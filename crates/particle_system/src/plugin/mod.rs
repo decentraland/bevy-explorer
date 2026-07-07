@@ -1,5 +1,6 @@
 mod random_color_modifier;
 mod set_position_modifier;
+mod set_velocity_modifier;
 mod speed_dampen;
 mod update_sprite_index;
 
@@ -34,7 +35,8 @@ use scene_runner::{
 use crate::{
     plugin::{
         random_color_modifier::RandomColorModifier, set_position_modifier::SetPositionModifier,
-        speed_dampen::SpeedDampenModifier, update_sprite_index::UpdateSpriteIndexModifier,
+        set_velocity_modifier::SetVelocityModifier, speed_dampen::SpeedDampenModifier,
+        update_sprite_index::UpdateSpriteIndexModifier,
     },
     ParticleSystem,
 };
@@ -308,6 +310,7 @@ fn make_particle_system(
     };
     let billboard = particle_system.billboard.unwrap_or(true);
     let sprite_sheet = particle_system.sprite_sheet.as_ref();
+    let shape = particle_system.shape.as_ref();
     // TODO playback state
     // TODO prewarm
     let simulation_space = match particle_system.simulation_space() {
@@ -318,7 +321,7 @@ fn make_particle_system(
     let writer = ExprWriter::new();
 
     // Modifiers
-    let init_position = make_position(particle_system.shape.as_ref(), &writer);
+    let init_position = make_position(shape, &writer);
     let init_rotation = SetAttributeModifier::new(
         ROTATION_ATTR,
         (writer.rand(ScalarType::Float) * writer.lit(std::f32::consts::TAU)).expr(),
@@ -327,14 +330,7 @@ fn make_particle_system(
         Attribute::SIZE,
         random_lerp(&writer, initial_size.start, initial_size.end),
     );
-    let init_velocity = SetVelocitySphereModifier {
-        center: writer.lit(Vec3::ZERO).expr(),
-        speed: random_lerp(
-            &writer,
-            initial_velocity_speed.start,
-            initial_velocity_speed.end,
-        ),
-    };
+    let init_velocity = make_velocity(shape, initial_velocity_speed, &writer);
     let init_age = SetAttributeModifier::new(Attribute::AGE, writer.lit(0.).expr());
     let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, writer.lit(lifetime).expr());
     let init_color = RandomColorModifier {
@@ -512,6 +508,21 @@ fn make_position(shape: Option<&Shape>, writer: &ExprWriter) -> SetPositionModif
             dimension: bevy_hanabi::ShapeDimension::Surface,
         }),
     }
+}
+
+fn make_velocity(
+    _shape: Option<&Shape>,
+    initial_velocity_speed: FloatRange,
+    writer: &ExprWriter,
+) -> SetVelocityModifier {
+    SetVelocityModifier::Sphere(SetVelocitySphereModifier {
+        center: writer.lit(Vec3::ZERO).expr(),
+        speed: random_lerp(
+            writer,
+            initial_velocity_speed.start,
+            initial_velocity_speed.end,
+        ),
+    })
 }
 
 fn random_lerp(writer: &ExprWriter, start: f32, end: f32) -> ExprHandle {
