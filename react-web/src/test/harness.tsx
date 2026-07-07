@@ -174,6 +174,8 @@ export function fakeSession(): EngineSession {
       startWithAccount: vi.fn(),
       exploreAsGuest: vi.fn(),
       jumpIn: vi.fn(),
+      profileFetchFailed: false,
+      resetProfileAndJumpIn: vi.fn(),
       useDifferentAccount: vi.fn()
     }
   }

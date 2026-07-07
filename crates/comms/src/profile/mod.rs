@@ -65,7 +65,7 @@ impl Plugin for UserProfilePlugin {
 
 enum ProfileDisplayState {
     Loaded(Box<UserProfile>),
-    Loading(Task<Result<UserProfile, anyhow::Error>>),
+    Loading(Task<Result<Option<UserProfile>, anyhow::Error>>),
     Failed,
 }
 
@@ -105,8 +105,8 @@ impl ProfileManager<'_, '_> {
 
         if let ProfileDisplayState::Loading(task) = state {
             match task.complete() {
-                Some(Ok(profile)) => *state = ProfileDisplayState::Loaded(Box::new(profile)),
-                Some(Err(_)) => *state = ProfileDisplayState::Failed,
+                Some(Ok(Some(profile))) => *state = ProfileDisplayState::Loaded(Box::new(profile)),
+                Some(Ok(None)) | Some(Err(_)) => *state = ProfileDisplayState::Failed,
                 None => (),
             }
         }
@@ -650,11 +650,14 @@ async fn deploy_profile(
     }
 }
 
+/// Ok(None) means the registry authoritatively reports no profile for the address; any
+/// failure to get a well-formed answer (no realm, transport error, bad status, parse
+/// failure) is an Err, so callers can tell "no profile" from "couldn't fetch".
 pub async fn get_remote_profile(
     address: Address,
     ipfs: std::sync::Arc<IpfsIo>,
     endpoint: Option<String>,
-) -> Result<UserProfile, anyhow::Error> {
+) -> Result<Option<UserProfile>, anyhow::Error> {
     let endpoint = match endpoint {
         Some(endpoint) => endpoint,
         None => ipfs.lambda_endpoint().ok_or(anyhow!("not connected"))?,
@@ -670,17 +673,18 @@ pub async fn get_remote_profile(
         .send()
         .await?;
 
-    let mut content = response.json::<Vec<LambdaProfiles>>().await?;
-    if content.is_empty() {
-        anyhow::bail!("not found");
+    if response.status() != StatusCode::OK {
+        anyhow::bail!("bad response: {}", response.status());
     }
 
-    let content = content
-        .remove(0)
-        .avatars
-        .into_iter()
-        .next()
-        .ok_or(anyhow!("not found"))?;
+    let mut content = response.json::<Vec<LambdaProfiles>>().await?;
+    if content.is_empty() {
+        return Ok(None);
+    }
+
+    let Some(content) = content.remove(0).avatars.into_iter().next() else {
+        return Ok(None);
+    };
 
     // debug!("loaded profile content preclean: {content:#?}");
     // // clean up the lambda result
@@ -708,5 +712,5 @@ pub async fn get_remote_profile(
     };
 
     debug!("loaded profile: {profile:#?}");
-    Ok(profile)
+    Ok(Some(profile))
 }

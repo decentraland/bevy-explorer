@@ -12,16 +12,20 @@ import type { PageToScene, SceneToPage } from './protocol'
 
 export interface LoginDriver {
   getPreviousLogin(): Promise<{ userId: string | null }>
-  loginPrevious(): Promise<unknown>
+  loginPrevious(defaultOnError?: boolean): Promise<unknown>
   loginGuest(): Promise<void>
   loginCancel(): Promise<void>
   /** Sign out of the current account → back to the login screen. */
   logout(): Promise<void>
-  /** Hand a same-domain SSO identity to the engine (replaces the auth-server poll). */
-  loginWithIdentity(identity: AuthIdentity): Promise<void>
+  /** Hand a same-domain SSO identity to the engine (replaces the auth-server poll).
+   *  `defaultOnError` continues with (and deploys) a default profile if the user's current
+   *  profile can't be fetched — it OVERWRITES the server-side profile, so only pass it after
+   *  a failed attempt, with explicit user consent. */
+  loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean): Promise<void>
   /** Reuse the existing login (the "Jump in" button). Each backend logs in the way it
-   *  supports: console `/login_identity` for the engine, `loginPrevious` over the bridge. */
-  jumpIn(): Promise<void>
+   *  supports: console `/login_identity` for the engine, `loginPrevious` over the bridge.
+   *  `defaultOnError` as for loginWithIdentity. */
+  jumpIn(defaultOnError?: boolean): Promise<void>
   /** Post a message to the scene (e.g. sendChat). */
   send(msg: PageToScene): void
   /** Subscribe to every scene→page message. Returns an unsubscribe. */
