@@ -144,21 +144,32 @@ pub struct SceneLoadingUi {
     pub pending_assets: Option<u32>,
 }
 
+/// Prefix on login error strings when the failure was fetching the user's profile —
+/// UIs match on this to offer retrying with a default profile (see the login variants'
+/// `default_on_error` bool).
+pub const PROFILE_FETCH_FAILED: &str = "profile fetch failed";
+
 #[derive(Event, Clone, Debug, Serialize, Deserialize)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
     CheckForUpdate(RpcResultSender<Option<(String, String)>>),
     MOTD(RpcResultSender<String>),
     GetPreviousLogin(RpcResultSender<Option<String>>),
-    LoginPrevious(RpcResultSender<Result<(), String>>),
+    /// bool: continue with (and deploy) a default profile if the user's current profile
+    /// can't be fetched — overwrites the server-side profile, so UIs should only set it
+    /// after a failed attempt and with explicit user consent.
+    LoginPrevious(bool, RpcResultSender<Result<(), String>>),
+    /// bool: as for LoginPrevious.
     LoginNew(
+        bool,
         RpcResultSender<Result<Option<i32>, String>>,
         RpcResultSender<Result<(), String>>,
     ),
     /// Log in with an AuthIdentity the web page already holds (base64-encoded AuthIdentity
     /// JSON read from localStorage) — no auth-server round-trip. The identity is the same
     /// regardless of how the user signed in (wallet, social, OTP, magic).
-    LoginWithIdentity(String, RpcResultSender<Result<(), String>>),
+    /// bool: as for LoginPrevious.
+    LoginWithIdentity(String, bool, RpcResultSender<Result<(), String>>),
     LoginGuest,
     LoginCancel,
     Logout,

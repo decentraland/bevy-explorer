@@ -39,16 +39,21 @@ fn login_guest_cmd(
 /// Login using previously saved credentials
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/login_previous")]
-struct LoginPreviousCommand;
+struct LoginPreviousCommand {
+    /// if the current profile can't be fetched, continue with (and deploy) a default
+    /// profile — this overwrites the server-side profile
+    #[arg(long)]
+    default_on_error: bool,
+}
 
 fn login_previous_cmd(
     mut input: ConsoleCommand<LoginPreviousCommand>,
     mut events: EventWriter<SystemApi>,
     mut pending: ResMut<PendingConsoleResponses>,
 ) {
-    if let Some(Ok(_)) = input.take() {
+    if let Some(Ok(command)) = input.take() {
         let (sx, rx) = common::rpc::RpcResultSender::<Result<(), String>>::channel();
-        events.write(SystemApi::LoginPrevious(sx));
+        events.write(SystemApi::LoginPrevious(command.default_on_error, sx));
         let responder = input.take_responder();
         pending.push_receiver(
             rx,
@@ -71,6 +76,10 @@ fn login_previous_cmd(
 struct LoginIdentityCommand {
     /// base64(JSON) of the stored AuthIdentity.
     payload: String,
+    /// if the current profile can't be fetched, continue with (and deploy) a default
+    /// profile — this overwrites the server-side profile
+    #[arg(long)]
+    default_on_error: bool,
 }
 
 fn login_identity_cmd(
@@ -80,7 +89,11 @@ fn login_identity_cmd(
 ) {
     if let Some(Ok(command)) = input.take() {
         let (sx, rx) = common::rpc::RpcResultSender::<Result<(), String>>::channel();
-        events.write(SystemApi::LoginWithIdentity(command.payload.clone(), sx));
+        events.write(SystemApi::LoginWithIdentity(
+            command.payload.clone(),
+            command.default_on_error,
+            sx,
+        ));
         let responder = input.take_responder();
         pending.push_receiver(
             rx,
