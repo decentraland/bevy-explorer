@@ -151,6 +151,13 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     (parent-owned confirm, same pattern as Block), the `ReportIcon` glyph, and wire the actual submit.
     (Old scene logged too — this is genuinely new backend work, not just UI.)
 
+23. **Edit your own name / profile — no UI yet** — *feature gap, flagged by Rob*. We can *view* the
+    profile (`ProfilePanel` = own profile, `ProfilePassport` = others), but there's **no UI to edit
+    your own** display name, description/bio, links, etc. — it's completely unimplemented (no
+    `editProfile`/`deployProfile` path in `features/profile` or the session). Needs the edit surface
+    + wiring the profile deploy through the bridge/engine. Reference the old client for the flow
+    (`unity-explorer` `Explorer/Assets/DCL/UI/`, `bevy-ui-scene` profile screens).
+
 ## Not gaps (already good / ahead)
 
 `Modal` (portal + focus-trap + blur + `--ui-scale`, richer than the old backdrop), `IconButton`
