@@ -37,7 +37,8 @@ impl DoAddConsoleCommand for App {
 }
 
 pub struct ConsolePlugin {
-    pub add_egui: bool,
+    // add the bevy_console command plumbing; false (tests) registers the bare events only
+    pub add_bevy_console: bool,
 }
 
 impl Plugin for ConsolePlugin {
@@ -53,7 +54,7 @@ impl Plugin for ConsolePlugin {
             ..Default::default()
         });
 
-        if self.add_egui {
+        if self.add_bevy_console {
             app.add_plugins(bevy_console::ConsolePlugin);
         } else {
             app.add_event::<ConsoleCommandEntered>();
