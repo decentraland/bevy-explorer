@@ -26,7 +26,6 @@ use common::{
     structs::{CurrentRealm, OutOfWorld, PlayerTeleported, PrimaryUser},
     util::{TaskCompat, TaskExt},
 };
-use dcl_component::proto_components::common::Vector3;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use dcl_component::proto_components::pulse;
 use dcl_component::transform_and_parent::DclTranslation;
@@ -154,12 +153,12 @@ impl Plugin for PulsePlugin {
 }
 
 /// Default Pulse endpoint (production). Native speaks ENet/UDP (7777); wasm has no ENet, so it speaks
-/// WebTransport on 7443. Override with the `PULSE_SERVER=host:port` env var — e.g.
+/// WebTransport on 7743. Override with the `PULSE_SERVER=host:port` env var — e.g.
 /// `pulse-server.decentraland.zone` for dev, or a local instance.
 #[cfg(not(target_arch = "wasm32"))]
 const DEFAULT_PULSE_SERVER: &str = "pulse-server.decentraland.org:7777";
 #[cfg(target_arch = "wasm32")]
-const DEFAULT_PULSE_SERVER: &str = "pulse-server.decentraland.org:7443";
+const DEFAULT_PULSE_SERVER: &str = "pulse-server.decentraland.org:7743";
 
 /// SHA-256 to pin the server's TLS cert via WebTransport's `serverCertificateHashes`. Production is
 /// CA-signed → `None` (default trust); native (ENet) never needs one.
@@ -688,11 +687,9 @@ fn send_teleport_at(session: &PulseSession, realm: &CurrentRealm, world: Vec3) {
 
     let teleport = pulse::TeleportRequest {
         parcel_index,
-        position: Some(Vector3 {
-            x: local.x,
-            y: local.y,
-            z: local.z,
-        }),
+        position_x: pulse::TeleportRequest::position_x_quantized(local.x),
+        position_y: pulse::TeleportRequest::position_y_quantized(local.y),
+        position_z: pulse::TeleportRequest::position_z_quantized(local.z),
         realm: realm_name,
     };
     let message = pulse::ClientMessage {

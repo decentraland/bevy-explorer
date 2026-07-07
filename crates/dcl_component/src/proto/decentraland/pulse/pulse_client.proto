@@ -2,8 +2,8 @@ syntax = "proto3";
 
 package decentraland.pulse;
 
-import "decentraland/common/vectors.proto";
 import "decentraland/pulse/pulse_shared.proto";
+import "decentraland/common/options.proto";
 
 message HandshakeRequest {
 	bytes auth_chain = 1;
@@ -59,9 +59,11 @@ message EmoteStop {
 // other. Must be the first gameplay message after handshake. Same-realm re-teleports are valid.
 message TeleportRequest {
   int32 parcel_index = 1;
-  decentraland.common.Vector3 position = 2;
+  uint32 position_x = 2 [(decentraland.common.quantized) = { min: 0, max: 16, bits: 8 }];
+  uint32 position_y = 3 [(decentraland.common.quantized) = { min: 0, max: 200, bits: 13 }];
+  uint32 position_z = 4 [(decentraland.common.quantized) = { min: 0, max: 16, bits: 8 }];
   // Non-empty realm identifier. Rejected if empty.
-  string realm = 3;
+  string realm = 5;
 }
 
 message ClientMessage {
