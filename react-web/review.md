@@ -115,7 +115,7 @@ logout via the profile chip.
 The 3D nametags, the pointer-lock crosshair, and projected proximity tips are drawn **in the engine
 scene**, not the DOM, so `?mock=1` can't show them and screenshots can't be deterministic. Verify
 these by hand (or have an agent drive the Chrome extension against a live world) after any change to
-`bridge-scene/src/domains/{nametags,pointer,proximity}.*`:
+`bridge-scene/src/domains/{nametags,pointer,proximity,avatarPointer}.*`:
 
 - [ ] **Nametags** appear above every avatar's head, follow them while walking, and **face the camera**.
 - [ ] Name **colour** = profile custom colour if set, else the address-hash palette; **claimed** names
