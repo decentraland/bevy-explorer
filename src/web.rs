@@ -89,10 +89,11 @@ pub async fn engine_init() -> Result<JsValue, JsValue> {
         return Ok("failed to read".into());
     }
 
-    let Ok(config) = serde_json::from_str(&buf) else {
+    let Ok(mut config) = serde_json::from_str::<AppConfig>(&buf) else {
         warn!("failed to deserialize app config, using default");
         return Ok("failed to deserialize".into());
     };
+    config.reset_outdated_settings();
 
     let _ = INIT_DATA.set(config);
 

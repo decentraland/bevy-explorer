@@ -480,7 +480,15 @@ pub struct AppConfig {
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub inputs: InputMapSerialized,
     pub point_at_marker_visibility: PointAtMarkerVisibility,
+    // field-level default (0) so configs saved before this field existed read as outdated,
+    // rather than taking the current generation from the container-level default
+    #[serde(default)]
+    pub settings_generation: u32,
 }
+
+/// bump to force a one-time reset of the preset-managed settings in existing configs
+/// (see [`AppConfig::reset_outdated_settings`])
+pub const SETTINGS_GENERATION: u32 = 1;
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -492,8 +500,8 @@ impl Default for AppConfig {
             audio: Default::default(),
             cache_bytes: 1024 * 1024 * 1024 * 10, // 10gb
             scene_threads: 4,
-            scene_load_distance: 50.0,
-            scene_unload_extra_distance: 15.0,
+            scene_load_distance: 10.0,
+            scene_unload_extra_distance: 10.0,
             scene_imposter_distances: vec![100.0, 200.0, 400.0, 800.0, 1600.0, 99999.0],
             scene_imposter_multisample: false,
             scene_imposter_multisample_amount: 0.0,
@@ -501,7 +509,7 @@ impl Default for AppConfig {
             parcel_grass_setting: Default::default(),
             sysinfo_visible: false,
             scene_log_to_console: false,
-            max_avatars: 100,
+            max_avatars: 20,
             constrain_scene_ui: false,
             player_settings: Default::default(),
             max_videos: 1,
@@ -512,11 +520,40 @@ impl Default for AppConfig {
             scene_permissions: Default::default(),
             inputs: Default::default(),
             point_at_marker_visibility: Default::default(),
+            settings_generation: SETTINGS_GENERATION,
         }
     }
 }
 
 impl AppConfig {
+    /// one-time forced reinitialization: configs saved with an older generation get the
+    /// current defaults for the preset-managed settings, keeping everything else
+    pub fn reset_outdated_settings(&mut self) {
+        if self.settings_generation >= SETTINGS_GENERATION {
+            return;
+        }
+        let default = Self::default();
+        self.graphics.msaa = default.graphics.msaa;
+        self.graphics.shadow_distance = default.graphics.shadow_distance;
+        self.graphics.shadow_settings = default.graphics.shadow_settings;
+        self.graphics.light_count = default.graphics.light_count;
+        self.graphics.shadow_caster_count = default.graphics.shadow_caster_count;
+        self.graphics.fog = default.graphics.fog;
+        self.graphics.bloom = default.graphics.bloom;
+        self.graphics.dof = default.graphics.dof;
+        self.graphics.ssao = default.graphics.ssao;
+        self.graphics.oob = default.graphics.oob;
+        self.scene_load_distance = default.scene_load_distance;
+        self.scene_unload_extra_distance = default.scene_unload_extra_distance;
+        self.scene_imposter_distances = default.scene_imposter_distances;
+        self.scene_imposter_multisample = default.scene_imposter_multisample;
+        self.scene_imposter_multisample_amount = default.scene_imposter_multisample_amount;
+        self.parcel_grass_setting = default.parcel_grass_setting;
+        self.max_avatars = default.max_avatars;
+        self.max_videos = default.max_videos;
+        self.settings_generation = SETTINGS_GENERATION;
+    }
+
     pub fn get_permission(
         &self,
         ty: PermissionType,
@@ -584,16 +621,16 @@ impl Default for GraphicsSettings {
         Self {
             vsync: false,
             log_fps: true,
-            msaa: AaSetting::FxaaHigh,
+            msaa: AaSetting::FxaaLow,
             fps_target: 60,
-            shadow_distance: 200.0,
-            shadow_settings: ShadowSetting::High,
-            light_count: 32,
-            shadow_caster_count: 8,
+            shadow_distance: 20.0,
+            shadow_settings: ShadowSetting::Low,
+            light_count: 4,
+            shadow_caster_count: 0,
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
-            bloom: BloomSetting::Low,
+            bloom: BloomSetting::High,
             dof: DofSetting::High,
             ssao: SsaoSetting::Off,
             oob: 2.0,
@@ -1328,10 +1365,9 @@ impl<T> MonotonicTimestamp<T> {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ParcelGrassSetting {
     Off,
-    #[cfg_attr(target_arch = "wasm32", default)]
+    #[default]
     Low,
     Mid,
-    #[cfg_attr(not(target_arch = "wasm32"), default)]
     High,
 }
 
