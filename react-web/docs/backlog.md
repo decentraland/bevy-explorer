@@ -158,6 +158,20 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     + wiring the profile deploy through the bridge/engine. Reference the old client for the flow
     (`unity-explorer` `Explorer/Assets/DCL/UI/`, `bevy-ui-scene` profile screens).
 
+24. **Radial hover prompts — viewport clamping near screen edges** — *polish, non-blocking; point to
+    review*. When the free cursor is near a viewport edge, the fixed-offset radial slots (`HOVER_SLOTS`
+    in `features/pointer/Pointer.tsx`) that point toward that edge run off-screen (cursor at the right
+    edge → the right-middle prompt's label clips). No clamp today. Arguments for leaving it:
+    (a) it's a **cursor-anchored** prompt, not a static web tooltip, so at the extreme edge some
+    overflow is inherent (the cursor is already at the edge, and the OS cursor itself can sit partly
+    off-screen there); (b) the canonical **unity-explorer** does the same — `ShowHoverFeedbackSystem`
+    + `HoverCanvas` position a fixed layout (`CURSOR_LAYOUTS`) at the cursor with **no edge-clamp/flip**
+    either (only `text-overflow: ellipsis` on the label), so a clamp would be an *enhancement over the
+    reference*, not a parity gap. If addressed: clamp the container by its measured (scaled) bounds like
+    `ProfileCard`, or flip slot sides near the edge. Review comment (note: it says "root is
+    overflow: hidden" — there's no such rule, the clip is just the viewport edge):
+    https://github.com/decentraland/bevy-explorer/pull/915#discussion_r3529180273
+
 ## Not gaps (already good / ahead)
 
 `Modal` (portal + focus-trap + blur + `--ui-scale`, richer than the old backdrop), `IconButton`
