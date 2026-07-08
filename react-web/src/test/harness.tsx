@@ -142,8 +142,6 @@ export function fakeSession(): EngineSession {
     reload: vi.fn(),
     dismissFatal: vi.fn(),
     hover: [],
-    subscribeHoverPos: () => () => {},
-    getHoverPos: () => null,
     cursorLocked: false,
     proximity: [],
     worldCard: null,

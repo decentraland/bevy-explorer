@@ -188,8 +188,6 @@ function Hud(): React.JSX.Element {
           {!pageOpen && (
             <Pointer
               hover={session.hover}
-              subscribeHoverPos={session.subscribeHoverPos}
-              getHoverPos={session.getHoverPos}
               locked={session.cursorLocked}
               proximity={session.proximity}
             />

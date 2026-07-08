@@ -5,12 +5,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { CameraIcon, WalkIcon } from '../../design'
 import type { HoverAction, ProximityTip } from '../../engine/protocol'
+import { subscribeCursor, getCursor, setCursorNotify } from './cursorStore'
 import styles from './Pointer.module.css'
-
-// Stable defaults so tests/callers that don't stream cursor position can omit the props — module-scope
-// identity keeps useSyncExternalStore from resubscribing every render.
-const noSubscribe = (): (() => void) => () => {}
-const noHoverPos = (): null => null
 
 // Default DCL key bindings (custom rebinds aren't reflected yet — v1).
 const IA_POINTER = 0
@@ -99,22 +95,18 @@ function Hint({ action, slot }: { action: HoverAction; slot?: Slot }): React.JSX
 
 export function Pointer({
   hover,
-  subscribeHoverPos = noSubscribe,
-  getHoverPos = noHoverPos,
   locked,
   proximity
 }: {
   hover: HoverAction[]
-  subscribeHoverPos?: (onChange: () => void) => () => void
-  getHoverPos?: () => { x: number; y: number } | null
   locked: boolean
   proximity: ProximityTip[]
 }): React.JSX.Element | null {
-  // Subscribed independently of the rest of the HUD's session state — hoverPos changes at mouse-move
-  // frequency while a free-cursor hover is active, so only this component should re-render on it.
-  const hoverPos = useSyncExternalStore(subscribeHoverPos, getHoverPos)
+  // Only re-renders while a free-cursor hover is active (see the cursor store above); the coords are
+  // read straight from the DOM pointer, so nothing streams over the bridge.
+  const cursorPos = useSyncExternalStore(subscribeCursor, getCursor)
   // The engine grabs the mouse without the browser Pointer Lock API, so `locked` comes from the
-  // bridge (PrimaryPointerInfo). Keep the browser API as a fallback for setups that do use it.
+  // bridge. Keep the browser API as a fallback for setups that do use it.
   const [browserLocked, setBrowserLocked] = useState(false)
   useEffect(() => {
     const update = (): void => setBrowserLocked(document.pointerLockElement != null)
@@ -125,24 +117,30 @@ export function Pointer({
 
   const showReticle = locked || browserLocked
   const active = hover.length > 0
+  // Wake the cursor store only when we're actually following the pointer (free cursor + a hover).
+  useEffect(() => {
+    setCursorNotify(active && !showReticle)
+    return () => setCursorNotify(false)
+  }, [active, showReticle])
+
   if (!showReticle && !active && proximity.length === 0) return null
 
   return (
     <div className={styles.root} aria-hidden="true">
       {showReticle && <div data-testid="reticle" className={`${styles.reticle}${active ? ` ${styles.reticleActive}` : ''}`} />}
       {active &&
-        (!showReticle && hoverPos ? (
-          // Free cursor: spread the prompts radially around the pointer (up to 7 slots).
-          <div className={styles.hintsRadial} style={{ left: hoverPos.x, top: hoverPos.y }}>
-            {hover.slice(0, HOVER_SLOTS.length).map((a, i) => (
-              <Hint key={i} action={a} slot={HOVER_SLOTS[i]} />
-            ))}
-          </div>
-        ) : (
-          // Pointer-locked (or no cursor pos): stack the prompts just below the centre reticle.
+        (showReticle ? (
+          // Pointer-locked: stack the prompts just below the centre reticle.
           <div className={styles.hints}>
             {hover.map((a, i) => (
               <Hint key={i} action={a} />
+            ))}
+          </div>
+        ) : (
+          // Free cursor: spread the prompts radially around the pointer (up to 7 slots).
+          <div className={styles.hintsRadial} style={{ left: cursorPos.x, top: cursorPos.y }}>
+            {hover.slice(0, HOVER_SLOTS.length).map((a, i) => (
+              <Hint key={i} action={a} slot={HOVER_SLOTS[i]} />
             ))}
           </div>
         ))}

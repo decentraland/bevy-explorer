@@ -162,8 +162,6 @@ function seedMockSso(o: MockOptions): void {
 export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
   const o = { ...DEFAULTS, ...opts }
   seedMockSso(o)
-  // ?simhover cursor-follow listener — kept here so the cleanup below can remove it.
-  let simHoverMove: ((e: MouseEvent) => void) | null = null
   // Stateful so markNotificationsRead persists across reopens (like the real service).
   const mockNow = 1_700_000_000_000
   // Shapes mirror the real notifications service: friendship notifications carry the other user
@@ -230,10 +228,10 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       1400
     )
 
-    // ?simhover=N seeds N world-hover prompts at screen centre so the radial cursor tooltips are
-    // visible/verifiable in ?mock=1 (the real engine hover stream isn't mocked). One is disabled
-    // (camera-distance gated, the PBPointerEvents default → shows the camera glyph; see pointer.test.tsx
-    // for the player-distance / walking-glyph variant).
+    // ?simhover=N seeds N world-hover prompts so the radial cursor tooltips are visible/verifiable in
+    // ?mock=1 (the real engine hover stream isn't mocked). React positions them at the live DOM cursor,
+    // so we only send the action list — no coordinates. One is disabled (camera-distance gated →
+    // shows the camera glyph; see pointer.test.tsx for the player-distance / walking-glyph variant).
     const simHover = Number(new URLSearchParams(location.search).get('simhover') ?? 0)
     if (simHover > 0) {
       const sample = [
@@ -245,16 +243,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         { button: 10, text: 'Use', enabled: true },
         { button: 11, text: 'Activate', enabled: true }
       ].slice(0, Math.min(simHover, 7))
-      // Centre of the viewport (fallback to the visual-baseline size if innerWidth is momentarily 0).
-      const cx = (window.innerWidth || 1600) / 2
-      const cy = (window.innerHeight || 900) / 2
-      setTimeout(() => reply({ kind: 'hover', actions: sample, x: cx, y: cy }), 1500)
-      // Follow the real cursor so the tooltip-tracks-the-mouse behaviour is verifiable in ?mock=1
-      // (the real bridge streams this from PrimaryPointerInfo per frame). Kept in simHoverMove so
-      // the bridge cleanup removes it (spawnPlayer can run again after a re-login).
-      if (simHoverMove) window.removeEventListener('mousemove', simHoverMove)
-      simHoverMove = (e) => reply({ kind: 'hoverPos', x: e.clientX, y: e.clientY })
-      window.addEventListener('mousemove', simHoverMove)
+      setTimeout(() => reply({ kind: 'hover', actions: sample }), 1500)
     }
 
     // Fake friends + requests for the React friends panel.
@@ -554,7 +543,6 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
   }
 
   return () => {
-    if (simHoverMove) window.removeEventListener('mousemove', simHoverMove)
     ch.close()
   }
 }

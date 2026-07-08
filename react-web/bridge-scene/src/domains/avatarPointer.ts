@@ -2,7 +2,7 @@
 // ECS entities carrying PlayerIdentityData (spawned by the engine, hold the address). We attach a
 // standard SDK7 pointer-down to each one (hover "Show Profile") and forward the click to React, which
 // opens the ProfileCard anchored at the cursor.
-import { engine, pointerEventsSystem, InputAction, PlayerIdentityData, PointerLock, PrimaryPointerInfo, type Entity } from '@dcl/sdk/ecs'
+import { engine, pointerEventsSystem, InputAction, PlayerIdentityData, PointerLock, type Entity } from '@dcl/sdk/ecs'
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
@@ -53,18 +53,12 @@ export function registerAvatarPointer(ctx: Ctx): void {
             const address = PlayerIdentityData.getOrNull(entity)?.address
             if (address == null || address === '') return
             if (passportDisabled.has(address.toLowerCase())) return // privacy area: passports disabled
-            // Cursor screen position at the click — where React anchors the profile card.
-            const p = PrimaryPointerInfo.getOrNull(engine.RootEntity)?.screenCoordinates
             // The engine grabs the cursor for camera-look; free it so the card is usable.
             const pl = PointerLock.getMutableOrNull(engine.CameraEntity)
             if (pl != null) pl.isPointerLocked = false
-            ctx.send({
-              kind: 'avatarClick',
-              address,
-              name: getPlayer({ userId: address })?.name ?? address,
-              x: p?.x ?? 0,
-              y: p?.y ?? 0
-            })
+            // Only the address travels — React resolves the name (nearby roster) and the card's
+            // anchor (live DOM cursor) itself.
+            ctx.send({ kind: 'avatarClick', address })
           }
         )
       }

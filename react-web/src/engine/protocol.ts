@@ -673,35 +673,25 @@ export interface SetSettingRequest {
   value: number
 }
 
-/** One hover hint for a world entity under the reticle (from the engine getHoverStream). */
+/** One interaction hint (a single key binding) for a world entity: the button to press + its label.
+ *  Shared by the reticle hover and the proximity tooltips. React maps `button` (an `InputAction` enum)
+ *  to a glyph (E / 🖱 / 1…). */
 export interface HoverAction {
-  /** The `InputAction` enum the action is bound to; React maps it to a key label (E / 🖱 / 1…). */
   button: number
   text: string
-  /** false → out of range ("Too far, get closer"). */
+  /** false → out of range (shown greyed with a "get closer" hint instead of the key glyph). */
   enabled: boolean
-  /** Only meaningful when `enabled` is false — which distance rule (PBPointerEvents) is gating the
-   *  action: 'camera' (no `maxPlayerDistance` configured — the implicit-default case too) shows a
-   *  camera glyph + "Get camera closer"; 'player' (`maxPlayerDistance` configured) shows the
-   *  bevy-ui-scene walking glyph + "Get player closer". Defaults to 'camera' when absent. */
+  /** Only meaningful when `enabled` is false — which distance rule gates the action: 'camera' (no
+   *  `maxPlayerDistance`, incl. the implicit default) → camera glyph + "Get camera closer";
+   *  'player' (`maxPlayerDistance` set) → walking glyph + "Get player closer". Defaults to 'camera'. */
   tooFarReason?: 'camera' | 'player'
 }
-/** Hover hints to show at the pointer. Empty array = nothing hovered. */
+/** Interaction hints for the entity under the reticle. Empty array = nothing hovered. The tooltip's
+ *  screen position is derived in React from the DOM cursor (free) or the centre (pointer-locked), so
+ *  no coordinates travel on the wire. */
 export interface HoverMessage {
   kind: 'hover'
   actions: HoverAction[]
-  /** Cursor screen-pixel position (from PrimaryPointerInfo) so the hint sits at the pointer, not the
-   *  reticle. It's the screen centre while pointer-locked; absent if unavailable. */
-  x?: number
-  y?: number
-}
-
-/** Streamed cursor position while a hover is active (free cursor) so the tooltip follows the mouse —
- *  the hover stream only fires on enter/exit, so position updates come through here per-frame. */
-export interface HoverPosMessage {
-  kind: 'hoverPos'
-  x: number
-  y: number
 }
 
 /** Whether the engine has grabbed the mouse for camera-look (OS cursor hidden) → draw the
@@ -726,20 +716,16 @@ export interface ProximityMessage {
   tips: ProximityTip[]
 }
 
-/** A nearby avatar was clicked in the world → open their profile card, anchored at the click. */
+/** A nearby avatar was clicked in the world → open their profile card. Only the address travels;
+ *  React resolves the display name (nearby roster) and anchors the card at the live DOM cursor. */
 export interface AvatarClickMessage {
   kind: 'avatarClick'
   address: string
-  name: string
-  /** Cursor screen-pixel position at the click (from PrimaryPointerInfo) — where to anchor the card. */
-  x: number
-  y: number
 }
 
 export type SceneToPage =
   | RpcResponse
   | HoverMessage
-  | HoverPosMessage
   | CursorLockMessage
   | ProximityMessage
   | AvatarClickMessage

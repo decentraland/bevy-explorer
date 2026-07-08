@@ -6,6 +6,7 @@ import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type St
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/EngineErrorModal'
 import { DEFAULT_REALM } from '../engine/EngineHost'
+import { getCursor } from '../pointer/cursorStore'
 import type {
   AppNotification,
   ChatMessage,
@@ -230,12 +231,6 @@ export interface EngineSession {
   dismissFatal: () => void
   /** World-entity hover hints (empty = nothing hovered). */
   hover: HoverAction[]
-  /** Subscribe to cursor-position updates (streamed at mouse-move frequency while a free-cursor hover
-   *  is active) without re-rendering the rest of the HUD on every move — pair with getHoverPos via
-   *  useSyncExternalStore. Only <Pointer> should consume this. */
-  subscribeHoverPos: (onChange: () => void) => () => void
-  /** Synchronously read the current cursor position (for useSyncExternalStore); null = show at the reticle. */
-  getHoverPos: () => { x: number; y: number } | null
   /** Engine has grabbed the mouse for camera-look (OS cursor hidden) → show the crosshair. */
   cursorLocked: boolean
   /** In-range world-entity tooltips, anchored at projected screen coords. */
@@ -323,25 +318,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [playerReady, setPlayerReady] = useState(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
-  // hoverPos streams at mouse-move frequency while a free-cursor hover is active — kept out of React
-  // state (which would re-render the whole HUD per frame) and exposed as its own tiny external store
-  // that only <Pointer> subscribes to via useSyncExternalStore.
-  const hoverPosRef = useRef<{ x: number; y: number } | null>(null)
-  const hoverPosListeners = useRef<Set<() => void>>(new Set())
-  const setHoverPos = useCallback((pos: { x: number; y: number } | null) => {
-    hoverPosRef.current = pos
-    hoverPosListeners.current.forEach((fn) => fn())
-  }, [])
-  const subscribeHoverPos = useCallback((onChange: () => void) => {
-    hoverPosListeners.current.add(onChange)
-    return () => { hoverPosListeners.current.delete(onChange) }
-  }, [])
-  const getHoverPos = useCallback(() => hoverPosRef.current, [])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
   const [worldCard, setWorldCard] = useState<{ address: string; name: string; x: number; y: number } | null>(null)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
+  // Mirror cursor-lock + roster into refs so the run-once message handler reads them without stale
+  // closures — avatarClick uses them to resolve the card's name and anchor.
+  const cursorLockedRef = useRef(false)
+  const membersRef = useRef<NearbyMember[]>([])
   const [chatOpen, setChatOpen] = useState(true)
   const [pendingMention, setPendingMention] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -404,24 +389,26 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'hover':
           setHover(msg.actions)
-          setHoverPos(msg.x != null && msg.y != null ? { x: msg.x, y: msg.y } : null)
-          break
-        case 'hoverPos':
-          setHoverPos({ x: msg.x, y: msg.y })
           break
         case 'cursorLock':
+          cursorLockedRef.current = msg.locked
           setCursorLocked(msg.locked)
           break
         case 'proximity':
           setProximity(msg.tips)
           break
-        case 'avatarClick':
+        case 'avatarClick': {
           // The card's scrim swallows mouse input, so the engine's raycast freezes and never sends
           // the hover-exit — clear the hover here or its tooltip stays painted beside the card.
           setHover([])
-          setHoverPos(null)
-          setWorldCard({ address: msg.address, name: msg.name, x: msg.x, y: msg.y })
+          // avatarClick carries only the address: resolve the display name from the nearby roster and
+          // anchor the card at the live DOM cursor (centre while the camera has the pointer locked).
+          const name =
+            membersRef.current.find((m) => m.address.toLowerCase() === msg.address.toLowerCase())?.name ?? msg.address
+          const p = cursorLockedRef.current ? { x: window.innerWidth / 2, y: window.innerHeight / 2 } : getCursor()
+          setWorldCard({ address: msg.address, name, x: p.x, y: p.y })
           break
+        }
         case 'chat':
           setMessages((prev) =>
             [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
@@ -433,6 +420,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setChatOpen(msg.open)
           break
         case 'members':
+          membersRef.current = msg.members
           setMembers(msg.members)
           break
         case 'menuVisibility':
@@ -1035,8 +1023,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       setFatalError(null)
     },
     hover,
-    subscribeHoverPos,
-    getHoverPos,
     cursorLocked,
     proximity,
     worldCard,

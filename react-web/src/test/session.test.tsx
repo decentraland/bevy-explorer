@@ -144,8 +144,11 @@ describe('session domain', () => {
   it('a nearby-avatar click (avatarClick message) opens session.worldCard; closeWorldCard clears it', () => {
     const h = renderSession({ userId: null })
     expect(h.session().worldCard).toBeNull()
-    act(() => h.driver.emit({ kind: 'avatarClick', address: '0xABC', name: 'Alice', x: 120, y: 240 }))
-    expect(h.session().worldCard).toEqual({ address: '0xABC', name: 'Alice', x: 120, y: 240 })
+    // avatarClick carries only the address; the name is resolved from the nearby roster and the anchor
+    // from the DOM cursor (0,0 in jsdom, unlocked).
+    act(() => h.driver.emit({ kind: 'members', members: [{ address: '0xABC', name: 'Alice' }] }))
+    act(() => h.driver.emit({ kind: 'avatarClick', address: '0xABC' }))
+    expect(h.session().worldCard).toEqual({ address: '0xABC', name: 'Alice', x: 0, y: 0 })
     act(() => h.session().closeWorldCard())
     expect(h.session().worldCard).toBeNull()
   })
