@@ -741,26 +741,27 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!submitted || destinationPicked || urlDestination.current == null) return
     const dest = urlDestination.current
     if (dest != null && dest.kind === 'world') {
-      // Validate the realm BEFORE launching — a typo'd ?realm= would otherwise strand the loading
-      // overlay forever. Same bare-name mapping as the engine (ipfs map_realm_name). The ref is
-      // consumed only on resolution, so phase stays 'entering' (no picker flash) while checking.
       if (validatingRealm.current) return
       validatingRealm.current = true
       const base =
         dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
           ? `https://worlds-content-server.decentraland.org/world/${dest.realm}`
           : dest.realm
-      fetch(`${base.replace(/\/+$/, '')}/about`)
+      // Launching against an unreachable realm strands the engine in a cryptic login failure, so
+      // block up front: 404 → not found, no/failed answer (incl. timeout) → unreachable.
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))
+      const unreachable = (): void =>
+        setFatalError({ message: `The world "${dest.realm}" isn't reachable right now.`, source: 'realm' })
+      Promise.race([fetch(`${base.replace(/\/+$/, '')}/about`), timeout])
         .then((r) => {
-          urlDestination.current = null
-          if (r.ok) pickDestination(dest)
-          else setFatalError({ message: `The world "${dest.realm}" doesn't exist.`, source: 'realm' })
+          if (r?.ok) pickDestination(dest)
+          else if (r?.status === 404)
+            setFatalError({ message: `The world "${dest.realm}" doesn't exist.`, source: 'realm' })
+          else unreachable()
         })
-        .catch(() => {
-          urlDestination.current = null
-          setFatalError({ message: `The world "${dest.realm}" isn't reachable right now.`, source: 'realm' })
-        })
+        .catch(unreachable)
         .finally(() => {
+          urlDestination.current = null
           validatingRealm.current = false
         })
       return
