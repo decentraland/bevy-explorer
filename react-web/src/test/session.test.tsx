@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { act, waitFor } from '@testing-library/react'
 import { renderSession, enterAsGuest, FakeDriver } from './harness'
+import { openProfileCard } from '../features/profileCard/ProfileCard'
+
+// The avatarClick handler opens the world profile card as a popup; stub it so we can assert the call.
+vi.mock('../features/profileCard/ProfileCard', () => ({ openProfileCard: vi.fn() }))
 
 // Simulates a boot-time engine panic: `throwOnLaunch` makes launch() throw synchronously (the generic
 // "unreachable" wasm trap), and `panic` is the readable message the iframe stashes and the host reads
@@ -141,16 +145,13 @@ describe('session domain', () => {
     )
   })
 
-  it('a nearby-avatar click (avatarClick message) opens session.worldCard; closeWorldCard clears it', () => {
+  it('a nearby-avatar click (avatarClick) opens the profile-card popup at the cursor', () => {
+    vi.mocked(openProfileCard).mockClear()
     const h = renderSession({ userId: null })
-    expect(h.session().worldCard).toBeNull()
-    // avatarClick carries only the address; the name + avatar are resolved from the nearby roster and
-    // the anchor from the DOM cursor (0,0 in jsdom, unlocked).
-    act(() => h.driver.emit({ kind: 'members', members: [{ address: '0xABC', name: 'Alice', picture: 'alice.png' }] }))
+    // avatarClick carries only the address; the card resolves name/avatar from the roster itself. The
+    // handler anchors it at the DOM cursor (0,0 in jsdom, unlocked).
     act(() => h.driver.emit({ kind: 'avatarClick', address: '0xABC' }))
-    expect(h.session().worldCard).toEqual({ address: '0xABC', name: 'Alice', picture: 'alice.png', x: 0, y: 0 })
-    act(() => h.session().closeWorldCard())
-    expect(h.session().worldCard).toBeNull()
+    expect(openProfileCard).toHaveBeenCalledWith('0xABC', 0, 0)
   })
 
   it('chat.mention opens chat and queues the @name until consumed', async () => {

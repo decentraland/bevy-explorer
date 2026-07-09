@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { ProfileCard } from '../features/chat/ProfileCard'
+import { ProfileCardPresentation } from '../features/chat/ProfileCardPresentation'
 import { PopupHost, resetPopups } from '../design'
 
 // The popup store is a module singleton — clear it between tests so open dialogs don't leak.
@@ -13,12 +13,12 @@ afterEach(resetPopups)
 // moderation endpoint exists.)
 const ALICE = { address: '0xalice', name: 'Alice' }
 
-function renderCard(props: Partial<React.ComponentProps<typeof ProfileCard>> = {}): { onClose: () => void } {
+function renderCard(props: Partial<React.ComponentProps<typeof ProfileCardPresentation>> = {}): { onClose: () => void } {
   const onClose = vi.fn()
   // PopupHost renders the imperative confirm (Block) opened via showConfirm.
   render(
     <>
-      <ProfileCard user={ALICE} x={20} y={20} me={{ address: '0xme' }} onClose={onClose} {...props} />
+      <ProfileCardPresentation user={ALICE} x={20} y={20} me={{ address: '0xme' }} onClose={onClose} {...props} />
       <PopupHost />
     </>
   )

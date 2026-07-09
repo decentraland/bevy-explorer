@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import { Avatar, Button } from '../../design'
 import { photoTime } from '../session/useEngineSession'
 import type { GalleryPhoto, GalleryPhotoMeta } from '../../engine/protocol'
-import type { ChatUser } from '../chat/ProfileCard'
+import type { ChatUser } from '../chat/ProfileCardPresentation'
 import styles from './GalleryPage.module.css'
 
 const REELS_BASE = 'https://reels.decentraland.org'

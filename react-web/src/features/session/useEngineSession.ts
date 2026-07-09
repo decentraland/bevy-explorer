@@ -7,6 +7,8 @@ import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/EngineErrorModal'
 import { DEFAULT_REALM } from '../engine/EngineHost'
 import { getCursor } from '../pointer/cursorStore'
+import { openProfileCard } from '../profileCard/ProfileCard'
+import type { ChatUser } from '../chat/ProfileCardPresentation'
 import type {
   AppNotification,
   ChatMessage,
@@ -228,10 +230,6 @@ export interface EngineSession {
   cursorLocked: boolean
   /** In-range world-entity tooltips, anchored at projected screen coords. */
   proximity: ProximityTip[]
-  /** The nearby avatar whose profile card is open in the world (clicked at x,y), or null. */
-  worldCard: { address: string; name: string; picture?: string; x: number; y: number } | null
-  /** Dismiss the world profile card. */
-  closeWorldCard: () => void
   chat: ChatState
   friends: FriendsState
   settings: SettingsState
@@ -240,6 +238,12 @@ export interface EngineSession {
   userProfiles: Record<string, Profile | null>
   /** Request a user's passport by address (populates `userProfiles`). */
   requestUserProfile: (address: string) => void
+  /** The user whose full-screen passport is open (identity only; rich data loads via userProfiles), or null. */
+  passport: ChatUser | null
+  /** Open a user's full-screen passport (also kicks off the rich-profile fetch). */
+  openPassport: (user: ChatUser) => void
+  /** Dismiss the passport. */
+  closePassport: () => void
   notifications: NotificationsState
   emotes: EmotesState
   backpack: BackpackState
@@ -313,13 +317,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
-  const [worldCard, setWorldCard] = useState<{ address: string; name: string; picture?: string; x: number; y: number } | null>(null)
+  const [passport, setPassport] = useState<ChatUser | null>(null)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
-  // Mirror cursor-lock + roster into refs so the run-once message handler reads them without stale
-  // closures — avatarClick uses them to resolve the card's name and anchor.
+  // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
+  // avatarClick uses it to centre the card while the camera has the pointer locked.
   const cursorLockedRef = useRef(false)
-  const membersRef = useRef<NearbyMember[]>([])
   const [chatOpen, setChatOpen] = useState(true)
   const [pendingMention, setPendingMention] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -390,12 +393,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           // The card's scrim swallows mouse input, so the engine's raycast freezes and never sends
           // the hover-exit — clear the hover here or its tooltip stays painted beside the card.
           setHover([])
-          // avatarClick carries only the address: resolve the display name + avatar from the nearby
-          // roster (same source the chat uses) and anchor the card at the live DOM cursor (centre while
-          // the camera has the pointer locked).
-          const member = membersRef.current.find((m) => m.address.toLowerCase() === msg.address.toLowerCase())
+          // Open the profile card as a popup, anchored at the live DOM cursor (centre while the camera
+          // has the pointer locked). The card resolves the name/avatar by address from the roster.
           const p = cursorLockedRef.current ? { x: window.innerWidth / 2, y: window.innerHeight / 2 } : getCursor()
-          setWorldCard({ address: msg.address, name: member?.name ?? msg.address, picture: member?.picture, x: p.x, y: p.y })
+          openProfileCard(msg.address, p.x, p.y)
           break
         }
         case 'chat':
@@ -409,7 +410,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setChatOpen(msg.open)
           break
         case 'members':
-          membersRef.current = msg.members
           setMembers(msg.members)
           break
         case 'menuVisibility':
@@ -614,7 +614,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const consumeMention = useCallback(() => setPendingMention(null), [])
-  const closeWorldCard = useCallback(() => setWorldCard(null), [])
 
   // Escape closes any open React panel/menu and returns to the world view. We only
   // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
@@ -855,6 +854,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const requestUserProfile = useCallback((address: string) => {
     driverRef.current?.send({ kind: 'getUserProfile', address })
   }, [])
+  // Full-screen passport (View Profile). Opening it also fetches the rich profile (badges/photos/about);
+  // it renders identity-only from the passed user until that lands.
+  const openPassport = useCallback((user: ChatUser) => {
+    setPassport(user)
+    if (user.address) driverRef.current?.send({ kind: 'getUserProfile', address: user.address })
+  }, [])
+  const closePassport = useCallback(() => setPassport(null), [])
   const friendAct = useCallback((op: FriendAction, address: string) => {
     driverRef.current?.send({ kind: 'friendAction', op, address })
   }, [])
@@ -1002,8 +1008,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     hover,
     cursorLocked,
     proximity,
-    worldCard,
-    closeWorldCard,
     chat: { messages, send: sendChat, open: chatOpen, toggle: toggleChat, members, mention: mentionInChat, pendingMention, consumeMention },
     friends: {
       available: friendsData.available,
@@ -1019,6 +1023,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     profile: { data: profile, open: profileOpen, toggle: toggleProfile },
     userProfiles,
     requestUserProfile,
+    passport,
+    openPassport,
+    closePassport,
     notifications: {
       list: notifications,
       unread: notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0),

@@ -13,7 +13,7 @@ import { Panel } from './Panel'
 import { DclLogo } from './DclLogo'
 import { Avatar } from './Avatar'
 import { WearableCard, type Rarity } from './WearableCard'
-import { showConfirm, showDialog } from './popups'
+import { showConfirm, showDialog, PopupHost } from './popups'
 import type { IconName } from './icons'
 import { ChatBubble, DaySeparator, MemberRow } from '../features/chat/Chat'
 import { EmoteSlot } from '../features/emotes/EmoteSlot'
@@ -133,6 +133,8 @@ export function Showcase(): React.JSX.Element {
   const [res, setRes] = useState('1080')
   return (
     <div style={wrap}>
+      {/* Showcase renders instead of Hud, so it hosts its own popup layer for the dialog demos below. */}
+      <PopupHost />
       <h1 style={{ margin: 0, fontSize: 'var(--fs-title)' }}>Design system · Explorer 2.0</h1>
 
       <Section title="Palette (tokens)">

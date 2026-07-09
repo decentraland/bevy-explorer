@@ -6,12 +6,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatLine, ChatState } from '../session/useEngineSession'
-import type { FriendAction, NearbyMember } from '../../engine/protocol'
+import type { NearbyMember } from '../../engine/protocol'
 import { Avatar, ControlButton, DclLogo } from '../../design'
 import { EmojiPicker } from './EmojiPicker'
 import { searchByShortcode, SHORTCODE_RE, type Emoji } from './emojiData'
 import { MessageText, mentionsMe, buildNameIndex } from './chatText'
-import { ProfileCard, type ChatUser, type Relationship } from './ProfileCard'
+import { type ChatUser } from './ProfileCardPresentation'
+import { openProfileCard } from '../profileCard/ProfileCard'
 import styles from './Chat.module.css'
 
 const MAX_LEN = 500
@@ -257,22 +258,13 @@ export function Chat({
   chat,
   hidden = false,
   me,
-  onFriendAction,
-  onViewProfile,
   onTeleport,
-  onVisitWorld,
-  relationshipOf
+  onVisitWorld
 }: {
   chat: ChatState
   hidden?: boolean
   /** The local player (for @-me highlight + hiding self-actions in the viewer). */
   me?: { address?: string; name?: string } | null
-  /** Friendship status for a user — drives the profile card's CTA. */
-  relationshipOf?: (address: string) => Relationship
-  /** Friend action (request/accept/reject/unblock) from the profile card. */
-  onFriendAction?: (op: FriendAction, address: string) => void
-  /** Open the full passport for a user (View Passport). */
-  onViewProfile?: (user: ChatUser) => void
   /** A location link (x,y) in a message was clicked. */
   onTeleport?: (x: number, y: number) => void
   /** A world name (e.g. boedo.dcl.eth) in a message was clicked → prompt to jump there. */
@@ -285,7 +277,6 @@ export function Chat({
   const [scQuery, setScQuery] = useState<string | null>(null)
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
-  const [viewUser, setViewUser] = useState<{ user: ChatUser; x: number; y: number } | null>(null)
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [mentionSug, setMentionSug] = useState<NearbyMember[]>([])
   const listRef = useRef<HTMLDivElement>(null)
@@ -345,9 +336,9 @@ export function Chat({
     if (!chat.open) chat.toggle()
   }
 
-  // Profile viewer: clicking a name/avatar/@mention opens a mini passport at the click.
+  // Profile viewer: clicking a name/avatar/@mention opens the shared profile card at the click.
   const openProfile = (user: ChatUser, e: React.MouseEvent): void => {
-    setViewUser({ user, x: e.clientX, y: e.clientY })
+    openProfileCard(user.address, e.clientX, e.clientY)
   }
   // "Mention" from the viewer drops @name into the draft, ready to send.
   const insertMention = (name: string): void => {
@@ -583,20 +574,6 @@ export function Chat({
             setShowMembers(false)
             chat.toggle()
           }}
-        />
-      )}
-
-      {viewUser && (
-        <ProfileCard
-          user={viewUser.user}
-          x={viewUser.x}
-          y={viewUser.y}
-          me={me}
-          relationship={viewUser.user.address ? relationshipOf?.(viewUser.user.address) : undefined}
-          onFriendAction={onFriendAction}
-          onViewProfile={onViewProfile}
-          onMention={insertMention}
-          onClose={() => setViewUser(null)}
         />
       )}
     </div>

@@ -9,16 +9,16 @@ import { createPortal } from 'react-dom'
 import { Avatar, Button, showConfirm } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { FriendAction } from '../../engine/protocol'
+import type { Relationship } from '../../lib/relationship'
 import styles from './ProfileCard.module.css'
+
+export type { Relationship } from '../../lib/relationship'
 
 export interface ChatUser {
   address: string
   name: string
   picture?: string
 }
-
-/** Relationship of the local user to this profile — drives the friend CTA. */
-export type Relationship = 'none' | 'requested' | 'incoming' | 'friend' | 'blocked'
 
 function Verified(): React.JSX.Element {
   return (
@@ -83,7 +83,7 @@ function isClaimed(name: string): boolean {
   return !!name && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
 }
 
-export function ProfileCard({
+export function ProfileCardPresentation({
   user,
   x,
   y,

@@ -24,7 +24,10 @@ import { Pointer } from './features/pointer/Pointer'
 import { ProfilePassport } from './features/profile/ProfilePassport'
 import { WorldVisitModal } from './components/WorldVisitModal'
 import { PermissionDialog } from './features/permissions/PermissionDialog'
-import { ProfileCard, type ChatUser, type Relationship } from './features/chat/ProfileCard'
+import { type Relationship } from './features/chat/ProfileCardPresentation'
+import { PopupHost } from './design'
+import { SessionProvider } from './features/session/SessionContext'
+import { relationshipOf as relationshipOfUtil } from './lib/relationship'
 import type { Profile } from './engine/protocol'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
@@ -108,9 +111,6 @@ function Hud(): React.JSX.Element {
   // Warn before the back gesture / Back button unloads the engine (only once in-world).
   const exitGuard = useExitGuard(session.phase === 'entering' || session.phase === 'world')
 
-  // Passport (View Profile). Self → the local rich profile; others → the fetched
-  // passport (requestUserProfile on open), falling back to identity-only while it loads.
-  const [passport, setPassport] = useState<ChatUser | null>(null)
   // A world (e.g. boedo.dcl.eth) the user asked to jump to — drives the shared confirm modal.
   const [visitWorld, setVisitWorld] = useState<string | null>(null)
   // Which tab the Backpack opens on. The emote wheel's "Customise [E]" opens it on Emotes; it resets
@@ -119,25 +119,17 @@ function Hud(): React.JSX.Element {
   useEffect(() => {
     if (!session.backpack.open) setBackpackTab('wearables')
   }, [session.backpack.open])
+  // Passport (View Profile) lives in the session now, so the popup-mounted ProfileCard can open it via
+  // useSession() without App wiring. Self → the local rich profile; others → the fetched passport.
+  const passport = session.passport
   const isSelfPassport =
     !!passport && !!session.profile.data && session.profile.data.address.toLowerCase() === passport.address.toLowerCase()
-  const openPassport = (user: ChatUser): void => {
-    setPassport(user)
-    if (user.address) session.requestUserProfile(user.address) // fetch badges/photos/catalyst data
-  }
-  // Friendship status for a user — drives the profile card's CTA (chat + friends list + world).
-  const relationshipOf = (address: string): Relationship => {
-    const a = address.toLowerCase()
-    if (session.friends.blocked.some((b) => b.toLowerCase() === a)) return 'blocked'
-    if (session.friends.list.some((f) => f.address.toLowerCase() === a)) return 'friend'
-    if (session.friends.received.some((r) => r.address.toLowerCase() === a)) return 'incoming'
-    if (session.friends.sent.some((r) => r.address.toLowerCase() === a)) return 'requested'
-    return 'none'
-  }
+  // Friendship status for a user — drives the profile card's CTA (chat + friends list).
+  const relationshipOf = (address: string): Relationship => relationshipOfUtil(session.friends, address)
   // Open MY OWN passport (Sidebar profile icon + the menu's "View Profile").
   const viewMyProfile = (): void => {
     const me = session.profile.data
-    if (me) openPassport({ address: me.address, name: me.name, picture: me.picture })
+    if (me) session.openPassport({ address: me.address, name: me.name, picture: me.picture })
   }
   const passportProfile: Profile | null = !passport
     ? null
@@ -174,7 +166,7 @@ function Hud(): React.JSX.Element {
     session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.gallery.open
 
   return (
-    <>
+    <SessionProvider value={session}>
       {rpc && <EngineHost rpc={rpc} />}
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
@@ -196,19 +188,10 @@ function Hud(): React.JSX.Element {
             chat={session.chat}
             hidden={session.friends.open || pageOpen}
             me={session.profile.data}
-            onFriendAction={session.friends.act}
-            onViewProfile={openPassport}
             onTeleport={(x, y) => session.map.teleport(x, y)}
             onVisitWorld={(name) => setVisitWorld(name)}
-            relationshipOf={relationshipOf}
           />
-          <FriendsPanel
-            friends={session.friends}
-            me={session.profile.data}
-            relationshipOf={relationshipOf}
-            onViewProfile={openPassport}
-            onMention={session.chat.mention}
-          />
+          <FriendsPanel friends={session.friends} />
           <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
           <ProfilePanel profile={session.profile} />
           <NotificationsPanel notifications={session.notifications} />
@@ -240,7 +223,7 @@ function Hud(): React.JSX.Element {
             profile={session.profile}
             onNavigate={goToMenuPage}
             onTeleport={(x, y) => session.map.teleport(x, y)}
-            onViewProfile={openPassport}
+            onViewProfile={session.openPassport}
           />
           {passport && passportProfile && (
             <ProfilePassport
@@ -249,21 +232,7 @@ function Hud(): React.JSX.Element {
               isSelf={isSelfPassport}
               relationship={relationshipOf(passport.address)}
               onAddFriend={(address) => session.friends.act('request', address)}
-              onClose={() => setPassport(null)}
-            />
-          )}
-          {session.worldCard && (
-            <ProfileCard
-              key={session.worldCard.address}
-              user={{ address: session.worldCard.address, name: session.worldCard.name, picture: session.worldCard.picture }}
-              x={session.worldCard.x}
-              y={session.worldCard.y}
-              me={session.profile.data}
-              relationship={relationshipOf(session.worldCard.address)}
-              onFriendAction={session.friends.act}
-              onMention={session.chat.mention}
-              onViewProfile={openPassport}
-              onClose={session.closeWorldCard}
+              onClose={session.closePassport}
             />
           )}
           {visitWorld && (
@@ -298,6 +267,9 @@ function Hud(): React.JSX.Element {
           onDismiss={session.fatalError.source === 'runtime' || session.fatalError.source === 'realm' ? session.dismissFatal : undefined}
         />
       )}
-    </>
+      {/* Popups (imperative overlay stack) live inside the session provider so popup-mounted surfaces
+          — the world <ProfileCard> — can read useSession(). */}
+      <PopupHost />
+    </SessionProvider>
   )
 }

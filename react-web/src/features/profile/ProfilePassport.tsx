@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react'
 import { Avatar } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Profile, ProfileInfo } from '../../engine/protocol'
-import type { Relationship } from '../chat/ProfileCard'
+import type { Relationship } from '../chat/ProfileCardPresentation'
 import styles from './ProfilePassport.module.css'
 
 type Tab = 'overview' | 'badges' | 'photos'
