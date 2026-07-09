@@ -12,16 +12,30 @@ wasm:
 # bundle the react HUD page + bridge scene into assets/ (the files native runs from)
 bundle-native:
     cd react-web && npm run bundle:native
+    mkdir -p target && touch target/.bundle-native-stamp
+
+# bundle only if react-web sources changed since the last successful bundle
+_bundle-native-if-stale:
+    #!/usr/bin/env sh
+    set -eu
+    stamp=target/.bundle-native-stamp
+    if [ -f "$stamp" ] && [ -f assets/react-hud/index.html ] \
+       && [ -f assets/bridge-scene/BevyExplorerUI/about ] \
+       && [ -z "$(find react-web -name node_modules -prune -o -type f -newer "$stamp" -print | head -n 1)" ]; then
+        echo "react-web unchanged; skipping bundle (just bundle-native to force)"
+    else
+        just bundle-native
+    fi
 
 # build + run the native app (debug) with the CEF react HUD. extra args pass through, e.g.
 #   just native-debug --server https://realm-provider.decentraland.org/main
-native-debug *ARGS: bundle-native
+native-debug *ARGS: _bundle-native-if-stale
     cargo build --package dcl_deno_ipc
     cargo build --bin decentra-bevy-cef
     cargo run --bin decentra-bevy -- {{ARGS}}
 
 # build + run the native app (release) with the CEF react HUD
-native-release *ARGS: bundle-native
+native-release *ARGS: _bundle-native-if-stale
     cargo build --release --package dcl_deno_ipc
     cargo build --release --bin decentra-bevy-cef
     cargo run --release --bin decentra-bevy -- {{ARGS}}
