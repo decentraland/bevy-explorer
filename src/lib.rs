@@ -2,9 +2,9 @@ mod commands;
 mod ext;
 #[cfg(target_arch = "wasm32")]
 mod web;
-// POC: native webview overlay of the react-web HUD (desktop, `react-hud` feature).
-#[cfg(all(not(target_arch = "wasm32"), feature = "react-hud"))]
-mod react_hud;
+// POC: react-web HUD via CEF offscreen rendering into an in-engine texture (`react-hud-cef`).
+#[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
+mod react_hud_cef;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
@@ -182,9 +182,12 @@ impl DecentralandApp {
         #[cfg(target_arch = "wasm32")]
         app.add_plugins(wasm_default_plugins(&decentraland_app_config));
 
-        // POC: attach the react-web HUD as a transparent native webview overlay.
-        #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud"))]
-        app.add_plugins(react_hud::ReactHudPlugin);
+        // POC: react-web HUD composited in-engine from CEF offscreen rendering. Skipped in test
+        // mode (automated scene tests run headless and must not boot CEF or gate input).
+        #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
+        if !decentraland_app_config.arguments.test_mode {
+            app.add_plugins(react_hud_cef::ReactHudCefPlugin);
+        }
 
         let version_hash = version();
         let version = format!("{VERSION} ({version_hash})");
@@ -327,17 +330,20 @@ impl DecentralandApp {
 
         // POC: the react-web overlay is the HUD — turn off the engine's native UI so it doesn't
         // render its own login/chat/etc. behind the webview. (Overrides the inserts above.)
-        #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud"))]
-        app.insert_resource(NativeUi {
-            login: false,
-            emote_wheel: false,
-            chat: false,
-            permissions: false,
-            profile: false,
-            nametags: false,
-            tooltips: false,
-            loading_scene: false,
-        });
+        // Test mode keeps the native UI: the HUD plugin is skipped there.
+        #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
+        if !decentraland_app_config.arguments.test_mode {
+            app.insert_resource(NativeUi {
+                login: false,
+                emote_wheel: false,
+                chat: false,
+                permissions: false,
+                profile: false,
+                nametags: false,
+                tooltips: false,
+                loading_scene: false,
+            });
+        }
 
         if !startup_scenes.is_empty() {
             app.add_systems(Update, process_startup_scenes);

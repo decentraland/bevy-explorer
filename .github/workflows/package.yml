@@ -77,6 +77,29 @@ jobs:
             with:
                 repo-token: ${{ secrets.GITHUB_TOKEN }}
     
+          # react HUD (cef): node for the page + bridge-scene bundles, ninja for cef-dll-sys' cmake build
+          - uses: actions/setup-node@v4
+            with:
+                node-version: 20
+          - name: Bundle react HUD (page + bridge scene -> assets/)
+            run: |
+                cd react-web && npm ci
+                cd bridge-scene && npm ci && cd ..
+                npm run bundle:native
+            shell: bash
+          - name: Install ninja (macos)
+            if: runner.os == 'macos'
+            run: brew install ninja
+          - name: Install ninja (linux)
+            if: runner.os == 'linux'
+            run: sudo apt-get install -y --no-install-recommends ninja-build
+          # CEF redistributables to ship next to the binaries (version must match the locked `cef` crate)
+          - name: Export CEF distribution
+            run: |
+                cargo install export-cef-dir --version "139.8.0+139.0.40"
+                export-cef-dir --force "$HOME/.local/share/cef"
+            shell: bash
+
           - name: Install alsa and udev
             if: runner.os == 'linux'
             run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
@@ -119,12 +142,18 @@ jobs:
               
           - name: Cargo build (windows)
             if: runner.os == 'windows'
+            env:
+                CEF_PATH: ${{ env.USERPROFILE }}\.local\share\cef
             run: cargo build --release --locked --package dcl_deno_ipc -j8 && cargo build --release --locked -j8
           - name: Cargo build (macos)
             if: runner.os == 'macos'
+            env:
+                CEF_PATH: /Users/runner/.local/share/cef
             run: cargo build --release --locked --package dcl_deno_ipc && cargo build --release --locked
           - name: Cargo build (linux)
             if: runner.os == 'linux'
+            env:
+                CEF_PATH: /home/runner/.local/share/cef
             run: cargo build --release --locked --package dcl_deno_ipc && cargo build --release --locked
 
           - name: Package common
@@ -161,6 +190,11 @@ jobs:
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy.exe package/decentra-bevy.exe
                 cp ${{ env.CARGO_BUILD_DIR }}/dcl_deno_ipc.exe package/dcl_deno_ipc.exe
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy-cef.exe package/decentra-bevy-cef.exe
+                cp -r assets package/assets
+                # CEF runtime: libcef.dll + resources flattened next to the exe (standard layout)
+                cp -r "$env:USERPROFILE\.local\share\cef\Release\*" package/ -ErrorAction SilentlyContinue
+                cp -r "$env:USERPROFILE\.local\share\cef\Resources\*" package/ -ErrorAction SilentlyContinue
                 cp ${{ env.FFMPEG_DIR }}/bin/*.dll package
                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
@@ -170,6 +204,13 @@ jobs:
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
                 cp ${{ env.CARGO_BUILD_DIR }}/dcl_deno_ipc package/dcl_deno_ipc
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy-cef package/decentra-bevy-cef || true
+                cp -r assets package/assets
+                # CEF runtime: libcef.so + resources flattened next to the exe (standard layout).
+                # NOTE (best-effort): unless cef-dll-sys sets an $ORIGIN rpath, linux users may
+                # need LD_LIBRARY_PATH=. to launch; AppImage packaging of CEF is not attempted.
+                cp -r "$HOME/.local/share/cef/Release/." package/ 2>/dev/null || true
+                cp -r "$HOME/.local/share/cef/Resources/." package/ 2>/dev/null || true
                 # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
                 cd package
                 tar -czvf ../${{ env.PACKAGE_FILE }} *            

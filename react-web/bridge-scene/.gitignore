@@ -10,3 +10,7 @@ yarn-error.log*
 # export-static output (regenerate with `npm run export-static`)
 static/
 static-native/
+# sdk-commands build artifacts
+dclcontext/
+# regenerated with the current commit hash by every build (update-version)
+src/version.ts

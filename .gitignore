@@ -21,3 +21,5 @@ config.json
 *.pem
 .DS_Store
 /react-web/bridge-scene/static-native
+assets/react-hud/
+/assets/bridge-scene
