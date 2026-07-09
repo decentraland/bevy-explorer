@@ -373,7 +373,7 @@ impl IpfsAssetServer<'_, '_> {
             .borrow()
             .as_ref()
             .and_then(|c| c.about.content.as_ref())
-            .map(|content| format!("{}/entities/active", &content.public_url))
+            .map(|content| format!("{}/entities/active", content.public_url))
     }
 
     pub fn ipfs(&self) -> &Arc<IpfsIo> {
@@ -1398,7 +1398,7 @@ impl IpfsIo {
             .borrow()
             .as_ref()
             .and_then(|c| c.about.content.as_ref())
-            .map(|content| format!("{}/contents/", &content.public_url))
+            .map(|content| format!("{}/contents/", content.public_url))
     }
 
     pub fn entities_endpoint(&self) -> Option<String> {
@@ -1406,7 +1406,7 @@ impl IpfsIo {
             .borrow()
             .as_ref()
             .and_then(|c| c.about.content.as_ref())
-            .map(|content| format!("{}/entities/", &content.public_url))
+            .map(|content| format!("{}/entities/", content.public_url))
     }
 
     async fn update_scene_urns(
