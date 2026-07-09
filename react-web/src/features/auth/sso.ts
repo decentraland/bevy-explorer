@@ -40,13 +40,25 @@ function expirationMs(identity: AuthIdentity): number {
   return m ? new Date(m[1]).getTime() : 0
 }
 
+// A real root (wallet) address. Guards against non-loginable identities under the SSO prefix —
+// e.g. the mock bridge's seeded `0xmock…` identity (?mock=1&previousLogin=1 on this origin) —
+// which the engine's /login_identity would reject with a cryptic "bad root address" AFTER launch.
+function isHexAddress(address: string): boolean {
+  return /^0x[0-9a-fA-F]{40}$/.test(address)
+}
+
 function readIdentity(address: string): AuthIdentity | null {
+  if (!isHexAddress(address)) return null
   const raw = localStorage.getItem(SSO_PREFIX + address)
   if (!raw) return null
   try {
     const identity = JSON.parse(raw) as AuthIdentity
     if (!identity?.ephemeralIdentity?.privateKey || !Array.isArray(identity.authChain)) return null
     if (expirationMs(identity) <= Date.now()) return null
+    // Same lookup as the engine (login.rs parse_auth_identity): the SIGNER link's payload is the
+    // root address it will hex-parse.
+    const signer = identity.authChain.find((l) => l.type === 'SIGNER')
+    if (!signer || !isHexAddress(signer.payload?.trim() ?? '')) return null
     return identity
   } catch {
     return null
