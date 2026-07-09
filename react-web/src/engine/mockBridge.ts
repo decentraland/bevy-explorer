@@ -138,6 +138,7 @@ const DEFAULTS: MockOptions = {
 
 // In ?mock=1&previousLogin=1, seed a fake same-domain SSO identity so the session's
 // localStorage read lights up the "welcome back" reuse flow (no real auth site in mock).
+// The 0xmock… address is deliberately non-hex so sso.ts hides it from real engine sessions.
 function seedMockSso(o: MockOptions): void {
   const key = `single-sign-on-${o.userId}`
   if (o.hasPreviousLogin) {

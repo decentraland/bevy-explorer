@@ -8,6 +8,14 @@ import { PopupHost, openPopup, resetPopups } from '../design'
 vi.mock('../features/profileCard/ProfileCard', () => ({ openProfileCard: vi.fn() }))
 afterEach(resetPopups)
 
+// Records launch() so tests can assert the realm/position the engine was booted with.
+class LaunchRecordingDriver extends FakeDriver {
+  launches: Array<[string?, string?]> = []
+  launch(realm?: string, position?: string): void {
+    this.launches.push([realm, position])
+  }
+}
+
 // Simulates a boot-time engine panic: `throwOnLaunch` makes launch() throw synchronously (the generic
 // "unreachable" wasm trap), and `panic` is the readable message the iframe stashes and the host reads
 // via enginePanic(). Either the sync catch or the post-launch poll must surface it as a FATAL 'launch'
@@ -54,6 +62,71 @@ describe('session domain', () => {
     await waitFor(() => expect(h.session().phase).toBe('picking'))
     act(() => h.session().pickDestination(null))
     await waitFor(() => expect(h.driver.calls).toContain('jumpIn'))
+  })
+
+  // A ?realm/?position launch goes straight in — never the Places picker. The /about probe blocks
+  // it with a modal on 404 (not found) or on no answer (unreachable).
+  async function launchFromUrl(search: string, driver: LaunchRecordingDriver): Promise<ReturnType<typeof renderSession>> {
+    history.replaceState(null, '', search)
+    const h = renderSession({ userId: null }, driver)
+    await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
+    act(() => h.session().login.exploreAsGuest())
+    return h
+  }
+
+  it('a preview ?realm launches straight in when /about answers — no picker', async () => {
+    const url = new URL(location.href)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+    try {
+      const driver = new LaunchRecordingDriver()
+      const h = await launchFromUrl('/?preview=true&realm=http://127.0.0.1:8000&position=0,0', driver)
+      await waitFor(() => expect(driver.launches).toHaveLength(1))
+      expect(h.session().phase).toBe('entering')
+      expect(driver.launches[0]).toEqual(['http://127.0.0.1:8000', '0,0'])
+      expect(fetchSpy).toHaveBeenCalledWith('http://127.0.0.1:8000/about')
+    } finally {
+      fetchSpy.mockRestore()
+      history.replaceState(null, '', url.pathname + url.search)
+    }
+  })
+
+  it('an unreachable ?realm shows the not-reachable modal and never launches', async () => {
+    const url = new URL(location.href)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
+    try {
+      const driver = new LaunchRecordingDriver()
+      const h = await launchFromUrl('/?realm=http://127.0.0.1:9999', driver)
+      await waitFor(() =>
+        expect(h.session().fatalError).toEqual({
+          message: 'The world "http://127.0.0.1:9999" isn\'t reachable right now.',
+          source: 'realm'
+        })
+      )
+      expect(driver.launches).toHaveLength(0)
+    } finally {
+      fetchSpy.mockRestore()
+      history.replaceState(null, '', url.pathname + url.search)
+    }
+  })
+
+  it('a world ?realm whose /about 404s shows World-not-found and never launches', async () => {
+    const url = new URL(location.href)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 404 }))
+    try {
+      const driver = new LaunchRecordingDriver()
+      const h = await launchFromUrl('/?realm=nope.dcl.eth', driver)
+      await waitFor(() =>
+        expect(h.session().fatalError).toEqual({
+          message: 'The world "nope.dcl.eth" doesn\'t exist.',
+          source: 'realm'
+        })
+      )
+      expect(driver.launches).toHaveLength(0)
+      expect(fetchSpy).toHaveBeenCalledWith('https://worlds-content-server.decentraland.org/world/nope.dcl.eth/about')
+    } finally {
+      fetchSpy.mockRestore()
+      history.replaceState(null, '', url.pathname + url.search)
+    }
   })
 
   it('nav(mic) posts a navAction', async () => {
