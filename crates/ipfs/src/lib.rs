@@ -1582,6 +1582,19 @@ impl AssetReader for IpfsIo {
             }
             let remote = ipfs_io_read_state.send_failure(remote)?;
 
+            // file realm: a `file://` baseUrl (local static scene export, e.g. `--ui <dir>`)
+            // reads straight from disk — no cache write, no request slot, no retries.
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(local) = remote.strip_prefix("file://") {
+                let data = ipfs_io_read_state.send_failure(std::fs::read(local).map_err(|e| {
+                    AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                        "file realm read `{remote}`: {e}"
+                    ))))
+                }))?;
+                ipfs_io_read_state.send_cached(data.len());
+                return Ok(Box::new(VecReader::new(data)));
+            }
+
             let fail_time = context.failed_remotes.get(&remote).cloned();
             drop(context);
 

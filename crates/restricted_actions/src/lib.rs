@@ -636,6 +636,12 @@ pub async fn lookup_ens(
     super_user: bool,
     ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::path::Path::new(&ens).join("about").is_file() {
+        // file realm: a local directory containing an `about` (sdk-commands export-static
+        // layout, e.g. `--ui react-web/bridge-scene/static/BevyExplorerUI`). No ens.
+        return lookup_local_realm(parent_scene, &ens, super_user);
+    }
     if ens.to_ascii_lowercase().starts_with("http") {
         lookup_portable(parent_scene, ens.clone(), super_user, ipfs)
     } else {
@@ -656,6 +662,54 @@ pub async fn lookup_ens(
             },
         )
     })
+}
+
+// file realm: load a scene from a local static export with no server. `path` is the directory
+// containing `about` (`sdk-commands export-static` writes `<dest>/<realmName>/about` with the
+// content files as `<dest>/<hash>`, so content resolves against the PARENT of the about dir).
+// The urn's baked baseUrl is a server path; rewrite it to a `file://` url so content reads go
+// straight to disk (see the file-realm branch in IpfsIo::read).
+#[cfg(not(target_arch = "wasm32"))]
+fn lookup_local_realm(
+    parent_scene: Option<String>,
+    path: &str,
+    super_user: bool,
+) -> Result<(String, PortableSource), String> {
+    let realm_dir = std::path::Path::new(path)
+        .canonicalize()
+        .map_err(|e| format!("{path}: {e}"))?;
+    let about = std::fs::read(realm_dir.join("about")).map_err(|e| e.to_string())?;
+    let about = serde_json::from_slice::<ServerAbout>(&about).map_err(|e| e.to_string())?;
+
+    let urn = about
+        .configurations
+        .and_then(|config| config.scenes_urn.and_then(|scenes| scenes.first().cloned()))
+        .ok_or("no scenesUrn in local about")?;
+    let hacked_urn = urn.replace('?', "?=&").replace("?=&=&", "?=&");
+    let ipfs_path = IpfsPath::new_from_urn::<EntityDefinition>(&hacked_urn)
+        .map_err(|_| "failed to parse urn".to_owned())?;
+    let hash = ipfs_path
+        .context_free_hash()
+        .ok()
+        .flatten()
+        .ok_or("failed to resolve content hash from urn")?;
+
+    let content_root = realm_dir
+        .parent()
+        .ok_or("realm dir has no parent")?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let file_urn = format!("urn:decentraland:entity:{hash}?=&baseUrl=file://{content_root}/");
+
+    Ok((
+        hash,
+        PortableSource {
+            pid: file_urn,
+            parent_scene,
+            ens: None,
+            super_user,
+        },
+    ))
 }
 
 pub async fn lookup_portable(
