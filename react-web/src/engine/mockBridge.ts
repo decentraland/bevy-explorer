@@ -409,18 +409,6 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       reply({ kind: 'communities', communities: mockCommunities })
       return
     }
-    if (msg.kind === 'getInvitableCommunities') {
-      // The social-api filters by role server-side; mock it by offering the ones you own/moderate.
-      const invitable = mockCommunities
-        .filter((c) => c.role === 'owner' || c.role === 'moderator')
-        .map((c) => ({ id: c.id, name: c.name }))
-      reply({ kind: 'invitableCommunities', address: msg.address, communities: invitable })
-      return
-    }
-    if (msg.kind === 'inviteToCommunity') {
-      console.log('[mock] invite', msg.address, '→', msg.communityId)
-      return
-    }
     if (msg.kind === 'getCommunityDetail') {
       const memberNames = ['DCLOfficial', 'KazeNoKai', 'METAWOLF', 'laurenmae', 'Eax', 'Thund', 'aixa', 'Kimbo', 'BayBackner', 'Rochyou', 'Soultasium', 'franfranfran', 'olavra', 'Meshroom']
       const addr = (i: number): string => `0x${(i + 1).toString(16).padStart(40, '0')}`

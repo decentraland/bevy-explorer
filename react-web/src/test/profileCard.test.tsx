@@ -10,7 +10,7 @@ afterEach(resetPopups)
 // DOMAIN: profile-card — the shared popover (chat / friends / world avatar click). Covers the
 // action set ported from bevy-ui-scene's profile-menu: relationship-driven friend CTA (Add /
 // Accept+Reject / Requested / Unblock), View Passport, Mention, Block. (Report was removed until a
-// moderation endpoint exists, and "Invite to Community" is parked for the communities feature — see backlog.md.)
+// moderation endpoint exists.)
 const ALICE = { address: '0xalice', name: 'Alice' }
 
 function renderCard(props: Partial<React.ComponentProps<typeof ProfileCard>> = {}): { onClose: () => void } {

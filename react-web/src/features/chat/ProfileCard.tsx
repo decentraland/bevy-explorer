@@ -2,8 +2,7 @@
 // sender's name/avatar, an @mention, or a nearby avatar in the world. Header with
 // avatar / name+copy / address+copy, a relationship-driven friend CTA (Add / Accept +
 // Reject / Requested), then the action list — mirroring bevy-ui-scene's profile-menu:
-// View Passport · Mention · Block/Unblock. ("Invite to Community" is parked
-// until the communities feature — see backlog.)
+// View Passport · Mention · Block/Unblock.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'

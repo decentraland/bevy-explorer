@@ -93,17 +93,10 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
 15. **`CopyButton`** (inline in ProfileCard · old `copy-button`)
 16. **`Username`** (name + verified · old `player-name-component`)
 17. `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
-17b. **Re-enable "Invite to Community" in `ProfileCard`** — *feature, parked until communities work*.
-    The row/submenu UI was removed from `ProfileCard` (PR #915 follow-up); the protocol messages,
-    `session.communities.invitable`/`requestInvitable`/`invite`, and the bridge handlers all remain.
-    When re-enabling: (1) the `/invites` response is `{data:[…]}` but `signed()` already unwraps the
-    envelope — type it as the bare array (fixed in `communities.ts`, don't regress it); (2) the
-    `invitableFetchedRef` once-per-address cache needs invalidation — drop the key on fetch failure
-    (a transient 500 currently caches "no communities" for the session), remove/refetch after a
-    successful invite (else the card re-offers it and the duplicate POST fails silently), and clear
-    both `invitable` and the ref on logout/identity change; (3) surface invite errors to the user
-    (the bridge currently swallows them with `console.error`); (4) build the submenu on the
-    `ContextMenu` primitive instead of the removed bespoke `.submenu`/`.subRow` CSS.
+17b. **"Invite to Community"** — *feature, deferred with the communities work*. When communities is
+    revisited, add an Invite to Community action to `ProfileCard` (or wherever it best fits). The prior
+    wiring (protocol messages, session `invitable`/`requestInvitable`/`invite`, bridge handlers) was
+    removed, so build it fresh against the social-api members `/invites` endpoint.
 18. **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** — *architecture,
     low priority*. All HUD state lives in one `useEngineSession` hook at the top of `Hud`, prop-drilled
     down; the returned `session` is a fresh object every render, so the whole HUD re-renders on any
@@ -115,7 +108,9 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     a **selector store** (zustand/jotai — adds a dep; project is deliberately state-lib-free). Also a
     test cost (harness passes props today; Context needs a provider wrapper). Recommendation: keep
     prop-drilling; add a single `SessionContext` only if drilling ergonomics annoy; memoized slices /
-    store only if re-renders become a *measured* problem.
+    store only if re-renders become a *measured* problem. **One concrete exception to "renders aren't
+    the bottleneck": item 25 — `proximity` is a per-frame (~60/s) re-render source while near an
+    interactable, not a user-action change.**
 19. **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture, low
     priority*. Entering a scene/world (and, ideally, opening HUD surfaces like the map/backpack) should
     be **parameterized in the URL** so the state is shareable and bookmarkable: reload/paste a URL and
@@ -171,6 +166,27 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     `ProfileCard`, or flip slot sides near the edge. Review comment (note: it says "root is
     overflow: hidden" — there's no such rule, the clip is just the viewport edge):
     https://github.com/decentraland/bevy-explorer/pull/915#discussion_r3529180273
+
+25. **`proximity` pushes a full HUD re-render every frame while near an interactable** — *perf, when
+    profiling confirms*. Unlike most session changes (user actions), the proximity domain is a
+    **per-frame** source: `registerProximity`'s `ctx.push` reprojects each in-range entity world→screen
+    and calls `ctx.send({ kind: 'proximity', tips })` **every frame with no dedupe**
+    (`bridge-scene/src/domains/proximity.ts:52`) whenever ≥1 interactable is in range. Each message
+    hits `setProximity(msg.tips)` with a fresh array (`useEngineSession.ts:416`), so `App` — and, per
+    item 18, the whole tree — re-renders ~60×/s. This is the concrete counterexample to item 18's
+    "engine round-trips are the bottleneck, not React renders." Cost is **conditional**: zero when
+    nothing is in range (the `inRange.size === 0` early-out short-circuits the send), but scales with
+    tree size, per-render cost (e.g. the `notifications.reduce` unread count runs every render,
+    `useEngineSession.ts:1061`), in-range entity count (busy scene = bigger `tips` + more projection
+    work), and device CPU; worst case it steals main-thread from the same-origin engine iframe → world
+    frame drops + battery drain near interactables. **Measure first** (React Profiler: proximity
+    commit duration × 60) — <1ms is noise, 5–10ms is a real 30–60% main-thread tax. Fix (pattern
+    already in the repo): mirror the `hoverPos` module store (item 7) — `<Pointer>` is the sole
+    consumer (`App.tsx:192`), so move proximity off session state into a store it reads via
+    `useSyncExternalStore` (as it already does for `hoverPos`, `Pointer.tsx:115`); then 60/s updates
+    re-render only `<Pointer>`, not the tree. Optional bridge-side dedupe (skip `ctx.send` when `tips`
+    is unchanged) zeroes the standing-still case but not the moving one (positions legitimately change
+    each frame), so the store is the structural fix.
 
 ## Not gaps (already good / ahead)
 

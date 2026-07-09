@@ -84,8 +84,6 @@ export type PageToScene =
   | CreateCommunityRequest
   | JoinCommunityRequest
   | LeaveCommunityRequest
-  | GetInvitableCommunitiesRequest
-  | InviteToCommunityRequest
   | GetCommunityDetailRequest
   | GetMapRequest
   | TeleportRequest
@@ -468,32 +466,6 @@ export interface LeaveCommunityRequest {
   id: string
 }
 
-/** Communities the local user can invite `address` to (server filters: caller is owner/mod, target not a member). */
-export interface GetInvitableCommunitiesRequest {
-  kind: 'getInvitableCommunities'
-  address: string
-}
-
-/** Invite `address` to a community (page → scene → signed POST to the social-api). */
-export interface InviteToCommunityRequest {
-  kind: 'inviteToCommunity'
-  communityId: string
-  address: string
-}
-
-/** A community the local user can invite someone to (id + name only, per the social-api). */
-export interface InvitableCommunity {
-  id: string
-  name: string
-}
-
-/** The invitable-communities list for `address` (empty → hide "Invite to Community"). */
-export interface InvitableCommunitiesMessage {
-  kind: 'invitableCommunities'
-  address: string
-  communities: InvitableCommunity[]
-}
-
 /** A member of a community (Members tab). */
 export interface CommunityMember {
   address: string
@@ -745,7 +717,6 @@ export type SceneToPage =
   | WearablesMessage
   | CommunitiesMessage
   | CommunityDetailMessage
-  | InvitableCommunitiesMessage
   | MapMessage
   | GalleryMessage
   | GalleryPhotoMessage

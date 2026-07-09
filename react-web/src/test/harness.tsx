@@ -155,7 +155,7 @@ export function fakeSession(): EngineSession {
     notifications: { list: [], unread: 0, open: false, toggle: vi.fn(), markAllRead: vi.fn() },
     emotes: { list: [], open: false, toggle: vi.fn(), play: vi.fn(), equip: vi.fn() },
     backpack: { list: [], open: false, toggle: vi.fn(), equip: vi.fn(), preview: vi.fn() },
-    communities: { list: [], open: false, toggle: vi.fn(), create: vi.fn(), join: vi.fn(), leave: vi.fn(), detail: null, loadDetail: vi.fn(), invitable: {}, requestInvitable: vi.fn(), invite: vi.fn() },
+    communities: { list: [], open: false, toggle: vi.fn(), create: vi.fn(), join: vi.fn(), leave: vi.fn(), detail: null, loadDetail: vi.fn() },
     map: { x: 0, y: 0, open: false, toggle: vi.fn(), teleport: vi.fn(), changeRealm: vi.fn() },
     places: { open: false, toggle: vi.fn() },
     gallery: { list: [], current: 0, max: 0, loaded: false, open: false, toggle: vi.fn(), metas: {}, loadPhoto: vi.fn(), remove: vi.fn() },

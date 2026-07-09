@@ -19,7 +19,6 @@ import type {
   GalleryPhoto,
   GalleryPhotoMeta,
   HoverAction,
-  InvitableCommunity,
   NavAction,
   NearbyMember,
   PermissionLevelChoice,
@@ -53,12 +52,6 @@ export interface CommunitiesState {
   detail: CommunityDetailMessage | null
   /** Request a community's detail (call when its modal opens). */
   loadDetail: (id: string) => void
-  /** Communities the local user can invite a given address to, keyed by lowercased address. */
-  invitable: Record<string, InvitableCommunity[]>
-  /** Fetch the invitable list for an address (call when a profile card opens). */
-  requestInvitable: (address: string) => void
-  /** Invite an address to a community (owner/moderator only, enforced server-side). */
-  invite: (communityId: string, address: string) => void
 }
 
 export interface MapState {
@@ -354,7 +347,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [communities, setCommunities] = useState<Community[]>([])
   const [communitiesOpen, setCommunitiesOpen] = useState(false)
   const [communityDetail, setCommunityDetail] = useState<CommunityDetailMessage | null>(null)
-  const [invitable, setInvitable] = useState<Record<string, InvitableCommunity[]>>({})
   const [mapParcel, setMapParcel] = useState({ x: 0, y: 0 })
   const [mapOpen, setMapOpen] = useState(false)
   const [placesOpen, setPlacesOpen] = useState(false)
@@ -367,9 +359,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const chatId = useRef(0)
   // Catalog fetches done once per session (cache; relays re-emit on change).
   const fetchedRef = useRef<Set<string>>(new Set())
-  // Invitable-communities fetches done once per address (re-opening the same profile card shouldn't
-  // re-issue the signed /invites GET — the answer is already cached in `invitable[address]`).
-  const invitableFetchedRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     const driver = createDriver()
@@ -461,9 +450,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'communityDetail':
           setCommunityDetail(msg)
-          break
-        case 'invitableCommunities':
-          setInvitable((prev) => ({ ...prev, [msg.address.toLowerCase()]: msg.communities }))
           break
         case 'mapState':
           setMapParcel({ x: msg.x, y: msg.y })
@@ -835,15 +821,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setCommunityDetail(null) // clear stale detail while the new one loads
     driverRef.current?.send({ kind: 'getCommunityDetail', id })
   }, [])
-  const requestInvitable = useCallback((address: string) => {
-    const key = address.toLowerCase()
-    if (invitableFetchedRef.current.has(key)) return
-    invitableFetchedRef.current.add(key)
-    driverRef.current?.send({ kind: 'getInvitableCommunities', address })
-  }, [])
-  const inviteToCommunity = useCallback((communityId: string, address: string) => {
-    driverRef.current?.send({ kind: 'inviteToCommunity', communityId, address })
-  }, [])
   const playEmote = useCallback((urn: string) => {
     driverRef.current?.send({ kind: 'triggerEmote', urn })
     setEmotesOpen(false)
@@ -1051,7 +1028,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
     backpack: { list: wearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables },
-    communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail, invitable, requestInvitable, invite: inviteToCommunity },
+    communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
     map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
     places: { open: placesOpen, toggle: togglePlaces },
     gallery: {
