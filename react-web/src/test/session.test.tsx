@@ -58,8 +58,8 @@ describe('session domain', () => {
     await waitFor(() => expect(h.driver.calls).toContain('jumpIn'))
   })
 
-  // A ?realm/?position launch goes straight in — never the Places picker. Only a 404 from the
-  // /about probe blocks it (World-not-found); a failed probe still launches.
+  // A ?realm/?position launch goes straight in — never the Places picker. The /about probe blocks
+  // it with a modal on 404 (not found) or on no answer (unreachable).
   async function launchFromUrl(search: string, driver: LaunchRecordingDriver): Promise<ReturnType<typeof renderSession>> {
     history.replaceState(null, '', search)
     const h = renderSession({ userId: null }, driver)
@@ -68,31 +68,35 @@ describe('session domain', () => {
     return h
   }
 
-  it('a preview ?realm launches even when the probe is blocked (local-network permission)', async () => {
+  it('a preview ?realm launches straight in when /about answers — no picker', async () => {
     const url = new URL(location.href)
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
     try {
       const driver = new LaunchRecordingDriver()
       const h = await launchFromUrl('/?preview=true&realm=http://127.0.0.1:8000&position=0,0', driver)
       await waitFor(() => expect(driver.launches).toHaveLength(1))
       expect(h.session().phase).toBe('entering')
       expect(driver.launches[0]).toEqual(['http://127.0.0.1:8000', '0,0'])
+      expect(fetchSpy).toHaveBeenCalledWith('http://127.0.0.1:8000/about')
     } finally {
       fetchSpy.mockRestore()
       history.replaceState(null, '', url.pathname + url.search)
     }
   })
 
-  it('a world ?realm probes /about and launches on 200 — no picker', async () => {
+  it('an unreachable ?realm shows the not-reachable modal and never launches', async () => {
     const url = new URL(location.href)
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
     try {
       const driver = new LaunchRecordingDriver()
-      const h = await launchFromUrl('/?realm=some.dcl.eth', driver)
-      await waitFor(() => expect(driver.launches).toHaveLength(1))
-      expect(h.session().phase).toBe('entering')
-      expect(driver.launches[0]).toEqual(['some.dcl.eth', undefined])
-      expect(fetchSpy).toHaveBeenCalledWith('https://worlds-content-server.decentraland.org/world/some.dcl.eth/about')
+      const h = await launchFromUrl('/?realm=http://127.0.0.1:9999', driver)
+      await waitFor(() =>
+        expect(h.session().fatalError).toEqual({
+          message: 'The world "http://127.0.0.1:9999" isn\'t reachable right now.',
+          source: 'realm'
+        })
+      )
+      expect(driver.launches).toHaveLength(0)
     } finally {
       fetchSpy.mockRestore()
       history.replaceState(null, '', url.pathname + url.search)
@@ -112,6 +116,7 @@ describe('session domain', () => {
         })
       )
       expect(driver.launches).toHaveLength(0)
+      expect(fetchSpy).toHaveBeenCalledWith('https://worlds-content-server.decentraland.org/world/nope.dcl.eth/about')
     } finally {
       fetchSpy.mockRestore()
       history.replaceState(null, '', url.pathname + url.search)

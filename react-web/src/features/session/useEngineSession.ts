@@ -747,17 +747,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
           ? `https://worlds-content-server.decentraland.org/world/${dest.realm}`
           : dest.realm
-      // Only a 404 blocks the launch (the world doesn't exist). Any other outcome — ok, error,
-      // timeout, or a blocked local fetch (browser local-network permission) — launches and lets
-      // the engine surface real connection errors.
+      // Launching against an unreachable realm strands the engine in a cryptic login failure, so
+      // block up front: 404 → not found, no/failed answer (incl. timeout) → unreachable.
       const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))
+      const unreachable = (): void =>
+        setFatalError({ message: `The world "${dest.realm}" isn't reachable right now.`, source: 'realm' })
       Promise.race([fetch(`${base.replace(/\/+$/, '')}/about`), timeout])
         .then((r) => {
-          if (r?.status === 404)
+          if (r?.ok) pickDestination(dest)
+          else if (r?.status === 404)
             setFatalError({ message: `The world "${dest.realm}" doesn't exist.`, source: 'realm' })
-          else pickDestination(dest)
+          else unreachable()
         })
-        .catch(() => pickDestination(dest))
+        .catch(unreachable)
         .finally(() => {
           urlDestination.current = null
           validatingRealm.current = false
