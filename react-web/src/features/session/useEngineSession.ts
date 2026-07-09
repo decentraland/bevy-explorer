@@ -178,6 +178,16 @@ export type Destination =
   | { kind: 'world'; realm: string; position?: string }
   | null
 
+// A ?realm pointing at a local dev/preview server (`sdk-commands start`).
+function isLocalRealm(realm: string): boolean {
+  try {
+    const host = new URL(realm).hostname
+    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '0.0.0.0'
+  } catch {
+    return false
+  }
+}
+
 export interface LoginFlow {
   status: LoginStatus
   /** Root wallet address of the stored SSO identity (shown on the "welcome back" screen). */
@@ -741,6 +751,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!submitted || destinationPicked || urlDestination.current == null) return
     const dest = urlDestination.current
     if (dest != null && dest.kind === 'world') {
+      // Local preview realms (`sdk-commands start` opens ?preview=true&realm=http://127.0.0.1:8000):
+      // launch WITHOUT the availability probe. From the hosted site, a fetch to 127.0.0.1 sits behind
+      // the browser's local-network permission (Chrome LNA, Brave shields) — it can hang on a pending
+      // prompt or reject even when the server is fine, and the failure path below would drop the
+      // destination onto the Places picker instead of the preview scene. The engine's own realm
+      // fetch triggers the same permission prompt and surfaces real connection errors, like the old
+      // boot page (which never pre-validated).
+      if (isLocalRealm(dest.realm)) {
+        urlDestination.current = null
+        pickDestination(dest)
+        return
+      }
       // Validate the realm BEFORE launching — a typo'd ?realm= would otherwise strand the loading
       // overlay forever. Same bare-name mapping as the engine (ipfs map_realm_name). The ref is
       // consumed only on resolution, so phase stays 'entering' (no picker flash) while checking.
