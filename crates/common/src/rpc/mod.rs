@@ -299,9 +299,10 @@ pub struct EntityDefinitionResponse {
     pub base_url: String,
 }
 
-// rmp can't handle #[serde(flatten)] and json::Value without using named vec.
-// the message format is much larger but flattens and values are rare in our ipc api,
-// so we default try to encode without
+// encode named. to_vec is positional, so a skipped #[serde(skip_serializing_if)]
+// field shortens the array and shifts the rest, and decode then fails (e.g. a
+// sequence where a string is expected). to_vec doesn't error on that, so the old
+// to_vec_named fallback never fired. named is larger but from_slice reads both.
 pub fn rmp_encode<T: Serialize>(value: &T) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-    rmp_serde::to_vec(value).or_else(|_| rmp_serde::to_vec_named(value))
+    rmp_serde::to_vec_named(value)
 }
