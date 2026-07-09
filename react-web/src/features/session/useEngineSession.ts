@@ -229,7 +229,7 @@ export interface EngineSession {
   /** In-range world-entity tooltips, anchored at projected screen coords. */
   proximity: ProximityTip[]
   /** The nearby avatar whose profile card is open in the world (clicked at x,y), or null. */
-  worldCard: { address: string; name: string; x: number; y: number } | null
+  worldCard: { address: string; name: string; picture?: string; x: number; y: number } | null
   /** Dismiss the world profile card. */
   closeWorldCard: () => void
   chat: ChatState
@@ -313,7 +313,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
-  const [worldCard, setWorldCard] = useState<{ address: string; name: string; x: number; y: number } | null>(null)
+  const [worldCard, setWorldCard] = useState<{ address: string; name: string; picture?: string; x: number; y: number } | null>(null)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
   // Mirror cursor-lock + roster into refs so the run-once message handler reads them without stale
@@ -390,12 +390,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           // The card's scrim swallows mouse input, so the engine's raycast freezes and never sends
           // the hover-exit — clear the hover here or its tooltip stays painted beside the card.
           setHover([])
-          // avatarClick carries only the address: resolve the display name from the nearby roster and
-          // anchor the card at the live DOM cursor (centre while the camera has the pointer locked).
-          const name =
-            membersRef.current.find((m) => m.address.toLowerCase() === msg.address.toLowerCase())?.name ?? msg.address
+          // avatarClick carries only the address: resolve the display name + avatar from the nearby
+          // roster (same source the chat uses) and anchor the card at the live DOM cursor (centre while
+          // the camera has the pointer locked).
+          const member = membersRef.current.find((m) => m.address.toLowerCase() === msg.address.toLowerCase())
           const p = cursorLockedRef.current ? { x: window.innerWidth / 2, y: window.innerHeight / 2 } : getCursor()
-          setWorldCard({ address: msg.address, name, x: p.x, y: p.y })
+          setWorldCard({ address: msg.address, name: member?.name ?? msg.address, picture: member?.picture, x: p.x, y: p.y })
           break
         }
         case 'chat':

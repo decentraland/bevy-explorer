@@ -255,7 +255,7 @@ function Hud(): React.JSX.Element {
           {session.worldCard && (
             <ProfileCard
               key={session.worldCard.address}
-              user={{ address: session.worldCard.address, name: session.worldCard.name }}
+              user={{ address: session.worldCard.address, name: session.worldCard.name, picture: session.worldCard.picture }}
               x={session.worldCard.x}
               y={session.worldCard.y}
               me={session.profile.data}
