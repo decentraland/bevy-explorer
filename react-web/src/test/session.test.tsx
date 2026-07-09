@@ -1,10 +1,12 @@
-import { describe, it, expect, vi } from 'vitest'
-import { act, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { act, waitFor, render, screen } from '@testing-library/react'
 import { renderSession, enterAsGuest, FakeDriver } from './harness'
 import { openProfileCard } from '../features/profileCard/ProfileCard'
+import { PopupHost, openPopup, resetPopups } from '../design'
 
 // The avatarClick handler opens the world profile card as a popup; stub it so we can assert the call.
 vi.mock('../features/profileCard/ProfileCard', () => ({ openProfileCard: vi.fn() }))
+afterEach(resetPopups)
 
 // Simulates a boot-time engine panic: `throwOnLaunch` makes launch() throw synchronously (the generic
 // "unreachable" wasm trap), and `panic` is the readable message the iframe stashes and the host reads
@@ -152,6 +154,17 @@ describe('session domain', () => {
     // handler anchors it at the DOM cursor (0,0 in jsdom, unlocked).
     act(() => h.driver.emit({ kind: 'avatarClick', address: '0xABC' }))
     expect(openProfileCard).toHaveBeenCalledWith('0xABC', 0, 0)
+  })
+
+  it("a 'Cancel' system action (the engine's Escape) closes the topmost popup", () => {
+    const h = renderSession({ userId: null })
+    render(<PopupHost />) // shares the module popup stack
+    act(() => {
+      openPopup(() => <div>a popup</div>)
+    })
+    expect(screen.getByText('a popup')).toBeTruthy()
+    act(() => h.driver.emit({ kind: 'systemAction', action: 'Cancel' }))
+    expect(screen.queryByText('a popup')).toBeNull()
   })
 
   it('chat.mention opens chat and queues the @name until consumed', async () => {

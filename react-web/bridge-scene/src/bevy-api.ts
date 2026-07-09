@@ -63,6 +63,11 @@ export type SystemHoverEvent = { entered: boolean; targetType: number; actions: 
 export type Vec3 = { x: number; y: number; z: number }
 export type SystemProximityEvent = { entered: boolean; entity: number; entityPosition: Vec3; actions: HoverEntry[] }
 
+// Global engine input actions. `action` is the SystemAction variant name (e.g. 'Cancel' = Escape,
+// 'Map', 'Chat'); `pressed` is press vs release. Emitted authoritatively by the engine even while it
+// holds keyboard focus, so the HUD can react to Escape without a DOM keydown.
+export type SystemActionEvent = { action: string; pressed: boolean }
+
 export type KernelFetchRequest = {
   url: string
   init: { headers?: Record<string, string>; method: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: string }
@@ -95,6 +100,7 @@ export type BevyApiInterface = {
   getSceneLoadingUIStream: () => Promise<AsyncIterable<SceneLoadingState>>
   getHoverStream: () => Promise<AsyncIterable<SystemHoverEvent>>
   getProximityStream: () => Promise<AsyncIterable<SystemProximityEvent>>
+  getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>
   getMicState: () => Promise<MicState>
   setMicEnabled: (enabled: boolean) => void
   getAvatarModifiers: () => Promise<AvatarModifierState[]>

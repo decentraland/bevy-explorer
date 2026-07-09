@@ -1,9 +1,3 @@
-.scrim {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal, 1000);
-}
-
 .card {
   position: fixed;
   z-index: calc(var(--z-modal, 1000) + 1);

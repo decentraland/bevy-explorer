@@ -5,7 +5,6 @@
 // View Passport · Mention · Block/Unblock.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { Avatar, Button, showConfirm } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { FriendAction } from '../../engine/protocol'
@@ -156,10 +155,11 @@ export function ProfileCardPresentation({
   const hasDestructive = canUnblock || canBlock
   const hasMenu = !isMe && (!!onViewProfile || !!onMention || hasDestructive)
 
-  return createPortal(
-    <>
-      <div className={styles.scrim} onClick={onClose} />
-      <div ref={cardRef} className={styles.card} style={{ left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
+  // The backdrop (and click-outside-to-close) is owned by the popup layer now (openPopup default
+  // options); this just renders the positioned card. The stopPropagation keeps a click on the card
+  // from reaching the backdrop.
+  return (
+    <div ref={cardRef} className={styles.card} style={{ left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
         <div className={styles.header}>
           <Avatar src={user.picture} name={base} color={color} size={72} status="online" />
           <button type="button" className={styles.copyRow} title="Copy name" onClick={() => copy(user.name, 'name')}>
@@ -240,7 +240,5 @@ export function ProfileCardPresentation({
           </div>
         )}
       </div>
-    </>,
-    document.body
   )
 }

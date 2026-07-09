@@ -38,24 +38,7 @@ export function ProfileCard({
   )
 }
 
-// Single-instance (matches the old worldCard "replace" semantics): a new click closes the previous
-// card before opening, so two rapid avatarClicks don't stack two popups.
-let closeCurrent: (() => void) | null = null
-
 /** Open the world profile card as a popup, anchored at the given screen coords. */
 export function openProfileCard(userId: string, x: number, y: number): () => void {
-  closeCurrent?.()
-  const handle = openPopup((close) => (
-    <ProfileCard
-      userId={userId}
-      x={x}
-      y={y}
-      onClose={() => {
-        close()
-        if (closeCurrent === handle) closeCurrent = null
-      }}
-    />
-  ))
-  closeCurrent = handle
-  return handle
+  return openPopup((close) => <ProfileCard userId={userId} x={x} y={y} onClose={close} />)
 }

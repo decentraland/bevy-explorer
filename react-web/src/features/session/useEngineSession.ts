@@ -6,6 +6,7 @@ import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type St
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/EngineErrorModal'
 import { DEFAULT_REALM } from '../engine/EngineHost'
+import { closeTopPopup } from '../../design'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import type {
@@ -377,6 +378,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'cursorLock':
           cursorLockedRef.current = msg.locked
           setCursorLocked(msg.locked)
+          break
+        case 'systemAction':
+          // 'Cancel' (Escape, from the engine input stream) closes the topmost popup — authoritative,
+          // so it works even while the engine holds keyboard focus.
+          if (msg.action === 'Cancel') closeTopPopup()
           break
         case 'proximity':
           setProximity(msg.tips)

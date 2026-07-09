@@ -97,21 +97,13 @@ describe('ProfileCard container — action wiring', () => {
 })
 
 describe('openProfileCard', () => {
-  it('mounts the card via the popup layer, and a second call replaces it', () => {
+  it('mounts the card via the popup layer for the resolved user', () => {
     renderWithSession(<PopupHost />, (s) => {
-      s.chat.members = [
-        { address: '0xabc', name: 'Alice' },
-        { address: '0xdef', name: 'Bob' }
-      ]
+      s.chat.members = [{ address: '0xabc', name: 'Alice' }]
     })
     act(() => {
       openProfileCard('0xabc', 5, 5)
     })
     expect(screen.getByText('Alice')).toBeTruthy()
-    act(() => {
-      openProfileCard('0xdef', 5, 5)
-    })
-    expect(screen.queryByText('Alice')).toBeNull() // replaced, not stacked
-    expect(screen.getByText('Bob')).toBeTruthy()
   })
 })

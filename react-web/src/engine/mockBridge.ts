@@ -193,6 +193,13 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     ch.postMessage({ to: 'page', msg } satisfies Envelope)
   }
 
+  // No engine in mock mode, so stand in for the engine's 'Cancel' system action: relay a DOM Escape
+  // as the same message the real bridge sends from getSystemActionStream (closes the topmost popup).
+  const onEscape = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') reply({ kind: 'systemAction', action: 'Cancel' })
+  }
+  window.addEventListener('keydown', onEscape)
+
   // Simulate the engine spawning the player + loading the spawn scene after a
   // successful login: player-ready, then a scene-asset countdown, then "done".
   const spawnPlayer = (): void => {
@@ -531,6 +538,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
   }
 
   return () => {
+    window.removeEventListener('keydown', onEscape)
     ch.close()
   }
 }

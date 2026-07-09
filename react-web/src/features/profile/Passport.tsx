@@ -3,7 +3,7 @@
 // openPassport() (from the profile card's "View Passport" and the sidebar's own profile), so it lives
 // in the HUD-wide popup layer and reads the session via useSession() like the profile card.
 import { useEffect } from 'react'
-import { openPopup } from '../../design'
+import {openPopup} from '../../design'
 import { useSession } from '../session/SessionContext'
 import { resolveIdentity } from '../session/resolveIdentity'
 import { relationshipOf } from '../../lib/relationship'
@@ -44,21 +44,7 @@ export function Passport({ userId, onClose }: { userId: string; onClose: () => v
   )
 }
 
-// Single-instance (like openProfileCard): a new open closes the previous passport first.
-let closeCurrent: (() => void) | null = null
-
 /** Open a user's full-screen passport as a popup. */
 export function openPassport(userId: string): () => void {
-  closeCurrent?.()
-  const handle = openPopup((close) => (
-    <Passport
-      userId={userId}
-      onClose={() => {
-        close()
-        if (closeCurrent === handle) closeCurrent = null
-      }}
-    />
-  ))
-  closeCurrent = handle
-  return handle
+  return openPopup((close) => <Passport userId={userId} onClose={close} />, { backdrop: false }) // draws its own overlay
 }

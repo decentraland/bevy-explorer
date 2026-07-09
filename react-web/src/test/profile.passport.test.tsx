@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ProfilePassport } from '../features/profile/ProfilePassport'
 import type { Profile } from '../engine/protocol'
@@ -75,13 +75,6 @@ describe('profile passport', () => {
     const onClose = vi.fn()
     render(<ProfilePassport profile={profile} onClose={onClose} />)
     await userEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('Escape closes the passport', () => {
-    const onClose = vi.fn()
-    render(<ProfilePassport profile={profile} onClose={onClose} />)
-    fireEvent.keyDown(window, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 

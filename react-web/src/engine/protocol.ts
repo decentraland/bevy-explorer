@@ -673,6 +673,14 @@ export interface CursorLockMessage {
   locked: boolean
 }
 
+/** A HUD-relevant engine system action that fired (pressed). `action` is the engine's SystemAction
+ *  variant name, e.g. 'Cancel' (bound to Escape) which closes the topmost popup. Relayed authoritatively
+ *  from the engine's input stream so it works even while the engine holds keyboard focus. */
+export interface SystemActionMessage {
+  kind: 'systemAction'
+  action: string
+}
+
 /** A proximity tooltip for an in-range world entity, anchored at its projected screen position
  *  (the bridge does the world→screen projection each frame). */
 export interface ProximityTip {
@@ -699,6 +707,7 @@ export type SceneToPage =
   | RpcResponse
   | HoverMessage
   | CursorLockMessage
+  | SystemActionMessage
   | ProximityMessage
   | AvatarClickMessage
   | PlayerReadyEvent

@@ -1,15 +1,25 @@
 import { Fragment, useSyncExternalStore, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ModalShell } from './Modal'
 import { Button } from './Button'
+import styles from './popups.module.css'
 
 /** A popup is a render function given its own `close` callback; it returns the overlay to render. */
 type PopupRender = (close: () => void) => ReactNode
+
+/** Per-popup options. By default the popup layer draws a full-screen backdrop that closes the popup
+ *  when clicked; set `backdrop: false` for popups that draw their own scrim (dialogs / the passport). */
+export interface PopupOptions {
+  backdrop?: boolean
+  backdropClickCloses?: boolean
+}
+const DEFAULTS: Required<PopupOptions> = { backdrop: true, backdropClickCloses: true }
 
 // Module-level popup stack — a single HUD-wide layer (like the hoverPos store), NOT React state.
 // Plain functions mutate it and notify subscribers, so a popup can be opened from anywhere (a
 // component, an event handler, a util) without prop-threading or a hook — and a popup can open
 // another (community → passport → confirm). <PopupHost/>, mounted once, subscribes and renders it.
-let stack: { id: number; render: PopupRender }[] = []
+let stack: { id: number; render: PopupRender; options: Required<PopupOptions> }[] = []
 let nextId = 0
 const listeners = new Set<() => void>()
 const emit = (): void => listeners.forEach((l) => l())
@@ -18,10 +28,17 @@ const closeById = (id: number): void => {
   emit()
 }
 
+/** Close the topmost popup (no-op if the stack is empty). Driven by the engine's 'Cancel' system
+ *  action (Escape) relayed through the bridge — see useEngineSession — so it works even while the
+ *  engine holds keyboard focus. Closes one layer at a time, so stacked popups dismiss in order. */
+export function closeTopPopup(): void {
+  if (stack.length > 0) closeById(stack[stack.length - 1].id)
+}
+
 /** Open an arbitrary popup imperatively; returns a `close` handle. Callable from anywhere. */
-export function openPopup(render: PopupRender): () => void {
+export function openPopup(render: PopupRender, options?: PopupOptions): () => void {
   const id = ++nextId
-  stack = [...stack, { id, render }]
+  stack = [...stack, { id, render, options: { ...DEFAULTS, ...options } }]
   emit()
   return () => closeById(id)
 }
@@ -45,9 +62,20 @@ export function PopupHost(): React.JSX.Element {
   const snap = useSyncExternalStore(subscribe, getSnapshot)
   return (
     <>
-      {snap.map((n) => (
-        <Fragment key={n.id}>{n.render(() => closeById(n.id))}</Fragment>
-      ))}
+      {snap.map((n) => {
+        const close = (): void => closeById(n.id)
+        const content = n.render(close)
+        // No backdrop → the content owns its own portal/scrim (dialogs, passport). Otherwise the popup
+        // layer draws a full-screen backdrop (portaled to <body> to escape the HUD transform) behind it.
+        if (!n.options.backdrop) return <Fragment key={n.id}>{content}</Fragment>
+        return createPortal(
+          <div className={styles.backdrop} onClick={n.options.backdropClickCloses ? close : undefined}>
+            {content}
+          </div>,
+          document.body,
+          String(n.id)
+        )
+      })}
     </>
   )
 }
@@ -85,21 +113,24 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
       }
       close()
     }
-    openPopup((close) => (
-      <ModalShell
-        title={opts.title}
-        onClose={() => done(null, close)}
-        width={opts.width ?? 420}
-        actionsEqual={opts.actionsEqual ?? opts.actions.length === 2}
-        actions={opts.actions.map((a) => (
-          <Button key={a.id} variant={a.variant ?? 'primary'} onClick={() => done(a.id, close)}>
-            {a.label}
-          </Button>
-        ))}
-      >
-        {opts.body}
-      </ModalShell>
-    ))
+    openPopup(
+      (close) => (
+        <ModalShell
+          title={opts.title}
+          onClose={() => done(null, close)}
+          width={opts.width ?? 420}
+          actionsEqual={opts.actionsEqual ?? opts.actions.length === 2}
+          actions={opts.actions.map((a) => (
+            <Button key={a.id} variant={a.variant ?? 'primary'} onClick={() => done(a.id, close)}>
+              {a.label}
+            </Button>
+          ))}
+        >
+          {opts.body}
+        </ModalShell>
+      ),
+      { backdrop: false } // ModalShell draws its own scrim
+    )
   })
 }
 

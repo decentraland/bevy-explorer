@@ -7,7 +7,7 @@
 // NOTE: backend follow-up for OTHER users — the bridge must fetch their rich profile
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Avatar } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Profile, ProfileInfo } from '../../engine/protocol'
@@ -83,17 +83,7 @@ export function ProfilePassport({
   // poll catches up a beat later), so the button isn't a no-op visually.
   const [justRequested, setJustRequested] = useState(false)
   const pending = relationship === 'requested' || justRequested
-  // Escape closes the passport.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  // (Escape is handled centrally by the popup stack — see popups.tsx.)
   const { base, tag } = splitName(profile.name)
   const claimed = profile.hasClaimedName
   const fields = FIELD_LABELS.filter(({ key }) => profile.info?.[key])
