@@ -41,10 +41,24 @@ use common::structs::PrimaryUser;
 use input_manager::{InputPriorities, InputPriority, InputType, MouseInteractionComponent};
 use system_bridge::{ChatMessage, SceneLoadingUi, SystemApi};
 
-pub struct ReactHudCefPlugin;
+pub struct ReactHudCefPlugin {
+    /// An explicit --server destination, if given. Injected into the page URL as ?realm= — the
+    /// page skips its post-login places picker for it (parity with ?realm= on web); the native
+    /// driver knows the engine is already there, so it keeps the realm rather than re-switching.
+    pub server: Option<String>,
+}
+
+/// Options threaded from the plugin into [`spawn_hud`].
+#[derive(Resource)]
+struct ReactHudOptions {
+    server: Option<String>,
+}
 
 impl Plugin for ReactHudCefPlugin {
     fn build(&self, app: &mut App) {
+        app.insert_resource(ReactHudOptions {
+            server: self.server.clone(),
+        });
         // Needed to read engine fps for the perf overlay; may already be added by --log_fps/preview.
         if !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>() {
             app.add_plugins(FrameTimeDiagnosticsPlugin::default());
@@ -140,15 +154,21 @@ fn spawn_hud(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     windows: Query<&Window, With<PrimaryWindow>>,
+    options: Res<ReactHudOptions>,
     mut sys: EventWriter<SystemApi>,
 ) {
-    let Some(url) = react_hud_url() else {
+    let Some(mut url) = react_hud_url() else {
         error!(
             "[react-hud-cef] no HUD page: run `npm run bundle:native` in react-web (or set \
              REACT_HUD_URL); the app will run without a HUD"
         );
         return;
     };
+    if let Some(server) = &options.server {
+        url.push_str(if url.contains('?') { "&" } else { "?" });
+        url.push_str("realm=");
+        url.push_str(&urlencoding::encode(server));
+    }
 
     let (w, h) = windows
         .single()
@@ -399,9 +419,7 @@ fn translate_edit_shortcuts(
                     input.pressed(KeyCode::ShiftLeft) || input.pressed(KeyCode::ShiftRight);
                 let command = match (nav, select) {
                     (TextInputAction::LineStart, false) => "MoveToBeginningOfLine",
-                    (TextInputAction::LineStart, true) => {
-                        "MoveToBeginningOfLineAndModifySelection"
-                    }
+                    (TextInputAction::LineStart, true) => "MoveToBeginningOfLineAndModifySelection",
                     (TextInputAction::LineEnd, false) => "MoveToEndOfLine",
                     (TextInputAction::LineEnd, true) => "MoveToEndOfLineAndModifySelection",
                     (TextInputAction::TextStart, false) => "MoveToBeginningOfDocument",

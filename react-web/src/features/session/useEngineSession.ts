@@ -741,6 +741,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   useEffect(() => {
     if (!submitted || destinationPicked || urlDestination.current == null) return
     const dest = urlDestination.current
+    if (dest.kind === 'world' && driverRef.current?.launch == null) {
+      // Native: ?realm= is injected by the engine from its own --server, so the engine is
+      // already there — skip the picker and keep the realm (the no-launch pickDestination(null)
+      // path). No validation fetch either: the engine booted on this realm, and preview/file
+      // realms wouldn't pass the worlds-server about probe anyway.
+      urlDestination.current = null
+      pickDestination(null)
+      return
+    }
     if (dest != null && dest.kind === 'world') {
       // Validate the realm BEFORE launching — a typo'd ?realm= would otherwise strand the loading
       // overlay forever. Same bare-name mapping as the engine (ipfs map_realm_name). The ref is

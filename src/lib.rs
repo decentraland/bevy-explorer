@@ -186,7 +186,11 @@ impl DecentralandApp {
         // mode (automated scene tests run headless and must not boot CEF or gate input).
         #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
         if !decentraland_app_config.arguments.test_mode {
-            app.add_plugins(react_hud_cef::ReactHudCefPlugin);
+            app.add_plugins(react_hud_cef::ReactHudCefPlugin {
+                // an explicit --server IS the destination: injected into the page URL as
+                // ?realm= so the HUD skips its places picker (parity with ?realm= on web)
+                server: decentraland_app_config.arguments.server.clone(),
+            });
         }
 
         let version_hash = version();
