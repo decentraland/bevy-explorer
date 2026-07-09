@@ -167,9 +167,15 @@ jobs:
         run: |
           cargo install export-cef-dir --version "139.8.0+139.0.40"
           export-cef-dir --force "$HOME/.local/share/cef"
-          echo "CEF_PATH=$HOME/.local/share/cef" >> "$GITHUB_ENV"
+          # GITHUB_ENV/GITHUB_PATH reach native processes verbatim: on windows the git-bash
+          # $HOME (/c/Users/...) would resolve as C:\c\Users\... — write windows paths there.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "CEF_PATH=$(cygpath -w "$HOME/.local/share/cef")" >> "$GITHUB_ENV"
+            cygpath -w "$HOME/.local/share/cef/Release" >> "$GITHUB_PATH"
+          else
+            echo "CEF_PATH=$HOME/.local/share/cef" >> "$GITHUB_ENV"
+          fi
           if [ "$RUNNER_OS" = "Linux" ]; then echo "LD_LIBRARY_PATH=$HOME/.local/share/cef/Release:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"; fi
-          if [ "$RUNNER_OS" = "Windows" ]; then echo "$HOME/.local/share/cef/Release" >> "$GITHUB_PATH"; fi
       - name: Build Release
         uses: actions-rs/cargo@v1
         with:
