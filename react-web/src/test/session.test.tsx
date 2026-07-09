@@ -58,12 +58,8 @@ describe('session domain', () => {
     await waitFor(() => expect(h.driver.calls).toContain('jumpIn'))
   })
 
-  // A ?realm/?position launch goes straight in — never the Places picker. Remote realms are probed
-  // (fetch <realm>/about) so a typo'd world shows "World not found" instead of stranding the
-  // loading overlay; LOCAL preview realms (`sdk-commands start` opens
-  // ?preview=true&realm=http://127.0.0.1:8000&position=0,0) skip the probe — from the hosted site
-  // it sits behind the browser's local-network permission (Chrome LNA / Brave shields) and hung or
-  // failed even with the server up, rerouting preview launches to the picker.
+  // A ?realm/?position launch goes straight in — never the Places picker. Only a 404 from the
+  // /about probe blocks it (World-not-found); a failed probe still launches.
   async function launchFromUrl(search: string, driver: LaunchRecordingDriver): Promise<ReturnType<typeof renderSession>> {
     history.replaceState(null, '', search)
     const h = renderSession({ userId: null }, driver)
@@ -72,17 +68,15 @@ describe('session domain', () => {
     return h
   }
 
-  it('a local preview ?realm launches directly — no picker, no /about probe', async () => {
+  it('a preview ?realm launches even when the probe is blocked (local-network permission)', async () => {
     const url = new URL(location.href)
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
     try {
       const driver = new LaunchRecordingDriver()
       const h = await launchFromUrl('/?preview=true&realm=http://127.0.0.1:8000&position=0,0', driver)
-      // Straight to entering — never 'picking'.
       await waitFor(() => expect(driver.launches).toHaveLength(1))
       expect(h.session().phase).toBe('entering')
       expect(driver.launches[0]).toEqual(['http://127.0.0.1:8000', '0,0'])
-      expect(fetchSpy).not.toHaveBeenCalled()
     } finally {
       fetchSpy.mockRestore()
       history.replaceState(null, '', url.pathname + url.search)
