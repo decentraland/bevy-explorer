@@ -129,7 +129,7 @@ impl Plugin for SettingBridgePlugin {
             settings: Vec::default(),
         };
         app.add_event::<NewCameraEvent>();
-        app.add_systems(Update, (send_settings, receive_settings));
+        app.add_systems(Update, handle_settings);
 
         let mut schedule = Schedule::new(ApplyAppSettingsLabel);
         let config = app.world().resource::<AppConfig>().clone();
@@ -406,24 +406,25 @@ impl Settings {
     }
 }
 
-fn send_settings(mut ev: EventReader<SystemApi>, settings: Res<Settings>) {
-    for ev in ev.read() {
-        if let SystemApi::GetSettings(sender) = ev {
-            sender.send(settings.settings.iter().map(|s| s.info.clone()).collect());
-        }
-    }
-}
-
-fn receive_settings(
+// Gets and sets must be handled in arrival order: the scene->engine channel is FIFO, so a
+// GetSettings queued after SetSettings is only guaranteed to reflect them if a single system
+// processes both event kinds in sequence.
+fn handle_settings(
     mut ev: EventReader<SystemApi>,
     mut config: ResMut<AppConfig>,
     mut settings: ResMut<Settings>,
 ) {
     for ev in ev.read() {
-        if let SystemApi::SetSetting(name, val) = ev {
-            if let Err(e) = settings.set_value(&mut config, name, *val) {
-                error!("Error setting {name}: {e}");
+        match ev {
+            SystemApi::GetSettings(sender) => {
+                sender.send(settings.settings.iter().map(|s| s.info.clone()).collect());
             }
+            SystemApi::SetSetting(name, val) => {
+                if let Err(e) = settings.set_value(&mut config, name, *val) {
+                    error!("Error setting {name}: {e}");
+                }
+            }
+            _ => (),
         }
     }
 }

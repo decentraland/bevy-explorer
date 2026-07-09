@@ -252,7 +252,9 @@ fn main() {
 
     app.add_plugins(UtilsPlugin)
         .add_plugins(UiCorePlugin)
-        .add_plugins(ConsolePlugin { add_egui: true })
+        .add_plugins(ConsolePlugin {
+            add_bevy_console: true,
+        })
         .add_plugins(SceneBoundPlugin)
         .add_plugins(SceneRunnerPlugin)
         .add_plugins(CommsPlugin)

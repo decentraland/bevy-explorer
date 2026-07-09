@@ -6,13 +6,15 @@
 
 import { useEffect, useState } from 'react'
 import { getStoredLogin } from '../auth/sso'
-import { fetchPlaces, fetchWorlds, type DiscoverPlace, type PlacesOrderBy, type PlacesResponse } from './placesApi'
+import { fetchLiveWorlds, fetchPlaces, fetchWorlds, type DiscoverPlace, type PlacesOrderBy, type PlacesResponse } from './placesApi'
 
 export type PlacesSection = 'all' | 'favourites' | 'my'
 export type PlacesSort = 'most_active' | 'like_score_best' | 'created_at' | 'name'
 
 export interface UsePlaces {
   places: DiscoverPlace[]
+  /** Worlds with users online right now (for Live Now) — /places only covers Genesis City. */
+  liveWorlds: DiscoverPlace[]
   loading: boolean
   error: string | null
   search: string
@@ -29,6 +31,7 @@ const PAGE_LIMIT = 48
 
 export function usePlaces(): UsePlaces {
   const [places, setPlaces] = useState<DiscoverPlace[]>([])
+  const [liveWorlds, setLiveWorlds] = useState<DiscoverPlace[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -36,6 +39,18 @@ export function usePlaces(): UsePlaces {
   const [category, setCategory] = useState('all')
   const [sort, setSort] = useState<PlacesSort>('most_active')
   const [section, setSection] = useState<PlacesSection>('all')
+
+  useEffect(() => {
+    let cancelled = false
+    fetchLiveWorlds()
+      .then((w) => {
+        if (!cancelled) setLiveWorlds(w)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     // Favourites needs a signed (authenticated) request to the places API, which we can't sign here
@@ -100,5 +115,5 @@ export function usePlaces(): UsePlaces {
     }
   }, [search, category, sort, section])
 
-  return { places, loading, error, search, setSearch, category, setCategory, sort, setSort, section, setSection }
+  return { places, liveWorlds, loading, error, search, setSearch, category, setCategory, sort, setSort, section, setSection }
 }

@@ -173,7 +173,10 @@ export type SessionPhase = 'login' | 'picking' | 'entering' | 'world'
 
 // Where the user chose to spawn after login (the post-jump-in Places picker). `null` = skip → the
 // engine's default spawn (Genesis Plaza). A world switches realm; a parcel teleports once spawned.
-export type Destination = { kind: 'parcel'; x: number; y: number } | { kind: 'world'; realm: string } | null
+export type Destination =
+  | { kind: 'parcel'; x: number; y: number }
+  | { kind: 'world'; realm: string; position?: string }
+  | null
 
 export interface LoginFlow {
   status: LoginStatus
@@ -193,6 +196,13 @@ export interface LoginFlow {
   exploreAsGuest: () => void
   /** Reuse the stored SSO identity (hand it to the engine). */
   jumpIn: () => void
+  /** The last login failed because the user's profile couldn't be fetched — offer
+   *  resetProfileAndJumpIn as the explicit recovery. */
+  profileFetchFailed: boolean
+  /** Retry the login, continuing with (and deploying) a default profile if the fetch still
+   *  fails. PERMANENTLY REPLACES the account's existing profile — only offered after a
+   *  profile-fetch failure, and the UI must make the consequence clear. */
+  resetProfileAndJumpIn: () => void
   /** Sign in with a different account → auth site. */
   useDifferentAccount: () => void
 }
@@ -661,11 +671,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         pendingLogin.current = null
         Promise.resolve(login?.(driver))
           .then(() => setBusy(false))
-          .catch((e: Error) => {
+          .catch((e: unknown) => {
             console.error('[login] post-launch login failed:', e)
-            setError(e.message)
+            // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
+            // e.message would be undefined and the login screen would show no error at all.
+            const msg = e instanceof Error ? e.message : String(e)
+            setError(msg !== '' ? msg : 'Login failed')
             setBusy(false)
-            setDestinationPicked(false) // back to the picker on failure
+            // Back to the LOGIN screen, not the picker: the picker renders no error, and the
+            // login screen is where the retry / profile-reset actions live. The engine stays
+            // launched (start()'s __bevyStarted guard makes the next launch a no-op).
+            setSubmitted(false)
+            setDestinationPicked(false)
           })
       }
       // No launch = the engine is already running at its own start realm (native's --server, or
@@ -674,8 +691,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // held until playerReady. Skip keeps the engine's own start realm rather than forcing
       // DEFAULT_REALM — natively that realm was chosen on the command line.
       if (driver.launch == null) {
-        if (dest?.kind === 'world') driver.send({ kind: 'changeRealm', realm: dest.realm })
-        else if (dest?.kind === 'parcel') pendingParcel.current = { x: dest.x, y: dest.y }
+        if (dest?.kind === 'world') {
+          driver.send({ kind: 'changeRealm', realm: dest.realm })
+          const [x, y] = (dest.position ?? '').split(',').map(Number)
+          if (Number.isFinite(x) && Number.isFinite(y)) pendingParcel.current = { x, y }
+        } else if (dest?.kind === 'parcel') {
+          pendingParcel.current = { x: dest.x, y: dest.y }
+        }
         runDeferredLogin()
         return
       }
@@ -688,7 +710,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
         if (dest == null) driver.launch?.(DEFAULT_REALM, '0,0')
-        else if (dest.kind === 'world') driver.launch?.(dest.realm, undefined)
+        else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
         else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
@@ -721,19 +743,22 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setTimeout(run, 60)
   }, [])
   // ?position=x,y / ?realm= (parity with the plain engine page): skip the Places picker and launch
-  // straight there. position wins when both are given (the realm still applies — EngineHost feeds
-  // it to the iframe as initialRealm, which a position-only launch inherits). Consumed once —
-  // after a sign-out the picker shows normally.
+  // straight there. realm wins when both are given, carrying the position along — letting
+  // ?position shadow ?realm made a reload in a custom realm respawn in Genesis at the same
+  // coordinates (a parcel launch passes DEFAULT_REALM explicitly). The engine's URL sync only
+  // writes ?position when the realm honours one; realms with fixed scene urns (worlds) spawn at
+  // their base scene and ignore it anyway. Consumed once — after a sign-out the picker shows
+  // normally.
   const urlDestination = useRef<Destination>(
     (() => {
       const q = new URLSearchParams(location.search)
       const raw = q.get('position')
-      if (raw != null) {
-        const [x, y] = raw.split(',').map((n) => parseInt(n.trim(), 10))
-        if (Number.isFinite(x) && Number.isFinite(y)) return { kind: 'parcel', x, y }
-      }
+      const [x, y] = raw?.split(',').map((n) => parseInt(n.trim(), 10)) ?? []
+      const hasPosition = Number.isFinite(x) && Number.isFinite(y)
       const realm = q.get('realm')
-      if (realm != null && realm !== '') return { kind: 'world', realm }
+      if (realm != null && realm !== '')
+        return { kind: 'world', realm, position: hasPosition ? `${x},${y}` : undefined }
+      if (hasPosition) return { kind: 'parcel', x, y }
       return null
     })()
   )
@@ -892,6 +917,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Reuse the existing login. The driver picks the path its backend supports (console
   // `/login_identity` for the engine, `loginPrevious` over the bridge).
   const jumpIn = useCallback(() => submitLogin((d) => d.jumpIn()), [submitLogin])
+  // The engine tags profile-fetch login failures (vs bad credentials etc.) with this marker —
+  // mirrors PROFILE_FETCH_FAILED in system_bridge. Only then do we offer the destructive reset.
+  const profileFetchFailed = error != null && error.includes('profile fetch failed')
+  // Explicit recovery from an unfetchable/corrupt profile: retry, continuing with a default
+  // profile if it still fails. The engine deploys that default, permanently replacing the
+  // account's server-side profile — the button copy must carry that warning.
+  const resetProfileAndJumpIn = useCallback(() => submitLogin((d) => d.jumpIn(true)), [submitLogin])
 
   // Fresh sign-in (or signing in with a different account): bounce to the same-domain auth
   // site, which writes the identity back to this origin's localStorage and redirects here.
@@ -1039,6 +1071,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       startWithAccount,
       exploreAsGuest,
       jumpIn,
+      profileFetchFailed,
+      resetProfileAndJumpIn,
       useDifferentAccount
     }
   }

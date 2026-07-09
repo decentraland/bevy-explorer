@@ -4,49 +4,63 @@ on:
       - main
   pull_request:
 
+# PRs share a per-ref group so a superseded push cancels the in-flight run. Main
+# pushes get a unique group each (run_id): sharing one made every main run queue
+# behind the previous run's whole test matrix, delaying deploy starts by up to an
+# hour. Only the deploy job serializes, via its job-level group.
 concurrency:
-  group: ${{github.workflow}}-${{github.ref}}
-  cancel-in-progress: ${{github.event_name == 'pull_request'}}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 name: Continuous integration
 
 jobs:
-  check:
-    name: Check
+  # No separate `cargo check` job: clippy compiles everything check does, plus lints.
+
+  # Did this change touch the rust dependency graph? The expensive jobs below scale
+  # their coverage on this. On pull_request the filter reads the PR file list from
+  # the API; on push it diffs against the pre-push commit (hence the checkout).
+  changes:
+    name: Changes
     runs-on: ubuntu-latest
+    outputs:
+      rust-deps: ${{ steps.filter.outputs.rust-deps }}
     steps:
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: Swatinem/rust-cache@v2
-      - name: Install protoc
-        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev ninja-build
-      - name: install ffmpeg deps
-        run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
-      - name: install livekit deps
-        run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
       - uses: actions/checkout@v6
-      - uses: actions-rs/cargo@v1
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
         with:
-          command: check
-          args: --locked
+          filters: |
+            rust-deps:
+              - 'Cargo.lock'
+              - 'Cargo.toml'
+              - '**/Cargo.toml'
+              - '.cargo/config.toml'
 
   hardcore-test:
     name: Test Scenes
+    needs: changes
+    # Runs only when the rust dep files change, and never for dependabot: its bumps
+    # are validated by the merge push to main, where the actor is the human merger.
+    if: ${{ needs.changes.outputs.rust-deps == 'true' && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-22.04
+    # Main runs no longer share a workflow group, so coalescing moves here: a
+    # newer push cancels this job's superseded in-flight run.
+    concurrency:
+      group: ${{ github.workflow }}-scenes-${{ github.ref }}
+      cancel-in-progress: true
     steps:
+      # Checkout must precede rust-cache: the cache key hashes Cargo.lock, and
+      # without it the key is constant — saved once from main, then frozen stale.
+      - uses: actions/checkout@v6
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -71,7 +85,6 @@ jobs:
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
       - name: install livekit deps
         run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
-      - uses: actions/checkout@v6
       - name: Test Scenes
         continue-on-error: true
         run: |
@@ -79,11 +92,23 @@ jobs:
 
   test:
     name: Test Suite
+    needs: changes
+    # Ubuntu always runs as the cheap unit-test leg. The 10x-macOS/2x-Windows legs
+    # only run when the rust dep files change — their main value is catching
+    # platform-specific dependency breakage. Dependabot cargo bumps get the ubuntu
+    # leg here plus the full matrix post-merge (main push: human actor + lock diff);
+    # its npm/actions bumps skip the job entirely (they can't affect the rust build).
+    if: ${{ needs.changes.outputs.rust-deps == 'true' || github.actor != 'dependabot[bot]' }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-15]
+        os: ${{ (needs.changes.outputs.rust-deps == 'true' && github.actor != 'dependabot[bot]') && fromJSON('["windows-latest", "ubuntu-latest", "macos-15"]') || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
+    # Same coalescing as Test Scenes, per matrix leg — without this, every push
+    # in a burst of main merges would bill the full 10x-macOS/2x-Windows matrix.
+    concurrency:
+      group: ${{ github.workflow }}-test-${{ matrix.os }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rs/toolchain@v1
@@ -98,7 +123,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev ninja-build
         if: runner.os == 'linux'
       - name: install ffmpeg deps (linux)
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
@@ -130,7 +155,7 @@ jobs:
           mv ffmpeg-*/* ffmpeg/
           if (-not (Test-Path "ffmpeg\include")) { throw "ffmpeg headers missing after extract (ffmpeg\include not found)" }
           Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
-          Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
+          Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"
       - name: Install ninja (macos)
         if: runner.os == 'macos'
         run: brew install ninja
@@ -145,7 +170,6 @@ jobs:
           echo "CEF_PATH=$HOME/.local/share/cef" >> "$GITHUB_ENV"
           if [ "$RUNNER_OS" = "Linux" ]; then echo "LD_LIBRARY_PATH=$HOME/.local/share/cef/Release:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"; fi
           if [ "$RUNNER_OS" = "Windows" ]; then echo "$HOME/.local/share/cef/Release" >> "$GITHUB_PATH"; fi
-
       - name: Build Release
         uses: actions-rs/cargo@v1
         with:
@@ -178,15 +202,6 @@ jobs:
           toolchain: stable
           override: true
       - run: rustup component add rustfmt
-      - uses: Swatinem/rust-cache@v2
-      - name: Install protoc
-        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev ninja-build
-      - name: install ffmpeg deps (linux)
-        run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
@@ -204,6 +219,8 @@ jobs:
           override: true
       - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -240,8 +257,13 @@ jobs:
 
   build-deploy-web:
     name: Build and Deploy Web
-    # needs: [check, test, fmt, clippy]
+    # Not gated off dependabot: this is the only job that builds the npm trees
+    # (react-web, bridge-scene, deploy/web), so npm bumps need it to merge safely.
+    # needs: [test, fmt, clippy]
     runs-on: ubuntu-latest
+    # Serialize deploys per ref so two main pushes can't publish concurrently.
+    concurrency:
+      group: ${{ github.workflow }}-deploy-web-${{ github.ref }}
 
     permissions:
       id-token: write
@@ -266,19 +288,35 @@ jobs:
           target: wasm32-unknown-unknown
           components: rust-src
           override: true
+      # Save only from main so PR runs restore main's cache instead of writing
+      # per-PR copies that thrash the repo's 10GB cache quota.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm-web
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install wasm-pack
-        run: cargo install wasm-pack --locked
+        run: |
+          curl -fsSL https://github.com/rustwasm/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz \
+            | tar -xz --strip-components=1 -C "$HOME/.cargo/bin" wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack
+      # alsa/udev ARE still needed despite targeting wasm32: the build compiles a HOST-side
+      # graph too (build scripts + their deps, x86_64), and that graph links libudev via
+      # pkg-config — dropping them fails `libudev-sys` before wasm-pack even reaches the
+      # wasm target.
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
       - name: install deps (linux)
-        run: sudo apt install -y --no-install-recommends clang curl
+        run: sudo apt install -y --no-install-recommends clang
+      # wasm-opt costs ~9 min and only matters for the published binary — PRs
+      # never publish (see the Publish step's if), so they skip it.
       - name: Build WASM package
+        env:
+          WASM_OPT_FLAG: ${{ github.event_name == 'pull_request' && '--no-opt' || '' }}
         run: |
-          wasm-pack build --target web --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social"
+          wasm-pack build --target web $WASM_OPT_FLAG --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social"
           rm -f ./deploy/web/engine/pkg/.gitignore
           WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm)
           echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json

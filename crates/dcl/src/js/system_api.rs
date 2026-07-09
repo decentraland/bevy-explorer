@@ -83,7 +83,7 @@ pub async fn op_login_previous(state: Rc<RefCell<impl State>>) -> Result<(), any
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::LoginPrevious(sx))?;
+        .send(SystemApi::LoginPrevious(false, sx))?;
 
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?
@@ -108,7 +108,7 @@ pub fn new_login(state: &mut impl State) -> &mut NewLogin {
         let (sx, result) = RpcResultSender::channel();
         state
             .borrow_mut::<SuperUserScene>()
-            .send(SystemApi::LoginNew(sc, sx))
+            .send(SystemApi::LoginNew(false, sc, sx))
             .unwrap();
 
         login.code = Some(code);

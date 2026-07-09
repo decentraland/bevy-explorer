@@ -550,7 +550,9 @@ fn on_page_envelope(
                 }
                 "loginPrevious" | "loginIdentity" => {
                     let (s, r) = RpcResultSender::channel();
-                    sys.write(SystemApi::LoginPrevious(s));
+                    // false: never deploy a default profile over an unfetchable one without
+                    // explicit user consent (the fallback relay has no consent UI)
+                    sys.write(SystemApi::LoginPrevious(false, s));
                     state.pending_login.push((id, r));
                 }
                 "logout" => {

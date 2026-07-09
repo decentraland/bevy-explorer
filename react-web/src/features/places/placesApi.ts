@@ -98,6 +98,65 @@ export function fetchWorlds(args: FetchPlacesArgs = {}): Promise<PlacesResponse>
   return cachedGet('/worlds', buildParams(args, false))
 }
 
+// ---- live worlds ----
+// Current world occupancy comes from the worlds-content-server, not the places API: /places
+// only covers Genesis City, and /worlds user counts lag behind live presence. We fetch the
+// live counts and resolve card metadata for those names in one batch.
+
+const WORLDS_LIVE_URL = 'https://worlds-content-server.decentraland.org/live-data'
+
+type LiveWorldEntry = { worldName: string; users: number }
+
+let liveWorldsCache: { at: number; promise: Promise<DiscoverPlace[]> } | null = null
+
+export function fetchLiveWorlds(): Promise<DiscoverPlace[]> {
+  if (liveWorldsCache && Date.now() - liveWorldsCache.at < CACHE_TTL) return liveWorldsCache.promise
+  const promise = getLiveWorlds()
+  liveWorldsCache = { at: Date.now(), promise }
+  promise.catch(() => {
+    if (liveWorldsCache?.promise === promise) liveWorldsCache = null
+  })
+  return promise
+}
+
+async function getLiveWorlds(): Promise<DiscoverPlace[]> {
+  const res = await fetch(WORLDS_LIVE_URL)
+  if (!res.ok) throw new Error(`live-data failed: ${res.status}`)
+  const body = (await res.json()) as { data?: { perWorld?: LiveWorldEntry[] | Record<string, number> } }
+  const perWorld = body.data?.perWorld
+  const entries: LiveWorldEntry[] = Array.isArray(perWorld)
+    ? perWorld
+    : perWorld
+      ? Object.entries(perWorld).map(([worldName, users]) => ({ worldName, users }))
+      : []
+  const live = entries.filter((e) => !!e.worldName && e.users > 0)
+  if (live.length === 0) return []
+
+  const params = new URLSearchParams()
+  for (const e of live) params.append('names', e.worldName.toLowerCase())
+  const meta = await getPlaces('/worlds', params).catch(() => null)
+  const byName = new Map<string, DiscoverPlace>()
+  for (const w of meta?.data ?? []) {
+    if (w.world_name) byName.set(w.world_name.toLowerCase(), w)
+  }
+  return live.map((e) => {
+    const match = byName.get(e.worldName.toLowerCase())
+    if (match) return { ...match, user_count: e.users }
+    // Not listed in the places API — render with PlaceCard's gradient fallback.
+    return {
+      id: e.worldName.toLowerCase(),
+      title: e.worldName,
+      description: '',
+      image: '',
+      positions: [],
+      owner: null,
+      world: true,
+      world_name: e.worldName,
+      user_count: e.users
+    }
+  })
+}
+
 // The default "Explore all / most active" list usePlaces requests first — warmed during the login
 // screen so both the picker and the in-world page paint from cache.
 export const DEFAULT_PLACES_ARGS = { limit: 48, offset: 0, order_by: 'most_active' as const, order: 'desc' as const }

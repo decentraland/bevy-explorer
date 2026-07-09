@@ -169,12 +169,29 @@ function Panel({ flow, name }: { flow: LoginFlow; name?: string }): React.JSX.El
         {status === 'reuse-login-or-new' && (
           <>
             <Button variant="primary" size="lg" className={styles.cta} onClick={flow.jumpIn} disabled={flow.busy || enginePending}>
-              <span className={styles.label}>{enginePending ? pendingLabel(flow) : 'JUMP INTO DECENTRALAND'}</span>
+              <span className={styles.label}>{enginePending ? pendingLabel(flow) : flow.profileFetchFailed ? 'TRY AGAIN' : 'JUMP INTO DECENTRALAND'}</span>
               {!enginePending && <ArrowIcon />}
             </Button>
             <Button variant="secondary" size="lg" className={styles.ctaSecondary} onClick={flow.useDifferentAccount} disabled={flow.busy}>
               <span className={styles.label}>USE A DIFFERENT ACCOUNT</span>
             </Button>
+            {flow.profileFetchFailed && (
+              <div className={styles.resetBox}>
+                <p className={styles.resetText}>
+                  If the problem persists you can continue with a fresh default profile.
+                  This permanently replaces your account&apos;s current avatar and profile.
+                </p>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className={`${styles.ctaSecondary} ${styles.ctaDanger}`}
+                  onClick={flow.resetProfileAndJumpIn}
+                  disabled={flow.busy || enginePending}
+                >
+                  <span className={styles.label}>RESET PROFILE & JUMP IN</span>
+                </Button>
+              </div>
+            )}
           </>
         )}
       </div>
