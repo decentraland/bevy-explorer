@@ -21,14 +21,11 @@ import { PlacesPicker } from './features/places/PlacesPicker'
 import { GalleryPage } from './features/gallery/GalleryPage'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Pointer } from './features/pointer/Pointer'
-import { ProfilePassport } from './features/profile/ProfilePassport'
+import { openPassport } from './features/profile/Passport'
 import { WorldVisitModal } from './components/WorldVisitModal'
 import { PermissionDialog } from './features/permissions/PermissionDialog'
-import { type Relationship } from './features/chat/ProfileCardPresentation'
 import { PopupHost } from './design'
 import { SessionProvider } from './features/session/SessionContext'
-import { relationshipOf as relationshipOfUtil } from './lib/relationship'
-import type { Profile } from './engine/protocol'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
@@ -119,32 +116,12 @@ function Hud(): React.JSX.Element {
   useEffect(() => {
     if (!session.backpack.open) setBackpackTab('wearables')
   }, [session.backpack.open])
-  // Passport (View Profile) lives in the session now, so the popup-mounted ProfileCard can open it via
-  // useSession() without App wiring. Self → the local rich profile; others → the fetched passport.
-  const passport = session.passport
-  const isSelfPassport =
-    !!passport && !!session.profile.data && session.profile.data.address.toLowerCase() === passport.address.toLowerCase()
-  // Friendship status for a user — drives the profile card's CTA (chat + friends list).
-  const relationshipOf = (address: string): Relationship => relationshipOfUtil(session.friends, address)
-  // Open MY OWN passport (Sidebar profile icon + the menu's "View Profile").
+  // Open MY OWN passport (Sidebar profile icon + the menu's "View Profile") — same popup the profile
+  // card opens for others.
   const viewMyProfile = (): void => {
     const me = session.profile.data
-    if (me) session.openPassport({ address: me.address, name: me.name, picture: me.picture })
+    if (me) openPassport(me.address)
   }
-  const passportProfile: Profile | null = !passport
-    ? null
-    : // Prefer the fetched passport (badges/photos/about), even for self; fall back to the
-      // local profile (self) or identity-only (others) while the fetch is in flight.
-      session.userProfiles[passport.address.toLowerCase()] ??
-      (isSelfPassport
-        ? session.profile.data
-        : {
-            address: passport.address,
-            name: passport.name,
-            picture: passport.picture,
-            hasClaimedName: !passport.name.includes('#') && !/^0x[0-9a-f]+$/i.test(passport.name),
-            isGuest: false
-          })
 
   // Top-nav navigation between the full-screen menu pages (Settings/Backpack/Map)
   // and the Communities panel. Each toggle is mutually exclusive.
@@ -223,18 +200,8 @@ function Hud(): React.JSX.Element {
             profile={session.profile}
             onNavigate={goToMenuPage}
             onTeleport={(x, y) => session.map.teleport(x, y)}
-            onViewProfile={session.openPassport}
+            onViewProfile={(u) => openPassport(u.address)}
           />
-          {passport && passportProfile && (
-            <ProfilePassport
-              key={passport.address}
-              profile={passportProfile}
-              isSelf={isSelfPassport}
-              relationship={relationshipOf(passport.address)}
-              onAddFriend={(address) => session.friends.act('request', address)}
-              onClose={session.closePassport}
-            />
-          )}
           {visitWorld && (
             <WorldVisitModal
               worldName={visitWorld}

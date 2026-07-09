@@ -8,7 +8,6 @@ import type { FatalError } from '../error/EngineErrorModal'
 import { DEFAULT_REALM } from '../engine/EngineHost'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
-import type { ChatUser } from '../chat/ProfileCardPresentation'
 import type {
   AppNotification,
   ChatMessage,
@@ -238,12 +237,6 @@ export interface EngineSession {
   userProfiles: Record<string, Profile | null>
   /** Request a user's passport by address (populates `userProfiles`). */
   requestUserProfile: (address: string) => void
-  /** The user whose full-screen passport is open (identity only; rich data loads via userProfiles), or null. */
-  passport: ChatUser | null
-  /** Open a user's full-screen passport (also kicks off the rich-profile fetch). */
-  openPassport: (user: ChatUser) => void
-  /** Dismiss the passport. */
-  closePassport: () => void
   notifications: NotificationsState
   emotes: EmotesState
   backpack: BackpackState
@@ -317,7 +310,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
-  const [passport, setPassport] = useState<ChatUser | null>(null)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
   // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
@@ -854,13 +846,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const requestUserProfile = useCallback((address: string) => {
     driverRef.current?.send({ kind: 'getUserProfile', address })
   }, [])
-  // Full-screen passport (View Profile). Opening it also fetches the rich profile (badges/photos/about);
-  // it renders identity-only from the passed user until that lands.
-  const openPassport = useCallback((user: ChatUser) => {
-    setPassport(user)
-    if (user.address) driverRef.current?.send({ kind: 'getUserProfile', address: user.address })
-  }, [])
-  const closePassport = useCallback(() => setPassport(null), [])
   const friendAct = useCallback((op: FriendAction, address: string) => {
     driverRef.current?.send({ kind: 'friendAction', op, address })
   }, [])
@@ -1023,9 +1008,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     profile: { data: profile, open: profileOpen, toggle: toggleProfile },
     userProfiles,
     requestUserProfile,
-    passport,
-    openPassport,
-    closePassport,
     notifications: {
       list: notifications,
       unread: notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0),

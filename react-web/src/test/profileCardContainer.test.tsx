@@ -2,14 +2,21 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, act, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ProfileCard, openProfileCard } from '../features/profileCard/ProfileCard'
+import { openPassport } from '../features/profile/Passport'
 import { SessionProvider } from '../features/session/SessionContext'
 import { fakeSession } from './harness'
 import { PopupHost, resetPopups } from '../design'
 import type { EngineSession } from '../features/session/useEngineSession'
 
+// View Passport opens the passport popup; stub it so we can assert the trigger.
+vi.mock('../features/profile/Passport', () => ({ openPassport: vi.fn() }))
+
 // COMPONENT: the smart <ProfileCard userId> resolves name/picture/relationship from the session
 // (read via useSession) and renders the presentational card; openProfileCard mounts it as a popup.
-afterEach(resetPopups)
+afterEach(() => {
+  resetPopups()
+  vi.mocked(openPassport).mockClear()
+})
 
 function renderWithSession(node: React.ReactNode, mutate?: (s: EngineSession) => void): EngineSession {
   const s = fakeSession()
@@ -68,10 +75,10 @@ describe('ProfileCard container — action wiring', () => {
     expect(s.chat.mention).toHaveBeenCalledWith('Alice')
   })
 
-  it('View Passport opens the session passport', async () => {
-    const s = renderWithSession(card('0xabc'), asAlice)
+  it('View Passport opens the passport popup for the user', async () => {
+    renderWithSession(card('0xabc'), asAlice)
     await userEvent.click(screen.getByRole('button', { name: /View Passport/i }))
-    expect(s.openPassport).toHaveBeenCalledWith(expect.objectContaining({ address: '0xabc', name: 'Alice' }))
+    expect(openPassport).toHaveBeenCalledWith('0xabc')
   })
 
   it('Block opens a confirm that fires the session friend action', async () => {
