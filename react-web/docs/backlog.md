@@ -60,6 +60,18 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
    runs on it (`if (await showConfirm(…)) …`). **Remaining:** migrate the still-bespoke confirms
    (`WorldVisitModal`, `ExitConfirm`) + the passport/community chains onto `openPopup`.
    (Old: `confirm-popup` / `alert-popup`.)
+7b. **`closeTopPopup` / `closeById` never run the popup's `onClose` → `showDialog` Promise leak** —
+    *correctness footgun, P2 pending PR #915 review*. `closeTopPopup()` (fired by the engine
+    `Cancel`/Escape relay in `useEngineSession`) removes the top node with `closeById`, which only
+    does `stack.filter + emit` — it never invokes that node's dismiss contract. So a
+    `showDialog`/`showConfirm` closed through the engine path never resolves its Promise (the `await`
+    hangs; the closure leaks). Harmless today for the only consumer (the profile-card Block confirm):
+    `ModalShell`→`Modal` traps focus and has its own DOM `Escape`→`onClose`, which resolves `false`
+    first, so the later engine-`Cancel` `closeById` is an idempotent no-op. It bites the moment a
+    future `showDialog` is dismissed via the engine path while the engine holds keyboard focus (no DOM
+    keydown reaches `Modal`). Fix: settle on removal — store the `close`/`onDismiss` per stack node and
+    have `closeById` call it, so every close path (engine `Cancel`, backdrop click, per-node `close`)
+    resolves the Promise exactly once.
 8. **`Badge` (standalone)** — *extract*. Badge logic is trapped inside `IconButton`; can't put a badge
    on a tab/avatar/chip without reimplementing. (Old: `notification-badge.tsx`.)
 9. **`Chip` / `Tag`** — *new*. "chip" is bespoke in ~11 files (map categories, count pills, status).
@@ -209,6 +221,16 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     re-render only `<Pointer>`, not the tree. Optional bridge-side dedupe (skip `ctx.send` when `tips`
     is unchanged) zeroes the standing-still case but not the moving one (positions legitimately change
     each frame), so the store is the structural fix.
+
+26. **Chat name click shows the raw address for players who left nearby range** — *UX regression, P2
+    pending PR #915 review*. `Chat`/`FriendsPanel` now open the shared card via
+    `openProfileCard(user.address, …)` (address only); the container re-resolves name/picture with
+    `resolveIdentity` (nearby roster → friends/requests → fetched passports). For a **non-friend who
+    has since left `chat.members`**, nothing resolves, so the card shows the bare `0x…` address instead
+    of the display name that was in the historical message (the old `ChatUser`-carrying path preserved
+    it). Common cases (nearby / friends) are unaffected. Fix if it matters: pass the message's known
+    name/picture into `openProfileCard` as a fallback hint, or give `resolveIdentity` a small
+    last-seen name cache.
 
 ## Not gaps (already good / ahead)
 
