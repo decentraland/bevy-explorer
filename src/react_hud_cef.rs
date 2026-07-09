@@ -66,6 +66,11 @@ impl Plugin for ReactHudCefPlugin {
                 push_engine_fps,
             ),
         );
+        // macOS only: Blink leaves Cmd editing shortcuts to the AppKit menu a windowed browser
+        // would have; offscreen rendering has none, so translate them for the webview. Blink
+        // handles the Ctrl equivalents itself on other platforms.
+        #[cfg(target_os = "macos")]
+        app.add_systems(Update, translate_edit_shortcuts);
         app.add_observer(on_page_envelope);
     }
 }
@@ -261,6 +266,16 @@ fn hud_alpha_at(image: &Image, pos: Vec2) -> u8 {
         .unwrap_or(0)
 }
 
+// Click cadence for CEF's click_count (2 = word select, 3 = paragraph select): with no OS window
+// under the webview, multi-click detection is the host's job.
+#[derive(Default)]
+struct MultiClick {
+    button: Option<MouseButton>,
+    count: i32,
+    at: f64,
+    pos: Vec2,
+}
+
 // Mouse routing: while the cursor is unlocked, everything is forwarded to the page (it sees the
 // full document like on web — outside-clicks defocus text fields, :hover tracks the real cursor);
 // what the ENGINE receives is gated per-pixel — an opaque HUD pixel under the cursor blocks world
@@ -275,6 +290,8 @@ fn route_mouse(
     buttons: Res<ButtonInput<MouseButton>>,
     mut wheel: EventReader<MouseWheel>,
     hud_nodes: Query<Entity, With<HudUiNode>>,
+    time: Res<Time>,
+    mut clicks: Local<MultiClick>,
     mut commands: Commands,
 ) {
     let Some(mut state) = state else { return };
@@ -307,14 +324,100 @@ fn route_mouse(
     browsers.send_mouse_move(&state.hud, buttons.get_pressed(), cursor, false);
     for button in [MouseButton::Left, MouseButton::Right, MouseButton::Middle] {
         if buttons.just_pressed(button) {
-            browsers.send_mouse_click(&state.hud, cursor, button, false);
+            let now = time.elapsed_secs_f64();
+            // same button, quick succession, near-stationary -> next multi-click step
+            if clicks.button == Some(button)
+                && now - clicks.at < 0.5
+                && cursor.distance(clicks.pos) < 4.0
+                && clicks.count < 3
+            {
+                clicks.count += 1;
+            } else {
+                clicks.count = 1;
+            }
+            *clicks = MultiClick {
+                button: Some(button),
+                count: clicks.count,
+                at: now,
+                pos: cursor,
+            };
+            browsers.send_mouse_click(&state.hud, cursor, button, false, clicks.count);
         }
         if buttons.just_released(button) {
-            browsers.send_mouse_click(&state.hud, cursor, button, true);
+            let count = if clicks.button == Some(button) {
+                clicks.count
+            } else {
+                1
+            };
+            browsers.send_mouse_click(&state.hud, cursor, button, true, count);
         }
     }
     for ev in wheel.read() {
         browsers.send_mouse_wheel(&state.hud, cursor, Vec2::new(ev.x, ev.y));
+    }
+}
+
+// Map editing shortcuts to webview edit commands using the same platform-aware binding table the
+// engine's own text boxes use (bevy_simple_text_input), so HUD and engine text editing stay
+// consistent. First matching binding wins, mirroring the crate's own matcher (order carries
+// meaning: e.g. Redo Cmd+Shift+Z is listed before Undo Cmd+Z, whose modifiers are a subset), and
+// like the crate, Shift is not part of the bindings — it upgrades a caret move to a selection.
+#[cfg(target_os = "macos")]
+fn translate_edit_shortcuts(
+    state: Option<Res<ReactHudCef>>,
+    mut er: EventReader<bevy::input::keyboard::KeyboardInput>,
+    input: Res<ButtonInput<KeyCode>>,
+    bindings: Res<bevy_simple_text_input::TextInputNavigationBindings>,
+    browsers: NonSend<Browsers>,
+) {
+    use bevy_simple_text_input::TextInputAction;
+    use cef_offscreen::prelude::EditCommand;
+    let Some(state) = state else { return };
+    for event in er.read() {
+        if event.state != bevy::input::ButtonState::Pressed {
+            continue;
+        }
+        let action = bindings
+            .0
+            .iter()
+            .filter(|(_, binding)| binding.modifiers().iter().all(|m| input.pressed(*m)))
+            .find(|(_, binding)| binding.key() == event.key_code)
+            .map(|(action, _)| action);
+        let command = match action {
+            Some(TextInputAction::Undo) => EditCommand::Undo,
+            Some(TextInputAction::Redo) => EditCommand::Redo,
+            Some(TextInputAction::Cut) => EditCommand::Cut,
+            Some(TextInputAction::Copy) => EditCommand::Copy,
+            Some(TextInputAction::Paste) => EditCommand::Paste,
+            Some(TextInputAction::SelectAll) => EditCommand::SelectAll,
+            // Caret movement: Cmd(meta)+arrow chords are AppKit's job in a windowed browser, so
+            // Blink ignores them raw on mac — send the Blink editor command instead. Everything
+            // else (plain/shift arrows, ALT+arrow word movement, backspace, enter) Blink handles
+            // natively from the forwarded keydown; translating those too would double-execute.
+            Some(nav) => {
+                let select =
+                    input.pressed(KeyCode::ShiftLeft) || input.pressed(KeyCode::ShiftRight);
+                let command = match (nav, select) {
+                    (TextInputAction::LineStart, false) => "MoveToBeginningOfLine",
+                    (TextInputAction::LineStart, true) => {
+                        "MoveToBeginningOfLineAndModifySelection"
+                    }
+                    (TextInputAction::LineEnd, false) => "MoveToEndOfLine",
+                    (TextInputAction::LineEnd, true) => "MoveToEndOfLineAndModifySelection",
+                    (TextInputAction::TextStart, false) => "MoveToBeginningOfDocument",
+                    (TextInputAction::TextStart, true) => {
+                        "MoveToBeginningOfDocumentAndModifySelection"
+                    }
+                    (TextInputAction::TextEnd, false) => "MoveToEndOfDocument",
+                    (TextInputAction::TextEnd, true) => "MoveToEndOfDocumentAndModifySelection",
+                    _ => continue,
+                };
+                browsers.execute_editor_commands(&state.hud, &[command]);
+                continue;
+            }
+            None => continue,
+        };
+        browsers.execute_edit_command(&state.hud, command);
     }
 }
 
@@ -383,14 +486,14 @@ fn on_page_envelope(
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
             // Keys still reach the page (CEF forwarding is unconditional), but the engine must
-            // not act on them while typing. Focus level: nothing else reserves or releases
-            // (Keyboard, Focus), and every world consumer reads at None/Scene — while (Keyboard,
-            // TextEntry) is released each frame by ui_core's propagate_focus when no native text
-            // entry is active, so that level would be stomped.
+            // not act on them while typing. TextEntry is the level the rest of the engine keys
+            // off: world consumers read at None/Scene, and input_manager's OS-shortcut
+            // suppression (which clobbers raw Shift state, breaking chords like Cmd+Shift+Z)
+            // switches off while the keyboard is claimed at >= TextEntry.
             if state.text_focused {
-                priorities.reserve(InputType::Keyboard, InputPriority::Focus);
+                priorities.reserve(InputType::Keyboard, InputPriority::TextEntry);
             } else {
-                priorities.release(InputType::Keyboard, InputPriority::Focus);
+                priorities.release(InputType::Keyboard, InputPriority::TextEntry);
             }
         }
         return;

@@ -24,7 +24,7 @@ use bevy::prelude::*;
 pub mod prelude {
     pub use crate::CefOffscreenPlugin;
     pub use crate::components::*;
-    pub use crate::core::browser_process::{Browsers, RenderTexture};
+    pub use crate::core::browser_process::{Browsers, EditCommand, RenderTexture};
     #[cfg(target_os = "macos")]
     pub use crate::core::debug::DebugLibraryLoader;
     pub use crate::core::render_process::execute_render_process;

@@ -32,11 +32,23 @@ pub struct WebviewBrowser {
     pub size: SharedViewSize,
 }
 
+/// Editing commands the host can inject (see [`Browsers::execute_edit_command`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditCommand {
+    Undo,
+    Redo,
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+}
+
 pub struct Browsers {
     browsers: HashMap<Entity, WebviewBrowser>,
     sender: TextureSender,
     receiver: TextureReceiver,
     ime_caret: SharedImeCaret,
+    dev_tools_message_id: Cell<i32>,
 }
 
 impl Default for Browsers {
@@ -47,6 +59,7 @@ impl Default for Browsers {
             sender,
             receiver,
             ime_caret: Rc::new(Cell::new(0)),
+            dev_tools_message_id: Cell::new(0),
         }
     }
 }
@@ -130,12 +143,16 @@ impl Browsers {
         }
     }
 
+    /// `click_count` follows Chromium's convention (1 = single, 2 = double-click word select,
+    /// 3 = triple-click paragraph select); the caller synthesizes it from click cadence since
+    /// there's no OS window to do it.
     pub fn send_mouse_click(
         &self,
         webview: &Entity,
         position: Vec2,
         button: MouseButton,
         mouse_up: bool,
+        click_count: i32,
     ) {
         if let Some(browser) = self.get_focused_browser(webview) {
             let mouse_event = cef::MouseEvent {
@@ -158,7 +175,7 @@ impl Browsers {
                 Some(&mouse_event),
                 MouseButtonType::from(mouse_button),
                 mouse_up as _,
-                1,
+                click_count,
             );
         }
     }
@@ -181,6 +198,49 @@ impl Browsers {
     pub fn send_key(&self, webview: &Entity, event: cef::KeyEvent) {
         if let Some(browser) = self.get_focused_browser(webview) {
             browser.host.send_key_event(Some(&event));
+        }
+    }
+
+    /// Run an editing command on the webview's focused frame. Needed on macOS, where Blink
+    /// leaves Cmd shortcuts (undo/copy/...) to the AppKit menu a windowed browser would have —
+    /// in offscreen rendering there is none, so the host translates them itself.
+    pub fn execute_edit_command(&self, webview: &Entity, command: EditCommand) {
+        if let Some(browser) = self.browsers.get(webview)
+            && let Some(frame) = browser.client.focused_frame()
+        {
+            match command {
+                EditCommand::Undo => frame.undo(),
+                EditCommand::Redo => frame.redo(),
+                EditCommand::Cut => frame.cut(),
+                EditCommand::Copy => frame.copy(),
+                EditCommand::Paste => frame.paste(),
+                EditCommand::SelectAll => frame.select_all(),
+            }
+        }
+    }
+
+    /// Run named Blink editor commands (e.g. "MoveToBeginningOfLineAndModifySelection") on the
+    /// webview. Caret/selection movement has no CefFrame equivalent; the DevTools protocol's
+    /// `Input.dispatchKeyEvent` `commands` field is the OSR channel for it (what Puppeteer uses
+    /// for macOS editing emulation). The synthetic event carries no key, so the page sees
+    /// nothing beyond the command's effect.
+    pub fn execute_editor_commands(&self, webview: &Entity, commands: &[&str]) {
+        if let Some(browser) = self.browsers.get(webview) {
+            let id = self.dev_tools_message_id.get().wrapping_add(1).max(1);
+            self.dev_tools_message_id.set(id);
+            let message = serde_json::json!({
+                "id": id,
+                "method": "Input.dispatchKeyEvent",
+                "params": {
+                    "type": "rawKeyDown",
+                    "windowsVirtualKeyCode": 0,
+                    "nativeVirtualKeyCode": 0,
+                    "commands": commands,
+                }
+            });
+            browser
+                .host
+                .send_dev_tools_message(Some(message.to_string().as_bytes()));
         }
     }
 

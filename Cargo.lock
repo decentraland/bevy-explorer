@@ -1738,7 +1738,7 @@ dependencies = [
 [[package]]
 name = "bevy_simple_text_input"
 version = "0.11.1"
-source = "git+https://github.com/robtfm/bevy_simple_text_input?branch=0.16#393f123de9c55581a76248f9fa98e66b0b1b48be"
+source = "git+https://github.com/robtfm/bevy_simple_text_input?branch=0.16#f63341739ea3c14dc1e98395115dc58969469297"
 dependencies = [
  "bevy",
  "copypwasmta",
