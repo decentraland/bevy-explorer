@@ -465,9 +465,16 @@ fn process_profile(
         if let Some(base) = &set_avatar.base {
             profile.content.avatar.body_shape = Some(base.body_shape_urn.clone());
 
-            profile.content.avatar.hair = base.hair_color.map(AvatarColor::new);
-            profile.content.avatar.eyes = base.eyes_color.map(AvatarColor::new);
-            profile.content.avatar.skin = base.skin_color.map(AvatarColor::new);
+            // a base without colors must not strip them from the profile
+            if let Some(hair) = base.hair_color {
+                profile.content.avatar.hair = Some(AvatarColor::new(hair));
+            }
+            if let Some(eyes) = base.eyes_color {
+                profile.content.avatar.eyes = Some(AvatarColor::new(eyes));
+            }
+            if let Some(skin) = base.skin_color {
+                profile.content.avatar.skin = Some(AvatarColor::new(skin));
+            }
 
             profile.content.name = base.name.clone();
             profile.content.avatar.name = Some(base.name.clone());

@@ -953,15 +953,11 @@ impl ScenePointers {
             .into_iter()
             .enumerate()
         {
-            if let Some(sub_crc) = self.crc(
+            let sub_crc = self.crc(
                 (level_parcel << level as u32) + (offset << (level - 1) as u32),
                 level - 1,
-            ) {
-                calc ^= sub_crc.rotate_right(ix as u32);
-            } else {
-                // println!("failed {level}");
-                return None;
-            }
+            )?;
+            calc ^= sub_crc.rotate_right(ix as u32);
         }
         // println!("success {level}");
         self.crcs[level][index] = Some(calc);

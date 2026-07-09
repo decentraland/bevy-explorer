@@ -77,7 +77,7 @@ fn decentraland_serialized_app_config() -> AppConfig {
         .unwrap()
         .config_dir()
         .join("config.json");
-    let base_config: AppConfig = std::fs::read(&config_file)
+    let mut base_config: AppConfig = std::fs::read(&config_file)
         .ok()
         .and_then(|f| {
             info!("config file loaded from {config_file:?}");
@@ -89,6 +89,7 @@ fn decentraland_serialized_app_config() -> AppConfig {
             warn!("config file not found at {config_file:?}, generating default");
             Default::default()
         });
+    base_config.reset_outdated_settings();
 
     base_config
 }

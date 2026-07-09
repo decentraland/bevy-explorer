@@ -1,15 +1,8 @@
 use anyhow::anyhow;
-use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
+use bevy::prelude::*;
 use bevy_dui::{DuiRegistry, DuiTemplate};
-use bevy_egui::{egui, EguiContext};
-use common::structs::ZOrder;
 
-use crate::{
-    ui_actions::{DataChanged, On},
-    Blocker,
-};
-
-use super::focus::Focus;
+use crate::ui_actions::{DataChanged, On};
 
 #[derive(Component)]
 pub struct ColorPicker {
@@ -32,91 +25,7 @@ pub struct ColorPickerPlugin;
 
 impl Plugin for ColorPickerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
-            .add_systems(Update, update_color_picker_components);
-    }
-}
-
-#[allow(clippy::type_complexity)]
-fn update_color_picker_components(
-    mut commands: Commands,
-    mut egui_ctx: Query<&mut EguiContext, With<PrimaryWindow>>,
-    mut color_pickers: Query<
-        (
-            Entity,
-            &mut ColorPicker,
-            &Node,
-            &ComputedNode,
-            &GlobalTransform,
-            Option<&mut Interaction>,
-            Option<&Focus>,
-        ),
-        Without<Blocker>,
-    >,
-    mut blocker: Local<Option<Entity>>,
-    mut blocker_display: Query<&mut Node, With<Blocker>>,
-    mut blocker_active: Local<bool>,
-) {
-    let Ok(mut ctx) = egui_ctx.single_mut() else {
-        return;
-    };
-    let ctx = ctx.get_mut();
-    let blocker = *blocker.get_or_insert_with(|| {
-        commands
-            .spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    display: Display::None,
-                    left: Val::Px(0.0),
-                    right: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    bottom: Val::Px(0.0),
-                    ..Default::default()
-                },
-                bevy::ui::FocusPolicy::Block,
-                ZOrder::EguiBlocker.default(),
-                Blocker,
-            ))
-            .id()
-    });
-
-    let mut popup_active = false;
-
-    for (entity, mut color_picker, style, node, transform, _maybe_interaction, _maybe_focus) in
-        color_pickers.iter_mut()
-    {
-        let center = transform.translation().xy() / ctx.zoom_factor();
-        let size = node.size() / ctx.zoom_factor();
-        let topleft = center - size / 2.0;
-
-        if matches!(style.display, Display::Flex) {
-            egui::Window::new(format!("{entity:?}"))
-                .fixed_pos(topleft.to_array())
-                .fixed_size(size.to_array())
-                .frame(egui::Frame::NONE)
-                .title_bar(false)
-                .show(ctx, |ui| {
-                    let response = ui.color_edit_button_rgb(&mut color_picker.color);
-
-                    if ui.memory(|mem| mem.any_popup_open()) {
-                        popup_active = true;
-                    }
-
-                    // pass through focus and interaction
-                    if response.changed() {
-                        commands.entity(entity).try_insert(DataChanged);
-                    }
-                });
-        }
-    }
-
-    if popup_active != *blocker_active {
-        blocker_display.get_mut(blocker).unwrap().display = if popup_active {
-            Display::Flex
-        } else {
-            Display::None
-        };
-        *blocker_active = popup_active;
+        app.add_systems(Startup, setup);
     }
 }
 
@@ -124,6 +33,8 @@ fn setup(mut dui: ResMut<DuiRegistry>) {
     dui.register_template("color-picker", DuiColorPicker);
 }
 
+// display-only swatch; the egui edit widget it used to spawn is gone, and the
+// native ui hosting it is superseded by the ui scene
 pub struct DuiColorPicker;
 impl DuiTemplate for DuiColorPicker {
     fn render(
@@ -137,7 +48,8 @@ impl DuiTemplate for DuiColorPicker {
                 .take::<Color>("color")?
                 .ok_or(anyhow!("no initial color"))?,
         );
-        commands.try_insert(picker);
+        let swatch = BackgroundColor(picker.get_linear());
+        commands.try_insert((picker, swatch));
 
         if let Some(onchanged) = props.take::<On<DataChanged>>("onchanged")? {
             commands.try_insert(onchanged);

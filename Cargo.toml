@@ -12,7 +12,7 @@ name = "webgpu_build"
 # - copy ./assets to deploy/web/assets
 # - copy ./crates/dcl/src/js/modules to deploy/web/modules
 # - rustup default nightly # (tested with 2026-04-15)
-# - wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit" && npx serve deploy/web
+# - wasm-pack build --target web --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social" (then serve via react-web; see react-web/README.md)
 
 [features]
 default = ["livekit", "ffmpeg", "inspect", "social"]
@@ -119,7 +119,9 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "reduce_image_sizes",
 ] }
 wgpu = "24"
-bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16" }
+# default-features = false drops the egui console window (we only use the
+# command/print plumbing, piped to chat); this keeps egui out of the build entirely
+bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16", default-features = false }
 # enables naga_oil function overrides on non-`virtual` bevy_pbr functions (e.g.
 # our shadow-darkness override in bound_material.wgsl). feature-unifies into the
 # naga_oil that bevy builds its shader composer with. version must match bevy's.
@@ -129,11 +131,6 @@ bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16"
 naga_oil = { version = "0.17", default-features = false, features = [
   "override_any",
 ] }
-bevy_egui = { version = "0.34", default-features = false, features = [
-  "default_fonts",
-  "render",
-] }
-
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
 
@@ -321,7 +318,7 @@ prost-build = "0.11.8"
 # carried on a fork branch off the 0.17.1 tag. not an upstream backport —
 # naga_oil main is 0.22; revisit only if bevy's pinned naga_oil moves.
 naga_oil = { git = "https://github.com/robtfm/naga_oil", branch = "fix/deterministic-override-emit-order" }
-# mess required by egui referencing bevy crates directly
+# mess required by ecosystem crates referencing bevy subcrates directly
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_a11y = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_asset = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
