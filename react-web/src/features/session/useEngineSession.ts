@@ -292,6 +292,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // post-boot panic as a launch failure). The timer id is kept so it's cancelled on unmount.
   const bootPollStop = useRef(false)
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Native parcel pick: the engine can only teleport an existing player (there's no boot-at-position
+  // when the engine is already running), so the pick is held until playerReady.
+  const pendingParcel = useRef<{ x: number; y: number } | null>(null)
   const [playerReady, setPlayerReady] = useState(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
@@ -349,6 +352,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           if (msg.name === 'playerReady') {
             setPlayerReady(true)
             bootPollStop.current = true // world reached → stop watching for a boot panic
+            if (pendingParcel.current != null) {
+              driver.send({ kind: 'teleport', ...pendingParcel.current })
+              pendingParcel.current = null
+            }
           }
           break
         case 'sceneLoading':
@@ -649,6 +656,29 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // guards against launching on a disposed driver (the rAF/timeout aren't otherwise cancellable).
       if (ran || driverRef.current == null) return
       ran = true
+      const runDeferredLogin = (): void => {
+        const login = pendingLogin.current
+        pendingLogin.current = null
+        Promise.resolve(login?.(driver))
+          .then(() => setBusy(false))
+          .catch((e: Error) => {
+            console.error('[login] post-launch login failed:', e)
+            setError(e.message)
+            setBusy(false)
+            setDestinationPicked(false) // back to the picker on failure
+          })
+      }
+      // No launch = the engine is already running at its own start realm (native's --server, or
+      // the mock): the pick maps to runtime directives instead of boot parameters. A world
+      // switches realm now (works pre-login); a parcel teleport needs a spawned player, so it's
+      // held until playerReady. Skip keeps the engine's own start realm rather than forcing
+      // DEFAULT_REALM — natively that realm was chosen on the command line.
+      if (driver.launch == null) {
+        if (dest?.kind === 'world') driver.send({ kind: 'changeRealm', realm: dest.realm })
+        else if (dest?.kind === 'parcel') pendingParcel.current = { x: dest.x, y: dest.y }
+        runDeferredLogin()
+        return
+      }
       bootPollStop.current = false
       driverRef.current?.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
       // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
@@ -685,16 +715,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         if (++polls < 24) pollTimer.current = setTimeout(pollPanic, 250) // ~6s boot window
       }
       pollTimer.current = setTimeout(pollPanic, 250)
-      const login = pendingLogin.current
-      pendingLogin.current = null
-      Promise.resolve(login?.(driver))
-        .then(() => setBusy(false))
-        .catch((e: Error) => {
-          console.error('[login] post-launch login failed:', e)
-          setError(e.message)
-          setBusy(false)
-          setDestinationPicked(false) // back to the picker on failure
-        })
+      runDeferredLogin()
     }
     requestAnimationFrame(() => requestAnimationFrame(run))
     setTimeout(run, 60)
