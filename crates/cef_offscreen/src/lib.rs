@@ -29,13 +29,12 @@ pub mod prelude {
     pub use crate::core::debug::DebugLibraryLoader;
     pub use crate::core::render_process::execute_render_process;
     pub use crate::ipc::*;
-    pub use crate::keyboard::CefInputGate;
     pub use crate::webview::*;
 }
 
 /// Everything needed to host offscreen CEF webviews: CEF bootstrap + message pump, webview
 /// lifecycle (spawn `CefWebviewUri` + `WebviewSize`), the cef:// asset scheme, js/host IPC,
-/// keyboard forwarding (gated by [`keyboard::CefInputGate`]) and cursor-icon relay.
+/// keyboard forwarding and cursor-icon relay.
 pub struct CefOffscreenPlugin;
 
 impl Plugin for CefOffscreenPlugin {

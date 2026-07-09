@@ -33,37 +33,50 @@ pub fn keyboard_modifiers(input: &ButtonInput<KeyCode>) -> u32 {
     flags
 }
 
-pub fn create_cef_key_event(
-    modifiers: u32,
-    _input: &ButtonInput<KeyCode>,
-    key_event: &KeyboardInput,
-) -> Option<cef::KeyEvent> {
-    let key_type = match key_event.state {
-        // ButtonState::Pressed if input.just_pressed(key_event.key_code) => {
-        //     cef_key_event_type_t::KEYEVENT_RAWKEYDOWN
-        // }
-        ButtonState::Pressed => cef_key_event_type_t::KEYEVENT_CHAR,
-        ButtonState::Released => cef_key_event_type_t::KEYEVENT_KEYUP,
-    };
+/// The event sequence Chromium expects from a physical key press (mirroring a native window):
+/// RAWKEYDOWN (drives DOM `keydown` — hotkey listeners, editing commands), then CHAR for
+/// printable input (drives `keypress`/text insertion), and KEYUP on release. Sending CHAR alone
+/// types text but never fires `keydown`, silently breaking every page hotkey.
+pub fn create_cef_key_events(modifiers: u32, key_event: &KeyboardInput) -> Vec<cef::KeyEvent> {
     let windows_key_code = keycode_to_windows_vk(key_event.key_code);
-
+    let native_key_code = to_native_key_code(&key_event.key_code) as _;
     let character = key_event
         .text
         .as_ref()
         .and_then(|text| text.chars().next())
-        .unwrap_or('\0') as u16;
+        .unwrap_or('\0');
+    let modifiers = if key_event.repeat {
+        modifiers | cef_event_flags_t::EVENTFLAG_IS_REPEAT as u32
+    } else {
+        modifiers
+    };
 
-    Some(cef::KeyEvent::from(cef_key_event_t {
-        size: core::mem::size_of::<cef_key_event_t>(),
-        type_: key_type,
-        modifiers,
-        windows_key_code,
-        native_key_code: to_native_key_code(&key_event.key_code) as _,
-        character,
-        unmodified_character: character,
-        is_system_key: false as _,
-        focus_on_editable_field: false as _,
-    }))
+    let make = |key_type| {
+        cef::KeyEvent::from(cef_key_event_t {
+            size: core::mem::size_of::<cef_key_event_t>(),
+            type_: key_type,
+            modifiers,
+            windows_key_code,
+            native_key_code,
+            character: character as u16,
+            unmodified_character: character as u16,
+            is_system_key: false as _,
+            focus_on_editable_field: false as _,
+        })
+    };
+
+    match key_event.state {
+        ButtonState::Pressed => {
+            let mut events = vec![make(cef_key_event_type_t::KEYEVENT_RAWKEYDOWN)];
+            // CHAR only for text-producing keys: control keys (backspace, arrows, escape...) act
+            // through the keydown's default handling, and a stray CHAR would insert junk.
+            if !character.is_control() || character == '\r' || character == '\t' {
+                events.push(make(cef_key_event_type_t::KEYEVENT_CHAR));
+            }
+            events
+        }
+        ButtonState::Released => vec![make(cef_key_event_type_t::KEYEVENT_KEYUP)],
+    }
 }
 
 // fn is_not_character_key_code(keycode: &KeyCode) -> bool {

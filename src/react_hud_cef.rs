@@ -18,9 +18,12 @@
 // ?native=1 for HMR), --ui <url|dir|none>. The CEF framework loads bundle-relative
 // (Contents/Frameworks) with a dev fallback at ~/.local/share/cef (export-cef-dir).
 //
-// Keys are forwarded to the page only while the cursor is over the HUD or a text field is
-// focused (CefInputGate); the engine still receives them in parallel (engine-side suppression
-// while typing is a known gap). Mouse wheel over the HUD also reaches the engine.
+// Input mirrors web semantics (where the page and the engine canvas share the document): all
+// keys and unlocked-cursor mouse events are forwarded to the page — so outside-clicks defocus
+// text fields and page hotkeys (e.g. B for emotes) always work — while the engine takes world
+// input per-pixel (opaque HUD pixel under the cursor gates it off) and drops key-bound actions
+// while a HUD text field holds focus (InputPriorities reservation). Mouse wheel over the HUD
+// still also reaches the engine (known gap).
 
 use bevy::asset::RenderAssetUsages;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
@@ -30,12 +33,12 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::ui::FocusPolicy;
 use bevy::window::{CursorGrabMode, PrimaryWindow, WindowResized};
 use cef_offscreen::prelude::{
-    Browsers, CefInputGate, CefOffscreenPlugin, CefWebviewUri, HostEmitEvent, JsEmitEventPlugin,
-    RenderTexture, WebviewSize,
+    Browsers, CefOffscreenPlugin, CefWebviewUri, HostEmitEvent, JsEmitEventPlugin, RenderTexture,
+    WebviewSize,
 };
 use common::rpc::{RpcResultReceiver, RpcResultSender, RpcStreamReceiver, RpcStreamSender};
 use common::structs::PrimaryUser;
-use input_manager::MouseInteractionComponent;
+use input_manager::{InputPriorities, InputPriority, InputType, MouseInteractionComponent};
 use system_bridge::{ChatMessage, SceneLoadingUi, SystemApi};
 
 pub struct ReactHudCefPlugin;
@@ -92,8 +95,8 @@ struct ReactHudCef {
     // The page's bridge listener is live once it has sent us anything; until then events like
     // playerReady would be fired into the void (the page hasn't subscribed yet).
     page_seen: bool,
-    // A HUD text field is focused (page focusin/focusout via the shim) — keep forwarding keys to
-    // CEF even when the cursor is over the world, so chat typing isn't cut off mid-word.
+    // A HUD text field is focused (page focusin/focusout via the shim) — the engine's key-bound
+    // actions are suppressed so WASD etc. type instead of moving the avatar.
     text_focused: bool,
     // When the super-user bridge-scene is driving (--ui <bridge-scene>), this is its page->scene
     // stream; the relay becomes a pure Envelope pipe and the per-domain fallback is bypassed.
@@ -258,9 +261,11 @@ fn hud_alpha_at(image: &Image, pos: Vec2) -> u8 {
         .unwrap_or(0)
 }
 
-// Per-pixel input routing: over an opaque HUD pixel, forward mouse to CEF and gate engine world
-// input (via Interaction on the fullscreen node); over transparent pixels the engine keeps the
-// mouse. While the cursor is pointer-locked (camera mouse-look) everything goes to the engine.
+// Mouse routing: while the cursor is unlocked, everything is forwarded to the page (it sees the
+// full document like on web — outside-clicks defocus text fields, :hover tracks the real cursor);
+// what the ENGINE receives is gated per-pixel — an opaque HUD pixel under the cursor blocks world
+// input (via Interaction on the fullscreen node). While pointer-locked (camera mouse-look) there
+// is no cursor and the engine keeps everything.
 #[allow(clippy::too_many_arguments)]
 fn route_mouse(
     state: Option<ResMut<ReactHudCef>>,
@@ -270,7 +275,6 @@ fn route_mouse(
     buttons: Res<ButtonInput<MouseButton>>,
     mut wheel: EventReader<MouseWheel>,
     hud_nodes: Query<Entity, With<HudUiNode>>,
-    mut gate: ResMut<CefInputGate>,
     mut commands: Commands,
 ) {
     let Some(mut state) = state else { return };
@@ -288,10 +292,6 @@ fn route_mouse(
         .and_then(|c| images.get(&state.image).map(|img| hud_alpha_at(img, c)))
         .is_some_and(|alpha| alpha > 8);
 
-    // keys go to the page while the cursor is over the HUD or a text field holds focus; world-
-    // control keys otherwise stay out of the page (no HUD hotkeys while walking)
-    gate.keyboard = over || state.text_focused;
-
     if over != state.over_ui {
         state.over_ui = over;
         if let Ok(node) = hud_nodes.single() {
@@ -299,17 +299,11 @@ fn route_mouse(
                 commands.entity(node).insert(Interaction::default());
             } else {
                 commands.entity(node).remove::<Interaction>();
-                // Tell the page the pointer left so CSS :hover state clears.
-                let leave = cursor.unwrap_or(Vec2::new(-1.0, -1.0));
-                browsers.send_mouse_move(&state.hud, [], leave, true);
             }
         }
     }
 
     let Some(cursor) = cursor else { return };
-    if !over {
-        return;
-    }
     browsers.send_mouse_move(&state.hud, buttons.get_pressed(), cursor, false);
     for button in [MouseButton::Left, MouseButton::Right, MouseButton::Middle] {
         if buttons.just_pressed(button) {
@@ -372,6 +366,7 @@ fn pump_bridge(
 fn on_page_envelope(
     trigger: Trigger<PageEnvelope>,
     state: Option<ResMut<ReactHudCef>>,
+    mut priorities: ResMut<InputPriorities>,
     mut sys: EventWriter<SystemApi>,
     mut commands: Commands,
 ) {
@@ -387,6 +382,16 @@ fn on_page_envelope(
                 .get("focused")
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
+            // Keys still reach the page (CEF forwarding is unconditional), but the engine must
+            // not act on them while typing. Focus level: nothing else reserves or releases
+            // (Keyboard, Focus), and every world consumer reads at None/Scene — while (Keyboard,
+            // TextEntry) is released each frame by ui_core's propagate_focus when no native text
+            // entry is active, so that level would be stomped.
+            if state.text_focused {
+                priorities.reserve(InputType::Keyboard, InputPriority::Focus);
+            } else {
+                priorities.release(InputType::Keyboard, InputPriority::Focus);
+            }
         }
         return;
     }
