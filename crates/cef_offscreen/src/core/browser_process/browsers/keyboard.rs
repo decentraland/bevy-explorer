@@ -8,25 +8,31 @@ use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::{ButtonInput, KeyCode};
 use cef_dll_sys::{cef_event_flags_t, cef_key_event_t, cef_key_event_type_t};
 
-pub fn keyboard_modifiers(input: &ButtonInput<KeyCode>) -> u32 {
+/// `also_pressed` supplements `ButtonInput` for hosts that scrub modifier state out of it (see
+/// keyboard.rs `TrackedModifiers`); a key counts as held if either source says so.
+pub fn keyboard_modifiers(
+    input: &ButtonInput<KeyCode>,
+    also_pressed: &bevy::platform::collections::HashSet<KeyCode>,
+) -> u32 {
+    let held = |k: KeyCode| input.pressed(k) || also_pressed.contains(&k);
     let mut flags = 0u32;
 
-    if input.pressed(KeyCode::ControlLeft) || input.pressed(KeyCode::ControlRight) {
+    if held(KeyCode::ControlLeft) || held(KeyCode::ControlRight) {
         flags |= cef_event_flags_t::EVENTFLAG_CONTROL_DOWN as u32;
     }
-    if input.pressed(KeyCode::AltLeft) || input.pressed(KeyCode::AltRight) {
+    if held(KeyCode::AltLeft) || held(KeyCode::AltRight) {
         flags |= cef_event_flags_t::EVENTFLAG_ALT_DOWN as u32;
     }
-    if input.pressed(KeyCode::ShiftLeft) || input.pressed(KeyCode::ShiftRight) {
+    if held(KeyCode::ShiftLeft) || held(KeyCode::ShiftRight) {
         flags |= cef_event_flags_t::EVENTFLAG_SHIFT_DOWN as u32;
     }
-    if input.pressed(KeyCode::SuperLeft) || input.pressed(KeyCode::SuperRight) {
+    if held(KeyCode::SuperLeft) || held(KeyCode::SuperRight) {
         flags |= cef_event_flags_t::EVENTFLAG_COMMAND_DOWN as u32;
     }
-    if input.pressed(KeyCode::CapsLock) {
+    if held(KeyCode::CapsLock) {
         flags |= cef_event_flags_t::EVENTFLAG_CAPS_LOCK_ON as u32;
     }
-    if input.pressed(KeyCode::NumLock) {
+    if held(KeyCode::NumLock) {
         flags |= cef_event_flags_t::EVENTFLAG_NUM_LOCK_ON as u32;
     }
 
