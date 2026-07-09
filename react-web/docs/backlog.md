@@ -85,6 +85,28 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     PermissionDialog. (Old: `radio-button.tsx`.)
 12. **`Skeleton`** — *new*. Only `Spinner` exists; no load placeholders for lists/cards.
     (Old: `loading-placeholder.tsx`.)
+12b. **Passport "too far by camera" is confusing in third-person** — *behavior/UX, engine+bridge*.
+    Hovering a nearby avatar in third-person greys out "Show Profile" with "Get camera closer" even
+    when your avatar is standing right next to them. Two causes combine: (1) the avatar pointer in
+    `bridge-scene/src/domains/avatarPointer.ts` sets **no** distance fields, so it hits the SDK7
+    default (camera distance ≤ 10m — `passes_distance_check`, case 4 in
+    `crates/scene_runner/src/update_scene/pointer_results.rs`); (2) bevy's `camera_distance` is the
+    **raw camera-origin→hit** distance, so a pulled-back third-person boom inflates it past 10m. The
+    OR machinery you'd reach for already exists (`max_distance` OR `max_player_distance`), so adding
+    an OR to the default alone won't fix it — the camera leg is still boom-inflated. **How
+    unity-explorer avoids it** (verified in `../unity-explorer`): its passport interaction
+    (`ProcessOtherAvatarsInteractionSystem.cs`) has **no** camera-distance gate at all — just a 100m
+    ray + privacy modifiers (`GlobalInteractionPlugin.cs` injects `maxRaycastDistance = 100f`); and
+    even for scene entities its `MaxDistance` ("camera") check is measured from the **player focus**
+    in third-person, never the camera boom (`PlayerOriginatedRaycastSystem.cs:85` —
+    `FirstPerson ? hitInfo.distance : Vector3.Distance(hit, PlayerFocus.position)`). So Unity's range
+    is player-relative everywhere and the boom is invisible to gating. **Fix paths:** (a) *cheap,
+    bridge-only* — set `maxPlayerDistance` on the avatar "Show Profile" pointer so it's gated on
+    player proximity (camera-agnostic, Unity passport parity); the existing `tooFarReason` plumbing
+    then only ever reports `player`. (b) *faithful, engine + ~15-20min wasm rebuild* — make bevy's
+    interaction `camera_distance` player-focus-relative in third-person like Unity, fixing **all**
+    SDK pointer events, not just passports. Analysis-only for now (2026-07-09) — user deferred the
+    code change.
 
 ## 🟢 Low / when a feature needs it
 
