@@ -21,7 +21,7 @@ pub mod prelude {
 ///
 /// ```rust
 /// use bevy::prelude::*;
-/// use bevy_cef::prelude::*;
+/// use cef_offscreen::prelude::*;
 ///
 /// #[derive(Component)]
 /// struct DebugWebview;
@@ -40,7 +40,7 @@ pub struct RequestShowDevTool;
 ///
 /// ```rust
 /// use bevy::prelude::*;
-/// use bevy_cef::prelude::*;
+/// use cef_offscreen::prelude::*;
 ///
 /// #[derive(Component)]
 /// struct DebugWebview;

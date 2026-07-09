@@ -1,7 +1,8 @@
 [package]
 name = "cef_offscreen"
 version = "0.1.0"
-edition = "2024"  # upstream bevy_cef code uses let-chains
+# 2024: the crate uses let-chains
+edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "CEF offscreen-rendered webview for bevy: OSR into Images, cef:// asset scheme, js/host IPC. Derived from not-elm/bevy_cef."
 
