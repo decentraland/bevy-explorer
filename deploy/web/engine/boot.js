@@ -149,8 +149,13 @@ const config = window.__bevyBootConfig ?? {}
 // the same place. Defaults are omitted so the canonical entry URL stays clean.
 const DEFAULT_SERVER = 'https://realm-provider-ea.decentraland.org/main'
 const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'
+// The engine connects to the EXPANDED world url (ipfs map_realm_name turns `name.dcl.eth` into
+// worlds-content-server…/world/name.dcl.eth) and echoes that back here. Reverse it so the address
+// bar keeps the short name the user typed; a reload re-expands it the same way.
+const WORLDS_PREFIX = 'https://worlds-content-server.decentraland.org/world/'
 window.set_url_params = (position, server, system_scene, portables, preview) => {
   try {
+    if (server.startsWith(WORLDS_PREFIX)) server = server.slice(WORLDS_PREFIX.length)
     const urlParams = new URLSearchParams(window.location.search)
     // absent when the realm won't honour a position (worlds spawn at their base scene)
     if (position != null) urlParams.set('position', position)
