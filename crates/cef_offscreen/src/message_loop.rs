@@ -8,7 +8,11 @@ use cef::{Settings, api_hash, execute_process, initialize, shutdown, sys};
 /// Controls the CEF message loop.
 ///
 /// - Windows and Linux: Support [`multi_threaded_message_loop`](https://cef-builds.spotifycdn.com/docs/106.1/structcef__settings__t.html#a518ac90db93ca5133a888faa876c08e0), so it is used.
-/// - macOS: Calls [`CefDoMessageLoopWork`](https://cef-builds.spotifycdn.com/docs/106.1/cef__app_8h.html#a830ae43dcdffcf4e719540204cefdb61) every frame.
+///   The CEF UI thread is then internal to CEF — and browser calls are only legal on it
+///   (off-thread they fail silently in release builds), so `Browsers` marshals every
+///   interaction there via `CefCommand`s (see `core::browser_process::cef_thread`).
+/// - macOS: MTML is unsupported; calls [`CefDoMessageLoopWork`](https://cef-builds.spotifycdn.com/docs/106.1/cef__app_8h.html#a830ae43dcdffcf4e719540204cefdb61) every frame, making
+///   the main thread the CEF UI thread, so browsers are driven directly.
 pub struct MessageLoopPlugin {
     _app: Box<cef::App>,
     #[cfg(target_os = "macos")]

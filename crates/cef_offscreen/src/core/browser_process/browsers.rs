@@ -1,7 +1,11 @@
 use crate::core::browser_process::ClientHandlerBuilder;
+#[cfg(not(target_os = "macos"))]
+use crate::core::browser_process::cef_command::CefCommand;
 use crate::core::browser_process::client_handler::{IpcEventRaw, JsEmitEventHandler};
 use crate::core::prelude::IntoString;
 use crate::core::prelude::*;
+#[cfg(not(target_os = "macos"))]
+use async_channel::Receiver;
 use async_channel::{Sender, TryRecvError};
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
@@ -43,28 +47,31 @@ pub enum EditCommand {
     SelectAll,
 }
 
-pub struct Browsers {
+/// CEF-facing browser state. Every method here touches `CefBrowser`/`CefBrowserHost`,
+/// which CEF only permits on the browser-process UI thread. On macOS (external message
+/// pump) that's the app main thread, so [`Browsers`] owns this directly; on
+/// Windows/Linux (multi-threaded message loop) the UI thread belongs to CEF, so this
+/// lives in a CEF-thread `thread_local` and is driven by `CefCommand`s (see
+/// `cef_thread`).
+pub(crate) struct BrowsersInner {
     browsers: HashMap<Entity, WebviewBrowser>,
-    sender: TextureSender,
-    receiver: TextureReceiver,
+    texture_sender: TextureSender,
     ime_caret: SharedImeCaret,
     dev_tools_message_id: Cell<i32>,
 }
 
-impl Default for Browsers {
-    fn default() -> Self {
-        let (sender, receiver) = async_channel::unbounded::<RenderTexture>();
-        Browsers {
+impl BrowsersInner {
+    pub(crate) fn new(texture_sender: TextureSender) -> Self {
+        Self {
             browsers: HashMap::default(),
-            sender,
-            receiver,
+            texture_sender,
             ime_caret: Rc::new(Cell::new(0)),
             dev_tools_message_id: Cell::new(0),
         }
     }
 }
 
-impl Browsers {
+impl BrowsersInner {
     #[allow(clippy::too_many_arguments)]
     pub fn create_browser(
         &mut self,
@@ -81,7 +88,12 @@ impl Browsers {
         let browser = browser_host_create_browser_sync(
             Some(&WindowInfo {
                 windowless_rendering_enabled: true as _,
-                external_begin_frame_enabled: true as _,
+                // macOS: the host pumps explicit begin-frames in step with the app frame
+                // loop. Windows/Linux run CEF's multi-threaded message loop, where CEF
+                // schedules its own paints at `windowless_frame_rate`; external
+                // begin-frames would have to be marshalled cross-thread every frame for
+                // no benefit (and a stalled app would freeze the HUD).
+                external_begin_frame_enabled: cfg!(target_os = "macos") as _,
                 #[cfg(target_os = "macos")]
                 parent_view: match _window_handle {
                     Some(RawWindowHandle::AppKit(handle)) => handle.ns_view.as_ptr(),
@@ -106,28 +118,38 @@ impl Browsers {
             }),
             None,
             context.as_mut(),
-        )
-        .expect("Failed to create browser");
+        );
+        // Don't panic: on Windows/Linux this runs inside a CEF task callback, and
+        // unwinding across that FFI boundary is UB.
+        let Some(browser) = browser else {
+            error!("Failed to create browser for webview {webview:?}");
+            return;
+        };
+        let Some(host) = browser.host() else {
+            error!("Failed to get browser host for webview {webview:?}");
+            return;
+        };
         self.browsers.insert(
             webview,
             WebviewBrowser {
-                host: browser.host().expect("Failed to get browser host"),
+                host,
                 client: browser,
                 size,
             },
         );
     }
 
+    #[cfg(target_os = "macos")]
     pub fn send_external_begin_frame(&mut self) {
         for browser in self.browsers.values_mut() {
             browser.host.send_external_begin_frame();
         }
     }
 
-    pub fn send_mouse_move<'a>(
+    pub fn send_mouse_move(
         &self,
         webview: &Entity,
-        buttons: impl IntoIterator<Item = &'a MouseButton>,
+        modifiers: u32,
         position: Vec2,
         mouse_leave: bool,
     ) {
@@ -135,7 +157,7 @@ impl Browsers {
             let mouse_event = cef::MouseEvent {
                 x: position.x as i32,
                 y: position.y as i32,
-                modifiers: modifiers_from_mouse_buttons(buttons),
+                modifiers,
             };
             browser
                 .host
@@ -143,9 +165,6 @@ impl Browsers {
         }
     }
 
-    /// `click_count` follows Chromium's convention (1 = single, 2 = double-click word select,
-    /// 3 = triple-click paragraph select); the caller synthesizes it from click cadence since
-    /// there's no OS window to do it.
     pub fn send_mouse_click(
         &self,
         webview: &Entity,
@@ -201,9 +220,6 @@ impl Browsers {
         }
     }
 
-    /// Run an editing command on the webview's focused frame. Needed on macOS, where Blink
-    /// leaves Cmd shortcuts (undo/copy/...) to the AppKit menu a windowed browser would have —
-    /// in offscreen rendering there is none, so the host translates them itself.
     pub fn execute_edit_command(&self, webview: &Entity, command: EditCommand) {
         if let Some(browser) = self.browsers.get(webview)
             && let Some(frame) = browser.client.focused_frame()
@@ -219,11 +235,6 @@ impl Browsers {
         }
     }
 
-    /// Run named Blink editor commands (e.g. "MoveToBeginningOfLineAndModifySelection") on the
-    /// webview. Caret/selection movement has no CefFrame equivalent; the DevTools protocol's
-    /// `Input.dispatchKeyEvent` `commands` field is the OSR channel for it (what Puppeteer uses
-    /// for macOS editing emulation). The synthetic event carries no key, so the page sees
-    /// nothing beyond the command's effect.
     pub fn execute_editor_commands(&self, webview: &Entity, commands: &[&str]) {
         if let Some(browser) = self.browsers.get(webview) {
             let id = self.dev_tools_message_id.get().wrapping_add(1).max(1);
@@ -277,11 +288,6 @@ impl Browsers {
         }
     }
 
-    #[inline]
-    pub fn try_receive_texture(&self) -> core::result::Result<RenderTexture, TryRecvError> {
-        self.receiver.try_recv()
-    }
-
     /// Shows the DevTools for the specified webview.
     pub fn show_devtool(&self, webview: &Entity) {
         let Some(browser) = self.browsers.get(webview) else {
@@ -299,65 +305,6 @@ impl Browsers {
     pub fn close_devtools(&self, webview: &Entity) {
         if let Some(browser) = self.browsers.get(webview) {
             browser.host.close_dev_tools();
-        }
-    }
-
-    /// Navigate backwards.
-    ///
-    /// ## Reference
-    ///
-    /// - [`GoBack`](https://cef-builds.spotifycdn.com/docs/122.0/classCefBrowser.html#a85b02760885c070e4ad2a2705cea56cb)
-    pub fn go_back(&self, webview: &Entity) {
-        if let Some(browser) = self.browsers.get(webview)
-            && browser.client.can_go_back() == 1
-        {
-            browser.client.go_back();
-        }
-    }
-
-    /// Navigate forwards.
-    ///
-    /// ## Reference
-    ///
-    /// - [`GoForward`](https://cef-builds.spotifycdn.com/docs/122.0/classCefBrowser.html#aa8e97fc210ee0e73f16b2d98482419d0)
-    pub fn go_forward(&self, webview: &Entity) {
-        if let Some(browser) = self.browsers.get(webview)
-            && browser.client.can_go_forward() == 1
-        {
-            browser.client.go_forward();
-        }
-    }
-
-    /// Returns the current zoom level for the specified webview.
-    ///
-    /// ## Reference
-    ///
-    /// - [`GetZoomLevel`](https://cef-builds.spotifycdn.com/docs/122.0/classCefBrowserHost.html#a524d4a358287dab284c0dfec6d6d229e)
-    pub fn zoom_level(&self, webview: &Entity) -> Option<f64> {
-        self.browsers
-            .get(webview)
-            .map(|browser| browser.host.zoom_level())
-    }
-
-    /// Sets the zoom level for the specified webview.
-    ///
-    /// ## Reference
-    ///
-    /// - [`SetZoomLevel`](https://cef-builds.spotifycdn.com/docs/122.0/classCefBrowserHost.html#af2b7bf250ac78345117cd575190f2f7b)
-    pub fn set_zoom_level(&self, webview: &Entity, zoom_level: f64) {
-        if let Some(browser) = self.browsers.get(webview) {
-            browser.host.set_zoom_level(zoom_level);
-        }
-    }
-
-    /// Sets whether the audio is muted for the specified webview.
-    ///
-    /// ## Reference
-    ///
-    /// - [`SetAudioMuted`](https://cef-builds.spotifycdn.com/docs/122.0/classCefBrowserHost.html#a153d179c9ff202c8bb8869d2e9a820a2)
-    pub fn set_audio_muted(&self, webview: &Entity, muted: bool) {
-        if let Some(browser) = self.browsers.get(webview) {
-            browser.host.set_audio_muted(muted as _);
         }
     }
 
@@ -448,7 +395,7 @@ impl Browsers {
     ) -> Client {
         ClientHandlerBuilder::new(RenderHandlerBuilder::build(
             webview,
-            self.sender.clone(),
+            self.texture_sender.clone(),
             size.clone(),
             self.ime_caret.clone(),
         ))
@@ -471,6 +418,299 @@ impl Browsers {
         self.browsers
             .get(webview)
             .and_then(|b| b.client.focused_frame().is_some().then_some(b))
+    }
+}
+
+/// Bevy-side handle to the CEF browsers, kept as a `NonSend` resource. The API is the
+/// same on all platforms; what differs is where the calls run. CEF only allows browser
+/// calls on the browser-process UI thread — off it they fail, silently in release
+/// builds (`CreateBrowserSync` returns null). On macOS the external message pump makes
+/// the app main thread that thread, so methods call [`BrowsersInner`] directly; on
+/// Windows/Linux the multi-threaded message loop owns it, so methods enqueue
+/// `CefCommand`s that the webview plugin flushes to the CEF UI thread each frame
+/// (see `cef_thread`).
+pub struct Browsers {
+    #[cfg(target_os = "macos")]
+    inner: BrowsersInner,
+    #[cfg(not(target_os = "macos"))]
+    commands: Sender<CefCommand>,
+    #[cfg(not(target_os = "macos"))]
+    commands_rx: Receiver<CefCommand>,
+    #[cfg(not(target_os = "macos"))]
+    texture_sender: TextureSender,
+    receiver: TextureReceiver,
+}
+
+impl Default for Browsers {
+    fn default() -> Self {
+        let (sender, receiver) = async_channel::unbounded::<RenderTexture>();
+        #[cfg(target_os = "macos")]
+        {
+            Browsers {
+                inner: BrowsersInner::new(sender),
+                receiver,
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let (commands, commands_rx) = async_channel::unbounded();
+            Browsers {
+                commands,
+                commands_rx,
+                texture_sender: sender,
+                receiver,
+            }
+        }
+    }
+}
+
+impl Browsers {
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_browser(
+        &mut self,
+        webview: Entity,
+        uri: &str,
+        webview_size: Vec2,
+        requester: Requester,
+        ipc_event_sender: Sender<IpcEventRaw>,
+        system_cursor_icon_sender: SystemCursorIconSenderInner,
+        _window_handle: Option<RawWindowHandle>,
+    ) {
+        #[cfg(target_os = "macos")]
+        self.inner.create_browser(
+            webview,
+            uri,
+            webview_size,
+            requester,
+            ipc_event_sender,
+            system_cursor_icon_sender,
+            _window_handle,
+        );
+        // the window handle is only consumed on macOS (parent_view); it isn't Send, so
+        // it never rides a command
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::CreateBrowser {
+            webview,
+            uri: uri.to_owned(),
+            size: webview_size,
+            requester,
+            ipc_event_sender,
+            cursor_icon_sender: system_cursor_icon_sender,
+        });
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn send_external_begin_frame(&mut self) {
+        self.inner.send_external_begin_frame();
+    }
+
+    pub fn send_mouse_move<'a>(
+        &self,
+        webview: &Entity,
+        buttons: impl IntoIterator<Item = &'a MouseButton>,
+        position: Vec2,
+        mouse_leave: bool,
+    ) {
+        let modifiers = modifiers_from_mouse_buttons(buttons);
+        #[cfg(target_os = "macos")]
+        self.inner
+            .send_mouse_move(webview, modifiers, position, mouse_leave);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::MouseMove {
+            webview: *webview,
+            modifiers,
+            position,
+            mouse_leave,
+        });
+    }
+
+    /// `click_count` follows Chromium's convention (1 = single, 2 = double-click word select,
+    /// 3 = triple-click paragraph select); the caller synthesizes it from click cadence since
+    /// there's no OS window to do it.
+    pub fn send_mouse_click(
+        &self,
+        webview: &Entity,
+        position: Vec2,
+        button: MouseButton,
+        mouse_up: bool,
+        click_count: i32,
+    ) {
+        #[cfg(target_os = "macos")]
+        self.inner
+            .send_mouse_click(webview, position, button, mouse_up, click_count);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::MouseClick {
+            webview: *webview,
+            position,
+            button,
+            mouse_up,
+            click_count,
+        });
+    }
+
+    /// [`SendMouseWheelEvent`](https://cef-builds.spotifycdn.com/docs/106.1/classCefBrowserHost.html#acd5d057bd5230baa9a94b7853ba755f7)
+    pub fn send_mouse_wheel(&self, webview: &Entity, position: Vec2, delta: Vec2) {
+        #[cfg(target_os = "macos")]
+        self.inner.send_mouse_wheel(webview, position, delta);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::MouseWheel {
+            webview: *webview,
+            position,
+            delta,
+        });
+    }
+
+    pub fn send_key(&self, webview: &Entity, event: cef::KeyEvent) {
+        #[cfg(target_os = "macos")]
+        self.inner.send_key(webview, event);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::Key {
+            webview: *webview,
+            event,
+        });
+    }
+
+    /// Run an editing command on the webview's focused frame. Needed on macOS, where Blink
+    /// leaves Cmd shortcuts (undo/copy/...) to the AppKit menu a windowed browser would have —
+    /// in offscreen rendering there is none, so the host translates them itself.
+    pub fn execute_edit_command(&self, webview: &Entity, command: EditCommand) {
+        #[cfg(target_os = "macos")]
+        self.inner.execute_edit_command(webview, command);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::EditCommand {
+            webview: *webview,
+            command,
+        });
+    }
+
+    /// Run named Blink editor commands (e.g. "MoveToBeginningOfLineAndModifySelection") on the
+    /// webview. Caret/selection movement has no CefFrame equivalent; the DevTools protocol's
+    /// `Input.dispatchKeyEvent` `commands` field is the OSR channel for it (what Puppeteer uses
+    /// for macOS editing emulation). The synthetic event carries no key, so the page sees
+    /// nothing beyond the command's effect.
+    pub fn execute_editor_commands(&self, webview: &Entity, commands: &[&str]) {
+        #[cfg(target_os = "macos")]
+        self.inner.execute_editor_commands(webview, commands);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::EditorCommands {
+            webview: *webview,
+            commands: commands.iter().map(|c| (*c).to_owned()).collect(),
+        });
+    }
+
+    pub fn emit_event(&self, webview: &Entity, id: impl Into<String>, event: &serde_json::Value) {
+        #[cfg(target_os = "macos")]
+        self.inner.emit_event(webview, id, event);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::EmitEvent {
+            webview: *webview,
+            id: id.into(),
+            event: event.clone(),
+        });
+    }
+
+    pub fn resize(&self, webview: &Entity, size: Vec2) {
+        #[cfg(target_os = "macos")]
+        self.inner.resize(webview, size);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::Resize {
+            webview: *webview,
+            size,
+        });
+    }
+
+    /// Closes the browser associated with the given webview entity.
+    pub fn close(&mut self, webview: &Entity) {
+        #[cfg(target_os = "macos")]
+        self.inner.close(webview);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::Close { webview: *webview });
+    }
+
+    #[inline]
+    pub fn try_receive_texture(&self) -> core::result::Result<RenderTexture, TryRecvError> {
+        self.receiver.try_recv()
+    }
+
+    /// Shows the DevTools for the specified webview.
+    pub fn show_devtool(&self, webview: &Entity) {
+        #[cfg(target_os = "macos")]
+        self.inner.show_devtool(webview);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::ShowDevtool { webview: *webview });
+    }
+
+    /// Closes the DevTools for the specified webview.
+    pub fn close_devtools(&self, webview: &Entity) {
+        #[cfg(target_os = "macos")]
+        self.inner.close_devtools(webview);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::CloseDevtools { webview: *webview });
+    }
+
+    /// Reload every webview from its current URL (used for asset hot-reload).
+    pub fn reload(&self) {
+        #[cfg(target_os = "macos")]
+        self.inner.reload();
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::Reload);
+    }
+
+    /// ## Reference
+    ///
+    /// - [`ImeSetComposition`](https://cef-builds.spotifycdn.com/docs/122.0/classCefBrowserHost.html#a567b41fb2d3917843ece3b57adc21ebe)
+    pub fn set_ime_composition(&self, text: &str, cursor_utf16: Option<u32>) {
+        #[cfg(target_os = "macos")]
+        self.inner.set_ime_composition(text, cursor_utf16);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::ImeSetComposition {
+            text: text.to_owned(),
+            cursor_utf16,
+        });
+    }
+
+    /// ## Reference
+    ///
+    /// [`ImeFinishComposingText`](https://cef-builds.spotifycdn.com/docs/122.0/classCefBrowserHost.html#a567b41fb2d3917843ece3b57adc21ebe)
+    pub fn ime_finish_composition(&self, keep_selection: bool) {
+        #[cfg(target_os = "macos")]
+        self.inner.ime_finish_composition(keep_selection);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::ImeFinishComposition { keep_selection });
+    }
+
+    pub fn set_ime_commit_text(&self, text: &str) {
+        #[cfg(target_os = "macos")]
+        self.inner.set_ime_commit_text(text);
+        #[cfg(not(target_os = "macos"))]
+        self.send(CefCommand::ImeCommitText {
+            text: text.to_owned(),
+        });
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn send(&self, command: CefCommand) {
+        // unbounded channel: try_send only fails if closed, and we hold the receiver too
+        let _ = self.commands.try_send(command);
+    }
+
+    /// Post the one-off task that creates the CEF-thread browser state. Must be called
+    /// after `cef::initialize` (MessageLoopPlugin) and before the first drain.
+    #[cfg(not(target_os = "macos"))]
+    pub(crate) fn post_init_task(&self) {
+        super::cef_thread::post_init(self.texture_sender.clone());
+    }
+
+    /// True if commands are queued for the CEF UI thread.
+    #[cfg(not(target_os = "macos"))]
+    pub(crate) fn commands_pending(&self) -> bool {
+        !self.commands_rx.is_empty()
+    }
+
+    /// Post a task to the CEF UI thread draining and executing all queued commands.
+    #[cfg(not(target_os = "macos"))]
+    pub(crate) fn post_drain_task(&self) {
+        super::cef_thread::post_drain(self.commands_rx.clone());
     }
 }
 

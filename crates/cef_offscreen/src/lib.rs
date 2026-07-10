@@ -7,7 +7,10 @@
 //! offscreen/fullscreen-HUD use case: worldspace (mesh/sprite) webviews, BRP/bevy_remote, page
 //! navigation, zoom and audio-mute support were removed, and a number of fixes are folded in
 //! (renderer V8 context leak, cursor-icon entity spray, cef:// scheme flags + query stripping,
-//! per-app cache path, sibling helper + bundled framework resolution, CORS switch).
+//! per-app cache path, sibling helper + bundled framework resolution, CORS switch, and — ported
+//! from upstream's `cef_thread.rs` — marshalling all browser interaction onto the CEF UI thread
+//! on Windows/Linux, where `multi_threaded_message_loop` means off-thread calls like
+//! `CreateBrowserSync` silently fail).
 #![allow(clippy::type_complexity)]
 
 mod components;

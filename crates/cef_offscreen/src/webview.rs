@@ -63,7 +63,6 @@ impl Plugin for WebviewPlugin {
             // fullscreen/offscreen consumers get RenderTexture events without worldspace webviews
             .add_event::<RenderTexture>()
             .add_systems(Update, send_render_textures)
-            .add_systems(Main, send_external_begin_frame)
             .add_systems(
                 Update,
                 (
@@ -73,6 +72,22 @@ impl Plugin for WebviewPlugin {
             )
             .add_observer(apply_request_show_devtool)
             .add_observer(apply_request_close_devtool);
+
+        // macOS: the main thread is the CEF UI thread; pump explicit begin-frames in
+        // step with the app frame loop. Windows/Linux paint on CEF's own schedule.
+        #[cfg(target_os = "macos")]
+        app.add_systems(Main, send_external_begin_frame);
+
+        // Windows/Linux: browser objects live on CEF's UI thread (multi-threaded message
+        // loop). CEF is already initialized — MessageLoopPlugin::default() ran when the
+        // plugin tuple was constructed — so set up that thread's browser state now, and
+        // flush the frame's queued commands to it in Last (after Update systems,
+        // observers and hooks have enqueued).
+        #[cfg(not(target_os = "macos"))]
+        {
+            app.world().non_send_resource::<Browsers>().post_init_task();
+            app.add_systems(Last, post_drain_commands);
+        }
 
         app.world_mut()
             .register_component_hooks::<CefWebviewUri>()
@@ -90,8 +105,16 @@ fn added_webview(webviews: Query<Entity, Added<CefWebviewUri>>) -> bool {
     !webviews.is_empty()
 }
 
+#[cfg(target_os = "macos")]
 fn send_external_begin_frame(mut hosts: NonSendMut<Browsers>) {
     hosts.send_external_begin_frame();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn post_drain_commands(browsers: NonSend<Browsers>) {
+    if browsers.commands_pending() {
+        browsers.post_drain_task();
+    }
 }
 
 fn send_render_textures(mut ew: EventWriter<RenderTexture>, browsers: NonSend<Browsers>) {
