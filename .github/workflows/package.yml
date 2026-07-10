@@ -98,6 +98,13 @@ jobs:
             run: |
                 cargo install export-cef-dir --version "139.8.0+139.0.40"
                 export-cef-dir --force "$HOME/.local/share/cef"
+                # GITHUB_ENV reaches native processes verbatim: on windows the git-bash $HOME
+                # (/c/Users/...) would resolve as C:\c\Users\... — write a windows path there.
+                if [ "$RUNNER_OS" = "Windows" ]; then
+                  echo "CEF_PATH=$(cygpath -w "$HOME/.local/share/cef")" >> "$GITHUB_ENV"
+                else
+                  echo "CEF_PATH=$HOME/.local/share/cef" >> "$GITHUB_ENV"
+                fi
             shell: bash
 
           - name: Install alsa and udev
@@ -140,20 +147,15 @@ jobs:
               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=c:\ffmpeg-6.0`n"
     
               
+          # CEF_PATH comes from the Export CEF distribution step via GITHUB_ENV
           - name: Cargo build (windows)
             if: runner.os == 'windows'
-            env:
-                CEF_PATH: ${{ env.USERPROFILE }}\.local\share\cef
             run: cargo build --release --locked --package dcl_deno_ipc -j8 && cargo build --release --locked -j8
           - name: Cargo build (macos)
             if: runner.os == 'macos'
-            env:
-                CEF_PATH: /Users/runner/.local/share/cef
             run: cargo build --release --locked --package dcl_deno_ipc && cargo build --release --locked
           - name: Cargo build (linux)
             if: runner.os == 'linux'
-            env:
-                CEF_PATH: /home/runner/.local/share/cef
             run: cargo build --release --locked --package dcl_deno_ipc && cargo build --release --locked
 
           - name: Package common
