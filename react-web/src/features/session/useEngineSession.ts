@@ -685,11 +685,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             setDestinationPicked(false)
           })
       }
-      // No launch = the engine is already running at its own start realm (native's --server, or
-      // the mock): the pick maps to runtime directives instead of boot parameters. A world
-      // switches realm now (works pre-login); a parcel teleport needs a spawned player, so it's
-      // held until playerReady. Skip keeps the engine's own start realm rather than forcing
-      // DEFAULT_REALM — natively that realm was chosen on the command line.
+      // No launch = the engine is already running at its own start realm (native): the pick maps
+      // to runtime directives instead of boot parameters. A world switches realm now (works
+      // pre-login); a parcel teleport needs a spawned player, so it's held until playerReady.
+      // A parcel pick sends no realm change: if the picker was reachable at all the engine
+      // omitted ?realm=, which it only does when it booted on the HUD's own DEFAULT_REALM —
+      // a changeRealm to the same realm is NOT a no-op (full scene purge + reconnect). Skip
+      // likewise keeps the engine's own start realm.
       if (driver.launch == null) {
         if (dest?.kind === 'world') {
           driver.send({ kind: 'changeRealm', realm: dest.realm })
