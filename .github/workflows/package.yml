@@ -194,9 +194,16 @@ jobs:
                 cp ${{ env.CARGO_BUILD_DIR }}/dcl_deno_ipc.exe package/dcl_deno_ipc.exe
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy-cef.exe package/decentra-bevy-cef.exe
                 cp -r assets package/assets
-                # CEF runtime: libcef.dll + resources flattened next to the exe (standard layout)
-                cp -r "$env:USERPROFILE\.local\share\cef\Release\*" package/ -ErrorAction SilentlyContinue
-                cp -r "$env:USERPROFILE\.local\share\cef\Resources\*" package/ -ErrorAction SilentlyContinue
+                # CEF runtime next to the exe (standard layout). export-cef-dir FLATTENS the
+                # distribution: dlls, snapshots, paks and locales all live at the root of the
+                # export dir — there is no Release/ or Resources/ subdir.
+                $cef = "$env:USERPROFILE\.local\share\cef"
+                cp "$cef\*.dll" package/
+                cp "$cef\*.bin" package/
+                cp "$cef\*.pak" package/
+                cp "$cef\*.dat" package/
+                cp "$cef\*.json" package/
+                cp -r "$cef\locales" package/locales
                 cp ${{ env.FFMPEG_DIR }}/bin/*.dll package
                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
@@ -206,13 +213,17 @@ jobs:
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
                 cp ${{ env.CARGO_BUILD_DIR }}/dcl_deno_ipc package/dcl_deno_ipc
-                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy-cef package/decentra-bevy-cef || true
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy-cef package/decentra-bevy-cef
                 cp -r assets package/assets
-                # CEF runtime: libcef.so + resources flattened next to the exe (standard layout).
+                # CEF runtime next to the exe (standard layout). export-cef-dir FLATTENS the
+                # distribution: .so, snapshots, paks and locales all live at the root of the
+                # export dir — there is no Release/ or Resources/ subdir.
                 # NOTE (best-effort): unless cef-dll-sys sets an $ORIGIN rpath, linux users may
                 # need LD_LIBRARY_PATH=. to launch; AppImage packaging of CEF is not attempted.
-                cp -r "$HOME/.local/share/cef/Release/." package/ 2>/dev/null || true
-                cp -r "$HOME/.local/share/cef/Resources/." package/ 2>/dev/null || true
+                cef="$HOME/.local/share/cef"
+                cp "$cef"/*.so* "$cef"/*.bin "$cef"/*.pak "$cef"/*.dat "$cef"/*.json package/
+                cp -r "$cef/locales" package/locales
+                if [ -f "$cef/chrome-sandbox" ]; then cp "$cef/chrome-sandbox" package/; fi
                 # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
                 cd package
                 tar -czvf ../${{ env.PACKAGE_FILE }} *            
