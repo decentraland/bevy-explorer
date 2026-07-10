@@ -233,18 +233,29 @@ jobs:
             continue-on-error: true
             run: |
               cd deploy/linux
-              mkdir BevyExplorer.AppDir/usr
-              mkdir BevyExplorer.AppDir/usr/bin
+              mkdir -p BevyExplorer.AppDir/usr/bin BevyExplorer.AppDir/usr/lib
               cp ../../target/release/decentra-bevy BevyExplorer.AppDir/usr/bin
               cp ../../target/release/dcl_deno_ipc BevyExplorer.AppDir/usr/bin
+              # CEF: decentra-bevy links libcef.so, so linuxdeploy must be able to resolve
+              # it (LD_LIBRARY_PATH below) — it then bundles it into usr/lib and patches
+              # rpaths. The runtime resources (paks, icudtl, snapshots, locales) are not
+              # library dependencies, so copy them next to where libcef.so will land, and
+              # the subprocess helper is found as a sibling of the main binary (usr/bin).
+              # export-cef-dir FLATTENS the distribution: everything is at the export root.
+              cef="$HOME/.local/share/cef"
+              cp ../../target/release/decentra-bevy-cef BevyExplorer.AppDir/usr/bin
+              cp "$cef"/*.bin "$cef"/*.pak "$cef"/*.dat "$cef"/*.json BevyExplorer.AppDir/usr/lib/
+              cp -r "$cef/locales" BevyExplorer.AppDir/usr/lib/locales
               wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
               wget https://github.com/AppImage/appimagetool/releases/latest/download/appimagetool-x86_64.AppImage
               chmod +x ./linuxdeploy-x86_64.AppImage ./appimagetool-x86_64.AppImage
               export PATH="$(pwd):$PATH"
               export APPIMAGETOOL="$(pwd)/appimagetool.AppImage"
+              export LD_LIBRARY_PATH="$cef:$LD_LIBRARY_PATH"
               ./linuxdeploy-x86_64.AppImage --appdir BevyExplorer.AppDir --output appimage --create-desktop-file \
                 --executable=../../target/release/decentra-bevy \
                 --executable=../../target/release/dcl_deno_ipc \
+                --executable=../../target/release/decentra-bevy-cef \
                 --icon-file=decentra-bevy.png
               mv ./decentra-bevy-x86_64.AppImage ${{ env.APPIMAGE_FILE }}
               gh release upload "${{ needs.create-release.outputs.tag_name }}" ${{ env.APPIMAGE_FILE }}
