@@ -699,6 +699,9 @@ fn lookup_local_realm(
         .ok_or("realm dir has no parent")?
         .to_string_lossy()
         .replace('\\', "/");
+    // windows canonicalize returns a verbatim path (`\\?\C:\...`); the prefix is
+    // meaningless inside the url and the recombined read path is rejected (os error 123)
+    let content_root = content_root.trim_start_matches("//?/");
     let file_urn = format!("urn:decentraland:entity:{hash}?=&baseUrl=file://{content_root}/");
 
     Ok((

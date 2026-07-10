@@ -1586,6 +1586,13 @@ impl AssetReader for IpfsIo {
             // reads straight from disk — no cache write, no request slot, no retries.
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(local) = remote.strip_prefix("file://") {
+                // url normalization writes windows paths as `file:///C:/...`; the path
+                // component's leading slash isn't part of the disk path, so strip it
+                // when a drive letter follows (unix absolute paths keep theirs)
+                let local = match local.as_bytes() {
+                    [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => &local[1..],
+                    _ => local,
+                };
                 let data = ipfs_io_read_state.send_failure(std::fs::read(local).map_err(|e| {
                     AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
                         "file realm read `{remote}`: {e}"
