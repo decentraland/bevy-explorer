@@ -36,7 +36,7 @@ impl AvatarColor {
 
 // Optional fields are omitted when absent, not serialized as `null`: other explorers
 // fail to parse present-but-null fields in deployed profiles.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AvatarWireFormat {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -56,6 +56,13 @@ pub struct AvatarWireFormat {
     pub emotes: Option<Vec<AvatarEmote>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snapshots: Option<AvatarSnapshots>,
+    // Load-bearing: this flatten field forces map-mode (named) encoding. Without it,
+    // rmp's compact `to_vec` (see rmp_encode) writes this struct as a positional array,
+    // and the `skip_serializing_if` fields above silently shorten it and shift the
+    // remaining slots, corrupting the native scene<->renderer IPC round-trip. As a
+    // bonus it preserves unknown avatar keys, mirroring SerializedProfile::extra_fields.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Deserialize)]
