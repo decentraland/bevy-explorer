@@ -46,11 +46,30 @@ pub fn keyboard_modifiers(
 pub fn create_cef_key_events(modifiers: u32, key_event: &KeyboardInput) -> Vec<cef::KeyEvent> {
     let windows_key_code = keycode_to_windows_vk(key_event.key_code);
     let native_key_code = to_native_key_code(&key_event.key_code) as _;
-    let character = key_event
+    let mut character = key_event
         .text
         .as_ref()
         .and_then(|text| text.chars().next())
         .unwrap_or('\0');
+    // Release events carry no `text`, but the logical key still knows the character.
+    if character == '\0'
+        && let bevy::input::keyboard::Key::Character(c) = &key_event.logical_key
+    {
+        character = c.chars().next().unwrap_or('\0');
+    }
+    // macOS: CEF synthesizes an NSEvent from this struct, and when BOTH character fields
+    // are zero it assumes a modifier key and uses NSEventTypeFlagsChanged — Chromium then
+    // re-derives the event type from modifier state, which turns KEYUPs into RawKeyDowns
+    // (arrows/backspace re-fire on release: caret moves twice per press). Carry the
+    // characters a real NSEvent would (AppKit function-key code points / ASCII control
+    // chars) so the synthesized event keeps its true type. Modifier keys stay
+    // characterless on purpose: FlagsChanged is the correct path for them.
+    #[cfg(target_os = "macos")]
+    let character = if character == '\0' {
+        mac_key_character(key_event.key_code)
+    } else {
+        character
+    };
     let modifiers = if key_event.repeat {
         modifiers | cef_event_flags_t::EVENTFLAG_IS_REPEAT as u32
     } else {
@@ -75,13 +94,55 @@ pub fn create_cef_key_events(modifiers: u32, key_event: &KeyboardInput) -> Vec<c
         ButtonState::Pressed => {
             let mut events = vec![make(cef_key_event_type_t::KEYEVENT_RAWKEYDOWN)];
             // CHAR only for text-producing keys: control keys (backspace, arrows, escape...) act
-            // through the keydown's default handling, and a stray CHAR would insert junk.
-            if !character.is_control() || character == '\r' || character == '\t' {
+            // through the keydown's default handling, and a stray CHAR would insert junk. The
+            // AppKit function-key code points (U+F700..) are not control chars but must not
+            // produce CHAR either.
+            if (!character.is_control() && !('\u{F700}'..='\u{F8FF}').contains(&character))
+                || character == '\r'
+                || character == '\t'
+            {
                 events.push(make(cef_key_event_type_t::KEYEVENT_CHAR));
             }
             events
         }
         ButtonState::Released => vec![make(cef_key_event_type_t::KEYEVENT_KEYUP)],
+    }
+}
+
+/// The character a real macOS NSEvent carries for keys that produce no text: AppKit
+/// function-key code points (U+F700 block) and ASCII control characters. Zero for
+/// everything else — notably modifiers, whose NSEvents genuinely have no characters.
+#[cfg(target_os = "macos")]
+fn mac_key_character(keycode: KeyCode) -> char {
+    match keycode {
+        KeyCode::ArrowUp => '\u{F700}',
+        KeyCode::ArrowDown => '\u{F701}',
+        KeyCode::ArrowLeft => '\u{F702}',
+        KeyCode::ArrowRight => '\u{F703}',
+        KeyCode::F1 => '\u{F704}',
+        KeyCode::F2 => '\u{F705}',
+        KeyCode::F3 => '\u{F706}',
+        KeyCode::F4 => '\u{F707}',
+        KeyCode::F5 => '\u{F708}',
+        KeyCode::F6 => '\u{F709}',
+        KeyCode::F7 => '\u{F70A}',
+        KeyCode::F8 => '\u{F70B}',
+        KeyCode::F9 => '\u{F70C}',
+        KeyCode::F10 => '\u{F70D}',
+        KeyCode::F11 => '\u{F70E}',
+        KeyCode::F12 => '\u{F70F}',
+        KeyCode::Insert => '\u{F727}',
+        KeyCode::Delete => '\u{F728}',
+        KeyCode::Home => '\u{F729}',
+        KeyCode::End => '\u{F72B}',
+        KeyCode::PageUp => '\u{F72C}',
+        KeyCode::PageDown => '\u{F72D}',
+        KeyCode::Backspace | KeyCode::NumpadBackspace => '\u{7F}',
+        KeyCode::Escape => '\u{1B}',
+        KeyCode::Enter | KeyCode::NumpadEnter => '\r',
+        KeyCode::Tab => '\t',
+        KeyCode::Space => ' ',
+        _ => '\0',
     }
 }
 
