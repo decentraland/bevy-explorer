@@ -62,7 +62,10 @@ impl Default for MessageLoopPlugin {
             browser_subprocess_path: render_process_path()
                 .map(|p| p.to_str().unwrap_or_default().into())
                 .unwrap_or_default(),
-            #[cfg(target_os = "macos")]
+            // We never provide CEF sandbox info (initialize gets a null sandbox_info, and on
+            // linux the SUID chrome-sandbox helper can't be shipped by a source build or an
+            // AppImage — with the sandbox left on, the zygote host FATALs at startup:
+            // zygote_host_impl_linux.cc "Check failed: . : No such file or directory").
             no_sandbox: true as _,
             // A per-executable cache dir: the default (shared) path triggers Chromium's process
             // singleton across different host apps, which can strand/kill renderer subprocesses.
