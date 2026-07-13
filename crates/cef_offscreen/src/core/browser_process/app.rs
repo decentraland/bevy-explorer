@@ -64,6 +64,11 @@ impl ImplApp for BrowserProcessAppBuilder {
             command_line.append_switch(Some(&"disable-gpu-compositing".into()));
             command_line.append_switch(Some(&"disable-software-rasterizer".into()));
         }
+        // GPU work is fully disabled above, so host the stub GPU service in the browser
+        // process rather than launching a helper that exists only to sit idle. On linux
+        // that helper failed to launch outright on some setups (error_code=1002 ×3 →
+        // FATAL "GPU process isn't usable. Goodbye." kills the app).
+        command_line.append_switch(Some(&"in-process-gpu".into()));
     }
 
     fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
