@@ -6,6 +6,8 @@
 import {
   BRIDGE_CHANNEL,
   type Envelope,
+  type Outfit,
+  type OutfitsMetadata,
   type PageToScene,
   type Profile,
   type SceneToPage,
@@ -108,6 +110,17 @@ const mockWearables: Wearable[] = BASE.map((b, i) => {
   }
 })
 
+// A saved outfit from a set of wearable urns (fixed colors/body shape — no real avatar in the mock).
+const BASE_MALE = 'urn:decentraland:off-chain:base-avatars:BaseMale'
+const mockOutfit = (urns: string[]): Outfit => ({
+  bodyShape: BASE_MALE,
+  eyes: { color: { r: 0.37, g: 0.22, b: 0.19 } },
+  hair: { color: { r: 0.6, g: 0.36, b: 0.2 } },
+  skin: { color: { r: 0.8, g: 0.6, b: 0.47 } },
+  wearables: urns,
+  forceRender: []
+})
+
 const v = (name: string): { name: string; description: string } => ({ name, description: '' })
 
 // Stateful so the mock's controls actually move when changed (setSetting → re-emit).
@@ -186,6 +199,14 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     isPublic: i % 2 === 0,
     dateTime: String(Math.floor((mockNow - i * 3 * DAY) / 1000))
   }))
+  // Stateful saved outfits so save/delete persist across reopens (mirrors the real store).
+  const mockOutfits: OutfitsMetadata = {
+    outfits: [
+      { slot: 0, outfit: mockOutfit(mockWearables.slice(0, 5).map((w) => w.urn)) },
+      { slot: 2, outfit: mockOutfit(mockWearables.slice(5, 10).map((w) => w.urn)) }
+    ],
+    namesForExtraSlots: []
+  }
   const ch = new BroadcastChannel(BRIDGE_CHANNEL)
   const wait = (ms: number): Promise<void> =>
     new Promise((r) => setTimeout(r, ms))
@@ -360,6 +381,33 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       const set = new Set(msg.urns)
       for (const w of mockWearables) w.equipped = set.has(w.urn)
       reply({ kind: 'wearables', wearables: mockWearables })
+      return
+    }
+    if (msg.kind === 'getOutfits') {
+      reply({ kind: 'outfits', metadata: mockOutfits })
+      return
+    }
+    if (msg.kind === 'saveOutfit') {
+      // Capture the currently-equipped mock wearables as the saved look.
+      mockOutfits.outfits = mockOutfits.outfits.filter((o) => o.slot !== msg.slot)
+      mockOutfits.outfits.push({ slot: msg.slot, outfit: mockOutfit(mockWearables.filter((w) => w.equipped).map((w) => w.urn)) })
+      mockOutfits.outfits.sort((a, b) => a.slot - b.slot)
+      reply({ kind: 'outfits', metadata: mockOutfits })
+      return
+    }
+    if (msg.kind === 'deleteOutfit') {
+      mockOutfits.outfits = mockOutfits.outfits.filter((o) => o.slot !== msg.slot)
+      reply({ kind: 'outfits', metadata: mockOutfits })
+      return
+    }
+    if (msg.kind === 'equipOutfit') {
+      // Reflect the outfit's wearables as equipped so the Wearables tab updates too.
+      const found = mockOutfits.outfits.find((o) => o.slot === msg.slot)
+      if (found) {
+        const set = new Set(found.outfit.wearables)
+        for (const w of mockWearables) w.equipped = set.has(w.urn)
+        reply({ kind: 'wearables', wearables: mockWearables })
+      }
       return
     }
     if (msg.kind === 'setMic') {

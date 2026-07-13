@@ -25,6 +25,8 @@ import type {
   HoverAction,
   NavAction,
   NearbyMember,
+  OutfitSlot,
+  OutfitsMetadata,
   PermissionLevelChoice,
   PermissionRequestMessage,
   ProximityTip,
@@ -42,6 +44,16 @@ export interface BackpackState {
   equip: (urns: string[]) => void
   /** Preview a set on the avatar without persisting (selecting); null reverts to the profile. */
   preview: (urns: string[] | null) => void
+  /** Saved outfits (Outfits tab), by slot index. */
+  outfits: OutfitSlot[]
+  /** Number of outfit slots available (5 free + 1 per owned DCL name, capped at 10). */
+  outfitSlots: number
+  /** Save the current look into a slot. */
+  saveOutfit: (slot: number) => void
+  /** Delete a saved outfit slot. */
+  deleteOutfit: (slot: number) => void
+  /** Equip a saved outfit (applies its body shape, colors and wearables). */
+  equipOutfit: (slot: number) => void
 }
 
 export interface CommunitiesState {
@@ -404,6 +416,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [emotesOpen, setEmotesOpen] = useState(false)
   const [mic, setMic] = useState({ enabled: false, available: false })
   const [wearables, setWearables] = useState<Wearable[]>([])
+  const [outfits, setOutfits] = useState<OutfitsMetadata>({ outfits: [], namesForExtraSlots: [] })
   const [backpackOpen, setBackpackOpen] = useState(false)
   const [communities, setCommunities] = useState<Community[]>([])
   const [communitiesOpen, setCommunitiesOpen] = useState(false)
@@ -521,6 +534,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'wearables':
           setWearables(msg.wearables)
+          break
+        case 'outfits':
+          setOutfits(msg.metadata)
           break
         case 'communities':
           setCommunities(msg.communities)
@@ -700,7 +716,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // re-emit fresh data through the relay, so we never need to re-pull on reopen. Avoids
   // hammering the catalyst every time a menu is reopened.
   const ensure = useCallback(
-    (kind: 'getSettings' | 'getProfile' | 'getEmotes' | 'getWearables' | 'getCommunities' | 'getGallery') => {
+    (kind: 'getSettings' | 'getProfile' | 'getEmotes' | 'getWearables' | 'getOutfits' | 'getCommunities' | 'getGallery') => {
       if (fetchedRef.current.has(kind)) return
       fetchedRef.current.add(kind)
       driverRef.current?.send({ kind })
@@ -764,6 +780,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       exclusive(setBackpackOpen, () => {
         ensure('getWearables')
         ensure('getEmotes') // Backpack's Emotes tab reuses the emotes list.
+        ensure('getOutfits') // Backpack's Outfits tab.
       }),
     [exclusive, ensure]
   )
@@ -979,6 +996,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const previewWearables = useCallback((urns: string[] | null) => {
     driverRef.current?.send({ kind: 'previewAvatar', urns })
+  }, [])
+  const saveOutfit = useCallback((slot: number) => {
+    driverRef.current?.send({ kind: 'saveOutfit', slot })
+  }, [])
+  const deleteOutfit = useCallback((slot: number) => {
+    driverRef.current?.send({ kind: 'deleteOutfit', slot })
+  }, [])
+  const equipOutfit = useCallback((slot: number) => {
+    driverRef.current?.send({ kind: 'equipOutfit', slot })
   }, [])
   const createCommunity = useCallback(
     (input: { name: string; description: string; privacy: 'public' | 'private'; discoverable: boolean }) => {
@@ -1274,7 +1300,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       markAllRead: markNotificationsRead
     },
     emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
-    backpack: { list: wearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables },
+    backpack: {
+      list: wearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables,
+      outfits: outfits.outfits, outfitSlots: Math.min(10, 5 + outfits.namesForExtraSlots.length),
+      saveOutfit, deleteOutfit, equipOutfit
+    },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
     map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
     places: { open: placesOpen, toggle: togglePlaces },

@@ -98,6 +98,10 @@ export type PageToScene =
   | GetWearablesRequest
   | EquipRequest
   | PreviewAvatarRequest
+  | GetOutfitsRequest
+  | SaveOutfitRequest
+  | DeleteOutfitRequest
+  | EquipOutfitRequest
   | GetCommunitiesRequest
   | CreateCommunityRequest
   | JoinCommunityRequest
@@ -639,6 +643,64 @@ export interface PreviewAvatarRequest {
   urns: string[] | null
 }
 
+/** RGB color, components 0..1 (matches PBAvatarBase / the deployed avatar entity). */
+export interface RGBColor {
+  r: number
+  g: number
+  b: number
+}
+
+/** A saved avatar look (backpack Outfits tab). The shape mirrors the catalyst `outfits` entity's
+ *  per-slot outfit so a saved look can later be deployed unchanged (Phase 2); Phase 1 persists
+ *  these locally (localStorage in the bridge scene). */
+export interface Outfit {
+  bodyShape: string
+  eyes: { color: RGBColor }
+  hair: { color: RGBColor }
+  skin: { color: RGBColor }
+  wearables: string[]
+  forceRender: string[]
+}
+
+/** One saved outfit at a fixed slot index (0-based). */
+export interface OutfitSlot {
+  slot: number
+  outfit: Outfit
+}
+
+/** The player's saved outfits + owned DCL names that unlock extra slots (beyond the 5 free). */
+export interface OutfitsMetadata {
+  outfits: OutfitSlot[]
+  namesForExtraSlots: string[]
+}
+
+export interface OutfitsMessage {
+  kind: 'outfits'
+  metadata: OutfitsMetadata
+}
+
+export interface GetOutfitsRequest {
+  kind: 'getOutfits'
+}
+
+/** Save the player's CURRENT look into a slot (scene captures getPlayer(); re-emits outfits). */
+export interface SaveOutfitRequest {
+  kind: 'saveOutfit'
+  slot: number
+}
+
+/** Remove a saved outfit slot (re-emits outfits). */
+export interface DeleteOutfitRequest {
+  kind: 'deleteOutfit'
+  slot: number
+}
+
+/** Equip a saved outfit: apply its body shape, colors and wearables to the profile. */
+export interface EquipOutfitRequest {
+  kind: 'equipOutfit'
+  slot: number
+}
+
 export interface GetEmotesRequest {
   kind: 'getEmotes'
 }
@@ -739,6 +801,7 @@ export type SceneToPage =
   | EmotesMessage
   | MicMessage
   | WearablesMessage
+  | OutfitsMessage
   | CommunitiesMessage
   | CommunityDetailMessage
   | MapMessage
