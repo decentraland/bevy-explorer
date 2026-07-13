@@ -88,6 +88,14 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('browser-gate.png')
   })
 
+  // GPU gate — the "enable WebGPU / hardware acceleration" page shown before boot when no usable GPU
+  // adapter is found (forced with ?gate=gpu; real detection is the async probe in App).
+  test('gpu gate', async ({ page }) => {
+    await page.goto('/?gate=gpu')
+    await settle(page)
+    await expect(page).toHaveScreenshot('gpu-gate.png')
+  })
+
   // Engine error popup — ?simerror=launch seeds a sample boot-panic (fatal: Reload + Copy, no
   // Dismiss). Mock mode → no engine iframe, fully deterministic.
   test('engine error popup', async ({ page }) => {
