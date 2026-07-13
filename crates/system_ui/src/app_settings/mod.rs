@@ -4,8 +4,8 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiR
 use common::structs::SsaoSetting;
 use common::{
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, PointAtMarkerVisibility,
-        PreviewMode, SettingsTab, ShadowSetting, WindowSetting,
+        AaSetting, AppConfig, BloomSetting, CameraSmoothing, DofSetting, FogSetting,
+        PointAtMarkerVisibility, PreviewMode, SettingsTab, ShadowSetting, WindowSetting,
     },
     util::TryPushChildrenEx,
 };
@@ -194,6 +194,7 @@ fn set_app_settings_content(
             spawn_int_setting_template::<ScrollSensitivitySetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<MovementSensitivitySetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<CameraSensitivitySetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<CameraSmoothing>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<PointAtMarkerVisibility>(&mut commands, &dui, &config),
         ]);
 
