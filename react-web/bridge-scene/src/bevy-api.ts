@@ -107,8 +107,9 @@ export type BevyApiInterface = {
   getPermissionRequestStream: () => Promise<AsyncIterable<PermissionRequestRaw>>
   setSinglePermission: (body: { id: number; allow: boolean }) => void
   setPermanentPermission: (body: SetPermanentPermissionBody) => void
-  /** Live scenes (hash → title), for resolving a permission request's scene name. */
-  liveSceneInfo: () => Promise<Array<{ hash: string; title: string }>>
+  /** Live scenes, for resolving a permission request's scene name and the current scene to reload
+   *  (`parcels`/`isSuper` let `/reload` target the scene the player stands in, never the bridge). */
+  liveSceneInfo: () => Promise<Array<{ hash: string; title: string; parcels?: Array<{ x: number; y: number }>; isSuper?: boolean }>>
   setAvatar: (data: { equip: { wearableUrns: string[]; emoteUrns: string[]; forceRender: string[] } }) => Promise<unknown>
   kernelFetch: (req: KernelFetchRequest) => Promise<KernelFetchResponse>
   getRealmProvider: () => Promise<string>

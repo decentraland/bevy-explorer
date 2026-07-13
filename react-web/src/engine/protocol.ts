@@ -45,6 +45,19 @@ export interface SendChatRequest {
   channel: string
 }
 
+/** Reload the current scene(s) — the `/reload` chat command (scene calls SystemApi.reload). */
+export interface ReloadSceneRequest {
+  kind: 'reloadScene'
+}
+
+/** Run an engine console command (the `/commands` chat command → `help`); the scene relays the
+ *  console's text output back as a system chat message. */
+export interface ConsoleCommandRequest {
+  kind: 'consoleCommand'
+  command: string
+  args?: string[]
+}
+
 /** Sidebar nav actions the React sidebar triggers in the scene (open a menu/popup,
  *  toggle emote wheel / mic) until those panels are themselves migrated to React. */
 export type NavAction =
@@ -66,6 +79,8 @@ export interface NavActionRequest {
 export type PageToScene =
   | RpcRequest
   | SendChatRequest
+  | ReloadSceneRequest
+  | ConsoleCommandRequest
   | NavActionRequest
   | FriendActionRequest
   | GetSettingsRequest

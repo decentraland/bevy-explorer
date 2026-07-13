@@ -205,7 +205,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     state-lib-free). Also a test cost (harness passes props today; Context needs a provider wrapper).
     Recommendation: keep prop-drilling; add a single `SessionContext` only if drilling ergonomics annoy;
     memoized slices / store only if re-renders become a *measured* problem. **One concrete exception to
-    "renders aren't the bottleneck": item 36 — `proximity` is a per-frame (~60/s) re-render source while
+    "renders aren't the bottleneck": item 35 — `proximity` is a per-frame (~60/s) re-render source while
     near an interactable, not a user-action change.**
 26. `[arch]` **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture,
     low priority*. Entering a scene/world (and, ideally, opening HUD surfaces like the map/backpack)
@@ -247,22 +247,16 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     wiring the profile deploy through the bridge/engine. Larger than the view-parity item (#16) — hence
     separate and lower priority than showing OTHER users' passports correctly. Reference the old client
     for the flow (`unity-explorer` `Explorer/Assets/DCL/UI/`, `bevy-ui-scene` profile screens).
-31. `[feature]` **Chat slash-commands (`/help`, `/goto`, `/world`)** — *feature parity, cross-client*.
-    All three prior clients have these (`bevy-ui-scene`'s `sendChatMessage`, unity-explorer's
-    `IChatCommand`/`GoToChatCommand`/`HelpChatCommand`), so they're a real gap, not polish — but net-new
-    parsing/dispatch in react-web's `Chat.tsx` `send()`, so scoped separately from the Enter-focus fix
-    (`fix/02-chat-enter-focus`). `/goto <x,y>` and `/goto <world>.dcl.eth` need `teleportTo`/`changeRealm`
-    over the bridge (see `onTeleport`/`onVisitWorld` already wired for in-message links — same plumbing).
-32. `[feature]` **Chat rate limiting** — *hardening, not in bevy-ui-scene*. unity-explorer's
+31. `[feature]` **Chat rate limiting** — *hardening, not in bevy-ui-scene*. unity-explorer's
     `MultiplayerChatMessagesBus` dedupes + rate-limits + buffers sends; react-web (like bevy-ui-scene)
     sends on every Enter with no client-side throttle. Only worth adding if spam becomes a real problem
     server-side rate limiting doesn't already cover.
-33. `[feature]` **DMs / private chat channels** — *net-new, not a port*. Neither `bevy-ui-scene` nor
+32. `[feature]` **DMs / private chat channels** — *net-new, not a port*. Neither `bevy-ui-scene` nor
     today's react-web have anything beyond the single "Nearby" channel; unity-explorer's
     `ChatChannelsPresenter`/`ChatChannelType.USER` is the only prior-art reference. Large scope (channel
     list UI, per-conversation history, member-list → "message" entry point) — flag for a dedicated design
     pass, not a drive-by addition.
-34. `[arch]` **SSO redirect on the login screen throws away the in-flight engine WASM download** —
+33. `[arch]` **SSO redirect on the login screen throws away the in-flight engine WASM download** —
     *boot perf, not blocking / not a direct bug*. On the login/loading screen the engine WASM is
     already downloading in the background while the sign-in buttons are live. "Start with account" /
     "Use different account" call `redirectToAuth()` → `location.replace('/auth/login?redirectTo=…')`
@@ -276,7 +270,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     a hidden **iframe** and read back the identity via `postMessage`/`storage` (auth site must allow
     being framed same-origin — verify its CSP/`X-Frame-Options`). Both are more moving parts than the
     current straight redirect, so only worth it if boot time on login is a measured concern.
-35. `[feature]` **Radial hover prompts — viewport clamping near screen edges** — *polish, non-blocking;
+34. `[feature]` **Radial hover prompts — viewport clamping near screen edges** — *polish, non-blocking;
     point to review*. When the free cursor is near a viewport edge, the fixed-offset radial slots
     (`HOVER_SLOTS` in `features/pointer/Pointer.tsx`) that point toward that edge run off-screen (cursor
     at the right edge → the right-middle prompt's label clips). No clamp today. Arguments for leaving it:
@@ -289,7 +283,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     `ProfileCard`, or flip slot sides near the edge. Review comment (note: it says "root is
     overflow: hidden" — there's no such rule, the clip is just the viewport edge):
     https://github.com/decentraland/bevy-explorer/pull/915#discussion_r3529180273
-36. `[arch]` **`proximity` pushes a full HUD re-render every frame while near an interactable** — *perf,
+35. `[arch]` **`proximity` pushes a full HUD re-render every frame while near an interactable** — *perf,
     when profiling confirms*. Unlike most session changes (user actions), the proximity domain is a
     **per-frame** source: `registerProximity`'s `ctx.push` reprojects each in-range entity world→screen
     and calls `ctx.send({ kind: 'proximity', tips })` **every frame with no dedupe**
@@ -308,7 +302,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     re-render only `<Pointer>`, not the tree. Optional bridge-side dedupe (skip `ctx.send` when `tips`
     is unchanged) zeroes the standing-still case but not the moving one (positions legitimately change
     each frame), so the store is the structural fix.
-37. `[bug]` **Chat name click shows the raw address for players who left nearby range** — *UX regression,
+36. `[bug]` **Chat name click shows the raw address for players who left nearby range** — *UX regression,
     P2 pending PR #915 review*. `Chat`/`FriendsPanel` now open the shared card via
     `openProfileCard(user.address, …)` (address only); the container re-resolves name/picture with
     `resolveIdentity` (nearby roster → friends/requests → fetched passports). For a **non-friend who

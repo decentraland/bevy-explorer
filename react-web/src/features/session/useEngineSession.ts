@@ -9,6 +9,7 @@ import { DEFAULT_REALM } from '../engine/EngineHost'
 import { closeTopPopup } from '../../design'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
+import { parseChatCommand } from '../chat/chatCommands'
 import type {
   AppNotification,
   ChatMessage,
@@ -610,11 +611,46 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     }
   }, [playerReady])
 
-  const sendChat = useCallback((text: string) => {
-    const trimmed = text.trim()
-    if (trimmed)
-      driverRef.current?.send({ kind: 'sendChat', message: trimmed, channel: 'Nearby' })
+  // Inject a local "DCL System" line (empty sender → rendered as the system member) for command
+  // feedback (/help, /goto usage, /commands output) that must NOT be broadcast to other players.
+  const pushSystemMessage = useCallback((message: string) => {
+    setMessages((prev) =>
+      [...prev, { sender: '', message, channel: 'Nearby', id: chatId.current++, ts: Date.now() }].slice(-MAX_CHAT_LINES)
+    )
   }, [])
+
+  // Chat send doubles as the slash-command interceptor (parity with bevy-ui-scene's `sendChatMessage`):
+  // a recognized `/command` never reaches other players — it teleports, reloads, runs an engine console
+  // command, or echoes a system message. Anything else is sent as a normal Nearby message.
+  const sendChat = useCallback(
+    (text: string) => {
+      const cmd = parseChatCommand(text)
+      switch (cmd.kind) {
+        case 'send':
+          if (cmd.text) driverRef.current?.send({ kind: 'sendChat', message: cmd.text, channel: 'Nearby' })
+          break
+        case 'goto':
+          driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
+          break
+        case 'genesis':
+          driverRef.current?.send({ kind: 'changeRealm', realm: DEFAULT_REALM })
+          break
+        case 'world':
+          driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
+          break
+        case 'reload':
+          driverRef.current?.send({ kind: 'reloadScene' })
+          break
+        case 'commands':
+          driverRef.current?.send({ kind: 'consoleCommand', command: 'help' })
+          break
+        case 'system':
+          pushSystemMessage(cmd.message)
+          break
+      }
+    },
+    [pushSystemMessage]
+  )
 
   // Toggle one exclusive panel (closing chat + all others); optionally run onOpen.
   // All exclusive (one-at-a-time) panel setters. Toggling one closes chat + the rest.
