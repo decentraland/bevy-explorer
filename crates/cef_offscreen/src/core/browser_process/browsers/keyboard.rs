@@ -45,6 +45,9 @@ pub fn keyboard_modifiers(
 /// types text but never fires `keydown`, silently breaking every page hotkey.
 pub fn create_cef_key_events(modifiers: u32, key_event: &KeyboardInput) -> Vec<cef::KeyEvent> {
     let windows_key_code = keycode_to_windows_vk(key_event.key_code);
+    #[cfg(target_os = "linux")]
+    let native_key_code = xkb_keycode(&key_event.key_code) as _;
+    #[cfg(not(target_os = "linux"))]
     let native_key_code = to_native_key_code(&key_event.key_code) as _;
     let mut character = key_event
         .text
@@ -337,8 +340,126 @@ fn keycode_to_windows_vk(keycode: KeyCode) -> i32 {
 //     )
 // }
 
+/// XKB keycodes (evdev scancode + 8, standard pc105 map) — the "native" keycode convention
+/// Chromium's `KeycodeConverter::NativeKeycodeToDomCode` expects on Linux under BOTH ozone
+/// backends: X11 servers and Wayland compositors deliver the same evdev-based codes
+/// (cefclient's X11 path passes `xkey.keycode` — the same values). The windows-VK-style
+/// defaults from [`to_native_key_code`] decode to the wrong physical key (0x41 = keycode 65
+/// = Space), giving pages garbage `event.code` values. 0 = unmapped (DomCode NONE).
+#[cfg(target_os = "linux")]
+fn xkb_keycode(keycode: &KeyCode) -> u32 {
+    match keycode {
+        KeyCode::Escape => 9,
+        KeyCode::Digit1 => 10,
+        KeyCode::Digit2 => 11,
+        KeyCode::Digit3 => 12,
+        KeyCode::Digit4 => 13,
+        KeyCode::Digit5 => 14,
+        KeyCode::Digit6 => 15,
+        KeyCode::Digit7 => 16,
+        KeyCode::Digit8 => 17,
+        KeyCode::Digit9 => 18,
+        KeyCode::Digit0 => 19,
+        KeyCode::Minus => 20,
+        KeyCode::Equal => 21,
+        KeyCode::Backspace => 22,
+        KeyCode::Tab => 23,
+        KeyCode::KeyQ => 24,
+        KeyCode::KeyW => 25,
+        KeyCode::KeyE => 26,
+        KeyCode::KeyR => 27,
+        KeyCode::KeyT => 28,
+        KeyCode::KeyY => 29,
+        KeyCode::KeyU => 30,
+        KeyCode::KeyI => 31,
+        KeyCode::KeyO => 32,
+        KeyCode::KeyP => 33,
+        KeyCode::BracketLeft => 34,
+        KeyCode::BracketRight => 35,
+        KeyCode::Enter => 36,
+        KeyCode::ControlLeft => 37,
+        KeyCode::KeyA => 38,
+        KeyCode::KeyS => 39,
+        KeyCode::KeyD => 40,
+        KeyCode::KeyF => 41,
+        KeyCode::KeyG => 42,
+        KeyCode::KeyH => 43,
+        KeyCode::KeyJ => 44,
+        KeyCode::KeyK => 45,
+        KeyCode::KeyL => 46,
+        KeyCode::Semicolon => 47,
+        KeyCode::Quote => 48,
+        KeyCode::Backquote => 49,
+        KeyCode::ShiftLeft => 50,
+        KeyCode::Backslash => 51,
+        KeyCode::KeyZ => 52,
+        KeyCode::KeyX => 53,
+        KeyCode::KeyC => 54,
+        KeyCode::KeyV => 55,
+        KeyCode::KeyB => 56,
+        KeyCode::KeyN => 57,
+        KeyCode::KeyM => 58,
+        KeyCode::Comma => 59,
+        KeyCode::Period => 60,
+        KeyCode::Slash => 61,
+        KeyCode::ShiftRight => 62,
+        KeyCode::NumpadMultiply => 63,
+        KeyCode::AltLeft => 64,
+        KeyCode::Space => 65,
+        KeyCode::CapsLock => 66,
+        KeyCode::F1 => 67,
+        KeyCode::F2 => 68,
+        KeyCode::F3 => 69,
+        KeyCode::F4 => 70,
+        KeyCode::F5 => 71,
+        KeyCode::F6 => 72,
+        KeyCode::F7 => 73,
+        KeyCode::F8 => 74,
+        KeyCode::F9 => 75,
+        KeyCode::F10 => 76,
+        KeyCode::NumLock => 77,
+        KeyCode::ScrollLock => 78,
+        KeyCode::Numpad7 => 79,
+        KeyCode::Numpad8 => 80,
+        KeyCode::Numpad9 => 81,
+        KeyCode::NumpadSubtract => 82,
+        KeyCode::Numpad4 => 83,
+        KeyCode::Numpad5 => 84,
+        KeyCode::Numpad6 => 85,
+        KeyCode::NumpadAdd => 86,
+        KeyCode::Numpad1 => 87,
+        KeyCode::Numpad2 => 88,
+        KeyCode::Numpad3 => 89,
+        KeyCode::Numpad0 => 90,
+        KeyCode::NumpadDecimal => 91,
+        KeyCode::F11 => 95,
+        KeyCode::F12 => 96,
+        KeyCode::NumpadEnter => 104,
+        KeyCode::ControlRight => 105,
+        KeyCode::NumpadDivide => 106,
+        KeyCode::AltRight => 108,
+        KeyCode::Home => 110,
+        KeyCode::ArrowUp => 111,
+        KeyCode::PageUp => 112,
+        KeyCode::ArrowLeft => 113,
+        KeyCode::ArrowRight => 114,
+        KeyCode::End => 115,
+        KeyCode::ArrowDown => 116,
+        KeyCode::PageDown => 117,
+        KeyCode::Insert => 118,
+        KeyCode::Delete => 119,
+        KeyCode::SuperLeft => 133,
+        KeyCode::SuperRight => 134,
+        KeyCode::ContextMenu => 135,
+        _ => 0,
+    }
+}
+
 /// Native key codes for different platforms based on MDN documentation
 /// [`Keyboard_event_key_values`](https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values)
+/// — macOS virtual keycodes, with windows-VK-style values as the default arm. Linux does
+/// NOT use this: it needs XKB (evdev+8) keycodes, see [`xkb_keycode`].
+#[cfg(not(target_os = "linux"))]
 fn to_native_key_code(keycode: &KeyCode) -> u32 {
     match keycode {
         // Letters - Platform specific native codes
