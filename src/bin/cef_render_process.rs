@@ -12,13 +12,18 @@ fn main() {
     // Die with the parent: CEF subprocesses normally exit when the browser process's IPC channel
     // drops, but a hard-killed (SIGKILL) browser never runs cef shutdown and can leave helpers
     // lingering; once we're reparented (ppid 1 = orphaned) the browser is gone, so exit.
+    // The linux zygote must be excluded: Chromium CHECKs that the zygote is single-threaded at
+    // startup (SIGTRAP in RunZygote otherwise). It needs no watchdog — its forked children never
+    // run this main, and the zygote itself exits when the browser-process socket drops.
     #[cfg(unix)]
-    std::thread::spawn(|| loop {
-        if std::os::unix::process::parent_id() == 1 {
-            std::process::exit(0);
-        }
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    });
+    if !std::env::args().any(|arg| arg == "--type=zygote") {
+        std::thread::spawn(|| loop {
+            if std::os::unix::process::parent_id() == 1 {
+                std::process::exit(0);
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        });
+    }
 
     cef_offscreen::prelude::execute_render_process();
 }
