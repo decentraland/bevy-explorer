@@ -40,9 +40,6 @@ export type SocialApi = {
 }
 
 export type ChatStreamMessage = { sender_address: string; message: string; channel: string }
-// Engine-level key-binding events (raw input the engine owns even while the iframe has focus,
-// e.g. pointer-locked camera-look). `action` is the Rust `SystemAction` enum variant name.
-export type SystemActionEvent = { action: string; pressed: boolean }
 export type SceneLoadingState = { visible?: boolean; realmConnected?: boolean; title?: string; pendingAssets?: number | null }
 export type MicState = { enabled: boolean; available: boolean }
 
@@ -104,7 +101,6 @@ export type BevyApiInterface = {
   getSceneLoadingUIStream: () => Promise<AsyncIterable<SceneLoadingState>>
   getHoverStream: () => Promise<AsyncIterable<SystemHoverEvent>>
   getProximityStream: () => Promise<AsyncIterable<SystemProximityEvent>>
-  getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>
   getMicState: () => Promise<MicState>
   setMicEnabled: (enabled: boolean) => void
   getAvatarModifiers: () => Promise<AvatarModifierState[]>
