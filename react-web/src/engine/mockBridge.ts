@@ -506,6 +506,15 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         reply({ kind: 'rpc:res', id: msg.id, ok: true })
         spawnPlayer()
         return
+      case 'loginNew':
+        // Remote-wallet flow: code first, then approval after a beat (long enough to see the
+        // verification panel; the real flow waits on the user's external browser).
+        reply({ kind: 'loginCode', code: '42' })
+        setTimeout(() => {
+          reply({ kind: 'rpc:res', id: msg.id, ok: true, value: { success: true, error: '' } })
+          spawnPlayer()
+        }, 2500)
+        return
       case 'loginCancel':
       case 'logout':
         reply({ kind: 'rpc:res', id: msg.id, ok: true })

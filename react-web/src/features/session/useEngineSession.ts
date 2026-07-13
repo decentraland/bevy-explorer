@@ -191,8 +191,13 @@ export interface LoginFlow {
   loadProgress: number
   /** Active boot step id ('download'|'compile'|'init'|'workers'|'gpu') or null. */
   loadStep: string | null
-  /** Fresh sign-in → redirect to the same-domain auth site. */
+  /** Fresh sign-in: same-domain auth redirect (web) or the engine's remote-wallet flow (native). */
   startWithAccount: () => void
+  /** Native fresh sign-in in flight → show the verification panel (code null until it arrives). */
+  authPending: boolean
+  authCode: string | null
+  /** Abort the in-flight native fresh sign-in. */
+  cancelLogin: () => void
   exploreAsGuest: () => void
   /** Reuse the stored SSO identity (hand it to the engine). */
   jumpIn: () => void
@@ -298,6 +303,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Deferred login: the login call captured on Jump in, run only once the user picks a destination
   // (so the engine is launched straight at that destination instead of loading Genesis Plaza first).
   const pendingLogin = useRef<((driver: LoginDriver) => Promise<unknown>) | null>(null)
+  // Native fresh sign-in (driver.loginNew) in flight: non-null shows the verification-code panel;
+  // `code` fills in when the engine's 'loginCode' message lands. The attempt counter invalidates
+  // a cancelled attempt's eventual resolution (the promise settles after loginCancel).
+  const [auth, setAuth] = useState<{ code: string | null } | null>(null)
+  const authAttempt = useRef(0)
   // Stops the post-launch boot-panic poll once the world is reached (so it can't mislabel a benign
   // post-boot panic as a launch failure). The timer id is kept so it's cancelled on unmount.
   const bootPollStop = useRef(false)
@@ -367,6 +377,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
               pendingParcel.current = null
             }
           }
+          break
+        case 'loginCode':
+          // Only meaningful while a fresh sign-in is in flight; a stray late code must not
+          // resurrect the panel.
+          setAuth((a) => (a == null ? a : { code: msg.code }))
           break
         case 'sceneLoading':
           setScene(msg.state)
@@ -928,12 +943,51 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // account's server-side profile — the button copy must carry that warning.
   const resetProfileAndJumpIn = useCallback(() => submitLogin((d) => d.jumpIn(true)), [submitLogin])
 
-  // Fresh sign-in (or signing in with a different account): bounce to the same-domain auth
-  // site, which writes the identity back to this origin's localStorage and redirects here.
+  // Fresh sign-in (or signing in with a different account). Web: bounce to the same-domain
+  // auth site, which writes the identity back to this origin's localStorage and redirects
+  // here. Native (the driver has loginNew): that redirect would resolve against cef:// and
+  // 404 into the asset server — instead run the engine's remote-wallet flow, which opens the
+  // auth site in the user's EXTERNAL browser and streams back a verification code to show.
+  // The auth runs now (not deferred like Jump in — it needs the user at the code panel);
+  // approval means the engine is already logged in, so the destination pick has no deferred
+  // login left to run.
   const startWithAccount = useCallback(() => {
     if (busy) return
-    redirectToAuth()
+    const driver = driverRef.current
+    if (driver?.loginNew == null) {
+      redirectToAuth()
+      return
+    }
+    const attempt = ++authAttempt.current
+    setError(null)
+    setBusy(true)
+    setAuth({ code: null })
+    driver
+      .loginNew()
+      .then(() => {
+        if (attempt !== authAttempt.current) return // cancelled meanwhile
+        setAuth(null)
+        setBusy(false)
+        pendingLogin.current = null
+        setSubmitted(true)
+      })
+      .catch((e: unknown) => {
+        if (attempt !== authAttempt.current) return // cancelled: the rejection is expected
+        setAuth(null)
+        setBusy(false)
+        const msg = e instanceof Error ? e.message : String(e)
+        setError(msg !== '' ? msg : 'Sign-in failed')
+      })
   }, [busy])
+
+  // Abort an in-flight fresh sign-in: drop the engine's login task and invalidate the pending
+  // loginNew promise (it settles late — as cancelled from the relay or rejected — and is ignored).
+  const cancelLogin = useCallback(() => {
+    authAttempt.current++
+    setAuth(null)
+    setBusy(false)
+    driverRef.current?.loginCancel().catch(() => {})
+  }, [])
 
   // "Use a different account" shows the sign-in/guest screen (Start with account + Explore as
   // guest) rather than jumping straight to auth — matching the reference scene, and the only way a
@@ -1072,6 +1126,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       loadProgress,
       loadStep,
       startWithAccount,
+      authPending: auth != null,
+      authCode: auth?.code ?? null,
+      cancelLogin,
       exploreAsGuest,
       jumpIn,
       profileFetchFailed,

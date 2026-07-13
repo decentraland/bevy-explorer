@@ -100,6 +100,10 @@ export type BevyApiInterface = {
   getRealmProvider: () => Promise<string>
   getPreviousLogin: () => Promise<{ userId: string | null }>
   loginPrevious: () => Promise<{ success: boolean; error: string }>
+  /** Remote-wallet fresh sign-in: the engine opens the auth site in the external browser.
+   *  `code` resolves with the verification code to display (null = none issued); `success`
+   *  resolves on approval and rejects on failure/cancel. */
+  loginNew: () => { code: Promise<string | null>; success: Promise<void> }
   loginGuest: () => void
   loginCancel: () => void
   logout: () => void

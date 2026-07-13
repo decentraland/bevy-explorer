@@ -24,6 +24,7 @@ export interface LoginPreviousResult {
 export type RpcMethod =
   | 'getPreviousLogin'
   | 'loginPrevious'
+  | 'loginNew'
   | 'loginGuest'
   | 'loginIdentity'
   | 'loginCancel'
@@ -108,6 +109,14 @@ export interface RpcResponse {
 export interface PlayerReadyEvent {
   kind: 'event'
   name: 'playerReady'
+}
+
+/** Mid-flight `loginNew` verification code (SystemApi.loginNew's `code` promise): the engine
+ *  has opened the auth site in the user's external browser; the page shows this code so the
+ *  user can match it there. `null` = the auth server issued no code (nothing to match). */
+export interface LoginCodeMessage {
+  kind: 'loginCode'
+  code: string | null
 }
 
 /** Mirrors SystemApi SceneLoadingWindow — the scene-asset loading state. */
@@ -687,6 +696,7 @@ export type SceneToPage =
   | CursorLockMessage
   | ProximityMessage
   | PlayerReadyEvent
+  | LoginCodeMessage
   | SceneLoadingMessage
   | ChatRelayMessage
   | ChatVisibilityMessage

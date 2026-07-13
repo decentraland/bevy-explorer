@@ -26,6 +26,11 @@ export interface LoginDriver {
    *  supports: console `/login_identity` for the engine, `loginPrevious` over the bridge.
    *  `defaultOnError` as for loginWithIdentity. */
   jumpIn(defaultOnError?: boolean): Promise<void>
+  /** Fresh sign-in through the engine's remote-wallet flow (SystemApi.loginNew): the engine
+   *  opens the auth site in the user's external browser and streams back a verification code
+   *  as a 'loginCode' message; resolves when the user approves there. Only the bridge backends
+   *  implement it — its absence means fresh sign-in is a same-origin auth redirect (web). */
+  loginNew?(): Promise<void>
   /** Post a message to the scene (e.g. sendChat). */
   send(msg: PageToScene): void
   /** Subscribe to every scene→page message. Returns an unsubscribe. */

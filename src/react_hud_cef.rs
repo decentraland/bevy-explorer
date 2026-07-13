@@ -110,6 +110,9 @@ struct ReactHudCef {
     // Outstanding login RPCs awaiting an engine result, paired with the page's rpc id.
     pending_prev: Vec<(String, RpcResultReceiver<Option<String>>)>,
     pending_login: Vec<(String, RpcResultReceiver<Result<(), String>>)>,
+    // loginNew verification codes awaiting the engine (forwarded to the page as 'loginCode'
+    // messages mid-flight; the rpc result itself rides pending_login).
+    pending_code: Vec<RpcResultReceiver<Result<Option<i32>, String>>>,
     player_ready_sent: bool,
     // The page's bridge listener is live once it has sent us anything; until then events like
     // playerReady would be fired into the void (the page hasn't subscribed yet).
@@ -227,6 +230,7 @@ fn spawn_hud(
         loading_rx,
         pending_prev: Vec::new(),
         pending_login: Vec::new(),
+        pending_code: Vec::new(),
         player_ready_sent: false,
         page_seen: false,
         text_focused: false,
@@ -555,11 +559,26 @@ fn on_page_envelope(
                     sys.write(SystemApi::LoginPrevious(false, s));
                     state.pending_login.push((id, r));
                 }
+                "loginNew" => {
+                    // Remote-wallet fresh sign-in: the engine opens the auth site in the user's
+                    // external browser. The verification code goes to the page mid-flight as a
+                    // 'loginCode' message; the rpc resolves with the final result.
+                    let (sc, rc) = RpcResultSender::channel();
+                    let (s, r) = RpcResultSender::channel();
+                    sys.write(SystemApi::LoginNew(false, sc, s));
+                    state.pending_code.push(rc);
+                    state.pending_login.push((id, r));
+                }
                 "logout" => {
                     sys.write(SystemApi::Logout);
                     rpc_res(&mut commands, hud, &id, serde_json::Value::Null);
                 }
-                "loginCancel" => rpc_res(&mut commands, hud, &id, serde_json::Value::Null),
+                "loginCancel" => {
+                    // Drops the engine's login task; an in-flight loginNew's result sender goes
+                    // with it and pump_streams resolves that rpc as cancelled.
+                    sys.write(SystemApi::LoginCancel);
+                    rpc_res(&mut commands, hud, &id, serde_json::Value::Null);
+                }
                 _ => {}
             }
         }
@@ -610,6 +629,26 @@ fn pump_streams(state: Option<ResMut<ReactHudCef>>, mut commands: Commands) {
         );
     }
 
+    // forward loginNew verification codes as they arrive (a code error also lands on the
+    // result sender, so the closed/error entries are just dropped here)
+    let mut i = 0;
+    while i < state.pending_code.len() {
+        match state.pending_code[i].poll_once() {
+            Ok(None) => i += 1,
+            Ok(Some(Ok(code))) => {
+                state.pending_code.remove(i);
+                to_page(
+                    &mut commands,
+                    hud,
+                    serde_json::json!({ "kind": "loginCode", "code": code.map(|c| c.to_string()) }),
+                );
+            }
+            Ok(Some(Err(_))) | Err(()) => {
+                state.pending_code.remove(i);
+            }
+        }
+    }
+
     // resolve login RPCs whose engine result has arrived
     let mut i = 0;
     while i < state.pending_prev.len() {
@@ -628,22 +667,27 @@ fn pump_streams(state: Option<ResMut<ReactHudCef>>, mut commands: Commands) {
     }
     let mut i = 0;
     while i < state.pending_login.len() {
-        match state.pending_login[i].1.try_recv() {
-            Ok(result) => {
-                let (id, _) = state.pending_login.remove(i);
-                let (success, error) = match result {
-                    Ok(()) => (true, String::new()),
-                    Err(e) => (false, e),
-                };
-                rpc_res(
-                    &mut commands,
-                    hud,
-                    &id,
-                    serde_json::json!({ "success": success, "error": error }),
-                );
+        // A dropped sender (poll_once Err) means the engine's login task was cancelled
+        // (LoginCancel) — resolve the rpc rather than leaking it.
+        let result = match state.pending_login[i].1.poll_once() {
+            Ok(None) => {
+                i += 1;
+                continue;
             }
-            _ => i += 1,
-        }
+            Ok(Some(result)) => result,
+            Err(()) => Err("cancelled".to_string()),
+        };
+        let (id, _) = state.pending_login.remove(i);
+        let (success, error) = match result {
+            Ok(()) => (true, String::new()),
+            Err(e) => (false, e),
+        };
+        rpc_res(
+            &mut commands,
+            hud,
+            &id,
+            serde_json::json!({ "success": success, "error": error }),
+        );
     }
 }
 
