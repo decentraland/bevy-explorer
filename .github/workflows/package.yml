@@ -254,10 +254,17 @@ jobs:
               export PATH="$(pwd):$PATH"
               export APPIMAGETOOL="$(pwd)/appimagetool.AppImage"
               export LD_LIBRARY_PATH="$cef:$LD_LIBRARY_PATH"
+              # libxkbcommon must NOT be bundled: it ships as a matched pair with the host's
+              # libxkbcommon-x11 (private struct layouts shared between the two), and only the
+              # base lib is a transitive dep here (ffmpeg -> SDL2), so bundling it pairs our
+              # build machine's copy with the host's -x11 half — the keymap winit builds
+              # through that mix is corrupt (hangs on every keypress, SEGV in
+              # xkb_keymap_unref at exit). winit dlopens both from the host instead.
               ./linuxdeploy-x86_64.AppImage --appdir BevyExplorer.AppDir --output appimage --create-desktop-file \
                 --executable=../../target/release/decentra-bevy \
                 --executable=../../target/release/dcl_deno_ipc \
                 --executable=../../target/release/decentra-bevy-cef \
+                --exclude-library="libxkbcommon*" \
                 --icon-file=decentra-bevy.png
               mv ./decentra-bevy-x86_64.AppImage ${{ env.APPIMAGE_FILE }}
               gh release upload "${{ needs.create-release.outputs.tag_name }}" ${{ env.APPIMAGE_FILE }}
