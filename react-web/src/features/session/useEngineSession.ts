@@ -196,6 +196,13 @@ export interface LoginFlow {
   exploreAsGuest: () => void
   /** Reuse the stored SSO identity (hand it to the engine). */
   jumpIn: () => void
+  /** The last login failed because the user's profile couldn't be fetched — offer
+   *  resetProfileAndJumpIn as the explicit recovery. */
+  profileFetchFailed: boolean
+  /** Retry the login, continuing with (and deploying) a default profile if the fetch still
+   *  fails. PERMANENTLY REPLACES the account's existing profile — only offered after a
+   *  profile-fetch failure, and the UI must make the consequence clear. */
+  resetProfileAndJumpIn: () => void
   /** Sign in with a different account → auth site. */
   useDifferentAccount: () => void
 }
@@ -692,11 +699,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       pendingLogin.current = null
       Promise.resolve(login?.(driver))
         .then(() => setBusy(false))
-        .catch((e: Error) => {
+        .catch((e: unknown) => {
           console.error('[login] post-launch login failed:', e)
-          setError(e.message)
+          // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
+          // e.message would be undefined and the login screen would show no error at all.
+          const msg = e instanceof Error ? e.message : String(e)
+          setError(msg !== '' ? msg : 'Login failed')
           setBusy(false)
-          setDestinationPicked(false) // back to the picker on failure
+          // Back to the LOGIN screen, not the picker: the picker renders no error, and the
+          // login screen is where the retry / profile-reset actions live. The engine stays
+          // launched (start()'s __bevyStarted guard makes the next launch a no-op).
+          setSubmitted(false)
+          setDestinationPicked(false)
         })
     }
     requestAnimationFrame(() => requestAnimationFrame(run))
@@ -727,26 +741,27 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!submitted || destinationPicked || urlDestination.current == null) return
     const dest = urlDestination.current
     if (dest != null && dest.kind === 'world') {
-      // Validate the realm BEFORE launching — a typo'd ?realm= would otherwise strand the loading
-      // overlay forever. Same bare-name mapping as the engine (ipfs map_realm_name). The ref is
-      // consumed only on resolution, so phase stays 'entering' (no picker flash) while checking.
       if (validatingRealm.current) return
       validatingRealm.current = true
       const base =
         dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
           ? `https://worlds-content-server.decentraland.org/world/${dest.realm}`
           : dest.realm
-      fetch(`${base.replace(/\/+$/, '')}/about`)
+      // Launching against an unreachable realm strands the engine in a cryptic login failure, so
+      // block up front: 404 → not found, no/failed answer (incl. timeout) → unreachable.
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))
+      const unreachable = (): void =>
+        setFatalError({ message: `The world "${dest.realm}" isn't reachable right now.`, source: 'realm' })
+      Promise.race([fetch(`${base.replace(/\/+$/, '')}/about`), timeout])
         .then((r) => {
-          urlDestination.current = null
-          if (r.ok) pickDestination(dest)
-          else setFatalError({ message: `The world "${dest.realm}" doesn't exist.`, source: 'realm' })
+          if (r?.ok) pickDestination(dest)
+          else if (r?.status === 404)
+            setFatalError({ message: `The world "${dest.realm}" doesn't exist.`, source: 'realm' })
+          else unreachable()
         })
-        .catch(() => {
-          urlDestination.current = null
-          setFatalError({ message: `The world "${dest.realm}" isn't reachable right now.`, source: 'realm' })
-        })
+        .catch(unreachable)
         .finally(() => {
+          urlDestination.current = null
           validatingRealm.current = false
         })
       return
@@ -868,6 +883,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Reuse the existing login. The driver picks the path its backend supports (console
   // `/login_identity` for the engine, `loginPrevious` over the bridge).
   const jumpIn = useCallback(() => submitLogin((d) => d.jumpIn()), [submitLogin])
+  // The engine tags profile-fetch login failures (vs bad credentials etc.) with this marker —
+  // mirrors PROFILE_FETCH_FAILED in system_bridge. Only then do we offer the destructive reset.
+  const profileFetchFailed = error != null && error.includes('profile fetch failed')
+  // Explicit recovery from an unfetchable/corrupt profile: retry, continuing with a default
+  // profile if it still fails. The engine deploys that default, permanently replacing the
+  // account's server-side profile — the button copy must carry that warning.
+  const resetProfileAndJumpIn = useCallback(() => submitLogin((d) => d.jumpIn(true)), [submitLogin])
 
   // Fresh sign-in (or signing in with a different account): bounce to the same-domain auth
   // site, which writes the identity back to this origin's localStorage and redirects here.
@@ -1015,6 +1037,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       startWithAccount,
       exploreAsGuest,
       jumpIn,
+      profileFetchFailed,
+      resetProfileAndJumpIn,
       useDifferentAccount
     }
   }

@@ -40,13 +40,21 @@ function expirationMs(identity: AuthIdentity): number {
   return m ? new Date(m[1]).getTime() : 0
 }
 
+function isHexAddress(address: string): boolean {
+  return /^0x[0-9a-fA-F]{40}$/.test(address)
+}
+
 function readIdentity(address: string): AuthIdentity | null {
+  if (!isHexAddress(address)) return null
   const raw = localStorage.getItem(SSO_PREFIX + address)
   if (!raw) return null
   try {
     const identity = JSON.parse(raw) as AuthIdentity
     if (!identity?.ephemeralIdentity?.privateKey || !Array.isArray(identity.authChain)) return null
     if (expirationMs(identity) <= Date.now()) return null
+    // Non-hex addresses (e.g. the mock bridge's 0xmock… seed) would fail the engine's login parse.
+    const signer = identity.authChain.find((l) => l.type === 'SIGNER')
+    if (!signer || !isHexAddress(signer.payload?.trim() ?? '')) return null
     return identity
   } catch {
     return null

@@ -34,18 +34,35 @@ impl AvatarColor {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+// Optional fields are omitted when absent, not serialized as `null`: other explorers
+// fail to parse present-but-null fields in deployed profiles.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AvatarWireFormat {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub body_shape: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub eyes: Option<AvatarColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hair: Option<AvatarColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub skin: Option<AvatarColor>,
     pub wearables: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub force_render: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub emotes: Option<Vec<AvatarEmote>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub snapshots: Option<AvatarSnapshots>,
+    // Load-bearing: this flatten field forces map-mode (named) encoding. Without it,
+    // rmp's compact `to_vec` (see rmp_encode) writes this struct as a positional array,
+    // and the `skip_serializing_if` fields above silently shorten it and shift the
+    // remaining slots, corrupting the native scene<->renderer IPC round-trip. As a
+    // bonus it preserves unknown avatar keys, mirroring SerializedProfile::extra_fields.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -56,6 +73,7 @@ pub struct LambdaProfiles {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SerializedProfile {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
     #[serde(default)]
     pub name: String,
@@ -64,8 +82,10 @@ pub struct SerializedProfile {
     pub eth_address: String,
     #[serde(default)]
     pub has_claimed_name: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub has_connected_web3: Option<bool>,
     pub avatar: AvatarWireFormat,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name_color: Option<Color3>,
     #[serde(flatten)]
     pub extra_fields: HashMap<String, serde_json::Value>,

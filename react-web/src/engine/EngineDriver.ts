@@ -47,8 +47,9 @@ export class EngineDriver implements LoginDriver {
     return { userId: login ? rootAddress(login.identity) : null }
   }
 
-  async loginPrevious(): Promise<unknown> {
-    const r = await this.rpc.command('/login_previous')
+  async loginPrevious(defaultOnError?: boolean): Promise<unknown> {
+    const flag = defaultOnError === true ? ' --default-on-error' : ''
+    const r = await this.rpc.command(`/login_previous${flag}`)
     this.scheduleReadyFallback()
     return r
   }
@@ -66,17 +67,18 @@ export class EngineDriver implements LoginDriver {
     await this.rpc.command('/logout')
   }
 
-  async loginWithIdentity(identity: AuthIdentity): Promise<void> {
-    await this.rpc.command(`/login_identity ${encodeIdentity(identity)}`)
+  async loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean): Promise<void> {
+    const flag = defaultOnError === true ? ' --default-on-error' : ''
+    await this.rpc.command(`/login_identity ${encodeIdentity(identity)}${flag}`)
     this.scheduleReadyFallback()
   }
 
   // "Jump in": reuse the SSO identity via `/login_identity`; if none is stored, fall back to
   // the engine's own saved login.
-  async jumpIn(): Promise<void> {
+  async jumpIn(defaultOnError?: boolean): Promise<void> {
     const login = getStoredLogin()
-    if (login) await this.loginWithIdentity(login.identity)
-    else await this.loginPrevious()
+    if (login) await this.loginWithIdentity(login.identity, defaultOnError)
+    else await this.loginPrevious(defaultOnError)
   }
 
   send(msg: PageToScene): void {

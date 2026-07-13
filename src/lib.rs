@@ -351,7 +351,9 @@ impl DecentralandApp {
             .add_plugins(UserInputPlugin)
             .add_plugins(UiCorePlugin)
             .add_plugins(SystemUiPlugin)
-            .add_plugins(ConsolePlugin { add_egui: true })
+            .add_plugins(ConsolePlugin {
+                add_bevy_console: true,
+            })
             .add_plugins(VisualsPlugin {
                 no_fog: decentraland_app_config.arguments.no_fog,
             })
