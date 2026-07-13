@@ -80,7 +80,7 @@ function FlagStep({ hint, target }: { hint: string; target: string }): React.JSX
     )
   }
   return (
-    <li className={styles.step}>
+    <li>
       <span className={styles.stepHint}>{hint}</span>
       <div className={styles.flag}>
         <code className={styles.flagText}>{target}</code>
