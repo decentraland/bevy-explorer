@@ -244,6 +244,8 @@ jobs:
               # export-cef-dir FLATTENS the distribution: everything is at the export root.
               cef="$HOME/.local/share/cef"
               cp ../../target/release/decentra-bevy-cef BevyExplorer.AppDir/usr/bin
+              # HUD page + bridge-scene resolve assets/ against the exe dir (native_hud_roots)
+              cp -r ../../assets BevyExplorer.AppDir/usr/bin/assets
               cp "$cef"/*.bin "$cef"/*.pak "$cef"/*.dat "$cef"/*.json BevyExplorer.AppDir/usr/lib/
               cp -r "$cef/locales" BevyExplorer.AppDir/usr/lib/locales
               wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
