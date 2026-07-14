@@ -24,8 +24,10 @@ describe('wearables domain', () => {
   it('wearables stream populates the catalog', async () => {
     const h = renderSession()
     await enterAsGuest(h)
-    h.driver.emit({ kind: 'wearables', wearables: [wearable('urn:hat'), wearable('urn:hair', true)] })
+    h.driver.emit({ kind: 'wearables', wearables: [wearable('urn:hat'), wearable('urn:hair', true)], equipped: [wearable('urn:hair', true)] })
     expect(h.session().backpack.list).toHaveLength(2)
+    // Equipped set is decoupled from the catalog list (drives the per-category slots).
+    expect(h.session().backpack.equipped.map((w) => w.urn)).toEqual(['urn:hair'])
   })
 
   it('preview posts previewAvatar; null clears it', async () => {
@@ -40,7 +42,7 @@ describe('wearables domain', () => {
   it('equip posts the full set and optimistically flips equipped', async () => {
     const h = renderSession()
     await enterAsGuest(h)
-    h.driver.emit({ kind: 'wearables', wearables: [wearable('urn:hat')] })
+    h.driver.emit({ kind: 'wearables', wearables: [wearable('urn:hat')], equipped: [] })
     act(() => h.session().backpack.equip(['urn:hat']))
     expect(h.driver.last('equip')).toEqual({ kind: 'equip', urns: ['urn:hat'] })
     expect(h.session().backpack.list.find((w) => w.urn === 'urn:hat')?.equipped).toBe(true)

@@ -623,7 +623,12 @@ export interface Wearable {
 
 export interface WearablesMessage {
   kind: 'wearables'
+  /** The owned-wearables catalog page (drives the grid). TODO: currently a single capped page
+   *  (200 items, see bridge-scene wearables.ts `fetchCatalog`) — needs server-side pagination. */
   wearables: Wearable[]
+  /** Currently-equipped wearables, resolved independently of the (paginated) catalog so every
+   *  equipped item drives its per-category slot even when it falls outside the catalog page. */
+  equipped: Wearable[]
 }
 
 export interface GetWearablesRequest {

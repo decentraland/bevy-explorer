@@ -121,6 +121,13 @@ const mockOutfit = (urns: string[]): Outfit => ({
   forceRender: []
 })
 
+// An equipped wearable that is NOT in the catalog grid (simulates an item beyond the fetched page).
+// It must still drive its category slot via the decoupled `equipped` list — the bug this exercises.
+const MOCK_OFF_CATALOG_EQUIPPED: Wearable[] = [
+  { urn: 'urn:decentraland:off-chain:base-avatars:thug_life', name: 'Off-catalog Eyewear', rarity: 'epic', category: 'eyewear', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:black_sun_glasses'), equipped: true }
+]
+const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED]
+
 const v = (name: string): { name: string; description: string } => ({ name, description: '' })
 
 // Stateful so the mock's controls actually move when changed (setSetting → re-emit).
@@ -374,13 +381,13 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'triggerEmote') return // no-op in the mock
     if (msg.kind === 'equipEmote') return // no-op in the mock
     if (msg.kind === 'getWearables') {
-      reply({ kind: 'wearables', wearables: mockWearables })
+      reply({ kind: 'wearables', wearables: mockWearables, equipped: equippedNow() })
       return
     }
     if (msg.kind === 'equip') {
       const set = new Set(msg.urns)
       for (const w of mockWearables) w.equipped = set.has(w.urn)
-      reply({ kind: 'wearables', wearables: mockWearables })
+      reply({ kind: 'wearables', wearables: mockWearables, equipped: equippedNow() })
       return
     }
     if (msg.kind === 'getOutfits') {
@@ -406,7 +413,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       if (found) {
         const set = new Set(found.outfit.wearables)
         for (const w of mockWearables) w.equipped = set.has(w.urn)
-        reply({ kind: 'wearables', wearables: mockWearables })
+        reply({ kind: 'wearables', wearables: mockWearables, equipped: equippedNow() })
       }
       return
     }

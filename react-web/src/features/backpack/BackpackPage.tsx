@@ -205,17 +205,22 @@ export function BackpackPage({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [collectiblesOnly, setCollectiblesOnly] = useState(false)
 
-  // Categories present in the wearable list, ordered like Unity.
+  // Categories present in the wearable list (plus any equipped item's category), ordered like Unity.
   const categories = useMemo(() => {
     const present = new Set(backpack.list.map((w) => w.category))
+    for (const w of backpack.equipped) present.add(w.category)
     return CATEGORY_ORDER.filter((c) => present.has(c))
-  }, [backpack.list])
+  }, [backpack.list, backpack.equipped])
 
+  // Equipped item shown in each category slot. Prefer the catalog list (so equip/unequip from the
+  // grid reflects optimistically), then fill from the decoupled equipped set for items that aren't
+  // on the catalog page at all — otherwise their slot would render empty.
   const equippedByCat = useMemo(() => {
     const m = new Map<string, Wearable>()
     for (const w of backpack.list) if (w.equipped && !m.has(w.category)) m.set(w.category, w)
+    for (const w of backpack.equipped) if (!m.has(w.category)) m.set(w.category, w)
     return m
-  }, [backpack.list])
+  }, [backpack.list, backpack.equipped])
 
   const items = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1

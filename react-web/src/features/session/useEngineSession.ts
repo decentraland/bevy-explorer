@@ -38,6 +38,7 @@ import type {
 
 export interface BackpackState {
   list: Wearable[]
+  equipped: Wearable[]
   open: boolean
   toggle: () => void
   /** Persist a full equipped set to the profile (the explicit Equip action). */
@@ -416,6 +417,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [emotesOpen, setEmotesOpen] = useState(false)
   const [mic, setMic] = useState({ enabled: false, available: false })
   const [wearables, setWearables] = useState<Wearable[]>([])
+  const [equippedWearables, setEquippedWearables] = useState<Wearable[]>([])
   const [outfits, setOutfits] = useState<OutfitsMetadata>({ outfits: [], namesForExtraSlots: [] })
   const [backpackOpen, setBackpackOpen] = useState(false)
   const [communities, setCommunities] = useState<Community[]>([])
@@ -534,6 +536,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'wearables':
           setWearables(msg.wearables)
+          setEquippedWearables(msg.equipped)
           break
         case 'outfits':
           setOutfits(msg.metadata)
@@ -1301,7 +1304,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
     backpack: {
-      list: wearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables,
+      list: wearables, equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables,
       outfits: outfits.outfits, outfitSlots: Math.min(10, 5 + outfits.namesForExtraSlots.length),
       saveOutfit, deleteOutfit, equipOutfit
     },

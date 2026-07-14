@@ -59,6 +59,29 @@ function indexTokens(elements: CatalogElement[]): void {
   }
 }
 
+// Reverse of tokenUrnFor: a deployed/owned urn may carry a tokenId
+// (…:collections-v2:<contract>:<itemId>:<tokenId>); the item form drops it. Base urns pass through.
+function itemUrnOf(urn: string): string {
+  const parts = urn.split(':')
+  if (parts[3] === 'collections-v2' && parts.length > 6) return parts.slice(0, 6).join(':')
+  return urn
+}
+
+type WearableDef = { id: string; name?: string; rarity?: string; thumbnail?: string; data?: { category?: string } }
+
+// Resolve wearable definitions by item urn (for equipped items absent from the catalog page), to
+// learn each one's category (slot placement). Batched to keep the URL length bounded; failures skip.
+async function resolveByUrn(baseUrl: string, itemUrns: string[]): Promise<Map<string, WearableDef>> {
+  const out = new Map<string, WearableDef>()
+  const CHUNK = 50
+  for (let i = 0; i < itemUrns.length; i += CHUNK) {
+    const qs = itemUrns.slice(i, i + CHUNK).map((u) => `wearableId=${u}`).join('&')
+    const data = await getJson<{ wearables?: WearableDef[] }>(`${baseUrl}/lambdas/collections/wearables?${qs}`).catch(() => undefined)
+    for (const w of data?.wearables ?? []) out.set(w.id, w)
+  }
+  return out
+}
+
 export function registerWearables(ctx: Ctx): void {
   ctx.on('equip', async (msg) => {
     const me = getPlayer()
@@ -77,7 +100,7 @@ export function registerWearables(ctx: Ctx): void {
   ctx.on('getWearables', async () => {
     const player = getPlayer()
     if (player == null) {
-      ctx.send({ kind: 'wearables', wearables: [] })
+      ctx.send({ kind: 'wearables', wearables: [], equipped: [] })
       return
     }
     const { baseUrl, elements } = await getCatalog(player.userId)
@@ -95,6 +118,34 @@ export function registerWearables(ctx: Ctx): void {
         equipped: owned.some((w) => w === el.urn || w.startsWith(`${el.urn}:`))
       }
     })
-    ctx.send({ kind: 'wearables', wearables })
+
+    // Equipped slots are DECOUPLED from the (paginated) catalog: take the avatar's equipped urns,
+    // reuse the catalog entry when present, else batch-resolve the item's category by urn. Each
+    // slot's thumbnail is a pure function of the urn — so every equipped item resolves regardless
+    // of which catalog page it falls on. Mirrors unity-explorer / bevy-ui-scene.
+    const byItemUrn = new Map<string, Wearable>()
+    for (const w of wearables) byItemUrn.set(w.urn, w)
+    const equippedItemUrns = [...new Set(owned.map(itemUrnOf))]
+    const missing = equippedItemUrns.filter((u) => !byItemUrn.has(u))
+    const resolved = missing.length > 0 ? await resolveByUrn(baseUrl, missing) : new Map<string, WearableDef>()
+    const equipped: Wearable[] = equippedItemUrns
+      .map((itemUrn): Wearable | null => {
+        const fromCatalog = byItemUrn.get(itemUrn)
+        if (fromCatalog != null) return { ...fromCatalog, equipped: true }
+        const def = resolved.get(itemUrn)
+        const category = def?.data?.category
+        if (category == null) return null // can't place a slot without its category
+        return {
+          urn: itemUrn,
+          name: def?.name ?? '',
+          rarity: def?.rarity ?? 'base',
+          category,
+          thumbnail: `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`,
+          equipped: true
+        }
+      })
+      .filter((w): w is Wearable => w != null)
+
+    ctx.send({ kind: 'wearables', wearables, equipped })
   })
 }
