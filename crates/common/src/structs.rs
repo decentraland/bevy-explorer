@@ -480,6 +480,7 @@ pub struct AppConfig {
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub inputs: InputMapSerialized,
     pub point_at_marker_visibility: PointAtMarkerVisibility,
+    pub camera_smoothing: CameraSmoothing,
     // field-level default (0) so configs saved before this field existed read as outdated,
     // rather than taking the current generation from the container-level default
     #[serde(default)]
@@ -520,6 +521,7 @@ impl Default for AppConfig {
             scene_permissions: Default::default(),
             inputs: Default::default(),
             point_at_marker_visibility: Default::default(),
+            camera_smoothing: Default::default(),
             settings_generation: SETTINGS_GENERATION,
         }
     }
@@ -1506,6 +1508,25 @@ pub enum PointAtMarkerVisibility {
     All,
     Friends,
     None,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CameraSmoothing {
+    Raw,
+    #[default]
+    Smoothed,
+    Drunk,
+}
+
+impl CameraSmoothing {
+    /// exponential smoothing rate; `None` means no smoothing
+    pub fn rate(&self) -> Option<f32> {
+        match self {
+            CameraSmoothing::Raw => None,
+            CameraSmoothing::Smoothed => Some(15.0),
+            CameraSmoothing::Drunk => Some(5.0),
+        }
+    }
 }
 
 #[derive(Event)]

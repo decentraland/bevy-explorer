@@ -9,7 +9,7 @@ import { MainMenuShell } from '../menu/MainMenuShell'
 import { PhotoDetail } from './PhotoDetail'
 import { photoTime, type GalleryState, type ProfileState } from '../session/useEngineSession'
 import type { GalleryPhoto } from '../../engine/protocol'
-import type { ChatUser } from '../chat/ProfileCard'
+import type { ChatUser } from '../chat/ProfileCardPresentation'
 import styles from './GalleryPage.module.css'
 
 function monthLabel(ms: number): string {

@@ -1,0 +1,7 @@
+/* Full-screen layer behind a popup: owns the z-layer and catches clicks outside the popup content.
+   Transparent by default (the profile card never dimmed); dialogs / the passport draw their own scrim. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+}

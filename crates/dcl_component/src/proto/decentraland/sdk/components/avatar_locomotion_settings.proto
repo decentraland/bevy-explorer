@@ -15,4 +15,7 @@ message PBAvatarLocomotionSettings {
   optional float jump_height = 4;           // Height of a regular jump (in meters)
   optional float run_jump_height = 5;       // Height of a jump while running (in meters)
   optional float hard_landing_cooldown = 6; // Cooldown time after a hard landing before the avatar can move again (in seconds)
+  optional float double_jump_height = 7;    // Height of the double jump (in meters)
+  optional float gliding_speed = 8;         // Maximum speed when gliding (in meters per second)
+  optional float gliding_falling_speed = 9; // Maximum falling speed when gliding (in meters per second)
 }

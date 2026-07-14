@@ -654,15 +654,22 @@ export interface SetSettingRequest {
   value: number
 }
 
-/** One hover hint for a world entity under the reticle (from the engine getHoverStream). */
+/** One interaction hint (a single key binding) for a world entity: the button to press + its label.
+ *  Shared by the reticle hover and the proximity tooltips. React maps `button` (an `InputAction` enum)
+ *  to a glyph (E / 🖱 / 1…). */
 export interface HoverAction {
-  /** The `InputAction` enum the action is bound to; React maps it to a key label (E / 🖱 / 1…). */
   button: number
   text: string
-  /** false → out of range ("Too far, get closer"). */
+  /** false → out of range (shown greyed with a "get closer" hint instead of the key glyph). */
   enabled: boolean
+  /** Only meaningful when `enabled` is false — which distance rule gates the action: 'camera' (no
+   *  `maxPlayerDistance`, incl. the implicit default) → camera glyph + "Get camera closer";
+   *  'player' (`maxPlayerDistance` set) → walking glyph + "Get player closer". Defaults to 'camera'. */
+  tooFarReason?: 'camera' | 'player'
 }
-/** Hover hints to show near the reticle. Empty array = nothing hovered. */
+/** Interaction hints for the entity under the reticle. Empty array = nothing hovered. The tooltip's
+ *  screen position is derived in React from the DOM cursor (free) or the centre (pointer-locked), so
+ *  no coordinates travel on the wire. */
 export interface HoverMessage {
   kind: 'hover'
   actions: HoverAction[]
@@ -673,6 +680,14 @@ export interface HoverMessage {
 export interface CursorLockMessage {
   kind: 'cursorLock'
   locked: boolean
+}
+
+/** A HUD-relevant engine system action that fired (pressed). `action` is the engine's SystemAction
+ *  variant name, e.g. 'Cancel' (bound to Escape) which closes the topmost popup. Relayed authoritatively
+ *  from the engine's input stream so it works even while the engine holds keyboard focus. */
+export interface SystemActionMessage {
+  kind: 'systemAction'
+  action: string
 }
 
 /** A proximity tooltip for an in-range world entity, anchored at its projected screen position
@@ -690,11 +705,20 @@ export interface ProximityMessage {
   tips: ProximityTip[]
 }
 
+/** A nearby avatar was clicked in the world → open their profile card. Only the address travels;
+ *  React resolves the display name (nearby roster) and anchors the card at the live DOM cursor. */
+export interface AvatarClickMessage {
+  kind: 'avatarClick'
+  address: string
+}
+
 export type SceneToPage =
   | RpcResponse
   | HoverMessage
   | CursorLockMessage
+  | SystemActionMessage
   | ProximityMessage
+  | AvatarClickMessage
   | PlayerReadyEvent
   | LoginCodeMessage
   | SceneLoadingMessage

@@ -25,6 +25,11 @@ export default defineConfig({
     headless: true,
     viewport: { width: 1600, height: 900 },
     deviceScaleFactor: 1,
+    // The COI service worker (coiServiceWorker.ts) reloads the page once on a first uncontrolled
+    // visit — every test context is a first visit, and the reload races settle() ("execution
+    // context destroyed", seen on the fast-rendering gate pages). Mock/gate pages don't need the
+    // SW (no engine assets), so block it for deterministic screenshots.
+    serviceWorkers: 'block',
     trace: 'retain-on-failure'
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 } } }],

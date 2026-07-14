@@ -128,12 +128,15 @@ globalThis.WebSocket = websocket.WebSocket;
 
 import * as _10 from "ext:deno_websocket/02_websocketstream.js";
 
+import * as textEncoding from "ext:deno_web/08_text_encoding.js";
+globalThis.TextEncoder = textEncoding.TextEncoder;
+globalThis.TextDecoder = textEncoding.TextDecoder;
+
 // we need to ensure all modules are evaluated, else deno complains in debug mode
 import * as _0 from "ext:deno_url/01_urlpattern.js"
 import * as _1 from "ext:deno_web/02_structured_clone.js"
 import * as _2 from "ext:deno_web/04_global_interfaces.js"
 import * as _3 from "ext:deno_web/05_base64.js"
-import * as _4 from "ext:deno_web/08_text_encoding.js"
 import * as _5 from "ext:deno_web/10_filereader.js"
 import * as _6 from "ext:deno_web/13_message_port.js"
 import * as _7 from "ext:deno_web/14_compression.js"

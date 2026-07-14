@@ -43,11 +43,18 @@ export type ChatStreamMessage = { sender_address: string; message: string; chann
 export type SceneLoadingState = { visible?: boolean; realmConnected?: boolean; title?: string; pendingAssets?: number | null }
 export type MicState = { enabled: boolean; available: boolean }
 
+// Per-player modifiers from AvatarModifierArea (privacy zones etc), only for players carrying one —
+// e.g. hideProfile means the local player is standing in a DISABLE_PASSPORTS area, so `userId`'s
+// passport should not be opened. Only present in the array when at least one flag is set.
+export type AvatarModifierState = { userId: string; hideAvatar: boolean; hideProfile: boolean }
+
 // World-entity hover events. targetType: 0=WORLD, 1=UI, 2=AVATAR. eventType: PointerEventType.
 export type HoverEntry = {
   eventType: number
   enabled?: boolean
-  eventInfo?: { button?: number; hoverText?: string; showFeedback?: boolean }
+  // maxPlayerDistance absent/null → the entry is range-gated by camera distance only (the PBPointerEvents
+  // default when neither is set is a 10m camera check), per pointer_events.proto's distance-rule doc.
+  eventInfo?: { button?: number; hoverText?: string; showFeedback?: boolean; maxPlayerDistance?: number | null }
 }
 export type SystemHoverEvent = { entered: boolean; targetType: number; actions: HoverEntry[] }
 
@@ -55,6 +62,11 @@ export type SystemHoverEvent = { entered: boolean; targetType: number; actions: 
 // projects it to screen each frame so React can anchor a tooltip on it.
 export type Vec3 = { x: number; y: number; z: number }
 export type SystemProximityEvent = { entered: boolean; entity: number; entityPosition: Vec3; actions: HoverEntry[] }
+
+// Global engine input actions. `action` is the SystemAction variant name (e.g. 'Cancel' = Escape,
+// 'Map', 'Chat'); `pressed` is press vs release. Emitted authoritatively by the engine even while it
+// holds keyboard focus, so the HUD can react to Escape without a DOM keydown.
+export type SystemActionEvent = { action: string; pressed: boolean }
 
 export type KernelFetchRequest = {
   url: string
@@ -88,8 +100,10 @@ export type BevyApiInterface = {
   getSceneLoadingUIStream: () => Promise<AsyncIterable<SceneLoadingState>>
   getHoverStream: () => Promise<AsyncIterable<SystemHoverEvent>>
   getProximityStream: () => Promise<AsyncIterable<SystemProximityEvent>>
+  getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>
   getMicState: () => Promise<MicState>
   setMicEnabled: (enabled: boolean) => void
+  getAvatarModifiers: () => Promise<AvatarModifierState[]>
   getPermissionRequestStream: () => Promise<AsyncIterable<PermissionRequestRaw>>
   setSinglePermission: (body: { id: number; allow: boolean }) => void
   setPermanentPermission: (body: SetPermanentPermissionBody) => void

@@ -26,8 +26,8 @@ use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ParcelGrassSetting,
-        PointAtMarkerVisibility, PreviewMode, ShadowSetting, WindowSetting,
+        AaSetting, AppConfig, BloomSetting, CameraSmoothing, DofSetting, FogSetting,
+        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -54,6 +54,7 @@ pub mod aa_settings;
 pub mod ambient_brightness_setting;
 pub mod bloom_settings;
 pub mod cache_size;
+pub mod camera_smoothing;
 pub mod cel_shading_setting;
 pub mod constrain_ui;
 pub mod dof_setting;
@@ -185,6 +186,7 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<ScrollSensitivitySetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<MovementSensitivitySetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<CameraSensitivitySetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<CameraSmoothing>(app, &mut settings, &mut schedule, &config);
 
         add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule, &config);

@@ -96,6 +96,20 @@ export function CameraIcon({ size = 16, className }: GlyphProps): React.JSX.Elem
   )
 }
 
+// Walking-person glyph — the "too far, get closer" hover state in bevy-ui-scene used a walking-
+// figure sprite (avatar/hover-actions' unreachable icon); this is that concept re-drawn as a vector.
+export function WalkIcon({ size = 16, className }: GlyphProps): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" className={className}>
+      <circle cx="12.5" cy="4.5" r="2" fill="currentColor" />
+      <path
+        d="M9 8.6 12.6 7l3 1.7v3.5h-1.8V9.8l-1-.5v2.8l2.3 2.2-.7 6.6-1.8-.2.6-5.7-1.9-1.8-1.2 5.8-1.7-.4 1.5-7.1-1.6-.9v3.2H7.7V9.6L9 8.6Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
 export function People({ size = 16, className }: GlyphProps): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" className={className}>

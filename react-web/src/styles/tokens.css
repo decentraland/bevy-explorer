@@ -47,6 +47,7 @@
   --ink-65: rgba(255, 255, 255, 0.65);
   --ink-6: rgba(255, 255, 255, 0.6);
   --ink-45: rgba(255, 255, 255, 0.45);
+  --text-dim: rgba(255, 255, 255, 0.55); /* muted secondary label text (ProfileCard tag/copy/submenu) */
   --scrim: rgba(0, 0, 0, 0.5);
   /* Login secondary CTA — translucent purple over the --menu-bg backdrop. */
   --login-cta2: rgba(108, 42, 168, 0.62);

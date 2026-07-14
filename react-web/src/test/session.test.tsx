@@ -1,6 +1,12 @@
-import { describe, it, expect, vi } from 'vitest'
-import { act, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { act, waitFor, render, screen } from '@testing-library/react'
 import { renderSession, enterAsGuest, FakeDriver } from './harness'
+import { openProfileCard } from '../features/profileCard/ProfileCard'
+import { PopupHost, openPopup, resetPopups } from '../design'
+
+// The avatarClick handler opens the world profile card as a popup; stub it so we can assert the call.
+vi.mock('../features/profileCard/ProfileCard', () => ({ openProfileCard: vi.fn() }))
+afterEach(resetPopups)
 
 // Records launch() so tests can assert the realm/position the engine was booted with.
 class LaunchRecordingDriver extends FakeDriver {
@@ -212,5 +218,35 @@ describe('session domain', () => {
         }),
       { timeout: 2000 }
     )
+  })
+
+  it('a nearby-avatar click (avatarClick) opens the profile-card popup at the cursor', () => {
+    vi.mocked(openProfileCard).mockClear()
+    const h = renderSession({ userId: null })
+    // avatarClick carries only the address; the card resolves name/avatar from the roster itself. The
+    // handler anchors it at the DOM cursor (0,0 in jsdom, unlocked).
+    act(() => h.driver.emit({ kind: 'avatarClick', address: '0xABC' }))
+    expect(openProfileCard).toHaveBeenCalledWith('0xABC', 0, 0)
+  })
+
+  it("a 'Cancel' system action (the engine's Escape) closes the topmost popup", () => {
+    const h = renderSession({ userId: null })
+    render(<PopupHost />) // shares the module popup stack
+    act(() => {
+      openPopup(() => <div>a popup</div>)
+    })
+    expect(screen.getByText('a popup')).toBeTruthy()
+    act(() => h.driver.emit({ kind: 'systemAction', action: 'Cancel' }))
+    expect(screen.queryByText('a popup')).toBeNull()
+  })
+
+  it('chat.mention opens chat and queues the @name until consumed', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().chat.mention('Alice'))
+    expect(h.session().chat.open).toBe(true)
+    expect(h.session().chat.pendingMention).toBe('Alice')
+    act(() => h.session().chat.consumeMention())
+    expect(h.session().chat.pendingMention).toBeNull()
   })
 })

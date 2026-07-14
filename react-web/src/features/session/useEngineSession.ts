@@ -6,6 +6,9 @@ import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type St
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/EngineErrorModal'
 import { DEFAULT_REALM } from '../engine/EngineHost'
+import { closeTopPopup } from '../../design'
+import { getCursor } from '../pointer/cursorStore'
+import { openProfileCard } from '../profileCard/ProfileCard'
 import type {
   AppNotification,
   ChatMessage,
@@ -127,6 +130,8 @@ export interface FriendsState {
   blocked: string[]
   open: boolean
   toggle: () => void
+  /* TODO: split domain data (queries) from commands — act/toggle don't belong in "State".
+   Expose commands as an imperative service/context (like the popup service), not prop-drilled. (#18) */
   /** accept/reject/cancel/delete/block/unblock a user (guest-disabled in-engine). */
   act: (op: FriendAction, address: string) => void
 }
@@ -148,6 +153,12 @@ export interface ChatState {
   toggle: () => void
   /** Nearby players (drives the "Nearby · N" header + members list). */
   members: NearbyMember[]
+  /** Open chat and queue an @name mention into the draft (from a profile card's "Mention"). */
+  mention: (name: string) => void
+  /** A queued @name waiting to be dropped into the chat draft (consumed by Chat), or null. */
+  pendingMention: string | null
+  /** Clear the queued mention once Chat has inserted it. */
+  consumeMention: () => void
 }
 
 const MAX_CHAT_LINES = 200
@@ -225,7 +236,7 @@ export interface EngineSession {
   reload: () => void
   /** Dismiss a non-fatal (runtime) error popup. */
   dismissFatal: () => void
-  /** World-entity hover hints under the reticle (empty = nothing hovered). */
+  /** World-entity hover hints (empty = nothing hovered). */
   hover: HoverAction[]
   /** Engine has grabbed the mouse for camera-look (OS cursor hidden) → show the crosshair. */
   cursorLocked: boolean
@@ -326,7 +337,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [cursorLocked, setCursorLocked] = useState(false)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
+  // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
+  // avatarClick uses it to centre the card while the camera has the pointer locked.
+  const cursorLockedRef = useRef(false)
   const [chatOpen, setChatOpen] = useState(true)
+  const [pendingMention, setPendingMention] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [friendsData, setFriendsData] = useState<{
     available: boolean
@@ -395,11 +410,27 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setHover(msg.actions)
           break
         case 'cursorLock':
+          cursorLockedRef.current = msg.locked
           setCursorLocked(msg.locked)
+          break
+        case 'systemAction':
+          // 'Cancel' (Escape, from the engine input stream) closes the topmost popup — authoritative,
+          // so it works even while the engine holds keyboard focus.
+          if (msg.action === 'Cancel') closeTopPopup()
           break
         case 'proximity':
           setProximity(msg.tips)
           break
+        case 'avatarClick': {
+          // The card's scrim swallows mouse input, so the engine's raycast freezes and never sends
+          // the hover-exit — clear the hover here or its tooltip stays painted beside the card.
+          setHover([])
+          // Open the profile card as a popup, anchored at the live DOM cursor (centre while the camera
+          // has the pointer locked). The card resolves the name/avatar by address from the roster.
+          const p = cursorLockedRef.current ? { x: window.innerWidth / 2, y: window.innerHeight / 2 } : getCursor()
+          openProfileCard(msg.address, p.x, p.y)
+          break
+        }
         case 'chat':
           setMessages((prev) =>
             [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
@@ -607,6 +638,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setChatOpen((o) => !o)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // "Mention" from a profile card opens chat and queues the @name; Chat consumes it into its draft.
+  const mentionInChat = useCallback((name: string) => {
+    panelSetters.forEach((set) => set(false))
+    setChatOpen(true)
+    setPendingMention(name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const consumeMention = useCallback(() => setPendingMention(null), [])
 
   // Escape closes any open React panel/menu and returns to the world view. We only
   // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
@@ -1090,7 +1129,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     hover,
     cursorLocked,
     proximity,
-    chat: { messages, send: sendChat, open: chatOpen, toggle: toggleChat, members },
+    chat: { messages, send: sendChat, open: chatOpen, toggle: toggleChat, members, mention: mentionInChat, pendingMention, consumeMention },
     friends: {
       available: friendsData.available,
       list: friendsData.friends,
