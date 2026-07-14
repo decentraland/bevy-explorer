@@ -123,6 +123,12 @@ export async function enterAsGuest(h: Harness, opts: { keepSent?: boolean } = {}
   await waitFor(() => expect(h.driver.calls.length).toBeGreaterThan(1))
   await waitFor(() => expect(h.session().phase).toBe('entering'))
   h.driver.emit({ kind: 'event', name: 'playerReady' })
+  // No loading state received counts as still-loading, so report "done" like the real
+  // bridge-scene's stream does.
+  h.driver.emit({
+    kind: 'sceneLoading',
+    state: { visible: false, realmConnected: true, title: '', pendingAssets: null }
+  })
   await waitFor(() => expect(h.session().phase).toBe('world'))
   if (!opts.keepSent) h.driver.clearSent()
 }

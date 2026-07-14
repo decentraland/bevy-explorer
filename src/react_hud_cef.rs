@@ -7,8 +7,12 @@
 // `window.cef.listen('bridge', ..)`, wired by react-web's cefNativeBridge when it detects
 // `window.cef`), and this file relays them like react_hud.rs does. With `--ui <bridge-scene>` the
 // SDK7 bridge-scene owns the wire protocol (this file is a pure Envelope pipe via
-// BridgeToPage/GetBridgeStream); without it a built-in fallback handles login, chat and
-// scene-loading directly (mirroring the earlier wry-overlay POC, PR #912).
+// BridgeToPage/GetBridgeStream); until it connects (scene boot takes seconds; the page is up
+// immediately) a built-in fallback handles the login rpcs, so the login screen is responsive
+// from the first frame. The fallback is a boot shim, not a HUD backend: it subscribes to no
+// engine streams, and the page assumes "loading" until the bridge-scene reports real state —
+// so with no bridge-scene at all (--ui none, missing bundle) login works but the world stays
+// behind the loading screen.
 //
 // Run (files only, no servers):
 //   cd react-web && npm run bundle:native   # page -> assets/react-hud, scene -> assets/bridge-scene
@@ -36,10 +40,10 @@ use cef_offscreen::prelude::{
     Browsers, CefOffscreenPlugin, CefWebviewUri, HostEmitEvent, JsEmitEventPlugin, RenderTexture,
     WebviewSize,
 };
-use common::rpc::{RpcResultReceiver, RpcResultSender, RpcStreamReceiver, RpcStreamSender};
+use common::rpc::{RpcResultReceiver, RpcResultSender, RpcStreamSender};
 use common::structs::PrimaryUser;
 use input_manager::{InputPriorities, InputPriority, InputType, MouseInteractionComponent};
-use system_bridge::{ChatMessage, SceneLoadingUi, SystemApi};
+use system_bridge::SystemApi;
 
 pub struct ReactHudCefPlugin {
     /// An explicit --server destination, if given. Injected into the page URL as ?realm= — the
@@ -105,8 +109,6 @@ struct ReactHudCef {
     // Cursor currently over an opaque HUD pixel (engine world input gated off via Interaction on
     // the fullscreen node), vs over the transparent world area.
     over_ui: bool,
-    chat_rx: RpcStreamReceiver<ChatMessage>,
-    loading_rx: RpcStreamReceiver<SceneLoadingUi>,
     // Outstanding login RPCs awaiting an engine result, paired with the page's rpc id.
     pending_prev: Vec<(String, RpcResultReceiver<Option<String>>)>,
     pending_login: Vec<(String, RpcResultReceiver<Result<(), String>>)>,
@@ -158,7 +160,6 @@ fn spawn_hud(
     mut images: ResMut<Assets<Image>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     options: Res<ReactHudOptions>,
-    mut sys: EventWriter<SystemApi>,
 ) {
     let Some(mut url) = react_hud_url() else {
         error!(
@@ -217,18 +218,10 @@ fn spawn_hud(
         Interaction::default(),
     ));
 
-    // Subscribe to the engine streams the HUD needs (fallback relay, as react_hud.rs).
-    let (chat_tx, chat_rx) = RpcStreamSender::channel();
-    let (loading_tx, loading_rx) = RpcStreamSender::channel();
-    sys.write(SystemApi::GetChatStream(chat_tx));
-    sys.write(SystemApi::GetSceneLoadingUiStream(loading_tx));
-
     commands.insert_resource(ReactHudCef {
         hud,
         image,
         over_ui: true,
-        chat_rx,
-        loading_rx,
         pending_prev: Vec::new(),
         pending_login: Vec::new(),
         pending_code: Vec::new(),
@@ -614,37 +607,11 @@ fn on_page_envelope(
     }
 }
 
-// engine -> page: drain streams + resolved login RPCs. Fallback only — the bridge-scene owns
-// these domains when it's driving.
+// engine -> page: resolved login RPCs. These are only armed while the fallback is driving
+// (pre-bridge); if the bridge-scene takes the wire mid-flight they still resolve here.
 fn pump_streams(state: Option<ResMut<ReactHudCef>>, mut commands: Commands) {
     let Some(mut state) = state else { return };
-    if state.bridge_sender.is_some() {
-        return;
-    }
     let hud = state.hud;
-
-    let mut chats = Vec::new();
-    while let Ok(cm) = state.chat_rx.try_recv() {
-        chats.push(cm);
-    }
-    let mut loadings = Vec::new();
-    while let Ok(l) = state.loading_rx.try_recv() {
-        loadings.push(l);
-    }
-    for cm in chats {
-        to_page(
-            &mut commands,
-            hud,
-            serde_json::json!({ "kind":"chat", "chat": { "sender": cm.sender_address, "message": cm.message, "channel": cm.channel } }),
-        );
-    }
-    for l in loadings {
-        to_page(
-            &mut commands,
-            hud,
-            serde_json::json!({ "kind":"sceneLoading", "state": { "visible": l.visible, "realmConnected": l.realm_connected, "title": l.title, "pendingAssets": l.pending_assets } }),
-        );
-    }
 
     // forward loginNew verification codes as they arrive (a code error also lands on the
     // result sender, so the closed/error entries are just dropped here)
@@ -666,21 +633,25 @@ fn pump_streams(state: Option<ResMut<ReactHudCef>>, mut commands: Commands) {
         }
     }
 
-    // resolve login RPCs whose engine result has arrived
+    // resolve login RPCs whose engine result has arrived (a dropped sender resolves as no
+    // previous user rather than leaving the page's rpc hanging)
     let mut i = 0;
     while i < state.pending_prev.len() {
-        match state.pending_prev[i].1.try_recv() {
-            Ok(user) => {
-                let (id, _) = state.pending_prev.remove(i);
-                rpc_res(
-                    &mut commands,
-                    hud,
-                    &id,
-                    serde_json::json!({ "userId": user }),
-                );
+        let user = match state.pending_prev[i].1.poll_once() {
+            Ok(None) => {
+                i += 1;
+                continue;
             }
-            _ => i += 1,
-        }
+            Ok(Some(user)) => user,
+            Err(()) => None,
+        };
+        let (id, _) = state.pending_prev.remove(i);
+        rpc_res(
+            &mut commands,
+            hud,
+            &id,
+            serde_json::json!({ "userId": user }),
+        );
     }
     let mut i = 0;
     while i < state.pending_login.len() {

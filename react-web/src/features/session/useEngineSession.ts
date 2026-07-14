@@ -1045,7 +1045,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // for each scene streamed into Genesis Plaza. We debounce the *reveal* (loading→world) so a brief
   // `visible` gap between scenes doesn't flash the HUD; the loader still appears INSTANTLY whenever
   // loading re-asserts. Loading = scene visible, or not spawned, or the render-settle still holding.
-  const loadingNow = scene?.visible === true || !playerReady || revealing
+  // No state received yet (scene == null) counts as loading: the loading stream is the
+  // bridge-scene's domain, and until it's running and reports otherwise the world isn't ready
+  // (on native the engine relay itself sends no loading state at all).
+  const loadingNow = scene?.visible !== false || !playerReady || revealing
   const [loaderActive, setLoaderActive] = useState(true)
   useEffect(() => {
     if (loadingNow) {
