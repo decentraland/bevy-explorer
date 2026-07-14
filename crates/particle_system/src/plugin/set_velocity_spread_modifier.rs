@@ -74,7 +74,7 @@ impl SetVelocitySpreadModifier {
         let s1 = axis * cos(theta);
         let s2 = cross(axis_of_rotation, axis) * sin(theta);
         let s3 = axis_of_rotation * dot(axis_of_rotation, axis) * (1 - cos(theta));
-        (*particle).{1} = s1 + s2 + s3;
+        (*particle).{1} = (s1 + s2 + s3) * {speed};
     }} else {{
         (*particle).{1} = axis * {speed};
     }}
