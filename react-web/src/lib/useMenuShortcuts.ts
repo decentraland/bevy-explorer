@@ -8,6 +8,11 @@
 import { useEffect, useRef } from 'react'
 import type { EngineSession } from '../features/session/useEngineSession'
 
+// Set by the wasm via boot.js __setEngineTextFocus: true while an engine-rendered text field
+// (e.g. a scene textinput) holds keyboard focus. Those fields live on the canvas, so the
+// e.target tag check below can't see them.
+type EngineFocusWindow = Window & { __engineTextFocus?: boolean }
+
 // key → the session toggle it triggers. Keep in sync with the nav/sidebar `shortcut` hints.
 const SHORTCUTS: Record<string, (s: EngineSession) => () => void> = {
   m: (s) => s.map.toggle,
@@ -32,6 +37,7 @@ export function useMenuShortcuts(session: EngineSession): void {
       const target = e.target as HTMLElement | null
       const tag = target?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
+      if ((window as EngineFocusWindow).__engineTextFocus) return
 
       const s = sessionRef.current
       if (s.phase !== 'world') return
