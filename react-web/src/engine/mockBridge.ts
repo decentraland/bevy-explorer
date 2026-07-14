@@ -194,6 +194,13 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     ch.postMessage({ to: 'page', msg } satisfies Envelope)
   }
 
+  // No engine in mock mode, so stand in for the engine's 'Cancel' system action: relay a DOM Escape
+  // as the same message the real bridge sends from getSystemActionStream (closes the topmost popup).
+  const onEscape = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') reply({ kind: 'systemAction', action: 'Cancel' })
+  }
+  window.addEventListener('keydown', onEscape)
+
   // Simulate the engine spawning the player + loading the spawn scene after a
   // successful login: player-ready, then a scene-asset countdown, then "done".
   const spawnPlayer = (): void => {
@@ -228,6 +235,24 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         }),
       1400
     )
+
+    // ?simhover=N seeds N world-hover prompts so the radial cursor tooltips are visible/verifiable in
+    // ?mock=1 (the real engine hover stream isn't mocked). React positions them at the live DOM cursor,
+    // so we only send the action list — no coordinates. One is disabled (camera-distance gated →
+    // shows the camera glyph; see pointer.test.tsx for the player-distance / walking-glyph variant).
+    const simHover = Number(new URLSearchParams(location.search).get('simhover') ?? 0)
+    if (simHover > 0) {
+      const sample = [
+        { button: 0, text: 'Show Profile', enabled: true },
+        { button: 1, text: 'Open', enabled: true },
+        { button: 2, text: 'Inspect', enabled: true },
+        { button: 8, text: 'Jump', enabled: true },
+        { button: 4, text: 'Grab', enabled: false, tooFarReason: 'camera' as const },
+        { button: 10, text: 'Use', enabled: true },
+        { button: 11, text: 'Activate', enabled: true }
+      ].slice(0, Math.min(simHover, 7))
+      setTimeout(() => reply({ kind: 'hover', actions: sample }), 1500)
+    }
 
     // Fake friends + requests for the React friends panel.
     setTimeout(
@@ -514,6 +539,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
   }
 
   return () => {
+    window.removeEventListener('keydown', onEscape)
     ch.close()
   }
 }
