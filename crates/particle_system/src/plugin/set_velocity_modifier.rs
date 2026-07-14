@@ -1,8 +1,9 @@
 use bevy::reflect::Reflect;
 use bevy_hanabi::{
-    Modifier, SetPositionCircleModifier, SetPositionCone3dModifier, SetPositionSphereModifier,
-    SetVelocityCircleModifier, SetVelocitySphereModifier, SetVelocityTangentModifier,
+    Modifier, SetVelocityCircleModifier, SetVelocitySphereModifier, SetVelocityTangentModifier,
 };
+
+use crate::plugin::set_velocity_direction_modifier::SetVelocityDirectionModifier;
 
 macro_rules! dispatch {
     ($a:expr, $method:ident) => {
@@ -10,6 +11,7 @@ macro_rules! dispatch {
             Self::Sphere(sphere) => sphere.$method(),
             Self::Circle(circle) => circle.$method(),
             Self::Tangent(cone3d) => cone3d.$method(),
+            Self::Direction(direction) => direction.$method(),
         }
     };
     ($a:expr, $method:ident, $arg1:expr, $arg2:expr) => {
@@ -17,6 +19,7 @@ macro_rules! dispatch {
             Self::Circle(circle) => circle.$method($arg1, $arg2),
             Self::Sphere(sphere) => sphere.$method($arg1, $arg2),
             Self::Tangent(cone3d) => cone3d.$method($arg1, $arg2),
+            Self::Direction(direction) => direction.$method($arg1, $arg2),
         }
     };
 }
@@ -26,6 +29,7 @@ pub enum SetVelocityModifier {
     Circle(SetVelocityCircleModifier),
     Sphere(SetVelocitySphereModifier),
     Tangent(SetVelocityTangentModifier),
+    Direction(SetVelocityDirectionModifier),
 }
 
 impl Modifier for SetVelocityModifier {

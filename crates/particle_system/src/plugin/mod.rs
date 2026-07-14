@@ -38,8 +38,10 @@ use crate::{
     plugin::{
         random_color_modifier::RandomColorModifier,
         set_position_box_modifier::SetPositionBoxModifier,
-        set_position_modifier::SetPositionModifier, set_velocity_modifier::SetVelocityModifier,
-        speed_dampen::SpeedDampenModifier, update_sprite_index::UpdateSpriteIndexModifier,
+        set_position_modifier::SetPositionModifier,
+        set_velocity_direction_modifier::SetVelocityDirectionModifier,
+        set_velocity_modifier::SetVelocityModifier, speed_dampen::SpeedDampenModifier,
+        update_sprite_index::UpdateSpriteIndexModifier,
     },
     ParticleSystem,
 };
@@ -504,18 +506,31 @@ fn make_position(shape: Option<&Shape>, writer: &ExprWriter) -> SetPositionModif
 }
 
 fn make_velocity(
-    _shape: Option<&Shape>,
+    shape: Option<&Shape>,
     initial_velocity_speed: FloatRange,
     writer: &ExprWriter,
 ) -> SetVelocityModifier {
-    SetVelocityModifier::Sphere(SetVelocitySphereModifier {
-        center: writer.lit(Vec3::ZERO).expr(),
-        speed: random_lerp(
-            writer,
-            initial_velocity_speed.start,
-            initial_velocity_speed.end,
-        ),
-    })
+    let speed = random_lerp(
+        writer,
+        initial_velocity_speed.start,
+        initial_velocity_speed.end,
+    );
+    match shape {
+        None | Some(Shape::Point(_) | Shape::Sphere(_)) => {
+            SetVelocityModifier::Sphere(SetVelocitySphereModifier {
+                center: writer.lit(Vec3::ZERO).expr(),
+                speed,
+            })
+        }
+        Some(Shape::Box(_)) => SetVelocityModifier::Direction(SetVelocityDirectionModifier {
+            direction: writer.lit(-Vec3::Z).expr(),
+            speed,
+        }),
+        Some(Shape::Cone(_)) => SetVelocityModifier::Direction(SetVelocityDirectionModifier {
+            direction: writer.lit(Vec3::Y).expr(),
+            speed,
+        }),
+    }
 }
 
 fn random_lerp(writer: &ExprWriter, start: f32, end: f32) -> ExprHandle {
