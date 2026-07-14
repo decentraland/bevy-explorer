@@ -10,7 +10,10 @@ use bevy::{
     transform::systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms},
 };
 use common::{anim_last_system, sets::PostUpdateSets, util::ModifyComponentExt};
-use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
+use dcl::{
+    crdt::lww::CrdtLWWState,
+    interface::{ComponentPosition, CrdtType},
+};
 
 use crate::{
     initialize_scene::process_scene_lifecycle,
@@ -20,8 +23,8 @@ use crate::{
 };
 use common::sets::SceneLoopSets;
 use dcl_component::{
-    transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
-    SceneEntityId,
+    transform_and_parent::DclTransformAndParent, DclReader, DclWriter, FromDclReader,
+    SceneComponentId, SceneEntityId,
 };
 
 use super::{AddCrdtInterfaceExt, CrdtStateComponent};
@@ -280,11 +283,32 @@ pub(crate) fn process_transform_and_parent_updates(
 // also this will lag if the parent of the syncee is moving so they should
 // be parented to the scene root generally.
 #[derive(Component)]
-pub struct ParentPositionSync<T: ParentPositionSyncStage>(pub Entity, PhantomData<fn() -> T>);
+pub struct ParentPositionSync<T: ParentPositionSyncStage> {
+    pub sync_to: Entity,
+    /// when set, the synced transform is also written back to the owning
+    /// scene's crdt, relative to this entity (normally the attached player's
+    /// root). unity semantics, which the sdk world-transform helpers build on:
+    /// rotation is made relative to the target, translation is the unrotated
+    /// world-axis delta from the target.
+    pub translation_target: Option<Entity>,
+    _p: PhantomData<fn() -> T>,
+}
 
 impl<T: ParentPositionSyncStage> ParentPositionSync<T> {
-    pub fn new(parent: Entity) -> Self {
-        Self(parent, Default::default())
+    pub fn new(sync_to: Entity) -> Self {
+        Self {
+            sync_to,
+            translation_target: None,
+            _p: Default::default(),
+        }
+    }
+
+    pub fn new_with_scene_writeback(sync_to: Entity, translation_target: Entity) -> Self {
+        Self {
+            sync_to,
+            translation_target: Some(translation_target),
+            _p: Default::default(),
+        }
     }
 }
 
@@ -296,6 +320,7 @@ impl ParentPositionSyncStage for AvatarAttachStage {}
 pub struct SceneProxyStage;
 impl ParentPositionSyncStage for SceneProxyStage {}
 
+#[allow(clippy::type_complexity)]
 pub fn parent_position_sync<T: ParentPositionSyncStage>(
     mut commands: Commands,
     syncees: Query<(
@@ -303,25 +328,82 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
         &ParentPositionSync<T>,
         &ChildOf,
         Option<&VisibilityComponent>,
+        Option<(&SceneEntity, &Transform)>,
     )>,
     globals: Query<&GlobalTransform>,
     gt_helper: TransformHelperPub,
     inherited_visibility: Query<&InheritedVisibility>,
+    mut contexts: Query<&mut RendererSceneContext>,
+    mut buf: Local<Vec<u8>>,
 ) {
-    for (ent, sync, parent, maybe_explicit_visibility) in syncees.iter() {
+    for (ent, sync, parent, maybe_explicit_visibility, maybe_scene_entity) in syncees.iter() {
         let Ok(parent_transform) = globals.get(parent.parent()) else {
             continue;
         };
 
-        let Ok(gt) = gt_helper.compute_global_transform(sync.0, None) else {
+        let Ok(gt) = gt_helper.compute_global_transform(sync.sync_to, None) else {
             continue;
         };
 
         let transform = gt.reparented_to(parent_transform);
+
+        // write the synced transform back to the owning scene, so it can read
+        // the anchor pose. the value is relative to the translation target
+        // (the attached player's root), matching unity and the sdk
+        // world-transform helpers which compose
+        // `player transform * entity transform` for entities with
+        // AvatarAttach: rotation is made relative to the target, but the
+        // translation delta is deliberately NOT rotated into the target's
+        // frame - that's what unity writes, and scenes in the wild correct
+        // for exactly that. scale and the declared parent are passed through
+        // unchanged.
+        if let (Some(target), Some((scene_entity, current_transform))) =
+            (sync.translation_target, maybe_scene_entity)
+        {
+            if let (Ok(target_gt), Ok(mut context)) = (
+                gt_helper.compute_global_transform(target, None),
+                contexts.get_mut(scene_entity.root),
+            ) {
+                let (_, anchor_rotation, anchor_translation) = gt.to_scale_rotation_translation();
+                let (_, target_rotation, target_translation) =
+                    target_gt.to_scale_rotation_translation();
+
+                let parent_id = context
+                    .crdt_store
+                    .get(
+                        SceneComponentId::TRANSFORM,
+                        CrdtType::LWW_ENT,
+                        scene_entity.id,
+                    )
+                    .and_then(|data| {
+                        DclTransformAndParent::from_reader(&mut DclReader::new(data)).ok()
+                    })
+                    .map(|t| t.parent)
+                    .unwrap_or(SceneEntityId::ROOT);
+
+                let dcl_transform = DclTransformAndParent::from_bevy_transform_and_parent(
+                    &Transform {
+                        translation: anchor_translation - target_translation,
+                        rotation: target_rotation.inverse() * anchor_rotation,
+                        scale: current_transform.scale,
+                    },
+                    parent_id,
+                );
+
+                buf.clear();
+                DclWriter::new(&mut buf).write(&dcl_transform);
+                context.crdt_store.update_if_different(
+                    SceneComponentId::TRANSFORM,
+                    CrdtType::LWW_ENT,
+                    scene_entity.id,
+                    Some(&mut DclReader::new(&buf)),
+                );
+            }
+        }
         let maybe_override_visibility = if maybe_explicit_visibility.is_some() {
             None
         } else {
-            let inherited_visibility = inherited_visibility.get(sync.0).unwrap();
+            let inherited_visibility = inherited_visibility.get(sync.sync_to).unwrap();
 
             Some(match inherited_visibility.get() {
                 true => Visibility::Visible,
