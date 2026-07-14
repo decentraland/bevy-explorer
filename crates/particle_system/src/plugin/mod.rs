@@ -7,7 +7,7 @@ mod update_sprite_index;
 
 use std::cmp::Ordering;
 
-use bevy::{math::bounding::Aabb3d, platform::collections::HashSet, prelude::*};
+use bevy::{platform::collections::HashSet, prelude::*};
 use bevy_hanabi::{
     AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
     EffectSpawner, ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, OrientMode,
@@ -35,9 +35,10 @@ use scene_runner::{
 
 use crate::{
     plugin::{
-        random_color_modifier::RandomColorModifier, set_position_modifier::SetPositionModifier,
-        set_velocity_modifier::SetVelocityModifier, speed_dampen::SpeedDampenModifier,
-        update_sprite_index::UpdateSpriteIndexModifier,
+        random_color_modifier::RandomColorModifier,
+        set_position_box_modifier::SetPositionBoxModifier,
+        set_position_modifier::SetPositionModifier, set_velocity_modifier::SetVelocityModifier,
+        speed_dampen::SpeedDampenModifier, update_sprite_index::UpdateSpriteIndexModifier,
     },
     ParticleSystem,
 };
@@ -480,28 +481,18 @@ fn make_position(shape: Option<&Shape>, writer: &ExprWriter) -> SetPositionModif
                 .expr(),
             dimension: bevy_hanabi::ShapeDimension::Volume,
         }),
-        Some(Shape::Box(r#box)) => {
-            // bevy_hanabi does not have a box spawner, faking it with a sphere
-            SetPositionModifier::Sphere(SetPositionSphereModifier {
-                center: writer.lit(Vec3::ZERO).expr(),
-                radius: writer
-                    .lit(
-                        Aabb3d::new(
-                            Vec3::ZERO,
-                            r#box
-                                .size
-                                .as_ref()
-                                .map(Vector3::abs_vec_to_vec3)
-                                .unwrap_or(Vec3::ONE)
-                                / 2.,
-                        )
-                        .bounding_sphere()
-                        .radius(),
-                    )
-                    .expr(),
-                dimension: bevy_hanabi::ShapeDimension::Volume,
-            })
-        }
+        Some(Shape::Box(r#box)) => SetPositionModifier::Box(SetPositionBoxModifier {
+            scale: writer
+                .lit(
+                    r#box
+                        .size
+                        .as_ref()
+                        .map(Vector3::abs_vec_to_vec3)
+                        .unwrap_or(Vec3::ONE),
+                )
+                .expr(),
+            dimension: bevy_hanabi::ShapeDimension::Volume,
+        }),
         Some(Shape::Cone(cone)) => SetPositionModifier::Cone3d(SetPositionCone3dModifier {
             base_radius: writer.lit(cone.radius.unwrap_or(1.)).expr(),
             height: writer.lit(1.).expr(),

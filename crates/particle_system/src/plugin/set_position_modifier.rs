@@ -3,12 +3,15 @@ use bevy_hanabi::{
     Modifier, SetPositionCircleModifier, SetPositionCone3dModifier, SetPositionSphereModifier,
 };
 
+use crate::plugin::set_position_box_modifier::SetPositionBoxModifier;
+
 macro_rules! dispatch {
     ($a:expr, $method:ident) => {
         match $a {
             Self::Sphere(sphere) => sphere.$method(),
             Self::Circle(circle) => circle.$method(),
             Self::Cone3d(cone3d) => cone3d.$method(),
+            Self::Box(r#box) => r#box.$method(),
         }
     };
     ($a:expr, $method:ident, $arg1:expr, $arg2:expr) => {
@@ -16,6 +19,7 @@ macro_rules! dispatch {
             Self::Sphere(sphere) => sphere.$method($arg1, $arg2),
             Self::Circle(circle) => circle.$method($arg1, $arg2),
             Self::Cone3d(cone3d) => cone3d.$method($arg1, $arg2),
+            Self::Box(r#box) => r#box.$method($arg1, $arg2),
         }
     };
 }
@@ -25,6 +29,7 @@ pub enum SetPositionModifier {
     Sphere(SetPositionSphereModifier),
     Circle(SetPositionCircleModifier),
     Cone3d(SetPositionCone3dModifier),
+    Box(SetPositionBoxModifier),
 }
 
 impl Modifier for SetPositionModifier {
