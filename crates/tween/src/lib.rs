@@ -23,6 +23,16 @@ use scene_runner::{
     ContainerEntity, SceneEntity,
 };
 
+/// Rotation axis for RotateContinuous: the direction quaternion's normalized
+/// imaginary part. The identity quaternion encodes no axis; fall back to Y to
+/// match unity-explorer.
+fn rotate_continuous_axis(direction: dcl_component::proto_components::common::Quaternion) -> Vec3 {
+    let quat = direction.to_bevy_normalized();
+    Vec3::new(quat.x, quat.y, quat.z)
+        .try_normalize()
+        .unwrap_or(Vec3::Y)
+}
+
 #[derive(Debug, Component, Deref, DerefMut)]
 pub struct Tween(PbTween);
 
@@ -174,16 +184,15 @@ impl Tween {
                 }
             }
             Some(Mode::RotateContinuous(data)) => {
-                let Some((axis, _)) = data
-                    .direction
-                    .map(|dcl_quat| dcl_quat.to_bevy_normalized().to_axis_angle())
-                else {
+                let Some(axis) = data.direction.map(rotate_continuous_axis) else {
                     return;
                 };
-                transform.rotation *= Quat::from_axis_angle(
+                // pre-multiply: the axis is in parent space (matches unity), so a
+                // tilted entity spins in place rather than swinging its own axes
+                transform.rotation = Quat::from_axis_angle(
                     axis,
                     ease_value * tween_apply_update.delta * -data.speed.to_radians(),
-                );
+                ) * transform.rotation;
             }
             Some(Mode::MoveContinuous(data)) => {
                 if let Some(direction) = data.direction {
