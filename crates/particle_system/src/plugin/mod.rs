@@ -3,6 +3,7 @@ mod set_position_box_modifier;
 mod set_position_modifier;
 mod set_velocity_direction_modifier;
 mod set_velocity_modifier;
+mod set_velocity_spread_modifier;
 mod speed_dampen;
 mod update_sprite_index;
 
