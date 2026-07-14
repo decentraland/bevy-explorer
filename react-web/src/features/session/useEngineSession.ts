@@ -313,9 +313,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const bootPollStop = useRef(false)
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Native parcel pick: the engine can only teleport an existing player (there's no boot-at-position
-  // when the engine is already running), so the pick is held until playerReady.
+  // when the engine is already running), so the pick is held until playerReady — or sent at once if
+  // the player already spawned (see the no-launch pick path).
   const pendingParcel = useRef<{ x: number; y: number } | null>(null)
   const [playerReady, setPlayerReady] = useState(false)
+  // Ref twin of playerReady: the destination pick runs in a callback that would close over a
+  // stale value of the state.
+  const playerReadyRef = useRef(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
@@ -370,6 +374,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       switch (msg.kind) {
         case 'event':
           if (msg.name === 'playerReady') {
+            playerReadyRef.current = true
             setPlayerReady(true)
             bootPollStop.current = true // world reached → stop watching for a boot panic
             if (pendingParcel.current != null) {
@@ -708,12 +713,21 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // a changeRealm to the same realm is NOT a no-op (full scene purge + reconnect). Skip
       // likewise keeps the engine's own start realm.
       if (driver.launch == null) {
+        // Deferred to the playerReady flush only if the player hasn't spawned yet. Fresh sign-in
+        // completes login BEFORE the picker, so playerReady has usually fired by pick time and the
+        // flush would never run again — send immediately then. An immediate teleport still lands
+        // after a just-sent changeRealm: the engine applies teleports after realm changes and
+        // overrides the spawn position.
+        const sendParcel = (x: number, y: number): void => {
+          if (playerReadyRef.current) driver.send({ kind: 'teleport', x, y })
+          else pendingParcel.current = { x, y }
+        }
         if (dest?.kind === 'world') {
           driver.send({ kind: 'changeRealm', realm: dest.realm })
           const [x, y] = (dest.position ?? '').split(',').map(Number)
-          if (Number.isFinite(x) && Number.isFinite(y)) pendingParcel.current = { x, y }
+          if (Number.isFinite(x) && Number.isFinite(y)) sendParcel(x, y)
         } else if (dest?.kind === 'parcel') {
-          pendingParcel.current = { x: dest.x, y: dest.y }
+          sendParcel(dest.x, dest.y)
         }
         runDeferredLogin()
         return
