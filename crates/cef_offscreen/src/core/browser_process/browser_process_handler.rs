@@ -49,11 +49,13 @@ impl ImplBrowserProcessHandler for BrowserProcessHandlerBuilder {
             return;
         };
 
+        // disable-web-security is REQUIRED: the page lives on the cef:// origin and fetches
+        // remote https APIs (catalyst profiles/thumbnails) that don't allowlist it for CORS.
+        // Precisely because those remote fetches happen, TLS must stay validated — the
+        // ignore-certificate-errors / ignore-ssl-errors / allow-running-insecure-content
+        // switches this inherited from the bevy_cef extraction were an open MITM door.
         command_line.append_switch(Some(&"disable-web-security".into()));
-        command_line.append_switch(Some(&"allow-running-insecure-content".into()));
         command_line.append_switch(Some(&"disable-session-crashed-bubble".into()));
-        command_line.append_switch(Some(&"ignore-certificate-errors".into()));
-        command_line.append_switch(Some(&"ignore-ssl-errors".into()));
         command_line.append_switch(Some(&"enable-logging=stderr".into()));
     }
     #[inline]
