@@ -637,10 +637,13 @@ pub async fn lookup_ens(
     ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
     #[cfg(not(target_arch = "wasm32"))]
-    if std::path::Path::new(&ens).join("about").is_file() {
+    // parent_scene gates on WHO is asking: only user-initiated lookups (--ui / console commands,
+    // which pass None) may resolve a local directory — a scene's spawnPortableExperience must
+    // not probe or load local paths.
+    if parent_scene.is_none() && std::path::Path::new(&ens).join("about").is_file() {
         // file realm: a local directory containing an `about` (sdk-commands export-static
         // layout, e.g. `--ui react-web/bridge-scene/static/BevyExplorerUI`). No ens.
-        return lookup_local_realm(parent_scene, &ens, super_user);
+        return lookup_local_realm(parent_scene, &ens, super_user, &ipfs);
     }
     if ens.to_ascii_lowercase().starts_with("http") {
         lookup_portable(parent_scene, ens.clone(), super_user, ipfs)
@@ -674,6 +677,7 @@ fn lookup_local_realm(
     parent_scene: Option<String>,
     path: &str,
     super_user: bool,
+    ipfs: &IpfsIo,
 ) -> Result<(String, PortableSource), String> {
     let realm_dir = std::path::Path::new(path)
         .canonicalize()
@@ -694,11 +698,10 @@ fn lookup_local_realm(
         .flatten()
         .ok_or("failed to resolve content hash from urn")?;
 
-    let content_root = realm_dir
-        .parent()
-        .ok_or("realm dir has no parent")?
-        .to_string_lossy()
-        .replace('\\', "/");
+    let content_dir = realm_dir.parent().ok_or("realm dir has no parent")?;
+    // registered roots bound what file:// urls may read (IpfsIo rejects the rest)
+    ipfs.add_allowed_file_root(content_dir.to_path_buf());
+    let content_root = content_dir.to_string_lossy().replace('\\', "/");
     // windows canonicalize returns a verbatim path (`\\?\C:\...`); the prefix is
     // meaningless inside the url and the recombined read path is rejected (os error 123)
     let content_root = content_root.trim_start_matches("//?/");
