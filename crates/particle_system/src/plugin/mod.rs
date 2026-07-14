@@ -13,7 +13,7 @@ use bevy_hanabi::{
     AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
     EffectSpawner, ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, OrientMode,
     OrientModifier, ParticleEffect, ParticleTextureModifier, ScalarType, SetAttributeModifier,
-    SetPositionCone3dModifier, SetPositionSphereModifier, SetVelocitySphereModifier,
+    SetPositionCircleModifier, SetPositionSphereModifier, SetVelocitySphereModifier,
     SizeOverLifetimeModifier, SpawnerSettings,
 };
 use common::{debug_panic, structs::PrimaryUser};
@@ -496,11 +496,11 @@ fn make_position(shape: Option<&Shape>, writer: &ExprWriter) -> SetPositionModif
                 .expr(),
             dimension: bevy_hanabi::ShapeDimension::Volume,
         }),
-        Some(Shape::Cone(cone)) => SetPositionModifier::Cone3d(SetPositionCone3dModifier {
-            base_radius: writer.lit(cone.radius.unwrap_or(1.)).expr(),
-            height: writer.lit(1.).expr(),
-            top_radius: writer.lit(cone.radius.unwrap_or(1.)).expr(),
-            dimension: bevy_hanabi::ShapeDimension::Surface,
+        Some(Shape::Cone(cone)) => SetPositionModifier::Circle(SetPositionCircleModifier {
+            axis: writer.lit(Vec3::NEG_Z).expr(),
+            center: writer.lit(Vec3::ZERO).expr(),
+            dimension: bevy_hanabi::ShapeDimension::Volume,
+            radius: writer.lit(cone.radius.unwrap_or(1.)).expr(),
         }),
     }
 }
@@ -527,7 +527,7 @@ fn make_velocity(
             speed,
         }),
         Some(Shape::Cone(_)) => SetVelocityModifier::Direction(SetVelocityDirectionModifier {
-            direction: writer.lit(Vec3::Y).expr(),
+            direction: writer.lit(Vec3::NEG_Z).expr(),
             speed,
         }),
     }
