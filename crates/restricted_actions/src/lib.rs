@@ -753,6 +753,7 @@ fn spawn_portable(
         RpcResultSender<Result<SpawnResponse, String>>,
     )>,
     ipfas: IpfsAssetServer,
+    is_server: Res<IsServer>,
 ) {
     let mut new_portables = HashMap::new();
     let mut failed_portables = HashSet::new();
@@ -766,6 +767,12 @@ fn spawn_portable(
         } => Some((location, spawner, response)),
         _ => None,
     }) {
+        // authoritative-server mode: a tenant scene must not spawn arbitrary portables
+        // in the shared engine (cross-tenant resource-exhaustion DoS).
+        if is_server.0 {
+            response.send(Err("portable experiences are disabled in server mode".to_owned()));
+            continue;
+        }
         perms.check(
             PermissionType::SpawnPortable,
             *spawner,

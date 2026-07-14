@@ -37,7 +37,10 @@ social = ["social/social"]
 remote = ["bevy/bevy_remote"]
 bevy_mesh_picking_backend = ["bevy/bevy_mesh_picking_backend"]
 # Gates the experimental headless scene-server binary out of default/release builds.
-headless = []
+# configurable_error_handler lets the headless bin install a warn-and-continue error
+# handler (bevy's default panics). Pulled in only by this feature, so prod builds
+# (which never enable `headless`) are unaffected.
+headless = ["bevy/configurable_error_handler"]
 
 # Debug features
 tween_debug = ["tween/tween_debug"]
