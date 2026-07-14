@@ -27,7 +27,7 @@
 
 use bevy::asset::RenderAssetUsages;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
-use bevy::input::mouse::MouseWheel;
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::ui::FocusPolicy;
@@ -387,7 +387,14 @@ fn route_mouse(
         }
     }
     for ev in wheel.read() {
-        browsers.send_mouse_wheel(&state.hud, cursor, Vec2::new(ev.x, ev.y));
+        // CEF takes pixel deltas. Notched mice report Line units (±1.0/notch) — unscaled that's
+        // one PIXEL per notch, i.e. lists that barely move; 40 px is Blink's own line step.
+        // Trackpads report Pixel units already.
+        let pixels_per_unit = match ev.unit {
+            MouseScrollUnit::Line => 40.0,
+            MouseScrollUnit::Pixel => 1.0,
+        };
+        browsers.send_mouse_wheel(&state.hud, cursor, Vec2::new(ev.x, ev.y) * pixels_per_unit);
     }
 }
 
