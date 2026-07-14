@@ -523,7 +523,7 @@ fn make_velocity(
             })
         }
         Some(Shape::Box(_)) => SetVelocityModifier::Direction(SetVelocityDirectionModifier {
-            direction: writer.lit(-Vec3::Z).expr(),
+            direction: writer.lit(Vec3::NEG_Z).expr(),
             speed,
         }),
         Some(Shape::Cone(_)) => SetVelocityModifier::Direction(SetVelocityDirectionModifier {
