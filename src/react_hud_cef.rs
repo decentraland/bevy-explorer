@@ -208,11 +208,12 @@ fn spawn_hud(
             ..Default::default()
         },
         GlobalZIndex(1000),
+        // Block + Interaction present initially (login screen is fully HUD); route_mouse flips
+        // BOTH as the cursor crosses opaque/transparent HUD pixels. Interaction presence gates
+        // engine world input (resolve_pointer_target treats any hovered MouseInteractionComponent
+        // as UI); FocusPolicy gates the scene-UI nodes stacked below this one.
         FocusPolicy::Block,
         MouseInteractionComponent,
-        // Present initially (login screen is fully HUD); route_mouse inserts/removes it as the
-        // cursor crosses opaque/transparent HUD pixels — its presence is what gates engine world
-        // input (resolve_pointer_target treats any hovered MouseInteractionComponent as UI).
         Interaction::default(),
     ));
 
@@ -337,9 +338,18 @@ fn route_mouse(
         state.over_ui = over;
         if let Ok(node) = hud_nodes.single() {
             if over {
-                commands.entity(node).insert(Interaction::default());
+                commands
+                    .entity(node)
+                    .insert((Interaction::default(), FocusPolicy::Block));
             } else {
-                commands.entity(node).remove::<Interaction>();
+                // FocusPolicy must flip with Interaction: ui_focus_system stops at the first
+                // Block node in the stack whether or not it has an Interaction, and this node
+                // covers everything at z1000 — a permanent Block starves every scene-UI node
+                // (their hover/press never fires, scene UIs are completely dead).
+                commands
+                    .entity(node)
+                    .remove::<Interaction>()
+                    .insert(FocusPolicy::Pass);
             }
         }
     }
