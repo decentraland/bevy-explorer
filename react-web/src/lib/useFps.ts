@@ -63,7 +63,7 @@ export function useFps(enabled: boolean): FpsStats {
         const secs = (t - windowStart) / 1000
         setStats({
           page: Math.round(frames / secs),
-          // Native pushes the real engine fps (see src/react_hud.rs); otherwise count the
+          // Native pushes the real engine fps (see src/react_hud_cef.rs); otherwise count the
           // same-document heartbeat (web).
           engine:
             typeof (window as HeartbeatWindow).__nativeEngineFps === 'number'

@@ -38,7 +38,8 @@ react-hud-cef = ["dep:cef_offscreen"]
 tween_debug = ["tween/tween_debug"]
 
 # CEF render-process helper (react-hud-cef): built alongside decentra-bevy, launched by Chromium
-# for its renderer/gpu/utility subprocesses. required-features keeps it out of default builds.
+# for its renderer/gpu/utility subprocesses. required-features keeps it out of builds without
+# the feature (e.g. --no-default-features wasm builds).
 [[bin]]
 name = "decentra-bevy-cef"
 path = "src/bin/cef_render_process.rs"

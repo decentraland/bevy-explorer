@@ -3,9 +3,9 @@
 // logical px (device px ÷ devicePixelRatio), so innerHeight/1080 is DPI-correct: a Retina
 // 3024×1890 framebuffer is ~945 logical tall → scale ≈ 0.87.
 //
-// NATIVE: the wry/WKWebView overlay does NOT report a reliable logical innerHeight (and fires no
-// dependable resize), which made full-screen pages render too big. So the native overlay pushes
-// bevy's authoritative logical window height to `window.__nativeUiHeight` (see src/react_hud.rs);
+// NATIVE: the offscreen webview's own innerHeight/resize timing isn't reliable (the host resizes
+// it asynchronously), which made full-screen pages render too big. So the engine pushes its
+// authoritative logical window height to `window.__nativeUiHeight` (see src/react_hud_cef.rs);
 // we prefer it and poll for changes since there's no resize event to rely on.
 
 import { useEffect } from 'react'

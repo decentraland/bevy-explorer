@@ -43,8 +43,8 @@ import { EngineErrorModal } from './features/error/EngineErrorModal'
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
 // ENGINE (default): real engine in a same-origin iframe + super-user bridge scene.
-// NATIVE (?native=1): HUD in a wry webview over the native bevy engine — a JS shim bridges this
-// app's BroadcastChannel to the engine's native SystemApi relay (no iframe, no mock).
+// NATIVE (?native=1): HUD in a CEF offscreen webview over the native bevy engine — a JS shim
+// bridges this app's BroadcastChannel to the engine's native relay (no iframe, no mock).
 const MODE: 'mock' | 'engine' | 'native' =
   params.get('mock') === '1' ? 'mock' : params.get('native') === '1' ? 'native' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
@@ -56,8 +56,7 @@ const SHOWCASE = params.get('showcase') === '1'
 function gateReason(): 'mobile' | 'browser' | null {
   // Precedence: a real device constraint wins over a test override — mobile is checked before
   // `?gate=browser`, so on an actual phone that param still (correctly) yields the mobile variant.
-  // Native (wry webview over native bevy): no browser/mobile gate — the host app IS the platform
-  // (and wry's UA is WebKit, which would misread as an unsupported browser).
+  // Native (CEF webview over native bevy): no browser/mobile gate — the host app IS the platform.
   if (MODE === 'native') return null
   if (params.get('nogate') === '1') return null
   if (isMobile() || params.get('gate') === '1') return 'mobile'
@@ -106,7 +105,8 @@ function Hud(): React.JSX.Element {
       return { rpc: null, createDriver: () => new BridgeClient() }
     }
     if (MODE === 'native') {
-      // The wry shim wires this BroadcastChannel to the native engine relay (see src/react_hud.rs).
+      // The CEF shim wires this BroadcastChannel to the native engine relay (see
+      // src/lib/cefNativeBridge.ts and src/react_hud_cef.rs).
       return { rpc: null, createDriver: () => new BridgeClient() }
     }
     const engineRpc = new EngineRpc()

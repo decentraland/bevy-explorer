@@ -14,7 +14,7 @@ if (new URLSearchParams(location.search).get('native') === '1') {
   document.body.style.background = 'transparent'
   // No webview context menu (Back/Reload) on right-click — that gesture is the engine's camera.
   window.addEventListener('contextmenu', (e) => e.preventDefault())
-  // CEF host (react-hud-cef): bridge Envelopes over window.cef instead of wry's window.ipc shim.
+  // CEF host (react-hud-cef): bridge Envelopes over window.cef (no-op when it's absent).
   installCefNativeBridge()
   // Some webview backends treat a GPU-overlay webview as a background page and throttle rendering;
   // report the page as always visible so rAF/paint keep running.

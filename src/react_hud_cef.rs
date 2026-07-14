@@ -5,7 +5,7 @@
 //
 // Transport: the page's BroadcastChannel Envelopes ride cef_offscreen's IPC (`window.cef.emit` /
 // `window.cef.listen('bridge', ..)`, wired by react-web's cefNativeBridge when it detects
-// `window.cef`), and this file relays them like react_hud.rs does. With `--ui <bridge-scene>` the
+// `window.cef`), and this file relays them. With `--ui <bridge-scene>` the
 // SDK7 bridge-scene owns the wire protocol (this file is a pure Envelope pipe via
 // BridgeToPage/GetBridgeStream); until it connects (scene boot takes seconds; the page is up
 // immediately) a built-in fallback handles the login rpcs, so the login screen is responsive
@@ -497,7 +497,7 @@ fn pump_bridge(
     }
 }
 
-// page -> engine: same fallback relay as react_hud.rs pump_ipc (login/chat domains).
+// page -> engine: textFocus control messages, the bridge-scene pipe, and the fallback login rpcs.
 fn on_page_envelope(
     trigger: Trigger<PageEnvelope>,
     state: Option<ResMut<ReactHudCef>>,
