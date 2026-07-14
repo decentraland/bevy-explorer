@@ -202,8 +202,13 @@ export interface LoginFlow {
   loadProgress: number
   /** Active boot step id ('download'|'compile'|'init'|'workers'|'gpu') or null. */
   loadStep: string | null
-  /** Fresh sign-in → redirect to the same-domain auth site. */
+  /** Fresh sign-in: same-domain auth redirect (web) or the engine's remote-wallet flow (native). */
   startWithAccount: () => void
+  /** Native fresh sign-in in flight → show the verification panel (code null until it arrives). */
+  authPending: boolean
+  authCode: string | null
+  /** Abort the in-flight native fresh sign-in. */
+  cancelLogin: () => void
   exploreAsGuest: () => void
   /** Reuse the stored SSO identity (hand it to the engine). */
   jumpIn: () => void
@@ -309,11 +314,23 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Deferred login: the login call captured on Jump in, run only once the user picks a destination
   // (so the engine is launched straight at that destination instead of loading Genesis Plaza first).
   const pendingLogin = useRef<((driver: LoginDriver) => Promise<unknown>) | null>(null)
+  // Native fresh sign-in (driver.loginNew) in flight: non-null shows the verification-code panel;
+  // `code` fills in when the engine's 'loginCode' message lands. The attempt counter invalidates
+  // a cancelled attempt's eventual resolution (the promise settles after loginCancel).
+  const [auth, setAuth] = useState<{ code: string | null } | null>(null)
+  const authAttempt = useRef(0)
   // Stops the post-launch boot-panic poll once the world is reached (so it can't mislabel a benign
   // post-boot panic as a launch failure). The timer id is kept so it's cancelled on unmount.
   const bootPollStop = useRef(false)
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Native parcel pick: the engine can only teleport an existing player (there's no boot-at-position
+  // when the engine is already running), so the pick is held until playerReady — or sent at once if
+  // the player already spawned (see the no-launch pick path).
+  const pendingParcel = useRef<{ x: number; y: number } | null>(null)
   const [playerReady, setPlayerReady] = useState(false)
+  // Ref twin of playerReady: the destination pick runs in a callback that would close over a
+  // stale value of the state.
+  const playerReadyRef = useRef(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
@@ -372,9 +389,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       switch (msg.kind) {
         case 'event':
           if (msg.name === 'playerReady') {
+            playerReadyRef.current = true
             setPlayerReady(true)
             bootPollStop.current = true // world reached → stop watching for a boot panic
+            if (pendingParcel.current != null) {
+              driver.send({ kind: 'teleport', ...pendingParcel.current })
+              pendingParcel.current = null
+            }
           }
+          break
+        case 'loginCode':
+          // Only meaningful while a fresh sign-in is in flight; a stray late code must not
+          // resurrect the panel.
+          setAuth((a) => (a == null ? a : { code: msg.code }))
           break
         case 'sceneLoading':
           setScene(msg.state)
@@ -698,6 +725,52 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // guards against launching on a disposed driver (the rAF/timeout aren't otherwise cancellable).
       if (ran || driverRef.current == null) return
       ran = true
+      const runDeferredLogin = (): void => {
+        const login = pendingLogin.current
+        pendingLogin.current = null
+        Promise.resolve(login?.(driver))
+          .then(() => setBusy(false))
+          .catch((e: unknown) => {
+            console.error('[login] post-launch login failed:', e)
+            // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
+            // e.message would be undefined and the login screen would show no error at all.
+            const msg = e instanceof Error ? e.message : String(e)
+            setError(msg !== '' ? msg : 'Login failed')
+            setBusy(false)
+            // Back to the LOGIN screen, not the picker: the picker renders no error, and the
+            // login screen is where the retry / profile-reset actions live. The engine stays
+            // launched (start()'s __bevyStarted guard makes the next launch a no-op).
+            setSubmitted(false)
+            setDestinationPicked(false)
+          })
+      }
+      // No launch = the engine is already running at its own start realm (native): the pick maps
+      // to runtime directives instead of boot parameters. A world switches realm now (works
+      // pre-login); a parcel teleport needs a spawned player, so it's held until playerReady.
+      // A parcel pick sends no realm change: if the picker was reachable at all the engine
+      // omitted ?realm=, which it only does when it booted on the HUD's own DEFAULT_REALM —
+      // a changeRealm to the same realm is NOT a no-op (full scene purge + reconnect). Skip
+      // likewise keeps the engine's own start realm.
+      if (driver.launch == null) {
+        // Deferred to the playerReady flush only if the player hasn't spawned yet. Fresh sign-in
+        // completes login BEFORE the picker, so playerReady has usually fired by pick time and the
+        // flush would never run again — send immediately then. An immediate teleport still lands
+        // after a just-sent changeRealm: the engine applies teleports after realm changes and
+        // overrides the spawn position.
+        const sendParcel = (x: number, y: number): void => {
+          if (playerReadyRef.current) driver.send({ kind: 'teleport', x, y })
+          else pendingParcel.current = { x, y }
+        }
+        if (dest?.kind === 'world') {
+          driver.send({ kind: 'changeRealm', realm: dest.realm })
+          const [x, y] = (dest.position ?? '').split(',').map(Number)
+          if (Number.isFinite(x) && Number.isFinite(y)) sendParcel(x, y)
+        } else if (dest?.kind === 'parcel') {
+          sendParcel(dest.x, dest.y)
+        }
+        runDeferredLogin()
+        return
+      }
       bootPollStop.current = false
       driverRef.current?.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
       // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
@@ -734,23 +807,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         if (++polls < 24) pollTimer.current = setTimeout(pollPanic, 250) // ~6s boot window
       }
       pollTimer.current = setTimeout(pollPanic, 250)
-      const login = pendingLogin.current
-      pendingLogin.current = null
-      Promise.resolve(login?.(driver))
-        .then(() => setBusy(false))
-        .catch((e: unknown) => {
-          console.error('[login] post-launch login failed:', e)
-          // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
-          // e.message would be undefined and the login screen would show no error at all.
-          const msg = e instanceof Error ? e.message : String(e)
-          setError(msg !== '' ? msg : 'Login failed')
-          setBusy(false)
-          // Back to the LOGIN screen, not the picker: the picker renders no error, and the
-          // login screen is where the retry / profile-reset actions live. The engine stays
-          // launched (start()'s __bevyStarted guard makes the next launch a no-op).
-          setSubmitted(false)
-          setDestinationPicked(false)
-        })
+      runDeferredLogin()
     }
     requestAnimationFrame(() => requestAnimationFrame(run))
     setTimeout(run, 60)
@@ -779,6 +836,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   useEffect(() => {
     if (!submitted || destinationPicked || urlDestination.current == null) return
     const dest = urlDestination.current
+    if (dest.kind === 'world' && driverRef.current?.launch == null) {
+      // Native: ?realm= is injected by the engine from its own --server, so the engine is
+      // already there — skip the picker and keep the realm (the no-launch pickDestination(null)
+      // path). No validation fetch either: the engine booted on this realm, and preview/file
+      // realms wouldn't pass the worlds-server about probe anyway.
+      urlDestination.current = null
+      pickDestination(null)
+      return
+    }
     if (dest != null && dest.kind === 'world') {
       if (validatingRealm.current) return
       validatingRealm.current = true
@@ -930,12 +996,51 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // account's server-side profile — the button copy must carry that warning.
   const resetProfileAndJumpIn = useCallback(() => submitLogin((d) => d.jumpIn(true)), [submitLogin])
 
-  // Fresh sign-in (or signing in with a different account): bounce to the same-domain auth
-  // site, which writes the identity back to this origin's localStorage and redirects here.
+  // Fresh sign-in (or signing in with a different account). Web: bounce to the same-domain
+  // auth site, which writes the identity back to this origin's localStorage and redirects
+  // here. Native (the driver has loginNew): that redirect would resolve against cef:// and
+  // 404 into the asset server — instead run the engine's remote-wallet flow, which opens the
+  // auth site in the user's EXTERNAL browser and streams back a verification code to show.
+  // The auth runs now (not deferred like Jump in — it needs the user at the code panel);
+  // approval means the engine is already logged in, so the destination pick has no deferred
+  // login left to run.
   const startWithAccount = useCallback(() => {
     if (busy) return
-    redirectToAuth()
+    const driver = driverRef.current
+    if (driver?.loginNew == null) {
+      redirectToAuth()
+      return
+    }
+    const attempt = ++authAttempt.current
+    setError(null)
+    setBusy(true)
+    setAuth({ code: null })
+    driver
+      .loginNew()
+      .then(() => {
+        if (attempt !== authAttempt.current) return // cancelled meanwhile
+        setAuth(null)
+        setBusy(false)
+        pendingLogin.current = null
+        setSubmitted(true)
+      })
+      .catch((e: unknown) => {
+        if (attempt !== authAttempt.current) return // cancelled: the rejection is expected
+        setAuth(null)
+        setBusy(false)
+        const msg = e instanceof Error ? e.message : String(e)
+        setError(msg !== '' ? msg : 'Sign-in failed')
+      })
   }, [busy])
+
+  // Abort an in-flight fresh sign-in: drop the engine's login task and invalidate the pending
+  // loginNew promise (it settles late — as cancelled from the relay or rejected — and is ignored).
+  const cancelLogin = useCallback(() => {
+    authAttempt.current++
+    setAuth(null)
+    setBusy(false)
+    driverRef.current?.loginCancel().catch(() => {})
+  }, [])
 
   // "Use a different account" shows the sign-in/guest screen (Start with account + Explore as
   // guest) rather than jumping straight to auth — matching the reference scene, and the only way a
@@ -979,7 +1084,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // for each scene streamed into Genesis Plaza. We debounce the *reveal* (loading→world) so a brief
   // `visible` gap between scenes doesn't flash the HUD; the loader still appears INSTANTLY whenever
   // loading re-asserts. Loading = scene visible, or not spawned, or the render-settle still holding.
-  const loadingNow = scene?.visible === true || !playerReady || revealing
+  // No state received yet (scene == null) counts as loading: the loading stream is the
+  // bridge-scene's domain, and until it's running and reports otherwise the world isn't ready
+  // (on native the engine relay itself sends no loading state at all).
+  const loadingNow = scene?.visible !== false || !playerReady || revealing
   const [loaderActive, setLoaderActive] = useState(true)
   useEffect(() => {
     if (loadingNow) {
@@ -1074,6 +1182,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       loadProgress,
       loadStep,
       startWithAccount,
+      authPending: auth != null,
+      authCode: auth?.code ?? null,
+      cancelLogin,
       exploreAsGuest,
       jumpIn,
       profileFetchFailed,

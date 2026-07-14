@@ -443,6 +443,40 @@ pub fn op_send_chat(state: Rc<RefCell<impl State>>, message: String, channel: St
         .unwrap();
 }
 
+// Native super-user bridge transport (backs a BroadcastChannel polyfill). scene -> page:
+pub fn op_bridge_to_page(state: Rc<RefCell<impl State>>, msg: String) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::BridgeToPage(msg))
+        .unwrap();
+}
+
+// page -> scene: subscribe once, then read repeatedly (mirrors the chat stream).
+pub async fn op_get_bridge_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetBridgeStream(sx))
+        .unwrap();
+    2
+}
+
+pub async fn op_read_bridge_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<String, anyhow::Error> {
+    // "" means no message (stream closed); Envelopes are JSON objects so never empty.
+    let Some(mut receiver) = state.borrow_mut().try_take::<RpcStreamReceiver<String>>() else {
+        return Ok(String::new());
+    };
+    let res = receiver.recv().await.unwrap_or_default();
+    state.borrow_mut().put(receiver);
+    Ok(res)
+}
+
 pub async fn op_get_profile_extras(
     state: Rc<RefCell<impl State>>,
 ) -> Result<std::collections::HashMap<String, serde_json::Value>, anyhow::Error> {

@@ -6,6 +6,7 @@
 //
 // ENGINE fps = the bevy render loop's rate, read by wrapping the engine's per-frame
 // `window.__engineHeartbeat()` (deploy/web/engine/boot.js; the Rust loop calls it every frame).
+// On NATIVE the overlay pushes bevy's measured fps to `window.__nativeEngineFps` instead.
 // null when there's no engine (mock mode) or it hasn't booted yet.
 
 import { useEffect, useState } from 'react'
@@ -19,7 +20,11 @@ export interface FpsStats {
   ms: number
 }
 
-type HeartbeatWindow = Window & { __engineHeartbeat?: (...a: unknown[]) => unknown }
+type HeartbeatWindow = Window & {
+  __engineHeartbeat?: (...a: unknown[]) => unknown
+  // Native overlay pushes bevy's measured fps here (no engine on this document's rAF loop).
+  __nativeEngineFps?: number
+}
 
 export function useFps(enabled: boolean): FpsStats {
   const [stats, setStats] = useState<FpsStats>({ page: 0, engine: null, ms: 0 })
@@ -58,7 +63,14 @@ export function useFps(enabled: boolean): FpsStats {
         const secs = (t - windowStart) / 1000
         setStats({
           page: Math.round(frames / secs),
-          engine: hookedWin ? Math.round(engineFrames / secs) : null,
+          // Native pushes the real engine fps (see src/react_hud_cef.rs); otherwise count the
+          // same-document heartbeat (web).
+          engine:
+            typeof (window as HeartbeatWindow).__nativeEngineFps === 'number'
+              ? Math.round((window as HeartbeatWindow).__nativeEngineFps!)
+              : hookedWin
+                ? Math.round(engineFrames / secs)
+                : null,
           ms: Number((msAccum / frames).toFixed(1))
         })
         frames = 0

@@ -2,6 +2,9 @@ mod commands;
 mod ext;
 #[cfg(target_arch = "wasm32")]
 mod web;
+// POC: react-web HUD via CEF offscreen rendering into an in-engine texture (`react-hud-cef`).
+#[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
+mod react_hud_cef;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
@@ -120,6 +123,17 @@ impl DecentralandAppConfig {
             wasm_loader_handle,
         }
     }
+
+    /// The realm the engine boots into: an explicit --server, else the configured server.
+    /// --server is deliberately NOT merged into the AppConfig: the config file is rewritten
+    /// wholesale on any settings change, which would silently persist a one-off CLI realm
+    /// as the configured (home) server.
+    pub fn boot_server(&self) -> &str {
+        self.arguments
+            .server
+            .as_deref()
+            .unwrap_or(&self.app_config.server)
+    }
 }
 
 pub struct DecentralandArguments {
@@ -179,10 +193,27 @@ impl DecentralandApp {
         #[cfg(target_arch = "wasm32")]
         app.add_plugins(wasm_default_plugins(&decentraland_app_config));
 
+        // POC: react-web HUD composited in-engine from CEF offscreen rendering. Skipped in test
+        // mode (automated scene tests run headless and must not boot CEF or gate input).
+        #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
+        if !decentraland_app_config.arguments.test_mode {
+            app.add_plugins(react_hud_cef::ReactHudCefPlugin {
+                // a non-default boot server (explicit --server or a configured home realm)
+                // IS the destination: injected into the page URL as ?realm= so the HUD skips
+                // its places picker (parity with ?realm= on web). On the stock default the
+                // param is omitted so the picker shows — and the HUD's own default-realm
+                // assumption then matches the realm the engine actually booted.
+                server: (decentraland_app_config.boot_server() != AppConfig::default().server)
+                    .then(|| decentraland_app_config.boot_server().to_owned()),
+            });
+        }
+
         let version_hash = version();
         let version = format!("{VERSION} ({version_hash})");
 
         info!("Bevy-Explorer version {}", version);
+
+        let boot_server = map_realm_name(decentraland_app_config.boot_server());
 
         // Resources
         app.insert_resource(Version(version))
@@ -218,7 +249,7 @@ impl DecentralandApp {
                 server: decentraland_app_config
                     .arguments
                     .is_preview
-                    .then_some(map_realm_name(&decentraland_app_config.app_config.server)),
+                    .then_some(boot_server),
                 is_preview: decentraland_app_config.arguments.is_preview,
                 preview_parcel: None,
             })
@@ -318,6 +349,23 @@ impl DecentralandApp {
             });
         }
 
+        // POC: the react-web overlay is the HUD — turn off the engine's native UI so it doesn't
+        // render its own login/chat/etc. behind the webview. (Overrides the inserts above.)
+        // Test mode keeps the native UI: the HUD plugin is skipped there.
+        #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
+        if !decentraland_app_config.arguments.test_mode {
+            app.insert_resource(NativeUi {
+                login: false,
+                emote_wheel: false,
+                chat: false,
+                permissions: false,
+                profile: false,
+                nametags: false,
+                tooltips: false,
+                loading_scene: false,
+            });
+        }
+
         if !startup_scenes.is_empty() {
             app.add_systems(Update, process_startup_scenes);
             info!("spawning {} startup scenes", startup_scenes.len());
@@ -392,7 +440,9 @@ impl DecentralandApp {
 
         // Analytics plugins
         app.add_plugins(MetricsPlugin);
-        if graphics_config.log_fps || decentraland_app_config.arguments.is_preview {
+        if (graphics_config.log_fps || decentraland_app_config.arguments.is_preview)
+            && !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>()
+        {
             app.add_plugins(FrameTimeDiagnosticsPlugin::default());
         }
         if graphics_config.log_fps {
@@ -479,9 +529,6 @@ fn update_app_config_from_arguments(
     base_app_config: &mut AppConfig,
     arguments: &DecentralandArguments,
 ) {
-    base_app_config
-        .server
-        .replace_if_some(arguments.server.clone());
     base_app_config.location.replace_if_some(arguments.location);
 
     base_app_config
@@ -587,7 +634,7 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
         .build()
         .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
             preview: decentraland_app_config.arguments.is_preview,
-            starting_realm: Some(map_realm_name(&decentraland_app_config.app_config.server)),
+            starting_realm: Some(map_realm_name(decentraland_app_config.boot_server())),
             content_server_override: decentraland_app_config
                 .arguments
                 .content_server_override
@@ -622,7 +669,7 @@ fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> Plug
         .disable::<LogPlugin>()
         .add_before::<AssetPlugin>(IpfsIoPlugin {
             preview: decentraland_app_config.arguments.is_preview,
-            starting_realm: Some(map_realm_name(&decentraland_app_config.app_config.server)),
+            starting_realm: Some(map_realm_name(decentraland_app_config.boot_server())),
             content_server_override: decentraland_app_config
                 .arguments
                 .content_server_override

@@ -15,7 +15,7 @@ name = "webgpu_build"
 # - wasm-pack build --target web --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social" (then serve via react-web; see react-web/README.md)
 
 [features]
-default = ["livekit", "ffmpeg", "inspect", "social"]
+default = ["livekit", "ffmpeg", "inspect", "social", "react-hud-cef"]
 # default = ["wasm"]
 console = []
 dcl-assert = ["common/dcl-assert"]
@@ -28,9 +28,22 @@ ffmpeg = ["av/ffmpeg"]
 social = ["social/social"]
 remote = ["bevy/bevy_remote"]
 bevy_mesh_picking_backend = ["bevy/bevy_mesh_picking_backend"]
+# POC: render the react-web HUD via CEF offscreen rendering into an in-engine texture (desktop).
+# The CEF framework loads bundle-relative (Contents/Frameworks) with a dev fallback at
+# ~/.local/share/cef; the render-process helper builds as the sibling binary `decentra-bevy-cef`
+# (see [[bin]] below), resolved at runtime as `<host exe>-cef`.
+react-hud-cef = ["dep:cef_offscreen"]
 
 # Debug features
 tween_debug = ["tween/tween_debug"]
+
+# CEF render-process helper (react-hud-cef): built alongside decentra-bevy, launched by Chromium
+# for its renderer/gpu/utility subprocesses. required-features keeps it out of builds without
+# the feature (e.g. --no-default-features wasm builds).
+[[bin]]
+name = "decentra-bevy-cef"
+path = "src/bin/cef_render_process.rs"
+required-features = ["react-hud-cef"]
 
 [profile.release]
 codegen-units = 1
@@ -85,6 +98,7 @@ scene_inspector = { path = "crates/scene_inspector" }
 texture_camera = { path = "crates/texture_camera" }
 platform = { path = "crates/platform" }
 image_processing = { path = "crates/image_processing" }
+cef_offscreen = { path = "crates/cef_offscreen" }
 
 bevy = { version = "0.16.1", default-features = false, features = [
   "animation",
@@ -119,6 +133,8 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "reduce_image_sizes",
 ] }
 wgpu = "24"
+cef = "139"
+cef-dll-sys = { version = "139.0", features = ["sandbox"] }
 # default-features = false drops the egui console window (we only use the
 # command/print plumbing, piped to chat); this keeps egui out of the build entirely
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16", default-features = false }
@@ -261,6 +277,7 @@ bevy_console = { workspace = true }
 # [workspace.dependencies]); not referenced from Rust.
 naga_oil = { workspace = true }
 
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
@@ -290,6 +307,7 @@ bevy_simple_text_input = { workspace = true }
 dcl_deno = { workspace = true }
 dcl_deno_ipc = { workspace = true }
 mimalloc = { version = "*", default-features = false }
+cef_offscreen = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 av = { workspace = true, features = ["html"] }

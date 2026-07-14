@@ -35,8 +35,18 @@ This project's goals are to:
       - set `FFMPEG_DIR` = `root folder where ffmpeg has been unzipped`
       - add `ffmpeg\bin` to your `PATH`
 4. Install [protoc](https://github.com/protocolbuffers/protobuf/releases) (Mac Homebrew users can do `brew install protobuf`)
-5. build scene engine: `cargo build --release --package dcl_deno_ipc`
-6. run renderer: `cargo run --release`
+5. Install the CEF runtime (the react HUD renders in a CEF offscreen webview; `react-hud-cef` is a default feature)
+    - install ninja: linux `sudo apt-get install ninja-build`, macos `brew install ninja`, windows ships it with visual studio
+    - export the CEF distribution (once per machine): `cargo install export-cef-dir --version "139.8.0+139.0.40" && export-cef-dir --force $HOME/.local/share/cef`
+    - set `CEF_PATH` to the export dir for builds: `export CEF_PATH=$HOME/.local/share/cef` (on windows use a windows-style path)
+    - on linux, also put it on the loader path to run from the target dir: `export LD_LIBRARY_PATH=$CEF_PATH:$LD_LIBRARY_PATH`
+6. build the react HUD — login and all 2d UI; without this bundle the app runs with no UI at all: `cd react-web && npm ci && (cd bridge-scene && npm ci) && npm run bundle:native` (needs node 20)
+7. build scene engine: `cargo build --release --package dcl_deno_ipc`
+8. build and run renderer (also builds the `decentra-bevy-cef` helper): `cargo build --release && cargo run --release`
+
+With [just](https://github.com/casey/just) installed, `just setup-cef` covers step 5's CEF export and `just native-release` bundles the HUD and builds + runs everything (`just --list` for more).
+
+To build without CEF entirely (engine-native UI instead of the react HUD): `cargo run --release --no-default-features --features "livekit,ffmpeg,inspect,social"`.
 
 We try to keep these instructions up to date, but the [github ci](.github/workflows/ci.yml) is the most accurate source of build information.
 

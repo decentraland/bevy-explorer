@@ -116,10 +116,21 @@ pub fn init_runtime() -> anyhow::Result<()> {
             target.set_extension("exe");
         }
 
-        let mut child = Command::new(&target)
+        let mut command = Command::new(&target);
+        command
             .arg(name_str)
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        // A console-subsystem child spawned by the GUI-subsystem app has no console to
+        // inherit, so windows pops a visible one; suppress it. The inherited handles
+        // still carry output to the parent's console when it has one (console builds).
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        let mut child = command
             .spawn()
             .unwrap_or_else(|_| panic!("failed to spawn deno binary at {target:?}"));
 

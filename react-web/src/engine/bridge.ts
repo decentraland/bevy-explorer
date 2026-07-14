@@ -66,6 +66,14 @@ export class BridgeClient {
     if (r && r.success === false) throw new Error(r.error || 'Could not reuse your login')
   }
 
+  // Fresh sign-in via the engine's remote-wallet flow: the verification code arrives
+  // mid-flight as a 'loginCode' message (generic `on` subscription); this resolves once the
+  // user approves in the external browser the engine opened.
+  async loginNew(): Promise<void> {
+    const r = await this.rpc<LoginPreviousResult>('loginNew')
+    if (r && r.success === false) throw new Error(r.error || 'Sign-in failed')
+  }
+
   send(msg: PageToScene): void {
     this.ch.postMessage({ to: 'scene', msg } satisfies Envelope)
   }

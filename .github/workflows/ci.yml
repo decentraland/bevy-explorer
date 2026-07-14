@@ -66,7 +66,15 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa, udev and xkb
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libxkbcommon-x11-0
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libxkbcommon-x11-0 ninja-build
+      # react-hud-cef (default feature) links libcef; export the distribution for build + runtime
+      # (the HUD itself is skipped in test mode, but the dynamic linker still needs the library)
+      - name: Export CEF distribution
+        run: |
+          cargo install export-cef-dir --version "139.8.0+139.0.40"
+          export-cef-dir --force "$HOME/.local/share/cef"
+          echo "CEF_PATH=$HOME/.local/share/cef" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$HOME/.local/share/cef:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
       - name: install xvfb, llvmpipe and lavapipe
         run: |
           sudo apt-get update -y -qq
@@ -115,7 +123,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev ninja-build
         if: runner.os == 'linux'
       - name: install ffmpeg deps (linux)
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
@@ -147,7 +155,27 @@ jobs:
           mv ffmpeg-*/* ffmpeg/
           if (-not (Test-Path "ffmpeg\include")) { throw "ffmpeg headers missing after extract (ffmpeg\include not found)" }
           Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
-          Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
+          Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"
+      - name: Install ninja (macos)
+        if: runner.os == 'macos'
+        run: brew install ninja
+      # windows runner images ship ninja + cmake already.
+      # react-hud-cef (default feature): test executables link libcef on linux/windows — export
+      # the distribution and put it on the loader path.
+      - name: Export CEF distribution
+        shell: bash
+        run: |
+          cargo install export-cef-dir --version "139.8.0+139.0.40"
+          export-cef-dir --force "$HOME/.local/share/cef"
+          # GITHUB_ENV/GITHUB_PATH reach native processes verbatim: on windows the git-bash
+          # $HOME (/c/Users/...) would resolve as C:\c\Users\... — write windows paths there.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "CEF_PATH=$(cygpath -w "$HOME/.local/share/cef")" >> "$GITHUB_ENV"
+            cygpath -w "$HOME/.local/share/cef" >> "$GITHUB_PATH"
+          else
+            echo "CEF_PATH=$HOME/.local/share/cef" >> "$GITHUB_ENV"
+          fi
+          if [ "$RUNNER_OS" = "Linux" ]; then echo "LD_LIBRARY_PATH=$HOME/.local/share/cef:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"; fi
       - name: Build Release
         uses: actions-rs/cargo@v1
         with:
@@ -204,7 +232,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev ninja-build
       - name: install ffmpeg deps (linux)
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
       - uses: actions-rs/cargo@v1

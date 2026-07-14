@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "bundle:native": "tsc --noEmit && vite build --base ./ --outDir ../assets/react-hud --emptyOutDir && npm --prefix bridge-scene run export-native",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

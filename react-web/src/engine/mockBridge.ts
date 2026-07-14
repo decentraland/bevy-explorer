@@ -194,6 +194,9 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     ch.postMessage({ to: 'page', msg } satisfies Envelope)
   }
 
+  // An in-flight loginNew approval (so loginCancel/logout can abort it).
+  let pendingAuth: { id: string; timer: ReturnType<typeof setTimeout> } | null = null
+
   // No engine in mock mode, so stand in for the engine's 'Cancel' system action: relay a DOM Escape
   // as the same message the real bridge sends from getSystemActionStream (closes the topmost popup).
   const onEscape = (e: KeyboardEvent): void => {
@@ -531,8 +534,33 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         reply({ kind: 'rpc:res', id: msg.id, ok: true })
         spawnPlayer()
         return
+      case 'loginNew':
+        // Remote-wallet flow: code first, then approval after a beat (long enough to see the
+        // verification panel; the real flow waits on the user's external browser).
+        reply({ kind: 'loginCode', code: '42' })
+        pendingAuth = {
+          id: msg.id,
+          timer: setTimeout(() => {
+            pendingAuth = null
+            reply({ kind: 'rpc:res', id: msg.id, ok: true, value: { success: true, error: '' } })
+            spawnPlayer()
+          }, 2500)
+        }
+        return
       case 'loginCancel':
       case 'logout':
+        // Mid-loginNew this stops the pending approval, mirroring the real flow (the engine
+        // drops its login task and the relay resolves the rpc as cancelled).
+        if (pendingAuth != null) {
+          clearTimeout(pendingAuth.timer)
+          reply({
+            kind: 'rpc:res',
+            id: pendingAuth.id,
+            ok: true,
+            value: { success: false, error: 'cancelled' }
+          })
+          pendingAuth = null
+        }
         reply({ kind: 'rpc:res', id: msg.id, ok: true })
         return
     }

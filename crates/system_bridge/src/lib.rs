@@ -188,6 +188,11 @@ pub enum SystemApi {
     GetHoverStream(RpcStreamSender<HoverEvent>),
     GetProximityStream(RpcStreamSender<ProximityEvent>),
     GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
+    // Native-only transport for the super-user bridge scene's BroadcastChannel: the scene posts page
+    // -bound Envelopes via BridgeToPage, and subscribes to page->scene Envelopes via GetBridgeStream.
+    // (In web the browser provides BroadcastChannel directly; native has no cross-process equivalent.)
+    BridgeToPage(String),
+    GetBridgeStream(RpcStreamSender<String>),
     SendChat(String, String),
     Quit,
     GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),
