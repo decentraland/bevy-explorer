@@ -82,6 +82,7 @@ impl Plugin for ReactHudCefPlugin {
                 player_ready,
                 resize_hud,
                 push_engine_fps,
+                push_text_focus,
             ),
         );
         // macOS only: Blink leaves Cmd editing shortcuts to the AppKit menu a windowed browser
@@ -754,6 +755,31 @@ fn push_engine_fps(
             HostEmitEvent {
                 id: "engineFps".to_string(),
                 payload: format!("{fps:.0}"),
+            },
+            state.hud,
+        );
+    }
+}
+
+// Mirror of web.rs update_text_focus for the CEF page: key forwarding to the webview is
+// unconditional (keyboard.rs in cef_offscreen), so while an ENGINE-side text field holds the
+// keyboard (scene textinput, engine text box) the page must be told to treat keys as typing —
+// otherwise useMenuShortcuts fires HUD panels off the typed letters. The shim writes this to
+// `window.__engineTextFocus`, the same signal boot.js provides on web.
+fn push_text_focus(
+    state: Option<Res<ReactHudCef>>,
+    priorities: Res<InputPriorities>,
+    mut prev: Local<bool>,
+    mut commands: Commands,
+) {
+    let Some(state) = state else { return };
+    let focused = priorities.keyboard_claimed();
+    if focused != *prev {
+        *prev = focused;
+        commands.trigger_targets(
+            HostEmitEvent {
+                id: "engineTextFocus".to_string(),
+                payload: focused.to_string(),
             },
             state.hud,
         );

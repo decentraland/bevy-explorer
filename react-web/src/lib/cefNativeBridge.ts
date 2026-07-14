@@ -61,4 +61,10 @@ export function installCefNativeBridge(): void {
     ;(window as Window & { __nativeUiHeight?: number }).__nativeUiHeight = Number(v)
     window.dispatchEvent(new Event('resize'))
   })
+  // Engine-side text focus (scene textinput / engine text box): keys forward to this page
+  // unconditionally, so useMenuShortcuts needs the same don't-treat-keys-as-shortcuts signal
+  // boot.js provides on web (see push_text_focus in src/react_hud_cef.rs).
+  cef.listen('engineTextFocus', (v) => {
+    ;(window as Window & { __engineTextFocus?: boolean }).__engineTextFocus = v === 'true'
+  })
 }
