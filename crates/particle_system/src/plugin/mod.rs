@@ -41,7 +41,8 @@ use crate::{
         set_position_box_modifier::SetPositionBoxModifier,
         set_position_modifier::SetPositionModifier,
         set_velocity_direction_modifier::SetVelocityDirectionModifier,
-        set_velocity_modifier::SetVelocityModifier, speed_dampen::SpeedDampenModifier,
+        set_velocity_modifier::SetVelocityModifier,
+        set_velocity_spread_modifier::SetVelocitySpreadModifier, speed_dampen::SpeedDampenModifier,
         update_sprite_index::UpdateSpriteIndexModifier,
     },
     ParticleSystem,
@@ -527,8 +528,17 @@ fn make_velocity(
             direction: writer.lit(Vec3::NEG_Z).expr(),
             speed,
         }),
-        Some(Shape::Cone(_)) => SetVelocityModifier::Direction(SetVelocityDirectionModifier {
-            direction: writer.lit(Vec3::NEG_Z).expr(),
+        Some(Shape::Cone(cone)) => SetVelocityModifier::Spread(SetVelocitySpreadModifier {
+            center: writer.lit(Vec3::ZERO).expr(),
+            radius: writer.lit(cone.radius.unwrap_or(1.)).expr(),
+            axis: writer.lit(Vec3::NEG_Z).expr(),
+            spread: writer
+                .lit(
+                    cone.angle
+                        .map(f32::to_radians)
+                        .unwrap_or(25.0f32.to_radians()),
+                )
+                .expr(),
             speed,
         }),
     }
