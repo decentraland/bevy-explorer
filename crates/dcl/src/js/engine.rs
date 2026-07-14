@@ -21,6 +21,14 @@ use crate::{
 
 use super::State;
 
+/// Returns whether this scene runs in authoritative-server role. Read synchronously
+/// from the scene's CrdtContext (seeded from the `IsServer` engine resource). MUST stay
+/// synchronous — an async op would return a Promise to JS, and `!!Promise` is always
+/// true, making every client believe it is the server.
+pub fn op_is_server(state: Rc<RefCell<impl State>>) -> bool {
+    state.borrow().borrow::<CrdtContext>().is_server
+}
+
 /// Localize the payload within a CRDT wire-format message.
 /// CRDT PutComponent format: length(4) + type(4) + entity(4) + component(4) + timestamp(4) + content_len(4) + payload
 fn localize_crdt_message(

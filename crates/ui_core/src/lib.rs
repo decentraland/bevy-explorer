@@ -75,6 +75,63 @@ pub fn user_font(name: FontName, weight: WeightName) -> Handle<Font> {
     FONTS.get().unwrap().get(&(name, weight)).unwrap().clone()
 }
 
+/// Register the SDK font handles. Called by UiCorePlugin's setup; also callable by
+/// headless binaries that skip the UI plugins but still process scene text.
+pub fn init_fonts(asset_server: &AssetServer) {
+    use FontName::*;
+    use WeightName::*;
+    let _ = FONTS.set(HashMap::from_iter([
+        (
+            (Mono, Regular),
+            asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
+        ),
+        (
+            (Mono, Bold),
+            asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
+        ),
+        (
+            (Mono, Italic),
+            asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
+        ),
+        (
+            (Mono, BoldItalic),
+            asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
+        ),
+        (
+            (Sans, Regular),
+            asset_server.load("embedded://fonts/NotoSans-Regular.ttf"),
+        ),
+        (
+            (Sans, Bold),
+            asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
+        ),
+        (
+            (Sans, Italic),
+            asset_server.load("embedded://fonts/NotoSans-Italic.ttf"),
+        ),
+        (
+            (Sans, BoldItalic),
+            asset_server.load("embedded://fonts/NotoSans-BoldItalic.ttf"),
+        ),
+        (
+            (Serif, Regular),
+            asset_server.load("embedded://fonts/NotoSerif-Regular.ttf"),
+        ),
+        (
+            (Serif, Bold),
+            asset_server.load("embedded://fonts/NotoSerif-Bold.ttf"),
+        ),
+        (
+            (Serif, Italic),
+            asset_server.load("embedded://fonts/NotoSerif-Italic.ttf"),
+        ),
+        (
+            (Serif, BoldItalic),
+            asset_server.load("embedded://fonts/NotoSerif-BoldItalic.ttf"),
+        ),
+    ]));
+}
+
 pub struct UiCorePlugin;
 
 impl Plugin for UiCorePlugin {
@@ -162,62 +219,7 @@ fn setup(
     dui.register_template("button-set", DuiButtonSetTemplate);
     dui.register_template("tab-group", DuiTabGroupTemplate);
 
-    {
-        use FontName::*;
-        use WeightName::*;
-        FONTS
-            .set(HashMap::from_iter([
-                (
-                    (Mono, Regular),
-                    asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
-                ),
-                (
-                    (Mono, Bold),
-                    asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
-                ),
-                (
-                    (Mono, Italic),
-                    asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
-                ),
-                (
-                    (Mono, BoldItalic),
-                    asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
-                ),
-                (
-                    (Sans, Regular),
-                    asset_server.load("embedded://fonts/NotoSans-Regular.ttf"),
-                ),
-                (
-                    (Sans, Bold),
-                    asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
-                ),
-                (
-                    (Sans, Italic),
-                    asset_server.load("embedded://fonts/NotoSans-Italic.ttf"),
-                ),
-                (
-                    (Sans, BoldItalic),
-                    asset_server.load("embedded://fonts/NotoSans-BoldItalic.ttf"),
-                ),
-                (
-                    (Serif, Regular),
-                    asset_server.load("embedded://fonts/NotoSerif-Regular.ttf"),
-                ),
-                (
-                    (Serif, Bold),
-                    asset_server.load("embedded://fonts/NotoSerif-Bold.ttf"),
-                ),
-                (
-                    (Serif, Italic),
-                    asset_server.load("embedded://fonts/NotoSerif-Italic.ttf"),
-                ),
-                (
-                    (Serif, BoldItalic),
-                    asset_server.load("embedded://fonts/NotoSerif-BoldItalic.ttf"),
-                ),
-            ]))
-            .unwrap();
-    }
+    init_fonts(&asset_server);
 
     TITLE_TEXT_STYLE
         .set((

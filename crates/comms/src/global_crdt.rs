@@ -70,6 +70,7 @@ impl Plugin for GlobalCrdtPlugin {
                 "Global Crdt".into(),
                 false,
                 false,
+                false,
             ),
             store: Default::default(),
             lookup: Default::default(),

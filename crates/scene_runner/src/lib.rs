@@ -250,6 +250,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<Toasts>();
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
+        app.init_resource::<common::structs::IsServer>();
 
         // let (sender, receiver) = tokio::sync::mpsc::channel(1000);
         let (sender, receiver) = scene_response_channel();
@@ -714,6 +715,7 @@ fn send_scene_updates(
     window: Query<&Window, With<PrimaryWindow>>,
     realm: Res<CurrentRealm>,
     data_channel: Res<SceneRoomConnection>,
+    server_rooms: Res<comms::ServerSceneRooms>,
     interactable_area: Res<InteractableArea>,
     preview_mode: Res<PreviewMode>,
     mut buf: Local<Vec<u8>>,
@@ -791,11 +793,12 @@ fn send_scene_updates(
         }
     }
 
-    // add realm info
+    // add realm info; server mode holds N rooms in ServerSceneRooms (empty on clients)
     let room = data_channel
         .0
         .as_ref()
-        .and_then(|(scene, addr, _)| (scene.scene_id == context.hash).then_some(addr));
+        .and_then(|(scene, addr, _)| (scene.scene_id == context.hash).then_some(addr))
+        .or_else(|| server_rooms.0.get(&context.hash).map(|(addr, _)| addr));
     let base_url = realm
         .about_url
         .strip_suffix("/about")

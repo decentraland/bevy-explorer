@@ -24,8 +24,8 @@ use common::{
     },
     sets::SceneSets,
     structs::{
-        AvatarDynamicState, EngineMovementControl, PermissionType, PreviewCommand, PrimaryCamera,
-        PrimaryUser, StartupScenes, ZOrder,
+        AvatarDynamicState, EngineMovementControl, IsServer, PermissionType, PreviewCommand,
+        PrimaryCamera, PrimaryUser, StartupScenes, ZOrder,
     },
     util::{AsH160, TaskCompat, TaskExt},
 };
@@ -1392,6 +1392,7 @@ fn send_scene_messages(
     mut events: EventReader<RpcCall>,
     transports: Query<(&Transport, Option<&SceneRoom>)>,
     scenes: Query<&RendererSceneContext>,
+    is_server: Res<IsServer>,
 ) {
     for (scene, data, recipient) in events.read().filter_map(|c| match c {
         RpcCall::SendMessageBus {
@@ -1422,12 +1423,23 @@ fn send_scene_messages(
             .map(NetworkMessageRecipient::Peer)
             .unwrap_or(NetworkMessageRecipient::All);
 
-        if ctx.authoritative_multiplayer {
+        // A client routes authoritative-scene traffic to the auth server. WE are the
+        // auth server, so keep the scene's intended recipient (targeted peer or broadcast)
+        // — otherwise the server would address messages to itself and clients never receive them.
+        if ctx.authoritative_multiplayer && !is_server.0 {
             recipient = NetworkMessageRecipient::AuthServer;
         }
 
         for (transport, scene_room) in transports.iter() {
-            if scene_room.is_some() {
+            // Client (prod) path unchanged: send to any scene room. When serving, also
+            // require the room to belong to this scene so N scenes in one engine don't
+            // cross-talk (a server may hold several scene rooms; a client holds one).
+            let send = if is_server.0 {
+                scene_room.is_some_and(|r| &r.0 == hash)
+            } else {
+                scene_room.is_some()
+            };
+            if send {
                 let _ = transport
                     .sender
                     .try_send(NetworkMessage::targetted_reliable(&message, recipient));

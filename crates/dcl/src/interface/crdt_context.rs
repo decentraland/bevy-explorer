@@ -15,6 +15,8 @@ pub struct CrdtContext {
     pub title: String,
     pub testing: bool,
     pub preview: bool,
+    #[serde(default)]
+    pub is_server: bool,
     #[serde(skip, default = "default_live_entities")]
     live_entities: LiveTable,
     #[serde(skip)]
@@ -40,6 +42,7 @@ impl CrdtContext {
         title: String,
         testing: bool,
         preview: bool,
+        is_server: bool,
     ) -> Self {
         Self {
             scene_id,
@@ -47,6 +50,7 @@ impl CrdtContext {
             title,
             testing,
             preview,
+            is_server,
             live_entities: default_live_entities(),
             nascent: Default::default(),
             death_row: Default::default(),

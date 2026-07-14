@@ -159,6 +159,7 @@ pub fn init_state(
         scene_context.title.clone(),
         scene_context.testing,
         scene_context.preview,
+        scene_context.is_server,
     ));
     for lww in initial_crdt_store.lww.values() {
         for entity in lww.last_write.keys() {
