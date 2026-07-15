@@ -57,6 +57,12 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
    runs on it (`if (await showConfirm(…)) …`). **Remaining:** migrate the still-bespoke confirms
    (`WorldVisitModal`, `ExitConfirm`) + the passport/community chains onto `openPopup`.
    (Old: `confirm-popup` / `alert-popup`.)
+   Extra reason to finish the migration: `hasOpenPopup()` (the store predicate that suppresses the
+   HUD's Enter/"Chat" action while an overlay is up — see `requestFocusChat` in `useEngineSession`)
+   only sees the popup stack. `WorldVisitModal` and `ExitConfirm` are conditionally rendered from
+   App-local state (`visitWorld`, `exitGuard.confirming`), so Enter still opens + focuses the chat
+   behind them. Moving them onto `openPopup` fixes that for free; the alternative (wiring their state
+   into the hook) is the reason not to bother.
 9. `[bug]` **`closeTopPopup` / `closeById` never run the popup's `onClose` → `showDialog` Promise leak** —
    *correctness footgun, P2 pending PR #915 review*. `closeTopPopup()` (fired by the engine
    `Cancel`/Escape relay in `useEngineSession`) removes the top node with `closeById`, which only

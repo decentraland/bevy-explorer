@@ -35,6 +35,13 @@ export function closeTopPopup(): void {
   if (stack.length > 0) closeById(stack[stack.length - 1].id)
 }
 
+/** Is any popup on the stack? Read at call time (the stack changes without a React render) by the
+ *  HUD's Enter/"Chat" action, which must not focus the chat sitting behind a popup — see
+ *  useEngineSession. */
+export function hasOpenPopup(): boolean {
+  return stack.length > 0
+}
+
 /** Open an arbitrary popup imperatively; returns a `close` handle. Callable from anywhere. */
 export function openPopup(render: PopupRender, options?: PopupOptions): () => void {
   const id = ++nextId

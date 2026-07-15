@@ -6,7 +6,7 @@ import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type St
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/EngineErrorModal'
 import { DEFAULT_REALM } from '../engine/EngineHost'
-import { closeTopPopup } from '../../design'
+import { closeTopPopup, hasOpenPopup } from '../../design'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { parseChatCommand } from '../chat/chatCommands'
@@ -355,16 +355,25 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Read inside the message-subscription closure (mounted once), not via a stale `chatOpen` capture.
   const chatOpenRef = useRef(chatOpen)
   chatOpenRef.current = chatOpen
+  // True while something is covering the chat (see the assignment below for what counts). Read by
+  // requestFocusChat from a callback that would otherwise close over a stale value. Popups aren't in
+  // here — they live in their own module store, so requestFocusChat asks it directly.
+  const chatCoveredRef = useRef(false)
   // Open + (re)focus chat — the engine's "Chat" system action (Enter while the iframe has focus)
   // and the page-level Enter shortcut (Enter while some other HUD element has focus, see
-  // useMenuShortcuts) both funnel into this single action. Clears the exclusive panels first, like
-  // every other path that opens chat: Chat renders null behind Friends (which shares its bottom-left
-  // dock) or a full-screen page, so focusing without closing them would make Enter a dead key.
+  // useMenuShortcuts) both funnel into this single action.
   const requestFocusChat = useCallback(() => {
-    panelSetters.forEach((set) => set(false))
+    // Enter is only a chat key when nothing is covering the chat. While the main menu, a popup or a
+    // modal is up it owns the screen, so Enter neither dismisses it nor focuses the chat behind it.
+    // hasOpenPopup() is read here, not during render: the popup stack is a module store that changes
+    // without re-rendering this hook.
+    if (chatCoveredRef.current || hasOpenPopup()) return
+    // Friends is the only panel Enter closes: it shares the chat's bottom-left dock, so Chat renders
+    // null behind it (App's `hidden`) and focusing without closing it would do nothing on screen.
+    // The rest (profile, notifications, emotes) sit clear of the chat, so leave them open.
+    setFriendsOpen(false)
     setChatOpen(true)
     setChatFocusTick((t) => t + 1)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const [pendingMention, setPendingMention] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -715,11 +724,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const consumeMention = useCallback(() => setPendingMention(null), [])
 
+  // The full-screen main menu — mirrors App's `pageOpen`.
+  const menuPageOpen =
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || galleryOpen
+  // What takes the screen from the chat, for requestFocusChat: the main menu, the emote wheel, and
+  // the two modals App renders above everything (permission prompt, fatal error).
+  chatCoveredRef.current =
+    menuPageOpen || emotesOpen || permissionQueue.length > 0 || fatalError != null
+
   // Escape closes any open React panel/menu and returns to the world view. We only
   // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
   const anyPanelOpen =
-    friendsOpen || settingsOpen || profileOpen || notificationsOpen ||
-    emotesOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || galleryOpen
+    menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen
   useEffect(() => {
     if (!anyPanelOpen) return
     const onKey = (e: KeyboardEvent): void => {
