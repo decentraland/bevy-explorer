@@ -7,6 +7,8 @@
 // Domain types mirror scene/src/bevy-api/interface.ts so the bridge scene can
 // forward SystemApi results verbatim.
 
+import type { SceneLoadingUi } from './generated'
+
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
 /** Mirrors SystemApi.getPreviousLogin(): userId is absent for a fresh user. */
@@ -120,12 +122,7 @@ export interface LoginCodeMessage {
 }
 
 /** Mirrors SystemApi SceneLoadingWindow — the scene-asset loading state. */
-export interface SceneLoadingState {
-  visible: boolean
-  realmConnected: boolean
-  title: string
-  pendingAssets: number | null
-}
+export type SceneLoadingState = SceneLoadingUi
 
 /** Streamed scene-asset loading updates (drives the React loading screen). */
 export interface SceneLoadingMessage {
