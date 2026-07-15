@@ -246,7 +246,7 @@ pub async fn op_set_avatar(
                 equip,
                 has_claimed_name,
                 profile_extras,
-                name_color: name_color.map(ClearableColor3::to_color3),
+                name_color,
             },
             sx,
         ))?;

@@ -1,8 +1,9 @@
 use bevy::{platform::collections::HashSet, prelude::Entity};
 use common::rpc::{CompareSnapshot, RpcCall};
 
-use dcl_component::{proto_components::common::Color3, SceneComponentId, SceneEntityId};
+use dcl_component::{SceneComponentId, SceneEntityId};
 use serde::{Deserialize, Serialize};
+pub use system_bridge::ClearableColor3;
 
 use self::interface::{CrdtComponentInterfaces, CrdtStore};
 
@@ -103,26 +104,4 @@ pub struct SceneLogMessage {
     pub timestamp: f64, // scene local time
     pub level: SceneLogLevel,
     pub message: String,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct ClearableColor3 {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub clear: bool,
-}
-
-impl ClearableColor3 {
-    pub fn to_color3(self) -> Option<Color3> {
-        if self.clear {
-            None
-        } else {
-            Some(Color3 {
-                r: self.r,
-                g: self.g,
-                b: self.b,
-            })
-        }
-    }
 }
