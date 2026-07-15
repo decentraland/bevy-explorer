@@ -343,6 +343,8 @@ jobs:
           echo "PUBLIC_URL=$PUBLIC_URL"
           npm ci --prefix react-web
           npm run build --prefix react-web
+      - name: react-web unit tests
+        run: npm run test --prefix react-web
       # The headless bridge scene the engine loads as its --ui systemScene. The realm (about) is
       # served same-origin with the engine iframe, but the scene CONTENT baseUrl is baked at
       # export — point it at the versioned CDN path so it's version-pinned + immutable and never
