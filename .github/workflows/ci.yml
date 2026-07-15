@@ -329,6 +329,10 @@ jobs:
       - name: Install
         run: npm i
         working-directory: deploy/web
+      # react-web/src/engine/generated (TS types the HUD + bridge scene import) is generated
+      # from the Rust system-api structs and gitignored — regenerate before building.
+      - name: Generate TS bindings
+        run: ./scripts/gen-ts-bindings.sh
       # The React HUD is the production page: build it into deploy/web root (vite outDir).
       # PUBLIC_URL = the versioned CDN base prebuild.js just wrote into package.json homepage —
       # index.html asset refs must be ABSOLUTE because the entry URL (decentraland.zone/bevy-web)
