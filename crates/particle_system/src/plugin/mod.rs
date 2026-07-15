@@ -22,7 +22,7 @@ use dcl_component::{
     proto_components::{
         common::{texture_union::Tex, Color4, ColorRange, FloatRange, Vector3},
         sdk::components::{
-            pb_particle_system::{BlendMode, Shape, SimulationSpace},
+            pb_particle_system::{BlendMode, PlaybackState, Shape, SimulationSpace},
             PbParticleSystem,
         },
         Color4DclToBevy,
@@ -323,7 +323,10 @@ fn make_particle_system(
     let billboard = particle_system.billboard.unwrap_or(true);
     let sprite_sheet = particle_system.sprite_sheet.as_ref();
     let shape = particle_system.shape.as_ref();
-    // TODO playback state
+    let playback_state = particle_system
+        .playback_state
+        .map(|_| particle_system.playback_state())
+        .unwrap_or(PlaybackState::PsPlaying);
     // TODO prewarm
     let simulation_space = match particle_system.simulation_space() {
         SimulationSpace::PssLocal => bevy_hanabi::SimulationSpace::Local,
@@ -440,6 +443,13 @@ fn make_particle_system(
     let mut module = writer.finish();
     if render_texture.is_some() {
         module.add_texture_slot("color");
+    }
+
+    match playback_state {
+        PlaybackState::PsPlaying => (),
+        PlaybackState::PsPaused | PlaybackState::PsStopped => {
+            spawner_settings.with_starts_active(false);
+        }
     }
 
     let mut effect_asset = EffectAsset::new(max_particles, spawner_settings, module)
