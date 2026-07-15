@@ -357,10 +357,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   chatOpenRef.current = chatOpen
   // Open + (re)focus chat — the engine's "Chat" system action (Enter while the iframe has focus)
   // and the page-level Enter shortcut (Enter while some other HUD element has focus, see
-  // useMenuShortcuts) both funnel into this single action.
+  // useMenuShortcuts) both funnel into this single action. Clears the exclusive panels first, like
+  // every other path that opens chat: Chat renders null behind Friends (which shares its bottom-left
+  // dock) or a full-screen page, so focusing without closing them would make Enter a dead key.
   const requestFocusChat = useCallback(() => {
+    panelSetters.forEach((set) => set(false))
     setChatOpen(true)
     setChatFocusTick((t) => t + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const [pendingMention, setPendingMention] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
