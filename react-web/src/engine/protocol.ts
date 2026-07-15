@@ -214,25 +214,11 @@ export interface FriendActionRequest {
   address: string
 }
 
-export interface SettingVariant {
-  name: string
-  description: string
-}
-
 /** Mirrors the engine's ExplorerSetting (BevyApi.getSettings). A setting is a
  *  Select when it has namedVariants, otherwise a numeric Slider; a 2-variant or
  *  0..1 setting renders as a Toggle. */
-export interface Setting {
-  name: string
-  category: string
-  description: string
-  minValue: number
-  maxValue: number
-  namedVariants: SettingVariant[]
-  value: number
-  default: number
-  stepSize: number
-}
+import type { SettingInfo as Setting, NamedVariant as SettingVariant } from './generated'
+export type { Setting, SettingVariant }
 
 export interface SettingsMessage {
   kind: 'settings'

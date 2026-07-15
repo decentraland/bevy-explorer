@@ -3,6 +3,7 @@
 // the wire shapes React sees live in the shared protocol. Only the methods the domains use
 // are declared — extend as needed.
 import type { Setting } from '../../src/engine/protocol'
+import type { ChatMessage, LiveSceneInfo } from '../../src/engine/generated'
 
 // --- raw social-service shapes (BevyApi.social.*) ---
 export type FriendStatusData = {
@@ -39,7 +40,7 @@ export type SocialApi = {
   unblockUser: (address: string) => Promise<void>
 }
 
-export type ChatStreamMessage = { sender_address: string; message: string; channel: string }
+export type ChatStreamMessage = ChatMessage
 export type SceneLoadingState = { visible?: boolean; realmConnected?: boolean; title?: string; pendingAssets?: number | null }
 export type MicState = { enabled: boolean; available: boolean }
 
@@ -107,8 +108,8 @@ export type BevyApiInterface = {
   getPermissionRequestStream: () => Promise<AsyncIterable<PermissionRequestRaw>>
   setSinglePermission: (body: { id: number; allow: boolean }) => void
   setPermanentPermission: (body: SetPermanentPermissionBody) => void
-  /** Live scenes (hash → title), for resolving a permission request's scene name. */
-  liveSceneInfo: () => Promise<Array<{ hash: string; title: string }>>
+  /** Live scenes, for resolving a permission request's scene name (hash → title). */
+  liveSceneInfo: () => Promise<LiveSceneInfo[]>
   setAvatar: (data: { equip: { wearableUrns: string[]; emoteUrns: string[]; forceRender: string[] } }) => Promise<unknown>
   kernelFetch: (req: KernelFetchRequest) => Promise<KernelFetchResponse>
   getRealmProvider: () => Promise<string>
