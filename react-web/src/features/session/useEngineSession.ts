@@ -945,6 +945,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setStatus('sign-in-or-guest')
   }, [busy])
 
+  // Embedded guest auto-login (?guest=1): skip the sign-in screen entirely and
+  // enter as a guest the moment the engine is warm. Used by the sites `/discover`
+  // embed, which shows the scene as a guest preview with no sign-in UI. The URL
+  // destination (?position / ?realm) is auto-picked by the effect above, so this
+  // takes the guest straight into the scene. Fires once — `submitted` flips true
+  // on the first call and gates re-entry.
+  const autoGuest = useRef(new URLSearchParams(location.search).get('guest') === '1')
+  useEffect(() => {
+    if (!autoGuest.current || !engineReady || submitted) return
+    exploreAsGuest()
+  }, [engineReady, submitted, exploreAsGuest])
+
   // Render-settle. When the scene flips from loading → loaded (visible true→false), hold the loader
   // a beat longer while the engine actually renders the world (compiling shaders / uploading
   // textures) — otherwise it's revealed as black models. Gated on the engine's `renderBusy` probe

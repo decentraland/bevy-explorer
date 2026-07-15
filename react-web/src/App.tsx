@@ -45,6 +45,12 @@ const params = new URLSearchParams(location.search)
 // ENGINE (default): real engine in a same-origin iframe + super-user bridge scene.
 const MODE: 'mock' | 'engine' = params.get('mock') === '1' ? 'mock' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
+// Embedded mode (?hud=0): render ONLY the engine — no React HUD at all (no
+// sidebar, chat, pointer, panels, or the sign-in / loading overlays). Used by
+// the sites `/discover` embed, which frames the scene itself and supplies its
+// own chrome. Pair with ?guest=1 (auto guest-login) so the engine still enters
+// the world without the — now hidden — sign-in screen.
+const HIDE_HUD = params.get('hud') === '0'
 // Gate: don't mount the HUD/engine where the engine can't run — mobile (no WebGPU/SharedArrayBuffer)
 // or a non-Chromium desktop browser (the engine bundle renders its own "Browser Not Supported" page
 // there — see deploy/web/index.html — which the HUD would otherwise cover, leaving login frozen at
@@ -141,6 +147,23 @@ function Hud(): React.JSX.Element {
   // A full-screen MainMenuShell page is open (covers the whole HUD).
   const pageOpen =
     session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.gallery.open
+
+  // Embedded mode: mount only the engine (+ the fatal-error surface so a crash
+  // isn't silently blank). No sidebar / chat / pointer / panels / sign-in UI.
+  if (HIDE_HUD) {
+    return (
+      <SessionProvider value={session}>
+        {rpc && <EngineHost rpc={rpc} />}
+        {session.fatalError && (
+          <EngineErrorModal
+            error={session.fatalError}
+            onReload={session.reload}
+            onDismiss={session.fatalError.source === 'runtime' || session.fatalError.source === 'realm' ? session.dismissFatal : undefined}
+          />
+        )}
+      </SessionProvider>
+    )
+  }
 
   return (
     <SessionProvider value={session}>
