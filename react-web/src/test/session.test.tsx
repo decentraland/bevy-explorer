@@ -272,6 +272,12 @@ describe('embedded auto-guest (?guest=1)', () => {
     // The deferred login runs a paint after the pick, so wait for the call.
     await waitFor(() => expect(h.driver.calls).toContain('loginGuest'))
     h.driver.emit({ kind: 'event', name: 'playerReady' })
+    // No loading state received counts as still-loading, so report "done" like the real
+    // bridge-scene's stream does (same as enterAsGuest).
+    h.driver.emit({
+      kind: 'sceneLoading',
+      state: { visible: false, realmConnected: true, title: '', pendingAssets: null }
+    })
     await waitFor(() => expect(h.session().phase).toBe('world'))
   })
 
