@@ -3460,6 +3460,7 @@ dependencies = [
  "console_error_panic_hook",
  "crc",
  "dcl",
+ "dcl_component",
  "dcl_deno",
  "dcl_deno_ipc",
  "dcl_wasm",
@@ -9059,6 +9060,7 @@ dependencies = [
  "urlencoding",
  "user_input",
  "wallet",
+ "web-time",
 ]
 
 [[package]]
@@ -11832,6 +11834,7 @@ dependencies = [
  "anyhow",
  "async-std",
  "async-trait",
+ "base64 0.22.1",
  "bevy",
  "chrono",
  "common",

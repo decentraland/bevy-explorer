@@ -1900,12 +1900,15 @@ fn handle_sign_request(
         )>,
     >,
     wallet: Res<Wallet>,
+    // present only in the headless server binary; None everywhere else
+    delegations: Option<Res<wallet::delegation::StorageDelegations>>,
 ) {
     for ev in events.read() {
         if let RpcCall::SignRequest {
             method,
             uri,
             meta,
+            scene,
             response,
         } = ev
         {
@@ -1913,6 +1916,35 @@ fn handle_sign_request(
                 response.send(Err(format!("failed to parse uri: {uri}")));
                 continue;
             };
+
+            // world-storage requests from a delegated scene are signed with the
+            // delegation's ephemeral key + scope header instead of the engine wallet
+            if let Some(delegation) = delegations
+                .as_ref()
+                .filter(|_| wallet::delegation::is_storage_request(&uri))
+                .and_then(|d| scene.as_deref().and_then(|s| d.get(s)))
+                .filter(|d| {
+                    !d.is_expired(
+                        web_time::SystemTime::now()
+                            .duration_since(web_time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as i64,
+                    )
+                })
+            {
+                let method = method.clone();
+                let meta = delegation.meta.clone();
+                let scope_header = delegation.scope_header.clone();
+                let ephemeral = delegation.wallet.clone();
+                let task = IoTaskPool::get().spawn_compat(async move {
+                    let mut headers = sign_request(&method, &uri, &ephemeral, meta).await?;
+                    headers.push(("x-authoritative-scope".to_owned(), scope_header));
+                    Ok(headers)
+                });
+                tasks.push((response.clone(), task));
+                continue;
+            }
+
             let method = method.clone();
             let meta = meta.to_owned().unwrap_or_default();
             let wallet = wallet.clone();

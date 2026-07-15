@@ -23,7 +23,9 @@ use bevy::{
 };
 use bevy::tasks::IoTaskPool;
 use bevy_dui::DuiPlugin;
+use collectibles::base_wearables;
 use comms::{
+    global_crdt::{ForeignPlayer, GlobalCrdtState},
     profile::{CurrentUserProfile, ProfileCache, UserProfile},
     AdapterManager, CommsPlugin, ServerSceneRooms,
 };
@@ -34,11 +36,16 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CursorLocks, EngineMovementControl,
-        GraphicsSettings, HeadSync, IsServer, PermissionUsed, PointAtSync, PreviewMode,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneGlobalLight,
-        SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
+        GraphicsSettings, HeadSync, IsServer, PermissionType, PermissionUsed, PermissionValue,
+        PointAtSync, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
+        SceneGlobalLight, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::{TaskCompat, TaskExt, UtilsPlugin},
+};
+use dcl::interface::CrdtType;
+use dcl_component::{
+    proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData},
+    SceneComponentId, SceneEntityId,
 };
 use console::ConsolePlugin;
 use dcl::SceneLogMessage;
@@ -56,8 +63,13 @@ use scene_runner::{
 };
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, stretch_uvs_image::StretchUvMaterial};
-use user_input::avatar_movement::{AvatarMovementInfo, GroundCollider};
-use wallet::{sign_request, Wallet, WalletPlugin};
+use user_input::avatar_movement::{
+    ActivePlayerComponent, AvatarMovement, AvatarMovementInfo, FromConfig, GroundCollider,
+};
+use wallet::{
+    delegation::{StorageDelegation, StorageDelegations},
+    sign_request, Wallet, WalletPlugin,
+};
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
@@ -70,6 +82,9 @@ struct Args {
     timeout: Option<f32>,
     scene_threads: usize,
     tick_hz: u32,
+    /// base64 world-storage delegation (hammurabi envelope); single-scene runs only —
+    /// orchestrated scenes receive theirs via the control channel
+    storage_delegation: Option<String>,
 }
 
 fn parse_args() -> Args {
@@ -91,6 +106,11 @@ fn parse_args() -> Args {
         .value_from_str("--scene-threads")
         .unwrap_or(if orchestrated { 16 } else { 4 });
     let tick_hz: u32 = args.value_from_str("--tick-hz").unwrap_or(30);
+    // mirror hammurabi's worker env contract (PROCESS_STORAGE_DELEGATION)
+    let storage_delegation: Option<String> = args
+        .value_from_str("--storage-delegation")
+        .ok()
+        .or_else(|| std::env::var("PROCESS_STORAGE_DELEGATION").ok());
     Args {
         realm,
         location,
@@ -100,6 +120,7 @@ fn parse_args() -> Args {
         timeout,
         scene_threads,
         tick_hz,
+        storage_delegation,
     }
 }
 
@@ -121,19 +142,23 @@ enum ControlCommand {
         /// pre-minted comms adapter (livekit:wss://host?access_token=T). If absent in
         /// --preview mode, the engine mints one from the local gatekeeper (smoke tests only).
         adapter: Option<String>,
+        /// base64 world-storage delegation minted by the orchestrator for this scene
+        #[serde(rename = "storageDelegation")]
+        storage_delegation: Option<String>,
     },
     RemoveScene {
         #[serde(rename = "sceneId")]
         scene_id: String,
     },
     Status,
-    /// Reserved for the storage-delegation renewal protocol (world storage). The bevy
-    /// runtime has no world-storage client yet; accepted as a no-op so orchestrators
-    /// speaking the full protocol don't get error events.
+    /// Storage-delegation renewal (mirrors hammurabi's storage-delegation:response IPC):
+    /// the engine emits `storage-delegation-request` when a delegation nears expiry and
+    /// the parent replies with a fresh one for that scene.
     #[serde(rename = "storage-delegation-response")]
     StorageDelegationResponse {
         #[serde(rename = "sceneId")]
-        _scene_id: Option<String>,
+        scene_id: Option<String>,
+        delegation: Option<String>,
     },
 }
 
@@ -220,6 +245,21 @@ fn main() {
         scene_load_distance: 100.0,
         scene_unload_extra_distance: 0.0,
         scene_log_to_console: true,
+        // headless permission policy (hammurabi parity): network APIs allowed, everything
+        // user-facing denied. Without an explicit value these resolve to Ask, and the Ask
+        // queue has no consumer headless — the scene promise would hang forever.
+        default_permissions: [
+            (PermissionType::Fetch, PermissionValue::Allow),
+            (PermissionType::Websocket, PermissionValue::Allow),
+            (PermissionType::Teleport, PermissionValue::Deny),
+            (PermissionType::ChangeRealm, PermissionValue::Deny),
+            (PermissionType::SpawnPortable, PermissionValue::Deny),
+            (PermissionType::KillPortables, PermissionValue::Deny),
+            (PermissionType::Web3, PermissionValue::Deny),
+            (PermissionType::CopyToClipboard, PermissionValue::Deny),
+            (PermissionType::OpenUrl, PermissionValue::Deny),
+        ]
+        .into(),
         ..Default::default()
     };
 
@@ -284,6 +324,27 @@ fn main() {
         |asset_server: Res<AssetServer>| ui_core::init_fonts(&asset_server),
     );
 
+    // world-storage delegations (per scene; CLI/env value is the single-scene fallback)
+    let mut delegations = StorageDelegations::default();
+    if args.orchestrated {
+        // KEY-3 style structural gate: a process-level credential in multi-scene mode
+        // would be a wildcard — delegations must arrive per scene over the control channel
+        if args.storage_delegation.is_some() {
+            println!("[headless] refusing --storage-delegation/PROCESS_STORAGE_DELEGATION in orchestrated mode; pass storageDelegation per add-scene");
+        }
+    } else if let Some(encoded) = &args.storage_delegation {
+        match StorageDelegation::parse(encoded, &map_realm_name(&args.realm)) {
+            Ok(delegation) => {
+                println!(
+                    "[headless] storage delegation loaded: world={} scene={} parcel={}",
+                    delegation.world, delegation.scene_id, delegation.parcel
+                );
+                delegations.fallback = Some(delegation);
+            }
+            Err(e) => println!("[headless] ignoring storage delegation: {e}"),
+        }
+    }
+
     // ---- resources & events the scene runtime needs (no render/UI plugins) ----
     let mut wallet = Wallet::default();
     wallet.finalize_as_guest();
@@ -325,6 +386,7 @@ fn main() {
             preview_parcel: None,
         })
         .insert_resource(IsServer(args.server_mode))
+        .insert_resource(delegations)
         .add_event::<RpcCall>()
         .add_event::<SystemAudio>()
         .add_event::<ScrollTargetEvent>()
@@ -333,6 +395,7 @@ fn main() {
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
     app.add_systems(Startup, setup.in_set(SetupSets::Init));
     app.add_systems(PreUpdate, supervisor);
+    app.add_systems(Update, (drain_permissions, replicate_avatar_info));
 
     if args.orchestrated {
         app.insert_resource(ControlChannel(std::sync::Mutex::new(spawn_stdin_reader())))
@@ -340,7 +403,14 @@ fn main() {
             // structural gate: the engine must never sign gatekeeper handshakes in
             // orchestrated mode — adapters are always minted by the trusted parent
             .insert_resource(comms::DisableSceneRoomGatekeeper(true))
-            .add_systems(Update, (drain_control_commands, demux_scene_logs))
+            .add_systems(
+                Update,
+                (
+                    drain_control_commands,
+                    demux_scene_logs,
+                    request_delegation_renewals,
+                ),
+            )
             .add_systems(PostUpdate, emit_scene_status);
         ctl_emit(&serde_json::json!({"type": "starting", "realm": args.realm}));
     }
@@ -429,6 +499,9 @@ fn setup(
             HeadSync::default(),
             PointAtSync::default(),
             GroundCollider::default(),
+            // movePlayerTo-with-duration / walkTo park their response here; without it
+            // (inserted by the omitted user_input plugin) the scene promise never settles
+            ActivePlayerComponent::<AvatarMovement>::from_config(&config),
         ))
         .id();
 
@@ -518,6 +591,104 @@ fn supervisor(
 // timeout is read in the supervisor; stored globally to avoid threading it as a resource
 static TIMEOUT: OnceLock<Option<f32>> = OnceLock::new();
 
+/// Answer queued permission requests by the headless policy. The Ask queue's only
+/// consumer is the omitted system_ui crate, so anything that lands here (a permission
+/// type missing from default_permissions) would otherwise hang its scene promise forever.
+fn drain_permissions(
+    mut manager: ResMut<PermissionManager>,
+    config: Res<AppConfig>,
+) {
+    while let Some(req) = manager.pending.pop_front() {
+        let allow = matches!(
+            config.default_permissions.get(&req.ty),
+            Some(PermissionValue::Allow)
+        );
+        req.sender.send(allow);
+    }
+}
+
+/// Forward player profile data into scene CRDTs as AVATAR_BASE / AVATAR_EQUIPPED_DATA.
+/// Copy of avatar::update_avatar_info — the AvatarPlugin that normally registers it is
+/// render-bound and omitted headless; without this, SDK getPlayer()/onEnterScene never
+/// see names or wearables.
+fn replicate_avatar_info(
+    updated_players: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
+    mut global_state: ResMut<GlobalCrdtState>,
+) {
+    for (player, profile) in &updated_players {
+        let avatar = &profile.content.avatar;
+        global_state.update_crdt(
+            SceneComponentId::AVATAR_BASE,
+            CrdtType::LWW_ANY,
+            player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
+            &PbAvatarBase {
+                name: profile.content.name.clone(),
+                skin_color: avatar.skin.map(|c| c.color),
+                eyes_color: avatar.eyes.map(|c| c.color),
+                hair_color: avatar.hair.map(|c| c.color),
+                body_shape_urn: avatar
+                    .body_shape
+                    .as_deref()
+                    .map(ToString::to_string)
+                    .unwrap_or(base_wearables::default_bodyshape_urn().to_string()),
+            },
+        );
+        global_state.update_crdt(
+            SceneComponentId::AVATAR_EQUIPPED_DATA,
+            CrdtType::LWW_ANY,
+            player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
+            &PbAvatarEquippedData {
+                wearable_urns: avatar.wearables.to_vec(),
+                emote_urns: (0..10)
+                    .map(|ix| {
+                        avatar
+                            .emotes
+                            .as_ref()
+                            .unwrap_or(&Vec::default())
+                            .iter()
+                            .find(|emote| emote.slot == ix)
+                            .map(|emote| emote.urn.clone())
+                            .unwrap_or_default()
+                    })
+                    .collect(),
+                force_render: avatar.force_render.clone().unwrap_or_default(),
+            },
+        )
+    }
+}
+
+/// Ask the orchestrator for fresh delegations nearing expiry (hammurabi semantics:
+/// 5-minute refresh buffer, at most one request per scene per 30 s).
+fn request_delegation_renewals(
+    delegations: Res<StorageDelegations>,
+    time: Res<Time>,
+    mut last_request: Local<std::collections::HashMap<String, f32>>,
+) {
+    const REFRESH_BUFFER_MS: i64 = 5 * 60 * 1000;
+    const REQUEST_THROTTLE_SECS: f32 = 30.0;
+
+    let now_ms = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let elapsed = time.elapsed_secs();
+
+    for (scene, delegation) in &delegations.by_scene {
+        if now_ms < delegation.expiration - REFRESH_BUFFER_MS {
+            continue;
+        }
+        let due = last_request
+            .get(scene)
+            .is_none_or(|last| elapsed - last > REQUEST_THROTTLE_SECS);
+        if due {
+            last_request.insert(scene.clone(), elapsed);
+            ctl_emit(&serde_json::json!({
+                "type": "storage-delegation-request", "scene": scene
+            }));
+        }
+    }
+}
+
 // ---------------- orchestrated-mode systems ----------------
 
 #[allow(clippy::too_many_arguments)]
@@ -532,9 +703,42 @@ fn drain_control_commands(
     ipfs: IpfsAssetServer,
     preview: Res<PreviewMode>,
     scenes: Query<&RendererSceneContext>,
+    mut delegations: ResMut<StorageDelegations>,
+    config: Res<AppConfig>,
     mut mint_tasks: Local<Vec<(String, bevy::tasks::Task<Result<String, anyhow::Error>>)>>,
 ) {
-    let mut connect =
+    let store_delegation = |scene_id: &str, encoded: &str, delegations: &mut StorageDelegations| {
+        match StorageDelegation::parse(encoded, &map_realm_name(&config.server)) {
+            Ok(delegation) => {
+                // reject a renewal that rebinds to another scene's credential
+                // (hammurabi's same-scene guard)
+                let same_scene = delegations
+                    .by_scene
+                    .get(scene_id)
+                    .is_none_or(|current| {
+                        current.world == delegation.world
+                            && current.scene_id == delegation.scene_id
+                            && current.parcel == delegation.parcel
+                    });
+                if !same_scene {
+                    ctl_emit(&serde_json::json!({
+                        "type": "error", "scene": scene_id,
+                        "error": "storage delegation is bound to a different scene; ignored"
+                    }));
+                    return;
+                }
+                delegations.by_scene.insert(scene_id.to_owned(), delegation);
+                ctl_emit(&serde_json::json!({
+                    "type": "storage-delegation-set", "scene": scene_id
+                }));
+            }
+            Err(e) => ctl_emit(&serde_json::json!({
+                "type": "error", "scene": scene_id,
+                "error": format!("bad storage delegation: {e}")
+            })),
+        }
+    };
+    let connect =
         |scene_id: &str,
          adapter: &str,
          manager: &mut AdapterManager,
@@ -595,6 +799,7 @@ fn drain_control_commands(
                 scene_id,
                 urn,
                 adapter,
+                storage_delegation,
             } => {
                 portables.insert(
                     scene_id.clone(),
@@ -606,6 +811,9 @@ fn drain_control_commands(
                     },
                 );
                 orch.wanted.insert(scene_id.clone(), adapter.clone());
+                if let Some(encoded) = &storage_delegation {
+                    store_delegation(&scene_id, encoded, &mut delegations);
+                }
                 ctl_emit(&serde_json::json!({"type": "scene-added", "scene": scene_id}));
 
                 if let Some(adapter) = adapter {
@@ -667,6 +875,7 @@ fn drain_control_commands(
             ControlCommand::RemoveScene { scene_id } => {
                 portables.remove(&scene_id);
                 orch.wanted.remove(&scene_id);
+                delegations.by_scene.remove(&scene_id);
                 if let Some((_, ent)) = server_rooms.0.remove(&scene_id) {
                     if let Ok(mut c) = commands.get_entity(ent) {
                         c.despawn();
@@ -682,8 +891,13 @@ fn drain_control_commands(
                     }));
                 }
             }
-            ControlCommand::StorageDelegationResponse { .. } => {
-                // reserved: no world-storage client in the engine yet
+            ControlCommand::StorageDelegationResponse {
+                scene_id,
+                delegation,
+            } => {
+                if let (Some(scene_id), Some(encoded)) = (&scene_id, &delegation) {
+                    store_delegation(scene_id, encoded, &mut delegations);
+                }
             }
         }
     }

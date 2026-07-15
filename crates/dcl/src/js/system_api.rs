@@ -221,6 +221,7 @@ pub async fn op_kernel_fetch_headers(
             method: method.unwrap_or_else(|| String::from("get")),
             uri,
             meta,
+            scene: None,
             response: sx,
         });
 

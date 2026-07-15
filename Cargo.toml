@@ -272,6 +272,7 @@ wgpu = { workspace = true }
 bevy_console = { workspace = true }
 bevy_dui = { workspace = true }
 dcl = { workspace = true }
+dcl_component = { workspace = true }
 serde = { workspace = true }
 http = { workspace = true }
 # present only to enable the naga_oil `override_any` feature graph-wide (see

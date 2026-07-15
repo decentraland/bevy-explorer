@@ -1,5 +1,13 @@
 # Headless bevy as the hammurabi replacement — implementation & towerofmadness test plan
 
+## STORAGE DELEGATION STATUS (2026-07-15)
+
+World-storage signing is implemented (§5's "storage delegation for production worlds" is no longer out of scope). `crates/wallet/src/delegation.rs` consumes hammurabi's base64 envelope; `handle_sign_request` signs `https://storage.decentraland.{org,zone}` scene requests with the delegation's ephemeral key + `x-authoritative-scope` + authoritative metadata when the scene has one. Delivery: `--storage-delegation <b64>` / env `PROCESS_STORAGE_DELEGATION` (single-scene; bound to the claim's SceneId), or orchestrated `add-scene.storageDelegation` / `storage-delegation-response` (per scene; process-level values are refused). The engine emits `@bevy-ctl {"type":"storage-delegation-request","scene":…}` 5 min before expiry (30 s throttle). Without a delegation, storage degrades to guest signing (prod answers 400/401; scenes catch it). Also fixed bin-side: default-Allow Fetch/Websocket + permission-queue drain (scene fetch/WS promises hung forever headless), `ActivePlayerComponent` on the fake player (movePlayerTo-with-duration hang), AvatarBase/AvatarEquippedData replication (§2b.7 done). Build now requires the `headless` feature:
+```
+cargo build --release -p dcl_deno_ipc && cargo build --release --bin headless --no-default-features --features livekit,headless
+```
+Verified against 7 production worlds (cleantheclub/skychaser/towerofmadness/boedo/flagtag/fastlane/kickoff .dcl.eth): all run their server branch headless for 300 s, 0 broken/panics, ~24.6 Hz (30 Hz target), 206 MB–1.05 GB RSS (engine+sidecar; heavy worlds dominated by resident GLTF textures — see §2c). Harness: `bench/run_worlds.sh` + `bench/analyze.py`.
+
 ## IMPLEMENTATION STATUS (2026-07-14)
 
 A working headless server binary now exists and was verified end-to-end against a local towerofmadness preview.
