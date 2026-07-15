@@ -36,8 +36,26 @@ import type {
   Wearable
 } from '../../engine/protocol'
 
+/** A server-side catalog page request (backpack grid). Filters/sort are applied by the catalyst. */
+export interface CatalogQuery {
+  page: number
+  pageSize: number
+  category?: string
+  search?: string
+  orderBy?: 'rarity' | 'name'
+  direction?: 'asc' | 'desc'
+  collectiblesOnly?: boolean
+}
+
 export interface BackpackState {
+  /** The current catalog page (server-side paginated; drives the grid). */
   list: Wearable[]
+  /** Total matching items for the active filters (drives the pager). */
+  total: number
+  /** True while a catalog page is in flight. */
+  loading: boolean
+  /** Request a catalog page (page + filters); the newest response wins (stale ones are dropped). */
+  query: (q: CatalogQuery) => void
   equipped: Wearable[]
   open: boolean
   toggle: () => void
@@ -416,8 +434,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [emotes, setEmotes] = useState<Emote[]>([])
   const [emotesOpen, setEmotesOpen] = useState(false)
   const [mic, setMic] = useState({ enabled: false, available: false })
-  const [wearables, setWearables] = useState<Wearable[]>([])
+  const [catalogItems, setCatalogItems] = useState<Wearable[]>([])
+  const [catalogTotal, setCatalogTotal] = useState(0)
+  const [catalogLoading, setCatalogLoading] = useState(false)
+  const catalogReqId = useRef(0)
   const [equippedWearables, setEquippedWearables] = useState<Wearable[]>([])
+  // Mirror of catalogItems for equipWearables' optimistic equipped-set rebuild (avoids stale closure).
+  const catalogItemsRef = useRef<Wearable[]>([])
+  useEffect(() => { catalogItemsRef.current = catalogItems }, [catalogItems])
   const [outfits, setOutfits] = useState<OutfitsMetadata>({ outfits: [], namesForExtraSlots: [] })
   const [backpackOpen, setBackpackOpen] = useState(false)
   const [communities, setCommunities] = useState<Community[]>([])
@@ -535,8 +559,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setMic({ enabled: msg.enabled, available: msg.available })
           break
         case 'wearables':
-          setWearables(msg.wearables)
           setEquippedWearables(msg.equipped)
+          break
+        case 'catalogPage':
+          // Only the newest request's page wins — drop stale responses (fast page/filter changes).
+          if (msg.catalog === 'wearables' && msg.requestId === catalogReqId.current) {
+            setCatalogItems(msg.items)
+            setCatalogTotal(msg.total)
+            setCatalogLoading(false)
+          }
           break
         case 'outfits':
           setOutfits(msg.metadata)
@@ -993,12 +1024,31 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [submitted, destinationPicked, pickDestination])
   const equipWearables = useCallback((urns: string[]) => {
     driverRef.current?.send({ kind: 'equip', urns })
-    // Optimistically reflect the new equipped set so the button flips to "Unequip" immediately —
-    // the engine deploy + wearables re-emit lags, and a failed deploy never re-emits at all.
-    setWearables((list) => list.map((w) => ({ ...w, equipped: urns.some((u) => u === w.urn || u.startsWith(`${w.urn}:`)) })))
+    // Optimistically reflect the new equipped set so the button flips to "Unequip" immediately AND the
+    // equipped set stays authoritative for the next equip — the engine deploy + wearables re-emit lags,
+    // and a failed deploy never re-emits at all. `urns` is the full next set (see BackpackPage), so
+    // rebuild `equippedWearables` from it (resolving each urn against the catalog ∪ current equipped),
+    // mirroring bevy-ui-scene's local-store-is-source-of-truth model. Otherwise a stale equipped set
+    // makes each subsequent equip drop the previously-equipped items from the deploy.
+    const matches = (u: string, urn: string): boolean => u === urn || u.startsWith(`${urn}:`)
+    setCatalogItems((list) => list.map((w) => ({ ...w, equipped: urns.some((u) => matches(u, w.urn)) })))
+    setEquippedWearables((prev) => {
+      const pool = new Map<string, Wearable>([...catalogItemsRef.current, ...prev].map((w) => [w.urn, w]))
+      return urns
+        .map((u): Wearable | null => {
+          const w = pool.get(u) ?? [...pool.values()].find((x) => u.startsWith(`${x.urn}:`))
+          return w != null ? { ...w, equipped: true } : null
+        })
+        .filter((w): w is Wearable => w != null)
+    })
   }, [])
   const previewWearables = useCallback((urns: string[] | null) => {
     driverRef.current?.send({ kind: 'previewAvatar', urns })
+  }, [])
+  const queryCatalog = useCallback((q: CatalogQuery) => {
+    catalogReqId.current += 1
+    setCatalogLoading(true)
+    driverRef.current?.send({ kind: 'catalogQuery', catalog: 'wearables', requestId: catalogReqId.current, ...q })
   }, [])
   const saveOutfit = useCallback((slot: number) => {
     driverRef.current?.send({ kind: 'saveOutfit', slot })
@@ -1304,7 +1354,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
     backpack: {
-      list: wearables, equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables,
+      list: catalogItems, total: catalogTotal, loading: catalogLoading, query: queryCatalog,
+      equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables,
       outfits: outfits.outfits, outfitSlots: Math.min(10, 5 + outfits.namesForExtraSlots.length),
       saveOutfit, deleteOutfit, equipOutfit
     },

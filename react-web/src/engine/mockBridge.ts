@@ -381,13 +381,30 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'triggerEmote') return // no-op in the mock
     if (msg.kind === 'equipEmote') return // no-op in the mock
     if (msg.kind === 'getWearables') {
-      reply({ kind: 'wearables', wearables: mockWearables, equipped: equippedNow() })
+      reply({ kind: 'wearables', equipped: equippedNow() })
+      return
+    }
+    if (msg.kind === 'catalogQuery') {
+      if (msg.catalog !== 'wearables') {
+        reply({ kind: 'catalogPage', catalog: msg.catalog, items: [], total: 0, requestId: msg.requestId })
+        return
+      }
+      let items = mockWearables.slice()
+      if (msg.category != null && msg.category !== 'all') items = items.filter((w) => w.category === msg.category)
+      if (msg.search != null && msg.search !== '') items = items.filter((w) => (w.name ?? '').toLowerCase().includes(msg.search!.toLowerCase()))
+      if (msg.collectiblesOnly === true) items = items.filter((w) => (w.rarity ?? 'base') !== 'base')
+      const dir = msg.direction === 'asc' ? 1 : -1
+      if (msg.orderBy === 'name') items.sort((a, b) => dir * (a.name ?? '').localeCompare(b.name ?? ''))
+      else if (msg.orderBy === 'rarity') items.sort((a, b) => dir * (RARITIES.indexOf(a.rarity) - RARITIES.indexOf(b.rarity)))
+      const total = items.length
+      const start = msg.page * msg.pageSize
+      reply({ kind: 'catalogPage', catalog: 'wearables', items: items.slice(start, start + msg.pageSize), total, requestId: msg.requestId })
       return
     }
     if (msg.kind === 'equip') {
       const set = new Set(msg.urns)
       for (const w of mockWearables) w.equipped = set.has(w.urn)
-      reply({ kind: 'wearables', wearables: mockWearables, equipped: equippedNow() })
+      reply({ kind: 'wearables', equipped: equippedNow() })
       return
     }
     if (msg.kind === 'getOutfits') {
@@ -413,7 +430,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       if (found) {
         const set = new Set(found.outfit.wearables)
         for (const w of mockWearables) w.equipped = set.has(w.urn)
-        reply({ kind: 'wearables', wearables: mockWearables, equipped: equippedNow() })
+        reply({ kind: 'wearables', equipped: equippedNow() })
       }
       return
     }

@@ -365,10 +365,6 @@
   font-weight: 700;
   cursor: pointer;
 }
-.pageArrow:disabled {
-  color: var(--ink-45);
-  cursor: default;
-}
 .pageNum:hover {
   background: var(--white-10);
 }

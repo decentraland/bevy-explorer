@@ -29,6 +29,18 @@ function humanize(s: string): string {
   return s.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+const PAGE_BUTTONS = 5
+
+// A sliding window of consecutive page numbers (mirrors bevy-ui-scene's pagination-util): the
+// current page stays centered once past the first half, and the window clamps at both ends so it
+// never runs off. All indices 0-based.
+export function pageWindow(current: number, count: number): number[] {
+  const size = Math.min(PAGE_BUTTONS, count)
+  const half = Math.floor(PAGE_BUTTONS / 2)
+  const start = current > half ? Math.min(current - half, count - size) : 0
+  return Array.from({ length: size }, (_, i) => start + i)
+}
+
 // Ordered like Unity's NftCategoryIcons (body parts grouped head→body→accessories).
 const CATEGORY_ORDER = [
   'body_shape', 'hair', 'eyebrows', 'eyes', 'mouth', 'facial_hair',
@@ -205,16 +217,12 @@ export function BackpackPage({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [collectiblesOnly, setCollectiblesOnly] = useState(false)
 
-  // Categories present in the wearable list (plus any equipped item's category), ordered like Unity.
-  const categories = useMemo(() => {
-    const present = new Set(backpack.list.map((w) => w.category))
-    for (const w of backpack.equipped) present.add(w.category)
-    return CATEGORY_ORDER.filter((c) => present.has(c))
-  }, [backpack.list, backpack.equipped])
+  // Fixed body-part slots. With a server-paginated grid we don't hold the full catalog, so the
+  // category column is the canonical Unity ordering rather than "categories present in the page".
+  const categories = CATEGORY_ORDER
 
-  // Equipped item shown in each category slot. Prefer the catalog list (so equip/unequip from the
-  // grid reflects optimistically), then fill from the decoupled equipped set for items that aren't
-  // on the catalog page at all — otherwise their slot would render empty.
+  // Equipped item shown in each category slot. Prefer the current page (so equip/unequip reflects
+  // optimistically), then fill from the decoupled equipped set for items not on this page.
   const equippedByCat = useMemo(() => {
     const m = new Map<string, Wearable>()
     for (const w of backpack.list) if (w.equipped && !m.has(w.category)) m.set(w.category, w)
@@ -222,28 +230,34 @@ export function BackpackPage({
     return m
   }, [backpack.list, backpack.equipped])
 
-  const items = useMemo(() => {
-    const dir = sortDir === 'asc' ? 1 : -1
-    return backpack.list
-      .filter(
-        (w) =>
-          (cat === 'all' || w.category === cat) &&
-          (!query || (w.name ?? '').toLowerCase().includes(query.toLowerCase())) &&
-          (!collectiblesOnly || (w.rarity ?? 'base') !== 'base')
-      )
-      .sort((a, b) =>
-        sortBy === 'name'
-          ? dir * (a.name ?? '').localeCompare(b.name ?? '')
-          : dir * ((RARITY_RANK[a.rarity ?? 'base'] ?? 0) - (RARITY_RANK[b.rarity ?? 'base'] ?? 0))
-      )
-  }, [backpack.list, cat, query, collectiblesOnly, sortBy, sortDir])
-  // Back to page 1 whenever the result set changes.
+  // Debounce the search box before hitting the server.
+  const [searchDebounced, setSearchDebounced] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+  // Any filter change resets to the first page.
   useEffect(() => {
     setPage(0)
-  }, [cat, query, collectiblesOnly, sortBy, sortDir])
-  const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  }, [cat, searchDebounced, collectiblesOnly, sortBy, sortDir])
+  // Fetch the current catalog page from the catalyst (wearables tab). Filters/sort are applied
+  // server-side; the session drops stale responses via a request id.
+  useEffect(() => {
+    if (!backpack.open || tab !== 'wearables') return
+    backpack.query({
+      page,
+      pageSize: PAGE_SIZE,
+      category: cat === 'all' ? undefined : cat,
+      search: searchDebounced || undefined,
+      orderBy: sortBy,
+      direction: sortDir,
+      collectiblesOnly
+    })
+  }, [backpack.open, tab, page, cat, searchDebounced, sortBy, sortDir, collectiblesOnly, backpack.query])
+
+  const pageCount = Math.max(1, Math.ceil(backpack.total / PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
-  const pageItems = items.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+  const pageItems = backpack.list
 
   // Emotes share the same search / sort / collectibles filter as wearables (no category — emotes
   // aren't grouped by body part). The wheel slot list on the left is unaffected.
@@ -283,15 +297,16 @@ export function BackpackPage({
 
   if (!backpack.open) return null
 
-  // The equipped set if `w` were on (same-category item swapped out).
+  // The full equipped set = the decoupled equipped list (NOT the current page — the rest of the
+  // outfit lives on other pages). The equipped set if `w` were on (same-category item swapped out).
   const equipSetWith = (w: Wearable): string[] =>
-    [...backpack.list.filter((x) => x.equipped && x.category !== w.category).map((x) => x.urn), w.urn]
+    [...backpack.equipped.filter((x) => x.category !== w.category).map((x) => x.urn), w.urn]
 
   // Explicit equip/unequip (the hover pill) — persists to the profile, then drops the preview
   // override so the avatar follows the (now updated) profile.
   const toggleEquip = (w: Wearable): void => {
     const next = w.equipped
-      ? backpack.list.filter((x) => x.equipped && x.urn !== w.urn).map((x) => x.urn)
+      ? backpack.equipped.filter((x) => x.urn !== w.urn).map((x) => x.urn)
       : equipSetWith(w)
     backpack.equip(next)
     backpack.preview(null)
@@ -430,7 +445,7 @@ export function BackpackPage({
                     )}
                   </div>
                   {pageItems.length === 0 ? (
-                    <div className={styles.empty}>No wearables.</div>
+                    <div className={styles.empty}>{backpack.loading ? 'Loading…' : 'No wearables.'}</div>
                   ) : (
                     <div className={styles.grid}>
                       {pageItems.map((w) => (
@@ -449,15 +464,24 @@ export function BackpackPage({
                       ))}
                     </div>
                   )}
+                  {/* Server-paginated → potentially hundreds of pages: a sliding window of
+                      consecutive page numbers (bevy-ui-scene style). The arrows WRAP — prev on the
+                      first page jumps to the last, next on the last wraps to the first. */}
                   {pageCount > 1 && (
                     <div className={styles.pager}>
-                      <button type="button" className={styles.pageArrow} disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>‹</button>
-                      {Array.from({ length: pageCount }, (_, i) => (
-                        <button key={i} type="button" className={`${styles.pageNum} ${i === safePage ? styles.pageNumActive : ''}`.trim()} onClick={() => setPage(i)}>
-                          {i + 1}
+                      <button type="button" className={styles.pageArrow} aria-label="Previous page" onClick={() => setPage(safePage === 0 ? pageCount - 1 : safePage - 1)}>‹</button>
+                      {pageWindow(safePage, pageCount).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          className={`${styles.pageNum} ${p === safePage ? styles.pageNumActive : ''}`.trim()}
+                          aria-current={p === safePage ? 'page' : undefined}
+                          onClick={() => setPage(p)}
+                        >
+                          {p + 1}
                         </button>
                       ))}
-                      <button type="button" className={styles.pageArrow} disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}>›</button>
+                      <button type="button" className={styles.pageArrow} aria-label="Next page" onClick={() => setPage(safePage >= pageCount - 1 ? 0 : safePage + 1)}>›</button>
                     </div>
                   )}
                 </div>
