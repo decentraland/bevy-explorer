@@ -12,7 +12,7 @@ use bevy::{
     app::ScheduleRunnerPlugin,
     diagnostic::{DiagnosticsPlugin, FrameCountPlugin},
     gizmos::GizmoPlugin,
-    gltf::GltfPlugin,
+    gltf::{Gltf, GltfPlugin},
     input::InputPlugin,
     log::LogPlugin,
     prelude::*,
@@ -395,7 +395,10 @@ fn main() {
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
     app.add_systems(Startup, setup.in_set(SetupSets::Init));
     app.add_systems(PreUpdate, supervisor);
-    app.add_systems(Update, (drain_permissions, replicate_avatar_info));
+    app.add_systems(
+        Update,
+        (drain_permissions, replicate_avatar_info, free_gltf_textures),
+    );
 
     if args.orchestrated {
         app.insert_resource(ControlChannel(std::sync::Mutex::new(spawn_stdin_reader())))
@@ -654,6 +657,57 @@ fn replicate_avatar_info(
                 force_render: avatar.force_render.clone().unwrap_or_default(),
             },
         )
+    }
+}
+
+/// Free decoded glTF textures once a glTF finishes loading. The fork's glTF loader
+/// decodes every embedded texture into raw RGBA unconditionally; with no render app
+/// there is nothing to hand the pixels to, so they would stay resident in
+/// Assets<Image> for the life of the process — the dominant headless memory cost
+/// (texture-heavy worlds hold ~700 MB each). Nothing observable depends on them:
+/// colliders/raycasts run on mesh geometry, and no headless system reads pixel data.
+/// Stripping the handles from the glTF's own materials drops the last strong
+/// references; dangling handles are harmless without a renderer. The decode CPU is
+/// still paid at load — skipping the decode itself needs a loader gate in the bevy
+/// fork (tracked for a follow-up there).
+fn free_gltf_textures(
+    mut events: EventReader<AssetEvent<Gltf>>,
+    gltfs: Res<Assets<Gltf>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    for ev in events.read() {
+        let AssetEvent::LoadedWithDependencies { id } = ev else {
+            continue;
+        };
+        let Some(gltf) = gltfs.get(*id) else { continue };
+        let mut freed = 0usize;
+        for h_material in gltf
+            .materials
+            .iter()
+            .chain(gltf.named_materials.values())
+        {
+            let Some(material) = materials.get_mut(h_material) else {
+                continue;
+            };
+            for texture in [
+                &mut material.base_color_texture,
+                &mut material.emissive_texture,
+                &mut material.metallic_roughness_texture,
+                &mut material.normal_map_texture,
+                &mut material.occlusion_texture,
+                &mut material.depth_map,
+            ] {
+                if let Some(handle) = texture.take() {
+                    if images.remove(&handle).is_some() {
+                        freed += 1;
+                    }
+                }
+            }
+        }
+        if freed > 0 {
+            debug!("freed {freed} decoded gltf textures");
+        }
     }
 }
 
