@@ -80,8 +80,10 @@ export function App(): React.JSX.Element {
   useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
   const showFps = useFpsToggle()
   // Probe the GPU before booting the engine — but only on the real boot path (a sync gate already
-  // decided, mock, or the design showcase all skip it). 'checking' shows a brief spinner.
-  const gpu = useGpuProbe(GATE_REASON != null || MODE === 'mock' || SHOWCASE)
+  // decided, mock, native, or the design showcase all skip it). Native renders through the host's
+  // bevy/wgpu, not WebGPU in this webview, so probing there would gate a HUD that runs fine.
+  // 'checking' shows a brief spinner.
+  const gpu = useGpuProbe(GATE_REASON != null || MODE === 'mock' || MODE === 'native' || SHOWCASE)
   if (GATE_REASON) return <MobileGate reason={GATE_REASON} />
   if (gpu === 'checking') return <GateChecking />
   if (gpu === 'blocked') return <MobileGate reason="gpu" />
@@ -111,7 +113,7 @@ function useFpsToggle(): boolean {
 }
 
 // Async pre-boot GPU probe. 'checking' → 'ok' (boot) or 'blocked' (→ the no-GPU gate). `skip` (a sync
-// gate already decided, mock, or showcase) resolves immediately to 'ok'. `?nogate=1` and the shared
+// gate already decided, mock, native, or showcase) resolves immediately to 'ok'. `?nogate=1` and the shared
 // bypass cookie skip the gate too; `?gate=gpu` is handled synchronously in gateReason(), so this only
 // runs the real detection path.
 function useGpuProbe(skip: boolean): 'checking' | 'ok' | 'blocked' {
