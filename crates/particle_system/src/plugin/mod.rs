@@ -267,7 +267,12 @@ fn make_particle_system(
     let size_over_lifetime = particle_system
         .size_over_time
         .unwrap_or(FloatRange { start: 1., end: 1. });
-    // TODO initial_rotation
+    let initial_rotation = Transform::from_rotation(
+        particle_system
+            .initial_rotation
+            .map(|quat| quat.to_bevy_normalized())
+            .unwrap_or_default(),
+    );
     // TODO rotation_over_time
     let face_travel_velocity = particle_system.face_travel_direction.unwrap_or(false);
     let initial_color = particle_system.initial_color.unwrap_or(ColorRange {
@@ -331,6 +336,18 @@ fn make_particle_system(
     let init_position = make_position(shape, &writer);
     let init_rotation =
         SetAttributeModifier::new(ROTATION_ATTR, writer.lit(std::f32::consts::PI).expr());
+    let init_axis_x = SetAttributeModifier::new(
+        Attribute::AXIS_X,
+        writer.lit(initial_rotation.transform_point(Vec3::X)).expr(),
+    );
+    let init_axis_y = SetAttributeModifier::new(
+        Attribute::AXIS_Y,
+        writer.lit(initial_rotation.transform_point(Vec3::Y)).expr(),
+    );
+    let init_axis_z = SetAttributeModifier::new(
+        Attribute::AXIS_Z,
+        writer.lit(initial_rotation.transform_point(Vec3::Z)).expr(),
+    );
     let init_size = SetAttributeModifier::new(
         Attribute::SIZE,
         random_lerp(&writer, initial_size.start, initial_size.end),
@@ -431,6 +448,9 @@ fn make_particle_system(
 
     set!(effect_asset, init, init_position);
     set!(effect_asset, init, init_rotation);
+    set!(effect_asset, init, init_axis_x);
+    set!(effect_asset, init, init_axis_y);
+    set!(effect_asset, init, init_axis_z);
     set!(effect_asset, init, init_size);
     set!(effect_asset, init, init_velocity);
     set!(effect_asset, init, init_age);
