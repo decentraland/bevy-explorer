@@ -13,10 +13,10 @@ import type {
   HoverAction,
   HoverEvent,
   LiveSceneInfo,
-  PbAvatarEquippedData,
   PermissionRequest,
   ProximityEvent,
   SceneLoadingUi,
+  SetAvatarData,
   SetSinglePermission,
   Vector3
 } from '../../src/engine/generated'
@@ -103,7 +103,7 @@ export type BevyApiInterface = {
   setPermanentPermission: (body: SetPermanentPermissionBody) => void
   /** Live scenes, for resolving a permission request's scene name (hash → title). */
   liveSceneInfo: () => Promise<LiveSceneInfo[]>
-  setAvatar: (data: { equip: PbAvatarEquippedData }) => Promise<unknown>
+  setAvatar: (data: SetAvatarData) => Promise<unknown>
   kernelFetch: (req: KernelFetchRequest) => Promise<KernelFetchResponse>
   getRealmProvider: () => Promise<string>
   getPreviousLogin: () => Promise<{ userId: string | null }>

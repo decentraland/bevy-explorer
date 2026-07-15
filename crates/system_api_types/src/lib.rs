@@ -37,12 +37,18 @@ impl ClearableColor3 {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, ts_rs::TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct SetAvatarData {
+    #[ts(optional)]
     pub base: Option<PbAvatarBase>,
+    #[ts(optional)]
     pub equip: Option<PbAvatarEquippedData>,
+    #[ts(optional)]
     pub has_claimed_name: Option<bool>,
+    #[ts(optional)]
     pub profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
+    #[ts(optional)]
     pub name_color: Option<ClearableColor3>,
 }
 
