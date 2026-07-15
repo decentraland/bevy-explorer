@@ -101,6 +101,9 @@ export type BevyApiInterface = {
   getSceneLoadingUIStream: () => Promise<AsyncIterable<SceneLoadingState>>
   getHoverStream: () => Promise<AsyncIterable<SystemHoverEvent>>
   getProximityStream: () => Promise<AsyncIterable<SystemProximityEvent>>
+  /** Run an engine console command (no leading slash) and await its reply; rejects with the failure
+   *  message. Optional: absent on runtimes whose SystemApi predates it, so callers must degrade. */
+  consoleCommand?: (cmd: string, args: string[]) => Promise<string>
   getMicState: () => Promise<MicState>
   setMicEnabled: (enabled: boolean) => void
   getAvatarModifiers: () => Promise<AvatarModifierState[]>

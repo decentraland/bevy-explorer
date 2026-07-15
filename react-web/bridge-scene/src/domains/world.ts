@@ -6,15 +6,6 @@ import { teleportTo, changeRealm } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
 
-// The engine's console op. `~system/SystemApi`'s `reload`/`show_ui` (deploy/web/modules/SystemApi.js)
-// call it exactly like this; it's not in the scene SDK types, so reach it off the isolate's `Deno`
-// global. Returns undefined if the runtime doesn't expose it (so callers degrade, never throw).
-type ConsoleOp = (cmd: string, args: string[]) => Promise<string>
-function consoleOp(): ConsoleOp | undefined {
-  return (globalThis as unknown as { Deno?: { core?: { ops?: { op_console_command?: ConsoleOp } } } }).Deno?.core?.ops
-    ?.op_console_command
-}
-
 // Echo a "DCL System" line into the React chat (empty sender → system member). Used to relay
 // slash-command feedback (/commands output, /reload status) that isn't broadcast to other players.
 function pushSystem(ctx: Ctx, message: string): void {
@@ -44,7 +35,7 @@ export function registerWorld(ctx: Ctx): void {
   // `/reload` — reload the scene the player is standing in, resolved by parcel from liveSceneInfo.
   // Never the super-user bridge (isSuper filtered out) and never reload-all, so the HUD survives.
   ctx.on('reloadScene', () => {
-    const op = consoleOp()
+    const op = BevyApi.consoleCommand
     if (op == null) {
       pushSystem(ctx, 'Reload is not available.')
       return
@@ -71,7 +62,7 @@ export function registerWorld(ctx: Ctx): void {
   // registered command the engine rejects with "Recognized commands: [...]" — exactly the list we
   // want — so relay either the successful output or the rejection text.
   ctx.on('consoleCommand', (msg) => {
-    const op = consoleOp()
+    const op = BevyApi.consoleCommand
     if (op == null) {
       pushSystem(ctx, 'Engine console is not available.')
       return
