@@ -6,6 +6,7 @@ import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
 import { fetchProfile, profileCache } from './profile'
 import { setChatBubble } from './nametags'
+import { onSystemAction } from './systemAction'
 import type { Ctx } from '../bridge'
 import type { NearbyMember } from '../../../src/engine/protocol'
 
@@ -40,21 +41,15 @@ export function registerChat(ctx: Ctx): void {
   // Enter → focus chat, even while the engine iframe holds keyboard focus (pointer-locked
   // camera-look swallows a plain DOM keydown before it reaches the React page). The engine
   // binds Enter/NumpadEnter to the "Chat" system action at the input layer and reports it here
-  // regardless of DOM focus — this is the same stream the old SDK7 scene used.
+  // regardless of DOM focus — this is the same stream the old SDK7 scene used. systemAction.ts
+  // owns that stream (it's single-consumer per scene); we subscribe rather than open a second one.
   let freeCursorPending = false
-  void (async () => {
-    try {
-      const stream = await BevyApi.getSystemActionStream()
-      for await (const a of stream) {
-        if (a.action === 'Chat' && a.pressed) {
-          freeCursorPending = true
-          ctx.send({ kind: 'focusChat' })
-        }
-      }
-    } catch (e) {
-      console.error('[chat] system action stream relay failed', e)
+  onSystemAction((a) => {
+    if (a.action === 'Chat' && a.pressed) {
+      freeCursorPending = true
+      ctx.send({ kind: 'focusChat' })
     }
-  })()
+  })
 
   // Release the engine's camera-look when Enter opens chat. The React chat is a DOM <input> in the
   // parent page, so typing needs DOM focus outside the iframe — which can't coexist with the iframe
