@@ -329,10 +329,8 @@ fn make_particle_system(
 
     // Modifiers
     let init_position = make_position(shape, &writer);
-    let init_rotation = SetAttributeModifier::new(
-        ROTATION_ATTR,
-        (writer.rand(ScalarType::Float) * writer.lit(std::f32::consts::TAU)).expr(),
-    );
+    let init_rotation =
+        SetAttributeModifier::new(ROTATION_ATTR, writer.lit(std::f32::consts::PI).expr());
     let init_size = SetAttributeModifier::new(
         Attribute::SIZE,
         random_lerp(&writer, initial_size.start, initial_size.end),
