@@ -250,3 +250,34 @@ describe('session domain', () => {
     expect(h.session().chat.pendingMention).toBeNull()
   })
 })
+
+// DOMAIN: embedded mode — the sites `/discover` embed loads bevy-web with
+// ?guest=1 (auto guest-login, no sign-in screen) and ?hud=0 (no React HUD).
+// ?hud=0 is a pure App.tsx render gate; the auto-guest flow lives in the hook.
+describe('embedded auto-guest (?guest=1)', () => {
+  afterEach(() => window.history.replaceState(null, '', '/'))
+
+  it('skips the sign-in screen and enters as a guest without any manual action', async () => {
+    window.history.replaceState(null, '', '/?guest=1')
+    const h = renderSession({ userId: null })
+    // No exploreAsGuest() call in the test — the flag alone drives it. With no
+    // URL destination it lands on the picker (a positioned embed skips that too).
+    await waitFor(() => expect(h.session().phase).toBe('picking'))
+  })
+
+  it('with a ?position, drives a guest straight into the world', async () => {
+    window.history.replaceState(null, '', '/?guest=1&position=10,20')
+    const h = renderSession({ userId: null })
+    await waitFor(() => expect(h.session().phase).toBe('entering'))
+    // The deferred login runs a paint after the pick, so wait for the call.
+    await waitFor(() => expect(h.driver.calls).toContain('loginGuest'))
+    h.driver.emit({ kind: 'event', name: 'playerReady' })
+    await waitFor(() => expect(h.session().phase).toBe('world'))
+  })
+
+  it('does not auto-login without the flag (normal sign-in screen)', async () => {
+    const h = renderSession({ userId: null })
+    await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
+    expect(h.session().phase).toBe('login')
+  })
+})
