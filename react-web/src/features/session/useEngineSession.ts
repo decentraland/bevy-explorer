@@ -359,7 +359,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // requestFocusChat from a callback that would otherwise close over a stale value. Popups aren't in
   // here — they live in their own module store, so requestFocusChat asks it directly.
   const chatCoveredRef = useRef(false)
-  // Open + (re)focus chat — the engine's "Chat" system action (Enter while the iframe has focus)
+  // Open + (re)focus chat — the engine's "Chat" system action (Enter while the engine holds focus)
   // and the page-level Enter shortcut (Enter while some other HUD element has focus, see
   // useMenuShortcuts) both funnel into this single action.
   const requestFocusChat = useCallback(() => {
@@ -368,6 +368,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // hasOpenPopup() is read here, not during render: the popup stack is a module store that changes
     // without re-rendering this hook.
     if (chatCoveredRef.current || hasOpenPopup()) return
+    // Release the browser pointer lock so mouse-look stops and you can type into the DOM <input>. On
+    // web the engine's camera-look IS the pointer lock; exiting it page-side here is the reliable
+    // release because this runs on the always-firing focus path (the engine-relay path needs Enter to
+    // reach the canvas and round-trip a component write — fragile). The engine self-heals: its
+    // update_pointer_lock drops camera-look when it sees `!document.pointerLockElement`. No-op on
+    // native — CEF has no DOM pointer lock; there the engine frees its OS cursor grab from the Chat
+    // action directly.
+    document.exitPointerLock?.()
     // Friends is the only panel Enter closes: it shares the chat's bottom-left dock, so Chat renders
     // null behind it (App's `hidden`) and focusing without closing it would do nothing on screen.
     // The rest (profile, notifications, emotes) sit clear of the chat, so leave them open.
