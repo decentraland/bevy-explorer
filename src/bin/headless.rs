@@ -400,7 +400,12 @@ fn main() {
     app.add_systems(PreUpdate, supervisor);
     app.add_systems(
         Update,
-        (drain_permissions, replicate_avatar_info, free_gltf_textures),
+        (
+            drain_permissions,
+            replicate_avatar_info,
+            free_gltf_textures,
+            reap_terminal_scene_rooms,
+        ),
     );
 
     if args.orchestrated {
@@ -712,6 +717,34 @@ fn free_gltf_textures(
             debug!("freed {freed} decoded gltf textures");
         }
     }
+}
+
+/// Tear down scene-room transports whose LiveKit room hit a terminal disconnect
+/// (DuplicateIdentity / kicked): the access token is spent, so no in-process reconnect
+/// is possible. Orchestrated mode notifies the parent (which re-adds the scene with a
+/// freshly minted adapter); standalone server mode lets update_scene_room re-mint.
+/// Without this the dead room handle errors on every publish attempt forever.
+fn reap_terminal_scene_rooms(
+    mut commands: Commands,
+    mut server_rooms: ResMut<ServerSceneRooms>,
+    terminal: Query<(), With<comms::livekit::room::ServerRoomTerminal>>,
+    orchestrated: Option<Res<OrchestratedScenes>>,
+) {
+    server_rooms.0.retain(|scene, (_, entity)| {
+        if terminal.get(*entity).is_err() {
+            return true;
+        }
+        warn!("[headless] scene room for {scene} terminally disconnected (duplicate identity / kicked); tearing down");
+        if let Ok(mut e) = commands.get_entity(*entity) {
+            e.despawn();
+        }
+        if orchestrated.is_some() {
+            ctl_emit(&serde_json::json!({
+                "type": "scene-room-disconnected", "scene": scene
+            }));
+        }
+        false
+    });
 }
 
 /// Ask the orchestrator for fresh delegations nearing expiry (hammurabi semantics:
