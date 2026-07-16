@@ -244,7 +244,7 @@ fn make_particle_system(
     commands: &mut Commands,
     entity: Entity,
     particle_system: &ParticleSystem,
-    spawner_settings: SpawnerSettings,
+    mut spawner_settings: SpawnerSettings,
     texture_resolver: &mut TextureResolver,
     renderer_scene_context: &RendererSceneContext,
     effect_assets: &mut Assets<EffectAsset>,
@@ -459,7 +459,7 @@ fn make_particle_system(
     match playback_state {
         PlaybackState::PsPlaying => (),
         PlaybackState::PsPaused | PlaybackState::PsStopped => {
-            spawner_settings.with_starts_active(false);
+            spawner_settings.set_starts_active(false);
         }
     }
 
