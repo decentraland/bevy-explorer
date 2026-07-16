@@ -137,10 +137,12 @@ fn enable_disable_particle_systems(
     }
 }
 
+#[expect(clippy::too_many_arguments)]
 fn particle_system_on_insert(
     trigger: Trigger<OnInsert, ParticleSystem>,
     mut commands: Commands,
     particle_systems: Query<(&ParticleSystem, Option<&ContainerEntity>, Option<&Children>)>,
+    particle_effects: Query<(), With<ParticleEffect>>,
     renderer_scene_contexts: Query<&RendererSceneContext>,
     mut effect_assets: ResMut<Assets<EffectAsset>>,
     mut texture_resolver: TextureResolver,
@@ -186,7 +188,7 @@ fn particle_system_on_insert(
             let mut filtered_children = children
                 .into_iter()
                 .copied()
-                .filter(|child| particle_systems.contains(*child))
+                .filter(|child| particle_effects.contains(*child))
                 .collect::<Vec<_>>();
             match filtered_children.len().cmp(&bursts.len()) {
                 Ordering::Greater => {
