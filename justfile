@@ -7,6 +7,8 @@ wasm:
     wasm-pack build --target web --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social"
     rm -f ./deploy/web/engine/pkg/.gitignore
     WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm) && echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
+    cd react-web && npm install
+    cd react-web/bridge-scene && npm install
     cd react-web && npm run dev -- --open
 
 # regenerate the TypeScript bindings for the ~system/BevyExplorerApi boundary from the Rust
