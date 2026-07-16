@@ -2424,6 +2424,7 @@ dependencies = [
  "bevy",
  "cef",
  "cef-dll-sys",
+ "libc",
  "objc",
  "raw-window-handle",
  "serde",
