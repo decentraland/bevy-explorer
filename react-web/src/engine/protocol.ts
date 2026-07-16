@@ -168,7 +168,7 @@ export interface ChatVisibilityMessage {
 }
 
 /** Enter was pressed (engine "Chat" system action) → open + focus the chat input, even while
- *  the engine iframe holds keyboard focus (pointer-locked camera-look). */
+ *  the engine holds keyboard focus (pointer-locked camera-look). */
 export interface FocusChatMessage {
   kind: 'focusChat'
 }

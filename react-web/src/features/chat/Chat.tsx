@@ -439,11 +439,10 @@ export function Chat({
         setSuggestions([])
       } else if (picker) setPicker(false)
       // Nothing to dismiss first → blur back to the world (DCL convention: Escape leaves chat).
-      // Opening chat already released the engine's camera-look (bridge chat.ts frees the pointer
-      // lock so the cursor is free to type), so there's nothing to restore here — and the browser
-      // won't re-lock without a fresh click anyway. Just blur; the player re-engages camera-look
-      // with a click into the world, same as leaving any other panel. Enter refocuses chat from
-      // anywhere (useMenuShortcuts).
+      // Opening chat already released camera-look (web: requestFocusChat exits pointer lock; native:
+      // the bridge frees the cursor), so there's nothing to restore — and the browser won't re-lock
+      // without a fresh gesture anyway. Just blur; re-engage camera-look with a click, same as leaving
+      // any panel. Enter refocuses chat from anywhere (useMenuShortcuts).
       else inputRef.current?.blur()
     }
   }

@@ -368,13 +368,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // hasOpenPopup() is read here, not during render: the popup stack is a module store that changes
     // without re-rendering this hook.
     if (chatCoveredRef.current || hasOpenPopup()) return
-    // Release the browser pointer lock so mouse-look stops and you can type into the DOM <input>. On
-    // web the engine's camera-look IS the pointer lock; exiting it page-side here is the reliable
-    // release because this runs on the always-firing focus path (the engine-relay path needs Enter to
-    // reach the canvas and round-trip a component write — fragile). The engine self-heals: its
-    // update_pointer_lock drops camera-look when it sees `!document.pointerLockElement`. No-op on
-    // native — CEF has no DOM pointer lock; there the engine frees its OS cursor grab from the Chat
-    // action directly.
+    // Release the browser pointer lock so the mouse stops driving the camera and you can type. On web
+    // camera-look IS the pointer lock; exiting it here (the always-firing focus path) reliably releases
+    // it, and the engine self-heals — update_pointer_lock drops camera-look on
+    // `!document.pointerLockElement`. No-op on native (no DOM pointer lock; the engine frees its own OS
+    // cursor grab from the Chat action).
     document.exitPointerLock?.()
     // Friends is the only panel Enter closes: it shares the chat's bottom-left dock, so Chat renders
     // null behind it (App's `hidden`) and focusing without closing it would do nothing on screen.

@@ -38,12 +38,10 @@ export function registerChat(ctx: Ctx): void {
     }
   })()
 
-  // Enter → focus chat. The engine binds Enter/NumpadEnter to the "Chat" system action and reports it
-  // here regardless of DOM focus — the same stream the old SDK7 scene used. This is the NATIVE path:
-  // there the engine reads keys off the OS window, so this relay is how the HUD learns Enter was
-  // pressed. (On web the engine shares this document and a page-level Enter shortcut in
-  // useMenuShortcuts focuses chat directly.) systemAction.ts owns the stream (single-consumer per
-  // scene); we subscribe rather than open a second one.
+  // Enter → focus chat. The engine reports its "Chat" action here regardless of DOM focus (the stream
+  // the old SDK7 scene used). This is the native path — there the engine reads keys off the OS window;
+  // on web the page-level Enter shortcut (useMenuShortcuts) focuses chat directly. systemAction.ts owns
+  // the stream (single-consumer per scene); we subscribe rather than open a second one.
   let freeCursorPending = false
   onSystemAction((a) => {
     if (a.action === 'Chat' && a.pressed) {
@@ -52,15 +50,12 @@ export function registerChat(ctx: Ctx): void {
     }
   })
 
-  // Release the engine's camera-look on NATIVE when Enter opens chat: camera-look is the engine's OS
-  // cursor grab, and writing isPointerLocked=false on CameraEntity frees it so the mouse stops driving
-  // the camera while you type into the DOM <input> (mirrors the profile-card free-cursor). Re-engaging
-  // is a click, same as leaving any other panel. On web this write isn't reached — the engine there
-  // doesn't see Enter (the capture-phase page shortcut consumes it), so the release is page-side
-  // instead: requestFocusChat calls document.exitPointerLock(). (The old SDK7 chat kept the lock
-  // because it was an in-engine TextEntry that only re-prioritised the keyboard — a DOM input can't.)
-  // Must run in a frame system, NOT the async stream callback above: a component write from an async
-  // callback doesn't flush to the engine — the same reason nametag chat bubbles defer their writes.
+  // Release the engine's camera-look on NATIVE when Enter opens chat: writing isPointerLocked=false on
+  // CameraEntity frees the engine's OS cursor grab so the mouse stops driving the camera while you type
+  // (mirrors the profile-card free-cursor). On web this write isn't reached — the engine never sees
+  // Enter there — so the release is page-side (requestFocusChat calls document.exitPointerLock). Must
+  // run in a frame system, NOT the async callback above: an async component write doesn't flush to the
+  // engine (the same reason nametag chat bubbles defer their writes).
   ctx.push(() => {
     if (!freeCursorPending) return
     freeCursorPending = false
