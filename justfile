@@ -17,6 +17,8 @@ ts-bindings:
 # bundle the react HUD page + bridge scene into assets/ (the files native runs from).
 # ts-bindings first so the TS the page + bridge scene import is regenerated from the Rust structs.
 bundle-native: ts-bindings
+    cd react-web && npm install
+    cd react-web/bridge-scene && npm install
     cd react-web && npm run bundle:native
     mkdir -p target && touch target/.bundle-native-stamp
 
