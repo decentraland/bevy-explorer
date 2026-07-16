@@ -7,6 +7,7 @@ import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/EngineErrorModal'
 import { DEFAULT_REALM } from '../engine/EngineHost'
 import { closeTopPopup } from '../../design'
+import { bootMode } from '../../lib/bootMode'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import type {
@@ -812,6 +813,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     requestAnimationFrame(() => requestAnimationFrame(run))
     setTimeout(run, 60)
   }, [])
+  // Boot-mode flags (?hud=0 / ?guest=1 / ?systemScene= — see lib/bootMode.ts), captured once
+  // per session mount so tests can vary location.search between mounts.
+  const boot = useRef(bootMode())
   // ?position=x,y / ?realm= (parity with the plain engine page): skip the Places picker and launch
   // straight there. realm wins when both are given, carrying the position along — letting
   // ?position shadow ?realm made a reload in a custom realm respawn in Genesis at the same
@@ -829,6 +833,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       if (realm != null && realm !== '')
         return { kind: 'world', realm, position: hasPosition ? `${x},${y}` : undefined }
       if (hasPosition) return { kind: 'parcel', x, y }
+      // A hidden HUD renders no picker — land at Genesis 0,0 so the boot doesn't strand on an
+      // invisible screen (parity with the picker's "skip").
+      if (boot.current.hideHud) return { kind: 'parcel', x: 0, y: 0 }
       return null
     })()
   )
@@ -1050,17 +1057,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setStatus('sign-in-or-guest')
   }, [busy])
 
-  // Embedded guest auto-login (?guest=1): skip the sign-in screen entirely and
-  // enter as a guest the moment the engine is warm. Used by the sites `/discover`
-  // embed, which shows the scene as a guest preview with no sign-in UI. The URL
-  // destination (?position / ?realm) is auto-picked by the effect above, so this
-  // takes the guest straight into the scene. Fires once — `submitted` flips true
-  // on the first call and gates re-entry.
-  const autoGuest = useRef(new URLSearchParams(location.search).get('guest') === '1')
+  // Auto-login (see lib/bootMode.ts): skip the sign-in screen the moment the engine is warm —
+  // as a guest (?guest=1, the sites `/discover` embed), or with no React login at all
+  // (?systemScene=: the substituted ui scene owns login in-engine, pre-react behavior). The
+  // destination is auto-picked by the effect above (?position / ?realm, else the hidden-HUD
+  // Genesis fallback), so this goes straight into the scene. Fires once — `submitted` flips
+  // true on the first call and gates re-entry.
   useEffect(() => {
-    if (!autoGuest.current || !engineReady || submitted) return
-    exploreAsGuest()
-  }, [engineReady, submitted, exploreAsGuest])
+    if (boot.current.autoLogin == null || !engineReady || submitted) return
+    if (boot.current.autoLogin === 'guest') exploreAsGuest()
+    // scene-owned: no React login at all — just boot the engine (a no-op deferred login).
+    else submitLogin(() => Promise.resolve())
+  }, [engineReady, submitted, exploreAsGuest, submitLogin])
 
   // Render-settle. When the scene flips from loading → loaded (visible true→false), hold the loader
   // a beat longer while the engine actually renders the world (compiling shaders / uploading
