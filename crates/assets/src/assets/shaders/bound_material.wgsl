@@ -8,6 +8,7 @@
     mesh_view_bindings::{globals, view, lights},
     pbr_types,
     shadows,
+    view_transformations,
 }
 #import bevy_core_pipeline::tonemapping::approximate_inverse_tone_mapping
 
@@ -241,6 +242,16 @@ fn fragment(
         // avoid writing to the depth buffer for alpha-blend materials with low alpha
         discard;
     }
+
+#ifdef TRANSPARENT_FOCUS_OUTPUT
+    // accumulate alpha-weighted view depth + coverage for depth of field
+    out.focus = vec4(
+        -view_transformations::depth_ndc_to_view_z(in.position.z),
+        1.0,
+        0.0,
+        out.color.a,
+    );
+#endif
 
     return out;
 }
