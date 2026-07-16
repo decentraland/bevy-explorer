@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 bevy = { workspace = true }
-bevy_hanabi = { workspace = true, features = ["2d", "3d", "gpu_tests"] }
+bevy_hanabi = { workspace = true, features = ["2d", "3d"] }
 
 common = { workspace = true }
 dcl_component = { workspace = true }
