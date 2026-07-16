@@ -251,10 +251,11 @@ describe('session domain', () => {
   })
 })
 
-// DOMAIN: embedded mode — the sites `/discover` embed loads bevy-web with
-// ?guest=1 (auto guest-login, no sign-in screen) and ?hud=0 (no React HUD).
-// ?hud=0 is a pure App.tsx render gate; the auto-guest flow lives in the hook.
-describe('embedded auto-guest (?guest=1)', () => {
+// DOMAIN: embedded/debug boot modes (lib/bootMode.ts) — the sites `/discover` embed loads
+// bevy-web with ?guest=1 (auto guest-login, no sign-in screen) and ?hud=0 (no React HUD);
+// ?systemScene= substitutes the super-user ui scene, which then owns login in-engine.
+// ?hud=0 is a pure App.tsx render gate; the auto-login flow lives in the hook.
+describe('embedded auto-boot (?guest=1 / ?systemScene=)', () => {
   afterEach(() => window.history.replaceState(null, '', '/'))
 
   it('skips the sign-in screen and enters as a guest without any manual action', async () => {
@@ -279,6 +280,15 @@ describe('embedded auto-guest (?guest=1)', () => {
       state: { visible: false, realmConnected: true, title: '', pendingAssets: null }
     })
     await waitFor(() => expect(h.session().phase).toBe('world'))
+  })
+
+  it('?systemScene= boots straight in with no React login at all (the scene owns it)', async () => {
+    window.history.replaceState(null, '', '/?systemScene=http://localhost:8100')
+    const h = renderSession({ userId: null })
+    // No destination params either — the hidden-HUD fallback lands at Genesis 0,0, so the
+    // boot never strands on the (invisible) picker.
+    await waitFor(() => expect(h.session().phase).toBe('entering'))
+    expect(h.driver.calls).not.toContain('loginGuest')
   })
 
   it('does not auto-login without the flag (normal sign-in screen)', async () => {

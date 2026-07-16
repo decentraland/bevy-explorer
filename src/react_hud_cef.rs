@@ -5,21 +5,22 @@
 //
 // Transport: the page's BroadcastChannel Envelopes ride cef_offscreen's IPC (`window.cef.emit` /
 // `window.cef.listen('bridge', ..)`, wired by react-web's cefNativeBridge when it detects
-// `window.cef`), and this file relays them. With `--ui <bridge-scene>` the
-// SDK7 bridge-scene owns the wire protocol (this file is a pure Envelope pipe via
-// BridgeToPage/GetBridgeStream); until it connects (scene boot takes seconds; the page is up
-// immediately) a built-in fallback handles the login rpcs, so the login screen is responsive
-// from the first frame. The fallback is a boot shim, not a HUD backend: it subscribes to no
-// engine streams, and the page assumes "loading" until the bridge-scene reports real state —
-// so with no bridge-scene at all (--ui none, missing bundle) login works but the world stays
-// behind the loading screen.
+// `window.cef`), and this file relays them. The bundled SDK7 bridge-scene (the default ui
+// scene when no --ui is given — see main.rs) owns the wire protocol (this file is a pure
+// Envelope pipe via BridgeToPage/GetBridgeStream); until it connects (scene boot takes seconds;
+// the page is up immediately) a built-in fallback handles the login rpcs, so the login screen
+// is responsive from the first frame. The fallback is a boot shim, not a HUD backend: it
+// subscribes to no engine streams, and the page assumes "loading" until the bridge-scene
+// reports real state — so with no bridge-scene at all (missing bundle) login works but the
+// world stays behind the loading screen. An explicit --ui (a scene, or "none" for the builtin
+// ui) skips this plugin entirely — the engine-side ui drives instead.
 //
 // Run (files only, no servers):
 //   cd react-web && npm run bundle:native   # page -> assets/react-hud, scene -> assets/bridge-scene
 //   cargo run --release --features react-hud-cef --bin decentra-bevy -- --server <realm>
 // The page loads from cef://localhost/react-hud (the bevy assets dir) and the bridge-scene loads
-// as a file realm from assets/bridge-scene. Overrides: REACT_HUD_URL (e.g. a vite dev server with
-// ?native=1 for HMR), --ui <url|dir|none>. The CEF framework loads bundle-relative
+// as a file realm from assets/bridge-scene. Override: REACT_HUD_URL (e.g. a vite dev server with
+// ?native=1 for HMR). The CEF framework loads bundle-relative
 // (Contents/Frameworks) with a dev fallback at ~/.local/share/cef (export-cef-dir).
 //
 // Input mirrors web semantics (where the page and the engine canvas share the document): all
@@ -123,7 +124,7 @@ struct ReactHudCef {
     // A HUD text field is focused (page focusin/focusout via the shim) — the engine's key-bound
     // actions are suppressed so WASD etc. type instead of moving the avatar.
     text_focused: bool,
-    // When the super-user bridge-scene is driving (--ui <bridge-scene>), this is its page->scene
+    // When the super-user bridge-scene is driving (the bundled default), this is its page->scene
     // stream; the relay becomes a pure Envelope pipe and the per-domain fallback is bypassed.
     bridge_sender: Option<RpcStreamSender<String>>,
 }
