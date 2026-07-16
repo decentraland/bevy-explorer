@@ -273,7 +273,7 @@ describe('embedded auto-guest (?guest=1)', () => {
     await waitFor(() => expect(h.driver.calls).toContain('loginGuest'))
     h.driver.emit({ kind: 'event', name: 'playerReady' })
     // No loading state received counts as still-loading, so report "done" like the real
-    // bridge-scene's stream does (same as enterAsGuest).
+    // bridge-scene's stream does (same as harness enterAsGuest).
     h.driver.emit({
       kind: 'sceneLoading',
       state: { visible: false, realmConnected: true, title: '', pendingAssets: null }

@@ -84,6 +84,16 @@ jobs:
           - uses: actions/setup-node@v4
             with:
                 node-version: 20
+          # moved up from below the CEF export: the TS-bindings build compiles the bevy dep
+          # graph (gilrs needs libudev) before the HUD bundle can build.
+          - name: Install alsa and udev
+            if: runner.os == 'linux'
+            run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+          # react-web/src/engine/generated (TS types the HUD + bridge scene import) is generated
+          # from the Rust system-api structs and gitignored — regenerate before bundling.
+          - name: Generate TS bindings
+            run: ./scripts/gen-ts-bindings.sh
+            shell: bash
           - name: Bundle react HUD (page + bridge scene -> assets/)
             run: |
                 cd react-web && npm ci
@@ -110,9 +120,6 @@ jobs:
                 fi
             shell: bash
 
-          - name: Install alsa and udev
-            if: runner.os == 'linux'
-            run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
           - name: install livekit deps
             if: runner.os == 'linux'
             run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev fuse libfuse2t64

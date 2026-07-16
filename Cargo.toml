@@ -94,6 +94,7 @@ collectibles = { path = "crates/collectibles" }
 social = { path = "crates/social" }
 imposters = { path = "crates/imposters" }
 system_bridge = { path = "crates/system_bridge" }
+system_api_types = { path = "crates/system_api_types" }
 scene_inspector = { path = "crates/scene_inspector" }
 texture_camera = { path = "crates/texture_camera" }
 platform = { path = "crates/platform" }
@@ -149,6 +150,7 @@ naga_oil = { version = "0.17", default-features = false, features = [
 ] }
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
+ts-rs = "12"
 
 itertools = "0.14"
 tokio = { version = "1.44", features = ["sync", "macros", "rt"] }

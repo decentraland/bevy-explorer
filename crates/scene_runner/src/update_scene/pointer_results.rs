@@ -1888,7 +1888,7 @@ fn handle_proximity_stream(
             cand.entity,
             ProximityEvent {
                 entered: true,
-                entity: cand.entity.to_bits(),
+                entity: cand.entity.index(),
                 entity_position: Vector3::world_vec_from_vec3(&cand.entity_position),
                 actions,
             },
