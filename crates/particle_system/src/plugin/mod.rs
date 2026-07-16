@@ -91,6 +91,14 @@ impl Plugin for ParticleSystemPlugin {
 #[derive(Default, Resource, Deref, DerefMut)]
 struct ActiveScenes(HashSet<Entity>);
 
+#[derive(Component)]
+#[relationship(relationship_target = BurstingEffect)]
+struct BurstOf(Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = BurstOf)]
+struct BurstingEffect(Vec<Entity>);
+
 fn collect_active_scenes(
     primary_user: Single<Entity, With<PrimaryUser>>,
     mut active_scenes: ResMut<ActiveScenes>,
@@ -108,7 +116,7 @@ fn collect_active_scenes(
 }
 
 fn enable_disable_particle_systems(
-    particle_systems: Query<(Entity, &SceneEntity, Option<&Children>), With<ParticleSystem>>,
+    particle_systems: Query<(Entity, &SceneEntity, Option<&BurstingEffect>), With<ParticleSystem>>,
     mut effect_spawner: Query<&mut EffectSpawner>,
     active_scenes: Res<ActiveScenes>,
 ) {
@@ -121,13 +129,13 @@ fn enable_disable_particle_systems(
         }
     };
 
-    for (entity, scene_entity, maybe_children) in particle_systems {
+    for (entity, scene_entity, maybe_bursting_effect) in particle_systems {
         let active = active_scenes.contains(&scene_entity.root);
         if !set_active(entity, active) {
             error!("Entity with `ParticleSystem` must have `EffectSpawner`");
         }
-        for child in maybe_children
-            .map(|children| children.collection())
+        for child in maybe_bursting_effect
+            .map(|bursting_effect| bursting_effect.collection())
             .into_iter()
             .flatten()
             .copied()
@@ -137,19 +145,21 @@ fn enable_disable_particle_systems(
     }
 }
 
-#[expect(clippy::too_many_arguments)]
 fn particle_system_on_insert(
     trigger: Trigger<OnInsert, ParticleSystem>,
     mut commands: Commands,
-    particle_systems: Query<(&ParticleSystem, Option<&ContainerEntity>, Option<&Children>)>,
-    particle_effects: Query<(), With<ParticleEffect>>,
+    particle_systems: Query<(
+        &ParticleSystem,
+        Option<&ContainerEntity>,
+        Option<&BurstingEffect>,
+    )>,
     renderer_scene_contexts: Query<&RendererSceneContext>,
     mut effect_assets: ResMut<Assets<EffectAsset>>,
     mut texture_resolver: TextureResolver,
     active_scenes: Res<ActiveScenes>,
 ) {
     let entity = trigger.target();
-    let Ok((particle_system, maybe_container_entity, maybe_children)) =
+    let Ok((particle_system, maybe_container_entity, maybe_bursting_effect)) =
         particle_systems.get(entity)
     else {
         unreachable!("Infallible query");
@@ -184,30 +194,26 @@ fn particle_system_on_insert(
 
     if let Some(bursts_config) = &particle_system.bursts {
         let bursts = &bursts_config.values;
-        let children = if let Some(children) = maybe_children {
-            let mut filtered_children = children
-                .into_iter()
-                .copied()
-                .filter(|child| particle_effects.contains(*child))
-                .collect::<Vec<_>>();
-            match filtered_children.len().cmp(&bursts.len()) {
+        let children = if let Some(bursting_effect) = maybe_bursting_effect {
+            let mut burst_effects = bursting_effect.collection().to_vec();
+            match burst_effects.len().cmp(&bursts.len()) {
                 Ordering::Greater => {
-                    for child in &filtered_children[bursts.len()..] {
+                    for child in &burst_effects[bursts.len()..] {
                         commands.entity(*child).despawn();
                     }
-                    filtered_children[..bursts.len()].to_vec()
+                    burst_effects[..bursts.len()].to_vec()
                 }
-                Ordering::Equal => filtered_children,
+                Ordering::Equal => burst_effects,
                 Ordering::Less => {
-                    for _ in filtered_children.len()..bursts.len() {
-                        filtered_children.push(commands.spawn(ChildOf(entity)).id());
+                    for _ in burst_effects.len()..bursts.len() {
+                        burst_effects.push(commands.spawn((ChildOf(entity), BurstOf(entity))).id());
                     }
-                    filtered_children
+                    burst_effects
                 }
             }
         } else {
             (0..bursts.len())
-                .map(|_| commands.spawn(ChildOf(entity)).id())
+                .map(|_| commands.spawn((ChildOf(entity), BurstOf(entity))).id())
                 .collect()
         };
 
