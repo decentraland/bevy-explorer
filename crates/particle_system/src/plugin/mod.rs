@@ -277,7 +277,7 @@ fn make_particle_system(
     );
     let rotate_over_time = particle_system
         .rotation_over_time
-        .map(|quat| quat.to_bevy_normalized());
+        .map(|quat| quat.to_bevy_normalized().inverse());
     let face_travel_velocity = particle_system.face_travel_direction.unwrap_or(false);
     let initial_color = particle_system.initial_color.unwrap_or(ColorRange {
         start: Some(Color4 {
