@@ -31,10 +31,21 @@ function renderBackpack(over: Partial<BackpackState> = {}): BackpackState {
 }
 
 describe('backpack page clicks', () => {
-  it('clicking a wearable card previews it (no persist)', async () => {
+  it('clicking a wearable card selects it (shows detail; does not equip or preview)', async () => {
     const backpack = renderBackpack()
+    expect(screen.getByText('No item selected')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Cool Hat' }))
-    expect(vi.mocked(backpack.preview)).toHaveBeenCalledWith(['urn:hat'])
+    // The detail panel now shows the item (its name renders as visible text there); the avatar is
+    // left untouched — nothing is previewed or equipped.
+    expect(screen.getByText('Cool Hat')).toBeInTheDocument()
+    expect(vi.mocked(backpack.preview)).not.toHaveBeenCalled()
+    expect(vi.mocked(backpack.equip)).not.toHaveBeenCalled()
+  })
+
+  it('double-clicking a wearable card equips it', async () => {
+    const backpack = renderBackpack()
+    await userEvent.dblClick(screen.getByRole('button', { name: 'Cool Hat' }))
+    expect(vi.mocked(backpack.equip)).toHaveBeenCalledWith(['urn:hat'])
   })
 
   it('EQUIP persists the set and drops the preview', async () => {

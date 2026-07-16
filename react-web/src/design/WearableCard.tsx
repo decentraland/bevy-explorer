@@ -27,8 +27,10 @@ interface WearableCardProps {
   incompatible?: boolean
   /** Body-part glyph shown in the top-left flap (matches Unity's category badge). */
   categoryIcon?: React.ReactNode
-  /** Card click — selects the item (previews, does not persist). */
+  /** Card click — selects the item (shows its detail; does not equip or preview). */
   onClick?: () => void
+  /** Card double-click — the explicit equip action (persists), same as the pill. */
+  onDoubleClick?: () => void
   /** Hover EQUIP/UNEQUIP pill click — the explicit equip action (persists). */
   onEquip?: () => void
 }
@@ -44,6 +46,7 @@ export function WearableCard({
   incompatible = false,
   categoryIcon,
   onClick,
+  onDoubleClick,
   onEquip
 }: WearableCardProps): React.JSX.Element {
   const [failed, setFailed] = useState(false)
@@ -54,6 +57,7 @@ export function WearableCard({
       title={name}
       aria-label={name}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
     >
       {categoryIcon != null && <span className={styles.flap}>{categoryIcon}</span>}
       {thumbnail && !failed ? (

@@ -311,11 +311,10 @@ export function BackpackPage({
     backpack.equip(next)
     backpack.preview(null)
   }
-  // Selecting an item (card click) — show it in the detail panel and preview it on the avatar
-  // WITHOUT persisting. Closing the Backpack (or equipping) clears this.
+  // Selecting an item (card click) — show it in the detail panel only. It is NOT equipped, and the
+  // avatar is left untouched; equipping is an explicit action (the card's EQUIP pill or a double-click).
   const select = (w: Wearable): void => {
     setSelected(w)
-    backpack.preview(w.equipped ? null : equipSetWith(w))
   }
   const pick = (c: string): void => {
     setCat(c)
@@ -459,6 +458,7 @@ export function BackpackPage({
                           count={w.count}
                           categoryIcon={<CategoryIcon category={w.category} size={15} />}
                           onClick={() => select(w)}
+                          onDoubleClick={() => toggleEquip(w)}
                           onEquip={() => toggleEquip(w)}
                         />
                       ))}
