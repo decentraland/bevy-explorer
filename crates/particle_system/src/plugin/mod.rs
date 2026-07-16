@@ -1,4 +1,5 @@
 mod random_color_modifier;
+mod rotate_over_time_modifier;
 mod set_position_box_modifier;
 mod set_position_modifier;
 mod set_velocity_direction_modifier;
@@ -12,10 +13,10 @@ use std::cmp::Ordering;
 use bevy::{platform::collections::HashSet, prelude::*};
 use bevy_hanabi::{
     AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
-    EffectSpawner, ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, OrientMode,
-    OrientModifier, ParticleEffect, ParticleTextureModifier, ScalarType, SetAttributeModifier,
-    SetPositionCircleModifier, SetPositionSphereModifier, SetVelocitySphereModifier,
-    SizeOverLifetimeModifier, SpawnerSettings,
+    EffectSpawner, ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, MatrixValue,
+    OrientMode, OrientModifier, ParticleEffect, ParticleTextureModifier, ScalarType,
+    SetAttributeModifier, SetPositionCircleModifier, SetPositionSphereModifier,
+    SetVelocitySphereModifier, SizeOverLifetimeModifier, SpawnerSettings, Value,
 };
 use common::{debug_panic, structs::PrimaryUser};
 use dcl_component::{
@@ -38,6 +39,7 @@ use scene_runner::{
 use crate::{
     plugin::{
         random_color_modifier::RandomColorModifier,
+        rotate_over_time_modifier::RotateOverTimeModifier,
         set_position_box_modifier::SetPositionBoxModifier,
         set_position_modifier::SetPositionModifier,
         set_velocity_direction_modifier::SetVelocityDirectionModifier,
@@ -273,7 +275,9 @@ fn make_particle_system(
             .map(|quat| quat.to_bevy_normalized())
             .unwrap_or_default(),
     );
-    // TODO rotation_over_time
+    let rotate_over_time = particle_system
+        .rotation_over_time
+        .map(|quat| quat.to_bevy_normalized());
     let face_travel_velocity = particle_system.face_travel_direction.unwrap_or(false);
     let initial_color = particle_system.initial_color.unwrap_or(ColorRange {
         start: Some(Color4 {
@@ -392,6 +396,13 @@ fn make_particle_system(
             .lit(limit_velocity.dampen.unwrap_or(1.).clamp(0., 1.))
             .expr(),
     });
+    let update_rotate_over_time = rotate_over_time.map(|rotation| RotateOverTimeModifier {
+        rotation: writer
+            .lit(Value::Matrix(MatrixValue::from(
+                Transform::from_rotation(rotation).compute_matrix(),
+            )))
+            .expr(),
+    });
     let update_sprite_sheet = sprite_sheet.map(|sprite_sheet| UpdateSpriteIndexModifier {
         frame_count: sprite_sheet.tiles_x * sprite_sheet.tiles_y,
         frames_per_second: sprite_sheet.frames_per_second.unwrap_or(30.),
@@ -470,6 +481,9 @@ fn make_particle_system(
     set!(effect_asset, update, update_accel);
     if let Some(update_clamp_velocity) = update_clamp_velocity {
         set!(effect_asset, update, update_clamp_velocity);
+    }
+    if let Some(update_rotate_over_time) = update_rotate_over_time {
+        set!(effect_asset, update, update_rotate_over_time);
     }
     if let Some(update_sprite_sheet) = update_sprite_sheet {
         set!(effect_asset, update, update_sprite_sheet);
