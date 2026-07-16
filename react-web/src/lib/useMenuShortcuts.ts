@@ -44,10 +44,17 @@ export function useMenuShortcuts(session: EngineSession): void {
 
       const s = sessionRef.current
       if (s.phase !== 'world') return
-      const toggle = SHORTCUTS[e.key.toLowerCase()]
+      const key = e.key.toLowerCase()
+      const toggle = SHORTCUTS[key]
       if (!toggle) return
       e.preventDefault()
-      e.stopPropagation()
+      // Enter must still reach the engine. It binds Enter to the "Chat" system action, and the bridge
+      // relays that to release camera-look (chat.ts frees the PointerLock) — the only path that also
+      // works on native, where the engine owns the OS cursor and no DOM pointer lock exists. This
+      // listener is window-capture, i.e. ahead of the canvas winit reads, so stopping propagation here
+      // silently killed that: chat took focus while the mouse kept spinning the camera. The letter
+      // shortcuts keep it, so the engine doesn't act on them too.
+      if (key !== 'enter') e.stopPropagation()
       toggle(s)()
     }
 
