@@ -173,7 +173,11 @@ window.set_url_params = (position, server, system_scene, portables, preview) => 
     else urlParams.delete('position')
     if (server !== DEFAULT_SERVER) urlParams.set('realm', server)
     else urlParams.delete('realm')
-    if (system_scene !== (config.systemScene ?? '')) urlParams.set('systemScene', system_scene)
+    // null = the engine runs NO ui scene (?systemScene=none) — keep that explicit across reloads.
+    // Compared against the page DEFAULT (not the boot value) so an explicit ?systemScene=
+    // override also survives a reload; only the default is omitted to keep the entry URL clean.
+    system_scene = system_scene ?? 'none'
+    if (system_scene !== (config.defaultSystemScene ?? config.systemScene ?? '')) urlParams.set('systemScene', system_scene)
     else urlParams.delete('systemScene')
     if (portables !== DEFAULT_PORTABLES) urlParams.set('portables', portables)
     else urlParams.delete('portables')

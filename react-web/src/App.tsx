@@ -53,7 +53,11 @@ const SHOWCASE = params.get('showcase') === '1'
 // the sites `/discover` embed, which frames the scene itself and supplies its
 // own chrome. Pair with ?guest=1 (auto guest-login) so the engine still enters
 // the world without the — now hidden — sign-in screen.
-const HIDE_HUD = params.get('hud') === '0'
+// An explicit ?systemScene= (debug: substitute the super-user ui scene, e.g. the
+// component inspector, or "none" for the engine's builtin ui) also hides the HUD —
+// the substituted scene owns the UI, and the engine boots straight away with no
+// React sign-in (see useEngineSession's systemScene boot).
+const HIDE_HUD = params.get('hud') === '0' || params.has('systemScene')
 // Gate: don't mount the HUD/engine where the engine can't run — mobile (no WebGPU/SharedArrayBuffer)
 // or a non-Chromium desktop browser (the engine bundle renders its own "Browser Not Supported" page
 // there — see deploy/web/index.html — which the HUD would otherwise cover, leaving login frozen at

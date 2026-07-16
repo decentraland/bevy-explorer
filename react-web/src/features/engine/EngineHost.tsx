@@ -46,6 +46,9 @@ function injectEngine(): void {
   window.PUBLIC_URL = new URL('engine', new URL(import.meta.env.BASE_URL, PAGE_DIR)).href
   window.__bevyBootConfig = {
     systemScene: params.get('systemScene') ?? SYSTEM_SCENE,
+    // the URL sync (boot.js set_url_params) omits only the DEFAULT scene from the address bar,
+    // so an explicit ?systemScene= override survives reloads
+    defaultSystemScene: SYSTEM_SCENE,
     portables: params.get('portables') ?? undefined,
     preview: params.has('preview')
   }
@@ -65,7 +68,12 @@ function injectEngine(): void {
 declare global {
   interface Window {
     PUBLIC_URL?: string
-    __bevyBootConfig?: { systemScene?: string; portables?: string; preview?: boolean }
+    __bevyBootConfig?: {
+      systemScene?: string
+      defaultSystemScene?: string
+      portables?: string
+      preview?: boolean
+    }
   }
 }
 

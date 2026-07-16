@@ -829,6 +829,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       if (realm != null && realm !== '')
         return { kind: 'world', realm, position: hasPosition ? `${x},${y}` : undefined }
       if (hasPosition) return { kind: 'parcel', x, y }
+      // Explicit ?systemScene= with no destination: there is no picker (the HUD is hidden) —
+      // land at Genesis 0,0 so the auto-boot below actually launches (parity with picker "skip").
+      if (q.has('systemScene')) return { kind: 'parcel', x: 0, y: 0 }
       return null
     })()
   )
@@ -1061,6 +1064,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!autoGuest.current || !engineReady || submitted) return
     exploreAsGuest()
   }, [engineReady, submitted, exploreAsGuest])
+
+  // Explicit ?systemScene= (debug, HUD hidden — see App.tsx): the substituted ui scene owns
+  // login and UI in-engine (pre-react behavior), so there's no sign-in screen to wait for —
+  // boot the engine as soon as it's warm, with no deferred login. ?guest=1 still wins: its
+  // auto guest-login above runs first, and this must not clobber its pending login.
+  const systemSceneBoot = useRef(new URLSearchParams(location.search).has('systemScene'))
+  useEffect(() => {
+    if (!systemSceneBoot.current || autoGuest.current || !engineReady || submitted) return
+    submitLogin(() => Promise.resolve())
+  }, [engineReady, submitted, submitLogin])
 
   // Render-settle. When the scene flips from loading → loaded (visible true→false), hold the loader
   // a beat longer while the engine actually renders the world (compiling shaders / uploading
