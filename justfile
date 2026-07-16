@@ -11,6 +11,8 @@ wasm:
 
 # bundle the react HUD page + bridge scene into assets/ (the files native runs from)
 bundle-native:
+    cd react-web && npm install
+    cd react-web/bridge-scene && npm install
     cd react-web && npm run bundle:native
     mkdir -p target && touch target/.bundle-native-stamp
 
