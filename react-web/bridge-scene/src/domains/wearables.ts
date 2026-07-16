@@ -42,11 +42,15 @@ function accumulateTokens(elements: CatalogElement[]): void {
   }
 }
 
-// A deployed/owned urn may carry a tokenId (…:collections-v2:<contract>:<itemId>:<tokenId>); the
-// item form drops it. Base urns pass through.
+// A deployed/owned urn may carry a tokenId (…:collections-v{1,2}:<contract>:<itemId>:<tokenId>);
+// the item form drops it. Both v1 (ethereum) and v2 (matic) items are 6 segments, so a trailing
+// token makes it >6 — strip it for either, else the equipped-set resolve (which needs the bare
+// item urn) misses the item and its category slot renders empty. Base urns pass through.
 function itemUrnOf(urn: string): string {
   const parts = urn.split(':')
-  if (parts[3] === 'collections-v2' && parts.length > 6) return parts.slice(0, 6).join(':')
+  if ((parts[3] === 'collections-v2' || parts[3] === 'collections-v1') && parts.length > 6) {
+    return parts.slice(0, 6).join(':')
+  }
   return urn
 }
 
