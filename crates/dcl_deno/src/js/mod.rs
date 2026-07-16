@@ -145,6 +145,12 @@ pub fn create_runtime(
         ..Default::default()
     };
 
+    // Per-isolate V8 heap cap. Every scene runs in its own isolate on its own thread, so
+    // a cap here bounds ONE scene's memory and stops a single runaway/hostile scene from
+    // OOM-killing the shared sidecar (and every co-tenant scene with it). The near-limit
+    // callback below terminates just that isolate instead of aborting the process.
+    const MAX_SCENE_HEAP_BYTES: usize = 512 * 1024 * 1024;
+
     // create runtime
     #[allow(unused_mut)]
     let mut runtime = JsRuntime::new(RuntimeOptions {
@@ -152,8 +158,24 @@ pub fn create_runtime(
             webidl, url, console, web, net, fetch, websocket, webstorage, ext,
         ],
         inspector: inspect,
+        create_params: Some(
+            deno_core::v8::CreateParams::default().heap_limits(0, MAX_SCENE_HEAP_BYTES),
+        ),
         ..Default::default()
     });
+
+    // On approaching the cap, terminate this isolate's execution so its JS unwinds and the
+    // scene ends cleanly; raise the reported limit so V8 has headroom to run the
+    // termination itself instead of hard-aborting the whole sidecar process.
+    {
+        let terminate_handle = runtime.v8_isolate().thread_safe_handle();
+        runtime.add_near_heap_limit_callback(move |current, _initial| {
+            bevy::prelude::error!("scene exceeded its {MAX_SCENE_HEAP_BYTES}-byte heap cap; terminating the scene isolate");
+            terminate_handle.terminate_execution();
+            // grant a temporary margin so the unwind can complete
+            current + 8 * 1024 * 1024
+        });
+    }
 
     #[cfg(feature = "inspect")]
     if inspect {

@@ -1171,16 +1171,19 @@ fn get_connected_players(
     me: Res<Wallet>,
     others: Query<&ForeignPlayer>,
     mut events: EventReader<RpcCall>,
+    is_server: Res<IsServer>,
 ) {
     for response in events.read().filter_map(|ev| match ev {
         RpcCall::GetConnectedPlayers { response } => Some(response),
         _ => None,
     }) {
-        let results = others
-            .iter()
-            .map(|f| format!("{:#x}", f.address))
-            .chain(me.address().map(|address| format!("{address:#x}")))
-            .collect();
+        let others = others.iter().map(|f| format!("{:#x}", f.address));
+        // a headless server has no real local player — don't report its fake player as
+        // a connected peer (it would appear as a ghost to every scene)
+        let own = (!is_server.0)
+            .then(|| me.address().map(|address| format!("{address:#x}")))
+            .flatten();
+        let results = others.chain(own).collect();
         response.send(results);
     }
 }
@@ -1191,16 +1194,20 @@ fn get_players_in_scene(
     others: Query<(Entity, &ForeignPlayer)>,
     mut events: EventReader<RpcCall>,
     containing_scene: ContainingScene,
+    is_server: Res<IsServer>,
 ) {
     for (scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetPlayersInScene { scene, response } => Some((scene, response)),
         _ => None,
     }) {
         let mut results = Vec::default();
-        if let Ok(player) = me.single() {
-            if containing_scene.get(player).contains(scene) {
-                if let Some(address) = wallet.address() {
-                    results.push(format!("{address:#x}"));
+        // skip the fake local player in server mode (see get_connected_players)
+        if !is_server.0 {
+            if let Ok(player) = me.single() {
+                if containing_scene.get(player).contains(scene) {
+                    if let Some(address) = wallet.address() {
+                        results.push(format!("{address:#x}"));
+                    }
                 }
             }
         }
@@ -1290,6 +1297,7 @@ fn event_player_moved_scene(
     me: Res<Wallet>,
     containing_scene: ContainingScene,
     mut events: EventReader<RpcCall>,
+    is_server: Res<IsServer>,
 ) {
     // gather new receivers
     for (enter, scene, sender) in events.read().filter_map(|ev| match ev {
@@ -1304,9 +1312,11 @@ fn event_player_moved_scene(
         }
     }
 
-    // gather current scene
+    // gather current scene (skip the fake local player in server mode — a `None`
+    // ForeignPlayer is the PrimaryUser, which is not a real participant on a server)
     let new_scene: HashMap<_, _> = players
         .iter()
+        .filter(|(_, f)| !(is_server.0 && f.is_none()))
         .flat_map(|(p, f)| {
             containing_scene.get_parcel(p).map(|parcel| {
                 (
@@ -1461,6 +1471,7 @@ fn open_nft_dialog(
     containing_scene: ContainingScene,
     primary_user: Query<Entity, With<PrimaryUser>>,
     asset_server: Res<AssetServer>,
+    is_server: Res<IsServer>,
 ) {
     for (scene, urn, response) in events.read().filter_map(|c| match c {
         RpcCall::OpenNftDialog {
@@ -1470,6 +1481,14 @@ fn open_nft_dialog(
         } => Some((scene, urn, response)),
         _ => None,
     }) {
+        // headless server: the "nft" asset source and the DUI template registry are
+        // absent, so proceeding would hit apply_template(...).unwrap() and panic the
+        // shared engine, taking down every co-tenant scene. Deny cleanly instead.
+        if is_server.0 {
+            response.send(Err("openNftDialog is not supported on a headless server".to_owned()));
+            continue;
+        }
+
         let Ok(player) = primary_user.single() else {
             response.send(Err("No player".to_owned()));
             return;

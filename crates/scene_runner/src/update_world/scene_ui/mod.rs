@@ -1165,10 +1165,12 @@ fn layout_scene_ui(
                 let ui_entity = ent_cmds.id();
                 debug!("{scene_id} create linked {:?}", ui_entity);
 
-                let (scroll_entity, content_entity) = if ui_transform.scroll {
-                    ent_cmds.try_insert(FocusPolicy::Block);
+                // the "scrollable-base" template is registered by ui_core, which the
+                // headless server omits — a scene setting overflow:scroll would otherwise
+                // panic the shared engine on the unwrap. Fall back to non-scrolling.
+                let scroll_template = ui_transform.scroll.then(|| {
                     let content = ent_cmds.commands().spawn(Node::default()).id();
-                    let scrollable = ent_cmds
+                    ent_cmds
                         .spawn_template(
                             &dui,
                             "scrollable-base",
@@ -1189,8 +1191,13 @@ fn layout_scene_ui(
                                 )
                                 .with_prop("content", content),
                         )
-                        .unwrap()
-                        .root;
+                        .map(|t| (t.root, content))
+                });
+
+                let (scroll_entity, content_entity) = if let Some(Ok((scrollable, content))) =
+                    scroll_template
+                {
+                    ent_cmds.try_insert(FocusPolicy::Block);
 
                     ent_cmds
                     .commands()
