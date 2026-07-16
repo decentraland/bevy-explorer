@@ -43,7 +43,7 @@ import { EngineErrorModal } from './features/error/EngineErrorModal'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
-// ENGINE (default): real engine in a same-origin iframe + super-user bridge scene.
+// ENGINE (default): real engine in a same-document canvas (EngineHost — no iframe) + super-user bridge scene.
 // NATIVE (?native=1): HUD in a CEF offscreen webview over the native bevy engine — a JS shim
 // bridges this app's BroadcastChannel to the engine's native relay (no iframe, no mock).
 const MODE: 'mock' | 'engine' | 'native' =
@@ -102,7 +102,7 @@ export function App(): React.JSX.Element {
 }
 
 // Perf overlay visibility: on via ?fps=1, toggle anytime with Ctrl/Cmd+Shift+F
-// (works even when the engine iframe holds keyboard focus — see useGlobalHotkey).
+// (works even when the engine holds keyboard focus — see useGlobalHotkey).
 function useFpsToggle(): boolean {
   const [on, setOn] = useState(params.get('fps') === '1')
   useGlobalHotkey(
