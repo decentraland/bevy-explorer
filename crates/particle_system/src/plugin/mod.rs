@@ -265,7 +265,7 @@ fn make_particle_system(
     let additional_force = particle_system
         .additional_force
         .as_ref()
-        .map(Vector3::abs_vec_to_vec3)
+        .map(Vector3::world_vec_to_vec3)
         .unwrap_or(Vec3::ZERO);
     let initial_velocity_speed = particle_system
         .initial_velocity_speed
@@ -542,7 +542,7 @@ fn make_position(shape: Option<&Shape>, writer: &ExprWriter) -> SetPositionModif
                     r#box
                         .size
                         .as_ref()
-                        .map(Vector3::abs_vec_to_vec3)
+                        .map(Vector3::world_vec_to_vec3)
                         .unwrap_or(Vec3::ONE),
                 )
                 .expr(),
