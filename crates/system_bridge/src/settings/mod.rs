@@ -38,7 +38,6 @@ use max_downloads::MaxDownloadsSetting;
 use oob_setting::OobSetting;
 use player_settings::{JumpSetting, RunSpeedSetting, WalkSpeedSetting};
 use scene_threads::SceneThreadsSetting;
-use serde::{Deserialize, Serialize};
 use shadow_settings::{LightCountSetting, ShadowCasterCountSetting, ShadowDistanceSetting};
 #[cfg(target_arch = "wasm32")]
 use tokio::sync::watch;
@@ -275,25 +274,7 @@ pub trait IntAppSetting: AppSetting + Sized + std::fmt::Debug {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct NamedVariant {
-    name: String,
-    description: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SettingInfo {
-    pub name: String,
-    pub category: String,
-    pub description: String,
-    pub min_value: f32,
-    pub max_value: f32,
-    pub named_variants: Vec<NamedVariant>,
-    pub step_size: f32,
-    pub value: f32,
-    pub default: f32,
-}
+pub use system_api_types::{NamedVariant, SettingInfo};
 
 pub struct Setting {
     pub info: SettingInfo,

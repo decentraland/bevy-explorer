@@ -104,28 +104,14 @@ pub async fn op_kernel_fetch_headers(
 }
 
 #[wasm_bindgen]
-pub async fn op_set_avatar(
-    state: &WorkerContext,
-    base: JsValue,
-    equip: JsValue,
-    has_claimed_name: Option<bool>,
-    profile_extras: JsValue,
-    name_color: JsValue,
-) -> Result<u32, WasmError> {
-    serde_parse!(base);
-    serde_parse!(equip);
-    serde_parse!(profile_extras);
-    serde_parse!(name_color);
-    dcl::js::system_api::op_set_avatar(
-        state.rc(),
-        base,
-        equip,
-        has_claimed_name,
-        profile_extras,
-        name_color,
-    )
-    .await
-    .map_err(WasmError::from)
+pub async fn op_set_avatar(state: &WorkerContext, avatar: JsValue) -> Result<u32, WasmError> {
+    // map_err rather than serde_parse!'s unwrap: with deny_unknown_fields a caller mistake
+    // must surface as a catchable JS error, not a worker panic.
+    let avatar = serde_wasm_bindgen::from_value(avatar)
+        .map_err(|e| WasmError::from(anyhow::anyhow!("setAvatar: {e}")))?;
+    dcl::js::system_api::op_set_avatar(state.rc(), avatar)
+        .await
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

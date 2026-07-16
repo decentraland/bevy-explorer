@@ -3,25 +3,32 @@
 // the wire shapes React sees live in the shared protocol. Only the methods the domains use
 // are declared — extend as needed.
 import type { Setting } from '../../src/engine/protocol'
+import type {
+  AvatarModifierState,
+  BlockedUserData,
+  BlockingStatusData,
+  ChatMessage,
+  FriendRequestData,
+  FriendStatusData,
+  HoverAction,
+  HoverEvent,
+  LiveSceneInfo,
+  PermissionRequest,
+  ProximityEvent,
+  SceneLoadingUi,
+  SetAvatarData,
+  SetSinglePermission,
+  Vector3
+} from '../../src/engine/generated'
 
-// --- raw social-service shapes (BevyApi.social.*) ---
-export type FriendStatusData = {
-  address: string
-  name: string
-  hasClaimedName: boolean
-  profilePictureUrl: string
-  status: 'online' | 'offline' | 'away'
-}
-export type FriendRequestData = {
-  address: string
-  name: string
-  hasClaimedName: boolean
-  profilePictureUrl: string
-  createdAt: number
-  message?: string
-  id: string
-}
-export type BlockingStatus = { blockedUsers: string[]; blockedByUsers: string[] }
+// --- raw social-service shapes (BevyApi.social.*), generated from the Rust structs ---
+export type { FriendStatusData, FriendRequestData }
+export type BlockingStatus = BlockingStatusData
+
+// Per-player modifiers from AvatarModifierArea (privacy zones etc), only for players carrying one —
+// e.g. hideProfile means the local player is standing in a DISABLE_PASSPORTS area, so `userId`'s
+// passport should not be opened. Only present in the array when at least one flag is set.
+export type { AvatarModifierState }
 
 export type SocialApi = {
   getSocialInitialized: () => Promise<boolean>
@@ -29,7 +36,7 @@ export type SocialApi = {
   getReceivedFriendRequests: () => Promise<FriendRequestData[]>
   getSentFriendRequests: () => Promise<FriendRequestData[]>
   getBlockingStatus?: () => Promise<BlockingStatus>
-  getBlockedUsers: () => Promise<Array<{ address: string }>>
+  getBlockedUsers: () => Promise<BlockedUserData[]>
   sendFriendRequest: (address: string, message?: string) => Promise<unknown>
   acceptFriendRequest: (address: string) => Promise<void>
   rejectFriendRequest: (address: string) => Promise<void>
@@ -39,29 +46,21 @@ export type SocialApi = {
   unblockUser: (address: string) => Promise<void>
 }
 
-export type ChatStreamMessage = { sender_address: string; message: string; channel: string }
-export type SceneLoadingState = { visible?: boolean; realmConnected?: boolean; title?: string; pendingAssets?: number | null }
+export type ChatStreamMessage = ChatMessage
+export type SceneLoadingState = SceneLoadingUi
 export type MicState = { enabled: boolean; available: boolean }
 
-// Per-player modifiers from AvatarModifierArea (privacy zones etc), only for players carrying one —
-// e.g. hideProfile means the local player is standing in a DISABLE_PASSPORTS area, so `userId`'s
-// passport should not be opened. Only present in the array when at least one flag is set.
-export type AvatarModifierState = { userId: string; hideAvatar: boolean; hideProfile: boolean }
-
 // World-entity hover events. targetType: 0=WORLD, 1=UI, 2=AVATAR. eventType: PointerEventType.
-export type HoverEntry = {
-  eventType: number
-  enabled?: boolean
-  // maxPlayerDistance absent/null → the entry is range-gated by camera distance only (the PBPointerEvents
-  // default when neither is set is a 10m camera check), per pointer_events.proto's distance-rule doc.
-  eventInfo?: { button?: number; hoverText?: string; showFeedback?: boolean; maxPlayerDistance?: number | null }
-}
-export type SystemHoverEvent = { entered: boolean; targetType: number; actions: HoverEntry[] }
+// eventInfo.maxPlayerDistance absent/null → the entry is range-gated by camera distance only (the
+// PBPointerEvents default when neither is set is a 10m camera check), per pointer_events.proto's
+// distance-rule doc.
+export type HoverEntry = HoverAction
+export type SystemHoverEvent = HoverEvent
 
 // Proximity (in-range) events for world entities. entityPosition is world-space; the bridge
 // projects it to screen each frame so React can anchor a tooltip on it.
-export type Vec3 = { x: number; y: number; z: number }
-export type SystemProximityEvent = { entered: boolean; entity: number; entityPosition: Vec3; actions: HoverEntry[] }
+export type Vec3 = Vector3
+export type SystemProximityEvent = ProximityEvent
 
 // Global engine input actions. `action` is the SystemAction variant name (e.g. 'Cancel' = Escape,
 // 'Map', 'Chat'); `pressed` is press vs release. Emitted authoritatively by the engine even while it
@@ -77,12 +76,7 @@ export type KernelFetchResponse = { ok: boolean; status: number; statusText?: st
 
 // A scene's pending permission request (e.g. ChangeRealm). `ty` is the serde enum name
 // (e.g. 'ChangeRealm'); `scene` is the scene HASH — resolve its title via liveSceneInfo().
-export type PermissionRequestRaw = {
-  ty: string
-  additional?: string | null
-  scene: string
-  id: number
-}
+export type PermissionRequestRaw = PermissionRequest
 // Persist a permission at a level. `value` is the scene hash (Scene) or realm url (Realm),
 // unused for Global. `allow: null` clears the stored value.
 export type SetPermanentPermissionBody = {
@@ -105,11 +99,11 @@ export type BevyApiInterface = {
   setMicEnabled: (enabled: boolean) => void
   getAvatarModifiers: () => Promise<AvatarModifierState[]>
   getPermissionRequestStream: () => Promise<AsyncIterable<PermissionRequestRaw>>
-  setSinglePermission: (body: { id: number; allow: boolean }) => void
+  setSinglePermission: (body: SetSinglePermission) => void
   setPermanentPermission: (body: SetPermanentPermissionBody) => void
-  /** Live scenes (hash → title), for resolving a permission request's scene name. */
-  liveSceneInfo: () => Promise<Array<{ hash: string; title: string }>>
-  setAvatar: (data: { equip: { wearableUrns: string[]; emoteUrns: string[]; forceRender: string[] } }) => Promise<unknown>
+  /** Live scenes, for resolving a permission request's scene name (hash → title). */
+  liveSceneInfo: () => Promise<LiveSceneInfo[]>
+  setAvatar: (data: SetAvatarData) => Promise<unknown>
   kernelFetch: (req: KernelFetchRequest) => Promise<KernelFetchResponse>
   getRealmProvider: () => Promise<string>
   getPreviousLogin: () => Promise<{ userId: string | null }>

@@ -9,8 +9,14 @@ wasm:
     WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm) && echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
     cd react-web && npm run dev -- --open
 
-# bundle the react HUD page + bridge scene into assets/ (the files native runs from)
-bundle-native:
+# regenerate the TypeScript bindings for the ~system/BevyExplorerApi boundary from the Rust
+# structs in crates/system_api_types, into react-web/src/engine/generated (+ a barrel index.ts).
+ts-bindings:
+    {{justfile_directory()}}/scripts/gen-ts-bindings.sh
+
+# bundle the react HUD page + bridge scene into assets/ (the files native runs from).
+# ts-bindings first so the TS the page + bridge scene import is regenerated from the Rust structs.
+bundle-native: ts-bindings
     cd react-web && npm install
     cd react-web/bridge-scene && npm install
     cd react-web && npm run bundle:native
