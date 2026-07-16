@@ -116,7 +116,12 @@ fn collect_active_scenes(
 }
 
 fn enable_disable_particle_systems(
-    particle_systems: Query<(Entity, &SceneEntity, Option<&BurstingEffect>), With<ParticleSystem>>,
+    particle_systems: Query<(
+        Entity,
+        &ParticleSystem,
+        &SceneEntity,
+        Option<&BurstingEffect>,
+    )>,
     mut effect_spawner: Query<&mut EffectSpawner>,
     active_scenes: Res<ActiveScenes>,
 ) {
@@ -129,8 +134,12 @@ fn enable_disable_particle_systems(
         }
     };
 
-    for (entity, scene_entity, maybe_bursting_effect) in particle_systems {
-        let active = active_scenes.contains(&scene_entity.root);
+    for (entity, particle_system, scene_entity, maybe_bursting_effect) in particle_systems {
+        let active = particle_system.active.unwrap_or(true)
+            && particle_system
+                .playback_state
+                .is_none_or(|playback_state| playback_state == PlaybackState::PsPlaying as i32)
+            && active_scenes.contains(&scene_entity.root);
         if !set_active(entity, active) {
             error!("Entity with `ParticleSystem` must have `EffectSpawner`");
         }
