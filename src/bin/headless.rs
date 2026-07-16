@@ -386,6 +386,9 @@ fn main() {
             preview_parcel: None,
         })
         .insert_resource(IsServer(args.server_mode))
+        // never join realm-wide comms (archipelago / world room): a server would be a
+        // ghost participant. Scene rooms use per-scene adapters and are unaffected.
+        .insert_resource(comms::DisableRealmComms(true))
         .insert_resource(delegations)
         .add_event::<RpcCall>()
         .add_event::<SystemAudio>()

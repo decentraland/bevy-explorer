@@ -161,7 +161,16 @@ fn process_realm_change(
     adapters: Query<Entity, With<Transport>>,
     mut manager: AdapterManager,
     wallet: Res<Wallet>,
+    disable_realm_comms: Option<Res<DisableRealmComms>>,
 ) {
+    // headless servers must never join realm-wide comms (archipelago / world room /
+    // preview ws-room) — they would show up as a ghost participant. Scene rooms are
+    // managed separately with per-scene adapters, so when the (headless-only) gate is
+    // set, skip the realm-driven transport lifecycle entirely.
+    if disable_realm_comms.is_some_and(|d| d.0) {
+        return;
+    }
+
     if realm.is_changed() || wallet.is_changed() {
         for adapter in adapters.iter() {
             commands.entity(adapter).despawn();
@@ -217,6 +226,12 @@ pub struct ServerSceneRooms(pub bevy::platform::collections::HashMap<String, (St
 /// trusted parent — the engine must never sign gatekeeper handshakes itself in that mode.
 #[derive(Resource, Default)]
 pub struct DisableSceneRoomGatekeeper(pub bool);
+
+/// When set (headless servers only), the engine never joins realm-wide comms
+/// (archipelago / world room / preview ws-room) — scene rooms via per-scene
+/// adapters are unaffected. Absent everywhere else: clients connect as always.
+#[derive(Resource, Default)]
+pub struct DisableRealmComms(pub bool);
 
 #[allow(clippy::type_complexity)]
 fn connect_scene_room(
