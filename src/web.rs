@@ -17,6 +17,7 @@ use common::{
 };
 use dcl_wasm::init_runtime;
 use futures_lite::io::AsyncReadExt;
+use input_manager::InputPriorities;
 use once_cell::sync::OnceCell;
 use scene_runner::vec3_to_parcel;
 use system_bridge::{SystemApi, SystemBridge};
@@ -61,6 +62,14 @@ extern "C" {
     /// watchdog surfaces the crash overlay. Defined in index.html before the engine runs.
     #[wasm_bindgen(js_name = "__engineHeartbeat")]
     fn engine_heartbeat();
+
+    /// Mirror "an engine text field holds keyboard focus" to the page (boot.js stores it
+    /// on window.__engineTextFocus). The react HUD's hotkey handlers see key events before
+    /// the engine does (capture-phase window listener vs the canvas), and an engine-rendered
+    /// text field is invisible to their DOM-focus checks — this flag is how they know to
+    /// leave keys alone while the user types into scene UI.
+    #[wasm_bindgen(js_name = "__setEngineTextFocus")]
+    fn set_engine_text_focus(focused: bool);
 }
 
 /// call from a separate worker to initialize a channel for asset load processing
@@ -149,6 +158,7 @@ pub fn engine_run(
 
     app.add_systems(Update, update_winit_fps)
         .add_systems(Update, update_url_params)
+        .add_systems(Update, update_text_focus)
         .add_systems(Last, engine_heartbeat_system);
 
     app.add_systems(
@@ -245,6 +255,14 @@ fn extract_js_api(config: Res<ConsoleConfiguration>) {
 /// Pings the JS watchdog each frame so it can detect a stalled engine loop.
 fn engine_heartbeat_system() {
     engine_heartbeat();
+}
+
+fn update_text_focus(priorities: Res<InputPriorities>, mut prev: Local<bool>) {
+    let focused = priorities.keyboard_claimed();
+    if focused != *prev {
+        *prev = focused;
+        set_engine_text_focus(focused);
+    }
 }
 
 pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>) {

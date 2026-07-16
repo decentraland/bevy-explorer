@@ -15,19 +15,11 @@ use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, ConsoleResponder
 use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
-    structs::{
-        AppConfig, MicState, PermissionLevel, PermissionType, PermissionUsed, PermissionValue,
-        PointerTargetType,
-    },
-};
-use dcl_component::proto_components::{
-    common::{Color3, Vector2, Vector3},
-    sdk::components::{pb_pointer_events, PbAvatarBase, PbAvatarEquippedData},
+    structs::{AppConfig, MicState, PermissionUsed},
 };
 use serde::{Deserialize, Serialize};
 use settings::SettingBridgePlugin;
-
-use crate::settings::SettingInfo;
+pub use system_api_types::*;
 
 pub struct SystemBridgePlugin {
     pub bare: bool,
@@ -55,93 +47,6 @@ impl Plugin for SystemBridgePlugin {
 
         app.add_plugins((SettingBridgePlugin, agent_commands::AgentCommandsPlugin));
     }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SetAvatarData {
-    pub base: Option<PbAvatarBase>,
-    pub equip: Option<PbAvatarEquippedData>,
-    pub has_claimed_name: Option<bool>,
-    pub profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
-    pub name_color: Option<Option<Color3>>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct LiveSceneInfo {
-    pub hash: String,
-    pub base_url: Option<String>,
-    pub title: String,
-    pub parcels: Vec<Vector2>,
-    pub is_portable: bool,
-    pub is_broken: bool,
-    pub is_blocked: bool,
-    pub is_super: bool,
-    pub sdk_version: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HomeScene {
-    pub realm: String,
-    pub parcel: Vector2,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
-    pub sender_address: String,
-    pub message: String,
-    pub channel: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct VoiceMessage {
-    pub sender_address: String,
-    pub channel: String,
-    pub active: bool,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct HoverAction {
-    #[serde(flatten)]
-    pub event: pb_pointer_events::Entry,
-    pub enabled: bool,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct HoverEvent {
-    pub entered: bool,
-    pub target_type: PointerTargetType,
-    pub actions: Vec<HoverAction>,
-}
-
-/// Streamed to the system scene whenever an entity carrying PROXIMITY pointer
-/// entries enters or leaves the avatar's interaction range, or when one of its
-/// per-entry distance gates flips (so the `enabled` flag on an action changes).
-/// `entity` is an opaque session-stable identifier so the scene can match
-/// enter/leave pairs. `entity_position` is the world-space AABB centre of the
-/// specific collider on the entity that produced the closest-point hit — for
-/// multi-collider entities (e.g. GltfContainers) this anchors UI on the part
-/// of the entity the player is actually nearest. The scene is responsible for
-/// projecting it to screen space per frame; the active camera's vertical FOV
-/// is available via `Runtime.getCameraFov`.
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ProximityEvent {
-    pub entered: bool,
-    pub entity: u64,
-    pub entity_position: Vector3,
-    pub actions: Vec<HoverAction>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct SceneLoadingUi {
-    pub visible: bool,
-    pub realm_connected: bool,
-    pub title: String,
-    pub pending_assets: Option<u32>,
 }
 
 /// Prefix on login error strings when the failure was fetching the user's profile —
@@ -188,6 +93,11 @@ pub enum SystemApi {
     GetHoverStream(RpcStreamSender<HoverEvent>),
     GetProximityStream(RpcStreamSender<ProximityEvent>),
     GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
+    // Native-only transport for the super-user bridge scene's BroadcastChannel: the scene posts page
+    // -bound Envelopes via BridgeToPage, and subscribes to page->scene Envelopes via GetBridgeStream.
+    // (In web the browser provides BroadcastChannel directly; native has no cross-process equivalent.)
+    BridgeToPage(String),
+    GetBridgeStream(RpcStreamSender<String>),
     SendChat(String, String),
     Quit,
     GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),
@@ -225,123 +135,6 @@ pub enum SystemApi {
     GetParams(RpcResultSender<HashMap<String, String>>),
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct AvatarModifierState {
-    pub user_id: String,
-    pub hide_avatar: bool,
-    pub hide_profile: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NameColor {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FriendData {
-    pub address: String,
-    pub name: String,
-    pub has_claimed_name: bool,
-    pub profile_picture_url: String,
-    pub name_color: Option<NameColor>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FriendRequestData {
-    pub address: String,
-    pub name: String,
-    pub has_claimed_name: bool,
-    pub profile_picture_url: String,
-    pub name_color: Option<NameColor>,
-    pub created_at: i64,
-    pub message: Option<String>,
-    pub id: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all_fields = "camelCase")]
-#[serde(tag = "type")]
-pub enum FriendshipEventUpdate {
-    #[serde(rename = "request")]
-    Request {
-        address: String,
-        name: String,
-        has_claimed_name: bool,
-        profile_picture_url: String,
-        name_color: Option<NameColor>,
-        created_at: i64,
-        message: Option<String>,
-        id: String,
-    },
-    #[serde(rename = "accept")]
-    Accept { address: String },
-    #[serde(rename = "reject")]
-    Reject { address: String },
-    #[serde(rename = "cancel")]
-    Cancel { address: String },
-    #[serde(rename = "delete")]
-    Delete { address: String },
-    #[serde(rename = "block")]
-    Block { address: String },
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FriendStatusData {
-    pub address: String,
-    pub name: String,
-    pub has_claimed_name: bool,
-    pub profile_picture_url: String,
-    pub name_color: Option<NameColor>,
-    /// "online", "offline", or "away"
-    pub status: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockedUserData {
-    pub address: String,
-    pub name: String,
-    pub has_claimed_name: bool,
-    pub profile_picture_url: String,
-    pub name_color: Option<NameColor>,
-}
-
-/// Both directions of the blocking relationship for the local user,
-/// addresses only (no profiles).
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockingStatusData {
-    pub blocked_users: Vec<String>,
-    pub blocked_by_users: Vec<String>,
-}
-
-/// Emitted when another user blocks / unblocks the local user.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockUpdateData {
-    pub address: String,
-    pub is_blocked: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FriendConnectivityEvent {
-    pub address: String,
-    pub name: String,
-    pub has_claimed_name: bool,
-    pub profile_picture_url: String,
-    pub name_color: Option<NameColor>,
-    /// "online", "offline", or "away"
-    pub status: String,
-}
-
 #[derive(Resource, Default, Clone, Debug)]
 pub struct SceneParams(pub HashMap<String, String>);
 
@@ -366,33 +159,6 @@ impl SceneParams {
             .collect();
         Self(map)
     }
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct PermanentPermissionItem {
-    pub ty: PermissionType,
-    pub allow: PermissionValue,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct PermissionRequest {
-    pub ty: PermissionType,
-    pub additional: Option<String>,
-    pub scene: String,
-    pub id: usize,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SetSinglePermission {
-    pub id: usize,
-    pub allow: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SetPermanentPermission {
-    pub ty: PermissionType,
-    pub level: PermissionLevel,
-    pub allow: Option<PermissionValue>,
 }
 
 #[derive(Resource)]

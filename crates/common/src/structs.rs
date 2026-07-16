@@ -16,7 +16,7 @@ use bevy::{
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
-use strum_macros::EnumIter;
+pub use system_api_types::{PermissionLevel, PermissionType, PermissionValue, PointerTargetType};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::inputs::InputMapSerialized;
@@ -384,29 +384,6 @@ pub struct HeadSync {
     pub pitch_enabled: bool,
 }
 
-/// Classifier for pointer-target hits — distinguishes scene world geometry,
-/// scene UI overlays, and avatars. Lives here (not in system_bridge) because
-/// the engine's pointer pipeline produces it before any scene API surface is
-/// involved; system_bridge re-exports the same value into its HoverEvent.
-#[derive(
-    Hash,
-    Clone,
-    Copy,
-    serde_repr::Serialize_repr,
-    serde_repr::Deserialize_repr,
-    Debug,
-    PartialEq,
-    Eq,
-    Default,
-)]
-#[repr(u32)]
-pub enum PointerTargetType {
-    #[default]
-    World = 0,
-    Ui = 1,
-    Avatar = 2,
-}
-
 /// World-space point-at state. On the local player, populated when the PointAt
 /// action fires and `WorldPointerTarget` has a hit; cleared when the latch
 /// expires. On remote players, populated from the incoming rfc4::Movement
@@ -480,6 +457,7 @@ pub struct AppConfig {
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub inputs: InputMapSerialized,
     pub point_at_marker_visibility: PointAtMarkerVisibility,
+    pub camera_smoothing: CameraSmoothing,
     // field-level default (0) so configs saved before this field existed read as outdated,
     // rather than taking the current generation from the container-level default
     #[serde(default)]
@@ -520,6 +498,7 @@ impl Default for AppConfig {
             scene_permissions: Default::default(),
             inputs: Default::default(),
             point_at_marker_visibility: Default::default(),
+            camera_smoothing: Default::default(),
             settings_generation: SETTINGS_GENERATION,
         }
     }
@@ -875,32 +854,6 @@ pub struct SceneMeta {
     pub authoritative_multiplayer: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum PermissionValue {
-    Allow,
-    Deny,
-    Ask,
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, EnumIter)]
-pub enum PermissionType {
-    MovePlayer,
-    ForceCamera,
-    PlayEmote,
-    SetLocomotion,
-    HideAvatarsNametags,
-    DisableVoice,
-    Teleport,
-    ChangeRealm,
-    SpawnPortable,
-    KillPortables,
-    Web3,
-    CopyToClipboard,
-    Fetch,
-    Websocket,
-    OpenUrl,
-}
-
 pub trait PermissionStrings {
     fn active(&self) -> &str;
     fn passive(&self) -> &str;
@@ -1013,13 +966,6 @@ impl PermissionStrings for PermissionType {
             PermissionType::CopyToClipboard => "copying text into the clipboard",
         }
     }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum PermissionLevel {
-    Scene(String),
-    Realm(String),
-    Global,
 }
 
 #[derive(Clone, Serialize, Deserialize, Event)]
@@ -1506,6 +1452,25 @@ pub enum PointAtMarkerVisibility {
     All,
     Friends,
     None,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CameraSmoothing {
+    Raw,
+    #[default]
+    Smoothed,
+    Drunk,
+}
+
+impl CameraSmoothing {
+    /// exponential smoothing rate; `None` means no smoothing
+    pub fn rate(&self) -> Option<f32> {
+        match self {
+            CameraSmoothing::Raw => None,
+            CameraSmoothing::Smoothed => Some(15.0),
+            CameraSmoothing::Drunk => Some(5.0),
+        }
+    }
 }
 
 #[derive(Event)]

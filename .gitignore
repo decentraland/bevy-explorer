@@ -16,8 +16,13 @@ config.json
 /deploy/web/bridge-scene
 /deploy/web/.env
 /deploy/web/package-lock.json
-/deploy/web/node_modules
 .idea
 *.pem
 .DS_Store
 /react-web/bridge-scene/static-native
+assets/react-hud/
+/assets/bridge-scene
+# ts-rs default export dir, written when the export_bindings tests run without
+# TS_RS_EXPORT_DIR (plain `cargo test`); the real output is scripts/gen-ts-bindings.sh's
+/crates/system_api_types/bindings
+node_modules/

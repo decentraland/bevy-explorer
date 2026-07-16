@@ -1,6 +1,12 @@
-import { describe, it, expect, vi } from 'vitest'
-import { act, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { act, waitFor, render, screen } from '@testing-library/react'
 import { renderSession, enterAsGuest, FakeDriver } from './harness'
+import { openProfileCard } from '../features/profileCard/ProfileCard'
+import { PopupHost, openPopup, resetPopups } from '../design'
+
+// The avatarClick handler opens the world profile card as a popup; stub it so we can assert the call.
+vi.mock('../features/profileCard/ProfileCard', () => ({ openProfileCard: vi.fn() }))
+afterEach(resetPopups)
 
 // Records launch() so tests can assert the realm/position the engine was booted with.
 class LaunchRecordingDriver extends FakeDriver {
@@ -212,5 +218,72 @@ describe('session domain', () => {
         }),
       { timeout: 2000 }
     )
+  })
+
+  it('a nearby-avatar click (avatarClick) opens the profile-card popup at the cursor', () => {
+    vi.mocked(openProfileCard).mockClear()
+    const h = renderSession({ userId: null })
+    // avatarClick carries only the address; the card resolves name/avatar from the roster itself. The
+    // handler anchors it at the DOM cursor (0,0 in jsdom, unlocked).
+    act(() => h.driver.emit({ kind: 'avatarClick', address: '0xABC' }))
+    expect(openProfileCard).toHaveBeenCalledWith('0xABC', 0, 0)
+  })
+
+  it("a 'Cancel' system action (the engine's Escape) closes the topmost popup", () => {
+    const h = renderSession({ userId: null })
+    render(<PopupHost />) // shares the module popup stack
+    act(() => {
+      openPopup(() => <div>a popup</div>)
+    })
+    expect(screen.getByText('a popup')).toBeTruthy()
+    act(() => h.driver.emit({ kind: 'systemAction', action: 'Cancel' }))
+    expect(screen.queryByText('a popup')).toBeNull()
+  })
+
+  it('chat.mention opens chat and queues the @name until consumed', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().chat.mention('Alice'))
+    expect(h.session().chat.open).toBe(true)
+    expect(h.session().chat.pendingMention).toBe('Alice')
+    act(() => h.session().chat.consumeMention())
+    expect(h.session().chat.pendingMention).toBeNull()
+  })
+})
+
+// DOMAIN: embedded mode — the sites `/discover` embed loads bevy-web with
+// ?guest=1 (auto guest-login, no sign-in screen) and ?hud=0 (no React HUD).
+// ?hud=0 is a pure App.tsx render gate; the auto-guest flow lives in the hook.
+describe('embedded auto-guest (?guest=1)', () => {
+  afterEach(() => window.history.replaceState(null, '', '/'))
+
+  it('skips the sign-in screen and enters as a guest without any manual action', async () => {
+    window.history.replaceState(null, '', '/?guest=1')
+    const h = renderSession({ userId: null })
+    // No exploreAsGuest() call in the test — the flag alone drives it. With no
+    // URL destination it lands on the picker (a positioned embed skips that too).
+    await waitFor(() => expect(h.session().phase).toBe('picking'))
+  })
+
+  it('with a ?position, drives a guest straight into the world', async () => {
+    window.history.replaceState(null, '', '/?guest=1&position=10,20')
+    const h = renderSession({ userId: null })
+    await waitFor(() => expect(h.session().phase).toBe('entering'))
+    // The deferred login runs a paint after the pick, so wait for the call.
+    await waitFor(() => expect(h.driver.calls).toContain('loginGuest'))
+    h.driver.emit({ kind: 'event', name: 'playerReady' })
+    // No loading state received counts as still-loading, so report "done" like the real
+    // bridge-scene's stream does (same as harness enterAsGuest).
+    h.driver.emit({
+      kind: 'sceneLoading',
+      state: { visible: false, realmConnected: true, title: '', pendingAssets: null }
+    })
+    await waitFor(() => expect(h.session().phase).toBe('world'))
+  })
+
+  it('does not auto-login without the flag (normal sign-in screen)', async () => {
+    const h = renderSession({ userId: null })
+    await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
+    expect(h.session().phase).toBe('login')
   })
 })

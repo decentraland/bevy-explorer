@@ -2,14 +2,8 @@ use common::{
     inputs::SystemActionEvent,
     structs::{MicState, PermissionType, PermissionUsed, PermissionValue},
 };
-use dcl::{
-    js::system_api::{JsBindingsData, PermissionTypeDetail},
-    ClearableColor3,
-};
-use dcl_component::proto_components::{
-    common::Vector2,
-    sdk::components::{PbAvatarBase, PbAvatarEquippedData},
-};
+use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
+use dcl_component::proto_components::common::Vector2;
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
@@ -17,7 +11,8 @@ use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
     FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, ProximityEvent, SceneLoadingUi, VoiceMessage,
+    PermanentPermissionItem, PermissionRequest, ProximityEvent, SceneLoadingUi, SetAvatarData,
+    VoiceMessage,
 };
 
 // list of op declarations
@@ -50,6 +45,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_chat_stream(),
             op_read_chat_stream(),
             op_send_chat(),
+            op_bridge_to_page(),
+            op_get_bridge_stream(),
+            op_read_bridge_stream(),
             op_get_profile_extras(),
             op_quit(),
             op_get_permission_request_stream(),
@@ -189,21 +187,9 @@ pub async fn op_kernel_fetch_headers(
 #[op2(async)]
 pub async fn op_set_avatar(
     state: Rc<RefCell<OpState>>,
-    #[serde] base: Option<PbAvatarBase>,
-    #[serde] equip: Option<PbAvatarEquippedData>,
-    has_claimed_name: Option<bool>,
-    #[serde] profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
-    #[serde] name_color: Option<ClearableColor3>,
+    #[serde] avatar: SetAvatarData,
 ) -> Result<u32, anyhow::Error> {
-    dcl::js::system_api::op_set_avatar(
-        state,
-        base,
-        equip,
-        has_claimed_name,
-        profile_extras,
-        name_color,
-    )
-    .await
+    dcl::js::system_api::op_set_avatar(state, avatar).await
 }
 
 #[op2(async)]
@@ -295,6 +281,25 @@ pub fn op_send_chat(
     #[string] channel: String,
 ) {
     dcl::js::system_api::op_send_chat(state, message, channel)
+}
+
+#[op2(fast)]
+pub fn op_bridge_to_page(state: Rc<RefCell<OpState>>, #[string] msg: String) {
+    dcl::js::system_api::op_bridge_to_page(state, msg)
+}
+
+#[op2(async)]
+pub async fn op_get_bridge_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_bridge_stream(state).await
+}
+
+#[op2(async)]
+#[string]
+pub async fn op_read_bridge_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<String, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_bridge_stream(state, rid).await
 }
 
 #[op2(async)]

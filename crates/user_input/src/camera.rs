@@ -9,8 +9,8 @@ use bevy::{
 use common::{
     inputs::{Action, SystemAction, CAMERA_SET, CAMERA_ZOOM, POINTER_SET},
     structs::{
-        AvatarDynamicState, CameraOverride, CursorLocks, HeadSync, MoveKind, PrimaryCamera,
-        PrimaryUser,
+        AppConfig, AvatarDynamicState, CameraOverride, CursorLocks, HeadSync, MoveKind,
+        PrimaryCamera, PrimaryUser,
     },
     util::ModifyComponentExt,
 };
@@ -38,6 +38,8 @@ pub fn update_camera(
     mut cinematic_data: Local<Option<CinematicInitialData>>,
     input_manager: InputManager,
     gt_helper: TransformHelper,
+    config: Res<AppConfig>,
+    mut smoothed_delta: Local<Vec2>,
 ) {
     let dt = time.delta_secs();
 
@@ -117,6 +119,14 @@ pub fn update_camera(
     let mut mouse_delta = input_manager.get_analog(CAMERA_SET, InputPriority::Scene) * 10.0;
     if locks.0.contains("camera") {
         mouse_delta += input_manager.get_analog(POINTER_SET, InputPriority::Scroll);
+    }
+    match config.camera_smoothing.rate() {
+        Some(rate) => {
+            let factor = 1.0 - (-dt * rate).exp();
+            mouse_delta = factor * mouse_delta + (1.0 - factor) * *smoothed_delta;
+            *smoothed_delta = mouse_delta;
+        }
+        None => *smoothed_delta = mouse_delta,
     }
 
     if allow_cam_move {

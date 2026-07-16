@@ -26,8 +26,8 @@ use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ParcelGrassSetting,
-        PointAtMarkerVisibility, PreviewMode, ShadowSetting, WindowSetting,
+        AaSetting, AppConfig, BloomSetting, CameraSmoothing, DofSetting, FogSetting,
+        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -38,7 +38,6 @@ use max_downloads::MaxDownloadsSetting;
 use oob_setting::OobSetting;
 use player_settings::{JumpSetting, RunSpeedSetting, WalkSpeedSetting};
 use scene_threads::SceneThreadsSetting;
-use serde::{Deserialize, Serialize};
 use shadow_settings::{LightCountSetting, ShadowCasterCountSetting, ShadowDistanceSetting};
 #[cfg(target_arch = "wasm32")]
 use tokio::sync::watch;
@@ -54,6 +53,7 @@ pub mod aa_settings;
 pub mod ambient_brightness_setting;
 pub mod bloom_settings;
 pub mod cache_size;
+pub mod camera_smoothing;
 pub mod cel_shading_setting;
 pub mod constrain_ui;
 pub mod dof_setting;
@@ -185,6 +185,7 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<ScrollSensitivitySetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<MovementSensitivitySetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<CameraSensitivitySetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<CameraSmoothing>(app, &mut settings, &mut schedule, &config);
 
         add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule, &config);
@@ -273,25 +274,7 @@ pub trait IntAppSetting: AppSetting + Sized + std::fmt::Debug {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct NamedVariant {
-    name: String,
-    description: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SettingInfo {
-    pub name: String,
-    pub category: String,
-    pub description: String,
-    pub min_value: f32,
-    pub max_value: f32,
-    pub named_variants: Vec<NamedVariant>,
-    pub step_size: f32,
-    pub value: f32,
-    pub default: f32,
-}
+pub use system_api_types::{NamedVariant, SettingInfo};
 
 pub struct Setting {
     pub info: SettingInfo,

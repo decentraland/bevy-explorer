@@ -1,10 +1,16 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Chat } from '../features/chat/Chat'
+import { openProfileCard } from '../features/profileCard/ProfileCard'
 import type { ChatLine, ChatState } from '../features/session/useEngineSession'
 import type { NearbyMember } from '../engine/protocol'
 import { fakeSession } from './harness'
+
+// Chat opens the shared profile card via openProfileCard (the card itself is covered by the container
+// + presentational tests). Stub it so we can assert the trigger + the resolved address.
+vi.mock('../features/profileCard/ProfileCard', () => ({ openProfileCard: vi.fn() }))
+afterEach(() => vi.mocked(openProfileCard).mockClear())
 
 const line = (message: string, sender = '0xsender'): ChatLine => ({
   sender,
@@ -18,24 +24,21 @@ function renderChat(
   opts: {
     messages?: ChatLine[]
     members?: NearbyMember[]
-    onAddFriend?: (a: string) => void
-    onBlock?: (a: string) => void
-    onViewProfile?: (u: { address: string; name: string }) => void
     onTeleport?: (x: number, y: number) => void
     me?: { address?: string; name?: string } | null
+    chatOver?: Partial<ChatState>
   } = {}
-) {
+): { chat: ChatState; container: HTMLElement } {
   const chat: ChatState = {
     ...fakeSession().chat,
     open: true,
     send: vi.fn(),
     toggle: vi.fn(),
     messages: opts.messages ?? [],
-    members: opts.members ?? []
+    members: opts.members ?? [],
+    ...opts.chatOver
   }
-  const { container } = render(
-    <Chat chat={chat} me={opts.me} onAddFriend={opts.onAddFriend} onBlock={opts.onBlock} onViewProfile={opts.onViewProfile} onTeleport={opts.onTeleport} />
-  )
+  const { container } = render(<Chat chat={chat} me={opts.me} onTeleport={opts.onTeleport} />)
   return { chat, container }
 }
 
@@ -54,58 +57,28 @@ describe('chat rich messages', () => {
     expect(onTeleport).toHaveBeenCalledWith(10, -5)
   })
 
-  it('an @mention opens the profile menu with the supported actions', async () => {
-    const onAddFriend = vi.fn()
-    const onBlock = vi.fn()
-    renderChat({
-      messages: [line('yo @Alice')],
-      members: [{ address: '0xalice', name: 'Alice', picture: 'p.png' }],
-      onAddFriend,
-      onBlock
-    })
-    await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
-    const dialog = screen.getByRole('dialog', { name: 'Profile' })
-    expect(dialog).toBeInTheDocument()
-    // Only the actions we support — no View Profile / Chat / Call / Hush / Gift / Report.
-    expect(screen.queryByRole('button', { name: /View Profile|Call|Hush|Gift|Report/i })).toBeNull()
-
-    await userEvent.click(screen.getByRole('button', { name: /ADD FRIEND/i }))
-    expect(onAddFriend).toHaveBeenCalledWith('0xalice')
-  })
-
-  it('the profile menu can block and mention', async () => {
-    const onBlock = vi.fn()
-    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onBlock })
-    await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Block' }))
-    expect(onBlock).toHaveBeenCalledWith('0xalice')
-  })
-
-  it('View Profile from the menu opens the passport for that user', async () => {
-    const onViewProfile = vi.fn()
-    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onViewProfile })
-    await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
-    await userEvent.click(screen.getByRole('button', { name: 'View Profile' }))
-    expect(onViewProfile).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
-  })
-
-  it('Mention from the menu drops @name into the draft', async () => {
-    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }] })
-    await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Mention' }))
-    expect((screen.getByRole('textbox') as HTMLInputElement).value).toContain('@Alice')
-  })
-
-  it('clicking a sender name opens their profile viewer', async () => {
+  it('clicking a sender opens the shared profile card', async () => {
     renderChat({ messages: [line('gm', '0xbob')], members: [{ address: '0xbob', name: 'Bob' }] })
     await userEvent.click(screen.getByRole('button', { name: 'View Bob' })) // avatar button
-    expect(screen.getByRole('dialog', { name: 'Profile' })).toBeInTheDocument()
+    expect(openProfileCard).toHaveBeenCalledWith('0xbob', expect.any(Number), expect.any(Number))
   })
 
-  it('right-clicking a sender also opens the profile menu', () => {
+  it('right-clicking a sender also opens the card', () => {
     renderChat({ messages: [line('gm', '0xbob')], members: [{ address: '0xbob', name: 'Bob' }] })
     fireEvent.contextMenu(screen.getByRole('button', { name: 'View Bob' }))
-    expect(screen.getByRole('dialog', { name: 'Profile' })).toBeInTheDocument()
+    expect(openProfileCard).toHaveBeenCalledWith('0xbob', expect.any(Number), expect.any(Number))
+  })
+
+  it('clicking an @mention opens the card for that user', async () => {
+    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice', picture: 'p.png' }] })
+    await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
+    expect(openProfileCard).toHaveBeenCalledWith('0xalice', expect.any(Number), expect.any(Number))
+  })
+
+  it('a mention queued from another surface (the card) drops @name into the draft', async () => {
+    // session.chat.mention → pendingMention → this effect → insertMention (the receiving end).
+    renderChat({ chatOver: { pendingMention: 'Alice', consumeMention: vi.fn() } })
+    await waitFor(() => expect((screen.getByRole('textbox') as HTMLInputElement).value).toContain('@Alice'))
   })
 
   it('@mention autocomplete inserts the picked name', async () => {

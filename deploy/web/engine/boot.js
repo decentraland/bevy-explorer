@@ -10,6 +10,8 @@
 //     __bevyReadyToLaunch / __bevyLaunch(realm?, position?) — deferred engine_run
 //     __bevyPanic — readable Rust panic text (the JS throw is a generic "unreachable" trap)
 //     __engineHeartbeat / reportEngineError / __rearmCrashWatchdog — crash watchdog plumbing
+//     __engineTextFocus — true while an engine-rendered text field holds keyboard focus (the
+//       wasm keeps it current via __setEngineTextFocus); HUD hotkeys must not fire while set
 //     __onEngineCrash(message, source) — OPTIONAL host callback; the watchdog calls it instead of
 //       rendering any overlay (React owns the error UI)
 //     window.engine / engine_console_command — the console RPC (built by engine.js post-launch)
@@ -143,6 +145,15 @@ publish()
 
 // Host-provided config (set before this module is injected).
 const config = window.__bevyBootConfig ?? {}
+
+// ---- engine text focus (CALLED BY THE WASM — src/web.rs update_text_focus) -----------------------
+// True while an engine-rendered text field (e.g. a scene textinput) holds keyboard focus. Those
+// fields live on the canvas, so DOM focus checks can't see them — HUD hotkey handlers read this
+// flag instead (useMenuShortcuts) to leave keys alone while the user is typing.
+window.__engineTextFocus = false
+window.__setEngineTextFocus = (focused) => {
+  window.__engineTextFocus = !!focused
+}
 
 // ---- URL sync (CALLED BY THE WASM — src/web.rs set_url_params) -----------------------------------
 // Keeps the browser URL in step with the player's realm/position so a reload/share lands back at

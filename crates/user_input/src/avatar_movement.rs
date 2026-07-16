@@ -254,6 +254,9 @@ impl FromConfig for AvatarLocomotionSettings {
             jump_height: Some(config.player_settings.jump_height),
             run_jump_height: Some(config.player_settings.run_jump_height),
             hard_landing_cooldown: Some(0.0),
+            double_jump_height: None,
+            gliding_speed: None,
+            gliding_falling_speed: None,
         })
     }
 }

@@ -13,6 +13,17 @@ export function registerSession(ctx: Ctx): void {
       switch (msg.method) {
         case 'getPreviousLogin': value = await BevyApi.getPreviousLogin(); break
         case 'loginPrevious': value = await BevyApi.loginPrevious(); break
+        // Fresh sign-in (remote wallet): forward the mid-flight verification code as its own
+        // message; the rpc itself resolves on approval (rejects on failure/cancel via catch).
+        case 'loginNew': {
+          const login = BevyApi.loginNew()
+          void login.code
+            .then((code) => ctx.send({ kind: 'loginCode', code: code ?? null }))
+            .catch(() => undefined) // errors surface through `success` below
+          await login.success
+          value = { success: true, error: '' }
+          break
+        }
         // The engine has no "log in with a raw identity" surface; reuse the saved login instead.
         case 'loginIdentity': value = await BevyApi.loginPrevious(); break
         case 'loginGuest': BevyApi.loginGuest(); break

@@ -723,6 +723,12 @@ pub struct IpfsIo {
     request_slots: tokio::sync::Semaphore,
     reqno: AtomicU16,
     static_files: HashMap<&'static str, &'static str>,
+    // Directories `file://` urls may read from. file realms are only minted by
+    // lookup_local_realm from a locally-supplied path (which registers its root here) — but a
+    // `file://` baseUrl can also be smuggled in a urn from a remote realm/portable, and those
+    // must not read local disk.
+    #[cfg(not(target_arch = "wasm32"))]
+    allowed_file_roots: std::sync::RwLock<Vec<PathBuf>>,
     client: reqwest::Client,
     #[cfg(feature = "ipfs_debug")]
     debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
@@ -754,6 +760,8 @@ impl IpfsIo {
             request_slots: tokio::sync::Semaphore::new(num_slots),
             reqno: default(),
             static_files: static_paths,
+            #[cfg(not(target_arch = "wasm32"))]
+            allowed_file_roots: Default::default(),
             client: reqwest::Client::builder()
                 .connect_timeout(Duration::from_secs(5))
                 .use_native_tls()
@@ -762,6 +770,15 @@ impl IpfsIo {
                 .unwrap(),
             #[cfg(feature = "ipfs_debug")]
             debug_overlay_sender,
+        }
+    }
+
+    /// Allow `file://` reads under `root` (canonical). See `allowed_file_roots`.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn add_allowed_file_root(&self, root: PathBuf) {
+        let mut roots = self.allowed_file_roots.write().unwrap();
+        if !roots.contains(&root) {
+            roots.push(root);
         }
     }
 
@@ -1581,6 +1598,45 @@ impl AssetReader for IpfsIo {
                 }
             }
             let remote = ipfs_io_read_state.send_failure(remote)?;
+
+            // file realm: a `file://` baseUrl (local static scene export, e.g. `--ui <dir>`)
+            // reads straight from disk — no cache write, no request slot, no retries.
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(local) = remote.strip_prefix("file://") {
+                // url normalization writes windows paths as `file:///C:/...`; the path
+                // component's leading slash isn't part of the disk path, so strip it
+                // when a drive letter follows (unix absolute paths keep theirs)
+                let local = match local.as_bytes() {
+                    [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => &local[1..],
+                    _ => local,
+                };
+                // canonicalize (resolving `..` and symlinks) and require a registered root, so
+                // urn-supplied baseUrls / content hashes can't address arbitrary disk paths
+                let local = std::fs::canonicalize(local)
+                    .ok()
+                    .filter(|canonical| {
+                        self.allowed_file_roots
+                            .read()
+                            .unwrap()
+                            .iter()
+                            .any(|root| canonical.starts_with(root))
+                    })
+                    .ok_or_else(|| {
+                        warn!("refusing file read outside registered file realms: `{remote}`");
+                        AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                            "file realm read `{remote}`: not found or not permitted"
+                        ))))
+                    });
+                let data = ipfs_io_read_state.send_failure(local.and_then(|local| {
+                    std::fs::read(local).map_err(|e| {
+                        AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                            "file realm read `{remote}`: {e}"
+                        ))))
+                    })
+                }))?;
+                ipfs_io_read_state.send_cached(data.len());
+                return Ok(Box::new(VecReader::new(data)));
+            }
 
             let fail_time = context.failed_remotes.get(&remote).cloned();
             drop(context);
