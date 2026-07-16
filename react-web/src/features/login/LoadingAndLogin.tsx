@@ -9,7 +9,7 @@ import { prefetchPlaces } from '../places/placesApi'
 import type { LoginFlow, LoginStatus } from '../session/useEngineSession'
 import styles from './LoadingAndLogin.module.css'
 
-// Engine boot steps surfaced from the iframe loader (deploy/web/ui.js), shown in the footer bar.
+// Engine boot steps surfaced from the engine loader (deploy/web/ui.js), shown in the footer bar.
 const STEP_LABEL: Record<string, string> = {
   download: 'Downloading engine',
   compile: 'Compiling',

@@ -300,7 +300,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [error, setError] = useState<string | null>(null)
   // Engine boots (autostart) while the login screen is up; this flips true once it can take commands.
   const [engineReady, setEngineReady] = useState(false)
-  // Real WASM-download/boot progress surfaced from the engine iframe (0–100) + the active step id,
+  // Real WASM-download/boot progress surfaced from the engine (0–100) + the active step id,
   // for the login footer bar. The engine's own loader is hidden (hideLoader=1).
   const [loadProgress, setLoadProgress] = useState(0)
   const [loadStep, setLoadStep] = useState<string | null>(null)
@@ -571,7 +571,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Watch engine boot: the iframe autostarts on mount, so poll until it can take commands, then stop.
+  // Watch engine boot: the engine autostarts on mount, so poll until it can take commands, then stop.
   // Drivers without an engine (mock/tests) report ready immediately.
   useEffect(() => {
     const driver = driverRef.current
@@ -599,8 +599,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     return () => clearInterval(id)
   }, [])
 
-  // Runtime engine crashes (heartbeat stall) are detected by the bundle's watchdog and bridged to us
-  // as a same-origin postMessage (the iframe's own overlay is hidden behind react-web's HUD).
+  // Runtime engine crashes (heartbeat stall) are detected by the bundle's watchdog and surfaced to us
+  // directly (the engine's own crash overlay is hidden behind react-web's HUD).
   useEffect(() => {
     // Same-document engine (no iframe): the crash watchdog in engine/boot.js calls this directly
     // instead of rendering any overlay — React owns the error UI.
@@ -865,7 +865,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       driverRef.current?.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
       // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
       // so only the chosen scene streams in. (No-op on the mock, which has no engine to launch.)
-      // Parcels pass the MAIN realm explicitly — the iframe's initialRealm may carry a ?realm
+      // Parcels pass the MAIN realm explicitly — the engine's initialRealm may carry a ?realm
       // override (possibly an invalid world after a failed validation), and inheriting it would
       // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
@@ -874,7 +874,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
-        // wasm trap). The readable message is captured on the iframe via enginePanic().
+        // wasm trap). The readable message is captured on the engine via enginePanic().
         const panic = driverRef.current?.enginePanic?.()?.message
         setFatalError({ message: panic ?? (e as Error)?.message ?? 'The engine failed to start.', source: 'launch' })
         driverRef.current?.clearEnginePanic?.()
@@ -1222,7 +1222,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     fatalError,
     reload: () => location.reload(),
     dismissFatal: () => {
-      // Re-arm the iframe watchdog (it left its `shown` flag set when it bridged the crash) so a later
+      // Re-arm the engine watchdog (it left its `shown` flag set when it bridged the crash) so a later
       // genuine crash still surfaces, and clear the stashed panic so it isn't re-read stale.
       driverRef.current?.rearmCrashWatchdog?.()
       driverRef.current?.clearEnginePanic?.()

@@ -44,7 +44,7 @@ export interface LoginDriver {
    *  screen keeps its CTAs in a "Starting…" state until this is true. Optional — the mock is always
    *  ready. */
   engineReady?(): boolean
-  /** Real weighted boot progress (0–100) + active step id, surfaced from the engine iframe loader for
+  /** Real weighted boot progress (0–100) + active step id, surfaced from the engine loader for
    *  the login footer bar. Optional — the mock has no engine to download. */
   loadProgress?(): number
   loadStep?(): string | null
@@ -52,7 +52,7 @@ export interface LoginDriver {
   enginePanic?(): { message: string } | null
   /** Clear the stashed panic once consumed, so a later read can't surface a stale one. Optional — mock. */
   clearEnginePanic?(): void
-  /** Re-arm the iframe crash watchdog after the host dismisses a runtime crash (resets its `shown`
+  /** Re-arm the engine crash watchdog after the host dismisses a runtime crash (resets its `shown`
    *  flag so a second genuine crash still shows). Optional — the mock has no engine. */
   rearmCrashWatchdog?(): void
   /** Boot the engine at a chosen realm/position (deferred-start: nothing loads until the user picks

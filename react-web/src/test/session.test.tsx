@@ -17,7 +17,7 @@ class LaunchRecordingDriver extends FakeDriver {
 }
 
 // Simulates a boot-time engine panic: `throwOnLaunch` makes launch() throw synchronously (the generic
-// "unreachable" wasm trap), and `panic` is the readable message the iframe stashes and the host reads
+// "unreachable" wasm trap), and `panic` is the readable message the engine stashes and the host reads
 // via enginePanic(). Either the sync catch or the post-launch poll must surface it as a FATAL 'launch'
 // error rather than the dismissable 'runtime' crash the heartbeat would mislabel it as (gonpombo8's 🔴).
 class BootPanicDriver extends FakeDriver {

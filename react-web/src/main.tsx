@@ -32,7 +32,7 @@ if (new URLSearchParams(location.search).get('native') === '1') {
 }
 
 // App picks the mode: ?mock=1 → login UI against the fake bridge (no engine);
-// default → real engine in a same-origin iframe driven over console commands.
+// default → real engine in a same-document canvas driven over console commands.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

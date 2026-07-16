@@ -1,9 +1,8 @@
 // HUD keyboard shortcuts (the [O]/[M]/[I]/[G]/[P]/[B]/[L]/[T]/[Z] hints shown in the nav + sidebar).
 //
-// These must fire even while playing: in the world the engine runs in a same-origin iframe that
-// grabs keyboard focus, so its keydown events dispatch to the IFRAME window — a plain `window`
-// listener never sees them. We attach to both the page window and the engine iframe window
-// (polling until it mounts) in capture phase, mirroring useGlobalHotkey.
+// These must fire even while playing: in the world the engine shares this document (its canvas is in
+// the page — EngineHost "Approach A", no iframe) and grabs keyboard focus, so we attach one
+// capture-phase `window` listener that sees the key wherever focus sits, mirroring useGlobalHotkey.
 
 import { useEffect, useRef } from 'react'
 import type { EngineSession } from '../features/session/useEngineSession'
