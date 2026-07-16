@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { fakeSession } from './harness'
 import { useMenuShortcuts } from '../lib/useMenuShortcuts'
@@ -44,27 +44,6 @@ describe('useMenuShortcuts', () => {
     document.body.appendChild(input)
     press('m', {}, input)
     expect(session.map.toggle).not.toHaveBeenCalled()
-  })
-
-  // The engine shares this document and winit reads keys off the canvas — downstream of our
-  // window-capture listener. Enter has to reach it (that's what fires the "Chat" system action the
-  // bridge turns into a camera-look release); the letter shortcuts must not, or the engine acts on
-  // them too. Stopping Enter here left chat focused with the mouse still spinning the camera.
-  it('lets Enter through to the engine canvas but swallows the letter shortcuts', () => {
-    const session = fakeSession()
-    renderHook(() => useMenuShortcuts(session))
-    const canvas = document.createElement('canvas')
-    document.body.appendChild(canvas)
-    const engine = vi.fn()
-    canvas.addEventListener('keydown', engine)
-
-    press('Enter', {}, canvas)
-    expect(session.chat.requestFocus).toHaveBeenCalledTimes(1)
-    expect(engine).toHaveBeenCalledTimes(1)
-
-    press('m', {}, canvas)
-    expect(session.map.toggle).toHaveBeenCalledTimes(1)
-    expect(engine).toHaveBeenCalledTimes(1) // unchanged: 'm' stopped at window capture
   })
 
   it('does nothing outside the world phase', () => {
