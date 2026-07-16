@@ -171,9 +171,16 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     lock**) and relay its value to the React chat display over the bridge. That restores the old
     `bevy-ui-scene` seamless feel (type → close → camera resumes instantly, no click) at the cost of
     re-introducing engine-owned input + a split display/input source of truth — hence a decision, not a
-    given. (Escape stays a hard limit either way: the browser's Esc-exits-pointer-lock is not cancelable;
-    a fragile `exitPointerLock()`-then-gesture-less-`requestPointerLock()` trick exists but is
-    browser/version-dependent — don't rely on it.) **(b) the related bug:** full-screen menus
+    given. (Escape is a browser limit today, but there IS a supported escape hatch we're deferring:
+    JS-initiated **fullscreen + the Keyboard Lock API** — `navigator.keyboard.lock(['Escape'])` then
+    `requestFullscreen()` — delivers Escape to the page as a normal keydown and keeps pointer lock, with
+    a hold-Esc-2s exit the browser narrates; this is the pattern cloud-gaming clients (Stadia, GeForce
+    NOW) use. Chromium-only, which is fine — we only support Chromium (see the no-GPU gate) — but it
+    needs whole-session fullscreen, must exclude the `?hud=0` embed, and would double-deliver Escape
+    (DOM + the engine's `Cancel` action) so one source has to win. A follow-up on its own, deferred to
+    spend time on higher-priority issues; the fragile `exitPointerLock()`-then-gesture-less-
+    `requestPointerLock()` trick is NOT it — don't rely on it. Moot on native: no browser pointer lock
+    there, the engine owns the OS cursor grab and releases it on the `Chat` action.) **(b) the related bug:** full-screen menus
     (settings/map/backpack…) opened via their **hotkey while camera-look is active** (`useMenuShortcuts`
     fires even when the iframe holds focus) **don't free the cursor at all** — only profile-card + chat
     do — so the menu renders over a still-locked cursor and is unusable until you click. Fold this into
