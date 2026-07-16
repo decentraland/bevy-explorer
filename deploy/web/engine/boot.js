@@ -164,6 +164,8 @@ const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'
 // worlds-content-server…/world/name.dcl.eth) and echoes that back here. Reverse it so the address
 // bar keeps the short name the user typed; a reload re-expands it the same way.
 const WORLDS_PREFIX = 'https://worlds-content-server.decentraland.org/world/'
+// captured from the ENTRY url (later syncs rewrite location.search)
+const explicitSystemScene = new URLSearchParams(window.location.search).has('systemScene')
 window.set_url_params = (position, server, system_scene, portables, preview) => {
   try {
     if (server.startsWith(WORLDS_PREFIX)) server = server.slice(WORLDS_PREFIX.length)
@@ -173,11 +175,10 @@ window.set_url_params = (position, server, system_scene, portables, preview) => 
     else urlParams.delete('position')
     if (server !== DEFAULT_SERVER) urlParams.set('realm', server)
     else urlParams.delete('realm')
-    // null = the engine runs NO ui scene (?systemScene=none) — keep that explicit across reloads.
-    // Compared against the page DEFAULT (not the boot value) so an explicit ?systemScene=
-    // override also survives a reload; only the default is omitted to keep the entry URL clean.
-    system_scene = system_scene ?? 'none'
-    if (system_scene !== (config.defaultSystemScene ?? config.systemScene ?? '')) urlParams.set('systemScene', system_scene)
+    // An explicit ?systemScene= boot override stays in the URL across reloads (null from the
+    // engine = NO ui scene running, i.e. systemScene=none); only the default scene is omitted
+    // to keep the canonical entry URL clean.
+    if (explicitSystemScene || system_scene !== (config.systemScene ?? '')) urlParams.set('systemScene', system_scene ?? 'none')
     else urlParams.delete('systemScene')
     if (portables !== DEFAULT_PORTABLES) urlParams.set('portables', portables)
     else urlParams.delete('portables')

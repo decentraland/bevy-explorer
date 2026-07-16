@@ -6,6 +6,7 @@
 
 import { useEffect } from 'react'
 import type { EngineRpc } from '../../engine/engineRpc'
+import { bootMode } from '../../lib/bootMode'
 import { PAGE_DIR } from '../../lib/publicUrl'
 
 // The main (Genesis City) realm. Exported: parcel launches pass it EXPLICITLY so a ?realm
@@ -45,10 +46,7 @@ function injectEngine(): void {
   // pkg/ fetch base: the versioned CDN in prod builds (BASE_URL), the served engine dir otherwise.
   window.PUBLIC_URL = new URL('engine', new URL(import.meta.env.BASE_URL, PAGE_DIR)).href
   window.__bevyBootConfig = {
-    systemScene: params.get('systemScene') ?? SYSTEM_SCENE,
-    // the URL sync (boot.js set_url_params) omits only the DEFAULT scene from the address bar,
-    // so an explicit ?systemScene= override survives reloads
-    defaultSystemScene: SYSTEM_SCENE,
+    systemScene: bootMode().systemScene ?? SYSTEM_SCENE,
     portables: params.get('portables') ?? undefined,
     preview: params.has('preview')
   }
@@ -68,12 +66,7 @@ function injectEngine(): void {
 declare global {
   interface Window {
     PUBLIC_URL?: string
-    __bevyBootConfig?: {
-      systemScene?: string
-      defaultSystemScene?: string
-      portables?: string
-      preview?: boolean
-    }
+    __bevyBootConfig?: { systemScene?: string; portables?: string; preview?: boolean }
   }
 }
 
