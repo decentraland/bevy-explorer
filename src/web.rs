@@ -308,15 +308,23 @@ fn update_url_params(
         return;
     };
     let (ui_scene, portables) = if let Some(s) = startup_scenes {
-        let scenes = s
+        // the ui scene is the super-user scene inserted at index 0 — when one was given at all
+        // (?systemScene=none boots with only regular startup scenes/portables)
+        let ui_scene = s
+            .scenes
+            .first()
+            .filter(|scene| scene.super_user)
+            .map(|scene| scene.source.clone());
+        let portables = s
             .scenes
             .iter()
+            .skip(ui_scene.is_some() as usize)
             .map(|scene| scene.source.clone())
             .collect::<Vec<_>>();
 
         (
-            scenes.first().cloned(),
-            scenes.get(1..).map(|scenes| scenes.join(";")),
+            ui_scene,
+            (!portables.is_empty()).then(|| portables.join(";")),
         )
     } else {
         (None, None)
@@ -409,7 +417,11 @@ fn decentraland_app_arguments(
                 .collect::<Vec<_>>(),
         )
         .filter(|startup_scenes| !startup_scenes.is_empty()),
-        ui_scene: (!ui_scene.is_empty()).then(|| ui_scene.to_owned()),
+        ui_scene: (!ui_scene.is_empty())
+            .then(|| ui_scene.to_owned())
+            .filter(|scene| scene != "none"),
+        // wasm has no engine-managed HUD: the react page hosting the engine is the HUD
+        hud: false,
         scene_params: Some(params.to_owned()),
         scene_threads: None,
         scene_load_distance: None,

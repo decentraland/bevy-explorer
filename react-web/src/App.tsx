@@ -35,6 +35,7 @@ import { useExitGuard } from './lib/useExitGuard'
 import { useHudScale } from './lib/useHudScale'
 import { useGlobalHotkey } from './lib/useGlobalHotkey'
 import { useMenuShortcuts } from './lib/useMenuShortcuts'
+import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
 import { MobileGate } from './features/gate/MobileGate'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
@@ -48,12 +49,11 @@ const params = new URLSearchParams(location.search)
 const MODE: 'mock' | 'engine' | 'native' =
   params.get('mock') === '1' ? 'mock' : params.get('native') === '1' ? 'native' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
-// Embedded mode (?hud=0): render ONLY the engine — no React HUD at all (no
-// sidebar, chat, pointer, panels, or the sign-in / loading overlays). Used by
-// the sites `/discover` embed, which frames the scene itself and supplies its
-// own chrome. Pair with ?guest=1 (auto guest-login) so the engine still enters
-// the world without the — now hidden — sign-in screen.
-const HIDE_HUD = params.get('hud') === '0'
+// Embedded/debug mode (?hud=0 or ?systemScene= — see lib/bootMode.ts): render ONLY the
+// engine — no React HUD at all (no sidebar, chat, pointer, panels, or the sign-in /
+// loading overlays). Something else owns the UI: the sites `/discover` embed's own
+// chrome, or the substituted ui scene in-engine.
+const HIDE_HUD = bootMode().hideHud
 // Gate: don't mount the HUD/engine where the engine can't run — mobile (no WebGPU/SharedArrayBuffer)
 // or a non-Chromium desktop browser (the engine bundle renders its own "Browser Not Supported" page
 // there — see deploy/web/index.html — which the HUD would otherwise cover, leaving login frozen at

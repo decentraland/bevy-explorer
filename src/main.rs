@@ -99,6 +99,10 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
 
     let test_scenes = args.value_from_str("--test_scenes").ok();
     let startup_scenes_preview = args.contains("--ui-preview");
+    // An explicit --ui (a scene source, or "none" for the engine's builtin ui) opts out of the
+    // react HUD entirely — the given ui scene drives instead (see lib.rs).
+    let ui_scene = args.value_from_str::<_, String>("--ui").ok();
+    let hud = ui_scene.is_none();
 
     let dcl_args = DecentralandArguments {
         server: args.value_from_str("--server").ok(),
@@ -121,9 +125,7 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
                     .collect::<Vec<_>>()
             })
             .ok(),
-        ui_scene: args
-            .value_from_str("--ui")
-            .ok()
+        ui_scene: ui_scene
             .or_else(|| {
                 // react HUD builds default to the bundled bridge-scene static export (a file
                 // realm, loaded with no server; `npm run bundle:native` in react-web generates
@@ -146,6 +148,7 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
                 ))
             })
             .filter(|scene| scene != "none"),
+        hud,
         scene_params: args.value_from_str("--params").ok(),
         scene_threads: args.value_from_str("--threads").ok(),
         scene_load_distance: args.value_from_str("--distance").ok(),

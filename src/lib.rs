@@ -142,6 +142,9 @@ pub struct DecentralandArguments {
     pub location: Option<IVec2>,
     pub startup_scenes: Option<Vec<StartupScene>>,
     pub ui_scene: Option<String>,
+    /// run the react HUD (native: the CEF overlay). False when an explicit --ui opted out in
+    /// favour of the engine-side ui, and on wasm (the react page hosts the engine itself).
+    pub hud: bool,
     pub scene_params: Option<String>,
     pub scene_threads: Option<usize>,
     pub scene_load_distance: Option<f32>,
@@ -194,9 +197,10 @@ impl DecentralandApp {
         app.add_plugins(wasm_default_plugins(&decentraland_app_config));
 
         // POC: react-web HUD composited in-engine from CEF offscreen rendering. Skipped in test
-        // mode (automated scene tests run headless and must not boot CEF or gate input).
+        // mode (automated scene tests run headless and must not boot CEF or gate input) and when
+        // an explicit --ui opted out of the HUD in favour of the engine-side ui.
         #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
-        if !decentraland_app_config.arguments.test_mode {
+        if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode {
             app.add_plugins(react_hud_cef::ReactHudCefPlugin {
                 // a non-default boot server (explicit --server or a configured home realm)
                 // IS the destination: injected into the page URL as ?realm= so the HUD skips
@@ -351,9 +355,9 @@ impl DecentralandApp {
 
         // POC: the react-web overlay is the HUD — turn off the engine's native UI so it doesn't
         // render its own login/chat/etc. behind the webview. (Overrides the inserts above.)
-        // Test mode keeps the native UI: the HUD plugin is skipped there.
+        // Test mode and an explicit --ui keep the native UI: the HUD plugin is skipped there.
         #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
-        if !decentraland_app_config.arguments.test_mode {
+        if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode {
             app.insert_resource(NativeUi {
                 login: false,
                 emote_wheel: false,
