@@ -240,12 +240,20 @@ fn particle_system_on_insert(
     }
 }
 
-fn particle_system_on_remove(trigger: Trigger<OnRemove, ParticleSystem>, mut commands: Commands) {
+fn particle_system_on_remove(
+    trigger: Trigger<OnRemove, ParticleSystem>,
+    mut commands: Commands,
+    bursting_effects: Query<&BurstingEffect>,
+) {
+    let entity = trigger.target();
     // On replace ParticleEffect will be replaced with a new value
     // On despawn ParticleEffect will cease to exist anyways
-    commands
-        .entity(trigger.target())
-        .try_remove::<ParticleEffect>();
+    commands.entity(entity).try_remove::<ParticleEffect>();
+    if let Ok(bursting_effect) = bursting_effects.get(entity) {
+        for burst in bursting_effect.collection() {
+            commands.entity(*burst).try_despawn();
+        }
+    }
 }
 
 fn make_particle_system(
