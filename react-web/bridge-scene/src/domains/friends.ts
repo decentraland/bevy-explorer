@@ -10,13 +10,14 @@ const toFriend = (f: FriendStatusData): Friend => ({
   address: f.address,
   name: f.name,
   picture: f.profilePictureUrl !== '' ? f.profilePictureUrl : undefined,
-  status: f.status
+  // the engine only emits "online" | "offline" | "away" (generated type widens to string)
+  status: f.status as Friend['status']
 })
 const toRequest = (r: FriendRequestData): FriendRequest => ({
   address: r.address,
   name: r.name,
   picture: r.profilePictureUrl !== '' ? r.profilePictureUrl : undefined,
-  message: r.message,
+  message: r.message ?? undefined,
   id: r.id,
   createdAt: r.createdAt
 })

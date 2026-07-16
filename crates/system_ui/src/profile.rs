@@ -511,7 +511,7 @@ fn process_profile(
         }
 
         if let Some(name_color) = set_avatar.name_color {
-            profile.content.name_color = name_color;
+            profile.content.name_color = name_color.to_color3();
         }
 
         profile.version += 1;
