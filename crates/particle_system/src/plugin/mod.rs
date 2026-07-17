@@ -230,6 +230,9 @@ fn particle_system_on_insert(
             debug!("Creating burst particle system");
             let cycles = burst.cycles.unwrap_or(1) as u32;
             let mut interval = burst.interval.unwrap_or(0.01);
+            if !interval.is_finite() {
+                interval = 0.;
+            }
             if cycles != 1 {
                 interval = interval.max(f32::EPSILON);
             }
