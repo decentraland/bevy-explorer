@@ -1,11 +1,12 @@
 // Chat: incoming messages, sending, and the nearby-players roster.
 //   from: BevyApi.getChatStream() / sendChat(), @dcl/sdk PlayerIdentityData (nearby roster)
 //         + the catalyst profile cache (profile.ts) for faces.
-import { engine, PlayerIdentityData } from '@dcl/sdk/ecs'
+import { engine, PlayerIdentityData, PointerLock } from '@dcl/sdk/ecs'
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
 import { fetchProfile, profileCache } from './profile'
 import { setChatBubble } from './nametags'
+import { onSystemAction } from './systemAction'
 import type { Ctx } from '../bridge'
 import type { NearbyMember } from '../../../src/engine/protocol'
 
@@ -36,6 +37,31 @@ export function registerChat(ctx: Ctx): void {
       console.error('[chat] stream relay failed', e)
     }
   })()
+
+  // Enter → focus chat. The engine reports its "Chat" action here regardless of DOM focus (the stream
+  // the old SDK7 scene used). This is the native path — there the engine reads keys off the OS window;
+  // on web the page-level Enter shortcut (useMenuShortcuts) focuses chat directly. systemAction.ts owns
+  // the stream (single-consumer per scene); we subscribe rather than open a second one.
+  let freeCursorPending = false
+  onSystemAction((a) => {
+    if (a.action === 'Chat' && a.pressed) {
+      freeCursorPending = true
+      ctx.send({ kind: 'focusChat' })
+    }
+  })
+
+  // Release the engine's camera-look on NATIVE when Enter opens chat: writing isPointerLocked=false on
+  // CameraEntity frees the engine's OS cursor grab so the mouse stops driving the camera while you type
+  // (mirrors the profile-card free-cursor). On web this write isn't reached — the engine never sees
+  // Enter there — so the release is page-side (requestFocusChat calls document.exitPointerLock). Must
+  // run in a frame system, NOT the async callback above: an async component write doesn't flush to the
+  // engine (the same reason nametag chat bubbles defer their writes).
+  ctx.push(() => {
+    if (!freeCursorPending) return
+    freeCursorPending = false
+    const pl = PointerLock.getMutableOrNull(engine.CameraEntity)
+    if (pl != null) pl.isPointerLocked = false
+  })
 
   // Nearby players (PlayerIdentityData set) → chat header "Nearby · N". Poll ~3s, push on change.
   let acc = 3

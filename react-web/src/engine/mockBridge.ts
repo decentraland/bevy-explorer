@@ -506,6 +506,15 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       reply({ kind: 'userProfile', address: msg.address, profile: richProfile(msg.address, name, false) })
       return
     }
+    // Slash-command effects (no engine in mock): echo a system chat line so the flow is testable in ?mock=1.
+    if (msg.kind === 'reloadScene') {
+      reply({ kind: 'chat', chat: { sender: '', message: 'Reloading the current scene…', channel: 'Nearby' } })
+      return
+    }
+    if (msg.kind === 'consoleCommand') {
+      reply({ kind: 'chat', chat: { sender: '', message: 'Console commands: reload, help, show_ui, noclip, speed, jump', channel: 'Nearby' } })
+      return
+    }
 
     switch (msg.method) {
       case 'getPreviousLogin':

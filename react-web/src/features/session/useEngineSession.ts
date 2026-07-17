@@ -6,10 +6,11 @@ import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type St
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/EngineErrorModal'
 import { DEFAULT_REALM } from '../engine/EngineHost'
-import { closeTopPopup } from '../../design'
+import { closeTopPopup, hasOpenPopup } from '../../design'
 import { bootMode } from '../../lib/bootMode'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
+import { parseChatCommand } from '../chat/chatCommands'
 import type {
   AppNotification,
   ChatMessage,
@@ -160,6 +161,14 @@ export interface ChatState {
   pendingMention: string | null
   /** Clear the queued mention once Chat has inserted it. */
   consumeMention: () => void
+  /** Messages received while closed, reset to 0 on open (drives the sidebar badge). */
+  unread: number
+  /** Bumped on every engine "focus chat" request (Enter, even while idle-open) — Chat watches
+   *  this to (re)focus the input beyond the open-transition case. */
+  focusTick: number
+  /** Open + (re)focus chat. Called by useMenuShortcuts' page-level Enter handler for when DOM
+   *  focus is on some other HUD element (a button would otherwise just activate on Enter). */
+  requestFocus: () => void
 }
 
 const MAX_CHAT_LINES = 200
@@ -292,7 +301,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [error, setError] = useState<string | null>(null)
   // Engine boots (autostart) while the login screen is up; this flips true once it can take commands.
   const [engineReady, setEngineReady] = useState(false)
-  // Real WASM-download/boot progress surfaced from the engine iframe (0–100) + the active step id,
+  // Real WASM-download/boot progress surfaced from the engine (0–100) + the active step id,
   // for the login footer bar. The engine's own loader is hidden (hideLoader=1).
   const [loadProgress, setLoadProgress] = useState(0)
   const [loadStep, setLoadStep] = useState<string | null>(null)
@@ -342,6 +351,37 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // avatarClick uses it to centre the card while the camera has the pointer locked.
   const cursorLockedRef = useRef(false)
   const [chatOpen, setChatOpen] = useState(true)
+  const [chatUnread, setChatUnread] = useState(0)
+  const [chatFocusTick, setChatFocusTick] = useState(0)
+  // Read inside the message-subscription closure (mounted once), not via a stale `chatOpen` capture.
+  const chatOpenRef = useRef(chatOpen)
+  chatOpenRef.current = chatOpen
+  // True while something is covering the chat (see the assignment below for what counts). Read by
+  // requestFocusChat from a callback that would otherwise close over a stale value. Popups aren't in
+  // here — they live in their own module store, so requestFocusChat asks it directly.
+  const chatCoveredRef = useRef(false)
+  // Open + (re)focus chat — the engine's "Chat" system action (Enter while the engine holds focus)
+  // and the page-level Enter shortcut (Enter while some other HUD element has focus, see
+  // useMenuShortcuts) both funnel into this single action.
+  const requestFocusChat = useCallback(() => {
+    // Enter is only a chat key when nothing is covering the chat. While the main menu, a popup or a
+    // modal is up it owns the screen, so Enter neither dismisses it nor focuses the chat behind it.
+    // hasOpenPopup() is read here, not during render: the popup stack is a module store that changes
+    // without re-rendering this hook.
+    if (chatCoveredRef.current || hasOpenPopup()) return
+    // Release the browser pointer lock so the mouse stops driving the camera and you can type. On web
+    // camera-look IS the pointer lock; exiting it here (the always-firing focus path) reliably releases
+    // it, and the engine self-heals — update_pointer_lock drops camera-look on
+    // `!document.pointerLockElement`. No-op on native (no DOM pointer lock; the engine frees its own OS
+    // cursor grab from the Chat action).
+    document.exitPointerLock?.()
+    // Friends is the only panel Enter closes: it shares the chat's bottom-left dock, so Chat renders
+    // null behind it (App's `hidden`) and focusing without closing it would do nothing on screen.
+    // The rest (profile, notifications, emotes) sit clear of the chat, so leave them open.
+    setFriendsOpen(false)
+    setChatOpen(true)
+    setChatFocusTick((t) => t + 1)
+  }, [])
   const [pendingMention, setPendingMention] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [friendsData, setFriendsData] = useState<{
@@ -438,6 +478,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
               -MAX_CHAT_LINES
             )
           )
+          if (!chatOpenRef.current) setChatUnread((n) => n + 1)
+          break
+        case 'focusChat':
+          requestFocusChat()
           break
         case 'chatVisibility':
           setChatOpen(msg.open)
@@ -528,7 +572,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Watch engine boot: the iframe autostarts on mount, so poll until it can take commands, then stop.
+  // Watch engine boot: the engine autostarts on mount, so poll until it can take commands, then stop.
   // Drivers without an engine (mock/tests) report ready immediately.
   useEffect(() => {
     const driver = driverRef.current
@@ -556,8 +600,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     return () => clearInterval(id)
   }, [])
 
-  // Runtime engine crashes (heartbeat stall) are detected by the bundle's watchdog and bridged to us
-  // as a same-origin postMessage (the iframe's own overlay is hidden behind react-web's HUD).
+  // Runtime engine crashes (heartbeat stall) are detected by the bundle's watchdog and surfaced to us
+  // directly (the engine's own crash overlay is hidden behind react-web's HUD).
   useEffect(() => {
     // Same-document engine (no iframe): the crash watchdog in engine/boot.js calls this directly
     // instead of rendering any overlay — React owns the error UI.
@@ -587,11 +631,46 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     }
   }, [playerReady])
 
-  const sendChat = useCallback((text: string) => {
-    const trimmed = text.trim()
-    if (trimmed)
-      driverRef.current?.send({ kind: 'sendChat', message: trimmed, channel: 'Nearby' })
+  // Inject a local "DCL System" line (empty sender → rendered as the system member) for command
+  // feedback (/help, /goto usage, /commands output) that must NOT be broadcast to other players.
+  const pushSystemMessage = useCallback((message: string) => {
+    setMessages((prev) =>
+      [...prev, { sender: '', message, channel: 'Nearby', id: chatId.current++, ts: Date.now() }].slice(-MAX_CHAT_LINES)
+    )
   }, [])
+
+  // Chat send doubles as the slash-command interceptor (parity with bevy-ui-scene's `sendChatMessage`):
+  // a recognized `/command` never reaches other players — it teleports, reloads, runs an engine console
+  // command, or echoes a system message. Anything else is sent as a normal Nearby message.
+  const sendChat = useCallback(
+    (text: string) => {
+      const cmd = parseChatCommand(text)
+      switch (cmd.kind) {
+        case 'send':
+          if (cmd.text) driverRef.current?.send({ kind: 'sendChat', message: cmd.text, channel: 'Nearby' })
+          break
+        case 'goto':
+          driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
+          break
+        case 'genesis':
+          driverRef.current?.send({ kind: 'changeRealm', realm: DEFAULT_REALM })
+          break
+        case 'world':
+          driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
+          break
+        case 'reload':
+          driverRef.current?.send({ kind: 'reloadScene' })
+          break
+        case 'commands':
+          driverRef.current?.send({ kind: 'consoleCommand', command: 'help' })
+          break
+        case 'system':
+          pushSystemMessage(cmd.message)
+          break
+      }
+    },
+    [pushSystemMessage]
+  )
 
   // Toggle one exclusive panel (closing chat + all others); optionally run onOpen.
   // All exclusive (one-at-a-time) panel setters. Toggling one closes chat + the rest.
@@ -639,6 +718,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setChatOpen((o) => !o)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Opening chat (any path — sidebar, Enter, a queued mention) clears the unread badge.
+  useEffect(() => {
+    if (chatOpen) setChatUnread(0)
+  }, [chatOpen])
   // "Mention" from a profile card opens chat and queues the @name; Chat consumes it into its draft.
   const mentionInChat = useCallback((name: string) => {
     panelSetters.forEach((set) => set(false))
@@ -648,11 +731,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const consumeMention = useCallback(() => setPendingMention(null), [])
 
+  // The full-screen main menu — mirrors App's `pageOpen`.
+  const menuPageOpen =
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || galleryOpen
+  // What takes the screen from the chat, for requestFocusChat: the main menu, the emote wheel, and
+  // the two modals App renders above everything (permission prompt, fatal error).
+  chatCoveredRef.current =
+    menuPageOpen || emotesOpen || permissionQueue.length > 0 || fatalError != null
+
   // Escape closes any open React panel/menu and returns to the world view. We only
   // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
   const anyPanelOpen =
-    friendsOpen || settingsOpen || profileOpen || notificationsOpen ||
-    emotesOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || galleryOpen
+    menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen
   useEffect(() => {
     if (!anyPanelOpen) return
     const onKey = (e: KeyboardEvent): void => {
@@ -776,7 +866,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       driverRef.current?.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
       // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
       // so only the chosen scene streams in. (No-op on the mock, which has no engine to launch.)
-      // Parcels pass the MAIN realm explicitly — the iframe's initialRealm may carry a ?realm
+      // Parcels pass the MAIN realm explicitly — the engine's initialRealm may carry a ?realm
       // override (possibly an invalid world after a failed validation), and inheriting it would
       // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
@@ -785,7 +875,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
-        // wasm trap). The readable message is captured on the iframe via enginePanic().
+        // wasm trap). The readable message is captured on the engine via enginePanic().
         const panic = driverRef.current?.enginePanic?.()?.message
         setFatalError({ message: panic ?? (e as Error)?.message ?? 'The engine failed to start.', source: 'launch' })
         driverRef.current?.clearEnginePanic?.()
@@ -1140,7 +1230,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     fatalError,
     reload: () => location.reload(),
     dismissFatal: () => {
-      // Re-arm the iframe watchdog (it left its `shown` flag set when it bridged the crash) so a later
+      // Re-arm the engine watchdog (it left its `shown` flag set when it bridged the crash) so a later
       // genuine crash still surfaces, and clear the stashed panic so it isn't re-read stale.
       driverRef.current?.rearmCrashWatchdog?.()
       driverRef.current?.clearEnginePanic?.()
@@ -1149,7 +1239,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     hover,
     cursorLocked,
     proximity,
-    chat: { messages, send: sendChat, open: chatOpen, toggle: toggleChat, members, mention: mentionInChat, pendingMention, consumeMention },
+    chat: {
+      messages,
+      send: sendChat,
+      open: chatOpen,
+      toggle: toggleChat,
+      members,
+      mention: mentionInChat,
+      pendingMention,
+      consumeMention,
+      unread: chatUnread,
+      focusTick: chatFocusTick,
+      requestFocus: requestFocusChat
+    },
     friends: {
       available: friendsData.available,
       list: friendsData.friends,

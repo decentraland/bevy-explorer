@@ -1,6 +1,6 @@
 // Page-side client for the bridge protocol (mock + reference). Transport-agnostic:
-// it only touches a BroadcastChannel, so the same client works whether the bridge
-// scene runs in this document or a same-origin iframe.
+// it only touches a BroadcastChannel, so the same client works wherever the bridge
+// scene runs (its JS isolate, same-origin).
 //
 // Like dcl-editor's bus, streams/events are delivered through ONE generic
 // `on(msg => …)` subscription; only request/response (login) is correlated by id.

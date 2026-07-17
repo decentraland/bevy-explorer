@@ -184,7 +184,7 @@
   align-items: center;
 }
 
-/* ---- engine boot progress (footer bar) — real weighted WASM-download progress from the iframe ---- */
+/* ---- engine boot progress (footer bar) — real weighted WASM-download progress from the engine ---- */
 .bootBar {
   position: absolute;
   left: 0;

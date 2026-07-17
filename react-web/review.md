@@ -58,7 +58,8 @@ each domain. Config: `playwright.visual.config.ts` (headless, 1600×900, `maxDif
 **Domains covered** (one baseline each, in `e2e/visual.spec.ts-snapshots/`):
 `showcase` · `login-fresh` · `login-welcome` · `world-hud` · `panel-friends` · `panel-settings` ·
 `panel-profile` · `panel-notifications` · `panel-emote-wheel` · `panel-communities` · `panel-map` ·
-`backpack-wearables` · `backpack-emotes`.
+`backpack-wearables` · `backpack-emotes` · `mobile-gate` · `browser-gate` · `gpu-gate` ·
+`engine-error-popup`.
 
 **Updating baselines** (only when the change is intentional):
 ```bash

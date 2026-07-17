@@ -1,9 +1,8 @@
 // HUD keyboard shortcuts (the [O]/[M]/[I]/[G]/[P]/[B]/[L]/[T]/[Z] hints shown in the nav + sidebar).
 //
-// These must fire even while playing: in the world the engine runs in a same-origin iframe that
-// grabs keyboard focus, so its keydown events dispatch to the IFRAME window — a plain `window`
-// listener never sees them. We attach to both the page window and the engine iframe window
-// (polling until it mounts) in capture phase, mirroring useGlobalHotkey.
+// These must fire even while playing: in the world the engine shares this document (its canvas is in
+// the page — EngineHost "Approach A", no iframe) and grabs keyboard focus, so we attach one
+// capture-phase `window` listener that sees the key wherever focus sits, mirroring useGlobalHotkey.
 
 import { useEffect, useRef } from 'react'
 import type { EngineSession } from '../features/session/useEngineSession'
@@ -23,7 +22,10 @@ const SHORTCUTS: Record<string, (s: EngineSession) => () => void> = {
   p: (s) => s.settings.toggle,
   b: (s) => s.emotes.toggle,
   l: (s) => s.friends.toggle,
-  t: (s) => s.chat.toggle
+  t: (s) => s.chat.toggle,
+  // Enter focuses chat (DCL convention) even when DOM focus sits on some other HUD control —
+  // otherwise the browser would just "activate" that focused element (e.g. click a button).
+  enter: (s) => s.chat.requestFocus
 }
 
 export function useMenuShortcuts(session: EngineSession): void {

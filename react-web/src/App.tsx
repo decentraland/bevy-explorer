@@ -37,13 +37,14 @@ import { useGlobalHotkey } from './lib/useGlobalHotkey'
 import { useMenuShortcuts } from './lib/useMenuShortcuts'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
-import { MobileGate } from './features/gate/MobileGate'
+import { hasUsableGpu } from './lib/gpu'
+import { MobileGate, GateChecking } from './features/gate/MobileGate'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
 import { EngineErrorModal } from './features/error/EngineErrorModal'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
-// ENGINE (default): real engine in a same-origin iframe + super-user bridge scene.
+// ENGINE (default): real engine in a same-document canvas (EngineHost — no iframe) + super-user bridge scene.
 // NATIVE (?native=1): HUD in a CEF offscreen webview over the native bevy engine — a JS shim
 // bridges this app's BroadcastChannel to the engine's native relay (no iframe, no mock).
 const MODE: 'mock' | 'engine' | 'native' =
@@ -57,9 +58,11 @@ const HIDE_HUD = bootMode().hideHud
 // Gate: don't mount the HUD/engine where the engine can't run — mobile (no WebGPU/SharedArrayBuffer)
 // or a non-Chromium desktop browser (the engine bundle renders its own "Browser Not Supported" page
 // there — see deploy/web/index.html — which the HUD would otherwise cover, leaving login frozen at
-// 0%). `?gate=1` forces the mobile variant, `?gate=browser` the browser variant (both for testing);
-// `?nogate=1` bypasses; the shared `bypass_browser_check` cookie ("try anyway") also bypasses.
-function gateReason(): 'mobile' | 'browser' | null {
+// 0%). `?gate=1` forces the mobile variant, `?gate=browser` the browser variant, `?gate=gpu` the
+// no-GPU variant (all for testing); `?nogate=1` bypasses; the shared `bypass_browser_check` cookie
+// ("try anyway") also bypasses. The mobile/browser checks are synchronous (UA); the real no-GPU
+// detection is async (see useGpuProbe) — `?gate=gpu` short-circuits it here for a deterministic gate.
+function gateReason(): 'mobile' | 'browser' | 'gpu' | null {
   // Precedence: a real device constraint wins over a test override — mobile is checked before
   // `?gate=browser`, so on an actual phone that param still (correctly) yields the mobile variant.
   // Native (CEF webview over native bevy): no browser/mobile gate — the host app IS the platform.
@@ -67,6 +70,7 @@ function gateReason(): 'mobile' | 'browser' | null {
   if (params.get('nogate') === '1') return null
   if (isMobile() || params.get('gate') === '1') return 'mobile'
   if (params.get('gate') === 'browser') return 'browser'
+  if (params.get('gate') === 'gpu') return 'gpu'
   if (!isChromiumBased() && !hasBypassCookie()) return 'browser'
   return null
 }
@@ -75,7 +79,14 @@ const GATE_REASON = gateReason()
 export function App(): React.JSX.Element {
   useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
   const showFps = useFpsToggle()
+  // Probe the GPU before booting the engine — but only on the real boot path (a sync gate already
+  // decided, mock, native, or the design showcase all skip it). Native renders through the host's
+  // bevy/wgpu, not WebGPU in this webview, so probing there would gate a HUD that runs fine.
+  // 'checking' shows a brief spinner.
+  const gpu = useGpuProbe(GATE_REASON != null || MODE === 'mock' || MODE === 'native' || SHOWCASE)
   if (GATE_REASON) return <MobileGate reason={GATE_REASON} />
+  if (gpu === 'checking') return <GateChecking />
+  if (gpu === 'blocked') return <MobileGate reason="gpu" />
   return (
     <ErrorBoundary>
       {SHOWCASE ? (
@@ -91,7 +102,7 @@ export function App(): React.JSX.Element {
 }
 
 // Perf overlay visibility: on via ?fps=1, toggle anytime with Ctrl/Cmd+Shift+F
-// (works even when the engine iframe holds keyboard focus — see useGlobalHotkey).
+// (works even when the engine holds keyboard focus — see useGlobalHotkey).
 function useFpsToggle(): boolean {
   const [on, setOn] = useState(params.get('fps') === '1')
   useGlobalHotkey(
@@ -99,6 +110,29 @@ function useFpsToggle(): boolean {
     () => setOn((v) => !v)
   )
   return on
+}
+
+// Async pre-boot GPU probe. 'checking' → 'ok' (boot) or 'blocked' (→ the no-GPU gate). `skip` (a sync
+// gate already decided, mock, native, or showcase) resolves immediately to 'ok'. `?nogate=1` and the shared
+// bypass cookie skip the gate too; `?gate=gpu` is handled synchronously in gateReason(), so this only
+// runs the real detection path.
+function useGpuProbe(skip: boolean): 'checking' | 'ok' | 'blocked' {
+  const [state, setState] = useState<'checking' | 'ok' | 'blocked'>(skip ? 'ok' : 'checking')
+  useEffect(() => {
+    if (skip) return
+    if (params.get('nogate') === '1' || hasBypassCookie()) {
+      setState('ok')
+      return
+    }
+    let cancelled = false
+    void hasUsableGpu().then((ok) => {
+      if (!cancelled) setState(ok ? 'ok' : 'blocked')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [skip])
+  return state
 }
 
 function Hud(): React.JSX.Element {

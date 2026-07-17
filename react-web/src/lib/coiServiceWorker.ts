@@ -10,7 +10,7 @@
 // avatar wearables all fail to download.
 import { PAGE_DIR } from './publicUrl'
 
-// One-shot reload guard. Deliberately NOT the engine's `sw_reloaded` — the iframe shares this
+// One-shot reload guard. Deliberately NOT the engine's `sw_reloaded` — the engine boot shares this
 // origin's sessionStorage and runs its own copy of the dance (engine/main.js).
 const FLAG = 'coi_sw_reloaded'
 
