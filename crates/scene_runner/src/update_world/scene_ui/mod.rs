@@ -1194,12 +1194,11 @@ fn layout_scene_ui(
                         .map(|t| (t.root, content))
                 });
 
-                let (scroll_entity, content_entity) = if let Some(Ok((scrollable, content))) =
-                    scroll_template
-                {
-                    ent_cmds.try_insert(FocusPolicy::Block);
+                let (scroll_entity, content_entity) =
+                    if let Some(Ok((scrollable, content))) = scroll_template {
+                        ent_cmds.try_insert(FocusPolicy::Block);
 
-                    ent_cmds
+                        ent_cmds
                     .commands()
                     .entity(scrollable)
                     .try_insert((
@@ -1229,10 +1228,10 @@ fn layout_scene_ui(
                         )
                     ));
 
-                    (Some(scrollable), content)
-                } else {
-                    (None, ui_entity)
-                };
+                        (Some(scrollable), content)
+                    } else {
+                        (None, ui_entity)
+                    };
 
                 let mut interactors = HashSet::new();
                 if ui_transform.block_pointer {

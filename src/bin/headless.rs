@@ -8,6 +8,7 @@
 
 use std::{sync::OnceLock, time::Duration};
 
+use bevy::tasks::IoTaskPool;
 use bevy::{
     app::ScheduleRunnerPlugin,
     diagnostic::{DiagnosticsPlugin, FrameCountPlugin},
@@ -21,14 +22,8 @@ use bevy::{
     state::app::StatesPlugin,
     time::TimePlugin,
 };
-use bevy::tasks::IoTaskPool;
 use bevy_dui::DuiPlugin;
 use collectibles::base_wearables;
-use comms::{
-    global_crdt::{ForeignPlayer, GlobalCrdtState},
-    profile::{CurrentUserProfile, ProfileCache, UserProfile},
-    AdapterManager, CommsPlugin, ServerSceneRooms,
-};
 use common::{
     inputs::InputMap,
     profile::SerializedProfile,
@@ -42,13 +37,18 @@ use common::{
     },
     util::{TaskCompat, TaskExt, UtilsPlugin},
 };
+use comms::{
+    global_crdt::{ForeignPlayer, GlobalCrdtState},
+    profile::{CurrentUserProfile, ProfileCache, UserProfile},
+    AdapterManager, CommsPlugin, ServerSceneRooms,
+};
+use console::ConsolePlugin;
 use dcl::interface::CrdtType;
+use dcl::SceneLogMessage;
 use dcl_component::{
     proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData},
     SceneComponentId, SceneEntityId,
 };
-use console::ConsolePlugin;
-use dcl::SceneLogMessage;
 use dcl_deno_ipc::init_runtime;
 use input_manager::{CumulativeAxisData, InputPriorities};
 use ipfs::{map_realm_name, IpfsAssetServer, IpfsIoPlugin};
@@ -215,12 +215,18 @@ fn main() {
     let dirs = platform::project_directories().unwrap();
     let log_dir = dirs.data_local_dir();
     std::fs::create_dir_all(log_dir).unwrap();
-    let session_log = log_dir.join(format!("headless-{}.log", session_time.format("%Y%m%d-%H%M%S")));
+    let session_log = log_dir.join(format!(
+        "headless-{}.log",
+        session_time.format("%Y%m%d-%H%M%S")
+    ));
     SESSION_LOG
         .set(session_log.to_string_lossy().into_owned())
         .unwrap();
 
     // v8 runtime must init on the main thread before the App is built (matches the tests).
+    // Headless is always a server: a lost JS sidecar must restart the whole engine (the
+    // desktop client and the scene_runner tests leave this false).
+    dcl_deno_ipc::EXIT_ON_SIDECAR_LOSS.store(true, std::sync::atomic::Ordering::SeqCst);
     init_runtime().unwrap();
 
     let args = parse_args();
@@ -266,7 +272,8 @@ fn main() {
     let mut app = App::new();
 
     app.add_plugins(LogPlugin {
-        filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error,symphonia=warn".to_string(),
+        filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error,symphonia=warn"
+            .to_string(),
         ..default()
     });
 
@@ -319,10 +326,9 @@ fn main() {
 
     // scene text processing needs the SDK fonts; embedded assets provide them
     app.add_plugins(assets::EmbedAssetsPlugin);
-    app.add_systems(
-        Startup,
-        |asset_server: Res<AssetServer>| ui_core::init_fonts(&asset_server),
-    );
+    app.add_systems(Startup, |asset_server: Res<AssetServer>| {
+        ui_core::init_fonts(&asset_server)
+    });
 
     // world-storage delegations (per scene; CLI/env value is the single-scene fallback)
     let mut delegations = StorageDelegations::default();
@@ -605,10 +611,7 @@ static TIMEOUT: OnceLock<Option<f32>> = OnceLock::new();
 /// Answer queued permission requests by the headless policy. The Ask queue's only
 /// consumer is the omitted system_ui crate, so anything that lands here (a permission
 /// type missing from default_permissions) would otherwise hang its scene promise forever.
-fn drain_permissions(
-    mut manager: ResMut<PermissionManager>,
-    config: Res<AppConfig>,
-) {
+fn drain_permissions(mut manager: ResMut<PermissionManager>, config: Res<AppConfig>) {
     while let Some(req) = manager.pending.pop_front() {
         let allow = matches!(
             config.default_permissions.get(&req.ty),
@@ -690,11 +693,7 @@ fn free_gltf_textures(
         };
         let Some(gltf) = gltfs.get(*id) else { continue };
         let mut freed = 0usize;
-        for h_material in gltf
-            .materials
-            .iter()
-            .chain(gltf.named_materials.values())
-        {
+        for h_material in gltf.materials.iter().chain(gltf.named_materials.values()) {
             let Some(material) = materials.get_mut(h_material) else {
                 continue;
             };
@@ -786,6 +785,7 @@ fn request_delegation_renewals(
 // ---------------- orchestrated-mode systems ----------------
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
 fn drain_control_commands(
     control: Res<ControlChannel>,
     mut orch: ResMut<OrchestratedScenes>,
@@ -806,14 +806,11 @@ fn drain_control_commands(
             Ok(delegation) => {
                 // reject a renewal that rebinds to another scene's credential
                 // (hammurabi's same-scene guard)
-                let same_scene = delegations
-                    .by_scene
-                    .get(scene_id)
-                    .is_none_or(|current| {
-                        current.world == delegation.world
-                            && current.scene_id == delegation.scene_id
-                            && current.parcel == delegation.parcel
-                    });
+                let same_scene = delegations.by_scene.get(scene_id).is_none_or(|current| {
+                    current.world == delegation.world
+                        && current.scene_id == delegation.scene_id
+                        && current.parcel == delegation.parcel
+                });
                 if !same_scene {
                     ctl_emit(&serde_json::json!({
                         "type": "error", "scene": scene_id,
@@ -832,37 +829,36 @@ fn drain_control_commands(
             })),
         }
     };
-    let connect =
-        |scene_id: &str,
-         adapter: &str,
-         manager: &mut AdapterManager,
-         commands: &mut Commands,
-         server_rooms: &mut ServerSceneRooms| {
-            // ONLY livekit adapters: any other protocol (signed-login, ws-room,
-            // fixed-adapter recursion) could make the engine sign a remote-chosen
-            // payload with its identity. Applies to orchestrator input AND
-            // gatekeeper mint responses alike.
-            if !adapter.starts_with("livekit:") {
-                ctl_emit(&serde_json::json!({
-                    "type": "scene-failed", "scene": scene_id,
-                    "error": format!("refusing non-livekit adapter: {}", &adapter[..adapter.len().min(24)])
-                }));
-                return;
-            }
-            if let Some(ent) = manager.connect(adapter) {
-                commands
-                    .entity(ent)
-                    .try_insert(comms::SceneRoom(scene_id.to_owned()));
-                server_rooms
-                    .0
-                    .insert(scene_id.to_owned(), (adapter.to_owned(), ent));
-                ctl_emit(&serde_json::json!({"type": "scene-room-connected", "scene": scene_id}));
-            } else {
-                ctl_emit(&serde_json::json!({
-                    "type": "error", "scene": scene_id, "error": "adapter connect failed"
-                }));
-            }
-        };
+    let connect = |scene_id: &str,
+                   adapter: &str,
+                   manager: &mut AdapterManager,
+                   commands: &mut Commands,
+                   server_rooms: &mut ServerSceneRooms| {
+        // ONLY livekit adapters: any other protocol (signed-login, ws-room,
+        // fixed-adapter recursion) could make the engine sign a remote-chosen
+        // payload with its identity. Applies to orchestrator input AND
+        // gatekeeper mint responses alike.
+        if !adapter.starts_with("livekit:") {
+            ctl_emit(&serde_json::json!({
+                "type": "scene-failed", "scene": scene_id,
+                "error": format!("refusing non-livekit adapter: {}", &adapter[..adapter.len().min(24)])
+            }));
+            return;
+        }
+        if let Some(ent) = manager.connect(adapter) {
+            commands
+                .entity(ent)
+                .try_insert(comms::SceneRoom(scene_id.to_owned()));
+            server_rooms
+                .0
+                .insert(scene_id.to_owned(), (adapter.to_owned(), ent));
+            ctl_emit(&serde_json::json!({"type": "scene-room-connected", "scene": scene_id}));
+        } else {
+            ctl_emit(&serde_json::json!({
+                "type": "error", "scene": scene_id, "error": "adapter connect failed"
+            }));
+        }
+    };
 
     // poll pending preview-gatekeeper mints
     let mut i = 0;
@@ -1002,7 +998,10 @@ fn drain_control_commands(
 fn demux_scene_logs(
     scenes: Query<(Entity, &RendererSceneContext)>,
     mut receivers: Local<
-        std::collections::HashMap<Entity, (String, common::util::RingBufferReceiver<SceneLogMessage>)>,
+        std::collections::HashMap<
+            Entity,
+            (String, common::util::RingBufferReceiver<SceneLogMessage>),
+        >,
     >,
 ) {
     for (ent, ctx) in scenes.iter() {

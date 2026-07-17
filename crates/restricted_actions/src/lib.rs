@@ -830,7 +830,9 @@ fn spawn_portable(
         // authoritative-server mode: a tenant scene must not spawn arbitrary portables
         // in the shared engine (cross-tenant resource-exhaustion DoS).
         if is_server.0 {
-            response.send(Err("portable experiences are disabled in server mode".to_owned()));
+            response.send(Err(
+                "portable experiences are disabled in server mode".to_owned()
+            ));
             continue;
         }
         perms.check(
@@ -1349,6 +1351,7 @@ fn event_player_disconnected(
 }
 
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 fn event_player_moved_scene(
     mut enter_senders: Local<HashMap<Entity, RpcEventSender>>,
     mut leave_senders: Local<HashMap<Entity, RpcEventSender>>,
@@ -1545,7 +1548,9 @@ fn open_nft_dialog(
         // absent, so proceeding would hit apply_template(...).unwrap() and panic the
         // shared engine, taking down every co-tenant scene. Deny cleanly instead.
         if is_server.0 {
-            response.send(Err("openNftDialog is not supported on a headless server".to_owned()));
+            response.send(Err(
+                "openNftDialog is not supported on a headless server".to_owned()
+            ));
             continue;
         }
 

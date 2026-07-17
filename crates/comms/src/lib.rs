@@ -234,6 +234,7 @@ pub struct DisableSceneRoomGatekeeper(pub bool);
 pub struct DisableRealmComms(pub bool);
 
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 fn connect_scene_room(
     mut commands: Commands,
     mut manager: AdapterManager,

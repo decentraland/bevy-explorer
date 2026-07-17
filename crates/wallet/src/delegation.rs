@@ -77,10 +77,10 @@ impl StorageDelegation {
         let world = value_for("World:")
             .map(|w| w.to_lowercase())
             .ok_or_else(|| anyhow::anyhow!("delegation claim missing World"))?;
-        let scene_id =
-            value_for("SceneId:").ok_or_else(|| anyhow::anyhow!("delegation claim missing SceneId"))?;
-        let parcel =
-            value_for("Parcel:").ok_or_else(|| anyhow::anyhow!("delegation claim missing Parcel"))?;
+        let scene_id = value_for("SceneId:")
+            .ok_or_else(|| anyhow::anyhow!("delegation claim missing SceneId"))?;
+        let parcel = value_for("Parcel:")
+            .ok_or_else(|| anyhow::anyhow!("delegation claim missing Parcel"))?;
         let expiration_iso = value_for("Expiration:")
             .ok_or_else(|| anyhow::anyhow!("delegation claim missing Expiration"))?;
         let expiration = chrono::DateTime::parse_from_rfc3339(&expiration_iso)
@@ -224,7 +224,9 @@ mod test {
             &"http://storage.decentraland.org/values/x".parse().unwrap()
         ));
         assert!(!is_storage_request(
-            &"https://storage.decentraland.org.evil.com/values".parse().unwrap()
+            &"https://storage.decentraland.org.evil.com/values"
+                .parse()
+                .unwrap()
         ));
     }
 }
