@@ -285,6 +285,30 @@
     color 0.3s ease,
     transform 0.25s ease;
 }
+/* Hover unequip button on an occupied category slot (top-right), like Unity/bevy-ui-scene. */
+.catUnequip {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-pill);
+  background-color: var(--scrim);
+  color: var(--text);
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) ease;
+  pointer-events: none;
+}
+.catTile:hover .catUnequip {
+  opacity: 1;
+  pointer-events: auto;
+}
 
 /* Grid area. */
 .gridArea {

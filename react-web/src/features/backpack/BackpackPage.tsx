@@ -48,16 +48,23 @@ const CATEGORY_ORDER = [
   'hat', 'eyewear', 'mask', 'head', 'tiara', 'top_head', 'earring', 'helmet', 'skin'
 ]
 
+// Categories that must always keep something equipped, so their slot shows no unequip button —
+// mirrors Unity's IsUnequippable gate (BackpackGridController: not body_shape/eyes/eyebrows/mouth).
+const REQUIRED_CATEGORIES = new Set(['body_shape', 'eyes', 'eyebrows', 'mouth'])
+
 function CategoryTile({
   cat,
   active,
   equipped,
-  onClick
+  onClick,
+  onUnequip
 }: {
   cat: string
   active: boolean
   equipped?: Wearable
   onClick: () => void
+  /** Present only when the slot holds a removable equipped item — renders the hover unequip button. */
+  onUnequip?: () => void
 }): React.JSX.Element {
   const [failed, setFailed] = useState(false)
   return (
@@ -72,6 +79,17 @@ function CategoryTile({
         <img className={styles.catThumb} src={equipped.thumbnail} alt="" onError={() => setFailed(true)} />
       ) : (
         <span className={styles.catGlyph}><CategoryIcon category={cat} /></span>
+      )}
+      {onUnequip != null && (
+        <span
+          className={styles.catUnequip}
+          role="button"
+          aria-label={`Unequip ${humanize(cat)}`}
+          title="Unequip"
+          onClick={(e) => { e.stopPropagation(); onUnequip() }}
+        >
+          ✕
+        </span>
       )}
     </button>
   )
@@ -316,8 +334,10 @@ export function BackpackPage({
   const select = (w: Wearable): void => {
     setSelected(w)
   }
+  // Clicking a category filters the grid to it; clicking the already-selected one again clears the
+  // filter back to "all" (deselect) — matches Unity's OnSlotButtonPressed toggle.
   const pick = (c: string): void => {
-    setCat(c)
+    setCat((prev) => (prev === c ? 'all' : c))
     setPage(0)
   }
   // Select a saved outfit — live-preview its wearables on the avatar without persisting.
@@ -428,9 +448,19 @@ export function BackpackPage({
               ) : (
               <div className={styles.catalog}>
                 <div className={styles.catColumn}>
-                  {categories.map((c) => (
-                    <CategoryTile key={c} cat={c} active={cat === c} equipped={equippedByCat.get(c)} onClick={() => pick(c)} />
-                  ))}
+                  {categories.map((c) => {
+                    const eq = equippedByCat.get(c)
+                    return (
+                      <CategoryTile
+                        key={c}
+                        cat={c}
+                        active={cat === c}
+                        equipped={eq}
+                        onClick={() => pick(c)}
+                        onUnequip={eq != null && !REQUIRED_CATEGORIES.has(c) ? () => toggleEquip(eq) : undefined}
+                      />
+                    )
+                  })}
                 </div>
                 <div className={styles.gridArea}>
                   <div className={styles.chips}>

@@ -55,6 +55,27 @@ describe('backpack page clicks', () => {
     expect(vi.mocked(backpack.preview)).toHaveBeenCalledWith(null)
   })
 
+  it('clicking the selected category again clears the filter back to all', async () => {
+    const query = vi.fn()
+    renderBackpack({ query })
+    const hatCategory = screen.getByRole('button', { name: 'Hat' })
+    await userEvent.click(hatCategory)
+    expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'hat' }))
+    await userEvent.click(hatCategory)
+    expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ category: undefined }))
+  })
+
+  it('an equipped removable category slot has a hover unequip button that unequips it', async () => {
+    const backpack = renderBackpack({ list: [], equipped: [wearable({ category: 'hat', equipped: true })] })
+    await userEvent.click(screen.getByRole('button', { name: 'Unequip Hat' }))
+    expect(vi.mocked(backpack.equip)).toHaveBeenCalledWith([])
+  })
+
+  it('a required category (eyes) shows no unequip button even when equipped', () => {
+    renderBackpack({ list: [], equipped: [wearable({ urn: 'urn:eyes', category: 'eyes', equipped: true })] })
+    expect(screen.queryByRole('button', { name: 'Unequip Eyes' })).toBeNull()
+  })
+
   it('switching to the Emotes tab shows the equipped emotes', async () => {
     renderBackpack()
     await userEvent.click(screen.getByRole('button', { name: 'Emotes' }))
