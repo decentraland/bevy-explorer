@@ -246,6 +246,8 @@ fn particle_system_on_insert(
                 &mut effect_assets,
             );
         }
+    } else {
+        commands.entity(entity).despawn_related::<BurstingEffect>();
     }
 }
 
