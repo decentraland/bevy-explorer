@@ -56,7 +56,7 @@ use nft::asset_source::Nft;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
-    initialize_scene::{PortableScenes, PortableSource, PARCEL_SIZE},
+    initialize_scene::{PortableScenes, PortableSource, SceneHash, SceneLoading, PARCEL_SIZE},
     permissions::PermissionManager,
     renderer_context::RendererSceneContext,
     SceneRunnerPlugin,
@@ -422,7 +422,7 @@ fn main() {
                     request_delegation_renewals,
                 ),
             )
-            .add_systems(PostUpdate, emit_scene_status);
+            .add_systems(PostUpdate, (emit_scene_status, emit_failed_scene_status));
         ctl_emit(&serde_json::json!({"type": "starting", "realm": args.realm}));
     }
 
@@ -763,6 +763,10 @@ fn request_delegation_renewals(
         .as_millis() as i64;
     let elapsed = time.elapsed_secs();
 
+    // drop throttle state for scenes no longer holding a delegation (removed scenes),
+    // so this map doesn't grow unbounded over the engine's lifetime
+    last_request.retain(|scene, _| delegations.by_scene.contains_key(scene));
+
     for (scene, delegation) in &delegations.by_scene {
         if now_ms < delegation.expiration - REFRESH_BUFFER_MS {
             continue;
@@ -1036,6 +1040,16 @@ fn emit_scene_status(
     mut live: Local<std::collections::HashSet<String>>,
     mut broken: Local<std::collections::HashSet<String>>,
 ) {
+    // Prune dedup entries for scenes that no longer exist, so a scene that is removed
+    // and later re-added (same hash, fresh entity) re-emits scene-live / scene-broken.
+    // Without this the orchestrator's remove+re-add recovery works only once per scene
+    // per engine lifetime — a re-broken scene would silently stay broken while the
+    // orchestrator still believes it is live.
+    let current: std::collections::HashSet<String> =
+        scenes.iter().map(|ctx| ctx.hash.clone()).collect();
+    live.retain(|hash| current.contains(hash));
+    broken.retain(|hash| current.contains(hash));
+
     for ctx in scenes.iter() {
         if ctx.tick_number >= 1 && !live.contains(&ctx.hash) {
             live.insert(ctx.hash.clone());
@@ -1055,6 +1069,37 @@ fn emit_scene_status(
                 "type": "scene-status", "scene": ctx.hash,
                 "tick": ctx.tick_number, "broken": ctx.broken,
             }));
+        }
+    }
+}
+
+/// Report scenes that FAILED to load (bad/missing entity definition, JS init error)
+/// to the orchestrator. A failed scene never gains a RendererSceneContext, so neither
+/// emit_scene_status nor the supervisor observes it — without this it sits invisibly
+/// wedged in live_scenes, and the orchestrator keeps it "active" so join events never
+/// respawn it. Emit scene-broken (deduped per live entity) so the orchestrator runs
+/// its bounded remove + re-add recovery, which re-fetches the entity and clears a
+/// transient content-server flake. Keyed by Entity, so a re-added scene (fresh entity,
+/// same hash) reports again and the per-scene restart budget applies.
+fn emit_failed_scene_status(
+    loading: Query<(Entity, &SceneHash, &SceneLoading)>,
+    mut reported: Local<std::collections::HashSet<Entity>>,
+    orchestrated: Option<Res<OrchestratedScenes>>,
+) {
+    if orchestrated.is_none() {
+        return;
+    }
+    let failed: Vec<(Entity, &str)> = loading
+        .iter()
+        .filter(|(_, _, state)| matches!(state, SceneLoading::Failed))
+        .map(|(entity, hash, _)| (entity, hash.0.as_str()))
+        .collect();
+    let current: std::collections::HashSet<Entity> = failed.iter().map(|(e, _)| *e).collect();
+    reported.retain(|e| current.contains(e));
+    for (entity, hash) in failed {
+        if reported.insert(entity) {
+            error!("[headless] scene {hash} failed to load");
+            ctl_emit(&serde_json::json!({"type": "scene-broken", "scene": hash}));
         }
     }
 }

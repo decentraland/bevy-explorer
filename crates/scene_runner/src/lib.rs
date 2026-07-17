@@ -699,6 +699,19 @@ impl ContainingScene<'_, '_> {
     }
 }
 
+/// Replace the value of an `access_token` query param with `REDACTED`, preserving
+/// the rest of the adapter string. Used to keep the server-minted LiveKit room
+/// credential out of RealmInfo (which scene JS can read via op_realm_information).
+fn redact_access_token(adapter: &str) -> String {
+    match adapter.split_once("access_token=") {
+        Some((prefix, rest)) => {
+            let tail = rest.find('&').map(|i| &rest[i..]).unwrap_or("");
+            format!("{prefix}access_token=REDACTED{tail}")
+        }
+        None => adapter.to_owned(),
+    }
+}
+
 fn send_scene_updates(
     mut scenes: Query<(
         Entity,
@@ -797,8 +810,18 @@ fn send_scene_updates(
     let room = data_channel
         .0
         .as_ref()
-        .and_then(|(scene, addr, _)| (scene.scene_id == context.hash).then_some(addr))
-        .or_else(|| server_rooms.0.get(&context.hash).map(|(addr, _)| addr));
+        .and_then(|(scene, addr, _)| (scene.scene_id == context.hash).then_some(addr.clone()))
+        // Server-mode room adapter is `livekit:...?access_token=<JWT>` minted by the
+        // orchestrator for THIS scene. Redact the token: RealmInfo is exposed to scene
+        // JS via op_realm_information, so passing it verbatim would let a hostile scene
+        // lift the authoritative-server room credential and impersonate the server in
+        // its own room. Scenes only need to know they are in a connected room.
+        .or_else(|| {
+            server_rooms
+                .0
+                .get(&context.hash)
+                .map(|(addr, _)| redact_access_token(addr))
+        });
     let base_url = realm
         .about_url
         .strip_suffix("/about")
@@ -822,7 +845,7 @@ fn send_scene_updates(
             })
             .unwrap_or("offline".to_owned()),
         is_preview: preview_mode.is_preview,
-        room: room.cloned(),
+        room: room.clone(),
         is_connected_scene_room: Some(room.is_some()),
     };
     buf.clear();

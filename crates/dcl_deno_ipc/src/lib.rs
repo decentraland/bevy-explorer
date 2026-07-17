@@ -151,7 +151,14 @@ pub fn init_runtime() -> anyhow::Result<()> {
 
         let _ = rt.block_on(async move { tokio::join!(f_out, f_in) });
 
-        child.wait().unwrap();
+        // The IPC loops only return when the sidecar connection breaks — i.e. the JS
+        // runtime died. Without it the engine can run no scene code, and nothing here
+        // can respawn it, so a half-dead engine would keep looking healthy forever
+        // (in orchestrated mode the parent's engine-down recovery never triggers).
+        // Exit hard so the supervisor restarts the whole process.
+        error!("dcl_deno_ipc runtime terminated (JS sidecar lost); exiting process");
+        let _ = child.wait();
+        std::process::exit(1);
     });
 
     init_rx.blocking_recv()?

@@ -1983,6 +1983,18 @@ fn handle_sign_request(
     })
 }
 
+/// True when a readFile target is shaped like `<scheme>://…` — the form
+/// `IpfsType::url_target` treats as a directly-fetchable URL rather than a scene
+/// content file. Used to block that fallthrough on the authoritative server.
+fn filename_looks_like_url(filename: &str) -> bool {
+    match filename.find("://") {
+        Some(idx) if idx > 0 => filename[..idx]
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.')),
+        _ => false,
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn handle_read_file(
     mut events: EventReader<RpcCall>,
@@ -1993,6 +2005,7 @@ fn handle_read_file(
         )>,
     >,
     ipfs: IpfsAssetServer,
+    is_server: Res<IsServer>,
 ) {
     for ev in events.read() {
         if let RpcCall::ReadFile {
@@ -2001,6 +2014,20 @@ fn handle_read_file(
             response,
         } = ev
         {
+            // SSRF guard — SERVER MODE ONLY. readFile must serve only the scene's own
+            // content files. When a filename is missing from the content map,
+            // IpfsType::url_target falls through to fetching it as a raw URL with an
+            // unguarded, redirect-following client, so a scene could
+            // readFile("http://169.254.169.254/…") and read cloud metadata / loopback /
+            // RFC1918 on the shared task. Refuse any scheme://-shaped filename on the
+            // authoritative server; desktop and web keep their existing behaviour (own
+            // machine / browser sandbox).
+            if is_server.0 && filename_looks_like_url(filename) {
+                response.send(Err(format!(
+                    "readFile: absolute URLs are not permitted on the authoritative server ({filename})"
+                )));
+                continue;
+            }
             let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
                 scene_hash.to_owned(),
                 filename.to_owned(),
