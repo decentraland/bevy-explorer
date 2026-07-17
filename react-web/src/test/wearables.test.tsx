@@ -91,4 +91,53 @@ describe('wearables domain', () => {
     // Categories survive the rebuild, so the per-category slots stay correct.
     expect(h.session().backpack.equipped.map((w) => w.category)).toEqual(['hat', 'feet', 'lower_body'])
   })
+
+  // Regression: equipping a saved outfit deploys via setAvatar and (like every equip) draws no
+  // wearables re-emit, so the session must rebuild `backpack.equipped` from the outfit itself. Before
+  // the fix it stayed stale and the next single-item equip (equipSetWith) dropped the outfit's other
+  // wearables. (The mock masks this by re-emitting; this test never re-emits.)
+  it('equipping a saved outfit rebuilds the equipped set so a later equip keeps the outfit', async () => {
+    const shirt = { ...wearable('urn:shirt'), category: 'upper_body' }
+    const pants = { ...wearable('urn:pants'), category: 'lower_body' }
+    const hat = { ...wearable('urn:hat'), category: 'hat' }
+
+    const h = renderSession()
+    await enterAsGuest(h)
+    // Catalog pool holds every wearable the outfit + later equip resolve against.
+    act(() => h.session().backpack.query({ page: 0, pageSize: 16 }))
+    const q = h.driver.last('catalogQuery') as { requestId: number }
+    h.driver.emit({ kind: 'catalogPage', catalog: 'wearables', items: [shirt, pants, hat], total: 3, requestId: q.requestId })
+    // A saved outfit at slot 0 with two wearables.
+    h.driver.emit({
+      kind: 'outfits',
+      metadata: {
+        outfits: [
+          {
+            slot: 0,
+            outfit: {
+              bodyShape: 'urn:body',
+              eyes: { color: { r: 0, g: 0, b: 0 } },
+              hair: { color: { r: 0, g: 0, b: 0 } },
+              skin: { color: { r: 0, g: 0, b: 0 } },
+              wearables: ['urn:shirt', 'urn:pants'],
+              forceRender: []
+            }
+          }
+        ],
+        namesForExtraSlots: []
+      }
+    })
+
+    // Equip the outfit — deploys via equipOutfit; no wearables re-emit follows.
+    act(() => h.session().backpack.equipOutfit(0))
+    expect(h.driver.last('equipOutfit')).toEqual({ kind: 'equipOutfit', slot: 0 })
+    expect(h.session().backpack.equipped.map((w) => w.urn)).toEqual(['urn:shirt', 'urn:pants'])
+
+    // Now equip a hat (a new category) — before the fix this deployed just [hat], dropping the outfit.
+    const equipSetWith = (equipped: Wearable[], w: Wearable): string[] =>
+      [...equipped.filter((x) => x.category !== w.category).map((x) => x.urn), w.urn]
+    act(() => h.session().backpack.equip(equipSetWith(h.session().backpack.equipped, hat)))
+    expect(h.driver.last('equip')).toEqual({ kind: 'equip', urns: ['urn:shirt', 'urn:pants', 'urn:hat'] })
+    expect(h.session().backpack.equipped.map((w) => w.urn)).toEqual(['urn:shirt', 'urn:pants', 'urn:hat'])
+  })
 })

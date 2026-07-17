@@ -443,6 +443,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const catalogItemsRef = useRef<Wearable[]>([])
   useEffect(() => { catalogItemsRef.current = catalogItems }, [catalogItems])
   const [outfits, setOutfits] = useState<OutfitsMetadata>({ outfits: [], namesForExtraSlots: [] })
+  // Mirror of outfits for equipOutfit's optimistic equipped-set rebuild (avoids stale closure).
+  const outfitsRef = useRef<OutfitsMetadata>({ outfits: [], namesForExtraSlots: [] })
+  useEffect(() => { outfitsRef.current = outfits }, [outfits])
   const [backpackOpen, setBackpackOpen] = useState(false)
   const [communities, setCommunities] = useState<Community[]>([])
   const [communitiesOpen, setCommunitiesOpen] = useState(false)
@@ -1022,14 +1025,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     urlDestination.current = null
     pickDestination(dest)
   }, [submitted, destinationPicked, pickDestination])
-  const equipWearables = useCallback((urns: string[]) => {
-    driverRef.current?.send({ kind: 'equip', urns })
-    // Optimistically reflect the new equipped set so the button flips to "Unequip" immediately AND the
-    // equipped set stays authoritative for the next equip — the engine deploy + wearables re-emit lags,
-    // and a failed deploy never re-emits at all. `urns` is the full next set (see BackpackPage), so
-    // rebuild `equippedWearables` from it (resolving each urn against the catalog ∪ current equipped),
-    // mirroring bevy-ui-scene's local-store-is-source-of-truth model. Otherwise a stale equipped set
-    // makes each subsequent equip drop the previously-equipped items from the deploy.
+  // Optimistically reflect a new equipped set so the button flips to "Unequip" immediately AND the
+  // equipped set stays authoritative for the next equip — the engine deploy + wearables re-emit lags,
+  // and a failed deploy never re-emits at all. `urns` is the full next set (see BackpackPage), so
+  // rebuild `equippedWearables` from it (resolving each urn against the catalog ∪ current equipped),
+  // mirroring bevy-ui-scene's local-store-is-source-of-truth model. Otherwise a stale equipped set
+  // makes each subsequent equip drop the previously-equipped items from the deploy.
+  const applyEquippedOptimistic = useCallback((urns: string[]) => {
     const matches = (u: string, urn: string): boolean => u === urn || u.startsWith(`${urn}:`)
     setCatalogItems((list) => list.map((w) => ({ ...w, equipped: urns.some((u) => matches(u, w.urn)) })))
     setEquippedWearables((prev) => {
@@ -1042,6 +1044,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         .filter((w): w is Wearable => w != null)
     })
   }, [])
+  const equipWearables = useCallback((urns: string[]) => {
+    driverRef.current?.send({ kind: 'equip', urns })
+    applyEquippedOptimistic(urns)
+  }, [applyEquippedOptimistic])
   const previewWearables = useCallback((urns: string[] | null) => {
     driverRef.current?.send({ kind: 'previewAvatar', urns })
   }, [])
@@ -1058,7 +1064,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const equipOutfit = useCallback((slot: number) => {
     driverRef.current?.send({ kind: 'equipOutfit', slot })
-  }, [])
+    // The bridge's equipOutfit deploys via setAvatar but never re-emits `wearables`, and the session
+    // fetches wearables only once — so rebuild the equipped set here from the outfit's wearables, else
+    // it stays stale and the next single-item equip (equipSetWith) drops the outfit's other wearables.
+    const found = outfitsRef.current.outfits.find((o) => o.slot === slot)
+    if (found != null) applyEquippedOptimistic(found.outfit.wearables.map(String))
+  }, [applyEquippedOptimistic])
   const createCommunity = useCallback(
     (input: { name: string; description: string; privacy: 'public' | 'private'; discoverable: boolean }) => {
       driverRef.current?.send({ kind: 'createCommunity', ...input })
