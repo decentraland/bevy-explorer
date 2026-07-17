@@ -228,6 +228,11 @@ fn particle_system_on_insert(
 
         for (burst, entity) in bursts.iter().zip(children) {
             debug!("Creating burst particle system");
+            let cycles = burst.cycles.unwrap_or(1) as u32;
+            let mut interval = burst.interval.unwrap_or(0.01);
+            if cycles != 1 {
+                interval = interval.max(f32::EPSILON);
+            }
             make_particle_system(
                 &mut commands,
                 entity,
@@ -235,8 +240,8 @@ fn particle_system_on_insert(
                 SpawnerSettings::new(
                     (burst.count as f32).into(),
                     0.0.into(),
-                    burst.interval.unwrap_or(0.01).into(),
-                    burst.cycles.unwrap_or(1) as u32,
+                    interval.into(),
+                    cycles,
                 )
                 .with_starts_active(active)
                 .with_first_emission(burst.time)
