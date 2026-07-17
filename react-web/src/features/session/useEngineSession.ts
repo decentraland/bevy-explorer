@@ -787,6 +787,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
     settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || galleryOpen
+  // Opening any full-screen menu frees the mouse: on web the camera-look IS the browser pointer lock,
+  // so releasing it lets the cursor drive the menu (the engine self-heals camera-look on
+  // `!document.pointerLockElement`, same as requestFocusChat). No-op on native (no DOM pointer lock).
+  useEffect(() => {
+    if (menuPageOpen) document.exitPointerLock?.()
+  }, [menuPageOpen])
   // What takes the screen from the chat, for requestFocusChat: the main menu, the emote wheel, and
   // the two modals App renders above everything (permission prompt, fatal error).
   chatCoveredRef.current =
