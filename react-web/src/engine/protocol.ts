@@ -96,8 +96,13 @@ export type PageToScene =
   | EquipEmoteRequest
   | SetMicRequest
   | GetWearablesRequest
+  | CatalogQueryRequest
   | EquipRequest
   | PreviewAvatarRequest
+  | GetOutfitsRequest
+  | SaveOutfitRequest
+  | DeleteOutfitRequest
+  | EquipOutfitRequest
   | GetCommunitiesRequest
   | CreateCommunityRequest
   | JoinCommunityRequest
@@ -617,13 +622,50 @@ export interface Wearable {
   equipped: boolean
 }
 
+/** Currently-equipped wearables, resolved by urn independently of the (paginated) grid so every
+ *  equipped item drives its per-category slot even when it isn't on the current catalog page. */
 export interface WearablesMessage {
   kind: 'wearables'
-  wearables: Wearable[]
+  equipped: Wearable[]
 }
 
+/** Load the equipped-wearables set (category slots). The owned catalog itself is paged via
+ *  catalogQuery — this only carries the decoupled equipped items. */
 export interface GetWearablesRequest {
   kind: 'getWearables'
+}
+
+/** Which owned-items catalog a paged query targets. Emotes reuse the same query/response. */
+export type CatalogKind = 'wearables' | 'emotes'
+
+/** A generic server-side-paginated request for an owned-items catalog page (backpack grid). The
+ *  scene fetches exactly this page from the catalyst so multi-thousand inventories never load at
+ *  once. Filters/sort are applied server-side; `requestId` lets the page drop stale responses. */
+export interface CatalogQueryRequest {
+  kind: 'catalogQuery'
+  catalog: CatalogKind
+  /** 0-based page index. */
+  page: number
+  pageSize: number
+  /** Wearables body-part category filter ('all' → omit). */
+  category?: string
+  /** Free-text name filter (server-side). */
+  search?: string
+  orderBy?: 'rarity' | 'name'
+  direction?: 'asc' | 'desc'
+  /** Exclude base (off-chain) items → collectibles only. */
+  collectiblesOnly?: boolean
+  /** Monotonic per-catalog id echoed in the response; the page ignores out-of-order replies. */
+  requestId: number
+}
+
+/** One catalog page (response to CatalogQueryRequest). `total` drives the pager. */
+export interface CatalogPageMessage {
+  kind: 'catalogPage'
+  catalog: CatalogKind
+  items: Wearable[]
+  total: number
+  requestId: number
 }
 
 /** Equip a new full wearable set (page → scene → BevyApi.setAvatar). */
@@ -637,6 +679,64 @@ export interface EquipRequest {
 export interface PreviewAvatarRequest {
   kind: 'previewAvatar'
   urns: string[] | null
+}
+
+/** RGB color, components 0..1 (matches PBAvatarBase / the deployed avatar entity). */
+export interface RGBColor {
+  r: number
+  g: number
+  b: number
+}
+
+/** A saved avatar look (backpack Outfits tab). The shape mirrors the catalyst `outfits` entity's
+ *  per-slot outfit so a saved look can later be deployed unchanged (Phase 2); Phase 1 persists
+ *  these locally (localStorage in the bridge scene). */
+export interface Outfit {
+  bodyShape: string
+  eyes: { color: RGBColor }
+  hair: { color: RGBColor }
+  skin: { color: RGBColor }
+  wearables: string[]
+  forceRender: string[]
+}
+
+/** One saved outfit at a fixed slot index (0-based). */
+export interface OutfitSlot {
+  slot: number
+  outfit: Outfit
+}
+
+/** The player's saved outfits + owned DCL names that unlock extra slots (beyond the 5 free). */
+export interface OutfitsMetadata {
+  outfits: OutfitSlot[]
+  namesForExtraSlots: string[]
+}
+
+export interface OutfitsMessage {
+  kind: 'outfits'
+  metadata: OutfitsMetadata
+}
+
+export interface GetOutfitsRequest {
+  kind: 'getOutfits'
+}
+
+/** Save the player's CURRENT look into a slot (scene captures getPlayer(); re-emits outfits). */
+export interface SaveOutfitRequest {
+  kind: 'saveOutfit'
+  slot: number
+}
+
+/** Remove a saved outfit slot (re-emits outfits). */
+export interface DeleteOutfitRequest {
+  kind: 'deleteOutfit'
+  slot: number
+}
+
+/** Equip a saved outfit: apply its body shape, colors and wearables to the profile. */
+export interface EquipOutfitRequest {
+  kind: 'equipOutfit'
+  slot: number
 }
 
 export interface GetEmotesRequest {
@@ -739,6 +839,8 @@ export type SceneToPage =
   | EmotesMessage
   | MicMessage
   | WearablesMessage
+  | CatalogPageMessage
+  | OutfitsMessage
   | CommunitiesMessage
   | CommunityDetailMessage
   | MapMessage

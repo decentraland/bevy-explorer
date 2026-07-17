@@ -14,6 +14,8 @@ import { registerFriends } from './domains/friends'
 import { registerChat } from './domains/chat'
 import { registerEmotes } from './domains/emotes'
 import { registerWearables } from './domains/wearables'
+import { registerCatalog } from './domains/catalog'
+import { registerOutfits } from './domains/outfits'
 import { registerNotifications } from './domains/notifications'
 import { registerSettings } from './domains/settings'
 import { registerCommunities } from './domains/communities'
@@ -37,6 +39,8 @@ export function main(): void {
     registerChat(ctx)
     registerEmotes(ctx)
     registerWearables(ctx)
+    registerCatalog(ctx)
+    registerOutfits(ctx)
     registerNotifications(ctx)
     registerSettings(ctx)
     registerCommunities(ctx)

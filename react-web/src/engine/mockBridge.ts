@@ -6,6 +6,8 @@
 import {
   BRIDGE_CHANNEL,
   type Envelope,
+  type Outfit,
+  type OutfitsMetadata,
   type PageToScene,
   type Profile,
   type SceneToPage,
@@ -108,6 +110,24 @@ const mockWearables: Wearable[] = BASE.map((b, i) => {
   }
 })
 
+// A saved outfit from a set of wearable urns (fixed colors/body shape — no real avatar in the mock).
+const BASE_MALE = 'urn:decentraland:off-chain:base-avatars:BaseMale'
+const mockOutfit = (urns: string[]): Outfit => ({
+  bodyShape: BASE_MALE,
+  eyes: { color: { r: 0.37, g: 0.22, b: 0.19 } },
+  hair: { color: { r: 0.6, g: 0.36, b: 0.2 } },
+  skin: { color: { r: 0.8, g: 0.6, b: 0.47 } },
+  wearables: urns,
+  forceRender: []
+})
+
+// An equipped wearable that is NOT in the catalog grid (simulates an item beyond the fetched page).
+// It must still drive its category slot via the decoupled `equipped` list — the bug this exercises.
+const MOCK_OFF_CATALOG_EQUIPPED: Wearable[] = [
+  { urn: 'urn:decentraland:off-chain:base-avatars:thug_life', name: 'Off-catalog Eyewear', rarity: 'epic', category: 'eyewear', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:black_sun_glasses'), equipped: true }
+]
+const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED]
+
 const v = (name: string): { name: string; description: string } => ({ name, description: '' })
 
 // Stateful so the mock's controls actually move when changed (setSetting → re-emit).
@@ -186,6 +206,14 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     isPublic: i % 2 === 0,
     dateTime: String(Math.floor((mockNow - i * 3 * DAY) / 1000))
   }))
+  // Stateful saved outfits so save/delete persist across reopens (mirrors the real store).
+  const mockOutfits: OutfitsMetadata = {
+    outfits: [
+      { slot: 0, outfit: mockOutfit(mockWearables.slice(0, 5).map((w) => w.urn)) },
+      { slot: 2, outfit: mockOutfit(mockWearables.slice(5, 10).map((w) => w.urn)) }
+    ],
+    namesForExtraSlots: []
+  }
   const ch = new BroadcastChannel(BRIDGE_CHANNEL)
   const wait = (ms: number): Promise<void> =>
     new Promise((r) => setTimeout(r, ms))
@@ -353,13 +381,58 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'triggerEmote') return // no-op in the mock
     if (msg.kind === 'equipEmote') return // no-op in the mock
     if (msg.kind === 'getWearables') {
-      reply({ kind: 'wearables', wearables: mockWearables })
+      reply({ kind: 'wearables', equipped: equippedNow() })
+      return
+    }
+    if (msg.kind === 'catalogQuery') {
+      if (msg.catalog !== 'wearables') {
+        reply({ kind: 'catalogPage', catalog: msg.catalog, items: [], total: 0, requestId: msg.requestId })
+        return
+      }
+      let items = mockWearables.slice()
+      if (msg.category != null && msg.category !== 'all') items = items.filter((w) => w.category === msg.category)
+      if (msg.search != null && msg.search !== '') items = items.filter((w) => (w.name ?? '').toLowerCase().includes(msg.search!.toLowerCase()))
+      if (msg.collectiblesOnly === true) items = items.filter((w) => (w.rarity ?? 'base') !== 'base')
+      const dir = msg.direction === 'asc' ? 1 : -1
+      if (msg.orderBy === 'name') items.sort((a, b) => dir * (a.name ?? '').localeCompare(b.name ?? ''))
+      else if (msg.orderBy === 'rarity') items.sort((a, b) => dir * (RARITIES.indexOf(a.rarity) - RARITIES.indexOf(b.rarity)))
+      const total = items.length
+      const start = msg.page * msg.pageSize
+      reply({ kind: 'catalogPage', catalog: 'wearables', items: items.slice(start, start + msg.pageSize), total, requestId: msg.requestId })
       return
     }
     if (msg.kind === 'equip') {
       const set = new Set(msg.urns)
       for (const w of mockWearables) w.equipped = set.has(w.urn)
-      reply({ kind: 'wearables', wearables: mockWearables })
+      reply({ kind: 'wearables', equipped: equippedNow() })
+      return
+    }
+    if (msg.kind === 'getOutfits') {
+      reply({ kind: 'outfits', metadata: mockOutfits })
+      return
+    }
+    if (msg.kind === 'saveOutfit') {
+      // Capture the full current look (equippedNow includes the off-catalog item), so a saved slot
+      // equals the equipped set and shows the "matches current look" marker.
+      mockOutfits.outfits = mockOutfits.outfits.filter((o) => o.slot !== msg.slot)
+      mockOutfits.outfits.push({ slot: msg.slot, outfit: mockOutfit(equippedNow().map((w) => w.urn)) })
+      mockOutfits.outfits.sort((a, b) => a.slot - b.slot)
+      reply({ kind: 'outfits', metadata: mockOutfits })
+      return
+    }
+    if (msg.kind === 'deleteOutfit') {
+      mockOutfits.outfits = mockOutfits.outfits.filter((o) => o.slot !== msg.slot)
+      reply({ kind: 'outfits', metadata: mockOutfits })
+      return
+    }
+    if (msg.kind === 'equipOutfit') {
+      // Reflect the outfit's wearables as equipped so the Wearables tab updates too.
+      const found = mockOutfits.outfits.find((o) => o.slot === msg.slot)
+      if (found) {
+        const set = new Set(found.outfit.wearables)
+        for (const w of mockWearables) w.equipped = set.has(w.urn)
+        reply({ kind: 'wearables', equipped: equippedNow() })
+      }
       return
     }
     if (msg.kind === 'setMic') {

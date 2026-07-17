@@ -180,13 +180,16 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     (DOM + the engine's `Cancel` action) so one source has to win. A follow-up on its own, deferred to
     spend time on higher-priority issues; the fragile `exitPointerLock()`-then-gesture-less-
     `requestPointerLock()` trick is NOT it — don't rely on it. Moot on native: no browser pointer lock
-    there, the engine owns the OS cursor grab and releases it on the `Chat` action.) **(b) the related bug:** full-screen menus
-    (settings/map/backpack…) opened via their **hotkey while camera-look is active** (`useMenuShortcuts`
-    fires even when the iframe holds focus) **don't free the cursor at all** — only profile-card + chat
-    do — so the menu renders over a still-locked cursor and is unusable until you click. Fold this into
-    the same pass: a single "any HUD panel/overlay open → engine cursor free" rule instead of the current
-    per-trigger frees. Kept Medium: chat + click-to-open panels work today, so it's not blocking — it's a
-    core-interaction UX/parity gap, not an MVP blocker.
+    there, the engine owns the OS cursor grab and releases it on the `Chat` action.) **(b) the related bug — web part SHIPPED (`fix/03-backpack`):**
+    full-screen menus (settings/map/backpack/communities/places/gallery) opened via their **hotkey while
+    camera-look is active** used to render over a still-locked cursor (only profile-card + chat freed it).
+    Now a single rule in `useEngineSession` releases the lock whenever any full-screen menu opens (a
+    `useEffect` on `menuPageOpen` → `document.exitPointerLock()`), replacing the per-trigger frees on web.
+    **Remaining — native:** `exitPointerLock` is a web no-op, so on native (CEF, engine owns the OS cursor
+    grab) a menu open does **not** yet free the cursor; if that proves needed, relay a bridge write
+    `PointerLock.isPointerLocked = false` on `CameraEntity` on menu open, the way `chat.ts` /
+    `avatarPointer.ts` already do for their surfaces. Kept Medium: chat + click-to-open panels + web
+    menus work today; only native menu-open cursor release is open.
 19. `[feature]` **Chat links: confirm popup before teleporting and before opening a URL** — *parity with
     `bevy-ui-scene`, safety*. The **parsing** has parity: `chatText.tsx`'s `TOKEN_RE` linkifies the same
     four kinds as the old `LINK_TYPE` (`components/chat/chat-message/ChatMessage.tsx:43`) — url, world,
