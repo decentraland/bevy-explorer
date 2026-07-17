@@ -8,10 +8,7 @@ use common::{
         PermissionValue,
     },
 };
-use dcl_component::proto_components::{
-    common::Vector2,
-    sdk::components::{PbAvatarBase, PbAvatarEquippedData},
-};
+use dcl_component::proto_components::common::Vector2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
@@ -24,7 +21,7 @@ use system_bridge::{
     SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 
-use crate::{interface::crdt_context::CrdtContext, js::player_identity, ClearableColor3, RpcCalls};
+use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
 
 use super::{State, SuperUserScene};
 
@@ -230,27 +227,14 @@ pub async fn op_kernel_fetch_headers(
 
 pub async fn op_set_avatar(
     state: Rc<RefCell<impl State>>,
-    base: Option<PbAvatarBase>,
-    equip: Option<PbAvatarEquippedData>,
-    has_claimed_name: Option<bool>,
-    profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
-    name_color: Option<ClearableColor3>,
+    avatar: SetAvatarData,
 ) -> Result<u32, anyhow::Error> {
     let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::SetAvatar(
-            SetAvatarData {
-                base,
-                equip,
-                has_claimed_name,
-                profile_extras,
-                name_color: name_color.map(ClearableColor3::to_color3),
-            },
-            sx,
-        ))?;
+        .send(SystemApi::SetAvatar(avatar, sx))?;
 
     rx.await?.map_err(|e| anyhow::anyhow!(e))
 }
@@ -442,6 +426,40 @@ pub fn op_send_chat(state: Rc<RefCell<impl State>>, message: String, channel: St
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::SendChat(message, channel))
         .unwrap();
+}
+
+// Native super-user bridge transport (backs a BroadcastChannel polyfill). scene -> page:
+pub fn op_bridge_to_page(state: Rc<RefCell<impl State>>, msg: String) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::BridgeToPage(msg))
+        .unwrap();
+}
+
+// page -> scene: subscribe once, then read repeatedly (mirrors the chat stream).
+pub async fn op_get_bridge_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetBridgeStream(sx))
+        .unwrap();
+    2
+}
+
+pub async fn op_read_bridge_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<String, anyhow::Error> {
+    // "" means no message (stream closed); Envelopes are JSON objects so never empty.
+    let Some(mut receiver) = state.borrow_mut().try_take::<RpcStreamReceiver<String>>() else {
+        return Ok(String::new());
+    };
+    let res = receiver.recv().await.unwrap_or_default();
+    state.borrow_mut().put(receiver);
+    Ok(res)
 }
 
 pub async fn op_get_profile_extras(

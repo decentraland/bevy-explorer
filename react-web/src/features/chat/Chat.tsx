@@ -11,7 +11,8 @@ import { Avatar, ControlButton, DclLogo } from '../../design'
 import { EmojiPicker } from './EmojiPicker'
 import { searchByShortcode, SHORTCODE_RE, type Emoji } from './emojiData'
 import { MessageText, mentionsMe, buildNameIndex } from './chatText'
-import { ProfileCard, type ChatUser } from './ProfileCard'
+import { type ChatUser } from './ProfileCardPresentation'
+import { openProfileCard } from '../profileCard/ProfileCard'
 import styles from './Chat.module.css'
 
 const MAX_LEN = 500
@@ -257,25 +258,13 @@ export function Chat({
   chat,
   hidden = false,
   me,
-  onAddFriend,
-  onBlock,
-  onViewProfile,
   onTeleport,
-  onVisitWorld,
-  relationshipOf
+  onVisitWorld
 }: {
   chat: ChatState
   hidden?: boolean
   /** The local player (for @-me highlight + hiding self-actions in the viewer). */
   me?: { address?: string; name?: string } | null
-  /** Friendship status for a user — drives the profile menu's ADD FRIEND CTA. */
-  relationshipOf?: (address: string) => 'none' | 'requested' | 'friend'
-  /** Add-friend from the profile viewer. */
-  onAddFriend?: (address: string) => void
-  /** Block from the profile viewer. */
-  onBlock?: (address: string) => void
-  /** Open the full passport for a user (View Profile). */
-  onViewProfile?: (user: ChatUser) => void
   /** A location link (x,y) in a message was clicked. */
   onTeleport?: (x: number, y: number) => void
   /** A world name (e.g. boedo.dcl.eth) in a message was clicked → prompt to jump there. */
@@ -288,7 +277,6 @@ export function Chat({
   const [scQuery, setScQuery] = useState<string | null>(null)
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
-  const [viewUser, setViewUser] = useState<{ user: ChatUser; x: number; y: number } | null>(null)
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [mentionSug, setMentionSug] = useState<NearbyMember[]>([])
   const listRef = useRef<HTMLDivElement>(null)
@@ -326,17 +314,43 @@ export function Chat({
     return out
   }, [chat.messages])
 
+  // Opening/activating the chat always jumps to the latest message.
   useEffect(() => {
     if (!open) return
     const el = listRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [chat.messages, open, active])
+  }, [open, active])
 
-  // Opening chat (e.g. via the sidebar icon) focuses the input so it comes up in the
-  // active/focused state, ready to type — matches Unity's "click chat → start typing".
+  // A new message only auto-scrolls if the user was already near the bottom — otherwise it
+  // would yank them away from history they scrolled up to read. Tracked via a live `scroll`
+  // listener (not recomputed at message time) so a burst of several messages landing in one
+  // React batch — which only re-renders once — still checks the position from just before the
+  // burst, not the cumulative jump the batch itself causes.
+  const NEAR_BOTTOM_PX = 80
+  const nearBottomRef = useRef(true)
+  useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const onScroll = (): void => {
+      nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
+    }
+    el.addEventListener('scroll', onScroll)
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [open])
+  useEffect(() => {
+    if (!open) return
+    const el = listRef.current
+    if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight
+  }, [chat.messages, open])
+
+  // Opening chat (sidebar icon, a queued mention, or Enter) focuses the input so it comes up in
+  // the active/focused state, ready to type — matches Unity's "click chat → start typing". Also
+  // reacts to focusTick alone: Enter while chat is already idle-open doesn't change `open`, so
+  // the engine's "Chat" system action (see bridge-scene chat.ts) bumps this tick to force focus.
   useEffect(() => {
     if (open) inputRef.current?.focus()
-  }, [open])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, chat.focusTick])
 
   // Leaving the chat (click outside → not hovered/focused) resets the nearby-members
   // overlay, so re-entering shows messages — not the members list left open from before.
@@ -348,9 +362,9 @@ export function Chat({
     if (!chat.open) chat.toggle()
   }
 
-  // Profile viewer: clicking a name/avatar/@mention opens a mini passport at the click.
+  // Profile viewer: clicking a name/avatar/@mention opens the shared profile card at the click.
   const openProfile = (user: ChatUser, e: React.MouseEvent): void => {
-    setViewUser({ user, x: e.clientX, y: e.clientY })
+    openProfileCard(user.address, e.clientX, e.clientY)
   }
   // "Mention" from the viewer drops @name into the draft, ready to send.
   const insertMention = (name: string): void => {
@@ -358,6 +372,13 @@ export function Chat({
     openIfClosed()
     inputRef.current?.focus()
   }
+  // A mention queued from another surface (world/friends profile card) — drop it in and clear.
+  useEffect(() => {
+    if (!chat.pendingMention) return
+    insertMention(chat.pendingMention)
+    chat.consumeMention()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.pendingMention])
 
   const MENTION_RE = /@([\w-]*)$/
   const updateDraft = (value: string): void => {
@@ -417,6 +438,12 @@ export function Chat({
         setScQuery(null)
         setSuggestions([])
       } else if (picker) setPicker(false)
+      // Nothing to dismiss first → blur back to the world (DCL convention: Escape leaves chat).
+      // Opening chat already released camera-look (web: requestFocusChat exits pointer lock; native:
+      // the bridge frees the cursor), so there's nothing to restore — and the browser won't re-lock
+      // without a fresh gesture anyway. Just blur; re-engage camera-look with a click, same as leaving
+      // any panel. Enter refocuses chat from anywhere (useMenuShortcuts).
+      else inputRef.current?.blur()
     }
   }
 
@@ -579,21 +606,6 @@ export function Chat({
             setShowMembers(false)
             chat.toggle()
           }}
-        />
-      )}
-
-      {viewUser && (
-        <ProfileCard
-          user={viewUser.user}
-          x={viewUser.x}
-          y={viewUser.y}
-          me={me}
-          relationship={viewUser.user.address ? relationshipOf?.(viewUser.user.address) : undefined}
-          onAddFriend={onAddFriend}
-          onBlock={onBlock}
-          onViewProfile={onViewProfile}
-          onMention={insertMention}
-          onClose={() => setViewUser(null)}
         />
       )}
     </div>

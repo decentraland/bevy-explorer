@@ -10,6 +10,8 @@
 //     __bevyReadyToLaunch / __bevyLaunch(realm?, position?) — deferred engine_run
 //     __bevyPanic — readable Rust panic text (the JS throw is a generic "unreachable" trap)
 //     __engineHeartbeat / reportEngineError / __rearmCrashWatchdog — crash watchdog plumbing
+//     __engineTextFocus — true while an engine-rendered text field holds keyboard focus (the
+//       wasm keeps it current via __setEngineTextFocus); HUD hotkeys must not fire while set
 //     __onEngineCrash(message, source) — OPTIONAL host callback; the watchdog calls it instead of
 //       rendering any overlay (React owns the error UI)
 //     window.engine / engine_console_command — the console RPC (built by engine.js post-launch)
@@ -144,6 +146,15 @@ publish()
 // Host-provided config (set before this module is injected).
 const config = window.__bevyBootConfig ?? {}
 
+// ---- engine text focus (CALLED BY THE WASM — src/web.rs update_text_focus) -----------------------
+// True while an engine-rendered text field (e.g. a scene textinput) holds keyboard focus. Those
+// fields live on the canvas, so DOM focus checks can't see them — HUD hotkey handlers read this
+// flag instead (useMenuShortcuts) to leave keys alone while the user is typing.
+window.__engineTextFocus = false
+window.__setEngineTextFocus = (focused) => {
+  window.__engineTextFocus = !!focused
+}
+
 // ---- URL sync (CALLED BY THE WASM — src/web.rs set_url_params) -----------------------------------
 // Keeps the browser URL in step with the player's realm/position so a reload/share lands back at
 // the same place. Defaults are omitted so the canonical entry URL stays clean.
@@ -153,6 +164,8 @@ const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'
 // worlds-content-server…/world/name.dcl.eth) and echoes that back here. Reverse it so the address
 // bar keeps the short name the user typed; a reload re-expands it the same way.
 const WORLDS_PREFIX = 'https://worlds-content-server.decentraland.org/world/'
+// captured from the ENTRY url (later syncs rewrite location.search)
+const explicitSystemScene = new URLSearchParams(window.location.search).has('systemScene')
 window.set_url_params = (position, server, system_scene, portables, preview) => {
   try {
     if (server.startsWith(WORLDS_PREFIX)) server = server.slice(WORLDS_PREFIX.length)
@@ -162,7 +175,10 @@ window.set_url_params = (position, server, system_scene, portables, preview) => 
     else urlParams.delete('position')
     if (server !== DEFAULT_SERVER) urlParams.set('realm', server)
     else urlParams.delete('realm')
-    if (system_scene !== (config.systemScene ?? '')) urlParams.set('systemScene', system_scene)
+    // An explicit ?systemScene= boot override stays in the URL across reloads (null from the
+    // engine = NO ui scene running, i.e. systemScene=none); only the default scene is omitted
+    // to keep the canonical entry URL clean.
+    if (explicitSystemScene || system_scene !== (config.systemScene ?? '')) urlParams.set('systemScene', system_scene ?? 'none')
     else urlParams.delete('systemScene')
     if (portables !== DEFAULT_PORTABLES) urlParams.set('portables', portables)
     else urlParams.delete('portables')

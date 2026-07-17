@@ -5,9 +5,10 @@
 // KEEP IN SYNC with deploy/web/index.html: the store/Chrome URLs and the Apple/Google/Chrome SVGs are
 // duplicated there (the engine loader gates before react-web mounts, so it can't import from here).
 
+import { useEffect, useState } from 'react'
 import { mobilePlatform } from '../../lib/isMobile'
 import { publicUrl } from '../../lib/publicUrl'
-import { Button } from '../../design'
+import { Button, Spinner, Copy, Check } from '../../design'
 import styles from './MobileGate.module.css'
 
 const APP_STORE_URL = 'https://testflight.apple.com/join/KF4r3jlU'
@@ -62,7 +63,73 @@ function tryAnyway(): void {
   location.reload()
 }
 
-export function MobileGate({ reason = 'mobile' }: { reason?: 'mobile' | 'browser' }): React.JSX.Element {
+// One "paste this into a new tab" step: an instruction + the chrome:// target with a Copy button.
+// It's shown as copyable text, NOT a link — Chromium blocks web pages from navigating to chrome://
+// (a click or window.open is a no-op), so the user must paste it into the address bar themselves.
+function FlagStep({ hint, target }: { hint: string; target: string }): React.JSX.Element {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 1200)
+    return () => clearTimeout(t)
+  }, [copied])
+  const copy = (): void => {
+    navigator.clipboard?.writeText(target).then(
+      () => setCopied(true),
+      () => {}
+    )
+  }
+  return (
+    <li>
+      <span className={styles.stepHint}>{hint}</span>
+      <div className={styles.flag}>
+        <code className={styles.flagText}>{target}</code>
+        <button type="button" className={styles.copy} onClick={copy} title="Copy" aria-label="Copy">
+          {copied ? <Check size={15} /> : <Copy size={15} />}
+        </button>
+      </div>
+    </li>
+  )
+}
+
+// Shown for the brief async GPU probe (App decides gate vs boot) so there's no white flash before the
+// engine's own loading screen — same magenta backdrop as the gate/login.
+export function GateChecking(): React.JSX.Element {
+  return (
+    <div className={styles.root}>
+      <Spinner />
+    </div>
+  )
+}
+
+export function MobileGate({ reason = 'mobile' }: { reason?: 'mobile' | 'browser' | 'gpu' }): React.JSX.Element {
+  if (reason === 'gpu') {
+    // WebGPU present but no usable GPU adapter (Linux without drivers, HW-accel off, blocklisted GPU,
+    // VM/headless). We only support Chromium, so guide the two Chrome fixes directly.
+    return (
+      <div className={styles.root}>
+        <div className={styles.card}>
+          <img className={styles.logo} src={publicUrl('assets/logo.png')} alt="" draggable={false} />
+          <h1 className={styles.title}>Enable GPU acceleration</h1>
+          <p className={styles.subtitle}>
+            Decentraland Web renders in 3D with <strong>WebGPU</strong>, which needs a working GPU. Your
+            browser has it turned off or can’t reach a supported GPU. In Chrome, paste each of these into
+            a new tab (they can’t be opened by clicking), switch it on, then relaunch:
+          </p>
+          <ol className={styles.steps}>
+            <FlagStep hint="Turn on “Use graphics acceleration when available”" target="chrome://settings/system" />
+            <FlagStep hint="Set “Unsafe WebGPU Support” to Enabled" target="chrome://flags/#enable-unsafe-webgpu" />
+          </ol>
+          {/* Bespoke text-link, not a Button: no link/text variant exists yet — tracked in
+              docs/backlog.md (Button extend). */}
+          <button type="button" className={styles.tryAnyway} onClick={tryAnyway}>
+            try anyway…
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (reason === 'browser') {
     return (
       <div className={styles.root}>
@@ -79,7 +146,7 @@ export function MobileGate({ reason = 'mobile' }: { reason?: 'mobile' | 'browser
             </Button>
           </div>
           {/* Bespoke text-link, not a Button: no link/text variant exists yet (Button is primary/
-              secondary/ghost pills) — tracked in docs/design-system-backlog.md (Button extend). */}
+              secondary/ghost pills) — tracked in docs/backlog.md (Button extend). */}
           <button type="button" className={styles.tryAnyway} onClick={tryAnyway}>
             try anyway…
           </button>

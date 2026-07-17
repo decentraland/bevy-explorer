@@ -9,7 +9,7 @@ import { prefetchPlaces } from '../places/placesApi'
 import type { LoginFlow, LoginStatus } from '../session/useEngineSession'
 import styles from './LoadingAndLogin.module.css'
 
-// Engine boot steps surfaced from the iframe loader (deploy/web/ui.js), shown in the footer bar.
+// Engine boot steps surfaced from the engine loader (deploy/web/ui.js), shown in the footer bar.
 const STEP_LABEL: Record<string, string> = {
   download: 'Downloading engine',
   compile: 'Compiling',
@@ -154,7 +154,22 @@ function Panel({ flow, name }: { flow: LoginFlow; name?: string }): React.JSX.El
       {flow.error && <p className={styles.error}>{flow.error}</p>}
 
       <div className={styles.buttons}>
-        {status === 'sign-in-or-guest' && (
+        {flow.authPending && (
+          // Native fresh sign-in (engine remote-wallet flow): the engine opened the auth site
+          // in the user's external browser; show the verification code to match there.
+          <>
+            <p className={styles.authHint}>
+              {flow.authCode != null
+                ? 'Verify this code matches the one in the browser window we just opened:'
+                : 'Opening the sign-in page in your browser…'}
+            </p>
+            {flow.authCode != null && <div className={styles.authCode}>{flow.authCode}</div>}
+            <Button variant="secondary" size="lg" className={styles.ctaSecondary} onClick={flow.cancelLogin}>
+              <span className={styles.label}>CANCEL</span>
+            </Button>
+          </>
+        )}
+        {status === 'sign-in-or-guest' && !flow.authPending && (
           <>
             <Button variant="primary" size="lg" className={styles.cta} onClick={flow.startWithAccount} disabled={flow.busy}>
               <span className={styles.label}>START WITH ACCOUNT</span>

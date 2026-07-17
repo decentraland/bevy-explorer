@@ -1,14 +1,17 @@
-// Profile menu — the popover the SDK7 chat opened when you clicked a sender's
-// name/avatar or an @mention (Figma "Profile Menu", node 8337-2971). Header with
-// avatar / name+copy / address+copy and an ADD FRIEND CTA, then the action list.
-// We only render the actions our bridge actually supports: Mention, Block. (View
-// Profile / Chat / Call / Hush / Gift / Report have no engine API yet.)
+// Profile card (the old SDK7 "profile menu") — the popover shown when you click a
+// sender's name/avatar, an @mention, or a nearby avatar in the world. Header with
+// avatar / name+copy / address+copy, a relationship-driven friend CTA (Add / Accept +
+// Reject / Requested), then the action list — mirroring bevy-ui-scene's profile-menu:
+// View Passport · Mention · Block/Unblock.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Avatar } from '../../design'
+import { Avatar, Button, showConfirm } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
+import type { FriendAction } from '../../engine/protocol'
+import type { Relationship } from '../../lib/relationship'
 import styles from './ProfileCard.module.css'
+
+export type { Relationship } from '../../lib/relationship'
 
 export interface ChatUser {
   address: string
@@ -79,38 +82,42 @@ function isClaimed(name: string): boolean {
   return !!name && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
 }
 
-export function ProfileCard({
+export function ProfileCardPresentation({
   user,
   x,
   y,
   me,
   relationship = 'none',
-  onAddFriend,
+  onFriendAction,
   onMention,
   onViewProfile,
-  onBlock,
   onClose
 }: {
   user: ChatUser
   x: number
   y: number
   me?: { address?: string } | null
-  /** Friendship status, so the CTA reflects reality (hide ADD FRIEND once friends/requested). */
-  relationship?: 'none' | 'requested' | 'friend'
-  onAddFriend?: (address: string) => void
+  /** Relationship of the local user to this profile — drives the friend CTA + Block/Unblock. */
+  relationship?: Relationship
+  /** Friend action (request/accept/reject/block/unblock). Block opens a confirm first. */
+  onFriendAction?: (op: FriendAction, address: string) => void //TODO to be removed
   onMention?: (name: string) => void
+  /** Open the full passport (labelled "View Passport"). */
   onViewProfile?: (user: ChatUser) => void
-  onBlock?: (address: string) => void
   onClose: () => void
 }): React.JSX.Element {
   const [copied, setCopied] = useState<'name' | 'address' | null>(null)
   const [justSent, setJustSent] = useState(false)
-  // After firing the friend request, show "REQUEST SENT" briefly, then close.
+  // After firing the friend request, show "REQUEST SENT" briefly, then close. onClose goes through
+  // a ref: call sites pass inline arrows, and having it in the deps would restart the timer on
+  // every parent re-render (which busy scenes trigger more often than every 1.1s).
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   useEffect(() => {
     if (!justSent) return
-    const t = setTimeout(onClose, 1100)
+    const t = setTimeout(() => onCloseRef.current(), 1100)
     return () => clearTimeout(t)
-  }, [justSent, onClose])
+  }, [justSent])
   // Reset the "copied" hint after a beat — in an effect so the timer is cleared on unmount.
   useEffect(() => {
     if (!copied) return
@@ -118,8 +125,9 @@ export function ProfileCard({
     return () => clearTimeout(t)
   }, [copied])
   const cardRef = useRef<HTMLDivElement>(null)
-  // Start at the click point; once the card is laid out, clamp it to the viewport
-  // using its REAL size (the menu height varies with which actions are shown).
+  // Start at the click point; once the card is laid out, clamp it to the viewport using its REAL
+  // size. Re-clamp when the height can change after mount — the relationship-driven CTA grows the
+  // card, and a stale clamp would push the lower rows off-screen.
   const [pos, setPos] = useState({ left: x, top: y })
   useLayoutEffect(() => {
     const el = cardRef.current
@@ -129,7 +137,7 @@ export function ProfileCard({
       left: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)),
       top: Math.max(8, Math.min(y, window.innerHeight - r.height - 8))
     })
-  }, [x, y])
+  }, [x, y, relationship])
   const isMe = !!me?.address && !!user.address && me.address.toLowerCase() === user.address.toLowerCase()
   const { base, tag } = splitName(user.name)
   const color = nameColor(user.address || user.name)
@@ -141,10 +149,17 @@ export function ProfileCard({
     )
   }
 
-  return createPortal(
-    <>
-      <div className={styles.scrim} onClick={onClose} />
-      <div ref={cardRef} className={styles.card} style={{ left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
+  // Unblock fires immediately; Block opens a confirm first — both go through onFriendAction.
+  const canUnblock = relationship === 'blocked' && !!onFriendAction && !!user.address
+  const canBlock = relationship !== 'blocked' && !!onFriendAction && !!user.address
+  const hasDestructive = canUnblock || canBlock
+  const hasMenu = !isMe && (!!onViewProfile || !!onMention || hasDestructive)
+
+  // The backdrop (and click-outside-to-close) is owned by the popup layer now (openPopup default
+  // options); this just renders the positioned card. The stopPropagation keeps a click on the card
+  // from reaching the backdrop.
+  return (
+    <div ref={cardRef} className={styles.card} style={{ left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
         <div className={styles.header}>
           <Avatar src={user.picture} name={base} color={color} size={72} status="online" />
           <button type="button" className={styles.copyRow} title="Copy name" onClick={() => copy(user.name, 'name')}>
@@ -164,43 +179,66 @@ export function ProfileCard({
           {copied && <span className={styles.copied}>Copied {copied}</span>}
         </div>
 
-        {!isMe && user.address && onAddFriend && relationship !== 'friend' && (
-          justSent || relationship === 'requested' ? (
-            <div className={`${styles.cta} ${styles.ctaSent}`}>✓ REQUEST SENT</div>
+        {!isMe && user.address && onFriendAction && relationship !== 'friend' && relationship !== 'blocked' && (
+          relationship === 'incoming' ? (
+            <div className={styles.ctaRow}>
+              <Button className={styles.ctaHalf} onClick={() => { onFriendAction('accept', user.address); onClose() }}>
+                ACCEPT
+              </Button>
+              <Button variant="ghost" className={styles.ctaHalf} onClick={() => { onFriendAction('reject', user.address); onClose() }}>
+                REJECT
+              </Button>
+            </div>
+          ) : justSent || relationship === 'requested' ? (
+            <div className={styles.ctaSent}>✓ REQUEST SENT</div>
           ) : (
-            <button type="button" className={styles.cta} onClick={() => { onAddFriend(user.address); setJustSent(true) }}>
+            <Button className={styles.ctaFull} onClick={() => { onFriendAction('request', user.address); setJustSent(true) }}>
               <AddFriendIcon /> ADD FRIEND
-            </button>
+            </Button>
           )
         )}
 
-        {!isMe && (onMention || onViewProfile || onBlock) && (
+        {hasMenu && (
           <div className={styles.menu}>
+            {onViewProfile && (
+              <button type="button" className={styles.row} onClick={() => { onViewProfile(user); onClose() }}>
+                <ViewProfileIcon />
+                <span>View Passport</span>
+              </button>
+            )}
             {onMention && (
               <button type="button" className={styles.row} onClick={() => { onMention(base); onClose() }}>
                 <MentionIcon />
                 <span>Mention</span>
               </button>
             )}
-            {onViewProfile && (
-              <button type="button" className={styles.row} onClick={() => { onViewProfile(user); onClose() }}>
-                <ViewProfileIcon />
-                <span>View Profile</span>
+            {hasDestructive && <div className={styles.divider} />}
+            {canUnblock && (
+              <button type="button" className={styles.row} onClick={() => { onFriendAction?.('unblock', user.address); onClose() }}>
+                <BlockIcon />
+                <span>Unblock</span>
               </button>
             )}
-            {onBlock && user.address && (
-              <>
-                <div className={styles.divider} />
-                <button type="button" className={`${styles.row} ${styles.danger}`} onClick={() => { onBlock(user.address); onClose() }}>
-                  <BlockIcon />
-                  <span>Block</span>
-                </button>
-              </>
+            {canBlock && (
+              <button
+                type="button"
+                className={`${styles.row} ${styles.danger}`}
+                onClick={async () => {
+                  onClose()
+                  const ok = await showConfirm({
+                    title: `Block ${base}?`,
+                    body: "Blocked users won't be able to message you, join your community events, or see when you're online.",
+                    confirmLabel: 'Block'
+                  })
+                  if (ok) onFriendAction?.('block', user.address)
+                }}
+              >
+                <BlockIcon />
+                <span>Block</span>
+              </button>
             )}
           </div>
         )}
       </div>
-    </>,
-    document.body
   )
 }

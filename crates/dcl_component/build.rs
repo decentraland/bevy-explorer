@@ -110,6 +110,22 @@ fn gen_sdk_components() -> Result<()> {
         );
     }
 
+    // ts-rs: inject `#[derive(ts_rs::TS)]` on exactly the proto types the system-api boundary
+    // embeds (and their transitive fields), so system_api_types can export TypeScript for them.
+    // Proto enum fields are stored as i32 by prost, so the enums themselves need no derive.
+    let ts_components = [
+        "Color3",
+        "Vector2",
+        "Vector3",
+        "PBAvatarBase",
+        "PBAvatarEquippedData",
+        "PBPointerEvents.Entry",
+        "PBPointerEvents.Info",
+    ];
+    for component in ts_components {
+        config.type_attribute(component, "#[derive(ts_rs::TS)]");
+    }
+
     let hash_components = [
         "PBMaterial",
         "GltfMaterial",

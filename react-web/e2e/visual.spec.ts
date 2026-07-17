@@ -17,7 +17,11 @@ const BLANK_PNG = Buffer.from(
 
 /** Make the page deterministic — call before the first navigation in each test. */
 async function prepare(page: Page): Promise<void> {
-  await page.clock.setFixedTime(FIXED_TIME)
+  // install (not setFixedTime): setFixedTime pins Date but leaves setTimeout on REAL time, so the
+  // mock bridge's staggered delivery (roster 1.4s, friends 1.6s, chat drip ≤6.9s — mockBridge
+  // spawnPlayer) raced the screenshot and pass/fail depended on machine load. install virtualizes
+  // the timers too, letting settle() fast-forward every test to the same terminal state.
+  await page.clock.install({ time: FIXED_TIME })
   await page.route(/^https?:\/\/(?!localhost|127\.0\.0\.1)/, (route) => {
     const type = route.request().resourceType()
     if (type === 'image' || type === 'media') return route.fulfill({ contentType: 'image/png', body: BLANK_PNG })
@@ -28,6 +32,9 @@ async function prepare(page: Page): Promise<void> {
 /** Fonts loaded + a beat for layout to settle (animations are frozen at screenshot time anyway). */
 async function settle(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready.then(() => undefined))
+  // Jump virtual time past the mock bridge's last staggered timer (chat drip ends at ~6.9s) so
+  // every screenshot captures the same fully-delivered state, regardless of wall-clock timing.
+  await page.clock.fastForward(15_000)
   await page.waitForTimeout(200)
 }
 
@@ -81,6 +88,14 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('browser-gate.png')
   })
 
+  // GPU gate — the "enable WebGPU / hardware acceleration" page shown before boot when no usable GPU
+  // adapter is found (forced with ?gate=gpu; real detection is the async probe in App).
+  test('gpu gate', async ({ page }) => {
+    await page.goto('/?gate=gpu')
+    await settle(page)
+    await expect(page).toHaveScreenshot('gpu-gate.png')
+  })
+
   // Engine error popup — ?simerror=launch seeds a sample boot-panic (fatal: Reload + Copy, no
   // Dismiss). Mock mode → no engine iframe, fully deterministic.
   test('engine error popup', async ({ page }) => {
@@ -93,6 +108,33 @@ test.describe('visual — mock HUD', () => {
     await enterWorld(page)
     await settle(page)
     await expect(page).toHaveScreenshot('world-hud.png')
+  })
+
+  // Profile card — the popover opened by clicking a chat sender / nearby avatar. Baselines the
+  // action set (View Passport · Mention · Block). The block confirm and the relationship
+  // states (Accept/Reject/Unblock) are covered deterministically by the tier-1 profileCard.test.tsx.
+  test('profile card', async ({ page }) => {
+    await enterWorld(page)
+    await page.getByRole('button', { name: 'View Sharknado' }).first().click()
+    const card = page.getByRole('dialog', { name: 'Profile' })
+    await card.getByRole('button', { name: 'Block' }).waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('profile-card.png')
+  })
+
+  // Radial free-cursor hover tooltips around the pointer (up to 7 slots), ported from the old scene.
+  // ?simhover=7 seeds seven prompts (one disabled → "Too far, get closer"); React anchors them at the
+  // live DOM cursor, so we move the mouse to the viewport centre to place them deterministically.
+  test('hover tooltips (radial)', async ({ page }) => {
+    await page.goto('/?mock=1&simhover=7')
+    await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
+    await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click()
+    await page.waitForSelector('nav[aria-label="Main navigation"]')
+    await page.getByText('Show Profile').waitFor() // the seeded hover arrives ~1.5s after entry
+    const vp = page.viewportSize()
+    if (vp) await page.mouse.move(vp.width / 2, vp.height / 2)
+    await settle(page)
+    await expect(page).toHaveScreenshot('hover-tooltips.png')
   })
 
   // Floating panels + full-screen pages, opened from the sidebar.

@@ -21,11 +21,11 @@ import { PlacesPicker } from './features/places/PlacesPicker'
 import { GalleryPage } from './features/gallery/GalleryPage'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Pointer } from './features/pointer/Pointer'
-import { ProfilePassport } from './features/profile/ProfilePassport'
+import { openPassport } from './features/profile/Passport'
 import { WorldVisitModal } from './components/WorldVisitModal'
 import { PermissionDialog } from './features/permissions/PermissionDialog'
-import type { ChatUser } from './features/chat/ProfileCard'
-import type { Profile } from './engine/protocol'
+import { PopupHost } from './design'
+import { SessionProvider } from './features/session/SessionContext'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
@@ -35,27 +35,42 @@ import { useExitGuard } from './lib/useExitGuard'
 import { useHudScale } from './lib/useHudScale'
 import { useGlobalHotkey } from './lib/useGlobalHotkey'
 import { useMenuShortcuts } from './lib/useMenuShortcuts'
+import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
-import { MobileGate } from './features/gate/MobileGate'
+import { hasUsableGpu } from './lib/gpu'
+import { MobileGate, GateChecking } from './features/gate/MobileGate'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
 import { EngineErrorModal } from './features/error/EngineErrorModal'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
-// ENGINE (default): real engine in a same-origin iframe + super-user bridge scene.
-const MODE: 'mock' | 'engine' = params.get('mock') === '1' ? 'mock' : 'engine'
+// ENGINE (default): real engine in a same-document canvas (EngineHost — no iframe) + super-user bridge scene.
+// NATIVE (?native=1): HUD in a CEF offscreen webview over the native bevy engine — a JS shim
+// bridges this app's BroadcastChannel to the engine's native relay (no iframe, no mock).
+const MODE: 'mock' | 'engine' | 'native' =
+  params.get('mock') === '1' ? 'mock' : params.get('native') === '1' ? 'native' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
+// Embedded/debug mode (?hud=0 or ?systemScene= — see lib/bootMode.ts): render ONLY the
+// engine — no React HUD at all (no sidebar, chat, pointer, panels, or the sign-in /
+// loading overlays). Something else owns the UI: the sites `/discover` embed's own
+// chrome, or the substituted ui scene in-engine.
+const HIDE_HUD = bootMode().hideHud
 // Gate: don't mount the HUD/engine where the engine can't run — mobile (no WebGPU/SharedArrayBuffer)
 // or a non-Chromium desktop browser (the engine bundle renders its own "Browser Not Supported" page
 // there — see deploy/web/index.html — which the HUD would otherwise cover, leaving login frozen at
-// 0%). `?gate=1` forces the mobile variant, `?gate=browser` the browser variant (both for testing);
-// `?nogate=1` bypasses; the shared `bypass_browser_check` cookie ("try anyway") also bypasses.
-function gateReason(): 'mobile' | 'browser' | null {
+// 0%). `?gate=1` forces the mobile variant, `?gate=browser` the browser variant, `?gate=gpu` the
+// no-GPU variant (all for testing); `?nogate=1` bypasses; the shared `bypass_browser_check` cookie
+// ("try anyway") also bypasses. The mobile/browser checks are synchronous (UA); the real no-GPU
+// detection is async (see useGpuProbe) — `?gate=gpu` short-circuits it here for a deterministic gate.
+function gateReason(): 'mobile' | 'browser' | 'gpu' | null {
   // Precedence: a real device constraint wins over a test override — mobile is checked before
   // `?gate=browser`, so on an actual phone that param still (correctly) yields the mobile variant.
+  // Native (CEF webview over native bevy): no browser/mobile gate — the host app IS the platform.
+  if (MODE === 'native') return null
   if (params.get('nogate') === '1') return null
   if (isMobile() || params.get('gate') === '1') return 'mobile'
   if (params.get('gate') === 'browser') return 'browser'
+  if (params.get('gate') === 'gpu') return 'gpu'
   if (!isChromiumBased() && !hasBypassCookie()) return 'browser'
   return null
 }
@@ -64,7 +79,14 @@ const GATE_REASON = gateReason()
 export function App(): React.JSX.Element {
   useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
   const showFps = useFpsToggle()
+  // Probe the GPU before booting the engine — but only on the real boot path (a sync gate already
+  // decided, mock, native, or the design showcase all skip it). Native renders through the host's
+  // bevy/wgpu, not WebGPU in this webview, so probing there would gate a HUD that runs fine.
+  // 'checking' shows a brief spinner.
+  const gpu = useGpuProbe(GATE_REASON != null || MODE === 'mock' || MODE === 'native' || SHOWCASE)
   if (GATE_REASON) return <MobileGate reason={GATE_REASON} />
+  if (gpu === 'checking') return <GateChecking />
+  if (gpu === 'blocked') return <MobileGate reason="gpu" />
   return (
     <ErrorBoundary>
       {SHOWCASE ? (
@@ -80,7 +102,7 @@ export function App(): React.JSX.Element {
 }
 
 // Perf overlay visibility: on via ?fps=1, toggle anytime with Ctrl/Cmd+Shift+F
-// (works even when the engine iframe holds keyboard focus — see useGlobalHotkey).
+// (works even when the engine holds keyboard focus — see useGlobalHotkey).
 function useFpsToggle(): boolean {
   const [on, setOn] = useState(params.get('fps') === '1')
   useGlobalHotkey(
@@ -88,6 +110,29 @@ function useFpsToggle(): boolean {
     () => setOn((v) => !v)
   )
   return on
+}
+
+// Async pre-boot GPU probe. 'checking' → 'ok' (boot) or 'blocked' (→ the no-GPU gate). `skip` (a sync
+// gate already decided, mock, native, or showcase) resolves immediately to 'ok'. `?nogate=1` and the shared
+// bypass cookie skip the gate too; `?gate=gpu` is handled synchronously in gateReason(), so this only
+// runs the real detection path.
+function useGpuProbe(skip: boolean): 'checking' | 'ok' | 'blocked' {
+  const [state, setState] = useState<'checking' | 'ok' | 'blocked'>(skip ? 'ok' : 'checking')
+  useEffect(() => {
+    if (skip) return
+    if (params.get('nogate') === '1' || hasBypassCookie()) {
+      setState('ok')
+      return
+    }
+    let cancelled = false
+    void hasUsableGpu().then((ok) => {
+      if (!cancelled) setState(ok ? 'ok' : 'blocked')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [skip])
+  return state
 }
 
 function Hud(): React.JSX.Element {
@@ -99,6 +144,11 @@ function Hud(): React.JSX.Element {
       startMockBridge()
       return { rpc: null, createDriver: () => new BridgeClient() }
     }
+    if (MODE === 'native') {
+      // The CEF shim wires this BroadcastChannel to the native engine relay (see
+      // src/lib/cefNativeBridge.ts and src/react_hud_cef.rs).
+      return { rpc: null, createDriver: () => new BridgeClient() }
+    }
     const engineRpc = new EngineRpc()
     return { rpc: engineRpc, createDriver: () => new EngineDriver(engineRpc) }
   }, [])
@@ -108,9 +158,6 @@ function Hud(): React.JSX.Element {
   // Warn before the back gesture / Back button unloads the engine (only once in-world).
   const exitGuard = useExitGuard(session.phase === 'entering' || session.phase === 'world')
 
-  // Passport (View Profile). Self → the local rich profile; others → the fetched
-  // passport (requestUserProfile on open), falling back to identity-only while it loads.
-  const [passport, setPassport] = useState<ChatUser | null>(null)
   // A world (e.g. boedo.dcl.eth) the user asked to jump to — drives the shared confirm modal.
   const [visitWorld, setVisitWorld] = useState<string | null>(null)
   // Which tab the Backpack opens on. The emote wheel's "Customise [E]" opens it on Emotes; it resets
@@ -119,38 +166,12 @@ function Hud(): React.JSX.Element {
   useEffect(() => {
     if (!session.backpack.open) setBackpackTab('wearables')
   }, [session.backpack.open])
-  const isSelfPassport =
-    !!passport && !!session.profile.data && session.profile.data.address.toLowerCase() === passport.address.toLowerCase()
-  const openPassport = (user: ChatUser): void => {
-    setPassport(user)
-    if (user.address) session.requestUserProfile(user.address) // fetch badges/photos/catalyst data
-  }
-  // Friendship status for a user — drives the profile menu's CTA (chat + friends list).
-  const relationshipOf = (address: string): 'none' | 'requested' | 'friend' => {
-    const a = address.toLowerCase()
-    if (session.friends.list.some((f) => f.address.toLowerCase() === a)) return 'friend'
-    if (session.friends.sent.some((r) => r.address.toLowerCase() === a)) return 'requested'
-    return 'none'
-  }
-  // Open MY OWN passport (Sidebar profile icon + the menu's "View Profile").
+  // Open MY OWN passport (Sidebar profile icon + the menu's "View Profile") — same popup the profile
+  // card opens for others.
   const viewMyProfile = (): void => {
     const me = session.profile.data
-    if (me) openPassport({ address: me.address, name: me.name, picture: me.picture })
+    if (me) openPassport(me.address)
   }
-  const passportProfile: Profile | null = !passport
-    ? null
-    : // Prefer the fetched passport (badges/photos/about), even for self; fall back to the
-      // local profile (self) or identity-only (others) while the fetch is in flight.
-      session.userProfiles[passport.address.toLowerCase()] ??
-      (isSelfPassport
-        ? session.profile.data
-        : {
-            address: passport.address,
-            name: passport.name,
-            picture: passport.picture,
-            hasClaimedName: !passport.name.includes('#') && !/^0x[0-9a-f]+$/i.test(passport.name),
-            isGuest: false
-          })
 
   // Top-nav navigation between the full-screen menu pages (Settings/Backpack/Map)
   // and the Communities panel. Each toggle is mutually exclusive.
@@ -171,8 +192,25 @@ function Hud(): React.JSX.Element {
   const pageOpen =
     session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.gallery.open
 
+  // Embedded mode: mount only the engine (+ the fatal-error surface so a crash
+  // isn't silently blank). No sidebar / chat / pointer / panels / sign-in UI.
+  if (HIDE_HUD) {
+    return (
+      <SessionProvider value={session}>
+        {rpc && <EngineHost rpc={rpc} />}
+        {session.fatalError && (
+          <EngineErrorModal
+            error={session.fatalError}
+            onReload={session.reload}
+            onDismiss={session.fatalError.source === 'runtime' || session.fatalError.source === 'realm' ? session.dismissFatal : undefined}
+          />
+        )}
+      </SessionProvider>
+    )
+  }
+
   return (
-    <>
+    <SessionProvider value={session}>
       {rpc && <EngineHost rpc={rpc} />}
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
@@ -183,26 +221,21 @@ function Hud(): React.JSX.Element {
               they don't show through (the map page's body is transparent). */}
           {!pageOpen && <Sidebar session={session} onViewProfile={viewMyProfile} />}
           {/* Reticle (when pointer-locked) + world-hover prompt — hidden under a full-screen page. */}
-          {!pageOpen && <Pointer hover={session.hover} locked={session.cursorLocked} proximity={session.proximity} />}
+          {!pageOpen && (
+            <Pointer
+              hover={session.hover}
+              locked={session.cursorLocked}
+              proximity={session.proximity}
+            />
+          )}
           <Chat
             chat={session.chat}
             hidden={session.friends.open || pageOpen}
             me={session.profile.data}
-            onAddFriend={(address) => session.friends.act('request', address)}
-            onBlock={(address) => session.friends.act('block', address)}
-            onViewProfile={openPassport}
             onTeleport={(x, y) => session.map.teleport(x, y)}
             onVisitWorld={(name) => setVisitWorld(name)}
-            relationshipOf={relationshipOf}
           />
-          <FriendsPanel
-            friends={session.friends}
-            me={session.profile.data}
-            relationshipOf={relationshipOf}
-            onAddFriend={(address) => session.friends.act('request', address)}
-            onViewProfile={openPassport}
-            onBlock={(address) => session.friends.act('block', address)}
-          />
+          <FriendsPanel friends={session.friends} />
           <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
           <ProfilePanel profile={session.profile} />
           <NotificationsPanel notifications={session.notifications} />
@@ -234,19 +267,8 @@ function Hud(): React.JSX.Element {
             profile={session.profile}
             onNavigate={goToMenuPage}
             onTeleport={(x, y) => session.map.teleport(x, y)}
-            onViewProfile={openPassport}
+            onViewProfile={(u) => openPassport(u.address)}
           />
-          {passport && passportProfile && (
-            <ProfilePassport
-              key={passport.address}
-              profile={passportProfile}
-              isSelf={isSelfPassport}
-              isFriend={session.friends.list.some((f) => f.address.toLowerCase() === passport.address.toLowerCase())}
-              requested={session.friends.sent.some((r) => r.address.toLowerCase() === passport.address.toLowerCase())}
-              onAddFriend={(address) => session.friends.act('request', address)}
-              onClose={() => setPassport(null)}
-            />
-          )}
           {visitWorld && (
             <WorldVisitModal
               worldName={visitWorld}
@@ -279,6 +301,9 @@ function Hud(): React.JSX.Element {
           onDismiss={session.fatalError.source === 'runtime' || session.fatalError.source === 'realm' ? session.dismissFatal : undefined}
         />
       )}
-    </>
+      {/* Popups (imperative overlay stack) live inside the session provider so popup-mounted surfaces
+          — the world <ProfileCard> — can read useSession(). */}
+      <PopupHost />
+    </SessionProvider>
   )
 }

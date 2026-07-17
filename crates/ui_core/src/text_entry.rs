@@ -217,6 +217,7 @@ pub fn propagate_focus(
     q: Query<(&TextEntry, &Children), With<Focus>>,
     mut activate: Query<(Entity, &mut TextInputInactive)>,
     mut input_manager: InputManager,
+    mut reserved: Local<bool>,
 ) {
     let active = q
         .iter()
@@ -235,9 +236,6 @@ pub fn propagate_focus(
                     inactive.set_changed();
                 }
 
-                input_manager
-                    .priorities()
-                    .reserve(InputType::Keyboard, InputPriority::TextEntry);
                 return Some(ent);
             }
             None
@@ -250,10 +248,18 @@ pub fn propagate_focus(
         }
     }
 
-    if active.is_none() {
+    // only release what we reserved: other keyboard claimants (e.g. the react HUD while one of
+    // its text fields is focused) share the (Keyboard, TextEntry) slot
+    if active.is_some() {
+        input_manager
+            .priorities()
+            .reserve(InputType::Keyboard, InputPriority::TextEntry);
+        *reserved = true;
+    } else if *reserved {
         input_manager
             .priorities()
             .release(InputType::Keyboard, InputPriority::TextEntry);
+        *reserved = false;
     }
 }
 

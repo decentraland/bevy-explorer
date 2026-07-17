@@ -62,6 +62,61 @@
   height: 22px;
   flex: 0 0 auto;
 }
+/* GPU gate: the "paste this into a new tab" steps (Chromium hardware-accel + WebGPU flag). */
+.steps {
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+}
+.stepHint {
+  display: block;
+  margin-bottom: 8px;
+  font-size: var(--fs-sm);
+  color: var(--ink-7);
+}
+.flag {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  background: var(--fill-2);
+  border: 1px solid var(--white-10);
+  border-radius: var(--r-control);
+  padding: 8px 8px 8px 12px;
+}
+.flagText {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  word-break: break-all;
+}
+/* Bespoke copy affordance (feature layout) — matches ProfilePassport's inline copy button; no
+   CopyButton primitive exists yet (docs/backlog.md). */
+.copy {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  border: none;
+  border-radius: var(--r-control);
+  background: var(--fill-4);
+  color: var(--ink-7);
+  cursor: pointer;
+  transition: color var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+.copy:hover {
+  color: var(--text);
+  background: var(--fill-5);
+}
+
 /* "try anyway" bypass — a subtle text link under the Chrome button (browser variant). */
 .tryAnyway {
   margin-top: 16px;

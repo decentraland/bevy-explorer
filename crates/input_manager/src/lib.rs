@@ -81,6 +81,13 @@ impl InputPriorities {
             .copied()
             .unwrap_or(InputPriority::None)
     }
+
+    /// true while any consumer holds the keyboard at TextEntry level or above (e.g. a
+    /// focused text field). in this state gameplay key bindings are blocked and consumers
+    /// read raw ButtonInput, so keys must be treated as "being typed", not as shortcuts.
+    pub fn keyboard_claimed(&self) -> bool {
+        self.get(InputType::All).max(self.get(InputType::Keyboard)) >= InputPriority::TextEntry
+    }
 }
 
 // Holding any of these triggers OS-shortcut suppression for non-modifier
@@ -506,12 +513,7 @@ fn handle_modifier_keys(
     }
     *was_super_held = super_held;
 
-    let keyboard_claimed = priorities
-        .get(InputType::All)
-        .max(priorities.get(InputType::Keyboard))
-        >= InputPriority::TextEntry;
-
-    let active = !keyboard_claimed && any_unbound_modifier_held(&key_input, &map);
+    let active = !priorities.keyboard_claimed() && any_unbound_modifier_held(&key_input, &map);
 
     if active && !*was_active {
         let held: Vec<KeyCode> = key_input

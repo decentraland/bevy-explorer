@@ -165,6 +165,9 @@
   line-height: 17px;
   color: var(--text);
   word-break: break-word;
+  /* Preserve newlines so multi-line system messages (/help, /commands) read as a list; normal
+     single-line messages are unaffected. */
+  white-space: pre-wrap;
 }
 .time {
   font-size: 10px;

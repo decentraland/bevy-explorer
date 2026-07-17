@@ -6,6 +6,11 @@ import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type St
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/EngineErrorModal'
 import { DEFAULT_REALM } from '../engine/EngineHost'
+import { closeTopPopup, hasOpenPopup } from '../../design'
+import { bootMode } from '../../lib/bootMode'
+import { getCursor } from '../pointer/cursorStore'
+import { openProfileCard } from '../profileCard/ProfileCard'
+import { parseChatCommand } from '../chat/chatCommands'
 import type {
   AppNotification,
   ChatMessage,
@@ -127,6 +132,8 @@ export interface FriendsState {
   blocked: string[]
   open: boolean
   toggle: () => void
+  /* TODO: split domain data (queries) from commands — act/toggle don't belong in "State".
+   Expose commands as an imperative service/context (like the popup service), not prop-drilled. (#18) */
   /** accept/reject/cancel/delete/block/unblock a user (guest-disabled in-engine). */
   act: (op: FriendAction, address: string) => void
 }
@@ -148,6 +155,20 @@ export interface ChatState {
   toggle: () => void
   /** Nearby players (drives the "Nearby · N" header + members list). */
   members: NearbyMember[]
+  /** Open chat and queue an @name mention into the draft (from a profile card's "Mention"). */
+  mention: (name: string) => void
+  /** A queued @name waiting to be dropped into the chat draft (consumed by Chat), or null. */
+  pendingMention: string | null
+  /** Clear the queued mention once Chat has inserted it. */
+  consumeMention: () => void
+  /** Messages received while closed, reset to 0 on open (drives the sidebar badge). */
+  unread: number
+  /** Bumped on every engine "focus chat" request (Enter, even while idle-open) — Chat watches
+   *  this to (re)focus the input beyond the open-transition case. */
+  focusTick: number
+  /** Open + (re)focus chat. Called by useMenuShortcuts' page-level Enter handler for when DOM
+   *  focus is on some other HUD element (a button would otherwise just activate on Enter). */
+  requestFocus: () => void
 }
 
 const MAX_CHAT_LINES = 200
@@ -191,8 +212,13 @@ export interface LoginFlow {
   loadProgress: number
   /** Active boot step id ('download'|'compile'|'init'|'workers'|'gpu') or null. */
   loadStep: string | null
-  /** Fresh sign-in → redirect to the same-domain auth site. */
+  /** Fresh sign-in: same-domain auth redirect (web) or the engine's remote-wallet flow (native). */
   startWithAccount: () => void
+  /** Native fresh sign-in in flight → show the verification panel (code null until it arrives). */
+  authPending: boolean
+  authCode: string | null
+  /** Abort the in-flight native fresh sign-in. */
+  cancelLogin: () => void
   exploreAsGuest: () => void
   /** Reuse the stored SSO identity (hand it to the engine). */
   jumpIn: () => void
@@ -220,7 +246,7 @@ export interface EngineSession {
   reload: () => void
   /** Dismiss a non-fatal (runtime) error popup. */
   dismissFatal: () => void
-  /** World-entity hover hints under the reticle (empty = nothing hovered). */
+  /** World-entity hover hints (empty = nothing hovered). */
   hover: HoverAction[]
   /** Engine has grabbed the mouse for camera-look (OS cursor hidden) → show the crosshair. */
   cursorLocked: boolean
@@ -275,7 +301,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [error, setError] = useState<string | null>(null)
   // Engine boots (autostart) while the login screen is up; this flips true once it can take commands.
   const [engineReady, setEngineReady] = useState(false)
-  // Real WASM-download/boot progress surfaced from the engine iframe (0–100) + the active step id,
+  // Real WASM-download/boot progress surfaced from the engine (0–100) + the active step id,
   // for the login footer bar. The engine's own loader is hidden (hideLoader=1).
   const [loadProgress, setLoadProgress] = useState(0)
   const [loadStep, setLoadStep] = useState<string | null>(null)
@@ -298,18 +324,65 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Deferred login: the login call captured on Jump in, run only once the user picks a destination
   // (so the engine is launched straight at that destination instead of loading Genesis Plaza first).
   const pendingLogin = useRef<((driver: LoginDriver) => Promise<unknown>) | null>(null)
+  // Native fresh sign-in (driver.loginNew) in flight: non-null shows the verification-code panel;
+  // `code` fills in when the engine's 'loginCode' message lands. The attempt counter invalidates
+  // a cancelled attempt's eventual resolution (the promise settles after loginCancel).
+  const [auth, setAuth] = useState<{ code: string | null } | null>(null)
+  const authAttempt = useRef(0)
   // Stops the post-launch boot-panic poll once the world is reached (so it can't mislabel a benign
   // post-boot panic as a launch failure). The timer id is kept so it's cancelled on unmount.
   const bootPollStop = useRef(false)
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Native parcel pick: the engine can only teleport an existing player (there's no boot-at-position
+  // when the engine is already running), so the pick is held until playerReady — or sent at once if
+  // the player already spawned (see the no-launch pick path).
+  const pendingParcel = useRef<{ x: number; y: number } | null>(null)
   const [playerReady, setPlayerReady] = useState(false)
+  // Ref twin of playerReady: the destination pick runs in a callback that would close over a
+  // stale value of the state.
+  const playerReadyRef = useRef(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
+  // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
+  // avatarClick uses it to centre the card while the camera has the pointer locked.
+  const cursorLockedRef = useRef(false)
   const [chatOpen, setChatOpen] = useState(true)
+  const [chatUnread, setChatUnread] = useState(0)
+  const [chatFocusTick, setChatFocusTick] = useState(0)
+  // Read inside the message-subscription closure (mounted once), not via a stale `chatOpen` capture.
+  const chatOpenRef = useRef(chatOpen)
+  chatOpenRef.current = chatOpen
+  // True while something is covering the chat (see the assignment below for what counts). Read by
+  // requestFocusChat from a callback that would otherwise close over a stale value. Popups aren't in
+  // here — they live in their own module store, so requestFocusChat asks it directly.
+  const chatCoveredRef = useRef(false)
+  // Open + (re)focus chat — the engine's "Chat" system action (Enter while the engine holds focus)
+  // and the page-level Enter shortcut (Enter while some other HUD element has focus, see
+  // useMenuShortcuts) both funnel into this single action.
+  const requestFocusChat = useCallback(() => {
+    // Enter is only a chat key when nothing is covering the chat. While the main menu, a popup or a
+    // modal is up it owns the screen, so Enter neither dismisses it nor focuses the chat behind it.
+    // hasOpenPopup() is read here, not during render: the popup stack is a module store that changes
+    // without re-rendering this hook.
+    if (chatCoveredRef.current || hasOpenPopup()) return
+    // Release the browser pointer lock so the mouse stops driving the camera and you can type. On web
+    // camera-look IS the pointer lock; exiting it here (the always-firing focus path) reliably releases
+    // it, and the engine self-heals — update_pointer_lock drops camera-look on
+    // `!document.pointerLockElement`. No-op on native (no DOM pointer lock; the engine frees its own OS
+    // cursor grab from the Chat action).
+    document.exitPointerLock?.()
+    // Friends is the only panel Enter closes: it shares the chat's bottom-left dock, so Chat renders
+    // null behind it (App's `hidden`) and focusing without closing it would do nothing on screen.
+    // The rest (profile, notifications, emotes) sit clear of the chat, so leave them open.
+    setFriendsOpen(false)
+    setChatOpen(true)
+    setChatFocusTick((t) => t + 1)
+  }, [])
+  const [pendingMention, setPendingMention] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [friendsData, setFriendsData] = useState<{
     available: boolean
@@ -357,9 +430,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       switch (msg.kind) {
         case 'event':
           if (msg.name === 'playerReady') {
+            playerReadyRef.current = true
             setPlayerReady(true)
             bootPollStop.current = true // world reached → stop watching for a boot panic
+            if (pendingParcel.current != null) {
+              driver.send({ kind: 'teleport', ...pendingParcel.current })
+              pendingParcel.current = null
+            }
           }
+          break
+        case 'loginCode':
+          // Only meaningful while a fresh sign-in is in flight; a stray late code must not
+          // resurrect the panel.
+          setAuth((a) => (a == null ? a : { code: msg.code }))
           break
         case 'sceneLoading':
           setScene(msg.state)
@@ -368,17 +451,37 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setHover(msg.actions)
           break
         case 'cursorLock':
+          cursorLockedRef.current = msg.locked
           setCursorLocked(msg.locked)
+          break
+        case 'systemAction':
+          // 'Cancel' (Escape, from the engine input stream) closes the topmost popup — authoritative,
+          // so it works even while the engine holds keyboard focus.
+          if (msg.action === 'Cancel') closeTopPopup()
           break
         case 'proximity':
           setProximity(msg.tips)
           break
+        case 'avatarClick': {
+          // The card's scrim swallows mouse input, so the engine's raycast freezes and never sends
+          // the hover-exit — clear the hover here or its tooltip stays painted beside the card.
+          setHover([])
+          // Open the profile card as a popup, anchored at the live DOM cursor (centre while the camera
+          // has the pointer locked). The card resolves the name/avatar by address from the roster.
+          const p = cursorLockedRef.current ? { x: window.innerWidth / 2, y: window.innerHeight / 2 } : getCursor()
+          openProfileCard(msg.address, p.x, p.y)
+          break
+        }
         case 'chat':
           setMessages((prev) =>
             [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
               -MAX_CHAT_LINES
             )
           )
+          if (!chatOpenRef.current) setChatUnread((n) => n + 1)
+          break
+        case 'focusChat':
+          requestFocusChat()
           break
         case 'chatVisibility':
           setChatOpen(msg.open)
@@ -469,7 +572,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Watch engine boot: the iframe autostarts on mount, so poll until it can take commands, then stop.
+  // Watch engine boot: the engine autostarts on mount, so poll until it can take commands, then stop.
   // Drivers without an engine (mock/tests) report ready immediately.
   useEffect(() => {
     const driver = driverRef.current
@@ -497,8 +600,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     return () => clearInterval(id)
   }, [])
 
-  // Runtime engine crashes (heartbeat stall) are detected by the bundle's watchdog and bridged to us
-  // as a same-origin postMessage (the iframe's own overlay is hidden behind react-web's HUD).
+  // Runtime engine crashes (heartbeat stall) are detected by the bundle's watchdog and surfaced to us
+  // directly (the engine's own crash overlay is hidden behind react-web's HUD).
   useEffect(() => {
     // Same-document engine (no iframe): the crash watchdog in engine/boot.js calls this directly
     // instead of rendering any overlay — React owns the error UI.
@@ -528,11 +631,46 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     }
   }, [playerReady])
 
-  const sendChat = useCallback((text: string) => {
-    const trimmed = text.trim()
-    if (trimmed)
-      driverRef.current?.send({ kind: 'sendChat', message: trimmed, channel: 'Nearby' })
+  // Inject a local "DCL System" line (empty sender → rendered as the system member) for command
+  // feedback (/help, /goto usage, /commands output) that must NOT be broadcast to other players.
+  const pushSystemMessage = useCallback((message: string) => {
+    setMessages((prev) =>
+      [...prev, { sender: '', message, channel: 'Nearby', id: chatId.current++, ts: Date.now() }].slice(-MAX_CHAT_LINES)
+    )
   }, [])
+
+  // Chat send doubles as the slash-command interceptor (parity with bevy-ui-scene's `sendChatMessage`):
+  // a recognized `/command` never reaches other players — it teleports, reloads, runs an engine console
+  // command, or echoes a system message. Anything else is sent as a normal Nearby message.
+  const sendChat = useCallback(
+    (text: string) => {
+      const cmd = parseChatCommand(text)
+      switch (cmd.kind) {
+        case 'send':
+          if (cmd.text) driverRef.current?.send({ kind: 'sendChat', message: cmd.text, channel: 'Nearby' })
+          break
+        case 'goto':
+          driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
+          break
+        case 'genesis':
+          driverRef.current?.send({ kind: 'changeRealm', realm: DEFAULT_REALM })
+          break
+        case 'world':
+          driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
+          break
+        case 'reload':
+          driverRef.current?.send({ kind: 'reloadScene' })
+          break
+        case 'commands':
+          driverRef.current?.send({ kind: 'consoleCommand', command: 'help' })
+          break
+        case 'system':
+          pushSystemMessage(cmd.message)
+          break
+      }
+    },
+    [pushSystemMessage]
+  )
 
   // Toggle one exclusive panel (closing chat + all others); optionally run onOpen.
   // All exclusive (one-at-a-time) panel setters. Toggling one closes chat + the rest.
@@ -580,12 +718,31 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setChatOpen((o) => !o)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Opening chat (any path — sidebar, Enter, a queued mention) clears the unread badge.
+  useEffect(() => {
+    if (chatOpen) setChatUnread(0)
+  }, [chatOpen])
+  // "Mention" from a profile card opens chat and queues the @name; Chat consumes it into its draft.
+  const mentionInChat = useCallback((name: string) => {
+    panelSetters.forEach((set) => set(false))
+    setChatOpen(true)
+    setPendingMention(name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const consumeMention = useCallback(() => setPendingMention(null), [])
+
+  // The full-screen main menu — mirrors App's `pageOpen`.
+  const menuPageOpen =
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || galleryOpen
+  // What takes the screen from the chat, for requestFocusChat: the main menu, the emote wheel, and
+  // the two modals App renders above everything (permission prompt, fatal error).
+  chatCoveredRef.current =
+    menuPageOpen || emotesOpen || permissionQueue.length > 0 || fatalError != null
 
   // Escape closes any open React panel/menu and returns to the world view. We only
   // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
   const anyPanelOpen =
-    friendsOpen || settingsOpen || profileOpen || notificationsOpen ||
-    emotesOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || galleryOpen
+    menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen
   useEffect(() => {
     if (!anyPanelOpen) return
     const onKey = (e: KeyboardEvent): void => {
@@ -659,11 +816,57 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // guards against launching on a disposed driver (the rAF/timeout aren't otherwise cancellable).
       if (ran || driverRef.current == null) return
       ran = true
+      const runDeferredLogin = (): void => {
+        const login = pendingLogin.current
+        pendingLogin.current = null
+        Promise.resolve(login?.(driver))
+          .then(() => setBusy(false))
+          .catch((e: unknown) => {
+            console.error('[login] post-launch login failed:', e)
+            // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
+            // e.message would be undefined and the login screen would show no error at all.
+            const msg = e instanceof Error ? e.message : String(e)
+            setError(msg !== '' ? msg : 'Login failed')
+            setBusy(false)
+            // Back to the LOGIN screen, not the picker: the picker renders no error, and the
+            // login screen is where the retry / profile-reset actions live. The engine stays
+            // launched (start()'s __bevyStarted guard makes the next launch a no-op).
+            setSubmitted(false)
+            setDestinationPicked(false)
+          })
+      }
+      // No launch = the engine is already running at its own start realm (native): the pick maps
+      // to runtime directives instead of boot parameters. A world switches realm now (works
+      // pre-login); a parcel teleport needs a spawned player, so it's held until playerReady.
+      // A parcel pick sends no realm change: if the picker was reachable at all the engine
+      // omitted ?realm=, which it only does when it booted on the HUD's own DEFAULT_REALM —
+      // a changeRealm to the same realm is NOT a no-op (full scene purge + reconnect). Skip
+      // likewise keeps the engine's own start realm.
+      if (driver.launch == null) {
+        // Deferred to the playerReady flush only if the player hasn't spawned yet. Fresh sign-in
+        // completes login BEFORE the picker, so playerReady has usually fired by pick time and the
+        // flush would never run again — send immediately then. An immediate teleport still lands
+        // after a just-sent changeRealm: the engine applies teleports after realm changes and
+        // overrides the spawn position.
+        const sendParcel = (x: number, y: number): void => {
+          if (playerReadyRef.current) driver.send({ kind: 'teleport', x, y })
+          else pendingParcel.current = { x, y }
+        }
+        if (dest?.kind === 'world') {
+          driver.send({ kind: 'changeRealm', realm: dest.realm })
+          const [x, y] = (dest.position ?? '').split(',').map(Number)
+          if (Number.isFinite(x) && Number.isFinite(y)) sendParcel(x, y)
+        } else if (dest?.kind === 'parcel') {
+          sendParcel(dest.x, dest.y)
+        }
+        runDeferredLogin()
+        return
+      }
       bootPollStop.current = false
       driverRef.current?.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
       // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
       // so only the chosen scene streams in. (No-op on the mock, which has no engine to launch.)
-      // Parcels pass the MAIN realm explicitly — the iframe's initialRealm may carry a ?realm
+      // Parcels pass the MAIN realm explicitly — the engine's initialRealm may carry a ?realm
       // override (possibly an invalid world after a failed validation), and inheriting it would
       // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
@@ -672,7 +875,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
-        // wasm trap). The readable message is captured on the iframe via enginePanic().
+        // wasm trap). The readable message is captured on the engine via enginePanic().
         const panic = driverRef.current?.enginePanic?.()?.message
         setFatalError({ message: panic ?? (e as Error)?.message ?? 'The engine failed to start.', source: 'launch' })
         driverRef.current?.clearEnginePanic?.()
@@ -695,27 +898,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         if (++polls < 24) pollTimer.current = setTimeout(pollPanic, 250) // ~6s boot window
       }
       pollTimer.current = setTimeout(pollPanic, 250)
-      const login = pendingLogin.current
-      pendingLogin.current = null
-      Promise.resolve(login?.(driver))
-        .then(() => setBusy(false))
-        .catch((e: unknown) => {
-          console.error('[login] post-launch login failed:', e)
-          // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
-          // e.message would be undefined and the login screen would show no error at all.
-          const msg = e instanceof Error ? e.message : String(e)
-          setError(msg !== '' ? msg : 'Login failed')
-          setBusy(false)
-          // Back to the LOGIN screen, not the picker: the picker renders no error, and the
-          // login screen is where the retry / profile-reset actions live. The engine stays
-          // launched (start()'s __bevyStarted guard makes the next launch a no-op).
-          setSubmitted(false)
-          setDestinationPicked(false)
-        })
+      runDeferredLogin()
     }
     requestAnimationFrame(() => requestAnimationFrame(run))
     setTimeout(run, 60)
   }, [])
+  // Boot-mode flags (?hud=0 / ?guest=1 / ?systemScene= — see lib/bootMode.ts), captured once
+  // per session mount so tests can vary location.search between mounts.
+  const boot = useRef(bootMode())
   // ?position=x,y / ?realm= (parity with the plain engine page): skip the Places picker and launch
   // straight there. realm wins when both are given, carrying the position along — letting
   // ?position shadow ?realm made a reload in a custom realm respawn in Genesis at the same
@@ -733,6 +923,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       if (realm != null && realm !== '')
         return { kind: 'world', realm, position: hasPosition ? `${x},${y}` : undefined }
       if (hasPosition) return { kind: 'parcel', x, y }
+      // A hidden HUD renders no picker — land at Genesis 0,0 so the boot doesn't strand on an
+      // invisible screen (parity with the picker's "skip").
+      if (boot.current.hideHud) return { kind: 'parcel', x: 0, y: 0 }
       return null
     })()
   )
@@ -740,6 +933,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   useEffect(() => {
     if (!submitted || destinationPicked || urlDestination.current == null) return
     const dest = urlDestination.current
+    if (dest.kind === 'world' && driverRef.current?.launch == null) {
+      // Native: ?realm= is injected by the engine from its own --server, so the engine is
+      // already there — skip the picker and keep the realm (the no-launch pickDestination(null)
+      // path). No validation fetch either: the engine booted on this realm, and preview/file
+      // realms wouldn't pass the worlds-server about probe anyway.
+      urlDestination.current = null
+      pickDestination(null)
+      return
+    }
     if (dest != null && dest.kind === 'world') {
       if (validatingRealm.current) return
       validatingRealm.current = true
@@ -891,12 +1093,51 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // account's server-side profile — the button copy must carry that warning.
   const resetProfileAndJumpIn = useCallback(() => submitLogin((d) => d.jumpIn(true)), [submitLogin])
 
-  // Fresh sign-in (or signing in with a different account): bounce to the same-domain auth
-  // site, which writes the identity back to this origin's localStorage and redirects here.
+  // Fresh sign-in (or signing in with a different account). Web: bounce to the same-domain
+  // auth site, which writes the identity back to this origin's localStorage and redirects
+  // here. Native (the driver has loginNew): that redirect would resolve against cef:// and
+  // 404 into the asset server — instead run the engine's remote-wallet flow, which opens the
+  // auth site in the user's EXTERNAL browser and streams back a verification code to show.
+  // The auth runs now (not deferred like Jump in — it needs the user at the code panel);
+  // approval means the engine is already logged in, so the destination pick has no deferred
+  // login left to run.
   const startWithAccount = useCallback(() => {
     if (busy) return
-    redirectToAuth()
+    const driver = driverRef.current
+    if (driver?.loginNew == null) {
+      redirectToAuth()
+      return
+    }
+    const attempt = ++authAttempt.current
+    setError(null)
+    setBusy(true)
+    setAuth({ code: null })
+    driver
+      .loginNew()
+      .then(() => {
+        if (attempt !== authAttempt.current) return // cancelled meanwhile
+        setAuth(null)
+        setBusy(false)
+        pendingLogin.current = null
+        setSubmitted(true)
+      })
+      .catch((e: unknown) => {
+        if (attempt !== authAttempt.current) return // cancelled: the rejection is expected
+        setAuth(null)
+        setBusy(false)
+        const msg = e instanceof Error ? e.message : String(e)
+        setError(msg !== '' ? msg : 'Sign-in failed')
+      })
   }, [busy])
+
+  // Abort an in-flight fresh sign-in: drop the engine's login task and invalidate the pending
+  // loginNew promise (it settles late — as cancelled from the relay or rejected — and is ignored).
+  const cancelLogin = useCallback(() => {
+    authAttempt.current++
+    setAuth(null)
+    setBusy(false)
+    driverRef.current?.loginCancel().catch(() => {})
+  }, [])
 
   // "Use a different account" shows the sign-in/guest screen (Start with account + Explore as
   // guest) rather than jumping straight to auth — matching the reference scene, and the only way a
@@ -905,6 +1146,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (busy) return
     setStatus('sign-in-or-guest')
   }, [busy])
+
+  // Auto-login (see lib/bootMode.ts): skip the sign-in screen the moment the engine is warm —
+  // as a guest (?guest=1, the sites `/discover` embed), or with no React login at all
+  // (?systemScene=: the substituted ui scene owns login in-engine, pre-react behavior). The
+  // destination is auto-picked by the effect above (?position / ?realm, else the hidden-HUD
+  // Genesis fallback), so this goes straight into the scene. Fires once — `submitted` flips
+  // true on the first call and gates re-entry.
+  useEffect(() => {
+    if (boot.current.autoLogin == null || !engineReady || submitted) return
+    if (boot.current.autoLogin === 'guest') exploreAsGuest()
+    // scene-owned: no React login at all — just boot the engine (a no-op deferred login).
+    else submitLogin(() => Promise.resolve())
+  }, [engineReady, submitted, exploreAsGuest, submitLogin])
 
   // Render-settle. When the scene flips from loading → loaded (visible true→false), hold the loader
   // a beat longer while the engine actually renders the world (compiling shaders / uploading
@@ -940,7 +1194,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // for each scene streamed into Genesis Plaza. We debounce the *reveal* (loading→world) so a brief
   // `visible` gap between scenes doesn't flash the HUD; the loader still appears INSTANTLY whenever
   // loading re-asserts. Loading = scene visible, or not spawned, or the render-settle still holding.
-  const loadingNow = scene?.visible === true || !playerReady || revealing
+  // No state received yet (scene == null) counts as loading: the loading stream is the
+  // bridge-scene's domain, and until it's running and reports otherwise the world isn't ready
+  // (on native the engine relay itself sends no loading state at all).
+  const loadingNow = scene?.visible !== false || !playerReady || revealing
   const [loaderActive, setLoaderActive] = useState(true)
   useEffect(() => {
     if (loadingNow) {
@@ -973,7 +1230,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     fatalError,
     reload: () => location.reload(),
     dismissFatal: () => {
-      // Re-arm the iframe watchdog (it left its `shown` flag set when it bridged the crash) so a later
+      // Re-arm the engine watchdog (it left its `shown` flag set when it bridged the crash) so a later
       // genuine crash still surfaces, and clear the stashed panic so it isn't re-read stale.
       driverRef.current?.rearmCrashWatchdog?.()
       driverRef.current?.clearEnginePanic?.()
@@ -982,7 +1239,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     hover,
     cursorLocked,
     proximity,
-    chat: { messages, send: sendChat, open: chatOpen, toggle: toggleChat, members },
+    chat: {
+      messages,
+      send: sendChat,
+      open: chatOpen,
+      toggle: toggleChat,
+      members,
+      mention: mentionInChat,
+      pendingMention,
+      consumeMention,
+      unread: chatUnread,
+      focusTick: chatFocusTick,
+      requestFocus: requestFocusChat
+    },
     friends: {
       available: friendsData.available,
       list: friendsData.friends,
@@ -1035,6 +1304,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       loadProgress,
       loadStep,
       startWithAccount,
+      authPending: auth != null,
+      authCode: auth?.code ?? null,
+      cancelLogin,
       exploreAsGuest,
       jumpIn,
       profileFetchFailed,

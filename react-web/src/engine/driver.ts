@@ -26,6 +26,11 @@ export interface LoginDriver {
    *  supports: console `/login_identity` for the engine, `loginPrevious` over the bridge.
    *  `defaultOnError` as for loginWithIdentity. */
   jumpIn(defaultOnError?: boolean): Promise<void>
+  /** Fresh sign-in through the engine's remote-wallet flow (SystemApi.loginNew): the engine
+   *  opens the auth site in the user's external browser and streams back a verification code
+   *  as a 'loginCode' message; resolves when the user approves there. Only the bridge backends
+   *  implement it — its absence means fresh sign-in is a same-origin auth redirect (web). */
+  loginNew?(): Promise<void>
   /** Post a message to the scene (e.g. sendChat). */
   send(msg: PageToScene): void
   /** Subscribe to every scene→page message. Returns an unsubscribe. */
@@ -39,7 +44,7 @@ export interface LoginDriver {
    *  screen keeps its CTAs in a "Starting…" state until this is true. Optional — the mock is always
    *  ready. */
   engineReady?(): boolean
-  /** Real weighted boot progress (0–100) + active step id, surfaced from the engine iframe loader for
+  /** Real weighted boot progress (0–100) + active step id, surfaced from the engine loader for
    *  the login footer bar. Optional — the mock has no engine to download. */
   loadProgress?(): number
   loadStep?(): string | null
@@ -47,7 +52,7 @@ export interface LoginDriver {
   enginePanic?(): { message: string } | null
   /** Clear the stashed panic once consumed, so a later read can't surface a stale one. Optional — mock. */
   clearEnginePanic?(): void
-  /** Re-arm the iframe crash watchdog after the host dismisses a runtime crash (resets its `shown`
+  /** Re-arm the engine crash watchdog after the host dismisses a runtime crash (resets its `shown`
    *  flag so a second genuine crash still shows). Optional — the mock has no engine. */
   rearmCrashWatchdog?(): void
   /** Boot the engine at a chosen realm/position (deferred-start: nothing loads until the user picks

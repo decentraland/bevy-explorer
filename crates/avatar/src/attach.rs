@@ -62,8 +62,8 @@ pub fn update_attached(
     attachments: Query<(Entity, &AvatarAttachment), Changed<AvatarAttachment>>,
     mut removed_attachments: RemovedComponents<AvatarAttachment>,
     visibility_component: Query<&VisibilityComponent>,
-    primary_user: Query<&AttachPoints, With<PrimaryUser>>,
-    all_users: Query<(&AttachPoints, &AvatarShape, Has<PrimaryUser>)>,
+    primary_user: Query<(Entity, &AttachPoints), With<PrimaryUser>>,
+    all_users: Query<(Entity, &AttachPoints, &AvatarShape, Has<PrimaryUser>)>,
 ) {
     for removed in removed_attachments.read() {
         if let Ok(mut commands) = commands.get_entity(removed) {
@@ -87,31 +87,31 @@ pub fn update_attached(
     }
 
     for (ent, attach) in attachments.iter() {
-        let (is_primary, attach_points) = match attach.0.avatar_id.as_ref() {
+        let (is_primary, player, attach_points) = match attach.0.avatar_id.as_ref() {
             None => {
-                let Ok(data) = primary_user.single() else {
+                let Ok((player, data)) = primary_user.single() else {
                     warn!("no primary user");
                     continue;
                 };
-                (true, data)
+                (true, player, data)
             }
             Some(id) => {
                 let id = id.to_lowercase();
-                let Some((attach_points, _, has_primary)) = all_users
+                let Some((player, attach_points, _, has_primary)) = all_users
                     .iter()
-                    .find(|(_, avatar_shape, _)| avatar_shape.0.id.to_lowercase() == id)
+                    .find(|(_, _, avatar_shape, _)| avatar_shape.0.id.to_lowercase() == id)
                 else {
                     warn!("avatar shape id {:?} not found", id);
                     warn!(
                         "available avatar shapes: {:?}",
                         all_users
                             .iter()
-                            .map(|(_, avatar_shape, _)| &avatar_shape.0.id)
+                            .map(|(_, _, avatar_shape, _)| &avatar_shape.0.id)
                             .collect::<Vec<_>>()
                     );
                     continue;
                 };
-                (has_primary, attach_points)
+                (has_primary, player, attach_points)
             }
         };
 
@@ -146,7 +146,7 @@ pub fn update_attached(
 
         let mut commands = commands.entity(ent);
         commands.try_insert((
-            ParentPositionSync::<AvatarAttachStage>::new(sync_entity),
+            ParentPositionSync::<AvatarAttachStage>::new_with_scene_writeback(sync_entity, player),
             DisableCollisions,
             AttachedToPlayer { is_primary },
         ));

@@ -7,6 +7,8 @@
 // Domain types mirror scene/src/bevy-api/interface.ts so the bridge scene can
 // forward SystemApi results verbatim.
 
+import type { SceneLoadingUi } from './generated'
+
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
 /** Mirrors SystemApi.getPreviousLogin(): userId is absent for a fresh user. */
@@ -24,6 +26,7 @@ export interface LoginPreviousResult {
 export type RpcMethod =
   | 'getPreviousLogin'
   | 'loginPrevious'
+  | 'loginNew'
   | 'loginGuest'
   | 'loginIdentity'
   | 'loginCancel'
@@ -42,6 +45,19 @@ export interface SendChatRequest {
   kind: 'sendChat'
   message: string
   channel: string
+}
+
+/** Reload the current scene(s) — the `/reload` chat command (scene calls SystemApi.reload). */
+export interface ReloadSceneRequest {
+  kind: 'reloadScene'
+}
+
+/** Run an engine console command (the `/commands` chat command → `help`); the scene relays the
+ *  console's text output back as a system chat message. */
+export interface ConsoleCommandRequest {
+  kind: 'consoleCommand'
+  command: string
+  args?: string[]
 }
 
 /** Sidebar nav actions the React sidebar triggers in the scene (open a menu/popup,
@@ -65,6 +81,8 @@ export interface NavActionRequest {
 export type PageToScene =
   | RpcRequest
   | SendChatRequest
+  | ReloadSceneRequest
+  | ConsoleCommandRequest
   | NavActionRequest
   | FriendActionRequest
   | GetSettingsRequest
@@ -110,13 +128,16 @@ export interface PlayerReadyEvent {
   name: 'playerReady'
 }
 
-/** Mirrors SystemApi SceneLoadingWindow — the scene-asset loading state. */
-export interface SceneLoadingState {
-  visible: boolean
-  realmConnected: boolean
-  title: string
-  pendingAssets: number | null
+/** Mid-flight `loginNew` verification code (SystemApi.loginNew's `code` promise): the engine
+ *  has opened the auth site in the user's external browser; the page shows this code so the
+ *  user can match it there. `null` = the auth server issued no code (nothing to match). */
+export interface LoginCodeMessage {
+  kind: 'loginCode'
+  code: string | null
 }
+
+/** Mirrors SystemApi SceneLoadingWindow — the scene-asset loading state. */
+export type SceneLoadingState = SceneLoadingUi
 
 /** Streamed scene-asset loading updates (drives the React loading screen). */
 export interface SceneLoadingMessage {
@@ -141,6 +162,12 @@ export interface ChatRelayMessage {
 export interface ChatVisibilityMessage {
   kind: 'chatVisibility'
   open: boolean
+}
+
+/** Enter was pressed (engine "Chat" system action) → open + focus the chat input, even while
+ *  the engine holds keyboard focus (pointer-locked camera-look). */
+export interface FocusChatMessage {
+  kind: 'focusChat'
 }
 
 /** A nearby player (from the scene's PlayerIdentityData set). */
@@ -205,25 +232,11 @@ export interface FriendActionRequest {
   address: string
 }
 
-export interface SettingVariant {
-  name: string
-  description: string
-}
-
 /** Mirrors the engine's ExplorerSetting (BevyApi.getSettings). A setting is a
  *  Select when it has namedVariants, otherwise a numeric Slider; a 2-variant or
  *  0..1 setting renders as a Toggle. */
-export interface Setting {
-  name: string
-  category: string
-  description: string
-  minValue: number
-  maxValue: number
-  namedVariants: SettingVariant[]
-  value: number
-  default: number
-  stepSize: number
-}
+import type { SettingInfo as Setting, NamedVariant as SettingVariant } from './generated'
+export type { Setting, SettingVariant }
 
 export interface SettingsMessage {
   kind: 'settings'
@@ -645,15 +658,22 @@ export interface SetSettingRequest {
   value: number
 }
 
-/** One hover hint for a world entity under the reticle (from the engine getHoverStream). */
+/** One interaction hint (a single key binding) for a world entity: the button to press + its label.
+ *  Shared by the reticle hover and the proximity tooltips. React maps `button` (an `InputAction` enum)
+ *  to a glyph (E / 🖱 / 1…). */
 export interface HoverAction {
-  /** The `InputAction` enum the action is bound to; React maps it to a key label (E / 🖱 / 1…). */
   button: number
   text: string
-  /** false → out of range ("Too far, get closer"). */
+  /** false → out of range (shown greyed with a "get closer" hint instead of the key glyph). */
   enabled: boolean
+  /** Only meaningful when `enabled` is false — which distance rule gates the action: 'camera' (no
+   *  `maxPlayerDistance`, incl. the implicit default) → camera glyph + "Get camera closer";
+   *  'player' (`maxPlayerDistance` set) → walking glyph + "Get player closer". Defaults to 'camera'. */
+  tooFarReason?: 'camera' | 'player'
 }
-/** Hover hints to show near the reticle. Empty array = nothing hovered. */
+/** Interaction hints for the entity under the reticle. Empty array = nothing hovered. The tooltip's
+ *  screen position is derived in React from the DOM cursor (free) or the centre (pointer-locked), so
+ *  no coordinates travel on the wire. */
 export interface HoverMessage {
   kind: 'hover'
   actions: HoverAction[]
@@ -664,6 +684,14 @@ export interface HoverMessage {
 export interface CursorLockMessage {
   kind: 'cursorLock'
   locked: boolean
+}
+
+/** A HUD-relevant engine system action that fired (pressed). `action` is the engine's SystemAction
+ *  variant name, e.g. 'Cancel' (bound to Escape) which closes the topmost popup. Relayed authoritatively
+ *  from the engine's input stream so it works even while the engine holds keyboard focus. */
+export interface SystemActionMessage {
+  kind: 'systemAction'
+  action: string
 }
 
 /** A proximity tooltip for an in-range world entity, anchored at its projected screen position
@@ -681,15 +709,26 @@ export interface ProximityMessage {
   tips: ProximityTip[]
 }
 
+/** A nearby avatar was clicked in the world → open their profile card. Only the address travels;
+ *  React resolves the display name (nearby roster) and anchors the card at the live DOM cursor. */
+export interface AvatarClickMessage {
+  kind: 'avatarClick'
+  address: string
+}
+
 export type SceneToPage =
   | RpcResponse
   | HoverMessage
   | CursorLockMessage
+  | SystemActionMessage
   | ProximityMessage
+  | AvatarClickMessage
   | PlayerReadyEvent
+  | LoginCodeMessage
   | SceneLoadingMessage
   | ChatRelayMessage
   | ChatVisibilityMessage
+  | FocusChatMessage
   | MembersMessage
   | MenuVisibilityMessage
   | FriendsMessage
