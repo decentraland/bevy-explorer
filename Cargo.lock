@@ -1250,6 +1250,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_hanabi"
+version = "0.16.0"
+source = "git+https://github.com/robtfm/bevy_hanabi?branch=0.16-dcl#788d63278f59eb298a43836e1942d322cf82981d"
+dependencies = [
+ "anyhow",
+ "bevy",
+ "bitflags 2.11.0",
+ "bytemuck",
+ "copyless",
+ "fixedbitset 0.5.7",
+ "naga",
+ "naga_oil",
+ "rand 0.8.5",
+ "rand_pcg",
+ "ron",
+ "serde",
+ "thiserror 2.0.18",
+ "wgpu",
+]
+
+[[package]]
 name = "bevy_image"
 version = "0.16.1"
 source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#b771bff2a673abe309d39878d142cdf0b1ff9b88"
@@ -2942,6 +2963,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "copyless"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2df960f5d869b2dd8532793fde43eb5427cceb126c929747a26823ab0eeb536"
+
+[[package]]
 name = "copypwasmta"
 version = "0.1.0"
 source = "git+https://github.com/robtfm/copypwasmta#04da562fdfe1198f7ff4796ed5392938873505b9"
@@ -3573,6 +3600,7 @@ dependencies = [
  "naga_oil",
  "nft",
  "once_cell",
+ "particle_system",
  "pico-args",
  "platform",
  "prost-build 0.11.9",
@@ -8072,6 +8100,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "particle_system"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_hanabi",
+ "common",
+ "dcl_component",
+ "scene_runner",
+]
+
+[[package]]
 name = "password-hash"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8865,6 +8904,15 @@ checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
 dependencies = [
  "num-traits",
  "rand 0.8.5",
+]
+
+[[package]]
+name = "rand_pcg"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59cad018caf63deb318e5a4586d99a24424a364f40f1e5778c29aca23f4fc73e"
+dependencies = [
+ "rand_core 0.6.4",
 ]
 
 [[package]]

@@ -1,0 +1,628 @@
+mod random_color_modifier;
+mod rotate_over_time_modifier;
+mod set_position_box_modifier;
+mod set_position_modifier;
+mod set_velocity_direction_modifier;
+mod set_velocity_modifier;
+mod set_velocity_spread_modifier;
+mod speed_dampen;
+mod update_sprite_index;
+
+use std::cmp::Ordering;
+
+use bevy::{platform::collections::HashSet, prelude::*};
+use bevy_hanabi::{
+    AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
+    EffectSpawner, ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, MatrixValue,
+    OrientMode, OrientModifier, ParticleEffect, ParticleTextureModifier, ScalarType,
+    SetAttributeModifier, SetPositionCircleModifier, SetPositionSphereModifier,
+    SetVelocitySphereModifier, SizeOverLifetimeModifier, SpawnerSettings, Value,
+};
+use common::{debug_panic, structs::PrimaryUser};
+use dcl_component::{
+    proto_components::{
+        common::{texture_union::Tex, Color4, ColorRange, FloatRange, Vector3},
+        sdk::components::{
+            pb_particle_system::{BlendMode, PlaybackState, Shape, SimulationSpace},
+            PbParticleSystem,
+        },
+        Color4DclToBevy,
+    },
+    ComponentPosition, SceneComponentId,
+};
+use scene_runner::{
+    renderer_context::RendererSceneContext,
+    update_world::{material::TextureResolver, AddCrdtInterfaceExt},
+    ContainerEntity, ContainingScene, SceneEntity,
+};
+
+use crate::{
+    plugin::{
+        random_color_modifier::RandomColorModifier,
+        rotate_over_time_modifier::RotateOverTimeModifier,
+        set_position_box_modifier::SetPositionBoxModifier,
+        set_position_modifier::SetPositionModifier,
+        set_velocity_direction_modifier::SetVelocityDirectionModifier,
+        set_velocity_modifier::SetVelocityModifier,
+        set_velocity_spread_modifier::SetVelocitySpreadModifier, speed_dampen::SpeedDampenModifier,
+        update_sprite_index::UpdateSpriteIndexModifier,
+    },
+    ParticleSystem,
+};
+
+const MIN_SPHERE_RADIUS: f32 = 1. / 128.;
+/// Keep in sync with https://github.com/robtfm/movement-scene/blob/main/src/constants.ts
+const GRAVITY: Vec3 = Vec3::new(0., -10., 0.);
+
+const ROTATION_ATTR: Attribute = Attribute::F32_0;
+
+macro_rules! set {
+    ($effect:expr, $stage:ident, $value:expr) => {
+        $effect = $effect.$stage($value);
+    };
+}
+
+pub struct ParticleSystemPlugin;
+
+impl Plugin for ParticleSystemPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(HanabiPlugin);
+
+        app.init_resource::<ActiveScenes>();
+
+        app.add_crdt_lww_component::<PbParticleSystem, ParticleSystem>(
+            SceneComponentId::PARTICLE_SYSTEM,
+            ComponentPosition::EntityOnly,
+        );
+
+        app.add_systems(
+            Update,
+            (
+                collect_active_scenes,
+                enable_disable_particle_systems.run_if(resource_changed::<ActiveScenes>),
+            ),
+        );
+
+        app.add_observer(particle_system_on_insert);
+        app.add_observer(particle_system_on_remove);
+    }
+}
+
+#[derive(Default, Resource, Deref, DerefMut)]
+struct ActiveScenes(HashSet<Entity>);
+
+#[derive(Component)]
+#[relationship(relationship_target = BurstingEffect)]
+struct BurstOf(Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = BurstOf)]
+struct BurstingEffect(Vec<Entity>);
+
+fn collect_active_scenes(
+    primary_user: Single<Entity, With<PrimaryUser>>,
+    mut active_scenes: ResMut<ActiveScenes>,
+    containing_scene: ContainingScene,
+) {
+    let player_in = containing_scene.get(*primary_user);
+
+    let difference = active_scenes
+        .symmetric_difference(&player_in)
+        .copied()
+        .collect::<HashSet<_>>();
+    if !difference.is_empty() {
+        **active_scenes = player_in;
+    }
+}
+
+fn enable_disable_particle_systems(
+    particle_systems: Query<(
+        Entity,
+        &ParticleSystem,
+        &SceneEntity,
+        Option<&BurstingEffect>,
+    )>,
+    mut effect_spawner: Query<&mut EffectSpawner>,
+    active_scenes: Res<ActiveScenes>,
+) {
+    let mut set_active = |entity: Entity, active: bool| -> bool {
+        if let Ok(mut effect_spawner) = effect_spawner.get_mut(entity) {
+            effect_spawner.active = active;
+            true
+        } else {
+            false
+        }
+    };
+
+    for (entity, particle_system, scene_entity, maybe_bursting_effect) in particle_systems {
+        let active = particle_system.active.unwrap_or(true)
+            && particle_system
+                .playback_state
+                .is_none_or(|playback_state| playback_state == PlaybackState::PsPlaying as i32)
+            && active_scenes.contains(&scene_entity.root);
+        if !set_active(entity, active) {
+            error!("Entity with `ParticleSystem` must have `EffectSpawner`");
+        }
+        for child in maybe_bursting_effect
+            .map(|bursting_effect| bursting_effect.collection())
+            .into_iter()
+            .flatten()
+            .copied()
+        {
+            set_active(child, active);
+        }
+    }
+}
+
+fn particle_system_on_insert(
+    trigger: Trigger<OnInsert, ParticleSystem>,
+    mut commands: Commands,
+    particle_systems: Query<(
+        &ParticleSystem,
+        Option<&ContainerEntity>,
+        Option<&BurstingEffect>,
+    )>,
+    renderer_scene_contexts: Query<&RendererSceneContext>,
+    mut effect_assets: ResMut<Assets<EffectAsset>>,
+    mut texture_resolver: TextureResolver,
+    active_scenes: Res<ActiveScenes>,
+) {
+    let entity = trigger.target();
+    let Ok((particle_system, maybe_container_entity, maybe_bursting_effect)) =
+        particle_systems.get(entity)
+    else {
+        unreachable!("Infallible query");
+    };
+
+    let Some(container_entity) = maybe_container_entity else {
+        debug_panic!("Particle system does not have ContainerEntity.");
+    };
+
+    let Ok(renderer_scene_context) = renderer_scene_contexts.get(container_entity.root) else {
+        debug_panic!("Particle system is not contained in a valid scene.");
+    };
+
+    let active =
+        particle_system.active.unwrap_or(true) && active_scenes.contains(&container_entity.root);
+    {
+        debug!("Creating main particle system");
+        let rate = particle_system.rate.unwrap_or(10.);
+        let r#loop = particle_system.r#loop.unwrap_or(true);
+        make_particle_system(
+            &mut commands,
+            entity,
+            particle_system,
+            SpawnerSettings::rate(rate.into())
+                .with_starts_active(active)
+                .with_cycle_count(!r#loop as u32),
+            &mut texture_resolver,
+            renderer_scene_context,
+            &mut effect_assets,
+        );
+    }
+
+    if let Some(bursts_config) = &particle_system.bursts {
+        let bursts = &bursts_config.values;
+        let children = if let Some(bursting_effect) = maybe_bursting_effect {
+            let mut burst_effects = bursting_effect.collection().to_vec();
+            match burst_effects.len().cmp(&bursts.len()) {
+                Ordering::Greater => {
+                    for child in &burst_effects[bursts.len()..] {
+                        commands.entity(*child).despawn();
+                    }
+                    burst_effects[..bursts.len()].to_vec()
+                }
+                Ordering::Equal => burst_effects,
+                Ordering::Less => {
+                    for _ in burst_effects.len()..bursts.len() {
+                        burst_effects.push(commands.spawn((ChildOf(entity), BurstOf(entity))).id());
+                    }
+                    burst_effects
+                }
+            }
+        } else {
+            (0..bursts.len())
+                .map(|_| commands.spawn((ChildOf(entity), BurstOf(entity))).id())
+                .collect()
+        };
+
+        for (burst, entity) in bursts.iter().zip(children) {
+            debug!("Creating burst particle system");
+            let cycles = burst.cycles.unwrap_or(1) as u32;
+            let mut interval = burst.interval.unwrap_or(0.01);
+            if !interval.is_finite() {
+                interval = 0.;
+            }
+            if cycles != 1 {
+                interval = interval.max(f32::EPSILON);
+            }
+            make_particle_system(
+                &mut commands,
+                entity,
+                particle_system,
+                SpawnerSettings::new(
+                    (burst.count as f32).into(),
+                    0.0.into(),
+                    interval.into(),
+                    cycles,
+                )
+                .with_starts_active(active)
+                .with_first_emission(burst.time)
+                .with_probability(burst.probability.unwrap_or(1.)),
+                &mut texture_resolver,
+                renderer_scene_context,
+                &mut effect_assets,
+            );
+        }
+    } else {
+        commands.entity(entity).despawn_related::<BurstingEffect>();
+    }
+}
+
+fn particle_system_on_remove(
+    trigger: Trigger<OnRemove, ParticleSystem>,
+    mut commands: Commands,
+    bursting_effects: Query<&BurstingEffect>,
+) {
+    let entity = trigger.target();
+    // On replace ParticleEffect will be replaced with a new value
+    // On despawn ParticleEffect will cease to exist anyways
+    commands.entity(entity).try_remove::<ParticleEffect>();
+    if let Ok(bursting_effect) = bursting_effects.get(entity) {
+        for burst in bursting_effect.collection() {
+            commands.entity(*burst).try_despawn();
+        }
+    }
+}
+
+fn make_particle_system(
+    commands: &mut Commands,
+    entity: Entity,
+    particle_system: &ParticleSystem,
+    mut spawner_settings: SpawnerSettings,
+    texture_resolver: &mut TextureResolver,
+    renderer_scene_context: &RendererSceneContext,
+    effect_assets: &mut Assets<EffectAsset>,
+) {
+    let mut effect_material = EffectMaterial { images: vec![] };
+
+    let max_particles = particle_system.max_particles.unwrap_or(1000);
+    let lifetime = particle_system.lifetime.unwrap_or(5.);
+    let gravity = particle_system.gravity.unwrap_or(0.);
+    let additional_force = particle_system
+        .additional_force
+        .as_ref()
+        .map(Vector3::world_vec_to_vec3)
+        .unwrap_or(Vec3::ZERO);
+    let initial_velocity_speed = particle_system
+        .initial_velocity_speed
+        .unwrap_or(FloatRange { start: 1., end: 1. });
+    let limit_velocity = particle_system.limit_velocity.as_ref();
+    let initial_size = particle_system
+        .initial_size
+        .unwrap_or(FloatRange { start: 1., end: 1. });
+    let size_over_lifetime = particle_system
+        .size_over_time
+        .unwrap_or(FloatRange { start: 1., end: 1. });
+    let initial_rotation = Transform::from_rotation(
+        particle_system
+            .initial_rotation
+            .map(|quat| quat.to_bevy_normalized())
+            .unwrap_or_default(),
+    );
+    let rotate_over_time = particle_system
+        .rotation_over_time
+        .map(|quat| quat.to_bevy_normalized().inverse());
+    let face_travel_velocity = particle_system.face_travel_direction.unwrap_or(false);
+    let initial_color = particle_system.initial_color.unwrap_or(ColorRange {
+        start: Some(Color4 {
+            r: 1.,
+            g: 1.,
+            b: 1.,
+            a: 1.,
+        }),
+        end: Some(Color4 {
+            r: 1.,
+            g: 1.,
+            b: 1.,
+            a: 1.,
+        }),
+    });
+    let color_over_time = particle_system.color_over_time.unwrap_or(ColorRange {
+        start: Some(Color4 {
+            r: 1.,
+            g: 1.,
+            b: 1.,
+            a: 1.,
+        }),
+        end: Some(Color4 {
+            r: 1.,
+            g: 1.,
+            b: 1.,
+            a: 1.,
+        }),
+    });
+    let texture = particle_system
+        .texture
+        .as_ref()
+        .and_then(|texture| {
+            texture_resolver
+                .resolve_texture(renderer_scene_context, &Tex::Texture(texture.clone()))
+                .inspect_err(|err| {
+                    error!("Could not resolve particle system texture due to '{err:?}'.")
+                })
+                .ok()
+        })
+        .map(|resolved_texture| resolved_texture.image);
+    let blend_mode = match particle_system.blend_mode() {
+        BlendMode::PsbAlpha => AlphaMode::Blend,
+        BlendMode::PsbAdd => AlphaMode::Add,
+        BlendMode::PsbMultiply => AlphaMode::Multiply,
+    };
+    let billboard = particle_system.billboard.unwrap_or(true);
+    let sprite_sheet = particle_system.sprite_sheet.as_ref();
+    let shape = particle_system.shape.as_ref();
+    let playback_state = particle_system
+        .playback_state
+        .map(|_| particle_system.playback_state())
+        .unwrap_or(PlaybackState::PsPlaying);
+    // TODO prewarm
+    let simulation_space = match particle_system.simulation_space() {
+        SimulationSpace::PssLocal => bevy_hanabi::SimulationSpace::Local,
+        SimulationSpace::PssWorld => bevy_hanabi::SimulationSpace::Global,
+    };
+
+    let writer = ExprWriter::new();
+
+    // Modifiers
+    let init_position = make_position(shape, &writer);
+    let init_rotation =
+        SetAttributeModifier::new(ROTATION_ATTR, writer.lit(std::f32::consts::PI).expr());
+    let init_axis_x = SetAttributeModifier::new(
+        Attribute::AXIS_X,
+        writer.lit(initial_rotation.transform_point(Vec3::X)).expr(),
+    );
+    let init_axis_y = SetAttributeModifier::new(
+        Attribute::AXIS_Y,
+        writer.lit(initial_rotation.transform_point(Vec3::Y)).expr(),
+    );
+    let init_axis_z = SetAttributeModifier::new(
+        Attribute::AXIS_Z,
+        writer.lit(initial_rotation.transform_point(Vec3::Z)).expr(),
+    );
+    let init_size = SetAttributeModifier::new(
+        Attribute::SIZE,
+        random_lerp(&writer, initial_size.start, initial_size.end),
+    );
+    let init_velocity = make_velocity(shape, initial_velocity_speed, &writer);
+    let init_age = SetAttributeModifier::new(Attribute::AGE, writer.lit(0.).expr());
+    let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, writer.lit(lifetime).expr());
+    let init_color = RandomColorModifier {
+        start: writer
+            .lit(
+                initial_color
+                    .start
+                    .map(|color| color.convert_srgba())
+                    .unwrap_or(Color::WHITE)
+                    .to_linear()
+                    .to_vec4(),
+            )
+            .expr(),
+        end: writer
+            .lit(
+                initial_color
+                    .end
+                    .map(|color| color.convert_srgba())
+                    .unwrap_or(Color::WHITE)
+                    .to_linear()
+                    .to_vec4(),
+            )
+            .expr(),
+    };
+
+    let update_accel = AccelModifier::new(
+        (writer.lit(GRAVITY) * writer.lit(Vec3::new(1., gravity, 1.))
+            + writer.lit(additional_force))
+        .expr(),
+    );
+    let update_clamp_velocity = limit_velocity.map(|limit_velocity| SpeedDampenModifier {
+        max_speed: writer.lit(limit_velocity.speed).expr(),
+        dampen: writer
+            .lit(limit_velocity.dampen.unwrap_or(1.).clamp(0., 1.))
+            .expr(),
+    });
+    let update_rotate_over_time = rotate_over_time.map(|rotation| RotateOverTimeModifier {
+        rotation: writer
+            .lit(Value::Matrix(MatrixValue::from(
+                Transform::from_rotation(rotation).compute_matrix(),
+            )))
+            .expr(),
+    });
+    let update_sprite_sheet = sprite_sheet.map(|sprite_sheet| UpdateSpriteIndexModifier {
+        frame_count: sprite_sheet.tiles_x * sprite_sheet.tiles_y,
+        frames_per_second: sprite_sheet.frames_per_second.unwrap_or(30.),
+    });
+
+    let render_size_over_lifetime = SizeOverLifetimeModifier {
+        gradient: Gradient::from_keys([
+            (0., Vec3::splat(size_over_lifetime.start)),
+            (1., Vec3::splat(size_over_lifetime.end)),
+        ]),
+        screen_space_size: false,
+    };
+    let render_face_travel_velocity = OrientModifier {
+        mode: OrientMode::AlongVelocity,
+        rotation: None,
+    };
+    let render_color_over_time = ColorOverLifetimeModifier::new(Gradient::from_keys([
+        (
+            0.,
+            color_over_time
+                .start
+                .map(|color| color.convert_srgba().to_linear().to_vec4())
+                .unwrap_or(Vec4::ONE),
+        ),
+        (
+            1.,
+            color_over_time
+                .end
+                .map(|color| color.convert_srgba().to_linear().to_vec4())
+                .unwrap_or(Vec4::ONE),
+        ),
+    ]));
+    let render_texture = texture.as_ref().map(|texture| {
+        let texture_slot = writer.lit(effect_material.images.len() as u32).expr();
+        effect_material.images.push(texture.clone());
+        ParticleTextureModifier::new(texture_slot)
+    });
+    let render_billboard = OrientModifier {
+        mode: OrientMode::ParallelCameraDepthPlane,
+        rotation: Some(writer.attr(ROTATION_ATTR).expr()),
+    };
+    let render_sprite_sheet = sprite_sheet.map(|sprite_sheet| FlipbookModifier {
+        sprite_grid_size: UVec2 {
+            x: sprite_sheet.tiles_x,
+            y: sprite_sheet.tiles_y,
+        },
+    });
+
+    let mut module = writer.finish();
+    if render_texture.is_some() {
+        module.add_texture_slot("color");
+    }
+
+    match playback_state {
+        PlaybackState::PsPlaying => (),
+        PlaybackState::PsPaused | PlaybackState::PsStopped => {
+            spawner_settings.set_starts_active(false);
+        }
+    }
+
+    let mut effect_asset = EffectAsset::new(max_particles, spawner_settings, module)
+        .with_alpha_mode(blend_mode)
+        .with_simulation_space(simulation_space);
+
+    set!(effect_asset, init, init_position);
+    set!(effect_asset, init, init_rotation);
+    set!(effect_asset, init, init_axis_x);
+    set!(effect_asset, init, init_axis_y);
+    set!(effect_asset, init, init_axis_z);
+    set!(effect_asset, init, init_size);
+    set!(effect_asset, init, init_velocity);
+    set!(effect_asset, init, init_age);
+    set!(effect_asset, init, init_lifetime);
+    set!(effect_asset, init, init_color);
+
+    set!(effect_asset, update, update_accel);
+    if let Some(update_clamp_velocity) = update_clamp_velocity {
+        set!(effect_asset, update, update_clamp_velocity);
+    }
+    if let Some(update_rotate_over_time) = update_rotate_over_time {
+        set!(effect_asset, update, update_rotate_over_time);
+    }
+    if let Some(update_sprite_sheet) = update_sprite_sheet {
+        set!(effect_asset, update, update_sprite_sheet);
+    }
+
+    set!(effect_asset, render, render_size_over_lifetime);
+    if face_travel_velocity {
+        set!(effect_asset, render, render_face_travel_velocity);
+    }
+    if particle_system.color_over_time.is_some() {
+        set!(effect_asset, render, render_color_over_time);
+    }
+    if let Some(render_texture) = render_texture {
+        set!(effect_asset, render, render_texture);
+    }
+    if billboard {
+        set!(effect_asset, render, render_billboard);
+    }
+    if let Some(render_sprite_sheet) = render_sprite_sheet {
+        set!(effect_asset, render, render_sprite_sheet);
+    }
+
+    let handle = effect_assets.add(effect_asset);
+
+    commands
+        .entity(entity)
+        .insert((ParticleEffect::new(handle), effect_material))
+        .try_remove::<EffectSpawner>();
+}
+
+fn make_position(shape: Option<&Shape>, writer: &ExprWriter) -> SetPositionModifier {
+    match shape {
+        None | Some(Shape::Point(_)) => SetPositionModifier::Sphere(SetPositionSphereModifier {
+            center: writer.lit(Vec3::ZERO).expr(),
+            radius: writer.lit(MIN_SPHERE_RADIUS).expr(),
+            dimension: bevy_hanabi::ShapeDimension::Volume,
+        }),
+        Some(Shape::Sphere(sphere)) => SetPositionModifier::Sphere(SetPositionSphereModifier {
+            center: writer.lit(Vec3::ZERO).expr(),
+            radius: writer
+                .lit(sphere.radius.unwrap_or(1.).max(MIN_SPHERE_RADIUS))
+                .expr(),
+            dimension: bevy_hanabi::ShapeDimension::Volume,
+        }),
+        Some(Shape::Box(r#box)) => SetPositionModifier::Box(SetPositionBoxModifier {
+            scale: writer
+                .lit(
+                    r#box
+                        .size
+                        .as_ref()
+                        .map(Vector3::world_vec_to_vec3)
+                        .unwrap_or(Vec3::ONE),
+                )
+                .expr(),
+            dimension: bevy_hanabi::ShapeDimension::Volume,
+        }),
+        Some(Shape::Cone(cone)) => SetPositionModifier::Circle(SetPositionCircleModifier {
+            axis: writer.lit(Vec3::NEG_Z).expr(),
+            center: writer.lit(Vec3::ZERO).expr(),
+            dimension: bevy_hanabi::ShapeDimension::Volume,
+            radius: writer.lit(cone.radius.unwrap_or(1.)).expr(),
+        }),
+    }
+}
+
+fn make_velocity(
+    shape: Option<&Shape>,
+    initial_velocity_speed: FloatRange,
+    writer: &ExprWriter,
+) -> SetVelocityModifier {
+    let speed = random_lerp(
+        writer,
+        initial_velocity_speed.start,
+        initial_velocity_speed.end,
+    );
+    match shape {
+        None | Some(Shape::Point(_) | Shape::Sphere(_)) => {
+            SetVelocityModifier::Sphere(SetVelocitySphereModifier {
+                center: writer.lit(Vec3::ZERO).expr(),
+                speed,
+            })
+        }
+        Some(Shape::Box(_)) => SetVelocityModifier::Direction(SetVelocityDirectionModifier {
+            direction: writer.lit(Vec3::NEG_Z).expr(),
+            speed,
+        }),
+        Some(Shape::Cone(cone)) => SetVelocityModifier::Spread(SetVelocitySpreadModifier {
+            center: writer.lit(Vec3::ZERO).expr(),
+            radius: writer.lit(cone.radius.unwrap_or(1.)).expr(),
+            axis: writer.lit(Vec3::NEG_Z).expr(),
+            spread: writer
+                .lit(
+                    cone.angle
+                        .map(f32::to_radians)
+                        .unwrap_or(25.0f32.to_radians()),
+                )
+                .expr(),
+            speed,
+        }),
+    }
+}
+
+fn random_lerp(writer: &ExprWriter, start: f32, end: f32) -> ExprHandle {
+    let expr =
+        writer.lit(start) + (writer.lit(end) - writer.lit(start)) * writer.rand(ScalarType::Float);
+    expr.expr()
+}
