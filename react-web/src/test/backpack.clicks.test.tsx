@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BackpackPage } from '../features/backpack/BackpackPage'
-import type { Wearable } from '../engine/protocol'
+import type { Outfit, OutfitSlot, Wearable } from '../engine/protocol'
 import type { BackpackState } from '../features/session/useEngineSession'
 import { fakeSession } from './harness'
 
@@ -14,6 +14,12 @@ const wearable = (over: Partial<Wearable> = {}): Wearable => ({
   equipped: false,
   ...over
 })
+
+const outfitSlot = (slot: number, wearables: string[]): OutfitSlot => {
+  const grey = { r: 0.5, g: 0.5, b: 0.5 }
+  const outfit: Outfit = { bodyShape: '', eyes: { color: grey }, hair: { color: grey }, skin: { color: grey }, wearables, forceRender: [] }
+  return { slot, outfit }
+}
 
 function renderBackpack(over: Partial<BackpackState> = {}): BackpackState {
   const backpack: BackpackState = { ...fakeSession().backpack, open: true, list: [wearable()], equip: vi.fn(), preview: vi.fn(), ...over }
@@ -74,6 +80,38 @@ describe('backpack page clicks', () => {
   it('a required category (eyes) shows no unequip button even when equipped', () => {
     renderBackpack({ list: [], equipped: [wearable({ urn: 'urn:eyes', category: 'eyes', equipped: true })] })
     expect(screen.queryByRole('button', { name: 'Unequip Eyes' })).toBeNull()
+  })
+
+  it('outfits: the outfit matching the current look is marked equipped', async () => {
+    renderBackpack({
+      list: [],
+      equipped: [wearable({ urn: 'urn:hat', category: 'hat' }), wearable({ urn: 'urn:shirt', category: 'upper_body' })],
+      outfits: [outfitSlot(0, ['urn:hat', 'urn:shirt']), outfitSlot(1, ['urn:other'])]
+    })
+    await userEvent.click(screen.getByRole('button', { name: /saved outfits/i }))
+    // Only slot 0 (Outfit 1) equals the equipped set → exactly one equipped dot.
+    expect(document.querySelectorAll('[class*="outfitDot"]')).toHaveLength(1)
+  })
+
+  it('outfits: selecting shows the outfit wearables in the detail panel without equipping or previewing', async () => {
+    const backpack = renderBackpack({
+      list: [],
+      equipped: [],
+      outfits: [outfitSlot(0, ['urn:hat', 'urn:shirt', 'urn:pants'])]
+    })
+    await userEvent.click(screen.getByRole('button', { name: /saved outfits/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Outfit 1' }))
+    // The detail panel shows every wearable of the outfit (the card composite shows only four).
+    expect(document.querySelectorAll('[class*="outfitDetailGrid"] img')).toHaveLength(3)
+    expect(vi.mocked(backpack.equipOutfit)).not.toHaveBeenCalled()
+    expect(vi.mocked(backpack.preview)).not.toHaveBeenCalled()
+  })
+
+  it('outfits: double-clicking an outfit equips it', async () => {
+    const backpack = renderBackpack({ list: [], equipped: [], outfits: [outfitSlot(0, ['urn:hat'])] })
+    await userEvent.click(screen.getByRole('button', { name: /saved outfits/i }))
+    await userEvent.dblClick(screen.getByRole('button', { name: 'Outfit 1' }))
+    expect(vi.mocked(backpack.equipOutfit)).toHaveBeenCalledWith(0)
   })
 
   it('switching to the Emotes tab shows the equipped emotes', async () => {

@@ -612,6 +612,21 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
 }
+/* Matches the current look — mirrors the equipped wearable (accent ring + dot). */
+.outfitEquipped {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.outfitDot {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--scrim);
+}
 .outfitThumbs {
   flex: 1;
   min-height: 0;
@@ -680,6 +695,28 @@
   text-transform: uppercase;
   text-align: center;
   color: var(--ink-6);
+}
+/* Selected-outfit detail: every wearable thumbnail (the card composite shows only four). */
+.outfitDetailGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+.outfitDetailThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: var(--fill-3);
+  overflow: hidden;
+}
+.outfitDetailThumb img {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
 }
 
 .empty {

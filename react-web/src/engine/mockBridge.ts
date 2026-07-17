@@ -412,9 +412,10 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'saveOutfit') {
-      // Capture the currently-equipped mock wearables as the saved look.
+      // Capture the full current look (equippedNow includes the off-catalog item), so a saved slot
+      // equals the equipped set and shows the "matches current look" marker.
       mockOutfits.outfits = mockOutfits.outfits.filter((o) => o.slot !== msg.slot)
-      mockOutfits.outfits.push({ slot: msg.slot, outfit: mockOutfit(mockWearables.filter((w) => w.equipped).map((w) => w.urn)) })
+      mockOutfits.outfits.push({ slot: msg.slot, outfit: mockOutfit(equippedNow().map((w) => w.urn)) })
       mockOutfits.outfits.sort((a, b) => a.slot - b.slot)
       reply({ kind: 'outfits', metadata: mockOutfits })
       return

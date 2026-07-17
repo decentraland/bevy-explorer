@@ -125,12 +125,14 @@ function DetailPanel({ item }: { item: Wearable | Emote | null }): React.JSX.Ele
 }
 
 // One Saved-Outfits slot: an empty "save current look" tile, or a saved outfit showing a
-// composite of its wearable thumbnails with Equip / Delete actions. Clicking a saved slot
-// live-previews it on the avatar (the left preview column); Equip persists it.
+// composite of its wearable thumbnails with Equip / Delete actions. Clicking a saved slot selects
+// it (shows its wearables in the detail panel) without touching the avatar; Equip or a double-click
+// persists it. A dot marks the outfit that matches the current look (like an equipped wearable).
 function OutfitSlotCard({
   index,
   outfit,
   selected,
+  equipped,
   onSelect,
   onSave,
   onEquip,
@@ -139,6 +141,7 @@ function OutfitSlotCard({
   index: number
   outfit: Outfit | null
   selected: boolean
+  equipped: boolean
   onSelect: () => void
   onSave: () => void
   onEquip: () => void
@@ -153,18 +156,34 @@ function OutfitSlotCard({
     )
   }
   return (
-    <div className={`${styles.outfitCard} ${selected ? styles.outfitCardSel : ''}`.trim()}>
-      <button type="button" className={styles.outfitThumbs} onClick={onSelect} aria-label={`Preview Outfit ${index + 1}`}>
+    <div className={`${styles.outfitCard} ${selected ? styles.outfitCardSel : ''} ${equipped ? styles.outfitEquipped : ''}`.trim()}>
+      <button type="button" className={styles.outfitThumbs} onClick={onSelect} onDoubleClick={onEquip} aria-label={`Outfit ${index + 1}`}>
         {outfit.wearables.slice(0, 4).map((u) => (
           <span key={u} className={styles.outfitThumb}><CatalystImg urn={u} /></span>
         ))}
       </button>
+      {equipped && <span className={styles.outfitDot} aria-hidden="true" />}
       <div className={styles.outfitActions}>
         <button type="button" className={styles.outfitEquip} onClick={onEquip}>EQUIP</button>
         <button type="button" className={styles.outfitDelete} onClick={onDelete} aria-label={`Delete Outfit ${index + 1}`} title="Delete outfit">✕</button>
       </div>
       <span className={styles.outfitLabel}>Outfit {index + 1}</span>
     </div>
+  )
+}
+
+// Right-panel detail for a selected saved outfit: all its wearable thumbnails (the composite card
+// shows only the first four).
+function OutfitDetailPanel({ outfit, index }: { outfit: Outfit; index: number }): React.JSX.Element {
+  return (
+    <aside className={styles.detail}>
+      <div className={styles.detailName}>Outfit {index + 1}</div>
+      <div className={styles.outfitDetailGrid}>
+        {outfit.wearables.map((u) => (
+          <span key={u} className={styles.outfitDetailThumb}><CatalystImg urn={u} /></span>
+        ))}
+      </div>
+    </aside>
   )
 }
 
@@ -221,7 +240,7 @@ export function BackpackPage({
 }): React.JSX.Element | null {
   const [tab, setTab] = useState<'wearables' | 'emotes'>(initialTab)
   const [section, setSection] = useState<'categories' | 'outfits'>('categories')
-  // The saved-outfit slot currently live-previewed on the avatar (null = none).
+  // The saved-outfit slot currently selected (shown in the detail panel; null = none).
   const [outfitSlot, setOutfitSlot] = useState<number | null>(null)
   const [cat, setCat] = useState('all')
   const [query, setQuery] = useState('')
@@ -296,22 +315,20 @@ export function BackpackPage({
     if (backpack.open) setTab(initialTab)
   }, [backpack.open, initialTab])
 
-  // When the Backpack closes, drop any unequipped preview so the avatar reverts to the
-  // actual profile (selecting an item must never persist).
+  // When the Backpack closes, drop any unequipped preview and clear the selection so a reopen
+  // starts clean (selecting an item must never persist).
   useEffect(() => {
     if (!backpack.open) {
       setSelected(null)
+      setOutfitSlot(null)
       backpack.preview(null)
     }
   }, [backpack.open, backpack.preview])
 
-  // Leaving the Outfits section reverts any outfit live-preview back to the profile.
+  // Leaving the Outfits section clears the selected outfit (and its detail panel).
   useEffect(() => {
-    if (section !== 'outfits' && outfitSlot !== null) {
-      setOutfitSlot(null)
-      backpack.preview(null)
-    }
-  }, [section, outfitSlot, backpack.preview])
+    if (section !== 'outfits' && outfitSlot !== null) setOutfitSlot(null)
+  }, [section, outfitSlot])
 
   if (!backpack.open) return null
 
@@ -340,13 +357,25 @@ export function BackpackPage({
     setCat((prev) => (prev === c ? 'all' : c))
     setPage(0)
   }
-  // Select a saved outfit — live-preview its wearables on the avatar without persisting.
-  // (Body-shape/colour preview lands with Phase 2; Equip already applies them.)
-  const selectOutfit = (slot: number, outfit: Outfit): void => {
+  // Select a saved outfit — show its wearables in the detail panel. Like selecting a wearable, this
+  // never touches the avatar (the preview keeps showing the current look); equip via EQUIP or a
+  // double-click.
+  const selectOutfit = (slot: number): void => {
     setOutfitSlot(slot)
     setSelected(null)
-    backpack.preview(outfit.wearables)
   }
+  // An outfit matches the current look when its wearable set equals the equipped set. The equipped
+  // set holds bare item urns; an outfit may carry token/deployed urns, so compare with the same
+  // item-urn matcher used for equipping (u === urn or u startsWith `${urn}:`).
+  const outfitMatchesEquipped = (outfit: Outfit): boolean => {
+    const eq = backpack.equipped
+    if (eq.length === 0 || outfit.wearables.length !== eq.length) return false
+    return eq.every((w) => outfit.wearables.some((u) => u === w.urn || u.startsWith(`${w.urn}:`)))
+  }
+  const selectedOutfit =
+    section === 'outfits' && outfitSlot !== null
+      ? backpack.outfits.find((o) => o.slot === outfitSlot)?.outfit ?? null
+      : null
 
   const p = profile.data
   return (
@@ -433,12 +462,13 @@ export function BackpackPage({
                           index={i}
                           outfit={saved}
                           selected={outfitSlot === i}
-                          onSelect={() => { if (saved) selectOutfit(i, saved) }}
+                          equipped={saved != null && outfitMatchesEquipped(saved)}
+                          onSelect={() => { if (saved) selectOutfit(i) }}
                           onSave={() => backpack.saveOutfit(i)}
-                          onEquip={() => { backpack.equipOutfit(i); setOutfitSlot(null); backpack.preview(null) }}
+                          onEquip={() => backpack.equipOutfit(i)}
                           onDelete={() => {
                             backpack.deleteOutfit(i)
-                            if (outfitSlot === i) { setOutfitSlot(null); backpack.preview(null) }
+                            if (outfitSlot === i) setOutfitSlot(null)
                           }}
                         />
                       )
@@ -569,8 +599,13 @@ export function BackpackPage({
             )}
           </div>
 
-          {/* Right: selected-item detail. */}
-          <DetailPanel item={selected} />
+          {/* Right: selected-item detail — an outfit's wearables in the Outfits section, else the
+              selected wearable/emote. */}
+          {selectedOutfit != null ? (
+            <OutfitDetailPanel outfit={selectedOutfit} index={outfitSlot as number} />
+          ) : (
+            <DetailPanel item={section === 'outfits' ? null : selected} />
+          )}
           </div>
         </div>
       </div>
