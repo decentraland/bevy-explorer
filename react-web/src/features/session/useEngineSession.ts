@@ -443,9 +443,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const catalogItemsRef = useRef<Wearable[]>([])
   useEffect(() => { catalogItemsRef.current = catalogItems }, [catalogItems])
   const [outfits, setOutfits] = useState<OutfitsMetadata>({ outfits: [], namesForExtraSlots: [] })
-  // Mirror of outfits for equipOutfit's optimistic equipped-set rebuild (avoids stale closure).
-  const outfitsRef = useRef<OutfitsMetadata>({ outfits: [], namesForExtraSlots: [] })
-  useEffect(() => { outfitsRef.current = outfits }, [outfits])
   const [backpackOpen, setBackpackOpen] = useState(false)
   const [communities, setCommunities] = useState<Community[]>([])
   const [communitiesOpen, setCommunitiesOpen] = useState(false)
@@ -1069,13 +1066,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'deleteOutfit', slot })
   }, [])
   const equipOutfit = useCallback((slot: number) => {
+    // The bridge resolves the outfit's wearables by urn and re-emits the full `wearables` set (incl.
+    // items off the loaded catalog page), which becomes the authoritative equipped set — so no
+    // client-side rebuild here (that dropped off-page items and later un-equipped them).
     driverRef.current?.send({ kind: 'equipOutfit', slot })
-    // The bridge's equipOutfit deploys via setAvatar but never re-emits `wearables`, and the session
-    // fetches wearables only once — so rebuild the equipped set here from the outfit's wearables, else
-    // it stays stale and the next single-item equip (equipSetWith) drops the outfit's other wearables.
-    const found = outfitsRef.current.outfits.find((o) => o.slot === slot)
-    if (found != null) applyEquippedOptimistic(found.outfit.wearables.map(String))
-  }, [applyEquippedOptimistic])
+  }, [])
   const createCommunity = useCallback(
     (input: { name: string; description: string; privacy: 'public' | 'private'; discoverable: boolean }) => {
       driverRef.current?.send({ kind: 'createCommunity', ...input })

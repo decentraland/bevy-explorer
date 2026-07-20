@@ -8,6 +8,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
+import { resolveEquippedSet } from './wearables'
 import type { Ctx } from '../bridge'
 import type { Outfit, OutfitsMetadata, RGBColor } from '../../../src/engine/protocol'
 
@@ -121,5 +122,9 @@ export function registerOutfits(ctx: Ctx): void {
     }).catch((e: unknown) => {
       console.error('[outfits] equip failed', e)
     })
+    // setAvatar's deploy never pushes a wearables update, so re-emit the equipped set resolved from
+    // the outfit's wearables (by urn, independent of the loaded catalog page). Otherwise off-page
+    // outfit items never reach the HUD's category slots and the next single-item equip drops them.
+    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(outfit.wearables.map(String)) })
   })
 }

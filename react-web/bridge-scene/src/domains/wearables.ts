@@ -56,15 +56,34 @@ function itemUrnOf(urn: string): string {
 
 type WearableDef = { id: string; name?: string; rarity?: string; thumbnail?: string; data?: { category?: string } }
 
+// A wearable's DEFINITION (name/category/thumbnail/model/rarity) is stable enough within a session to
+// cache, though NOT truly immutable: a creator can re-publish edits (new content entity) under the
+// same urn. The cache is in-memory and session-lifetime, so at worst it serves stale metadata until a
+// reload — acceptable for the HUD. Cache defs by ITEM urn (tokenId already stripped by itemUrnOf;
+// every token of an item shares one entry) to serve repeat resolves — getWearables on reopen,
+// equipOutfit — from memory instead of re-hitting the catalyst. Mirrors bevy-ui-scene's
+// catalystMetadataMap. Misses aren't cached (a transient failure or a not-yet-resolvable urn is
+// retried next time).
+const defByItemUrn = new Map<string, WearableDef>()
+
 // Resolve wearable definitions by item urn (equipped set) to learn each one's category (slot
-// placement). Batched to keep the URL length bounded; failures skip.
+// placement). Cached hits skip the network; only misses are fetched, batched to bound URL length.
 async function resolveByUrn(baseUrl: string, itemUrns: string[]): Promise<Map<string, WearableDef>> {
   const out = new Map<string, WearableDef>()
+  const missing: string[] = []
+  for (const u of itemUrns) {
+    const cached = defByItemUrn.get(u)
+    if (cached != null) out.set(u, cached)
+    else missing.push(u)
+  }
   const CHUNK = 50
-  for (let i = 0; i < itemUrns.length; i += CHUNK) {
-    const qs = itemUrns.slice(i, i + CHUNK).map((u) => `wearableId=${u}`).join('&')
+  for (let i = 0; i < missing.length; i += CHUNK) {
+    const qs = missing.slice(i, i + CHUNK).map((u) => `wearableId=${u}`).join('&')
     const data = await getJson<{ wearables?: WearableDef[] }>(`${baseUrl}/lambdas/collections/wearables?${qs}`).catch(() => undefined)
-    for (const w of data?.wearables ?? []) out.set(w.id, w)
+    for (const w of data?.wearables ?? []) {
+      defByItemUrn.set(w.id, w)
+      out.set(w.id, w)
+    }
   }
   return out
 }
@@ -112,6 +131,39 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
   return { items, total: data?.totalAmount ?? items.length }
 }
 
+// Resolve a set of (possibly token-form) urns into the equipped category-slot list, indexing
+// item→token so a later equip can deploy them. Resolution is by urn (catalyst lambdas) and DECOUPLED
+// from the paged grid, so every item resolves regardless of which catalog page is loaded — shared by
+// `getWearables` (the live avatar) and `equipOutfit` (a saved outfit's wearables). Mirrors
+// bevy-ui-scene's fetchWearablesData(...)(...wearables) on outfit equip.
+export async function resolveEquippedSet(urns: string[]): Promise<Wearable[]> {
+  const baseUrl = await catalystBase()
+  const owned = urns.map(String)
+  // Equipped urns are the deployable token form → index item→token now (equip needs it even
+  // before any grid page is fetched).
+  for (const u of owned) {
+    const item = itemUrnOf(u)
+    if (item !== u) tokenUrnByItem.set(item, u)
+  }
+  const equippedItemUrns = [...new Set(owned.map(itemUrnOf))]
+  const resolved = equippedItemUrns.length > 0 ? await resolveByUrn(baseUrl, equippedItemUrns) : new Map<string, WearableDef>()
+  return equippedItemUrns
+    .map((itemUrn): Wearable | null => {
+      const category = resolved.get(itemUrn)?.data?.category
+      if (category == null) return null // can't place a slot without its category
+      const def = resolved.get(itemUrn)
+      return {
+        urn: itemUrn,
+        name: def?.name ?? '',
+        rarity: def?.rarity ?? 'base',
+        category,
+        thumbnail: `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`,
+        equipped: true
+      }
+    })
+    .filter((w): w is Wearable => w != null)
+}
+
 export function registerWearables(ctx: Ctx): void {
   ctx.on('equip', (msg) => {
     const me = getPlayer()
@@ -123,40 +175,14 @@ export function registerWearables(ctx: Ctx): void {
     })
   })
 
-  // Equipped set (category slots), resolved by urn — DECOUPLED from the paged grid so every equipped
-  // item shows regardless of which catalog page it's on. Mirrors unity-explorer / bevy-ui-scene.
+  // Equipped set (category slots) for the live avatar, resolved by urn — DECOUPLED from the paged
+  // grid so every equipped item shows regardless of which catalog page it's on.
   ctx.on('getWearables', async () => {
     const player = getPlayer()
     if (player == null) {
       ctx.send({ kind: 'wearables', equipped: [] })
       return
     }
-    const baseUrl = await catalystBase()
-    const owned = (player.wearables ?? []).map(String)
-    // Equipped urns are the deployable token form → index item→token now (equip needs it even
-    // before any grid page is fetched).
-    for (const u of owned) {
-      const item = itemUrnOf(u)
-      if (item !== u) tokenUrnByItem.set(item, u)
-    }
-    const equippedItemUrns = [...new Set(owned.map(itemUrnOf))]
-    const resolved = equippedItemUrns.length > 0 ? await resolveByUrn(baseUrl, equippedItemUrns) : new Map<string, WearableDef>()
-    const equipped: Wearable[] = equippedItemUrns
-      .map((itemUrn): Wearable | null => {
-        const category = resolved.get(itemUrn)?.data?.category
-        if (category == null) return null // can't place a slot without its category
-        const def = resolved.get(itemUrn)
-        return {
-          urn: itemUrn,
-          name: def?.name ?? '',
-          rarity: def?.rarity ?? 'base',
-          category,
-          thumbnail: `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`,
-          equipped: true
-        }
-      })
-      .filter((w): w is Wearable => w != null)
-
-    ctx.send({ kind: 'wearables', equipped })
+    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet((player.wearables ?? []).map(String)) })
   })
 }
