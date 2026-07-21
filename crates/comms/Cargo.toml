@@ -22,6 +22,7 @@ system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }
+bitflags = { workspace = true }
 ethers-core = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -53,11 +54,15 @@ livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "decentr
   "native-tls",
 ], optional = true }
 cpal = "0.15.2"
+rusty_enet = { workspace = true }
+# Pulse's native ENet driver blocks on socket/channel readiness via a current-thread runtime.
+tokio = { workspace = true, features = ["net", "time"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
+web-sys = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde_bytes = { workspace = true }
-gloo-timers = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }

@@ -1,5 +1,6 @@
 use std::io::Result;
 
+mod build_quant;
 mod build_schema;
 
 fn gen_sdk_components() -> Result<()> {
@@ -81,6 +82,12 @@ fn gen_sdk_components() -> Result<()> {
     sources.push("src/proto/decentraland/kernel/comms/rfc4/comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/v3/archipelago.proto".into());
     sources.push("src/proto/decentraland/social/friendships/friendships.proto".into());
+    // Pulse: realtime movement transport (server-authoritative). The quantization field
+    // options in common/options.proto are parsed by protoc but applied app-side; prost emits
+    // plain uint32 fields, so dequantization lives in the pulse transport module.
+    sources.push("src/proto/decentraland/pulse/pulse_shared.proto".into());
+    sources.push("src/proto/decentraland/pulse/pulse_client.proto".into());
+    sources.push("src/proto/decentraland/pulse/pulse_server.proto".into());
 
     let mut config = prost_build::Config::new();
     config.type_attribute(
@@ -158,10 +165,17 @@ fn gen_sdk_components() -> Result<()> {
         .join("component_schemas.json");
     build_schema::generate(&descriptor_bytes, &schemas_path);
 
+    // Generate Pulse dequantization accessors from the (decentraland.common.quantized) field
+    // options carried in the same descriptor — proto stays the single source of truth.
+    let quant_path = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"))
+        .join("pulse_quant.rs");
+    build_quant::generate(&descriptor_bytes, &quant_path);
+
     for source in sources {
         println!("cargo:rerun-if-changed={source}");
     }
     println!("cargo:rerun-if-changed=build_schema.rs");
+    println!("cargo:rerun-if-changed=build_quant.rs");
 
     Ok(())
 }

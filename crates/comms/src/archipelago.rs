@@ -317,10 +317,13 @@ async fn archipelago_handler_inner(
     // wrap and transmit outbound heartbeat
     let f_write = async move {
         while let Some(next) = receiver.recv().await {
+            let Some(bytes) = next.message.to_rfc4() else {
+                continue;
+            };
             let Ok(rfc4::Packet {
                 message: Some(rfc4::packet::Message::Position(pos)),
                 ..
-            }) = DclReader::new(&next.data).read()
+            }) = DclReader::new(&bytes).read()
             else {
                 // skip non-position messages
                 continue;

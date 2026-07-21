@@ -1,5 +1,3 @@
-use std::f32::consts::TAU;
-
 use bevy::prelude::*;
 
 use common::structs::{
@@ -12,12 +10,13 @@ use dcl_component::{
 use wallet::Wallet;
 
 use crate::{
+    broadcast, broadcast_to,
     global_crdt::GlobalCrdtState,
     movement_compressed::{Movement, Temporal},
-    TransportType,
+    BroadcastTarget,
 };
 
-use super::{NetworkMessage, Transport};
+use super::Transport;
 
 pub struct BroadcastPositionPlugin;
 
@@ -53,6 +52,9 @@ struct LastAnim {
     // Previous frame's sound list, used to avoid re-latching the same list multiple
     // times when the scene holds it across frames between broadcasts.
     last_seen_sounds: Vec<String>,
+    // Monotonic counter stamped onto each outbound SDA so the (unreliable) receiver can
+    // order datagrams and drop reordered/duplicate ones. Carries no timing.
+    sequence: u32,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -149,44 +151,8 @@ fn broadcast_position(
         return;
     }
 
-    // OLD CLIENT MESSAGES
-    // (bevy uses the old version only if no new ones are received from a particular player,
-    // so it doesn't use them between bevy instances)
     let dcl_position = DclTranslation::from_bevy_translation(translation);
-    let dcl_rotation = DclQuat::from_bevy_quat(rotation);
-    let position_packet = rfc4::Position {
-        index: *last_index,
-        position_x: dcl_position.0[0],
-        position_y: dcl_position.0[1],
-        position_z: dcl_position.0[2],
-        rotation_x: dcl_rotation.0[0],
-        rotation_y: dcl_rotation.0[1],
-        rotation_z: dcl_rotation.0[2],
-        rotation_w: dcl_rotation.0[3],
-    };
 
-    debug!("sending position: {position_packet:?}");
-    let packet = rfc4::Packet {
-        message: Some(rfc4::packet::Message::Position(position_packet)),
-        protocol_version: 100,
-    };
-
-    for transport in transports
-        .iter()
-        .filter(|t| t.transport_type != TransportType::SceneRoom)
-    {
-        if let Err(e) = transport
-            .sender
-            .try_send(NetworkMessage::unreliable(&packet))
-        {
-            warn!(
-                "failed to update position to transport {:?}: {e}",
-                transport.transport_type
-            );
-        }
-    }
-
-    // NEW CLIENT MESSAGES
     let movement = Movement::new(
         translation,
         dynamics.velocity,
@@ -263,8 +229,10 @@ fn broadcast_position(
     // Attach the nested message only when there's anim state to communicate — that is,
     // when we have an active animation (ride-along, keepalive, or transition-in) or
     // when we're transitioning out (scene_hash == Some("")). Otherwise leave it None
-    // so the field isn't serialized at all.
+    // so the field isn't serialized at all. The monotonic `sequence` is for ordering only;
+    // the receiver derives apply timing from our movement stream's server tick instead.
     let scene_driven_animation = if active_anim.is_some() || scene_hash.is_some() {
+        last_anim.sequence = last_anim.sequence.wrapping_add(1);
         Some(
             dcl_component::proto_components::kernel::comms::rfc4::SceneDrivenAnimation {
                 scene_hash,
@@ -278,6 +246,7 @@ fn broadcast_position(
                 idle,
                 tilt_pitch,
                 tilt_roll,
+                sequence: Some(last_anim.sequence),
             },
         )
     } else {
@@ -309,10 +278,18 @@ fn broadcast_position(
         position_x: dcl_position.0[0],
         position_y: dcl_position.0[1],
         position_z: dcl_position.0[2],
-        rotation_y: -movement_compressed.temporal.rotation_f32() * 360.0 / TAU,
-        velocity_x: movement_compressed.movement.velocity().x,
-        velocity_y: movement_compressed.movement.velocity().y,
-        velocity_z: movement_compressed.movement.velocity().z,
+        // Yaw in [0, 360). Pulse quantizes rotation_y over [0, 360] on the delta tier, so a negative
+        // angle clamps to 0 there and freezes remote rotation. Taken raw from the yaw (not the
+        // compressed round-trip) to avoid the extra 6-bit (~5.6°) coarsening; the receiver maps it
+        // back with `from_rotation_y(-rotation_y)`.
+        rotation_y: (-rotation.to_euler(bevy::math::EulerRot::YXZ).0.to_degrees())
+            .rem_euclid(360.0),
+        // Raw velocity — the uncompressed packet carries no quantization, and Pulse re-quantizes
+        // server-side anyway, so the old compressed round-trip only threw away precision (3–5 bits).
+        // z is negated to match the receiver's `-velocity_z` DCL-space flip.
+        velocity_x: dynamics.velocity.x,
+        velocity_y: dynamics.velocity.y,
+        velocity_z: -dynamics.velocity.z,
         movement_blend_value: dynamics.velocity.length_squared(),
         slide_blend_value: 0.0,
         is_grounded: movement_compressed.temporal.grounded(),
@@ -332,7 +309,11 @@ fn broadcast_position(
         point_at_y: point_at.target_world.y,
         point_at_z: point_at.target_world.z,
         is_pointing_at: point_at.is_pointing,
-        scene_driven_animation,
+        // Scene-driven animation no longer rides the movement — it goes out as its own packet below.
+        scene_driven_animation: None,
+        // Receive-side only (the Pulse decoder stamps it); never set on the send path, so it stays
+        // out of the serialized packet.
+        position_precision: None,
     };
 
     // let movement_packet = rfc4::MovementCompressed {
@@ -345,34 +326,60 @@ fn broadcast_position(
     //     message: Some(rfc4::packet::Message::MovementCompressed(movement_packet)),
     //     protocol_version: 100,
     // };
-    let uncompressed_packet = rfc4::Packet {
-        message: Some(rfc4::packet::Message::Movement(movement_uncompressed)),
+    debug!("sending movement: {movement_uncompressed:?}");
+
+    // Movement rides each rfc4 packet to exactly its consumer: `Movement` on `PRIMARY` (the websocket
+    // dev server, plus Pulse — whose routing transport bridges it into a `PlayerStateInput`), and
+    // `Position` to Archipelago, which clusters islands from it. LiveKit is excluded throughout, the
+    // way movement always was.
+    let dcl_rotation = DclQuat::from_bevy_quat(rotation);
+    let position_packet = rfc4::Packet {
+        message: Some(rfc4::packet::Message::Position(rfc4::Position {
+            index: *last_index,
+            position_x: dcl_position.0[0],
+            position_y: dcl_position.0[1],
+            position_z: dcl_position.0[2],
+            rotation_x: dcl_rotation.0[0],
+            rotation_y: dcl_rotation.0[1],
+            rotation_z: dcl_rotation.0[2],
+            rotation_w: dcl_rotation.0[3],
+        })),
         protocol_version: 100,
     };
+    broadcast(
+        transports.iter(),
+        BroadcastTarget::PRIMARY,
+        true,
+        movement_uncompressed,
+    );
+    broadcast_to(
+        transports.iter(),
+        BroadcastTarget::ARCHIPELAGO,
+        true,
+        &position_packet,
+    );
+    *last_index = last_index.wrapping_add(1);
 
-    debug!("sending uncompressed: {uncompressed_packet:?}");
-
-    for transport in transports.iter() {
-        // if let Err(e) = transport
-        //     .sender
-        //     .try_send(NetworkMessage::unreliable(&packet))
-        // {
-        //     warn!("failed to update to transport: {e}");
-        // }
-        if let Err(e) = transport
-            .sender
-            .try_send(NetworkMessage::unreliable(&uncompressed_packet))
-        {
-            warn!(
-                "failed to update movement to transport {:?}: {e}",
-                transport.transport_type
-            );
-        }
+    // Scene-driven animation rides its own packet (unreliable, like the old movement) to the avatar
+    // renderers — LiveKit and the websocket dev server — only when there's anim state to send. Not
+    // Archipelago (island assignment, no rendering) nor Pulse (no animation conversion). Carries a
+    // monotonic sequence (for ordering); the receiver aligns it to our Pulse positions using its own
+    // last-received movement tick from us.
+    if let Some(anim) = scene_driven_animation {
+        let packet = rfc4::Packet {
+            message: Some(rfc4::packet::Message::SceneDrivenAnimation(anim)),
+            protocol_version: 100,
+        };
+        broadcast_to(
+            transports.iter(),
+            BroadcastTarget::WEBSOCKET | BroadcastTarget::LIVEKIT,
+            true,
+            &packet,
+        );
     }
 
     *last_position = (translation, rotation, dynamics.velocity);
     *last_head_sync = head_sync;
     *last_point_at = point_at;
-    *last_index += 1;
     *last_sent = time;
 }

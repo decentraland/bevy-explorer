@@ -2746,6 +2746,7 @@ dependencies = [
  "bevy",
  "bevy_kira_audio",
  "bimap",
+ "bitflags 2.11.0",
  "cid",
  "common",
  "cpal",
@@ -2768,6 +2769,7 @@ dependencies = [
  "platform",
  "prost 0.11.9",
  "reqwest 0.12.15",
+ "rusty_enet",
  "serde",
  "serde-wasm-bindgen",
  "serde_bytes",
@@ -2777,6 +2779,7 @@ dependencies = [
  "wallet",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
 ]
 
@@ -9639,6 +9642,14 @@ name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
+
+[[package]]
+name = "rusty_enet"
+version = "0.4.0"
+source = "git+https://github.com/robtfm/rusty_enet?branch=decentraland-pulse#6fa651d50554f6db8f8a4bd98aaf95ef3238b408"
+dependencies = [
+ "js-sys",
+]
 
 [[package]]
 name = "rustybuzz"
