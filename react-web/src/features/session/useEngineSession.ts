@@ -560,6 +560,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'wearables':
           setEquippedWearables(msg.equipped)
+          // The grid page carries its own per-item equipped flags (stamped at fetch, flipped by the
+          // single-equip optimistic rebuild) — an authoritative emit (e.g. after equipOutfit) must
+          // reconcile them too, or stale page flags shadow the new set in the category slots
+          // (equippedByCat prefers page items) and the card markers.
+          setCatalogItems((list) =>
+            list.map((w) => ({
+              ...w,
+              equipped: msg.equipped.some((e) => e.urn === w.urn || e.urn.startsWith(`${w.urn}:`))
+            }))
+          )
           break
         case 'catalogPage':
           // Only the newest request's page wins — drop stale responses (fast page/filter changes).

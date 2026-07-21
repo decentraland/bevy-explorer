@@ -234,7 +234,13 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     corrects; epoch/sequence the `wearables` emits (the `requestId` pattern `catalogQuery`/`catalogPage`
     already use) so a stale emit can't clobber a newer optimistic set — this also closes the
     equip-during-`equipOutfit`-round-trip race. Same pass: mutation ack/error correlation so the HUD
-    can surface "equip failed" (silent today). Related hardening: the urn logic all this leans on
+    can surface "equip failed" (silent today). Fold in the state normalization this implies: derive
+    the grid card markers from the equipped set at render and retire the per-item `equipped` flag on
+    catalog page items (+ the page-priority arbitration in `equippedByCat`) — the same fact currently
+    lives in two states, and any mutation path that updates only one shows stale markers/slots (bit
+    once already: equipOutfit's authoritative emit didn't reconcile page flags — fixed by
+    reconciliation in the session's `wearables` handler, but normalization makes the class
+    impossible). Related hardening: the urn logic all this leans on
     (`itemUrnOf`, `tokenUrnFor`, `resolveEquippedSet`) has **zero coverage** — bridge-scene has no test
     runner and the app's vitest excludes it; they're pure functions, so add a minimal bridge-scene
     vitest (or move them into a shared, tested module).

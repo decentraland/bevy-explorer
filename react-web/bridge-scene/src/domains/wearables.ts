@@ -79,7 +79,12 @@ async function resolveByUrn(baseUrl: string, itemUrns: string[]): Promise<Map<st
   const CHUNK = 50
   for (let i = 0; i < missing.length; i += CHUNK) {
     const qs = missing.slice(i, i + CHUNK).map((u) => `wearableId=${u}`).join('&')
-    const data = await getJson<{ wearables?: WearableDef[] }>(`${baseUrl}/lambdas/collections/wearables?${qs}`).catch(() => undefined)
+    const data = await getJson<{ wearables?: WearableDef[] }>(`${baseUrl}/lambdas/collections/wearables?${qs}`).catch((e: unknown) => {
+      // Loud on purpose: a swallowed chunk failure shrinks the resolved set, and downstream that
+      // once meant silently undressing the avatar on the next equip (see resolveEquippedSet).
+      console.error('[wearables] resolve-by-urn chunk failed', e)
+      return undefined
+    })
     for (const w of data?.wearables ?? []) {
       defByItemUrn.set(w.id, w)
       out.set(w.id, w)
@@ -138,30 +143,29 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
 // bevy-ui-scene's fetchWearablesData(...)(...wearables) on outfit equip.
 export async function resolveEquippedSet(urns: string[]): Promise<Wearable[]> {
   const baseUrl = await catalystBase()
-  const owned = urns.map(String)
   // Equipped urns are the deployable token form → index item→token now (equip needs it even
   // before any grid page is fetched).
-  for (const u of owned) {
+  for (const u of urns) {
     const item = itemUrnOf(u)
     if (item !== u) tokenUrnByItem.set(item, u)
   }
-  const equippedItemUrns = [...new Set(owned.map(itemUrnOf))]
+  const equippedItemUrns = [...new Set(urns.map(itemUrnOf))]
   const resolved = equippedItemUrns.length > 0 ? await resolveByUrn(baseUrl, equippedItemUrns) : new Map<string, WearableDef>()
-  return equippedItemUrns
-    .map((itemUrn): Wearable | null => {
-      const category = resolved.get(itemUrn)?.data?.category
-      if (category == null) return null // can't place a slot without its category
-      const def = resolved.get(itemUrn)
-      return {
-        urn: itemUrn,
-        name: def?.name ?? '',
-        rarity: def?.rarity ?? 'base',
-        category,
-        thumbnail: `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`,
-        equipped: true
-      }
-    })
-    .filter((w): w is Wearable => w != null)
+  return equippedItemUrns.map((itemUrn): Wearable => {
+    const def = resolved.get(itemUrn)
+    return {
+      urn: itemUrn,
+      name: def?.name ?? '',
+      rarity: def?.rarity ?? 'base',
+      // No def (resolve failure or an urn the lambda doesn't know): keep the item under 'unknown'
+      // rather than dropping it — 'unknown' renders in no category slot, but the item stays in the
+      // equipped set, so the next equip round-trip (equipSetWith) still deploys it. Dropping here
+      // silently undressed the avatar whenever the lambdas request failed mid-session.
+      category: def?.data?.category ?? 'unknown',
+      thumbnail: `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`,
+      equipped: true
+    }
+  })
 }
 
 export function registerWearables(ctx: Ctx): void {

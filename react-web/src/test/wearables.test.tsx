@@ -101,7 +101,8 @@ describe('wearables domain', () => {
   // now does too.)
   it('equipping a saved outfit takes the bridge-resolved set, keeping off-page items', async () => {
     const shirt = { ...wearable('urn:shirt'), category: 'upper_body' }
-    const hat = { ...wearable('urn:hat'), category: 'hat' }
+    // Stale-equipped on the page: the pre-outfit look wears the hat, the outfit doesn't.
+    const hat = { ...wearable('urn:hat', true), category: 'hat' }
 
     const h = renderSession()
     await enterAsGuest(h)
@@ -119,6 +120,12 @@ describe('wearables domain', () => {
       { ...wearable('urn:boots', true), category: 'feet' }
     ] })
     expect(h.session().backpack.equipped.map((w) => w.urn)).toEqual(['urn:shirt', 'urn:boots'])
+    // The emit also reconciles the page's per-item flags — without it the hat card kept its stale
+    // equipped marker (and shadowed the hat slot via page-priority) while the avatar wore no hat.
+    expect(h.session().backpack.list.map((w) => [w.urn, w.equipped])).toEqual([
+      ['urn:shirt', true],
+      ['urn:hat', false]
+    ])
 
     // Now equip a hat (a new category) — before the fix the dropped boots never reached here; the
     // equipped set is authoritative, so equipSetWith keeps them.
