@@ -216,14 +216,37 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     one; (c) `chat.rich.test.tsx` covers url/location/mention clicks but never the `world` token or the
     `rel` attribute.
 
+20. `[arch]` **Unify avatar-equip authority — bridge re-emits `wearables` after every mutation (+
+    mutation acks/errors)** — *hardening, from the fix/ui/04-outfits architecture review*. The equipped
+    set runs two consistency models today: `equipOutfit` is **bridge-authoritative** (resolves the
+    outfit by urn via `resolveEquippedSet` and re-emits `wearables` — the fix/ui/04-outfits fix), but
+    single-item `equip` is **client-authoritative** — `applyEquippedOptimistic` (`useEngineSession.ts`)
+    rebuilds `equippedWearables` locally and the bridge never re-emits, so the optimistic state is
+    load-bearing, not a hint. Consequences: (a) **a failed `setAvatar` deploy diverges HUD from avatar
+    permanently** — the failure dies in a bridge `console.error` (`wearables.ts` `'equip'`), the HUD
+    keeps the item marked equipped, and the *next* equip (built via `equipSetWith` from that phantom
+    set) deploys the divergence into the profile; (b) **mock/real contract asymmetry** — the mock
+    re-emits `wearables` after `equip` (`mockBridge.ts`) but the real bridge doesn't — the same masking
+    asymmetry that hid the outfits off-page P1 (`?mock=1` validates a contract production doesn't
+    honor). Fix path: every avatar-mutation handler ends by re-emitting the authoritative set via
+    `resolveEquippedSet` — on success *and* on failure (failure re-emits the previous set = visual
+    rollback) — demoting the client optimistic update to instant feedback the emit confirms or
+    corrects; epoch/sequence the `wearables` emits (the `requestId` pattern `catalogQuery`/`catalogPage`
+    already use) so a stale emit can't clobber a newer optimistic set — this also closes the
+    equip-during-`equipOutfit`-round-trip race. Same pass: mutation ack/error correlation so the HUD
+    can surface "equip failed" (silent today). Related hardening: the urn logic all this leans on
+    (`itemUrnOf`, `tokenUrnFor`, `resolveEquippedSet`) has **zero coverage** — bridge-scene has no test
+    runner and the app's vitest excludes it; they're pure functions, so add a minimal bridge-scene
+    vitest (or move them into a shared, tested module).
+
 ## 🟢 Low / when a feature needs it
 
-20. `[DS]` **`Divider`** (bespoke in ~4 places · old `bottom-border`)
-21. `[DS]` **`Pagination`** (unused today · old `pagination/`)
-22. `[DS]` **`CopyButton`** (inline in ProfileCard · old `copy-button`)
-23. `[DS]` **`Username`** (name + verified · old `player-name-component`)
-24. `[DS]` `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
-25. `[feature]` **Re-enable "Invite to Community" in `ProfileCard`** — *feature, parked until
+21. `[DS]` **`Divider`** (bespoke in ~4 places · old `bottom-border`)
+22. `[DS]` **`Pagination`** (unused today · old `pagination/`)
+23. `[DS]` **`CopyButton`** (inline in ProfileCard · old `copy-button`)
+24. `[DS]` **`Username`** (name + verified · old `player-name-component`)
+25. `[DS]` `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
+26. `[feature]` **Re-enable "Invite to Community" in `ProfileCard`** — *feature, parked until
     communities work*. The row/submenu UI was removed from `ProfileCard` (PR #915 follow-up); the
     protocol messages, `session.communities.invitable`/`requestInvitable`/`invite`, and the bridge
     handlers all remain. When re-enabling: (1) the `/invites` response is `{data:[…]}` but `signed()`
@@ -234,7 +257,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     clear both `invitable` and the ref on logout/identity change; (3) surface invite errors to the user
     (the bridge currently swallows them with `console.error`); (4) build the submenu on the
     `ContextMenu` primitive instead of the removed bespoke `.submenu`/`.subRow` CSS.
-26. `[arch]` **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** —
+27. `[arch]` **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** —
     *architecture, low priority*. All HUD state lives in one `useEngineSession` hook at the top of
     `Hud`, prop-drilled down; the returned `session` is a fresh object every render, so the whole HUD
     re-renders on any change. Fine at current scale (engine round-trips are the bottleneck, not React
@@ -246,22 +269,22 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     state-lib-free). Also a test cost (harness passes props today; Context needs a provider wrapper).
     Recommendation: keep prop-drilling; add a single `SessionContext` only if drilling ergonomics annoy;
     memoized slices / store only if re-renders become a *measured* problem. **One concrete exception to
-    "renders aren't the bottleneck": item 35 — `proximity` is a per-frame (~60/s) re-render source while
+    "renders aren't the bottleneck": item 37 — `proximity` is a per-frame (~60/s) re-render source while
     near an interactable, not a user-action change.**
-27. `[arch]` **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture,
+28. `[arch]` **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture,
     low priority*. Entering a scene/world (and, ideally, opening HUD surfaces like the map/backpack)
     should be **parameterized in the URL** so the state is shareable and bookmarkable: reload/paste a
     URL and land in the same realm + coords. Scope to nail down: realm/world + parcel coords (e.g.
     `?realm=…&position=x,y` or a path), whether HUD panels also serialize, and wiring it to the picker
     (`pickDestination`) + `map.teleport`/`changeRealm` so URL ⇄ engine stay in sync (`popstate` → jump,
     jump → `pushState`). Deferred: needs a small router/URL-sync layer (project is router-free today).
-28. `[arch]` **Migrate inline `dt`-throttle timers to `bridge-scene/src/system-helpers.ts`** —
+29. `[arch]` **Migrate inline `dt`-throttle timers to `bridge-scene/src/system-helpers.ts`** —
     *cleanup*. The `throttleByDt` helper (added in PR #915 for `avatarPointer`) replaces a dt-accumulator
     that's re-implemented inline across most bridge domains (`chat`, `world`, `friends`, `project`,
     `nametags` — two timers there —, `avatarPreview`). Migrate them to the helper (and consider
     `singleFlight` / a named `pollSequential` wrapper where a polled async RPC could overlap). Pure
     cleanup, no behavior change; kept out of #915 to stay surgical.
-29. `[feature]` **Voice feedback — "who's speaking" indicator** — *feature parity, when voice chat is
+30. `[feature]` **Voice feedback — "who's speaking" indicator** — *feature parity, when voice chat is
     prioritized*. The old scene showed an **animated speaking indicator on each avatar nametag** while a
     nearby player talked (and used the local mic state for your own tag). Mechanism to port: the engine
     exposes a voice stream — `BevyApi.getVoiceStream()` yielding `{ sender_address, active }`
@@ -273,13 +296,13 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     nametags** (bridge scene) and/or the DOM **nearby-members list** (`chat.members`) — e.g. a pulsing
     mic ring. Depends on voice chat being wired end-to-end; today only the local `mic` toggle exists (no
     per-remote-speaker signal). Could yield a reusable `SpeakingIndicator` primitive.
-30. `[feature]` **Re-add "Report" to the profile card once a moderation/report endpoint exists** —
+31. `[feature]` **Re-add "Report" to the profile card once a moderation/report endpoint exists** —
     *feature, low priority*. Report was removed from `ProfileCard` in PR #915 because there's no backend —
     it was only a `console.log` stub, so shipping a dead action was worse than hiding it. When a report/
     moderation endpoint lands: re-add the `Report` row + `onBlock`-style `onReport` request prop
     (parent-owned confirm, same pattern as Block), the `ReportIcon` glyph, and wire the actual submit.
     (Old scene logged too — this is genuinely new backend work, not just UI.)
-31. `[feature]` **Passport / own-profile edit mode — no UI yet** — *feature, own-profile only; flagged by
+32. `[feature]` **Passport / own-profile edit mode — no UI yet** — *feature, own-profile only; flagged by
     Rob*. bevy-ui-scene lets you edit your own passport in place — About Me, the info-field dropdowns,
     links (add/remove, up to 5), and display name — then deploys the updated profile. react-web can
     *view* the profile (`ProfilePanel` = own profile, `ProfilePassport` = others) but has **no UI to
@@ -288,16 +311,16 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     wiring the profile deploy through the bridge/engine. Larger than the view-parity item (#16) — hence
     separate and lower priority than showing OTHER users' passports correctly. Reference the old client
     for the flow (`unity-explorer` `Explorer/Assets/DCL/UI/`, `bevy-ui-scene` profile screens).
-32. `[feature]` **Chat rate limiting** — *hardening, not in bevy-ui-scene*. unity-explorer's
+33. `[feature]` **Chat rate limiting** — *hardening, not in bevy-ui-scene*. unity-explorer's
     `MultiplayerChatMessagesBus` dedupes + rate-limits + buffers sends; react-web (like bevy-ui-scene)
     sends on every Enter with no client-side throttle. Only worth adding if spam becomes a real problem
     server-side rate limiting doesn't already cover.
-33. `[feature]` **DMs / private chat channels** — *net-new, not a port*. Neither `bevy-ui-scene` nor
+34. `[feature]` **DMs / private chat channels** — *net-new, not a port*. Neither `bevy-ui-scene` nor
     today's react-web have anything beyond the single "Nearby" channel; unity-explorer's
     `ChatChannelsPresenter`/`ChatChannelType.USER` is the only prior-art reference. Large scope (channel
     list UI, per-conversation history, member-list → "message" entry point) — flag for a dedicated design
     pass, not a drive-by addition.
-34. `[arch]` **SSO redirect on the login screen throws away the in-flight engine WASM download** —
+35. `[arch]` **SSO redirect on the login screen throws away the in-flight engine WASM download** —
     *boot perf, not blocking / not a direct bug*. On the login/loading screen the engine WASM is
     already downloading in the background while the sign-in buttons are live. "Start with account" /
     "Use different account" call `redirectToAuth()` → `location.replace('/auth/login?redirectTo=…')`
@@ -311,7 +334,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     a hidden **iframe** and read back the identity via `postMessage`/`storage` (auth site must allow
     being framed same-origin — verify its CSP/`X-Frame-Options`). Both are more moving parts than the
     current straight redirect, so only worth it if boot time on login is a measured concern.
-35. `[feature]` **Radial hover prompts — viewport clamping near screen edges** — *polish, non-blocking;
+36. `[feature]` **Radial hover prompts — viewport clamping near screen edges** — *polish, non-blocking;
     point to review*. When the free cursor is near a viewport edge, the fixed-offset radial slots
     (`HOVER_SLOTS` in `features/pointer/Pointer.tsx`) that point toward that edge run off-screen (cursor
     at the right edge → the right-middle prompt's label clips). No clamp today. Arguments for leaving it:
@@ -324,13 +347,13 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     `ProfileCard`, or flip slot sides near the edge. Review comment (note: it says "root is
     overflow: hidden" — there's no such rule, the clip is just the viewport edge):
     https://github.com/decentraland/bevy-explorer/pull/915#discussion_r3529180273
-36. `[arch]` **`proximity` pushes a full HUD re-render every frame while near an interactable** — *perf,
+37. `[arch]` **`proximity` pushes a full HUD re-render every frame while near an interactable** — *perf,
     when profiling confirms*. Unlike most session changes (user actions), the proximity domain is a
     **per-frame** source: `registerProximity`'s `ctx.push` reprojects each in-range entity world→screen
     and calls `ctx.send({ kind: 'proximity', tips })` **every frame with no dedupe**
     (`bridge-scene/src/domains/proximity.ts:52`) whenever ≥1 interactable is in range. Each message
     hits `setProximity(msg.tips)` with a fresh array (`useEngineSession.ts:416`), so `App` — and, per
-    item 25, the whole tree — re-renders ~60×/s. This is the concrete counterexample to item 25's
+    item 27, the whole tree — re-renders ~60×/s. This is the concrete counterexample to item 27's
     "engine round-trips are the bottleneck, not React renders." Cost is **conditional**: zero when
     nothing is in range (the `inRange.size === 0` early-out short-circuits the send), but scales with
     tree size, per-render cost (e.g. the `notifications.reduce` unread count runs every render), in-range
@@ -343,7 +366,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     re-render only `<Pointer>`, not the tree. Optional bridge-side dedupe (skip `ctx.send` when `tips`
     is unchanged) zeroes the standing-still case but not the moving one (positions legitimately change
     each frame), so the store is the structural fix.
-37. `[bug]` **Chat name click shows the raw address for players who left nearby range** — *UX regression,
+38. `[bug]` **Chat name click shows the raw address for players who left nearby range** — *UX regression,
     P2 pending PR #915 review*. `Chat`/`FriendsPanel` now open the shared card via
     `openProfileCard(user.address, …)` (address only); the container re-resolves name/picture with
     `resolveIdentity` (nearby roster → friends/requests → fetched passports). For a **non-friend who
