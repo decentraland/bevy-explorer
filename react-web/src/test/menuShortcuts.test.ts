@@ -52,4 +52,25 @@ describe('useMenuShortcuts', () => {
     press('m')
     expect(session.map.toggle).not.toHaveBeenCalled()
   })
+
+  it('quick emotes: a number plays that slot, but only while the wheel is open', () => {
+    const emote = { slot: 3, urn: 'urn:emote:three', name: 'Three' }
+
+    // Wheel closed → a number does nothing.
+    const closed = fakeSession()
+    closed.emotes.list = [emote]
+    const { unmount } = renderHook(() => useMenuShortcuts(closed))
+    press('3')
+    expect(closed.emotes.play).not.toHaveBeenCalled()
+    unmount()
+
+    // Wheel open → the number plays that slot's emote; an empty slot (7) is a no-op.
+    const open = fakeSession()
+    open.emotes = { ...open.emotes, open: true, list: [emote] }
+    renderHook(() => useMenuShortcuts(open))
+    press('3')
+    press('7')
+    expect(open.emotes.play).toHaveBeenCalledTimes(1)
+    expect(open.emotes.play).toHaveBeenCalledWith('urn:emote:three')
+  })
 })
