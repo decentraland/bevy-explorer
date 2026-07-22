@@ -24,7 +24,7 @@ jobs:
   set-manual-by-path-rollout:
     runs-on: ubuntu-latest
     steps:
-      - uses: hmarr/debug-action@v2
+      - uses: hmarr/debug-action@v3
       - name: Set Rollout
         uses: decentraland/set-rollout-action@v2
         with:
