@@ -8,6 +8,14 @@ default-run = "decentra-bevy"
 crate-type = ["cdylib", "rlib"]
 name = "webgpu_build"
 
+# Experimental headless scene-server binary. Gated behind the `headless` feature so
+# `cargo build --release` (packaging) skips it — build explicitly with
+# `cargo build --bin headless --no-default-features --features "headless,livekit"`.
+[[bin]]
+name = "headless"
+path = "src/bin/headless.rs"
+required-features = ["headless"]
+
 # to build wasm lib:
 # - copy ./assets to deploy/web/assets
 # - copy ./crates/dcl/src/js/modules to deploy/web/modules
@@ -28,6 +36,11 @@ ffmpeg = ["av/ffmpeg"]
 social = ["social/social"]
 remote = ["bevy/bevy_remote"]
 bevy_mesh_picking_backend = ["bevy/bevy_mesh_picking_backend"]
+# Gates the experimental headless scene-server binary out of default/release builds.
+# configurable_error_handler lets the headless bin install a warn-and-continue error
+# handler (bevy's default panics). Pulled in only by this feature, so prod builds
+# (which never enable `headless`) are unaffected.
+headless = ["bevy/configurable_error_handler"]
 # POC: render the react-web HUD via CEF offscreen rendering into an in-engine texture (desktop).
 # The CEF framework loads bundle-relative (Contents/Frameworks) with a dev fallback at
 # ~/.local/share/cef; the render-process helper builds as the sibling binary `decentra-bevy-cef`
@@ -279,6 +292,10 @@ particle_system = { workspace = true }
 bevy = { workspace = true }
 wgpu = { workspace = true }
 bevy_console = { workspace = true }
+bevy_dui = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
+http = { workspace = true }
 # present only to enable the naga_oil `override_any` feature graph-wide (see
 # [workspace.dependencies]); not referenced from Rust.
 naga_oil = { workspace = true }

@@ -6,7 +6,7 @@ use common::{
 };
 use dcl::{
     interface::{CrdtStore, CrdtType},
-    SceneId, SceneLogMessage,
+    SceneId, SceneLogMessage, SceneResourceCounters,
 };
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
 use scene_material::BoundRegion;
@@ -112,6 +112,9 @@ pub struct RendererSceneContext {
 
     // does the scene use an authoritative multiplayer server
     pub authoritative_multiplayer: bool,
+
+    // latest cumulative resource-counter snapshot from the scene thread
+    pub resource_counters: Option<SceneResourceCounters>,
 }
 
 /// Block reason used by /freeze_scene and /tick_scene.
@@ -187,6 +190,7 @@ impl RendererSceneContext {
             sdk_version,
             inspected,
             authoritative_multiplayer,
+            resource_counters: None,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =

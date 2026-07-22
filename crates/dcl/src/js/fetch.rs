@@ -72,7 +72,7 @@ pub async fn op_signed_fetch_headers(
 
     let meta = SignedFetchMeta {
         origin: Some(realm_info.base_url.clone()),
-        scene_id: Some(urn),
+        scene_id: Some(urn.clone()),
         parcel: Some(scene_meta.scene.base.clone()),
         tld: Some("org".to_owned()),
         network: Some("mainnet".to_owned()),
@@ -96,6 +96,7 @@ pub async fn op_signed_fetch_headers(
             method: method.unwrap_or_else(|| String::from("get")),
             uri,
             meta: Some(serde_json::to_string(&meta).unwrap()),
+            scene: Some(urn),
             response: sx,
         });
 

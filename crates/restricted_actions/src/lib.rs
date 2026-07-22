@@ -24,8 +24,8 @@ use common::{
     },
     sets::SceneSets,
     structs::{
-        AvatarDynamicState, EngineMovementControl, PermissionType, PreviewCommand, PrimaryCamera,
-        PrimaryUser, StartupScenes, ZOrder,
+        AvatarDynamicState, EngineMovementControl, IsServer, PermissionType, PreviewCommand,
+        PrimaryCamera, PrimaryUser, StartupScenes, ZOrder,
     },
     util::{AsH160, TaskCompat, TaskExt},
 };
@@ -813,6 +813,7 @@ fn spawn_portable(
         RpcResultSender<Result<SpawnResponse, String>>,
     )>,
     ipfas: IpfsAssetServer,
+    is_server: Res<IsServer>,
 ) {
     let mut new_portables = HashMap::new();
     let mut failed_portables = HashSet::new();
@@ -826,6 +827,14 @@ fn spawn_portable(
         } => Some((location, spawner, response)),
         _ => None,
     }) {
+        // authoritative-server mode: a tenant scene must not spawn arbitrary portables
+        // in the shared engine (cross-tenant resource-exhaustion DoS).
+        if is_server.0 {
+            response.send(Err(
+                "portable experiences are disabled in server mode".to_owned()
+            ));
+            continue;
+        }
         perms.check(
             PermissionType::SpawnPortable,
             *spawner,
@@ -1224,16 +1233,19 @@ fn get_connected_players(
     me: Res<Wallet>,
     others: Query<&ForeignPlayer>,
     mut events: EventReader<RpcCall>,
+    is_server: Res<IsServer>,
 ) {
     for response in events.read().filter_map(|ev| match ev {
         RpcCall::GetConnectedPlayers { response } => Some(response),
         _ => None,
     }) {
-        let results = others
-            .iter()
-            .map(|f| format!("{:#x}", f.address))
-            .chain(me.address().map(|address| format!("{address:#x}")))
-            .collect();
+        let others = others.iter().map(|f| format!("{:#x}", f.address));
+        // a headless server has no real local player — don't report its fake player as
+        // a connected peer (it would appear as a ghost to every scene)
+        let own = (!is_server.0)
+            .then(|| me.address().map(|address| format!("{address:#x}")))
+            .flatten();
+        let results = others.chain(own).collect();
         response.send(results);
     }
 }
@@ -1244,16 +1256,20 @@ fn get_players_in_scene(
     others: Query<(Entity, &ForeignPlayer)>,
     mut events: EventReader<RpcCall>,
     containing_scene: ContainingScene,
+    is_server: Res<IsServer>,
 ) {
     for (scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetPlayersInScene { scene, response } => Some((scene, response)),
         _ => None,
     }) {
         let mut results = Vec::default();
-        if let Ok(player) = me.single() {
-            if containing_scene.get(player).contains(scene) {
-                if let Some(address) = wallet.address() {
-                    results.push(format!("{address:#x}"));
+        // skip the fake local player in server mode (see get_connected_players)
+        if !is_server.0 {
+            if let Ok(player) = me.single() {
+                if containing_scene.get(player).contains(scene) {
+                    if let Some(address) = wallet.address() {
+                        results.push(format!("{address:#x}"));
+                    }
                 }
             }
         }
@@ -1335,6 +1351,7 @@ fn event_player_disconnected(
 }
 
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 fn event_player_moved_scene(
     mut enter_senders: Local<HashMap<Entity, RpcEventSender>>,
     mut leave_senders: Local<HashMap<Entity, RpcEventSender>>,
@@ -1343,6 +1360,7 @@ fn event_player_moved_scene(
     me: Res<Wallet>,
     containing_scene: ContainingScene,
     mut events: EventReader<RpcCall>,
+    is_server: Res<IsServer>,
 ) {
     // gather new receivers
     for (enter, scene, sender) in events.read().filter_map(|ev| match ev {
@@ -1357,9 +1375,11 @@ fn event_player_moved_scene(
         }
     }
 
-    // gather current scene
+    // gather current scene (skip the fake local player in server mode — a `None`
+    // ForeignPlayer is the PrimaryUser, which is not a real participant on a server)
     let new_scene: HashMap<_, _> = players
         .iter()
+        .filter(|(_, f)| !(is_server.0 && f.is_none()))
         .flat_map(|(p, f)| {
             containing_scene.get_parcel(p).map(|parcel| {
                 (
@@ -1452,6 +1472,7 @@ fn send_scene_messages(
     mut events: EventReader<RpcCall>,
     transports: Query<(&Transport, Option<&SceneRoom>)>,
     scenes: Query<&RendererSceneContext>,
+    is_server: Res<IsServer>,
 ) {
     for (scene, data, recipient) in events.read().filter_map(|c| match c {
         RpcCall::SendMessageBus {
@@ -1482,12 +1503,23 @@ fn send_scene_messages(
             .map(NetworkMessageRecipient::Peer)
             .unwrap_or(NetworkMessageRecipient::All);
 
-        if ctx.authoritative_multiplayer {
+        // A client routes authoritative-scene traffic to the auth server. WE are the
+        // auth server, so keep the scene's intended recipient (targeted peer or broadcast)
+        // — otherwise the server would address messages to itself and clients never receive them.
+        if ctx.authoritative_multiplayer && !is_server.0 {
             recipient = NetworkMessageRecipient::AuthServer;
         }
 
         for (transport, scene_room) in transports.iter() {
-            if scene_room.is_some() {
+            // Client (prod) path unchanged: send to any scene room. When serving, also
+            // require the room to belong to this scene so N scenes in one engine don't
+            // cross-talk (a server may hold several scene rooms; a client holds one).
+            let send = if is_server.0 {
+                scene_room.is_some_and(|r| &r.0 == hash)
+            } else {
+                scene_room.is_some()
+            };
+            if send {
                 let _ = transport
                     .sender
                     .try_send(NetworkMessage::targetted_reliable(&message, recipient));
@@ -1502,6 +1534,7 @@ fn open_nft_dialog(
     containing_scene: ContainingScene,
     primary_user: Query<Entity, With<PrimaryUser>>,
     asset_server: Res<AssetServer>,
+    is_server: Res<IsServer>,
 ) {
     for (scene, urn, response) in events.read().filter_map(|c| match c {
         RpcCall::OpenNftDialog {
@@ -1511,6 +1544,16 @@ fn open_nft_dialog(
         } => Some((scene, urn, response)),
         _ => None,
     }) {
+        // headless server: the "nft" asset source and the DUI template registry are
+        // absent, so proceeding would hit apply_template(...).unwrap() and panic the
+        // shared engine, taking down every co-tenant scene. Deny cleanly instead.
+        if is_server.0 {
+            response.send(Err(
+                "openNftDialog is not supported on a headless server".to_owned()
+            ));
+            continue;
+        }
+
         let Ok(player) = primary_user.single() else {
             response.send(Err("No player".to_owned()));
             return;
@@ -1941,12 +1984,15 @@ fn handle_sign_request(
         )>,
     >,
     wallet: Res<Wallet>,
+    // present only in the headless server binary; None everywhere else
+    delegations: Option<Res<wallet::delegation::StorageDelegations>>,
 ) {
     for ev in events.read() {
         if let RpcCall::SignRequest {
             method,
             uri,
             meta,
+            scene,
             response,
         } = ev
         {
@@ -1954,6 +2000,35 @@ fn handle_sign_request(
                 response.send(Err(format!("failed to parse uri: {uri}")));
                 continue;
             };
+
+            // world-storage requests from a delegated scene are signed with the
+            // delegation's ephemeral key + scope header instead of the engine wallet
+            if let Some(delegation) = delegations
+                .as_ref()
+                .filter(|_| wallet::delegation::is_storage_request(&uri))
+                .and_then(|d| scene.as_deref().and_then(|s| d.get(s)))
+                .filter(|d| {
+                    !d.is_expired(
+                        web_time::SystemTime::now()
+                            .duration_since(web_time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as i64,
+                    )
+                })
+            {
+                let method = method.clone();
+                let meta = delegation.meta.clone();
+                let scope_header = delegation.scope_header.clone();
+                let ephemeral = delegation.wallet.clone();
+                let task = IoTaskPool::get().spawn_compat(async move {
+                    let mut headers = sign_request(&method, &uri, &ephemeral, meta).await?;
+                    headers.push(("x-authoritative-scope".to_owned(), scope_header));
+                    Ok(headers)
+                });
+                tasks.push((response.clone(), task));
+                continue;
+            }
+
             let method = method.clone();
             let meta = meta.to_owned().unwrap_or_default();
             let wallet = wallet.clone();
@@ -1973,6 +2048,18 @@ fn handle_sign_request(
     })
 }
 
+/// True when a readFile target is shaped like `<scheme>://…` — the form
+/// `IpfsType::url_target` treats as a directly-fetchable URL rather than a scene
+/// content file. Used to block that fallthrough on the authoritative server.
+fn filename_looks_like_url(filename: &str) -> bool {
+    match filename.find("://") {
+        Some(idx) if idx > 0 => filename[..idx]
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.')),
+        _ => false,
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn handle_read_file(
     mut events: EventReader<RpcCall>,
@@ -1983,6 +2070,7 @@ fn handle_read_file(
         )>,
     >,
     ipfs: IpfsAssetServer,
+    is_server: Res<IsServer>,
 ) {
     for ev in events.read() {
         if let RpcCall::ReadFile {
@@ -1991,6 +2079,20 @@ fn handle_read_file(
             response,
         } = ev
         {
+            // SSRF guard — SERVER MODE ONLY. readFile must serve only the scene's own
+            // content files. When a filename is missing from the content map,
+            // IpfsType::url_target falls through to fetching it as a raw URL with an
+            // unguarded, redirect-following client, so a scene could
+            // readFile("http://169.254.169.254/…") and read cloud metadata / loopback /
+            // RFC1918 on the shared task. Refuse any scheme://-shaped filename on the
+            // authoritative server; desktop and web keep their existing behaviour (own
+            // machine / browser sandbox).
+            if is_server.0 && filename_looks_like_url(filename) {
+                response.send(Err(format!(
+                    "readFile: absolute URLs are not permitted on the authoritative server ({filename})"
+                )));
+                continue;
+            }
             let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
                 scene_hash.to_owned(),
                 filename.to_owned(),

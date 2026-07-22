@@ -287,6 +287,11 @@ pub struct SceneDrivenAnimationFeedback {
     pub state: Option<SceneDrivenAnimationFeedbackState>,
 }
 
+/// When true, scenes run in authoritative-server role: `isServer()` returns true
+/// to scene JS. Set by the headless server binary; defaults to false everywhere else.
+#[derive(Resource, Default)]
+pub struct IsServer(pub bool);
+
 #[derive(Debug, Clone)]
 pub struct SceneDrivenAnimationFeedbackState {
     pub src: String,

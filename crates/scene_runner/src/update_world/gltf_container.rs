@@ -691,7 +691,10 @@ fn update_ready_gltfs(
                             }
                         }
 
-                        let shape = mesh_to_parry_shape(mesh_data);
+                        let shape = mesh_to_parry_shape(mesh_data).unwrap_or_else(|| {
+                            warn!("gltf mesh has no positions; using placeholder collider");
+                            SharedShape::ball(0.01)
+                        });
 
                         let maybe_collider = if is_skinned {
                             let mut new_mesh = Mesh::new(
@@ -1173,12 +1176,16 @@ fn _node_graph(
     format!("{dot:?}")
 }
 
-pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
+/// Returns None when the mesh has no POSITION attribute — a crafted glTF can produce
+/// such a primitive (the lenient fork loader accepts accessors with no bufferView), and
+/// panicking here would abort the shared engine and every co-tenant scene.
+pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> Option<SharedShape> {
     // create collider shape
     let VertexAttributeValues::Float32x3(positions_ref) =
-        mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+        mesh_data.attribute(Mesh::ATTRIBUTE_POSITION)?
     else {
-        panic!("no positions")
+        warn!("gltf collider mesh POSITION is not Float32x3; skipping");
+        return None;
     };
 
     let positions_parry: Vec<_> = positions_ref
@@ -1196,17 +1203,19 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
         .map(|chunk| chunk.try_into().unwrap())
         .collect();
 
-    SharedShape::trimesh_with_flags(
-        positions_parry,
-        indices_parry,
-        TriMeshFlags::DELETE_DEGENERATE_TRIANGLES
-            | TriMeshFlags::DELETE_DUPLICATE_TRIANGLES
-            | TriMeshFlags::MERGE_DUPLICATE_VERTICES,
+    Some(
+        SharedShape::trimesh_with_flags(
+            positions_parry,
+            indices_parry,
+            TriMeshFlags::DELETE_DEGENERATE_TRIANGLES
+                | TriMeshFlags::DELETE_DUPLICATE_TRIANGLES
+                | TriMeshFlags::MERGE_DUPLICATE_VERTICES,
+        )
+        .unwrap_or_else(|_| {
+            warn!("empty indices, can't generate collider");
+            SharedShape::ball(0.01)
+        }),
     )
-    .unwrap_or_else(|_| {
-        warn!("empty indices, can't generate collider");
-        SharedShape::ball(0.01)
-    })
 }
 
 #[derive(Component, Debug)]

@@ -13,13 +13,21 @@ use crate::{
     interface::{crdt_context::CrdtContext, CrdtType},
     js::{
         AllocatorContext, CommunicatedWithRenderer, FilteredCrdtStore, RendererStore,
-        SceneResponseSender, ShuttingDown,
+        SceneResponseSender, SceneStatsFlush, ShuttingDown,
     },
     AllocError, CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
-    SceneLogMessage, SceneResponse,
+    SceneLogMessage, SceneResourceCounters, SceneResponse,
 };
 
 use super::State;
+
+/// Returns whether this scene runs in authoritative-server role. Read synchronously
+/// from the scene's CrdtContext (seeded from the `IsServer` engine resource). MUST stay
+/// synchronous — an async op would return a Promise to JS, and `!!Promise` is always
+/// true, making every client believe it is the server.
+pub fn op_is_server(state: Rc<RefCell<impl State>>) -> bool {
+    state.borrow().borrow::<CrdtContext>().is_server
+}
 
 /// Localize the payload within a CRDT wire-format message.
 /// CRDT PutComponent format: length(4) + type(4) + entity(4) + component(4) + timestamp(4) + content_len(4) + payload
@@ -104,6 +112,22 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
             rpc_calls,
         ))
         .expect("failed to send to renderer");
+
+    let scene_id = entity_map.scene_id;
+    {
+        let counters = op_state.borrow_mut::<SceneResourceCounters>();
+        counters.ipc_responses += 1;
+        counters.crdt_bytes += messages.len() as u64;
+        counters.tick_count += 1;
+    }
+    if elapsed_time - op_state.borrow::<SceneStatsFlush>().0 >= 5.0 {
+        op_state.put(SceneStatsFlush(elapsed_time));
+        let snapshot = op_state.borrow::<SceneResourceCounters>().clone();
+        // advisory telemetry: drop the snapshot if the channel is full
+        let _ = op_state
+            .borrow_mut::<SceneResponseSender>()
+            .try_send(SceneResponse::Stats(scene_id, snapshot));
+    }
 
     op_state.put(writers);
     op_state.put(entity_map);

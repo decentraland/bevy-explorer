@@ -81,6 +81,39 @@ pub enum SceneResponse {
     /// `Ok(id)` for an instantiated entity, `Err` for a slot that couldn't be allocated (an explicit
     /// id that was already live, or no free id for a fresh allocation).
     EntityAllocated(SceneId, Vec<Result<SceneEntityId, AllocError>>),
+    /// Advisory periodic snapshot of the scene's cumulative resource counters. Dropped
+    /// (never blocks) when the channel is full.
+    Stats(SceneId, SceneResourceCounters),
+}
+
+/// Cumulative per-scene resource counters, incremented by the scene-side ops and flushed
+/// to the renderer via [`SceneResponse::Stats`]. All fields are monotonic totals except
+/// `heap_used`/`heap_limit`, which are last-sampled gauges.
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct SceneResourceCounters {
+    pub fetch_started: u64,
+    pub fetch_completed: u64,
+    pub fetch_failed: u64,
+    pub fetch_bytes_down: u64,
+    /// Fetches whose URL host is the world-storage service (`storage.decentraland.*`).
+    /// Counted in addition to the generic `fetch_*` counters.
+    pub storage_requests: u64,
+    pub storage_completed: u64,
+    pub storage_failed: u64,
+    /// Storage responses that came back 401/403 (also counted in `storage_completed`).
+    pub storage_unauthorized: u64,
+    pub ws_opened: u64,
+    pub comms_msgs_out: u64,
+    pub comms_bytes_out: u64,
+    pub log_lines: u64,
+    pub log_bytes: u64,
+    pub crdt_bytes: u64,
+    pub ipc_responses: u64,
+    pub tick_count: u64,
+    /// Microseconds of wall time spent executing the scene's JS (onStart + onUpdate).
+    pub run_us: u64,
+    pub heap_used: u64,
+    pub heap_limit: u64,
 }
 
 /// Why an [`RendererResponse::AllocateEntity`] slot couldn't be allocated.

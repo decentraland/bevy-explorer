@@ -20,7 +20,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
     process::{Command, Stdio},
-    sync::RwLock,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        RwLock,
+    },
 };
 use system_bridge::SystemApi;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -71,6 +74,13 @@ pub struct NewSceneCommand {
 pub static NEW_SCENE_SENDER: Lazy<
     RwLock<Option<tokio::sync::mpsc::UnboundedSender<NewSceneCommand>>>,
 > = Lazy::new(Default::default);
+
+/// Opt-in for the orchestrated headless server ONLY: when set, a runtime whose IPC
+/// loops end (the JS sidecar was lost) hard-exits the process so the supervisor can
+/// restart the whole engine — otherwise a half-dead engine looks healthy forever and
+/// the parent's engine-down recovery never fires. Left false for the desktop client
+/// and for tests, which build a fresh runtime per app and must not kill the process.
+pub static EXIT_ON_SIDECAR_LOSS: AtomicBool = AtomicBool::new(false);
 
 pub fn init_runtime() -> anyhow::Result<()> {
     let (init_sx, init_rx) = tokio::sync::oneshot::channel::<anyhow::Result<()>>();
@@ -161,8 +171,18 @@ pub fn init_runtime() -> anyhow::Result<()> {
         let _ = init_sx.send(Ok(()));
 
         let _ = rt.block_on(async move { tokio::join!(f_out, f_in) });
+        let _ = child.wait();
 
-        child.wait().unwrap();
+        // Orchestrated headless server only (EXIT_ON_SIDECAR_LOSS): the IPC loops ended,
+        // so the JS sidecar is gone and the engine can run no scene code. Nothing here
+        // can respawn it, and the parent's engine-down recovery never fires for a still-
+        // running process — so exit hard and let the supervisor restart the whole engine.
+        // Desktop/tests leave the flag false and end quietly (tests build a fresh runtime
+        // per app, where this is a normal shutdown, not a crash).
+        if EXIT_ON_SIDECAR_LOSS.load(Ordering::SeqCst) {
+            error!("dcl_deno_ipc runtime terminated (JS sidecar lost); exiting process");
+            std::process::exit(1);
+        }
     });
 
     init_rx.blocking_recv()?
@@ -249,7 +269,19 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
             SceneToEngine::SceneResponse(scene_response) => RENDERER_SENDER.with(|sender| {
                 let mut sender = sender.borrow_mut();
                 let sender = sender.as_mut().unwrap();
-                sender.try_send(scene_response).unwrap();
+                // HEADLESS-ONLY: EXIT_ON_SIDECAR_LOSS marks the orchestrated headless server,
+                // where every scene shares one engine. There, a panic in this IPC task ends
+                // the loop and trips the process exit above — killing the whole engine and
+                // every co-tenant scene. So shed the response instead of panicking: a scene
+                // that outruns the bevy-side drain only stalls itself. Desktop and tests
+                // (flag unset) keep the original panic-on-failure behavior unchanged.
+                if EXIT_ON_SIDECAR_LOSS.load(Ordering::SeqCst) {
+                    if let Err(e) = sender.try_send(scene_response) {
+                        warn!("dropping scene response: renderer channel unavailable ({e})");
+                    }
+                } else {
+                    sender.try_send(scene_response).unwrap();
+                }
             }),
             SceneToEngine::IpcMessage(id, ipc_message) => {
                 let IpcMessage::Closed = ipc_message else {

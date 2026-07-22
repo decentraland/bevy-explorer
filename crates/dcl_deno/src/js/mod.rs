@@ -9,7 +9,7 @@ use dcl::{
         engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, SceneResponseSender,
         ShuttingDown, SuperUserScene,
     },
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneResponse,
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneResourceCounters, SceneResponse,
 };
 use deno_core::{
     anyhow::anyhow,
@@ -145,6 +145,12 @@ pub fn create_runtime(
         ..Default::default()
     };
 
+    // Per-isolate V8 heap cap. Every scene runs in its own isolate on its own thread, so
+    // a cap here bounds ONE scene's memory and stops a single runaway/hostile scene from
+    // OOM-killing the shared sidecar (and every co-tenant scene with it). The near-limit
+    // callback below terminates just that isolate instead of aborting the process.
+    const MAX_SCENE_HEAP_BYTES: usize = 512 * 1024 * 1024;
+
     // create runtime
     #[allow(unused_mut)]
     let mut runtime = JsRuntime::new(RuntimeOptions {
@@ -152,8 +158,24 @@ pub fn create_runtime(
             webidl, url, console, web, net, fetch, websocket, webstorage, ext,
         ],
         inspector: inspect,
+        create_params: Some(
+            deno_core::v8::CreateParams::default().heap_limits(0, MAX_SCENE_HEAP_BYTES),
+        ),
         ..Default::default()
     });
+
+    // On approaching the cap, terminate this isolate's execution so its JS unwinds and the
+    // scene ends cleanly; raise the reported limit so V8 has headroom to run the
+    // termination itself instead of hard-aborting the whole sidecar process.
+    {
+        let terminate_handle = runtime.v8_isolate().thread_safe_handle();
+        runtime.add_near_heap_limit_callback(move |current, _initial| {
+            bevy::prelude::error!("scene exceeded its {MAX_SCENE_HEAP_BYTES}-byte heap cap; terminating the scene isolate");
+            terminate_handle.terminate_execution();
+            // grant a temporary margin so the unwind can complete
+            current + 8 * 1024 * 1024
+        });
+    }
 
     #[cfg(feature = "inspect")]
     if inspect {
@@ -279,8 +301,13 @@ pub(crate) fn scene_thread(
     crdt_send_to_renderer(state.clone(), &[]);
 
     // run startup function
+    let run_start = thread_cpu_us();
     let result =
         rt.block_on(async { run_script(&mut runtime, &script, "onStart", |_| Vec::new()).await });
+    state
+        .borrow_mut()
+        .borrow_mut::<SceneResourceCounters>()
+        .run_us += thread_cpu_us().saturating_sub(run_start);
 
     debug!(
         "[scene thread {scene_id:?}] post startup, {} rpc calls",
@@ -307,6 +334,7 @@ pub(crate) fn scene_thread(
     let mut prev_time = start_time;
     let mut elapsed;
     let mut reported_errors = 0;
+    let mut last_heap_sample: Option<std::time::Instant> = None;
     loop {
         let now = std::time::Instant::now();
         let dt = now.saturating_duration_since(prev_time).min(MAX_SCENE_DT);
@@ -317,13 +345,29 @@ pub(crate) fn scene_thread(
             .borrow_mut()
             .put(SceneElapsedTime(elapsed.as_secs_f32()));
 
+        // heap gauges: sampling walks the isolate's spaces, so cap it at ~once per 5s
+        if last_heap_sample.is_none_or(|at| now.saturating_duration_since(at).as_secs() >= 5) {
+            last_heap_sample = Some(now);
+            let mut heap = v8::HeapStatistics::default();
+            runtime.v8_isolate().get_heap_statistics(&mut heap);
+            let mut guard = state.borrow_mut();
+            let counters = guard.borrow_mut::<SceneResourceCounters>();
+            counters.heap_used = heap.used_heap_size() as u64;
+            counters.heap_limit = heap.heap_size_limit() as u64;
+        }
+
         // run the onUpdate function
+        let run_start = thread_cpu_us();
         let result = rt.block_on(async {
             run_script(&mut runtime, &script, "onUpdate", |scope| {
                 vec![v8::Number::new(scope, dt.as_secs_f64()).into()]
             })
             .await
         });
+        state
+            .borrow_mut()
+            .borrow_mut::<SceneResourceCounters>()
+            .run_us += thread_cpu_us().saturating_sub(run_start);
 
         if state.borrow().try_borrow::<ShuttingDown>().is_some() {
             rt.block_on(async move {
@@ -363,6 +407,33 @@ pub(crate) fn scene_thread(
         }
 
         state.borrow_mut().try_take::<CommunicatedWithRenderer>();
+    }
+}
+
+/// Microseconds of CPU time consumed by the calling thread. The scene loop runs
+/// lockstep with the renderer (run_script blocks on the crdt round-trip inside a
+/// tick), so wall time would count idle waiting as script time; thread CPU time
+/// only advances while JS actually executes. Non-unix targets fall back to wall
+/// time.
+fn thread_cpu_us() -> u64 {
+    #[cfg(unix)]
+    {
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // SAFETY: ts is a valid, writable timespec
+        if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) } == 0 {
+            (ts.tv_sec as u64) * 1_000_000 + (ts.tv_nsec as u64) / 1_000
+        } else {
+            0
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        use std::sync::OnceLock;
+        static START: OnceLock<std::time::Instant> = OnceLock::new();
+        START.get_or_init(std::time::Instant::now).elapsed().as_micros() as u64
     }
 }
 

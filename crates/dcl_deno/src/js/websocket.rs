@@ -7,7 +7,7 @@ use common::{
 use deno_core::{anyhow, error::AnyError, op2, ByteString, OpDecl, OpState, ResourceId};
 use deno_websocket::{CreateResponse, WebSocketPermissions};
 
-use dcl::{interface::crdt_context::CrdtContext, RpcCalls};
+use dcl::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
 
 // list of op declarations
 pub fn override_ops() -> Vec<OpDecl> {
@@ -65,6 +65,18 @@ where
         anyhow::bail!("User denied fetch request");
     }
 
+    // SSRF guard — SERVER MODE ONLY (client/web keep the browser-like behaviour). The
+    // scheme check above still lets `wss://<private-ip>` (or loopback in non-preview)
+    // through; resolve and refuse any non-public destination on the shared server.
+    let (is_server, allow_loopback) = {
+        let op_state = state.borrow();
+        let ctx = op_state.borrow::<CrdtContext>();
+        (ctx.is_server, ctx.preview)
+    };
+    if is_server {
+        common::util::assert_public_url(&url, allow_loopback).await?;
+    }
+
     // set default headers
     let mut headers = headers.unwrap_or_default();
     if !headers
@@ -80,13 +92,18 @@ where
         headers.push(("accept".into(), "*/*".into()));
     }
 
-    deno_websocket::op_ws_create__raw_fn::<WP>(
-        state,
+    let response = deno_websocket::op_ws_create__raw_fn::<WP>(
+        state.clone(),
         api_name,
         url,
         protocols,
         cancel_handle,
         Some(headers),
     )
-    .await
+    .await?;
+    state
+        .borrow_mut()
+        .borrow_mut::<SceneResourceCounters>()
+        .ws_opened += 1;
+    Ok(response)
 }

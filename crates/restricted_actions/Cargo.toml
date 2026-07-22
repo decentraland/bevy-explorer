@@ -32,3 +32,4 @@ clap = { workspace = true }
 copypwasmta = { workspace = true }
 http = { workspace = true }
 futures-lite = { workspace = true }
+web-time = { workspace = true }

@@ -52,6 +52,12 @@ use self::livekit::{plugin::LivekitPlugin, StartLivekit};
 const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
 const PREVIEW_GATEKEEPER_URL: &str =
     "https://comms-gatekeeper-local.decentraland.org/get-scene-adapter";
+// Authoritative-server endpoints: yield a token with the LiveKit identity
+// `authoritative-server`, which clients target for authoritative-scene traffic.
+const SERVER_GATEKEEPER_URL: &str =
+    "https://comms-gatekeeper.decentraland.org/get-server-scene-adapter";
+const PREVIEW_SERVER_GATEKEEPER_URL: &str =
+    "https://comms-gatekeeper-local.decentraland.org/get-server-scene-adapter";
 
 pub mod chat_marker_things {
     pub const EMOTE: char = '␐';
@@ -64,7 +70,9 @@ pub struct CommsPlugin;
 impl Plugin for CommsPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<SetCurrentScene>()
-            .init_resource::<SceneRoomConnection>();
+            .init_resource::<SceneRoomConnection>()
+            .init_resource::<ServerSceneRooms>()
+            .init_resource::<DisableSceneRoomGatekeeper>();
 
         app.add_plugins((
             WebsocketRoomPlugin,
@@ -153,7 +161,16 @@ fn process_realm_change(
     adapters: Query<Entity, With<Transport>>,
     mut manager: AdapterManager,
     wallet: Res<Wallet>,
+    disable_realm_comms: Option<Res<DisableRealmComms>>,
 ) {
+    // headless servers must never join realm-wide comms (archipelago / world room /
+    // preview ws-room) — they would show up as a ghost participant. Scene rooms are
+    // managed separately with per-scene adapters, so when the (headless-only) gate is
+    // set, skip the realm-driven transport lifecycle entirely.
+    if disable_realm_comms.is_some_and(|d| d.0) {
+        return;
+    }
+
     if realm.is_changed() || wallet.is_changed() {
         for adapter in adapters.iter() {
             commands.entity(adapter).despawn();
@@ -198,7 +215,26 @@ pub struct SceneRoom(pub String);
 #[derive(Resource, Default)]
 pub struct SceneRoomConnection(pub Option<(SetCurrentScene, String, Entity)>);
 
+/// Scene rooms held by a multi-scene authoritative server: scene hash -> (adapter, transport
+/// entity). Additive alongside the client's single-room `SceneRoomConnection`; always empty
+/// outside server mode, so client behavior is unchanged.
+#[derive(Resource, Default)]
+pub struct ServerSceneRooms(pub bevy::platform::collections::HashMap<String, (String, Entity)>);
+
+/// Structurally disables the gatekeeper-signing scene-room path (`connect_scene_room`).
+/// Set by orchestrated headless servers, whose room credentials are ALWAYS minted by the
+/// trusted parent — the engine must never sign gatekeeper handshakes itself in that mode.
+#[derive(Resource, Default)]
+pub struct DisableSceneRoomGatekeeper(pub bool);
+
+/// When set (headless servers only), the engine never joins realm-wide comms
+/// (archipelago / world room / preview ws-room) — scene rooms via per-scene
+/// adapters are unaffected. Absent everywhere else: clients connect as always.
+#[derive(Resource, Default)]
+pub struct DisableRealmComms(pub bool);
+
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 fn connect_scene_room(
     mut commands: Commands,
     mut manager: AdapterManager,
@@ -207,7 +243,15 @@ fn connect_scene_room(
     mut scene: EventReader<SetCurrentScene>,
     wallet: Res<Wallet>,
     ipfs: IpfsAssetServer,
+    is_server: Res<common::structs::IsServer>,
+    disabled: Res<DisableSceneRoomGatekeeper>,
 ) {
+    if disabled.0 {
+        // orchestrated servers receive pre-minted adapters over the control channel and
+        // must never sign gatekeeper handshakes themselves
+        scene.clear();
+        return;
+    }
     if let Some(ev) = scene.read().last().cloned() {
         if let Some((existing, room, entity)) = current.0.take() {
             if existing == ev {
@@ -223,17 +267,33 @@ fn connect_scene_room(
             *gatekeeper_task = None;
         } else {
             let wallet = wallet.clone();
-            let url = if ev.scene_id.starts_with("b64-") {
-                PREVIEW_GATEKEEPER_URL
-            } else {
-                GATEKEEPER_URL
+            let preview = ev.scene_id.starts_with("b64-");
+            let url = match (is_server.0, preview) {
+                (true, true) => PREVIEW_SERVER_GATEKEEPER_URL,
+                (true, false) => SERVER_GATEKEEPER_URL,
+                (false, true) => PREVIEW_GATEKEEPER_URL,
+                (false, false) => GATEKEEPER_URL,
             };
             let uri = Uri::try_from(url).unwrap();
             let client = ipfs.ipfs().client();
+            // The authoritative-server gatekeeper endpoint validates the full comms-handshake
+            // metadata (intent/signer/realm) that the client `get-scene-adapter` path omits;
+            // signing the bare SetCurrentScene there returns 401. Mirror hammurabi's payload.
+            let meta = if is_server.0 {
+                serde_json::json!({
+                    "intent": "dcl:explorer:comms-handshake",
+                    "signer": "dcl:explorer",
+                    "isGuest": wallet.is_guest(),
+                    "realm": { "serverName": ev.realm_name },
+                    "realmName": ev.realm_name,
+                    "sceneId": ev.scene_id,
+                })
+                .to_string()
+            } else {
+                serde_json::to_string(&ev).unwrap()
+            };
             *gatekeeper_task = Some(IoTaskPool::get().spawn_compat(async move {
-                let headers =
-                    sign_request("POST", &uri, &wallet, serde_json::to_string(&ev).unwrap())
-                        .await?;
+                let headers = sign_request("POST", &uri, &wallet, meta).await?;
 
                 let mut request = client
                     .post(uri.to_string())

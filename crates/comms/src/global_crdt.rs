@@ -70,6 +70,7 @@ impl Plugin for GlobalCrdtPlugin {
                 "Global Crdt".into(),
                 false,
                 false,
+                false,
             ),
             store: Default::default(),
             lookup: Default::default(),
@@ -237,37 +238,37 @@ impl GlobalCrdtState {
             CrdtType::LWW(_) => put_component(&id, &component_id, &timestamp, Some(&buf)),
             CrdtType::GO(_) => append_component(&id, &component_id, &buf),
         };
-        if let Err(e) = self
-            .int_sender
-            .send(GlobalCrdtStateUpdate::Crdt(crdt_message, localizer))
-        {
-            error!("failed to send foreign player update to scenes: {e}");
-        }
+        self.send_update(
+            GlobalCrdtStateUpdate::Crdt(crdt_message, localizer),
+            "foreign player",
+        );
     }
 
     pub fn delete_entity(&mut self, id: SceneEntityId) {
         self.store.clean_up(&HashSet::from_iter(Some(id)));
         let crdt_message = delete_entity(&id);
-        if let Err(e) = self
-            .int_sender
-            .send(GlobalCrdtStateUpdate::Crdt(crdt_message, Localizer::None))
-        {
-            error!("failed to send foreign player update to scenes: {e}");
-        }
+        self.send_update(
+            GlobalCrdtStateUpdate::Crdt(crdt_message, Localizer::None),
+            "foreign player",
+        );
     }
 
     pub fn update_time(&mut self, time: f32) {
-        if let Err(e) = self.int_sender.send(GlobalCrdtStateUpdate::Time(time)) {
-            error!("failed to send time update to scenes: {e}");
-        }
+        self.send_update(GlobalCrdtStateUpdate::Time(time), "time");
     }
 
     pub fn update_camera_fov(&mut self, fov_y: f32) {
-        if let Err(e) = self
-            .int_sender
-            .send(GlobalCrdtStateUpdate::CameraFov(fov_y))
-        {
-            error!("failed to send camera fov update to scenes: {e}");
+        self.send_update(GlobalCrdtStateUpdate::CameraFov(fov_y), "camera fov");
+    }
+
+    // a broadcast send fails exactly when there are no subscribers, which is the
+    // normal state whenever no scenes are live — not an error, just nobody listening
+    fn send_update(&self, update: GlobalCrdtStateUpdate, what: &str) {
+        if self.int_sender.receiver_count() == 0 {
+            return;
+        }
+        if let Err(e) = self.int_sender.send(update) {
+            error!("failed to send {what} update to scenes: {e}");
         }
     }
 }
