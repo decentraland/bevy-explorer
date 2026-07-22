@@ -45,6 +45,7 @@ use comms::{
 use console::ConsolePlugin;
 use dcl::interface::CrdtType;
 use dcl::SceneLogMessage;
+use dcl::SceneResourceCounters;
 use dcl_component::{
     proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData},
     SceneComponentId, SceneEntityId,
@@ -428,7 +429,10 @@ fn main() {
                     request_delegation_renewals,
                 ),
             )
-            .add_systems(PostUpdate, (emit_scene_status, emit_failed_scene_status));
+            .add_systems(
+                PostUpdate,
+                (emit_scene_status, emit_scene_stats, emit_failed_scene_status),
+            );
         ctl_emit(&serde_json::json!({"type": "starting", "realm": args.realm}));
     }
 
@@ -1070,6 +1074,73 @@ fn emit_scene_status(
             }));
         }
     }
+}
+
+/// Periodic per-scene resource stats for the orchestrator. Every field except the
+/// mem gauges is a per-window delta against the previous emission's cumulative
+/// snapshot, so the orchestrator can rate scenes without tracking totals itself.
+fn emit_scene_stats(
+    time: Res<Time>,
+    scenes: Query<&RendererSceneContext>,
+    mut last: Local<f32>,
+    mut prev: Local<std::collections::HashMap<String, (SceneResourceCounters, f32)>>,
+) {
+    let elapsed = time.elapsed_secs();
+    if elapsed - *last <= 10.0 {
+        return;
+    }
+    *last = elapsed;
+
+    for ctx in scenes.iter() {
+        // only present once the scene has ticked (the scene thread flushes with its Ok responses)
+        let Some(cur) = &ctx.resource_counters else {
+            continue;
+        };
+        let (base, prev_at) = prev
+            .get(&ctx.hash)
+            .cloned()
+            .unwrap_or((SceneResourceCounters::default(), 0.0));
+        println!(
+            "@scene-stats {}",
+            serde_json::json!({
+                "scene": ctx.hash,
+                "window_s": elapsed - prev_at,
+                "fetch": {
+                    "started": cur.fetch_started.saturating_sub(base.fetch_started),
+                    "completed": cur.fetch_completed.saturating_sub(base.fetch_completed),
+                    "failed": cur.fetch_failed.saturating_sub(base.fetch_failed),
+                    "bytes_down": cur.fetch_bytes_down.saturating_sub(base.fetch_bytes_down),
+                },
+                "storage": {
+                    "requests": cur.storage_requests.saturating_sub(base.storage_requests),
+                    "completed": cur.storage_completed.saturating_sub(base.storage_completed),
+                    "failed": cur.storage_failed.saturating_sub(base.storage_failed),
+                    "unauthorized": cur.storage_unauthorized.saturating_sub(base.storage_unauthorized),
+                },
+                "ws": {"opened": cur.ws_opened.saturating_sub(base.ws_opened)},
+                "comms": {
+                    "msgs_out": cur.comms_msgs_out.saturating_sub(base.comms_msgs_out),
+                    "bytes_out": cur.comms_bytes_out.saturating_sub(base.comms_bytes_out),
+                },
+                "logs": {
+                    "lines": cur.log_lines.saturating_sub(base.log_lines),
+                    "bytes": cur.log_bytes.saturating_sub(base.log_bytes),
+                },
+                "crdt": {"bytes": cur.crdt_bytes.saturating_sub(base.crdt_bytes)},
+                "ipc": {"responses": cur.ipc_responses.saturating_sub(base.ipc_responses)},
+                "cpu": {
+                    "ticks": cur.tick_count.saturating_sub(base.tick_count),
+                    "run_ms": cur.run_us.saturating_sub(base.run_us) / 1000,
+                },
+                "mem": {"heap_used": cur.heap_used, "heap_limit": cur.heap_limit},
+            })
+        );
+        prev.insert(ctx.hash.clone(), (cur.clone(), elapsed));
+    }
+
+    let current: std::collections::HashSet<String> =
+        scenes.iter().map(|ctx| ctx.hash.clone()).collect();
+    prev.retain(|hash, _| current.contains(hash));
 }
 
 /// Report scenes that FAILED to load (bad/missing entity definition, JS init error)

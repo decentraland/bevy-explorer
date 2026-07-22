@@ -967,6 +967,14 @@ fn receive_scene_updates(
                     }
                     None
                 }
+                SceneResponse::Stats(scene_id, counters) => {
+                    if let Some(root) = updates.scene_ids.get(&scene_id) {
+                        if let Ok(mut context) = scenes.get_mut(*root) {
+                            context.resource_counters = Some(counters);
+                        }
+                    }
+                    None
+                }
                 SceneResponse::WaitingForInspector => {
                     toaster.add_toast("inspector", "Scene paused waiting for inspector session");
                     None

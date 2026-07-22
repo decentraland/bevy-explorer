@@ -13,7 +13,8 @@ use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneLogLevel, SceneLogMessage, SceneResponse,
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneLogLevel, SceneLogMessage,
+    SceneResourceCounters, SceneResponse,
 };
 
 use super::interface::CrdtStore;
@@ -86,6 +87,9 @@ impl std::ops::Deref for SuperUserScene {
 
 // marker to notify that the scene/renderer interface functions were used
 pub struct CommunicatedWithRenderer;
+
+// scene-elapsed time (seconds) of the last SceneResponse::Stats flush
+pub struct SceneStatsFlush(pub f32);
 
 pub trait State {
     fn borrow<T: 'static>(&self) -> &T;
@@ -191,6 +195,8 @@ pub fn init_state(
     state.put(RendererStore(initial_crdt_store));
     state.put(FilteredCrdtStore::default());
     state.put(Vec::<SceneLogMessage>::default());
+    state.put(SceneResourceCounters::default());
+    state.put(SceneStatsFlush(0.0));
     state.put(SceneElapsedTime(0.0));
     state.put(TimeOfDay { time: 0. });
     state.put(CameraFov::default());
@@ -203,8 +209,11 @@ pub fn init_state(
 pub fn op_log(state: Rc<RefCell<impl State>>, message: String) {
     debug!("op_log {}", message);
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
+    let mut state = state.borrow_mut();
+    let counters = state.borrow_mut::<SceneResourceCounters>();
+    counters.log_lines += 1;
+    counters.log_bytes += message.len() as u64;
     state
-        .borrow_mut()
         .borrow_mut::<Vec<SceneLogMessage>>()
         .push(SceneLogMessage {
             timestamp: time as f64,
@@ -216,8 +225,11 @@ pub fn op_log(state: Rc<RefCell<impl State>>, message: String) {
 pub fn op_error(state: Rc<RefCell<impl State>>, message: String) {
     debug!("op_error");
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
+    let mut state = state.borrow_mut();
+    let counters = state.borrow_mut::<SceneResourceCounters>();
+    counters.log_lines += 1;
+    counters.log_bytes += message.len() as u64;
     state
-        .borrow_mut()
         .borrow_mut::<Vec<SceneLogMessage>>()
         .push(SceneLogMessage {
             timestamp: time as f64,

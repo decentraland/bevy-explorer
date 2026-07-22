@@ -7,7 +7,7 @@ use common::{
 use deno_core::{anyhow, error::AnyError, op2, ByteString, OpDecl, OpState, ResourceId};
 use deno_websocket::{CreateResponse, WebSocketPermissions};
 
-use dcl::{interface::crdt_context::CrdtContext, RpcCalls};
+use dcl::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
 
 // list of op declarations
 pub fn override_ops() -> Vec<OpDecl> {
@@ -92,13 +92,18 @@ where
         headers.push(("accept".into(), "*/*".into()));
     }
 
-    deno_websocket::op_ws_create__raw_fn::<WP>(
-        state,
+    let response = deno_websocket::op_ws_create__raw_fn::<WP>(
+        state.clone(),
         api_name,
         url,
         protocols,
         cancel_handle,
         Some(headers),
     )
-    .await
+    .await?;
+    state
+        .borrow_mut()
+        .borrow_mut::<SceneResourceCounters>()
+        .ws_opened += 1;
+    Ok(response)
 }

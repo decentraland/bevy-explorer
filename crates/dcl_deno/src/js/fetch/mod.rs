@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use fetch_response_body_resource::FetchResponseBodyResource;
 
-use dcl::{interface::crdt_context::CrdtContext, RpcCalls};
+use dcl::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
 
 // we have to provide fetch perm structs even though we don't use them
 pub struct FP;
@@ -78,6 +78,8 @@ struct FetchRequestResource {
     request_body_rid: Option<ResourceId>,
     body_bytes: Option<Vec<u8>>,
     url: String,
+    /// URL host is the world-storage service (`storage.decentraland.*`).
+    is_storage: bool,
 }
 impl deno_core::Resource for FetchRequestResource {}
 
@@ -106,6 +108,19 @@ where
 {
     debug!("op_fetch");
     // TODO scene permissions
+
+    let is_storage = deno_core::url::Url::parse(&url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.starts_with("storage.decentraland.")))
+        .unwrap_or(false);
+
+    {
+        let counters = state.borrow_mut::<SceneResourceCounters>();
+        counters.fetch_started += 1;
+        if is_storage {
+            counters.storage_requests += 1;
+        }
+    }
 
     // authoritative-server mode only: never auto-follow redirects, so a 3xx onto a
     // private host can't bypass the per-request SSRF check or leak signed headers. The
@@ -206,6 +221,7 @@ where
         request_body_rid,
         request,
         url,
+        is_storage,
     });
 
     debug!("returning {:?}", request_rid);
@@ -235,6 +251,40 @@ pub async fn op_fetch_send(
     state: Rc<RefCell<OpState>>,
     #[smi] rid: ResourceId,
 ) -> Result<FetchResponse, AnyError> {
+    // copy the flag out before fetch_send_inner takes (and try_unwraps) the resource
+    let is_storage = state
+        .borrow()
+        .resource_table
+        .get::<FetchRequestResource>(rid)
+        .map(|r| r.is_storage)
+        .unwrap_or(false);
+    let result = fetch_send_inner(state.clone(), rid).await;
+    let mut op_state = state.borrow_mut();
+    let counters = op_state.borrow_mut::<SceneResourceCounters>();
+    match &result {
+        Ok(response) => {
+            counters.fetch_completed += 1;
+            if is_storage {
+                counters.storage_completed += 1;
+                if matches!(response.status, 401 | 403) {
+                    counters.storage_unauthorized += 1;
+                }
+            }
+        }
+        Err(_) => {
+            counters.fetch_failed += 1;
+            if is_storage {
+                counters.storage_failed += 1;
+            }
+        }
+    }
+    result
+}
+
+async fn fetch_send_inner(
+    state: Rc<RefCell<OpState>>,
+    rid: ResourceId,
+) -> Result<FetchResponse, AnyError> {
     debug!("op_fetch_send");
     let request = state
         .borrow_mut()
@@ -247,6 +297,7 @@ pub async fn op_fetch_send(
         body_bytes,
         request_body_rid,
         url,
+        is_storage: _,
     } = Rc::try_unwrap(request)
         .ok()
         .expect("multiple op_fetch_send ongoing");
@@ -311,6 +362,11 @@ pub async fn op_fetch_send(
 
     let content_length = res.content_length();
     let chunk = res.bytes().await?;
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SceneResourceCounters>()
+        .fetch_bytes_down += chunk.len() as u64;
 
     let response_rid = state
         .borrow_mut()

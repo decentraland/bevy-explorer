@@ -3452,6 +3452,7 @@ dependencies = [
  "http 1.4.0",
  "hyper 0.14.32",
  "ipfs",
+ "libc",
  "multihash-codetable",
  "once_cell",
  "platform",
