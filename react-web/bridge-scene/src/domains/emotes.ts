@@ -25,6 +25,16 @@ function itemUrn(urn: string): string {
 }
 const isBase = (urn: string): boolean => BASE_EMOTES.includes(itemUrn(urn))
 
+// The 10 wheel slots to show for a profile: its equipped emotes positionally, or — when the wheel is
+// entirely empty (a fresh profile) — the base emotes in order (slot i = BASE_EMOTES[i]). The bevy
+// runtime doesn't seed the defaults into getPlayer().emotes (bevy-ui-scene hits the same empty array),
+// so the HUD fills them here, mirroring Unity's SelfProfile empty-wheel fill: it's all-or-nothing, so
+// once any slot is equipped the remaining empties stay empty.
+function equippedSlots(emotes: readonly unknown[] | undefined): string[] {
+  const slots = Array.from({ length: SLOT_COUNT }, (_, i) => String((emotes ?? [])[i] ?? ''))
+  return slots.every((u) => u === '') ? [...BASE_EMOTES] : slots
+}
+
 // Title-case a base-emote id ("raisehand" → "Raise Hand"); custom emotes use the catalog name.
 function baseEmoteName(urn: string): string {
   const i = urn.indexOf('base-emotes:')
@@ -99,7 +109,9 @@ export function registerEmotes(ctx: Ctx): void {
     const me = getPlayer()
     if (me == null) return
     if (!isBase(msg.urn) && tokenUrnByItem.size === 0) await getOwned(await catalystBase(), me.userId).catch(() => [])
-    const slots = Array.from({ length: SLOT_COUNT }, (_, i) => String((me.emotes ?? [])[i] ?? ''))
+    // Seed from the effective slots (base defaults when the wheel is empty) so equipping into a fresh
+    // profile persists the defaults alongside the new one, instead of blanking the other 9 slots.
+    const slots = equippedSlots(me.emotes)
     slots[msg.slot] = equipUrn(msg.urn)
     BevyApi.setAvatar({
       equip: { wearableUrns: (me.wearables ?? []).map(String), emoteUrns: slots, forceRender: [] }
@@ -112,9 +124,9 @@ export function registerEmotes(ctx: Ctx): void {
     const player = getPlayer()
     const base = await catalystBase()
 
-    // equipped array index = wheel slot; map item-urn → slot.
+    // equipped array index = wheel slot; map item-urn → slot (base defaults when the wheel is empty).
     const slotByItem = new Map<string, number>()
-    ;(player?.emotes ?? []).map(String).forEach((urn, slot) => {
+    equippedSlots(player?.emotes).forEach((urn, slot) => {
       if (urn !== '') slotByItem.set(itemUrn(urn), slot)
     })
 
