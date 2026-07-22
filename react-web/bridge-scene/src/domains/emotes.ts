@@ -11,9 +11,19 @@ import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
 
 const SLOT_COUNT = 10 // the emote wheel has 10 slots
+const BASE_EMOTE_PREFIX = 'urn:decentraland:off-chain:base-emotes:'
 const BASE_EMOTES = ['handsair', 'wave', 'fistpump', 'dance', 'raisehand', 'clap', 'money', 'kiss', 'headexplode', 'shrug'].map(
-  (n) => `urn:decentraland:off-chain:base-emotes:${n}`
+  (n) => `${BASE_EMOTE_PREFIX}${n}`
 )
+
+// getPlayer().emotes stores base emotes by SHORT name ("handsair"), not the full off-chain urn:
+// the engine strips base emotes to their short form when it writes the profile (see the explorer's
+// system_ui/src/profile.rs, and avatar/src/lib.rs which feeds emote_urns back verbatim). The catalog
+// + BASE_EMOTES use the full urn, so expand bare short names or equipped base emotes never match a
+// slot and the wheel renders empty.
+function fullEmoteUrn(urn: string): string {
+  return urn !== '' && !urn.includes(':') ? `${BASE_EMOTE_PREFIX}${urn}` : urn
+}
 
 // Equipped/owned emote urns can carry an NFT token id:
 //   urn:decentraland:matic:collections-v2:<contract>:<itemId>[:<tokenId>]
@@ -125,9 +135,10 @@ export function registerEmotes(ctx: Ctx): void {
     const base = await catalystBase()
 
     // equipped array index = wheel slot; map item-urn → slot (base defaults when the wheel is empty).
+    // Normalize short base-emote names to the full urn so equipped base emotes match a slot.
     const slotByItem = new Map<string, number>()
     equippedSlots(player?.emotes).forEach((urn, slot) => {
-      if (urn !== '') slotByItem.set(itemUrn(urn), slot)
+      if (urn !== '') slotByItem.set(itemUrn(fullEmoteUrn(urn)), slot)
     })
 
     // base emotes are always available to everyone
