@@ -734,6 +734,19 @@ pub struct IpfsIo {
     debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
 }
 
+// dev servers emit `b64-` hashes as standard base64 (older SDKs) or base64url (newer SDKs)
+fn decode_local_b64(b64: &str) -> Option<String> {
+    use base64::{
+        prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD},
+        Engine,
+    };
+    let bytes = BASE64_STANDARD
+        .decode(b64)
+        .or_else(|_| BASE64_URL_SAFE_NO_PAD.decode(b64))
+        .ok()?;
+    String::from_utf8(bytes).ok()
+}
+
 impl IpfsIo {
     pub fn new(
         is_preview: bool,
@@ -1263,17 +1276,14 @@ impl IpfsIo {
     /// entry in the scene's collection. Returns None when the scene isn't b64-addressed (native /
     /// deployed scenes — there the source hash + local cache is used instead).
     pub async fn local_b64_hash_for(&self, scene_hash: &str, rel: &str) -> Option<String> {
-        use base64::{prelude::BASE64_STANDARD, Engine};
+        use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
         let read = self.context.read().await;
         let collection = &read.entities.get(scene_hash)?.collection;
         for (key, h) in collection.0.iter() {
             let Some(b64) = h.strip_prefix("b64-") else {
                 continue;
             };
-            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
-                continue;
-            };
-            let Ok(decoded) = String::from_utf8(decoded) else {
+            let Some(decoded) = decode_local_b64(b64) else {
                 continue;
             };
             // decoded == "{projectRoot}/{key-original-case}-{machineId}"; the key is lowercased, so
@@ -1285,7 +1295,11 @@ impl IpfsIo {
             let project_root = &decoded[..idx];
             let machine_id = &decoded[idx + marker.len()..];
             let abs = format!("{project_root}/{rel}-{machine_id}");
-            return Some(format!("b64-{}", BASE64_STANDARD.encode(abs.as_bytes())));
+            // base64url like newer SDKs; the dev server (node) decodes either alphabet
+            return Some(format!(
+                "b64-{}",
+                BASE64_URL_SAFE_NO_PAD.encode(abs.as_bytes())
+            ));
         }
         None
     }
@@ -1296,17 +1310,13 @@ impl IpfsIo {
     /// native/deployed scenes (entries aren't in the `b64-<path>-machineId` form). Lets the web save
     /// locate the project folder under a granted directory handle.
     pub async fn local_project_root(&self, scene_hash: &str) -> Option<String> {
-        use base64::{prelude::BASE64_STANDARD, Engine};
         let read = self.context.read().await;
         let collection = &read.entities.get(scene_hash)?.collection;
         for (key, h) in collection.0.iter() {
             let Some(b64) = h.strip_prefix("b64-") else {
                 continue;
             };
-            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
-                continue;
-            };
-            let Ok(decoded) = String::from_utf8(decoded) else {
+            let Some(decoded) = decode_local_b64(b64) else {
                 continue;
             };
             let marker = format!("/{key}-");
