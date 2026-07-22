@@ -84,9 +84,7 @@ export function EmotesWheel({
             Customise [E]
           </button>
           <div className={styles.hint}>
-            Hold [B+num] to run an emote
-            <br />
-            while the wheel is closed
+            Press [B+num] to run an emote
           </div>
         </div>
       </div>

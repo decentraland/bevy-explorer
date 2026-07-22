@@ -33,8 +33,8 @@ export function useMenuShortcuts(session: EngineSession): void {
   sessionRef.current = session
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent): void => {
-      // Plain letters only — leave chords (Ctrl/Cmd/Alt) and keystrokes in text fields alone.
+    const keyDownHandler = (e: KeyboardEvent): void => {
+      // Plain keys only — leave chords (Ctrl/Cmd/Alt) and keystrokes in text fields alone.
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
       const target = e.target as HTMLElement | null
       const tag = target?.tagName
@@ -43,6 +43,19 @@ export function useMenuShortcuts(session: EngineSession): void {
 
       const s = sessionRef.current
       if (s.phase !== 'world') return
+
+      // Quick emotes: while the wheel is open, a number key (0–9) plays that slot's emote (which also
+      // closes the wheel). With the wheel closed a number does nothing — this covers both "hold B, tap
+      // a number" and "tap B, then a number", since either way B has opened the wheel first. Handled
+      // here (not off the engine's QuickEmote action) so it fires while the HUD holds keyboard focus.
+      if (s.emotes.open && /^[0-9]$/.test(e.key)) {
+        e.preventDefault()
+        e.stopPropagation()
+        const emote = s.emotes.list.find((em) => em.slot === Number(e.key))
+        if (emote) s.emotes.play(emote.urn)
+        return
+      }
+
       const toggle = SHORTCUTS[e.key.toLowerCase()]
       if (!toggle) return
       e.preventDefault()
@@ -52,7 +65,7 @@ export function useMenuShortcuts(session: EngineSession): void {
 
     // Same-document engine (no iframe): the canvas shares this window, so one capture-phase
     // listener sees keys wherever focus is.
-    window.addEventListener('keydown', handler, true)
-    return () => window.removeEventListener('keydown', handler, true)
+    window.addEventListener('keydown', keyDownHandler, true)
+    return () => window.removeEventListener('keydown', keyDownHandler, true)
   }, [])
 }
