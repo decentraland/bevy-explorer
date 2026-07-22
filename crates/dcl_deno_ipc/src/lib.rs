@@ -269,7 +269,19 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
             SceneToEngine::SceneResponse(scene_response) => RENDERER_SENDER.with(|sender| {
                 let mut sender = sender.borrow_mut();
                 let sender = sender.as_mut().unwrap();
-                sender.try_send(scene_response).unwrap();
+                // HEADLESS-ONLY: EXIT_ON_SIDECAR_LOSS marks the orchestrated headless server,
+                // where every scene shares one engine. There, a panic in this IPC task ends
+                // the loop and trips the process exit above — killing the whole engine and
+                // every co-tenant scene. So shed the response instead of panicking: a scene
+                // that outruns the bevy-side drain only stalls itself. Desktop and tests
+                // (flag unset) keep the original panic-on-failure behavior unchanged.
+                if EXIT_ON_SIDECAR_LOSS.load(Ordering::SeqCst) {
+                    if let Err(e) = sender.try_send(scene_response) {
+                        warn!("dropping scene response: renderer channel unavailable ({e})");
+                    }
+                } else {
+                    sender.try_send(scene_response).unwrap();
+                }
             }),
             SceneToEngine::IpcMessage(id, ipc_message) => {
                 let IpcMessage::Closed = ipc_message else {
