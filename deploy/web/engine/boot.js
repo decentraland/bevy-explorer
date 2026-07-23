@@ -55,6 +55,22 @@ publish()
   const HANG_TICKS = 8 // ~16s with no corroborating error
   const ERROR_CONFIRM_TICKS = 2 // ~4s after a recorded error
 
+  // "Alive but rendering-dead" detector. The stall watchdog above only catches a FROZEN engine (the
+  // heartbeat stops). A render loop that keeps beating while every frame throws the SAME error — e.g. a
+  // wgpu pipeline/attachment mismatch that blanks the screen and spams the console — sails past it, so
+  // catch it by the flood: the identical engine-core console.error repeating FATAL_REPEATS times within
+  // FATAL_WINDOW_MS ⇒ runtime crash. Scene (UGC) console.error lives in the sandbox WORKER's own
+  // console and never reaches this main-thread patch, so this stream is engine-core only. Signatures are
+  // whitespace-normalized but otherwise EXACT (numbers/urls kept) so distinct errors — different assets,
+  // different coords — never pool into one false flood; only a truly identical per-frame error trips it.
+  const FATAL_REPEATS = 30
+  const FATAL_WINDOW_MS = 4000
+  // Engine-core errors that can repeat identically without being fatal — never trip the flood on these.
+  const BENIGN_REPEATS = ['Message too large']
+  // signature -> { count, since }. Per-signature counters (not a single last-seen key) so an identical
+  // per-frame error still floods even when the loop interleaves it with a second error each frame.
+  const floodCounts = new Map()
+
   const nowMs = () => (window.performance?.now ? performance.now() : Date.now())
   const errMessage = (err) => {
     if (!err) return 'Unknown error'
@@ -80,6 +96,7 @@ publish()
     missedTicks = 0
     recoverTicks = 0
     lastBeatCount = beatCount
+    floodCounts.clear()
     window.__bevyPanic = undefined
   }
   window.__rearmCrashWatchdog = rearm
@@ -90,6 +107,28 @@ publish()
   }
   window.reportEngineError = recordError
 
+  // Collapse whitespace only (keep numbers/urls) so "the same error" groups but distinct ones don't.
+  const signature = (msg) => String(msg).replace(/\s+/g, ' ').trim().slice(0, 300)
+
+  // Flood detector (see FATAL_REPEATS above): an identical engine-core error repeating every frame is a
+  // running-but-dead loop the stall watchdog can't see. Latched via `shown`; rearm() clears the counters.
+  function considerFatalRepeat(msg) {
+    if (shown) return
+    if (BENIGN_REPEATS.some((b) => msg.indexOf(b) !== -1)) return
+    const key = signature(msg)
+    const now = nowMs()
+    let e = floodCounts.get(key)
+    if (!e || now - e.since > FATAL_WINDOW_MS) {
+      e = { count: 0, since: now }
+      floodCounts.set(key, e)
+    }
+    if (++e.count >= FATAL_REPEATS) crash(msg, 'runtime')
+    // Bound memory: drop signatures whose window has lapsed once the map grows.
+    if (floodCounts.size > 64) {
+      for (const [k, v] of floodCounts) if (now - v.since > FATAL_WINDOW_MS) floodCounts.delete(k)
+    }
+  }
+
   // Capture Rust panic text: the wasm panic hook prints "panicked at …" via console.error, while
   // the throw that surfaces is a generic trap — stash the readable message for the host.
   const origConsoleError = console.error.bind(console)
@@ -99,6 +138,17 @@ publish()
       if (typeof first === 'string' && first.indexOf('panicked at') !== -1) {
         window.__bevyPanic = { message: String(first), at: nowMs() }
         recordError(first, 'panic')
+      }
+      // Engine-core log lines arrive as a single formatted string (wasm __wbg_error → console.error).
+      // Feed them to the flood detector so a per-frame error storm (blank-screen render crash) becomes
+      // a runtime crash modal instead of an endless silent spam. Skip our OWN watchdog logging
+      // (recordError/crash re-enter this patch) so their constant prefixes can't self-trip the flood.
+      if (
+        typeof first === 'string' &&
+        first.indexOf('[engine error]') !== 0 &&
+        first.indexOf('[crash watchdog]') !== 0
+      ) {
+        considerFatalRepeat(first)
       }
     } catch (_) {}
     return origConsoleError.apply(console, arguments)
