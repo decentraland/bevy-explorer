@@ -27,8 +27,9 @@ use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
-        SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay, PRIMARY_AVATAR_LIGHT_LAYER,
+        AppConfig, DofConfig, FogSetting, GraphicsSettings, PrimaryCamera, PrimaryCameraRes,
+        PrimaryUser, SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay,
+        PRIMARY_AVATAR_LIGHT_LAYER,
     },
 };
 use console::DoAddConsoleCommand;
@@ -42,23 +43,40 @@ pub struct VisualsPlugin {
 
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(DirectionalLightShadowMap { size: 4096 })
-            .init_resource::<SceneGlobalLight>()
-            .insert_resource(CloudCover {
-                cover: 0.35,
-                speed: 30.0,
-                density_cap: 0.8,
-                shadow: 0.05,
-                scale: 1.5,
-                steps: 44,
-                lacunarity: 2.0,
-            })
-            .add_plugins(WireframePlugin::default())
-            .add_plugins(DayNightPlugin)
-            .add_plugins(ShellTexturingPlugin)
-            .add_systems(Update, apply_global_light)
-            .add_systems(Update, update_dof)
-            .add_systems(Startup, setup.in_set(SetupSets::Main));
+        let shadow_map_size =
+            directional_shadow_map_size(&app.world().resource::<AppConfig>().graphics);
+
+        app.insert_resource(DirectionalLightShadowMap {
+            size: shadow_map_size,
+        })
+        .init_resource::<SceneGlobalLight>()
+        .init_resource::<BlendedGlobalLight>()
+        .insert_resource(CloudCover {
+            cover: 0.35,
+            speed: 30.0,
+            density_cap: 0.8,
+            shadow: 0.05,
+            scale: 1.5,
+            steps: 44,
+            lacunarity: 2.0,
+        })
+        .add_plugins(WireframePlugin::default())
+        .add_plugins(DayNightPlugin)
+        .add_plugins(ShellTexturingPlugin)
+        .add_systems(
+            Update,
+            (
+                apply_global_light,
+                update_atmosphere.run_if(sky_needs_update),
+            )
+                .chain(),
+        )
+        .add_systems(
+            Update,
+            update_shadow_map_size.run_if(resource_changed::<AppConfig>),
+        )
+        .add_systems(Update, update_dof)
+        .add_systems(Startup, setup.in_set(SetupSets::Main));
 
         app.insert_resource(AtmosphereSettings {
             resolution: 1024,
@@ -110,6 +128,30 @@ impl Plugin for VisualsPlugin {
 #[derive(Component)]
 struct DirectionalLightLayer(Layer);
 
+fn directional_shadow_map_size(graphics: &GraphicsSettings) -> usize {
+    // on web the shadow map is a significant part of the fixed frame cost; use a
+    // smaller map unless the user explicitly asks for high quality shadows
+    if cfg!(target_arch = "wasm32") && graphics.shadow_settings != ShadowSetting::High {
+        2048
+    } else {
+        4096
+    }
+}
+
+fn update_shadow_map_size(
+    config: Res<AppConfig>,
+    mut shadow_map: ResMut<DirectionalLightShadowMap>,
+) {
+    let size = directional_shadow_map_size(&config.graphics);
+    if shadow_map.size != size {
+        shadow_map.size = size;
+    }
+}
+
+/// the output of `apply_global_light`'s settle transition, consumed by `update_atmosphere`
+#[derive(Resource, Default)]
+struct BlendedGlobalLight(SceneGlobalLight);
+
 fn setup(
     mut commands: Commands,
     camera: Res<PrimaryCameraRes>,
@@ -147,13 +189,124 @@ fn setup(
 }
 
 static TRANSITION_TIME: f32 = 1.0;
+const SKY_UPDATE_INTERVAL: u32 = 8;
+const SKY_JUMP_BURST_FRAMES: u32 = 64;
+
+fn color_delta(a: Color, b: Color) -> f32 {
+    let a = a.to_srgba();
+    let b = b.to_srgba();
+    (a.red - b.red)
+        .abs()
+        .max((a.green - b.green).abs())
+        .max((a.blue - b.blue).abs())
+}
+
+// merely constructing the `AtmosphereMut` param marks the atmosphere resource changed,
+// which re-dispatches the sky compute pass, so `update_atmosphere` must not run every
+// frame. while the light drifts slowly (day/night cycle) an update every
+// SKY_UPDATE_INTERVAL frames is imperceptible under the dithered skybox; a real jump
+// (scene light override, teleport) triggers a full-rate burst so the sky snaps to the
+// new state instead of visibly stepping.
+fn sky_needs_update(
+    scene_global_light: Res<SceneGlobalLight>,
+    mut frames_since_update: Local<u32>,
+    mut burst_frames: Local<u32>,
+    mut last_applied: Local<Option<SceneGlobalLight>>,
+) -> bool {
+    let jumped = match last_applied.as_ref() {
+        None => true,
+        Some(prev) => {
+            prev.source != scene_global_light.source
+                || prev
+                    .dir_direction
+                    .angle_between(scene_global_light.dir_direction)
+                    > 0.02
+                || (prev.dir_illuminance - scene_global_light.dir_illuminance).abs()
+                    > prev.dir_illuminance.max(100.0) * 0.05
+                || color_delta(prev.dir_color, scene_global_light.dir_color) > 0.05
+                || color_delta(prev.ambient_color, scene_global_light.ambient_color) > 0.05
+                || (prev.ambient_brightness - scene_global_light.ambient_brightness).abs() > 0.1
+        }
+    };
+
+    if jumped {
+        *burst_frames = SKY_JUMP_BURST_FRAMES;
+    }
+
+    *frames_since_update += 1;
+    if *burst_frames > 0 || *frames_since_update >= SKY_UPDATE_INTERVAL {
+        *burst_frames = burst_frames.saturating_sub(1);
+        *frames_since_update = 0;
+        *last_applied = Some(scene_global_light.clone());
+        true
+    } else {
+        false
+    }
+}
+
+fn update_atmosphere(
+    mut atmosphere: AtmosphereMut<NishitaCloud>,
+    cloud: Res<CloudCover>,
+    blended: Res<BlendedGlobalLight>,
+    time_of_day: Res<TimeOfDay>,
+    time: Res<Time>,
+    mut cloud_dt: Local<f32>,
+    mut last_elapsed: Local<Option<f32>>,
+) {
+    // this system runs at a reduced rate, so track real elapsed time rather than
+    // using the frame delta
+    let elapsed = time.elapsed_secs();
+    let dt = elapsed - last_elapsed.unwrap_or(elapsed);
+    *last_elapsed = Some(elapsed);
+
+    let light = &blended.0;
+
+    // physically-simulated sky: rayleigh (hue) and mie (haze) are baked day-cycle
+    // curves keyed by time of day; the sun sets naturally (no floor), and a flat
+    // night colour (added in-shader) provides the night sky.
+    let day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
+    atmosphere.sun_position = -light.dir_direction;
+    atmosphere.rayleigh_coefficient = atmosphere_params::RAYLEIGH.sample(day);
+    atmosphere.mie_coefficient = atmosphere_params::MIE.sample(day);
+    atmosphere.night_color = atmosphere_params::NIGHT_SKY;
+    // moon on its own low orbit: rises at dusk, peaks at MOON_PEAK_ELEV around
+    // midnight (well below the zenith, so it never sits overhead like the sun),
+    // sets at dawn. Anti-phase to the sun but on an independent arc, so it has
+    // no singularity at midnight (where the antisolar direction is undefined).
+    const MOON_PEAK_ELEV: f32 = 0.45; // radians (~26°)
+    let a = day * std::f32::consts::TAU + std::f32::consts::FRAC_PI_2;
+    let (sin_a, cos_a) = a.sin_cos();
+    let (sin_b, cos_b) = MOON_PEAK_ELEV.sin_cos();
+    atmosphere.moon_position = Vec3::new(cos_a, sin_a * sin_b, -sin_a * cos_b);
+    atmosphere.dir_light_intensity = light.dir_illuminance;
+    atmosphere.sun_color = light.dir_color.to_srgba().to_vec3();
+    atmosphere.tick += 1;
+
+    if atmosphere.cloudy != cloud.cover {
+        *cloud_dt = (*cloud_dt + dt * 20.0)
+            .min(80.0 * (atmosphere.cloudy - cloud.cover).abs())
+            .max(1.0);
+        atmosphere.cloudy += (cloud.cover - atmosphere.cloudy)
+            .clamp(-dt * 0.005 * *cloud_dt, dt * 0.005 * *cloud_dt);
+    } else {
+        *cloud_dt = f32::max(*cloud_dt - dt, cloud.speed);
+    }
+
+    atmosphere.time += dt * *cloud_dt;
+
+    // cloud look (live-tunable, baked later)
+    atmosphere.cloud_density_cap = cloud.density_cap;
+    atmosphere.cloud_shadow = cloud.shadow;
+    atmosphere.cloud_scale = cloud.scale;
+    atmosphere.cloud_steps = cloud.steps;
+    atmosphere.cloud_lacunarity = cloud.lacunarity;
+}
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn apply_global_light(
     mut commands: Commands,
     setting: Res<AppConfig>,
-    mut atmosphere: AtmosphereMut<NishitaCloud>,
-    cloud: Res<CloudCover>,
+    mut blended: ResMut<BlendedGlobalLight>,
     mut sun: Query<(
         Entity,
         &DirectionalLightLayer,
@@ -165,13 +318,44 @@ fn apply_global_light(
     mut cameras: Query<(Option<&PrimaryCamera>, Option<&mut DistanceFog>), With<Camera3d>>,
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
-    time_of_day: Res<TimeOfDay>,
     mut prev: Local<(f32, SceneGlobalLight)>,
-    mut cloud_dt: Local<f32>,
     mut last_primary_distance: Local<f32>,
 ) {
     // the transition has settled once the previous output exactly matches the target
     let settled = prev.0 >= TRANSITION_TIME && prev.1 == *scene_global_light;
+
+    // skip the light/fog/ambient writes (which trigger change detection and re-extraction)
+    // when the light has settled and nothing else affecting them has changed
+    let primary_distance = cameras
+        .iter()
+        .find_map(|(maybe_primary, _)| maybe_primary.map(|camera| camera.distance))
+        .unwrap_or(0.0);
+    // a (re)inserted DistanceFog fires `is_added` and must be written even when the light has
+    // settled. reading the tick through the existing `&mut` access avoids the query conflict an
+    // `Added<DistanceFog>` filter would have with `cameras`; `is_added` (not `is_changed`) is used
+    // because our own per-frame fog writes set `changed`, which would otherwise never let the gate
+    // re-engage.
+    let fog_added = cameras
+        .iter_mut()
+        .any(|(_, fog)| fog.is_some_and(|fog| fog.is_added()));
+    // extra per-layer suns never cast shadows; re-disable if anything (e.g. the
+    // shadow console command) turned them back on
+    for (_, layer, _, mut light) in sun.iter_mut() {
+        if layer.0 != 0 && light.shadows_enabled {
+            light.shadows_enabled = false;
+        }
+    }
+    let skip_writes = settled
+        && !setting.is_changed()
+        && !scene_distance.is_changed()
+        && !fog_added
+        && *last_primary_distance == primary_distance;
+    *last_primary_distance = primary_distance;
+
+    if skip_writes {
+        prev.0 += time.delta_secs();
+        return;
+    }
 
     let next_light = if prev.0 >= TRANSITION_TIME && prev.1.source == scene_global_light.source {
         scene_global_light.clone()
@@ -205,75 +389,7 @@ fn apply_global_light(
 
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
 
-    // physically-simulated sky: rayleigh (hue) and mie (haze) are baked day-cycle
-    // curves keyed by time of day; the sun sets naturally (no floor), and a flat
-    // night colour (added in-shader) provides the night sky.
-    let day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
-    atmosphere.sun_position = -next_light.dir_direction;
-    atmosphere.rayleigh_coefficient = atmosphere_params::RAYLEIGH.sample(day);
-    atmosphere.mie_coefficient = atmosphere_params::MIE.sample(day);
-    atmosphere.night_color = atmosphere_params::NIGHT_SKY;
-    // moon on its own low orbit: rises at dusk, peaks at MOON_PEAK_ELEV around
-    // midnight (well below the zenith, so it never sits overhead like the sun),
-    // sets at dawn. Anti-phase to the sun but on an independent arc, so it has
-    // no singularity at midnight (where the antisolar direction is undefined).
-    const MOON_PEAK_ELEV: f32 = 0.45; // radians (~26°)
-    let a = day * std::f32::consts::TAU + std::f32::consts::FRAC_PI_2;
-    let (sin_a, cos_a) = a.sin_cos();
-    let (sin_b, cos_b) = MOON_PEAK_ELEV.sin_cos();
-    atmosphere.moon_position = Vec3::new(cos_a, sin_a * sin_b, -sin_a * cos_b);
-    atmosphere.dir_light_intensity = next_light.dir_illuminance;
-    atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
-    atmosphere.tick += 1;
-
-    if atmosphere.cloudy != cloud.cover {
-        *cloud_dt = (*cloud_dt + time.delta_secs() * 20.0)
-            .min(80.0 * (atmosphere.cloudy - cloud.cover).abs())
-            .max(1.0);
-        atmosphere.cloudy += (cloud.cover - atmosphere.cloudy).clamp(
-            -time.delta_secs() * 0.005 * *cloud_dt,
-            time.delta_secs() * 0.005 * *cloud_dt,
-        );
-        // atmosphere.time += time.delta_secs() * 10.0;
-    } else {
-        *cloud_dt = f32::max(*cloud_dt - time.delta_secs(), cloud.speed);
-    }
-
-    atmosphere.time += time.delta_secs() * *cloud_dt;
-
-    // cloud look (live-tunable, baked later)
-    atmosphere.cloud_density_cap = cloud.density_cap;
-    atmosphere.cloud_shadow = cloud.shadow;
-    atmosphere.cloud_scale = cloud.scale;
-    atmosphere.cloud_steps = cloud.steps;
-    atmosphere.cloud_lacunarity = cloud.lacunarity;
-
-    // skip the light/fog/ambient writes (which trigger change detection and re-extraction)
-    // when the light has settled and nothing else affecting them has changed
-    let primary_distance = cameras
-        .iter()
-        .find_map(|(maybe_primary, _)| maybe_primary.map(|camera| camera.distance))
-        .unwrap_or(0.0);
-    // a (re)inserted DistanceFog fires `is_added` and must be written even when the light has
-    // settled. reading the tick through the existing `&mut` access avoids the query conflict an
-    // `Added<DistanceFog>` filter would have with `cameras`; `is_added` (not `is_changed`) is used
-    // because our own per-frame fog writes set `changed`, which would otherwise never let the gate
-    // re-engage.
-    let fog_added = cameras
-        .iter_mut()
-        .any(|(_, fog)| fog.is_some_and(|fog| fog.is_added()));
-    let skip_writes = settled
-        && !setting.is_changed()
-        && !scene_distance.is_changed()
-        && !fog_added
-        && *last_primary_distance == primary_distance;
-    *last_primary_distance = primary_distance;
-
-    if skip_writes {
-        prev.0 += time.delta_secs();
-        prev.1 = next_light;
-        return;
-    }
+    blended.0 = next_light.clone();
 
     let mut directional_layers = RenderLayers::none();
     for (entity, layer, mut light_trans, mut directional) in sun.iter_mut() {
@@ -298,30 +414,36 @@ fn apply_global_light(
             layer = layer.union(&PRIMARY_AVATAR_LIGHT_LAYER);
         }
 
-        let (shadows_enabled, cascade_shadow_config) = match setting.graphics.shadow_settings {
-            ShadowSetting::Off => (false, Default::default()),
-            ShadowSetting::Low => (
-                true,
-                CascadeShadowConfigBuilder {
-                    num_cascades: 1,
-                    minimum_distance: 0.1,
-                    maximum_distance: setting.graphics.shadow_distance,
-                    first_cascade_far_bound: setting.graphics.shadow_distance,
-                    overlap_proportion: 0.2,
-                }
-                .build(),
-            ),
-            ShadowSetting::High => (
-                true,
-                CascadeShadowConfigBuilder {
-                    num_cascades: 4,
-                    minimum_distance: 0.1,
-                    maximum_distance: setting.graphics.shadow_distance,
-                    first_cascade_far_bound: setting.graphics.shadow_distance / 15.0,
-                    overlap_proportion: 0.2,
-                }
-                .build(),
-            ),
+        // only the layer-0 sun casts shadows; each extra per-layer sun would otherwise
+        // add a full shadow cascade pass
+        let (shadows_enabled, cascade_shadow_config) = if new_layer != 0 {
+            (false, Default::default())
+        } else {
+            match setting.graphics.shadow_settings {
+                ShadowSetting::Off => (false, Default::default()),
+                ShadowSetting::Low => (
+                    true,
+                    CascadeShadowConfigBuilder {
+                        num_cascades: 1,
+                        minimum_distance: 0.1,
+                        maximum_distance: setting.graphics.shadow_distance,
+                        first_cascade_far_bound: setting.graphics.shadow_distance,
+                        overlap_proportion: 0.2,
+                    }
+                    .build(),
+                ),
+                ShadowSetting::High => (
+                    true,
+                    CascadeShadowConfigBuilder {
+                        num_cascades: 4,
+                        minimum_distance: 0.1,
+                        maximum_distance: setting.graphics.shadow_distance,
+                        first_cascade_far_bound: setting.graphics.shadow_distance / 15.0,
+                        overlap_proportion: 0.2,
+                    }
+                    .build(),
+                ),
+            }
         };
 
         commands.spawn((
