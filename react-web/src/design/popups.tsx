@@ -171,7 +171,6 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
           title={opts.title}
           onClose={close}
           width={opts.width ?? 420}
-          scrimless // the popup layer owns the scrim, scale, entrance animation and focus trap
           actionsEqual={opts.actionsEqual ?? opts.actions.length === 2}
           actions={opts.actions.map((a) => (
             <Button

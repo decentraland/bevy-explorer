@@ -62,7 +62,6 @@ export function EngineErrorModal({
     <div ref={scrimRef} className={styles.scrim} tabIndex={-1} onClick={onDismiss ?? undefined}>
       <div className={styles.pop}>
         <ModalShell
-          scrimless
           // Alert-style dialog: centered header with title-scale type, centered footer buttons.
           header={
             <div className={styles.head}>
