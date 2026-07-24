@@ -5,7 +5,6 @@ export function ExitConfirm({ onStay, onLeave }: { onStay: () => void; onLeave: 
   return (
     <ModalShell
       title="Leave Decentraland?"
-      scrimless // the popup layer draws the scrim / handles dismiss
       closeButton={false}
       width={420}
       actions={
