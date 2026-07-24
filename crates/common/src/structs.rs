@@ -458,6 +458,10 @@ pub struct AppConfig {
     pub inputs: InputMapSerialized,
     pub point_at_marker_visibility: PointAtMarkerVisibility,
     pub camera_smoothing: CameraSmoothing,
+    // where imposter tiles are fetched from: url of the store directory whose
+    // {level}/{x},{y}.{crc}.zip tiles cover the current realm. None = the
+    // default store, keyed by the current realm
+    pub imposter_source: Option<String>,
     // field-level default (0) so configs saved before this field existed read as outdated,
     // rather than taking the current generation from the container-level default
     #[serde(default)]
@@ -499,6 +503,7 @@ impl Default for AppConfig {
             inputs: Default::default(),
             point_at_marker_visibility: Default::default(),
             camera_smoothing: Default::default(),
+            imposter_source: None,
             settings_generation: SETTINGS_GENERATION,
         }
     }

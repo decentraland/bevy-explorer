@@ -153,6 +153,7 @@ pub struct DecentralandArguments {
     pub scene_imposter_bake: Option<SceneImposterBake>,
     pub scene_imposter_distances: Option<Vec<f32>>,
     pub scene_imposter_multisample: Option<bool>,
+    pub imposter_source: Option<String>,
     pub vsync: Option<bool>,
     pub fps_target: Option<usize>,
     pub gpu_bytes_per_frame: Option<usize>,
@@ -585,6 +586,9 @@ fn update_app_config_from_arguments(
     base_app_config
         .scene_imposter_multisample
         .replace_if_some(arguments.scene_imposter_multisample);
+    if let Some(source) = &arguments.imposter_source {
+        base_app_config.imposter_source = Some(source.clone());
+    }
     base_app_config.sysinfo_visible |= arguments.sysinfo_visible;
     base_app_config.scene_log_to_console |= arguments.scene_log_to_console;
 }

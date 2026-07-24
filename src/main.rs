@@ -176,6 +176,7 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
                     .unwrap()
             }),
         scene_imposter_multisample: args.value_from_str("--impost_multi").ok(),
+        imposter_source: args.value_from_str("--imposter-source").ok(),
         vsync: args.value_from_str("--vsync").ok(),
         fps_target: args.value_from_str::<_, usize>("--fps").ok(),
         gpu_bytes_per_frame: args
