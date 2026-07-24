@@ -1,5 +1,4 @@
 import { Fragment, useSyncExternalStore, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import { ModalShell } from './Modal'
 import { Button } from './Button'
 import styles from './popups.module.css'
@@ -64,7 +63,9 @@ const subscribe = (cb: () => void): (() => void) => {
 }
 const getSnapshot = (): typeof stack => stack
 
-/** Mounted once (see main.tsx) — the single React subscriber that renders the popup stack. */
+/** Mounted once at the HUD root (see App) — the single React subscriber that renders the popup stack.
+ *  It has no transformed ancestor, so a popup's own `position: fixed` resolves against the viewport;
+ *  no portal is needed (the passport / dialogs already rely on that for their inline scrims). */
 export function PopupHost(): React.JSX.Element {
   const snap = useSyncExternalStore(subscribe, getSnapshot)
   return (
@@ -72,15 +73,14 @@ export function PopupHost(): React.JSX.Element {
       {snap.map((n) => {
         const close = (): void => closeById(n.id)
         const content = n.render(close)
-        // No backdrop → the content owns its own portal/scrim (dialogs, passport). Otherwise the popup
-        // layer draws a full-screen backdrop (portaled to <body> to escape the HUD transform) behind it.
+        // No backdrop → the content owns its own scrim (dialogs, passport). Otherwise draw a
+        // full-screen fixed backdrop behind it; `.backdrop` has no transform, so it neither shifts
+        // nor clips the popup's own fixed positioning.
         if (!n.options.backdrop) return <Fragment key={n.id}>{content}</Fragment>
-        return createPortal(
-          <div className={styles.backdrop} onClick={n.options.backdropClickCloses ? close : undefined}>
+        return (
+          <div key={n.id} className={styles.backdrop} onClick={n.options.backdropClickCloses ? close : undefined}>
             {content}
-          </div>,
-          document.body,
-          String(n.id)
+          </div>
         )
       })}
     </>
