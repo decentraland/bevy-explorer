@@ -424,27 +424,29 @@ impl From<PbUiCanvas> for UiCanvas {
 
 impl Plugin for SceneUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_lww_component::<PbUiTransform, UiTransform>(
+        // scene frameworks commonly resend unchanged ui state every frame; dedup
+        // registration avoids rebuilding the ui tree when nothing changed
+        app.add_crdt_lww_component_dedup::<PbUiTransform, UiTransform>(
             SceneComponentId::UI_TRANSFORM,
             ComponentPosition::EntityOnly,
         );
-        app.add_crdt_lww_component::<PbUiBackground, UiBackground>(
+        app.add_crdt_lww_component_dedup::<PbUiBackground, UiBackground>(
             SceneComponentId::UI_BACKGROUND,
             ComponentPosition::EntityOnly,
         );
-        app.add_crdt_lww_component::<PbUiText, UiText>(
+        app.add_crdt_lww_component_dedup::<PbUiText, UiText>(
             SceneComponentId::UI_TEXT,
             ComponentPosition::EntityOnly,
         );
-        app.add_crdt_lww_component::<PbUiInput, UiInput>(
+        app.add_crdt_lww_component_dedup::<PbUiInput, UiInput>(
             SceneComponentId::UI_INPUT,
             ComponentPosition::EntityOnly,
         );
-        app.add_crdt_lww_component::<PbUiDropdown, UiDropdown>(
+        app.add_crdt_lww_component_dedup::<PbUiDropdown, UiDropdown>(
             SceneComponentId::UI_DROPDOWN,
             ComponentPosition::EntityOnly,
         );
-        app.add_crdt_lww_component::<PbUiCanvas, UiCanvas>(
+        app.add_crdt_lww_component_dedup::<PbUiCanvas, UiCanvas>(
             SceneComponentId::UI_CANVAS,
             ComponentPosition::EntityOnly,
         );
