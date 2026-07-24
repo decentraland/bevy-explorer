@@ -19,7 +19,7 @@ use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use console::DoAddConsoleCommand;
 use scene_material::SceneMaterial;
-use ui_background::{set_ui_background, UiBackground};
+use ui_background::{set_ui_background, StretchUvKey, UiBackground};
 use ui_dropdown::{set_ui_dropdown, UiDropdown};
 use ui_input::{set_ui_input, UiInput};
 use ui_pointer::set_ui_pointer_events;
@@ -32,6 +32,7 @@ use crate::{
     ContainerEntity, ContainingScene, InteractableArea, SceneEntity, SceneSets,
 };
 use common::{
+    asset_cache::{clean_asset_cache, AssetCache},
     rpc::{RpcCall, RpcUiFocusAction},
     structs::{AppConfig, PrimaryPlayerRes, PrimaryUser, ZOrder},
     util::{DespawnWith, ModifyComponentExt},
@@ -54,6 +55,7 @@ use ui_core::{
     scrollable::{
         ScrollDirection, ScrollPosition, ScrollTarget, ScrollTargetEvent, Scrollable, StartPosition,
     },
+    stretch_uvs_image::StretchUvMaterial,
     ui_actions::{DataChanged, On, UiActionSet, UiCaller},
 };
 
@@ -451,6 +453,11 @@ impl Plugin for SceneUiPlugin {
 
         app.init_resource::<HiddenSceneUis>();
         app.init_resource::<SceneCanvasAtlases>();
+        app.init_resource::<AssetCache<StretchUvKey, StretchUvMaterial>>();
+        app.add_systems(
+            Update,
+            clean_asset_cache::<StretchUvKey, StretchUvMaterial>.after(set_ui_background),
+        );
 
         app.add_systems(Update, init_scene_ui_root.in_set(SceneSets::PostInit));
         app.add_systems(
