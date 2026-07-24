@@ -426,6 +426,29 @@ fn update_scene_priority(
         .map(|(e, gt)| (containing_scene.get(e), gt.translation()))
         .unwrap_or_default();
 
+    // mark scenes that have been in-flight past the timeout as broken and free their
+    // slot, so a wedged scene worker can't hold a scene thread forever
+    let elapsed = time.elapsed_secs();
+    for (ent, _, mut context, _) in scenes.iter_mut() {
+        if context.in_flight
+            && !context.broken
+            && !context.inspected
+            && elapsed - context.last_sent
+                > renderer_context::SCENE_NOT_RESPONDING_TIMEOUT.as_secs_f32()
+        {
+            warn!(
+                "scene {} ({} @ {}) has not responded for {:.0}s, marking broken",
+                context.hash,
+                context.title,
+                context.base,
+                elapsed - context.last_sent
+            );
+            context.broken = true;
+            context.in_flight = false;
+            updates.jobs_in_flight.remove(&ent);
+        }
+    }
+
     // check all in-flight scenes still exist
     let mut missing_in_flight = updates.jobs_in_flight.clone();
 
@@ -980,47 +1003,57 @@ fn receive_scene_updates(
                         rpc_calls.len(),
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
-                        context.tick_number = context.tick_number.wrapping_add(1);
-                        if context
-                            .refreeze_at_tick
-                            .is_some_and(|t| context.tick_number >= t)
-                        {
-                            context.blocked.insert(renderer_context::FROZEN_BLOCK);
-                            context.refreeze_at_tick = None;
-                        }
-                        context.last_update_dt = runtime.0 - context.total_runtime;
-                        context.total_runtime = runtime.0;
-                        context.last_update_frame = frame.0;
-                        context.in_flight = false;
-                        // extend (not assign) so renderer-side births (the inspector's /new_entity
-                        // adds the freshly-allocated ids straight to `nascent`) aren't clobbered by
-                        // the scene's reported births. `nascent` is drained every lifecycle pass, so
-                        // this matches assignment for scene-reported births.
-                        context.nascent.extend(census.born);
-                        // Merge externally-queued deaths (e.g. /delete_entity) with
-                        // scene-reported deaths, draining the old set so entries are
-                        // only processed once.
-                        let mut died = census.died;
-                        died.extend(std::mem::take(&mut context.death_row));
-                        context.death_row = died;
-                        for message in messages.into_iter() {
-                            context.log(message);
-                        }
-                        // Sync scene timestamps into crdt_store so renderer writes (e.g.
-                        // /set_component) use a base timestamp that wins over the scene's current.
-                        // Must happen before updates_to_entity drains `crdt`.
-                        context.crdt_store.sync_lww_timestamps_from(&crdt);
+                        if context.broken {
+                            // drop late replies from a scene already marked broken so they
+                            // can't un-break it; still fall through to free the job slot
+                            debug!("[{scene_id:?}] discarding update for broken scene");
+                        } else {
+                            context.tick_number = context.tick_number.wrapping_add(1);
+                            if context
+                                .refreeze_at_tick
+                                .is_some_and(|t| context.tick_number >= t)
+                            {
+                                context.blocked.insert(renderer_context::FROZEN_BLOCK);
+                                context.refreeze_at_tick = None;
+                            }
+                            context.last_update_dt = runtime.0 - context.total_runtime;
+                            context.total_runtime = runtime.0;
+                            context.last_update_frame = frame.0;
+                            context.in_flight = false;
+                            // extend (not assign) so renderer-side births (the inspector's /new_entity
+                            // adds the freshly-allocated ids straight to `nascent`) aren't clobbered by
+                            // the scene's reported births. `nascent` is drained every lifecycle pass, so
+                            // this matches assignment for scene-reported births.
+                            context.nascent.extend(census.born);
+                            // Merge externally-queued deaths (e.g. /delete_entity) with
+                            // scene-reported deaths, draining the old set so entries are
+                            // only processed once.
+                            let mut died = census.died;
+                            died.extend(std::mem::take(&mut context.death_row));
+                            context.death_row = died;
+                            for message in messages.into_iter() {
+                                context.log(message);
+                            }
+                            // Sync scene timestamps into crdt_store so renderer writes (e.g.
+                            // /set_component) use a base timestamp that wins over the scene's current.
+                            // Must happen before updates_to_entity drains `crdt`.
+                            context.crdt_store.sync_lww_timestamps_from(&crdt);
 
-                        let mut commands = commands.entity(*root);
-                        for (component_id, interface) in crdt_interfaces.0.iter() {
-                            interface.updates_to_entity(*component_id, &mut crdt, &mut commands);
-                        }
-                        // dcl_assert!(
-                        //     updates.jobs_in_flight.contains(root) || context.tick_number <= 2
-                        // );
+                            let mut commands = commands.entity(*root);
+                            for (component_id, interface) in crdt_interfaces.0.iter() {
+                                interface.updates_to_entity(
+                                    *component_id,
+                                    &mut crdt,
+                                    &mut commands,
+                                );
+                            }
+                            // dcl_assert!(
+                            //     updates.jobs_in_flight.contains(root) || context.tick_number <= 2
+                            // );
 
-                        for rpc_call in rpc_calls {
-                            rpc_call_events.write(rpc_call);
+                            for rpc_call in rpc_calls {
+                                rpc_call_events.write(rpc_call);
+                            }
                         }
                     } else {
                         debug!(
