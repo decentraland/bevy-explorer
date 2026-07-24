@@ -199,6 +199,7 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
           title={opts.title}
           onClose={close}
           width={opts.width ?? 420}
+          scrimless // the popup layer owns the scrim, scale, entrance animation and focus trap
           actionsEqual={opts.actionsEqual ?? opts.actions.length === 2}
           actions={opts.actions.map((a) => (
             <Button
@@ -216,7 +217,7 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
           {opts.body}
         </ModalShell>
       ),
-      { backdrop: false, onClose: () => settle(null) } // ModalShell draws its own scrim
+      { onClose: () => settle(null) } // default dim scrim from PopupHost
     )
   })
 }
