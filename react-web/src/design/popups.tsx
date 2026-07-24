@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { ModalShell } from './Modal'
 import { Button } from './Button'
+import { useFocusTrap } from '../lib/useFocusTrap'
 import styles from './popups.module.css'
 
 /** A popup is a render function given its own `close` callback; it returns the overlay to render. */
@@ -23,8 +24,6 @@ export interface PopupOptions {
 type ResolvedOptions = Required<Omit<PopupOptions, 'onClose'>> & Pick<PopupOptions, 'onClose'>
 const DEFAULTS: Required<Omit<PopupOptions, 'onClose'>> = { backdrop: true, dim: true, backdropClickCloses: true }
 type PopupNode = { id: number; render: PopupRender; options: ResolvedOptions }
-
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
 
 // Module-level popup stack — a single HUD-wide layer (like the hoverPos store), NOT React state.
 // Plain functions mutate it and notify subscribers, so a popup can be opened from anywhere (a
@@ -91,35 +90,8 @@ function PopupLayer({ node, isTop }: { node: PopupNode; isTop: boolean }): React
   const close = (): void => closeById(node.id)
   const content = node.render(close)
 
-  useEffect(() => {
-    const root = ref.current
-    if (!isTop || !root) return // only the top backdrop popup traps; bare content self-manages
-    const prev = document.activeElement
-    root.focus()
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Tab') return
-      const f = root.querySelectorAll<HTMLElement>(FOCUSABLE)
-      if (!f.length) {
-        e.preventDefault()
-        root.focus()
-        return
-      }
-      const first = f[0]
-      const last = f[f.length - 1]
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault()
-        last.focus()
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault()
-        first.focus()
-      }
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => {
-      document.removeEventListener('keydown', onKey, true)
-      if (prev instanceof HTMLElement) prev.focus()
-    }
-  }, [isTop, node.id])
+  // Only the top backdrop popup traps focus (bare content, if any, has no ref → the hook no-ops).
+  useFocusTrap(ref, isTop)
 
   // No backdrop → the content owns its own scrim (dialogs). Otherwise the popup layer draws it:
   // `.dim` is the shared dimmed+blurred modal scrim; without `dim` it's a transparent click-catcher
