@@ -6,10 +6,14 @@ import styles from './popups.module.css'
 /** A popup is a render function given its own `close` callback; it returns the overlay to render. */
 type PopupRender = (close: () => void) => ReactNode
 
-/** Per-popup options. By default the popup layer draws a full-screen backdrop that closes the popup
- *  when clicked; set `backdrop: false` for popups that draw their own scrim (dialogs / the passport). */
+/** Per-popup options. By default the popup layer draws a full-screen, dimmed+blurred backdrop that
+ *  closes the popup when clicked. Set `dim: false` for an anchored popover (transparent click-catcher,
+ *  e.g. the profile card); set `backdrop: false` for content that owns its own scrim (dialogs). */
 export interface PopupOptions {
   backdrop?: boolean
+  /** The backdrop is the shared dimmed+blurred modal scrim (default). `false` → transparent
+   *  click-catcher, for an anchored popover that must not dim the HUD behind it. */
+  dim?: boolean
   backdropClickCloses?: boolean
   /** Dismiss contract: run once when the popup leaves the stack by ANY path — backdrop click, the
    *  returned handle, or the central Escape. Owners that hold state behind the popup settle it here
@@ -17,7 +21,7 @@ export interface PopupOptions {
   onClose?: () => void
 }
 type ResolvedOptions = Required<Omit<PopupOptions, 'onClose'>> & Pick<PopupOptions, 'onClose'>
-const DEFAULTS: Required<Omit<PopupOptions, 'onClose'>> = { backdrop: true, backdropClickCloses: true }
+const DEFAULTS: Required<Omit<PopupOptions, 'onClose'>> = { backdrop: true, dim: true, backdropClickCloses: true }
 
 // Module-level popup stack — a single HUD-wide layer (like the hoverPos store), NOT React state.
 // Plain functions mutate it and notify subscribers, so a popup can be opened from anywhere (a
@@ -99,12 +103,13 @@ export function PopupHost(): React.JSX.Element {
       {snap.map((n) => {
         const close = (): void => closeById(n.id)
         const content = n.render(close)
-        // No backdrop → the content owns its own scrim (dialogs, passport). Otherwise draw a
-        // full-screen fixed backdrop behind it; `.backdrop` has no transform, so it neither shifts
-        // nor clips the popup's own fixed positioning.
+        // No backdrop → the content owns its own scrim (dialogs). Otherwise the popup layer draws it:
+        // `.dim` is the shared dimmed+blurred modal scrim; without `dim` it's a transparent
+        // click-catcher for an anchored popover (the profile card).
         if (!n.options.backdrop) return <Fragment key={n.id}>{content}</Fragment>
+        const className = n.options.dim ? `${styles.backdrop} ${styles.dim}` : styles.backdrop
         return (
-          <div key={n.id} className={styles.backdrop} onClick={n.options.backdropClickCloses ? close : undefined}>
+          <div key={n.id} className={className} onClick={n.options.backdropClickCloses ? close : undefined}>
             {content}
           </div>
         )

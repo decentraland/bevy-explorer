@@ -1,7 +1,35 @@
 /* Full-screen layer behind a popup: owns the z-layer and catches clicks outside the popup content.
-   Transparent by default (the profile card never dimmed); dialogs / the passport draw their own scrim. */
+   The base is transparent (an anchored popover like the profile card never dims). `.dim` adds the
+   shared modal scrim — dark, blurred, DPI-scaled on the reference canvas (like MainMenuShell), so
+   centered content authored at reference px lands correctly without its own transform. */
 .backdrop {
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
+}
+.dim {
+  /* Reference-canvas DPI scale: size at 100%/scale then scale back down, anchored top-left. Overrides
+     the base inset:0 (width/height + top/left win). */
+  inset: auto;
+  top: 0;
+  left: 0;
+  width: calc(100% / var(--ui-scale));
+  height: calc(100% / var(--ui-scale));
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3vh 3vw;
+  background: var(--modal-scrim);
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
