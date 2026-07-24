@@ -140,6 +140,7 @@ impl DecentralandAppConfig {
 pub struct DecentralandArguments {
     pub server: Option<String>,
     pub content_server_override: Option<String>,
+    pub scene_packs_url: Option<String>,
     pub location: Option<IVec2>,
     pub startup_scenes: Option<Vec<StartupScene>>,
     pub ui_scene: Option<String>,
@@ -536,6 +537,9 @@ fn update_app_config_from_arguments(
     arguments: &DecentralandArguments,
 ) {
     base_app_config.location.replace_if_some(arguments.location);
+    if arguments.scene_packs_url.is_some() {
+        base_app_config.scene_packs_url = arguments.scene_packs_url.clone();
+    }
 
     base_app_config
         .graphics
@@ -647,6 +651,7 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
                 .clone(),
             assets_root: Default::default(),
             num_slots: decentraland_app_config.app_config.max_concurrent_remotes,
+            scene_packs_url: decentraland_app_config.app_config.scene_packs_url.clone(),
         })
         .add_before::<IpfsIoPlugin>(NftReaderPlugin)
 }
@@ -682,6 +687,7 @@ fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> Plug
                 .clone(),
             assets_root: Default::default(),
             num_slots: decentraland_app_config.app_config.max_concurrent_remotes,
+            scene_packs_url: decentraland_app_config.app_config.scene_packs_url.clone(),
         })
         .add_before::<IpfsIoPlugin>(NftReaderPlugin)
 }

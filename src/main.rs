@@ -107,6 +107,7 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
     let dcl_args = DecentralandArguments {
         server: args.value_from_str("--server").ok(),
         content_server_override: args.value_from_str("--content-server").ok(),
+        scene_packs_url: args.value_from_str("--scene-packs-url").ok(),
         location: args
             .value_from_str::<_, IVec2Arg>("--location")
             .ok()

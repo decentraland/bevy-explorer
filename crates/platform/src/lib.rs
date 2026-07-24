@@ -8,16 +8,16 @@ mod wasm;
 #[cfg(target_arch = "wasm32")]
 pub use wasm::*;
 
-use std::{future::Future, time::Duration};
+use std::{future::Future, pin::Pin, time::Duration};
 
 use futures_timer::Delay;
 use futures_util::{
     future::{select, Either},
-    pin_mut, StreamExt,
+    pin_mut, Stream, StreamExt,
 };
 
-/// Internal marker: the [`with_timeout`] timer fired before the future resolved.
-struct Elapsed;
+/// Marker: the [`with_timeout`] timer fired before the future resolved.
+pub struct Elapsed;
 
 /// Race `fut` against a `dur` timer, returning `Err(Elapsed)` if the timer wins.
 ///
@@ -25,7 +25,7 @@ struct Elapsed;
 /// — tokio is built without the `time` feature, and it wouldn't work on wasm
 /// anyway). `futures-timer` backs this with a native timer thread or wasm
 /// `setTimeout`.
-async fn with_timeout<F: Future>(dur: Duration, fut: F) -> Result<F::Output, Elapsed> {
+pub async fn with_timeout<F: Future>(dur: Duration, fut: F) -> Result<F::Output, Elapsed> {
     pin_mut!(fut);
     match select(fut, Delay::new(dur)).await {
         Either::Left((out, _)) => Ok(out),
@@ -55,6 +55,73 @@ pub enum FetchError<E> {
     Body(reqwest::Error),
 }
 
+impl FetchError<std::convert::Infallible> {
+    /// Re-type a body-phase error (which can never be `Send`) to any send error type.
+    pub fn widen<E>(self) -> FetchError<E> {
+        match self {
+            FetchError::Headers => FetchError::Headers,
+            FetchError::Send(never) => match never {},
+            FetchError::Status(status) => FetchError::Status(status),
+            FetchError::Stalled => FetchError::Stalled,
+            FetchError::Body(e) => FetchError::Body(e),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+type BytesStream = Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>;
+#[cfg(target_arch = "wasm32")]
+type BytesStream = Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>>>>;
+
+/// An in-flight response body being read incrementally.
+///
+/// Dropping a FetchStream aborts the transfer: reqwest's wasm AbortGuard lives
+/// exactly as long as the body stream, and native closes the connection.
+pub struct FetchStream {
+    pub headers: reqwest::header::HeaderMap,
+    stream: BytesStream,
+    idle_timeout: Duration,
+}
+
+/// Like [`fetch`], but hand back the body stream after the headers phase so the
+/// caller can consume chunks as they arrive (and abort by dropping).
+pub async fn fetch_stream<E>(
+    send: impl Future<Output = Result<reqwest::Response, E>>,
+    headers_timeout: Duration,
+    idle_timeout: Duration,
+) -> Result<FetchStream, FetchError<E>> {
+    let response = match with_timeout(headers_timeout, send).await {
+        Ok(Ok(response)) => response,
+        Ok(Err(e)) => return Err(FetchError::Send(e)),
+        Err(Elapsed) => return Err(FetchError::Headers),
+    };
+
+    if !response.status().is_success() {
+        return Err(FetchError::Status(response.status()));
+    }
+
+    Ok(FetchStream {
+        headers: response.headers().clone(),
+        stream: Box::pin(response.bytes_stream()),
+        idle_timeout,
+    })
+}
+
+impl FetchStream {
+    /// Ok(Some(chunk)), Ok(None) at clean end, Err(Stalled) after idle_timeout
+    /// without a chunk, Err(Body) on transport error.
+    pub async fn next_chunk(
+        &mut self,
+    ) -> Result<Option<bytes::Bytes>, FetchError<std::convert::Infallible>> {
+        match with_timeout(self.idle_timeout, self.stream.next()).await {
+            Ok(Some(Ok(chunk))) => Ok(Some(chunk)),
+            Ok(Some(Err(e))) => Err(FetchError::Body(e)),
+            Ok(None) => Ok(None),
+            Err(Elapsed) => Err(FetchError::Stalled),
+        }
+    }
+}
+
 /// Drive an HTTP request with two independent timeouts, returning the response
 /// headers and fully-read body.
 ///
@@ -69,25 +136,18 @@ pub async fn fetch<E>(
     headers_timeout: Duration,
     idle_timeout: Duration,
 ) -> Result<FetchedResponse, FetchError<E>> {
-    let response = match with_timeout(headers_timeout, send).await {
-        Ok(Ok(response)) => response,
-        Ok(Err(e)) => return Err(FetchError::Send(e)),
-        Err(Elapsed) => return Err(FetchError::Headers),
-    };
-
-    if !response.status().is_success() {
-        return Err(FetchError::Status(response.status()));
-    }
-
-    let headers = response.headers().clone();
-    let mut stream = Box::pin(response.bytes_stream());
+    let mut stream = fetch_stream(send, headers_timeout, idle_timeout).await?;
     let mut body = Vec::new();
     loop {
-        match with_timeout(idle_timeout, stream.next()).await {
-            Ok(Some(Ok(chunk))) => body.extend_from_slice(&chunk),
-            Ok(Some(Err(e))) => return Err(FetchError::Body(e)),
-            Ok(None) => return Ok(FetchedResponse { headers, body }),
-            Err(Elapsed) => return Err(FetchError::Stalled),
+        match stream.next_chunk().await {
+            Ok(Some(chunk)) => body.extend_from_slice(&chunk),
+            Ok(None) => {
+                return Ok(FetchedResponse {
+                    headers: stream.headers,
+                    body,
+                })
+            }
+            Err(e) => return Err(e.widen()),
         }
     }
 }
