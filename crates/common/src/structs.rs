@@ -1276,6 +1276,11 @@ pub struct PreviewMode {
     pub preview_parcel: Option<IVec2>,
 }
 
+/// Render out-of-bounds geometry (dithered) instead of culling it. Set at startup;
+/// read by scene_material's show-outside-bounds observer.
+#[derive(Debug, Resource, Default)]
+pub struct ShowOutOfBounds(pub bool);
+
 // resource into which systems can add debug info
 #[derive(Resource, Default, Debug)]
 pub struct DebugInfo {
