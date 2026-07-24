@@ -25,11 +25,30 @@
   backdrop-filter: blur(2px);
   animation: fadeIn 0.2s ease;
 }
+/* Content pop layer for dim popups: the scrim fades (above), the content scales in. Fills the scrim's
+   centering box so a percentage-sized panel still resolves against the full canvas. The scale lives
+   here, not on the scrim, so the dark backdrop itself never scales. */
+.pop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  animation: popIn 0.2s var(--ease-spring);
+}
 @keyframes fadeIn {
   from {
     opacity: 0;
   }
   to {
     opacity: 1;
+  }
+}
+@keyframes popIn {
+  from {
+    transform: scale(0.96);
+  }
+  to {
+    transform: scale(1);
   }
 }

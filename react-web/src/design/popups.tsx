@@ -128,7 +128,8 @@ function PopupLayer({ node, isTop }: { node: PopupNode; isTop: boolean }): React
   const className = node.options.dim ? `${styles.backdrop} ${styles.dim}` : styles.backdrop
   return (
     <div ref={ref} className={className} tabIndex={-1} onClick={node.options.backdropClickCloses ? close : undefined}>
-      {content}
+      {/* dim popups scale in via the pop layer; an anchored popover (dim:false) just appears. */}
+      {node.options.dim ? <div className={styles.pop}>{content}</div> : content}
     </div>
   )
 }
