@@ -6,6 +6,7 @@ use bevy::{
     diagnostic::FrameCount,
     ecs::system::SystemParam,
     math::FloatOrd,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         camera::RenderTarget,
@@ -39,7 +40,15 @@ impl Plugin for AvatarTexturePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LiveBooths>();
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
-        app.add_systems(Update, (update_booth_image, snapshot, clean_booths));
+        app.add_systems(
+            Update,
+            (
+                update_booth_image,
+                update_booth_camera_activity,
+                snapshot,
+                clean_booths,
+            ),
+        );
     }
 }
 
@@ -305,6 +314,37 @@ fn update_booth_image(
                 height: (node_size.y as u32).max(16),
                 ..Default::default()
             };
+        }
+    }
+}
+
+// booth cameras render only while some ui node is actually displaying their output
+// (snapshots use their own transient cameras, so they are unaffected)
+fn update_booth_camera_activity(
+    consumers: Query<(&BoothInstance, &InheritedVisibility, &ComputedNode), With<BoothImage>>,
+    mut cameras: Query<&mut Camera>,
+    mut managed: Local<HashSet<Entity>>,
+    mut desired: Local<HashMap<Entity, bool>>,
+) {
+    desired.clear();
+    for camera in managed.iter() {
+        desired.insert(*camera, false);
+    }
+    for (instance, visibility, node) in consumers.iter() {
+        let shown = visibility.get() && node.size().cmpgt(Vec2::ZERO).all();
+        let entry = desired.entry(instance.camera).or_insert(false);
+        if shown {
+            *entry = true;
+        }
+    }
+    managed.clear();
+    for (camera_ent, active) in desired.iter() {
+        let Ok(mut camera) = cameras.get_mut(*camera_ent) else {
+            continue;
+        };
+        managed.insert(*camera_ent);
+        if camera.is_active != *active {
+            camera.is_active = *active;
         }
     }
 }

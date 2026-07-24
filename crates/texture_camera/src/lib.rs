@@ -3,6 +3,7 @@ use std::f32::consts::FRAC_PI_4;
 use bevy::{
     app::{HierarchyPropagatePlugin, Propagate, PropagateSet, PropagateStop},
     asset::RenderAssetTransferPriority,
+    diagnostic::FrameCount,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
@@ -199,6 +200,13 @@ fn update_directional_light_layers(
 #[derive(Component)]
 pub struct TextureCamEntity(Entity);
 
+// frame at which the camera was last (re)created, used to prioritise the most
+// recently requested cameras when a scene has more than the active limit
+#[derive(Component)]
+pub struct TextureCamRequest(u32);
+
+const MAX_ACTIVE_TEXTURE_CAMERAS_PER_SCENE: usize = 4;
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_texture_cameras(
     mut commands: Commands,
@@ -208,6 +216,7 @@ fn update_texture_cameras(
         &ContainerEntity,
         Option<&TextureCamEntity>,
         Option<&VideoTextureOutput>,
+        Option<&TextureCamRequest>,
     )>,
     removed: Query<(Entity, &TextureCamEntity), Without<TextureCamera>>,
     mut images: ResMut<Assets<Image>>,
@@ -220,11 +229,14 @@ fn update_texture_cameras(
     layers: Res<SceneLayerProperties>,
     mut layer_cache: ResMut<TextureLayersCache>,
     scene_distance: Res<SceneLoadDistance>,
+    frame: Res<FrameCount>,
 ) {
     let active_scenes = player
         .single()
         .map(|p| containing_scene.get_area(p, PLAYER_COLLIDER_RADIUS))
         .unwrap_or_default();
+
+    let mut existing_cams: HashMap<Entity, Vec<(u32, Entity)>> = HashMap::new();
 
     // remove cameras when TextureCam is removed
     for (ent, removed) in &removed {
@@ -235,7 +247,9 @@ fn update_texture_cameras(
     }
 
     // (re)create new/modified cams
-    for (ent, texture_cam, container, maybe_existing_camera, maybe_existing_image) in q.iter() {
+    for (ent, texture_cam, container, maybe_existing_camera, maybe_existing_image, maybe_request) in
+        q.iter()
+    {
         let layer_ix = layer_cache.get_layer(container.root, texture_cam.0.layer.unwrap_or(0));
         if texture_cam.is_changed() || layer_cache.changed_layers.contains(&layer_ix) {
             // remove previous camera if modified
@@ -383,24 +397,38 @@ fn update_texture_cameras(
             commands
                 .entity(ent)
                 .try_push_children(&[camera_id])
-                .try_insert((TextureCamEntity(camera_id), VideoTextureOutput(image)));
+                .try_insert((
+                    TextureCamEntity(camera_id),
+                    TextureCamRequest(frame.0),
+                    VideoTextureOutput(image),
+                ));
 
             new_cam_events.write(NewCameraEvent(camera_id));
         } else {
-            // set active for current scenes only
-            // TODO: limit / cycle
             let Some(existing) = maybe_existing_camera else {
                 warn!("missing TextureCameraEntity");
                 continue;
             };
 
-            let Ok(camera) = cameras.get_mut(existing.0) else {
+            existing_cams
+                .entry(container.root)
+                .or_default()
+                .push((maybe_request.map(|r| r.0).unwrap_or(0), existing.0));
+        }
+    }
+
+    // set active for current scenes only, limited to the most recently requested
+    // cameras per scene
+    for (root, mut cams) in existing_cams {
+        let scene_active = active_scenes.contains(&root);
+        cams.sort_unstable_by(|a, b| b.cmp(a));
+        for (ix, (_, cam_ent)) in cams.into_iter().enumerate() {
+            let Ok(camera) = cameras.get_mut(cam_ent) else {
                 warn!("missing camera entity for TextureCamera");
                 continue;
             };
 
-            let is_active = active_scenes.contains(&container.root);
-            // debug!("[{}] active: {}", container.container_id, is_active);
+            let is_active = scene_active && ix < MAX_ACTIVE_TEXTURE_CAMERAS_PER_SCENE;
             camera
                 .map_unchanged(|c| &mut c.is_active)
                 .set_if_neq(is_active);
