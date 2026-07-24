@@ -1,4 +1,4 @@
-import { Fragment, useSyncExternalStore, type ReactNode } from 'react'
+import { Fragment, useEffect, useSyncExternalStore, type ReactNode } from 'react'
 import { ModalShell } from './Modal'
 import { Button } from './Button'
 import styles from './popups.module.css'
@@ -11,25 +11,36 @@ type PopupRender = (close: () => void) => ReactNode
 export interface PopupOptions {
   backdrop?: boolean
   backdropClickCloses?: boolean
+  /** Dismiss contract: run once when the popup leaves the stack by ANY path — backdrop click, the
+   *  returned handle, or the central Escape. Owners that hold state behind the popup settle it here
+   *  (e.g. showDialog resolves its promise), so a keyboard/Escape close never leaks. */
+  onClose?: () => void
 }
-const DEFAULTS: Required<PopupOptions> = { backdrop: true, backdropClickCloses: true }
+type ResolvedOptions = Required<Omit<PopupOptions, 'onClose'>> & Pick<PopupOptions, 'onClose'>
+const DEFAULTS: Required<Omit<PopupOptions, 'onClose'>> = { backdrop: true, backdropClickCloses: true }
 
 // Module-level popup stack — a single HUD-wide layer (like the hoverPos store), NOT React state.
 // Plain functions mutate it and notify subscribers, so a popup can be opened from anywhere (a
 // component, an event handler, a util) without prop-threading or a hook — and a popup can open
 // another (community → passport → confirm). <PopupHost/>, mounted once, subscribes and renders it.
-let stack: { id: number; render: PopupRender; options: Required<PopupOptions> }[] = []
+let stack: { id: number; render: PopupRender; options: ResolvedOptions }[] = []
 let nextId = 0
 const listeners = new Set<() => void>()
 const emit = (): void => listeners.forEach((l) => l())
+// Remove the node first, then run its onClose, so every close path is idempotent: a re-entrant close
+// (an owner whose onClose fires its own handle) finds no node and stops here.
 const closeById = (id: number): void => {
+  const node = stack.find((n) => n.id === id)
+  if (!node) return
   stack = stack.filter((n) => n.id !== id)
   emit()
+  node.options.onClose?.()
 }
 
-/** Close the topmost popup (no-op if the stack is empty). Driven by the engine's 'Cancel' system
- *  action (Escape) relayed through the bridge — see useEngineSession — so it works even while the
- *  engine holds keyboard focus. Closes one layer at a time, so stacked popups dismiss in order. */
+/** Close the topmost popup (no-op if the stack is empty). Fired by PopupHost's own Escape handler
+ *  (below) and, as a backup while the engine holds keyboard focus, by the engine's 'Cancel' system
+ *  action relayed through the bridge — see useEngineSession. Closes one layer at a time, so stacked
+ *  popups dismiss in order. */
 export function closeTopPopup(): void {
   if (stack.length > 0) closeById(stack[stack.length - 1].id)
 }
@@ -49,7 +60,8 @@ export function openPopup(render: PopupRender, options?: PopupOptions): () => vo
   return () => closeById(id)
 }
 
-/** Clear the popup stack — for tests (the store is a module singleton, so it leaks across tests). */
+/** Hard-clear the popup stack, skipping the `onClose` contract — for tests only (the store is a
+ *  module singleton, so it leaks across tests). */
 export function resetPopups(): void {
   stack = []
   emit()
@@ -68,6 +80,20 @@ const getSnapshot = (): typeof stack => stack
  *  no portal is needed (the passport / dialogs already rely on that for their inline scrims). */
 export function PopupHost(): React.JSX.Element {
   const snap = useSyncExternalStore(subscribe, getSnapshot)
+  // The single, DOM-level Escape handler for every popup — so no popup needs its own. Capture phase
+  // + stopPropagation so it wins over (and suppresses) the engine's Cancel relay and Modal's own key
+  // handler, closing exactly one layer. Only acts while a popup is open; otherwise Escape passes
+  // through to whatever else wants it (the engine, an App-local Modal).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || !hasOpenPopup()) return
+      e.stopPropagation()
+      e.preventDefault()
+      closeTopPopup()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [])
   return (
     <>
       {snap.map((n) => {
@@ -112,23 +138,31 @@ export interface DialogOptions {
  */
 export function showDialog(opts: DialogOptions): Promise<string | null> {
   return new Promise((resolve) => {
+    // Every close path funnels through the popup's onClose, so the promise settles exactly once no
+    // matter how the dialog goes away — including the central Escape, which closes via closeTopPopup
+    // and never reaches ModalShell. Choosing an action settles first, then closes (onClose no-ops).
     let settled = false
-    const done = (value: string | null, close: () => void): void => {
-      if (!settled) {
-        settled = true
-        resolve(value)
-      }
-      close()
+    const settle = (value: string | null): void => {
+      if (settled) return
+      settled = true
+      resolve(value)
     }
     openPopup(
       (close) => (
         <ModalShell
           title={opts.title}
-          onClose={() => done(null, close)}
+          onClose={close}
           width={opts.width ?? 420}
           actionsEqual={opts.actionsEqual ?? opts.actions.length === 2}
           actions={opts.actions.map((a) => (
-            <Button key={a.id} variant={a.variant ?? 'primary'} onClick={() => done(a.id, close)}>
+            <Button
+              key={a.id}
+              variant={a.variant ?? 'primary'}
+              onClick={() => {
+                settle(a.id)
+                close()
+              }}
+            >
               {a.label}
             </Button>
           ))}
@@ -136,7 +170,7 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
           {opts.body}
         </ModalShell>
       ),
-      { backdrop: false } // ModalShell draws its own scrim
+      { backdrop: false, onClose: () => settle(null) } // ModalShell draws its own scrim
     )
   })
 }
