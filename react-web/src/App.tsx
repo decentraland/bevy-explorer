@@ -29,7 +29,7 @@ import { SessionProvider } from './features/session/SessionContext'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
-import { ExitConfirm } from './features/session/ExitConfirm'
+import { openExitConfirm } from './features/session/ExitConfirm'
 import { useEngineSession } from './features/session/useEngineSession'
 import { useExitGuard } from './lib/useExitGuard'
 import { useHudScale } from './lib/useHudScale'
@@ -155,8 +155,14 @@ function Hud(): React.JSX.Element {
 
   const session = useEngineSession(createDriver)
   useMenuShortcuts(session) // [O]/[M]/[I]/[G]/[P]/[B]/[L]/[T] hints in the nav + sidebar
-  // Warn before the back gesture / Back button unloads the engine (only once in-world).
+  // Warn before the back gesture / Back button unloads the engine (only once in-world). Shown through
+  // the popup layer so hasOpenPopup() covers it (Enter must not focus the chat behind it); Escape /
+  // scrim-click resolve to "stay", which clears `confirming` and the effect closes the (already-closed) popup.
   const exitGuard = useExitGuard(session.phase === 'entering' || session.phase === 'world')
+  useEffect(() => {
+    if (!exitGuard.confirming) return
+    return openExitConfirm(exitGuard.stay, exitGuard.leave)
+  }, [exitGuard.confirming, exitGuard.stay, exitGuard.leave])
 
   // A world (e.g. boedo.dcl.eth) the user asked to jump to — drives the shared confirm modal.
   const [visitWorld, setVisitWorld] = useState<string | null>(null)
@@ -291,8 +297,6 @@ function Hud(): React.JSX.Element {
           }
         />
       )}
-      {/* Confirm before the back gesture / Back button unloads the engine. */}
-      {exitGuard.confirming && <ExitConfirm onStay={exitGuard.stay} onLeave={exitGuard.leave} />}
       {/* Fatal engine error (boot panic / runtime crash) — above everything. */}
       {session.fatalError && (
         <EngineErrorModal
