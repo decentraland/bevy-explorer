@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{diagnostic::FrameCount, prelude::*};
 use common::{asset_cache::AssetCache, util::TryPushChildrenEx};
 use dcl_component::proto_components::{
     common::{BorderRect, TextureUnion},
@@ -91,10 +91,17 @@ impl From<PbUiBackground> for UiBackground {
 pub struct UiBackgroundMarker;
 
 #[derive(Component)]
-pub struct RetryBackground;
+pub struct RetryBackground {
+    since_frame: u32,
+}
+
+const RETRY_BACKGROUND_INTERVAL: u32 = 10;
 
 #[derive(Component)]
-pub struct UiMaterialSource(Entity);
+pub struct UiMaterialSource {
+    source: Entity,
+    owner: Entity,
+}
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct StretchUvKey {
@@ -106,7 +113,13 @@ pub struct StretchUvKey {
 pub fn set_ui_background(
     mut commands: Commands,
     backgrounds: Query<
-        (Entity, &SceneEntity, &UiBackground, &UiLink),
+        (
+            Entity,
+            &SceneEntity,
+            Ref<UiBackground>,
+            Ref<UiLink>,
+            Option<&RetryBackground>,
+        ),
         Or<(
             Changed<UiBackground>,
             Changed<UiLink>,
@@ -122,11 +135,9 @@ pub fn set_ui_background(
     mut resolver: TextureResolver,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
     mut cache: ResMut<AssetCache<StretchUvKey, StretchUvMaterial>>,
-    sourced: Query<(
-        Entity,
-        Option<&MaterialNode<StretchUvMaterial>>,
-        &UiMaterialSource,
-    )>,
+    frame: Res<FrameCount>,
+    sourced: Query<&UiMaterialSource>,
+    retried: Query<Has<RetryBackground>>,
 ) {
     for ent in removed.read() {
         let Ok(link) = links.get(ent) else {
@@ -146,7 +157,17 @@ pub fn set_ui_background(
         }
     }
 
-    for (ent, scene_ent, background, link) in backgrounds.iter() {
+    for (ent, scene_ent, background, link, maybe_retry) in backgrounds.iter() {
+        // waiting on a texture source; only despawn/respawn the node every few frames
+        if let Some(retry) = maybe_retry {
+            if !background.is_changed()
+                && !link.is_changed()
+                && frame.0.wrapping_sub(retry.since_frame) < RETRY_BACKGROUND_INTERVAL
+            {
+                continue;
+            }
+        }
+
         if let Ok(children) = children.get(link.ui_entity) {
             for child in children.iter().filter(|c| prev_backgrounds.get(*c).is_ok()) {
                 if let Ok(mut commands) = commands.get_entity(child) {
@@ -161,7 +182,7 @@ pub fn set_ui_background(
             continue;
         };
 
-        debug!("[{}] set background {:?}", scene_ent.id, background);
+        debug!("[{}] set background {:?}", scene_ent.id, &*background);
 
         if let Some(texture) = background.texture.as_ref() {
             let Ok(ctx) = contexts.get(scene_ent.root) else {
@@ -177,7 +198,9 @@ pub fn set_ui_background(
             let image = match image {
                 Some(Ok(t)) => t,
                 Some(Err(TextureResolveError::SourceNotReady)) => {
-                    commands.commands().entity(ent).try_insert(RetryBackground);
+                    commands.commands().entity(ent).try_insert(RetryBackground {
+                        since_frame: frame.0,
+                    });
                     continue;
                 }
                 None | Some(Err(TextureResolveError::NoTexture)) => {
@@ -266,7 +289,7 @@ pub fn set_ui_background(
                         .try_with_children(|c| {
                             let mut inner = c.spawn((node, MaterialNode(material)));
                             if let Some(source) = image.source_entity {
-                                inner.try_insert(UiMaterialSource(source));
+                                inner.try_insert(UiMaterialSource { source, owner: ent });
                             }
                             if let Some(radius) = border_radius {
                                 inner.try_insert(*radius);
@@ -304,7 +327,7 @@ pub fn set_ui_background(
                             let mut inner = c
                                 .spawn((node, ImageNode::new(image.image).with_color(image_color)));
                             if let Some(source) = image.source_entity {
-                                inner.try_insert(UiMaterialSource(source));
+                                inner.try_insert(UiMaterialSource { source, owner: ent });
                             }
                             if let Some(radius) = border_radius {
                                 inner.try_insert(*radius);
@@ -323,9 +346,15 @@ pub fn set_ui_background(
         }
     }
 
-    for (ent, _maybe_stretch, source) in sourced.iter() {
-        if commands.get_entity(source.0).is_err() {
-            commands.entity(ent).try_insert(RetryBackground);
+    // rebuild the owner when its texture-source entity disappears
+    for source in sourced.iter() {
+        let Ok(has_retry) = retried.get(source.owner) else {
+            continue;
+        };
+        if !has_retry && commands.get_entity(source.source).is_err() {
+            commands.entity(source.owner).try_insert(RetryBackground {
+                since_frame: frame.0,
+            });
         }
     }
 }
