@@ -2,7 +2,10 @@
 // requested world doesn't exist. Sits above everything (login/loading). Fed by useEngineSession's
 // fatalError or the ErrorBoundary fallback.
 
+import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { ModalShell, Button } from '../../design'
+import { useFocusTrap } from '../../lib/useFocusTrap'
 import styles from './EngineErrorModal.module.css'
 
 export interface FatalError {
@@ -36,48 +39,64 @@ export function EngineErrorModal({
   // A bad realm isn't a crash: no technical detail, no Reload (it would re-hit the same URL) —
   // just OK back to the destination picker. Crashes show the panic text (bug reports) + Reload.
   const isRealm = error.source === 'realm'
+  const scrimRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(scrimRef, true) // self-contained: no PopupHost here (ErrorBoundary fallback / embedded)
 
-  return (
-    <ModalShell
-      // Alert-style dialog: centered header with title-scale type (the shell's default header is
-      // a compact panel heading), centered footer buttons.
-      header={
-        <div className={styles.head}>
-          <h2 className={styles.title}>{title}</h2>
-          <p className={styles.subtitle}>{isRealm ? error.message : subtitle}</p>
-        </div>
-      }
-      role="alertdialog"
-      ariaLabel={title}
-      // A dismissable error can be closed via Escape or scrim-click; a fatal boot/react crash
-      // has no onDismiss → onClose is undefined → it can't be escaped. No header X — footer buttons
-      // drive it. (ModalShell ties Escape to dismissOnScrim, so gate both on onDismiss.)
-      onClose={onDismiss}
-      dismissOnScrim={!!onDismiss}
-      closeButton={false}
-      // Sit above login/loading (Modal's default backdrop is --z-modal).
-      backdropClassName={styles.fatalLayer}
-      actionsAlign="center"
-      actions={
-        isRealm ? (
-          <Button variant="primary" className={styles.btn} onClick={onDismiss}>
-            OK
-          </Button>
-        ) : (
-          <>
-            {onDismiss && (
-              <Button variant="ghost" className={styles.btn} onClick={onDismiss}>
-                Dismiss
+  // A dismissable error (runtime crash, bad realm) closes on Escape / scrim-click; a fatal boot/react
+  // crash has no onDismiss and can't be escaped.
+  useEffect(() => {
+    if (!onDismiss) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      onDismiss()
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [onDismiss])
+
+  // Own scrim at --z-fatal (above the whole popup layer + login), portaled to <body>. ModalShell is
+  // rendered scrimless — just the card; this component owns the backdrop, DPI scale, animation, focus
+  // trap and Escape (what PopupHost does for popups, but here without depending on it).
+  return createPortal(
+    <div ref={scrimRef} className={styles.scrim} tabIndex={-1} onClick={onDismiss ?? undefined}>
+      <div className={styles.pop}>
+        <ModalShell
+          scrimless
+          // Alert-style dialog: centered header with title-scale type, centered footer buttons.
+          header={
+            <div className={styles.head}>
+              <h2 className={styles.title}>{title}</h2>
+              <p className={styles.subtitle}>{isRealm ? error.message : subtitle}</p>
+            </div>
+          }
+          role="alertdialog"
+          ariaLabel={title}
+          closeButton={false}
+          actionsAlign="center"
+          actions={
+            isRealm ? (
+              <Button variant="primary" className={styles.btn} onClick={onDismiss}>
+                OK
               </Button>
-            )}
-            <Button variant="primary" className={styles.btn} onClick={onReload}>
-              Reload
-            </Button>
-          </>
-        )
-      }
-    >
-      {!isRealm && <pre className={styles.detail}>{error.message}</pre>}
-    </ModalShell>
+            ) : (
+              <>
+                {onDismiss && (
+                  <Button variant="ghost" className={styles.btn} onClick={onDismiss}>
+                    Dismiss
+                  </Button>
+                )}
+                <Button variant="primary" className={styles.btn} onClick={onReload}>
+                  Reload
+                </Button>
+              </>
+            )
+          }
+        >
+          {!isRealm && <pre className={styles.detail}>{error.message}</pre>}
+        </ModalShell>
+      </div>
+    </div>,
+    document.body
   )
 }

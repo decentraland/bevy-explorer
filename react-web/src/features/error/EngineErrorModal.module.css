@@ -1,9 +1,48 @@
-/* The popup itself now reuses the Modal/ModalShell primitive (backdrop + card + focus-trap + Escape).
-   Only two things are feature-specific: raising the backdrop above login, and the panic-text block. */
-
-/* Raise Modal's backdrop above login/loading (its default is --z-modal). */
-.fatalLayer {
+/* The crash popup is self-contained: it can't use PopupHost (it renders in the ErrorBoundary fallback
+   and in embedded mode, where the popup layer isn't mounted), so it draws its own scrim. Same look as
+   the shared .dim scrim, at --z-fatal so it sits above the whole popup layer (--z-modal) and login. */
+.scrim {
+  position: fixed;
+  top: 0;
+  left: 0;
+  /* Reference-canvas DPI scale (like the shared scrim / MainMenuShell): size at 100%/scale, scale
+     back down; the scrimless card is authored at reference px and centers here without self-scaling. */
+  width: calc(100% / var(--ui-scale, 1));
+  height: calc(100% / var(--ui-scale, 1));
+  transform: scale(var(--ui-scale, 1));
+  transform-origin: top left;
   z-index: var(--z-fatal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3vh 3vw;
+  background: var(--modal-scrim);
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.2s ease;
+}
+.pop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  animation: popIn 0.2s var(--ease-spring);
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes popIn {
+  from {
+    transform: scale(0.96);
+  }
+  to {
+    transform: scale(1);
+  }
 }
 
 /* Alert-style centered header — title-scale type instead of the shell's compact panel heading. */
