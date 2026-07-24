@@ -97,6 +97,7 @@ pub trait CrdtInterface {
 
 pub struct CrdtLWWInterface<T: FromDclReader> {
     position: ComponentPosition,
+    dedup: bool,
     _marker: PhantomData<T>,
 }
 
@@ -111,10 +112,28 @@ impl<T: FromDclReader> CrdtInterface for CrdtLWWInterface<T> {
         type_map: &mut CrdtStore,
         commands: &mut EntityCommands,
     ) {
-        type_map
-            .lww
-            .remove(&component_id)
-            .map(|state| commands.try_insert(CrdtStateComponent::<CrdtLWWState, T>::new(state)));
+        let Some(state) = type_map.lww.remove(&component_id) else {
+            return;
+        };
+
+        if self.dedup {
+            // merge into the existing state so unchanged payloads can be recognised
+            commands.queue_handled(
+                move |mut entity: EntityWorldMut| {
+                    if let Some(mut existing) =
+                        entity.get_mut::<CrdtStateComponent<CrdtLWWState, T>>()
+                    {
+                        existing.state.merge_dedup(state);
+                    } else {
+                        entity.insert(CrdtStateComponent::<CrdtLWWState, T>::new(state));
+                    }
+                },
+                // the scene may have despawned; just drop the update
+                bevy::ecs::error::ignore,
+            );
+        } else {
+            commands.try_insert(CrdtStateComponent::<CrdtLWWState, T>::new(state));
+        }
     }
 }
 
@@ -219,6 +238,24 @@ pub trait AddCrdtInterfaceExt {
     ) where
         <C as TryFrom<D>>::Error: std::fmt::Display;
 
+    // as `add_crdt_lww_component`, but a resend with an unchanged payload only
+    // advances the crdt timestamp instead of re-applying the component. don't
+    // use for components where a resend is meaningful (e.g. tween restart).
+    fn add_crdt_lww_component_dedup<
+        D: FromDclReader
+            + std::fmt::Debug
+            + prost::Message
+            + Default
+            + serde::Serialize
+            + serde::de::DeserializeOwned,
+        C: Component + TryFrom<D>,
+    >(
+        &mut self,
+        id: SceneComponentId,
+        position: ComponentPosition,
+    ) where
+        <C as TryFrom<D>>::Error: std::fmt::Display;
+
     fn add_crdt_go_component<
         D: FromDclReader
             + std::fmt::Debug
@@ -234,22 +271,73 @@ pub trait AddCrdtInterfaceExt {
     );
 }
 
+fn register_crdt_lww_interface<D: FromDclReader>(
+    app: &mut App,
+    id: SceneComponentId,
+    position: ComponentPosition,
+    dedup: bool,
+) {
+    // store a writer
+    let existing = app.world_mut().resource_mut::<CrdtExtractors>().0.insert(
+        id,
+        Box::new(CrdtLWWInterface::<D> {
+            position,
+            dedup,
+            _marker: PhantomData,
+        }),
+    );
+
+    assert!(existing.is_none(), "duplicate registration for {id:?}");
+}
+
+fn register_crdt_lww_component<
+    D: FromDclReader
+        + std::fmt::Debug
+        + prost::Message
+        + Default
+        + serde::Serialize
+        + serde::de::DeserializeOwned,
+    C: Component + TryFrom<D>,
+    const DEDUP: bool,
+>(
+    app: &mut App,
+    id: SceneComponentId,
+    position: ComponentPosition,
+) where
+    <C as TryFrom<D>>::Error: std::fmt::Display,
+{
+    register_crdt_lww_interface::<D>(app, id, position, DEDUP);
+    // register in ComponentNameRegistry for inspection
+    let (inspect, write, default) = make_proto_closures::<D>();
+    app.world_mut()
+        .resource_mut::<ComponentNameRegistry>()
+        .register(
+            derive_component_name::<D>(),
+            id,
+            CrdtType::LWW(position),
+            inspect,
+            Some(write),
+            Some(default),
+        );
+    // add a system to process the update
+    app.world_mut()
+        .resource_mut::<SceneLoopSchedule>()
+        .schedule
+        .add_systems(process_crdt_lww_updates::<D, C, DEDUP>.in_set(SceneLoopSets::UpdateWorld));
+    // add a tracker system
+    app.add_systems(
+        PostUpdate,
+        track_components::<C, false>.run_if(|track: Res<TrackComponents>| track.0),
+    );
+}
+
 impl AddCrdtInterfaceExt for App {
     fn add_crdt_lww_interface<D: FromDclReader>(
         &mut self,
         id: SceneComponentId,
         position: ComponentPosition,
     ) {
-        // store a writer
-        let existing = self.world_mut().resource_mut::<CrdtExtractors>().0.insert(
-            id,
-            Box::new(CrdtLWWInterface::<D> {
-                position,
-                _marker: PhantomData,
-            }),
-        );
-
-        assert!(existing.is_none(), "duplicate registration for {id:?}");
+        register_crdt_lww_interface::<D>(self, id, position, false);
     }
 
     fn add_crdt_lww_component<
@@ -267,29 +355,25 @@ impl AddCrdtInterfaceExt for App {
     ) where
         <C as TryFrom<D>>::Error: std::fmt::Display,
     {
-        self.add_crdt_lww_interface::<D>(id, position);
-        // register in ComponentNameRegistry for inspection
-        let (inspect, write, default) = make_proto_closures::<D>();
-        self.world_mut()
-            .resource_mut::<ComponentNameRegistry>()
-            .register(
-                derive_component_name::<D>(),
-                id,
-                CrdtType::LWW(position),
-                inspect,
-                Some(write),
-                Some(default),
-            );
-        // add a system to process the update
-        self.world_mut()
-            .resource_mut::<SceneLoopSchedule>()
-            .schedule
-            .add_systems(process_crdt_lww_updates::<D, C>.in_set(SceneLoopSets::UpdateWorld));
-        // add a tracker system
-        self.add_systems(
-            PostUpdate,
-            track_components::<C, false>.run_if(|track: Res<TrackComponents>| track.0),
-        );
+        register_crdt_lww_component::<D, C, false>(self, id, position);
+    }
+
+    fn add_crdt_lww_component_dedup<
+        D: FromDclReader
+            + std::fmt::Debug
+            + prost::Message
+            + Default
+            + serde::Serialize
+            + serde::de::DeserializeOwned,
+        C: Component + TryFrom<D>,
+    >(
+        &mut self,
+        id: SceneComponentId,
+        position: ComponentPosition,
+    ) where
+        <C as TryFrom<D>>::Error: std::fmt::Display,
+    {
+        register_crdt_lww_component::<D, C, true>(self, id, position);
     }
 
     fn add_crdt_go_component<
@@ -340,6 +424,7 @@ impl AddCrdtInterfaceExt for App {
 pub(crate) fn process_crdt_lww_updates<
     D: FromDclReader + std::fmt::Debug,
     C: Component + TryFrom<D>,
+    const DEDUP: bool,
 >(
     mut commands: Commands,
     mut scenes: Query<(
@@ -353,16 +438,20 @@ pub(crate) fn process_crdt_lww_updates<
 {
     for (_root, scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
         // avoid triggering change detection when there is nothing to do
-        if updates.last_write.is_empty() && deleted_entities.0.is_empty() {
+        if updates.updates.is_empty() && deleted_entities.0.is_empty() {
             continue;
         }
 
         // remove crdt state for dead entities
         for deleted in &deleted_entities.0 {
             updates.last_write.remove(deleted);
+            updates.updates.remove(deleted);
         }
 
-        for (scene_entity, entry) in std::mem::take(&mut updates.last_write) {
+        for scene_entity in std::mem::take(&mut updates.updates) {
+            let Some(entry) = updates.last_write.get(&scene_entity) else {
+                continue;
+            };
             let Some(entity) = scene_context.bevy_entity(scene_entity) else {
                 warn!(
                     "skipping {} update for missing entity {:?}",
@@ -405,6 +494,11 @@ pub(crate) fn process_crdt_lww_updates<
             } else {
                 commands.entity(entity).remove::<C>();
             }
+        }
+
+        // dedup interfaces keep last_write so unchanged resends can be recognised
+        if !DEDUP {
+            updates.last_write.clear();
         }
     }
 }
