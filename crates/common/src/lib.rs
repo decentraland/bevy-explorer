@@ -1,3 +1,4 @@
+pub mod asset_cache;
 pub mod dynamics;
 pub mod inputs;
 pub mod profile;

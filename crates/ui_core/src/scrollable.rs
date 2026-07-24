@@ -256,7 +256,7 @@ fn update_scrollables(
         Ref<GlobalTransform>,
         Ref<ComputedNode>,
         &Interaction,
-        Option<&UiTargetCamera>,
+        &ComputedNodeTarget,
     )>,
     mut bars: Query<
         (
@@ -267,7 +267,7 @@ fn update_scrollables(
             &Interaction,
             &ComputedNode,
             &GlobalTransform,
-            Option<&UiTargetCamera>,
+            &ComputedNodeTarget,
         ),
         (Without<Scrollable>, Without<Slider>),
     >,
@@ -331,9 +331,9 @@ fn update_scrollables(
 
     let window_cursor_position = window.cursor_position().unwrap_or(Vec2::NEG_ONE);
     let manual_cursor_positions: HashMap<_, _> = cursors.iter().collect();
-    let cursor_position = |camera: Option<&UiTargetCamera>| -> Option<Vec2> {
-        if let Some(camera) = camera {
-            if let Some(position) = manual_cursor_positions.get(&camera.0) {
+    let cursor_position = |camera: &ComputedNodeTarget| -> Option<Vec2> {
+        if let Some(camera) = camera.camera() {
+            if let Some(position) = manual_cursor_positions.get(&camera) {
                 return position.0;
             }
         }
@@ -359,7 +359,7 @@ fn update_scrollables(
         ref_transform,
         ref_node,
         interaction,
-        maybe_target_camera,
+        target_camera,
     ) in scrollables.iter_mut()
     {
         let Ok((child_node, mut style, _)) = nodes.get_mut(scroll_content.0) else {
@@ -367,7 +367,7 @@ fn update_scrollables(
             continue;
         };
 
-        let cursor_position = cursor_position(maybe_target_camera);
+        let cursor_position = cursor_position(target_camera);
 
         let child_size = child_node.size() / scale_factor;
         let parent_size = node.size() / scale_factor;
@@ -538,7 +538,7 @@ fn update_scrollables(
     }
 
     // bars
-    for (entity, bar, mut style, mut bounds, interaction, node, transform, maybe_target_camera) in
+    for (entity, bar, mut style, mut bounds, interaction, node, transform, target_camera) in
         bars.iter_mut()
     {
         let source = if bar.vertical {
@@ -575,7 +575,7 @@ fn update_scrollables(
             bounds.border_size = Val::Px(bar_width * 0.125);
         }
 
-        let Some(cursor_position) = cursor_position(maybe_target_camera) else {
+        let Some(cursor_position) = cursor_position(target_camera) else {
             continue;
         };
 
