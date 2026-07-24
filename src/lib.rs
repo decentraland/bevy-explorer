@@ -1,5 +1,6 @@
 mod commands;
 mod ext;
+mod meshopt_ext;
 #[cfg(target_arch = "wasm32")]
 mod web;
 // POC: react-web HUD via CEF offscreen rendering into an in-engine texture (`react-hud-cef`).
@@ -421,7 +422,8 @@ impl DecentralandApp {
             .add_plugins(SystemBridgePlugin { bare: false })
             .add_plugins(SceneInspectorPlugin)
             .add_plugins(EmbedAssetsPlugin)
-            .add_plugins(ParticleSystemPlugin);
+            .add_plugins(ParticleSystemPlugin)
+            .add_plugins(crate::meshopt_ext::MeshoptPlugin);
 
         if !decentraland_app_config.arguments.is_preview {
             app.add_plugins(DclImposterPlugin {
