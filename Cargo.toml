@@ -293,9 +293,15 @@ web-time = { workspace = true }
 pico-args = "0.5.0"
 zip = { workspace = true }
 anyhow = { workspace = true }
+base64 = { workspace = true }
 crc = { workspace = true }
 urlencoding = { workspace = true }
 image = { workspace = true }
+gltf = { version = "1.4", default-features = false, features = [
+  "extensions",
+  "utils",
+] }
+meshopt = "=0.6.2"
 rand = { workspace = true }
 chrono = { workspace = true }
 # tracing = { version = "0.1", features = ["release_max_level_info"] }
