@@ -226,6 +226,9 @@ pub(crate) fn load_scene_json(
             None,
             definition.metadata.as_ref().map(|v| v.to_string()),
         );
+        // start streaming the scene's content pack (if a pack server is configured)
+        // so asset reads can be served from it
+        ipfas.ipfs().prefetch_scene_pack(&definition.id);
 
         let crdt = definition.content.hash("main.crdt").map(|_| {
             ipfas
@@ -1515,6 +1518,7 @@ pub fn process_scene_lifecycle(
     imposter_scene: Res<CurrentImposterScene>,
     preview_mode: Res<PreviewMode>,
     mut current_scene_loading_res: ResMut<CurrentSceneLoading>,
+    ipfas: IpfsAssetServer,
 ) {
     let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::new();
 
@@ -1640,6 +1644,7 @@ pub fn process_scene_lifecycle(
 
     for removed_hash in removed_hashes {
         live_scenes.scenes.remove(removed_hash);
+        ipfas.ipfs().release_scene_pack(removed_hash);
     }
 
     let mut defer_to_current_scene = false;

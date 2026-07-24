@@ -566,6 +566,15 @@ impl IpfsPath {
         Ok(self.ipfs_type.context_free_hash()?.map(ToOwned::to_owned))
     }
 
+    // the scene hash whose content pack (if any) can serve this request
+    pub fn scene_context_hash(&self) -> Option<&str> {
+        match &self.ipfs_type {
+            IpfsType::ContentFile { content_hash, .. } => Some(content_hash),
+            IpfsType::SceneContent { scene_hash, .. } => Some(scene_hash),
+            _ => None,
+        }
+    }
+
     pub fn should_cache(&self, hash: &str) -> bool {
         !hash.starts_with("b64-")
         //        true // TODO only if hash is some and is not b64-

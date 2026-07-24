@@ -458,6 +458,9 @@ pub struct AppConfig {
     pub inputs: InputMapSerialized,
     pub point_at_marker_visibility: PointAtMarkerVisibility,
     pub camera_smoothing: CameraSmoothing,
+    // base url of a scene content-pack server; None (the default) disables
+    // scene packs entirely and every content request goes to /contents
+    pub scene_packs_url: Option<String>,
     // field-level default (0) so configs saved before this field existed read as outdated,
     // rather than taking the current generation from the container-level default
     #[serde(default)]
@@ -499,6 +502,7 @@ impl Default for AppConfig {
             inputs: Default::default(),
             point_at_marker_visibility: Default::default(),
             camera_smoothing: Default::default(),
+            scene_packs_url: None,
             settings_generation: SETTINGS_GENERATION,
         }
     }
