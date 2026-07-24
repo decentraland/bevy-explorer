@@ -23,7 +23,7 @@ import { Sidebar } from './features/sidebar/Sidebar'
 import { Pointer } from './features/pointer/Pointer'
 import { openPassport } from './features/profile/Passport'
 import { WorldVisitModal } from './components/WorldVisitModal'
-import { PermissionDialog } from './features/permissions/PermissionDialog'
+import { openPermissionDialog } from './features/permissions/PermissionDialog'
 import { PopupHost } from './design'
 import { SessionProvider } from './features/session/SessionContext'
 import { FpsMeter } from './features/debug/FpsMeter'
@@ -164,6 +164,16 @@ function Hud(): React.JSX.Element {
     return openExitConfirm(exitGuard.stay, exitGuard.leave)
   }, [exitGuard.confirming, exitGuard.stay, exitGuard.leave])
 
+  // Scene permission prompts (e.g. ChangeRealm), one at a time, opened through the popup layer. Escape
+  // / scrim-click deny once. Re-opens whenever the front of the pending queue changes.
+  const permFrontId = session.phase === 'world' ? session.permissions.pending[0]?.id : undefined
+  useEffect(() => {
+    const front = session.permissions.pending[0]
+    if (permFrontId == null || !front) return
+    return openPermissionDialog(front, session.permissions.resolve)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the front request changes
+  }, [permFrontId])
+
   // A world (e.g. boedo.dcl.eth) the user asked to jump to — drives the shared confirm modal.
   const [visitWorld, setVisitWorld] = useState<string | null>(null)
   // Which tab the Backpack opens on. The emote wheel's "Customise [E]" opens it on Emotes; it resets
@@ -286,16 +296,6 @@ function Hud(): React.JSX.Element {
             />
           )}
         </>
-      )}
-      {/* Scene permission prompts (e.g. ChangeRealm) — one at a time, above any open menu. */}
-      {session.phase === 'world' && session.permissions.pending.length > 0 && (
-        <PermissionDialog
-          key={session.permissions.pending[0].id}
-          request={session.permissions.pending[0]}
-          onResolve={(allow, level) =>
-            session.permissions.resolve(session.permissions.pending[0].id, allow, level)
-          }
-        />
       )}
       {/* Fatal engine error (boot panic / runtime crash) — above everything. */}
       {session.fatalError && (
