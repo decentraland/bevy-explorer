@@ -142,8 +142,41 @@ pub(crate) fn write_imposter(
     }
 }
 
+const DEFAULT_IMPOSTER_URL_BASE: &str = "https://bevy-imposters.dclregenesislabs.xyz";
+
+fn remote_zip_url(
+    source: Option<&str>,
+    id: &str,
+    parcel: IVec2,
+    level: usize,
+    crc: Option<u32>,
+) -> String {
+    match source {
+        // a configured source is a ready url: append the tile name only, and
+        // never re-encode segments the operator already encoded
+        Some(source) => format!(
+            "{}/{}/{},{}.{}.zip",
+            source.trim_end_matches('/'),
+            level,
+            parcel.x,
+            parcel.y,
+            crc.unwrap()
+        ),
+        None => {
+            let zip_file = zip_path(None, id, parcel, level, crc)
+                .to_string_lossy()
+                .into_owned()
+                .replace("\\", "/");
+            format!("{DEFAULT_IMPOSTER_URL_BASE}/{zip_file}")
+                // double url encode
+                .replace("%", "%25")
+        }
+    }
+}
+
 pub async fn load_imposter(
     ipfs: Arc<IpfsIo>,
+    source: Option<String>,
     id: String,
     parcel: IVec2,
     level: usize,
@@ -164,7 +197,16 @@ pub async fn load_imposter(
     }
 
     if download {
-        if let Err(e) = load_imposter_remote(&ipfs, &id, parcel, level, required_crc, cancel).await
+        if let Err(e) = load_imposter_remote(
+            &ipfs,
+            source.as_deref(),
+            &id,
+            parcel,
+            level,
+            required_crc,
+            cancel,
+        )
+        .await
         {
             warn!("{e}");
             return None;
@@ -175,8 +217,42 @@ pub async fn load_imposter(
     None
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn default_source_builds_the_store_url() {
+        assert_eq!(
+            remote_zip_url(
+                None,
+                "https://realm-provider.decentraland.org/main",
+                IVec2::new(-29, 55),
+                3,
+                Some(12345)
+            ),
+            "https://bevy-imposters.dclregenesislabs.xyz/imposters/realms/https%253A%252F%252Frealm-provider.decentraland.org%252Fmain/3/-29,55.12345.zip"
+        );
+    }
+
+    #[test]
+    fn configured_source_is_used_verbatim() {
+        assert_eq!(
+            remote_zip_url(
+                Some("https://imposters.example.test/imposters/realms/my%20key/"),
+                "ignored",
+                IVec2::new(1, -2),
+                0,
+                Some(7)
+            ),
+            "https://imposters.example.test/imposters/realms/my%20key/0/1,-2.7.zip"
+        );
+    }
+}
+
 pub async fn load_imposter_remote(
     ipfs: &IpfsIo,
+    source: Option<&str>,
     id: &str,
     parcel: IVec2,
     level: usize,
@@ -184,13 +260,7 @@ pub async fn load_imposter_remote(
     cancel: CancellationToken,
 ) -> Result<(), anyhow::Error> {
     let client = ipfs.client();
-    let zip_file = zip_path(None, id, parcel, level, crc)
-        .to_string_lossy()
-        .into_owned()
-        .replace("\\", "/");
-    let zip_url = format!("https://bevy-imposters.dclregenesislabs.xyz/{zip_file}")
-        // double url encode
-        .replace("%", "%25");
+    let zip_url = remote_zip_url(source, id, parcel, level, crc);
     debug!("zip_url {zip_url}");
 
     // Bulk imposter-zip download. No total request timeout: platform::fetch below
