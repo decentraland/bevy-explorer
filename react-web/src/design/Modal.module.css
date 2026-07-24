@@ -40,6 +40,12 @@
 .card:focus-visible {
   outline: none;
 }
+/* Scrimless (inside the popup layer): PopupHost's .dim scales via the reference canvas and .pop
+   animates the entrance, so the card must not self-scale or fade — that would double up. */
+.scrimless {
+  transform: none;
+  animation: none;
+}
 
 @media (max-height: 540px) {
   .backdrop {

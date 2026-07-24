@@ -26,6 +26,10 @@ interface ModalProps {
   /** Extra class on the fixed backdrop — escape-hatch for a non-default z-layer (e.g. the fatal
    *  error popup, which must sit above login). */
   backdropClassName?: string
+  /** Render only the card — no portal, no backdrop scrim, no self-scale, no own focus trap / Escape.
+   *  For a dialog living inside the popup layer, where PopupHost owns the scrim, the DPI scale, the
+   *  entrance animation, the focus trap and Escape. Leave off for an App-local modal. */
+  scrimless?: boolean
 }
 
 export function Modal({
@@ -35,11 +39,13 @@ export function Modal({
   ariaLabel,
   role = 'dialog',
   className = '',
-  backdropClassName = ''
+  backdropClassName = '',
+  scrimless = false
 }: ModalProps): React.JSX.Element {
   const cardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (scrimless) return // PopupHost owns focus + Escape for popup-layer dialogs
     const prev = document.activeElement
     cardRef.current?.focus()
 
@@ -71,22 +77,28 @@ export function Modal({
       document.removeEventListener('keydown', onKey)
       if (prev instanceof HTMLElement) prev.focus()
     }
-  }, [onClose])
+  }, [onClose, scrimless])
 
+  const card = (
+    <div
+      className={`${styles.card} ${scrimless ? styles.scrimless : ''} ${className}`.trim()}
+      style={{ width }}
+      role={role}
+      aria-modal="true"
+      aria-label={ariaLabel}
+      tabIndex={-1}
+      ref={cardRef}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children}
+    </div>
+  )
+
+  // Scrimless → just the card; the popup layer draws the scrim/scale/animation and traps focus.
+  if (scrimless) return card
   return createPortal(
     <div className={`${styles.backdrop} ${backdropClassName}`.trim()} onClick={onClose}>
-      <div
-        className={`${styles.card} ${className}`.trim()}
-        style={{ width }}
-        role={role}
-        aria-modal="true"
-        aria-label={ariaLabel}
-        tabIndex={-1}
-        ref={cardRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
+      {card}
     </div>,
     document.body
   )
@@ -268,6 +280,8 @@ interface ModalShellProps {
   width?: number
   size?: keyof typeof SIZES
   dismissOnScrim?: boolean
+  /** Render only the card — the popup layer owns the scrim/scale/animation/focus (see Modal). */
+  scrimless?: boolean
   className?: string
   backdropClassName?: string
   ariaLabel?: string
@@ -296,6 +310,7 @@ export function ModalShell({
   width,
   size = 'sm',
   dismissOnScrim = true,
+  scrimless = false,
   className = '',
   backdropClassName,
   ariaLabel,
@@ -359,6 +374,7 @@ export function ModalShell({
     <Modal
       onClose={dismissOnScrim ? onClose : undefined}
       width={resolvedWidth}
+      scrimless={scrimless}
       className={`${styles.shell} ${className}`.trim()}
       backdropClassName={backdropClassName}
       ariaLabel={ariaLabel}
