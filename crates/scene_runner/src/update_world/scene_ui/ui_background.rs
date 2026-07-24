@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::util::TryPushChildrenEx;
+use common::{asset_cache::AssetCache, util::TryPushChildrenEx};
 use dcl_component::proto_components::{
     common::{BorderRect, TextureUnion},
     sdk::components::{self, PbUiBackground},
@@ -96,6 +96,13 @@ pub struct RetryBackground;
 #[derive(Component)]
 pub struct UiMaterialSource(Entity);
 
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub struct StretchUvKey {
+    image: AssetId<Image>,
+    uvs: [u32; 8],
+    color: [u32; 4],
+}
+
 pub fn set_ui_background(
     mut commands: Commands,
     backgrounds: Query<
@@ -114,6 +121,7 @@ pub fn set_ui_background(
     contexts: Query<&RendererSceneContext>,
     mut resolver: TextureResolver,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
+    mut cache: ResMut<AssetCache<StretchUvKey, StretchUvMaterial>>,
     sourced: Query<(
         Entity,
         Option<&MaterialNode<StretchUvMaterial>>,
@@ -223,36 +231,49 @@ pub fn set_ui_background(
                         UiBackgroundMarker,
                     ))
                     .id(),
-                BackgroundTextureMode::Stretch(ref uvs) => commands
-                    .commands()
-                    .spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            top: Val::Px(0.0),
-                            right: Val::Px(0.0),
-                            left: Val::Px(0.0),
-                            bottom: Val::Px(0.0),
-                            ..Default::default()
-                        },
-                        UiBackgroundMarker,
-                    ))
-                    .try_with_children(|c| {
-                        let mut inner = c.spawn((
-                            node,
-                            MaterialNode(stretch_uvs.add(StretchUvMaterial {
-                                image: image.image.clone(),
-                                uvs: *uvs,
-                                color: image_color.to_linear().to_vec4(),
-                            })),
-                        ));
-                        if let Some(source) = image.source_entity {
-                            inner.try_insert(UiMaterialSource(source));
-                        }
-                        if let Some(radius) = border_radius {
-                            inner.try_insert(*radius);
-                        }
-                    })
-                    .id(),
+                BackgroundTextureMode::Stretch(ref uvs) => {
+                    let color = image_color.to_linear().to_vec4();
+                    let mut uv_bits = [0u32; 8];
+                    for (bits, uv) in uv_bits
+                        .iter_mut()
+                        .zip(uvs.iter().flat_map(|v| v.to_array()))
+                    {
+                        *bits = uv.to_bits();
+                    }
+                    let key = StretchUvKey {
+                        image: image.image.id(),
+                        uvs: uv_bits,
+                        color: color.to_array().map(f32::to_bits),
+                    };
+                    let material = cache.get_or_add(key, &mut stretch_uvs, || StretchUvMaterial {
+                        image: image.image.clone(),
+                        uvs: *uvs,
+                        color,
+                    });
+                    commands
+                        .commands()
+                        .spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                top: Val::Px(0.0),
+                                right: Val::Px(0.0),
+                                left: Val::Px(0.0),
+                                bottom: Val::Px(0.0),
+                                ..Default::default()
+                            },
+                            UiBackgroundMarker,
+                        ))
+                        .try_with_children(|c| {
+                            let mut inner = c.spawn((node, MaterialNode(material)));
+                            if let Some(source) = image.source_entity {
+                                inner.try_insert(UiMaterialSource(source));
+                            }
+                            if let Some(radius) = border_radius {
+                                inner.try_insert(*radius);
+                            }
+                        })
+                        .id()
+                }
                 BackgroundTextureMode::Center => commands
                     .commands()
                     .spawn((
