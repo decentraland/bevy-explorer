@@ -46,5 +46,5 @@ export function Passport({ userId, onClose }: { userId: string; onClose: () => v
 
 /** Open a user's full-screen passport as a popup. */
 export function openPassport(userId: string): () => void {
-  return openPopup((close) => <Passport userId={userId} onClose={close} />, { backdrop: false }) // draws its own overlay
+  return openPopup((close) => <Passport userId={userId} onClose={close} />)
 }

@@ -92,8 +92,10 @@ export function ProfilePassport({
   const hasOverview = hasBadges || hasAbout
 
   return (
-    <div className={styles.overlay}>
-      <div className={styles.panel}>
+    // The dimmed scrim + click-outside-to-close are owned by the popup layer (openPassport →
+    // PopupHost); this is just the panel. stopPropagation keeps a click inside it (tabs, copy, links)
+    // from reaching the scrim and closing the passport.
+    <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
         {/* --- header --- */}
         <header className={styles.head}>
           <div className={styles.idblock}>
@@ -235,6 +237,5 @@ export function ProfilePassport({
           </div>
         </div>
       </div>
-    </div>
   )
 }
