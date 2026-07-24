@@ -480,7 +480,6 @@ impl Plugin for SceneUiPlugin {
                     set_ui_dropdown,
                     set_ui_pointer_events,
                 ),
-                fully_update_target_camera_system,
                 set_ui_focus,
                 manage_scene_ui_interact,
             )
@@ -1437,66 +1436,6 @@ fn layout_scene_ui(
                 warn!("scroll to target `{target}` not found");
             }
         }
-    }
-}
-
-pub fn fully_update_target_camera_system(
-    mut commands: Commands,
-    root_nodes_query: Query<
-        (Entity, Option<&UiTargetCamera>),
-        (With<ComputedNode>, Without<ChildOf>),
-    >,
-    children_query: Query<&Children, With<ComputedNode>>,
-) {
-    // Track updated entities to prevent redundant updates, as `Commands` changes are deferred,
-    // and updates done for changed_children_query can overlap with itself or with root_node_query
-    let mut updated_entities = HashSet::new();
-
-    for (root_node, target_camera) in &root_nodes_query {
-        update_children_target_camera(
-            root_node,
-            target_camera,
-            &children_query,
-            &mut commands,
-            &mut updated_entities,
-        );
-    }
-}
-
-fn update_children_target_camera(
-    entity: Entity,
-    camera_to_set: Option<&UiTargetCamera>,
-    children_query: &Query<&Children, With<ComputedNode>>,
-    commands: &mut Commands,
-    updated_entities: &mut HashSet<Entity>,
-) {
-    let Ok(children) = children_query.get(entity) else {
-        return;
-    };
-
-    for &child in children {
-        // Skip if the child has already been updated
-        if updated_entities.contains(&child) {
-            continue;
-        }
-
-        match camera_to_set {
-            Some(camera) => {
-                commands.entity(child).try_insert(camera.clone());
-            }
-            None => {
-                commands.entity(child).remove::<UiTargetCamera>();
-            }
-        }
-        updated_entities.insert(child);
-
-        update_children_target_camera(
-            child,
-            camera_to_set,
-            children_query,
-            commands,
-            updated_entities,
-        );
     }
 }
 
