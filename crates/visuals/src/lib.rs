@@ -128,13 +128,16 @@ impl Plugin for VisualsPlugin {
 #[derive(Component)]
 struct DirectionalLightLayer(Layer);
 
+const SHADOW_MAP_SIZE: usize = 4096;
+const WEB_SHADOW_MAP_SIZE: usize = 2048;
+
 fn directional_shadow_map_size(graphics: &GraphicsSettings) -> usize {
     // on web the shadow map is a significant part of the fixed frame cost; use a
     // smaller map unless the user explicitly asks for high quality shadows
     if cfg!(target_arch = "wasm32") && graphics.shadow_settings != ShadowSetting::High {
-        2048
+        WEB_SHADOW_MAP_SIZE
     } else {
-        4096
+        SHADOW_MAP_SIZE
     }
 }
 
@@ -191,6 +194,11 @@ fn setup(
 static TRANSITION_TIME: f32 = 1.0;
 const SKY_UPDATE_INTERVAL: u32 = 8;
 const SKY_JUMP_BURST_FRAMES: u32 = 64;
+const SKY_JUMP_DIRECTION_RADIANS: f32 = 0.02;
+const SKY_JUMP_ILLUMINANCE_FRACTION: f32 = 0.05;
+const SKY_JUMP_ILLUMINANCE_FLOOR: f32 = 100.0;
+const SKY_JUMP_COLOR_DELTA: f32 = 0.05;
+const SKY_JUMP_AMBIENT_DELTA: f32 = 0.1;
 
 fn color_delta(a: Color, b: Color) -> f32 {
     let a = a.to_srgba();
@@ -220,12 +228,15 @@ fn sky_needs_update(
                 || prev
                     .dir_direction
                     .angle_between(scene_global_light.dir_direction)
-                    > 0.02
+                    > SKY_JUMP_DIRECTION_RADIANS
                 || (prev.dir_illuminance - scene_global_light.dir_illuminance).abs()
-                    > prev.dir_illuminance.max(100.0) * 0.05
-                || color_delta(prev.dir_color, scene_global_light.dir_color) > 0.05
-                || color_delta(prev.ambient_color, scene_global_light.ambient_color) > 0.05
-                || (prev.ambient_brightness - scene_global_light.ambient_brightness).abs() > 0.1
+                    > prev.dir_illuminance.max(SKY_JUMP_ILLUMINANCE_FLOOR)
+                        * SKY_JUMP_ILLUMINANCE_FRACTION
+                || color_delta(prev.dir_color, scene_global_light.dir_color) > SKY_JUMP_COLOR_DELTA
+                || color_delta(prev.ambient_color, scene_global_light.ambient_color)
+                    > SKY_JUMP_COLOR_DELTA
+                || (prev.ambient_brightness - scene_global_light.ambient_brightness).abs()
+                    > SKY_JUMP_AMBIENT_DELTA
         }
     };
 
