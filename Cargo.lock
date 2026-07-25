@@ -2210,7 +2210,7 @@ version = "0.1.1"
 source = "git+https://github.com/robtfm/boimp?branch=feat%2Fcomposite-bake-via-storage-texture#8abfcf6d0d2a9ec8beefbbc96822968379501d7c"
 dependencies = [
  "anyhow",
- "async-channel 2.5.0",
+ "async-channel 1.9.0",
  "bevy",
  "bytemuck",
  "crossbeam-channel",
@@ -2756,7 +2756,6 @@ dependencies = [
  "futures-util",
  "gloo-timers 0.3.0",
  "http 1.4.0",
- "image",
  "ipfs",
  "js-sys",
  "kira",
