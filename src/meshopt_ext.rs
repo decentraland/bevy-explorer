@@ -112,7 +112,10 @@ mod imp {
     fn check_walk_refs(root: &gltf::json::Root) -> Result<(), String> {
         for view in &root.buffer_views {
             if view.buffer.value() >= root.buffers.len() {
-                return Err(format!("bufferView buffer {} out of range", view.buffer.value()));
+                return Err(format!(
+                    "bufferView buffer {} out of range",
+                    view.buffer.value()
+                ));
             }
         }
         for accessor in &root.accessors {
@@ -581,7 +584,7 @@ mod imp {
         src: &[u8],
         budget: &mut usize,
     ) -> Result<Vec<u8>, String> {
-        if f.count == 0 || !(4..=256).contains(&f.stride) || f.stride % 4 != 0 {
+        if f.count == 0 || !(4..=256).contains(&f.stride) || !f.stride.is_multiple_of(4) {
             return Err(format!("bad attribute stride {}", f.stride));
         }
         // count/stride are attacker-controlled: a wrapping multiply would size
@@ -648,7 +651,7 @@ mod imp {
         src: &[u8],
         budget: &mut usize,
     ) -> Result<Vec<u8>, String> {
-        if f.count == 0 || f.count % 3 != 0 || (f.stride != 2 && f.stride != 4) {
+        if f.count == 0 || !f.count.is_multiple_of(3) || (f.stride != 2 && f.stride != 4) {
             return Err(format!("bad index count/stride {}/{}", f.count, f.stride));
         }
         // the C decoder writes 3 indices per triangle (past `out` if count is
