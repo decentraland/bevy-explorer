@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import { CAT_ICONS, CAT_PINS, WORLD_ICON } from './mapArt'
 import type { MapState, ProfileState } from '../session/useEngineSession'
-import { WorldVisitModal } from '../../components/WorldVisitModal'
+import { openWorldVisit } from '../../components/WorldVisitModal'
 import styles from './MapPage.module.css'
 
 // Genesis City satellite atlas — identical source/geometry to unity-explorer's
@@ -216,7 +216,9 @@ export function MapPage({
   const [query, setQuery] = useState('')
   const [worldHits, setWorldHits] = useState<World[]>([])
   const [placeHits, setPlaceHits] = useState<Place[]>([])
-  const [confirmWorld, setConfirmWorld] = useState<World | null>(null)
+  // The world-jump confirm lives in the HUD-wide popup layer now, so this page no longer unmounts it —
+  // keep its close handle and dismiss it explicitly when the map closes.
+  const closeVisitRef = useRef<(() => void) | null>(null)
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null)
   const viewRef = useRef<HTMLDivElement>(null)
 
@@ -304,7 +306,8 @@ export function MapPage({
       setSelected(null)
       setCatKey('all')
       setQuery('')
-      setConfirmWorld(null)
+      closeVisitRef.current?.()
+      closeVisitRef.current = null
     }
     // Only re-center when the map opens — player movement shouldn't yank the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -331,6 +334,13 @@ export function MapPage({
   const visitWorld = (w: World): void => {
     map.changeRealm(w.world_name)
     map.toggle()
+  }
+  const askVisitWorld = (w: World): void => {
+    closeVisitRef.current = openWorldVisit({
+      worldName: w.world_name,
+      title: w.title,
+      onConfirm: () => visitWorld(w)
+    })
   }
   const jumpTo = (pl: Place): void => {
     const [x, y] = pl.base_position.split(',').map(Number)
@@ -427,7 +437,7 @@ export function MapPage({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  if (worldHits[0]) setConfirmWorld(worldHits[0])
+                  if (worldHits[0]) askVisitWorld(worldHits[0])
                   else if (placeHits[0]) pickPlace(placeHits[0])
                 } else if (e.key === 'Escape') setQuery('')
               }}
@@ -435,7 +445,7 @@ export function MapPage({
             {query.trim().length >= 2 && (worldHits.length > 0 || placeHits.length > 0) && (
               <div className={styles.results}>
                 {worldHits.map((w) => (
-                  <button key={w.world_name} type="button" className={styles.result} onClick={() => setConfirmWorld(w)}>
+                  <button key={w.world_name} type="button" className={styles.result} onClick={() => askVisitWorld(w)}>
                     <img className={styles.resultWorldIcon} src={WORLD_ICON} alt="" />
                     <div className={styles.resultBody}>
                       <div className={styles.resultTitle}>{w.title || w.world_name}</div>
@@ -538,15 +548,6 @@ export function MapPage({
         )}
 
         {place && <PlacePanel place={place} onClose={() => setPlace(null)} onJump={() => jumpTo(place)} />}
-
-        {confirmWorld && (
-          <WorldVisitModal
-            worldName={confirmWorld.world_name}
-            title={confirmWorld.title}
-            onCancel={() => setConfirmWorld(null)}
-            onConfirm={() => visitWorld(confirmWorld)}
-          />
-        )}
       </div>
     </MainMenuShell>
   )

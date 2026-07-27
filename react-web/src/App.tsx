@@ -22,7 +22,7 @@ import { GalleryPage } from './features/gallery/GalleryPage'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Pointer } from './features/pointer/Pointer'
 import { openPassport } from './features/profile/Passport'
-import { WorldVisitModal } from './components/WorldVisitModal'
+import { openWorldVisit } from './components/WorldVisitModal'
 import { openPermissionDialog } from './features/permissions/PermissionDialog'
 import { PopupHost } from './design'
 import { SessionProvider } from './features/session/SessionContext'
@@ -174,8 +174,6 @@ function Hud(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the front request changes
   }, [permFrontId])
 
-  // A world (e.g. boedo.dcl.eth) the user asked to jump to — drives the shared confirm modal.
-  const [visitWorld, setVisitWorld] = useState<string | null>(null)
   // Which tab the Backpack opens on. The emote wheel's "Customise [E]" opens it on Emotes; it resets
   // to Wearables once the Backpack closes so a normal (sidebar/topbar) open lands on Wearables.
   const [backpackTab, setBackpackTab] = useState<'wearables' | 'emotes'>('wearables')
@@ -249,7 +247,7 @@ function Hud(): React.JSX.Element {
             hidden={session.friends.open || pageOpen}
             me={session.profile.data}
             onTeleport={(x, y) => session.map.teleport(x, y)}
-            onVisitWorld={(name) => setVisitWorld(name)}
+            onVisitWorld={(name) => openWorldVisit({ worldName: name, onConfirm: () => session.map.changeRealm(name) })}
           />
           <FriendsPanel friends={session.friends} />
           <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
@@ -285,16 +283,6 @@ function Hud(): React.JSX.Element {
             onTeleport={(x, y) => session.map.teleport(x, y)}
             onViewProfile={(u) => openPassport(u.address)}
           />
-          {visitWorld && (
-            <WorldVisitModal
-              worldName={visitWorld}
-              onCancel={() => setVisitWorld(null)}
-              onConfirm={() => {
-                session.map.changeRealm(visitWorld)
-                setVisitWorld(null)
-              }}
-            />
-          )}
         </>
       )}
       {/* Fatal engine error (boot panic / runtime crash) — above everything. */}
