@@ -345,7 +345,9 @@ fn update_booth_camera_activity(
             continue;
         };
         managed.insert(*camera_ent);
-        camera.map_unchanged(|c| &mut c.is_active).set_if_neq(*active);
+        camera
+            .map_unchanged(|c| &mut c.is_active)
+            .set_if_neq(*active);
     }
 }
 
