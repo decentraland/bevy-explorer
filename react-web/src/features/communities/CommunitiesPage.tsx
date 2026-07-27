@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Avatar, Button } from '../../design'
 import { nameColor } from '../../lib/identity'
 import { MainMenuShell } from '../menu/MainMenuShell'
-import { CommunityModal } from './CommunityModal'
+import { openCommunityModal } from './CommunityModal'
 import { CommunityCreateModal } from './CommunityCreateModal'
 import type { Community } from '../../engine/protocol'
 import type { CommunitiesState, ProfileState } from '../session/useEngineSession'
@@ -63,27 +63,29 @@ function CommunityCard({ c, onJoin, onOpen }: { c: Community; onJoin: (id: strin
 export function CommunitiesPage({
   communities,
   profile,
-  onNavigate,
-  onAddFriend,
-  onOpenChat
+  onNavigate
 }: {
   communities: CommunitiesState
   profile: ProfileState
   onNavigate: (page: string) => void
-  onAddFriend: (address: string) => void
-  onOpenChat: () => void
 }): React.JSX.Element | null {
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   // Main area shows the browse grid, or all of "My Communities" (via VIEW ALL).
   const [tab, setTab] = useState<'browse' | 'mine'>('browse')
-  const { loadDetail } = communities
 
-  // Load the per-community detail (members/posts/places/events) when a modal opens.
+  // The community detail modal lives in the HUD-wide popup layer (openCommunityModal), not this page's
+  // own JSX — CommunityModalContainer reads live data itself. Re-opens on a different selection; closes
+  // when the page closes (communities.open → false) or a selection clears, via the effect cleanup.
+  const wantOpen = communities.open ? openId : null
   useEffect(() => {
-    if (openId != null) loadDetail(openId)
-  }, [openId, loadDetail])
+    if (wantOpen == null) return
+    // Only clear if `wantOpen` (captured here) is still the current selection: when switching directly
+    // from one community to another, this same callback fires for the OLD id as its cleanup — by then
+    // `openId` already holds the NEW id, so the identity check keeps it from clobbering the new popup.
+    return openCommunityModal(wantOpen, () => setOpenId((id) => (id === wantOpen ? null : id)))
+  }, [wantOpen])
 
   const matchesQuery = (c: Community): boolean => !query || c.name.toLowerCase().includes(query.toLowerCase())
   const mine = useMemo(() => communities.list.filter((c) => isMember(c.role)), [communities.list])
@@ -94,7 +96,6 @@ export function CommunitiesPage({
 
   if (!communities.open) return null
 
-  const selected = openId ? communities.list.find((c) => c.id === openId) ?? null : null
   const p = profile.data
   return (
     <MainMenuShell
@@ -157,18 +158,6 @@ export function CommunitiesPage({
           )}
         </section>
       </div>
-
-      {selected && (
-        <CommunityModal
-          community={selected}
-          detail={communities.detail != null && communities.detail.id === selected.id ? communities.detail : null}
-          onJoin={communities.join}
-          onLeave={communities.leave}
-          onAddFriend={onAddFriend}
-          onOpenChat={() => { setOpenId(null); onOpenChat() }}
-          onClose={() => setOpenId(null)}
-        />
-      )}
 
       {creating && (
         <CommunityCreateModal

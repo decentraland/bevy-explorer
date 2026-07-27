@@ -265,8 +265,6 @@ function Hud(): React.JSX.Element {
             communities={session.communities}
             profile={session.profile}
             onNavigate={goToMenuPage}
-            onAddFriend={(address) => session.friends.act('request', address)}
-            onOpenChat={() => session.chat.toggle()}
           />
           <MapPage map={session.map} profile={session.profile} onNavigate={goToMenuPage} />
           <PlacesPage
