@@ -39,8 +39,8 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AvatarDynamicState, HeadSync, PointAtSync, PreviewMode, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance, ShowOutOfBounds,
+        AppConfig, AvatarDynamicState, EditorMode, HeadSync, PointAtSync, PreviewMode,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance,
         StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
     util::UtilsPlugin,
@@ -230,9 +230,9 @@ impl DecentralandApp {
         info!("Bevy-Explorer version {}", version);
 
         let boot_server = map_realm_name(decentraland_app_config.boot_server());
-        // Show out-of-bounds geometry in preview + on a loopback realm (editor /
+        // We're an editor when running a preview or a loopback realm (editor /
         // local dev), never on a public realm. Computed before boot_server moves.
-        let show_out_of_bounds =
+        let editor_mode =
             decentraland_app_config.arguments.is_preview || is_loopback_realm(&boot_server);
 
         // Resources
@@ -273,7 +273,7 @@ impl DecentralandApp {
                 is_preview: decentraland_app_config.arguments.is_preview,
                 preview_parcel: None,
             })
-            .insert_resource(ShowOutOfBounds(show_out_of_bounds))
+            .insert_resource(EditorMode(editor_mode))
             .insert_resource(SceneLoadDistance {
                 load: if decentraland_app_config.arguments.is_preview {
                     1.0

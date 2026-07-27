@@ -1324,10 +1324,12 @@ pub struct PreviewMode {
     pub preview_parcel: Option<IVec2>,
 }
 
-/// Render out-of-bounds geometry (dithered) instead of culling it. Set at startup;
-/// read by scene_material's show-outside-bounds observer.
+/// True when the explorer is running as a scene editor (preview or a loopback
+/// realm), false for normal players on public realms. Set once at startup, drives
+/// editor-only behaviors: rendering out-of-bounds geometry (dithered) instead of
+/// culling it, and freezing a scene after main() has run once. Default false.
 #[derive(Debug, Resource, Default)]
-pub struct ShowOutOfBounds(pub bool);
+pub struct EditorMode(pub bool);
 
 // resource into which systems can add debug info
 #[derive(Resource, Default, Debug)]

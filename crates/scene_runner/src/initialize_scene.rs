@@ -18,8 +18,8 @@ use bevy::{
 use common::{
     sets::RealmLifecycle,
     structs::{
-        server_mode, AppConfig, AppError, CurrentRealm, GlobalCrdtStateUpdate, IVec2Arg,
-        PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
+        server_mode, AppConfig, AppError, CurrentRealm, EditorMode, GlobalCrdtStateUpdate,
+        IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
     },
     util::{TaskExt, TryPushChildrenEx},
 };
@@ -637,6 +637,7 @@ pub(crate) fn initialize_scene(
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
     time: Res<Time>,
+    editor_mode: Res<EditorMode>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
@@ -720,6 +721,19 @@ pub(crate) fn initialize_scene(
             handle: SceneThreadHandle { sender: main_sx },
             in_flight: true,
         };
+
+        // In the editor a project scene must not silently run a racy number of
+        // frames before the user hits play. Auto-freeze after main() has run once
+        // (its entities / one-shot setup appear) but before the scene free-runs, so
+        // the initial state is deterministic. refreeze fires when tick_number
+        // reaches the target after a scene update; the first two updates are the
+        // engine handshake (init + onStart/composite instancing, no scene frame),
+        // and the third is the first real scene update that runs main() + one system
+        // pass — so 3 lands on "main ran, one frame". Super scenes (the editor
+        // agent) are exempt — they must keep ticking.
+        if editor_mode.0 && super_user.is_none() {
+            context.refreeze_at_tick = Some(3);
+        }
 
         commands.entity(root).remove::<SceneLoading>();
     }
