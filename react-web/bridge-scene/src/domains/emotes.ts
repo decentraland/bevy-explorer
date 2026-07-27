@@ -11,9 +11,19 @@ import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
 
 const SLOT_COUNT = 10 // the emote wheel has 10 slots
+const BASE_EMOTE_PREFIX = 'urn:decentraland:off-chain:base-emotes:'
 const BASE_EMOTES = ['handsair', 'wave', 'fistpump', 'dance', 'raisehand', 'clap', 'money', 'kiss', 'headexplode', 'shrug'].map(
-  (n) => `urn:decentraland:off-chain:base-emotes:${n}`
+  (n) => `${BASE_EMOTE_PREFIX}${n}`
 )
+
+// getPlayer().emotes stores base emotes by SHORT name ("handsair"), not the full off-chain urn:
+// the engine strips base emotes to their short form when it writes the profile (see the explorer's
+// system_ui/src/profile.rs, and avatar/src/lib.rs which feeds emote_urns back verbatim). The catalog
+// + BASE_EMOTES use the full urn, so expand bare short names or equipped base emotes never match a
+// slot and the wheel renders empty.
+function fullEmoteUrn(urn: string): string {
+  return urn !== '' && !urn.includes(':') ? `${BASE_EMOTE_PREFIX}${urn}` : urn
+}
 
 // Equipped/owned emote urns can carry an NFT token id:
 //   urn:decentraland:matic:collections-v2:<contract>:<itemId>[:<tokenId>]
@@ -24,6 +34,16 @@ function itemUrn(urn: string): string {
   return urn
 }
 const isBase = (urn: string): boolean => BASE_EMOTES.includes(itemUrn(urn))
+
+// The 10 wheel slots to show for a profile: its equipped emotes positionally, or — when the wheel is
+// entirely empty (a fresh profile) — the base emotes in order (slot i = BASE_EMOTES[i]). The bevy
+// runtime doesn't seed the defaults into getPlayer().emotes (bevy-ui-scene hits the same empty array),
+// so the HUD fills them here, mirroring Unity's SelfProfile empty-wheel fill: it's all-or-nothing, so
+// once any slot is equipped the remaining empties stay empty.
+function equippedSlots(emotes: readonly unknown[] | undefined): string[] {
+  const slots = Array.from({ length: SLOT_COUNT }, (_, i) => String((emotes ?? [])[i] ?? ''))
+  return slots.every((u) => u === '') ? [...BASE_EMOTES] : slots
+}
 
 // Title-case a base-emote id ("raisehand" → "Raise Hand"); custom emotes use the catalog name.
 function baseEmoteName(urn: string): string {
@@ -99,7 +119,9 @@ export function registerEmotes(ctx: Ctx): void {
     const me = getPlayer()
     if (me == null) return
     if (!isBase(msg.urn) && tokenUrnByItem.size === 0) await getOwned(await catalystBase(), me.userId).catch(() => [])
-    const slots = Array.from({ length: SLOT_COUNT }, (_, i) => String((me.emotes ?? [])[i] ?? ''))
+    // Seed from the effective slots (base defaults when the wheel is empty) so equipping into a fresh
+    // profile persists the defaults alongside the new one, instead of blanking the other 9 slots.
+    const slots = equippedSlots(me.emotes)
     slots[msg.slot] = equipUrn(msg.urn)
     BevyApi.setAvatar({
       equip: { wearableUrns: (me.wearables ?? []).map(String), emoteUrns: slots, forceRender: [] }
@@ -112,10 +134,11 @@ export function registerEmotes(ctx: Ctx): void {
     const player = getPlayer()
     const base = await catalystBase()
 
-    // equipped array index = wheel slot; map item-urn → slot.
+    // equipped array index = wheel slot; map item-urn → slot (base defaults when the wheel is empty).
+    // Normalize short base-emote names to the full urn so equipped base emotes match a slot.
     const slotByItem = new Map<string, number>()
-    ;(player?.emotes ?? []).map(String).forEach((urn, slot) => {
-      if (urn !== '') slotByItem.set(itemUrn(urn), slot)
+    equippedSlots(player?.emotes).forEach((urn, slot) => {
+      if (urn !== '') slotByItem.set(itemUrn(fullEmoteUrn(urn)), slot)
     })
 
     // base emotes are always available to everyone
