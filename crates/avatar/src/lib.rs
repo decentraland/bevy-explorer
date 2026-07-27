@@ -117,7 +117,7 @@ impl Plugin for AvatarPlugin {
                 spawn_scenes,
                 process_avatar.after(update_render_avatar),
                 set_avatar_visibility,
-                retag_avatars_on_cel_shading_change,
+                retag_avatars_on_style_change,
             ),
         );
 
@@ -498,16 +498,16 @@ pub struct AvatarDefinition {
 #[derive(Component)]
 pub struct RetryRenderAvatar;
 
-// when the cel-shading setting is toggled, re-render every avatar so their
-// meshes are respawned with (or without) the toon mesh tag. the tag is set once
-// at mesh creation in process_avatar, so an in-place flip isn't enough.
-fn retag_avatars_on_cel_shading_change(
+// when an avatar style setting (cel shading, outline) is toggled, re-render every
+// avatar so their meshes are respawned with the right mesh tags. the tags are set
+// once at mesh creation in process_avatar, so an in-place flip isn't enough.
+fn retag_avatars_on_style_change(
     config: Res<AppConfig>,
-    mut prev: Local<Option<bool>>,
+    mut prev: Local<Option<(bool, bool)>>,
     avatars: Query<Entity, With<AvatarSelection>>,
     mut commands: Commands,
 ) {
-    let cur = config.graphics.cel_shading;
+    let cur = (config.graphics.cel_shading, config.graphics.avatar_outline);
     if *prev != Some(cur) {
         if prev.is_some() {
             for entity in &avatars {
@@ -1049,10 +1049,15 @@ fn process_avatar(
             Vec3::new(1.24, 2.42, 0.7) + root_gt.translation(),
         );
 
-        // cel-shade avatar meshes only when the setting is on; toggling it
-        // re-renders avatars (see retag_avatars_on_cel_shading_change)
+        // style avatar meshes per the current settings; toggling either
+        // re-renders avatars (see retag_avatars_on_style_change)
         let toon_tag = if config.graphics.cel_shading {
             SCENE_MATERIAL_TOON_MESH_TAG
+        } else {
+            0
+        };
+        let outline_tag = if config.graphics.avatar_outline {
+            SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
         } else {
             0
         };
@@ -1196,7 +1201,7 @@ fn process_avatar(
                     commands.entity(scene_ent).try_insert((
                         MeshMaterial3d(instance_mat.clone()),
                         MeshTag(
-                            SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
+                            outline_tag
                                 | (if def.disable_dither {
                                     SCENE_MATERIAL_NO_DITHERING_MESH_TAG
                                 } else {
@@ -1265,7 +1270,7 @@ fn process_avatar(
                             commands.entity(scene_ent).try_insert((
                                 MeshMaterial3d(material),
                                 MeshTag(
-                                    SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
+                                    outline_tag
                                         | (if def.disable_dither {
                                             SCENE_MATERIAL_NO_DITHERING_MESH_TAG
                                         } else {
@@ -1488,7 +1493,7 @@ fn process_avatar(
                         commands.entity(scene_ent).try_insert((
                             MeshMaterial3d(instance_mat.clone()),
                             MeshTag(
-                                SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
+                                outline_tag
                                     | (if def.disable_dither {
                                         SCENE_MATERIAL_NO_DITHERING_MESH_TAG
                                     } else {

@@ -592,6 +592,8 @@ pub struct GraphicsSettings {
     pub ambient_brightness: i32,
     /// cel-shade avatars (toon shading) instead of standard PBR
     pub cel_shading: bool,
+    /// draw the dark edge outline around avatars
+    pub avatar_outline: bool,
     pub gpu_bytes_per_frame: usize,
 }
 
@@ -615,6 +617,7 @@ impl Default for GraphicsSettings {
             oob: 2.0,
             ambient_brightness: 50,
             cel_shading: true,
+            avatar_outline: true,
             gpu_bytes_per_frame: 0,
         }
     }
