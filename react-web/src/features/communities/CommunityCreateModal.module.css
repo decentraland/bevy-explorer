@@ -1,16 +1,5 @@
-/* Create-a-Community modal — faithfully matches dcl-react-ui's CommunityCreate. */
-.scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 10001;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--modal-scrim);
-  backdrop-filter: blur(2px);
-  padding: 24px;
-}
-
+/* Create-a-Community modal — faithfully matches dcl-react-ui's CommunityCreate. Just the card: the
+   popup layer (PopupHost .dim/.pop) draws the scrim, DPI-scales it and animates it in. */
 .modal {
   display: flex;
   flex-direction: column;
@@ -22,7 +11,6 @@
   color: #fff;
   background: var(--modal-bg);
   box-shadow: var(--shadow-modal);
-  transform: scale(var(--ui-scale)); /* DPI-match the scaled HUD */
 }
 .title {
   margin: 0 0 24px;
@@ -214,7 +202,6 @@
   box-shadow: var(--shadow-modal);
   padding: 32px 28px;
   text-align: center;
-  transform: scale(var(--ui-scale)); /* DPI-match the scaled HUD */
 }
 .gateArt {
   color: var(--brand);

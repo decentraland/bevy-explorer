@@ -9,7 +9,7 @@ import { Avatar, Button } from '../../design'
 import { nameColor } from '../../lib/identity'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import { openCommunityModal } from './CommunityModal'
-import { CommunityCreateModal } from './CommunityCreateModal'
+import { openCommunityCreateModal } from './CommunityCreateModal'
 import type { Community } from '../../engine/protocol'
 import type { CommunitiesState, ProfileState } from '../session/useEngineSession'
 import styles from './CommunitiesPage.module.css'
@@ -71,7 +71,6 @@ export function CommunitiesPage({
 }): React.JSX.Element | null {
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
   // Main area shows the browse grid, or all of "My Communities" (via VIEW ALL).
   const [tab, setTab] = useState<'browse' | 'mine'>('browse')
 
@@ -119,7 +118,13 @@ export function CommunitiesPage({
 
       <div className={styles.layout}>
         <aside className={styles.side}>
-          <button type="button" className={styles.createBtn} onClick={() => setCreating(true)}>+ CREATE A COMMUNITY</button>
+          <button
+            type="button"
+            className={styles.createBtn}
+            onClick={() => openCommunityCreateModal(!!p && p.hasClaimedName && !p.isGuest, communities.create)}
+          >
+            + CREATE A COMMUNITY
+          </button>
           <div className={styles.sideSection}>
             <span className={styles.sideHead}>Invites &amp; Requests</span>
           </div>
@@ -158,14 +163,6 @@ export function CommunitiesPage({
           )}
         </section>
       </div>
-
-      {creating && (
-        <CommunityCreateModal
-          canCreate={!!p && p.hasClaimedName && !p.isGuest}
-          onCreate={communities.create}
-          onClose={() => setCreating(false)}
-        />
-      )}
     </MainMenuShell>
   )
 }
