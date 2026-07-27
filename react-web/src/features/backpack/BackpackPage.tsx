@@ -41,11 +41,14 @@ export function pageWindow(current: number, count: number): number[] {
   return Array.from({ length: size }, (_, i) => start + i)
 }
 
-// Ordered like Unity's NftCategoryIcons (body parts grouped head→body→accessories).
+// The 18 equipable slot categories, ordered like Unity's Backpack prefab (body parts grouped
+// head→body→accessories). NOT included: 'head' — it exists in the schemas only as a hide/replace
+// TARGET (wearables can `hides: ["head"]`); nothing is published with category "head", so Unity's
+// slot column omits it (its NftCategoryIcons has a glyph for cards, but no AvatarSlot).
 const CATEGORY_ORDER = [
   'body_shape', 'hair', 'eyebrows', 'eyes', 'mouth', 'facial_hair',
   'upper_body', 'hands_wear', 'lower_body', 'feet',
-  'hat', 'eyewear', 'mask', 'head', 'tiara', 'top_head', 'earring', 'helmet', 'skin'
+  'hat', 'eyewear', 'mask', 'tiara', 'top_head', 'earring', 'helmet', 'skin'
 ]
 
 // Categories that must always keep something equipped, so their slot shows no unequip button —

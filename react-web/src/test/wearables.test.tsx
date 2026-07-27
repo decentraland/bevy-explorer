@@ -92,52 +92,47 @@ describe('wearables domain', () => {
     expect(h.session().backpack.equipped.map((w) => w.category)).toEqual(['hat', 'feet', 'lower_body'])
   })
 
-  // Regression: equipping a saved outfit deploys via setAvatar and (like every equip) draws no
-  // wearables re-emit, so the session must rebuild `backpack.equipped` from the outfit itself. Before
-  // the fix it stayed stale and the next single-item equip (equipSetWith) dropped the outfit's other
-  // wearables. (The mock masks this by re-emitting; this test never re-emits.)
-  it('equipping a saved outfit rebuilds the equipped set so a later equip keeps the outfit', async () => {
+  // Regression: equipping a saved outfit deploys via setAvatar, which pushes no wearables update, so
+  // the bridge re-emits the equipped set it resolved from the outfit's wearables BY URN — independent
+  // of the loaded catalog page. Before the fix the session rebuilt the set from `catalog page ∪
+  // equipped`, dropping any outfit item that wasn't on the current page; the next single-item equip
+  // then deployed without it. Here the outfit's boots are OFF the loaded page: they must still land in
+  // the equipped set and survive a later equip. (The mock masks this by re-emitting; the real bridge
+  // now does too.)
+  it('equipping a saved outfit takes the bridge-resolved set, keeping off-page items', async () => {
     const shirt = { ...wearable('urn:shirt'), category: 'upper_body' }
-    const pants = { ...wearable('urn:pants'), category: 'lower_body' }
-    const hat = { ...wearable('urn:hat'), category: 'hat' }
+    // Stale-equipped on the page: the pre-outfit look wears the hat, the outfit doesn't.
+    const hat = { ...wearable('urn:hat', true), category: 'hat' }
 
     const h = renderSession()
     await enterAsGuest(h)
-    // Catalog pool holds every wearable the outfit + later equip resolve against.
+    // Loaded catalog page holds shirt + hat only — the outfit's boots live on another page.
     act(() => h.session().backpack.query({ page: 0, pageSize: 16 }))
     const q = h.driver.last('catalogQuery') as { requestId: number }
-    h.driver.emit({ kind: 'catalogPage', catalog: 'wearables', items: [shirt, pants, hat], total: 3, requestId: q.requestId })
-    // A saved outfit at slot 0 with two wearables.
-    h.driver.emit({
-      kind: 'outfits',
-      metadata: {
-        outfits: [
-          {
-            slot: 0,
-            outfit: {
-              bodyShape: 'urn:body',
-              eyes: { color: { r: 0, g: 0, b: 0 } },
-              hair: { color: { r: 0, g: 0, b: 0 } },
-              skin: { color: { r: 0, g: 0, b: 0 } },
-              wearables: ['urn:shirt', 'urn:pants'],
-              forceRender: []
-            }
-          }
-        ],
-        namesForExtraSlots: []
-      }
-    })
+    h.driver.emit({ kind: 'catalogPage', catalog: 'wearables', items: [shirt, hat], total: 40, requestId: q.requestId })
 
-    // Equip the outfit — deploys via equipOutfit; no wearables re-emit follows.
+    // Equip the outfit — the session only dispatches; it no longer rebuilds the set client-side.
     act(() => h.session().backpack.equipOutfit(0))
     expect(h.driver.last('equipOutfit')).toEqual({ kind: 'equipOutfit', slot: 0 })
-    expect(h.session().backpack.equipped.map((w) => w.urn)).toEqual(['urn:shirt', 'urn:pants'])
+    // The bridge resolves the outfit by urn (incl. the off-page boots) and re-emits the full set.
+    h.driver.emit({ kind: 'wearables', equipped: [
+      { ...wearable('urn:shirt', true), category: 'upper_body' },
+      { ...wearable('urn:boots', true), category: 'feet' }
+    ] })
+    expect(h.session().backpack.equipped.map((w) => w.urn)).toEqual(['urn:shirt', 'urn:boots'])
+    // The emit also reconciles the page's per-item flags — without it the hat card kept its stale
+    // equipped marker (and shadowed the hat slot via page-priority) while the avatar wore no hat.
+    expect(h.session().backpack.list.map((w) => [w.urn, w.equipped])).toEqual([
+      ['urn:shirt', true],
+      ['urn:hat', false]
+    ])
 
-    // Now equip a hat (a new category) — before the fix this deployed just [hat], dropping the outfit.
+    // Now equip a hat (a new category) — before the fix the dropped boots never reached here; the
+    // equipped set is authoritative, so equipSetWith keeps them.
     const equipSetWith = (equipped: Wearable[], w: Wearable): string[] =>
       [...equipped.filter((x) => x.category !== w.category).map((x) => x.urn), w.urn]
     act(() => h.session().backpack.equip(equipSetWith(h.session().backpack.equipped, hat)))
-    expect(h.driver.last('equip')).toEqual({ kind: 'equip', urns: ['urn:shirt', 'urn:pants', 'urn:hat'] })
-    expect(h.session().backpack.equipped.map((w) => w.urn)).toEqual(['urn:shirt', 'urn:pants', 'urn:hat'])
+    expect(h.driver.last('equip')).toEqual({ kind: 'equip', urns: ['urn:shirt', 'urn:boots', 'urn:hat'] })
+    expect(h.session().backpack.equipped.map((w) => w.urn)).toEqual(['urn:shirt', 'urn:boots', 'urn:hat'])
   })
 })
