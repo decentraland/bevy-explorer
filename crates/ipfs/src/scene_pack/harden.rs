@@ -12,7 +12,10 @@ use super::{
 
 #[test]
 fn dribbles_prime_chunks_across_header_boundaries() {
-    let _env = idle_env("5");
+    // completeness across prime chunk boundaries, not idle-abort: the 2ms-per-chunk
+    // server can outlast any finite idle window on a slow runner and abort the
+    // read-less stream mid-payload, so keep the abort timer off here
+    let _env = idle_env("0");
     let (entity, bytes) = stream_fixture();
     let (base, _) = serve_scripted(pack_route(&entity), bytes.clone(), vec![full(7)]);
     let io = Arc::new(test_io());
