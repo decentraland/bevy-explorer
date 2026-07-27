@@ -322,6 +322,8 @@ fn update_booth_image(
 // (snapshots use their own transient cameras, so they are unaffected)
 fn update_booth_camera_activity(
     consumers: Query<(&BoothInstance, &InheritedVisibility, &ComputedNode), With<BoothImage>>,
+    // shares `&mut Camera` with `update_texture_cameras`; the two touch disjoint camera
+    // entities so bevy just orders them (no marker exists to make the access disjoint)
     mut cameras: Query<&mut Camera>,
     mut managed: Local<HashSet<Entity>>,
     mut desired: Local<HashMap<Entity, bool>>,
@@ -339,13 +341,11 @@ fn update_booth_camera_activity(
     }
     managed.clear();
     for (camera_ent, active) in desired.iter() {
-        let Ok(mut camera) = cameras.get_mut(*camera_ent) else {
+        let Ok(camera) = cameras.get_mut(*camera_ent) else {
             continue;
         };
         managed.insert(*camera_ent);
-        if camera.is_active != *active {
-            camera.is_active = *active;
-        }
+        camera.map_unchanged(|c| &mut c.is_active).set_if_neq(*active);
     }
 }
 

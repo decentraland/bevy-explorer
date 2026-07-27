@@ -220,6 +220,8 @@ fn update_texture_cameras(
     )>,
     removed: Query<(Entity, &TextureCamEntity), Without<TextureCamera>>,
     mut images: ResMut<Assets<Image>>,
+    // shares `&mut Camera` with `update_booth_camera_activity`; the two touch disjoint
+    // camera entities so bevy just orders them (no marker exists to make the access disjoint)
     mut cameras: Query<&mut Camera>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
@@ -230,13 +232,14 @@ fn update_texture_cameras(
     mut layer_cache: ResMut<TextureLayersCache>,
     scene_distance: Res<SceneLoadDistance>,
     frame: Res<FrameCount>,
+    mut existing_cams: Local<HashMap<Entity, Vec<(u32, Entity)>>>,
 ) {
     let active_scenes = player
         .single()
         .map(|p| containing_scene.get_area(p, PLAYER_COLLIDER_RADIUS))
         .unwrap_or_default();
 
-    let mut existing_cams: HashMap<Entity, Vec<(u32, Entity)>> = HashMap::new();
+    existing_cams.clear();
 
     // remove cameras when TextureCam is removed
     for (ent, removed) in &removed {
@@ -419,11 +422,11 @@ fn update_texture_cameras(
 
     // set active for current scenes only, limited to the most recently requested
     // cameras per scene
-    for (root, mut cams) in existing_cams {
-        let scene_active = active_scenes.contains(&root);
+    for (root, cams) in existing_cams.iter_mut() {
+        let scene_active = active_scenes.contains(root);
         cams.sort_unstable_by(|a, b| b.cmp(a));
-        for (ix, (_, cam_ent)) in cams.into_iter().enumerate() {
-            let Ok(camera) = cameras.get_mut(cam_ent) else {
+        for (ix, (_, cam_ent)) in cams.iter().enumerate() {
+            let Ok(camera) = cameras.get_mut(*cam_ent) else {
                 warn!("missing camera entity for TextureCamera");
                 continue;
             };

@@ -193,7 +193,6 @@ fn setup(
 
 static TRANSITION_TIME: f32 = 1.0;
 const SKY_UPDATE_INTERVAL: u32 = 8;
-const SKY_JUMP_BURST_FRAMES: u32 = 64;
 const SKY_JUMP_DIRECTION_RADIANS: f32 = 0.02;
 const SKY_JUMP_ILLUMINANCE_FRACTION: f32 = 0.05;
 const SKY_JUMP_ILLUMINANCE_FLOOR: f32 = 100.0;
@@ -217,8 +216,9 @@ fn color_delta(a: Color, b: Color) -> f32 {
 // new state instead of visibly stepping.
 fn sky_needs_update(
     scene_global_light: Res<SceneGlobalLight>,
+    time: Res<Time>,
     mut frames_since_update: Local<u32>,
-    mut burst_frames: Local<u32>,
+    mut burst_secs: Local<f32>,
     mut last_applied: Local<Option<SceneGlobalLight>>,
 ) -> bool {
     let jumped = match last_applied.as_ref() {
@@ -240,13 +240,16 @@ fn sky_needs_update(
         }
     };
 
+    // hold the sky at full update rate for the length of the light transition; time-based
+    // to match the time-based settle so it tracks the transition instead of stepping
     if jumped {
-        *burst_frames = SKY_JUMP_BURST_FRAMES;
+        *burst_secs = TRANSITION_TIME;
     }
+    let bursting = *burst_secs > 0.0;
+    *burst_secs = (*burst_secs - time.delta_secs()).max(0.0);
 
     *frames_since_update += 1;
-    if *burst_frames > 0 || *frames_since_update >= SKY_UPDATE_INTERVAL {
-        *burst_frames = burst_frames.saturating_sub(1);
+    if bursting || *frames_since_update >= SKY_UPDATE_INTERVAL {
         *frames_since_update = 0;
         *last_applied = Some(scene_global_light.clone());
         true
