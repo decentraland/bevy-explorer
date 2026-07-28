@@ -1,12 +1,13 @@
 // World: current parcel + teleport, the live player pose for the minimap, the realm kind,
 // and the mic state.
 //   from: @dcl/sdk getPlayer().position (parcel), Transform of the player/camera entities
-//         (pose), RestrictedActions.teleportTo, BevyApi.getRealmProvider(),
+//         (pose), RestrictedActions.teleportTo, Runtime.getRealm,
 //         BevyApi.getMicState() / setMicEnabled().
 import { Transform, engine } from '@dcl/sdk/ecs'
 import { Quaternion } from '@dcl/sdk/math'
 import { getPlayer } from '@dcl/sdk/players'
 import { teleportTo, changeRealm } from '~system/RestrictedActions'
+import { getRealm } from '~system/Runtime'
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
 
@@ -18,11 +19,15 @@ const POSE_INTERVAL = 0.05
 const POSE_EPSILON_M = 0.05
 const POSE_EPSILON_DEG = 0.5
 
-// A realm is a World (rather than Genesis City) when it's served by a worlds content
-// server or named like `foo.dcl.eth`. Worlds have no map tiles, so the minimap falls back
-// to the engine-rendered Camera style there. Mirrors bevy-ui-scene's realm-change check.
-function realmIsWorld(realm: string): boolean {
-  return realm.includes('worlds-content-server') || /\.eth\/?$/.test(realm)
+// A realm is a World (rather than Genesis City) when it's served by a worlds content server
+// or named like `foo.dcl.eth`. Worlds have no map tiles, so the minimap falls back to the
+// engine-rendered Camera style there and drops its Genesis City markers.
+//
+// The two checks are not redundant — they come from different fields, and either one alone
+// misses cases: a world reached by name (`?realm=welcomeguides.dcl.eth`) need not carry the
+// content server in its base url. Same pair bevy-ui-scene's realm-change check used.
+function realmIsWorld(baseUrl: string, realmName: string): boolean {
+  return baseUrl.includes('worlds-content-server') || realmName.endsWith('.eth')
 }
 
 // Echo a "DCL System" line into the React chat (empty sender → system member). Used to relay
@@ -131,16 +136,20 @@ export function registerWorld(ctx: Ctx): void {
     realmAcc += dt
     if (realmAcc < 2) return
     realmAcc = 0
-    // Read through a local: on a runtime whose SystemApi predates this call the property is
-    // absent, and invoking it would throw every poll. No realm info just means the minimap
-    // never force-switches to the Camera style.
-    const getRealm = BevyApi.getRealmProvider
-    if (getRealm == null) return
-    getRealm()
-      .then((realm) => {
-        if (realm === lastRealm) return
-        lastRealm = realm
-        ctx.send({ kind: 'realmInfo', realm, isWorld: realmIsWorld(realm) })
+    getRealm({})
+      .then(({ realmInfo }) => {
+        const baseUrl = realmInfo?.baseUrl ?? ''
+        const realmName = realmInfo?.realmName ?? ''
+        // Key on both, so a change in either field re-publishes.
+        const key = `${baseUrl}|${realmName}`
+        if (key === lastRealm) return
+        lastRealm = key
+        const isWorld = realmIsWorld(baseUrl, realmName)
+        // Only on change, so this is a handful of lines per session. Worth it: when the
+        // minimap misreads a World the symptom (Genesis City markers on a world map) gives no
+        // hint which of the two fields didn't match.
+        console.log(`[world] realm baseUrl=${baseUrl} name=${realmName} isWorld=${String(isWorld)}`)
+        ctx.send({ kind: 'realmInfo', realm: realmName || baseUrl, isWorld })
       })
       .catch(() => undefined)
   })
