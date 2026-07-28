@@ -9222,6 +9222,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "ui_core",
+ "url",
  "urlencoding",
  "user_input",
  "wallet",
