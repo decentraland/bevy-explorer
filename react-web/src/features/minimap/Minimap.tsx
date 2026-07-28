@@ -101,13 +101,16 @@ export function Minimap({
     }
   }, [minimap.isWorld, markerCategories.length])
 
-  const nearby = useMemo(
-    () =>
-      placesNear(places, parcel.x, parcel.y, MARKER_RADIUS).filter((p) =>
-        p.categories.some((c) => markerCategories.includes(c))
-      ),
-    [places, parcel.x, parcel.y, markerCategories]
-  )
+  const nearby = useMemo(() => {
+    // Guard here as well as on the fetch: places loaded in Genesis City stay in state when you
+    // travel to a World, and a World's coordinates are local — they sit near the origin, which
+    // is exactly where Genesis City has places. Without this you get Genesis markers on a map
+    // they have nothing to do with. Kept in state rather than cleared so coming back doesn't refetch.
+    if (minimap.isWorld) return []
+    return placesNear(places, parcel.x, parcel.y, MARKER_RADIUS).filter((p) =>
+      p.categories.some((c) => markerCategories.includes(c))
+    )
+  }, [minimap.isWorld, places, parcel.x, parcel.y, markerCategories])
 
   useEffect(() => {
     const surface = surfaceRef.current
