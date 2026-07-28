@@ -202,7 +202,7 @@ async function runWithScope(code) {
     "globalThis",
     "module",
     "exports",
-    `${jsPreamble}\n\n${code}`
+    `${jsPreamble}\n\n;(function (globalThis, module, exports) {\n${code}\n}).call(globalThis, globalThis, module, exports);`
   );
 
   await defer(() => func.call(jsProxy, jsProxy, module, module.exports));
