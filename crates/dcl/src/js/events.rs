@@ -8,6 +8,8 @@ use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 use super::State;
 
+const MAX_NETWORK_MESSAGE_QUEUE: usize = 1024;
+
 struct EventReceiver<T: EventType> {
     inner: RpcStreamReceiver<String>,
     _p: PhantomData<fn() -> T>,
@@ -94,9 +96,23 @@ pub fn op_subscribe(state: &mut impl State, id: &str) {
     register!(id, state, PlayerClicked, |sender| {
         RpcCall::SubscribePlayerClicked { sender }
     });
-    register!(id, state, MessageBus, |sender| {
-        RpcCall::SubscribeMessageBus { sender, hash }
-    });
+
+    // MessageBus carries untrusted peer traffic, so bound it rather than use the unbounded event channel.
+    if id == <MessageBus as EventType>::label() {
+        if state.has::<EventReceiver<MessageBus>>() {
+            return;
+        }
+        let (sender, rx) = RpcEventSender::bounded_channel(MAX_NETWORK_MESSAGE_QUEUE);
+        state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::SubscribeMessageBus { sender, hash });
+        state.put(EventReceiver::<MessageBus> {
+            inner: rx,
+            _p: Default::default(),
+        });
+        debug!("subscribed to {}", <MessageBus as EventType>::label());
+        return;
+    }
 
     warn!("subscribe to unrecognised event {id}");
 }
