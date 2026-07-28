@@ -11,6 +11,9 @@ use crate::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounter
 
 use super::State;
 
+const MAX_COMMS_MESSAGE_BYTES: usize = 30_000;
+const MAX_NETWORK_MESSAGE_QUEUE: usize = 1024;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum CommsMessageType {
@@ -28,6 +31,10 @@ struct BinaryBusReceiver(RpcStreamReceiver<(String, Vec<u8>)>);
 
 pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: String) {
     debug!("op_comms_send_string");
+    if message.len() > MAX_COMMS_MESSAGE_BYTES {
+        debug!("op_comms_send_string: dropping oversized message");
+        return;
+    }
     let mut state = state.borrow_mut();
     let scene = state.borrow::<CrdtContext>().scene_id.0;
     let mut data = vec![CommsMessageType::String as u8];
@@ -50,6 +57,10 @@ pub async fn op_comms_send_binary_single(
     recipient: Option<String>,
 ) {
     debug!("op_comms_send_binary_single");
+    if message.as_ref().len() > MAX_COMMS_MESSAGE_BYTES {
+        debug!("op_comms_send_binary_single: dropping oversized message");
+        return;
+    }
     let mut state = state.borrow_mut();
 
     let context = state.borrow::<CrdtContext>();
@@ -84,7 +95,8 @@ pub async fn op_comms_recv_binary(
     let mut results = Vec::default();
 
     if !state.has::<BinaryBusReceiver>() {
-        let (sx, rx) = RpcStreamSender::<(String, Vec<u8>)>::channel();
+        let (sx, rx) =
+            RpcStreamSender::<(String, Vec<u8>)>::bounded_channel(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
             .push(RpcCall::SubscribeBinaryBus { hash, sender: sx });
