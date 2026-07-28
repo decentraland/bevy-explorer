@@ -71,7 +71,7 @@ where
     let (is_server, allow_loopback) = {
         let op_state = state.borrow();
         let ctx = op_state.borrow::<CrdtContext>();
-        (ctx.is_server, ctx.preview)
+        (ctx.is_server, ctx.preview_egress())
     };
     if is_server {
         common::util::assert_public_url(&url, allow_loopback).await?;

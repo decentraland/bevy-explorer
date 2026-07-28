@@ -219,7 +219,7 @@ pub(crate) fn scene_thread(
     scene_origin: bevy::prelude::Vec3,
 ) {
     let scene_id = scene_context.scene_id;
-    let preview = scene_context.preview;
+    let preview = scene_context.preview_egress();
     let (mut runtime, inspector) = create_runtime(inspect, super_user.is_some(), &storage_root);
 
     // store handle
@@ -433,7 +433,10 @@ fn thread_cpu_us() -> u64 {
     {
         use std::sync::OnceLock;
         static START: OnceLock<std::time::Instant> = OnceLock::new();
-        START.get_or_init(std::time::Instant::now).elapsed().as_micros() as u64
+        START
+            .get_or_init(std::time::Instant::now)
+            .elapsed()
+            .as_micros() as u64
     }
 }
 
