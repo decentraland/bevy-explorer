@@ -1,10 +1,29 @@
-// World: current parcel + teleport, and the mic state.
-//   from: @dcl/sdk getPlayer().position (parcel), RestrictedActions.teleportTo,
+// World: current parcel + teleport, the live player pose for the minimap, the realm kind,
+// and the mic state.
+//   from: @dcl/sdk getPlayer().position (parcel), Transform of the player/camera entities
+//         (pose), RestrictedActions.teleportTo, BevyApi.getRealmProvider(),
 //         BevyApi.getMicState() / setMicEnabled().
+import { Transform, engine } from '@dcl/sdk/ecs'
+import { Quaternion } from '@dcl/sdk/math'
 import { getPlayer } from '@dcl/sdk/players'
 import { teleportTo, changeRealm } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
+
+// Pose stream: ~20/s is smooth enough for the minimap once React interpolates between
+// samples, and keeps the bridge far quieter than a per-frame push.
+const POSE_INTERVAL = 0.05
+// Don't re-send while the player stands still: 5 cm and half a degree are both below
+// what a minimap can show.
+const POSE_EPSILON_M = 0.05
+const POSE_EPSILON_DEG = 0.5
+
+// A realm is a World (rather than Genesis City) when it's served by a worlds content
+// server or named like `foo.dcl.eth`. Worlds have no map tiles, so the minimap falls back
+// to the engine-rendered Camera style there. Mirrors bevy-ui-scene's realm-change check.
+function realmIsWorld(realm: string): boolean {
+  return realm.includes('worlds-content-server') || /\.eth\/?$/.test(realm)
+}
 
 // Echo a "DCL System" line into the React chat (empty sender → system member). Used to relay
 // slash-command feedback (/commands output, /reload status) that isn't broadcast to other players.
@@ -74,6 +93,56 @@ export function registerWorld(ctx: Ctx): void {
 
   ctx.on('setMic', (msg) => {
     BevyApi.setMicEnabled(msg.enabled)
+  })
+
+  // Player pose → the minimap (position in metres, avatar and camera yaw in degrees).
+  let poseAcc = 0
+  let lastX = NaN
+  let lastZ = NaN
+  let lastYaw = NaN
+  let lastCamYaw = NaN
+  ctx.push((dt) => {
+    poseAcc += dt
+    if (poseAcc < POSE_INTERVAL) return
+    poseAcc = 0
+    const pos = getPlayer()?.position
+    if (pos == null) return
+    const playerT = Transform.getOrNull(engine.PlayerEntity)
+    const camT = Transform.getOrNull(engine.CameraEntity)
+    const yaw = playerT == null ? 0 : Quaternion.toEulerAngles(playerT.rotation).y
+    const camYaw = camT == null ? 0 : Quaternion.toEulerAngles(camT.rotation).y
+    const still =
+      Math.abs(pos.x - lastX) < POSE_EPSILON_M &&
+      Math.abs(pos.z - lastZ) < POSE_EPSILON_M &&
+      Math.abs(yaw - lastYaw) < POSE_EPSILON_DEG &&
+      Math.abs(camYaw - lastCamYaw) < POSE_EPSILON_DEG
+    if (still) return
+    lastX = pos.x
+    lastZ = pos.z
+    lastYaw = yaw
+    lastCamYaw = camYaw
+    ctx.send({ kind: 'playerPose', x: pos.x, z: pos.z, yaw, camYaw })
+  })
+
+  // Realm kind → the minimap (Worlds have no map tiles). Poll ~2s, push on change.
+  let realmAcc = 2
+  let lastRealm = ''
+  ctx.push((dt) => {
+    realmAcc += dt
+    if (realmAcc < 2) return
+    realmAcc = 0
+    // Read through a local: on a runtime whose SystemApi predates this call the property is
+    // absent, and invoking it would throw every poll. No realm info just means the minimap
+    // never force-switches to the Camera style.
+    const getRealm = BevyApi.getRealmProvider
+    if (getRealm == null) return
+    getRealm()
+      .then((realm) => {
+        if (realm === lastRealm) return
+        lastRealm = realm
+        ctx.send({ kind: 'realmInfo', realm, isWorld: realmIsWorld(realm) })
+      })
+      .catch(() => undefined)
   })
 
   // Mic state → React mic toggle. Poll ~1s, push on change.

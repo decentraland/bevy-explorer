@@ -111,6 +111,7 @@ export type PageToScene =
   | GetMapRequest
   | TeleportRequest
   | ChangeRealmRequest
+  | MinimapConfigRequest
   | PermissionResolveRequest
   | EngineViewportRequest
   | GetGalleryRequest
@@ -382,6 +383,44 @@ export interface MapMessage {
 export interface GetMapRequest {
   kind: 'getMap'
 }
+
+/** The local player's live pose, streamed for the minimap. Position is in world metres
+ *  (not parcels) so the map can scroll smoothly between parcels; both yaws are degrees.
+ *  `yaw` is the avatar's heading (drives the arrow), `camYaw` the camera's (drives
+ *  "rotate with camera"). Throttled and change-guarded by the scene. */
+export interface PlayerPoseMessage {
+  kind: 'playerPose'
+  x: number
+  z: number
+  yaw: number
+  camYaw: number
+}
+
+/** Which realm we're in. `isWorld` distinguishes a World (worlds-content-server, or a
+ *  `.eth` name) from Genesis City: Worlds have no satellite/parcel tiles, so the minimap
+ *  forces the engine-rendered Camera style there. Pushed on change. */
+export interface RealmInfoMessage {
+  kind: 'realmInfo'
+  realm: string
+  isWorld: boolean
+}
+
+/** Minimap style/zoom/rotation (page → scene). The scene only runs the Camera-style
+ *  TextureCamera while `style` is 'imposters'; the DOM styles render in React and the
+ *  camera is disposed. `visibleMeters` maps to the camera's orthographic vertical range. */
+export interface MinimapConfigRequest {
+  kind: 'minimapConfig'
+  style: MinimapStyle
+  rotation: MinimapRotation
+  visibleMeters: number
+}
+
+/** 'parcel' and 'satellite' are rendered in the DOM from map tiles; 'imposters' (labelled
+ *  "Camera" in the UI) is a live top-down render of the world by the engine. */
+export type MinimapStyle = 'parcel' | 'satellite' | 'imposters'
+
+/** 'camera' rotates the map with the camera; 'north' keeps north up. */
+export type MinimapRotation = 'camera' | 'north'
 
 /** Teleport to a parcel (page → scene → teleportTo). */
 export interface TeleportRequest {
@@ -844,6 +883,8 @@ export type SceneToPage =
   | CommunitiesMessage
   | CommunityDetailMessage
   | MapMessage
+  | PlayerPoseMessage
+  | RealmInfoMessage
   | GalleryMessage
   | GalleryPhotoMessage
   | PermissionRequestMessage

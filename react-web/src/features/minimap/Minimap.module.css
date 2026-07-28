@@ -1,0 +1,243 @@
+/* The HUD minimap: header pill + circular map, top-left beside the 46px nav rail.
+
+   Everything that moves is driven by the custom properties --map-scale / --map-tx / --map-ty
+   / --map-yaw / --map-arrow, written once per frame by Minimap.tsx. The values are unitless
+   so calc() can attach px/deg here. The defaults below are what the first paint uses, before
+   the first pose sample arrives. */
+
+.root {
+  position: fixed;
+  top: 8px;
+  left: 54px;
+  z-index: var(--z-hud);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transform: scale(var(--ui-scale)) translateZ(0);
+  transform-origin: top left;
+  /* Layout only — `paint` would clip the settings popover, which deliberately overhangs the
+     map to the right. The translateZ above already gives the map its own compositing layer,
+     which is what keeps its repaints off the engine's frame. */
+  contain: layout;
+}
+
+/* ---- header ---- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  max-width: 220px;
+  padding: 5px 6px 5px 12px;
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coords {
+  flex: none;
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.collapse {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-7);
+  cursor: pointer;
+}
+
+.collapse:hover {
+  background: var(--fill-3);
+  color: var(--text);
+}
+
+/* ---- map surface ---- */
+
+.surface {
+  --map-scale: 1;
+  --map-tx: 0;
+  --map-ty: 0;
+  --map-yaw: 0;
+  --map-arrow: 0;
+
+  position: relative;
+  width: 220px;
+  height: 220px;
+}
+
+.circle {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--white-10);
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  box-shadow: var(--shadow-panel);
+  cursor: pointer;
+}
+
+/* Camera style — the engine renders the map behind the page, so the circle has to let it
+   through. The engine draws its own circular mask, so the corners stay clear of the world. */
+.cutout {
+  background: transparent;
+}
+
+.cutoutFill {
+  position: absolute;
+  inset: 0;
+}
+
+.rotor {
+  position: absolute;
+  inset: 0;
+  transform: rotate(calc(var(--map-yaw) * 1deg));
+  transform-origin: center;
+}
+
+/* A zero-size anchor pinned at the circle's centre. Children are placed in atlas px (see
+   ../map/atlas.ts); translating by the player's atlas position puts the player at the centre,
+   and the scale turns atlas px into screen px for the current zoom. */
+.layer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: scale(var(--map-scale)) translate(calc(var(--map-tx) * 1px), calc(var(--map-ty) * 1px));
+  transform-origin: 0 0;
+}
+
+.tile {
+  position: absolute;
+}
+
+/* A zero-size anchor at the place's parcel centre, inside the map layer so it pans with it. */
+.poi {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* Undo the layer's scale and the rotor's rotation, so the pin stays upright and screen-sized
+   whatever the map is doing, then offset it so its tip sits on the anchor. Order matters: this
+   is the inverse of the parent transforms, applied in reverse. */
+.poiPin {
+  position: absolute;
+  width: 26px;
+  height: 32px;
+  transform: scale(calc(1 / var(--map-scale))) rotate(calc(var(--map-yaw) * -1deg)) translate(-50%, -100%);
+  transform-origin: 0 0;
+}
+
+/* Same inverse transform as the pin, offset below the anchor instead of above it. */
+.poiLabel {
+  position: absolute;
+  overflow: hidden;
+  max-width: 110px;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: var(--scrim);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: scale(calc(1 / var(--map-scale))) rotate(calc(var(--map-yaw) * -1deg)) translate(-50%, 3px);
+  transform-origin: 0 0;
+}
+
+/* ---- overlays ---- */
+
+/* Sits inside the rotor, so it tracks true north as the map turns; the glyph counter-rotates
+   to stay upright. */
+.north {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  border-radius: var(--r-pill);
+  background: var(--scrim);
+}
+
+.northLabel {
+  display: block;
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: 1;
+  transform: rotate(calc(var(--map-yaw) * -1deg));
+}
+
+/* The player, always dead centre, pointing where the avatar faces (relative to the map). */
+.arrow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  transform: rotate(calc(var(--map-arrow) * 1deg));
+}
+
+/* ---- controls ---- */
+
+.zoom {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+}
+
+.roundButton {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--white-10);
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.roundButton:hover:not(:disabled) {
+  background: var(--fill-4);
+}
+
+.roundButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

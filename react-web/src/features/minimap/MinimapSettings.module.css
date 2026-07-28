@@ -1,0 +1,51 @@
+/* Popover for the minimap's gear button, anchored to its right so it never covers the map. */
+
+.menu {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 6px);
+  z-index: 1;
+  min-width: 168px;
+  padding: 8px 0;
+  border: 1px solid var(--white-10);
+  border-radius: var(--r-card);
+  background: var(--panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.section {
+  margin: 0;
+  padding: 6px 12px 2px;
+  color: var(--ink-45);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.option:hover {
+  background: var(--fill-3);
+}
+
+.check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--brand);
+}

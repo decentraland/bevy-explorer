@@ -1,0 +1,152 @@
+// Minimap "Camera" style: a live top-down render of the world, shown through the transparent
+// cutout the React minimap carves out (EngineViewport region='map').
+//
+// The DOM styles (parcel / satellite) are drawn entirely in React from map tiles and never
+// reach this file — React tells us which style is active via `minimapConfig`, and we only hold
+// a camera while it's 'imposters'. That matters: a TextureCamera is a second render pass, so
+// leaving one alive for a map nobody is looking at costs a frame budget for nothing.
+//
+// The circular mask is drawn HERE rather than in React. React is transparent around the map
+// (the world shows through), so if the engine drew a square the corners would spill over the
+// world outside the circle — there is no React pixel to cover them.
+import ReactEcs, { UiEntity } from '@dcl/react-ecs'
+import { CameraLayer, TextureCamera, Transform, engine } from '@dcl/sdk/ecs'
+import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
+import { getPlayer } from '@dcl/sdk/players'
+import type { Entity } from '@dcl/ecs'
+import type { Ctx } from '../bridge'
+import type { MinimapRotation, MinimapStyle } from '../../../src/engine/protocol'
+
+type Rect = { x: number; y: number; width: number; height: number }
+
+// Layer 0 is the real world, so this sees what the player would see looking down — including
+// the engine's baked scene imposters at distance, which is where the style's internal name
+// ('imposters') comes from.
+const LAYER = 0
+const ALTITUDE = 201
+// Not a flat 90°: pointing exactly down leaves the camera's up vector degenerate.
+const PITCH = 89.9
+const RESOLUTION = 512
+
+let rect: Rect | null = null
+let cameraEntity: Entity | null = null
+let style: MinimapStyle = 'satellite'
+let rotation: MinimapRotation = 'north'
+let visibleMeters = 256
+let appliedMeters = 0
+
+/** The Camera style needs both a place to draw and to actually be the selected style. */
+function shouldRender(): boolean {
+  return rect != null && style === 'imposters'
+}
+
+function createCamera(): void {
+  if (cameraEntity != null) return
+  const c = engine.addEntity()
+  CameraLayer.create(c, {
+    layer: LAYER,
+    directionalLight: false,
+    showAvatars: false,
+    showSkybox: false,
+    showFog: false,
+    // Flat, evenly-lit read of the ground; the map is for orientation, not atmosphere.
+    ambientBrightnessOverride: 5,
+    ambientColorOverride: Color4.White()
+  })
+  TextureCamera.create(c, {
+    width: RESOLUTION,
+    height: RESOLUTION,
+    layer: LAYER,
+    clearColor: Color4.create(0, 0, 0, 1),
+    mode: { $case: 'orthographic', orthographic: { verticalRange: visibleMeters } },
+    // Silent: `volume` attaches an audio receiver to the camera, and this one sits 200 m
+    // above the player — anything it picked up would be heard from the wrong place.
+    volume: 0
+  })
+  Transform.create(c, {
+    position: Vector3.create(0, ALTITUDE, 0),
+    rotation: Quaternion.fromEulerDegrees(PITCH, 0, 0)
+  })
+  cameraEntity = c
+  appliedMeters = visibleMeters
+}
+
+function disposeCamera(): void {
+  if (cameraEntity == null) return
+  engine.removeEntity(cameraEntity)
+  cameraEntity = null
+}
+
+/** Keep the camera over the player, turned the way the map is turned, at the current zoom. */
+function sync(): void {
+  if (cameraEntity == null) return
+  const pos = getPlayer()?.position
+  if (pos == null) return
+  const camT = Transform.getOrNull(engine.CameraEntity)
+  const camYaw = camT == null ? 0 : Quaternion.toEulerAngles(camT.rotation).y
+  const yaw = rotation === 'north' ? 0 : camYaw
+  const t = Transform.getMutableOrNull(cameraEntity)
+  if (t != null) {
+    t.position = Vector3.create(pos.x, ALTITUDE, pos.z)
+    t.rotation = Quaternion.fromEulerDegrees(PITCH, yaw, 0)
+  }
+  // Only on change: rebuilding the projection every frame would be pure churn.
+  if (visibleMeters !== appliedMeters) {
+    const cam = TextureCamera.getMutableOrNull(cameraEntity)
+    if (cam != null) {
+      cam.mode = { $case: 'orthographic', orthographic: { verticalRange: visibleMeters } }
+      appliedMeters = visibleMeters
+    }
+  }
+}
+
+export function registerMinimap(ctx: Ctx): void {
+  ctx.on('engineViewport', (msg) => {
+    if (msg.region !== 'map') return
+    rect = msg.rect
+    if (shouldRender()) createCamera()
+    else disposeCamera()
+  })
+
+  ctx.on('minimapConfig', (msg) => {
+    style = msg.style
+    rotation = msg.rotation
+    visibleMeters = msg.visibleMeters
+    if (shouldRender()) createCamera()
+    else disposeCamera()
+  })
+
+  ctx.push(() => {
+    sync()
+  })
+}
+
+export function renderMinimap(): ReactEcs.JSX.Element | null {
+  if (rect == null || cameraEntity == null) return null
+  const r = rect
+  return (
+    // The rounding has to sit on the entity that carries the background, not on the wrapper —
+    // a parent's borderRadius does not clip a child's texture, it only rounds its own fill.
+    // The wrapper contributes `overflow: hidden`. Same split the SDK7 HUD used.
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { left: r.x, top: r.y },
+        width: r.width,
+        height: r.height,
+        overflow: 'hidden'
+      }}
+    >
+      <UiEntity
+        uiTransform={{
+          positionType: 'absolute',
+          position: { top: 0, left: 0 },
+          width: r.width,
+          height: r.height,
+          borderRadius: 9999
+        }}
+        uiBackground={{ videoTexture: { videoPlayerEntity: cameraEntity }, textureMode: 'stretch' }}
+      />
+    </UiEntity>
+  )
+}

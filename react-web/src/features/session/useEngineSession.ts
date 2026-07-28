@@ -24,6 +24,8 @@ import type {
   GalleryPhoto,
   GalleryPhotoMeta,
   HoverAction,
+  MinimapRotation,
+  MinimapStyle,
   NavAction,
   NearbyMember,
   OutfitSlot,
@@ -99,6 +101,29 @@ export interface MapState {
   teleport: (x: number, y: number) => void
   /** Travel to a world/realm by name (e.g. `boedo.dcl.eth`). */
   changeRealm: (realm: string) => void
+}
+
+/** Live player pose for the minimap: position in world metres, yaws in degrees. */
+export interface PlayerPose {
+  x: number
+  z: number
+  /** Avatar heading — drives the map arrow. */
+  yaw: number
+  /** Camera heading — drives the "rotate with camera" mode. */
+  camYaw: number
+}
+
+export interface MinimapState {
+  /** The pose stream, arriving ~20/s. Deliberately a ref rather than state: the minimap
+   *  animates it from a RAF loop, and routing 20 updates/s through React state would
+   *  re-render the whole HUD tree for a transform the DOM can apply directly. */
+  pose: { current: PlayerPose }
+  /** True in a World. Worlds have no satellite/parcel tiles, so the minimap forces the
+   *  engine-rendered Camera style and hides the style picker. */
+  isWorld: boolean
+  /** Relay the current style/rotation/zoom to the scene. Only the Camera style needs the
+   *  engine; on the DOM styles the scene disposes its TextureCamera. */
+  setConfig: (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => void
 }
 
 // Places browses the places API over HTTP (no bridge data) — it only needs open/close.
@@ -297,6 +322,7 @@ export interface EngineSession {
   backpack: BackpackState
   communities: CommunitiesState
   map: MapState
+  minimap: MinimapState
   places: PlacesState
   gallery: GalleryState
   /** Scene permission prompts (e.g. ChangeRealm) awaiting an Allow/Deny. */
@@ -453,6 +479,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [communityDetail, setCommunityDetail] = useState<CommunityDetailMessage | null>(null)
   const [mapParcel, setMapParcel] = useState({ x: 0, y: 0 })
   const [mapOpen, setMapOpen] = useState(false)
+  // Minimap pose: a ref, not state — see MinimapState.pose for why.
+  const poseRef = useRef<PlayerPose>({ x: 0, z: 0, yaw: 0, camYaw: 0 })
+  const [isWorld, setIsWorld] = useState(false)
   const [placesOpen, setPlacesOpen] = useState(false)
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([])
   const [galleryStorage, setGalleryStorage] = useState({ current: 0, max: 0 })
@@ -589,6 +618,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'mapState':
           setMapParcel({ x: msg.x, y: msg.y })
+          break
+        case 'playerPose':
+          // Mutate the ref instead of setState: this arrives ~20/s and the minimap reads
+          // it from a RAF loop, so it must not drive React renders.
+          poseRef.current = { x: msg.x, z: msg.z, yaw: msg.yaw, camYaw: msg.camYaw }
+          break
+        case 'realmInfo':
+          setIsWorld(msg.isWorld)
           break
         case 'gallery':
           setGalleryPhotos([...msg.photos].sort((a, b) => photoTime(b.dateTime) - photoTime(a.dateTime)))
@@ -850,6 +887,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const changeRealm = useCallback((realm: string) => {
     driverRef.current?.send({ kind: 'changeRealm', realm })
   }, [])
+  const setMinimapConfig = useCallback(
+    (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => {
+      driverRef.current?.send({ kind: 'minimapConfig', ...config })
+    },
+    []
+  )
   const resolvePermission = useCallback(
     (id: number, allow: boolean, level: PermissionLevelChoice) => {
       setPermissionQueue((q) => {
@@ -1379,6 +1422,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
     map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
+    minimap: { pose: poseRef, isWorld, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },
     gallery: {
       list: galleryPhotos,

@@ -7,22 +7,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import { CAT_ICONS, CAT_PINS, WORLD_ICON } from './mapArt'
+import { GRID, ORIGIN_X, ORIGIN_Y, PARCELS_PER_TILE, SIZE, SPAN, tileUrl } from './atlas'
 import type { MapState, ProfileState } from '../session/useEngineSession'
 import { openWorldVisit } from '../../components/WorldVisitModal'
 import styles from './MapPage.module.css'
-
-// Genesis City satellite atlas — identical source/geometry to unity-explorer's
-// SatelliteChunkController (and mobile-curation): an 8×8 grid of 40-parcel jpg chunks.
-// File {col}%2C{row}.jpg is the chunk at column `col` (left→right) and row `row` (top→bottom).
-const TILE_BASE_URL = 'https://media.githubusercontent.com/media/genesis-city/parcels/new-client-images/maps/lod-0/3/'
-const GRID = 8 // 8×8 satellite chunks
-const PARCELS_PER_TILE = 40 // one chunk spans 40 parcels
-const SPAN = GRID * PARCELS_PER_TILE // 320 parcels across
-// Unity places the top-left chunk's center at parcel (-133, 132); chunks are 40 wide, so the
-// atlas's top-left corner sits at parcel (-153, 152). x increases right, y increases up.
-const ORIGIN_X = -153 // parcel x at the atlas left edge
-const ORIGIN_Y = 152 // parcel y at the atlas top edge
-const SIZE = 8 // px per parcel in the base (untransformed) atlas
 
 const PLACES_API = 'https://places.decentraland.org/api/places'
 const WORLDS_API = 'https://places.decentraland.org/api/worlds'
@@ -68,7 +56,7 @@ function AtlasTiles({ size }: { size: number }): React.JSX.Element {
       tiles.push(
         <img
           key={`${col},${row}`}
-          src={`${TILE_BASE_URL}${col}%2C${row}.jpg`}
+          src={tileUrl(col, row)}
           alt=""
           draggable={false}
           width={tilePx}
