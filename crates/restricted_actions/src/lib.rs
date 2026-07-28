@@ -1656,6 +1656,7 @@ pub fn handle_eth_async(
     scenes: Query<&RendererSceneContext>,
     wallet: Res<Wallet>,
     time: Res<Time>,
+    is_server: Res<IsServer>,
     mut tasks: Local<
         Vec<(
             RpcResultSender<Result<serde_json::Value, String>>,
@@ -1672,6 +1673,14 @@ pub fn handle_eth_async(
         } => Some((body, scene, response)),
         _ => None,
     }) {
+        // The engine wallet is AUTHORITATIVE_SERVER_KEY on a server; never sign for a scene.
+        if is_server.0 {
+            response.send(Err(
+                "eth signing is not available on the authoritative server".to_owned(),
+            ));
+            continue;
+        }
+
         let last_action_time = scenes
             .get(*scene)
             .ok()
