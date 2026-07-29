@@ -9754,6 +9754,7 @@ dependencies = [
  "console 0.1.0",
  "dcl",
  "dcl_component",
+ "image",
  "ipfs",
  "platform",
  "prost 0.11.9",
