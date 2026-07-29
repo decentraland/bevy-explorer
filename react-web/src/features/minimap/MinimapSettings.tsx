@@ -4,7 +4,6 @@
 // Markers are modelled as the full category list even though the menu only offers three
 // presets, so per-category toggles stay a UI change rather than a data change.
 
-import { useEffect, useRef } from 'react'
 import { Check } from '../../design'
 import { ALL_MARKER_CATEGORIES } from './minimapPrefs'
 import type { MinimapRotation, MinimapStyle } from '../../engine/protocol'
@@ -43,8 +42,7 @@ export function MinimapSettings({
   onStyle,
   hideStyle,
   markers,
-  onMarkers,
-  onClose
+  onMarkers
 }: {
   rotation: MinimapRotation
   onRotation: (r: MinimapRotation) => void
@@ -54,23 +52,11 @@ export function MinimapSettings({
   hideStyle: boolean
   markers: string[]
   onMarkers: (categories: string[]) => void
-  onClose: () => void
 }): React.JSX.Element {
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const onDown = (e: PointerEvent): void => {
-      if (!ref.current?.contains(e.target as Node)) onClose()
-    }
-    // Capture: the map underneath opens the full-screen map on click, so this has to win.
-    document.addEventListener('pointerdown', onDown, true)
-    return () => document.removeEventListener('pointerdown', onDown, true)
-  }, [onClose])
-
   const preset = presetOf(markers)
 
   return (
-    <div className={styles.menu} ref={ref} role="menu" aria-label="Minimap settings">
+    <div className={styles.menu} role="menu" aria-label="Minimap settings">
       <p className={styles.section}>Rotation mode</p>
       {ROTATION_LABELS.map((o) => (
         <Option key={o.value} label={o.label} selected={rotation === o.value} onSelect={() => onRotation(o.value)} />

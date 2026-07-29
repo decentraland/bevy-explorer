@@ -68,6 +68,9 @@ export function Minimap({
   const [parcel, setParcel] = useState({ x: 0, y: 0 })
 
   const surfaceRef = useRef<HTMLDivElement>(null)
+  // Wraps the gear AND its menu: the trigger has to count as "inside", or its own click would
+  // close the menu here and immediately reopen it in the button's onClick.
+  const settingsRef = useRef<HTMLDivElement>(null)
   // The animated zoom, read by the RAF loop. Mirrors `visibleMeters` but updates every frame
   // during the ease, without a render per frame.
   const zoomRef = useRef(visibleMeters)
@@ -191,6 +194,16 @@ export function Minimap({
   const canZoomIn = visibleMeters > MIN_VISIBLE_METERS
   const canZoomOut = visibleMeters < MAX_VISIBLE_METERS
 
+  useEffect(() => {
+    if (!settingsOpen) return
+    const onDown = (e: PointerEvent): void => {
+      if (!settingsRef.current?.contains(e.target as Node)) setSettingsOpen(false)
+    }
+    // Capture: the map underneath opens the full-screen map on click, so this has to win.
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [settingsOpen])
+
   // Every preference persists the moment it changes — the menu has no confirm step.
   const pickStyle = useCallback((s: MinimapStyle) => {
     setStyle(s)
@@ -292,7 +305,7 @@ export function Minimap({
             </button>
           </div>
 
-          <div className={styles.settings} onClick={swallow}>
+          <div className={styles.settings} onClick={swallow} ref={settingsRef}>
             <button
               type="button"
               className={styles.roundButton}
@@ -311,7 +324,6 @@ export function Minimap({
                 hideStyle={minimap.isWorld}
                 markers={markerCategories}
                 onMarkers={pickMarkers}
-                onClose={() => setSettingsOpen(false)}
               />
             )}
           </div>
