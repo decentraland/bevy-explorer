@@ -416,6 +416,29 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     because both its triggers (Map world search, a chat message with a `*.dcl.eth` link) need the
     places-API fetch stubbed to be deterministic in mock mode. Add a mock/stub for that fetch and a
     `world visit modal` test case when convenient.
+41. `[bug]` **Tier-2 e2e `profile: the passport is relayed to the page` asserts the opposite of the
+    shipped behaviour — has never passed** — *test-only, no product impact*. `e2e/engine.spec.ts`
+    clicks the Profile sidebar icon and expects `aria-pressed="true"`, but that attribute tracks
+    `session.profile.open`, and `Sidebar.tsx` wires the icon to `onClick={onViewProfile ?? session.profile.toggle}`
+    — `App.tsx` always passes `onViewProfile`, so the click opens the **passport** and `profile.toggle`
+    is never called. The tier-1 test `src/test/clicks.test.tsx` ("Profile opens the passport … not the
+    small panel") asserts exactly that and passes. Both files, plus the `onViewProfile` wiring, landed
+    together in #901 — verified by checking out `6abf0ba7` with its own `package-lock.json`: the tier-1
+    test passed there too, so the e2e assertion has been impossible to satisfy since day one. It went
+    unnoticed because Playwright never runs in CI (see item 42). Fix: assert the passport opened
+    instead — but `ProfilePassport.tsx` exposes no stable handle (no `role="dialog"`, no `data-testid`,
+    only a generic `aria-label="Close"`), so give it an accessible role/name first, the way the profile
+    *card* already has (`getByRole('dialog', { name: 'Profile' })` in `visual.spec.ts`).
+42. `[bug]` **Tier-2 e2e `backpack: equipping a wearable bumps the profile version` depends on a live
+    catalyst deploy** — *test-only, flaky by construction*. The click reaches the bridge (the
+    `scene:equip` assertion passes); what times out is `expect.poll(profileVersion).toBeGreaterThan(before)`
+    after 60s, which needs a **real profile deploy round-trip to the catalyst on a guest account**.
+    Verified failing identically on consecutive runs of `fix/ui/08-minimap`, and no branch in the
+    06→08 stack touches backpack/wearables/avatar code. Fix: assert the observable bridge round-trip
+    (`setAvatar` → confirmation) instead of the deployed version, or move it behind an explicit
+    network-dependent tag. Related: nothing gates these tests — CI runs vitest only, so `test:e2e` and
+    `test:visual` rot silently (visual baselines are macOS-only `*-chromium-darwin.png`). Both tiers
+    disagreeing should be treated as "the untested tier is wrong" until proven otherwise.
 
 ## Not gaps (already good / ahead)
 
