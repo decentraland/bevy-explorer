@@ -169,11 +169,21 @@ pub fn create_runtime(
     // termination itself instead of hard-aborting the whole sidecar process.
     {
         let terminate_handle = runtime.v8_isolate().thread_safe_handle();
+        let granted = std::sync::atomic::AtomicBool::new(false);
         runtime.add_near_heap_limit_callback(move |current, _initial| {
-            bevy::prelude::error!("scene exceeded its {MAX_SCENE_HEAP_BYTES}-byte heap cap; terminating the scene isolate");
+            let first_trip = !granted.swap(true, std::sync::atomic::Ordering::SeqCst);
+            if first_trip {
+                bevy::prelude::error!("scene exceeded its {MAX_SCENE_HEAP_BYTES}-byte heap cap; terminating the scene isolate");
+            }
             terminate_handle.terminate_execution();
-            // grant a temporary margin so the unwind can complete
-            current + 8 * 1024 * 1024
+            if first_trip {
+                // one-time margin so the termination unwind can run rather than hard-aborting
+                current + 8 * 1024 * 1024
+            } else {
+                // kill already latched: stop re-granting, so a scene that keeps allocating
+                // through termination can't ratchet the cap upward on every callback
+                current
+            }
         });
     }
 
@@ -433,7 +443,10 @@ fn thread_cpu_us() -> u64 {
     {
         use std::sync::OnceLock;
         static START: OnceLock<std::time::Instant> = OnceLock::new();
-        START.get_or_init(std::time::Instant::now).elapsed().as_micros() as u64
+        START
+            .get_or_init(std::time::Instant::now)
+            .elapsed()
+            .as_micros() as u64
     }
 }
 
