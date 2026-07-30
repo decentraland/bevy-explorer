@@ -439,6 +439,28 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     network-dependent tag. Related: nothing gates these tests — CI runs vitest only, so `test:e2e` and
     `test:visual` rot silently (visual baselines are macOS-only `*-chromium-darwin.png`). Both tiers
     disagreeing should be treated as "the untested tier is wrong" until proven otherwise.
+41. `[bug]` **Tier-1.5 `maxDiffPixelRatio: 0.01` is loose enough to hide a whole new HUD widget** —
+    *the safety net is nearly blind*. 1% of 1600×900 is **14,400 px**, and the HUD is mostly dark
+    chrome, so anything thin (outline circles, small text, grey-on-black bubbles) falls under the
+    per-pixel colour threshold too. Measured on `fix/ui/08-minimap`: the entire minimap plus six chat
+    messages moved **6,433 px** in `world-hud.png` and the suite passed — it had been green against a
+    baseline generated on 2026-07-03 that contains neither. Re-measuring every surface at
+    `maxDiffPixelRatio: 0` showed the drift was universal, not just the minimap: engine-error 11,537 px
+    (07's scrim rewrite), world-hud 6,437, login-welcome 1,003, login-fresh 836, the panels/tooltips
+    ~240–650 each; only the gates, showcase, backpack-wearables and communities were byte-identical.
+    Baselines were regenerated in that branch, and 19/20 then passed at **zero** tolerance — so the
+    render is deterministic and the old numbers were real drift, not antialiasing noise. That also
+    means the tolerance can be tightened hard (~0.001, i.e. ~1.4k px) without flakiness; it exists
+    for AA jitter that measurably isn't there. Do it together with item 42, the one genuinely
+    unstable test.
+42. `[bug]` **`visual.spec.ts` "profile card" never settles** — *flaky, and it hides real drift*. It
+    fails against its own freshly-generated baseline at zero tolerance, with the diff *growing* across
+    retries (183 → 208 → 270 → 407 → 567 px), and takes ~23 s against ~4 s for every other case.
+    Something in the card is still animating or loading past `settle()` (which only awaits
+    `document.fonts.ready`, fast-forwards the clock 15 s, and waits 200 ms) — most likely the avatar
+    image or an entrance transition that `animations: 'disabled'` doesn't cover. It passes at the
+    current 1% tolerance, so it reads as green while measuring nothing. Fix before tightening the
+    ratio (item 41), or that test starts failing for the wrong reason.
 
 ## Not gaps (already good / ahead)
 
