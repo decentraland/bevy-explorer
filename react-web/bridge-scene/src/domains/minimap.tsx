@@ -27,6 +27,11 @@ const ALTITUDE = 201
 // Not a flat 90°: pointing exactly down leaves the camera's up vector degenerate.
 const PITCH = 89.9
 const RESOLUTION = 512
+// Below these the camera would move less than the map can show, and writing the Transform is
+// not free: it dirties the component, so every frame would serialise a CRDT update to the
+// engine. Same thresholds the pose stream uses in `world.ts`.
+const MOVE_EPSILON_M = 0.05
+const MOVE_EPSILON_DEG = 0.5
 
 let rect: Rect | null = null
 let cameraEntity: Entity | null = null
@@ -34,6 +39,11 @@ let style: MinimapStyle = 'satellite'
 let rotation: MinimapRotation = 'north'
 let visibleMeters = 256
 let appliedMeters = 0
+// Last values written to the camera Transform. NaN until the first sync after a (re)create, so
+// the comparison below always fails once and the camera is placed before it is ever shown.
+let lastX = NaN
+let lastZ = NaN
+let lastYaw = NaN
 
 /** The Camera style needs both a place to draw and to actually be the selected style. */
 function shouldRender(): boolean {
@@ -69,6 +79,9 @@ function createCamera(): void {
   })
   cameraEntity = c
   appliedMeters = visibleMeters
+  lastX = NaN
+  lastZ = NaN
+  lastYaw = NaN
 }
 
 function disposeCamera(): void {
@@ -84,11 +97,24 @@ function sync(): void {
   if (pos == null) return
   const camT = Transform.getOrNull(engine.CameraEntity)
   const camYaw = camT == null ? 0 : Quaternion.toEulerAngles(camT.rotation).y
+  // In `north` the map never turns, so a camera spin is not a reason to touch the Transform.
   const yaw = rotation === 'north' ? 0 : camYaw
-  const t = Transform.getMutableOrNull(cameraEntity)
-  if (t != null) {
-    t.position = Vector3.create(pos.x, ALTITUDE, pos.z)
-    t.rotation = Quaternion.fromEulerDegrees(PITCH, yaw, 0)
+  // Written as "still" rather than "moved" for the NaN seeding to work: every comparison against
+  // NaN is false, so `still` is false on the first sync after a (re)create and the camera gets
+  // placed. The inverse (an OR of `>=`) would collapse to false and never move it at all.
+  const still =
+    Math.abs(pos.x - lastX) < MOVE_EPSILON_M &&
+    Math.abs(pos.z - lastZ) < MOVE_EPSILON_M &&
+    Math.abs(yaw - lastYaw) < MOVE_EPSILON_DEG
+  if (!still) {
+    const t = Transform.getMutableOrNull(cameraEntity)
+    if (t != null) {
+      t.position = Vector3.create(pos.x, ALTITUDE, pos.z)
+      t.rotation = Quaternion.fromEulerDegrees(PITCH, yaw, 0)
+      lastX = pos.x
+      lastZ = pos.z
+      lastYaw = yaw
+    }
   }
   // Only on change: rebuilding the projection every frame would be pure churn.
   if (visibleMeters !== appliedMeters) {
