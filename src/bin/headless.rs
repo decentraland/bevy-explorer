@@ -102,6 +102,10 @@ fn parse_args() -> Args {
     let orchestrated = args.contains("--orchestrated");
     // orchestrated mode is always a server
     let server_mode = args.contains("--server-mode") || orchestrated;
+    // latch the process-global mirror of IsServer so ECS-less code (ipfs) sees server role
+    if server_mode {
+        common::structs::set_server_mode();
+    }
     let timeout: Option<f32> = args.value_from_str("--timeout").ok();
     let scene_threads: usize = args
         .value_from_str("--scene-threads")
@@ -431,7 +435,11 @@ fn main() {
             )
             .add_systems(
                 PostUpdate,
-                (emit_scene_status, emit_scene_stats, emit_failed_scene_status),
+                (
+                    emit_scene_status,
+                    emit_scene_stats,
+                    emit_failed_scene_status,
+                ),
             );
         ctl_emit(&serde_json::json!({"type": "starting", "realm": args.realm}));
     }

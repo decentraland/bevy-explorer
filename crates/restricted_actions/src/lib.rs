@@ -2048,16 +2048,16 @@ fn handle_sign_request(
     })
 }
 
-/// True when a readFile target is shaped like `<scheme>://…` — the form
-/// `IpfsType::url_target` treats as a directly-fetchable URL rather than a scene
+/// True when a readFile target parses as an absolute URL of ANY scheme — the form
+/// `IpfsType::url_target` can treat as a directly-fetchable URL rather than a scene
 /// content file. Used to block that fallthrough on the authoritative server.
+///
+/// `Url::parse` succeeds only for absolute URLs (a relative content path yields
+/// `RelativeUrlWithoutBase`), and it applies WHATWG normalisation, so it catches shapes a
+/// raw `://` scan missed: leading whitespace (` http://169.254.169.254`) and the slash-less
+/// `http:169.254.169.254` (normalised to `http://169.254.169.254/`).
 fn filename_looks_like_url(filename: &str) -> bool {
-    match filename.find("://") {
-        Some(idx) if idx > 0 => filename[..idx]
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.')),
-        _ => false,
-    }
+    url::Url::parse(filename.trim()).is_ok()
 }
 
 #[allow(clippy::type_complexity)]
@@ -2241,5 +2241,50 @@ pub fn process_startup_scenes(
 
     if tasks.is_empty() {
         *done = true;
+    }
+}
+
+#[cfg(test)]
+mod readfile_url_guard_tests {
+    use super::filename_looks_like_url;
+
+    #[test]
+    fn absolute_urls_of_any_scheme_are_url_shaped() {
+        for s in [
+            "http://169.254.169.254/latest/meta-data/",
+            "https://evil.example/x",
+            "ws://127.0.0.1:9000",
+            "file:///etc/passwd",
+            "ipfs+http://host/x",
+        ] {
+            assert!(
+                filename_looks_like_url(s),
+                "{s} must be refused on a server"
+            );
+        }
+    }
+
+    #[test]
+    fn the_shapes_a_substring_scan_missed_are_caught() {
+        assert!(filename_looks_like_url(" http://169.254.169.254"));
+        assert!(filename_looks_like_url("http:169.254.169.254"));
+        assert!(filename_looks_like_url("\thttps://evil.example\n"));
+    }
+
+    #[test]
+    fn ordinary_scene_content_paths_are_not_url_shaped() {
+        for s in [
+            "models/scene.glb",
+            "a/b://c",
+            "://nohost",
+            "plain.txt",
+            "./nested/thing.json",
+            "",
+        ] {
+            assert!(
+                !filename_looks_like_url(s),
+                "{s} is scene content and must still be readable"
+            );
+        }
     }
 }
