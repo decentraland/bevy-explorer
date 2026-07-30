@@ -88,31 +88,103 @@ struct Args {
     storage_delegation: Option<String>,
 }
 
+const USAGE: &str = "\
+decentra-bevy headless — run scenes with no window
+
+USAGE: headless [OPTIONS]
+
+  --realm <URL>               realm to connect to [default: http://localhost:8000]
+  --location <X,Y>            parcel to stand in [default: 0,0]
+  --preview                   preview mode
+  --server-mode               act as the authoritative scene server
+  --orchestrated              take scenes from the control protocol on stdin; implies
+                              --server-mode and defaults --scene-threads to 16
+  --timeout <SECONDS>         exit after this long
+  --scene-threads <N>         scene worker slots [default: 4, or 16 orchestrated]
+  --tick-hz <N>               scene tick rate [default: 30]
+  --storage-delegation <B64>  world-storage delegation; also read from
+                              PROCESS_STORAGE_DELEGATION
+  -h, --help                  print this and exit
+";
+
+enum ArgOutcome {
+    Parsed(Box<Args>),
+    Usage,
+    Rejected(String),
+}
+
+fn optional<T: std::str::FromStr>(
+    args: &mut pico_args::Arguments,
+    key: &'static str,
+) -> Result<Option<T>, String>
+where
+    T::Err: std::fmt::Display,
+{
+    args.opt_value_from_str(key)
+        .map_err(|e| format!("{key}: {e}"))
+}
+
 fn parse_args() -> Args {
-    let mut args = pico_args::Arguments::from_env();
-    let realm: String = args
-        .value_from_str("--realm")
-        .unwrap_or_else(|_| "http://localhost:8000".to_owned());
-    let location = args
-        .value_from_str::<_, common::structs::IVec2Arg>("--location")
-        .ok()
-        .map(|va| va.0)
+    match parse_args_from(std::env::args_os().skip(1).collect()) {
+        ArgOutcome::Parsed(args) => *args,
+        ArgOutcome::Usage => {
+            print!("{USAGE}");
+            std::process::exit(0)
+        }
+        ArgOutcome::Rejected(message) => {
+            eprintln!("headless: {message}\n\n{USAGE}");
+            std::process::exit(2)
+        }
+    }
+}
+
+fn parse_args_from(argv: Vec<std::ffi::OsString>) -> ArgOutcome {
+    macro_rules! opt {
+        ($args:expr, $key:literal) => {
+            match optional($args, $key) {
+                Ok(v) => v,
+                Err(e) => return ArgOutcome::Rejected(e),
+            }
+        };
+    }
+
+    let mut args = pico_args::Arguments::from_vec(argv);
+    if args.contains(["-h", "--help"]) {
+        return ArgOutcome::Usage;
+    }
+    let realm: String =
+        opt!(&mut args, "--realm").unwrap_or_else(|| "http://localhost:8000".to_owned());
+    let location = opt!(&mut args, "--location")
+        .map(|va: common::structs::IVec2Arg| va.0)
         .unwrap_or(IVec2::ZERO);
     let preview = args.contains("--preview");
     let orchestrated = args.contains("--orchestrated");
     // orchestrated mode is always a server
     let server_mode = args.contains("--server-mode") || orchestrated;
-    let timeout: Option<f32> = args.value_from_str("--timeout").ok();
-    let scene_threads: usize = args
-        .value_from_str("--scene-threads")
-        .unwrap_or(if orchestrated { 16 } else { 4 });
-    let tick_hz: u32 = args.value_from_str("--tick-hz").unwrap_or(30);
+    let timeout: Option<f32> = opt!(&mut args, "--timeout");
+    let scene_threads: usize =
+        opt!(&mut args, "--scene-threads").unwrap_or(if orchestrated { 16 } else { 4 });
+    let tick_hz: u32 = opt!(&mut args, "--tick-hz").unwrap_or(30);
     // mirror hammurabi's worker env contract (PROCESS_STORAGE_DELEGATION)
-    let storage_delegation: Option<String> = args
-        .value_from_str("--storage-delegation")
-        .ok()
+    let storage_delegation: Option<String> = opt!(&mut args, "--storage-delegation")
         .or_else(|| std::env::var("PROCESS_STORAGE_DELEGATION").ok());
-    Args {
+
+    let leftover = args.finish();
+    if !leftover.is_empty() {
+        let names: Vec<String> = leftover
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        return ArgOutcome::Rejected(format!("unrecognised argument(s): {}", names.join(" ")));
+    }
+    if scene_threads == 0 {
+        return ArgOutcome::Rejected("--scene-threads must be at least 1".into());
+    }
+    if tick_hz == 0 {
+        return ArgOutcome::Rejected("--tick-hz must be at least 1".into());
+    }
+
+    ArgOutcome::Parsed(Box::new(Args {
         realm,
         location,
         preview,
@@ -122,7 +194,7 @@ fn parse_args() -> Args {
         scene_threads,
         tick_hz,
         storage_delegation,
-    }
+    }))
 }
 
 // ---------------- orchestrator control protocol ----------------
@@ -1170,6 +1242,137 @@ fn emit_failed_scene_status(
         if reported.insert(entity) {
             error!("[headless] scene {hash} failed to load");
             ctl_emit(&serde_json::json!({"type": "scene-broken", "scene": hash}));
+        }
+    }
+}
+
+#[cfg(test)]
+mod arg_tests {
+    use super::*;
+
+    fn parse(argv: &[&str]) -> ArgOutcome {
+        parse_args_from(argv.iter().map(std::ffi::OsString::from).collect())
+    }
+
+    fn parsed(argv: &[&str]) -> Args {
+        match parse(argv) {
+            ArgOutcome::Parsed(a) => *a,
+            ArgOutcome::Usage => panic!("expected parse, got usage"),
+            ArgOutcome::Rejected(e) => panic!("expected parse, got rejection: {e}"),
+        }
+    }
+
+    fn rejection(argv: &[&str]) -> String {
+        match parse(argv) {
+            ArgOutcome::Rejected(e) => e,
+            ArgOutcome::Usage => panic!("expected rejection, got usage"),
+            ArgOutcome::Parsed(_) => panic!("expected rejection, got a parse: {argv:?}"),
+        }
+    }
+
+    #[test]
+    fn defaults_hold_when_nothing_is_given() {
+        let a = parsed(&[]);
+        assert_eq!(a.realm, "http://localhost:8000");
+        assert_eq!(a.tick_hz, 30);
+        assert_eq!(a.scene_threads, 4);
+        assert!(!a.server_mode);
+    }
+
+    #[test]
+    fn a_misspelled_mode_flag_is_refused_not_ignored() {
+        let e = rejection(&["--server-mod"]);
+        assert!(
+            e.contains("--server-mod"),
+            "the rejection must name the flag, got: {e}"
+        );
+        assert!(
+            !parsed(&[]).server_mode,
+            "sanity: the typo previously produced exactly this, a silent client"
+        );
+    }
+
+    #[test]
+    fn a_malformed_value_is_refused_not_defaulted() {
+        for (argv, key) in [
+            (vec!["--tick-hz", "abc"], "--tick-hz"),
+            (vec!["--scene-threads", "many"], "--scene-threads"),
+            (vec!["--timeout", "soon"], "--timeout"),
+            (vec!["--location", "over-there"], "--location"),
+        ] {
+            let e = rejection(&argv);
+            assert!(e.contains(key), "rejection must name {key}, got: {e}");
+            assert!(
+                e.contains("failed to parse"),
+                "{key} must be refused for being unparseable, not swept up by the leftover \
+                 check, which would still reject but report the wrong reason and would not \
+                 notice if the parse error were swallowed: {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn zero_is_refused_for_counts_that_cannot_be_zero() {
+        assert!(rejection(&["--tick-hz", "0"]).contains("--tick-hz"));
+        assert!(rejection(&["--scene-threads", "0"]).contains("--scene-threads"));
+    }
+
+    #[test]
+    fn help_prints_usage_and_starts_nothing() {
+        assert!(matches!(parse(&["--help"]), ArgOutcome::Usage));
+        assert!(matches!(parse(&["-h"]), ArgOutcome::Usage));
+    }
+
+    #[test]
+    fn orchestrated_implies_server_and_raises_threads() {
+        let a = parsed(&["--orchestrated"]);
+        assert!(a.server_mode);
+        assert_eq!(a.scene_threads, 16);
+    }
+
+    #[test]
+    fn every_documented_flag_is_accepted() {
+        let a = parsed(&[
+            "--realm",
+            "http://example.invalid",
+            "--location",
+            "5,-9",
+            "--preview",
+            "--server-mode",
+            "--timeout",
+            "1.5",
+            "--scene-threads",
+            "3",
+            "--tick-hz",
+            "60",
+            "--storage-delegation",
+            "b64",
+        ]);
+        assert_eq!(a.realm, "http://example.invalid");
+        assert_eq!(a.location, IVec2::new(5, -9));
+        assert!(a.preview && a.server_mode);
+        assert_eq!(a.timeout, Some(1.5));
+        assert_eq!(a.scene_threads, 3);
+        assert_eq!(a.tick_hz, 60);
+        assert_eq!(a.storage_delegation.as_deref(), Some("b64"));
+
+        for flag in [
+            "--realm",
+            "--location",
+            "--preview",
+            "--server-mode",
+            "--orchestrated",
+            "--timeout",
+            "--scene-threads",
+            "--tick-hz",
+            "--storage-delegation",
+            "-h",
+            "--help",
+        ] {
+            assert!(
+                USAGE.contains(flag),
+                "{flag} is accepted but missing from --help"
+            );
         }
     }
 }
