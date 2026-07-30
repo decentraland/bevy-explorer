@@ -338,7 +338,11 @@ export interface EngineSession {
   /** Trigger a sidebar nav action in the scene (open menu/popup, emotes, mic). */
   nav: (action: NavAction) => void
   /** Report (or clear) the screen rect where the scene should render an engine view. */
-  setEngineViewport: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
+  setEngineViewport: (
+    region: 'map' | 'avatarPreview',
+    rect: { x: number; y: number; width: number; height: number } | null,
+    dpr?: number
+  ) => void
   /** Sign out → back to the login screen. */
   logout: () => void
   /** A full scene menu page is open → the React HUD (sidebar + chat) hides. */
@@ -1207,8 +1211,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [closeAllPanels])
 
   const setEngineViewport = useCallback(
-    (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => {
-      driverRef.current?.send({ kind: 'engineViewport', region, rect })
+    (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null, dpr?: number) => {
+      driverRef.current?.send({ kind: 'engineViewport', region, rect, dpr })
     },
     []
   )

@@ -26,7 +26,13 @@ const LAYER = 0
 const ALTITUDE = 201
 // Not a flat 90°: pointing exactly down leaves the camera's up vector degenerate.
 const PITCH = 89.9
-const RESOLUTION = 512
+// The render target is sized from the hole the page actually carved out, in PHYSICAL pixels
+// (CSS px × dpr), instead of a fixed square: a 220 px minimap on a non-retina display was
+// rendering 512² for 220² of visible pixels, i.e. ~5× the fill for no visible gain. Capped so a
+// very high dpr or a future bigger minimap can't ask for an unreasonable target, and floored so
+// it never degrades into mush.
+const MIN_RESOLUTION = 128
+const MAX_RESOLUTION = 512
 // Below these the camera would move less than the map can show, and writing the Transform is
 // not free: it dirties the component, so every frame would serialise a CRDT update to the
 // engine. Same thresholds the pose stream uses in `world.ts`.
@@ -34,11 +40,21 @@ const MOVE_EPSILON_M = 0.05
 const MOVE_EPSILON_DEG = 0.5
 
 let rect: Rect | null = null
+let dpr = 1
 let cameraEntity: Entity | null = null
 let style: MinimapStyle = 'satellite'
 let rotation: MinimapRotation = 'north'
 let visibleMeters = 256
 let appliedMeters = 0
+let appliedResolution = 0
+
+/** The square render target for the current rect: physical pixels, clamped. The map is a
+ *  circle inside a square hole, so the larger side is what has to be covered. */
+function targetResolution(): number {
+  if (rect == null) return MIN_RESOLUTION
+  const px = Math.max(rect.width, rect.height) * dpr
+  return Math.round(Math.min(MAX_RESOLUTION, Math.max(MIN_RESOLUTION, px)))
+}
 // Last values written to the camera Transform. NaN until the first sync after a (re)create, so
 // the comparison below always fails once and the camera is placed before it is ever shown.
 let lastX = NaN
@@ -63,9 +79,10 @@ function createCamera(): void {
     ambientBrightnessOverride: 5,
     ambientColorOverride: Color4.White()
   })
+  const resolution = targetResolution()
   TextureCamera.create(c, {
-    width: RESOLUTION,
-    height: RESOLUTION,
+    width: resolution,
+    height: resolution,
     layer: LAYER,
     clearColor: Color4.create(0, 0, 0, 1),
     mode: { $case: 'orthographic', orthographic: { verticalRange: visibleMeters } },
@@ -79,6 +96,7 @@ function createCamera(): void {
   })
   cameraEntity = c
   appliedMeters = visibleMeters
+  appliedResolution = resolution
   lastX = NaN
   lastZ = NaN
   lastYaw = NaN
@@ -116,12 +134,19 @@ function sync(): void {
       lastYaw = yaw
     }
   }
-  // Only on change: rebuilding the projection every frame would be pure churn.
-  if (visibleMeters !== appliedMeters) {
+  // Only on change: rebuilding the projection or the render target every frame would be pure
+  // churn. The resolution follows the hole's size and the display density, both of which can
+  // change under a live camera (collapse/expand keeps the entity, dragging to another monitor
+  // changes dpr), so it is re-applied here rather than only at creation.
+  const resolution = targetResolution()
+  if (visibleMeters !== appliedMeters || resolution !== appliedResolution) {
     const cam = TextureCamera.getMutableOrNull(cameraEntity)
     if (cam != null) {
       cam.mode = { $case: 'orthographic', orthographic: { verticalRange: visibleMeters } }
+      cam.width = resolution
+      cam.height = resolution
       appliedMeters = visibleMeters
+      appliedResolution = resolution
     }
   }
 }
@@ -130,6 +155,8 @@ export function registerMinimap(ctx: Ctx): void {
   ctx.on('engineViewport', (msg) => {
     if (msg.region !== 'map') return
     rect = msg.rect
+    // Older pages don't send it; 1 is the safe read (CSS px == physical px).
+    dpr = msg.dpr ?? 1
     if (shouldRender()) createCamera()
     else disposeCamera()
   })

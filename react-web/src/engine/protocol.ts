@@ -487,6 +487,10 @@ export interface EngineViewportRequest {
   kind: 'engineViewport'
   region: 'map' | 'avatarPreview'
   rect: { x: number; y: number; width: number; height: number } | null
+  /** `devicePixelRatio` at the time the rect was measured. The rect is in CSS pixels, so this is
+   *  what turns it into the physical pixels the scene should actually render — without it a
+   *  render target has to assume the worst display and oversample everywhere else. */
+  dpr?: number
 }
 
 /** A community (from the scene's fetchCommunities). */
