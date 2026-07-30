@@ -260,7 +260,7 @@ function Hud(): React.JSX.Element {
       {rpc && <EngineHost rpc={rpc} />}
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
-      {session.phase === 'entering' && <SceneLoadingOverlay scene={session.scene} />}
+      {session.phase === 'entering' && <SceneLoadingOverlay scene={session.sceneLoading} />}
       {session.phase === 'world' && !session.menuOpen && (
         <>
           {/* The full-screen menu pages own the whole screen; hide the rail + chat so

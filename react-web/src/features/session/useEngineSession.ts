@@ -299,7 +299,10 @@ export interface EngineSession {
   /** Post-jump-in Places picker: choose where to spawn (or null to skip → Genesis Plaza). */
   pickDestination: (dest: Destination) => void
   login: LoginFlow
-  scene: SceneLoadingState | null
+  /** Entry overlay state (the sceneLoading stream): what is loading while `phase` is
+   *  'entering'. NOT the scene the player is in — that is `minimap.sceneTitle`, resolved by
+   *  parcel; this title is whatever was last loading and goes stale as the player moves. */
+  sceneLoading: SceneLoadingState | null
   /** Fatal engine error → full-screen error popup. 'launch' = boot panic (fatal), 'runtime' =
    *  post-launch crash bridged from the engine watchdog (dismissable). null when healthy. */
   fatalError: FatalError | null
@@ -406,7 +409,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Ref twin of playerReady: the destination pick runs in a callback that would close over a
   // stale value of the state.
   const playerReadyRef = useRef(false)
-  const [scene, setScene] = useState<SceneLoadingState | null>(null)
+  const [sceneLoading, setSceneLoading] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
@@ -522,7 +525,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setAuth((a) => (a == null ? a : { code: msg.code }))
           break
         case 'sceneLoading':
-          setScene(msg.state)
+          setSceneLoading(msg.state)
           break
         case 'hover':
           setHover(msg.actions)
@@ -1316,7 +1319,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [revealing, setRevealing] = useState(false)
   const prevSceneVisible = useRef<boolean | undefined>(undefined)
   useEffect(() => {
-    const visible = scene?.visible
+    const visible = sceneLoading?.visible
     const justLoaded = prevSceneVisible.current === true && visible === false
     prevSceneVisible.current = visible
     if (!justLoaded || typeof driverRef.current?.renderBusy !== 'function') return
@@ -1335,17 +1338,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     timer = setTimeout(tick, MIN_REVEAL_MS)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene?.visible])
+  }, [sceneLoading?.visible])
 
   // Mirror the engine's native loading screen (SDK7 SceneLoadingWindow: `if (!visible) return null`).
   // The engine keeps its loader visible until the player's scene is rendered, and flips it back on
   // for each scene streamed into Genesis Plaza. We debounce the *reveal* (loading→world) so a brief
   // `visible` gap between scenes doesn't flash the HUD; the loader still appears INSTANTLY whenever
   // loading re-asserts. Loading = scene visible, or not spawned, or the render-settle still holding.
-  // No state received yet (scene == null) counts as loading: the loading stream is the
+  // No state received yet (sceneLoading == null) counts as loading: the loading stream is the
   // bridge-scene's domain, and until it's running and reports otherwise the world isn't ready
   // (on native the engine relay itself sends no loading state at all).
-  const loadingNow = scene?.visible !== false || !playerReady || revealing
+  const loadingNow = sceneLoading?.visible !== false || !playerReady || revealing
   const [loaderActive, setLoaderActive] = useState(true)
   useEffect(() => {
     if (loadingNow) {
@@ -1374,7 +1377,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   return {
     phase,
     pickDestination,
-    scene,
+    sceneLoading,
     fatalError,
     reload: () => location.reload(),
     dismissFatal: () => {

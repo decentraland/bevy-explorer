@@ -143,7 +143,7 @@ export function fakeSession(): EngineSession {
   return {
     phase: 'world',
     pickDestination: vi.fn(),
-    scene: null,
+    sceneLoading: null,
     fatalError: null,
     reload: vi.fn(),
     dismissFatal: vi.fn(),
