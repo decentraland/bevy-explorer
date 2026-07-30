@@ -263,6 +263,9 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     // Plaza at the same ~20/s cadence the real bridge uses, so the minimap has something
     // to follow, centre on, and rotate with. Genesis City, so the DOM tile styles apply.
     reply({ kind: 'realmInfo', realm: 'https://realm-provider.decentraland.org/main', isWorld: false })
+    // The real bridge resolves this per parcel from the live scene list; the mock circles
+    // inside one scene, so a single push is the whole story.
+    reply({ kind: 'sceneInfo', title: 'Genesis Plaza' })
     let t = 0
     poseTimer = setInterval(() => {
       t += 0.05

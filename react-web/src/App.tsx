@@ -270,7 +270,7 @@ function Hud(): React.JSX.Element {
             <Minimap
               minimap={session.minimap}
               map={session.map}
-              sceneTitle={session.scene?.title ?? ''}
+              sceneTitle={session.minimap.sceneTitle}
               setEngineViewport={session.setEngineViewport}
             />
           )}

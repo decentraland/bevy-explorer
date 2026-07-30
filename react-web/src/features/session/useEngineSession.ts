@@ -121,6 +121,10 @@ export interface MinimapState {
   /** True in a World. Worlds have no satellite/parcel tiles, so the minimap forces the
    *  engine-rendered Camera style and hides the style picker. */
   isWorld: boolean
+  /** Title of the scene the player is standing in, for the header. Empty on an undeployed
+   *  parcel (the header falls back to "Empty parcel"). Updates as the player crosses into
+   *  another scene — unlike the entry overlay's title, which never does. */
+  sceneTitle: string
   /** Relay the current style/rotation/zoom to the scene. Only the Camera style needs the
    *  engine; on the DOM styles the scene disposes its TextureCamera. */
   setConfig: (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => void
@@ -482,6 +486,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Minimap pose: a ref, not state — see MinimapState.pose for why.
   const poseRef = useRef<PlayerPose>({ x: 0, z: 0, yaw: 0, camYaw: 0 })
   const [isWorld, setIsWorld] = useState(false)
+  const [sceneTitle, setSceneTitle] = useState('')
   const [placesOpen, setPlacesOpen] = useState(false)
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([])
   const [galleryStorage, setGalleryStorage] = useState({ current: 0, max: 0 })
@@ -626,6 +631,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'realmInfo':
           setIsWorld(msg.isWorld)
+          break
+        case 'sceneInfo':
+          setSceneTitle(msg.title)
           break
         case 'gallery':
           setGalleryPhotos([...msg.photos].sort((a, b) => photoTime(b.dateTime) - photoTime(a.dateTime)))
@@ -1422,7 +1430,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
     map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
-    minimap: { pose: poseRef, isWorld, setConfig: setMinimapConfig },
+    minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },
     gallery: {
       list: galleryPhotos,

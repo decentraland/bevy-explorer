@@ -25,6 +25,25 @@ describe('world domain', () => {
     expect(h.driver.last('teleport')).toEqual({ kind: 'teleport', x: 5, y: -3 })
   })
 
+  it('sceneInfo drives the minimap title, and re-pushes as the player crosses scenes', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    // The entry overlay's own title (sceneLoading) must not be what the header reads: it is
+    // empty once the overlay clears and never changes when walking into the next scene.
+    h.driver.emit({ kind: 'sceneLoading', state: { visible: false, realmConnected: true, title: 'Genesis Plaza', pendingAssets: null } })
+    expect(h.session().minimap.sceneTitle).toBe('')
+
+    h.driver.emit({ kind: 'sceneInfo', title: 'Genesis Plaza' })
+    expect(h.session().minimap.sceneTitle).toBe('Genesis Plaza')
+
+    h.driver.emit({ kind: 'sceneInfo', title: "Make's Stack" })
+    expect(h.session().minimap.sceneTitle).toBe("Make's Stack")
+
+    // An undeployed parcel reports no scene — the header falls back to "Empty parcel".
+    h.driver.emit({ kind: 'sceneInfo', title: '' })
+    expect(h.session().minimap.sceneTitle).toBe('')
+  })
+
   it('mic toggle posts setMic (optimistic) and the stream confirms availability', async () => {
     const h = renderSession()
     await enterAsGuest(h)

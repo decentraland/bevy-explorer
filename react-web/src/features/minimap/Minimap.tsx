@@ -231,7 +231,9 @@ export function Minimap({
   return (
     <div className={styles.root}>
       <div className={styles.header}>
-        <span className={styles.title}>{sceneTitle || 'Unknown place'}</span>
+        {/* No scene deployed on this parcel — say so, rather than implying the lookup failed
+            (bevy-ui-scene's widget said "empty scene" for the same case). */}
+        <span className={styles.title}>{sceneTitle || 'Empty parcel'}</span>
         <span className={styles.coords}>
           {parcel.x},{parcel.y}
         </span>

@@ -405,6 +405,15 @@ export interface RealmInfoMessage {
   isWorld: boolean
 }
 
+/** Title of the scene the player is standing in, for the minimap header. Resolved by parcel
+ *  from the live scene list and pushed when the parcel changes — NOT the same as the
+ *  `sceneLoading` title, which describes the entry overlay and goes stale the moment you
+ *  walk into the next scene. Empty when the parcel has no deployed scene. */
+export interface SceneInfoMessage {
+  kind: 'sceneInfo'
+  title: string
+}
+
 /** Minimap style/zoom/rotation (page → scene). The scene only runs the Camera-style
  *  TextureCamera while `style` is 'imposters'; the DOM styles render in React and the
  *  camera is disposed. `visibleMeters` maps to the camera's orthographic vertical range. */
@@ -885,6 +894,7 @@ export type SceneToPage =
   | MapMessage
   | PlayerPoseMessage
   | RealmInfoMessage
+  | SceneInfoMessage
   | GalleryMessage
   | GalleryPhotoMessage
   | PermissionRequestMessage
