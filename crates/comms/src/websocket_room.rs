@@ -274,10 +274,13 @@ async fn websocket_room_handler_inner(
     // wrap and transmit outbound messages
     let f_write = async move {
         while let Some(next) = receiver.recv().await {
+            let Some(body) = next.message.to_rfc4() else {
+                continue;
+            };
             let packet = WsPacket {
                 message: Some(ws_packet::Message::PeerUpdateMessage(WsPeerUpdate {
                     from_alias,
-                    body: next.data,
+                    body,
                     unreliable: next.unreliable,
                 })),
             };

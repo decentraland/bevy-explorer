@@ -491,8 +491,7 @@ fn update_scene_priority(
 // - see if we can get v8 single threaded / no native threads working
 // const MAX_CONCURRENT_SCENES: usize = 8;
 
-#[derive(Component)]
-pub struct OutOfWorld;
+pub use common::structs::OutOfWorld;
 
 // helper to get the scene entity containing a given world position
 #[derive(SystemParam)]

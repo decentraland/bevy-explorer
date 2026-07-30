@@ -15,10 +15,10 @@ use common::{
     util::{AsH160, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx},
 };
 use comms::{
-    chat_marker_things,
+    broadcast_to, chat_marker_things,
     global_crdt::{ChatEvent, ForeignPlayer},
     profile::UserProfile,
-    NetworkMessage, Transport,
+    BroadcastTarget, Transport,
 };
 use console::DoAddConsoleCommand;
 use conversation_manager::ConversationManager;
@@ -594,17 +594,22 @@ pub fn broadcast_nearby_chats(
             "embedded://sounds/ui/widget_chat_message_private_send.wav".to_owned(),
         ));
 
-        for transport in transports.iter() {
-            let _ = transport
-                .sender
-                .try_send(NetworkMessage::reliable(&rfc4::Packet {
-                    message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
-                        message: ev.message.clone(),
-                        timestamp: ev.timestamp,
-                    })),
-                    protocol_version: 100,
-                }));
-        }
+        // Nearby chat targets only the realm's byte transports that actually carry it: the websocket
+        // dev server and LiveKit (incl. the LiveKit scene room, which rides the LIVEKIT bit). It has
+        // no Archipelago use and no Pulse representation, so those are left out rather than queued and
+        // dropped.
+        broadcast_to(
+            transports.iter(),
+            BroadcastTarget::WEBSOCKET | BroadcastTarget::LIVEKIT,
+            false,
+            &rfc4::Packet {
+                message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
+                    message: ev.message.clone(),
+                    timestamp: ev.timestamp,
+                })),
+                protocol_version: 100,
+            },
+        );
     }
 }
 

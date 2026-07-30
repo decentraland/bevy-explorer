@@ -18,6 +18,9 @@ message Packet {
     PlayerEmote player_emote = 9;
     SceneEmote scene_emote = 10;
     MovementCompressed movement_compressed = 12;
+    // bevy-private: scene-driven animation, decoupled from movement (which now rides Pulse).
+    // Other clients (Unity, web) don't understand it and drop the unknown oneof field.
+    SceneDrivenAnimation scene_driven_animation = 13;
   }
   uint32 protocol_version = 11;
 }
@@ -97,6 +100,22 @@ message Movement {
   // drops the whole field, instead of handing us a plausible-looking string we'd try to
   // resolve as a GLB hash.
   optional SceneDrivenAnimation scene_driven_animation = 10000;
+
+  // Per-axis position quantization half-step ("box radius"), a bevy-explorer local extension.
+  // Filled ONLY by the Pulse receiver, where position arrives quantized: it tells the
+  // foreign-avatar interpolator the ± box the true position lies within, so it dead-reckons inside
+  // that box rather than snapping to the quantized centre. Never set on the send path (so never
+  // serialised); absent from precise sources (LiveKit, full-state snapshots), where absence means
+  // "exact". Wrapped in a nested message at a high private tag for the same collision-avoidance
+  // reason as scene_driven_animation.
+  optional PositionPrecision position_precision = 10001;
+}
+
+// Carrier for Movement.position_precision — per-axis ± half-step box around the quantized position.
+message PositionPrecision {
+  float x = 1;
+  float y = 2;
+  float z = 3;
 }
 
 // Nested carrier for scene-driven movement animation state. All fields are optional so
@@ -132,6 +151,13 @@ message SceneDrivenAnimation {
   // remote's physics or the yaw other clients read. Absent/0 from senders without tilt.
   optional float tilt_pitch = 10;
   optional float tilt_roll = 11;
+  // Monotonic per-sender sequence counter. Carries no timing — the receiver uses it only to
+  // order SDA datagrams and drop reordered/duplicate ones (LiveKit is unreliable). The receiver
+  // schedules each accepted SDA against the sender's own last-received movement server tick, so
+  // anim and position — which ride different transports — apply on a shared clock without the
+  // sender's send-time leg polluting the alignment. Absent on the legacy nested usage; only the
+  // top-level `Packet.scene_driven_animation` carries it.
+  optional uint32 sequence = 12;
 }
 
 message MovementCompressed {
@@ -149,6 +175,7 @@ message PlayerEmote {
   uint32 incremental_id = 1;
   string urn = 2;
   float timestamp = 3;
+  optional bool is_stopping = 4; // true means the emote has been stopped in the sender's client
 }
 
 message SceneEmote {

@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package decentraland.pulse;
+
+import "decentraland/common/options.proto";
+import "decentraland/pulse/pulse_shared.proto";
+
+message HandshakeResponse {
+  bool success = 1;
+  optional string error = 2;
+}
+
+message PlayerProfileVersionsAnnounced {
+  uint32 subject_id = 1;
+  int32 version = 2;
+}
+
+message PlayerStateDeltaTier0 {
+  uint32 subject_id = 1;
+
+  // Between two consecutive server simulation ticks, the subject may have sent multiple inputs, each incrementing Seq by 1. So
+  // the delta's NewSeq will naturally jump by more than 1 compared to the previous delta — even with zero packet loss.
+  // Without the "BaselineSeq" the client has no way to detect the package loss
+  uint32 baseline_seq = 2;
+  uint32 new_seq = 3;
+  uint32 server_tick = 4;
+
+  // While the player doesn't cross the parcel, this field is omitted from diff
+  optional int32 parcel_index = 5;
+
+  // X position inside the parcel
+  optional uint32 position_x = 6 [(decentraland.common.quantized) = { min:  0,  max:   16, bits: 8 }];
+
+  // Y position
+  optional uint32 position_y = 7 [(decentraland.common.quantized) = { min:  0,  max:   200, bits: 13 }];
+
+  // Z position inside the parcel
+  optional uint32 position_z = 8 [(decentraland.common.quantized) = { min:  0,  max:   16, bits: 8 }];
+
+  // Power-law quantized: a sign bit + 7-bit magnitude curve over [-50, 50]. Zero is exactly
+  // representable (a stopped peer reports an exact 0 instead of the linear quantizer's ±0.196
+  // residual that drove foreign-avatar drift), and pow=2 concentrates resolution at the low speeds
+  // where avatars actually move, leaving only the visually-irrelevant extremes coarse.
+  optional uint32 velocity_x = 9 [(decentraland.common.quantized_power) = { max: 50, pow: 2, bits: 8 }];
+  optional uint32 velocity_y = 10 [(decentraland.common.quantized_power) = { max: 50, pow: 2, bits: 8 }];
+  optional uint32 velocity_z = 11 [(decentraland.common.quantized_power) = { max: 50, pow: 2, bits: 8 }];
+
+  optional uint32 rotation_y = 12 [(decentraland.common.quantized) = { min:  0,  max:   360.0, bits: 7 }];
+  optional uint32 movement_blend = 13 [(decentraland.common.quantized) = { min:  0,  max:   3, bits: 5 }];
+  optional uint32 slide_blend = 14 [(decentraland.common.quantized) = { min:  0,  max:   1, bits: 4 }];
+  optional uint32 head_yaw = 15 [(decentraland.common.quantized) = { min:  0,  max:   360.0, bits: 7 }];
+  optional uint32 head_pitch = 16 [(decentraland.common.quantized) = { min:  0,  max:   360.0, bits: 7 }];
+
+  optional uint32 state_flags = 17;
+  optional GlideState glide_state = 18;
+
+  optional int32 jump_count = 19;
+
+  // Absolute world hit position the player is pointing at.
+  // Only meaningful when POINTING_AT is set in `state_flags`.
+  //
+  // X/Z use 17 bits over the world span (~±3000m, covers GenesisCity + border +
+  // raycast cutoff) which yields ~0.046m steps — at least as fine as the player's
+  // own parcel_index + position_x/z combined precision (0.0625m), so no separate
+  // parcel index is needed for point-at.
+  //
+  // Y uses 7 bits over the player altitude range (matches position_y), step ~1.6m.
+  // Point At is not supposed to change frequently so the wire overhead should be minimal
+  optional uint32 point_at_x = 20 [(decentraland.common.quantized) = { min: -3000.0, max: 3000.0, bits: 17 }];
+  optional uint32 point_at_y = 21 [(decentraland.common.quantized) = { min:     0.0, max:  200.0, bits:  7 }];
+  optional uint32 point_at_z = 22 [(decentraland.common.quantized) = { min: -3000.0, max: 3000.0, bits: 17 }];
+}
+
+// Full State is sent to the client when it is out of sync, and can't recover with a diff only
+message PlayerStateFull {
+  uint32 subject_id = 1;
+  uint32 sequence = 2;
+  uint32 server_tick = 3;
+  PlayerState state = 4;
+}
+
+// Notification to the client, that a peer has joined, it can mean connection or entering the area of interest, it's up to the server to decide
+message PlayerJoined {
+  string user_id = 1;
+  int32 profile_version = 2;
+  PlayerStateFull state = 3;
+}
+
+// Notification to the client, that a peer has left, it can mean disconnection or leaving the area of interest
+message PlayerLeft {
+  uint32 subject_id = 1;
+}
+
+enum EmoteStopReason {
+  COMPLETED = 0;  // one-shot timer expired on the server
+  CANCELLED = 1;  // client sent EmoteStop (looping emotes)
+}
+
+// Server → All Observers
+// Full player state is piggybacked to ensure the emote is played in the right place.
+// Observers use server_tick to scrub animation forward by transit latency.
+message EmoteStarted {
+  uint32 subject_id = 1;
+  uint32 sequence = 2;
+  uint32 server_tick = 3;
+  string emote_id = 4;
+  PlayerState player_state = 5;
+  optional int32 mask = 6;
+}
+
+// Server → All Observers
+// Client resumes MovementInput only after receiving this.
+// Carries full PlayerState so the client can snap to the correct position on resume.
+message EmoteStopped {
+  uint32 subject_id = 1;
+  uint32 server_tick = 2;
+  EmoteStopReason reason = 3;
+  uint32 sequence = 4;
+  PlayerState player_state = 5;
+}
+
+// Server → All Observers
+message TeleportPerformed {
+  uint32 subject_id = 1;
+  uint32 sequence = 2;
+  uint32 server_tick = 3;
+  PlayerState state = 4;
+}
+
+message ServerMessage {
+  oneof message {
+      HandshakeResponse handshake = 1;
+      PlayerStateFull player_state_full = 2;
+      PlayerStateDeltaTier0 player_state_delta = 3;
+      PlayerJoined player_joined = 4;
+      PlayerLeft player_left = 5;
+      PlayerProfileVersionsAnnounced player_profile_version_announced = 6;
+      EmoteStarted emote_started = 7;
+      EmoteStopped emote_stopped = 8;
+      TeleportPerformed teleported = 9;
+  }
+}
