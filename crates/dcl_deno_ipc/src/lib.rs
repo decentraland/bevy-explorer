@@ -285,7 +285,8 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
             }),
             SceneToEngine::IpcMessage(id, ipc_message) => {
                 let IpcMessage::Closed = ipc_message else {
-                    panic!()
+                    warn!("ignoring unexpected ipc data message for channel {id}");
+                    continue;
                 };
 
                 ENGINE_IPC_CONTEXT.with(|ctx| {
