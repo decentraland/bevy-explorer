@@ -447,11 +447,14 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     baseline generated on 2026-07-03 that contains neither. Re-measuring every surface at
     `maxDiffPixelRatio: 0` showed the drift was universal, not just the minimap: engine-error 11,537 px
     (07's scrim rewrite), world-hud 6,437, login-welcome 1,003, login-fresh 836, the panels/tooltips
-    ~240–650 each; only the gates, showcase, backpack-wearables and communities were byte-identical.
+    ~240–650 each; only the gates, showcase, backpack-wearables and communities came out unchanged.
     Baselines were regenerated in that branch, and 19/20 then passed at **zero** tolerance — so the
-    render is deterministic and the old numbers were real drift, not antialiasing noise. That also
-    means the tolerance can be tightened hard (~0.001, i.e. ~1.4k px) without flakiness; it exists
-    for AA jitter that measurably isn't there. Do it together with item 42, the one genuinely
+    render is deterministic and the old numbers were real drift, not antialiasing noise. Note that
+    "zero tolerance" is `maxDiffPixelRatio: 0` *with the default per-pixel `threshold: 0.2`*, not
+    byte-equality: those unchanged surfaces still re-encode with a little AA jitter (showcase moved
+    57 scattered pixels by ≤3/255 per channel, far under the threshold, which is why it passed while
+    its file changed). That jitter is exactly why the tolerance can be tightened hard (~0.001, i.e.
+    ~1.4k px) without flakiness — sub-threshold noise never counts as a differing pixel. Do it together with item 42, the one genuinely
     unstable test.
 42. `[bug]` **`visual.spec.ts` "profile card" never settles** — *flaky, and it hides real drift*. It
     fails against its own freshly-generated baseline at zero tolerance, with the diff *growing* across
