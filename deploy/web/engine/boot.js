@@ -47,6 +47,11 @@ publish()
 // (window.__onEngineCrash) — React shows the error modal; there is no overlay here.
 ;(function () {
   let shown = false
+  // Set when the crash came from the FLOOD detector: there the heartbeat never stopped, so
+  // "frames resumed" is not evidence of recovery — only a host dismiss (__rearmCrashWatchdog)
+  // clears this latch. Without it the stall watchdog's auto-rearm would clear `shown` ~4s in,
+  // the still-running flood would re-trip, and the crash cycle would repeat forever.
+  let floodLatched = false
   let lastError = null
   let lastBeat = 0
   let beatsSeen = false
@@ -58,15 +63,19 @@ publish()
   // "Alive but rendering-dead" detector. The stall watchdog above only catches a FROZEN engine (the
   // heartbeat stops). A render loop that keeps beating while every frame throws the SAME error — e.g. a
   // wgpu pipeline/attachment mismatch that blanks the screen and spams the console — sails past it, so
-  // catch it by the flood: the identical engine-core console.error repeating FATAL_REPEATS times within
+  // catch it by the flood: the same fatal-class engine error repeating FATAL_REPEATS times within
   // FATAL_WINDOW_MS ⇒ runtime crash. Scene (UGC) console.error lives in the sandbox WORKER's own
   // console and never reaches this main-thread patch, so this stream is engine-core only. Signatures are
   // whitespace-normalized but otherwise EXACT (numbers/urls kept) so distinct errors — different assets,
   // different coords — never pool into one false flood; only a truly identical per-frame error trips it.
   const FATAL_REPEATS = 30
   const FATAL_WINDOW_MS = 4000
-  // Engine-core errors that can repeat identically without being fatal — never trip the flood on these.
-  const BENIGN_REPEATS = ['Message too large']
+  // Only these engine messages can trip the flood. A healthy session floods the console with benign
+  // ERROR lines at exactly this rate — a 404 asset retried per frame by bevy_asset, comms "channel
+  // closed" during startup — so an allowlist, not a denylist, is what keeps the modal off a working
+  // world. `captured wgpu error` is src/lib.rs's on_uncaptured_error handler: the device-level GPU
+  // fault that blanks the screen while the render loop keeps beating.
+  const FATAL_SIGNALS = ['captured wgpu error']
   // signature -> { count, since }. Per-signature counters (not a single last-seen key) so an identical
   // per-frame error still floods even when the loop interleaves it with a second error each frame.
   const floodCounts = new Map()
@@ -78,9 +87,10 @@ publish()
     return err.message || err.stack || String(err)
   }
 
-  function crash(err, source) {
+  function crash(err, source, latch) {
     if (shown) return
     shown = true
+    if (latch) floodLatched = true
     const msg = errMessage(err)
     console.error('[crash watchdog]', source || 'error', err)
     try {
@@ -91,6 +101,7 @@ publish()
   // Re-arm from a clean slate (host dismissed the modal, or frames resumed).
   function rearm() {
     shown = false
+    floodLatched = false
     lastError = null
     lastBeat = nowMs()
     missedTicks = 0
@@ -114,7 +125,7 @@ publish()
   // running-but-dead loop the stall watchdog can't see. Latched via `shown`; rearm() clears the counters.
   function considerFatalRepeat(msg) {
     if (shown) return
-    if (BENIGN_REPEATS.some((b) => msg.indexOf(b) !== -1)) return
+    if (!FATAL_SIGNALS.some((s) => msg.indexOf(s) !== -1)) return
     const key = signature(msg)
     const now = nowMs()
     let e = floodCounts.get(key)
@@ -122,15 +133,16 @@ publish()
       e = { count: 0, since: now }
       floodCounts.set(key, e)
     }
-    if (++e.count >= FATAL_REPEATS) crash(msg, 'runtime')
+    if (++e.count >= FATAL_REPEATS) crash(msg, 'runtime', true)
     // Bound memory: drop signatures whose window has lapsed once the map grows.
     if (floodCounts.size > 64) {
       for (const [k, v] of floodCounts) if (now - v.since > FATAL_WINDOW_MS) floodCounts.delete(k)
     }
   }
 
-  // Capture Rust panic text: the wasm panic hook prints "panicked at …" via console.error, while
-  // the throw that surfaces is a generic trap — stash the readable message for the host.
+  // Capture Rust panic text: the wasm panic hook prints "panicked at …" via console.error (the only
+  // engine path that uses that channel — wasm-bindgen's __wbg_error), while the throw that surfaces
+  // is a generic trap — stash the readable message for the host.
   const origConsoleError = console.error.bind(console)
   console.error = function () {
     try {
@@ -139,19 +151,22 @@ publish()
         window.__bevyPanic = { message: String(first), at: nowMs() }
         recordError(first, 'panic')
       }
-      // Engine-core log lines arrive as a single formatted string (wasm __wbg_error → console.error).
-      // Feed them to the flood detector so a per-frame error storm (blank-screen render crash) becomes
-      // a runtime crash modal instead of an endless silent spam. Skip our OWN watchdog logging
-      // (recordError/crash re-enter this patch) so their constant prefixes can't self-trip the flood.
-      if (
-        typeof first === 'string' &&
-        first.indexOf('[engine error]') !== 0 &&
-        first.indexOf('[crash watchdog]') !== 0
-      ) {
-        considerFatalRepeat(first)
-      }
     } catch (_) {}
     return origConsoleError.apply(console, arguments)
+  }
+
+  // Engine LOG lines — including every error!() — come through console.LOG, not console.error:
+  // bevy_log's wasm path (LogPlugin with no custom_layer) is tracing-wasm, whose only console
+  // binding is `log`. Each event is a 4-arg styled call whose first argument starts with the level
+  // ("%cERROR%c src/lib.rs:505 …"). So the flood detector has to listen here, or the wgpu storm this
+  // watchdog exists for never reaches it. FATAL_SIGNALS keeps the benign ERROR spam out.
+  const origConsoleLog = console.log.bind(console)
+  console.log = function () {
+    try {
+      const first = arguments[0]
+      if (typeof first === 'string') considerFatalRepeat(first)
+    } catch (_) {}
+    return origConsoleLog.apply(console, arguments)
   }
 
   window.__engineHeartbeat = () => {
@@ -174,7 +189,10 @@ publish()
     lastBeatCount = beatCount
 
     if (shown) {
-      // Frames back for two consecutive ticks → transient stall, re-arm.
+      // Frames back for two consecutive ticks → transient stall, re-arm. Never for a flood crash:
+      // there the frames never stopped (that's the whole point), so this would clear the latch and
+      // let the ongoing flood re-trip every few seconds. Only a host dismiss re-arms that one.
+      if (floodLatched) return
       recoverTicks = advanced ? recoverTicks + 1 : 0
       if (recoverTicks >= 2) rearm()
       return
