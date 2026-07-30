@@ -285,6 +285,30 @@
     color 0.3s ease,
     transform 0.25s ease;
 }
+/* Hover unequip button on an occupied category slot (top-right), like Unity/bevy-ui-scene. */
+.catUnequip {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-pill);
+  background-color: var(--scrim);
+  color: var(--text);
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) ease;
+  pointer-events: none;
+}
+.catTile:hover .catUnequip {
+  opacity: 1;
+  pointer-events: auto;
+}
 
 /* Grid area. */
 .gridArea {
@@ -364,10 +388,6 @@
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
-}
-.pageArrow:disabled {
-  color: var(--ink-45);
-  cursor: default;
 }
 .pageNum:hover {
   background: var(--white-10);
@@ -532,14 +552,171 @@
   color: var(--ink-6);
 }
 
-/* Saved Outfits placeholder — fills the catalog area (outfits aren't wired to the engine yet). */
+/* Saved Outfits — a slot grid filling the catalog area. */
 .outfits {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 16px;
+}
+.outfitGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 148px));
+  grid-auto-rows: max-content;
+  justify-content: center;
+  gap: 16px;
+}
+.outfitCard,
+.outfitEmpty {
+  position: relative;
+  aspect-ratio: 1;
+  border: 1px solid var(--white-10);
+  border-radius: var(--r-card);
+  background-color: var(--fill-2);
+  overflow: hidden;
+}
+/* Empty slot — click to save the current look. */
+.outfitEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--ink-45);
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+.outfitEmpty:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.outfitPlus {
+  font-size: 34px;
+  font-weight: 300;
+  line-height: 1;
+}
+.outfitEmptyLabel {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+/* Saved slot — composite of wearable thumbnails + a label, with hover actions. */
+.outfitCard {
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.outfitCardSel {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+/* Matches the current look — mirrors the equipped wearable (accent ring + dot). */
+.outfitEquipped {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.outfitDot {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--scrim);
+}
+.outfitThumbs {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 1fr;
+  gap: 4px;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.outfitThumb {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
+  overflow: hidden;
+}
+.outfitThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.outfitActions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.outfitCard:hover .outfitActions,
+.outfitCardSel .outfitActions {
+  opacity: 1;
+}
+.outfitEquip {
+  border: none;
+  border-radius: var(--r-pill);
+  padding: 4px 10px;
+  background-color: var(--accent);
+  color: var(--accent-ink);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.outfitDelete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--r-pill);
+  background-color: var(--scrim);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+.outfitLabel {
+  padding: 6px 10px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--ink-6);
+}
+/* Selected-outfit detail: every wearable thumbnail (the card composite shows only four). */
+.outfitDetailGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+.outfitDetailThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: var(--fill-3);
+  overflow: hidden;
+}
+.outfitDetailThumb img {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
 }
 
 .empty {

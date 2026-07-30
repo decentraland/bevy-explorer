@@ -10,6 +10,7 @@ use crate::{
 };
 use ambient_brightness_setting::AmbientSetting;
 use anyhow::anyhow;
+use avatar_outline_setting::AvatarOutlineSetting;
 use bevy::{
     app::{Plugin, Update},
     ecs::{
@@ -51,6 +52,7 @@ use {js_sys::Function, wasm_bindgen::prelude::*, web_sys::Event};
 
 pub mod aa_settings;
 pub mod ambient_brightness_setting;
+pub mod avatar_outline_setting;
 pub mod bloom_settings;
 pub mod cache_size;
 pub mod camera_smoothing;
@@ -153,6 +155,7 @@ impl Plugin for SettingBridgePlugin {
         add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<CelShadingSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<AvatarOutlineSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<AmbientSetting>(app, &mut settings, &mut schedule, &config);
         if is_fullscreen_available() {

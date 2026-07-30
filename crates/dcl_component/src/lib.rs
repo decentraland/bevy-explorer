@@ -218,6 +218,8 @@ impl SceneComponentId {
 
     pub const PHYSICS_COMBINED_IMPULSE: SceneComponentId = SceneComponentId(1215);
     pub const PHYSICS_COMBINED_FORCE: SceneComponentId = SceneComponentId(1216);
+
+    pub const PARTICLE_SYSTEM: SceneComponentId = SceneComponentId(1217);
 }
 
 #[derive(

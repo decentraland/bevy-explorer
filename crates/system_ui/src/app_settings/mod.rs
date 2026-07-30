@@ -25,6 +25,7 @@ use crate::profile::SettingsDialog;
 
 use system_bridge::settings::{
     ambient_brightness_setting::AmbientSetting,
+    avatar_outline_setting::AvatarOutlineSetting,
     cel_shading_setting::CelShadingSetting,
     constrain_ui::ConstrainUiSetting,
     frame_rate::FpsTargetSetting,
@@ -126,6 +127,7 @@ fn set_app_settings_content(
             spawn_enum_setting_template::<SsaoSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<OobSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<CelShadingSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<AvatarOutlineSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<ConstrainUiSetting>(&mut commands, &dui, &config),
             commands
                 .spawn_template(

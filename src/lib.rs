@@ -40,8 +40,8 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AvatarDynamicState, HeadSync, PointAtSync, PreviewMode, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance, StartupScene,
-        StartupScenes, Version, GROUND_RENDERLAYER,
+        PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance, ShowOutOfBounds,
+        StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
     util::UtilsPlugin,
 };
@@ -52,6 +52,7 @@ use imposters::DclImposterPlugin;
 use input_manager::InputManagerPlugin;
 use ipfs::{map_realm_name, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
+use particle_system::plugin::ParticleSystemPlugin;
 use platform::default_camera_components;
 use restricted_actions::process_startup_scenes;
 use restricted_actions::RestrictedActionsPlugin;
@@ -176,6 +177,17 @@ pub struct DecentralandArguments {
     pub loading_scene: bool,
 }
 
+/// Whether a realm URL points at the local machine (localhost / loopback IP).
+fn is_loopback_realm(realm: &str) -> bool {
+    let after_scheme = realm.split("://").last().unwrap_or(realm);
+    let host = after_scheme
+        .split(['/', ':'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+}
+
 impl DecentralandApp {
     /// Creates an [`App`] with [`LogPlugin`] so that logs
     /// work from the start
@@ -218,6 +230,10 @@ impl DecentralandApp {
         info!("Bevy-Explorer version {}", version);
 
         let boot_server = map_realm_name(decentraland_app_config.boot_server());
+        // Show out-of-bounds geometry in preview + on a loopback realm (editor /
+        // local dev), never on a public realm. Computed before boot_server moves.
+        let show_out_of_bounds =
+            decentraland_app_config.arguments.is_preview || is_loopback_realm(&boot_server);
 
         // Resources
         app.insert_resource(Version(version))
@@ -257,6 +273,7 @@ impl DecentralandApp {
                 is_preview: decentraland_app_config.arguments.is_preview,
                 preview_parcel: None,
             })
+            .insert_resource(ShowOutOfBounds(show_out_of_bounds))
             .insert_resource(SceneLoadDistance {
                 load: if decentraland_app_config.arguments.is_preview {
                     1.0
@@ -419,7 +436,8 @@ impl DecentralandApp {
             .add_plugins(ImageProcessingPlugin)
             .add_plugins(SystemBridgePlugin { bare: false })
             .add_plugins(SceneInspectorPlugin)
-            .add_plugins(EmbedAssetsPlugin);
+            .add_plugins(EmbedAssetsPlugin)
+            .add_plugins(ParticleSystemPlugin);
 
         if !decentraland_app_config.arguments.is_preview {
             app.add_plugins(DclImposterPlugin {
