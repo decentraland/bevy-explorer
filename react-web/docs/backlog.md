@@ -439,7 +439,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     network-dependent tag. Related: nothing gates these tests — CI runs vitest only, so `test:e2e` and
     `test:visual` rot silently (visual baselines are macOS-only `*-chromium-darwin.png`). Both tiers
     disagreeing should be treated as "the untested tier is wrong" until proven otherwise.
-41. `[bug]` **Tier-1.5 `maxDiffPixelRatio: 0.01` is loose enough to hide a whole new HUD widget** —
+43. `[bug]` **Tier-1.5 `maxDiffPixelRatio: 0.01` is loose enough to hide a whole new HUD widget** —
     *the safety net is nearly blind*. 1% of 1600×900 is **14,400 px**, and the HUD is mostly dark
     chrome, so anything thin (outline circles, small text, grey-on-black bubbles) falls under the
     per-pixel colour threshold too. Measured on `fix/ui/08-minimap`: the entire minimap plus six chat
@@ -454,16 +454,38 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     byte-equality: those unchanged surfaces still re-encode with a little AA jitter (showcase moved
     57 scattered pixels by ≤3/255 per channel, far under the threshold, which is why it passed while
     its file changed). That jitter is exactly why the tolerance can be tightened hard (~0.001, i.e.
-    ~1.4k px) without flakiness — sub-threshold noise never counts as a differing pixel. Do it together with item 42, the one genuinely
+    ~1.4k px) without flakiness — sub-threshold noise never counts as a differing pixel. Do it together with item 44, the one genuinely
     unstable test.
-42. `[bug]` **`visual.spec.ts` "profile card" never settles** — *flaky, and it hides real drift*. It
+44. `[bug]` **`visual.spec.ts` "profile card" never settles** — *flaky, and it hides real drift*. It
     fails against its own freshly-generated baseline at zero tolerance, with the diff *growing* across
     retries (183 → 208 → 270 → 407 → 567 px), and takes ~23 s against ~4 s for every other case.
     Something in the card is still animating or loading past `settle()` (which only awaits
     `document.fonts.ready`, fast-forwards the clock 15 s, and waits 200 ms) — most likely the avatar
     image or an entrance transition that `animations: 'disabled'` doesn't cover. It passes at the
     current 1% tolerance, so it reads as green while measuring nothing. Fix before tightening the
-    ratio (item 41), or that test starts failing for the wrong reason.
+    ratio (item 43), or that test starts failing for the wrong reason.
+45. `[arch]` **Texture cameras render every frame; the minimap doesn't need real time** — *engine-side
+    (Rust), the last big minimap cost we can't reach from the HUD*. In the Camera style the minimap is
+    a second full render pass at 60 Hz. A map is orientation, not gameplay: ~10 Hz would look the same
+    and cost ~6× less. Three notes on where the fix belongs:
+    - **The scene cannot ask for it.** `PBTextureCamera` (`texture_camera.proto`, ecs component 1207)
+      has `width`, `height`, `layer`, `clear_color`, `far_plane`, `mode`, `volume` — no cadence and no
+      on-demand render. Everything the HUD could do from its side is already done: the camera only
+      exists while the style is Camera *and* a rect is reported (so collapsing the minimap or opening a
+      full-screen page disposes it), it only writes its Transform when the player actually moved, and
+      its render target is sized from the on-screen hole. What's left is engine policy.
+    - **The engine already has the lever, half-used.** `crates/texture_camera/src/lib.rs` drives
+      `camera.is_active` per scene and carries a literal `// TODO: limit / cycle`. #1002 implements the
+      *limit* half (cap 4 active cameras per scene, most-recently-requested first) — which does nothing
+      for a single-camera scene like the bridge. The *cycle* half — render 1 frame in N — is the one
+      that helps here. Expect a frozen frame rather than a black one while inactive, since the target is
+      `RenderTarget::Image` and Bevy doesn't clear an inactive camera's target; **verify that** before
+      relying on it, as the whole idea rests on it.
+    - **The general fix is a protocol field** (e.g. an optional `update_hz` on `PBTextureCamera`, via
+      `protocol-ps`), so any scene with a near-static RTT surface — maps, portraits, signage — can opt
+      out of 60 Hz instead of the engine guessing. Bigger process; the engine-side cycle is the cheap
+      first step.
+    Needs a WASM rebuild, so it belongs in its own PR, not in the HUD stack.
 
 ## Not gaps (already good / ahead)
 
