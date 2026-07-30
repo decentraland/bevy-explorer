@@ -206,36 +206,84 @@ pub fn init_state(
     }
 }
 
+pub const DEFAULT_SCENE_LOG_MAX_LINES: usize = 10_000;
+pub const DEFAULT_SCENE_LOG_MAX_LINE_BYTES: usize = 8 * 1024;
+
+pub fn resolve_log_budget(env: impl Fn(&str) -> Option<String>) -> (usize, usize) {
+    let read = |key: &str, default: usize| {
+        env(key)
+            .and_then(|v| v.parse().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(default)
+    };
+    (
+        read("DCL_SCENE_LOG_MAX_LINES", DEFAULT_SCENE_LOG_MAX_LINES),
+        read(
+            "DCL_SCENE_LOG_MAX_LINE_BYTES",
+            DEFAULT_SCENE_LOG_MAX_LINE_BYTES,
+        ),
+    )
+}
+
+fn scene_log_budget() -> (usize, usize) {
+    static BUDGET: std::sync::OnceLock<(usize, usize)> = std::sync::OnceLock::new();
+    *BUDGET.get_or_init(|| resolve_log_budget(|k| std::env::var(k).ok()))
+}
+
+fn push_scene_log(state: &mut impl State, level: SceneLogLevel, message: String, timestamp: f64) {
+    let (max_lines, max_line_bytes) = scene_log_budget();
+    push_scene_log_bounded(state, level, message, timestamp, max_lines, max_line_bytes)
+}
+
+fn push_scene_log_bounded(
+    state: &mut impl State,
+    level: SceneLogLevel,
+    mut message: String,
+    timestamp: f64,
+    max_lines: usize,
+    max_line_bytes: usize,
+) {
+    let emitted = message.len() as u64;
+
+    if message.len() > max_line_bytes {
+        let mut cut = max_line_bytes;
+        while cut > 0 && !message.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        message.truncate(cut);
+        message.push_str("…[truncated]");
+    }
+
+    let counters = state.borrow_mut::<SceneResourceCounters>();
+    counters.log_lines += 1;
+    counters.log_bytes += emitted;
+
+    if state.borrow::<Vec<SceneLogMessage>>().len() >= max_lines {
+        state.borrow_mut::<SceneResourceCounters>().log_dropped += 1;
+        return;
+    }
+
+    state
+        .borrow_mut::<Vec<SceneLogMessage>>()
+        .push(SceneLogMessage {
+            timestamp,
+            level,
+            message,
+        })
+}
+
 pub fn op_log(state: Rc<RefCell<impl State>>, message: String) {
     debug!("op_log {}", message);
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
     let mut state = state.borrow_mut();
-    let counters = state.borrow_mut::<SceneResourceCounters>();
-    counters.log_lines += 1;
-    counters.log_bytes += message.len() as u64;
-    state
-        .borrow_mut::<Vec<SceneLogMessage>>()
-        .push(SceneLogMessage {
-            timestamp: time as f64,
-            level: SceneLogLevel::Log,
-            message,
-        })
+    push_scene_log(&mut *state, SceneLogLevel::Log, message, time as f64)
 }
 
 pub fn op_error(state: Rc<RefCell<impl State>>, message: String) {
     debug!("op_error");
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
     let mut state = state.borrow_mut();
-    let counters = state.borrow_mut::<SceneResourceCounters>();
-    counters.log_lines += 1;
-    counters.log_bytes += message.len() as u64;
-    state
-        .borrow_mut::<Vec<SceneLogMessage>>()
-        .push(SceneLogMessage {
-            timestamp: time as f64,
-            level: SceneLogLevel::SceneError,
-            message,
-        })
+    push_scene_log(&mut *state, SceneLogLevel::SceneError, message, time as f64)
 }
 
 pub fn player_identity(state: &impl State) -> Result<PbPlayerIdentityData, anyhow::Error> {
@@ -249,4 +297,154 @@ pub fn player_identity(state: &impl State) -> Result<PbPlayerIdentityData, anyho
     };
     PbPlayerIdentityData::from_reader(&mut DclReader::new(player_identity))
         .map_err(|e| anyhow!(format!("{e:?}")))
+}
+
+#[cfg(test)]
+mod scene_log_budget_tests {
+    use super::*;
+    use std::any::{Any, TypeId};
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    struct TestState(HashMap<TypeId, Box<dyn Any>>);
+
+    impl State for TestState {
+        fn borrow<T: 'static>(&self) -> &T {
+            self.try_borrow().expect("absent")
+        }
+        fn try_borrow<T: 'static>(&self) -> Option<&T> {
+            self.0
+                .get(&TypeId::of::<T>())
+                .map(|v| v.downcast_ref().unwrap())
+        }
+        fn borrow_mut<T: 'static>(&mut self) -> &mut T {
+            self.try_borrow_mut().expect("absent")
+        }
+        fn try_borrow_mut<T: 'static>(&mut self) -> Option<&mut T> {
+            self.0
+                .get_mut(&TypeId::of::<T>())
+                .map(|v| v.downcast_mut().unwrap())
+        }
+        fn has<T: 'static>(&self) -> bool {
+            self.0.contains_key(&TypeId::of::<T>())
+        }
+        fn put<T: 'static>(&mut self, value: T) {
+            self.0.insert(TypeId::of::<T>(), Box::new(value));
+        }
+        fn take<T: 'static>(&mut self) -> T {
+            self.try_take().expect("absent")
+        }
+        fn try_take<T: 'static>(&mut self) -> Option<T> {
+            self.0
+                .remove(&TypeId::of::<T>())
+                .map(|v| *v.downcast().unwrap())
+        }
+    }
+
+    fn state() -> TestState {
+        let mut s = TestState::default();
+        s.put(Vec::<SceneLogMessage>::default());
+        s.put(SceneResourceCounters::default());
+        s
+    }
+
+    fn log(s: &mut TestState, msg: &str, max_lines: usize, max_bytes: usize) {
+        push_scene_log_bounded(
+            s,
+            SceneLogLevel::Log,
+            msg.to_owned(),
+            0.0,
+            max_lines,
+            max_bytes,
+        )
+    }
+
+    #[test]
+    fn line_cap_sheds_and_is_counted() {
+        let mut s = state();
+        for _ in 0..10 {
+            log(&mut s, "x", 4, 1024);
+        }
+        let stored = s.borrow::<Vec<SceneLogMessage>>().len();
+        let c = s.borrow::<SceneResourceCounters>();
+        assert_eq!(stored, 4, "buffer must stop at the cap");
+        assert_eq!(c.log_lines, 10, "every emitted line is still counted");
+        assert_eq!(c.log_dropped, 6, "shed lines are visible as dropped");
+        assert_eq!(
+            c.log_lines - c.log_dropped,
+            stored as u64,
+            "lines minus dropped must equal what reached the renderer"
+        );
+    }
+
+    #[test]
+    fn long_line_is_clamped_but_charged_in_full() {
+        let mut s = state();
+        let huge = "a".repeat(100_000);
+        log(&mut s, &huge, 10, 1024);
+        let stored = &s.borrow::<Vec<SceneLogMessage>>()[0].message;
+        assert!(
+            stored.len() < 1200,
+            "stored line must be clamped, got {}",
+            stored.len()
+        );
+        assert!(
+            stored.ends_with("…[truncated]"),
+            "clamping must be visible to the reader"
+        );
+        assert_eq!(
+            s.borrow::<SceneResourceCounters>().log_bytes,
+            100_000,
+            "counters must charge what the scene emitted, not what survived"
+        );
+    }
+
+    #[test]
+    fn tick_cost_is_bounded_by_lines_times_line_bytes() {
+        let mut s = state();
+        let huge = "b".repeat(50_000);
+        for _ in 0..50 {
+            log(&mut s, &huge, 8, 256);
+        }
+        let held: usize = s
+            .borrow::<Vec<SceneLogMessage>>()
+            .iter()
+            .map(|l| l.message.len())
+            .sum();
+        assert!(
+            held <= 8 * (256 + "…[truncated]".len()),
+            "one tick held {held} bytes, over the lines x line-bytes bound"
+        );
+    }
+
+    #[test]
+    fn clamp_never_splits_a_utf8_char() {
+        let mut s = state();
+        log(&mut s, &"é".repeat(100), 10, 15);
+        let stored = &s.borrow::<Vec<SceneLogMessage>>()[0].message;
+        assert!(stored.is_char_boundary(stored.len()));
+        assert!(stored.starts_with('é'));
+    }
+
+    #[test]
+    fn budget_resolution_defaults_and_rejects_zero() {
+        let none = resolve_log_budget(|_| None);
+        assert_eq!(
+            none,
+            (
+                DEFAULT_SCENE_LOG_MAX_LINES,
+                DEFAULT_SCENE_LOG_MAX_LINE_BYTES
+            )
+        );
+        let zero = resolve_log_budget(|_| Some("0".into()));
+        assert_eq!(zero, none, "zero must not disable the buffer entirely");
+        let junk = resolve_log_budget(|_| Some("banana".into()));
+        assert_eq!(junk, none);
+        let set = resolve_log_budget(|k| match k {
+            "DCL_SCENE_LOG_MAX_LINES" => Some("5".into()),
+            "DCL_SCENE_LOG_MAX_LINE_BYTES" => Some("64".into()),
+            _ => None,
+        });
+        assert_eq!(set, (5, 64));
+    }
 }

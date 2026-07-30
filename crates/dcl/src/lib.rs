@@ -107,6 +107,7 @@ pub struct SceneResourceCounters {
     pub comms_bytes_out: u64,
     pub log_lines: u64,
     pub log_bytes: u64,
+    pub log_dropped: u64,
     pub crdt_bytes: u64,
     pub ipc_responses: u64,
     pub tick_count: u64,
