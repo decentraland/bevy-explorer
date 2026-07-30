@@ -82,6 +82,40 @@ pub static NEW_SCENE_SENDER: Lazy<
 /// and for tests, which build a fresh runtime per app and must not kill the process.
 pub static EXIT_ON_SIDECAR_LOSS: AtomicBool = AtomicBool::new(false);
 
+pub fn max_ipc_frame_bytes() -> u64 {
+    static MAX: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *MAX.get_or_init(|| {
+        std::env::var("DCL_IPC_MAX_FRAME_BYTES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(256 * 1024 * 1024)
+    })
+}
+
+pub async fn read_frame<T: serde::de::DeserializeOwned>(
+    stream: &mut (impl tokio::io::AsyncRead + Unpin),
+) -> Option<T> {
+    let len = stream.read_u64_le().await.ok()?;
+    let max = max_ipc_frame_bytes();
+    if len > max {
+        error!("ipc frame declares {len} bytes, over the {max} byte cap; closing");
+        return None;
+    }
+    let mut buffer = vec![0u8; len as usize];
+    if let Err(e) = stream.read_exact(&mut buffer).await {
+        error!("ipc frame body incomplete ({e}); closing");
+        return None;
+    }
+    match rmp_serde::from_slice(&buffer) {
+        Ok(msg) => Some(msg),
+        Err(e) => {
+            error!("undecodable ipc frame ({e}); closing");
+            None
+        }
+    }
+}
+
 pub fn init_runtime() -> anyhow::Result<()> {
     let (init_sx, init_rx) = tokio::sync::oneshot::channel::<anyhow::Result<()>>();
 
@@ -260,11 +294,7 @@ pub async fn renderer_ipc_out(
 }
 
 pub async fn renderer_ipc_in(mut stream: RecvHalf) {
-    while let Ok(len) = stream.read_u64_le().await {
-        let mut buffer = vec![0u8; len as usize];
-        stream.read_exact(&mut buffer).await.unwrap();
-        let msg: SceneToEngine = rmp_serde::from_slice(&buffer).unwrap();
-
+    while let Some(msg) = read_frame::<SceneToEngine>(&mut stream).await {
         match msg {
             SceneToEngine::SceneResponse(scene_response) => RENDERER_SENDER.with(|sender| {
                 let mut sender = sender.borrow_mut();
@@ -360,4 +390,103 @@ pub async fn write_msg<T: Serialize>(stream: &mut SendHalf, value: &T) {
         .await
         .unwrap();
     stream.write_all(&bytes).await.unwrap();
+}
+
+#[cfg(test)]
+mod frame_bounds_tests {
+    use super::*;
+
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    struct Probe {
+        v: u32,
+    }
+
+    fn framed(payload: &[u8]) -> Vec<u8> {
+        let mut out = (payload.len() as u64).to_le_bytes().to_vec();
+        out.extend_from_slice(payload);
+        out
+    }
+
+    fn declared(len: u64, body: &[u8]) -> Vec<u8> {
+        let mut out = len.to_le_bytes().to_vec();
+        out.extend_from_slice(body);
+        out
+    }
+
+    async fn read<T: serde::de::DeserializeOwned>(bytes: Vec<u8>) -> Option<T> {
+        read_frame(&mut std::io::Cursor::new(bytes)).await
+    }
+
+    fn rt() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_well_formed_frame_round_trips() {
+        let body = rmp_encode(&Probe { v: 7 }).unwrap();
+        let got: Option<Probe> = rt().block_on(read(framed(&body)));
+        assert_eq!(got, Some(Probe { v: 7 }));
+    }
+
+    #[test]
+    fn an_oversized_length_is_refused_without_allocating_it() {
+        // 16 EiB declared, 4 bytes delivered. Honouring this length is the allocation the
+        // cap exists to prevent, so the refusal must happen before the body is read.
+        let got: Option<Probe> = rt().block_on(read(declared(u64::MAX, b"\x00\x00\x00\x00")));
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn the_cap_is_the_boundary() {
+        let max = max_ipc_frame_bytes();
+        let over: Option<Probe> = rt().block_on(read(declared(max + 1, b"")));
+        assert_eq!(over, None, "one byte over the cap must be refused");
+
+        let body = rmp_encode(&Probe { v: 1 }).unwrap();
+        assert!((body.len() as u64) < max);
+        let under: Option<Probe> = rt().block_on(read(framed(&body)));
+        assert_eq!(
+            under,
+            Some(Probe { v: 1 }),
+            "an ordinary frame must still pass"
+        );
+    }
+
+    #[test]
+    fn a_truncated_body_ends_the_connection() {
+        let body = rmp_encode(&Probe { v: 3 }).unwrap();
+        let got: Option<Probe> = rt().block_on(read(declared(body.len() as u64, &body[..1])));
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn an_undecodable_body_ends_the_connection() {
+        let got: Option<Probe> = rt().block_on(read(framed(b"\xc1\xc1\xc1\xc1")));
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn a_closed_stream_ends_the_connection() {
+        let got: Option<Probe> = rt().block_on(read(Vec::new()));
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn no_input_panics_the_reader() {
+        // The point of the lane: every one of these used to unwrap. In the engine that
+        // reader runs in the process holding the authoritative identity.
+        for bytes in [
+            declared(u64::MAX, b"zz"),
+            declared(1024, b"short"),
+            framed(b"\xc1\xc1"),
+            vec![1, 2, 3],
+            Vec::new(),
+        ] {
+            let got: Option<Probe> = rt().block_on(read(bytes));
+            assert_eq!(got, None);
+        }
+    }
 }
