@@ -111,7 +111,6 @@ export type PageToScene =
   | GetMapRequest
   | TeleportRequest
   | ChangeRealmRequest
-  | TeleportToPlaceRequest
   | MinimapConfigRequest
   | PermissionResolveRequest
   | EngineViewportRequest
@@ -432,11 +431,23 @@ export type MinimapStyle = 'parcel' | 'satellite' | 'imposters'
 /** 'camera' rotates the map with the camera; 'north' keeps north up. */
 export type MinimapRotation = 'camera' | 'north'
 
-/** Teleport to a parcel (page → scene → teleportTo). */
+/** Teleport to a parcel (page → scene → teleportTo).
+ *
+ *  Parcel coordinates only address one realm's grid, so a destination that belongs to a *known*
+ *  realm carries it: the scene switches realm first (only when it isn't already there, and waiting
+ *  for the new one to be live), then teleports. That is a place picked out of a listing — Places, a
+ *  map pin — and it's the same pair the native explorer's discover page fires together
+ *  (crates/system_ui/src/discover.rs).
+ *
+ *  Omit `realm` for coordinates that are already relative to wherever the player is: a chat
+ *  location link, a photo's capture spot. Nothing changes realm then. */
 export interface TeleportRequest {
   kind: 'teleport'
   x: number
   y: number
+  /** Realm the parcel belongs to: a world name (`boedo.dcl.eth`) or a realm URL. Omitted = the
+   *  realm the player is already in. */
+  realm?: string
 }
 
 /** Change to a world/realm (page → scene → changeRealm). `realm` is a world name
@@ -444,21 +455,6 @@ export interface TeleportRequest {
 export interface ChangeRealmRequest {
   kind: 'changeRealm'
   realm: string
-}
-
-/** Teleport to a place: a parcel *in a given realm*. Parcel coordinates only address the realm
- *  that owns them, so leaving the current one is part of the trip — the scene switches realm
- *  (only when it isn't already there) and then teleports. Same pair the native explorer's discover
- *  page fires together (crates/system_ui/src/discover.rs).
- *
- *  Not the same as `teleport`, which stays in the current realm: that one is for coordinates
- *  that are already realm-relative (a chat location link, a photo's capture spot). */
-export interface TeleportToPlaceRequest {
-  kind: 'teleportToPlace'
-  /** Realm the place lives in: a world name (`boedo.dcl.eth`) or a realm URL. */
-  realm: string
-  x: number
-  y: number
 }
 
 /** A scene's pending permission prompt relayed from the engine (e.g. it wants to move you

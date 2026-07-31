@@ -32,9 +32,8 @@ describe('world domain', () => {
     const h = renderSession()
     await enterAsGuest(h)
     act(() => h.session().map.teleportToPlace(5, -3))
-    expect(h.driver.last('teleportToPlace')).toEqual({ kind: 'teleportToPlace', realm: DEFAULT_REALM, x: 5, y: -3 })
-    // Never the realm-relative teleport: that one would keep the player in the World.
-    expect(h.driver.sentOf('teleport')).toHaveLength(0)
+    // The realm rides along; without it the scene would move the player inside the World.
+    expect(h.driver.last('teleport')).toEqual({ kind: 'teleport', realm: DEFAULT_REALM, x: 5, y: -3 })
   })
 
   it('sceneInfo drives the minimap title, and re-pushes as the player crosses scenes', async () => {

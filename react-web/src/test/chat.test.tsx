@@ -41,7 +41,7 @@ describe('chat domain', () => {
     const h = renderSession()
     await enterAsGuest(h)
     act(() => h.session().chat.send('/goto main'))
-    expect(h.driver.last('teleportToPlace')).toEqual({ kind: 'teleportToPlace', realm: DEFAULT_REALM, x: 0, y: 0 })
+    expect(h.driver.last('teleport')).toEqual({ kind: 'teleport', realm: DEFAULT_REALM, x: 0, y: 0 })
     expect(h.driver.sentOf('changeRealm')).toHaveLength(0)
     expect(h.driver.sentOf('sendChat')).toHaveLength(0) // never broadcast as a chat line
   })

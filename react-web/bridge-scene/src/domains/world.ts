@@ -64,29 +64,20 @@ export function registerWorld(ctx: Ctx): void {
     })
   }
 
-  // A place teleport held until its realm change lands (see the teleportToPlace handler).
-  // `waited` is seconds accumulated by the realm poll, so a realm that never arrives drops it
-  // instead of teleporting into whatever realm the player ends up in.
-  let pendingPlace: { realm: string; x: number; y: number; waited: number } | null = null
-  const PLACE_ARRIVAL_TIMEOUT = 60
+  // A teleport held until its realm change lands (see the teleport handler). `waited` is seconds
+  // accumulated by the realm poll, so a realm that never arrives drops it instead of teleporting
+  // into whatever realm the player ends up in.
+  let pendingTeleport: { realm: string; x: number; y: number; waited: number } | null = null
+  const REALM_ARRIVAL_TIMEOUT = 60
 
-  ctx.on('teleport', (msg) => {
-    teleportToParcel(msg.x, msg.y)
-  })
-
-  // Travel to a world/realm (e.g. boedo.dcl.eth). The engine auto-grants ChangeRealm for our
-  // super-user scene, so the React HUD owns the confirmation prompt.
-  ctx.on('changeRealm', (msg) => {
-    changeRealm({ realm: msg.realm }).catch((e: unknown) => {
-      console.error('[world] changeRealm failed', e)
-    })
-  })
-
-  // A place is realm + parcel. Resolved here rather than in React because this is where the
-  // current realm is known first-hand: React only sees the 2s realmInfo poll, and a teleport
-  // fired right after a realm change would read a stale one. The realm switch is skipped when the
-  // player is already there — a changeRealm to the realm you are in is a full scene purge +
-  // reconnect, not a no-op.
+  // Teleport to a parcel. Without a realm the coordinates are relative to wherever the player
+  // already is (a chat location link, a photo's capture spot) and nothing changes realm.
+  //
+  // With one, the parcel belongs to that realm, and getting there is part of the trip. It is
+  // resolved here rather than in React because this is where the current realm is known
+  // first-hand: React only sees the 2s realmInfo poll and would read a stale realm right after a
+  // change. The switch is skipped when the player is already there — a changeRealm to the realm
+  // you are in is a full scene purge + reconnect, not a no-op.
   //
   // The parcel CANNOT be sent on changeRealm's promise. That promise resolves as soon as the engine
   // ACCEPTS the change (restricted_actions/src/lib.rs: it queues a ChangeRealmEvent and answers Ok);
@@ -94,23 +85,36 @@ export function registerWorld(ctx: Ctx): void {
   // teleport sent there addresses the parcel grid of the realm we are LEAVING — you get one
   // out-of-world round trip inside the old realm, then a second one when the realm actually lands.
   // So the parcel waits for getRealm to report the target realm; the poll below completes it.
-  ctx.on('teleportToPlace', (msg) => {
+  ctx.on('teleport', (msg) => {
+    const realm = msg.realm
+    if (realm == null) {
+      teleportToParcel(msg.x, msg.y)
+      return
+    }
     getRealm({})
       .then(async ({ realmInfo }) => {
-        if (inRealm(realmInfo?.baseUrl ?? '', realmInfo?.realmName ?? '', msg.realm)) {
+        if (inRealm(realmInfo?.baseUrl ?? '', realmInfo?.realmName ?? '', realm)) {
           teleportToParcel(msg.x, msg.y)
           return
         }
-        pendingPlace = { realm: msg.realm, x: msg.x, y: msg.y, waited: 0 }
-        await changeRealm({ realm: msg.realm }).catch((e: unknown) => {
+        pendingTeleport = { realm, x: msg.x, y: msg.y, waited: 0 }
+        await changeRealm({ realm }).catch((e: unknown) => {
           console.error('[world] changeRealm failed', e)
-          pendingPlace = null
+          pendingTeleport = null
         })
       })
       .catch((e: unknown) => {
-        console.error('[world] teleportToPlace failed', e)
-        pendingPlace = null
+        console.error('[world] teleport failed', e)
+        pendingTeleport = null
       })
+  })
+
+  // Travel to a world/realm (e.g. boedo.dcl.eth) with no destination parcel. The engine
+  // auto-grants ChangeRealm for our super-user scene, so the React HUD owns the confirmation.
+  ctx.on('changeRealm', (msg) => {
+    changeRealm({ realm: msg.realm }).catch((e: unknown) => {
+      console.error('[world] changeRealm failed', e)
+    })
   })
 
   // `/reload` — reload the scene the player is standing in, resolved by parcel from liveSceneInfo.
@@ -193,21 +197,21 @@ export function registerWorld(ctx: Ctx): void {
   let pendingParcel = ''
   let attempts = 0
 
-  // Realm kind → the minimap (Worlds have no map tiles). Poll ~2s, push on change. While a place
-  // teleport is waiting for its realm, poll ~10×/s instead: that wait is a player standing in front
-  // of the loading screen, and up to 2s of it would be spent looking at the wrong parcel.
+  // Realm kind → the minimap (Worlds have no map tiles). Poll ~2s, push on change. While a teleport
+  // is waiting for its realm, poll ~10×/s instead: that wait is a player standing in front of the
+  // loading screen, and up to 2s of it would be spent looking at the wrong parcel.
   let realmAcc = 2
   let lastRealm = ''
   ctx.push((dt) => {
     realmAcc += dt
-    if (pendingPlace != null) {
-      pendingPlace.waited += dt
-      if (pendingPlace.waited > PLACE_ARRIVAL_TIMEOUT) {
-        console.error(`[world] realm ${pendingPlace.realm} never arrived; dropping the place teleport`)
-        pendingPlace = null
+    if (pendingTeleport != null) {
+      pendingTeleport.waited += dt
+      if (pendingTeleport.waited > REALM_ARRIVAL_TIMEOUT) {
+        console.error(`[world] realm ${pendingTeleport.realm} never arrived; dropping the teleport`)
+        pendingTeleport = null
       }
     }
-    if (realmAcc < (pendingPlace == null ? 2 : 0.1)) return
+    if (realmAcc < (pendingTeleport == null ? 2 : 0.1)) return
     realmAcc = 0
     getRealm({})
       .then(({ realmInfo }) => {
@@ -215,10 +219,10 @@ export function registerWorld(ctx: Ctx): void {
         const realmName = realmInfo?.realmName ?? ''
         // The realm we were held for is live: finish the trip. Done before the change check below
         // so it doesn't depend on the minimap's dedupe key.
-        if (pendingPlace != null && inRealm(baseUrl, realmName, pendingPlace.realm)) {
-          const place = pendingPlace
-          pendingPlace = null
-          teleportToParcel(place.x, place.y)
+        if (pendingTeleport != null && inRealm(baseUrl, realmName, pendingTeleport.realm)) {
+          const target = pendingTeleport
+          pendingTeleport = null
+          teleportToParcel(target.x, target.y)
         }
         // Key on both, so a change in either field re-publishes.
         const key = `${baseUrl}|${realmName}`

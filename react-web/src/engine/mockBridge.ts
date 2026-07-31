@@ -478,11 +478,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'teleport') {
-      reply({ kind: 'mapState', x: msg.x, y: msg.y })
-      return
-    }
-    if (msg.kind === 'teleportToPlace') {
-      // No realm switching in the mock, so a place teleport is just the parcel move.
+      // `realm` is ignored: there is no realm switching in the mock, only the parcel move.
       reply({ kind: 'mapState', x: msg.x, y: msg.y })
       return
     }

@@ -773,7 +773,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           // bounds (scene_runner initialize_scene.rs, RealmInitialLocation::Base) — from a World
           // that means landing on whatever Genesis parcel matches the world coordinates you
           // happened to be at, often an empty one. Same 0,0 the old system-scene HUD teleported to.
-          driverRef.current?.send({ kind: 'teleportToPlace', realm: DEFAULT_REALM, x: 0, y: 0 })
+          driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x: 0, y: 0 })
           break
         case 'world':
           driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
@@ -905,14 +905,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setGalleryPhotos((list) => list.filter((p) => p.id !== id))
     setGalleryStorage((s) => ({ ...s, current: Math.max(0, s.current - 1) }))
   }, [])
+  // Same request, and the same engine op behind it: the two differ only in whether the parcel
+  // carries the realm it belongs to. Without one the scene teleports inside the current realm.
   const teleport = useCallback((x: number, y: number) => {
     driverRef.current?.send({ kind: 'teleport', x, y })
   }, [])
-  // Teleport to a Genesis City place. The realm is part of the destination: from inside a World these
-  // coordinates address a different parcel grid, so a bare teleport would land on the world's
-  // own x,y. The scene skips the realm switch when we're already in Genesis.
+  // With one, the scene travels there first. These coordinates are Genesis City's, so from inside a
+  // World a bare teleport would land on the world's own x,y. The realm switch is skipped when we're
+  // already in Genesis.
   const teleportToPlace = useCallback((x: number, y: number) => {
-    driverRef.current?.send({ kind: 'teleportToPlace', realm: DEFAULT_REALM, x, y })
+    driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
   }, [])
   const changeRealm = useCallback((realm: string) => {
     driverRef.current?.send({ kind: 'changeRealm', realm })
