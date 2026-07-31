@@ -98,9 +98,13 @@ export interface MapState {
   y: number
   open: boolean
   toggle: () => void
+  /** Move to a parcel of the realm the player is already in. For a place picked out of a
+   *  listing use `teleportToPlace` — those coordinates are Genesis City's, not the current realm's. */
   teleport: (x: number, y: number) => void
   /** Travel to a world/realm by name (e.g. `boedo.dcl.eth`). */
   changeRealm: (realm: string) => void
+  /** Teleport to a Genesis City place: returns to Genesis first when the player is in a World. */
+  teleportToPlace: (x: number, y: number) => void
 }
 
 /** Live player pose for the minimap: position in world metres, yaws in degrees. */
@@ -764,7 +768,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
           break
         case 'genesis':
-          driverRef.current?.send({ kind: 'changeRealm', realm: DEFAULT_REALM })
+          // Genesis Plaza, not merely the Genesis realm. A bare realm change names no destination,
+          // and the engine then keeps the parcel you were standing on, clamped into the new realm's
+          // bounds (scene_runner initialize_scene.rs, RealmInitialLocation::Base) — from a World
+          // that means landing on whatever Genesis parcel matches the world coordinates you
+          // happened to be at, often an empty one. Same 0,0 the old system-scene HUD teleported to.
+          driverRef.current?.send({ kind: 'teleportToPlace', realm: DEFAULT_REALM, x: 0, y: 0 })
           break
         case 'world':
           driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
@@ -898,6 +907,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const teleport = useCallback((x: number, y: number) => {
     driverRef.current?.send({ kind: 'teleport', x, y })
+  }, [])
+  // Teleport to a Genesis City place. The realm is part of the destination: from inside a World these
+  // coordinates address a different parcel grid, so a bare teleport would land on the world's
+  // own x,y. The scene skips the realm switch when we're already in Genesis.
+  const teleportToPlace = useCallback((x: number, y: number) => {
+    driverRef.current?.send({ kind: 'teleportToPlace', realm: DEFAULT_REALM, x, y })
   }, [])
   const changeRealm = useCallback((realm: string) => {
     driverRef.current?.send({ kind: 'changeRealm', realm })
@@ -1436,7 +1451,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       saveOutfit, deleteOutfit, equipOutfit
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
-    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
+    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace },
     minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },
     gallery: {

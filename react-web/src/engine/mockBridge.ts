@@ -481,6 +481,11 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       reply({ kind: 'mapState', x: msg.x, y: msg.y })
       return
     }
+    if (msg.kind === 'teleportToPlace') {
+      // No realm switching in the mock, so a place teleport is just the parcel move.
+      reply({ kind: 'mapState', x: msg.x, y: msg.y })
+      return
+    }
     if (msg.kind === 'changeRealm') return // no realm switching in the mock
     if (msg.kind === 'permissionResolve') return // no engine to apply the decision in the mock
     if (msg.kind === 'getCommunities') {

@@ -111,6 +111,7 @@ export type PageToScene =
   | GetMapRequest
   | TeleportRequest
   | ChangeRealmRequest
+  | TeleportToPlaceRequest
   | MinimapConfigRequest
   | PermissionResolveRequest
   | EngineViewportRequest
@@ -443,6 +444,21 @@ export interface TeleportRequest {
 export interface ChangeRealmRequest {
   kind: 'changeRealm'
   realm: string
+}
+
+/** Teleport to a place: a parcel *in a given realm*. Parcel coordinates only address the realm
+ *  that owns them, so leaving the current one is part of the trip — the scene switches realm
+ *  (only when it isn't already there) and then teleports. Same pair the native explorer's discover
+ *  page fires together (crates/system_ui/src/discover.rs).
+ *
+ *  Not the same as `teleport`, which stays in the current realm: that one is for coordinates
+ *  that are already realm-relative (a chat location link, a photo's capture spot). */
+export interface TeleportToPlaceRequest {
+  kind: 'teleportToPlace'
+  /** Realm the place lives in: a world name (`boedo.dcl.eth`) or a realm URL. */
+  realm: string
+  x: number
+  y: number
 }
 
 /** A scene's pending permission prompt relayed from the engine (e.g. it wants to move you
