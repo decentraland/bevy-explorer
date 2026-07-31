@@ -486,6 +486,35 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
       out of 60 Hz instead of the engine guessing. Bigger process; the engine-side cycle is the cheap
       first step.
     Needs a WASM rebuild, so it belongs in its own PR, not in the HUD stack.
+44. `[bug]` **The loading screen closes before the destination scene is loaded** — *engine-side (Rust),
+    one to discuss with Rob*. Teleport into Genesis Plaza from a World and you get: "Preparing your
+    surroundings", then the overlay closes onto an empty green parcel, then the plaza pops in over the
+    next few seconds. The HUD can't fix this — `SceneLoadingOverlay` is a pure mirror of the engine's
+    `visible` flag (`wallet.address().is_some() && !oow.is_empty()`, `system_ui/src/oow.rs:264`), and
+    the player is let into the world by `handle_out_of_world` as soon as the scene is "ready"
+    (`restricted_actions/src/teleport.rs:143`): `tick_number > 5` and nothing in `blocked`.
+    - **The asset gate is tick-bounded, not completion-bounded.** `gltf_container.rs:1079` only inserts
+      `GLTF_LOADING` into `blocked` *while* `context.tick_number <= 5`; past that it removes the block
+      unconditionally and forces `GltfLoadingCount` to 0. A scene whose GLTFs take longer to stream than
+      its first 5 ticks (i.e. any real scene) therefore reports "ready" with nothing rendered yet.
+    - **Same reason the asset counter never appears.** `pendingAssets` comes from that same
+      `GltfLoadingCount` (`oow.rs:38`), so outside the 5-tick window it is 0/None and the React overlay
+      falls back to its indeterminate "Preparing your surroundings" bar. Users read that as "the loading
+      screen doesn't work", when what's missing is the number behind it.
+    - **Why it only shows up on a cold destination.** Teleporting inside the realm you're already in
+      usually looks fine: the surroundings have been streaming for a while (`SceneLoadDistance`), the
+      pointers are resolved and the target scene is partly cached, so by tick 5 there is something to
+      draw. A realm change makes everything cold (about, active-entities, entity definition, then the
+      GLTFs), and 5 ticks are ~5 frames against seconds of downloads — hence the empty parcel. The
+      repro to confirm this framing: from Genesis, with no realm change, jump to a far, never-visited
+      place; if the empty-parcel flash appears there too, the realm change is only the reliable way to
+      get a cold destination, not the cause.
+    - **Shape of a fix**: gate on the declared GltfContainers actually finishing (with a timeout, so a
+      broken scene can't strand the player) instead of cutting at tick 5, and keep publishing the
+      pending count for as long as the gate holds. Worth checking with Rob whether the 5-tick cut is
+      load-bearing for something else (it predates the React HUD and the native loading dialog reads the
+      same signal, `oow.rs:100`).
+    Needs a WASM rebuild, so it belongs in its own PR, not in the HUD stack.
 
 ## Not gaps (already good / ahead)
 
