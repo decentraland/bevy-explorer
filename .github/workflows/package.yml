@@ -13,16 +13,16 @@ jobs:
         if: github.repository == 'decentraland/bevy-explorer' || github.event_name == 'workflow_dispatch'
         steps:
           - name: Clone repo
-            uses: actions/checkout@v3
+            uses: actions/checkout@v7
 
           - name: Get current time with underscores
-            uses: 1466587594/get-current-time@5979d2f4455ed5df566aa6df67cedd77d17afaa9 # v2.1.1, pinned for supply-chain safety
+            uses: 1466587594/get-current-time@6826799222c9d913068c04cb99e67f34dbf3caae # v2.1.1, pinned for supply-chain safety
             id: current_time_underscores
             with:
                 format: YYYY-MM-DD-HH-mm-ss
 
           - name: Get current time with dashes
-            uses: 1466587594/get-current-time@5979d2f4455ed5df566aa6df67cedd77d17afaa9 # v2.1.1, pinned for supply-chain safety
+            uses: 1466587594/get-current-time@6826799222c9d913068c04cb99e67f34dbf3caae # v2.1.1, pinned for supply-chain safety
             id: current_time_dashes
             with:
                 format: YYYY-MM-DD-HH-mm-ss
@@ -63,7 +63,7 @@ jobs:
         runs-on: ${{ matrix.os }}
         steps:
           - name: Clone repo
-            uses: actions/checkout@v3
+            uses: actions/checkout@v7
 
           - uses: actions-rs/toolchain@v1
             with:
@@ -81,7 +81,7 @@ jobs:
                 repo-token: ${{ secrets.GITHUB_TOKEN }}
     
           # react HUD (cef): node for the page + bridge-scene bundles, ninja for cef-dll-sys' cmake build
-          - uses: actions/setup-node@v4
+          - uses: actions/setup-node@v7
             with:
                 node-version: 20
           # moved up from below the CEF export: the TS-bindings build compiles the bevy dep
