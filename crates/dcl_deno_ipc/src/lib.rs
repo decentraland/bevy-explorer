@@ -329,27 +329,30 @@ pub fn spawn_scene(
     let (main_sx, thread_rx) = tokio::sync::mpsc::unbounded_channel::<RendererResponse>();
 
     let ipc_out = NEW_SCENE_SENDER.read().unwrap();
-    let ipc_out = ipc_out.as_ref().unwrap();
+    let Some(ipc_out) = ipc_out.as_ref() else {
+        error!("scene {id:?} not started: ipc runtime is not initialized");
+        return main_sx;
+    };
 
-    ipc_out
-        .send(NewSceneCommand {
-            id: id.0.to_bits(),
-            info: NewSceneInfo {
-                initial_crdt_store,
-                scene_context,
-                scene_js: scene_js.0.to_string(),
-                crdt_component_interfaces,
-                storage_root,
-                inspect,
-                is_super,
-                scene_origin,
-            },
-            renderer_channel: thread_rx,
-            global_channel: global_update_receiver,
-            response_channel: renderer_sender,
-            system_api_sender: super_user,
-        })
-        .unwrap();
+    if let Err(e) = ipc_out.send(NewSceneCommand {
+        id: id.0.to_bits(),
+        info: NewSceneInfo {
+            initial_crdt_store,
+            scene_context,
+            scene_js: scene_js.0.to_string(),
+            crdt_component_interfaces,
+            storage_root,
+            inspect,
+            is_super,
+            scene_origin,
+        },
+        renderer_channel: thread_rx,
+        global_channel: global_update_receiver,
+        response_channel: renderer_sender,
+        system_api_sender: super_user,
+    }) {
+        error!("scene {id:?} not started: ipc channel closed ({e})");
+    }
 
     main_sx
 }
