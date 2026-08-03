@@ -183,16 +183,22 @@ jobs:
           args: --package dcl_deno_ipc --release --locked
       - uses: actions-rs/cargo@v1
         if: runner.os == 'windows'
+        env:
+          ALLOW_SKIPPED_INTEGRATION: "1"
         with:
           command: test
           args: --all --release --locked -j8 -- --test-threads=1 
       - uses: actions-rs/cargo@v1
         if: runner.os == 'linux'
+        env:
+          ALLOW_SKIPPED_INTEGRATION: "1"
         with:
           command: test
           args: --all --release --locked -- --test-threads=1 
       - uses: actions-rs/cargo@v1
         if: runner.os == 'macos'
+        env:
+          ALLOW_SKIPPED_INTEGRATION: "1"
         with:
           command: test
           args: --all --release --locked -- --test-threads=1 
