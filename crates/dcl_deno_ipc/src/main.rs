@@ -9,7 +9,7 @@ use bevy::{
 };
 use common::rpc::{IpcMessage, RequestContext, SCENE_IPC_CONTEXT};
 use dcl::js::{SceneResponseReceiver, SceneResponseSender};
-use dcl_deno_ipc::{write_msg, EngineToScene, SceneToEngine};
+use dcl_deno_ipc::{read_frame, write_msg, EngineToScene, SceneToEngine};
 use interprocess::local_socket::{
     tokio::{RecvHalf, SendHalf, Stream},
     traits::tokio::Stream as _,
@@ -17,7 +17,6 @@ use interprocess::local_socket::{
 };
 use std::{env, sync::Arc};
 use system_bridge::SystemApi;
-use tokio::io::AsyncReadExt;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -115,11 +114,7 @@ async fn scene_ipc_in(
 
     let (global_sx, _global_rx) = tokio::sync::broadcast::channel(1000);
 
-    while let Ok(len) = stream.read_u64_le().await {
-        let mut buffer = vec![0u8; len as usize];
-        stream.read_exact(&mut buffer).await.unwrap();
-        let msg: EngineToScene = rmp_serde::from_slice(&buffer).unwrap();
-
+    while let Some(msg) = read_frame::<EngineToScene>(&mut stream).await {
         match msg {
             EngineToScene::NewScene(id, new_scene_info) => {
                 let response_sx = dcl_deno::spawn_scene(
