@@ -1,7 +1,7 @@
 use bevy::{math::Vec3Swizzles, prelude::*};
 use common::{
     rpc::{RpcCall, RpcResultSender},
-    structs::{AvatarDynamicState, PermissionType, PrimaryUser},
+    structs::{AvatarDynamicState, CurrentRealm, PermissionType, PrimaryUser},
 };
 use comms::global_crdt::ForeignPlayer;
 use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
@@ -92,6 +92,7 @@ pub fn handle_out_of_world(
     live_scenes: Res<LiveScenes>,
     foreign_players: Query<&GlobalTransform, With<ForeignPlayer>>,
     wallet: Res<Wallet>,
+    current_realm: Res<CurrentRealm>,
 ) {
     let Ok((player, mut t)) = player.single_mut() else {
         return;
@@ -109,7 +110,24 @@ pub fn handle_out_of_world(
         .as_ivec2();
 
     let hash = match pointers.get(parcel) {
-        Some(PointerResult::Exists { hash, .. }) => hash,
+        // Only trust a pointer tagged with the realm we are actually in. A pointer from the realm
+        // we just left survives a realm change (`process_realm_change` reconciles pointers against
+        // the new realm's scene list, which an ActiveEntities realm like Genesis doesn't have, so
+        // nothing is purged there) and `load_active_entities` treats such a pointer as "must
+        // re-request" rather than as an answer — see its `realm != current_realm.pointer_realm()`
+        // filter. Trusting it here let a teleport into a fresh realm resolve to the PREVIOUS
+        // realm's scene, which is already ticking and "ready", so the player was dropped straight
+        // into it: no loading screen, no asset count, and the real scene streamed in afterwards.
+        // Treat it like an unresolved parcel and wait for the sweep to answer for this realm.
+        Some(PointerResult::Exists { realm, hash, .. })
+            if realm == current_realm.pointer_realm() =>
+        {
+            hash
+        }
+        Some(PointerResult::Exists { .. }) => {
+            debug!("scene {parcel} is from another realm, waiting for this realm to resolve it");
+            return;
+        }
         Some(PointerResult::Nothing) => {
             debug!("scene {parcel} doesn't exist, returning to world");
             debug!("everything: {:?}", pointers);
