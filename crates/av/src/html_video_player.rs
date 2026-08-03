@@ -39,11 +39,6 @@ use web_sys::{
     wasm_bindgen::{prelude::Closure, JsCast, JsValue},
     HtmlMediaElement, HtmlVideoElement, VideoFrame,
 };
-#[cfg(feature = "livekit")]
-use {
-    bevy::ecs::relationship::Relationship,
-    comms::livekit::participant::{ChangeVolume, StreamViewer},
-};
 
 use crate::{
     audio_stream_should_be_playing, av_player_is_in_scene, video_player_should_be_playing,
@@ -478,26 +473,17 @@ impl<T: AVPlayer> Drop for HtmlMediaEntity<T> {
     }
 }
 
-#[cfg(not(feature = "livekit"))]
-type AVPlayerOnInsertQuery<'a, T> = (&'a T, &'a mut HtmlMediaEntity<T>);
-#[cfg(feature = "livekit")]
-type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a StreamViewer>, &'a mut HtmlMediaEntity<T>);
-
 fn av_player_on_insert<T: AVPlayer>(
     trigger: Trigger<OnInsert, T>,
     mut commands: Commands,
-    mut av_players: Query<AVPlayerOnInsertQuery<T>>,
+    mut av_players: Query<(&T, &mut HtmlMediaEntity<T>)>,
     audio_settings: Res<AudioSettings>,
 ) {
     info!("AVPlayer updated.");
     let entity = trigger.target();
-    let Ok(query) = av_players.get_mut(entity) else {
+    let Ok((av_player, mut html_media_entity)) = av_players.get_mut(entity) else {
         return;
     };
-    #[cfg(not(feature = "livekit"))]
-    let (av_player, mut html_media_entity) = query;
-    #[cfg(feature = "livekit")]
-    let (av_player, maybe_stream_viewer, mut html_media_entity) = query;
 
     let source_url = av_player.source();
 
@@ -507,10 +493,6 @@ fn av_player_on_insert<T: AVPlayer>(
         if source_url.starts_with("livekit-video://") {
             html_media_entity.set_loop(av_player.r#loop());
             html_media_entity.set_volume(av_player_volume * audio_settings.scene());
-            #[cfg(feature = "livekit")]
-            if let Some(stream_viewer) = maybe_stream_viewer {
-                commands.trigger_targets(ChangeVolume(av_player_volume), stream_viewer.get());
-            }
         } else {
             // This forces an update on the entity
             commands.entity(entity).try_remove::<ShouldBePlaying<T>>();
@@ -523,8 +505,6 @@ fn av_player_on_insert<T: AVPlayer>(
         commands
             .entity(trigger.target())
             .try_remove::<(HtmlMediaEntity<T>, ShouldBePlaying<T>)>();
-        #[cfg(feature = "livekit")]
-        commands.entity(entity).try_remove::<StreamViewer>();
     }
 }
 
@@ -536,8 +516,6 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
         HtmlMediaEntity<T>,
         VideoTextureOutput,
     )>();
-    #[cfg(feature = "livekit")]
-    commands.entity(entity).try_remove::<StreamViewer>();
 }
 
 #[expect(clippy::type_complexity)]

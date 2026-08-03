@@ -8,7 +8,6 @@ edition = "2021"
 [features]
 ffmpeg = ["dep:ffmpeg-next"]
 html = ["dep:web-sys", "dep:wasm-bindgen"]
-livekit = ["comms/livekit"]
 av_player_debug = ["bevy/bevy_picking"]
 
 [dependencies]

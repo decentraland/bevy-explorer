@@ -22,11 +22,6 @@ use scene_runner::{
     update_world::material::{update_materials, VideoTextureOutput},
     ContainerEntity,
 };
-#[cfg(feature = "livekit")]
-use {
-    bevy::ecs::relationship::Relationship,
-    comms::livekit::participant::{ChangeVolume, StreamImage, StreamViewer},
-};
 
 use crate::{
     audio_sink::ChangeAudioSinkVolume,
@@ -63,8 +58,6 @@ impl Plugin for VideoPlayerPlugin {
         app.add_observer(av_player_should_be_playing_on_add::<VideoPlayer>);
         app.add_observer(av_player_should_be_playing_on_remove::<AudioStream>);
         app.add_observer(av_player_should_be_playing_on_remove::<VideoPlayer>);
-        #[cfg(feature = "livekit")]
-        app.add_observer(copy_stream_image);
     }
 }
 
@@ -73,10 +66,7 @@ fn init_ffmpeg() {
     ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Error);
 }
 
-#[cfg(not(feature = "livekit"))]
 type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a AVSinks<T>>);
-#[cfg(feature = "livekit")]
-type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a StreamViewer>, Option<&'a AVSinks<T>>);
 
 fn av_player_on_insert<T: AVPlayer>(
     trigger: Trigger<OnInsert, T>,
@@ -84,13 +74,9 @@ fn av_player_on_insert<T: AVPlayer>(
     av_players: Query<AVPlayerOnInsertQuery<T>>,
 ) {
     let entity = trigger.target();
-    let Ok(query) = av_players.get(entity) else {
+    let Ok((av_player, maybe_sinks)) = av_players.get(entity) else {
         unreachable!("Infallible query.");
     };
-    #[cfg(not(feature = "livekit"))]
-    let (av_player, maybe_sinks) = query;
-    #[cfg(feature = "livekit")]
-    let (av_player, maybe_stream_viewer, maybe_sinks) = query;
 
     let maybe_audio_sink = maybe_sinks.and_then(|sinks| sinks.audio_sink());
     let maybe_video_sink = maybe_sinks.and_then(|sinks| sinks.video_sink());
@@ -103,11 +89,7 @@ fn av_player_on_insert<T: AVPlayer>(
     let livekit_stream = source.starts_with("livekit-video://");
     if !source.is_empty() && (equal_sink || livekit_stream) {
         if livekit_stream {
-            #[cfg(feature = "livekit")]
-            if let Some(stream_viewer) = maybe_stream_viewer {
-                debug!("Updating volume of stream.");
-                commands.trigger_targets(ChangeVolume(av_player.volume()), stream_viewer.get());
-            }
+            // Noop
         } else {
             debug!("Updating sinks of {entity}.");
             // This forces an update on the entity
@@ -144,8 +126,6 @@ fn av_player_on_insert<T: AVPlayer>(
         commands
             .entity(entity)
             .try_remove::<(AVSinks<T>, ShouldBePlaying<T>)>();
-        #[cfg(feature = "livekit")]
-        commands.entity(entity).try_remove::<StreamViewer>();
     }
 }
 
@@ -154,10 +134,6 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
     commands
         .entity(entity)
         .try_remove::<(InScene, ShouldBePlaying<T>, AVSinks<T>, VideoTextureOutput)>();
-    #[cfg(feature = "livekit")]
-    commands
-        .entity(entity)
-        .try_remove::<(StreamViewer, StreamImage)>();
 }
 
 fn av_player_should_be_playing_on_add<T: AVPlayer>(
@@ -303,11 +279,6 @@ fn play_videos(
     }
 }
 
-#[cfg(not(feature = "livekit"))]
-type RebuildSinkFilter<T> = (Without<T>,);
-#[cfg(feature = "livekit")]
-type RebuildSinkFilter<T> = (Without<T>, Without<StreamViewer>);
-
 #[expect(clippy::type_complexity)]
 fn rebuild_sinks<T: AVPlayer>(
     mut commands: Commands,
@@ -319,7 +290,7 @@ fn rebuild_sinks<T: AVPlayer>(
             Option<&VideoTextureOutput>,
             Has<ShouldBePlaying<T>>,
         ),
-        RebuildSinkFilter<AVSinks<T>>,
+        Without<T>,
     >,
     scenes: Query<&RendererSceneContext>,
     ipfs: Res<IpfsResource>,
@@ -387,21 +358,4 @@ fn rebuild_sinks<T: AVPlayer>(
             T::build_sink_component(audio_sink, video_sink),
         ));
     }
-}
-
-#[cfg(feature = "livekit")]
-fn copy_stream_image(
-    trigger: Trigger<OnInsert, StreamImage>,
-    mut commands: Commands,
-    stream_viewers: Query<&StreamImage, With<StreamViewer>>,
-) {
-    let entity = trigger.target();
-    let Ok(stream_image) = stream_viewers.get(entity) else {
-        // StreamImage added to something that is not a StreamViewer
-        return;
-    };
-    debug!("Adding VideoTextureOutput to {entity}.");
-    commands
-        .entity(entity)
-        .try_insert(VideoTextureOutput((**stream_image).clone()));
 }
