@@ -772,11 +772,26 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           // and the engine then keeps the parcel you were standing on, clamped into the new realm's
           // bounds (scene_runner initialize_scene.rs, RealmInitialLocation::Base) — from a World
           // that means landing on whatever Genesis parcel matches the world coordinates you
-          // happened to be at, often an empty one. Same 0,0 the old system-scene HUD teleported to.
-          driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x: 0, y: 0 })
+          // happened to be at, often an empty one.
+          //
+          // Default is the plaza's BASE parcel (-3,-2), deliberately not 0,0. The landing spot is
+          // identical — the engine spawns at the scene's spawn points whichever of its parcels you
+          // target — but 0,0 is also where a World's own scene sits, and that scene survives a
+          // world→Genesis change (the engine only purges scenes for realms with scenes_urn). A
+          // teleport to 0,0 then finds that stale "ready" scene at the parcel and drops the player
+          // in before Genesis Plaza has even spawned: no loading screen, empty land. Backlog 44 has
+          // the full trace. `/goto genesis x,y` overrides the default, for testing other parcels.
+          driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x: cmd.x ?? -3, y: cmd.y ?? -2 })
           break
         case 'world':
-          driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
+          // With x,y (`/goto <world> x,y`), the bridge holds the teleport until the realm change
+          // lands — see the `teleport` handler in bridge-scene/src/domains/world.ts. Without, the
+          // realm's own default spawn applies (RealmInitialLocation::Base), unchanged from before.
+          if (cmd.x != null && cmd.y != null) {
+            driverRef.current?.send({ kind: 'teleport', realm: cmd.realm, x: cmd.x, y: cmd.y })
+          } else {
+            driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
+          }
           break
         case 'reload':
           driverRef.current?.send({ kind: 'reloadScene' })
