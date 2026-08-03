@@ -229,7 +229,7 @@ pub(crate) fn scene_thread(
     scene_origin: bevy::prelude::Vec3,
 ) {
     let scene_id = scene_context.scene_id;
-    let preview = scene_context.preview;
+    let preview = scene_context.preview_egress();
     let (mut runtime, inspector) = create_runtime(inspect, super_user.is_some(), &storage_root);
 
     // store handle
