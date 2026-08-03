@@ -32,10 +32,10 @@ use crate::{
         participant::{HostedBy, LivekitParticipant, StreamBroadcast, Streamer},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         track::{
-            Audio, Camera, LivekitTrack, Microphone, PublishedBy, SubscribeToAudioTrack,
-            SubscribeToTrack, Subscribed, Subscribing, TrackPublished, TrackSubscribed,
-            TrackUnpublished, TrackUnsubscribed, TrackVolume, UnsubscribeToTrack, Unsubscribed,
-            Unsubscribing, Video,
+            Audio, Camera, LivekitTrack, Microphone, PublishedBy, ScreenshareAudio,
+            ScreenshareVideo, SubscribeToAudioTrack, SubscribeToTrack, Subscribed, Subscribing,
+            TrackPublished, TrackSubscribed, TrackUnpublished, TrackUnsubscribed, TrackVolume,
+            UnsubscribeToTrack, Unsubscribed, Unsubscribing, Video,
         },
         LivekitRuntime,
     },
@@ -121,6 +121,12 @@ fn track_published(
         }
         TrackSource::Camera => {
             entity_cmd.try_insert(Camera);
+        }
+        TrackSource::ScreenshareAudio => {
+            entity_cmd.try_insert(ScreenshareAudio);
+        }
+        TrackSource::Screenshare => {
+            entity_cmd.try_insert(ScreenshareVideo);
         }
         source => warn!("Track {} had {:?} source.", track.sid(), source),
     }
