@@ -1,3 +1,5 @@
+use std::collections::{HashMap, VecDeque};
+
 use bevy::{
     ecs::{entity::EntityHashSet, relationship::Relationship},
     platform::collections::HashSet,
@@ -43,10 +45,50 @@ use crate::{
     SceneRoom,
 };
 
+const MAX_INBOUND_PACKET_BYTES: usize = 128 * 1024;
+const INBOUND_RATE_WINDOW_SECS: f64 = 1.0;
+const MAX_MESSAGES_PER_WINDOW: usize = 300;
+const MAX_RATE_ENTRIES: usize = 4096;
+
+// Per-peer sliding-window rate limit; `windows` is bounded by MAX_RATE_ENTRIES against an identity flood.
+#[derive(Resource, Default)]
+struct InboundRateLimiter {
+    windows: HashMap<String, VecDeque<f64>>,
+}
+
+impl InboundRateLimiter {
+    fn allow(&mut self, identity: &str, now: f64) -> bool {
+        let cutoff = now - INBOUND_RATE_WINDOW_SECS;
+
+        if !self.windows.contains_key(identity) && self.windows.len() >= MAX_RATE_ENTRIES {
+            self.windows.retain(|_, times| {
+                while times.front().is_some_and(|&t| t < cutoff) {
+                    times.pop_front();
+                }
+                !times.is_empty()
+            });
+            if !self.windows.contains_key(identity) && self.windows.len() >= MAX_RATE_ENTRIES {
+                return false;
+            }
+        }
+
+        let times = self.windows.entry(identity.to_owned()).or_default();
+        while times.front().is_some_and(|&t| t < cutoff) {
+            times.pop_front();
+        }
+        if times.len() >= MAX_MESSAGES_PER_WINDOW {
+            return false;
+        }
+        times.push_back(now);
+        true
+    }
+}
+
 pub struct LivekitParticipantPlugin;
 
 impl Plugin for LivekitParticipantPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<InboundRateLimiter>();
         app.add_observer(participant_connected);
         app.add_observer(participant_disconnected);
         app.add_observer(participant_connection_quality_changed);
@@ -210,12 +252,33 @@ fn participant_payload(
     global_crdt_state: Res<GlobalCrdtState>,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
     livekit_runtime: Res<LivekitRuntime>,
+    mut rate_limiter: ResMut<InboundRateLimiter>,
+    time: Res<Time>,
 ) {
     let ParticipantPayload {
         room: room_entity,
         participant,
         payload,
     } = trigger.event();
+
+    if payload.len() > MAX_INBOUND_PACKET_BYTES {
+        warn!(
+            "dropping oversized ({} bytes) payload from participant {} ({}).",
+            payload.len(),
+            participant.sid(),
+            participant.identity()
+        );
+        return;
+    }
+
+    if !rate_limiter.allow(participant.identity().as_str(), time.elapsed_secs_f64()) {
+        trace!(
+            "rate-limited payload from participant {} ({}).",
+            participant.sid(),
+            participant.identity()
+        );
+        return;
+    }
 
     let packet = match rfc4::Packet::decode(payload.as_slice()) {
         Ok(packet) => packet,
