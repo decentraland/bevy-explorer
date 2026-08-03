@@ -3594,6 +3594,7 @@ dependencies = [
  "imposters",
  "input_manager",
  "ipfs",
+ "livestream_manager",
  "log",
  "log-panics",
  "mimalloc",
@@ -6780,6 +6781,13 @@ source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webr
 dependencies = [
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "livestream_manager"
+version = "0.1.0"
+dependencies = [
+ "bevy",
 ]
 
 [[package]]

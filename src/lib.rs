@@ -51,6 +51,7 @@ use image_processing::ImageProcessingPlugin;
 use imposters::DclImposterPlugin;
 use input_manager::InputManagerPlugin;
 use ipfs::{map_realm_name, IpfsIoPlugin};
+use livestream_manager::plugin::LivestreamManagerPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use particle_system::plugin::ParticleSystemPlugin;
 use platform::default_camera_components;
@@ -437,7 +438,8 @@ impl DecentralandApp {
             .add_plugins(SystemBridgePlugin { bare: false })
             .add_plugins(SceneInspectorPlugin)
             .add_plugins(EmbedAssetsPlugin)
-            .add_plugins(ParticleSystemPlugin);
+            .add_plugins(ParticleSystemPlugin)
+            .add_plugins(LivestreamManagerPlugin);
 
         if !decentraland_app_config.arguments.is_preview {
             app.add_plugins(DclImposterPlugin {
