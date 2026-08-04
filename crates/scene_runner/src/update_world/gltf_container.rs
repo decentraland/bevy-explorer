@@ -176,6 +176,21 @@ fn on_gltf_container_removed(trigger: Trigger<OnRemove, GltfDefinition>, mut com
         .try_remove::<(GltfLoaded, GltfProcessed, GltfReady)>();
 }
 
+// assets are keyed by path and the first load's settings win, so every gltf that might
+// also be used by a GltfContainer (e.g. AssetLoad preloads) must load with these settings
+pub fn scene_gltf_loader_settings(
+    transfer_priority: RenderAssetTransferPriority,
+) -> impl Fn(&mut GltfLoaderSettings) + Send + Sync + 'static {
+    move |s| {
+        s.load_cameras = false;
+        s.load_lights = true;
+        s.load_meshes = RenderAssetUsages::MAIN_WORLD; // we'll modify then upload
+        s.load_materials = RenderAssetUsages::RENDER_WORLD;
+        s.include_source = true;
+        s.transfer_priority = transfer_priority;
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_gltf(
     mut commands: Commands,
@@ -271,14 +286,7 @@ fn update_gltf(
         let h_gltf = ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
             &gltf.0.src,
             &scene_def.id,
-            move |s| {
-                s.load_cameras = false;
-                s.load_lights = true;
-                s.load_meshes = RenderAssetUsages::MAIN_WORLD; // we'll modify then upload
-                s.load_materials = RenderAssetUsages::RENDER_WORLD;
-                s.include_source = true;
-                s.transfer_priority = transfer_priority;
-            },
+            scene_gltf_loader_settings(transfer_priority),
         );
 
         let h_gltf = match h_gltf {
