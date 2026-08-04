@@ -105,6 +105,7 @@ fn transmitter_on(
     _trigger: Trigger<OnAdd, ActiveTransmitter>,
     mut next_state: ResMut<NextState<Transmitter>>,
 ) {
+    debug!("New transmitter {}", _trigger.target());
     next_state.set(Transmitter::On);
 }
 
@@ -112,6 +113,10 @@ fn transmitter_off(
     _trigger: Trigger<OnRemove, ActiveTransmitter>,
     mut next_state: ResMut<NextState<Transmitter>>,
 ) {
+    debug!(
+        "Transmitter {} removed, transmitters are now Off",
+        _trigger.target()
+    );
     next_state.set(Transmitter::Off);
 }
 
@@ -119,6 +124,7 @@ fn receiver_on(
     _trigger: Trigger<OnAdd, ActiveReceiver>,
     mut next_state: ResMut<NextState<Receiver>>,
 ) {
+    debug!("New receiver {}", _trigger.target());
     next_state.set(Receiver::On);
 }
 
@@ -127,7 +133,9 @@ fn receiver_off(
     receivers: Query<(), With<ActiveReceiver>>,
     mut next_state: ResMut<NextState<Receiver>>,
 ) {
+    debug!("Receiver {} removed", _trigger.target());
     if receivers.iter().len() == 1 {
+        debug!("Receivers are now Off");
         next_state.set(Receiver::Off);
     }
 }
