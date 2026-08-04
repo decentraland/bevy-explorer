@@ -1,6 +1,6 @@
 use bevy::{
     asset::RenderAssetUsages,
-    ecs::relationship::Relationship,
+    ecs::{relationship::Relationship, system::entity_command},
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
@@ -540,7 +540,10 @@ fn active_transmitter_removed(
     mut commands: Commands,
 ) {
     let entity = trigger.target();
-    commands.entity(entity).trigger(UnsubscribeToTrack);
+    commands.entity(entity).queue_handled(
+        entity_command::trigger(UnsubscribeToTrack),
+        bevy::ecs::error::debug,
+    );
 }
 
 #[cfg(not(target_arch = "wasm32"))]
