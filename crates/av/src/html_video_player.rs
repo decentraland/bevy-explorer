@@ -42,7 +42,7 @@ use web_sys::{
 
 use crate::{
     audio_stream_should_be_playing, av_player_is_in_scene, video_player_should_be_playing,
-    AVPlayer, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
+    AVPlayer, AudioStream, InScene, ShouldBePlaying, VideoPlayer, LIVEKIT_VIDEO_STREAM,
 };
 
 type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
@@ -490,7 +490,7 @@ fn av_player_on_insert<T: AVPlayer>(
     if source_url == html_media_entity.source {
         debug!("Updating html media entity {entity}.");
         let av_player_volume = av_player.volume();
-        if source_url.starts_with("livekit-video://") {
+        if source_url == LIVEKIT_VIDEO_STREAM {
             html_media_entity.set_loop(av_player.r#loop());
             html_media_entity.set_volume(av_player_volume * audio_settings.scene());
         } else {
@@ -565,7 +565,7 @@ fn rebuild_html_media_entities<T: AVPlayer>(
                 Some(texture) => texture.0.clone(),
             };
 
-            let mut video = if source_url.starts_with("livekit-video://") {
+            let mut video = if source_url == LIVEKIT_VIDEO_STREAM {
                 let Some(video) =
                     HtmlMediaEntity::<T>::new_stream(source_url.to_owned(), image_handle.clone())
                 else {
@@ -624,7 +624,7 @@ fn update_av_players<T: AVPlayer>(
 
         let state = av.state();
 
-        if av.source.starts_with("livekit-video://") && state == VideoState::VsError {
+        if av.source == LIVEKIT_VIDEO_STREAM && state == VideoState::VsError {
             error!("Stream is erroring, retrying.");
             commands.entity(ent).try_remove::<HtmlMediaEntity<T>>();
             continue;

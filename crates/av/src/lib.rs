@@ -65,6 +65,8 @@ use {
     html_video_player::VideoPlayerPlugin,
 };
 
+const LIVEKIT_VIDEO_STREAM: &str = "livekit-video://current-stream";
+
 pub trait AVPlayer: Component {
     fn source(&self) -> &str;
     fn playing(&self) -> bool;
@@ -345,12 +347,11 @@ fn video_player_should_be_playing(
         .filter_map(
             |(ent, player, has_in_scene, has_should_be_playing, transform)| {
                 if player.playing() {
-                    let distance =
-                        if !has_in_scene && player.source().starts_with("livekit-video://") {
-                            f32::MAX
-                        } else {
-                            transform.translation().distance(user.translation())
-                        };
+                    let distance = if !has_in_scene && player.source() == LIVEKIT_VIDEO_STREAM {
+                        f32::MAX
+                    } else {
+                        transform.translation().distance(user.translation())
+                    };
                     Some((has_in_scene, has_should_be_playing, distance, ent))
                 } else {
                     None

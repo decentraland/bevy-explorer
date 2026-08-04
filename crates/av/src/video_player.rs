@@ -31,6 +31,7 @@ use crate::{
     video_player_should_be_playing,
     video_stream::{av_sinks, noop_sinks},
     AVPlayer, AVPlayerSinks, AVSinks, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
+    LIVEKIT_VIDEO_STREAM,
 };
 
 pub struct VideoPlayerPlugin;
@@ -86,7 +87,7 @@ fn av_player_on_insert<T: AVPlayer>(
         .as_ref()
         .filter(|video_sink| source == video_sink.source)
         .is_some();
-    let livekit_stream = source.starts_with("livekit-video://");
+    let livekit_stream = source == LIVEKIT_VIDEO_STREAM;
     if !source.is_empty() && (equal_sink || livekit_stream) {
         if livekit_stream {
             // Noop
@@ -325,7 +326,7 @@ fn rebuild_sinks<T: AVPlayer>(
 
         let source = player.source();
         let source_playing = player.playing();
-        let (video_sink, audio_sink) = if source.starts_with("livekit-video://") {
+        let (video_sink, audio_sink) = if source == LIVEKIT_VIDEO_STREAM {
             // Done in observers
             continue;
         } else if source.is_empty() {
