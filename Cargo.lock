@@ -645,6 +645,7 @@ dependencies = [
  "ffmpeg-next",
  "ipfs",
  "kira",
+ "livestream_manager",
  "reqwest 0.12.15",
  "scene_runner",
  "system_bridge",

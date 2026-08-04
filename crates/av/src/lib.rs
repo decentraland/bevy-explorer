@@ -51,6 +51,7 @@ use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoPlayer},
     SceneComponentId,
 };
+use livestream_manager::ActiveReceiver;
 use scene_runner::{update_world::AddCrdtInterfaceExt, ContainerEntity, ContainingScene};
 
 #[cfg(feature = "ffmpeg")]
@@ -215,6 +216,9 @@ impl<T> Default for ShouldBePlaying<T> {
 #[derive(Debug, Component)]
 pub struct InScene;
 
+#[derive(Debug, Component)]
+pub struct Stream;
+
 #[derive(Default)]
 pub struct AVPlayerPlugin;
 
@@ -260,6 +264,7 @@ impl Plugin for AVPlayerPlugin {
                     audio_stream_should_be_playing,
                     video_player_should_be_playing,
                 ),
+                (activate_receiver, deactivate_receiver),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
@@ -377,16 +382,58 @@ fn video_player_should_be_playing(
             .try_remove::<ShouldBePlaying<VideoPlayer>>();
     }
 
-    for ent in sorted_players
+    for (ent, distance, has_should_be_playing) in sorted_players
         .iter()
         .take(config.max_videos)
-        // Only call `insert` on those that do not have `ShouldBePlaying`
-        // The `filter` MUST be after the `take`
-        .filter(|(_, has_should_be_playing, _, _)| !*has_should_be_playing)
-        .map(|(_, _, _, ent)| *ent)
+        .map(|(_, has_should_be_playing, distance, ent)| (*ent, *distance, *has_should_be_playing))
     {
-        commands
-            .entity(ent)
-            .try_insert(ShouldBePlaying::<VideoPlayer>::default());
+        if distance == f32::MAX {
+            if has_should_be_playing {
+                commands
+                    .entity(ent)
+                    .try_remove::<ShouldBePlaying<VideoPlayer>>();
+            }
+        } else {
+            if !has_should_be_playing {
+                commands
+                    .entity(ent)
+                    .try_insert(ShouldBePlaying::<VideoPlayer>::default());
+            }
+        }
+    }
+}
+
+#[expect(clippy::type_complexity)]
+fn activate_receiver(
+    mut commands: Commands,
+    av_players: Populated<
+        Entity,
+        (
+            With<VideoPlayer>,
+            With<Stream>,
+            With<ShouldBePlaying<VideoPlayer>>,
+            Without<ActiveReceiver>,
+        ),
+    >,
+) {
+    for entity in av_players.into_inner() {
+        commands.entity(entity).try_insert(ActiveReceiver);
+    }
+}
+
+#[expect(clippy::type_complexity)]
+fn deactivate_receiver(
+    mut commands: Commands,
+    av_players: Populated<
+        Entity,
+        (
+            With<VideoPlayer>,
+            Without<ShouldBePlaying<VideoPlayer>>,
+            With<ActiveReceiver>,
+        ),
+    >,
+) {
+    for entity in av_players.into_inner() {
+        commands.entity(entity).try_remove::<ActiveReceiver>();
     }
 }

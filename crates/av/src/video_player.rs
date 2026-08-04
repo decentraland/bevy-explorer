@@ -30,7 +30,7 @@ use crate::{
     video_context::{VideoData, VideoInfo},
     video_player_should_be_playing,
     video_stream::{av_sinks, noop_sinks},
-    AVPlayer, AVPlayerSinks, AVSinks, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
+    AVPlayer, AVPlayerSinks, AVSinks, AudioStream, InScene, ShouldBePlaying, Stream, VideoPlayer,
     LIVEKIT_VIDEO_STREAM,
 };
 
@@ -67,12 +67,10 @@ fn init_ffmpeg() {
     ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Error);
 }
 
-type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a AVSinks<T>>);
-
 fn av_player_on_insert<T: AVPlayer>(
     trigger: Trigger<OnInsert, T>,
     mut commands: Commands,
-    av_players: Query<AVPlayerOnInsertQuery<T>>,
+    av_players: Query<(&T, Option<&AVSinks<T>>)>,
 ) {
     let entity = trigger.target();
     let Ok((av_player, maybe_sinks)) = av_players.get(entity) else {
@@ -83,18 +81,22 @@ fn av_player_on_insert<T: AVPlayer>(
     let maybe_video_sink = maybe_sinks.and_then(|sinks| sinks.video_sink());
 
     let source = av_player.source();
+    let livekit_stream = source == LIVEKIT_VIDEO_STREAM;
+
     let equal_sink = maybe_video_sink
         .as_ref()
         .filter(|video_sink| source == video_sink.source)
         .is_some();
-    let livekit_stream = source == LIVEKIT_VIDEO_STREAM;
+
     if !source.is_empty() && (equal_sink || livekit_stream) {
         if livekit_stream {
-            // Noop
+            commands.entity(entity).try_insert(Stream);
         } else {
             debug!("Updating sinks of {entity}.");
             // This forces an update on the entity
-            commands.entity(entity).try_remove::<ShouldBePlaying<T>>();
+            commands
+                .entity(entity)
+                .try_remove::<(ShouldBePlaying<T>, Stream)>();
             if let Some(video_sink) = maybe_video_sink {
                 video_sink
                     .command_sender
