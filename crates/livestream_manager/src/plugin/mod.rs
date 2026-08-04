@@ -34,7 +34,7 @@ impl Plugin for LivestreamManagerPlugin {
 
         app.add_systems(
             Update,
-            activate_transmission.run_if(in_state(Transmission::NeedsTransmitter)),
+            manage_streams.run_if(not(in_state(Transmission::Off))),
         );
     }
 }
@@ -133,7 +133,7 @@ fn receiver_off(
 }
 
 #[expect(clippy::type_complexity)]
-fn activate_transmission(
+fn manage_streams(
     mut commands: Commands,
     livestream_manager: Single<(
         &LivestreamManager,
@@ -143,6 +143,7 @@ fn activate_transmission(
             &ManagingVideoStreams,
         )>,
     )>,
+    active_transmission: Option<Single<Entity, With<ActiveTransmitter>>>,
 ) {
     let (livestream_manager, any_streamer) = livestream_manager.into_inner();
     let collection = match any_streamer {
@@ -152,9 +153,14 @@ fn activate_transmission(
         _ => unreachable!("Infallible"),
     };
 
-    let highest_priority = collection.iter().next().copied().unwrap();
+    let highest_priority = collection.iter().next().copied();
 
-    commands
-        .entity(highest_priority)
-        .insert(ActiveTransmitter((*livestream_manager).clone()));
+    if highest_priority != active_transmission.as_deref().copied() {
+        let highest_priority = highest_priority
+            .expect("Entity is available if any of the relationships are populated");
+        debug!("{highest_priority} is the transmitter with highest priority.");
+        commands
+            .entity(highest_priority)
+            .insert(ActiveTransmitter((*livestream_manager).clone()));
+    }
 }
