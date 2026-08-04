@@ -125,6 +125,13 @@ function createJsContext(wasmApi, context) {
   // gpu_cache.js both run on the main thread.
   deleteFromPrototypeChain(self, "indexedDB");
 
+  // CacheStorage is the last same-origin store the sandbox could see — it holds the ipfs fetch
+  // cache (`ipfs-path-cache-v1`), so a scene could read every asset the client has pulled and, more
+  // to the point, write to keys the loader later serves. Its users are elsewhere:
+  // image_processing/src/processor/wasm_fs.rs runs under asset_processor.js, which engine.js spawns
+  // as its own worker, and service_worker.js is a different context entirely.
+  deleteFromPrototypeChain(self, "caches");
+
   // BroadcastChannel is a same-origin, serverless side channel — handed ONLY to the trusted
   // super-user (--ui) scene, so an embedded host page can drive it; ordinary scenes never see it
   // (it would otherwise let an untrusted scene coordinate with the page / other scenes off-network).
