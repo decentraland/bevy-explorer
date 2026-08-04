@@ -42,7 +42,7 @@ use web_sys::{
 
 use crate::{
     audio_stream_should_be_playing, av_player_is_in_scene, video_player_should_be_playing,
-    AVPlayer, AudioStream, InScene, ShouldBePlaying, VideoPlayer, LIVEKIT_VIDEO_STREAM,
+    AVPlayer, AudioStream, InScene, ShouldBePlaying, Stream, VideoPlayer, LIVEKIT_VIDEO_STREAM,
 };
 
 type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
@@ -401,35 +401,45 @@ impl<T: AVPlayer> Drop for HtmlMediaEntity<T> {
 fn av_player_on_insert<T: AVPlayer>(
     trigger: Trigger<OnInsert, T>,
     mut commands: Commands,
-    mut av_players: Query<(&T, &mut HtmlMediaEntity<T>)>,
+    mut av_players: Query<(&T, Option<&mut HtmlMediaEntity<T>>)>,
     audio_settings: Res<AudioSettings>,
 ) {
     info!("AVPlayer updated.");
     let entity = trigger.target();
-    let Ok((av_player, mut html_media_entity)) = av_players.get_mut(entity) else {
+    let Ok((av_player, maybe_html_media_entity)) = av_players.get_mut(entity) else {
         return;
     };
 
     let source_url = av_player.source();
 
-    if source_url == html_media_entity.source {
-        debug!("Updating html media entity {entity}.");
-        let av_player_volume = av_player.volume();
-        if source_url == LIVEKIT_VIDEO_STREAM {
-            html_media_entity.set_loop(av_player.r#loop());
-            html_media_entity.set_volume(av_player_volume * audio_settings.scene());
+    if let Some(mut html_media_entity) = maybe_html_media_entity {
+        if source_url == html_media_entity.source {
+            debug!("Updating html media entity {entity}.");
+            let av_player_volume = av_player.volume();
+            if source_url == LIVEKIT_VIDEO_STREAM {
+                html_media_entity.set_loop(av_player.r#loop());
+                html_media_entity.set_volume(av_player_volume * audio_settings.scene());
+                commands.entity(entity).try_insert(Stream);
+            } else {
+                // This forces an update on the entity
+                commands.entity(entity).try_remove::<ShouldBePlaying<T>>();
+                html_media_entity.stop();
+                html_media_entity.set_loop(av_player.r#loop());
+                html_media_entity.set_volume(av_player_volume * audio_settings.scene());
+            }
         } else {
-            // This forces an update on the entity
-            commands.entity(entity).try_remove::<ShouldBePlaying<T>>();
-            html_media_entity.stop();
-            html_media_entity.set_loop(av_player.r#loop());
-            html_media_entity.set_volume(av_player_volume * audio_settings.scene());
+            debug!("Removing html media entity {entity} due to diverging source.");
+            commands
+                .entity(trigger.target())
+                .try_remove::<(HtmlMediaEntity<T>, ShouldBePlaying<T>, Stream)>();
         }
+    } else if source_url == LIVEKIT_VIDEO_STREAM {
+        commands.entity(entity).try_insert(Stream);
     } else {
         debug!("Removing html media entity {entity} due to diverging source.");
         commands
             .entity(trigger.target())
-            .try_remove::<(HtmlMediaEntity<T>, ShouldBePlaying<T>)>();
+            .try_remove::<(HtmlMediaEntity<T>, ShouldBePlaying<T>, Stream)>();
     }
 }
 
@@ -440,6 +450,7 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
         ShouldBePlaying<T>,
         HtmlMediaEntity<T>,
         VideoTextureOutput,
+        Stream,
     )>();
 }
 
@@ -448,7 +459,7 @@ fn rebuild_html_media_entities<T: AVPlayer>(
     mut commands: Commands,
     av_players: Populated<
         (Entity, &ContainerEntity, &T, Option<&VideoTextureOutput>),
-        Without<HtmlMediaEntity<T>>,
+        (Without<HtmlMediaEntity<T>>, Without<Stream>),
     >,
     scenes: Query<&RendererSceneContext>,
     ipfs: Res<IpfsResource>,
@@ -490,15 +501,7 @@ fn rebuild_html_media_entities<T: AVPlayer>(
                 Some(texture) => texture.0.clone(),
             };
 
-            let mut video = if source_url == LIVEKIT_VIDEO_STREAM {
-                let Some(video) =
-                    HtmlMediaEntity::<T>::new_stream(source_url.to_owned(), image_handle.clone())
-                else {
-                    continue;
-                };
-                debug!("stream video {}", source_url);
-                video
-            } else if source_url.is_empty() {
+            let mut video = if source_url.is_empty() {
                 debug!("noop video {}", source_url);
                 HtmlMediaEntity::<T>::new_noop(source_url.to_owned(), image_handle.clone())
             } else {
