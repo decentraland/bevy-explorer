@@ -51,8 +51,11 @@ use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoPlayer},
     SceneComponentId,
 };
-use livestream_manager::ActiveReceiver;
-use scene_runner::{update_world::AddCrdtInterfaceExt, ContainerEntity, ContainingScene};
+use livestream_manager::{ActiveReceiver, ReceiverImage};
+use scene_runner::{
+    update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
+    ContainerEntity, ContainingScene,
+};
 
 #[cfg(feature = "ffmpeg")]
 use {
@@ -275,6 +278,9 @@ impl Plugin for AVPlayerPlugin {
         #[cfg(feature = "ffmpeg")]
         app.add_observer(audio_sink::change_audio_sink_volume::<VideoPlayer>);
 
+        app.add_observer(receiver_image_added);
+        app.add_observer(receiver_image_removed);
+
         #[cfg(feature = "av_player_debug")]
         app.add_plugins(av_player_debug::AvPlayerDebugPlugin);
     }
@@ -436,4 +442,23 @@ fn deactivate_receiver(
     for entity in av_players.into_inner() {
         commands.entity(entity).try_remove::<ActiveReceiver>();
     }
+}
+
+fn receiver_image_added(
+    trigger: Trigger<OnAdd, ReceiverImage>,
+    mut commands: Commands,
+    video_players: Query<&ReceiverImage, (With<VideoPlayer>, With<Stream>)>,
+) {
+    let entity = trigger.target();
+
+    if let Ok(receiver_image) = video_players.get(entity) {
+        commands
+            .entity(entity)
+            .insert(VideoTextureOutput((*receiver_image).clone()));
+    }
+}
+
+fn receiver_image_removed(trigger: Trigger<OnAdd, ReceiverImage>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<VideoTextureOutput>();
 }
