@@ -117,6 +117,14 @@ function createJsContext(wasmApi, context) {
   deleteFromPrototypeChain(self.navigator, "storage");
   deleteFromPrototypeChain(self.navigator, "storageBuckets");
 
+  // IndexedDB is same-origin too, and holds more than its own data: platform/src/web_save.js keeps
+  // the FileSystemDirectoryHandle for the user's picked scene folder there (db `dcl-editor`, store
+  // `handles`), with readwrite permission already granted. A handle read back out of IndexedDB is
+  // as live as the one that was stored, so a scene reaching it would get the user's real
+  // filesystem, not origin-private storage. Nothing in this worker uses IndexedDB — web_save.js and
+  // gpu_cache.js both run on the main thread.
+  deleteFromPrototypeChain(self, "indexedDB");
+
   // BroadcastChannel is a same-origin, serverless side channel — handed ONLY to the trusted
   // super-user (--ui) scene, so an embedded host page can drive it; ordinary scenes never see it
   // (it would otherwise let an untrusted scene coordinate with the page / other scenes off-network).
