@@ -81,6 +81,7 @@ fn setup_manager(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     ));
 
     commands.spawn(LivestreamManager(handle));
+    debug!("LivestreamManager setup");
 }
 
 fn component_on_add<T: Component, R: Relationship>(
