@@ -1,13 +1,16 @@
 // Interstitial for a link that picks its own super-user scene (`?systemScene=`) — see
 // lib/systemScene.ts for why that parameter is worth stopping on.
 //
-// Deliberately not a dismissible dialog: it renders INSTEAD of the app (App.tsx returns this before
-// EngineHost mounts, so no engine boots and no scene loads while it is up), there is no scrim to
-// click away, and Escape does nothing. Continuing is behind ADVANCED because the safe choice has to
-// be the easy one — the user arrives here having already clicked something the attacker gave them.
+// Not dismissible, by omission rather than by fighting the primitive: with no `onClose`, Modal's
+// Escape handler and its scrim click both call `onClose?.()` and go inert, and `closeButton={false}`
+// drops the X. It renders INSTEAD of the app (App.tsx returns it before EngineHost mounts, so no
+// engine boots and no scene loads while it is up), so there is nothing behind it to dismiss to.
+//
+// Continuing is behind ADVANCED because the safe choice has to be the easy one — the user arrives
+// here having already clicked something the attacker gave them.
 
 import { useState } from 'react'
-import { Button, DclLogo } from '../../design'
+import { Button, DclLogo, ModalShell } from '../../design'
 import styles from './UntrustedLaunchGate.module.css'
 
 // A tab the user opened themselves can't be closed by script, so send them somewhere safe instead.
@@ -15,6 +18,8 @@ function exitApplication(): void {
   window.close()
   window.location.replace('https://decentraland.org')
 }
+
+const TITLE = 'This Launch Link Is Not Trusted'
 
 export function UntrustedLaunchGate({
   systemScene,
@@ -26,32 +31,22 @@ export function UntrustedLaunchGate({
   const [advanced, setAdvanced] = useState(false)
 
   return (
-    <div className={styles.root}>
-      <div className={styles.card} role="dialog" aria-modal="true" aria-labelledby="untrusted-launch-title">
-        <DclLogo size={72} className={styles.logo} />
-        <h1 id="untrusted-launch-title" className={styles.title}>
-          This Launch Link Is Not Trusted
-        </h1>
-
-        <p className={styles.lead}>Someone may be trying to change how your Explorer behaves.</p>
-        <p className={styles.lead}>
-          This link carries a parameter the Explorer does not accept from links, because it replaces
-          the interface with code that runs as you:
-        </p>
-
-        <dl className={styles.params}>
-          <dt className={styles.paramName}>
-            systemScene = <span className={styles.paramValue}>{systemScene}</span>
-          </dt>
-          <dd className={styles.paramDesc}>
-            Replaces the Explorer&apos;s interface with a scene loaded from this address. It can move
-            your avatar, change your profile, and answer permission prompts on your behalf.
-          </dd>
-        </dl>
-
-        <p className={styles.lead}>Unless you built this link yourself, the safe choice is to exit.</p>
-
-        <div className={styles.buttons}>
+    <ModalShell
+      role="alertdialog"
+      ariaLabel={TITLE}
+      width={560}
+      dismissOnScrim={false}
+      closeButton={false}
+      backdropClassName={styles.layer}
+      header={
+        <div className={styles.head}>
+          <DclLogo size={72} />
+          <h2 className={styles.title}>{TITLE}</h2>
+        </div>
+      }
+      actionsDirection="column"
+      actions={
+        <>
           {/* autoFocus lands focus on the safe action rather than whatever the browser picks. */}
           <Button autoFocus variant="primary" className={styles.exit} onClick={exitApplication}>
             Exit Application
@@ -67,12 +62,30 @@ export function UntrustedLaunchGate({
               </Button>
             </div>
           ) : (
-            <Button variant="secondary" className={styles.more} onClick={() => setAdvanced(true)}>
+            <Button variant="secondary" onClick={() => setAdvanced(true)}>
               Advanced
             </Button>
           )}
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <p className={styles.lead}>Someone may be trying to change how your Explorer behaves.</p>
+      <p className={styles.lead}>
+        This link carries a parameter the Explorer does not accept from links, because it replaces the
+        interface with code that runs as you:
+      </p>
+
+      <dl className={styles.params}>
+        <dt>
+          systemScene = <span className={styles.paramValue}>{systemScene}</span>
+        </dt>
+        <dd className={styles.paramDesc}>
+          Replaces the Explorer&apos;s interface with a scene loaded from this address. It can move
+          your avatar, change your profile, and answer permission prompts on your behalf.
+        </dd>
+      </dl>
+
+      <p className={styles.lead}>Unless you built this link yourself, the safe choice is to exit.</p>
+    </ModalShell>
   )
 }

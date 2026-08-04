@@ -1,64 +1,44 @@
-.root {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal, 1000);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  overflow-y: auto;
-  /* Darker than --menu-bg: this is a stop sign, not a menu. */
+/* The popup reuses Modal/ModalShell (backdrop + card + focus-trap + Escape), like EngineErrorModal.
+   Only the parts specific to a security stop-sign live here. */
+
+/* The app isn't rendered behind this gate, so the shell's translucent scrim would sit over a blank
+   page. Paint it opaque — and darker than --menu-bg, because this is a stop sign, not a menu. */
+.layer {
   background: radial-gradient(circle at 50% 30%, #3b1063 0%, #240a3d 55%, #14051f 100%);
-  font-family: var(--font-family);
-  color: var(--text);
+  backdrop-filter: none;
 }
-.card {
-  width: 100%;
-  max-width: 560px;
-  margin: auto;
-  padding: 40px 44px 36px;
-  border-radius: var(--r-panel);
-  background: var(--modal-bg);
-  box-shadow: var(--shadow-modal);
+
+/* Alert-style centered header — logo + title-scale type, not the shell's compact panel heading. */
+.head {
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-.logo {
-  width: 72px;
-  height: 72px;
-  margin-bottom: 18px;
+  padding: 12px 12px 0;
+  text-align: center;
 }
 .title {
-  margin: 0 0 28px;
-  /* Not --fs-display: that tops out at 3.25rem, which is a full-page headline, not a card title. */
-  font-size: clamp(1.5rem, 3.2vh, 2rem);
+  margin: 18px 0 0;
+  font-size: var(--fs-title);
   font-weight: 700;
-  letter-spacing: -0.01em;
-  text-align: center;
+  line-height: 1.2;
   color: var(--error);
 }
+
 .lead {
-  width: 100%;
   margin: 0 0 18px;
   font-size: var(--fs-lg);
-  line-height: 1.45;
   color: var(--ink-95);
 }
 
 .params {
-  width: 100%;
   margin: 0 0 18px;
-}
-.paramName {
   font-size: var(--fs-lg);
-  line-height: 1.45;
   color: var(--ink-95);
 }
-/* The attacker controls this string: break it anywhere so a long one can't push the card wide or
-   run under the card's edge, and keep it visually distinct from our own copy. */
+/* The attacker controls this string: break it anywhere so a long one can't push the card wide, and
+   keep it visually distinct from our own copy. */
 .paramValue {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   color: var(--error-text);
   overflow-wrap: anywhere;
 }
@@ -66,43 +46,7 @@
   margin: 2px 0 0;
   padding-left: 18px;
   font-size: var(--fs-md);
-  line-height: 1.45;
   color: var(--ink-7);
-}
-
-.buttons {
-  width: 100%;
-  margin-top: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-/* 2-class selectors so these beat Button's own variant/size rules regardless of import order. */
-.buttons .exit,
-.buttons .more,
-.buttons .proceed {
-  width: 100%;
-  min-height: 52px;
-}
-.buttons .exit {
-  background: var(--error);
-  color: var(--text);
-}
-.buttons .exit:hover {
-  background: #ff4444;
-}
-/* The exit button is autofocused, so its ring is on screen from the first paint — the UA default is
-   a blue that fights the palette. */
-.buttons .exit:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 3px;
-}
-.buttons .more {
-  background: var(--fill-2);
-  color: var(--ink-85);
-}
-.buttons .more:hover {
-  background: var(--fill-4);
 }
 
 .advanced {
@@ -117,15 +61,27 @@
 .advancedNote {
   margin: 0;
   font-size: var(--fs-md);
-  line-height: 1.45;
   color: var(--ink-7);
 }
+
+.exit {
+  background: var(--error);
+  color: var(--text);
+}
+.exit:hover {
+  background: #ff4444;
+}
+/* Autofocused, so its ring is on screen from the first paint — the UA default blue fights the
+   palette. */
+.exit:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
 /* Understated on purpose — the risky path shouldn't look like the recommended one. */
-.buttons .proceed {
-  min-height: 44px;
+.proceed {
   border: 1px solid var(--error);
   color: var(--error-text);
 }
-.buttons .proceed:hover {
+.proceed:hover {
   background: rgba(255, 36, 36, 0.12);
 }
