@@ -14,5 +14,8 @@ pub struct VideoStream;
 #[derive(Component, Deref)]
 pub struct ActiveTransmitter(Handle<Image>);
 
+#[derive(Component)]
+pub struct ActiveReceiver;
+
 #[derive(Component, Deref)]
-pub struct ActiveReceiver(Handle<Image>);
+pub struct ReceiverImage(Handle<Image>);

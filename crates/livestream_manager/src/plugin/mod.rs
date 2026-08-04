@@ -8,7 +8,8 @@ use bevy::{
 };
 
 use crate::{
-    plugin::states::*, ActiveReceiver, ActiveTransmitter, Presentation, VideoCast, VideoStream,
+    plugin::states::*, ActiveReceiver, ActiveTransmitter, Presentation, ReceiverImage, VideoCast,
+    VideoStream,
 };
 
 pub struct LivestreamManagerPlugin;
@@ -121,19 +122,28 @@ fn transmitter_off(
 }
 
 fn receiver_on(
-    _trigger: Trigger<OnAdd, ActiveReceiver>,
+    trigger: Trigger<OnAdd, ActiveReceiver>,
+    mut commands: Commands,
+    livestream_manager: Single<&LivestreamManager>,
     mut next_state: ResMut<NextState<Receiver>>,
 ) {
-    debug!("New receiver {}", _trigger.target());
+    let entity = trigger.target();
+    debug!("New receiver {}", entity);
+    commands
+        .entity(entity)
+        .insert(ReceiverImage((**livestream_manager).clone()));
     next_state.set(Receiver::On);
 }
 
 fn receiver_off(
-    _trigger: Trigger<OnRemove, ActiveReceiver>,
+    trigger: Trigger<OnRemove, ActiveReceiver>,
+    mut commands: Commands,
     receivers: Query<(), With<ActiveReceiver>>,
     mut next_state: ResMut<NextState<Receiver>>,
 ) {
-    debug!("Receiver {} removed", _trigger.target());
+    let entity = trigger.target();
+    debug!("Receiver {} removed", entity);
+    commands.entity(entity).try_remove::<ReceiverImage>();
     if receivers.iter().len() == 1 {
         debug!("Receivers are now Off");
         next_state.set(Receiver::Off);
