@@ -2762,6 +2762,7 @@ dependencies = [
  "js-sys",
  "kira",
  "livekit",
+ "livestream_manager",
  "modular-bitfield",
  "multihash-codetable",
  "multipart",

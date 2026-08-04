@@ -1,5 +1,12 @@
-use bevy::{ecs::relationship::Relationship, prelude::*};
+use bevy::{
+    asset::RenderAssetUsages,
+    ecs::relationship::Relationship,
+    prelude::*,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+};
 use common::{debug_panic, util::AsH160};
+use livekit::webrtc::video_frame::VideoBuffer;
+use livestream_manager::{ActiveTransmitter, Presentation, VideoCast, VideoStream};
 #[cfg(not(target_arch = "wasm32"))]
 use {
     bevy::ecs::world::OnDespawn,
@@ -20,6 +27,7 @@ use crate::livekit::{
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
+        livekit_bridge::I420BufferExt,
         participant::{HostedBy, LivekitParticipant},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         track::{
@@ -52,6 +60,12 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(audio_track_unpublished);
         #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(video_track_is_now_subscribed);
+
+        app.add_observer(active_transmitter_added);
+        app.add_observer(active_transmitter_removed);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(Update, copy_frame);
     }
 }
 
@@ -65,7 +79,7 @@ fn track_published(
 ) {
     let TrackPublished { participant, track } = trigger.event();
 
-    let Some((entity, _, hosted_by)) = participants
+    let Some((participant_entity, _, hosted_by)) = participants
         .iter()
         .find(|(_, livekit_participant, _)| livekit_participant.sid() == participant.sid())
     else {
@@ -85,7 +99,7 @@ fn track_published(
         LivekitTrack {
             track: track.clone(),
         },
-        PublishedBy(entity),
+        PublishedBy(participant_entity),
         Unsubscribed,
     ));
     match track.kind() {
@@ -101,44 +115,63 @@ fn track_published(
             entity_cmd.try_insert(Microphone);
         }
         TrackSource::Camera => {
-            entity_cmd.try_insert(Camera);
+            entity_cmd.try_insert((Camera, VideoStream));
         }
         TrackSource::ScreenshareAudio => {
             entity_cmd.try_insert(ScreenshareAudio);
         }
         TrackSource::Screenshare => {
-            entity_cmd.try_insert(ScreenshareVideo);
+            entity_cmd.try_insert((ScreenshareVideo, VideoCast));
         }
         source => warn!("Track {} had {:?} source.", track.sid(), source),
     }
+    if participant
+        .identity()
+        .as_str()
+        .starts_with("presentation-bot:")
+    {
+        entity_cmd.try_insert(Presentation);
+    }
+    let entity = entity_cmd.id();
 
     let maybe_address = participant.identity().as_str().as_h160();
-    if maybe_address.is_some() && track.kind() == TrackKind::Audio {
-        #[expect(
-            clippy::unnecessary_unwrap,
-            reason = "No let chains in current version."
-        )]
-        let address = maybe_address.unwrap();
+    if track.kind() == TrackKind::Audio {
+        if maybe_address.is_some() {
+            #[expect(
+                clippy::unnecessary_unwrap,
+                reason = "No let chains in current version."
+            )]
+            let address = maybe_address.unwrap();
 
-        let sender = player_state.get_sender();
-        let task = livekit_runtime.spawn(async move {
-            sender
-                .send(
-                    PlayerUpdate {
-                        transport_id: room_entity,
-                        message: PlayerMessage::AudioStreamAvailable {
-                            transport: room_entity,
-                        },
-                        address,
-                    }
-                    .into(),
-                )
-                .await
-        });
-        player_update_tasks.push(PlayerUpdateTask {
-            runtime: livekit_runtime.clone(),
-            task,
-        });
+            let sender = player_state.get_sender();
+            let task = livekit_runtime.spawn(async move {
+                sender
+                    .send(
+                        PlayerUpdate {
+                            transport_id: room_entity,
+                            message: PlayerMessage::AudioStreamAvailable {
+                                transport: room_entity,
+                            },
+                            address,
+                        }
+                        .into(),
+                    )
+                    .await
+            });
+            player_update_tasks.push(PlayerUpdateTask {
+                runtime: (*livekit_runtime).clone(),
+                task,
+            });
+        } else {
+            // Any audio track that does not come from a H160
+            // identity must run always
+            debug!(
+                "Subscribing to Audio for non-player participant {} ({})",
+                participant.sid(),
+                participant.identity()
+            );
+            commands.trigger_targets(SubscribeToTrack, entity);
+        }
     }
 }
 
@@ -217,7 +250,7 @@ fn track_unpublished(
         });
 
         player_update_tasks.push(PlayerUpdateTask {
-            runtime: livekit_runtime.clone(),
+            runtime: (*livekit_runtime).clone(),
             task,
         });
     }
@@ -495,4 +528,63 @@ fn video_track_is_now_subscribed(
     commands
         .entity(entity)
         .try_insert((LivekitTrackTask(handle), VideoFrameReceiver { receiver }));
+}
+
+fn active_transmitter_added(trigger: Trigger<OnAdd, ActiveTransmitter>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).trigger(SubscribeToTrack);
+}
+
+fn active_transmitter_removed(
+    trigger: Trigger<OnRemove, ActiveTransmitter>,
+    mut commands: Commands,
+) {
+    let entity = trigger.target();
+    commands.entity(entity).trigger(UnsubscribeToTrack);
+}
+
+// #[cfg(not(target_arch = "wasm32"))]
+fn copy_frame(
+    mut commands: Commands,
+    active_transmitter: Single<(Entity, &ActiveTransmitter, &mut VideoFrameReceiver)>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let (entity, active_transmitter, mut video_frame_receiver): (
+        Entity,
+        &ActiveTransmitter,
+        Mut<VideoFrameReceiver>,
+    ) = active_transmitter.into_inner();
+
+    if !images.contains(active_transmitter.id()) {
+        debug_panic!("ActiveTransmitter image handle is invalid");
+    }
+
+    let mut frame = None;
+    loop {
+        match video_frame_receiver.try_recv() {
+            Ok(new_frame) => frame = Some(new_frame),
+            Err(mpsc::error::TryRecvError::Empty) => break,
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                error!("VideoFrameReceiver has disconnected.");
+                commands.entity(entity).try_remove::<VideoFrameReceiver>();
+                break;
+            }
+        }
+    }
+    if let Some(frame) = frame {
+        let mut image = Image::new(
+            Extent3d {
+                width: frame.width(),
+                height: frame.height(),
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            frame.rgba_data(),
+            TextureFormat::Rgba8Unorm,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Priority(-2);
+
+        images.insert(active_transmitter.id(), image);
+    }
 }
