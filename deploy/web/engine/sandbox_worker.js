@@ -70,6 +70,16 @@ const allowListES2020 = [
   "WeakSet",
 ];
 
+// Remove an inherited property. Interface objects (BroadcastChannel, Worker) are own properties of
+// the global and go with a plain delete; attributes like navigator.storage live on a prototype, and
+// deleting them off the instance silently succeeds without removing anything.
+function deleteFromPrototypeChain(obj, name) {
+  for (let o = obj; o != null; o = Object.getPrototypeOf(o)) {
+    if (Object.prototype.hasOwnProperty.call(o, name)) return delete o[name];
+  }
+  return false;
+}
+
 const jsContext = Object.create(null);
 var jsProxy = undefined;
 var jsPreamble = undefined;
@@ -89,6 +99,23 @@ function createJsContext(wasmApi, context) {
   delete self.BroadcastChannel;
   delete self.Worker;
   delete self.SharedWorker;
+
+  // OPFS is the origin's storage: config.json, the ipfs cache and every scene's localStorage all
+  // hang off the one root that navigator.storage.getDirectory() hands out. The scene's own storage
+  // no longer goes through it from here — crates/dcl_wasm/src/inner/local_storage.rs took a handle
+  // to just the local_storage/ subtree during wasm_init_scene, above, and that handle stays live
+  // once the accessor is gone.
+  //
+  // `delete navigator.storage` would return true and do nothing: WorkerNavigator exposes it on its
+  // prototype, so the own-property delete succeeds against a property that was never there. Walk to
+  // the prototype that actually holds it. (Same reason `delete self.navigator` is a no-op.)
+  //
+  // storageBuckets is the second door to the same API — navigator.storageBuckets.open(name) hands
+  // back a bucket with its own getDirectory(). A named bucket can't reach the default bucket's
+  // contents, so it isn't a route to engine state, but it is unmetered scene-controlled storage and
+  // two scenes agreeing on a bucket name would have a shared filesystem.
+  deleteFromPrototypeChain(self.navigator, "storage");
+  deleteFromPrototypeChain(self.navigator, "storageBuckets");
 
   // BroadcastChannel is a same-origin, serverless side channel — handed ONLY to the trusted
   // super-user (--ui) scene, so an embedded host page can drive it; ordinary scenes never see it
