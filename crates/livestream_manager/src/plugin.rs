@@ -5,7 +5,7 @@ use bevy::{
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 
-use crate::{ActiveTransmiter, Presentation, VideoCast, VideoStream};
+use crate::{ActiveTransmitter, Presentation, VideoCast, VideoStream};
 
 pub struct LivestreamManagerPlugin;
 
@@ -86,7 +86,7 @@ fn component_on_remove<T: Component, R: Relationship>(
 ) {
     commands
         .entity(trigger.target())
-        .try_remove::<(R, ActiveTransmiter)>();
+        .try_remove::<(R, ActiveTransmitter)>();
 }
 
 fn transmissions_available_but_none_active(
@@ -98,9 +98,9 @@ fn transmissions_available_but_none_active(
         )>,
         With<LivestreamManager>,
     >,
-    active_stream: Query<Entity, With<ActiveTransmiter>>,
+    active_transmitters: Query<Entity, With<ActiveTransmitter>>,
 ) -> bool {
-    !livestream_manager.is_empty() && active_stream.is_empty()
+    !livestream_manager.is_empty() && active_transmitters.is_empty()
 }
 
 #[expect(clippy::type_complexity)]
@@ -127,5 +127,5 @@ fn activate_transmission(
 
     commands
         .entity(highest_priority)
-        .insert(ActiveTransmiter((*livestream_manager).clone()));
+        .insert(ActiveTransmitter((*livestream_manager).clone()));
 }
