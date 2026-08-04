@@ -8,8 +8,8 @@ use bevy::{
 };
 
 use crate::{
-    plugin::states::*, ActiveReceiver, ActiveTransmitter, Presentation, ReceiverImage, VideoCast,
-    VideoStream,
+    plugin::states::*, ActiveReceiver, ActiveTransmitter, Presentation, ReceiverImage, Screenshare,
+    VideoCast, VideoStream,
 };
 
 pub struct LivestreamManagerPlugin;
@@ -24,6 +24,8 @@ impl Plugin for LivestreamManagerPlugin {
 
         app.add_observer(component_on_add::<Presentation, PresentationCaster>);
         app.add_observer(component_on_remove::<Presentation, PresentationCaster>);
+        app.add_observer(component_on_add::<Screenshare, Screensharer>);
+        app.add_observer(component_on_remove::<Screenshare, Screensharer>);
         app.add_observer(component_on_add::<VideoCast, VideoCaster>);
         app.add_observer(component_on_remove::<VideoCast, VideoCaster>);
         app.add_observer(component_on_add::<VideoStream, VideoStreamer>);
@@ -50,6 +52,14 @@ struct ManagingPresentations(Vec<Entity>);
 #[derive(Component)]
 #[relationship(relationship_target = ManagingPresentations)]
 struct PresentationCaster(Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = Screensharer)]
+struct ManagingScreenshare(Vec<Entity>);
+
+#[derive(Component)]
+#[relationship(relationship_target = ManagingScreenshare)]
+struct Screensharer(Entity);
 
 #[derive(Component)]
 #[relationship_target(relationship = VideoCaster)]
@@ -158,6 +168,7 @@ fn manage_streams(
         &LivestreamManager,
         AnyOf<(
             &ManagingPresentations,
+            &ManagingScreenshare,
             &ManagingCasts,
             &ManagingVideoStreams,
         )>,
@@ -166,9 +177,10 @@ fn manage_streams(
 ) {
     let (livestream_manager, any_streamer) = livestream_manager.into_inner();
     let collection = match any_streamer {
-        (Some(presentations), _, _) => presentations.collection(),
-        (_, Some(casts), _) => casts.collection(),
-        (_, _, Some(videos)) => videos.collection(),
+        (Some(presentations), _, _, _) => presentations.collection(),
+        (_, Some(screenshares), _, _) => screenshares.collection(),
+        (_, _, Some(casts), _) => casts.collection(),
+        (_, _, _, Some(videos)) => videos.collection(),
         _ => unreachable!("Infallible"),
     };
 

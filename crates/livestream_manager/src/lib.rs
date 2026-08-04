@@ -6,6 +6,9 @@ use bevy::prelude::*;
 pub struct Presentation;
 
 #[derive(Component)]
+pub struct Screenshare;
+
+#[derive(Component)]
 pub struct VideoCast;
 
 #[derive(Component)]
