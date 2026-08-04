@@ -11,5 +11,5 @@ pub struct VideoCast;
 #[derive(Component)]
 pub struct VideoStream;
 
-#[derive(Component)]
-struct ActiveTransmission;
+#[derive(Component, Deref, DerefMut)]
+pub struct ActiveTransmission(Handle<Image>);
