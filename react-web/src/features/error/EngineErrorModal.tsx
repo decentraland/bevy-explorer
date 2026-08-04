@@ -2,7 +2,7 @@
 // requested world doesn't exist. Sits above everything (login/loading). Fed by useEngineSession's
 // fatalError or the ErrorBoundary fallback.
 
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { ModalShell, Button } from '../../design'
 import { useFocusTrap } from '../../lib/useFocusTrap'
@@ -42,22 +42,14 @@ export function EngineErrorModal({
   const scrimRef = useRef<HTMLDivElement>(null)
   useFocusTrap(scrimRef, true) // self-contained: no PopupHost here (ErrorBoundary fallback / embedded)
 
-  // A dismissable error (runtime crash, bad realm) closes on Escape / scrim-click; a fatal boot/react
-  // crash has no onDismiss and can't be escaped.
-  useEffect(() => {
-    if (!onDismiss) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return
-      e.stopPropagation()
-      onDismiss()
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [onDismiss])
+  // No Escape-to-dismiss here, unlike every popup: Escape is reflex in-world (release pointer lock,
+  // close a menu), and a stray press would wipe the panic text before it's read. A dismissable error
+  // (runtime crash, bad realm) closes on Dismiss/OK or a scrim click; a fatal boot/react crash has no
+  // onDismiss at all.
 
   // Own scrim at --z-fatal (above the whole popup layer + login), portaled to <body>. ModalShell is
-  // rendered scrimless — just the card; this component owns the backdrop, DPI scale, animation, focus
-  // trap and Escape (what PopupHost does for popups, but here without depending on it).
+  // rendered scrimless — just the card; this component owns the backdrop, DPI scale, animation and
+  // focus trap (what PopupHost does for popups, but here without depending on it).
   return createPortal(
     <div ref={scrimRef} className={styles.scrim} tabIndex={-1} onClick={onDismiss ?? undefined}>
       <div className={styles.pop}>
