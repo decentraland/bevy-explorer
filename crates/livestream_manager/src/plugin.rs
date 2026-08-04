@@ -1,4 +1,9 @@
-use bevy::{ecs::relationship::Relationship, prelude::*};
+use bevy::{
+    asset::RenderAssetUsages,
+    ecs::relationship::Relationship,
+    prelude::*,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+};
 
 use crate::{ActiveTransmiter, Presentation, VideoCast, VideoStream};
 
@@ -22,8 +27,8 @@ impl Plugin for LivestreamManagerPlugin {
     }
 }
 
-#[derive(Component)]
-struct LivestreamManager;
+#[derive(Component, Deref)]
+struct LivestreamManager(Handle<Image>);
 
 #[derive(Component)]
 #[relationship_target(relationship = PresentationCaster)]
@@ -49,8 +54,20 @@ struct ManagingVideoStreams(Vec<Entity>);
 #[relationship(relationship_target = ManagingVideoStreams)]
 struct VideoStreamer(Entity);
 
-fn setup_manager(mut commands: Commands) {
-    commands.spawn(LivestreamManager);
+fn setup_manager(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    let handle = images.add(Image::new_fill(
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[255, 0, 255, 255],
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::all(),
+    ));
+
+    commands.spawn(LivestreamManager(handle));
 }
 
 fn component_on_add<T: Component, R: Relationship>(
@@ -86,18 +103,20 @@ fn transmissions_available_but_none_active(
     !livestream_manager.is_empty() && active_stream.is_empty()
 }
 
+#[expect(clippy::type_complexity)]
 fn activate_transmission(
     mut commands: Commands,
-    livestream_manager: Single<
+    livestream_manager: Single<(
+        &LivestreamManager,
         AnyOf<(
             &ManagingPresentations,
             &ManagingCasts,
             &ManagingVideoStreams,
         )>,
-        With<LivestreamManager>,
-    >,
+    )>,
 ) {
-    let collection = match *livestream_manager {
+    let (livestream_manager, any_streamer) = livestream_manager.into_inner();
+    let collection = match any_streamer {
         (Some(presentations), _, _) => presentations.collection(),
         (_, Some(casts), _) => casts.collection(),
         (_, _, Some(videos)) => videos.collection(),
@@ -106,5 +125,7 @@ fn activate_transmission(
 
     let highest_priority = collection.iter().next().copied().unwrap();
 
-    commands.entity(highest_priority).insert(ActiveTransmiter);
+    commands
+        .entity(highest_priority)
+        .insert(ActiveTransmiter((*livestream_manager).clone()));
 }
