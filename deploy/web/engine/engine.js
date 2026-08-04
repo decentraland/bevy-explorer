@@ -159,7 +159,16 @@ export async function initEngine() {
   window.spawn_and_init_sandbox = async () => {
     var timeoutId;
     return new Promise((resolve, _reject) => {
-      const sandboxWorkerPath = new URL("./sandbox_worker.js", import.meta.url);
+      // The BUNDLE, not sandbox_worker.js. Scene code shares this worker's realm, and any
+      // module in that realm can be re-imported by URL — which for "./pkg/webgpu_build.js"
+      // hands back OUR initialised instance (wasm-bindgen's init returns the cached exports),
+      // shared engine heap and all. Inlining makes the glue's exports ordinary module-scope
+      // bindings of the bundle instead. A scene can still import the bundle's URL, but a
+      // namespace object exposes only that module's *exports*, and this entry has none — so
+      // it gets an empty object. Keep sandbox_worker.js export-free or that stops being true.
+      // Built alongside the wasm (see react-web/README.md); lives in pkg/ so the glue's
+      // relative paths still resolve. sandbox_worker.js is unchanged, just no longer the entry.
+      const sandboxWorkerPath = new URL("./pkg/sandbox_worker.bundle.js", import.meta.url);
       var sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
       sandboxWorker.onerror = workerCrashHandler("sandbox");
 

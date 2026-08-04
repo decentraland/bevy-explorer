@@ -326,6 +326,30 @@ jobs:
           rm -f ./deploy/web/engine/pkg/.gitignore
           WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm)
           echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
+          # Inline the glue into the sandbox worker: scene code shares that worker's realm and
+          # can re-import any module in it by URL, which for pkg/webgpu_build.js hands back our
+          # INITIALISED instance and with it the shared engine heap. Inlining turns the glue's
+          # exports into module-scope bindings of the bundle. Re-runs on every wasm build,
+          # since it embeds a copy of the generated glue.
+          npx --yes esbuild@0.28.1 ./deploy/web/engine/sandbox_worker.js \
+            --bundle --format=esm --log-level=error \
+            --metafile="${RUNNER_TEMP:-/tmp}/sandbox_worker.meta.json" \
+            --outfile=./deploy/web/engine/pkg/sandbox_worker.bundle.js
+          # A scene can still import the bundle's OWN url, and a namespace object hands out
+          # exactly the module's exports — so the entire guarantee reduces to "this entry
+          # exports nothing". Enforce that instead of trusting a comment to hold: an `export`
+          # added to sandbox_worker.js (worst case a re-export of the glue) would silently
+          # undo the fix. esbuild's metafile is authoritative, so nothing has to be executed.
+          node -e '
+            const meta = require(process.argv[1]);
+            const [out] = Object.values(meta.outputs).filter((o) => o.entryPoint);
+            if (!out) { console.error("no entry output found in esbuild metafile"); process.exit(1); }
+            if (out.exports.length) {
+              console.error("sandbox_worker bundle must export nothing, or scene code can import it and reach the live wasm instance. Found: " + out.exports.join(", "));
+              process.exit(1);
+            }
+            console.log("sandbox worker bundle exports nothing - ok");
+          ' "${RUNNER_TEMP:-/tmp}/sandbox_worker.meta.json"
       - name: Install
         run: npm i
         working-directory: deploy/web
