@@ -1,0 +1,131 @@
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 1000);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  /* Darker than --menu-bg: this is a stop sign, not a menu. */
+  background: radial-gradient(circle at 50% 30%, #3b1063 0%, #240a3d 55%, #14051f 100%);
+  font-family: var(--font-family);
+  color: var(--text);
+}
+.card {
+  width: 100%;
+  max-width: 560px;
+  margin: auto;
+  padding: 40px 44px 36px;
+  border-radius: var(--r-panel);
+  background: var(--modal-bg);
+  box-shadow: var(--shadow-modal);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.logo {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 18px;
+}
+.title {
+  margin: 0 0 28px;
+  /* Not --fs-display: that tops out at 3.25rem, which is a full-page headline, not a card title. */
+  font-size: clamp(1.5rem, 3.2vh, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-align: center;
+  color: var(--error);
+}
+.lead {
+  width: 100%;
+  margin: 0 0 18px;
+  font-size: var(--fs-lg);
+  line-height: 1.45;
+  color: var(--ink-95);
+}
+
+.params {
+  width: 100%;
+  margin: 0 0 18px;
+}
+.paramName {
+  font-size: var(--fs-lg);
+  line-height: 1.45;
+  color: var(--ink-95);
+}
+/* The attacker controls this string: break it anywhere so a long one can't push the card wide or
+   run under the card's edge, and keep it visually distinct from our own copy. */
+.paramValue {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--error-text);
+  overflow-wrap: anywhere;
+}
+.paramDesc {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  color: var(--ink-7);
+}
+
+.buttons {
+  width: 100%;
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* 2-class selectors so these beat Button's own variant/size rules regardless of import order. */
+.buttons .exit,
+.buttons .more,
+.buttons .proceed {
+  width: 100%;
+  min-height: 52px;
+}
+.buttons .exit {
+  background: var(--error);
+  color: var(--text);
+}
+.buttons .exit:hover {
+  background: #ff4444;
+}
+/* The exit button is autofocused, so its ring is on screen from the first paint — the UA default is
+   a blue that fights the palette. */
+.buttons .exit:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+.buttons .more {
+  background: var(--fill-2);
+  color: var(--ink-85);
+}
+.buttons .more:hover {
+  background: var(--fill-4);
+}
+
+.advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--fill-1);
+}
+.advancedNote {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  color: var(--ink-7);
+}
+/* Understated on purpose — the risky path shouldn't look like the recommended one. */
+.buttons .proceed {
+  min-height: 44px;
+  border: 1px solid var(--error);
+  color: var(--error-text);
+}
+.buttons .proceed:hover {
+  background: rgba(255, 36, 36, 0.12);
+}
