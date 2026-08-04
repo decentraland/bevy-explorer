@@ -543,7 +543,7 @@ fn active_transmitter_removed(
     commands.entity(entity).trigger(UnsubscribeToTrack);
 }
 
-// #[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 fn copy_frame(
     mut commands: Commands,
     active_transmitter: Single<(Entity, &ActiveTransmitter, &mut VideoFrameReceiver)>,
