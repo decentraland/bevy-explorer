@@ -1,8 +1,7 @@
 use bevy::{
-    asset::RenderAssetUsages,
     ecs::{relationship::Relationship, system::entity_command},
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+    render::render_resource::Extent3d,
 };
 use common::{debug_panic, util::AsH160};
 use livekit::webrtc::video_frame::VideoBuffer;
@@ -566,9 +565,9 @@ fn copy_frame(
         Mut<VideoFrameReceiver>,
     ) = active_transmitter.into_inner();
 
-    if !images.contains(active_transmitter.id()) {
+    let Some(image) = images.get_mut(active_transmitter.id()) else {
         debug_panic!("ActiveTransmitter image handle is invalid");
-    }
+    };
 
     let mut frame = None;
     loop {
@@ -583,19 +582,20 @@ fn copy_frame(
         }
     }
     if let Some(frame) = frame {
-        let mut image = Image::new(
-            Extent3d {
+        if image.width() != frame.width() || image.height() != frame.height() {
+            debug!("Resizing active transmitter image.");
+            image.resize(Extent3d {
                 width: frame.width(),
                 height: frame.height(),
                 depth_or_array_layers: 1,
-            },
-            TextureDimension::D2,
-            frame.rgba_data(),
-            TextureFormat::Rgba8Unorm,
-            RenderAssetUsages::RENDER_WORLD,
-        );
-        image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Priority(-2);
-
-        images.insert(active_transmitter.id(), image);
+            });
+        }
+        if let Some(data) = &mut image.data {
+            // TODO verify this transfer priority
+            image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Priority(-2);
+            frame.rgba_data_into_slice(data.as_mut_slice());
+        } else {
+            image.data = Some(frame.rgba_data());
+        }
     }
 }
