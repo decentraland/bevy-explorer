@@ -174,10 +174,17 @@ fn manage_streams(
 
     let highest_priority = collection.iter().next().copied();
 
-    if highest_priority != active_transmission.as_deref().copied() {
+    let old_active = active_transmission.as_deref().copied();
+
+    if highest_priority != old_active {
         let highest_priority = highest_priority
             .expect("Entity is available if any of the relationships are populated");
         debug!("{highest_priority} is the transmitter with highest priority.");
+        if let Some(old_active) = old_active {
+            commands
+                .entity(old_active)
+                .try_remove::<ActiveTransmitter>();
+        }
         commands
             .entity(highest_priority)
             .insert(ActiveTransmitter((*livestream_manager).clone()));
