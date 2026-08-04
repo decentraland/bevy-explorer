@@ -12,7 +12,7 @@ pub struct VideoCast;
 pub struct VideoStream;
 
 #[derive(Component, Deref)]
-pub struct ActiveTransmission(Handle<Image>);
+pub struct ActiveTransmiter(Handle<Image>);
 
 #[derive(Component, Deref)]
-pub struct ActiveBroadcast(Handle<Image>);
+pub struct ActiveReceiver(Handle<Image>);

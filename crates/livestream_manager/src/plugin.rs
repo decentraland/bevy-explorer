@@ -1,6 +1,6 @@
 use bevy::{ecs::relationship::Relationship, prelude::*};
 
-use crate::{ActiveTransmission, Presentation, VideoCast, VideoStream};
+use crate::{ActiveTransmiter, Presentation, VideoCast, VideoStream};
 
 pub struct LivestreamManagerPlugin;
 
@@ -69,7 +69,7 @@ fn component_on_remove<T: Component, R: Relationship>(
 ) {
     commands
         .entity(trigger.target())
-        .try_remove::<(R, ActiveTransmission)>();
+        .try_remove::<(R, ActiveTransmiter)>();
 }
 
 fn transmissions_available_but_none_active(
@@ -81,7 +81,7 @@ fn transmissions_available_but_none_active(
         )>,
         With<LivestreamManager>,
     >,
-    active_stream: Query<Entity, With<ActiveTransmission>>,
+    active_stream: Query<Entity, With<ActiveTransmiter>>,
 ) -> bool {
     !livestream_manager.is_empty() && active_stream.is_empty()
 }
@@ -106,5 +106,5 @@ fn activate_transmission(
 
     let highest_priority = collection.iter().next().copied().unwrap();
 
-    commands.entity(highest_priority).insert(ActiveTransmission);
+    commands.entity(highest_priority).insert(ActiveTransmiter);
 }
