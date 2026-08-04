@@ -1,3 +1,5 @@
+mod states;
+
 use bevy::{
     asset::RenderAssetUsages,
     ecs::relationship::Relationship,
@@ -5,12 +7,18 @@ use bevy::{
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 
-use crate::{ActiveTransmitter, Presentation, VideoCast, VideoStream};
+use crate::{
+    plugin::states::*, ActiveReceiver, ActiveTransmitter, Presentation, VideoCast, VideoStream,
+};
 
 pub struct LivestreamManagerPlugin;
 
 impl Plugin for LivestreamManagerPlugin {
     fn build(&self, app: &mut App) {
+        app.init_state::<Transmitter>();
+        app.init_state::<Receiver>();
+        app.add_computed_state::<Transmission>();
+
         app.add_systems(Startup, setup_manager);
 
         app.add_observer(component_on_add::<Presentation, PresentationCaster>);
@@ -19,10 +27,14 @@ impl Plugin for LivestreamManagerPlugin {
         app.add_observer(component_on_remove::<VideoCast, VideoCaster>);
         app.add_observer(component_on_add::<VideoStream, VideoStreamer>);
         app.add_observer(component_on_remove::<VideoStream, VideoStreamer>);
+        app.add_observer(transmitter_on);
+        app.add_observer(transmitter_off);
+        app.add_observer(receiver_on);
+        app.add_observer(receiver_off);
 
         app.add_systems(
             Update,
-            activate_transmission.run_if(transmissions_available_but_none_active),
+            activate_transmission.run_if(in_state(Transmission::NeedsTransmitter)),
         );
     }
 }
@@ -89,18 +101,35 @@ fn component_on_remove<T: Component, R: Relationship>(
         .try_remove::<(R, ActiveTransmitter)>();
 }
 
-fn transmissions_available_but_none_active(
-    livestream_manager: Query<
-        AnyOf<(
-            &ManagingPresentations,
-            &ManagingCasts,
-            &ManagingVideoStreams,
-        )>,
-        With<LivestreamManager>,
-    >,
-    active_transmitters: Query<Entity, With<ActiveTransmitter>>,
-) -> bool {
-    !livestream_manager.is_empty() && active_transmitters.is_empty()
+fn transmitter_on(
+    _trigger: Trigger<OnAdd, ActiveTransmitter>,
+    mut next_state: ResMut<NextState<Transmitter>>,
+) {
+    next_state.set(Transmitter::On);
+}
+
+fn transmitter_off(
+    _trigger: Trigger<OnRemove, ActiveTransmitter>,
+    mut next_state: ResMut<NextState<Transmitter>>,
+) {
+    next_state.set(Transmitter::Off);
+}
+
+fn receiver_on(
+    _trigger: Trigger<OnAdd, ActiveReceiver>,
+    mut next_state: ResMut<NextState<Receiver>>,
+) {
+    next_state.set(Receiver::On);
+}
+
+fn receiver_off(
+    _trigger: Trigger<OnRemove, ActiveReceiver>,
+    receivers: Query<(), With<ActiveReceiver>>,
+    mut next_state: ResMut<NextState<Receiver>>,
+) {
+    if receivers.iter().len() == 1 {
+        next_state.set(Receiver::Off);
+    }
 }
 
 #[expect(clippy::type_complexity)]
