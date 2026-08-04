@@ -3,6 +3,10 @@
 // Import the wasm-bindgen generated JS glue code.
 import init, * as wasm_bindgen_exports from "./pkg/webgpu_build.js";
 
+// The capability the trusted super-user scene is given below. Captured before the scrub so the
+// constructor survives while the global does not.
+const RealBroadcastChannel = self.BroadcastChannel;
+
 // self.WebSocket = {}
 
 console.log("[Sandbox Worker] Starting");
@@ -71,10 +75,31 @@ var jsProxy = undefined;
 var jsPreamble = undefined;
 function createJsContext(wasmApi, context) {
   const isSuper = wasmApi.is_super(context);
-  // BroadcastChannel is a same-origin, serverless side channel — exposed ONLY to the trusted
+
+  // The allowlist below cannot withhold a capability: jsProxy is only consulted for
+  // `globalThis.X` property lookups, so a bare identifier in scene code resolves straight
+  // through to the real worker global. Withholding therefore has to be a deletion from that
+  // global. `Worker` goes with it — a nested worker is a fresh realm whose global has
+  // BroadcastChannel back, which would undo the deletion in one line. (SharedWorker isn't
+  // exposed to dedicated workers in Chromium, but delete it too for other engines.)
+  //
+  // Runs before preloadModules and before any scene code, so nothing untrusted has observed
+  // the pre-scrub global. Deleting for super-user scenes as well keeps one code path: the
+  // trusted scene gets the captured constructor back through jsContext, below.
+  delete self.BroadcastChannel;
+  delete self.Worker;
+  delete self.SharedWorker;
+
+  // BroadcastChannel is a same-origin, serverless side channel — handed ONLY to the trusted
   // super-user (--ui) scene, so an embedded host page can drive it; ordinary scenes never see it
   // (it would otherwise let an untrusted scene coordinate with the page / other scenes off-network).
-  const allowList = isSuper ? [...allowListES2020, "BroadcastChannel"] : allowListES2020;
+  if (isSuper) {
+    Object.defineProperty(jsContext, "BroadcastChannel", {
+      configurable: false,
+      value: RealBroadcastChannel,
+    });
+  }
+
   const sceneLabel = context.get_scene_title();
   const sceneStartTime = performance.now();
   function scenePrefix() {
@@ -179,7 +204,7 @@ function createJsContext(wasmApi, context) {
       if (propKey === "global") return jsProxy;
       if (propKey === "undefined") return undefined;
       if (jsContext[propKey] !== undefined) return jsContext[propKey];
-      if (allowList.includes(propKey)) {
+      if (allowListES2020.includes(propKey)) {
         return globalThis[propKey];
       }
       return undefined;
@@ -187,7 +212,7 @@ function createJsContext(wasmApi, context) {
   });
 
   const contextKeys = Object.getOwnPropertyNames(jsContext);
-  const allGlobals = [...new Set([...allowList, ...contextKeys])];
+  const allGlobals = [...new Set([...allowListES2020, ...contextKeys])];
   jsPreamble = allGlobals
     .map((key) => `const ${key} = globalThis.${key};`)
     .join("\n");
