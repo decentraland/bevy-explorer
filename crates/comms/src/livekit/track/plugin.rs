@@ -6,7 +6,7 @@ use bevy::{
 };
 use common::{debug_panic, util::AsH160};
 use livekit::webrtc::video_frame::VideoBuffer;
-use livestream_manager::{ActiveTransmitter, Presentation, VideoCast, VideoStream};
+use livestream_manager::{ActiveTransmitter, Presentation, Screenshare, VideoCast, VideoStream};
 #[cfg(not(target_arch = "wasm32"))]
 use {
     bevy::ecs::world::OnDespawn,
@@ -89,10 +89,11 @@ fn track_published(
     let room_entity = hosted_by.get();
 
     debug!(
-        "{} ({}) published {:?} track {}.",
+        "{} ({}) published {:?} ({:?}) track {}.",
         participant.sid(),
         participant.identity(),
         track.kind(),
+        track.source(),
         track.sid(),
     );
     let mut entity_cmd = commands.spawn((
@@ -115,22 +116,29 @@ fn track_published(
             entity_cmd.try_insert(Microphone);
         }
         TrackSource::Camera => {
-            entity_cmd.try_insert((Camera, VideoStream));
+            entity_cmd.try_insert(Camera);
+            if participant.identity().as_str().starts_with("stream:") {
+                entity_cmd.try_insert(VideoCast);
+            } else {
+                entity_cmd.try_insert(VideoStream);
+            }
         }
         TrackSource::ScreenshareAudio => {
             entity_cmd.try_insert(ScreenshareAudio);
         }
         TrackSource::Screenshare => {
-            entity_cmd.try_insert((ScreenshareVideo, VideoCast));
+            entity_cmd.try_insert(ScreenshareVideo);
+            if participant
+                .identity()
+                .as_str()
+                .starts_with("presentation-bot:")
+            {
+                entity_cmd.try_insert(Presentation);
+            } else {
+                entity_cmd.try_insert(Screenshare);
+            }
         }
         source => warn!("Track {} had {:?} source.", track.sid(), source),
-    }
-    if participant
-        .identity()
-        .as_str()
-        .starts_with("presentation-bot:")
-    {
-        entity_cmd.try_insert(Presentation);
     }
     let entity = entity_cmd.id();
 
