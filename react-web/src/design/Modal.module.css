@@ -1,7 +1,11 @@
 /* The dialog card — presentational only. The scrim, DPI scale and entrance animation are owned by the
-   host (PopupHost's .dim/.pop, or a self-contained surface like EngineErrorModal). */
+   host (PopupHost's .dim/.pop, or a self-contained surface like CrashModal). */
 .card {
-  max-height: calc(100dvh - 40px);
+  /* Cap against the host's .pop box (100% = the DPI-scaled reference canvas = the visible screen),
+     NOT dvh: viewport units ignore the ancestor scale transform, so at --ui-scale > 1 a dvh-capped
+     card renders taller than the screen with the overflow unreachable. Content taller than the cap
+     scrolls INSIDE the card (overflow-y below). */
+  max-height: calc(100% - 40px);
   overflow-y: auto;
   background: var(--modal-bg);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -21,7 +25,7 @@
   .card {
     padding: 18px;
     border-radius: var(--r-control);
-    max-height: calc(100dvh - 16px);
+    max-height: calc(100% - 16px);
   }
 }
 
