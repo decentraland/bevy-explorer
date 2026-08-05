@@ -58,12 +58,6 @@ impl CrdtContext {
         }
     }
 
-    // Loopback / non-`wss` egress is a preview-only relaxation, so a `--preview` server must
-    // not hand its loopback surface to tenants. Mirrors the fetch path.
-    pub fn preview_egress(&self) -> bool {
-        self.preview && !self.is_server
-    }
-
     fn entity_entry(&self, id: u16) -> &(u16, bool) {
         // SAFETY: live entities has u16::MAX members
         unsafe { self.live_entities.get_unchecked(id as usize) }

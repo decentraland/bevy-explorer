@@ -66,12 +66,13 @@ where
     }
 
     // SSRF guard — SERVER MODE ONLY (client/web keep the browser-like behaviour). The
-    // scheme check above still lets `wss://<private-ip>` (or loopback in non-preview)
-    // through; resolve and refuse any non-public destination on the shared server.
+    // scheme check above still lets `wss://<private-ip>` through; resolve and refuse any
+    // non-public destination on the shared server. Loopback stays reachable in preview,
+    // where the whole point is talking to a local dev server — same rule as fetch.
     let (is_server, allow_loopback) = {
         let op_state = state.borrow();
         let ctx = op_state.borrow::<CrdtContext>();
-        (ctx.is_server, ctx.preview_egress())
+        (ctx.is_server, ctx.preview)
     };
     if is_server {
         common::util::assert_public_url(&url, allow_loopback).await?;
