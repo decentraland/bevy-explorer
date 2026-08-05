@@ -206,6 +206,7 @@ fn player_position_added<T: AVPlayer>(
         unreachable!("Infallible query");
     };
 
+    debug!("Seeking AVPlayer to {}", (**position));
     if let Some(audio_sink) = &mut sinks.audio {
         audio_sink
             .command_sender
