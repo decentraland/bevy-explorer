@@ -63,7 +63,6 @@ use scene_runner::{
     SceneRunnerPlugin,
 };
 use system_bridge::SystemBridgePlugin;
-use ui_core::{scrollable::ScrollTargetEvent, stretch_uvs_image::StretchUvMaterial};
 use user_input::avatar_movement::{
     ActivePlayerComponent, AvatarMovement, AvatarMovementInfo, FromConfig, GroundCollider,
 };
@@ -311,18 +310,17 @@ fn main() {
         .add_plugins(DuiPlugin)
         .add_plugins(SystemBridgePlugin { bare: true });
 
-    // manual asset/text inits update_text_shapes and material processing need (from init_test_app)
+    // manual asset inits the scene runtime needs (from init_test_app). The text stack
+    // (Font/TextPipeline/CosmicFontSystem) and StretchUvMaterial went with the scene-UI
+    // and TextShape plugins below.
     app.init_asset::<Shader>()
         .init_asset::<AnimationClip>()
-        .init_asset::<Image>()
-        .init_asset::<StretchUvMaterial>()
-        .init_asset::<bevy::text::Font>()
-        .init_resource::<bevy::text::TextPipeline>()
-        .init_resource::<bevy::text::CosmicFontSystem>();
+        .init_asset::<Image>();
 
-    // no scene-UI processing on a server: nothing renders it, no pointer/scroll results
-    // can be produced, and its DUI templates (registered by the omitted ui_core) are absent
-    app.insert_resource(scene_runner::update_world::NoSceneUi(true));
+    // Skip the render-only scene plugins (scene UI, TextShape, scene materials, billboards,
+    // lights, visibility, pointer results). Must precede SceneRunnerPlugin: the gates are
+    // read at plugin-build time.
+    app.insert_resource(common::structs::IsHeadless(true));
 
     app.add_plugins(MaterialPlugin::<StandardMaterial>::default())
         .add_plugins(GizmoPlugin)
@@ -333,11 +331,8 @@ fn main() {
 
     register_gltf_scene_types(&mut app);
 
-    // scene text processing needs the SDK fonts; embedded assets provide them
+    // embedded assets: the scene-loading material (grid.png / loading.wgsl)
     app.add_plugins(assets::EmbedAssetsPlugin);
-    app.add_systems(Startup, |asset_server: Res<AssetServer>| {
-        ui_core::init_fonts(&asset_server)
-    });
 
     // world-storage delegations (per scene; CLI/env value is the single-scene fallback)
     let mut delegations = StorageDelegations::default();
@@ -407,7 +402,6 @@ fn main() {
         .insert_resource(delegations)
         .add_event::<RpcCall>()
         .add_event::<SystemAudio>()
-        .add_event::<ScrollTargetEvent>()
         .add_event::<PermissionUsed>();
 
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));

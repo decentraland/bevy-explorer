@@ -17,7 +17,15 @@ impl Plugin for SceneInputPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_plugins(EngineInfoPlugin);
         app.add_plugins(RaycastResultPlugin);
-        app.add_plugins(PointerResultPlugin);
+        // pointer results need input and a rendered UI, neither of which exists headless,
+        // so no result could ever be produced
+        if !app
+            .world()
+            .get_resource::<common::structs::IsHeadless>()
+            .is_some_and(|h| h.0)
+        {
+            app.add_plugins(PointerResultPlugin);
+        }
         app.add_plugins(PointerLockPlugin);
         app.add_plugins(CameraModePlugin);
     }

@@ -251,6 +251,11 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
         app.init_resource::<common::structs::IsServer>();
+        app.init_resource::<common::structs::IsHeadless>();
+        // shared by pointer results, trigger areas and the avatar crate — owned here so
+        // trigger areas keep working when the pointer-result systems are skipped
+        app.init_resource::<update_scene::pointer_results::AvatarColliders>();
+        app.init_resource::<update_scene::pointer_results::PointerRay>();
 
         // let (sender, receiver) = tokio::sync::mpsc::channel(1000);
         let (sender, receiver) = scene_response_channel();
@@ -321,7 +326,13 @@ impl Plugin for SceneRunnerPlugin {
         app.add_plugins(SceneInputPlugin);
         app.add_plugins(SceneOutputPlugin);
         app.add_plugins(SceneUtilPlugin);
-        app.add_plugins(LightsPlugin);
+        if !app
+            .world()
+            .get_resource::<common::structs::IsHeadless>()
+            .is_some_and(|h| h.0)
+        {
+            app.add_plugins(LightsPlugin);
+        }
         app.add_plugins(AssetPreloadPlugin);
 
         app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));

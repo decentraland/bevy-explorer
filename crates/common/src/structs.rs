@@ -292,6 +292,15 @@ pub struct SceneDrivenAnimationFeedback {
 #[derive(Resource, Default)]
 pub struct IsServer(pub bool);
 
+/// When true, the app runs with no render app / window / GPU. Render-only scene
+/// plugins are skipped: nothing displays their output and none of them feed results
+/// back to the scene, so their components stay in the scene-side filtered store and
+/// never cross the IPC boundary. Distinct from [`IsServer`] — the headless binary is
+/// always headless, but only an authoritative server is also `IsServer`.
+/// Must be inserted before `SceneRunnerPlugin` is added.
+#[derive(Resource, Default)]
+pub struct IsHeadless(pub bool);
+
 static SERVER_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Latch this process as an authoritative scene server. Irreversible by design;
