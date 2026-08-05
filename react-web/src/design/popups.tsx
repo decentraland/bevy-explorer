@@ -83,8 +83,7 @@ const getSnapshot = (): typeof stack => stack
 
 /** One rendered popup layer. The topmost popup with a backdrop owns the focus trap: it focuses itself
  *  on open, cycles Tab/Shift+Tab within its content, and restores focus to the opener on close — so no
- *  popup needs its own trap. A `backdrop:false` popup (a dialog on Modal) renders bare and keeps
- *  managing its own focus until it moves onto the shared scrim. */
+ *  popup needs its own trap. A `backdrop:false` popup renders bare, with no trap of its own. */
 function PopupLayer({ node, isTop, locked }: { node: PopupNode; isTop: boolean; locked: boolean }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const close = (): void => closeById(node.id)

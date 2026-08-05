@@ -1,5 +1,5 @@
 // Trap keyboard focus inside an element while it's the active overlay. Used by PopupHost (the topmost
-// popup) and the self-contained EngineErrorModal — anywhere that owns a modal surface and must keep
+// popup) and the self-contained CrashModal — anywhere that owns a modal surface and must keep
 // Tab/Shift+Tab inside it. Focuses the element on activate, cycles at the ends, restores focus on close.
 import { useEffect, type RefObject } from 'react'
 import { isInputLocked } from './inputLock'

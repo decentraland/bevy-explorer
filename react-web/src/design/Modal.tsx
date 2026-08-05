@@ -3,7 +3,7 @@
 //
 // The card is presentational only: the overlay (scrim, DPI scale, entrance animation, focus trap,
 // Escape) is owned by whoever hosts it — PopupHost for popup-layer dialogs, or a self-contained
-// surface like EngineErrorModal. So Modal draws no backdrop and does no portalling.
+// surface like CrashModal. So Modal draws no backdrop and does no portalling.
 
 import { Children, Fragment, isValidElement, type ReactNode } from 'react'
 import styles from './Modal.module.css'

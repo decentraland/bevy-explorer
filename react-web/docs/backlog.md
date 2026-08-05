@@ -113,9 +113,13 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     badge on a tab/avatar/chip without reimplementing. (Old: `notification-badge.tsx`.)
 13. `[DS]` **`Chip` / `Tag`** — *new*. "chip" is bespoke in ~11 files (map categories, count pills,
     status). (Old: `color-tag.tsx`.)
-14. `[DS]` **Consolidate modals onto `Modal`/`ModalShell`** — *cleanup*. ProfileCard, CommunityModal,
-    CommunityCreateModal, WorldVisitModal roll their own portal/overlay and hardcode `z-index: 10001`.
-    Unify backdrop / escape / focus-trap / z-layer.
+14. `[DS]` **Consolidate modals onto `Modal`/`ModalShell`** — *mostly DONE (PR #1014)*. ProfileCard,
+    CommunityModal, CommunityCreateModal and WorldVisitModal used to roll their own portal/overlay and
+    hardcode `z-index: 10001`; all four now mount via `openPopup`, so `<PopupHost/>` owns backdrop /
+    Escape / focus-trap / z-layer for them uniformly (see `design/popups.tsx`). Remaining: `CrashModal`
+    is deliberately still self-contained (it renders in the ErrorBoundary fallback / embedded mode,
+    before `<PopupHost/>` exists to mount into) — not a gap to close, just the one surface that can't
+    use the popup layer.
     12b. `[bug]` **Suppress the world-hover tooltip while any overlay/scrim is open** — *mechanism, from
     PR #915 review*. A scrim freezes the engine raycast, so no hover-exit fires; the world-hover prompt
     (`<Pointer>`) can stay painted behind/beside a popup. Today only the `avatarClick` path clears it

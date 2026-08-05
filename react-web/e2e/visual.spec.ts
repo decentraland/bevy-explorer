@@ -96,7 +96,7 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('gpu-gate.png')
   })
 
-  // Engine error popup — ?simerror=launch seeds a sample boot-panic (fatal: Reload + Copy, no
+  // Engine error popup — ?simerror=launch seeds a sample boot-panic (fatal: Reload only, no
   // Dismiss). Mock mode → no engine iframe, fully deterministic.
   test('engine error popup', async ({ page }) => {
     await page.goto('/?mock=1&simerror=launch')
