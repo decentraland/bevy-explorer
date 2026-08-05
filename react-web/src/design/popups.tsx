@@ -45,9 +45,8 @@ const closeById = (id: number): void => {
 }
 
 /** Close the topmost popup (no-op if the stack is empty). Fired by PopupHost's own Escape handler
- *  (below) and, as a backup while the engine holds keyboard focus, by the engine's 'Cancel' system
- *  action relayed through the bridge — see useEngineSession. Closes one layer at a time, so stacked
- *  popups dismiss in order. */
+ *  (below) — the DOM listener sees Escape wherever focus sits, so the old engine 'Cancel' relay is
+ *  gone. Closes one layer at a time, so stacked popups dismiss in order. */
 export function closeTopPopup(): void {
   if (stack.length > 0) closeById(stack[stack.length - 1].id)
 }

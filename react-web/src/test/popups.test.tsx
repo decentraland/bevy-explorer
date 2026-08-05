@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { PopupHost, openPopup, closeTopPopup, showConfirm, resetPopups } from '../design'
 import { CrashModal } from '../features/error/CrashModal'
+import { openExitConfirm } from '../features/session/ExitConfirm'
 
 const pressEscape = (): void =>
   act(() => {
@@ -149,5 +150,27 @@ describe('popup stack', () => {
     pressEscape()
     expect(screen.queryByText('passport')).toBeNull()
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('openExitConfirm settles exactly one outcome: Leave never runs the stay contract, Escape stays once', async () => {
+    render(<PopupHost />)
+
+    const onStay = vi.fn()
+    const onLeave = vi.fn()
+    act(() => {
+      openExitConfirm(onStay, onLeave)
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Leave/i }))
+    expect(onLeave).toHaveBeenCalledTimes(1)
+    expect(onStay).not.toHaveBeenCalled() // close() fires onClose, but Leave already settled
+
+    const onStay2 = vi.fn()
+    const onLeave2 = vi.fn()
+    act(() => {
+      openExitConfirm(onStay2, onLeave2)
+    })
+    pressEscape()
+    expect(onStay2).toHaveBeenCalledTimes(1)
+    expect(onLeave2).not.toHaveBeenCalled()
   })
 })
