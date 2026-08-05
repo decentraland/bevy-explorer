@@ -12,10 +12,10 @@
 // swallow would also kill the modal's own focus trap, stranding keyboard users away from
 // Dismiss/Reload.
 //
-// Rather than leave every handler to remember the check, `useHotkey` (see useHotkey.ts) is the single
-// wrapper around a global keydown listener and applies the gate for them. Only two places read the
-// flag directly: the popup layer's Escape/focus-trap coordination in popups.tsx, and useFocusTrap —
-// which can't go through the wrapper, since the crash modal itself needs Tab to keep working.
+// Rather than leave every handler to remember the check, `useWindowKeyDown` is the single wrapper
+// around a global keydown listener and applies the gate for them. Only two places read the flag
+// directly: the popup layer's Escape/focus-trap coordination in popups.tsx, and useFocusTrap — which
+// can't go through the wrapper, since the crash modal itself needs Tab to keep working.
 
 let holders = 0
 const listeners = new Set<() => void>()

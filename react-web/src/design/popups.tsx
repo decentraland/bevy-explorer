@@ -2,6 +2,7 @@ import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { ModalShell } from './Modal'
 import { Button } from './Button'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import { isInputLocked, subscribeInputLock } from '../lib/inputLock'
 import styles from './popups.module.css'
 
 /** A popup is a render function given its own `close` callback; it returns the overlay to render. */
@@ -85,13 +86,16 @@ const getSnapshot = (): typeof stack => stack
  *  on open, cycles Tab/Shift+Tab within its content, and restores focus to the opener on close — so no
  *  popup needs its own trap. A `backdrop:false` popup (a dialog on Modal) renders bare and keeps
  *  managing its own focus until it moves onto the shared scrim. */
-function PopupLayer({ node, isTop }: { node: PopupNode; isTop: boolean }): React.JSX.Element {
+function PopupLayer({ node, isTop, locked }: { node: PopupNode; isTop: boolean; locked: boolean }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const close = (): void => closeById(node.id)
   const content = node.render(close)
 
   // Only the top backdrop popup traps focus (bare content, if any, has no ref → the hook no-ops).
-  useFocusTrap(ref, isTop)
+  // Stands down while a fatal error modal holds input: it registers its own Tab-cycling trap after
+  // this one, so a still-active trap here would let Tab boundary-cycle within the hidden popup and
+  // leak focus out of the crash modal's trap instead of staying put — see inputLock.
+  useFocusTrap(ref, isTop && !locked)
 
   // No backdrop → the content owns its own scrim (dialogs). Otherwise the popup layer draws it:
   // `.dim` is the shared dimmed+blurred modal scrim; without `dim` it's a transparent click-catcher
@@ -111,13 +115,15 @@ function PopupLayer({ node, isTop }: { node: PopupNode; isTop: boolean }): React
  *  no portal is needed (the passport / dialogs already rely on that for their inline scrims). */
 export function PopupHost(): React.JSX.Element {
   const snap = useSyncExternalStore(subscribe, getSnapshot)
+  const locked = useSyncExternalStore(subscribeInputLock, isInputLocked)
   // The single, DOM-level Escape handler for every popup — so no popup needs its own. Capture phase
   // + stopPropagation so it wins over (and suppresses) the engine's Cancel relay and Modal's own key
   // handler, closing exactly one layer. Only acts while a popup is open; otherwise Escape passes
-  // through to whatever else wants it (the engine, an App-local Modal).
+  // through to whatever else wants it (the engine, an App-local Modal). Stands down while a fatal
+  // error modal holds input — see inputLock — so whatever's underneath stays exactly as it was.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape' || !hasOpenPopup()) return
+      if (e.key !== 'Escape' || !hasOpenPopup() || isInputLocked()) return
       e.stopPropagation()
       e.preventDefault()
       closeTopPopup()
@@ -128,7 +134,7 @@ export function PopupHost(): React.JSX.Element {
   return (
     <>
       {snap.map((n, i) => (
-        <PopupLayer key={n.id} node={n} isTop={i === snap.length - 1} />
+        <PopupLayer key={n.id} node={n} isTop={i === snap.length - 1} locked={locked} />
       ))}
     </>
   )

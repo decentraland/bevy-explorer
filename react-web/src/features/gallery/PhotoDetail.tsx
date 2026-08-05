@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from 'react'
 import { Avatar, Button } from '../../design'
+import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { photoTime } from '../session/useEngineSession'
 import type { GalleryPhoto, GalleryPhotoMeta } from '../../engine/protocol'
 import type { ChatUser } from '../chat/ProfileCardPresentation'
@@ -79,21 +80,17 @@ export function PhotoDetail({
   // Keyboard: Escape closes the lightbox (before the session closes the gallery),
   // arrows navigate. Capture phase + stopImmediatePropagation so we win over the
   // session's window Escape handler.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        e.stopImmediatePropagation()
-        onClose()
-      } else if (e.key === 'ArrowLeft' && hasPrev) {
-        onIndex(index - 1)
-      } else if (e.key === 'ArrowRight' && hasNext) {
-        onIndex(index + 1)
-      }
+  useWindowKeyDown((e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      onClose()
+    } else if (e.key === 'ArrowLeft' && hasPrev) {
+      onIndex(index - 1)
+    } else if (e.key === 'ArrowRight' && hasNext) {
+      onIndex(index + 1)
     }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [index, hasPrev, hasNext, onClose, onIndex])
+  })
 
   const copyLink = (): void => {
     navigator.clipboard

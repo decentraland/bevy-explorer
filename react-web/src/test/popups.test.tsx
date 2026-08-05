@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { PopupHost, openPopup, closeTopPopup, showConfirm, resetPopups } from '../design'
+import { CrashModal } from '../features/error/CrashModal'
 
 const pressEscape = (): void =>
   act(() => {
@@ -117,5 +118,36 @@ describe('popup stack', () => {
     pressEscape()
     expect(await confirmed).toBe(false)
     expect(screen.queryByText('Sure?')).toBeNull()
+  })
+
+  it('a crash modal freezes the popup layer: Escape stands down and the popup stays open underneath, then resumes once the crash is gone', () => {
+    const onClose = vi.fn()
+    const { rerender } = render(
+      <>
+        <PopupHost />
+      </>
+    )
+    act(() => {
+      openPopup(() => <div>passport</div>, { onClose })
+    })
+    expect(screen.getByText('passport')).toBeInTheDocument()
+
+    // The crash modal mounts on top — the popup underneath must stay exactly as it was so it's still
+    // visible in a screenshot, and its Escape/focus-trap contract must not fire invisibly.
+    rerender(
+      <>
+        <PopupHost />
+        <CrashModal error={{ message: 'boom', source: 'runtime' }} onReload={vi.fn()} onDismiss={vi.fn()} />
+      </>
+    )
+    pressEscape()
+    expect(screen.getByText('passport')).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+
+    // Once the crash modal is dismissed, Escape closes the popup normally again.
+    rerender(<PopupHost />)
+    pressEscape()
+    expect(screen.queryByText('passport')).toBeNull()
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

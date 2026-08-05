@@ -33,14 +33,15 @@ import { openExitConfirm } from './features/session/ExitConfirm'
 import { useEngineSession } from './features/session/useEngineSession'
 import { useExitGuard } from './lib/useExitGuard'
 import { useHudScale } from './lib/useHudScale'
-import { useGlobalHotkey } from './lib/useGlobalHotkey'
+import { useWindowKeyDown } from './lib/useWindowKeyDown'
 import { useMenuShortcuts } from './lib/useMenuShortcuts'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
 import { hasUsableGpu } from './lib/gpu'
 import { MobileGate, GateChecking } from './features/gate/MobileGate'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
-import { EngineErrorModal } from './features/error/EngineErrorModal'
+import { CrashModal } from './features/error/CrashModal'
+import { openRealmError } from './features/error/RealmErrorModal'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
@@ -102,13 +103,15 @@ export function App(): React.JSX.Element {
 }
 
 // Perf overlay visibility: on via ?fps=1, toggle anytime with Ctrl/Cmd+Shift+F
-// (works even when the engine holds keyboard focus — see useGlobalHotkey).
+// (works even when the engine holds keyboard focus — see useWindowKeyDown).
 function useFpsToggle(): boolean {
   const [on, setOn] = useState(params.get('fps') === '1')
-  useGlobalHotkey(
-    (e) => (e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f'),
-    () => setOn((v) => !v)
-  )
+  useWindowKeyDown((e) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+      e.preventDefault()
+      setOn((v) => !v)
+    }
+  })
   return on
 }
 
@@ -164,6 +167,21 @@ function Hud(): React.JSX.Element {
     return openExitConfirm(exitGuard.stay, exitGuard.leave)
   }, [exitGuard.confirming, exitGuard.stay, exitGuard.leave])
 
+  // A world that doesn't exist isn't a crash — it's an ordinary dialog on the popup layer, so it gets
+  // Escape/scrim-click for free and freezes nothing behind it (unlike CrashModal, see inputLock). Any
+  // close path clears the session's error, so a keyboard dismiss can't strand it.
+  const realmErrorMessage = session.fatalError?.source === 'realm' ? session.fatalError.message : null
+  useEffect(() => {
+    if (realmErrorMessage == null) return
+    return openRealmError({ message: realmErrorMessage, onDismiss: session.dismissFatal })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the message changes
+  }, [realmErrorMessage])
+  // Everything else IS a crash → the full-screen CrashModal (narrowed so it never sees 'realm').
+  const crash =
+    session.fatalError != null && session.fatalError.source !== 'realm'
+      ? { message: session.fatalError.message, source: session.fatalError.source }
+      : null
+
   // Scene permission prompts (e.g. ChangeRealm), one at a time, opened through the popup layer. Escape
   // / scrim-click deny once. Re-opens whenever the front of the pending queue changes.
   const permFrontId = session.phase === 'world' ? session.permissions.pending[0]?.id : undefined
@@ -206,19 +224,16 @@ function Hud(): React.JSX.Element {
   const pageOpen =
     session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.gallery.open
 
-  // Embedded mode: mount only the engine (+ the fatal-error surface so a crash
-  // isn't silently blank). No sidebar / chat / pointer / panels / sign-in UI.
+  // Embedded mode: mount only the engine (+ the error surfaces so a crash isn't silently blank).
+  // No sidebar / chat / pointer / panels / sign-in UI. PopupHost renders nothing while the stack is
+  // empty, and it's what a world-not-found dialog opens into — without it that error would be invisible.
   if (HIDE_HUD) {
     return (
       <SessionProvider value={session}>
         {rpc && <EngineHost rpc={rpc} />}
-        {session.fatalError && (
-          <EngineErrorModal
-            error={session.fatalError}
-            onReload={session.reload}
-            onDismiss={session.fatalError.source === 'runtime' || session.fatalError.source === 'realm' ? session.dismissFatal : undefined}
-          />
-        )}
+        <PopupHost />
+        {/* After PopupHost: the crash surface sits above the popup layer. */}
+        {crash && <CrashModal error={crash} onReload={session.reload} onDismiss={crash.source === 'runtime' ? session.dismissFatal : undefined} />}
       </SessionProvider>
     )
   }
@@ -283,17 +298,12 @@ function Hud(): React.JSX.Element {
           />
         </>
       )}
-      {/* Fatal engine error (boot panic / runtime crash) — above everything. */}
-      {session.fatalError && (
-        <EngineErrorModal
-          error={session.fatalError}
-          onReload={session.reload}
-          onDismiss={session.fatalError.source === 'runtime' || session.fatalError.source === 'realm' ? session.dismissFatal : undefined}
-        />
-      )}
       {/* Popups (imperative overlay stack) live inside the session provider so popup-mounted surfaces
           — the world <ProfileCard> — can read useSession(). */}
       <PopupHost />
+      {/* Crash surface (boot panic / runtime crash / react render crash) — last, so it renders above
+          the popup layer. A world-not-found is not a crash and opens as a popup instead (see above). */}
+      {crash && <CrashModal error={crash} onReload={session.reload} onDismiss={crash.source === 'runtime' ? session.dismissFatal : undefined} />}
     </SessionProvider>
   )
 }

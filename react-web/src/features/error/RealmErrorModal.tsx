@@ -9,9 +9,16 @@
 import { openPopup, ModalShell, Button } from '../../design'
 import styles from './RealmErrorModal.module.css'
 
-/** Open the world-not-found dialog; returns the close handle. `onDismiss` runs exactly once, on ANY
- *  close path (OK, Escape, scrim click) — the caller clears the error state there, so a keyboard
- *  dismiss can't strand the session holding a stale error. */
+/** Open the world-not-found dialog. `onDismiss` runs exactly once, on any USER close path (OK,
+ *  Escape, scrim click) — the caller clears the error state there, so a keyboard dismiss can't
+ *  strand the session holding a stale error.
+ *
+ *  The returned handle is a silent retract: it closes the popup WITHOUT firing `onDismiss`. It's
+ *  what App's open-from-effect cleanup calls, and under StrictMode that cleanup runs once at mount
+ *  (mount → cleanup → mount) — if it settled the contract, `dismissFatal` would wipe the session's
+ *  error before the second mount and the dialog would self-destruct. (Contrast openPermissionDialog,
+ *  where the cleanup close deliberately denies: its state is empty at mount, so the spurious run
+ *  settles nothing.) */
 export function openRealmError(opts: { message: string; onDismiss: () => void }): () => void {
   let settled = false
   const done = (): void => {
@@ -19,7 +26,7 @@ export function openRealmError(opts: { message: string; onDismiss: () => void })
     settled = true
     opts.onDismiss()
   }
-  return openPopup(
+  const close = openPopup(
     (close) => (
       <ModalShell
         // Alert-style dialog: centered header with title-scale type, centered footer button.
@@ -47,4 +54,8 @@ export function openRealmError(opts: { message: string; onDismiss: () => void })
     ),
     { onClose: done }
   )
+  return () => {
+    settled = true // retract silently — the popup leaves, the dismiss contract stays unfired
+    close()
+  }
 }

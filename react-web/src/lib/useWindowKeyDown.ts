@@ -13,7 +13,7 @@
 import { useEffect, useRef } from 'react'
 import { isInputLocked } from './inputLock'
 
-export interface HotkeyOptions {
+export interface WindowKeyDownOptions {
   /** Capture phase — needed to beat the engine's own handlers on the shared window. Default true. */
   capture?: boolean
   /** Skip while false, without re-registering (the handler stays subscribed and no-ops). */
@@ -24,7 +24,7 @@ export interface HotkeyOptions {
  * Run `handler` on every keydown that reaches `window`, except while a crash modal holds HUD input.
  * `handler` is read from a ref, so it can close over fresh props without re-subscribing.
  */
-export function useHotkey(handler: (e: KeyboardEvent) => void, options: HotkeyOptions = {}): void {
+export function useWindowKeyDown(handler: (e: KeyboardEvent) => void, options: WindowKeyDownOptions = {}): void {
   const { capture = true, enabled = true } = options
   const handlerRef = useRef(handler)
   handlerRef.current = handler
