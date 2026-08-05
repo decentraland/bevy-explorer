@@ -39,6 +39,7 @@ impl Plugin for LivestreamManagerPlugin {
             Update,
             manage_streams.run_if(not(in_state(Transmission::Off))),
         );
+        app.add_systems(OnEnter(Transmission::Off), drop_transmissions);
     }
 }
 
@@ -201,4 +202,13 @@ fn manage_streams(
             .entity(highest_priority)
             .insert(ActiveTransmitter((*livestream_manager).clone()));
     }
+}
+
+fn drop_transmissions(
+    mut commands: Commands,
+    transmission: Single<Entity, With<ActiveTransmitter>>,
+) {
+    commands
+        .entity(*transmission)
+        .try_remove::<ActiveTransmitter>();
 }
