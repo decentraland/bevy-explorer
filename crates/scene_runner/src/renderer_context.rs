@@ -119,9 +119,6 @@ pub const FROZEN_BLOCK: &str = "frozen";
 
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
 
-/// both 0 and 65535 are valid indexes
-const LIVE_TABLE_LEN: usize = u16::MAX as usize + 1;
-
 // A scene tick that has been in-flight (sent to the scene, no response yet) for longer than this
 // is treated as "not responding": handle_out_of_world stops holding the player behind the loading
 // screen, and the loading UI surfaces a countdown to this timeout.
@@ -167,7 +164,7 @@ impl RendererSceneContext {
             death_row: Default::default(),
             outbound_born: Default::default(),
             outbound_died: Default::default(),
-            live_entities: vec![(0, None); LIVE_TABLE_LEN],
+            live_entities: vec![(0, None); SceneEntityId::LIVE_TABLE_LEN],
             unparented_entities: HashSet::new(),
             hierarchy_changed: false,
             last_sent: 0.0,
@@ -198,10 +195,12 @@ impl RendererSceneContext {
     }
 
     fn entity_entry(&self, id: u16) -> &(u16, Option<Entity>) {
+        // SAFETY: live_entities has LIVE_TABLE_LEN (u16::MAX + 1) entries, so any u16 index is in bounds
         unsafe { self.live_entities.get_unchecked(id as usize) }
     }
 
     fn entity_entry_mut(&mut self, id: u16) -> &mut (u16, Option<Entity>) {
+        // SAFETY: live_entities has LIVE_TABLE_LEN (u16::MAX + 1) entries, so any u16 index is in bounds
         unsafe { self.live_entities.get_unchecked_mut(id as usize) }
     }
 

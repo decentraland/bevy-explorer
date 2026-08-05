@@ -8,9 +8,6 @@ use dcl_component::SceneEntityId;
 
 type LiveTable = Vec<(u16, bool)>;
 
-/// both 0 and 65535 are valid indexes
-const LIVE_TABLE_LEN: usize = u16::MAX as usize + 1;
-
 #[derive(Serialize, Deserialize)]
 pub struct CrdtContext {
     pub scene_id: SceneId,
@@ -29,7 +26,7 @@ pub struct CrdtContext {
 }
 
 fn default_live_entities() -> LiveTable {
-    vec![(0, false); LIVE_TABLE_LEN]
+    vec![(0, false); SceneEntityId::LIVE_TABLE_LEN]
 }
 
 fn default_last_new() -> u16 {
@@ -58,6 +55,7 @@ impl CrdtContext {
     }
 
     fn entity_entry(&self, id: u16) -> &(u16, bool) {
+        // SAFETY: live_entities has LIVE_TABLE_LEN (u16::MAX + 1) entries, so any u16 index is in bounds
         unsafe { self.live_entities.get_unchecked(id as usize) }
     }
 

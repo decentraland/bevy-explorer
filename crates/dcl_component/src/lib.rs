@@ -106,6 +106,9 @@ impl SceneEntityId {
 
     pub const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=405;
 
+    /// size for a table indexed by `id`: both 0 and 65535 are valid indexes
+    pub const LIVE_TABLE_LEN: usize = u16::MAX as usize + 1;
+
     pub fn as_proto_u32(&self) -> Option<u32> {
         Some(self.id as u32 | ((self.generation as u32) << 16))
     }
