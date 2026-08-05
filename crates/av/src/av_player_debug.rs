@@ -161,7 +161,7 @@ fn av_player_on_add<T: AVPlayer>(
                 next_row,
                 entity,
                 (
-                    av_player.source(),
+                    av_player.url(),
                     #[cfg(feature = "ffmpeg")]
                     "No",
                     "No",
@@ -237,7 +237,7 @@ fn av_player_on_insert<T: AVPlayer>(
     };
 
     commands.entity(node).despawn_related::<Children>();
-    let source = av_player.source();
+    let source = av_player.url();
     let av_player_name = if source.len() >= 32 {
         &source[..32]
     } else {

@@ -10,7 +10,7 @@ use bevy::{
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
 };
-use common::{sets::SceneSets, util::ReportErr};
+use common::{debug_panic, util::ReportErr};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbVideoEvent, VideoState},
@@ -24,13 +24,10 @@ use scene_runner::{
 };
 
 use crate::{
-    audio_sink::ChangeAudioSinkVolume,
-    audio_stream_should_be_playing,
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
-    video_player_should_be_playing,
     video_stream::{av_sinks, noop_sinks},
-    AVPlayer, AVPlayerSinks, AVSinks, AudioStream, InScene, ShouldBePlaying, Stream, VideoPlayer,
+    AVPlayer, AVPlayerConfig, AVPlayerSinks, AVSinks, AudioStream, ShouldBePlaying, VideoPlayer,
     LIVEKIT_VIDEO_STREAM,
 };
 
@@ -40,21 +37,15 @@ impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, init_ffmpeg);
         app.add_systems(Update, play_videos.before(update_materials));
-        app.add_systems(
-            Update,
-            (
-                rebuild_sinks::<AudioStream>.after(audio_stream_should_be_playing),
-                rebuild_sinks::<VideoPlayer>.after(video_player_should_be_playing),
-            )
-                .chain()
-                .after(play_videos)
-                .in_set(SceneSets::PostLoop),
-        );
 
-        app.add_observer(av_player_on_insert::<AudioStream>);
-        app.add_observer(av_player_on_insert::<VideoPlayer>);
-        app.add_observer(av_player_on_remove::<AudioStream>);
-        app.add_observer(av_player_on_remove::<VideoPlayer>);
+        app.add_observer(new_player_source::<AudioStream>);
+        app.add_observer(new_player_source::<VideoPlayer>);
+        app.add_observer(player_source_removed::<AudioStream>);
+        app.add_observer(player_source_removed::<VideoPlayer>);
+        app.add_observer(player_config_added::<AudioStream>);
+        app.add_observer(player_config_added::<VideoPlayer>);
+        app.add_observer(player_position_added::<AudioStream>);
+        app.add_observer(player_position_added::<VideoPlayer>);
         app.add_observer(av_player_should_be_playing_on_add::<AudioStream>);
         app.add_observer(av_player_should_be_playing_on_add::<VideoPlayer>);
         app.add_observer(av_player_should_be_playing_on_remove::<AudioStream>);
@@ -67,76 +58,166 @@ fn init_ffmpeg() {
     ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Error);
 }
 
-fn av_player_on_insert<T: AVPlayer>(
-    trigger: Trigger<OnInsert, T>,
+#[expect(clippy::type_complexity)]
+fn new_player_source<T: AVPlayer>(
+    trigger: Trigger<OnInsert, T::Source>,
     mut commands: Commands,
-    av_players: Query<(&T, Option<&AVSinks<T>>)>,
+    av_players: Query<(
+        &T::Source,
+        &ContainerEntity,
+        Option<&VideoTextureOutput>,
+        Option<&AVSinks<T>>,
+    )>,
+    scenes: Query<&RendererSceneContext>,
+    mut images: ResMut<Assets<Image>>,
+    ipfs: Res<IpfsResource>,
 ) {
     let entity = trigger.target();
-    let Ok((av_player, maybe_sinks)) = av_players.get(entity) else {
-        unreachable!("Infallible query.");
+
+    let Ok((source, container_entity, maybe_video_texture_output, maybe_sinks)) =
+        av_players.get(entity)
+    else {
+        unreachable!("Infallible query");
+    };
+    let Ok(context) = scenes.get(container_entity.root) else {
+        debug_panic!("AVPlayer has an invalid link to RendererSceneContext");
     };
 
-    let maybe_audio_sink = maybe_sinks.and_then(|sinks| sinks.audio_sink());
-    let maybe_video_sink = maybe_sinks.and_then(|sinks| sinks.video_sink());
-
-    let source = av_player.source();
-    let livekit_stream = source == LIVEKIT_VIDEO_STREAM;
-
-    let equal_sink = maybe_video_sink
-        .as_ref()
-        .filter(|video_sink| source == video_sink.source)
-        .is_some();
-
-    if !source.is_empty() && (equal_sink || livekit_stream) {
-        if livekit_stream {
-            commands.entity(entity).try_insert(Stream);
-        } else {
-            debug!("Updating sinks of {entity}.");
-            // This forces an update on the entity
-            commands
-                .entity(entity)
-                .try_remove::<(ShouldBePlaying<T>, Stream)>();
-            if let Some(video_sink) = maybe_video_sink {
-                video_sink
-                    .command_sender
-                    .send(AVCommand::Repeat(av_player.r#loop()))
-                    .report();
-                video_sink.command_sender.send(AVCommand::Pause).report();
-            }
-            if let Some(audio_sink) = maybe_audio_sink {
-                commands.trigger_targets(
-                    ChangeAudioSinkVolume::<T> {
-                        volume: av_player.volume(),
-                        _phantom: Default::default(),
-                    },
-                    entity,
-                );
-                audio_sink.command_sender.send(AVCommand::Pause).report();
-            }
-        }
-    } else {
-        if maybe_audio_sink.is_some() || maybe_video_sink.is_some() {
-            debug!("Removing sinks of {entity} due to diverging source.");
-        }
-        if let Some(video_sink) = maybe_video_sink {
-            video_sink.command_sender.send(AVCommand::Dispose).report();
-        }
-        if let Some(audio_sink) = maybe_audio_sink {
+    if let Some(sinks) = maybe_sinks {
+        if let Some(audio_sink) = &sinks.audio {
             audio_sink.command_sender.send(AVCommand::Dispose).report();
         }
-        debug!("{entity:?} has {}.", av_player.source());
-        commands
-            .entity(entity)
-            .try_remove::<(AVSinks<T>, ShouldBePlaying<T>)>();
+        if let Some(video_sink) = &sinks.audio {
+            video_sink.command_sender.send(AVCommand::Dispose).report();
+        }
+    }
+
+    let mut create_image_handle = || match maybe_video_texture_output {
+        None => {
+            let mut image = Image::new_fill(
+                bevy::render::render_resource::Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                TextureDimension::D2,
+                &basic::FUCHSIA.to_u8_array(),
+                TextureFormat::Rgba8UnormSrgb,
+                RenderAssetUsages::all(),
+            );
+            image.texture_descriptor.usage =
+                TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
+            image.transfer_priority = RenderAssetTransferPriority::Immediate;
+            images.add(image)
+        }
+        Some(texture) => texture.0.clone(),
+    };
+
+    debug!(
+        "Creating new sinks for {} targeting \"{}\"",
+        entity,
+        &(**source)
+    );
+    let (video_sink, audio_sink) = match &(**source) {
+        "" => noop_sinks((**source).to_owned(), create_image_handle(), 1.),
+        LIVEKIT_VIDEO_STREAM => return,
+        other => av_sinks(
+            (*ipfs).clone(),
+            other.to_owned(),
+            context.hash.clone(),
+            create_image_handle(),
+            1.,
+            true,
+            false,
+        ),
+    };
+
+    let video_output = VideoTextureOutput(video_sink.image.clone());
+    commands.entity(entity).try_insert((
+        video_output,
+        T::build_sink_component(audio_sink, video_sink),
+    ));
+}
+
+fn player_source_removed<T: AVPlayer>(
+    trigger: Trigger<OnRemove, T::Source>,
+    mut commands: Commands,
+    av_players: Query<Option<&AVSinks<T>>, With<T>>,
+) {
+    let entity = trigger.target();
+    let Ok(maybe_sinks) = av_players.get(entity) else {
+        unreachable!("Infallible query");
+    };
+
+    commands.entity(entity).try_remove::<AVSinks<T>>();
+
+    if let Some(sinks) = maybe_sinks {
+        if let Some(audio_sink) = &sinks.audio {
+            audio_sink.command_sender.send(AVCommand::Dispose).report();
+        }
+        if let Some(video_sink) = &sinks.audio {
+            video_sink.command_sender.send(AVCommand::Dispose).report();
+        }
     }
 }
 
-fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands: Commands) {
+#[expect(clippy::type_complexity)]
+fn player_config_added<T: AVPlayer>(
+    trigger: Trigger<OnInsert, T::Config>,
+    mut av_players: Query<(&T::Config, &mut AVSinks<T>, Has<ShouldBePlaying<T>>)>,
+) {
     let entity = trigger.target();
-    commands
-        .entity(entity)
-        .try_remove::<(InScene, ShouldBePlaying<T>, AVSinks<T>, VideoTextureOutput)>();
+    let Ok((config, mut sinks, has_should_be_playing)) = av_players.get_mut(entity) else {
+        unreachable!("Infallible query");
+    };
+
+    if let Some(audio_sink) = &mut sinks.audio {
+        audio_sink.volume = config.volume();
+        if config.playing() && has_should_be_playing {
+            audio_sink.command_sender.send(AVCommand::Play).report();
+        } else {
+            audio_sink.command_sender.send(AVCommand::Pause).report();
+        }
+        audio_sink
+            .command_sender
+            .send(AVCommand::Repeat(config.r#loop()))
+            .report();
+    }
+    if let Some(video_sink) = &mut sinks.video {
+        if config.playing() && has_should_be_playing {
+            video_sink.command_sender.send(AVCommand::Play).report();
+        } else {
+            video_sink.command_sender.send(AVCommand::Pause).report();
+        }
+        video_sink
+            .command_sender
+            .send(AVCommand::Repeat(config.r#loop()))
+            .report();
+        video_sink.rate = Some(config.playback_rate() as f64);
+    }
+}
+
+fn player_position_added<T: AVPlayer>(
+    trigger: Trigger<OnInsert, T::Position>,
+    mut av_players: Query<(&T::Position, &mut AVSinks<T>)>,
+) {
+    let entity = trigger.target();
+    let Ok((position, mut sinks)) = av_players.get_mut(entity) else {
+        unreachable!("Infallible query");
+    };
+
+    if let Some(audio_sink) = &mut sinks.audio {
+        audio_sink
+            .command_sender
+            .send(AVCommand::Seek((**position) as f64))
+            .report();
+    }
+    if let Some(video_sink) = &mut sinks.video {
+        video_sink
+            .command_sender
+            .send(AVCommand::Seek((**position) as f64))
+            .report();
+    }
 }
 
 fn av_player_should_be_playing_on_add<T: AVPlayer>(
@@ -279,86 +360,5 @@ fn play_videos(
                 sink.last_reported_time = sink.current_time;
             }
         }
-    }
-}
-
-#[expect(clippy::type_complexity)]
-fn rebuild_sinks<T: AVPlayer>(
-    mut commands: Commands,
-    video_players: Populated<
-        (
-            Entity,
-            &ContainerEntity,
-            &T,
-            Option<&VideoTextureOutput>,
-            Has<ShouldBePlaying<T>>,
-        ),
-        Without<T>,
-    >,
-    scenes: Query<&RendererSceneContext>,
-    ipfs: Res<IpfsResource>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    for (ent, container, player, maybe_texture, should_be_playing) in video_players.iter() {
-        trace!("Rebuilding sinks for {}.", ent);
-        let mut create_image_handle = || match maybe_texture {
-            None => {
-                let mut image = Image::new_fill(
-                    bevy::render::render_resource::Extent3d {
-                        width: 8,
-                        height: 8,
-                        depth_or_array_layers: 1,
-                    },
-                    TextureDimension::D2,
-                    &basic::FUCHSIA.to_u8_array(),
-                    TextureFormat::Rgba8UnormSrgb,
-                    RenderAssetUsages::all(),
-                );
-                image.texture_descriptor.usage =
-                    TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
-                image.transfer_priority = RenderAssetTransferPriority::Immediate;
-                images.add(image)
-            }
-            Some(texture) => texture.0.clone(),
-        };
-
-        let Ok(context) = scenes.get(container.root) else {
-            continue;
-        };
-
-        let source = player.source();
-        let source_playing = player.playing();
-        let (video_sink, audio_sink) = if source == LIVEKIT_VIDEO_STREAM {
-            // Done in observers
-            continue;
-        } else if source.is_empty() {
-            let (video_sink, audio_sink) =
-                noop_sinks(source.to_owned(), create_image_handle(), player.volume());
-            debug!(
-                "spawned noop sink for scene @ {} (playing={})",
-                context.base, source_playing
-            );
-            (video_sink, audio_sink)
-        } else {
-            let (video_sink, audio_sink) = av_sinks(
-                ipfs.clone(),
-                source.to_owned(),
-                context.hash.clone(),
-                create_image_handle(),
-                player.volume(),
-                should_be_playing && source_playing,
-                player.r#loop(),
-            );
-            debug!(
-                "spawned av thread for scene @ {} (playing={})",
-                context.base, source_playing
-            );
-            (video_sink, audio_sink)
-        };
-        let video_output = VideoTextureOutput(video_sink.image.clone());
-        commands.entity(ent).try_insert((
-            video_output,
-            T::build_sink_component(audio_sink, video_sink),
-        ));
     }
 }

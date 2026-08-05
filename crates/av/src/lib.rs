@@ -72,14 +72,14 @@ use {
 const LIVEKIT_VIDEO_STREAM: &str = "livekit-video://current-stream";
 
 pub trait AVPlayer: Component {
-    type Source: Deref<Target = str> + PartialEq + From<&'static Self>;
-    type Config: AVPlayerConfig + PartialEq + From<&'static Self>;
-    type Position: Deref<Target = f32> + PartialEq + From<&'static Self>;
+    type Source: Component + Deref<Target = str> + PartialEq;
+    type Config: Component + AVPlayerConfig + PartialEq;
+    type Position: Component + Deref<Target = f32> + PartialEq;
 
-    fn source(&self) -> &str;
-    fn playing(&self) -> bool;
-    fn volume(&self) -> f32;
-    fn r#loop(&self) -> bool;
+    fn url(&self) -> &str;
+    fn source(&self) -> Self::Source;
+    fn config(&self) -> Self::Config;
+    fn position(&self) -> Self::Position;
 
     #[cfg(feature = "ffmpeg")]
     fn build_sink_component(audio_sink: AudioSink, video_sink: VideoSink) -> AVSinks<Self>
@@ -147,20 +147,23 @@ impl AVPlayer for AudioStream {
     type Config = AudioStreamConfig;
     type Position = AudioStreamPosition;
 
-    fn source(&self) -> &str {
+    fn url(&self) -> &str {
         &self.url
     }
 
-    fn playing(&self) -> bool {
-        self.playing.unwrap_or(true)
+    fn source(&self) -> Self::Source {
+        AudioStreamSource(self.url.to_owned())
     }
 
-    fn volume(&self) -> f32 {
-        self.volume.unwrap_or(1.)
+    fn config(&self) -> Self::Config {
+        AudioStreamConfig {
+            playing: self.playing.unwrap_or(true),
+            volume: self.volume.unwrap_or(1.),
+        }
     }
 
-    fn r#loop(&self) -> bool {
-        false
+    fn position(&self) -> Self::Position {
+        AudioStreamPosition(0.)
     }
 
     #[cfg(feature = "ffmpeg")]
@@ -193,20 +196,25 @@ impl AVPlayer for VideoPlayer {
     type Config = VideoPlayerConfig;
     type Position = VideoPlayerPosition;
 
-    fn source(&self) -> &str {
+    fn url(&self) -> &str {
         &self.src
     }
 
-    fn playing(&self) -> bool {
-        self.playing.unwrap_or(true)
+    fn source(&self) -> Self::Source {
+        VideoPlayerSource(self.src.to_owned())
     }
 
-    fn volume(&self) -> f32 {
-        self.volume.unwrap_or(1.)
+    fn config(&self) -> Self::Config {
+        VideoPlayerConfig {
+            playing: self.playing.unwrap_or(true),
+            volume: self.volume.unwrap_or(1.),
+            playback_rate: self.playback_rate.unwrap_or(1.),
+            r#loop: self.r#loop.unwrap_or(false),
+        }
     }
 
-    fn r#loop(&self) -> bool {
-        self.r#loop.unwrap_or(false)
+    fn position(&self) -> Self::Position {
+        VideoPlayerPosition(self.position.unwrap_or(0.))
     }
 
     #[cfg(feature = "ffmpeg")]
@@ -427,11 +435,15 @@ impl Plugin for AVPlayerPlugin {
                     audio_stream_should_be_playing,
                     video_player_should_be_playing,
                 ),
-                (activate_receiver, deactivate_receiver),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
+
+        app.add_observer(av_player_on_insert::<AudioStream>);
+        app.add_observer(av_player_on_insert::<VideoPlayer>);
+        app.add_observer(av_player_on_remove::<AudioStream>);
+        app.add_observer(av_player_on_remove::<VideoPlayer>);
 
         #[cfg(feature = "ffmpeg")]
         app.add_observer(audio_sink::change_audio_sink_volume::<AudioStream>);
@@ -439,7 +451,6 @@ impl Plugin for AVPlayerPlugin {
         app.add_observer(audio_sink::change_audio_sink_volume::<VideoPlayer>);
 
         app.add_observer(receiver_image_added);
-        app.add_observer(receiver_image_removed);
 
         app.add_systems(FixedUpdate, video_texture_output_image_changed);
 
@@ -448,9 +459,78 @@ impl Plugin for AVPlayerPlugin {
     }
 }
 
+#[expect(clippy::type_complexity)]
+fn av_player_on_insert<T: AVPlayer>(
+    trigger: Trigger<OnInsert, T>,
+    mut commands: Commands,
+    mut av_players: Query<(
+        &T,
+        Option<&T::Source>,
+        Option<&T::Config>,
+        Option<&T::Position>,
+        Has<Stream>,
+    )>,
+) {
+    info!("AVPlayer updated.");
+    let entity = trigger.target();
+    let Ok((av_player, maybe_source, mut maybe_config, mut maybe_position, has_stream)) =
+        av_players.get_mut(entity)
+    else {
+        return;
+    };
+
+    let source_url = av_player.url();
+    let livestream = source_url == LIVEKIT_VIDEO_STREAM;
+    let mut entity_cmd = commands.entity(entity);
+
+    if maybe_source.is_none_or(|src| &(**src) != source_url) {
+        debug!("AVPlayer sources diverge");
+        let new_source = av_player.source();
+
+        if livestream != has_stream {
+            if livestream {
+                entity_cmd.insert((Stream, ActiveReceiver));
+            } else {
+                entity_cmd.remove::<(Stream, ActiveReceiver, ReceiverImage, VideoTextureOutput)>();
+            }
+        }
+
+        // Order on insertion matters
+        entity_cmd.insert(new_source);
+
+        let _ = maybe_config.take();
+        let _ = maybe_position.take();
+    }
+
+    let new_config = av_player.config();
+    if maybe_config.is_none_or(|config| (*config) != new_config) {
+        debug!("AVPlayer config update");
+        entity_cmd.insert(new_config);
+    }
+
+    let new_position = av_player.position();
+    if maybe_position.is_none_or(|position| ((**position) - *new_position).abs() >= 0.5) {
+        debug!("AVPlayer position update");
+        entity_cmd.insert(new_position);
+    }
+}
+
+fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<(
+        T::Source,
+        T::Config,
+        T::Position,
+        InScene,
+        ShouldBePlaying<T>,
+        VideoTextureOutput,
+        Stream,
+    )>();
+}
+
 fn av_player_is_in_scene<T: AVPlayer>(
     mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, &T, Has<InScene>)>,
+    av_players: Query<(Entity, &ContainerEntity, &T::Config, Has<InScene>)>,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
@@ -507,7 +587,8 @@ fn video_player_should_be_playing(
     mut commands: Commands,
     av_players: Query<(
         Entity,
-        &VideoPlayer,
+        &<VideoPlayer as AVPlayer>::Source,
+        &<VideoPlayer as AVPlayer>::Config,
         Has<InScene>,
         Has<ShouldBePlaying<VideoPlayer>>,
         &GlobalTransform,
@@ -518,9 +599,16 @@ fn video_player_should_be_playing(
     let mut sorted_players = av_players
         .iter()
         .filter_map(
-            |(ent, player, has_in_scene, has_should_be_playing, transform)| {
-                if player.playing() {
-                    let distance = if !has_in_scene && player.source() == LIVEKIT_VIDEO_STREAM {
+            |(
+                ent,
+                player_source,
+                player_config,
+                has_in_scene,
+                has_should_be_playing,
+                transform,
+            )| {
+                if player_config.playing() {
+                    let distance = if !has_in_scene && &(**player_source) == LIVEKIT_VIDEO_STREAM {
                         f32::MAX
                     } else {
                         transform.translation().distance(user.translation())
@@ -571,41 +659,6 @@ fn video_player_should_be_playing(
     }
 }
 
-#[expect(clippy::type_complexity)]
-fn activate_receiver(
-    mut commands: Commands,
-    av_players: Populated<
-        Entity,
-        (
-            With<VideoPlayer>,
-            With<Stream>,
-            With<ShouldBePlaying<VideoPlayer>>,
-            Without<ActiveReceiver>,
-        ),
-    >,
-) {
-    for entity in av_players.into_inner() {
-        commands.entity(entity).try_insert(ActiveReceiver);
-    }
-}
-
-#[expect(clippy::type_complexity)]
-fn deactivate_receiver(
-    mut commands: Commands,
-    av_players: Populated<
-        Entity,
-        (
-            With<VideoPlayer>,
-            Without<ShouldBePlaying<VideoPlayer>>,
-            With<ActiveReceiver>,
-        ),
-    >,
-) {
-    for entity in av_players.into_inner() {
-        commands.entity(entity).try_remove::<ActiveReceiver>();
-    }
-}
-
 fn receiver_image_added(
     trigger: Trigger<OnAdd, ReceiverImage>,
     mut commands: Commands,
@@ -618,11 +671,6 @@ fn receiver_image_added(
             .entity(entity)
             .insert(VideoTextureOutput((*receiver_image).clone()));
     }
-}
-
-fn receiver_image_removed(trigger: Trigger<OnAdd, ReceiverImage>, mut commands: Commands) {
-    let entity = trigger.target();
-    commands.entity(entity).try_remove::<VideoTextureOutput>();
 }
 
 fn video_texture_output_image_changed(video_texture_outputs: Populated<&mut VideoTextureOutput>) {
