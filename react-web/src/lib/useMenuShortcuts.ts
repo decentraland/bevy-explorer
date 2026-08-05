@@ -5,6 +5,7 @@
 // like every other hotkey.
 
 import type { EngineSession } from '../features/session/useEngineSession'
+import { hasOpenPopup } from '../design'
 import { useWindowKeyDown } from './useWindowKeyDown'
 
 // Set by the wasm via boot.js __setEngineTextFocus: true while an engine-rendered text field
@@ -38,6 +39,10 @@ export function useMenuShortcuts(session: EngineSession): void {
     const tag = target?.tagName
     if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
     if ((window as EngineFocusWindow).__engineTextFocus) return
+    // A popup is a modal dialog — nothing outside it should react to a keypress (standard modal UX:
+    // Slack/Figma/Notion, the WAI-ARIA "inert background" pattern). Mirrors the same check already
+    // guarding Enter-to-focus-chat in requestFocusChat.
+    if (hasOpenPopup()) return
 
     if (session.phase !== 'world') return
 
