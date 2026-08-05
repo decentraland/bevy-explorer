@@ -5,7 +5,9 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal);
+  /* --z-popup, not --z-modal: a popup must open above any phase surface (login, the destination
+     picker, the scene-loading overlay) — e.g. the world-not-found dialog over the picker. */
+  z-index: var(--z-popup);
 }
 .dim {
   /* Reference-canvas DPI scale: size at 100%/scale then scale back down, anchored top-left. Overrides

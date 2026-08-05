@@ -1,6 +1,6 @@
 /* The crash surface is self-contained: it can't use PopupHost (it renders in the ErrorBoundary
    fallback and in embedded mode, where the popup layer isn't mounted), so it draws its own scrim. Same
-   look as the shared .dim scrim, at --z-fatal so it sits above the whole popup layer (--z-modal) and
+   look as the shared .dim scrim, at --z-fatal so it sits above the whole popup layer (--z-popup) and
    login. */
 .scrim {
   position: fixed;
