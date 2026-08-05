@@ -32,7 +32,7 @@ pub mod video_player;
 #[cfg(feature = "av_player_debug")]
 pub mod av_player_debug;
 
-use std::marker::PhantomData;
+use std::{borrow::Borrow, marker::PhantomData, ops::Deref};
 
 #[cfg(feature = "ffmpeg")]
 use crate::{audio_sink::AudioSink, video_stream::VideoSink};
@@ -72,6 +72,10 @@ use {
 const LIVEKIT_VIDEO_STREAM: &str = "livekit-video://current-stream";
 
 pub trait AVPlayer: Component {
+    type Source: Deref<Target = str> + PartialEq + From<&'static Self>;
+    type Config: AVPlayerConfig + PartialEq + From<&'static Self>;
+    type Position: Deref<Target = f32> + PartialEq + From<&'static Self>;
+
     fn source(&self) -> &str;
     fn playing(&self) -> bool;
     fn volume(&self) -> f32;
@@ -84,6 +88,13 @@ pub trait AVPlayer: Component {
 
     #[cfg(feature = "html")]
     fn has_video() -> bool;
+}
+
+pub trait AVPlayerConfig {
+    fn playing(&self) -> bool;
+    fn volume(&self) -> f32;
+    fn playback_rate(&self) -> f32;
+    fn r#loop(&self) -> bool;
 }
 
 #[cfg(feature = "ffmpeg")]
@@ -132,6 +143,10 @@ impl From<PbAudioStream> for AudioStream {
 }
 
 impl AVPlayer for AudioStream {
+    type Source = AudioStreamSource;
+    type Config = AudioStreamConfig;
+    type Position = AudioStreamPosition;
+
     fn source(&self) -> &str {
         &self.url
     }
@@ -174,6 +189,10 @@ impl From<PbVideoPlayer> for VideoPlayer {
 }
 
 impl AVPlayer for VideoPlayer {
+    type Source = VideoPlayerSource;
+    type Config = VideoPlayerConfig;
+    type Position = VideoPlayerPosition;
+
     fn source(&self) -> &str {
         &self.src
     }
@@ -202,6 +221,147 @@ impl AVPlayer for VideoPlayer {
     #[cfg(feature = "html")]
     fn has_video() -> bool {
         true
+    }
+}
+
+#[derive(Clone, PartialEq, Component)]
+#[component(immutable)]
+pub struct AudioStreamSource(String);
+
+impl<T: Borrow<AudioStream>> From<T> for AudioStreamSource {
+    fn from(value: T) -> Self {
+        let borrow = value.borrow();
+        Self(borrow.url.to_owned())
+    }
+}
+
+impl Deref for AudioStreamSource {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_str()
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Component)]
+#[component(immutable)]
+pub struct AudioStreamConfig {
+    playing: bool,
+    volume: f32,
+}
+
+impl<T: Borrow<AudioStream>> From<T> for AudioStreamConfig {
+    fn from(value: T) -> Self {
+        let borrow = value.borrow();
+        Self {
+            playing: borrow.playing.unwrap_or(true),
+            volume: borrow.volume.unwrap_or(1.),
+        }
+    }
+}
+
+impl AVPlayerConfig for AudioStreamConfig {
+    fn playing(&self) -> bool {
+        self.playing
+    }
+
+    fn volume(&self) -> f32 {
+        self.volume
+    }
+
+    fn playback_rate(&self) -> f32 {
+        1.
+    }
+
+    fn r#loop(&self) -> bool {
+        false
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Component)]
+#[component(immutable)]
+pub struct AudioStreamPosition(f32);
+
+impl<T: Borrow<AudioStream>> From<T> for AudioStreamPosition {
+    fn from(_value: T) -> Self {
+        Self(0.)
+    }
+}
+
+impl Deref for AudioStreamPosition {
+    type Target = f32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Clone, PartialEq, Component)]
+#[component(immutable)]
+pub struct VideoPlayerSource(String);
+
+impl Deref for VideoPlayerSource {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_str()
+    }
+}
+
+impl<T: Borrow<VideoPlayer>> From<T> for VideoPlayerSource {
+    fn from(value: T) -> Self {
+        let borrow = value.borrow();
+        Self(borrow.src.to_owned())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Component)]
+#[component(immutable)]
+pub struct VideoPlayerConfig {
+    pub playing: bool,
+    pub volume: f32,
+    pub playback_rate: f32,
+    pub r#loop: bool,
+}
+
+impl<T: Borrow<VideoPlayer>> From<T> for VideoPlayerConfig {
+    fn from(value: T) -> Self {
+        let borrow = value.borrow();
+        Self {
+            playing: borrow.playing.unwrap_or(true),
+            volume: borrow.volume.unwrap_or(1.),
+            playback_rate: borrow.playback_rate.unwrap_or(1.),
+            r#loop: borrow.r#loop.unwrap_or(false),
+        }
+    }
+}
+
+impl AVPlayerConfig for VideoPlayerConfig {
+    fn playing(&self) -> bool {
+        self.playing
+    }
+
+    fn volume(&self) -> f32 {
+        self.volume
+    }
+
+    fn playback_rate(&self) -> f32 {
+        self.playback_rate
+    }
+
+    fn r#loop(&self) -> bool {
+        self.r#loop
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Component, Deref)]
+#[component(immutable)]
+pub struct VideoPlayerPosition(f32);
+
+impl<T: Borrow<VideoPlayer>> From<T> for VideoPlayerPosition {
+    fn from(value: T) -> Self {
+        let borrow = value.borrow();
+        Self(borrow.position.unwrap_or(0.))
     }
 }
 
