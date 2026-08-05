@@ -518,4 +518,3 @@ function createWebStorageProxy(ops) {
   );
 }
 
-postMessage({ type: `READY` });

@@ -169,8 +169,6 @@ export async function initEngine() {
       // Built alongside the wasm (see react-web/README.md); lives in pkg/ so the glue's
       // relative paths still resolve. sandbox_worker.js is unchanged, just no longer the entry.
       const sandboxWorkerPath = new URL("./pkg/sandbox_worker.bundle.js", import.meta.url);
-      var sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
-      sandboxWorker.onerror = workerCrashHandler("sandbox");
 
       var timeoutCount = 0;
       let logTimeout = () => {
@@ -183,25 +181,36 @@ export async function initEngine() {
       };
       timeoutId = setTimeout(logTimeout, 5000);
 
-      sandboxWorker.onmessage = (workerEvent) => {
-        if (workerEvent.data.type === "READY") {
-          sandboxWorker.postMessage({
-            type: "INIT_WORKER",
-            payload: {
-              compiledModule,
-              sharedMemory,
-            },
-          });
-        }
-        if (workerEvent.data.type === "INIT_COMPLETE") {
-          resolve();
-        }
-        if (workerEvent.data.type === "INIT_FAILED") {
-          console.log("[Main JS] Sandbox init failed; retrying");
-          sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
-          sandboxWorker.onerror = workerCrashHandler("sandbox");
-        }
+      // Payload goes out unprompted — a worker queues messages posted before it has a listener,
+      // so nothing needs to ask for it. Scene code shares this worker's realm and reaches the
+      // real worker global (bare `postMessage` is the platform's, not ours), so any request we
+      // honoured would be forgeable, and sharedMemory is the engine heap. The handler drops at
+      // INIT_COMPLETE, which the worker posts before it builds the js context: this side is not
+      // listening while scene code runs.
+      const spawn = () => {
+        const sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
+        sandboxWorker.onerror = workerCrashHandler("sandbox");
+        sandboxWorker.postMessage({
+          type: "INIT_WORKER",
+          payload: {
+            compiledModule,
+            sharedMemory,
+          },
+        });
+        sandboxWorker.onmessage = (workerEvent) => {
+          if (workerEvent.data.type === "INIT_COMPLETE") {
+            sandboxWorker.onmessage = null;
+            resolve();
+          }
+          if (workerEvent.data.type === "INIT_FAILED") {
+            // The failed worker closes itself; this replaces it, wired the same way.
+            sandboxWorker.onmessage = null;
+            console.log("[Main JS] Sandbox init failed; retrying");
+            spawn();
+          }
+        };
       };
+      spawn();
     }).finally(() => {
       clearTimeout(timeoutId);
     });
@@ -229,17 +238,17 @@ export async function initEngine() {
 
     const assetLoader = new Worker(assetLoaderPath, { type: "module" });
     assetLoader.onerror = workerCrashHandler("asset loader");
+    // Unprompted, as for the sandbox above.
+    assetLoader.postMessage({
+      type: "INIT_ASSET_LOADER",
+      payload: {
+        compiledModule,
+        sharedMemory,
+      },
+    });
     assetLoader.onmessage = (workerEvent) => {
-      if (workerEvent.data.type === "READY") {
-        assetLoader.postMessage({
-          type: "INIT_ASSET_LOADER",
-          payload: {
-            compiledModule,
-            sharedMemory,
-          },
-        });
-      }
       if (workerEvent.data.type === "INITIALIZED") {
+        assetLoader.onmessage = null;
         resolve();
       }
     };
@@ -252,17 +261,16 @@ export async function initEngine() {
 
     const assetProcessor = new Worker(assetProcessorPath, { type: "module" });
     assetProcessor.onerror = workerCrashHandler("asset processor");
+    assetProcessor.postMessage({
+      type: "INIT_ASSET_PROCESSOR",
+      payload: {
+        compiledModule,
+        sharedMemory,
+      },
+    });
     assetProcessor.onmessage = (workerEvent) => {
-      if (workerEvent.data.type === "READY") {
-        assetProcessor.postMessage({
-          type: "INIT_ASSET_PROCESSOR",
-          payload: {
-            compiledModule,
-            sharedMemory,
-          },
-        });
-      }
       if (workerEvent.data.type === "INITIALIZED") {
+        assetProcessor.onmessage = null;
         resolve();
       }
     };
