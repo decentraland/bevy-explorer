@@ -36,7 +36,13 @@ impl GltfResolver<'_, '_> {
                         s.load_cameras = false;
                         s.load_lights = false;
                         s.load_meshes = RenderAssetUsages::all();
-                        s.load_materials = RenderAssetUsages::RENDER_WORLD;
+                        // must match scene_gltf_loader_settings: assets are keyed by path
+                        // and the first load's settings win
+                        s.load_materials = if common::structs::headless() {
+                            RenderAssetUsages::empty()
+                        } else {
+                            RenderAssetUsages::RENDER_WORLD
+                        };
                         s.include_source = true;
                     },
                 )

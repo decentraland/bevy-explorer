@@ -314,6 +314,20 @@ pub fn server_mode() -> bool {
     SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+static HEADLESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Latch this process as headless. Irreversible by design; mirrors [`IsHeadless`] for
+/// code with no ECS access — notably the glTF loader-settings closures, which must agree
+/// across every load path because assets are keyed by path and the first load's settings win.
+pub fn set_headless() {
+    HEADLESS.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// True once [`set_headless`] has been called.
+pub fn headless() -> bool {
+    HEADLESS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Debug, Clone)]
 pub struct SceneDrivenAnimationFeedbackState {
     pub src: String,

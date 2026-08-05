@@ -185,7 +185,13 @@ pub fn scene_gltf_loader_settings(
         s.load_cameras = false;
         s.load_lights = true;
         s.load_meshes = RenderAssetUsages::MAIN_WORLD; // we'll modify then upload
-        s.load_materials = RenderAssetUsages::RENDER_WORLD;
+                                                       // headless: no renderer can ever sample a material, and empty usages also tell the
+                                                       // loader to register embedded textures as 1x1 placeholders instead of decoding them
+        s.load_materials = if common::structs::headless() {
+            RenderAssetUsages::empty()
+        } else {
+            RenderAssetUsages::RENDER_WORLD
+        };
         s.include_source = true;
         s.transfer_priority = transfer_priority;
     }
