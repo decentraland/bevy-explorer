@@ -39,6 +39,8 @@ import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
 import { hasUsableGpu } from './lib/gpu'
 import { MobileGate, GateChecking } from './features/gate/MobileGate'
+import { UntrustedLaunchGate } from './features/gate/UntrustedLaunchGate'
+import { isTrustedSystemScene } from './lib/systemScene'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
 import { CrashModal } from './features/error/CrashModal'
 import { openRealmError } from './features/error/RealmErrorModal'
@@ -77,6 +79,14 @@ function gateReason(): 'mobile' | 'browser' | 'gpu' | null {
 }
 const GATE_REASON = gateReason()
 
+// `?systemScene=` picks the super-user scene, which permissions.rs waves through every permission
+// check and hands the whole SystemApi. A link carrying an unrecognised one is a session takeover
+// with no sandbox escape involved, so it gets an interstitial before anything boots — captured at
+// module scope, from the ENTRY url, so a later history.replaceState can't retire the warning.
+const SYSTEM_SCENE_OVERRIDE = bootMode().systemScene
+const UNTRUSTED_SYSTEM_SCENE =
+  SYSTEM_SCENE_OVERRIDE != null && !isTrustedSystemScene(SYSTEM_SCENE_OVERRIDE) ? SYSTEM_SCENE_OVERRIDE : null
+
 export function App(): React.JSX.Element {
   useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
   const showFps = useFpsToggle()
@@ -85,6 +95,12 @@ export function App(): React.JSX.Element {
   // bevy/wgpu, not WebGPU in this webview, so probing there would gate a HUD that runs fine.
   // 'checking' shows a brief spinner.
   const gpu = useGpuProbe(GATE_REASON != null || MODE === 'mock' || MODE === 'native' || SHOWCASE)
+  // Ahead of every other gate: returning here is what keeps EngineHost unmounted, and EngineHost is
+  // what injects boot.js and starts the scene.
+  const [trustUntrusted, setTrustUntrusted] = useState(false)
+  if (UNTRUSTED_SYSTEM_SCENE != null && !trustUntrusted) {
+    return <UntrustedLaunchGate systemScene={UNTRUSTED_SYSTEM_SCENE} onProceed={() => setTrustUntrusted(true)} />
+  }
   if (GATE_REASON) return <MobileGate reason={GATE_REASON} />
   if (gpu === 'checking') return <GateChecking />
   if (gpu === 'blocked') return <MobileGate reason="gpu" />

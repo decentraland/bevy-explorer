@@ -87,10 +87,20 @@ explorer URL (e.g. `decentraland.zone/bevy-web`, assets on the versioned CDN pat
 - The **engine module + bridge scene + service worker must stay same-origin** with the page
   (BroadcastChannel / `contentWindow`): they resolve against `PAGE_DIR`
   (`src/lib/publicUrl.ts`), *never* against the CDN base.
+- The sandbox worker is loaded as **`pkg/sandbox_worker.bundle.js`**, with the wasm glue
+  inlined. Scene code shares that worker's realm, and any module in a realm can be re-imported
+  by URL — so a scene importing `./pkg/webgpu_build.js` would otherwise be handed the
+  *initialised* instance (wasm-bindgen's `init` returns the cached exports) and with it the
+  shared engine heap. Inlining turns the glue's exports into module-scope bindings of the
+  bundle: a scene can still import the bundle's own URL, but a namespace exposes only a
+  module's **exports** and this entry has none, so it gets an empty object. **Keep
+  `sandbox_worker.js` export-free** — anything it exports becomes reachable. The bundle embeds
+  a copy of the generated glue, so it must be rebuilt whenever the wasm is.
 
 ```bash
 # CI does, in order (see .github/workflows/ci.yml build-deploy-web):
 wasm-pack build --out-dir deploy/web/engine/pkg …   # engine wasm
+npx esbuild engine/sandbox_worker.js --bundle …     # inlines the glue — see note below
 npm i                 # in deploy/web — prebuild.js stamps PUBLIC_URL/homepage
 PUBLIC_URL=<homepage> npm run build                 # in react-web — the HUD → deploy/web
 npm run bundle        # in react-web/bridge-scene — realm → deploy/web/bridge-scene/static
