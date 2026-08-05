@@ -1,8 +1,8 @@
-// Catches render crashes in the react-web HUD and shows the same error popup the engine uses, so a
+// Catches render crashes in the react-web HUD and shows the same crash surface the engine uses, so a
 // UI exception degrades to a recoverable "Reload" screen instead of a blank page.
 
 import { Component, type ReactNode } from 'react'
-import { EngineErrorModal } from './EngineErrorModal'
+import { CrashModal } from './CrashModal'
 
 interface State {
   error: Error | null
@@ -23,7 +23,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     const { error } = this.state
     if (error) {
       return (
-        <EngineErrorModal
+        <CrashModal
           error={{ message: error.stack ?? error.message, source: 'react' }}
           onReload={() => location.reload()}
         />

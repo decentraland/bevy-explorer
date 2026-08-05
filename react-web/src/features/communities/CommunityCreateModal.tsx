@@ -4,7 +4,7 @@
 // bodies are strings, so the chosen picture previews locally but isn't sent yet.
 
 import { useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { openPopup } from '../../design'
 import styles from './CommunityCreateModal.module.css'
 
 const MEMBERSHIP = [
@@ -76,77 +76,81 @@ export function CommunityCreateModal({
     onClose()
   }
 
-  return createPortal(
-    <div className={styles.scrim} onClick={onClose}>
-      {!canCreate ? (
-        <div className={styles.gate} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Get a NAME">
-          <div className={styles.gateArt}><LockArt /></div>
-          <h2 className={styles.gateTitle}>Get a NAME to Unlock Community Creation</h2>
-          <p className={styles.gateBody}>
-            NAMEs are unique Decentraland usernames that come with a World, and unlock community creation.
-          </p>
-          <div className={styles.gateBtns}>
-            <button type="button" className={styles.primary} onClick={() => window.open(NAMES_URL, '_blank', 'noopener')}>Get a NAME</button>
-            <button type="button" className={styles.ghost} onClick={onClose}>Maybe later</button>
+  // Just the card (gate or form) — the popup layer (PopupHost .dim/.pop) draws the scrim, DPI-scales
+  // it and animates it in. stopPropagation keeps a click on the card from reaching the scrim.
+  return !canCreate ? (
+    <div className={styles.gate} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Get a NAME">
+      <div className={styles.gateArt}><LockArt /></div>
+      <h2 className={styles.gateTitle}>Get a NAME to Unlock Community Creation</h2>
+      <p className={styles.gateBody}>
+        NAMEs are unique Decentraland usernames that come with a World, and unlock community creation.
+      </p>
+      <div className={styles.gateBtns}>
+        <button type="button" className={styles.primary} onClick={() => window.open(NAMES_URL, '_blank', 'noopener')}>Get a NAME</button>
+        <button type="button" className={styles.ghost} onClick={onClose}>Maybe later</button>
+      </div>
+    </div>
+  ) : (
+    <div className={styles.modal} role="dialog" aria-modal="true" aria-label="Create a Community" onClick={(e) => e.stopPropagation()}>
+      <h2 className={styles.title}>Create a Community</h2>
+
+      <div className={styles.scroll}>
+        <div className={styles.group}>
+          <span className={styles.label}>PROFILE PICTURE</span>
+          <span className={styles.hint}>PNG or JPG | 512x512 px | 500KB max</span>
+          <div className={styles.pfp}>
+            <span className={styles.pfpImg} style={pfp ? { backgroundImage: `url(${pfp})` } : undefined}>
+              {!pfp && <ImageIcon />}
+            </span>
+            <button type="button" className={styles.pfpEdit} aria-label="Edit profile picture" onClick={() => fileRef.current?.click()}>
+              <PencilIcon />
+            </button>
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg" hidden onChange={pickPfp} />
           </div>
         </div>
-      ) : (
-        <div className={styles.modal} role="dialog" aria-modal="true" aria-label="Create a Community" onClick={(e) => e.stopPropagation()}>
-          <h2 className={styles.title}>Create a Community</h2>
 
-          <div className={styles.scroll}>
-            <div className={styles.group}>
-              <span className={styles.label}>PROFILE PICTURE</span>
-              <span className={styles.hint}>PNG or JPG | 512x512 px | 500KB max</span>
-              <div className={styles.pfp}>
-                <span className={styles.pfpImg} style={pfp ? { backgroundImage: `url(${pfp})` } : undefined}>
-                  {!pfp && <ImageIcon />}
-                </span>
-                <button type="button" className={styles.pfpEdit} aria-label="Edit profile picture" onClick={() => fileRef.current?.click()}>
-                  <PencilIcon />
-                </button>
-                <input ref={fileRef} type="file" accept="image/png,image/jpeg" hidden onChange={pickPfp} />
-              </div>
-            </div>
-
-            <div className={styles.group}>
-              <label className={styles.label} htmlFor="cc-name">COMMUNITY NAME <span className={styles.req}>*</span></label>
-              <input
-                id="cc-name"
-                className={styles.input}
-                maxLength={30}
-                placeholder="Write here"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                // eslint-disable-next-line jsx-a11y/no-autofocus
-                autoFocus
-              />
-            </div>
-
-            <div className={styles.group}>
-              <label className={styles.label} htmlFor="cc-membership">MEMBERSHIP</label>
-              <div className={styles.selectWrap}>
-                <select id="cc-membership" className={styles.select} value={privacy} onChange={(e) => setPrivacy(e.target.value as 'public' | 'private')}>
-                  {MEMBERSHIP.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}  {o.note}</option>
-                  ))}
-                </select>
-                <svg className={styles.chevron} viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-                  <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className={styles.actions}>
-            <button type="button" className={`${styles.ghost} ${styles.cancel}`} onClick={onClose}>CANCEL</button>
-            <button type="button" className={`${styles.primary} ${styles.create}`} disabled={!valid} onClick={submit}>CREATE</button>
-          </div>
-
-          <p className={styles.policy}>Please ensure Community content follows Decentraland's Content Policy.</p>
+        <div className={styles.group}>
+          <label className={styles.label} htmlFor="cc-name">COMMUNITY NAME <span className={styles.req}>*</span></label>
+          <input
+            id="cc-name"
+            className={styles.input}
+            maxLength={30}
+            placeholder="Write here"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+          />
         </div>
-      )}
-    </div>,
-    document.body
+
+        <div className={styles.group}>
+          <label className={styles.label} htmlFor="cc-membership">MEMBERSHIP</label>
+          <div className={styles.selectWrap}>
+            <select id="cc-membership" className={styles.select} value={privacy} onChange={(e) => setPrivacy(e.target.value as 'public' | 'private')}>
+              {MEMBERSHIP.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}  {o.note}</option>
+              ))}
+            </select>
+            <svg className={styles.chevron} viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.actions}>
+        <button type="button" className={`${styles.ghost} ${styles.cancel}`} onClick={onClose}>CANCEL</button>
+        <button type="button" className={`${styles.primary} ${styles.create}`} disabled={!valid} onClick={submit}>CREATE</button>
+      </div>
+
+      <p className={styles.policy}>Please ensure Community content follows Decentraland's Content Policy.</p>
+    </div>
   )
+}
+
+/** Open the create-a-community flow (NAME gate or form) as a popup; returns the close handle.
+ *  `canCreate` is a snapshot taken when the button is clicked — matches the other fire-once popups
+ *  (WorldVisitModal/ExitConfirm): the profile's claimed-NAME state isn't expected to change mid-flow. */
+export function openCommunityCreateModal(canCreate: boolean, onCreate: (input: CreateCommunityInput) => void): () => void {
+  return openPopup((close) => <CommunityCreateModal canCreate={canCreate} onCreate={onCreate} onClose={close} />)
 }

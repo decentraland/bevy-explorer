@@ -1,7 +1,7 @@
 .card {
   position: fixed;
   z-index: calc(var(--z-modal, 1000) + 1);
-  /* Portaled to <body> (escapes the HUD's transform), so re-apply the DPI scale
+  /* Fixed to the viewport (the popup layer has no transformed ancestor), so re-apply the DPI scale
      here. Anchored top-left so left/top still place the corner at the click. */
   transform: scale(var(--ui-scale, 1));
   transform-origin: top left;

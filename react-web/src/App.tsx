@@ -22,18 +22,18 @@ import { GalleryPage } from './features/gallery/GalleryPage'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Pointer } from './features/pointer/Pointer'
 import { openPassport } from './features/profile/Passport'
-import { WorldVisitModal } from './components/WorldVisitModal'
-import { PermissionDialog } from './features/permissions/PermissionDialog'
+import { openWorldVisit } from './components/WorldVisitModal'
+import { openPermissionDialog } from './features/permissions/PermissionDialog'
 import { PopupHost } from './design'
 import { SessionProvider } from './features/session/SessionContext'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
-import { ExitConfirm } from './features/session/ExitConfirm'
+import { openExitConfirm } from './features/session/ExitConfirm'
 import { useEngineSession } from './features/session/useEngineSession'
 import { useExitGuard } from './lib/useExitGuard'
 import { useHudScale } from './lib/useHudScale'
-import { useGlobalHotkey } from './lib/useGlobalHotkey'
+import { useWindowKeyDown } from './lib/useWindowKeyDown'
 import { useMenuShortcuts } from './lib/useMenuShortcuts'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
@@ -42,7 +42,8 @@ import { MobileGate, GateChecking } from './features/gate/MobileGate'
 import { UntrustedLaunchGate } from './features/gate/UntrustedLaunchGate'
 import { isTrustedSystemScene } from './lib/systemScene'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
-import { EngineErrorModal } from './features/error/EngineErrorModal'
+import { CrashModal } from './features/error/CrashModal'
+import { openRealmError } from './features/error/RealmErrorModal'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
@@ -118,13 +119,15 @@ export function App(): React.JSX.Element {
 }
 
 // Perf overlay visibility: on via ?fps=1, toggle anytime with Ctrl/Cmd+Shift+F
-// (works even when the engine holds keyboard focus — see useGlobalHotkey).
+// (works even when the engine holds keyboard focus — see useWindowKeyDown).
 function useFpsToggle(): boolean {
   const [on, setOn] = useState(params.get('fps') === '1')
-  useGlobalHotkey(
-    (e) => (e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f'),
-    () => setOn((v) => !v)
-  )
+  useWindowKeyDown((e) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+      e.preventDefault()
+      setOn((v) => !v)
+    }
+  })
   return on
 }
 
@@ -171,11 +174,40 @@ function Hud(): React.JSX.Element {
 
   const session = useEngineSession(createDriver)
   useMenuShortcuts(session) // [O]/[M]/[I]/[G]/[P]/[B]/[L]/[T] hints in the nav + sidebar
-  // Warn before the back gesture / Back button unloads the engine (only once in-world).
+  // Warn before the back gesture / Back button unloads the engine (only once in-world). Shown through
+  // the popup layer so hasOpenPopup() covers it (Enter must not focus the chat behind it); Escape /
+  // scrim-click resolve to "stay", which clears `confirming` and the effect closes the (already-closed) popup.
   const exitGuard = useExitGuard(session.phase === 'entering' || session.phase === 'world')
+  useEffect(() => {
+    if (!exitGuard.confirming) return
+    return openExitConfirm(exitGuard.stay, exitGuard.leave)
+  }, [exitGuard.confirming, exitGuard.stay, exitGuard.leave])
 
-  // A world (e.g. boedo.dcl.eth) the user asked to jump to — drives the shared confirm modal.
-  const [visitWorld, setVisitWorld] = useState<string | null>(null)
+  // A world that doesn't exist isn't a crash — it's an ordinary dialog on the popup layer, so it gets
+  // Escape/scrim-click for free and freezes nothing behind it (unlike CrashModal, see inputLock). Any
+  // close path clears the session's error, so a keyboard dismiss can't strand it.
+  const realmErrorMessage = session.fatalError?.source === 'realm' ? session.fatalError.message : null
+  useEffect(() => {
+    if (realmErrorMessage == null) return
+    return openRealmError({ message: realmErrorMessage, onDismiss: session.dismissFatal })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the message changes
+  }, [realmErrorMessage])
+  // Everything else IS a crash → the full-screen CrashModal (narrowed so it never sees 'realm').
+  const crash =
+    session.fatalError != null && session.fatalError.source !== 'realm'
+      ? { message: session.fatalError.message, source: session.fatalError.source }
+      : null
+
+  // Scene permission prompts (e.g. ChangeRealm), one at a time, opened through the popup layer. Escape
+  // / scrim-click deny once. Re-opens whenever the front of the pending queue changes.
+  const permFrontId = session.phase === 'world' ? session.permissions.pending[0]?.id : undefined
+  useEffect(() => {
+    const front = session.permissions.pending[0]
+    if (permFrontId == null || !front) return
+    return openPermissionDialog(front, session.permissions.resolve)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the front request changes
+  }, [permFrontId])
+
   // Which tab the Backpack opens on. The emote wheel's "Customise [E]" opens it on Emotes; it resets
   // to Wearables once the Backpack closes so a normal (sidebar/topbar) open lands on Wearables.
   const [backpackTab, setBackpackTab] = useState<'wearables' | 'emotes'>('wearables')
@@ -208,19 +240,16 @@ function Hud(): React.JSX.Element {
   const pageOpen =
     session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.gallery.open
 
-  // Embedded mode: mount only the engine (+ the fatal-error surface so a crash
-  // isn't silently blank). No sidebar / chat / pointer / panels / sign-in UI.
+  // Embedded mode: mount only the engine (+ the error surfaces so a crash isn't silently blank).
+  // No sidebar / chat / pointer / panels / sign-in UI. PopupHost renders nothing while the stack is
+  // empty, and it's what a world-not-found dialog opens into — without it that error would be invisible.
   if (HIDE_HUD) {
     return (
       <SessionProvider value={session}>
         {rpc && <EngineHost rpc={rpc} />}
-        {session.fatalError && (
-          <EngineErrorModal
-            error={session.fatalError}
-            onReload={session.reload}
-            onDismiss={session.fatalError.source === 'runtime' || session.fatalError.source === 'realm' ? session.dismissFatal : undefined}
-          />
-        )}
+        <PopupHost />
+        {/* After PopupHost: the crash surface sits above the popup layer. */}
+        {crash && <CrashModal error={crash} onReload={session.reload} onDismiss={crash.source === 'runtime' ? session.dismissFatal : undefined} />}
       </SessionProvider>
     )
   }
@@ -249,7 +278,7 @@ function Hud(): React.JSX.Element {
             hidden={session.friends.open || pageOpen}
             me={session.profile.data}
             onTeleport={(x, y) => session.map.teleport(x, y)}
-            onVisitWorld={(name) => setVisitWorld(name)}
+            onVisitWorld={(name) => openWorldVisit({ worldName: name, onConfirm: () => session.map.changeRealm(name) })}
           />
           <FriendsPanel friends={session.friends} />
           <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
@@ -267,8 +296,6 @@ function Hud(): React.JSX.Element {
             communities={session.communities}
             profile={session.profile}
             onNavigate={goToMenuPage}
-            onAddFriend={(address) => session.friends.act('request', address)}
-            onOpenChat={() => session.chat.toggle()}
           />
           <MapPage map={session.map} profile={session.profile} onNavigate={goToMenuPage} />
           <PlacesPage
@@ -285,41 +312,14 @@ function Hud(): React.JSX.Element {
             onTeleport={(x, y) => session.map.teleport(x, y)}
             onViewProfile={(u) => openPassport(u.address)}
           />
-          {visitWorld && (
-            <WorldVisitModal
-              worldName={visitWorld}
-              onCancel={() => setVisitWorld(null)}
-              onConfirm={() => {
-                session.map.changeRealm(visitWorld)
-                setVisitWorld(null)
-              }}
-            />
-          )}
         </>
-      )}
-      {/* Scene permission prompts (e.g. ChangeRealm) — one at a time, above any open menu. */}
-      {session.phase === 'world' && session.permissions.pending.length > 0 && (
-        <PermissionDialog
-          key={session.permissions.pending[0].id}
-          request={session.permissions.pending[0]}
-          onResolve={(allow, level) =>
-            session.permissions.resolve(session.permissions.pending[0].id, allow, level)
-          }
-        />
-      )}
-      {/* Confirm before the back gesture / Back button unloads the engine. */}
-      {exitGuard.confirming && <ExitConfirm onStay={exitGuard.stay} onLeave={exitGuard.leave} />}
-      {/* Fatal engine error (boot panic / runtime crash) — above everything. */}
-      {session.fatalError && (
-        <EngineErrorModal
-          error={session.fatalError}
-          onReload={session.reload}
-          onDismiss={session.fatalError.source === 'runtime' || session.fatalError.source === 'realm' ? session.dismissFatal : undefined}
-        />
       )}
       {/* Popups (imperative overlay stack) live inside the session provider so popup-mounted surfaces
           — the world <ProfileCard> — can read useSession(). */}
       <PopupHost />
+      {/* Crash surface (boot panic / runtime crash / react render crash) — last, so it renders above
+          the popup layer. A world-not-found is not a crash and opens as a popup instead (see above). */}
+      {crash && <CrashModal error={crash} onReload={session.reload} onDismiss={crash.source === 'runtime' ? session.dismissFatal : undefined} />}
     </SessionProvider>
   )
 }

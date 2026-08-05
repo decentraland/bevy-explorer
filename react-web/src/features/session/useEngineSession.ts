@@ -4,10 +4,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
-import type { FatalError } from '../error/EngineErrorModal'
+import type { FatalError } from '../error/fatalError'
 import { DEFAULT_REALM } from '../engine/EngineHost'
-import { closeTopPopup, hasOpenPopup } from '../../design'
+import { hasOpenPopup } from '../../design'
 import { bootMode } from '../../lib/bootMode'
+import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { parseChatCommand } from '../chat/chatCommands'
@@ -338,10 +339,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [loadStep, setLoadStep] = useState<string | null>(null)
   // Fatal engine error → full-screen popup. 'launch' = boot panic (fatal, no dismiss); 'runtime' =
   // post-launch crash bridged from the engine watchdog (can be a false positive → dismissable).
-  // ?simerror=1 (or =launch) seeds a sample so the popup can be iterated without a real panic.
+  // ?simerror=1 (or =launch, =realm) seeds a sample so each surface can be iterated without a real
+  // panic — 'realm' matters in mock, where the driver has no launch and the ?realm= pre-flight
+  // (below) is skipped entirely.
   const [fatalError, setFatalError] = useState<FatalError | null>(() => {
     const sim = new URLSearchParams(location.search).get('simerror')
     if (sim == null) return null
+    if (sim === 'realm') return { message: 'The world "noexiste.dcl.eth" doesn\'t exist. (simulated)', source: 'realm' }
     return {
       message: "panicked at crates/dcl_wasm/src/inner/mod.rs:41:9:\ncan't init wasm queue\n\n(simulated)",
       source: sim === 'launch' ? 'launch' : 'runtime'
@@ -492,11 +496,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'cursorLock':
           cursorLockedRef.current = msg.locked
           setCursorLocked(msg.locked)
-          break
-        case 'systemAction':
-          // 'Cancel' (Escape, from the engine input stream) closes the topmost popup — authoritative,
-          // so it works even while the engine holds keyboard focus.
-          if (msg.action === 'Cancel') closeTopPopup()
           break
         case 'proximity':
           setProximity(msg.tips)
@@ -809,17 +808,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
   const anyPanelOpen =
     menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen
-  useEffect(() => {
-    if (!anyPanelOpen) return
-    const onKey = (e: KeyboardEvent): void => {
+  useWindowKeyDown(
+    (e) => {
       if (e.key !== 'Escape') return
       e.preventDefault()
       panelSetters.forEach((set) => set(false))
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anyPanelOpen])
+    },
+    { capture: false, enabled: anyPanelOpen }
+  )
   const toggleFriends = useCallback(() => exclusive(setFriendsOpen), [exclusive])
   const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => ensure('getSettings')), [exclusive, ensure])
   const toggleProfile = useCallback(() => exclusive(setProfileOpen, () => ensure('getProfile')), [exclusive, ensure])
