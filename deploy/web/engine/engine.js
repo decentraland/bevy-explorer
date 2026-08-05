@@ -29,13 +29,15 @@ function workerCrashHandler(name) {
  * Fetches a URL with download progress tracking.
  * @param {string} url - URL to fetch
  * @param {function} onProgress - Callback with percentage (0-100)
- * @param {number|null} expectedSize - Expected uncompressed size in bytes (fallback when Content-Length is missing due to content-encoding)
+ * @param {number|null} expectedSize - Expected decoded size in bytes. Preferred over
+ *   Content-Length, which under CDN compression counts compressed bytes while the body
+ *   reader yields decoded bytes.
  * @returns {Promise<ArrayBuffer>}
  */
 async function fetchWithProgress(url, onProgress, expectedSize) {
   const response = await fetch(url);
   const contentLength = response.headers.get('Content-Length');
-  const total = contentLength ? parseInt(contentLength, 10) : expectedSize;
+  const total = expectedSize || (contentLength ? parseInt(contentLength, 10) : null);
 
   if (!total || !response.body) {
     // Fallback if no size info available or no streaming support
@@ -69,6 +71,71 @@ async function fetchWithProgress(url, onProgress, expectedSize) {
 }
 
 /**
+ * Downloads and compiles the engine WASM.
+ *
+ * Compiles with WebAssembly.compileStreaming on the live network response, so
+ * compilation overlaps the download and — because the response keeps its URL
+ * identity — the browser may persist the compiled module in its code cache and
+ * skip the compile on repeat visits. The progress callback is fed from a clone
+ * of the response; wrapping a byte-counting stream in a synthesized Response
+ * instead would discard the URL identity and with it the code cache.
+ *
+ * @param {string} url - WASM URL
+ * @param {number|null} expectedSize - Expected decoded size in bytes (from the manifest)
+ * @param {function} onProgress - Callback with percentage (0-100)
+ * @param {function} onDownloaded - Called once the last byte has arrived, before the compile tail
+ * @returns {Promise<WebAssembly.Module>}
+ */
+async function compileWasmWithProgress(url, expectedSize, onProgress, onDownloaded) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`WASM fetch failed: ${response.status} ${response.statusText}`);
+  }
+
+  const contentLength = response.headers.get('Content-Length');
+  const total = expectedSize || (contentLength ? parseInt(contentLength, 10) : null);
+
+  if (typeof WebAssembly.compileStreaming === 'function' && response.body) {
+    let cancelProgress = () => {};
+    let progressTask = Promise.resolve();
+    if (total) {
+      const reader = response.clone().body.getReader();
+      cancelProgress = () => reader.cancel().catch(() => {});
+      progressTask = (async () => {
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received += value.length;
+          onProgress(Math.min((received / total) * 100, 100));
+        }
+      })().catch(() => {});
+    }
+
+    try {
+      const module = await WebAssembly.compileStreaming(response);
+      await progressTask;
+      onProgress(100);
+      onDownloaded();
+      return module;
+    } catch (e) {
+      // typically a server not sending Content-Type: application/wasm — refetch
+      // (usually straight from the HTTP cache) and compile from a buffer instead
+      cancelProgress();
+      console.warn('[Main JS] compileStreaming failed, falling back to buffered compile', e);
+    }
+  } else {
+    try {
+      response.body?.cancel();
+    } catch (e) { /* body already consumed or locked */ }
+  }
+
+  const buffer = await fetchWithProgress(url, onProgress, total);
+  onDownloaded();
+  return WebAssembly.compile(buffer);
+}
+
+/**
  * Initializes the WASM engine, shared memory, and worker threads.
  * @returns {Promise<void>}
  */
@@ -88,18 +155,20 @@ export async function initEngine() {
     console.warn("Could not load manifest.json, progress may not be accurate", e);
   }
 
-  // Step 1: Download WASM with progress
+  // Steps 1+2: Download and compile WASM. Compilation streams alongside the download,
+  // so the 'compile' step only covers the tail left after the last byte arrives.
   setLoadingStepActive('download');
-  const wasmBytes = await fetchWithProgress(wasmUrl, (percent) => {
-    setLoadingStepProgress('download', percent);
-  }, expectedWasmSize);
-  setLoadingStepCompleted('download');
-
-  // Step 2: Compile WASM
-  setLoadingStepActive('compile');
   console.time("compileTime")
-  const compiledModule = await WebAssembly.compile(wasmBytes);
-  console.timeEnd("compileTime") // 70 ms
+  const compiledModule = await compileWasmWithProgress(
+    wasmUrl,
+    expectedWasmSize,
+    (percent) => setLoadingStepProgress('download', percent),
+    () => {
+      setLoadingStepCompleted('download');
+      setLoadingStepActive('compile');
+    }
+  );
+  console.timeEnd("compileTime")
   setLoadingStepCompleted('compile');
 
   const initialMemoryPages = 1280; // setting initial memory high causes malloc failures
