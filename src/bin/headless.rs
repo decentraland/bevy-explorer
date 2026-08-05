@@ -320,6 +320,10 @@ fn main() {
         .init_resource::<bevy::text::TextPipeline>()
         .init_resource::<bevy::text::CosmicFontSystem>();
 
+    // no scene-UI processing on a server: nothing renders it, no pointer/scroll results
+    // can be produced, and its DUI templates (registered by the omitted ui_core) are absent
+    app.insert_resource(scene_runner::update_world::NoSceneUi(true));
+
     app.add_plugins(MaterialPlugin::<StandardMaterial>::default())
         .add_plugins(GizmoPlugin)
         .add_plugins(UtilsPlugin)

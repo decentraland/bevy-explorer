@@ -152,6 +152,12 @@ pub struct SceneOutputPlugin;
 #[derive(Resource)]
 pub struct NoGltf(pub bool);
 
+/// Skip scene-UI processing entirely (headless server: scene UI is never rendered and
+/// no pointer/scroll results can be produced, so the layout/text/dui work is pure waste).
+/// Must be inserted before SceneRunnerPlugin is added.
+#[derive(Resource)]
+pub struct NoSceneUi(pub bool);
+
 #[derive(Resource, Default)]
 pub struct TrackComponents(pub bool);
 
@@ -174,7 +180,13 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugins(BillboardPlugin);
         app.add_plugins(RaycastPlugin);
         app.add_plugins(PointerEventsPlugin);
-        app.add_plugins(SceneUiPlugin);
+        if !app
+            .world()
+            .get_resource::<NoSceneUi>()
+            .is_some_and(|no_ui| no_ui.0)
+        {
+            app.add_plugins(SceneUiPlugin);
+        }
         app.add_plugins(TextShapePlugin);
         app.add_plugins(CameraModeAreaPlugin);
         app.add_plugins(VisibilityComponentPlugin {
