@@ -104,6 +104,62 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('engine-error.png')
   })
 
+  // Realm error popup — ?simerror=realm seeds a "world not found" fatalError, distinct from the
+  // full-screen CrashModal above: it renders through the popup layer (dismissible, PopupHost .dim).
+  test('realm error popup', async ({ page }) => {
+    await page.goto('/?mock=1&simerror=realm')
+    await settle(page)
+    await expect(page).toHaveScreenshot('realm-error.png')
+  })
+
+  // Passport — the full profile popup opened from the profile card's "View Passport".
+  test('passport', async ({ page }) => {
+    await enterWorld(page)
+    await page.getByRole('button', { name: 'View Sharknado' }).first().click()
+    await page.getByRole('button', { name: 'View Passport' }).click()
+    await settle(page)
+    await expect(page).toHaveScreenshot('passport.png')
+  })
+
+  // Permission dialog — ?perm=1 fires a sample scene permission request shortly after entering world.
+  test('permission dialog', async ({ page }) => {
+    await page.goto('/?mock=1&perm=1')
+    await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
+    await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click()
+    await page.getByRole('alertdialog').waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('permission-dialog.png')
+  })
+
+  // Community modal — opened by clicking a community card from the Communities panel.
+  test('community modal', async ({ page }) => {
+    await enterWorld(page)
+    await openPanel(page, 'Communities')
+    await page.getByRole('button', { name: /Decentraland Foundation/ }).first().click()
+    await page.getByRole('heading', { name: 'Decentraland Foundation', level: 2 }).waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('community-modal.png')
+  })
+
+  // Community create modal — "+ CREATE A COMMUNITY" from the Communities panel.
+  test('community create modal', async ({ page }) => {
+    await enterWorld(page)
+    await openPanel(page, 'Communities')
+    await page.getByRole('button', { name: /CREATE A COMMUNITY/i }).click()
+    await page.getByRole('dialog').waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('community-create-modal.png')
+  })
+
+  // Exit confirm — the browser Back gesture is trapped by useExitGuard while in-world.
+  test('exit confirm', async ({ page }) => {
+    await enterWorld(page)
+    await page.goBack()
+    await page.getByText('Leave Decentraland?').waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('exit-confirm.png')
+  })
+
   test('world HUD (sidebar + chat)', async ({ page }) => {
     await enterWorld(page)
     await settle(page)

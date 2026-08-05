@@ -419,6 +419,12 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     it). Common cases (nearby / friends) are unaffected. Fix if it matters: pass the message's known
     name/picture into `openProfileCard` as a fallback hint, or give `resolveIdentity` a small
     last-seen name cache.
+41. `[test]` **No tier-1.5 visual baseline for `WorldVisitModal`** — *coverage gap, PR #1014
+    follow-up*. Passport, PermissionDialog, CommunityModal, CommunityCreateModal and ExitConfirm all
+    got `e2e/visual.spec.ts` baselines; `WorldVisitModal` (`src/components/WorldVisitModal.tsx`) didn't
+    because both its triggers (Map world search, a chat message with a `*.dcl.eth` link) need the
+    places-API fetch stubbed to be deterministic in mock mode. Add a mock/stub for that fetch and a
+    `world visit modal` test case when convenient.
 
 ## Not gaps (already good / ahead)
 

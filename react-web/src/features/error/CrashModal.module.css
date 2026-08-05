@@ -16,7 +16,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 3vh 3vw;
+  /* Reference px, not vh/vw: this box is already the DPI-scaled reference canvas (see above), so
+     viewport units here would ignore the ancestor transform and drift out of proportion at
+     non-default --ui-scale. */
+  padding: 32px;
   background: var(--modal-scrim);
   backdrop-filter: blur(2px);
   animation: fadeIn 0.2s ease;
