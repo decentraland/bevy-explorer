@@ -325,6 +325,10 @@ export interface Profile {
   mutuals?: number
   /** Camera-reel photo URLs (Photos tab). */
   photos?: string[]
+  /** Currently-equipped wearables (category slots), resolved from the deployed avatar. */
+  equippedWearables?: Wearable[]
+  /** Currently-equipped emotes (wheel slots), resolved from the deployed avatar. */
+  equippedEmotes?: Emote[]
 }
 
 export interface ProfileMessage {

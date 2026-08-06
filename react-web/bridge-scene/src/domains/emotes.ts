@@ -106,6 +106,57 @@ function equipUrn(urn: string): string {
   return tokenUrnByItem.get(itemUrn(urn)) ?? urn
 }
 
+type EmoteDef = { id: string; name?: string; rarity?: string; thumbnail?: string }
+
+// A custom emote's definition (name/rarity/thumbnail) is stable enough within a session to cache,
+// keyed by item urn. Mirrors wearables.ts's defByItemUrn.
+const defByItemUrn = new Map<string, EmoteDef>()
+
+// Resolve custom (non-base) emote definitions by item urn, batched to bound URL length. Cached hits
+// skip the network. Mirrors wearables.ts's resolveByUrn.
+async function resolveByUrn(baseUrl: string, itemUrns: string[]): Promise<Map<string, EmoteDef>> {
+  const out = new Map<string, EmoteDef>()
+  const missing: string[] = []
+  for (const u of itemUrns) {
+    const cached = defByItemUrn.get(u)
+    if (cached != null) out.set(u, cached)
+    else missing.push(u)
+  }
+  const CHUNK = 50
+  for (let i = 0; i < missing.length; i += CHUNK) {
+    const qs = missing.slice(i, i + CHUNK).map((u) => `emoteId=${u}`).join('&')
+    const data = await getJson<{ emotes?: EmoteDef[] }>(`${baseUrl}/lambdas/collections/emotes?${qs}`).catch((e: unknown) => {
+      console.error('[emotes] resolve-by-urn chunk failed', e)
+      return undefined
+    })
+    for (const e of data?.emotes ?? []) {
+      defByItemUrn.set(e.id, e)
+      out.set(e.id, e)
+    }
+  }
+  return out
+}
+
+// Resolve a profile's equipped-emotes list (deployed avatar.emotes: {slot, urn}[], from the catalyst
+// profile lambda) into displayable Emote[] — DECOUPLED from getPlayer(), so it works for any address
+// (self or another user's passport), not just nearby/local players. Base emotes resolve locally
+// (no network); custom ones resolve via the catalyst collections lambda, like resolveEquippedSet.
+export async function resolveEquippedEmotes(entries: Array<{ slot: number; urn: string }>): Promise<Emote[]> {
+  const baseUrl = await catalystBase()
+  const valid = entries.filter((e) => e.urn !== '')
+  const customItemUrns = [...new Set(valid.filter((e) => !isBase(fullEmoteUrn(e.urn))).map((e) => itemUrn(fullEmoteUrn(e.urn))))]
+  const resolved = customItemUrns.length > 0 ? await resolveByUrn(baseUrl, customItemUrns) : new Map<string, EmoteDef>()
+  return valid.map((e): Emote => {
+    const full = fullEmoteUrn(e.urn)
+    if (isBase(full)) {
+      return { slot: e.slot, urn: full, name: baseEmoteName(full), rarity: 'base', thumbnail: `${baseUrl}/lambdas/collections/contents/${full}/thumbnail` }
+    }
+    const item = itemUrn(full)
+    const def = resolved.get(item)
+    return { slot: e.slot, urn: item, name: def?.name ?? '', rarity: def?.rarity ?? 'base', thumbnail: `${baseUrl}/lambdas/collections/contents/${item}/thumbnail` }
+  })
+}
+
 export function registerEmotes(ctx: Ctx): void {
   ctx.on('triggerEmote', (msg) => {
     triggerEmote({ predefinedEmote: msg.urn }).catch((e: unknown) => {

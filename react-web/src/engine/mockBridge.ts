@@ -6,6 +6,7 @@
 import {
   bridgeChannelName,
   type BindingEntry,
+  type Emote,
   type Envelope,
   type Outfit,
   type OutfitsMetadata,
@@ -33,6 +34,8 @@ function richProfile(address: string, name: string, isGuest: boolean): Profile {
     mutuals: 30,
     badges: Array.from({ length: 8 }, (_, i) => ({ id: `b${i}`, name: `Badge ${i + 1}`, tier: ['bronze', 'silver', 'gold'][i % 3], image: `https://picsum.photos/seed/badge${i}/96/96` })),
     photos: Array.from({ length: 6 }, (_, i) => `https://picsum.photos/seed/photo${i}/300/300`),
+    equippedWearables: equippedNow(),
+    equippedEmotes: mockEquippedEmotes(),
     info: {
       gender: 'Male',
       birthdate: '26/11/1991',
@@ -128,6 +131,18 @@ const MOCK_OFF_CATALOG_EQUIPPED: Wearable[] = [
   { urn: 'urn:decentraland:off-chain:base-avatars:thug_life', name: 'Off-catalog Eyewear', rarity: 'epic', category: 'eyewear', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:black_sun_glasses'), equipped: true }
 ]
 const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED]
+
+// The 10 wheel-slot base emotes — shared by getEmotes (the wheel) and the passport's Equipped
+// Emotes section, so both mocks agree.
+const MOCK_EMOTE_NAMES = ['Hands Air', 'Wave', 'Fist Pump', 'Dance', 'Raise Hand', 'Clap', 'Money', 'Kiss', 'Head Explode', 'Shrug']
+const mockEquippedEmotes = (): Emote[] =>
+  // No `thumbnail` field — mirrors the scene relay so we validate URN-derived thumbnails too.
+  MOCK_EMOTE_NAMES.map((name, slot) => ({
+    slot,
+    urn: `urn:decentraland:off-chain:base-emotes:${name.toLowerCase().replace(/ /g, '')}`,
+    name,
+    rarity: 'base'
+  }))
 
 const v = (name: string): { name: string; description: string } => ({ name, description: '' })
 
@@ -501,17 +516,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'getEmotes') {
-      const names = ['Hands Air', 'Wave', 'Fist Pump', 'Dance', 'Raise Hand', 'Clap', 'Money', 'Kiss', 'Head Explode', 'Shrug']
-      reply({
-        kind: 'emotes',
-        // The 10 default emotes are all 'base' rarity (matches the real relay). Custom
-        // equipped emotes would carry their own rarity from the catalog. No `thumbnail`
-        // field — mirrors the scene relay so we validate URN-derived thumbnails too.
-        emotes: names.map((name, slot) => {
-          const urn = `urn:decentraland:off-chain:base-emotes:${name.toLowerCase().replace(/ /g, '')}`
-          return { slot, urn, name, rarity: 'base' }
-        })
-      })
+      reply({ kind: 'emotes', emotes: mockEquippedEmotes() })
       return
     }
     if (msg.kind === 'triggerEmote') return // no-op in the mock
