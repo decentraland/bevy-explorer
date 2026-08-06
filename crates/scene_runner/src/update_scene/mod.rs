@@ -21,7 +21,7 @@ impl Plugin for SceneInputPlugin {
         // so no result could ever be produced
         if !app
             .world()
-            .get_resource::<common::structs::IsHeadless>()
+            .get_resource::<common::structs::NoRenderApp>()
             .is_some_and(|h| h.0)
         {
             app.add_plugins(PointerResultPlugin);

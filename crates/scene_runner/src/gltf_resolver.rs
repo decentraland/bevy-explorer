@@ -38,7 +38,7 @@ impl GltfResolver<'_, '_> {
                         s.load_meshes = RenderAssetUsages::all();
                         // must match scene_gltf_loader_settings: assets are keyed by path
                         // and the first load's settings win
-                        s.load_materials = if common::structs::headless() {
+                        s.load_materials = if common::structs::no_render_app() {
                             RenderAssetUsages::empty()
                         } else {
                             RenderAssetUsages::RENDER_WORLD

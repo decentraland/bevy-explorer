@@ -105,9 +105,9 @@ fn parse_args() -> Args {
     if server_mode {
         common::structs::set_server_mode();
     }
-    // ditto IsHeadless, for the gltf loader-settings closures (no ECS access, and every
+    // ditto NoRenderApp, for the gltf loader-settings closures (no ECS access, and every
     // load path must agree because the first load's settings win)
-    common::structs::set_headless();
+    common::structs::set_no_render_app();
     let timeout: Option<f32> = args.value_from_str("--timeout").ok();
     let scene_threads: usize = args
         .value_from_str("--scene-threads")
@@ -323,7 +323,7 @@ fn main() {
     // Skip the render-only scene plugins (scene UI, TextShape, scene materials, billboards,
     // lights, visibility, pointer results). Must precede SceneRunnerPlugin: the gates are
     // read at plugin-build time.
-    app.insert_resource(common::structs::IsHeadless(true));
+    app.insert_resource(common::structs::NoRenderApp(true));
 
     app.add_plugins(MaterialPlugin::<StandardMaterial>::default())
         .add_plugins(GizmoPlugin)

@@ -292,14 +292,20 @@ pub struct SceneDrivenAnimationFeedback {
 #[derive(Resource, Default)]
 pub struct IsServer(pub bool);
 
-/// When true, the app runs with no render app / window / GPU. Render-only scene
-/// plugins are skipped: nothing displays their output and none of them feed results
-/// back to the scene, so their components stay in the scene-side filtered store and
-/// never cross the IPC boundary. Distinct from [`IsServer`] — the headless binary is
-/// always headless, but only an authoritative server is also `IsServer`.
-/// Must be inserted before `SceneRunnerPlugin` is added.
+/// When true, the app has no render app. Render-only scene plugins are skipped:
+/// nothing displays their output and none of them feed results back to the scene,
+/// so their components stay in the scene-side filtered store and never cross the
+/// IPC boundary. Must be inserted before `SceneRunnerPlugin` is added.
+///
+/// This is narrower than "headless": `impost.rs` disables winit and runs with no
+/// primary window, but keeps `DefaultPlugins` and a camera to bake imposters, so it
+/// must leave this false. Setting it there would strip every imposter texture with
+/// no panic and no test failure.
+///
+/// Also distinct from [`IsServer`]: the headless binary never has a render app, but
+/// is only `IsServer` when run with --server-mode.
 #[derive(Resource, Default)]
-pub struct IsHeadless(pub bool);
+pub struct NoRenderApp(pub bool);
 
 static SERVER_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -314,18 +320,19 @@ pub fn server_mode() -> bool {
     SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-static HEADLESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static NO_RENDER_APP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Latch this process as headless. Irreversible by design; mirrors [`IsHeadless`] for
-/// code with no ECS access — notably the glTF loader-settings closures, which must agree
-/// across every load path because assets are keyed by path and the first load's settings win.
-pub fn set_headless() {
-    HEADLESS.store(true, std::sync::atomic::Ordering::Relaxed);
+/// Latch this process as having no render app. Irreversible by design; mirrors
+/// [`NoRenderApp`] for code with no ECS access — notably the glTF loader-settings
+/// closures, which must agree across every load path because assets are keyed by path
+/// and the first load's settings win.
+pub fn set_no_render_app() {
+    NO_RENDER_APP.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// True once [`set_headless`] has been called.
-pub fn headless() -> bool {
-    HEADLESS.load(std::sync::atomic::Ordering::Relaxed)
+/// True once [`set_no_render_app`] has been called.
+pub fn no_render_app() -> bool {
+    NO_RENDER_APP.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 #[derive(Debug, Clone)]

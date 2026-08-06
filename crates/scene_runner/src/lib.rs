@@ -261,7 +261,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
         app.init_resource::<common::structs::IsServer>();
-        app.init_resource::<common::structs::IsHeadless>();
+        app.init_resource::<common::structs::NoRenderApp>();
         // shared by pointer results, trigger areas and the avatar crate — owned here so
         // trigger areas keep working when the pointer-result systems are skipped
         app.init_resource::<update_scene::pointer_results::AvatarColliders>();
@@ -340,7 +340,7 @@ impl Plugin for SceneRunnerPlugin {
         app.add_plugins(SceneUtilPlugin);
         if !app
             .world()
-            .get_resource::<common::structs::IsHeadless>()
+            .get_resource::<common::structs::NoRenderApp>()
             .is_some_and(|h| h.0)
         {
             app.add_plugins(LightsPlugin);

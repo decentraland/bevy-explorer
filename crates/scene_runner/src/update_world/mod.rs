@@ -164,7 +164,7 @@ impl Plugin for SceneOutputPlugin {
         // AvatarModifierAreaPlugin (inert today, but its modifiers are server-relevant).
         let headless = app
             .world()
-            .get_resource::<common::structs::IsHeadless>()
+            .get_resource::<common::structs::NoRenderApp>()
             .is_some_and(|h| h.0);
 
         app.add_plugins(TransformAndParentPlugin);

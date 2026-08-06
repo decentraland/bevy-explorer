@@ -269,7 +269,7 @@ pub fn scene_gltf_loader_settings(
         s.load_meshes = RenderAssetUsages::MAIN_WORLD; // we'll modify then upload
                                                        // headless: no renderer can ever sample a material, and empty usages also tell the
                                                        // loader to register embedded textures as 1x1 placeholders instead of decoding them
-        s.load_materials = if common::structs::headless() {
+        s.load_materials = if common::structs::no_render_app() {
             RenderAssetUsages::empty()
         } else {
             RenderAssetUsages::RENDER_WORLD
