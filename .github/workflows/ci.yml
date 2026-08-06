@@ -221,11 +221,18 @@ jobs:
         with:
           key: headless-linux-x64
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Mirrors publish-headless.yml. No CEF or ffmpeg: --no-default-features drops them.
+      # NOT apt protobuf-compiler: ubuntu-22.04 ships protoc 3.12, which rejects the
+      # proto3 optional fields in billboard.proto. The rest of this workflow uses the
+      # action for the same reason.
+      - name: Install protoc
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # No CEF or ffmpeg: --no-default-features drops them.
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake pkg-config protobuf-compiler libprotobuf-dev \
+          sudo apt-get install -y clang cmake pkg-config \
             libasound2-dev libudev-dev libgl-dev libx11-dev libxext-dev
       # headless spawns the sidecar from its own directory, so both land in target/release.
       - name: Build sidecar
