@@ -111,7 +111,12 @@ where
 
     let is_storage = deno_core::url::Url::parse(&url)
         .ok()
-        .and_then(|u| u.host_str().map(|h| h.starts_with("storage.decentraland.")))
+        .and_then(|u| {
+            u.host_str().map(|h| {
+                h.strip_prefix("storage.decentraland.")
+                    .is_some_and(|tld| !tld.contains('.'))
+            })
+        })
         .unwrap_or(false);
 
     {
