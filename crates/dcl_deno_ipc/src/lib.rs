@@ -249,7 +249,11 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
             SceneToEngine::SceneResponse(scene_response) => RENDERER_SENDER.with(|sender| {
                 let mut sender = sender.borrow_mut();
                 let sender = sender.as_mut().unwrap();
-                sender.try_send(scene_response).unwrap();
+                // A full channel is per-scene backpressure, not a crash condition: this
+                // engine-side IPC-in task serves every scene sharing the sidecar, so a
+                // panicking `try_send(..).unwrap()` here takes down every co-tenant when one
+                // tenant fills the queue. Drop the frame under backpressure instead.
+                let _ = sender.try_send(scene_response);
             }),
             SceneToEngine::IpcMessage(id, ipc_message) => {
                 let IpcMessage::Closed = ipc_message else {
