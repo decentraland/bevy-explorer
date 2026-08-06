@@ -166,8 +166,11 @@ impl Plugin for SceneOutputPlugin {
         let headless = app.world().get_resource::<NoRenderApp>().is_some();
 
         app.add_plugins(TransformAndParentPlugin);
-        app.add_plugins(MeshDefinitionPlugin);
         if !headless {
+            // builds Mesh3d and default materials for scene-authored PbMeshRenderer.
+            // MeshCollider resolves its own meshes, and the only other Mesh3d reader is
+            // pointer raycasting, which is skipped headless too.
+            app.add_plugins(MeshDefinitionPlugin);
             // builds StandardMaterials and loads their textures for scene-authored
             // PbMaterial; nothing samples them without a renderer
             app.add_plugins(MaterialDefinitionPlugin);
