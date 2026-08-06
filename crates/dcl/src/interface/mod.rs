@@ -458,6 +458,7 @@ mod test {
             Default::default(),
             false,
             false,
+            false,
         );
 
         assert!(context.init(max));
