@@ -36,11 +36,16 @@ impl GltfResolver<'_, '_> {
                     gltf_src,
                     scene_hash,
                     move |s| {
-                        s.load_cameras = false;
-                        s.load_lights = false;
-                        s.load_meshes = RenderAssetUsages::all();
                         // must match scene_gltf_loader_settings: assets are keyed by path
-                        // and the first load's settings win
+                        // and the first load's settings win, so whichever path loads a file
+                        // first decides for the other.
+                        s.load_cameras = false;
+                        // unused here, but a GltfContainer on the same file converts them
+                        // per spawn — loading false would leave it nothing to convert
+                        s.load_lights = true;
+                        // MAIN_WORLD only: colliders and raycasts never upload. mesh_renderer
+                        // is the one consumer that renders, and promotes its own mesh.
+                        s.load_meshes = RenderAssetUsages::MAIN_WORLD;
                         s.load_materials = if no_render_app {
                             RenderAssetUsages::empty()
                         } else {

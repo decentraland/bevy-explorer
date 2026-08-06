@@ -3,7 +3,10 @@ use std::f32::consts::FRAC_PI_2;
 use bevy::{
     platform::collections::HashMap,
     prelude::*,
-    render::mesh::{skinning::SkinnedMesh, VertexAttributeValues},
+    render::{
+        mesh::{skinning::SkinnedMesh, VertexAttributeValues},
+        render_asset::RenderAssetUsages,
+    },
 };
 
 use common::{sets::SceneSets, structs::AppConfig};
@@ -316,6 +319,11 @@ pub fn update_mesh(
                     commands.entity(ent).try_insert(RetryMeshDefinition);
                     continue;
                 };
+                // the resolver loads MAIN_WORLD only, since its other consumers (colliders,
+                // raycasts) read the mesh cpu-side and never upload it
+                if let Some(mesh) = meshes.get_mut(h_mesh.id()) {
+                    mesh.asset_usage |= RenderAssetUsages::RENDER_WORLD;
+                }
                 // remove skin if mesh changed
                 if maybe_existing_mesh.map(|me| &me.0) != Some(&h_mesh) {
                     commands.entity(ent).remove::<SkinnedMesh>();
