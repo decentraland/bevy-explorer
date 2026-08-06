@@ -572,6 +572,7 @@ fn supervisor(
     mut announced: Local<bool>,
     mut last_report: Local<f32>,
     orchestrated: Option<Res<OrchestratedScenes>>,
+    updates: Res<scene_runner::SceneUpdates>,
 ) {
     let elapsed = time.elapsed_secs();
 
@@ -598,7 +599,11 @@ fn supervisor(
 
     if *announced && elapsed - *last_report > 5.0 {
         *last_report = elapsed;
-        println!("[headless] alive: {count} scene(s), max_tick={max_tick}, t={elapsed:.0}s");
+        println!(
+            "[headless] alive: {count} scene(s), max_tick={max_tick}, t={elapsed:.0}s, \
+             frames={}, skip_inflight={}, skip_sent={}",
+            updates.frames, updates.skipped_in_flight, updates.skipped_already_sent
+        );
     }
 
     // Orchestrated: a broken scene is reported (scene-broken event) and removed by the

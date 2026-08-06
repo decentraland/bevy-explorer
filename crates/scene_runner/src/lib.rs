@@ -87,6 +87,13 @@ pub struct SceneUpdates {
     pub eligible_jobs: usize,
     pub loop_end_time: Instant,
     pub scene_queue: VecDeque<(Entity, FloatOrd)>,
+    /// Engine frames since startup (one per `update_scene_priority` run).
+    pub frames: u64,
+    /// Scene-frames lost because the scene's previous job was still in flight when
+    /// the eligible queue was snapshotted, so it could not be dispatched this frame.
+    pub skipped_in_flight: u64,
+    /// Scene-frames lost because the scene had already been dispatched this frame.
+    pub skipped_already_sent: u64,
     /// Named scene entities that must be scheduled every frame (e.g. the
     /// movement controller). These scenes bypass the `scene_threads` limit
     /// but still occupy slots, preventing non-priority scenes from running.
@@ -269,6 +276,9 @@ impl Plugin for SceneRunnerPlugin {
             scene_queue: Default::default(),
             loop_end_time: Instant::now(),
             priority_scenes: Default::default(),
+            frames: 0,
+            skipped_in_flight: 0,
+            skipped_already_sent: 0,
         });
 
         app.add_event::<LoadSceneEvent>();
@@ -432,6 +442,7 @@ fn update_scene_priority(
     containing_scene: ContainingScene,
 ) {
     updates.eligible_jobs = 0;
+    updates.frames += 1;
 
     let (active_scenes, player_translation) = player
         .single()
@@ -441,6 +452,11 @@ fn update_scene_priority(
     // check all in-flight scenes still exist
     let mut missing_in_flight = updates.jobs_in_flight.clone();
 
+    // scene-frames lost this frame, tallied locally: the two closures below cannot
+    // both borrow `updates` mutably at once.
+    let mut skipped_in_flight = 0u64;
+    let mut skipped_already_sent = 0u64;
+
     // sort eligible scenes
     updates.scene_queue = scenes
         .iter_mut()
@@ -449,6 +465,9 @@ fn update_scene_priority(
             let allow = !context.in_flight
                 && !context.broken
                 && (context.blocked.is_empty() || maybe_super.is_some());
+            if context.in_flight {
+                skipped_in_flight += 1;
+            }
             if !allow {
                 debug!(
                     "skipping {ent} (@{}) on {:?}",
@@ -477,6 +496,10 @@ fn update_scene_priority(
             };
             let not_yet_run = context.last_sent < time.elapsed_secs();
 
+            if !context.in_flight && !not_yet_run {
+                skipped_already_sent += 1;
+            }
+
             (!context.in_flight && not_yet_run).then(|| {
                 updates.eligible_jobs += 1;
                 let priority =
@@ -485,6 +508,8 @@ fn update_scene_priority(
             })
         })
         .collect();
+    updates.skipped_in_flight += skipped_in_flight;
+    updates.skipped_already_sent += skipped_already_sent;
     updates
         .scene_queue
         .make_contiguous()
