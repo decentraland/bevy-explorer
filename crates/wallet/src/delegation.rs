@@ -208,9 +208,12 @@ mod test {
 
     #[test]
     fn fallback_only_serves_its_own_scene() {
-        let mut delegations = StorageDelegations::default();
-        delegations.fallback =
-            Some(StorageDelegation::parse(&mint("2030-01-01T00:00:00Z"), "https://realm").unwrap());
+        let delegations = StorageDelegations {
+            fallback: Some(
+                StorageDelegation::parse(&mint("2030-01-01T00:00:00Z"), "https://realm").unwrap(),
+            ),
+            ..Default::default()
+        };
         assert!(delegations.get("bafkreitest").is_some());
         assert!(delegations.get("bafkreiother").is_none());
     }
