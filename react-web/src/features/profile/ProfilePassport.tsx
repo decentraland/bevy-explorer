@@ -9,7 +9,7 @@
 
 import { useState } from 'react'
 import { Avatar, WearableCard, type Rarity } from '../../design'
-import { nameColor, shortAddr, splitName } from '../../lib/identity'
+import { nameColor, shopUrl, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileInfo, Wearable } from '../../engine/protocol'
 import type { Relationship } from '../chat/ProfileCardPresentation'
 import styles from './ProfilePassport.module.css'
@@ -69,14 +69,15 @@ function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
 }
 
 // Read-only equipped-item tile (wearable or emote) — reuses the backpack's WearableCard for the
-// rarity-gradient tile, without any equip affordance (this is someone else's passport, or a
-// view-only summary of your own).
+// rarity-gradient tile. No equip affordance (this is someone else's passport, or a view-only
+// summary of your own) — instead, the hover pill deep-links to the item's shop page when it's a
+// collectible (base/off-chain items have no marketplace listing, so no pill shows for those).
 function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Element {
   return (
     <div className={styles.equippedRow}>
       {items.map((it) => (
         <div key={it.urn} className={styles.equippedTile}>
-          <WearableCard thumbnail={it.thumbnail} name={it.name} rarity={asRarity(it.rarity)} />
+          <WearableCard thumbnail={it.thumbnail} name={it.name} rarity={asRarity(it.rarity)} shopUrl={shopUrl(it.urn)} />
         </div>
       ))}
     </div>

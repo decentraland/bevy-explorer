@@ -56,6 +56,16 @@ function itemUrn(urn: string): string {
   return urn
 }
 
+// Deep link to a collectible's shop page. Urn shape: urn:decentraland:matic:collections-v{1,2}:
+// <contract>:<itemId>[:<tokenId>] → shop/item/<contract>/<itemId>. Base (off-chain) wearables/emotes
+// have no marketplace listing, so callers should hide the shop action when this returns undefined.
+const SHOP_BASE = 'https://decentraland.org/shop/item'
+export function shopUrl(urn: string): string | undefined {
+  const parts = urn.split(':')
+  if ((parts[3] !== 'collections-v1' && parts[3] !== 'collections-v2') || parts.length < 6) return undefined
+  return `${SHOP_BASE}/${parts[4]}/${parts[5]}`
+}
+
 function hash(s: string): number {
   let h = 0
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0

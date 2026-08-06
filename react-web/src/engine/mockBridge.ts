@@ -130,7 +130,12 @@ const mockOutfit = (urns: string[]): Outfit => ({
 const MOCK_OFF_CATALOG_EQUIPPED: Wearable[] = [
   { urn: 'urn:decentraland:off-chain:base-avatars:thug_life', name: 'Off-catalog Eyewear', rarity: 'epic', category: 'eyewear', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:black_sun_glasses'), equipped: true }
 ]
-const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED]
+// An equipped on-chain collectible (has a marketplace listing) — exercises the passport's SHOP
+// hover pill, which base/off-chain wearables never show.
+const MOCK_COLLECTIBLE_EQUIPPED: Wearable[] = [
+  { urn: 'urn:decentraland:matic:collections-v2:0xa42e166edac870aa5351b098ae6458d39ca0fca6:0', name: 'Neon Tiara', rarity: 'legendary', category: 'tiara', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hat'), equipped: true }
+]
+const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED, ...MOCK_COLLECTIBLE_EQUIPPED]
 
 // The 10 wheel-slot base emotes — shared by getEmotes (the wheel) and the passport's Equipped
 // Emotes section, so both mocks agree.
