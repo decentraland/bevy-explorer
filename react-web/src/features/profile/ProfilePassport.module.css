@@ -200,6 +200,15 @@
   background: rgba(255, 255, 255, 0.15);
 }
 
+.equippedRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.equippedTile {
+  width: 72px;
+}
+
 .about {
   margin: 0;
   font-size: 0.9rem;

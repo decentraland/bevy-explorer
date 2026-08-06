@@ -8,11 +8,17 @@
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
 import { useState } from 'react'
-import { Avatar } from '../../design'
+import { Avatar, WearableCard, type Rarity } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
-import type { Badge, Profile, ProfileInfo } from '../../engine/protocol'
+import type { Badge, Emote, Profile, ProfileInfo, Wearable } from '../../engine/protocol'
 import type { Relationship } from '../chat/ProfileCardPresentation'
 import styles from './ProfilePassport.module.css'
+
+const RARITIES: Rarity[] = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
+function asRarity(r?: string): Rarity {
+  const k = (r ?? '').toLowerCase()
+  return RARITIES.find((x) => x === k) ?? 'base'
+}
 
 type Tab = 'overview' | 'badges' | 'photos'
 
@@ -62,6 +68,21 @@ function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
   )
 }
 
+// Read-only equipped-item tile (wearable or emote) — reuses the backpack's WearableCard for the
+// rarity-gradient tile, without any equip affordance (this is someone else's passport, or a
+// view-only summary of your own).
+function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Element {
+  return (
+    <div className={styles.equippedRow}>
+      {items.map((it) => (
+        <div key={it.urn} className={styles.equippedTile}>
+          <WearableCard thumbnail={it.thumbnail} name={it.name} rarity={asRarity(it.rarity)} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function ProfilePassport({
   profile,
   relationship = 'none',
@@ -89,7 +110,10 @@ export function ProfilePassport({
   const fields = FIELD_LABELS.filter(({ key }) => profile.info?.[key])
   const hasBadges = (profile.badges?.length ?? 0) > 0
   const hasAbout = !!profile.description || fields.length > 0 || (profile.links?.length ?? 0) > 0
-  const hasOverview = hasBadges || hasAbout
+  const hasWearables = (profile.equippedWearables?.length ?? 0) > 0
+  const hasEmotes = (profile.equippedEmotes?.length ?? 0) > 0
+  const hasEquipped = hasWearables || hasEmotes
+  const hasOverview = hasBadges || hasAbout || hasEquipped
 
   return (
     // The dimmed scrim + click-outside-to-close are owned by the popup layer (openPassport →
@@ -166,14 +190,6 @@ export function ProfilePassport({
             )}
             {tab === 'overview' && hasOverview && (
               <>
-                {profile.badges && profile.badges.length > 0 && (
-                  <section className={styles.card}>
-                    <h2 className={styles.cardTitle}>Badges</h2>
-                    <div className={styles.badgeRow}>
-                      {profile.badges.map((b) => <BadgeTile key={b.id} badge={b} />)}
-                    </div>
-                  </section>
-                )}
                 {hasAbout && (
                 <section className={styles.card}>
                   {profile.description && (
@@ -205,6 +221,30 @@ export function ProfilePassport({
                     </>
                   )}
                 </section>
+                )}
+                {hasEquipped && (
+                  <section className={styles.card}>
+                    {hasWearables && (
+                      <>
+                        <h2 className={styles.cardTitle}>Equipped Wearables</h2>
+                        <EquippedRow items={profile.equippedWearables ?? []} />
+                      </>
+                    )}
+                    {hasEmotes && (
+                      <>
+                        <h2 className={styles.cardTitle}>Equipped Emotes</h2>
+                        <EquippedRow items={profile.equippedEmotes ?? []} />
+                      </>
+                    )}
+                  </section>
+                )}
+                {profile.badges && profile.badges.length > 0 && (
+                  <section className={styles.card}>
+                    <h2 className={styles.cardTitle}>Badges</h2>
+                    <div className={styles.badgeRow}>
+                      {profile.badges.map((b) => <BadgeTile key={b.id} badge={b} />)}
+                    </div>
+                  </section>
                 )}
               </>
             )}
