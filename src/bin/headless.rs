@@ -811,7 +811,7 @@ fn drain_control_commands(
         if !adapter.starts_with("livekit:") {
             ctl_emit(&serde_json::json!({
                 "type": "scene-failed", "scene": scene_id,
-                "error": format!("refusing non-livekit adapter: {}", &adapter[..adapter.len().min(24)])
+                "error": format!("refusing non-livekit adapter: {}", adapter.chars().take(24).collect::<String>())
             }));
             return;
         }
