@@ -13,6 +13,7 @@ import { Panel } from './Panel'
 import { DclLogo } from './DclLogo'
 import { Avatar } from './Avatar'
 import { WearableCard, type Rarity } from './WearableCard'
+import { EquippedItemCard } from './EquippedItemCard'
 import { showConfirm, showDialog, PopupHost } from './popups'
 import type { IconName } from './icons'
 import { ChatBubble, DaySeparator, MemberRow } from '../features/chat/Chat'
@@ -385,6 +386,19 @@ export function Showcase(): React.JSX.Element {
             <div key={r} style={{ width: 84 }}>
               <WearableCard rarity={r} equipped={i === 4} isNew={i === 1} count={i === 7 ? 2 : undefined} />
             </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="EquippedItemCard (passport)">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 108px)', gap: 12 }}>
+          {(['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic', 'base'] as Rarity[]).map((r, i) => (
+            <EquippedItemCard
+              key={r}
+              name={`${r[0].toUpperCase()}${r.slice(1)} Item`}
+              rarity={r}
+              shopUrl={i % 2 === 0 ? 'https://decentraland.org/shop/item/0xa42e166edac870aa5351b098ae6458d39ca0fca6/0' : undefined}
+            />
           ))}
         </div>
       </Section>

@@ -8,17 +8,11 @@
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
 import { useState } from 'react'
-import { Avatar, WearableCard, type Rarity } from '../../design'
+import { Avatar, EquippedItemCard } from '../../design'
 import { nameColor, shopUrl, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileInfo, Wearable } from '../../engine/protocol'
 import type { Relationship } from '../chat/ProfileCardPresentation'
 import styles from './ProfilePassport.module.css'
-
-const RARITIES: Rarity[] = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
-function asRarity(r?: string): Rarity {
-  const k = (r ?? '').toLowerCase()
-  return RARITIES.find((x) => x === k) ?? 'base'
-}
 
 type Tab = 'overview' | 'badges' | 'photos'
 
@@ -68,17 +62,15 @@ function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
   )
 }
 
-// Read-only equipped-item tile (wearable or emote) — reuses the backpack's WearableCard for the
-// rarity-gradient tile. No equip affordance (this is someone else's passport, or a view-only
-// summary of your own) — instead, the hover pill deep-links to the item's shop page when it's a
-// collectible (base/off-chain items have no marketplace listing, so no pill shows for those).
+// Read-only equipped-item row (wearable or emote), 6 per row like unity-explorer's passport. No
+// equip affordance (this is someone else's passport, or a view-only summary of your own) — instead
+// the SHOP button deep-links to the item's shop page when it's a collectible (base/off-chain items
+// have no marketplace listing, so no button shows for those).
 function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Element {
   return (
     <div className={styles.equippedRow}>
       {items.map((it) => (
-        <div key={it.urn} className={styles.equippedTile}>
-          <WearableCard thumbnail={it.thumbnail} name={it.name} rarity={asRarity(it.rarity)} shopUrl={shopUrl(it.urn)} />
-        </div>
+        <EquippedItemCard key={it.urn} thumbnail={it.thumbnail} name={it.name} rarity={it.rarity} shopUrl={shopUrl(it.urn)} />
       ))}
     </div>
   )
