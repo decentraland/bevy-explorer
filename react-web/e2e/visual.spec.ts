@@ -211,6 +211,19 @@ test.describe('visual — mock HUD', () => {
     })
   }
 
+  // Minimap — the HUD's newest surface, and the one `world-hud.png` covers worst: it is mostly
+  // dark chrome over a dark HUD, so a whole missing minimap only moved ~6k pixels there, inside
+  // the 1% tolerance. Baselined with the gear menu open, which is the densest state (header,
+  // zoom, gear, and the three menu sections). Map tiles are external images and don't load here,
+  // so this baselines the chrome, not the imagery.
+  test('minimap (settings open)', async ({ page }) => {
+    await enterWorld(page)
+    await page.getByRole('button', { name: 'Minimap settings' }).click()
+    await page.getByRole('menu', { name: 'Minimap settings' }).waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('minimap-settings.png')
+  })
+
   test('backpack — wearables', async ({ page }) => {
     await enterWorld(page)
     await openPanel(page, 'Backpack')

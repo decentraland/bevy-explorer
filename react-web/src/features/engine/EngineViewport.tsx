@@ -13,8 +13,9 @@ export function EngineViewport({
   report
 }: {
   region: 'map' | 'avatarPreview'
-  /** Stable callback (useCallback) — reports the rect, or null to clear. */
-  report: (region: 'map' | 'avatarPreview', rect: Rect | null) => void
+  /** Stable callback (useCallback) — reports the rect (in CSS pixels) and the current
+   *  `devicePixelRatio`, or null to clear. */
+  report: (region: 'map' | 'avatarPreview', rect: Rect | null, dpr?: number) => void
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -23,7 +24,9 @@ export function EngineViewport({
     if (!el) return
     const push = (): void => {
       const r = el.getBoundingClientRect()
-      report(region, { x: r.left, y: r.top, width: r.width, height: r.height })
+      // Re-read the ratio on every push rather than once: dragging the window to a display with
+      // a different density changes it, and `resize` fires when that happens.
+      report(region, { x: r.left, y: r.top, width: r.width, height: r.height }, window.devicePixelRatio)
     }
     push()
     const ro = new ResizeObserver(push)

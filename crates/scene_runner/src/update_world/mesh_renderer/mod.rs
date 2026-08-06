@@ -319,8 +319,8 @@ pub fn update_mesh(
                     commands.entity(ent).try_insert(RetryMeshDefinition);
                     continue;
                 };
-                // the resolver loads MAIN_WORLD only, since its other consumers (colliders,
-                // raycasts) read the mesh cpu-side and never upload it
+                // the shared settings load MAIN_WORLD only, since the resolver's other
+                // consumers (colliders, raycasts) read the mesh cpu-side and never upload
                 if let Some(mesh) = meshes.get_mut(h_mesh.id()) {
                     mesh.asset_usage |= RenderAssetUsages::RENDER_WORLD;
                 }

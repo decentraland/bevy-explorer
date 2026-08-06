@@ -20,6 +20,7 @@ import { PlacesPage } from './features/places/PlacesPage'
 import { PlacesPicker } from './features/places/PlacesPicker'
 import { GalleryPage } from './features/gallery/GalleryPage'
 import { Sidebar } from './features/sidebar/Sidebar'
+import { Minimap } from './features/minimap/Minimap'
 import { Pointer } from './features/pointer/Pointer'
 import { openPassport } from './features/profile/Passport'
 import { openWorldVisit } from './components/WorldVisitModal'
@@ -259,12 +260,20 @@ function Hud(): React.JSX.Element {
       {rpc && <EngineHost rpc={rpc} />}
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
-      {session.phase === 'entering' && <SceneLoadingOverlay scene={session.scene} />}
+      {session.phase === 'entering' && <SceneLoadingOverlay scene={session.sceneLoading} />}
       {session.phase === 'world' && !session.menuOpen && (
         <>
           {/* The full-screen menu pages own the whole screen; hide the rail + chat so
               they don't show through (the map page's body is transparent). */}
           {!pageOpen && <Sidebar session={session} onViewProfile={viewMyProfile} />}
+          {!pageOpen && (
+            <Minimap
+              minimap={session.minimap}
+              map={session.map}
+              sceneTitle={session.minimap.sceneTitle}
+              setEngineViewport={session.setEngineViewport}
+            />
+          )}
           {/* Reticle (when pointer-locked) + world-hover prompt — hidden under a full-screen page. */}
           {!pageOpen && (
             <Pointer

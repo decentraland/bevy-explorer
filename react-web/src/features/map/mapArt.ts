@@ -37,3 +37,14 @@ export const CAT_PINS: Record<string, string> = {
 }
 
 export const WORLD_ICON = worldPng
+
+/** Pin sprite for a place, from the first of its categories we have art for. Places with only
+ *  categories that have no pin (`poi`, `featured`, …) fall back to the generic "all" icon,
+ *  matching how MapPage resolves an unknown category. */
+export function pinForCategories(categories: string[]): string {
+  for (const c of categories) {
+    const pin = CAT_PINS[c]
+    if (pin != null) return pin
+  }
+  return CAT_ICONS.all
+}
