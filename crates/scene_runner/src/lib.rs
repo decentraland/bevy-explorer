@@ -227,8 +227,11 @@ pub struct SceneRunnerPlugin;
 #[derive(Resource)]
 pub struct SceneLoopSchedule {
     schedule: Schedule,
-    run_time: f64,
-    prev_loop_end: Instant,
+    /// Absolute wall-clock deadline for the end of the next frame. Accumulating this
+    /// by the frame target (rather than restarting the clock from `Instant::now()` each
+    /// frame) means a frame that overruns is repaid by a correspondingly shorter sleep,
+    /// so the long-run rate matches the target instead of losing the overshoot forever.
+    next_frame_end: Instant,
     #[cfg(not(target_arch = "wasm32"))]
     sleeper: SpinSleeper,
 }
@@ -327,8 +330,7 @@ impl Plugin for SceneRunnerPlugin {
 
         app.insert_resource(SceneLoopSchedule {
             schedule: scene_schedule,
-            prev_loop_end: Instant::now(),
-            run_time: 0.01,
+            next_frame_end: Instant::now(),
             #[cfg(not(target_arch = "wasm32"))]
             sleeper: SpinSleeper::default(),
         });
@@ -386,17 +388,13 @@ fn run_scene_loop(world: &mut World) {
         Duration::from_nanos((1e9 / fps) as u64)
     };
     let start_loop_time = Instant::now();
-    let non_loop_duration = start_loop_time
-        .checked_duration_since(loop_schedule.prev_loop_end)
-        .unwrap_or_default();
-    let ideal_loop_time = frame_target_duration
-        .checked_sub(non_loop_duration)
-        .unwrap_or_default()
-        .max(Duration::from_millis(1))
-        .as_secs_f64();
-    loop_schedule.run_time = loop_schedule.run_time * 0.5 + 0.5 * ideal_loop_time;
-
-    let target_end_time = start_loop_time + Duration::from_secs_f64(loop_schedule.run_time);
+    // Bounded so we neither burn through a backlog after a hitch (a deadline already in
+    // the past still leaves a 1ms floor to make progress) nor run a frame longer than the
+    // target if the deadline is stale — e.g. after an fps change, or an uncapped frame.
+    let earliest_end = start_loop_time + Duration::from_millis(1);
+    let latest_end = start_loop_time + frame_target_duration.max(Duration::from_millis(1));
+    let target_end_time = loop_schedule.next_frame_end.clamp(earliest_end, latest_end);
+    loop_schedule.next_frame_end = target_end_time + frame_target_duration;
 
     world.resource_mut::<SceneUpdates>().loop_end_time = target_end_time;
 
@@ -422,8 +420,6 @@ fn run_scene_loop(world: &mut World) {
             loop_schedule.sleeper.sleep(sleep_time);
         }
     }
-
-    loop_schedule.prev_loop_end = Instant::now();
 }
 
 fn update_scene_priority(
