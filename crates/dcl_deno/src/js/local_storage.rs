@@ -24,23 +24,40 @@ fn address(state: &OpState) -> String {
     address
 }
 
-fn strip_prefix(key: impl AsRef<str>) -> String {
-    key.as_ref().split_once(':').unwrap().1.to_owned()
+/// The `{address}:` prefix every key for this player is stored under.
+fn address_prefix(state: &OpState) -> String {
+    format!("{}:", address(state))
 }
 
-// returns filtered keys matching current user, including the prefix
-fn iterate_keys(
-    state: &mut OpState,
-    persistent: bool,
-) -> Result<impl Iterator<Item = String>, AnyError> {
-    let address = address(state);
+/// This player's keys, still carrying their `{address}:` prefix.
+///
+/// Matching is on the full `{address}:` prefix, never the bare address:
+/// `address` falls back to an empty string when there is no player identity,
+/// and `starts_with("")` holds for every key in the store — including other
+/// players'. The bare-address match also collided one address with a longer
+/// one sharing its hex prefix.
+fn prefixed_keys(state: &mut OpState, persistent: bool) -> Result<Vec<String>, AnyError> {
+    let prefix = address_prefix(state);
     let iter = deno_webstorage::op_webstorage_iterate_keys__raw_fn(state, persistent)?;
-    Ok(iter.into_iter().filter(move |k| k.starts_with(&address)))
+    Ok(iter.into_iter().filter(|k| k.starts_with(&prefix)).collect())
+}
+
+/// The same keys as the scene names them, prefix removed.
+///
+/// A key that does not carry the prefix is dropped rather than split, so no
+/// path remains where a foreign key reaches a `split_once` that would unwrap.
+fn scene_keys(state: &mut OpState, persistent: bool) -> Result<Vec<String>, AnyError> {
+    let prefix = address_prefix(state);
+    let iter = deno_webstorage::op_webstorage_iterate_keys__raw_fn(state, persistent)?;
+    Ok(iter
+        .into_iter()
+        .filter_map(|k| k.strip_prefix(&prefix).map(ToOwned::to_owned))
+        .collect())
 }
 
 #[op2(fast)]
 pub fn op_webstorage_length(state: &mut OpState, persistent: bool) -> Result<u32, AnyError> {
-    Ok(iterate_keys(state, persistent)?.count() as u32)
+    Ok(scene_keys(state, persistent)?.len() as u32)
 }
 
 #[op2]
@@ -50,9 +67,7 @@ pub fn op_webstorage_key(
     #[smi] index: u32,
     persistent: bool,
 ) -> Result<Option<String>, AnyError> {
-    Ok(iterate_keys(state, persistent)?
-        .nth(index as usize)
-        .map(strip_prefix))
+    Ok(scene_keys(state, persistent)?.into_iter().nth(index as usize))
 }
 
 #[op2(fast)]
@@ -98,7 +113,7 @@ pub fn op_webstorage_remove(
 
 #[op2(fast)]
 pub fn op_webstorage_clear(state: &mut OpState, persistent: bool) -> Result<(), AnyError> {
-    for key in iterate_keys(state, persistent)? {
+    for key in prefixed_keys(state, persistent)? {
         deno_webstorage::op_webstorage_remove__raw_fn(state, &key, persistent)?;
     }
 
@@ -111,5 +126,5 @@ pub fn op_webstorage_iterate_keys(
     state: &mut OpState,
     persistent: bool,
 ) -> Result<Vec<String>, AnyError> {
-    Ok(iterate_keys(state, persistent)?.map(strip_prefix).collect())
+    scene_keys(state, persistent)
 }
