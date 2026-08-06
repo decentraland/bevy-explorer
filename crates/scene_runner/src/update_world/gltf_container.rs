@@ -24,7 +24,7 @@ use bevy::{
 };
 use common::{
     anim_last_system,
-    structs::{AppConfig, PrimaryUser},
+    structs::{AppConfig, NoRenderApp, PrimaryUser},
     util::{ModifyComponentExt, SceneSpawnerPlus},
 };
 use rapier3d_f64::prelude::*;
@@ -262,14 +262,15 @@ fn on_gltf_container_removed(trigger: Trigger<OnRemove, GltfDefinition>, mut com
 // also be used by a GltfContainer (e.g. AssetLoad preloads) must load with these settings
 pub fn scene_gltf_loader_settings(
     transfer_priority: RenderAssetTransferPriority,
+    no_render_app: bool,
 ) -> impl Fn(&mut GltfLoaderSettings) + Send + Sync + 'static {
     move |s| {
         s.load_cameras = false;
         s.load_lights = true;
         s.load_meshes = RenderAssetUsages::MAIN_WORLD; // we'll modify then upload
-                                                       // headless: no renderer can ever sample a material, and empty usages also tell the
+                                                       // no renderer can ever sample a material, and empty usages also tell the
                                                        // loader to register embedded textures as 1x1 placeholders instead of decoding them
-        s.load_materials = if common::structs::no_render_app() {
+        s.load_materials = if no_render_app {
             RenderAssetUsages::empty()
         } else {
             RenderAssetUsages::RENDER_WORLD
@@ -309,6 +310,7 @@ fn update_gltf(
     mut contexts: Query<(Entity, &mut RendererSceneContext, Has<SceneResourceLookup>)>,
     containing_scenes: ContainingScene,
     oow_player: Query<Entity, (With<OutOfWorld>, With<PrimaryUser>)>,
+    no_render_app: Option<Res<NoRenderApp>>,
 ) {
     let immediate_scene = oow_player
         .single()
@@ -374,7 +376,7 @@ fn update_gltf(
         let h_gltf = ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
             &gltf.0.src,
             &scene_def.id,
-            scene_gltf_loader_settings(transfer_priority),
+            scene_gltf_loader_settings(transfer_priority, no_render_app.is_some()),
         );
 
         let h_gltf = match h_gltf {

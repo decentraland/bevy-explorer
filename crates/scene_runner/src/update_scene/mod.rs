@@ -1,4 +1,5 @@
 use bevy::prelude::Plugin;
+use common::structs::NoRenderApp;
 
 use self::{
     camera_mode::CameraModePlugin, engine_info::EngineInfoPlugin, pointer_lock::PointerLockPlugin,
@@ -19,11 +20,7 @@ impl Plugin for SceneInputPlugin {
         app.add_plugins(RaycastResultPlugin);
         // pointer results need input and a rendered UI, neither of which exists headless,
         // so no result could ever be produced
-        if !app
-            .world()
-            .get_resource::<common::structs::NoRenderApp>()
-            .is_some_and(|h| h.0)
-        {
+        if app.world().get_resource::<NoRenderApp>().is_none() {
             app.add_plugins(PointerResultPlugin);
         }
         app.add_plugins(PointerLockPlugin);

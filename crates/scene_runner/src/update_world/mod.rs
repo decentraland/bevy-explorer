@@ -11,6 +11,7 @@ use bevy::{
     prelude::*,
 };
 
+use common::structs::NoRenderApp;
 use dcl::{
     crdt::{growonly::CrdtGOState, lww::CrdtLWWState},
     interface::{ComponentPosition, CrdtStore},
@@ -162,10 +163,7 @@ impl Plugin for SceneOutputPlugin {
         // cross IPC (see CrdtStore::process_message). Kept headless: AnimatorPlugin (animation
         // drives transforms, so moving-platform colliders depend on it) and
         // AvatarModifierAreaPlugin (inert today, but its modifiers are server-relevant).
-        let headless = app
-            .world()
-            .get_resource::<common::structs::NoRenderApp>()
-            .is_some_and(|h| h.0);
+        let headless = app.world().get_resource::<NoRenderApp>().is_some();
 
         app.add_plugins(TransformAndParentPlugin);
         app.add_plugins(MeshDefinitionPlugin);

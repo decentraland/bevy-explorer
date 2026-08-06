@@ -6,6 +6,7 @@ use bevy::{
     prelude::*,
     render::render_asset::RenderAssetUsages,
 };
+use common::structs::NoRenderApp;
 use ipfs::IpfsAssetServer;
 
 #[derive(SystemParam)]
@@ -14,6 +15,7 @@ pub struct GltfResolver<'w, 's> {
     pending_gltfs: Local<'s, HashMap<String, Handle<Gltf>>>,
     ipfas: IpfsAssetServer<'w, 's>,
     gltfs: Res<'w, Assets<Gltf>>,
+    no_render_app: Option<Res<'w, NoRenderApp>>,
 }
 
 impl GltfResolver<'_, '_> {
@@ -27,18 +29,19 @@ impl GltfResolver<'_, '_> {
         scene_hash: &str,
     ) -> Result<Option<Handle<Gltf>>, anyhow::Error> {
         let lookup = format!("{gltf_src}##{scene_hash}");
+        let no_render_app = self.no_render_app.is_some();
         let h_gltf = self.prev_pending_gltfs.remove(&lookup).unwrap_or_else(|| {
             self.ipfas
                 .load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
                     gltf_src,
                     scene_hash,
-                    |s| {
+                    move |s| {
                         s.load_cameras = false;
                         s.load_lights = false;
                         s.load_meshes = RenderAssetUsages::all();
                         // must match scene_gltf_loader_settings: assets are keyed by path
                         // and the first load's settings win
-                        s.load_materials = if common::structs::no_render_app() {
+                        s.load_materials = if no_render_app {
                             RenderAssetUsages::empty()
                         } else {
                             RenderAssetUsages::RENDER_WORLD
