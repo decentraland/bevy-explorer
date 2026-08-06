@@ -195,8 +195,81 @@ jobs:
         if: runner.os == 'macos'
         with:
           command: test
-          args: --all --release --locked -- --test-threads=1 
-      
+          args: --all --release --locked -- --test-threads=1
+
+  # The headless server is otherwise built only by publish-headless.yml, which runs on
+  # main pushes and publishes the result to npm — so a PR that breaks it goes green and
+  # the breakage is discovered by consumers. `cargo build` alone is not enough: the
+  # failures this binary actually has are runtime system-param validation panics (a
+  # plugin gated out while a system still requests its resource), which compile clean.
+  # So this builds the shipped configuration and runs it against a real realm until it
+  # ticks. ubuntu-22.04 and the feature set mirror publish-headless.yml's linux-x64 leg.
+  headless-smoke:
+    name: Headless Smoke
+    runs-on: ubuntu-22.04
+    concurrency:
+      group: ${{ github.workflow }}-headless-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: headless-linux-x64
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Mirrors publish-headless.yml. No CEF or ffmpeg: --no-default-features drops them.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake pkg-config protobuf-compiler libprotobuf-dev \
+            libasound2-dev libudev-dev libgl-dev libx11-dev libxext-dev
+      # headless spawns the sidecar from its own directory, so both land in target/release.
+      - name: Build sidecar
+        run: cargo build --release --locked -p dcl_deno_ipc
+      - name: Build engine
+        run: >
+          cargo build --release --locked
+          --bin headless --no-default-features --features headless,livekit
+      # scene-explorer-tests is a static GitHub Pages site already relied on by Test
+      # Scenes above, so this adds no new infrastructure dependency. 52,-52 co-tenants
+      # 8 scenes, which exercises the multi-scene scheduling path rather than just boot.
+      - name: Smoke test
+        run: |
+          set -o pipefail
+          ./target/release/headless \
+            --realm https://decentraland.github.io/scene-explorer-tests/scene-explorer-tests \
+            --location 52,-52 --server-mode --timeout 90 2>&1 | tee smoke.log
+      - name: Assert scenes ticked
+        run: |
+          if ! grep -q "first tick reached" smoke.log; then
+            echo "::error::headless never reached first tick"
+            exit 1
+          fi
+          if grep -q "panicked at" smoke.log; then
+            echo "::error::headless panicked"
+            grep -m5 -A5 "panicked at" smoke.log
+            exit 1
+          fi
+          # a scene that ticks once then wedges must fail too, so require progress
+          ticks=$(grep -o "max_tick=[0-9]*" smoke.log | cut -d= -f2)
+          first=$(echo "$ticks" | head -1)
+          last=$(echo "$ticks" | tail -1)
+          if [ -z "$last" ] || [ "$last" -le "$first" ]; then
+            echo "::error::scene ticks stalled (first=$first last=$last)"
+            exit 1
+          fi
+          echo "ok: ticks advanced $first -> $last"
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-smoke-log
+          path: smoke.log
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
