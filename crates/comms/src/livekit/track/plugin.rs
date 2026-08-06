@@ -27,7 +27,7 @@ use crate::livekit::{
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
-        participant::{HostedBy, LivekitParticipant},
+        participant::{ActiveSpeaker, HostedBy, LivekitParticipant},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         track::{
             Audio, Camera, LivekitTrack, Microphone, PublishedBy, ScreenshareAudio,
@@ -71,16 +71,16 @@ impl Plugin for LivekitTrackPlugin {
 fn track_published(
     trigger: Trigger<TrackPublished>,
     mut commands: Commands,
-    participants: Query<(Entity, &LivekitParticipant, &HostedBy)>,
+    participants: Query<(Entity, &LivekitParticipant, &HostedBy, Has<ActiveSpeaker>)>,
     player_state: Res<GlobalCrdtState>,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
     let TrackPublished { participant, track } = trigger.event();
 
-    let Some((participant_entity, _, hosted_by)) = participants
+    let Some((participant_entity, _, hosted_by, has_active_speaker)) = participants
         .iter()
-        .find(|(_, livekit_participant, _)| livekit_participant.sid() == participant.sid())
+        .find(|(_, livekit_participant, _, _)| livekit_participant.sid() == participant.sid())
     else {
         debug_panic!("No participant entity with sid {}.", participant.sid());
     };
@@ -116,11 +116,10 @@ fn track_published(
         }
         TrackSource::Camera => {
             entity_cmd.try_insert(Camera);
-            if participant.identity().as_str().starts_with("stream:") {
+            if has_active_speaker {
                 entity_cmd.try_insert(VideoCast);
-            } else {
-                entity_cmd.try_insert(VideoStream);
             }
+            entity_cmd.try_insert(VideoStream);
         }
         TrackSource::ScreenshareAudio => {
             entity_cmd.try_insert(ScreenshareAudio);

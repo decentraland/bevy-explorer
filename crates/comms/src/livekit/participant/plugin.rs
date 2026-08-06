@@ -10,6 +10,7 @@ use common::{
 use dcl_component::proto_components::kernel::comms::rfc4;
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::prelude::Participant;
+use livestream_manager::VideoCast;
 use prost::Message;
 use system_bridge::VoiceMessage;
 
@@ -27,7 +28,7 @@ use crate::{
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
-        track::{Audio, Publishing, TrackVolume},
+        track::{Audio, Camera as CameraTrack, Publishing, TrackVolume, Video},
         LivekitRuntime,
     },
     SceneRoom,
@@ -343,15 +344,21 @@ fn active_speakers_changed(
     }
 }
 
+#[expect(clippy::type_complexity)]
 fn is_now_speaking(
     trigger: Trigger<OnInsert, ActiveSpeaker>,
-    participants: Query<(&LivekitParticipant, Option<&HostedBy>), With<ActiveSpeaker>>,
+    mut commands: Commands,
+    participants: Query<
+        (&LivekitParticipant, Option<&HostedBy>, Option<&Publishing>),
+        With<ActiveSpeaker>,
+    >,
+    tracks: Query<(), (With<Video>, With<CameraTrack>)>,
     scene_rooms: Query<&SceneRoom>,
     senders: Res<VoiceMessageStreams>,
 ) {
     let entity = trigger.target();
 
-    let Ok((participant, maybe_hosted_by)) = participants.get(entity) else {
+    let Ok((participant, maybe_hosted_by, maybe_publishing)) = participants.get(entity) else {
         unreachable!("Infallible Query");
     };
     debug!(
@@ -368,12 +375,12 @@ fn is_now_speaking(
         );
     };
 
-    let channel = match scene_rooms.get(room.get()).ok() {
-        Some(room) => room.0.clone(),
-        None => "Nearby".to_string(),
-    };
-    for sender in senders.iter() {
-        if let Some(sender_address) = participant.identity().as_str().as_h160() {
+    if let Some(sender_address) = participant.identity().as_str().as_h160() {
+        let channel = match scene_rooms.get(room.get()).ok() {
+            Some(room) => room.0.clone(),
+            None => "Nearby".to_string(),
+        };
+        for sender in senders.iter() {
             sender
                 .send(VoiceMessage {
                     sender_address: format!("{:#x}", sender_address),
@@ -381,25 +388,31 @@ fn is_now_speaking(
                     active: true,
                 })
                 .report();
-        } else {
-            error!(
-                "Non-h160 participant {} ({}) tried to send voice data.",
-                participant.sid(),
-                participant.identity()
-            );
+        }
+    } else if let Some(publishing) = maybe_publishing {
+        for published in publishing.collection() {
+            if tracks.contains(*published) {
+                commands.entity(*published).insert(VideoCast);
+            }
         }
     }
 }
 
+#[expect(clippy::type_complexity)]
 fn is_no_longer_speaking(
     trigger: Trigger<OnReplace, ActiveSpeaker>,
-    participants: Query<(&LivekitParticipant, Option<&HostedBy>), With<ActiveSpeaker>>,
+    mut commands: Commands,
+    participants: Query<
+        (&LivekitParticipant, Option<&HostedBy>, Option<&Publishing>),
+        With<ActiveSpeaker>,
+    >,
+    tracks: Query<(), (With<Video>, With<CameraTrack>, With<VideoCast>)>,
     scene_rooms: Query<&SceneRoom>,
     senders: Res<VoiceMessageStreams>,
 ) {
     let entity = trigger.target();
 
-    let Ok((participant, maybe_hosted_by)) = participants.get(entity) else {
+    let Ok((participant, maybe_hosted_by, maybe_publishing)) = participants.get(entity) else {
         unreachable!("Infallible Query");
     };
     debug!(
@@ -416,12 +429,12 @@ fn is_no_longer_speaking(
         );
     };
 
-    let channel = match scene_rooms.get(room.get()).ok() {
-        Some(room) => room.0.clone(),
-        None => "Nearby".to_string(),
-    };
-    for sender in senders.iter() {
-        if let Some(sender_address) = participant.identity().as_str().as_h160() {
+    if let Some(sender_address) = participant.identity().as_str().as_h160() {
+        let channel = match scene_rooms.get(room.get()).ok() {
+            Some(room) => room.0.clone(),
+            None => "Nearby".to_string(),
+        };
+        for sender in senders.iter() {
             sender
                 .send(VoiceMessage {
                     sender_address: format!("{:#x}", sender_address),
@@ -429,12 +442,12 @@ fn is_no_longer_speaking(
                     active: false,
                 })
                 .report();
-        } else {
-            error!(
-                "Non-h160 participant {} ({}) tried to send voice data.",
-                participant.sid(),
-                participant.identity()
-            );
+        }
+    } else if let Some(publishing) = maybe_publishing {
+        for published in publishing.collection() {
+            if tracks.contains(*published) {
+                commands.entity(*published).try_remove::<VideoCast>();
+            }
         }
     }
 }
