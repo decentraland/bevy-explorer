@@ -31,7 +31,7 @@ describe('ported design primitives', () => {
   it('render without throwing', () => {
     const { container } = render(
       <>
-        <Modal onClose={() => {}}>modal</Modal>
+        <Modal>modal</Modal>
         <ModalShell onClose={() => {}} title="Title">shell</ModalShell>
         <ModalTitle title="t" subtitle="s" />
         <ModalActions>

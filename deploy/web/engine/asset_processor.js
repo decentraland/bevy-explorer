@@ -30,4 +30,3 @@ self.onmessage = async (event) => {
   }
 };
 
-postMessage({ type: `READY` });

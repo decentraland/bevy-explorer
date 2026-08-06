@@ -3527,7 +3527,6 @@ dependencies = [
  "common",
  "dcl",
  "dcl_component",
- "futures-lite",
  "ipfs",
  "js-sys",
  "log",
@@ -3539,7 +3538,7 @@ dependencies = [
  "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "web-fs",
+ "web-sys",
 ]
 
 [[package]]

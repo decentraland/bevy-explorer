@@ -1,6 +1,13 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
-import { PopupHost, openPopup, closeTopPopup, resetPopups } from '../design'
+import { PopupHost, openPopup, closeTopPopup, showConfirm, resetPopups } from '../design'
+import { CrashModal } from '../features/error/CrashModal'
+import { openExitConfirm } from '../features/session/ExitConfirm'
+
+const pressEscape = (): void =>
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
 
 afterEach(resetPopups)
 
@@ -42,5 +49,128 @@ describe('popup stack', () => {
     })
     fireEvent.click(document.querySelector('[class*="backdrop"]') as HTMLElement)
     expect(screen.getByText('locked')).toBeTruthy() // stayed open
+  })
+
+  it('Escape closes the topmost popup, one layer at a time — the single central handler', () => {
+    render(<PopupHost />)
+    act(() => {
+      openPopup(() => <div>first</div>)
+      openPopup(() => <div>second</div>)
+    })
+    pressEscape()
+    expect(screen.queryByText('second')).toBeNull()
+    expect(screen.getByText('first')).toBeTruthy()
+    pressEscape()
+    expect(screen.queryByText('first')).toBeNull()
+  })
+
+  it('Escape passes through to the engine (window) when no popup is open, but is suppressed when one is', () => {
+    render(<PopupHost />)
+    const onWindow = vi.fn() // stands in for the mock/engine Cancel relay + Modal's own key handler
+    window.addEventListener('keydown', onWindow)
+
+    pressEscape() // nothing open → not swallowed, the engine still gets it
+    expect(onWindow).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      openPopup(() => <div>x</div>)
+    })
+    pressEscape() // popup open → PopupHost captures + stops, so no double-close downstream
+    expect(onWindow).toHaveBeenCalledTimes(1) // unchanged: window never saw the second Escape
+    expect(screen.queryByText('x')).toBeNull() // ...and the popup closed
+
+    window.removeEventListener('keydown', onWindow)
+  })
+
+  it('runs the popup onClose exactly once, on every close path (Escape, handle, backdrop)', () => {
+    render(<PopupHost />)
+
+    const onClose = vi.fn()
+    act(() => {
+      openPopup(() => <div>a</div>, { onClose })
+    })
+    pressEscape()
+    expect(onClose).toHaveBeenCalledTimes(1)
+
+    const onClose2 = vi.fn()
+    let close2!: () => void
+    act(() => {
+      close2 = openPopup(() => <div>b</div>, { onClose: onClose2 })
+    })
+    act(() => close2())
+    act(() => close2()) // already gone → no-op
+    expect(onClose2).toHaveBeenCalledTimes(1)
+
+    const onClose3 = vi.fn()
+    act(() => {
+      openPopup(() => <div>c</div>, { onClose: onClose3 })
+    })
+    fireEvent.click(document.querySelector('[class*="backdrop"]') as HTMLElement)
+    expect(onClose3).toHaveBeenCalledTimes(1)
+  })
+
+  it('a showConfirm dismissed with Escape resolves false (no hanging promise)', async () => {
+    render(<PopupHost />)
+    let confirmed!: Promise<boolean>
+    act(() => {
+      confirmed = showConfirm({ title: 'Sure?' })
+    })
+    expect(screen.getByText('Sure?')).toBeTruthy()
+    pressEscape()
+    expect(await confirmed).toBe(false)
+    expect(screen.queryByText('Sure?')).toBeNull()
+  })
+
+  it('a crash modal freezes the popup layer: Escape stands down and the popup stays open underneath, then resumes once the crash is gone', () => {
+    const onClose = vi.fn()
+    const { rerender } = render(
+      <>
+        <PopupHost />
+      </>
+    )
+    act(() => {
+      openPopup(() => <div>passport</div>, { onClose })
+    })
+    expect(screen.getByText('passport')).toBeInTheDocument()
+
+    // The crash modal mounts on top — the popup underneath must stay exactly as it was so it's still
+    // visible in a screenshot, and its Escape/focus-trap contract must not fire invisibly.
+    rerender(
+      <>
+        <PopupHost />
+        <CrashModal error={{ message: 'boom', source: 'runtime' }} onReload={vi.fn()} onDismiss={vi.fn()} />
+      </>
+    )
+    pressEscape()
+    expect(screen.getByText('passport')).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+
+    // Once the crash modal is dismissed, Escape closes the popup normally again.
+    rerender(<PopupHost />)
+    pressEscape()
+    expect(screen.queryByText('passport')).toBeNull()
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('openExitConfirm settles exactly one outcome: Leave never runs the stay contract, Escape stays once', async () => {
+    render(<PopupHost />)
+
+    const onStay = vi.fn()
+    const onLeave = vi.fn()
+    act(() => {
+      openExitConfirm(onStay, onLeave)
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Leave/i }))
+    expect(onLeave).toHaveBeenCalledTimes(1)
+    expect(onStay).not.toHaveBeenCalled() // close() fires onClose, but Leave already settled
+
+    const onStay2 = vi.fn()
+    const onLeave2 = vi.fn()
+    act(() => {
+      openExitConfirm(onStay2, onLeave2)
+    })
+    pressEscape()
+    expect(onStay2).toHaveBeenCalledTimes(1)
+    expect(onLeave2).not.toHaveBeenCalled()
   })
 })

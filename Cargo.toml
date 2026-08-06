@@ -252,6 +252,20 @@ web-sys = { version = "0.3", features = [
   "ResponseInit",
   "Headers",
   "Url",
+  # OPFS, for the scene-storage directory dcl_wasm holds open (crates/dcl_wasm/.../local_storage.rs).
+  # Enabled here rather than relied on via web-fs's own web-sys features: dcl_wasm no longer depends
+  # on web-fs, so that unification is not ours to count on.
+  "Blob",
+  "File",
+  "FileSystemDirectoryHandle",
+  "FileSystemFileHandle",
+  "FileSystemGetDirectoryOptions",
+  "FileSystemGetFileOptions",
+  "FileSystemWritableFileStream",
+  "StorageManager",
+  "WorkerGlobalScope",
+  "WorkerNavigator",
+  "WritableStream",
 ] }
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }

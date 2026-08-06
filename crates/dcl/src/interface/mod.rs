@@ -440,3 +440,28 @@ impl CrdtStore {
         });
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    // a peer sending 65535 as an id should not crash us
+    #[test]
+    fn max_entity_id_is_within_the_live_table() {
+        let max = SceneEntityId {
+            id: u16::MAX,
+            generation: 0,
+        };
+        let mut context = CrdtContext::new(
+            crate::SceneId::DUMMY,
+            Default::default(),
+            Default::default(),
+            false,
+            false,
+        );
+
+        assert!(context.init(max));
+        context.kill(max);
+        assert!(context.is_dead(max));
+    }
+}

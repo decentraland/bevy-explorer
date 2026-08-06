@@ -1,21 +1,5 @@
-/* Full-screen, DPI-scaled like MainMenuShell (reference-canvas: size at 100%/scale,
-   scale back by --ui-scale, anchored top-left). */
-.overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: calc(100% / var(--ui-scale));
-  height: calc(100% / var(--ui-scale));
-  transform: scale(var(--ui-scale));
-  transform-origin: top left;
-  z-index: var(--z-modal, 1000);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 3vh 3vw;
-  background: rgba(8, 6, 12, 0.55);
-}
-
+/* The dimmed, DPI-scaled scrim is drawn by the popup layer now (openPassport → PopupHost `.dim`);
+   the panel is centered inside it on the reference canvas. */
 .panel {
   width: min(1180px, 96%);
   height: min(760px, 92%);
