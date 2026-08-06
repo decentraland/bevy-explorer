@@ -151,7 +151,7 @@ describe('session domain', () => {
       kind: 'sceneLoading',
       state: { visible: true, realmConnected: true, title: 'Genesis', pendingAssets: 3 }
     })
-    expect(h.session().scene?.title).toBe('Genesis')
+    expect(h.session().sceneLoading?.title).toBe('Genesis')
     h.driver.emit({ kind: 'menuVisibility', open: true })
     expect(h.session().menuOpen).toBe(true)
     h.driver.emit({ kind: 'chatVisibility', open: false })

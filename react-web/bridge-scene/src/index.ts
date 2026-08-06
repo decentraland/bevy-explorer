@@ -2,12 +2,15 @@
 //
 // It starts the bridge, which relays the engine's SystemApi to the React host over
 // BroadcastChannel. Every HUD data source lives in exactly one `domains/*` file, so it's
-// obvious where each piece comes from. The ONLY thing it renders is the avatar preview
-// (a TextureCamera shown through React's transparent Backpack cutout); all other UI is React.
+// obvious where each piece comes from. The only things it renders are the two engine-backed
+// views shown through transparent React cutouts — the Backpack's avatar preview and the
+// minimap's Camera style; all other UI is React.
 
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
 import { startBridge } from './bridge'
-import { registerAvatarPreview, renderAvatarPreview } from './domains/avatarPreview'
+import { registerAvatarPreview } from './domains/avatarPreview'
+import { registerMinimap } from './domains/minimap'
+import { renderSceneUi } from './ui'
 import { registerSession } from './domains/session'
 import { registerProfile } from './domains/profile'
 import { registerFriends } from './domains/friends'
@@ -52,10 +55,11 @@ export function main(): void {
     registerAvatarPointer(ctx)
     registerPermissions(ctx)
     registerAvatarPreview(ctx)
+    registerMinimap(ctx)
   })
 
-  // The avatar preview is the scene's only full-screen UI — shown through React's Backpack cutout.
-  ReactEcsRenderer.setUiRenderer(renderAvatarPreview)
+  // A scene gets one UI renderer, so both cutout views are composed under a single root.
+  ReactEcsRenderer.setUiRenderer(renderSceneUi)
 
   // World-space UI the DOM can't track smoothly: the billboarded nametag above each avatar's head.
   initNametags()

@@ -241,6 +241,14 @@ export function Plus({ size = 18, className, strokeWidth = 2 }: StrokeGlyphProps
   )
 }
 
+export function Minus({ size = 18, className, strokeWidth = 2 }: StrokeGlyphProps): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" aria-hidden="true" className={className}>
+      <path d="M5 12h14" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function Trash({ size = 18, className }: GlyphProps): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true" className={className}>
