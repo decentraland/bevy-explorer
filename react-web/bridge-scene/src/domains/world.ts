@@ -23,7 +23,7 @@ const POSE_EPSILON_DEG = 0.5
 // Scene lookup for the minimap header. The RPC only fires on a parcel change, so an idle tick
 // costs one coordinate compare. Attempts are spaced by the poll interval, giving a retry budget
 // of INTERVAL × ATTEMPTS for a scene that hasn't registered yet after entering or teleporting.
-const SCENE_POLL_INTERVAL = 1
+const SCENE_POLL_INTERVAL = 0.3
 const SCENE_LOOKUP_ATTEMPTS = 3
 
 // A realm is a World (rather than Genesis City) when it's served by a worlds content server
@@ -197,7 +197,7 @@ export function registerWorld(ctx: Ctx): void {
         const current = scenes.find((s) => !s.isSuper && s.parcels.some((p) => p.x === px && p.y === py))
         // A scene the player just walked (or teleported) into isn't in the live list until it
         // registers, so an immediate miss means "not yet", not "nothing here" — keep trying for
-        // ~3s before settling on empty. bevy-ui-scene's widget did the same (20 tries × 100 ms).
+        // ~1s before settling on empty. bevy-ui-scene's widget did the same (20 tries × 100 ms).
         // While retrying the header keeps the previous title, so this budget is also how long a
         // stale name can survive after stepping onto an undeployed parcel.
         if (current == null && attempts < SCENE_LOOKUP_ATTEMPTS) return
