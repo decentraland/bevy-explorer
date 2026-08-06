@@ -33,9 +33,6 @@ interface WearableCardProps {
   onDoubleClick?: () => void
   /** Hover EQUIP/UNEQUIP pill click — the explicit equip action (persists). */
   onEquip?: () => void
-  /** Marketplace URL — when set, the hover pill reads SHOP and opens it instead of EQUIP/UNEQUIP
-   *  (read-only contexts, e.g. the passport, have no equip action). */
-  shopUrl?: string
 }
 
 export function WearableCard({
@@ -50,8 +47,7 @@ export function WearableCard({
   categoryIcon,
   onClick,
   onDoubleClick,
-  onEquip,
-  shopUrl
+  onEquip
 }: WearableCardProps): React.JSX.Element {
   const [failed, setFailed] = useState(false)
   return (
@@ -72,15 +68,7 @@ export function WearableCard({
       {equipped && <span className={styles.equippedDot} aria-hidden="true" />}
       {isNew && <span className={styles.new}>NEW</span>}
       {count != null && count > 1 && <span className={styles.count}>×{count}</span>}
-      {shopUrl != null ? (
-        <span
-          className={`${styles.action} ${styles.equip}`}
-          role="button"
-          onClick={(e) => { e.stopPropagation(); window.open(shopUrl, '_blank', 'noopener,noreferrer') }}
-        >
-          SHOP
-        </span>
-      ) : onEquip != null && (
+      {onEquip != null && (
         <span
           className={`${styles.action} ${equipped ? styles.unequip : styles.equip}`}
           role="button"

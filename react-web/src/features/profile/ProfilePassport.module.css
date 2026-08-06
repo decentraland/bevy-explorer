@@ -201,12 +201,9 @@
 }
 
 .equippedRow {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
   gap: 0.75rem;
-}
-.equippedTile {
-  width: 72px;
 }
 
 .about {
