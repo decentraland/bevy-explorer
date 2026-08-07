@@ -170,6 +170,9 @@ impl DclTransformAndParent {
         };
 
         let mut scale = self.scale;
+        if !scale.is_finite() {
+            scale = Vec3::ONE;
+        }
         if scale.x == 0.0 {
             scale.x = f32::EPSILON;
         };
@@ -180,8 +183,15 @@ impl DclTransformAndParent {
             scale.z = f32::EPSILON;
         };
 
+        let translation = self.translation.to_bevy_translation();
+        let translation = if translation.is_finite() {
+            translation
+        } else {
+            Vec3::ZERO
+        };
+
         Transform {
-            translation: self.translation.to_bevy_translation(),
+            translation,
             rotation,
             scale,
         }
