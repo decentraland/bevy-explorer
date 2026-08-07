@@ -412,7 +412,12 @@ fn update_gltf(
             }
         }
 
-        let gltf = gltfs.get(h_gltf.0.id()).unwrap();
+        let Some(gltf) = gltfs.get(h_gltf.0.id()) else {
+            warn!("gltf {} unloaded between load state and lookup", def.0.src);
+            set_state(scene_ent, LoadingState::FinishedWithError);
+            commands.entity(ent).try_insert(GltfLoaded(None));
+            continue;
+        };
         let gltf_scene_handle = gltf.default_scene.as_ref();
 
         // validate texture types
@@ -2137,14 +2142,15 @@ fn update_gltf_linked_transforms(
                         debug!("[{gltf_ent:?}] s -> r {:?}", gltf_node_transform);
 
                         // and update stored state with the rrt we will compute next frame, to avoid rounding errors
-                        stored_transforms_and_parents.get_mut(&gltf_ent).unwrap().0 = gt_helper
-                            .compute_global_transform_with_overrides(
-                                gltf_ent,
-                                Some(data.transform_root),
-                                &updated_transforms,
-                            )
-                            .unwrap()
-                            .compute_transform();
+                        let Ok(gltf_global) = gt_helper.compute_global_transform_with_overrides(
+                            gltf_ent,
+                            Some(data.transform_root),
+                            &updated_transforms,
+                        ) else {
+                            return None;
+                        };
+                        stored_transforms_and_parents.get_mut(&gltf_ent).unwrap().0 =
+                            gltf_global.compute_transform();
                         None
                     }
                 }
