@@ -9,7 +9,7 @@ import { getPlayerData } from '~system/Players'
 import { catalystBase, getJson } from '../http'
 import type { UserData } from '~system/Players'
 import { resolveEquippedSet } from './wearables'
-import { resolveEquippedEmotes } from './emotes'
+import { equippedSlots, resolveEquippedEmotes } from './emotes'
 import type { Badge, Profile } from '../../../src/engine/protocol'
 import type { Ctx } from '../bridge'
 
@@ -174,8 +174,11 @@ export function registerProfile(ctx: Ctx): void {
     const me = getPlayer()
     const isSelf = me != null && me.userId.toLowerCase() === msg.address.toLowerCase()
     const wearableUrns = isSelf ? (me.wearables ?? []).map(String) : (av?.avatar?.wearables ?? [])
+    // Through equippedSlots, not me.emotes: the bevy runtime leaves a fresh profile's wheel empty
+    // and the emote wheel fills it with the 10 base emotes, so reading the raw array would show an
+    // empty Equipped Emotes section in your own passport while the wheel shows ten.
     const emoteEntries = isSelf
-      ? (me.emotes ?? []).map((urn, slot) => ({ slot, urn: String(urn) }))
+      ? equippedSlots(me.emotes).map((urn, slot) => ({ slot, urn }))
       : (av?.avatar?.emotes ?? [])
     const [equippedWearables, equippedEmotes] = await Promise.all([
       // indexTokens only for our OWN urns: another user's tokenIds must never reach the map the

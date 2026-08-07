@@ -41,7 +41,7 @@ const isBase = (urn: string): boolean => BASE_EMOTES.includes(itemUrn(urn))
 // runtime doesn't seed the defaults into getPlayer().emotes (bevy-ui-scene hits the same empty array),
 // so the HUD fills them here, mirroring Unity's SelfProfile empty-wheel fill: it's all-or-nothing, so
 // once any slot is equipped the remaining empties stay empty.
-function equippedSlots(emotes: readonly unknown[] | undefined): string[] {
+export function equippedSlots(emotes: readonly unknown[] | undefined): string[] {
   const slots = Array.from({ length: SLOT_COUNT }, (_, i) => String((emotes ?? [])[i] ?? ''))
   return slots.every((u) => u === '') ? [...BASE_EMOTES] : slots
 }
