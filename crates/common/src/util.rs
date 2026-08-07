@@ -656,6 +656,80 @@ impl UrlLoopbackExt for url::Url {
     }
 }
 
+/// True if an IP must never be reachable from scene-controlled requests (SSRF guard):
+/// loopback, private RFC1918, CGNAT, link-local (incl. cloud metadata 169.254.169.254),
+/// unique-local/link-local v6, unspecified, and v4-mapped v6 forms of the above.
+pub fn is_forbidden_ip(ip: &std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_unspecified()
+                || v4.is_documentation()
+                || o[0] == 0
+                // carrier-grade NAT 100.64.0.0/10
+                || (o[0] == 100 && (o[1] & 0xc0) == 64)
+        }
+        IpAddr::V6(v6) => {
+            if let Some(mapped) = v6.to_ipv4_mapped() {
+                return is_forbidden_ip(&IpAddr::V4(mapped));
+            }
+            let seg = v6.segments();
+            v6.is_loopback()
+                || v6.is_unspecified()
+                // unique local fc00::/7
+                || (seg[0] & 0xfe00) == 0xfc00
+                // link local fe80::/10
+                || (seg[0] & 0xffc0) == 0xfe80
+        }
+    }
+}
+
+/// SSRF guard for scene-controlled URLs (fetch / signedFetch / readFile). Enforces an
+/// http(s)/ws(s) scheme and resolves the host, rejecting if ANY resolved address is
+/// non-public (defeats a literal private IP and static-DNS pointers to internal hosts).
+/// `allow_loopback` is for local preview only. Returns Ok for a public destination.
+/// Native-only: it is invoked exclusively from the native request-executing ops; the
+/// wasm/web client relies on the browser's own network sandbox.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn assert_public_url(url_str: &str, allow_loopback: bool) -> Result<(), anyhow::Error> {
+    use std::net::ToSocketAddrs;
+    let url = url::Url::parse(url_str)?;
+    match url.scheme() {
+        "https" | "http" | "wss" | "ws" => {}
+        other => anyhow::bail!("scheme `{other}` is not allowed"),
+    }
+    if allow_loopback && url.is_loopback() {
+        return Ok(());
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("request URL has no host"))?
+        .to_owned();
+    let port = url.port_or_known_default().unwrap_or(443);
+    // std resolver on the blocking pool (avoids pulling tokio's `net` feature into the
+    // wasm-shared workspace dependency)
+    let hostport = format!("{host}:{port}");
+    let addrs = tokio::task::spawn_blocking(move || {
+        hostport.to_socket_addrs().map(|it| it.collect::<Vec<_>>())
+    })
+    .await?
+    .map_err(|e| anyhow::anyhow!("could not resolve host `{host}`: {e}"))?;
+    if addrs.is_empty() {
+        anyhow::bail!("host `{host}` did not resolve to any address");
+    }
+    for addr in addrs {
+        if is_forbidden_ip(&addr.ip()) {
+            anyhow::bail!("request to a non-public address is not allowed");
+        }
+    }
+    Ok(())
+}
+
 /// A colour ramp keyed by a normalized parameter in `[0, 1)` (e.g. time of day).
 /// Stops are sorted ascending; sampling wraps across the ends (last -> first).
 pub struct Gradient(pub &'static [(f32, Vec3)]);

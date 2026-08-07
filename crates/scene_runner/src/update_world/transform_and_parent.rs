@@ -403,9 +403,14 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
         let maybe_override_visibility = if maybe_explicit_visibility.is_some() {
             None
         } else {
-            let inherited_visibility = inherited_visibility.get(sync.sync_to).unwrap();
+            // default visible when the sync target has no InheritedVisibility —
+            // only possible headless (no render plugin); always present in prod
+            let visible = inherited_visibility
+                .get(sync.sync_to)
+                .map(|iv| iv.get())
+                .unwrap_or(true);
 
-            Some(match inherited_visibility.get() {
+            Some(match visible {
                 true => Visibility::Visible,
                 false => Visibility::Hidden,
             })

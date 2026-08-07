@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use fetch_response_body_resource::FetchResponseBodyResource;
 
-use dcl::{interface::crdt_context::CrdtContext, RpcCalls};
+use dcl::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
 
 // we have to provide fetch perm structs even though we don't use them
 pub struct FP;
@@ -78,6 +78,8 @@ struct FetchRequestResource {
     request_body_rid: Option<ResourceId>,
     body_bytes: Option<Vec<u8>>,
     url: String,
+    /// URL host is the world-storage service (`storage.decentraland.*`).
+    is_storage: bool,
 }
 impl deno_core::Resource for FetchRequestResource {}
 
@@ -107,9 +109,42 @@ where
     debug!("op_fetch");
     // TODO scene permissions
 
+    let is_storage = deno_core::url::Url::parse(&url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.starts_with("storage.decentraland.")))
+        .unwrap_or(false);
+
+    {
+        let counters = state.borrow_mut::<SceneResourceCounters>();
+        counters.fetch_started += 1;
+        if is_storage {
+            counters.storage_requests += 1;
+        }
+    }
+
+    // authoritative-server mode only: never auto-follow redirects, so a 3xx onto a
+    // private host can't bypass the per-request SSRF check or leak signed headers. The
+    // desktop/web client keeps the default redirect-following behaviour unchanged.
+    let is_server = state.borrow::<CrdtContext>().is_server;
+
     let client = if let Some(rid) = client_rid {
         let r = state.resource_table.get::<ClientResource>(rid)?;
         r.0.clone()
+    } else if is_server {
+        match state.try_borrow::<ServerHttpClient>() {
+            Some(client) => client.0.clone(),
+            None => {
+                let client = reqwest::Client::builder()
+                    .connect_timeout(Duration::from_secs(5))
+                    .use_native_tls()
+                    .user_agent("DCLExplorer/0.1")
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .unwrap();
+                state.put(ServerHttpClient(client.clone()));
+                client
+            }
+        }
     } else {
         match state.try_borrow::<reqwest::Client>() {
             Some(client) => client,
@@ -186,6 +221,7 @@ where
         request_body_rid,
         request,
         url,
+        is_storage,
     });
 
     debug!("returning {:?}", request_rid);
@@ -215,6 +251,40 @@ pub async fn op_fetch_send(
     state: Rc<RefCell<OpState>>,
     #[smi] rid: ResourceId,
 ) -> Result<FetchResponse, AnyError> {
+    // copy the flag out before fetch_send_inner takes (and try_unwraps) the resource
+    let is_storage = state
+        .borrow()
+        .resource_table
+        .get::<FetchRequestResource>(rid)
+        .map(|r| r.is_storage)
+        .unwrap_or(false);
+    let result = fetch_send_inner(state.clone(), rid).await;
+    let mut op_state = state.borrow_mut();
+    let counters = op_state.borrow_mut::<SceneResourceCounters>();
+    match &result {
+        Ok(response) => {
+            counters.fetch_completed += 1;
+            if is_storage {
+                counters.storage_completed += 1;
+                if matches!(response.status, 401 | 403) {
+                    counters.storage_unauthorized += 1;
+                }
+            }
+        }
+        Err(_) => {
+            counters.fetch_failed += 1;
+            if is_storage {
+                counters.storage_failed += 1;
+            }
+        }
+    }
+    result
+}
+
+async fn fetch_send_inner(
+    state: Rc<RefCell<OpState>>,
+    rid: ResourceId,
+) -> Result<FetchResponse, AnyError> {
     debug!("op_fetch_send");
     let request = state
         .borrow_mut()
@@ -227,6 +297,7 @@ pub async fn op_fetch_send(
         body_bytes,
         request_body_rid,
         url,
+        is_storage: _,
     } = Rc::try_unwrap(request)
         .ok()
         .expect("multiple op_fetch_send ongoing");
@@ -245,6 +316,20 @@ pub async fn op_fetch_send(
     let permit = rx.await?;
     if !permit {
         anyhow::bail!("User denied fetch request");
+    }
+
+    // SSRF guard — SERVER MODE ONLY. On the shared multi-tenant server a scene must not
+    // reach cloud metadata / loopback / private ranges. The desktop and web clients run
+    // on the user's own machine (and the browser sandboxes the web build), so they keep
+    // unrestricted behaviour. Auto-redirects are disabled for the server client above,
+    // so this check can't be bypassed by a 3xx onto a private host.
+    let (is_server, allow_loopback) = {
+        let op_state = state.borrow();
+        let ctx = op_state.borrow::<CrdtContext>();
+        (ctx.is_server, ctx.preview)
+    };
+    if is_server {
+        common::util::assert_public_url(&url, allow_loopback).await?;
     }
 
     let async_req = if let Some(body_id) = request_body_rid {
@@ -277,6 +362,11 @@ pub async fn op_fetch_send(
 
     let content_length = res.content_length();
     let chunk = res.bytes().await?;
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SceneResourceCounters>()
+        .fetch_bytes_down += chunk.len() as u64;
 
     let response_rid = state
         .borrow_mut()
@@ -329,6 +419,11 @@ pub struct BasicAuth {
 pub struct ClientResource(reqwest::Client);
 impl deno_core::Resource for ClientResource {}
 
+/// Cached default fetch client for authoritative-server mode: redirects disabled so the
+/// per-request SSRF guard can't be bypassed by a 3xx onto a private host. Kept separate
+/// from the client-mode `reqwest::Client` so client/web behaviour is unchanged.
+struct ServerHttpClient(reqwest::Client);
+
 #[op2]
 #[serde]
 pub fn op_fetch_custom_client(
@@ -337,6 +432,10 @@ pub fn op_fetch_custom_client(
 ) -> Result<ResourceId, AnyError> {
     debug!("op_fetch_custom_client");
     let mut builder = reqwest::Client::builder().use_native_tls();
+    // server mode: no auto-redirects (SSRF), matching the default server client
+    if state.borrow::<CrdtContext>().is_server {
+        builder = builder.redirect(reqwest::redirect::Policy::none());
+    }
     if let Some(proxy_def) = args.proxy {
         let mut proxy = reqwest::Proxy::http(proxy_def.url)?;
         if let Some(creds) = proxy_def.basic_auth {

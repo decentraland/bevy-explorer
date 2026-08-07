@@ -287,6 +287,24 @@ pub struct SceneDrivenAnimationFeedback {
     pub state: Option<SceneDrivenAnimationFeedbackState>,
 }
 
+/// When true, scenes run in authoritative-server role: `isServer()` returns true
+/// to scene JS. Set by the headless server binary; defaults to false everywhere else.
+#[derive(Resource, Default)]
+pub struct IsServer(pub bool);
+
+static SERVER_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Latch this process as an authoritative scene server. Irreversible by design;
+/// mirrors [`IsServer`] for code paths (e.g. the ipfs crate) that have no ECS access.
+pub fn set_server_mode() {
+    SERVER_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// True once [`set_server_mode`] has been called.
+pub fn server_mode() -> bool {
+    SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Debug, Clone)]
 pub struct SceneDrivenAnimationFeedbackState {
     pub src: String,

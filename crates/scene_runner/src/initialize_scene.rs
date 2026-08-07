@@ -18,7 +18,7 @@ use bevy::{
 use common::{
     sets::RealmLifecycle,
     structs::{
-        AppConfig, AppError, CurrentRealm, GlobalCrdtStateUpdate, IVec2Arg, PreviewMode,
+        AppConfig, AppError, CurrentRealm, GlobalCrdtStateUpdate, IVec2Arg, IsServer, PreviewMode,
         SceneLoadDistance, SceneMeta, SceneTime,
     },
     util::{TaskExt, TryPushChildrenEx},
@@ -475,6 +475,7 @@ pub(crate) fn load_scene_javascript(
                 renderer_context.title.clone(),
                 false,
                 false,
+                false,
             );
             let mut main_crdt = CrdtStore::default();
             main_crdt.process_message_stream(
@@ -629,6 +630,7 @@ pub(crate) fn initialize_scene(
     asset_server: Res<AssetServer>,
     testing_data: Res<TestingData>,
     preview_mode: Res<PreviewMode>,
+    is_server: Res<IsServer>,
     su_bridge: Res<SystemBridge>,
     time: Res<Time>,
 ) {
@@ -687,6 +689,7 @@ pub(crate) fn initialize_scene(
             context.title.clone(),
             testing_data.test_mode,
             preview_mode.is_preview,
+            is_server.0,
         );
 
         let main_sx = spawn_scene(

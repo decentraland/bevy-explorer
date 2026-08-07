@@ -77,7 +77,13 @@ fn broadcast_position(
     time: Res<Time>,
     global_crdt: Res<GlobalCrdtState>,
     wallet: Res<Wallet>,
+    is_server: Res<common::structs::IsServer>,
 ) {
+    // An authoritative server has no avatar to announce — hammurabi's reportPosition is
+    // a no-op. Suppress so clients never see a ghost server player.
+    if is_server.0 {
+        return;
+    }
     let Ok((player, dynamics, scene_anim, head_sync, point_at)) = player.single() else {
         return;
     };
