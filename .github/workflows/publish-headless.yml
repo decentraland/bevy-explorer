@@ -59,7 +59,7 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -75,7 +75,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -137,7 +137,7 @@ jobs:
           cd deploy/headless/dist/bevy-headless-server-${{ matrix.platform }}
           npm pack --pack-destination "$GITHUB_WORKSPACE/deploy/headless/dist"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bevy-headless-${{ matrix.platform }}
           path: deploy/headless/dist/*.tgz
@@ -151,8 +151,8 @@ jobs:
     permissions:
       id-token: write # npm OIDC trusted publishing — no token secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -179,7 +179,7 @@ jobs:
           '
           git diff deploy/headless/launcher/package.json
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: deploy/headless/artifacts
           merge-multiple: true
