@@ -486,6 +486,27 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
       out of 60 Hz instead of the engine guessing. Bigger process; the engine-side cycle is the cheap
       first step.
     Needs a WASM rebuild, so it belongs in its own PR, not in the HUD stack.
+46. `[arch]` **Passport open blocks the whole panel on the equipped-items resolution** — *perceived
+    latency, from PR #1058*. `getUserProfile` (`bridge-scene/src/domains/profile.ts`) awaits the
+    catalyst profile + badges + photos, then awaits `resolveEquippedSet` / `resolveEquippedEmotes`
+    (catalyst collections lambda, plus the marketplace items API for legacy collections-v1 items)
+    before sending a single `userProfile` message. So name, avatar, About and badges — all already
+    fetched — sit behind ~3 sequential round trips of work only the equipped grid needs. Unity does
+    the opposite: `PassportController` renders each module immediately and every module owns its
+    loading placeholders and its own error state. The fix is to split the reply: send the profile as
+    soon as it lands, then a follow-up message (e.g. `userProfileEquipped`) that fills the grid, with
+    the passport rendering skeleton tiles meanwhile. Protocol change plus a second reducer path in
+    `useEngineSession`, hence its own PR.
+47. `[feature]` **Passport equipped grid doesn't filter hidden categories** — *parity gap, from PR
+    #1058*. Unity's `EquippedItems_PassportModuleController.SetGridElements` builds
+    `Wearable.ComposeHiddenCategories(bodyShape, wearables, forceRender)` and skips any item whose
+    category is hidden by another equipped item, so a shirt under a full-body robe never gets a tile.
+    We skip only `body_shape` (`ProfilePassport.tsx`), because the equipped set the bridge sends
+    carries urn/name/rarity/category/thumbnail and nothing else. Doing it properly means carrying each
+    item's `hides` / `replaces` (and the profile's `forceRender`) through `resolveEquippedSet` — the
+    catalyst collections lambda already returns them in `data` — and porting the compose rules. Worth
+    it when someone reports a phantom tile; until then the grid just shows a couple of items Unity
+    would have dropped.
 
 ## Not gaps (already good / ahead)
 
