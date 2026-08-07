@@ -471,7 +471,7 @@ fn av_player_on_insert<T: AVPlayer>(
         Has<Stream>,
     )>,
 ) {
-    info!("AVPlayer updated.");
+    debug!("AVPlayer updated.");
     let entity = trigger.target();
     let Ok((av_player, maybe_source, mut maybe_config, mut maybe_position, has_stream)) =
         av_players.get_mut(entity)
