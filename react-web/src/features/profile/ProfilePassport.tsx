@@ -8,7 +8,7 @@
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
 import { useState } from 'react'
-import { Avatar, EquippedItemCard } from '../../design'
+import { Avatar, EquippedItemCard, Icon } from '../../design'
 import { CategoryIcon } from '../backpack/categoryIcons'
 import { catalystThumbUrl, nameColor, shopUrl, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileInfo, Wearable } from '../../engine/protocol'
@@ -77,7 +77,7 @@ function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Elem
           name={it.name}
           rarity={it.rarity}
           shopUrl={shopUrl(it.urn)}
-          categoryIcon={'category' in it ? <CategoryIcon category={it.category} size={15} /> : undefined}
+          categoryIcon={'category' in it ? <CategoryIcon category={it.category} size={15} /> : <Icon name="emotes" size={15} />}
         />
       ))}
     </div>

@@ -15,7 +15,7 @@ import { Avatar } from './Avatar'
 import { WearableCard, type Rarity } from './WearableCard'
 import { EquippedItemCard } from './EquippedItemCard'
 import { showConfirm, showDialog, PopupHost } from './popups'
-import type { IconName } from './icons'
+import { Icon, type IconName } from './icons'
 import { ChatBubble, DaySeparator, MemberRow } from '../features/chat/Chat'
 import { EmoteSlot } from '../features/emotes/EmoteSlot'
 import { catalystThumbUrl } from '../lib/identity'
@@ -398,6 +398,7 @@ export function Showcase(): React.JSX.Element {
               name={`${r[0].toUpperCase()}${r.slice(1)} Item`}
               rarity={r}
               shopUrl={i % 2 === 0 ? 'https://decentraland.org/shop/item/0xa42e166edac870aa5351b098ae6458d39ca0fca6/0' : undefined}
+              categoryIcon={<Icon name="emotes" size={15} />}
             />
           ))}
         </div>
