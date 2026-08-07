@@ -9,7 +9,7 @@ use bevy::{
 };
 use boimp::bake::{ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin};
 use common::{
-    structs::{PreviewMode, ShowOutOfBounds},
+    structs::{EditorMode, PreviewMode},
     util::InvertedScaleExt,
 };
 
@@ -317,7 +317,7 @@ impl Plugin for SceneBoundPlugin {
 
         app.init_resource::<InvertedMaterials>();
         // Default false; the app entry overrides it.
-        app.init_resource::<ShowOutOfBounds>();
+        app.init_resource::<EditorMode>();
 
         app.add_observer(new_material);
         app.add_systems(
@@ -335,10 +335,10 @@ impl Plugin for SceneBoundPlugin {
 fn update_show_outside_bounds(
     trigger: Trigger<OnInsert, MeshMaterial3d<SceneMaterial>>,
     mut meshes: Query<&mut MeshTag, With<MeshMaterial3d<SceneMaterial>>>,
-    show_oob: Res<ShowOutOfBounds>,
+    editor_mode: Res<EditorMode>,
 ) {
     // Tag the mesh to render out-of-bounds instead of being culled.
-    if !show_oob.0 {
+    if !editor_mode.0 {
         return;
     }
 
