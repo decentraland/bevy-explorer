@@ -87,7 +87,7 @@ fn new_player_source<T: AVPlayer>(
         if let Some(audio_sink) = &sinks.audio {
             audio_sink.command_sender.send(AVCommand::Dispose).report();
         }
-        if let Some(video_sink) = &sinks.audio {
+        if let Some(video_sink) = &sinks.video {
             video_sink.command_sender.send(AVCommand::Dispose).report();
         }
     }
@@ -155,7 +155,7 @@ fn player_source_removed<T: AVPlayer>(
         if let Some(audio_sink) = &sinks.audio {
             audio_sink.command_sender.send(AVCommand::Dispose).report();
         }
-        if let Some(video_sink) = &sinks.audio {
+        if let Some(video_sink) = &sinks.video {
             video_sink.command_sender.send(AVCommand::Dispose).report();
         }
     }
