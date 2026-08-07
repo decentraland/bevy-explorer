@@ -116,7 +116,11 @@ export function ProfilePassport({
   const fields = FIELD_LABELS.filter(({ key }) => profile.info?.[key])
   const hasBadges = (profile.badges?.length ?? 0) > 0
   const hasAbout = !!profile.description || fields.length > 0 || (profile.links?.length ?? 0) > 0
-  const hasWearables = (profile.equippedWearables?.length ?? 0) > 0
+  // The body shape isn't a collectible you can shop for — Unity skips it before filling the grid
+  // (EquippedItems_PassportModuleController.SetGridElements). It skips hidden categories too, but
+  // that needs each item's hides/replaces metadata, which the equipped set doesn't carry.
+  const wearables = (profile.equippedWearables ?? []).filter((w) => w.category !== 'body_shape')
+  const hasWearables = wearables.length > 0
   const hasEmotes = (profile.equippedEmotes?.length ?? 0) > 0
   const hasEquipped = hasWearables || hasEmotes
   const hasOverview = hasBadges || hasAbout || hasEquipped
@@ -233,7 +237,7 @@ export function ProfilePassport({
                     {hasWearables && (
                       <>
                         <h2 className={styles.cardTitle}>Equipped Wearables</h2>
-                        <EquippedRow items={profile.equippedWearables ?? []} />
+                        <EquippedRow items={wearables} />
                       </>
                     )}
                     {hasEmotes && (
