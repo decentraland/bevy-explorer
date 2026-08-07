@@ -635,6 +635,7 @@ name = "av"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "av",
  "bevy",
  "bevy_console",
  "bevy_kira_audio",

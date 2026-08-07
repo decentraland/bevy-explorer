@@ -46,6 +46,8 @@ impl Plugin for VideoPlayerPlugin {
         app.add_observer(player_config_added::<VideoPlayer>);
         app.add_observer(player_position_added::<AudioStream>);
         app.add_observer(player_position_added::<VideoPlayer>);
+        app.add_observer(av_sinks_on_remove::<AudioStream>);
+        app.add_observer(av_sinks_on_remove::<VideoPlayer>);
         app.add_observer(av_player_should_be_playing_on_add::<AudioStream>);
         app.add_observer(av_player_should_be_playing_on_add::<VideoPlayer>);
         app.add_observer(av_player_should_be_playing_on_remove::<AudioStream>);
@@ -142,7 +144,7 @@ fn new_player_source<T: AVPlayer>(
 fn player_source_removed<T: AVPlayer>(
     trigger: Trigger<OnRemove, T::Source>,
     mut commands: Commands,
-    av_players: Query<Option<&AVSinks<T>>, With<T>>,
+    av_players: Query<Option<&AVSinks<T>>, With<T::Source>>,
 ) {
     let entity = trigger.target();
     let Ok(maybe_sinks) = av_players.get(entity) else {
@@ -219,6 +221,11 @@ fn player_position_added<T: AVPlayer>(
             .send(AVCommand::Seek((**position) as f64))
             .report();
     }
+}
+
+fn av_sinks_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, AVSinks<T>>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<VideoTextureOutput>();
 }
 
 fn av_player_should_be_playing_on_add<T: AVPlayer>(
