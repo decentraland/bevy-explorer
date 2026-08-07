@@ -27,8 +27,8 @@ use crate::{
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
     video_stream::{av_sinks, noop_sinks},
-    AVPlayer, AVPlayerConfig, AVPlayerSinks, AVSinks, AudioStream, ShouldBePlaying, VideoPlayer,
-    LIVEKIT_VIDEO_STREAM,
+    AVPlayer, AVPlayerConfig, AVPlayerSinks, AVSinks, AudioStream, ShouldBePlaying, Stream,
+    VideoPlayer, LIVEKIT_VIDEO_STREAM,
 };
 
 pub struct VideoPlayerPlugin;
@@ -166,11 +166,23 @@ fn player_source_removed<T: AVPlayer>(
 #[expect(clippy::type_complexity)]
 fn player_config_added<T: AVPlayer>(
     trigger: Trigger<OnInsert, T::Config>,
-    mut av_players: Query<(&T::Config, &mut AVSinks<T>, Has<ShouldBePlaying<T>>)>,
+    mut av_players: Query<(
+        &T::Config,
+        Option<&mut AVSinks<T>>,
+        Has<ShouldBePlaying<T>>,
+        Has<Stream>,
+    )>,
 ) {
     let entity = trigger.target();
-    let Ok((config, mut sinks, has_should_be_playing)) = av_players.get_mut(entity) else {
+    let Ok((config, maybe_sinks, has_should_be_playing, has_stream)) = av_players.get_mut(entity)
+    else {
         unreachable!("Infallible query");
+    };
+    let Some(mut sinks) = maybe_sinks else {
+        if !has_stream {
+            debug_panic!("Non-stream AVPlayer did not have sinks.");
+        }
+        return;
     };
 
     if let Some(audio_sink) = &mut sinks.audio {
@@ -199,13 +211,20 @@ fn player_config_added<T: AVPlayer>(
     }
 }
 
+#[expect(clippy::type_complexity)]
 fn player_position_added<T: AVPlayer>(
     trigger: Trigger<OnInsert, T::Position>,
-    mut av_players: Query<(&T::Position, &mut AVSinks<T>)>,
+    mut av_players: Query<(&T::Position, Option<&mut AVSinks<T>>, Has<Stream>)>,
 ) {
     let entity = trigger.target();
-    let Ok((position, mut sinks)) = av_players.get_mut(entity) else {
+    let Ok((position, maybe_sinks, has_stream)) = av_players.get_mut(entity) else {
         unreachable!("Infallible query");
+    };
+    let Some(mut sinks) = maybe_sinks else {
+        if !has_stream {
+            debug_panic!("Non-stream AVPlayer did not have sinks.");
+        }
+        return;
     };
 
     debug!("Seeking AVPlayer to {}", (**position));
