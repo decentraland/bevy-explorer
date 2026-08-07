@@ -1,43 +1,17 @@
-.scrim {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
-  font-family: var(--font-family);
-  animation: scrimIn 0.18s ease;
-}
-@keyframes scrimIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
+/* Just the card — the popup layer (PopupHost .dim/.pop) draws the scrim, DPI-scales it (reference
+   canvas) and animates it in. Screen-relative caps use % — percentages resolve against the scaled
+   .pop box, i.e. the visible screen. vw/vh would NOT: viewport units ignore ancestor transforms, so
+   at --ui-scale > 1 they overshoot the real screen. */
 .modal {
   position: relative;
   display: flex;
-  width: min(1080px, 94vw);
-  height: min(700px, 88vh);
+  width: min(1080px, 94%);
+  height: min(700px, 88%);
   border-radius: 18px;
+  font-family: var(--font-family);
   background: linear-gradient(160deg, #4a2088 0%, #371561 100%);
   box-shadow: var(--shadow-modal);
   overflow: hidden;
-  animation: modalIn 0.24s var(--ease-spring, ease);
-}
-@keyframes modalIn {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
 }
 
 /* Main column (header + tabs + content). */

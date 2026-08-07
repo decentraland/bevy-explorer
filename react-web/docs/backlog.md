@@ -10,37 +10,28 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
 
 ## 🔴 High
 
-1. `[bug]` **HUD hotkeys fire while typing in an SDK7 scene text input** — *behavior/bug, high impact*.
-   Typing in a scene-rendered input (search boxes, in-scene forms) triggers the menu shortcuts —
-   e.g. pressing **P** opens Settings mid-word. Cause: `useMenuShortcuts` attaches capture-phase
-   `keydown` to the **engine iframe window**, and a scene UI input is drawn inside the canvas, so
-   `e.target` is the canvas — the `INPUT`/`TEXTAREA`/`isContentEditable` guard never matches.
-   Fix path: the HUD needs to know when a scene text input has focus — have the bridge scene relay
-   the engine's text-input/IME focus state (a `textInputFocus` message) and suspend `useMenuShortcuts`
-   (and any other letter-key hotkeys) while it's true. Same underlying HUD↔engine keyboard-focus
-   problem the Enter-to-focus-chat work solved — reuse that mechanism.
-2. `[DS]` **Toast system** — *new*. Nothing transient/cross-cutting exists. Needed for real-time events
+1. `[DS]` **Toast system** — *new*. Nothing transient/cross-cutting exists. Needed for real-time events
    (remote friend accepted, community invites, item sold…), ephemeral confirmations, and operational
    errors. Today faked with per-component `setTimeout`. (Old: `notification-toast-stack`.)
-3. `[DS]` **`Tabs` primitive** — *new*. Tabs are reimplemented bespoke in ~37 files (Settings,
+2. `[DS]` **`Tabs` primitive** — *new*. Tabs are reimplemented bespoke in ~37 files (Settings,
    Backpack, FriendsPanel, CommunityModal…). (Old: `tab-component.tsx`.)
-4. `[DS]` **Reusable `FriendButton` + full relationship model** — *new + pattern*. State is already a
+3. `[DS]` **Reusable `FriendButton` + full relationship model** — *new + pattern*. State is already a
    single reactive source ✅, but the add-friend CTA is duplicated per view (ProfileCard,
    ProfilePassport, CommunityModal) with ad-hoc optimism. Need `<FriendButton address>` /
    `useRelationship`, a **6-state** relationship (add `blocked`, `incoming`/Accept to the current 3),
    centralized optimistic update, and **fix CommunityModal desync** (it reads `member.isFriend`, not
    `session.friends`).
-5. `[DS]` **`Button`: `loading` state + `danger`/`destructive` + `link`/text variant** — *extend*.
+4. `[DS]` **`Button`: `loading` state + `danger`/`destructive` + `link`/text variant** — *extend*.
    Recurring need (jump-in/create/send → loading; unfriend/reject/leave/delete → danger; a subtle
    underlined text-link like the gate's "try anyway…" → link, currently a bespoke `<button>`). (Old:
    `ButtonComponent`.)
-6. `[bug]` **"Jump in" icon on the initial scene catalog is actually a pencil** — *visible on first
+5. `[bug]` **"Jump in" icon on the initial scene catalog is actually a pencil** — *visible on first
    impression*. `JumpInGlyph()`'s SVG path (`M5 12l9-9 4 4-9 9-5 1z` + `M13 4l3 3M5 12l-1 7 7-1`) draws a
    diagonal pencil-with-tip shape, not a "jump in" arrow — a copy/paste-wrong-glyph mistake, not a design
    choice. **Duplicated identically** in both `PlaceCard.tsx` and `FeaturedCard.tsx` (the login-flow
    "Live Now"/"Featured Places" catalog, `LoadingAndLogin.tsx`), so fix both — or better, extract one
    shared glyph while fixing it (there's no `src/design/` icon for this yet).
-7. `[bug]` **Engine boot failure or hang leaves the user on the loading bar forever** — *blocks the app
+6. `[bug]` **Engine boot failure or hang leaves the user on the loading bar forever** — *blocks the app
    completely, no error state; the "no infinite loading" delivery priority*. Every crash signal we have
    needs the engine to have started: the watchdog tick in `deploy/web/engine/boot.js` returns early while
    `beatsSeen` is false, so **before the first frame it is fully inert**. Two uncovered paths, both
@@ -54,6 +45,17 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
    source alongside the existing `'launch'`/`'realm'`/`'runtime'`), and give the readiness poll a
    no-progress deadline — watch `loadProgress`, and raise a fatal after ~30s **without advancement** (not
    a wall-clock cap, or a slow connection on a legitimately long wasm download would false-trip).
+7. `[bug]` **In-world `/goto <world>`/`/world <world>` to a non-existent realm hangs forever on
+   "Reconnecting…"** — *no error, no escape, no timeout; the "no infinite loading" delivery priority*.
+   The URL-entry path (`?realm=`) pre-flights the destination with a `/about` fetch before launching
+   and raises `EngineErrorModal` (`source: 'realm'`) on a 404/timeout — see the `validatingRealm` effect
+   in `useEngineSession.ts`. The in-world chat command skips that entirely: `parseChatCommand`'s `goto`
+   case calls `driver.send({ kind: 'changeRealm', realm })` directly, the engine purges the current scene
+   and `realmConnected` never flips back to true, and `SceneLoadingOverlay` shows "Reconnecting…"
+   indefinitely with no cancel/Escape path — the user has to hard-refresh the tab. Fix path: run the same
+   `/about` pre-flight (probably worth extracting to a shared helper) before sending `changeRealm` from
+   the chat-command path, and raise the existing `'realm'` fatal on 404/unreachable, matching the
+   URL-entry behavior exactly.
 
 ## 🟡 Medium
 
@@ -62,7 +64,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
    WASM panics on launch (e.g. `can't init wasm queue`) and runtime crashes now surface a popup
    (message + copy details + reload/dismiss). (Old: `error-popup` + `error-popup-service`.)
    **Known gaps** (all are "engine alive, rendering dead" — the heartbeat keeps beating, so the stall
-   watchdog never fires; boot-time gaps are item 7). (a) **GPU device loss is handled nowhere** — nothing
+   watchdog never fires; boot-time gaps are item 6). (a) **GPU device loss is handled nowhere** — nothing
    in the repo awaits `device.lost` (not Rust, not the host JS, not react-web). A driver reset / GPU OOM /
    the browser reclaiming the device gives a black canvas with a live page and **no console output at
    all**, so the flood detector can't see it either. Cheapest real win here, and host-side only: await
@@ -90,25 +92,25 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
    App-local state (`visitWorld`, `exitGuard.confirming`), so Enter still opens + focuses the chat
    behind them. Moving them onto `openPopup` fixes that for free; the alternative (wiring their state
    into the hook) is the reason not to bother.
-10. `[bug]` **`closeTopPopup` / `closeById` never run the popup's `onClose` → `showDialog` Promise leak** —
-   *correctness footgun, P2 pending PR #915 review*. `closeTopPopup()` (fired by the engine
-   `Cancel`/Escape relay in `useEngineSession`) removes the top node with `closeById`, which only
-   does `stack.filter + emit` — it never invokes that node's dismiss contract. So a
-   `showDialog`/`showConfirm` closed through the engine path never resolves its Promise (the `await`
-   hangs; the closure leaks). Harmless today for the only consumer (the profile-card Block confirm):
-   `ModalShell`→`Modal` traps focus and has its own DOM `Escape`→`onClose`, which resolves `false`
-   first, so the later engine-`Cancel` `closeById` is an idempotent no-op. It bites the moment a
-   future `showDialog` is dismissed via the engine path while the engine holds keyboard focus (no DOM
-   keydown reaches `Modal`). Fix: settle on removal — store the `close`/`onDismiss` per stack node and
-   have `closeById` call it, so every close path (engine `Cancel`, backdrop click, per-node `close`)
-   resolves the Promise exactly once.
+10. `[bug]` **`PhotoDetail` keys stay live under a popup opened from the lightbox** — *same
+    inert-background gap fixed for the menu hotkeys in PR #1014, one surface further in*. The lightbox
+    can open a passport from "People in this photo"; its keydown handler (`useWindowKeyDown` in
+    `PhotoDetail.tsx`) doesn't check `hasOpenPopup()`, so with the passport on top the arrow keys
+    still switch photos underneath, and Escape — a capture listener on `window`, which runs before
+    PopupHost's on `document` + `stopImmediatePropagation` — closes the *lightbox* instead of the
+    passport. Fix: the same `hasOpenPopup()` early-return `useMenuShortcuts` now has. Deferred while
+    the gallery has bigger open issues; fold into the next gallery pass.
 11. `[DS]` **`Badge` (standalone)** — *extract*. Badge logic is trapped inside `IconButton`; can't put a
     badge on a tab/avatar/chip without reimplementing. (Old: `notification-badge.tsx`.)
 12. `[DS]` **`Chip` / `Tag`** — *new*. "chip" is bespoke in ~11 files (map categories, count pills,
     status). (Old: `color-tag.tsx`.)
-13. `[DS]` **Consolidate modals onto `Modal`/`ModalShell`** — *cleanup*. ProfileCard, CommunityModal,
-    CommunityCreateModal, WorldVisitModal roll their own portal/overlay and hardcode `z-index: 10001`.
-    Unify backdrop / escape / focus-trap / z-layer.
+13. `[DS]` **Consolidate modals onto `Modal`/`ModalShell`** — *mostly DONE (PR #1014)*. ProfileCard,
+    CommunityModal, CommunityCreateModal and WorldVisitModal used to roll their own portal/overlay and
+    hardcode `z-index: 10001`; all four now mount via `openPopup`, so `<PopupHost/>` owns backdrop /
+    Escape / focus-trap / z-layer for them uniformly (see `design/popups.tsx`). Remaining: `CrashModal`
+    is deliberately still self-contained (it renders in the ErrorBoundary fallback / embedded mode,
+    before `<PopupHost/>` exists to mount into) — not a gap to close, just the one surface that can't
+    use the popup layer.
     12b. `[bug]` **Suppress the world-hover tooltip while any overlay/scrim is open** — *mechanism, from
     PR #915 review*. A scrim freezes the engine raycast, so no hover-exit fires; the world-hover prompt
     (`<Pointer>`) can stay painted behind/beside a popup. Today only the `avatarClick` path clears it
@@ -408,6 +410,82 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     it). Common cases (nearby / friends) are unaffected. Fix if it matters: pass the message's known
     name/picture into `openProfileCard` as a fallback hint, or give `resolveIdentity` a small
     last-seen name cache.
+40. `[test]` **No tier-1.5 visual baseline for `WorldVisitModal`** — *coverage gap, PR #1014
+    follow-up*. Passport, PermissionDialog, CommunityModal, CommunityCreateModal and ExitConfirm all
+    got `e2e/visual.spec.ts` baselines; `WorldVisitModal` (`src/components/WorldVisitModal.tsx`) didn't
+    because both its triggers (Map world search, a chat message with a `*.dcl.eth` link) need the
+    places-API fetch stubbed to be deterministic in mock mode. Add a mock/stub for that fetch and a
+    `world visit modal` test case when convenient.
+41. `[bug]` **Tier-2 e2e `profile: the passport is relayed to the page` asserts the opposite of the
+    shipped behaviour — has never passed** — *test-only, no product impact*. `e2e/engine.spec.ts`
+    clicks the Profile sidebar icon and expects `aria-pressed="true"`, but that attribute tracks
+    `session.profile.open`, and `Sidebar.tsx` wires the icon to `onClick={onViewProfile ?? session.profile.toggle}`
+    — `App.tsx` always passes `onViewProfile`, so the click opens the **passport** and `profile.toggle`
+    is never called. The tier-1 test `src/test/clicks.test.tsx` ("Profile opens the passport … not the
+    small panel") asserts exactly that and passes. Both files, plus the `onViewProfile` wiring, landed
+    together in #901 — verified by checking out `6abf0ba7` with its own `package-lock.json`: the tier-1
+    test passed there too, so the e2e assertion has been impossible to satisfy since day one. It went
+    unnoticed because Playwright never runs in CI (see item 42). Fix: assert the passport opened
+    instead — but `ProfilePassport.tsx` exposes no stable handle (no `role="dialog"`, no `data-testid`,
+    only a generic `aria-label="Close"`), so give it an accessible role/name first, the way the profile
+    *card* already has (`getByRole('dialog', { name: 'Profile' })` in `visual.spec.ts`).
+42. `[bug]` **Tier-2 e2e `backpack: equipping a wearable bumps the profile version` depends on a live
+    catalyst deploy** — *test-only, flaky by construction*. The click reaches the bridge (the
+    `scene:equip` assertion passes); what times out is `expect.poll(profileVersion).toBeGreaterThan(before)`
+    after 60s, which needs a **real profile deploy round-trip to the catalyst on a guest account**.
+    Verified failing identically on consecutive runs of `fix/ui/08-minimap`, and no branch in the
+    06→08 stack touches backpack/wearables/avatar code. Fix: assert the observable bridge round-trip
+    (`setAvatar` → confirmation) instead of the deployed version, or move it behind an explicit
+    network-dependent tag. Related: nothing gates these tests — CI runs vitest only, so `test:e2e` and
+    `test:visual` rot silently (visual baselines are macOS-only `*-chromium-darwin.png`). Both tiers
+    disagreeing should be treated as "the untested tier is wrong" until proven otherwise.
+43. `[bug]` **Tier-1.5 `maxDiffPixelRatio: 0.01` is loose enough to hide a whole new HUD widget** —
+    *the safety net is nearly blind*. 1% of 1600×900 is **14,400 px**, and the HUD is mostly dark
+    chrome, so anything thin (outline circles, small text, grey-on-black bubbles) falls under the
+    per-pixel colour threshold too. Measured on `fix/ui/08-minimap`: the entire minimap plus six chat
+    messages moved **6,433 px** in `world-hud.png` and the suite passed — it had been green against a
+    baseline generated on 2026-07-03 that contains neither. Re-measuring every surface at
+    `maxDiffPixelRatio: 0` showed the drift was universal, not just the minimap: engine-error 11,537 px
+    (07's scrim rewrite), world-hud 6,437, login-welcome 1,003, login-fresh 836, the panels/tooltips
+    ~240–650 each; only the gates, showcase, backpack-wearables and communities came out unchanged.
+    Baselines were regenerated in that branch, and 19/20 then passed at **zero** tolerance — so the
+    render is deterministic and the old numbers were real drift, not antialiasing noise. Note that
+    "zero tolerance" is `maxDiffPixelRatio: 0` *with the default per-pixel `threshold: 0.2`*, not
+    byte-equality: those unchanged surfaces still re-encode with a little AA jitter (showcase moved
+    57 scattered pixels by ≤3/255 per channel, far under the threshold, which is why it passed while
+    its file changed). That jitter is exactly why the tolerance can be tightened hard (~0.001, i.e.
+    ~1.4k px) without flakiness — sub-threshold noise never counts as a differing pixel. Do it together with item 44, the one genuinely
+    unstable test.
+44. `[bug]` **`visual.spec.ts` "profile card" never settles** — *flaky, and it hides real drift*. It
+    fails against its own freshly-generated baseline at zero tolerance, with the diff *growing* across
+    retries (183 → 208 → 270 → 407 → 567 px), and takes ~23 s against ~4 s for every other case.
+    Something in the card is still animating or loading past `settle()` (which only awaits
+    `document.fonts.ready`, fast-forwards the clock 15 s, and waits 200 ms) — most likely the avatar
+    image or an entrance transition that `animations: 'disabled'` doesn't cover. It passes at the
+    current 1% tolerance, so it reads as green while measuring nothing. Fix before tightening the
+    ratio (item 43), or that test starts failing for the wrong reason.
+45. `[arch]` **Texture cameras render every frame; the minimap doesn't need real time** — *engine-side
+    (Rust), the last big minimap cost we can't reach from the HUD*. In the Camera style the minimap is
+    a second full render pass at 60 Hz. A map is orientation, not gameplay: ~10 Hz would look the same
+    and cost ~6× less. Three notes on where the fix belongs:
+    - **The scene cannot ask for it.** `PBTextureCamera` (`texture_camera.proto`, ecs component 1207)
+      has `width`, `height`, `layer`, `clear_color`, `far_plane`, `mode`, `volume` — no cadence and no
+      on-demand render. Everything the HUD could do from its side is already done: the camera only
+      exists while the style is Camera *and* a rect is reported (so collapsing the minimap or opening a
+      full-screen page disposes it), it only writes its Transform when the player actually moved, and
+      its render target is sized from the on-screen hole. What's left is engine policy.
+    - **The engine already has the lever, half-used.** `crates/texture_camera/src/lib.rs` drives
+      `camera.is_active` per scene and carries a literal `// TODO: limit / cycle`. #1002 implements the
+      *limit* half (cap 4 active cameras per scene, most-recently-requested first) — which does nothing
+      for a single-camera scene like the bridge. The *cycle* half — render 1 frame in N — is the one
+      that helps here. Expect a frozen frame rather than a black one while inactive, since the target is
+      `RenderTarget::Image` and Bevy doesn't clear an inactive camera's target; **verify that** before
+      relying on it, as the whole idea rests on it.
+    - **The general fix is a protocol field** (e.g. an optional `update_hz` on `PBTextureCamera`, via
+      `protocol-ps`), so any scene with a near-static RTT surface — maps, portraits, signage — can opt
+      out of 60 Hz instead of the engine guessing. Bigger process; the engine-side cycle is the cheap
+      first step.
+    Needs a WASM rebuild, so it belongs in its own PR, not in the HUD stack.
 
 ## Not gaps (already good / ahead)
 

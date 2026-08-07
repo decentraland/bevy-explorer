@@ -7,22 +7,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import { CAT_ICONS, CAT_PINS, WORLD_ICON } from './mapArt'
+import { GRID, ORIGIN_X, ORIGIN_Y, PARCELS_PER_TILE, SIZE, SPAN, tileUrl } from './atlas'
 import type { MapState, ProfileState } from '../session/useEngineSession'
-import { WorldVisitModal } from '../../components/WorldVisitModal'
+import { openWorldVisit } from '../../components/WorldVisitModal'
 import styles from './MapPage.module.css'
-
-// Genesis City satellite atlas — identical source/geometry to unity-explorer's
-// SatelliteChunkController (and mobile-curation): an 8×8 grid of 40-parcel jpg chunks.
-// File {col}%2C{row}.jpg is the chunk at column `col` (left→right) and row `row` (top→bottom).
-const TILE_BASE_URL = 'https://media.githubusercontent.com/media/genesis-city/parcels/new-client-images/maps/lod-0/3/'
-const GRID = 8 // 8×8 satellite chunks
-const PARCELS_PER_TILE = 40 // one chunk spans 40 parcels
-const SPAN = GRID * PARCELS_PER_TILE // 320 parcels across
-// Unity places the top-left chunk's center at parcel (-133, 132); chunks are 40 wide, so the
-// atlas's top-left corner sits at parcel (-153, 152). x increases right, y increases up.
-const ORIGIN_X = -153 // parcel x at the atlas left edge
-const ORIGIN_Y = 152 // parcel y at the atlas top edge
-const SIZE = 8 // px per parcel in the base (untransformed) atlas
 
 const PLACES_API = 'https://places.decentraland.org/api/places'
 const WORLDS_API = 'https://places.decentraland.org/api/worlds'
@@ -68,7 +56,7 @@ function AtlasTiles({ size }: { size: number }): React.JSX.Element {
       tiles.push(
         <img
           key={`${col},${row}`}
-          src={`${TILE_BASE_URL}${col}%2C${row}.jpg`}
+          src={tileUrl(col, row)}
           alt=""
           draggable={false}
           width={tilePx}
@@ -216,7 +204,9 @@ export function MapPage({
   const [query, setQuery] = useState('')
   const [worldHits, setWorldHits] = useState<World[]>([])
   const [placeHits, setPlaceHits] = useState<Place[]>([])
-  const [confirmWorld, setConfirmWorld] = useState<World | null>(null)
+  // The world-jump confirm lives in the HUD-wide popup layer now, so this page no longer unmounts it —
+  // keep its close handle and dismiss it explicitly when the map closes.
+  const closeVisitRef = useRef<(() => void) | null>(null)
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null)
   const viewRef = useRef<HTMLDivElement>(null)
 
@@ -304,7 +294,8 @@ export function MapPage({
       setSelected(null)
       setCatKey('all')
       setQuery('')
-      setConfirmWorld(null)
+      closeVisitRef.current?.()
+      closeVisitRef.current = null
     }
     // Only re-center when the map opens — player movement shouldn't yank the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -331,6 +322,13 @@ export function MapPage({
   const visitWorld = (w: World): void => {
     map.changeRealm(w.world_name)
     map.toggle()
+  }
+  const askVisitWorld = (w: World): void => {
+    closeVisitRef.current = openWorldVisit({
+      worldName: w.world_name,
+      title: w.title,
+      onConfirm: () => visitWorld(w)
+    })
   }
   const jumpTo = (pl: Place): void => {
     const [x, y] = pl.base_position.split(',').map(Number)
@@ -427,7 +425,7 @@ export function MapPage({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  if (worldHits[0]) setConfirmWorld(worldHits[0])
+                  if (worldHits[0]) askVisitWorld(worldHits[0])
                   else if (placeHits[0]) pickPlace(placeHits[0])
                 } else if (e.key === 'Escape') setQuery('')
               }}
@@ -435,7 +433,7 @@ export function MapPage({
             {query.trim().length >= 2 && (worldHits.length > 0 || placeHits.length > 0) && (
               <div className={styles.results}>
                 {worldHits.map((w) => (
-                  <button key={w.world_name} type="button" className={styles.result} onClick={() => setConfirmWorld(w)}>
+                  <button key={w.world_name} type="button" className={styles.result} onClick={() => askVisitWorld(w)}>
                     <img className={styles.resultWorldIcon} src={WORLD_ICON} alt="" />
                     <div className={styles.resultBody}>
                       <div className={styles.resultTitle}>{w.title || w.world_name}</div>
@@ -538,15 +536,6 @@ export function MapPage({
         )}
 
         {place && <PlacePanel place={place} onClose={() => setPlace(null)} onJump={() => jumpTo(place)} />}
-
-        {confirmWorld && (
-          <WorldVisitModal
-            worldName={confirmWorld.world_name}
-            title={confirmWorld.title}
-            onCancel={() => setConfirmWorld(null)}
-            onConfirm={() => visitWorld(confirmWorld)}
-          />
-        )}
       </div>
     </MainMenuShell>
   )

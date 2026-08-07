@@ -151,7 +151,7 @@ describe('session domain', () => {
       kind: 'sceneLoading',
       state: { visible: true, realmConnected: true, title: 'Genesis', pendingAssets: 3 }
     })
-    expect(h.session().scene?.title).toBe('Genesis')
+    expect(h.session().sceneLoading?.title).toBe('Genesis')
     h.driver.emit({ kind: 'menuVisibility', open: true })
     expect(h.session().menuOpen).toBe(true)
     h.driver.emit({ kind: 'chatVisibility', open: false })
@@ -229,15 +229,17 @@ describe('session domain', () => {
     expect(openProfileCard).toHaveBeenCalledWith('0xABC', 0, 0)
   })
 
-  it("a 'Cancel' system action (the engine's Escape) closes the topmost popup", () => {
+  it("a 'Cancel' system action no longer closes popups — PopupHost's DOM Escape owns that now", () => {
     const h = renderSession({ userId: null })
     render(<PopupHost />) // shares the module popup stack
     act(() => {
       openPopup(() => <div>a popup</div>)
     })
     expect(screen.getByText('a popup')).toBeTruthy()
+    // The engine still emits Cancel, but the session no longer relays it to closeTopPopup: popups are
+    // always open with the cursor freed, so the single DOM keydown handler in PopupHost suffices.
     act(() => h.driver.emit({ kind: 'systemAction', action: 'Cancel' }))
-    expect(screen.queryByText('a popup')).toBeNull()
+    expect(screen.getByText('a popup')).toBeTruthy() // unchanged — Cancel is a no-op
   })
 
   it('chat.mention opens chat and queues the @name until consumed', async () => {

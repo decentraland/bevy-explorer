@@ -40,5 +40,5 @@ export function ProfileCard({
 
 /** Open the world profile card as a popup, anchored at the given screen coords. */
 export function openProfileCard(userId: string, x: number, y: number): () => void {
-  return openPopup((close) => <ProfileCard userId={userId} x={x} y={y} onClose={close} />)
+  return openPopup((close) => <ProfileCard userId={userId} x={x} y={y} onClose={close} />, { dim: false }) // anchored popover, no scrim dim
 }

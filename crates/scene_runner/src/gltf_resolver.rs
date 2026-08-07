@@ -1,12 +1,14 @@
 use anyhow::anyhow;
 use bevy::{
+    asset::RenderAssetTransferPriority,
     ecs::system::SystemParam,
     gltf::{Gltf, GltfLoaderSettings, GltfMesh},
     platform::collections::HashMap,
     prelude::*,
-    render::render_asset::RenderAssetUsages,
 };
 use ipfs::IpfsAssetServer;
+
+use crate::update_world::gltf_container::scene_gltf_loader_settings;
 
 #[derive(SystemParam)]
 pub struct GltfResolver<'w, 's> {
@@ -32,13 +34,11 @@ impl GltfResolver<'_, '_> {
                 .load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
                     gltf_src,
                     scene_hash,
-                    |s| {
-                        s.load_cameras = false;
-                        s.load_lights = false;
-                        s.load_meshes = RenderAssetUsages::all();
-                        s.load_materials = RenderAssetUsages::RENDER_WORLD;
-                        s.include_source = true;
-                    },
+                    // same settings as GltfContainer: assets are keyed by path and the
+                    // first load's settings win, so whichever path reaches a file first
+                    // decides for the other. Background priority, as for preloads —
+                    // these meshes are not needed the frame they resolve.
+                    scene_gltf_loader_settings(RenderAssetTransferPriority::Priority(0)),
                 )
                 .unwrap()
         });
