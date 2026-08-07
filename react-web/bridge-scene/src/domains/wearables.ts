@@ -206,19 +206,34 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
 // from the paged grid, so every item resolves regardless of which catalog page is loaded — shared by
 // `getWearables` (the live avatar) and `equipOutfit` (a saved outfit's wearables). Mirrors
 // bevy-ui-scene's fetchWearablesData(...)(...wearables) on outfit equip.
-export async function resolveEquippedSet(urns: string[]): Promise<Wearable[]> {
+//
+// `indexTokens` MUST be false for any set that is not the local player's own (another user's
+// passport): tokenUrnByItem is keyed by ITEM urn and is what the equip handler deploys, so their
+// tokenId would overwrite ours for a commonly-owned item and the next equip would claim a token we
+// don't own — the catalyst rejects that deploy and the change silently doesn't persist.
+//
+// `shopUrls` is opt-in because only the passport's EquippedItemCard renders a SHOP action — the
+// Backpack's WearableCard ignores it — and resolving a legacy (collections-v1) item costs a
+// marketplace-api round trip the Backpack and outfit equip would pay for nothing.
+export async function resolveEquippedSet(
+  urns: string[],
+  opts: { indexTokens?: boolean; shopUrls?: boolean } = {}
+): Promise<Wearable[]> {
   const baseUrl = await catalystBase()
   // Equipped urns are the deployable token form → index item→token now (equip needs it even
   // before any grid page is fetched).
-  for (const u of urns) {
-    const item = itemUrnOf(u)
-    if (item !== u) tokenUrnByItem.set(item, u)
+  if (opts.indexTokens !== false) {
+    for (const u of urns) {
+      const item = itemUrnOf(u)
+      if (item !== u) tokenUrnByItem.set(item, u)
+    }
   }
   const equippedItemUrns = [...new Set(urns.map(itemUrnOf))]
   const resolved = equippedItemUrns.length > 0 ? await resolveByUrn(baseUrl, equippedItemUrns) : new Map<string, WearableDef>()
-  const shopUrls = await resolveShopUrls(
-    equippedItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress }))
-  )
+  const shopUrls =
+    opts.shopUrls === true
+      ? await resolveShopUrls(equippedItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress })))
+      : undefined
   return equippedItemUrns.map((itemUrn): Wearable => {
     const def = resolved.get(itemUrn)
     return {
@@ -232,7 +247,7 @@ export async function resolveEquippedSet(urns: string[]): Promise<Wearable[]> {
       category: def?.data?.category ?? 'unknown',
       thumbnail: `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`,
       equipped: true,
-      shopUrl: shopUrls.get(itemUrn)
+      shopUrl: shopUrls?.get(itemUrn)
     }
   })
 }

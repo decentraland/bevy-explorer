@@ -178,7 +178,10 @@ export function registerProfile(ctx: Ctx): void {
       ? (me.emotes ?? []).map((urn, slot) => ({ slot, urn: String(urn) }))
       : (av?.avatar?.emotes ?? [])
     const [equippedWearables, equippedEmotes] = await Promise.all([
-      resolveEquippedSet(wearableUrns).catch(() => undefined),
+      // indexTokens only for our OWN urns: another user's tokenIds must never reach the map the
+      // equip handler deploys from. shopUrls because the passport is the only surface that renders
+      // a SHOP action (see resolveEquippedSet).
+      resolveEquippedSet(wearableUrns, { indexTokens: isSelf, shopUrls: true }).catch(() => undefined),
       resolveEquippedEmotes(emoteEntries).catch(() => undefined)
     ])
     ctx.send({
