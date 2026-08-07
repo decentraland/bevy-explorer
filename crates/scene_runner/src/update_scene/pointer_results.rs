@@ -500,6 +500,16 @@ fn update_manual_cursor(
             None => [face * 3, face * 3 + 1, face * 3 + 2],
         };
 
+        // a malformed gltf can index past its own position buffer, or carry fewer uvs than
+        // positions. clamp rather than drop the hit: this only feeds uv projection for ui
+        // rendered onto a mesh, so a wrong uv beats aborting, and the fix is for the creator
+        // to clean up the mesh.
+        let usable_verts = posns.len().min(uvs.len());
+        if usable_verts == 0 {
+            return None;
+        }
+        let indices = indices.map(|ix| ix.min(usable_verts - 1));
+
         let posns: [Vec3; 3] = [
             gt.transform_point(Vec3::from(posns[indices[0]])),
             gt.transform_point(Vec3::from(posns[indices[1]])),
@@ -547,6 +557,12 @@ fn update_manual_cursor(
                 None => 0..posns.len() / 3,
             };
 
+            // as above: clamp malformed indices rather than aborting
+            let usable_verts = posns.len().min(uvs.len());
+            if usable_verts == 0 {
+                return;
+            }
+
             let mut distances_and_barycoords = faces
                 .into_iter()
                 .filter_map(|face| {
@@ -563,6 +579,7 @@ fn update_manual_cursor(
                         ],
                         None => [face * 3, face * 3 + 1, face * 3 + 2],
                     };
+                    let indices = indices.map(|ix| ix.min(usable_verts - 1));
 
                     let posns: [Vec3; 3] = [
                         gt.transform_point(Vec3::from(posns[indices[0]])),
