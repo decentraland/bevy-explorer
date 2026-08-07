@@ -7,6 +7,7 @@ import { getPlayer } from '@dcl/sdk/players'
 import { triggerEmote } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
+import { marketplaceShopUrl } from './wearables'
 import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
 
@@ -106,7 +107,7 @@ function equipUrn(urn: string): string {
   return tokenUrnByItem.get(itemUrn(urn)) ?? urn
 }
 
-type EmoteDef = { id: string; name?: string; rarity?: string; thumbnail?: string }
+type EmoteDef = { id: string; name?: string; rarity?: string; thumbnail?: string; collectionAddress?: string }
 
 // A custom emote's definition (name/rarity/thumbnail) is stable enough within a session to cache,
 // keyed by item urn. Mirrors wearables.ts's defByItemUrn.
@@ -153,7 +154,14 @@ export async function resolveEquippedEmotes(entries: Array<{ slot: number; urn: 
     }
     const item = itemUrn(full)
     const def = resolved.get(item)
-    return { slot: e.slot, urn: item, name: def?.name ?? '', rarity: def?.rarity ?? 'base', thumbnail: `${baseUrl}/lambdas/collections/contents/${item}/thumbnail` }
+    return {
+      slot: e.slot,
+      urn: item,
+      name: def?.name ?? '',
+      rarity: def?.rarity ?? 'base',
+      thumbnail: `${baseUrl}/lambdas/collections/contents/${item}/thumbnail`,
+      shopUrl: marketplaceShopUrl(item, def?.collectionAddress)
+    }
   })
 }
 

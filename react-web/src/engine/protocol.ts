@@ -352,6 +352,9 @@ export interface Emote {
   rarity?: string
   /** Owned quantity (×N badge). */
   count?: number
+  /** Marketplace deep link — set only when the item is a resolvable on-chain collectible (a base
+   *  emote, or a legacy slug-identified urn with no recoverable item id, has none). */
+  shopUrl?: string
 }
 
 export interface EmotesMessage {
@@ -676,6 +679,9 @@ export interface Wearable {
   thumbnail?: string
   count?: number
   equipped: boolean
+  /** Marketplace deep link — set only when the item is a resolvable on-chain collectible (an
+   *  off-chain/base item, or a legacy slug-identified urn with no recoverable item id, has none). */
+  shopUrl?: string
 }
 
 /** Currently-equipped wearables, resolved by urn independently of the (paginated) grid so every

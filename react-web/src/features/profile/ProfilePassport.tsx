@@ -8,9 +8,9 @@
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
 import { useState } from 'react'
-import { Avatar, EquippedItemCard, Icon } from '../../design'
+import { Avatar, EquippedItemCard, Icon, Tooltip } from '../../design'
 import { CategoryIcon } from '../backpack/categoryIcons'
-import { catalystThumbUrl, nameColor, shopUrl, shortAddr, splitName } from '../../lib/identity'
+import { catalystThumbUrl, nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileInfo, Wearable } from '../../engine/protocol'
 import type { Relationship } from '../chat/ProfileCardPresentation'
 import styles from './ProfilePassport.module.css'
@@ -57,16 +57,19 @@ function Verified(): React.JSX.Element {
 
 function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
   return (
-    <div className={styles.badge} title={badge.name}>
-      {badge.image ? <img src={badge.image} alt={badge.name} /> : <span className={styles.badgePlaceholder} />}
-    </div>
+    <Tooltip label={badge.tier != null ? `${badge.name} · ${badge.tier}` : badge.name} side="top">
+      <div className={styles.badge}>
+        {badge.image ? <img src={badge.image} alt={badge.name} /> : <span className={styles.badgePlaceholder} />}
+      </div>
+    </Tooltip>
   )
 }
 
 // Read-only equipped-item row (wearable or emote), 6 per row like unity-explorer's passport. No
 // equip affordance (this is someone else's passport, or a view-only summary of your own) — instead
-// the SHOP button deep-links to the item's shop page when it's a collectible (base/off-chain items
-// have no marketplace listing, so no button shows for those).
+// the SHOP button deep-links to the item's shop page. The link is resolved by the bridge (it needs
+// the item's on-chain collection address); items without one — base wearables/emotes, legacy
+// slug-identified collections-v1 items — simply show no button.
 function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Element {
   return (
     <div className={styles.equippedRow}>
@@ -76,7 +79,7 @@ function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Elem
           thumbnail={it.thumbnail ?? catalystThumbUrl(it.urn)}
           name={it.name}
           rarity={it.rarity}
-          shopUrl={shopUrl(it.urn)}
+          shopUrl={it.shopUrl}
           categoryIcon={'category' in it ? <CategoryIcon category={it.category} size={15} /> : <Icon name="emotes" size={15} />}
         />
       ))}
