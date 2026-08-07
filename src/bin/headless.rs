@@ -447,7 +447,7 @@ fn main() {
     // Warn-and-continue on fallible-system / command / observer errors instead of the
     // Bevy default (panic). A raw panic in a scene-data system still aborts the shared
     // engine and takes every co-tenant down, so this is a safety net, not a full fix —
-    // see HEADLESS_SECURITY_ISOLATION.md (S3).
+    // see #1063 for the scene-reachable panic sites this does not cover.
     bevy::ecs::error::GLOBAL_ERROR_HANDLER
         .set(bevy::ecs::error::warn)
         .ok();
