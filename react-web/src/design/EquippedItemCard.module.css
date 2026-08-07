@@ -61,9 +61,9 @@
   border-radius: var(--r-card) var(--r-card) 0 0;
   background: radial-gradient(
     128% 110% at 50% -12%,
-    color-mix(in srgb, var(--rm, #a09ba8) 35%, white) 0%,
-    var(--rm, #a09ba8) 60%,
-    color-mix(in srgb, var(--rm, #a09ba8) 86%, #000) 100%
+    color-mix(in srgb, var(--rm) 35%, white) 0%,
+    var(--rm) 60%,
+    color-mix(in srgb, var(--rm) 86%, #000) 100%
   );
 }
 .thumb {
@@ -74,7 +74,7 @@
 .placeholder {
   width: 52%;
   height: 52%;
-  border-radius: 12px;
+  border-radius: var(--r-control);
   background: rgba(255, 255, 255, 0.16);
 }
 
@@ -89,8 +89,8 @@
   padding: 5px 0 0 6px;
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--rm, #a09ba8) 45%, white) 0%,
-    var(--rm, #a09ba8) 49.8%,
+    color-mix(in srgb, var(--rm) 45%, white) 0%,
+    var(--rm) 49.8%,
     transparent 50%
   );
   color: var(--ink-95);
@@ -116,9 +116,9 @@
   margin: 3px 0 9px 8px;
   padding: 2px 9px;
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--rm, #a09ba8) 20%, transparent);
-  color: var(--rm, #a09ba8);
-  font-size: 0.6rem;
+  background: color-mix(in srgb, var(--rm) 20%, transparent);
+  color: var(--rm);
+  font-size: var(--fs-2xs);
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
