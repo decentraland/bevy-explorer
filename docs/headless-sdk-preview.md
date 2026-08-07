@@ -122,8 +122,9 @@ CPU time (macOS `ps %cpu` is a lifetime average and cannot be used directly).
 | | hammurabi (node) | bevy-headless | delta |
 | --- | --- | --- | --- |
 | CPU, steady state | 6.7% of one core | 16.5% of one core | **2.5× more** |
-| RSS, steady state | 308 MB (286–339) | 234 MB (224–255) | **−24%** |
-| processes | 1 | 2 (engine 111 MB + sidecar 113 MB) | +1 |
+| RSS, steady state | 308 MB (286–339) | 175 MB | **−43%** |
+| processes | 1 | 2 (engine 96 MB + sidecar 79 MB) | +1 |
+| scene tick rate | — | 29.97 Hz (30 Hz target) | — |
 | download, cold install | 96 MB (62 packages) | 71 MB (2 packages) | **−26%** |
 | on disk after install | 236 MB | 154 MB | **−35%** |
 | time to `[Server] Ready` | 1.5–3.0 s | 0.7 s | **2–4× faster** |
@@ -133,6 +134,15 @@ takes the CPU derivative over the window and drops the first 30% of samples. Bot
 the same scene against the same preview server with one identical headless client attached,
 and both were sampled for 180 s starting 460 s after boot — i.e. during the second round,
 after the first tower had been built, destroyed and rebuilt.
+
+The bevy RSS and tick figures were re-measured on 2026-08-07 after the headless build stopped
+decoding glTF textures and stopped constructing render-only scene plugins; the original
+reading was 234 MB. **These two rows are not a like-for-like swap**: they come from
+`bench/sample.py` with no client attached, sampled from boot, whereas the rest of the table
+was taken with one connected client during the second tower round using a `treesample.py`
+that is no longer in the repo. A connected client only adds work, so 175 MB is a floor for
+the original conditions rather than a contradiction of them. The CPU, download, on-disk and
+startup rows are unchanged from 2026-07-31 and were not re-measured.
 
 Caveat on RSS: measured with `ps rss`, which counts shared pages per process, so the
 two-process bevy figure is if anything slightly pessimistic. Single-sample RSS is very noisy
