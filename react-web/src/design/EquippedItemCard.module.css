@@ -9,9 +9,10 @@
   --shop-ext: 42px; /* how far the hover card extends down to wrap the SHOP button */
   position: relative;
   isolation: isolate; /* keeps the z-index:-1 background inside this card's stacking context */
+  min-width: 0; /* as a grid item, don't let the nowrap name inflate the column */
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   border-radius: var(--r-card);
   transition: transform var(--dur-fast) ease;
 }
@@ -95,8 +96,9 @@
   color: var(--ink-95);
 }
 
-/* Caption on the dark body — name always one line (ellipsized, min-height keeps tiles uniform
-   when a name is missing), rarity tag in bevy-ui-scene's style: 20% tint pill + colored text. */
+/* Caption on the dark body, left-aligned like Unity's tile — name always one line (ellipsized,
+   min-height keeps tiles uniform when a name is missing), rarity tag in bevy-ui-scene's style:
+   20% tint pill + colored text. */
 .name {
   width: 100%;
   margin-top: 6px;
@@ -105,13 +107,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: center;
+  text-align: left;
   font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--text);
 }
 .rarityTag {
-  margin: 3px 0 9px;
+  margin: 3px 0 9px 8px;
   padding: 2px 9px;
   border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--rm, #a09ba8) 20%, transparent);
