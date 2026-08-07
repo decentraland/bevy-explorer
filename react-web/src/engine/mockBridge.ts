@@ -130,12 +130,13 @@ const mockOutfit = (urns: string[]): Outfit => ({
 const MOCK_OFF_CATALOG_EQUIPPED: Wearable[] = [
   { urn: 'urn:decentraland:off-chain:base-avatars:thug_life', name: 'Off-catalog Eyewear', rarity: 'epic', category: 'eyewear', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:black_sun_glasses'), equipped: true }
 ]
-// Equipped collectibles: a collections-v2 item (numeric item id → the scene resolves a shopUrl, so
-// the passport shows the SHOP hover button) and a legacy collections-v1 item, whose slug urn has no
-// recoverable item id → no shopUrl, no button. Base/off-chain wearables never get one either.
+// Equipped collectibles, both carrying the shopUrl the scene resolves (→ the passport shows the SHOP
+// hover button): a collections-v2 item, whose urn already ends in the numeric item id, and a legacy
+// collections-v1 item, whose slug urn needs the marketplace lookup to reach item 3. Base/off-chain
+// wearables have no listing and so never get one.
 const MOCK_COLLECTIBLE_EQUIPPED: Wearable[] = [
   { urn: 'urn:decentraland:matic:collections-v2:0xa42e166edac870aa5351b098ae6458d39ca0fca6:0', name: 'Neon Tiara', rarity: 'legendary', category: 'tiara', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hat'), equipped: true, shopUrl: 'https://decentraland.org/shop/item/0xa42e166edac870aa5351b098ae6458d39ca0fca6/0' },
-  { urn: 'urn:decentraland:ethereum:collections-v1:mf_sammichgamer:mf_animehair', name: 'Anime warrior hair', rarity: 'legendary', category: 'hair', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hair_anime_01'), equipped: true }
+  { urn: 'urn:decentraland:ethereum:collections-v1:mf_sammichgamer:mf_animehair', name: 'Anime warrior hair', rarity: 'legendary', category: 'hair', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hair_anime_01'), equipped: true, shopUrl: 'https://decentraland.org/shop/item/0x30d3387ff3de2a21bef7032f82d00ff7739e403c/3' }
 ]
 const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED, ...MOCK_COLLECTIBLE_EQUIPPED]
 

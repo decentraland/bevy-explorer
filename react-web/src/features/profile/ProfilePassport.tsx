@@ -68,8 +68,8 @@ function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
 // Read-only equipped-item row (wearable or emote), 6 per row like unity-explorer's passport. No
 // equip affordance (this is someone else's passport, or a view-only summary of your own) — instead
 // the SHOP button deep-links to the item's shop page. The link is resolved by the bridge (it needs
-// the item's on-chain collection address); items without one — base wearables/emotes, legacy
-// slug-identified collections-v1 items — simply show no button.
+// the item's on-chain contract + item id); items with no listing — base wearables and emotes —
+// simply show no button.
 function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Element {
   return (
     <div className={styles.equippedRow}>
