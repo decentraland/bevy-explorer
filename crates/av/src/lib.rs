@@ -444,6 +444,10 @@ impl Plugin for AVPlayerPlugin {
         app.add_observer(av_player_on_insert::<VideoPlayer>);
         app.add_observer(av_player_on_remove::<AudioStream>);
         app.add_observer(av_player_on_remove::<VideoPlayer>);
+        app.add_observer(stream_on_add::<VideoPlayer>);
+        app.add_observer(stream_on_remove);
+        app.add_observer(should_be_playing_on_add::<VideoPlayer>);
+        app.add_observer(should_be_playing_on_remove::<VideoPlayer>);
 
         #[cfg(feature = "ffmpeg")]
         app.add_observer(audio_sink::change_audio_sink_volume::<AudioStream>);
@@ -451,6 +455,7 @@ impl Plugin for AVPlayerPlugin {
         app.add_observer(audio_sink::change_audio_sink_volume::<VideoPlayer>);
 
         app.add_observer(receiver_image_added);
+        app.add_observer(receiver_image_removed);
 
         app.add_systems(FixedUpdate, video_texture_output_image_changed);
 
@@ -489,9 +494,9 @@ fn av_player_on_insert<T: AVPlayer>(
 
         if livestream != has_stream {
             if livestream {
-                entity_cmd.insert((Stream, ActiveReceiver));
+                entity_cmd.insert(Stream);
             } else {
-                entity_cmd.remove::<(Stream, ActiveReceiver, ReceiverImage, VideoTextureOutput)>();
+                entity_cmd.remove::<Stream>();
             }
         }
 
@@ -523,10 +528,53 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
         T::Position,
         InScene,
         ShouldBePlaying<T>,
-        VideoTextureOutput,
         Stream,
-        ActiveReceiver,
     )>();
+}
+
+#[expect(clippy::type_complexity)]
+fn stream_on_add<T: AVPlayer>(
+    trigger: Trigger<OnAdd, Stream>,
+    mut commands: Commands,
+    av_players: Query<Has<ShouldBePlaying<T>>, (With<T>, With<Stream>)>,
+) {
+    let entity = trigger.target();
+    let Ok(has_should_be_playing) = av_players.get(entity) else {
+        unreachable!("Infallible query");
+    };
+
+    if has_should_be_playing {
+        commands.entity(entity).insert(ActiveReceiver);
+    }
+}
+
+fn stream_on_remove(trigger: Trigger<OnRemove, Stream>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<ActiveReceiver>();
+}
+
+#[expect(clippy::type_complexity)]
+fn should_be_playing_on_add<T: AVPlayer>(
+    trigger: Trigger<OnAdd, ShouldBePlaying<T>>,
+    mut commands: Commands,
+    av_players: Query<Has<Stream>, (With<T>, With<ShouldBePlaying<T>>)>,
+) {
+    let entity = trigger.target();
+    let Ok(has_stream) = av_players.get(entity) else {
+        unreachable!("Infallible query");
+    };
+
+    if has_stream {
+        commands.entity(entity).insert(ActiveReceiver);
+    }
+}
+
+fn should_be_playing_on_remove<T: AVPlayer>(
+    trigger: Trigger<OnRemove, ShouldBePlaying<T>>,
+    mut commands: Commands,
+) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<ActiveReceiver>();
 }
 
 fn av_player_is_in_scene<T: AVPlayer>(
@@ -672,6 +720,11 @@ fn receiver_image_added(
             .entity(entity)
             .insert(VideoTextureOutput((*receiver_image).clone()));
     }
+}
+
+fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<VideoTextureOutput>();
 }
 
 fn video_texture_output_image_changed(video_texture_outputs: Populated<&mut VideoTextureOutput>) {
