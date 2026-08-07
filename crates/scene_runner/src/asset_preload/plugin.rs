@@ -9,7 +9,10 @@ use bevy::{
     gltf::{Gltf, GltfLoaderSettings},
     prelude::*,
 };
-use common::{debug_panic, structs::MonotonicTimestamp};
+use common::{
+    debug_panic,
+    structs::{MonotonicTimestamp, NoRenderApp},
+};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
@@ -68,6 +71,7 @@ fn asset_load_on_insert(
     mut renderer_scene_contexts: Query<&mut RendererSceneContext>,
     asset_server: Res<AssetServer>,
     timestamp: Res<MonotonicTimestamp<PbAssetLoadLoadingState>>,
+    no_render_app: Option<Res<NoRenderApp>>,
 ) {
     let entity = trigger.target();
 
@@ -101,7 +105,10 @@ fn asset_load_on_insert(
             asset_server
                 .load_with_settings::<Gltf, GltfLoaderSettings>(
                     PathBuf::from(&ipfs_path),
-                    scene_gltf_loader_settings(RenderAssetTransferPriority::Priority(0)),
+                    scene_gltf_loader_settings(
+                        RenderAssetTransferPriority::Priority(0),
+                        no_render_app.is_some(),
+                    ),
                 )
                 .untyped()
         } else {

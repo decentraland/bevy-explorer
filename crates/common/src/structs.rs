@@ -287,6 +287,40 @@ pub struct SceneDrivenAnimationFeedback {
     pub state: Option<SceneDrivenAnimationFeedbackState>,
 }
 
+/// When true, scenes run in authoritative-server role: `isServer()` returns true
+/// to scene JS. Set by the headless server binary; defaults to false everywhere else.
+#[derive(Resource, Default)]
+pub struct IsServer(pub bool);
+
+/// Marker: present when the app has no render app. Render-only scene plugins are then
+/// skipped — nothing displays their output and none of them feed results back to the
+/// scene, so their components stay in the scene-side filtered store and never cross the
+/// IPC boundary. Insert it before `SceneRunnerPlugin`, which reads it at build time.
+///
+/// Absence is the normal case, so nothing needs to opt in and no default can be wrong.
+///
+/// Narrower than "headless": `impost.rs` disables winit and runs with no primary window,
+/// but keeps `DefaultPlugins` and a camera to bake imposters, so it must NOT insert this.
+/// Doing so would strip every imposter texture with no panic and no test failure.
+///
+/// Also distinct from [`IsServer`]: the headless binary never has a render app, but is
+/// only `IsServer` when run with --server-mode.
+#[derive(Resource)]
+pub struct NoRenderApp;
+
+static SERVER_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Latch this process as an authoritative scene server. Irreversible by design;
+/// mirrors [`IsServer`] for code paths (e.g. the ipfs crate) that have no ECS access.
+pub fn set_server_mode() {
+    SERVER_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// True once [`set_server_mode`] has been called.
+pub fn server_mode() -> bool {
+    SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Debug, Clone)]
 pub struct SceneDrivenAnimationFeedbackState {
     pub src: String,

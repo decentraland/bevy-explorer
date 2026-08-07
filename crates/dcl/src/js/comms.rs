@@ -7,7 +7,7 @@ use common::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use crate::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
 
 use super::State;
 
@@ -32,6 +32,9 @@ pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: Strin
     let scene = state.borrow::<CrdtContext>().scene_id.0;
     let mut data = vec![CommsMessageType::String as u8];
     data.extend(message.into_bytes());
+    let counters = state.borrow_mut::<SceneResourceCounters>();
+    counters.comms_msgs_out += 1;
+    counters.comms_bytes_out += (data.len() - 1) as u64;
     state
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::SendMessageBus {
@@ -53,6 +56,10 @@ pub async fn op_comms_send_binary_single(
     let scene = context.scene_id.0;
     let mut data = vec![CommsMessageType::Binary as u8];
     data.extend(message.as_ref());
+
+    let counters = state.borrow_mut::<SceneResourceCounters>();
+    counters.comms_msgs_out += 1;
+    counters.comms_bytes_out += message.as_ref().len() as u64;
 
     let recipient = recipient.and_then(|r| r.as_h160());
 

@@ -265,6 +265,9 @@ pub enum RpcCall {
         method: String,
         uri: String,
         meta: Option<String>,
+        /// scene hash of the requesting scene, when the request originates from scene JS —
+        /// selects a per-scene storage delegation in server mode
+        scene: Option<String>,
         response: RpcResultSender<Result<Vec<(String, String)>, String>>,
     },
     ReadFile {

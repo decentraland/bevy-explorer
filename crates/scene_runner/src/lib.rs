@@ -20,8 +20,8 @@ use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
     structs::{
-        AppConfig, AppError, CurrentRealm, DebugInfo, PreviewMode, PrimaryCamera, PrimaryUser,
-        TimeOfDay,
+        AppConfig, AppError, CurrentRealm, DebugInfo, NoRenderApp, PreviewMode, PrimaryCamera,
+        PrimaryUser, TimeOfDay,
     },
     util::{dcl_assert, TryPushChildrenEx},
 };
@@ -87,6 +87,13 @@ pub struct SceneUpdates {
     pub eligible_jobs: usize,
     pub loop_end_time: Instant,
     pub scene_queue: VecDeque<(Entity, FloatOrd)>,
+    /// Engine frames since startup (one per `update_scene_priority` run).
+    pub frames: u64,
+    /// Scene-frames lost because the scene's previous job was still in flight when
+    /// the eligible queue was snapshotted, so it could not be dispatched this frame.
+    pub skipped_in_flight: u64,
+    /// Scene-frames lost because the scene had already been dispatched this frame.
+    pub skipped_already_sent: u64,
     /// Named scene entities that must be scheduled every frame (e.g. the
     /// movement controller). These scenes bypass the `scene_threads` limit
     /// but still occupy slots, preventing non-priority scenes from running.
@@ -220,8 +227,11 @@ pub struct SceneRunnerPlugin;
 #[derive(Resource)]
 pub struct SceneLoopSchedule {
     schedule: Schedule,
-    run_time: f64,
-    prev_loop_end: Instant,
+    /// Absolute wall-clock deadline for the end of the next frame. Accumulating this
+    /// by the frame target (rather than restarting the clock from `Instant::now()` each
+    /// frame) means a frame that overruns is repaid by a correspondingly shorter sleep,
+    /// so the long-run rate matches the target instead of losing the overshoot forever.
+    next_frame_end: Instant,
     #[cfg(not(target_arch = "wasm32"))]
     sleeper: SpinSleeper,
 }
@@ -250,6 +260,11 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<Toasts>();
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
+        app.init_resource::<common::structs::IsServer>();
+        // shared by pointer results, trigger areas and the avatar crate — owned here so
+        // trigger areas keep working when the pointer-result systems are skipped
+        app.init_resource::<update_scene::pointer_results::AvatarColliders>();
+        app.init_resource::<update_scene::pointer_results::PointerRay>();
 
         // let (sender, receiver) = tokio::sync::mpsc::channel(1000);
         let (sender, receiver) = scene_response_channel();
@@ -263,6 +278,9 @@ impl Plugin for SceneRunnerPlugin {
             scene_queue: Default::default(),
             loop_end_time: Instant::now(),
             priority_scenes: Default::default(),
+            frames: 0,
+            skipped_in_flight: 0,
+            skipped_already_sent: 0,
         });
 
         app.add_event::<LoadSceneEvent>();
@@ -311,8 +329,7 @@ impl Plugin for SceneRunnerPlugin {
 
         app.insert_resource(SceneLoopSchedule {
             schedule: scene_schedule,
-            prev_loop_end: Instant::now(),
-            run_time: 0.01,
+            next_frame_end: Instant::now(),
             #[cfg(not(target_arch = "wasm32"))]
             sleeper: SpinSleeper::default(),
         });
@@ -320,7 +337,9 @@ impl Plugin for SceneRunnerPlugin {
         app.add_plugins(SceneInputPlugin);
         app.add_plugins(SceneOutputPlugin);
         app.add_plugins(SceneUtilPlugin);
-        app.add_plugins(LightsPlugin);
+        if app.world().get_resource::<NoRenderApp>().is_none() {
+            app.add_plugins(LightsPlugin);
+        }
         app.add_plugins(AssetPreloadPlugin);
 
         app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
@@ -364,17 +383,13 @@ fn run_scene_loop(world: &mut World) {
         Duration::from_nanos((1e9 / fps) as u64)
     };
     let start_loop_time = Instant::now();
-    let non_loop_duration = start_loop_time
-        .checked_duration_since(loop_schedule.prev_loop_end)
-        .unwrap_or_default();
-    let ideal_loop_time = frame_target_duration
-        .checked_sub(non_loop_duration)
-        .unwrap_or_default()
-        .max(Duration::from_millis(1))
-        .as_secs_f64();
-    loop_schedule.run_time = loop_schedule.run_time * 0.5 + 0.5 * ideal_loop_time;
-
-    let target_end_time = start_loop_time + Duration::from_secs_f64(loop_schedule.run_time);
+    // Bounded so we neither burn through a backlog after a hitch (a deadline already in
+    // the past still leaves a 1ms floor to make progress) nor run a frame longer than the
+    // target if the deadline is stale — e.g. after an fps change, or an uncapped frame.
+    let earliest_end = start_loop_time + Duration::from_millis(1);
+    let latest_end = start_loop_time + frame_target_duration.max(Duration::from_millis(1));
+    let target_end_time = loop_schedule.next_frame_end.clamp(earliest_end, latest_end);
+    loop_schedule.next_frame_end = target_end_time + frame_target_duration;
 
     world.resource_mut::<SceneUpdates>().loop_end_time = target_end_time;
 
@@ -400,8 +415,6 @@ fn run_scene_loop(world: &mut World) {
             loop_schedule.sleeper.sleep(sleep_time);
         }
     }
-
-    loop_schedule.prev_loop_end = Instant::now();
 }
 
 fn update_scene_priority(
@@ -420,6 +433,7 @@ fn update_scene_priority(
     containing_scene: ContainingScene,
 ) {
     updates.eligible_jobs = 0;
+    updates.frames += 1;
 
     let (active_scenes, player_translation) = player
         .single()
@@ -429,6 +443,11 @@ fn update_scene_priority(
     // check all in-flight scenes still exist
     let mut missing_in_flight = updates.jobs_in_flight.clone();
 
+    // scene-frames lost this frame, tallied locally: the two closures below cannot
+    // both borrow `updates` mutably at once.
+    let mut skipped_in_flight = 0u64;
+    let mut skipped_already_sent = 0u64;
+
     // sort eligible scenes
     updates.scene_queue = scenes
         .iter_mut()
@@ -437,6 +456,9 @@ fn update_scene_priority(
             let allow = !context.in_flight
                 && !context.broken
                 && (context.blocked.is_empty() || maybe_super.is_some());
+            if context.in_flight {
+                skipped_in_flight += 1;
+            }
             if !allow {
                 debug!(
                     "skipping {ent} (@{}) on {:?}",
@@ -465,6 +487,10 @@ fn update_scene_priority(
             };
             let not_yet_run = context.last_sent < time.elapsed_secs();
 
+            if !context.in_flight && !not_yet_run {
+                skipped_already_sent += 1;
+            }
+
             (!context.in_flight && not_yet_run).then(|| {
                 updates.eligible_jobs += 1;
                 let priority =
@@ -473,6 +499,8 @@ fn update_scene_priority(
             })
         })
         .collect();
+    updates.skipped_in_flight += skipped_in_flight;
+    updates.skipped_already_sent += skipped_already_sent;
     updates
         .scene_queue
         .make_contiguous()
@@ -698,6 +726,19 @@ impl ContainingScene<'_, '_> {
     }
 }
 
+/// Replace the value of an `access_token` query param with `REDACTED`, preserving
+/// the rest of the adapter string. Used to keep the server-minted LiveKit room
+/// credential out of RealmInfo (which scene JS can read via op_realm_information).
+fn redact_access_token(adapter: &str) -> String {
+    match adapter.split_once("access_token=") {
+        Some((prefix, rest)) => {
+            let tail = rest.find('&').map(|i| &rest[i..]).unwrap_or("");
+            format!("{prefix}access_token=REDACTED{tail}")
+        }
+        None => adapter.to_owned(),
+    }
+}
+
 fn send_scene_updates(
     mut scenes: Query<(
         Entity,
@@ -714,6 +755,7 @@ fn send_scene_updates(
     window: Query<&Window, With<PrimaryWindow>>,
     realm: Res<CurrentRealm>,
     data_channel: Res<SceneRoomConnection>,
+    server_rooms: Res<comms::ServerSceneRooms>,
     interactable_area: Res<InteractableArea>,
     preview_mode: Res<PreviewMode>,
     mut buf: Local<Vec<u8>>,
@@ -791,11 +833,22 @@ fn send_scene_updates(
         }
     }
 
-    // add realm info
+    // add realm info; server mode holds N rooms in ServerSceneRooms (empty on clients)
     let room = data_channel
         .0
         .as_ref()
-        .and_then(|(scene, addr, _)| (scene.scene_id == context.hash).then_some(addr));
+        .and_then(|(scene, addr, _)| (scene.scene_id == context.hash).then_some(addr.clone()))
+        // Server-mode room adapter is `livekit:...?access_token=<JWT>` minted by the
+        // orchestrator for THIS scene. Redact the token: RealmInfo is exposed to scene
+        // JS via op_realm_information, so passing it verbatim would let a hostile scene
+        // lift the authoritative-server room credential and impersonate the server in
+        // its own room. Scenes only need to know they are in a connected room.
+        .or_else(|| {
+            server_rooms
+                .0
+                .get(&context.hash)
+                .map(|(addr, _)| redact_access_token(addr))
+        });
     let base_url = realm
         .about_url
         .strip_suffix("/about")
@@ -819,7 +872,7 @@ fn send_scene_updates(
             })
             .unwrap_or("offline".to_owned()),
         is_preview: preview_mode.is_preview,
-        room: room.cloned(),
+        room: room.clone(),
         is_connected_scene_room: Some(room.is_some()),
     };
     buf.clear();
@@ -938,6 +991,14 @@ fn receive_scene_updates(
                             scene_entity,
                             results,
                         });
+                    }
+                    None
+                }
+                SceneResponse::Stats(scene_id, counters) => {
+                    if let Some(root) = updates.scene_ids.get(&scene_id) {
+                        if let Ok(mut context) = scenes.get_mut(*root) {
+                            context.resource_counters = Some(counters);
+                        }
                     }
                     None
                 }

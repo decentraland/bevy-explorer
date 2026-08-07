@@ -6,6 +6,7 @@ use bevy::{
     platform::collections::HashMap,
     prelude::*,
 };
+use common::structs::NoRenderApp;
 use ipfs::IpfsAssetServer;
 
 use crate::update_world::gltf_container::scene_gltf_loader_settings;
@@ -16,6 +17,7 @@ pub struct GltfResolver<'w, 's> {
     pending_gltfs: Local<'s, HashMap<String, Handle<Gltf>>>,
     ipfas: IpfsAssetServer<'w, 's>,
     gltfs: Res<'w, Assets<Gltf>>,
+    no_render_app: Option<Res<'w, NoRenderApp>>,
 }
 
 impl GltfResolver<'_, '_> {
@@ -29,6 +31,7 @@ impl GltfResolver<'_, '_> {
         scene_hash: &str,
     ) -> Result<Option<Handle<Gltf>>, anyhow::Error> {
         let lookup = format!("{gltf_src}##{scene_hash}");
+        let no_render_app = self.no_render_app.is_some();
         let h_gltf = self.prev_pending_gltfs.remove(&lookup).unwrap_or_else(|| {
             self.ipfas
                 .load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
@@ -38,7 +41,10 @@ impl GltfResolver<'_, '_> {
                     // first load's settings win, so whichever path reaches a file first
                     // decides for the other. Background priority, as for preloads —
                     // these meshes are not needed the frame they resolve.
-                    scene_gltf_loader_settings(RenderAssetTransferPriority::Priority(0)),
+                    scene_gltf_loader_settings(
+                        RenderAssetTransferPriority::Priority(0),
+                        no_render_app,
+                    ),
                 )
                 .unwrap()
         });
