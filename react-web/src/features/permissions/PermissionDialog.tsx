@@ -4,9 +4,8 @@
 // back as a permissionResolve. Violet design-system treatment, matching the Create-a-Community
 // modal; wording + Once/Scene/Realm/Global scopes mirror unity-explorer / the native dialog.
 
-import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Button } from '../../design'
+import { useState } from 'react'
+import { Button, openPopup } from '../../design'
 import type { PermissionLevelChoice, PermissionRequestMessage } from '../../engine/protocol'
 import styles from './PermissionDialog.module.css'
 
@@ -56,65 +55,77 @@ export function PermissionDialog({
   const [level, setLevel] = useState<PermissionLevelChoice>('once')
   const passive = PASSIVE[request.ty] ?? 'perform a restricted action'
 
-  // Escape dismisses as a one-time deny — the prompt never silently grants.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onResolve(false, 'once')
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onResolve])
-
-  return createPortal(
-    // Clicking the scrim is also a one-time deny.
-    <div className={styles.scrim} onClick={() => onResolve(false, 'once')}>
-      <div
-        className={styles.modal}
-        role="alertdialog"
-        aria-modal="true"
-        aria-label="Scene permission request"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <span className={styles.icon}>
-          <LockIcon />
-        </span>
-        <div className={styles.prompt}>
-          The scene <span className={styles.scene}>{request.sceneName || 'A scene'}</span> wants
-          permission to {passive}
-        </div>
-        {request.additional ? <div className={styles.additional}>{request.additional}</div> : null}
-
-        <div className={styles.options} role="radiogroup" aria-label="Apply this decision">
-          {LEVELS.map((opt) => (
-            <label key={opt.value} className={styles.option}>
-              <input
-                className={styles.input}
-                type="radio"
-                name="permission-level"
-                checked={level === opt.value}
-                onChange={() => setLevel(opt.value)}
-              />
-              <span className={`${styles.radio} ${level === opt.value ? styles.radioOn : ''}`.trim()}>
-                {level === opt.value ? <span className={styles.radioDot} /> : null}
-              </span>
-              {opt.label}
-            </label>
-          ))}
-        </div>
-
-        <div className={styles.actions}>
-          <Button variant="primary" onClick={() => onResolve(true, level)}>
-            Allow
-          </Button>
-          <Button variant="ghost" className={styles.deny} onClick={() => onResolve(false, level)}>
-            Deny
-          </Button>
-        </div>
+  // Just the card — the popup layer draws the scrim, and dismissing it (Escape / scrim-click) denies
+  // once via openPermissionDialog's onClose. stopPropagation keeps a click on the card from dismissing.
+  return (
+    <div
+      className={styles.modal}
+      role="alertdialog"
+      aria-modal="true"
+      aria-label="Scene permission request"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className={styles.icon}>
+        <LockIcon />
+      </span>
+      <div className={styles.prompt}>
+        The scene <span className={styles.scene}>{request.sceneName || 'A scene'}</span> wants
+        permission to {passive}
       </div>
-    </div>,
-    document.body
+      {request.additional ? <div className={styles.additional}>{request.additional}</div> : null}
+
+      <div className={styles.options} role="radiogroup" aria-label="Apply this decision">
+        {LEVELS.map((opt) => (
+          <label key={opt.value} className={styles.option}>
+            <input
+              className={styles.input}
+              type="radio"
+              name="permission-level"
+              checked={level === opt.value}
+              onChange={() => setLevel(opt.value)}
+            />
+            <span className={`${styles.radio} ${level === opt.value ? styles.radioOn : ''}`.trim()}>
+              {level === opt.value ? <span className={styles.radioDot} /> : null}
+            </span>
+            {opt.label}
+          </label>
+        ))}
+      </div>
+
+      <div className={styles.actions}>
+        <Button variant="primary" onClick={() => onResolve(true, level)}>
+          Allow
+        </Button>
+        <Button variant="ghost" className={styles.deny} onClick={() => onResolve(false, level)}>
+          Deny
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Open a scene-permission prompt as a popup; returns the close handle. Escape / scrim-click deny once
+ *  (the prompt never silently grants); Allow/Deny carry the chosen scope. Resolves exactly once. */
+export function openPermissionDialog(
+  request: PermissionRequestMessage,
+  resolve: (id: number, allow: boolean, level: PermissionLevelChoice) => void
+): () => void {
+  let settled = false
+  const done = (allow: boolean, level: PermissionLevelChoice): void => {
+    if (settled) return
+    settled = true
+    resolve(request.id, allow, level)
+  }
+  return openPopup(
+    (close) => (
+      <PermissionDialog
+        request={request}
+        onResolve={(allow, level) => {
+          done(allow, level)
+          close()
+        }}
+      />
+    ),
+    { onClose: () => done(false, 'once') }
   )
 }

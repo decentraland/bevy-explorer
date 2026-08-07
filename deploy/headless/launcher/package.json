@@ -1,0 +1,33 @@
+{
+  "name": "@dcl-regenesislabs/bevy-headless-server",
+  "version": "0.1.0",
+  "description": "Decentraland authoritative scene server (bevy engine) — drop-in replacement for @dcl/hammurabi-server",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/decentraland/bevy-explorer.git",
+    "directory": "deploy/headless/launcher"
+  },
+  "bin": {
+    "bevy-headless-server": "bin/cli.js"
+  },
+  "main": "lib/resolve-binary.js",
+  "files": [
+    "bin/cli.js",
+    "lib/resolve-binary.js",
+    "install.js",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@dcl-regenesislabs/bevy-headless-server-darwin-arm64": "0.1.0",
+    "@dcl-regenesislabs/bevy-headless-server-darwin-x64": "0.1.0",
+    "@dcl-regenesislabs/bevy-headless-server-linux-x64": "0.1.0",
+    "@dcl-regenesislabs/bevy-headless-server-win32-x64": "0.1.0"
+  }
+}

@@ -15,6 +15,8 @@ pub struct CrdtContext {
     pub title: String,
     pub testing: bool,
     pub preview: bool,
+    #[serde(default)]
+    pub is_server: bool,
     #[serde(skip, default = "default_live_entities")]
     live_entities: LiveTable,
     #[serde(skip)]
@@ -26,7 +28,7 @@ pub struct CrdtContext {
 }
 
 fn default_live_entities() -> LiveTable {
-    vec![(0, false); u16::MAX as usize]
+    vec![(0, false); SceneEntityId::LIVE_TABLE_LEN]
 }
 
 fn default_last_new() -> u16 {
@@ -40,6 +42,7 @@ impl CrdtContext {
         title: String,
         testing: bool,
         preview: bool,
+        is_server: bool,
     ) -> Self {
         Self {
             scene_id,
@@ -47,6 +50,7 @@ impl CrdtContext {
             title,
             testing,
             preview,
+            is_server,
             live_entities: default_live_entities(),
             nascent: Default::default(),
             death_row: Default::default(),
@@ -55,7 +59,7 @@ impl CrdtContext {
     }
 
     fn entity_entry(&self, id: u16) -> &(u16, bool) {
-        // SAFETY: live entities has u16::MAX members
+        // SAFETY: live_entities has LIVE_TABLE_LEN (u16::MAX + 1) entries, so any u16 index is in bounds
         unsafe { self.live_entities.get_unchecked(id as usize) }
     }
 

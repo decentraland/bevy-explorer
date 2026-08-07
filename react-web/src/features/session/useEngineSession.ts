@@ -4,10 +4,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
-import type { FatalError } from '../error/EngineErrorModal'
+import type { FatalError } from '../error/fatalError'
 import { DEFAULT_REALM } from '../engine/EngineHost'
-import { closeTopPopup, hasOpenPopup } from '../../design'
+import { hasOpenPopup } from '../../design'
 import { bootMode } from '../../lib/bootMode'
+import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { parseChatCommand } from '../chat/chatCommands'
@@ -23,6 +24,8 @@ import type {
   GalleryPhoto,
   GalleryPhotoMeta,
   HoverAction,
+  MinimapRotation,
+  MinimapStyle,
   NavAction,
   NearbyMember,
   OutfitSlot,
@@ -98,6 +101,33 @@ export interface MapState {
   teleport: (x: number, y: number) => void
   /** Travel to a world/realm by name (e.g. `boedo.dcl.eth`). */
   changeRealm: (realm: string) => void
+}
+
+/** Live player pose for the minimap: position in world metres, yaws in degrees. */
+export interface PlayerPose {
+  x: number
+  z: number
+  /** Avatar heading — drives the map arrow. */
+  yaw: number
+  /** Camera heading — drives the "rotate with camera" mode. */
+  camYaw: number
+}
+
+export interface MinimapState {
+  /** The pose stream, arriving ~20/s. Deliberately a ref rather than state: the minimap
+   *  animates it from a RAF loop, and routing 20 updates/s through React state would
+   *  re-render the whole HUD tree for a transform the DOM can apply directly. */
+  pose: { current: PlayerPose }
+  /** True in a World. Worlds have no satellite/parcel tiles, so the minimap forces the
+   *  engine-rendered Camera style and hides the style picker. */
+  isWorld: boolean
+  /** Title of the scene the player is standing in, for the header. Empty on an undeployed
+   *  parcel (the header falls back to "Empty parcel"). Updates as the player crosses into
+   *  another scene — unlike the entry overlay's title, which never does. */
+  sceneTitle: string
+  /** Relay the current style/rotation/zoom to the scene. Only the Camera style needs the
+   *  engine; on the DOM styles the scene disposes its TextureCamera. */
+  setConfig: (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => void
 }
 
 // Places browses the places API over HTTP (no bridge data) — it only needs open/close.
@@ -269,7 +299,10 @@ export interface EngineSession {
   /** Post-jump-in Places picker: choose where to spawn (or null to skip → Genesis Plaza). */
   pickDestination: (dest: Destination) => void
   login: LoginFlow
-  scene: SceneLoadingState | null
+  /** Entry overlay state (the sceneLoading stream): what is loading while `phase` is
+   *  'entering'. NOT the scene the player is in — that is `minimap.sceneTitle`, resolved by
+   *  parcel; this title is whatever was last loading and goes stale as the player moves. */
+  sceneLoading: SceneLoadingState | null
   /** Fatal engine error → full-screen error popup. 'launch' = boot panic (fatal), 'runtime' =
    *  post-launch crash bridged from the engine watchdog (dismissable). null when healthy. */
   fatalError: FatalError | null
@@ -296,6 +329,7 @@ export interface EngineSession {
   backpack: BackpackState
   communities: CommunitiesState
   map: MapState
+  minimap: MinimapState
   places: PlacesState
   gallery: GalleryState
   /** Scene permission prompts (e.g. ChangeRealm) awaiting an Allow/Deny. */
@@ -304,7 +338,11 @@ export interface EngineSession {
   /** Trigger a sidebar nav action in the scene (open menu/popup, emotes, mic). */
   nav: (action: NavAction) => void
   /** Report (or clear) the screen rect where the scene should render an engine view. */
-  setEngineViewport: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
+  setEngineViewport: (
+    region: 'map' | 'avatarPreview',
+    rect: { x: number; y: number; width: number; height: number } | null,
+    dpr?: number
+  ) => void
   /** Sign out → back to the login screen. */
   logout: () => void
   /** A full scene menu page is open → the React HUD (sidebar + chat) hides. */
@@ -338,10 +376,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [loadStep, setLoadStep] = useState<string | null>(null)
   // Fatal engine error → full-screen popup. 'launch' = boot panic (fatal, no dismiss); 'runtime' =
   // post-launch crash bridged from the engine watchdog (can be a false positive → dismissable).
-  // ?simerror=1 (or =launch) seeds a sample so the popup can be iterated without a real panic.
+  // ?simerror=1 (or =launch, =realm) seeds a sample so each surface can be iterated without a real
+  // panic — 'realm' matters in mock, where the driver has no launch and the ?realm= pre-flight
+  // (below) is skipped entirely.
   const [fatalError, setFatalError] = useState<FatalError | null>(() => {
     const sim = new URLSearchParams(location.search).get('simerror')
     if (sim == null) return null
+    if (sim === 'realm') return { message: 'The world "noexiste.dcl.eth" doesn\'t exist. (simulated)', source: 'realm' }
     return {
       message: "panicked at crates/dcl_wasm/src/inner/mod.rs:41:9:\ncan't init wasm queue\n\n(simulated)",
       source: sim === 'launch' ? 'launch' : 'runtime'
@@ -372,7 +413,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Ref twin of playerReady: the destination pick runs in a callback that would close over a
   // stale value of the state.
   const playerReadyRef = useRef(false)
-  const [scene, setScene] = useState<SceneLoadingState | null>(null)
+  const [sceneLoading, setSceneLoading] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
@@ -449,6 +490,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [communityDetail, setCommunityDetail] = useState<CommunityDetailMessage | null>(null)
   const [mapParcel, setMapParcel] = useState({ x: 0, y: 0 })
   const [mapOpen, setMapOpen] = useState(false)
+  // Minimap pose: a ref, not state — see MinimapState.pose for why.
+  const poseRef = useRef<PlayerPose>({ x: 0, z: 0, yaw: 0, camYaw: 0 })
+  const [isWorld, setIsWorld] = useState(false)
+  const [sceneTitle, setSceneTitle] = useState('')
   const [placesOpen, setPlacesOpen] = useState(false)
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([])
   const [galleryStorage, setGalleryStorage] = useState({ current: 0, max: 0 })
@@ -484,7 +529,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setAuth((a) => (a == null ? a : { code: msg.code }))
           break
         case 'sceneLoading':
-          setScene(msg.state)
+          setSceneLoading(msg.state)
           break
         case 'hover':
           setHover(msg.actions)
@@ -492,11 +537,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'cursorLock':
           cursorLockedRef.current = msg.locked
           setCursorLocked(msg.locked)
-          break
-        case 'systemAction':
-          // 'Cancel' (Escape, from the engine input stream) closes the topmost popup — authoritative,
-          // so it works even while the engine holds keyboard focus.
-          if (msg.action === 'Cancel') closeTopPopup()
           break
         case 'proximity':
           setProximity(msg.tips)
@@ -590,6 +630,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'mapState':
           setMapParcel({ x: msg.x, y: msg.y })
+          break
+        case 'playerPose':
+          // Mutate the ref instead of setState: this arrives ~20/s and the minimap reads
+          // it from a RAF loop, so it must not drive React renders.
+          poseRef.current = { x: msg.x, z: msg.z, yaw: msg.yaw, camYaw: msg.camYaw }
+          break
+        case 'realmInfo':
+          setIsWorld(msg.isWorld)
+          break
+        case 'sceneInfo':
+          setSceneTitle(msg.title)
           break
         case 'gallery':
           setGalleryPhotos([...msg.photos].sort((a, b) => photoTime(b.dateTime) - photoTime(a.dateTime)))
@@ -809,17 +860,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
   const anyPanelOpen =
     menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen
-  useEffect(() => {
-    if (!anyPanelOpen) return
-    const onKey = (e: KeyboardEvent): void => {
+  useWindowKeyDown(
+    (e) => {
       if (e.key !== 'Escape') return
       e.preventDefault()
       panelSetters.forEach((set) => set(false))
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anyPanelOpen])
+    },
+    { capture: false, enabled: anyPanelOpen }
+  )
   const toggleFriends = useCallback(() => exclusive(setFriendsOpen), [exclusive])
   const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => ensure('getSettings')), [exclusive, ensure])
   const toggleProfile = useCallback(() => exclusive(setProfileOpen, () => ensure('getProfile')), [exclusive, ensure])
@@ -854,6 +902,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const changeRealm = useCallback((realm: string) => {
     driverRef.current?.send({ kind: 'changeRealm', realm })
   }, [])
+  const setMinimapConfig = useCallback(
+    (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => {
+      driverRef.current?.send({ kind: 'minimapConfig', ...config })
+    },
+    []
+  )
   const resolvePermission = useCallback(
     (id: number, allow: boolean, level: PermissionLevelChoice) => {
       setPermissionQueue((q) => {
@@ -1157,8 +1211,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [closeAllPanels])
 
   const setEngineViewport = useCallback(
-    (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => {
-      driverRef.current?.send({ kind: 'engineViewport', region, rect })
+    (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null, dpr?: number) => {
+      driverRef.current?.send({ kind: 'engineViewport', region, rect, dpr })
     },
     []
   )
@@ -1269,7 +1323,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [revealing, setRevealing] = useState(false)
   const prevSceneVisible = useRef<boolean | undefined>(undefined)
   useEffect(() => {
-    const visible = scene?.visible
+    const visible = sceneLoading?.visible
     const justLoaded = prevSceneVisible.current === true && visible === false
     prevSceneVisible.current = visible
     if (!justLoaded || typeof driverRef.current?.renderBusy !== 'function') return
@@ -1288,17 +1342,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     timer = setTimeout(tick, MIN_REVEAL_MS)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene?.visible])
+  }, [sceneLoading?.visible])
 
   // Mirror the engine's native loading screen (SDK7 SceneLoadingWindow: `if (!visible) return null`).
   // The engine keeps its loader visible until the player's scene is rendered, and flips it back on
   // for each scene streamed into Genesis Plaza. We debounce the *reveal* (loading→world) so a brief
   // `visible` gap between scenes doesn't flash the HUD; the loader still appears INSTANTLY whenever
   // loading re-asserts. Loading = scene visible, or not spawned, or the render-settle still holding.
-  // No state received yet (scene == null) counts as loading: the loading stream is the
+  // No state received yet (sceneLoading == null) counts as loading: the loading stream is the
   // bridge-scene's domain, and until it's running and reports otherwise the world isn't ready
   // (on native the engine relay itself sends no loading state at all).
-  const loadingNow = scene?.visible !== false || !playerReady || revealing
+  const loadingNow = sceneLoading?.visible !== false || !playerReady || revealing
   const [loaderActive, setLoaderActive] = useState(true)
   useEffect(() => {
     if (loadingNow) {
@@ -1327,7 +1381,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   return {
     phase,
     pickDestination,
-    scene,
+    sceneLoading,
     fatalError,
     reload: () => location.reload(),
     dismissFatal: () => {
@@ -1383,6 +1437,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
     map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
+    minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },
     gallery: {
       list: galleryPhotos,

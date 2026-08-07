@@ -206,8 +206,7 @@ fn init_test_app(entity_json: &str) -> App {
     });
     app.world_mut().insert_resource(SceneLoopSchedule {
         schedule: skip_loop_schedule,
-        prev_loop_end: Instant::now(),
-        run_time: 100.0,
+        next_frame_end: Instant::now(),
         sleeper: SpinSleeper::default(),
     });
 
@@ -227,8 +226,7 @@ fn init_test_app(entity_json: &str) -> App {
 
     app.world_mut().insert_resource(SceneLoopSchedule {
         schedule: Schedule::new(SceneLoopLabel),
-        prev_loop_end: Instant::now(),
-        run_time: 100.0,
+        next_frame_end: Instant::now(),
         sleeper: SpinSleeper::default(),
     });
 

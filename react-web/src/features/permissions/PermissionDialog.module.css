@@ -1,16 +1,6 @@
 /* Scene permission prompt (e.g. ChangeRealm). Restores the native/unity dialog the react-web HUD
    dropped, in the design-system violet treatment shared with the Create-a-Community modal. */
-.scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 10001;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--modal-scrim);
-  backdrop-filter: blur(2px);
-  padding: 24px;
-}
+/* Just the card — the popup layer (PopupHost .dim/.pop) draws the scrim and DPI-scales it. */
 .modal {
   display: flex;
   flex-direction: column;
@@ -23,7 +13,6 @@
   color: #fff;
   background: var(--modal-bg);
   box-shadow: var(--shadow-modal);
-  transform: scale(var(--ui-scale)); /* DPI-match the scaled HUD */
 }
 .icon {
   display: flex;

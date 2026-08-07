@@ -1,11 +1,15 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CommunitiesPage } from '../features/communities/CommunitiesPage'
 import { CommunityModal } from '../features/communities/CommunityModal'
+import { SessionProvider } from '../features/session/SessionContext'
+import { PopupHost, resetPopups } from '../design'
 import type { Community, CommunityDetailMessage } from '../engine/protocol'
 import type { CommunitiesState } from '../features/session/useEngineSession'
 import { fakeSession } from './harness'
+
+afterEach(resetPopups) // the community modal now lives on the module-level popup stack
 
 const community = (over: Partial<Community>): Community => ({
   id: 'c1',
@@ -19,24 +23,18 @@ const community = (over: Partial<Community>): Community => ({
 })
 
 describe('communities page clicks', () => {
+  // The community detail modal opens as a popup and reads live data via useSession(), so the page and
+  // <PopupHost/> must share one SessionProvider (its `communities` is what the popup content reads).
   function renderPage(list: Community[]): CommunitiesState {
-    const communities: CommunitiesState = {
-      ...fakeSession().communities,
-      open: true,
-      list,
-      join: vi.fn(),
-      loadDetail: vi.fn()
-    }
+    const session = fakeSession()
+    session.communities = { ...session.communities, open: true, list, join: vi.fn(), loadDetail: vi.fn() }
     render(
-      <CommunitiesPage
-        communities={communities}
-        profile={{ data: null, open: false, toggle: vi.fn() }}
-        onNavigate={vi.fn()}
-        onAddFriend={vi.fn()}
-        onOpenChat={vi.fn()}
-      />
+      <SessionProvider value={session}>
+        <CommunitiesPage communities={session.communities} profile={{ data: null, open: false, toggle: vi.fn() }} onNavigate={vi.fn()} />
+        <PopupHost />
+      </SessionProvider>
     )
-    return communities
+    return session.communities
   }
 
   it('Join on a browse card joins that community', async () => {

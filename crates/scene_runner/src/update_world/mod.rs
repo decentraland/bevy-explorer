@@ -11,6 +11,7 @@ use bevy::{
     prelude::*,
 };
 
+use common::structs::NoRenderApp;
 use dcl::{
     crdt::{growonly::CrdtGOState, lww::CrdtLWWState},
     interface::{ComponentPosition, CrdtStore},
@@ -157,9 +158,23 @@ pub struct TrackComponents(pub bool);
 
 impl Plugin for SceneOutputPlugin {
     fn build(&self, app: &mut App) {
+        // Render-only plugins are skipped headless. None of them feed results back to the
+        // scene, so their components simply stay in the scene-side filtered store and never
+        // cross IPC (see CrdtStore::process_message). Kept headless: AnimatorPlugin (animation
+        // drives transforms, so moving-platform colliders depend on it) and
+        // AvatarModifierAreaPlugin (inert today, but its modifiers are server-relevant).
+        let headless = app.world().get_resource::<NoRenderApp>().is_some();
+
         app.add_plugins(TransformAndParentPlugin);
-        app.add_plugins(MeshDefinitionPlugin);
-        app.add_plugins(MaterialDefinitionPlugin);
+        if !headless {
+            // builds Mesh3d and default materials for scene-authored PbMeshRenderer.
+            // MeshCollider resolves its own meshes, and the only other Mesh3d reader is
+            // pointer raycasting, which is skipped headless too.
+            app.add_plugins(MeshDefinitionPlugin);
+            // builds StandardMaterials and loads their textures for scene-authored
+            // PbMaterial; nothing samples them without a renderer
+            app.add_plugins(MaterialDefinitionPlugin);
+        }
         app.add_plugins(MeshColliderPlugin);
         app.add_plugins(TriggerAreaPlugin);
 
@@ -171,15 +186,25 @@ impl Plugin for SceneOutputPlugin {
             app.add_plugins(GltfDefinitionPlugin);
         }
         app.add_plugins(AnimatorPlugin);
-        app.add_plugins(BillboardPlugin);
+        if !headless {
+            app.add_plugins(BillboardPlugin);
+        }
         app.add_plugins(RaycastPlugin);
-        app.add_plugins(PointerEventsPlugin);
-        app.add_plugins(SceneUiPlugin);
-        app.add_plugins(TextShapePlugin);
+        if !headless {
+            // PointerEvents: tooltips / selection outlines / avatar-event propagation, all
+            // driven by pointer picking that needs input. Its only other consumers are
+            // scene UI (skipped here too) and the editor's EditorHighlight, which lives in
+            // the client app's SceneInspectorPlugin.
+            app.add_plugins(PointerEventsPlugin);
+            app.add_plugins(SceneUiPlugin);
+            app.add_plugins(TextShapePlugin);
+        }
         app.add_plugins(CameraModeAreaPlugin);
-        app.add_plugins(VisibilityComponentPlugin {
-            setup_crdt_lww: true,
-        });
+        if !headless {
+            app.add_plugins(VisibilityComponentPlugin {
+                setup_crdt_lww: true,
+            });
+        }
         app.add_plugins(AvatarModifierAreaPlugin);
 
         app.init_resource::<TrackComponents>();

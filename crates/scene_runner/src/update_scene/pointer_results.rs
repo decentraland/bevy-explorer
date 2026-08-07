@@ -102,13 +102,13 @@ pub struct PointerResultPlugin;
 
 impl Plugin for PointerResultPlugin {
     fn build(&self, app: &mut App) {
+        // AvatarColliders and PointerRay are owned by SceneRunnerPlugin: they are also read
+        // by trigger areas and the avatar crate, which must work without this plugin.
         app.init_resource::<PointerTarget>()
-            .init_resource::<PointerRay>()
             .init_resource::<PointerActionTarget>()
             .init_resource::<UiPointerTarget>()
             .init_resource::<WorldPointerTarget>()
             .init_resource::<DebugPointers>()
-            .init_resource::<AvatarColliders>()
             .init_resource::<ProximityCandidates>()
             .init_resource::<MonotonicTimestamp<PbPointerEventsResult>>();
 

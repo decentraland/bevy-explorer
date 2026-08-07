@@ -1,94 +1,42 @@
-// Modal family — portal dialog with focus trap, plus the ModalShell layout
-// wrapper, ModalTitle header and ModalActions footer. Rebuilt in TS + CSS
-// Modules; design references eordano/dcl-react-ui Modal.
+// Modal family — the dialog card, plus the ModalShell layout wrapper, ModalTitle header and
+// ModalActions footer. Rebuilt in TS + CSS Modules; design references eordano/dcl-react-ui Modal.
+//
+// The card is presentational only: the overlay (scrim, DPI scale, entrance animation, focus trap,
+// Escape) is owned by whoever hosts it — PopupHost for popup-layer dialogs, or a self-contained
+// surface like CrashModal. So Modal draws no backdrop and does no portalling.
 
-import {
-  Children,
-  Fragment,
-  isValidElement,
-  useEffect,
-  useRef,
-  type ReactNode
-} from 'react'
-import { createPortal } from 'react-dom'
+import { Children, Fragment, isValidElement, type ReactNode } from 'react'
 import styles from './Modal.module.css'
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
 
 interface ModalProps {
   children: ReactNode
-  onClose?: () => void
   width?: number
   ariaLabel?: string
   role?: string
   className?: string
-  /** Extra class on the fixed backdrop — escape-hatch for a non-default z-layer (e.g. the fatal
-   *  error popup, which must sit above login). */
-  backdropClassName?: string
 }
 
+/** The dialog card — presentational only. Whoever hosts it owns the scrim, DPI scale, entrance
+ *  animation, focus trap and Escape (PopupHost, or a self-contained surface). stopPropagation keeps a
+ *  click on the card from reaching the host's scrim (and closing it). */
 export function Modal({
   children,
-  onClose,
   width = 420,
   ariaLabel,
   role = 'dialog',
-  className = '',
-  backdropClassName = ''
+  className = ''
 }: ModalProps): React.JSX.Element {
-  const cardRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const prev = document.activeElement
-    cardRef.current?.focus()
-
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') {
-        onClose?.()
-        return
-      }
-      if (e.key !== 'Tab' || !cardRef.current) return
-      const f = cardRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
-      if (!f.length) {
-        e.preventDefault()
-        cardRef.current.focus()
-        return
-      }
-      const first = f[0]
-      const last = f[f.length - 1]
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault()
-        last.focus()
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault()
-        first.focus()
-      }
-    }
-
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      if (prev instanceof HTMLElement) prev.focus()
-    }
-  }, [onClose])
-
-  return createPortal(
-    <div className={`${styles.backdrop} ${backdropClassName}`.trim()} onClick={onClose}>
-      <div
-        className={`${styles.card} ${className}`.trim()}
-        style={{ width }}
-        role={role}
-        aria-modal="true"
-        aria-label={ariaLabel}
-        tabIndex={-1}
-        ref={cardRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>,
-    document.body
+  return (
+    <div
+      className={`${styles.card} ${className}`.trim()}
+      style={{ width }}
+      role={role}
+      aria-modal="true"
+      aria-label={ariaLabel}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children}
+    </div>
   )
 }
 
@@ -264,12 +212,11 @@ const SIZES: Record<string, number> = {
 
 interface ModalShellProps {
   children: ReactNode
+  /** Runs from the header close (X) button, when `closeButton` is on. */
   onClose?: () => void
   width?: number
   size?: keyof typeof SIZES
-  dismissOnScrim?: boolean
   className?: string
-  backdropClassName?: string
   ariaLabel?: string
   role?: string
   bodyless?: boolean
@@ -295,9 +242,7 @@ export function ModalShell({
   onClose,
   width,
   size = 'sm',
-  dismissOnScrim = true,
   className = '',
-  backdropClassName,
   ariaLabel,
   role = 'dialog',
   bodyless = false,
@@ -356,14 +301,7 @@ export function ModalShell({
   )
 
   return (
-    <Modal
-      onClose={dismissOnScrim ? onClose : undefined}
-      width={resolvedWidth}
-      className={`${styles.shell} ${className}`.trim()}
-      backdropClassName={backdropClassName}
-      ariaLabel={ariaLabel}
-      role={role}
-    >
+    <Modal width={resolvedWidth} className={`${styles.shell} ${className}`.trim()} ariaLabel={ariaLabel} role={role}>
       {headerNode}
       {body}
       {footerNode}

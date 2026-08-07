@@ -4,7 +4,7 @@
 // popstate) instead of leaving — and surface a confirm modal. Refresh / tab-close fall back to the
 // browser's native "Leave site?" prompt (its text can't be customised).
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export interface ExitGuard {
   /** True while the leave-confirmation modal should be shown. */
@@ -46,14 +46,16 @@ export function useExitGuard(active: boolean): ExitGuard {
     }
   }, [active])
 
-  const stay = (): void => setConfirming(false)
-  const leave = (): void => {
+  // Stable identities: App opens the confirm popup from an effect keyed on these; a fresh callback each
+  // render would close and reopen the popup under the user.
+  const stay = useCallback((): void => setConfirming(false), [])
+  const leave = useCallback((): void => {
     setConfirming(false)
     leavingRef.current = true
     // Go back past the two sentinels (setup + the one re-armed on the trapped back) and the app entry,
     // landing on wherever the user came from. No-op if the app is the first history entry.
     window.history.go(-2)
-  }
+  }, [])
 
   return { confirming, stay, leave }
 }
