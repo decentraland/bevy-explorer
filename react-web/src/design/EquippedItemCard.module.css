@@ -1,14 +1,23 @@
-/* EquippedItemCard — rarity-gradient tile (single --rm colour, computed via color-mix so we don't
-   duplicate WearableCard's per-rarity palette), name + rarity tag below. The SHOP button is
-   absolutely positioned under the card and hidden until hover, so default row heights stay equal
-   across a grid row — only the hovered card grows, overlapping the row beneath it. */
+/* EquippedItemCard — unity-passport-style tile. The rarity gradient + border live on ::before
+   (a single --rm colour, computed via color-mix so we don't duplicate WearableCard's per-rarity
+   palette): on hover it stretches below the card to enclose the revealed SHOP button, so the
+   glowing border wraps card + button as one piece (like Unity's expanded hover card) while the
+   grid row itself never reflows — the extension just overlaps the row beneath. */
 .card {
+  --shop-ext: 42px; /* how far the hover border extends down to wrap the SHOP button */
   position: relative;
+  isolation: isolate; /* keeps the z-index:-1 background inside this card's stacking context */
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.6rem 0.5rem 0.7rem;
+  border-radius: var(--r-card);
+  transition: transform var(--dur-fast) ease;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   border: 2px solid transparent;
   border-radius: var(--r-card);
   background: radial-gradient(
@@ -18,10 +27,28 @@
     color-mix(in srgb, var(--rm, #a09ba8) 86%, #000) 100%
   );
   transition:
+    bottom var(--dur-fast) ease,
     border-color var(--dur-fast) ease,
     box-shadow var(--dur-fast) ease;
 }
 
+/* Top-left category flap (Unity FlapBackground + CategoryImage), like WearableCard's. */
+.flap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-top-left-radius: calc(var(--r-card) - 2px);
+  border-bottom-right-radius: 10px;
+  background: var(--scrim);
+  color: var(--ink-95);
+}
+
+/* Full-bleed square thumbnail area — the item art nearly touches the card edges (Unity look). */
 .thumbWrap {
   width: 100%;
   aspect-ratio: 1;
@@ -30,8 +57,8 @@
   justify-content: center;
 }
 .thumb {
-  width: 88%;
-  height: 88%;
+  width: 94%;
+  height: 94%;
   object-fit: contain;
 }
 .placeholder {
@@ -41,8 +68,13 @@
   background: rgba(255, 255, 255, 0.16);
 }
 
+/* Caption pinned to the bottom (margin-top:auto absorbs any extra row height), on the darker
+   lower end of the gradient — white bold name, rarity tag as a dark pill with rarity-colored
+   text (Unity's tag style, readable on every gradient). */
 .name {
+  margin-top: auto;
   width: 100%;
+  padding: 0 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -51,32 +83,37 @@
   font-weight: 700;
   color: var(--text);
 }
-
 .rarityTag {
-  padding: 1px 8px;
+  margin: 3px 0 9px;
+  padding: 2px 9px;
   border-radius: var(--r-pill);
-  color: #fff;
+  background: var(--scrim);
+  color: var(--rm, #a09ba8);
   font-size: 0.6rem;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .hasShop:hover {
   z-index: 2;
+  transform: scale(1.04);
+}
+.hasShop:hover::before {
+  bottom: calc(-1 * var(--shop-ext));
   border-color: var(--brand);
   box-shadow:
     0 0 0 1px var(--brand-active),
-    0 0 14px var(--brand-active);
+    0 0 18px var(--brand-active);
 }
 
+/* SHOP — revealed inside the extended border on hover. */
 .shopBtn {
   position: absolute;
-  left: 0.4rem;
-  right: 0.4rem;
-  top: 100%;
-  margin-top: 0.35rem;
-  width: auto;
+  top: calc(100% + 4px);
+  left: 10px;
+  right: 10px;
+  text-decoration: none;
   opacity: 0;
   transform: translateY(-4px);
   pointer-events: none;
