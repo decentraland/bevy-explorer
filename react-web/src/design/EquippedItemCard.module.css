@@ -157,14 +157,21 @@
   right: 10px;
   text-decoration: none;
   opacity: 0;
+  /* visibility, not just opacity: an invisible link is still in the tab order, so keyboard users
+     would land on something they can't see or activate. Its change is delayed to the end of the
+     transition so the fade-out still plays. */
+  visibility: hidden;
   transform: translateY(-4px);
   pointer-events: none;
   transition:
     opacity var(--dur-fast) ease,
-    transform var(--dur-fast) ease;
+    transform var(--dur-fast) ease,
+    visibility 0s linear var(--dur-fast);
 }
 .hasShop:hover .shopBtn {
   opacity: 1;
+  visibility: visible;
   transform: translateY(0);
   pointer-events: auto;
+  transition-delay: 0s;
 }
