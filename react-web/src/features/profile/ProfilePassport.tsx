@@ -9,7 +9,8 @@
 
 import { useState } from 'react'
 import { Avatar, EquippedItemCard } from '../../design'
-import { nameColor, shopUrl, shortAddr, splitName } from '../../lib/identity'
+import { CategoryIcon } from '../backpack/categoryIcons'
+import { catalystThumbUrl, nameColor, shopUrl, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileInfo, Wearable } from '../../engine/protocol'
 import type { Relationship } from '../chat/ProfileCardPresentation'
 import styles from './ProfilePassport.module.css'
@@ -70,7 +71,14 @@ function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Elem
   return (
     <div className={styles.equippedRow}>
       {items.map((it) => (
-        <EquippedItemCard key={it.urn} thumbnail={it.thumbnail} name={it.name} rarity={it.rarity} shopUrl={shopUrl(it.urn)} />
+        <EquippedItemCard
+          key={it.urn}
+          thumbnail={it.thumbnail ?? catalystThumbUrl(it.urn)}
+          name={it.name}
+          rarity={it.rarity}
+          shopUrl={shopUrl(it.urn)}
+          categoryIcon={'category' in it ? <CategoryIcon category={it.category} size={15} /> : undefined}
+        />
       ))}
     </div>
   )
