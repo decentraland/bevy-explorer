@@ -75,7 +75,9 @@ function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Elem
     <div className={styles.equippedRow}>
       {items.map((it) => (
         <EquippedItemCard
-          key={it.urn}
+          // Emotes are keyed by slot too: the same emote can sit in more than one wheel slot (the
+          // equipped set is deduped, the wheel isn't), and a duplicate key drops the second tile.
+          key={'slot' in it ? `${it.urn}:${it.slot}` : it.urn}
           thumbnail={it.thumbnail ?? catalystThumbUrl(it.urn)}
           name={it.name}
           rarity={it.rarity}
