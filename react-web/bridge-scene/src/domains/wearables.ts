@@ -96,7 +96,7 @@ export async function resolveShopUrls(items: Array<{ urn: string; collectionAddr
     const last = urn.split(':').pop()
     if (contract == null || last == null || last === '') continue
     if (/^\d+$/.test(last)) {
-      const url = `${SHOP_ITEM_BASE}/${contract}/${last}`
+      const url = `${SHOP_ITEM_BASE}/${encodeURIComponent(contract)}/${last}`
       shopUrlByItemUrn.set(urn, url)
       out.set(urn, url)
       continue
@@ -105,7 +105,7 @@ export async function resolveShopUrls(items: Array<{ urn: string; collectionAddr
   }
   const CHUNK = 25 // bounds URL length, like the catalyst resolves above
   for (let i = 0; i < pendingIds.length; i += CHUNK) {
-    const qs = pendingIds.slice(i, i + CHUNK).map((id) => `id=${id}`).join('&')
+    const qs = pendingIds.slice(i, i + CHUNK).map((id) => `id=${encodeURIComponent(id)}`).join('&')
     const data = await getJson<{ data?: MarketplaceItem[] }>(`${MARKETPLACE_ITEMS}?${qs}`).catch((e: unknown) => {
       // Non-fatal: those items just show no SHOP button (and aren't cached, so a later open retries).
       console.error('[wearables] marketplace item-id lookup failed', e)
@@ -113,7 +113,7 @@ export async function resolveShopUrls(items: Array<{ urn: string; collectionAddr
     })
     for (const it of data?.data ?? []) {
       if (it.urn == null || it.contractAddress == null || it.itemId == null) continue
-      const url = `${SHOP_ITEM_BASE}/${it.contractAddress}/${it.itemId}`
+      const url = `${SHOP_ITEM_BASE}/${encodeURIComponent(it.contractAddress)}/${encodeURIComponent(it.itemId)}`
       shopUrlByItemUrn.set(it.urn, url)
       out.set(it.urn, url)
     }
