@@ -1,24 +1,21 @@
 use bevy::{
-    core_pipeline::CorePipelinePlugin,
     log::{Level, LogPlugin},
     prelude::*,
-    render::{
-        settings::{RenderCreation, WgpuSettings},
-        RenderPlugin,
-    },
     state::app::StatesPlugin,
 };
 use common::structs::PrimaryCameraRes;
 use dcl_component::proto_components::sdk::components::PbVideoPlayer;
 #[cfg(feature = "ffmpeg")]
 use ffmpeg_next::format::input;
-use livestream_manager::{plugin::LivestreamManagerPlugin, ActiveReceiver, ReceiverImage};
-use scene_runner::SceneRunnerPlugin;
-use wgpu::Backends;
+use livestream_manager::{plugin::LivestreamManagerPlugin, ActiveReceiver};
+use scene_runner::{update_world::material::VideoTextureOutput, SceneRunnerPlugin};
 
 #[cfg(feature = "ffmpeg")]
 use crate::video_context::VideoContext;
-use crate::{AVPlayerPlugin, Stream, VideoPlayer, LIVEKIT_VIDEO_STREAM};
+use crate::{
+    AVPlayerPlugin, InScene, ShouldBePlaying, Stream, VideoPlayer, VideoPlayerConfig,
+    VideoPlayerPosition, VideoPlayerSource, LIVEKIT_VIDEO_STREAM,
+};
 
 #[cfg(feature = "ffmpeg")]
 #[test]
@@ -32,8 +29,7 @@ fn test_ffmpeg() {
     VideoContext::init(&context, sx).unwrap();
 }
 
-#[test]
-fn test_removing_video_player() {
+fn min_test_app() -> App {
     let mut app = App::new();
 
     app.add_plugins((
@@ -62,6 +58,54 @@ fn test_removing_video_player() {
 
     app.world_mut().run_schedule(Startup);
 
+    app
+}
+
+#[test]
+fn test_insert_video_player() {
+    let mut app = min_test_app();
+
+    let video_player = app
+        .world_mut()
+        .spawn(VideoPlayer(PbVideoPlayer {
+            src: "https://example.com".to_owned(),
+            ..Default::default()
+        }))
+        .id();
+
+    assert!(app.world().entity(video_player).contains::<VideoPlayer>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerSource>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerConfig>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerPosition>());
+    assert!(!app.world().entity(video_player).contains::<Stream>());
+    assert!(!app.world().entity(video_player).contains::<InScene>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<ShouldBePlaying<VideoPlayer>>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoTextureOutput>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<ActiveReceiver>());
+}
+
+#[test]
+fn test_insert_livekit_video_player() {
+    let mut app = min_test_app();
+
     let video_player = app
         .world_mut()
         .spawn(VideoPlayer(PbVideoPlayer {
@@ -70,21 +114,177 @@ fn test_removing_video_player() {
         }))
         .id();
 
-    assert!(app.world().entity(video_player).contains::<Stream>());
+    assert!(app.world().entity(video_player).contains::<VideoPlayer>());
     assert!(app
         .world()
         .entity(video_player)
+        .contains::<VideoPlayerSource>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerConfig>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerPosition>());
+    assert!(app.world().entity(video_player).contains::<Stream>());
+    assert!(!app.world().entity(video_player).contains::<InScene>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<ShouldBePlaying<VideoPlayer>>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoTextureOutput>());
+    assert!(!app
+        .world()
+        .entity(video_player)
         .contains::<ActiveReceiver>());
-    assert!(app.world().entity(video_player).contains::<ReceiverImage>());
+}
+
+#[test]
+fn test_removing_video_player() {
+    let mut app = min_test_app();
+
+    let video_player = app
+        .world_mut()
+        .spawn(VideoPlayer(PbVideoPlayer {
+            src: "https://example.com".to_owned(),
+            ..Default::default()
+        }))
+        .id();
+
+    assert!(app.world().entity(video_player).contains::<VideoPlayer>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerSource>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerConfig>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerPosition>());
+    assert!(!app.world().entity(video_player).contains::<Stream>());
+    assert!(!app.world().entity(video_player).contains::<InScene>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<ShouldBePlaying<VideoPlayer>>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoTextureOutput>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<ActiveReceiver>());
 
     app.world_mut()
         .entity_mut(video_player)
         .remove::<VideoPlayer>();
 
+    assert!(!app.world().entity(video_player).contains::<VideoPlayer>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerSource>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerConfig>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerPosition>());
     assert!(!app.world().entity(video_player).contains::<Stream>());
+    assert!(!app.world().entity(video_player).contains::<InScene>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<ShouldBePlaying<VideoPlayer>>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoTextureOutput>());
     assert!(!app
         .world()
         .entity(video_player)
         .contains::<ActiveReceiver>());
-    assert!(!app.world().entity(video_player).contains::<ReceiverImage>());
+}
+
+#[test]
+fn test_removing_livekit_video_player() {
+    let mut app = min_test_app();
+
+    let video_player = app
+        .world_mut()
+        .spawn(VideoPlayer(PbVideoPlayer {
+            src: LIVEKIT_VIDEO_STREAM.to_owned(),
+            ..Default::default()
+        }))
+        .id();
+
+    assert!(app.world().entity(video_player).contains::<VideoPlayer>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerSource>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerConfig>());
+    assert!(app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerPosition>());
+    assert!(app.world().entity(video_player).contains::<Stream>());
+    assert!(!app.world().entity(video_player).contains::<InScene>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<ShouldBePlaying<VideoPlayer>>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoTextureOutput>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<ActiveReceiver>());
+
+    app.world_mut()
+        .entity_mut(video_player)
+        .remove::<VideoPlayer>();
+
+    assert!(!app.world().entity(video_player).contains::<VideoPlayer>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerSource>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerConfig>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoPlayerPosition>());
+    assert!(!app.world().entity(video_player).contains::<Stream>());
+    assert!(!app.world().entity(video_player).contains::<InScene>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<ShouldBePlaying<VideoPlayer>>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<VideoTextureOutput>());
+    assert!(!app
+        .world()
+        .entity(video_player)
+        .contains::<ActiveReceiver>());
 }
