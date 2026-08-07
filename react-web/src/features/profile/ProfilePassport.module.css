@@ -200,9 +200,12 @@
   background: rgba(255, 255, 255, 0.15);
 }
 
+/* minmax(0, 1fr): a plain 1fr track's min size is the item's min-content, and the card's
+   nowrap name would stretch its column (uneven tiles, horizontal overflow) — clamping to 0
+   keeps all 6 columns equal and lets the name ellipsize instead. */
 .equippedRow {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
