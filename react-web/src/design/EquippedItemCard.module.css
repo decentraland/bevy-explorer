@@ -163,6 +163,7 @@
   visibility: hidden;
   transform: translateY(-4px);
   pointer-events: none;
+  /* Leaving hover: no delay, so the button clears before the card retracts from under it. */
   transition:
     opacity var(--dur-fast) ease,
     transform var(--dur-fast) ease,
@@ -173,5 +174,7 @@
   visibility: visible;
   transform: translateY(0);
   pointer-events: auto;
-  transition-delay: 0s;
+  /* Entering hover: wait for ::before to finish extending the card downwards, so the button
+     appears inside the grown card instead of over the gap it is still opening. */
+  transition-delay: var(--dur-fast);
 }
