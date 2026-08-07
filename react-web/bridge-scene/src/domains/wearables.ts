@@ -54,7 +54,22 @@ function itemUrnOf(urn: string): string {
   return urn
 }
 
-type WearableDef = { id: string; name?: string; rarity?: string; thumbnail?: string; data?: { category?: string } }
+type WearableDef = { id: string; name?: string; rarity?: string; thumbnail?: string; collectionAddress?: string; data?: { category?: string } }
+
+// Marketplace deep link for an item urn, given its resolved on-chain collection address (absent
+// on a resolve failure or an off-chain item). Only collections-v2 (matic) urns carry a numeric
+// item id themselves; legacy collections-v1 (ethereum) items are slug-identified (e.g.
+// "mf_animehair") and the real numeric id isn't recoverable from the catalyst — TheGraph has it,
+// but that's an extra round-trip unity-explorer's own passport skips for the same reason (see its
+// EquippedItems_PassportModuleController.GetMarketplaceLink). So: build the link only when the
+// last urn segment already parses as the numeric item id; otherwise no link, rather than a dead
+// "/shop/item/<slug>/<slug>" URL.
+export function marketplaceShopUrl(itemUrn: string, collectionAddress?: string): string | undefined {
+  if (collectionAddress == null || !collectionAddress.startsWith('0x')) return undefined
+  const last = itemUrn.split(':').pop()
+  if (last == null || !/^\d+$/.test(last)) return undefined
+  return `https://decentraland.org/shop/item/${collectionAddress}/${last}`
+}
 
 // A wearable's DEFINITION (name/category/thumbnail/model/rarity) is stable enough within a session to
 // cache, though NOT truly immutable: a creator can re-publish edits (new content entity) under the
@@ -163,7 +178,8 @@ export async function resolveEquippedSet(urns: string[]): Promise<Wearable[]> {
       // silently undressed the avatar whenever the lambdas request failed mid-session.
       category: def?.data?.category ?? 'unknown',
       thumbnail: `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`,
-      equipped: true
+      equipped: true,
+      shopUrl: marketplaceShopUrl(itemUrn, def?.collectionAddress)
     }
   })
 }

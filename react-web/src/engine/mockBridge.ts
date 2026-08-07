@@ -130,10 +130,12 @@ const mockOutfit = (urns: string[]): Outfit => ({
 const MOCK_OFF_CATALOG_EQUIPPED: Wearable[] = [
   { urn: 'urn:decentraland:off-chain:base-avatars:thug_life', name: 'Off-catalog Eyewear', rarity: 'epic', category: 'eyewear', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:black_sun_glasses'), equipped: true }
 ]
-// An equipped on-chain collectible (has a marketplace listing) — exercises the passport's SHOP
-// hover pill, which base/off-chain wearables never show.
+// Equipped collectibles: a collections-v2 item (numeric item id → the scene resolves a shopUrl, so
+// the passport shows the SHOP hover button) and a legacy collections-v1 item, whose slug urn has no
+// recoverable item id → no shopUrl, no button. Base/off-chain wearables never get one either.
 const MOCK_COLLECTIBLE_EQUIPPED: Wearable[] = [
-  { urn: 'urn:decentraland:matic:collections-v2:0xa42e166edac870aa5351b098ae6458d39ca0fca6:0', name: 'Neon Tiara', rarity: 'legendary', category: 'tiara', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hat'), equipped: true }
+  { urn: 'urn:decentraland:matic:collections-v2:0xa42e166edac870aa5351b098ae6458d39ca0fca6:0', name: 'Neon Tiara', rarity: 'legendary', category: 'tiara', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hat'), equipped: true, shopUrl: 'https://decentraland.org/shop/item/0xa42e166edac870aa5351b098ae6458d39ca0fca6/0' },
+  { urn: 'urn:decentraland:ethereum:collections-v1:mf_sammichgamer:mf_animehair', name: 'Anime warrior hair', rarity: 'legendary', category: 'hair', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hair_anime_01'), equipped: true }
 ]
 const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED, ...MOCK_COLLECTIBLE_EQUIPPED]
 
