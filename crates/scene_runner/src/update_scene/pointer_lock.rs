@@ -219,14 +219,14 @@ pub fn update_pointer_lock(
             world_ray_direction: ray,
         };
 
-        context.update_crdt(
+        context.update_crdt_if_different(
             SceneComponentId::PRIMARY_POINTER_INFO,
             CrdtType::LWW_ENT,
             SceneEntityId::ROOT,
             &pointer_info,
         );
 
-        context.update_crdt(
+        context.update_crdt_if_different(
             SceneComponentId::POINTER_LOCK,
             CrdtType::LWW_ENT,
             SceneEntityId::CAMERA,

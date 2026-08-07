@@ -34,7 +34,7 @@ use dcl::{
 use dcl_component::{
     proto_components::{
         common::BorderRect,
-        sdk::components::{PbRealmInfo, PbUiCanvasInformation},
+        sdk::components::{PbEngineInfo, PbRealmInfo, PbUiCanvasInformation},
     },
     transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
@@ -698,6 +698,13 @@ impl ContainingScene<'_, '_> {
     }
 }
 
+// serialized realm info, rebuilt only when the realm or scene room changes
+#[derive(Default)]
+struct RealmInfoCache {
+    disconnected: Vec<u8>,
+    connected: Option<(String, Vec<u8>)>,
+}
+
 fn send_scene_updates(
     mut scenes: Query<(
         Entity,
@@ -708,6 +715,7 @@ fn send_scene_updates(
     )>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
+    frame: Res<FrameCount>,
     player: Query<&Transform, With<PrimaryUser>>,
     camera: Query<&Transform, With<PrimaryCamera>>,
     config: Res<AppConfig>,
@@ -717,9 +725,51 @@ fn send_scene_updates(
     interactable_area: Res<InteractableArea>,
     preview_mode: Res<PreviewMode>,
     mut buf: Local<Vec<u8>>,
+    mut realm_info_cache: Local<RealmInfoCache>,
 ) {
     let updates = &mut *updates;
     let buf = &mut *buf;
+    let realm_info_cache = &mut *realm_info_cache;
+
+    // rebuild the cached realm info bytes; this must run before any early return
+    // so a change is never missed
+    if realm.is_changed() || data_channel.is_changed() || preview_mode.is_changed() {
+        let base_url = realm
+            .about_url
+            .strip_suffix("/about")
+            .unwrap_or(&realm.about_url);
+        let realm_name = realm.config.realm_name.clone().unwrap_or_default();
+        let base_url = base_url
+            .strip_suffix(&format!("/{realm_name}"))
+            .unwrap_or(base_url);
+        let mut realm_info = PbRealmInfo {
+            base_url: base_url.to_owned(),
+            realm_name,
+            network_id: realm.config.network_id.unwrap_or_default() as i32,
+            comms_adapter: realm
+                .comms
+                .as_ref()
+                .and_then(|comms| {
+                    comms
+                        .adapter
+                        .clone()
+                        .or_else(|| comms.fixed_adapter.clone())
+                })
+                .unwrap_or("offline".to_owned()),
+            is_preview: preview_mode.is_preview,
+            room: None,
+            is_connected_scene_room: Some(false),
+        };
+        realm_info_cache.disconnected.clear();
+        DclWriter::new(&mut realm_info_cache.disconnected).write(&realm_info);
+        realm_info_cache.connected = data_channel.0.as_ref().map(|(scene, addr, _)| {
+            realm_info.room = Some(addr.clone());
+            realm_info.is_connected_scene_room = Some(true);
+            let mut bytes = Vec::new();
+            DclWriter::new(&mut bytes).write(&realm_info);
+            (scene.scene_id.clone(), bytes)
+        });
+    }
 
     // Peek at the next scene before popping. Priority scenes bypass the thread
     // limit (but still occupy slots, preventing non-priority scenes from
@@ -792,43 +842,15 @@ fn send_scene_updates(
     }
 
     // add realm info
-    let room = data_channel
-        .0
-        .as_ref()
-        .and_then(|(scene, addr, _)| (scene.scene_id == context.hash).then_some(addr));
-    let base_url = realm
-        .about_url
-        .strip_suffix("/about")
-        .unwrap_or(&realm.about_url);
-    let realm_name = realm.config.realm_name.clone().unwrap_or_default();
-    let base_url = base_url
-        .strip_suffix(&format!("/{realm_name}"))
-        .unwrap_or(base_url);
-    let realm_info = PbRealmInfo {
-        base_url: base_url.to_owned(),
-        realm_name: realm.config.realm_name.clone().unwrap_or_default(),
-        network_id: realm.config.network_id.unwrap_or_default() as i32,
-        comms_adapter: realm
-            .comms
-            .as_ref()
-            .and_then(|comms| {
-                comms
-                    .adapter
-                    .clone()
-                    .or_else(|| comms.fixed_adapter.clone())
-            })
-            .unwrap_or("offline".to_owned()),
-        is_preview: preview_mode.is_preview,
-        room: room.cloned(),
-        is_connected_scene_room: Some(room.is_some()),
+    let realm_bytes = match realm_info_cache.connected.as_ref() {
+        Some((hash, bytes)) if *hash == context.hash => bytes.as_slice(),
+        _ => realm_info_cache.disconnected.as_slice(),
     };
-    buf.clear();
-    DclWriter::new(buf).write(&realm_info);
     context.crdt_store.update_if_different(
         SceneComponentId::REALM_INFO,
         CrdtType::LWW_ANY,
         SceneEntityId::ROOT,
-        Some(&mut DclReader::new(buf)),
+        Some(&mut DclReader::new(realm_bytes)),
     );
 
     // add canvas info
@@ -874,8 +896,22 @@ fn send_scene_updates(
 
     buf.clear();
     DclWriter::new(buf).write(&canvas_info);
-    context.crdt_store.force_update(
+    context.crdt_store.update_if_different(
         SceneComponentId::CANVAS_INFO,
+        CrdtType::LWW_ROOT,
+        SceneEntityId::ROOT,
+        Some(&mut DclReader::new(buf)),
+    );
+
+    // add engine info, only for the scene actually being sent
+    buf.clear();
+    DclWriter::new(buf).write(&PbEngineInfo {
+        frame_number: frame.0,
+        total_runtime: context.total_runtime,
+        tick_number: context.tick_number,
+    });
+    context.crdt_store.force_update(
+        SceneComponentId::ENGINE_INFO,
         CrdtType::LWW_ROOT,
         SceneEntityId::ROOT,
         Some(&mut DclReader::new(buf)),
