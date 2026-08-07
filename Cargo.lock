@@ -635,7 +635,9 @@ name = "av"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "av",
  "bevy",
+ "bevy_console",
  "bevy_kira_audio",
  "common",
  "comms",
@@ -645,6 +647,7 @@ dependencies = [
  "ffmpeg-next",
  "ipfs",
  "kira",
+ "livestream_manager",
  "reqwest 0.12.15",
  "scene_runner",
  "system_bridge",
@@ -2761,6 +2764,7 @@ dependencies = [
  "js-sys",
  "kira",
  "livekit",
+ "livestream_manager",
  "modular-bitfield",
  "multihash-codetable",
  "multipart",
@@ -3598,6 +3602,7 @@ dependencies = [
  "imposters",
  "input_manager",
  "ipfs",
+ "livestream_manager",
  "log",
  "log-panics",
  "mimalloc",
@@ -6784,6 +6789,13 @@ source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webr
 dependencies = [
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "livestream_manager"
+version = "0.1.0"
+dependencies = [
+ "bevy",
 ]
 
 [[package]]

@@ -135,6 +135,12 @@ pub struct Microphone;
 #[derive(Component)]
 pub struct Camera;
 
+#[derive(Component)]
+pub struct ScreenshareAudio;
+
+#[derive(Component)]
+pub struct ScreenshareVideo;
+
 #[derive(Event)]
 pub struct TrackPublished {
     pub participant: Participant,

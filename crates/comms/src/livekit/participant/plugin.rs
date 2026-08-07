@@ -8,20 +8,12 @@ use common::{
     util::{AsH160, ReportErr},
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
+#[cfg(not(target_arch = "wasm32"))]
+use livekit::prelude::Participant;
+use livestream_manager::VideoCast;
 use prost::Message;
 use system_bridge::VoiceMessage;
-#[cfg(not(target_arch = "wasm32"))]
-use {
-    bevy::{
-        asset::RenderAssetUsages,
-        color::palettes,
-        render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
-    },
-    livekit::prelude::Participant,
-};
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::participant::{StreamImage, StreamViewer};
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::Participant;
 use crate::{
@@ -33,11 +25,10 @@ use crate::{
             ActiveSpeaker, ActiveSpeakersChanged, ChangeVolume, HostedBy, HostingParticipants,
             LivekitParticipant, Local, ParticipantConnected, ParticipantConnectionQuality,
             ParticipantDisconnected, ParticipantMetadataChanged, ParticipantPayload,
-            StreamBroadcast, Streamer,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
-        track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, TrackVolume, Video},
+        track::{Audio, Camera as CameraTrack, Publishing, TrackVolume, Video},
         LivekitRuntime,
     },
     SceneRoom,
@@ -56,16 +47,6 @@ impl Plugin for LivekitParticipantPlugin {
         app.add_observer(is_now_speaking);
         app.add_observer(is_no_longer_speaking);
 
-        #[cfg(not(target_arch = "wasm32"))]
-        app.add_systems(
-            Update,
-            (
-                stream_viewer_without_stream_image,
-                non_stream_viewer_with_stream_image,
-            ),
-        );
-        app.add_observer(someone_wants_to_watch_stream);
-        app.add_observer(noone_is_watching_stream);
         app.add_observer(change_volume_of_tracks);
     }
 }
@@ -91,23 +72,12 @@ fn participant_connected(
 
     let is_local = matches!(participant.participant, Participant::Local(_));
 
+    let mut cmd = commands.spawn((
+        participant.clone(),
+        <HostedBy as Relationship>::from(*room_entity),
+    ));
     if is_local {
-        commands.spawn((
-            participant.clone(),
-            <HostedBy as Relationship>::from(*room_entity),
-            Local,
-        ));
-    } else if participant.identity().as_str().ends_with("-streamer") {
-        commands.spawn((
-            participant.clone(),
-            <HostedBy as Relationship>::from(*room_entity),
-            Streamer,
-        ));
-    } else {
-        commands.spawn((
-            participant.clone(),
-            <HostedBy as Relationship>::from(*room_entity),
-        ));
+        cmd.insert(Local);
     }
 
     commands.trigger(ParticipantMetadataChanged {
@@ -317,134 +287,6 @@ fn participant_metadata_changed(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn stream_viewer_without_stream_image(
-    mut commands: Commands,
-    stream_viewers: Populated<(Entity, &StreamViewer), Without<StreamImage>>,
-    stream_broadcasts: Query<&StreamImage, With<StreamBroadcast>>,
-) {
-    for (entity, stream_viewer) in stream_viewers.into_inner() {
-        let Ok(stream_image) = stream_broadcasts.get(stream_viewer.get()) else {
-            debug_panic!("Invalid StreamBroadcast relationship.");
-        };
-
-        commands.entity(entity).try_insert(stream_image.clone());
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[expect(clippy::type_complexity, reason = "Queries are complex")]
-fn non_stream_viewer_with_stream_image(
-    mut commands: Commands,
-    stream_viewers: Populated<
-        Entity,
-        (
-            Without<StreamViewer>,
-            Without<StreamBroadcast>,
-            With<StreamImage>,
-        ),
-    >,
-) {
-    for entity in stream_viewers.into_inner() {
-        commands.entity(entity).remove::<StreamImage>();
-    }
-}
-
-fn someone_wants_to_watch_stream(
-    trigger: Trigger<OnAdd, StreamBroadcast>,
-    mut commands: Commands,
-    participants: Query<(&LivekitParticipant, Option<&Publishing>), With<Streamer>>,
-    audio_tracks: Query<(), With<Audio>>,
-    video_tracks: Query<(), With<Video>>,
-    #[cfg(not(target_arch = "wasm32"))] mut images: ResMut<Assets<Image>>,
-) {
-    let entity = trigger.target();
-    let Ok((participant, maybe_publishing)) = participants.get(entity) else {
-        debug_panic!("StreamBroadcast on a non-Streamer participant.");
-    };
-
-    debug!(
-        "Streamer {} ({}) is now being watched.",
-        participant.sid(),
-        participant.identity()
-    );
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let mut image = Image::new_fill(
-            bevy::render::render_resource::Extent3d {
-                width: 8,
-                height: 8,
-                depth_or_array_layers: 1,
-            },
-            TextureDimension::D2,
-            &palettes::basic::FUCHSIA.to_u8_array(),
-            TextureFormat::Rgba8UnormSrgb,
-            RenderAssetUsages::all(),
-        );
-        image.texture_descriptor.usage = TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
-
-        commands
-            .entity(entity)
-            .try_insert(StreamImage(images.add(image)));
-    }
-
-    if let Some(publishing) = maybe_publishing {
-        if let Some(audio_track) = publishing
-            .iter()
-            .find(|published_track| audio_tracks.contains(*published_track))
-        {
-            commands.trigger_targets(SubscribeToTrack, audio_track);
-        } else {
-            debug!(
-                "Participant {} ({}) is being watched but do not have any published audio track.",
-                participant.sid(),
-                participant.identity()
-            );
-        }
-        if let Some(video_track) = publishing
-            .iter()
-            .find(|published_track| video_tracks.contains(*published_track))
-        {
-            commands.trigger_targets(SubscribeToTrack, video_track);
-        } else {
-            debug!(
-                "Participant {} ({}) is being watched but do not have any published video track.",
-                participant.sid(),
-                participant.identity()
-            );
-        }
-    }
-}
-
-fn noone_is_watching_stream(
-    trigger: Trigger<OnRemove, StreamBroadcast>,
-    #[cfg(not(target_arch = "wasm32"))] mut commands: Commands,
-    participants: Query<(&LivekitParticipant, Option<&Publishing>), With<Streamer>>,
-    tracks: Query<&LivekitTrack>,
-    livekit_runtime: Res<LivekitRuntime>,
-) {
-    let entity = trigger.target();
-    let Ok((participant, maybe_publishing)) = participants.get(entity) else {
-        debug_panic!("StreamBroadcast on a non-Streamer participant.");
-    };
-    debug!(
-        "Streamer {} ({}) no longer being watched.",
-        participant.sid(),
-        participant.identity()
-    );
-    #[cfg(not(target_arch = "wasm32"))]
-    commands.entity(entity).try_remove::<StreamImage>();
-
-    if let Some(publishing) = maybe_publishing {
-        for livekit_track in tracks.iter_many(publishing.collection()) {
-            let track = livekit_track.clone();
-            livekit_runtime.spawn(async move {
-                track.set_subscribed(false);
-            });
-        }
-    }
-}
-
 fn change_volume_of_tracks(
     trigger: Trigger<ChangeVolume>,
     mut commands: Commands,
@@ -502,15 +344,21 @@ fn active_speakers_changed(
     }
 }
 
+#[expect(clippy::type_complexity)]
 fn is_now_speaking(
     trigger: Trigger<OnInsert, ActiveSpeaker>,
-    participants: Query<(&LivekitParticipant, Option<&HostedBy>), With<ActiveSpeaker>>,
+    mut commands: Commands,
+    participants: Query<
+        (&LivekitParticipant, Option<&HostedBy>, Option<&Publishing>),
+        With<ActiveSpeaker>,
+    >,
+    tracks: Query<(), (With<Video>, With<CameraTrack>)>,
     scene_rooms: Query<&SceneRoom>,
     senders: Res<VoiceMessageStreams>,
 ) {
     let entity = trigger.target();
 
-    let Ok((participant, maybe_hosted_by)) = participants.get(entity) else {
+    let Ok((participant, maybe_hosted_by, maybe_publishing)) = participants.get(entity) else {
         unreachable!("Infallible Query");
     };
     debug!(
@@ -527,12 +375,12 @@ fn is_now_speaking(
         );
     };
 
-    let channel = match scene_rooms.get(room.get()).ok() {
-        Some(room) => room.0.clone(),
-        None => "Nearby".to_string(),
-    };
-    for sender in senders.iter() {
-        if let Some(sender_address) = participant.identity().as_str().as_h160() {
+    if let Some(sender_address) = participant.identity().as_str().as_h160() {
+        let channel = match scene_rooms.get(room.get()).ok() {
+            Some(room) => room.0.clone(),
+            None => "Nearby".to_string(),
+        };
+        for sender in senders.iter() {
             sender
                 .send(VoiceMessage {
                     sender_address: format!("{:#x}", sender_address),
@@ -540,25 +388,31 @@ fn is_now_speaking(
                     active: true,
                 })
                 .report();
-        } else {
-            error!(
-                "Non-h160 participant {} ({}) tried to send voice data.",
-                participant.sid(),
-                participant.identity()
-            );
+        }
+    } else if let Some(publishing) = maybe_publishing {
+        for published in publishing.collection() {
+            if tracks.contains(*published) {
+                commands.entity(*published).insert(VideoCast);
+            }
         }
     }
 }
 
+#[expect(clippy::type_complexity)]
 fn is_no_longer_speaking(
     trigger: Trigger<OnReplace, ActiveSpeaker>,
-    participants: Query<(&LivekitParticipant, Option<&HostedBy>), With<ActiveSpeaker>>,
+    mut commands: Commands,
+    participants: Query<
+        (&LivekitParticipant, Option<&HostedBy>, Option<&Publishing>),
+        With<ActiveSpeaker>,
+    >,
+    tracks: Query<(), (With<Video>, With<CameraTrack>, With<VideoCast>)>,
     scene_rooms: Query<&SceneRoom>,
     senders: Res<VoiceMessageStreams>,
 ) {
     let entity = trigger.target();
 
-    let Ok((participant, maybe_hosted_by)) = participants.get(entity) else {
+    let Ok((participant, maybe_hosted_by, maybe_publishing)) = participants.get(entity) else {
         unreachable!("Infallible Query");
     };
     debug!(
@@ -575,12 +429,12 @@ fn is_no_longer_speaking(
         );
     };
 
-    let channel = match scene_rooms.get(room.get()).ok() {
-        Some(room) => room.0.clone(),
-        None => "Nearby".to_string(),
-    };
-    for sender in senders.iter() {
-        if let Some(sender_address) = participant.identity().as_str().as_h160() {
+    if let Some(sender_address) = participant.identity().as_str().as_h160() {
+        let channel = match scene_rooms.get(room.get()).ok() {
+            Some(room) => room.0.clone(),
+            None => "Nearby".to_string(),
+        };
+        for sender in senders.iter() {
             sender
                 .send(VoiceMessage {
                     sender_address: format!("{:#x}", sender_address),
@@ -588,12 +442,12 @@ fn is_no_longer_speaking(
                     active: false,
                 })
                 .report();
-        } else {
-            error!(
-                "Non-h160 participant {} ({}) tried to send voice data.",
-                participant.sid(),
-                participant.identity()
-            );
+        }
+    } else if let Some(publishing) = maybe_publishing {
+        for published in publishing.collection() {
+            if tracks.contains(*published) {
+                commands.entity(*published).try_remove::<VideoCast>();
+            }
         }
     }
 }
