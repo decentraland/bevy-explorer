@@ -525,6 +525,7 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
         ShouldBePlaying<T>,
         VideoTextureOutput,
         Stream,
+        ActiveReceiver,
     )>();
 }
 
