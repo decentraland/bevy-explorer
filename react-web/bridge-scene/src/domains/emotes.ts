@@ -7,7 +7,7 @@ import { getPlayer } from '@dcl/sdk/players'
 import { triggerEmote } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
-import { marketplaceShopUrl } from './wearables'
+import { resolveShopUrls } from './wearables'
 import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
 
@@ -147,6 +147,9 @@ export async function resolveEquippedEmotes(entries: Array<{ slot: number; urn: 
   const valid = entries.filter((e) => e.urn !== '')
   const customItemUrns = [...new Set(valid.filter((e) => !isBase(fullEmoteUrn(e.urn))).map((e) => itemUrn(fullEmoteUrn(e.urn))))]
   const resolved = customItemUrns.length > 0 ? await resolveByUrn(baseUrl, customItemUrns) : new Map<string, EmoteDef>()
+  const shopUrls = await resolveShopUrls(
+    customItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress }))
+  )
   return valid.map((e): Emote => {
     const full = fullEmoteUrn(e.urn)
     if (isBase(full)) {
@@ -160,7 +163,7 @@ export async function resolveEquippedEmotes(entries: Array<{ slot: number; urn: 
       name: def?.name ?? '',
       rarity: def?.rarity ?? 'base',
       thumbnail: `${baseUrl}/lambdas/collections/contents/${item}/thumbnail`,
-      shopUrl: marketplaceShopUrl(item, def?.collectionAddress)
+      shopUrl: shopUrls.get(item)
     }
   })
 }

@@ -56,19 +56,69 @@ function itemUrnOf(urn: string): string {
 
 type WearableDef = { id: string; name?: string; rarity?: string; thumbnail?: string; collectionAddress?: string; data?: { category?: string } }
 
-// Marketplace deep link for an item urn, given its resolved on-chain collection address (absent
-// on a resolve failure or an off-chain item). Only collections-v2 (matic) urns carry a numeric
-// item id themselves; legacy collections-v1 (ethereum) items are slug-identified (e.g.
-// "mf_animehair") and the real numeric id isn't recoverable from the catalyst — TheGraph has it,
-// but that's an extra round-trip unity-explorer's own passport skips for the same reason (see its
-// EquippedItems_PassportModuleController.GetMarketplaceLink). So: build the link only when the
-// last urn segment already parses as the numeric item id; otherwise no link, rather than a dead
-// "/shop/item/<slug>/<slug>" URL.
-export function marketplaceShopUrl(itemUrn: string, collectionAddress?: string): string | undefined {
-  if (collectionAddress == null || !collectionAddress.startsWith('0x')) return undefined
-  const last = itemUrn.split(':').pop()
-  if (last == null || !/^\d+$/.test(last)) return undefined
-  return `https://decentraland.org/shop/item/${collectionAddress}/${last}`
+// --- marketplace shop deep links ------------------------------------------------
+// The shop link is /shop/item/<contract>/<numeric item id>. A collections-v2 (matic) urn already
+// ends in that item id, so it's built for free. Legacy collections-v1 (ethereum) items are
+// slug-identified instead (…:mf_sammichgamer:mf_animehair) and the catalyst never carries their
+// numeric id, so those are looked up in the marketplace items API — the same API bevy-ui-scene
+// uses for item data (see its promise-utils fetchWearable). Its `id` is `<contract>-<last urn
+// segment>` for BOTH versions, and repeated `id=` params batch, so one request resolves every
+// legacy item at once.
+const SHOP_ITEM_BASE = 'https://decentraland.org/shop/item'
+const MARKETPLACE_ITEMS = 'https://marketplace-api.decentraland.org/v1/items'
+
+// Resolved links are cached for the session: an item's contract + item id are immutable on-chain.
+const shopUrlByItemUrn = new Map<string, string>()
+
+// The contract: from the resolved definition, or straight out of a collections-v2 urn (which
+// embeds it) when the definition is missing.
+function contractOf(itemUrn: string, collectionAddress?: string): string | undefined {
+  if (collectionAddress != null && collectionAddress.startsWith('0x')) return collectionAddress
+  const parts = itemUrn.split(':')
+  return parts[4] != null && parts[4].startsWith('0x') ? parts[4] : undefined
+}
+
+type MarketplaceItem = { urn?: string; itemId?: string; contractAddress?: string }
+
+/** Shop links for the given items, keyed by item urn. Items with no on-chain listing (base /
+ *  off-chain wearables and emotes, or a lookup failure) are simply absent from the map — callers
+ *  render no SHOP action for those rather than a dead link. */
+export async function resolveShopUrls(items: Array<{ urn: string; collectionAddress?: string }>): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const pendingIds: string[] = []
+  for (const { urn, collectionAddress } of items) {
+    const cached = shopUrlByItemUrn.get(urn)
+    if (cached != null) {
+      out.set(urn, cached)
+      continue
+    }
+    const contract = contractOf(urn, collectionAddress)
+    const last = urn.split(':').pop()
+    if (contract == null || last == null || last === '') continue
+    if (/^\d+$/.test(last)) {
+      const url = `${SHOP_ITEM_BASE}/${contract}/${last}`
+      shopUrlByItemUrn.set(urn, url)
+      out.set(urn, url)
+      continue
+    }
+    pendingIds.push(`${contract}-${last}`)
+  }
+  const CHUNK = 25 // bounds URL length, like the catalyst resolves above
+  for (let i = 0; i < pendingIds.length; i += CHUNK) {
+    const qs = pendingIds.slice(i, i + CHUNK).map((id) => `id=${id}`).join('&')
+    const data = await getJson<{ data?: MarketplaceItem[] }>(`${MARKETPLACE_ITEMS}?${qs}`).catch((e: unknown) => {
+      // Non-fatal: those items just show no SHOP button (and aren't cached, so a later open retries).
+      console.error('[wearables] marketplace item-id lookup failed', e)
+      return undefined
+    })
+    for (const it of data?.data ?? []) {
+      if (it.urn == null || it.contractAddress == null || it.itemId == null) continue
+      const url = `${SHOP_ITEM_BASE}/${it.contractAddress}/${it.itemId}`
+      shopUrlByItemUrn.set(it.urn, url)
+      out.set(it.urn, url)
+    }
+  }
+  return out
 }
 
 // A wearable's DEFINITION (name/category/thumbnail/model/rarity) is stable enough within a session to
@@ -166,6 +216,9 @@ export async function resolveEquippedSet(urns: string[]): Promise<Wearable[]> {
   }
   const equippedItemUrns = [...new Set(urns.map(itemUrnOf))]
   const resolved = equippedItemUrns.length > 0 ? await resolveByUrn(baseUrl, equippedItemUrns) : new Map<string, WearableDef>()
+  const shopUrls = await resolveShopUrls(
+    equippedItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress }))
+  )
   return equippedItemUrns.map((itemUrn): Wearable => {
     const def = resolved.get(itemUrn)
     return {
@@ -179,7 +232,7 @@ export async function resolveEquippedSet(urns: string[]): Promise<Wearable[]> {
       category: def?.data?.category ?? 'unknown',
       thumbnail: `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`,
       equipped: true,
-      shopUrl: marketplaceShopUrl(itemUrn, def?.collectionAddress)
+      shopUrl: shopUrls.get(itemUrn)
     }
   })
 }
