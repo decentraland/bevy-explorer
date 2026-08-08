@@ -13,6 +13,7 @@ use bevy::{
             AsBindGroup, Extent3d, ShaderRef, TextureDimension, TextureFormat, TextureUsages,
         },
         renderer::RenderDevice,
+        view::RenderLayers,
     },
     transform::TransformSystem,
     ui::UiSystem,
@@ -130,6 +131,8 @@ pub fn spawn_world_ui_view(
         .spawn((
             WorldUiRenderTarget(image.clone()),
             Camera2d,
+            // this camera only renders ui; keep world entities out of its visibility pass
+            RenderLayers::none(),
             Camera {
                 target: RenderTarget::Image(image.clone().into()),
                 order: -1,
