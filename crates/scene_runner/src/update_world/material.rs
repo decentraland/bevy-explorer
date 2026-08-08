@@ -284,6 +284,11 @@ impl Plugin for MaterialDefinitionPlugin {
     }
 }
 
+// marks entities whose material is derived and shared by the avatar system.
+// shared assets must not be mutated per-entity, so update_bias leaves them alone
+#[derive(Component)]
+pub struct AvatarMaterialOwned;
+
 #[derive(Component)]
 pub struct RetryMaterial(pub Vec<Handle<Image>>);
 
@@ -771,18 +776,45 @@ fn update_bias(
     mut materials: ResMut<Assets<SceneMaterial>>,
     query: Query<
         (&Aabb, &MeshMaterial3d<SceneMaterial>),
-        Or<(Changed<MeshMaterial3d<SceneMaterial>>, Changed<Aabb>)>,
+        (
+            Or<(Changed<MeshMaterial3d<SceneMaterial>>, Changed<Aabb>)>,
+            Without<AvatarMaterialOwned>,
+        ),
     >,
 ) {
     for (aabb, h_material) in query.iter() {
+        let Some(material) = materials.get(h_material) else {
+            continue;
+        };
+        if material.base.alpha_mode != AlphaMode::Blend {
+            continue;
+        }
+        // add a bias based on the aabb size, to force an explicit transparent order which is
+        // hopefully correct, but should be better than nothing even if not always perfect.
+        // quantize so similar-sized meshes agree on the bias, and only get_mut when the value
+        // really changes - mutating an asset invalidates it for every entity that shares it
+        let bias = quantize_bias(aabb.half_extents.length() * 1e-5);
+        if material.base.depth_bias == bias {
+            continue;
+        }
         if let Some(material) = materials.get_mut(h_material) {
-            if material.base.alpha_mode == AlphaMode::Blend {
-                // add a bias based on the aabb size, to force an explicit transparent order which is
-                // hopefully correct, but should be better than nothing even if not always perfect
-                material.base.depth_bias = aabb.half_extents.length() * 1e-5;
-            }
+            material.base.depth_bias = bias;
         }
     }
+}
+
+// round to 3 significant figures
+fn quantize_bias(bias: f32) -> f32 {
+    if bias == 0.0 || !bias.is_finite() {
+        return bias;
+    }
+    let scale = 10f32.powi(2 - bias.abs().log10().floor() as i32);
+    let scaled = bias * scale;
+    if !scaled.is_finite() {
+        // scale overflowed for a (sub)normal-tiny bias; better unquantized than NaN
+        return bias;
+    }
+    scaled.round() / scale
 }
 
 pub fn dcl_material_from_standard_material(
