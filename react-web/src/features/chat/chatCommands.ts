@@ -14,8 +14,8 @@ export type ChatCommand =
   | { kind: 'send'; text: string }
   /** `/goto x,y` — teleport to a parcel of the realm the player is already in. */
   | { kind: 'goto'; x: number; y: number }
-  /** `/goto genesis|main [x,y]` — go to Genesis Plaza. Defaults to its base parcel (-3,-2); an
-   *  explicit x,y overrides it (testing other Genesis parcels — see backlog 44). */
+  /** `/goto genesis|main [x,y]` — go to Genesis Plaza. Defaults to its base parcel (0,0); an
+   *  explicit x,y overrides it (testing other Genesis parcels — see backlog 45). */
   | { kind: 'genesis'; x?: number; y?: number }
   /** `/goto <world> [x,y]` or `/world <world> [x,y]` — jump to a world's realm (normalized to
    *  `.dcl.eth`). With x,y, teleports there once the realm is live; without, the world's own

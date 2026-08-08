@@ -774,14 +774,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           // that means landing on whatever Genesis parcel matches the world coordinates you
           // happened to be at, often an empty one.
           //
-          // Default is the plaza's BASE parcel (-3,-2), deliberately not 0,0. The landing spot is
-          // identical — the engine spawns at the scene's spawn points whichever of its parcels you
-          // target — but 0,0 is also where a World's own scene sits, and that scene survives a
-          // world→Genesis change (the engine only purges scenes for realms with scenes_urn). A
-          // teleport to 0,0 then finds that stale "ready" scene at the parcel and drops the player
-          // in before Genesis Plaza has even spawned: no loading screen, empty land. Backlog 44 has
-          // the full trace. `/goto genesis x,y` overrides the default, for testing other parcels.
-          driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x: cmd.x ?? -3, y: cmd.y ?? -2 })
+          // Default is the plaza's base parcel (0,0). `handle_out_of_world` used to accept a
+          // ScenePointers entry from whichever realm produced it, so 0,0 — also where a World's own
+          // scene usually sits — could resolve against that stale World-realm pointer and drop the
+          // player in before Genesis Plaza had even spawned (no loading screen, empty land). Fixed
+          // engine-side by #1042 (handle_out_of_world now only accepts a pointer tagged with the
+          // realm the player is actually in). `/goto genesis x,y` overrides the default, for testing
+          // other parcels.
+          driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x: cmd.x ?? 0, y: cmd.y ?? 0 })
           break
         case 'world':
           // With x,y (`/goto <world> x,y`), the bridge holds the teleport until the realm change

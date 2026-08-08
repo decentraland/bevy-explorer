@@ -47,7 +47,7 @@ describe('parseChatCommand', () => {
   })
 
   // A trailing x,y after a destination targets a specific parcel there instead of its default
-  // spawn — added for testing the realm-arrival-wait/stale-pointer behavior (backlog 44).
+  // spawn — added for testing the realm-arrival-wait/stale-pointer behavior (backlog 45).
   it('/goto <world> x,y and /goto genesis x,y carry the override parcel', () => {
     expect(parseChatCommand('/goto pablo 3,1')).toEqual({ kind: 'world', realm: 'pablo.dcl.eth', x: 3, y: 1 })
     expect(parseChatCommand('/goto main -3,-2')).toEqual({ kind: 'genesis', x: -3, y: -2 })
