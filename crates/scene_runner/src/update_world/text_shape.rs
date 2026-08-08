@@ -640,7 +640,6 @@ fn apply_text_extras(
         Ref<TextLayout>,
         &ComputedTextBlock,
         &ComputedNode,
-        Option<&UiTargetCamera>,
         &ComputedNodeTarget,
     )>,
     changed_spans: Query<
@@ -715,17 +714,8 @@ fn apply_text_extras(
         .map(|c| c.parent())
         .collect::<HashSet<_>>();
 
-    for (
-        entity,
-        children,
-        parent,
-        gt,
-        layout,
-        computed_text,
-        computed_node,
-        maybe_camera,
-        node_target,
-    ) in text.iter()
+    for (entity, children, parent, gt, layout, computed_text, computed_node, node_target) in
+        text.iter()
     {
         let mut requires_update = layout.is_changed();
         requires_update |= changed.contains(&entity);
@@ -784,8 +774,8 @@ fn apply_text_extras(
                 TextExtraMarker,
             ));
 
-            if let Some(target_camera) = maybe_camera.as_ref() {
-                cmds.try_insert(UiTargetCamera(target_camera.0));
+            if let Some(camera) = node_target.camera() {
+                cmds.try_insert(UiTargetCamera(camera));
             }
 
             cmds.id()
