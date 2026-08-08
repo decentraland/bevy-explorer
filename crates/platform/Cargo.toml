@@ -11,6 +11,7 @@ edition = "2021"
 
 bevy = { workspace = true }
 anyhow = { workspace = true }
+bytes = "1"
 tungstenite = { workspace = true }
 futures-util = { workspace = true }
 futures-timer = { workspace = true }

@@ -1,6 +1,9 @@
 #[cfg(feature = "ipfs_debug")]
 mod ipfs_debug;
 pub mod ipfs_path;
+mod scene_pack;
+
+pub use scene_pack::ScenePack;
 
 use std::{
     borrow::Cow,
@@ -458,6 +461,9 @@ pub struct IpfsIoPlugin {
     pub starting_realm: Option<String>,
     pub content_server_override: Option<String>,
     pub num_slots: usize,
+    // base url for opt-in single-fetch scene content packs; None (the default
+    // config value) disables the feature entirely
+    pub scene_packs_url: Option<String>,
 }
 
 impl Plugin for IpfsIoPlugin {
@@ -498,6 +504,7 @@ impl Plugin for IpfsIoPlugin {
             cache_root,
             HashMap::default(),
             self.num_slots,
+            self.scene_packs_url.clone(),
             #[cfg(feature = "ipfs_debug")]
             debug_overlay_sender,
         );
@@ -730,6 +737,7 @@ pub struct IpfsIo {
     #[cfg(not(target_arch = "wasm32"))]
     allowed_file_roots: std::sync::RwLock<Vec<PathBuf>>,
     client: reqwest::Client,
+    scene_packs: scene_pack::ScenePackRegistry,
     #[cfg(feature = "ipfs_debug")]
     debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
 }
@@ -741,6 +749,7 @@ impl IpfsIo {
         default_fs_path: Option<PathBuf>,
         static_paths: HashMap<&'static str, &'static str>,
         num_slots: usize,
+        scene_packs_url: Option<String>,
         #[cfg(feature = "ipfs_debug")] debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<
             IpfsDebug,
         >,
@@ -760,6 +769,7 @@ impl IpfsIo {
             request_slots: tokio::sync::Semaphore::new(num_slots),
             reqno: default(),
             static_files: static_paths,
+            scene_packs: scene_pack::ScenePackRegistry::new(scene_packs_url),
             #[cfg(not(target_arch = "wasm32"))]
             allowed_file_roots: Default::default(),
             client: reqwest::Client::builder()
@@ -1554,6 +1564,16 @@ impl AssetReader for IpfsIo {
             }
 
             let hash = ipfs_path.hash(&*self.context.read().await);
+
+            // serve scene content from a resident scene pack when one is loaded;
+            // any miss or pack failure falls through to the regular fetch path
+            if let (Some(scene_hash), Some(cid)) = (ipfs_path.scene_context_hash(), hash.as_deref())
+            {
+                if let Some(slice) = self.scene_pack_read(scene_hash, cid).await {
+                    ipfs_io_read_state.send_cached(slice.as_ref().len());
+                    return Ok(Box::new(AsyncCursor::new(slice)));
+                }
+            }
 
             if let Some(cache_path) = self.cache_path() {
                 if let Some(hash) = &hash {
