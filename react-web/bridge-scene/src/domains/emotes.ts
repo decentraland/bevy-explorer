@@ -7,6 +7,7 @@ import { getPlayer } from '@dcl/sdk/players'
 import { triggerEmote } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
+import { resolveShopUrls } from './wearables'
 import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
 
@@ -40,7 +41,7 @@ const isBase = (urn: string): boolean => BASE_EMOTES.includes(itemUrn(urn))
 // runtime doesn't seed the defaults into getPlayer().emotes (bevy-ui-scene hits the same empty array),
 // so the HUD fills them here, mirroring Unity's SelfProfile empty-wheel fill: it's all-or-nothing, so
 // once any slot is equipped the remaining empties stay empty.
-function equippedSlots(emotes: readonly unknown[] | undefined): string[] {
+export function equippedSlots(emotes: readonly unknown[] | undefined): string[] {
   const slots = Array.from({ length: SLOT_COUNT }, (_, i) => String((emotes ?? [])[i] ?? ''))
   return slots.every((u) => u === '') ? [...BASE_EMOTES] : slots
 }
@@ -104,6 +105,67 @@ function equipUrn(urn: string): string {
   if (urn === '') return ''
   if (isBase(urn)) return urn
   return tokenUrnByItem.get(itemUrn(urn)) ?? urn
+}
+
+type EmoteDef = { id: string; name?: string; rarity?: string; thumbnail?: string; collectionAddress?: string }
+
+// A custom emote's definition (name/rarity/thumbnail) is stable enough within a session to cache,
+// keyed by item urn. Mirrors wearables.ts's defByItemUrn.
+const defByItemUrn = new Map<string, EmoteDef>()
+
+// Resolve custom (non-base) emote definitions by item urn, batched to bound URL length. Cached hits
+// skip the network. Mirrors wearables.ts's resolveByUrn.
+async function resolveByUrn(baseUrl: string, itemUrns: string[]): Promise<Map<string, EmoteDef>> {
+  const out = new Map<string, EmoteDef>()
+  const missing: string[] = []
+  for (const u of itemUrns) {
+    const cached = defByItemUrn.get(u)
+    if (cached != null) out.set(u, cached)
+    else missing.push(u)
+  }
+  const CHUNK = 50
+  for (let i = 0; i < missing.length; i += CHUNK) {
+    const qs = missing.slice(i, i + CHUNK).map((u) => `emoteId=${u}`).join('&')
+    const data = await getJson<{ emotes?: EmoteDef[] }>(`${baseUrl}/lambdas/collections/emotes?${qs}`).catch((e: unknown) => {
+      console.error('[emotes] resolve-by-urn chunk failed', e)
+      return undefined
+    })
+    for (const e of data?.emotes ?? []) {
+      defByItemUrn.set(e.id, e)
+      out.set(e.id, e)
+    }
+  }
+  return out
+}
+
+// Resolve a profile's equipped-emotes list (deployed avatar.emotes: {slot, urn}[], from the catalyst
+// profile lambda) into displayable Emote[] — DECOUPLED from getPlayer(), so it works for any address
+// (self or another user's passport), not just nearby/local players. Base emotes resolve locally
+// (no network); custom ones resolve via the catalyst collections lambda, like resolveEquippedSet.
+export async function resolveEquippedEmotes(entries: Array<{ slot: number; urn: string }>): Promise<Emote[]> {
+  const baseUrl = await catalystBase()
+  const valid = entries.filter((e) => e.urn !== '')
+  const customItemUrns = [...new Set(valid.filter((e) => !isBase(fullEmoteUrn(e.urn))).map((e) => itemUrn(fullEmoteUrn(e.urn))))]
+  const resolved = customItemUrns.length > 0 ? await resolveByUrn(baseUrl, customItemUrns) : new Map<string, EmoteDef>()
+  const shopUrls = await resolveShopUrls(
+    customItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress }))
+  )
+  return valid.map((e): Emote => {
+    const full = fullEmoteUrn(e.urn)
+    if (isBase(full)) {
+      return { slot: e.slot, urn: full, name: baseEmoteName(full), rarity: 'base', thumbnail: `${baseUrl}/lambdas/collections/contents/${full}/thumbnail` }
+    }
+    const item = itemUrn(full)
+    const def = resolved.get(item)
+    return {
+      slot: e.slot,
+      urn: item,
+      name: def?.name ?? '',
+      rarity: def?.rarity ?? 'base',
+      thumbnail: `${baseUrl}/lambdas/collections/contents/${item}/thumbnail`,
+      shopUrl: shopUrls.get(item)
+    }
+  })
 }
 
 export function registerEmotes(ctx: Ctx): void {

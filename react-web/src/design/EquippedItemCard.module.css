@@ -1,0 +1,180 @@
+/* EquippedItemCard — unity-passport-style tile, layered like bevy-ui-scene's atlas sprites:
+   a dark card whose SQUARE top area carries the rarity gradient (`rarity-background-*`) and a
+   rarity-colored diagonal corner flap (`rarity-corner-*`) holding the category glyph; name +
+   rarity tag sit below on the dark body. The dark background lives on ::before so the hover
+   state can stretch it below the card to enclose the revealed SHOP button (Unity's expanded
+   hover card) without reflowing the grid — the extension just overlaps the row beneath. The
+   hover frame itself is ::after: a masked gradient ring whose colors drift, plus a glow. */
+.card {
+  --shop-ext: 42px; /* how far the hover card extends down to wrap the SHOP button */
+  position: relative;
+  isolation: isolate; /* keeps the z-index:-1 background inside this card's stacking context */
+  min-width: 0; /* as a grid item, don't let the nowrap name inflate the column */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  border-radius: var(--r-card);
+  transition: transform var(--dur-fast) ease;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--r-card);
+  background: var(--scrim);
+  transition:
+    bottom var(--dur-fast) ease,
+    box-shadow var(--dur-fast) ease;
+}
+/* Animated gradient border ring (Unity's hover frame): padding + content-box mask composite
+   leaves only the border band visible; the gradient drifts via background-position. */
+.card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: var(--r-card);
+  padding: 2.5px;
+  background: linear-gradient(120deg, var(--brand), var(--purple), var(--lavender), var(--brand)) 0 0 / 300% 300%;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) ease,
+    bottom var(--dur-fast) ease;
+}
+
+/* Square rarity-gradient thumbnail area (bevy-ui-scene's rarity-background-* sprite) — the
+   colour covers ONLY this square, not the whole card. */
+.thumbWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--r-card) var(--r-card) 0 0;
+  background: radial-gradient(
+    128% 110% at 50% -12%,
+    color-mix(in srgb, var(--rm) 35%, white) 0%,
+    var(--rm) 60%,
+    color-mix(in srgb, var(--rm) 86%, #000) 100%
+  );
+}
+.thumb {
+  width: 95%;
+  height: 95%;
+  object-fit: contain;
+}
+.placeholder {
+  width: 52%;
+  height: 52%;
+  border-radius: var(--r-control);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* Rarity-colored diagonal corner flap (bevy-ui-scene's rarity-corner-* sprite) + category
+   glyph. The 135° gradient paints the top-left triangle and leaves the rest transparent. */
+.corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 46px;
+  height: 46px;
+  padding: 5px 0 0 6px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rm) 45%, white) 0%,
+    var(--rm) 49.8%,
+    transparent 50%
+  );
+  color: var(--ink-95);
+}
+
+/* Caption on the dark body, left-aligned like Unity's tile — name always one line (ellipsized,
+   min-height keeps tiles uniform when a name is missing), rarity tag in bevy-ui-scene's style:
+   20% tint pill + colored text. */
+.name {
+  width: 100%;
+  margin-top: 6px;
+  padding: 0 8px;
+  min-height: 1.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text);
+}
+.rarityTag {
+  margin: 3px 0 9px 8px;
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--rm) 20%, transparent);
+  color: var(--rm);
+  font-size: var(--fs-2xs);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hasShop:hover {
+  z-index: 2;
+  transform: scale(1.04);
+}
+.hasShop:hover::before {
+  bottom: calc(-1 * var(--shop-ext));
+  box-shadow: 0 0 18px var(--brand-active);
+}
+.hasShop:hover::after {
+  opacity: 1;
+  bottom: calc(-1 * var(--shop-ext));
+  animation: ringShift 2.5s linear infinite;
+}
+@keyframes ringShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* SHOP — revealed inside the extended card on hover. */
+.shopBtn {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 10px;
+  right: 10px;
+  text-decoration: none;
+  opacity: 0;
+  /* visibility, not just opacity: an invisible link is still in the tab order, so keyboard users
+     would land on something they can't see or activate. Its change is delayed to the end of the
+     transition so the fade-out still plays. */
+  visibility: hidden;
+  transform: translateY(-4px);
+  pointer-events: none;
+  /* Leaving hover: no delay, so the button clears before the card retracts from under it. */
+  transition:
+    opacity var(--dur-fast) ease,
+    transform var(--dur-fast) ease,
+    visibility 0s linear var(--dur-fast);
+}
+.hasShop:hover .shopBtn {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+  /* Entering hover: wait for ::before to finish extending the card downwards, so the button
+     appears inside the grown card instead of over the gap it is still opening. */
+  transition-delay: var(--dur-fast);
+}

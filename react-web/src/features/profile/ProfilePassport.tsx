@@ -8,9 +8,10 @@
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
 import { useState } from 'react'
-import { Avatar } from '../../design'
-import { nameColor, shortAddr, splitName } from '../../lib/identity'
-import type { Badge, Profile, ProfileInfo } from '../../engine/protocol'
+import { Avatar, EquippedItemCard, Icon, Tooltip } from '../../design'
+import { CategoryIcon } from '../backpack/categoryIcons'
+import { catalystThumbUrl, nameColor, shortAddr, splitName } from '../../lib/identity'
+import type { Badge, Emote, Profile, ProfileInfo, Wearable } from '../../engine/protocol'
 import type { Relationship } from '../chat/ProfileCardPresentation'
 import styles from './ProfilePassport.module.css'
 
@@ -56,8 +57,34 @@ function Verified(): React.JSX.Element {
 
 function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
   return (
-    <div className={styles.badge} title={badge.name}>
-      {badge.image ? <img src={badge.image} alt={badge.name} /> : <span className={styles.badgePlaceholder} />}
+    <Tooltip label={badge.tier != null ? `${badge.name} · ${badge.tier}` : badge.name} side="top">
+      <div className={styles.badge}>
+        {badge.image ? <img src={badge.image} alt={badge.name} /> : <span className={styles.badgePlaceholder} />}
+      </div>
+    </Tooltip>
+  )
+}
+
+// Read-only equipped-item row (wearable or emote), 6 per row like unity-explorer's passport. No
+// equip affordance (this is someone else's passport, or a view-only summary of your own) — instead
+// the SHOP button deep-links to the item's shop page. The link is resolved by the bridge (it needs
+// the item's on-chain contract + item id); items with no listing — base wearables and emotes —
+// simply show no button.
+function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Element {
+  return (
+    <div className={styles.equippedRow}>
+      {items.map((it) => (
+        <EquippedItemCard
+          // Emotes are keyed by slot too: the same emote can sit in more than one wheel slot (the
+          // equipped set is deduped, the wheel isn't), and a duplicate key drops the second tile.
+          key={'slot' in it ? `${it.urn}:${it.slot}` : it.urn}
+          thumbnail={it.thumbnail ?? catalystThumbUrl(it.urn)}
+          name={it.name}
+          rarity={it.rarity}
+          shopUrl={it.shopUrl}
+          categoryIcon={'category' in it ? <CategoryIcon category={it.category} size={15} /> : <Icon name="emotes" size={15} />}
+        />
+      ))}
     </div>
   )
 }
@@ -89,7 +116,14 @@ export function ProfilePassport({
   const fields = FIELD_LABELS.filter(({ key }) => profile.info?.[key])
   const hasBadges = (profile.badges?.length ?? 0) > 0
   const hasAbout = !!profile.description || fields.length > 0 || (profile.links?.length ?? 0) > 0
-  const hasOverview = hasBadges || hasAbout
+  // The body shape isn't a collectible you can shop for — Unity skips it before filling the grid
+  // (EquippedItems_PassportModuleController.SetGridElements). It skips hidden categories too, but
+  // that needs each item's hides/replaces metadata, which the equipped set doesn't carry.
+  const wearables = (profile.equippedWearables ?? []).filter((w) => w.category !== 'body_shape')
+  const hasWearables = wearables.length > 0
+  const hasEmotes = (profile.equippedEmotes?.length ?? 0) > 0
+  const hasEquipped = hasWearables || hasEmotes
+  const hasOverview = hasBadges || hasAbout || hasEquipped
 
   return (
     // The dimmed scrim + click-outside-to-close are owned by the popup layer (openPassport →
@@ -166,14 +200,6 @@ export function ProfilePassport({
             )}
             {tab === 'overview' && hasOverview && (
               <>
-                {profile.badges && profile.badges.length > 0 && (
-                  <section className={styles.card}>
-                    <h2 className={styles.cardTitle}>Badges</h2>
-                    <div className={styles.badgeRow}>
-                      {profile.badges.map((b) => <BadgeTile key={b.id} badge={b} />)}
-                    </div>
-                  </section>
-                )}
                 {hasAbout && (
                 <section className={styles.card}>
                   {profile.description && (
@@ -205,6 +231,30 @@ export function ProfilePassport({
                     </>
                   )}
                 </section>
+                )}
+                {hasEquipped && (
+                  <section className={styles.card}>
+                    {hasWearables && (
+                      <>
+                        <h2 className={styles.cardTitle}>Equipped Wearables</h2>
+                        <EquippedRow items={wearables} />
+                      </>
+                    )}
+                    {hasEmotes && (
+                      <>
+                        <h2 className={styles.cardTitle}>Equipped Emotes</h2>
+                        <EquippedRow items={profile.equippedEmotes ?? []} />
+                      </>
+                    )}
+                  </section>
+                )}
+                {profile.badges && profile.badges.length > 0 && (
+                  <section className={styles.card}>
+                    <h2 className={styles.cardTitle}>Badges</h2>
+                    <div className={styles.badgeRow}>
+                      {profile.badges.map((b) => <BadgeTile key={b.id} badge={b} />)}
+                    </div>
+                  </section>
                 )}
               </>
             )}

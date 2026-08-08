@@ -83,6 +83,7 @@
   /* ---- typography (Inter scale) ---- */
   --font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', monospace;
+  --fs-2xs: 0.6rem; /* micro labels — rarity tags and the like */
   --fs-xs: 0.72rem;
   --fs-sm: 0.82rem;
   --fs-md: 0.92rem;
