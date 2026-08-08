@@ -429,6 +429,7 @@ fn decentraland_app_arguments(
         scene_imposter_bake: None,
         scene_imposter_distances: None,
         scene_imposter_multisample: None,
+        imposter_source: None,
         vsync: None,
         fps_target: None,
         gpu_bytes_per_frame: Some(gpu_bytes_per_frame),
