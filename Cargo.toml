@@ -193,7 +193,20 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 kira = "0.9.6"
 zip = { version = "2", default-features = false }
-image = "0.25"
+# every image format observed in active catalyst content, plus png encode for
+# screenshots. drops the default avif *encoder* (rav1e, an AV1 encoder no client
+# path can invoke — avif decode is a non-default feature) and the unused
+# dds/exr/ff/hdr/pnm/qoi/tga decoders from the shipped code.
+image = { version = "0.25", default-features = false, features = [
+  "bmp",
+  "gif",
+  "ico",
+  "jpeg",
+  "png",
+  "rayon",
+  "tiff",
+  "webp",
+] }
 opener = { version = "0.8", git = "https://github.com/robtfm/opener" }
 chrono = { version = "0.4.31", features = ["serde"] }
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "0.16" }
