@@ -12,12 +12,15 @@ const GENESIS_ALIASES = new Set(['genesis', 'main'])
 export type ChatCommand =
   /** Not a command (no leading `/`) — send as a normal chat message. */
   | { kind: 'send'; text: string }
-  /** `/goto x,y` — teleport to a parcel. */
+  /** `/goto x,y` — teleport to a parcel of the realm the player is already in. */
   | { kind: 'goto'; x: number; y: number }
-  /** `/goto genesis|main` — change to the default (Genesis) realm. */
-  | { kind: 'genesis' }
-  /** `/goto <world>` or `/world <world>` — jump to a world's realm (normalized to `.dcl.eth`). */
-  | { kind: 'world'; realm: string }
+  /** `/goto genesis|main [x,y]` — go to Genesis Plaza. Defaults to its base parcel (0,0); an
+   *  explicit x,y overrides it (testing other Genesis parcels — see backlog 45). */
+  | { kind: 'genesis'; x?: number; y?: number }
+  /** `/goto <world> [x,y]` or `/world <world> [x,y]` — jump to a world's realm (normalized to
+   *  `.dcl.eth`). With x,y, teleports there once the realm is live; without, the world's own
+   *  default spawn applies. */
+  | { kind: 'world'; realm: string; x?: number; y?: number }
   /** `/reload` — reload the current scene. */
   | { kind: 'reload' }
   /** `/commands` — list the engine console commands. */
@@ -30,9 +33,8 @@ export const HELP_TEXT = [
   'Available commands:',
   '/help — show this help',
   '/goto x,y — teleport to parcel x,y',
-  '/goto <world> — jump to a world (e.g. world_name or world_name.dcl.eth)',
-  '/goto genesis — go to Genesis Plaza',
-  '/world <world> — jump to a world (alias of /goto <world>)',
+  '/goto <world> [x,y] — jump to a world, optionally at parcel x,y (e.g. world_name or world_name.dcl.eth)',
+  '/goto genesis [x,y] — go to Genesis Plaza, optionally at parcel x,y',
   '/reload — reload the current scene',
   '/commands — list the engine console commands',
 ].join('\n')
@@ -44,16 +46,41 @@ function toRealm(token: string): string {
 
 const COORDS_RE = /^(-?\d+)\s*,\s*(-?\d+)$/
 
-// `/goto` and `/world` share the realm/coords parsing; only `/goto` accepts coordinates.
+// `/goto` and `/world` share the realm/coords parsing; only `/goto` accepts bare coordinates
+// (`/goto x,y`, no destination — teleport within the current realm). Both accept an optional
+// trailing `x,y` after a destination (`/goto <world|genesis> x,y`) to target a specific parcel
+// there instead of the destination's default.
 function parseGoto(rest: string, allowCoords: boolean): ChatCommand {
-  const arg = rest.trim()
-  if (!arg) return { kind: 'system', message: 'Usage: /goto x,y  ·  /goto <world>  ·  /goto genesis' }
-  if (GENESIS_ALIASES.has(arg.toLowerCase())) return { kind: 'genesis' }
-  const m = allowCoords ? arg.match(COORDS_RE) : null
-  if (m) return { kind: 'goto', x: Number(m[1]), y: Number(m[2]) }
-  // A single token → world name; anything with a space/comma that isn't coords is invalid.
-  if (/\s|,/.test(arg)) return { kind: 'system', message: `Invalid destination: ${arg}` }
-  return { kind: 'world', realm: toRealm(arg) }
+  const trimmed = rest.trim()
+  if (!trimmed) {
+    return { kind: 'system', message: 'Usage: /goto x,y  ·  /goto <world> [x,y]  ·  /goto genesis [x,y]' }
+  }
+
+  // Bare coords (tolerates "x, y" with a space after the comma), checked against the whole
+  // remainder before any tokenizing — a trailing destination coords pair below is checked the
+  // same way, just against the substring after the destination token.
+  if (allowCoords) {
+    const m = trimmed.match(COORDS_RE)
+    if (m) return { kind: 'goto', x: Number(m[1]), y: Number(m[2]) }
+  }
+
+  // <destination> [x,y] — split on the FIRST run of whitespace only, so the trailing coords
+  // argument can itself contain "x, y" with a space after the comma.
+  const firstSpace = trimmed.search(/\s/)
+  const first = firstSpace === -1 ? trimmed : trimmed.slice(0, firstSpace)
+  const remainder = firstSpace === -1 ? '' : trimmed.slice(firstSpace).trim()
+
+  let coords: { x: number; y: number } | undefined
+  if (remainder) {
+    const m = remainder.match(COORDS_RE)
+    if (!m) return { kind: 'system', message: `Invalid destination: ${trimmed}` }
+    coords = { x: Number(m[1]), y: Number(m[2]) }
+  }
+
+  if (GENESIS_ALIASES.has(first.toLowerCase())) return { kind: 'genesis', ...coords }
+  // A coords-shaped or otherwise invalid first token isn't a destination name.
+  if (/\s|,/.test(first)) return { kind: 'system', message: `Invalid destination: ${trimmed}` }
+  return { kind: 'world', realm: toRealm(first), ...coords }
 }
 
 /** Parse a raw chat input into an action. Non-`/` lines pass through as `send`. */

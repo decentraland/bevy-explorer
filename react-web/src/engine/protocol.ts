@@ -431,11 +431,23 @@ export type MinimapStyle = 'parcel' | 'satellite' | 'imposters'
 /** 'camera' rotates the map with the camera; 'north' keeps north up. */
 export type MinimapRotation = 'camera' | 'north'
 
-/** Teleport to a parcel (page → scene → teleportTo). */
+/** Teleport to a parcel (page → scene → teleportTo).
+ *
+ *  Parcel coordinates only address one realm's grid, so a destination that belongs to a *known*
+ *  realm carries it: the scene switches realm first (only when it isn't already there, and waiting
+ *  for the new one to be live), then teleports. That is a place picked out of a listing — Places, a
+ *  map pin — and it's the same pair the native explorer's discover page fires together
+ *  (crates/system_ui/src/discover.rs).
+ *
+ *  Omit `realm` for coordinates that are already relative to wherever the player is: a chat
+ *  location link, a photo's capture spot. Nothing changes realm then. */
 export interface TeleportRequest {
   kind: 'teleport'
   x: number
   y: number
+  /** Realm the parcel belongs to: a world name (`boedo.dcl.eth`) or a realm URL. Omitted = the
+   *  realm the player is already in. */
+  realm?: string
 }
 
 /** Change to a world/realm (page → scene → changeRealm). `realm` is a world name

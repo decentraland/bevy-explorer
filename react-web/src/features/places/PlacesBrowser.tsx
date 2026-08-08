@@ -1,8 +1,8 @@
-// The Places browser, matched to the "What's On" design: three stacked sections —
+// The Places browser, matched to the "What's On" design: a toolbar (Explore all / Favourites /
+// My places + search + Any Category + Sort by) up top, then two stacked sections —
 //   1. LIVE NOW    — the 4 most-populated places (a single full-width row)
 //   2. FEATURED    — places tagged as points of interest
-//   3. ALL          — a toolbar (Explore all / Favourites / My places + search + Any Category +
-//                     Sort by) over a purple grid panel of every place.
+//   3. ALL          — a purple grid panel of every place.
 // Live Now + Featured are curated highlights shown only on the default Explore-all view (no search,
 // no category filter); searching/filtering collapses to the All grid. Shared by the in-world
 // PlacesPage and the post-jump-in PlacesPicker; the host supplies an `onPick(place)` action.
@@ -103,22 +103,6 @@ export function PlacesBrowser({
 
   return (
     <>
-      {showHighlights && liveNow.length > 0 && (
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>
-            <span className={styles.liveDot} /> Live Now
-          </h2>
-          {renderGrid(liveNow)}
-        </section>
-      )}
-
-      {showHighlights && featured.length > 0 && (
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Featured Places</h2>
-          <FeaturedCarousel places={featured} onPick={onPick} />
-        </section>
-      )}
-
       <div className={styles.toolbar}>
         <div className={styles.tabs} role="tablist" aria-label="Places sections">
           {SECTIONS.map((s) => (
@@ -152,6 +136,22 @@ export function PlacesBrowser({
           {headExtra}
         </div>
       </div>
+
+      {showHighlights && liveNow.length > 0 && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>
+            <span className={styles.liveDot} /> Live Now
+          </h2>
+          {renderGrid(liveNow)}
+        </section>
+      )}
+
+      {showHighlights && featured.length > 0 && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Featured Places</h2>
+          <FeaturedCarousel places={featured} onPick={onPick} />
+        </section>
+      )}
 
       <div className={styles.panel}>
         {loading ? (

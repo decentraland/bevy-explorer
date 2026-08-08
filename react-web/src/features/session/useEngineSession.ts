@@ -98,9 +98,13 @@ export interface MapState {
   y: number
   open: boolean
   toggle: () => void
+  /** Move to a parcel of the realm the player is already in. For a place picked out of a
+   *  listing use `teleportToPlace` — those coordinates are Genesis City's, not the current realm's. */
   teleport: (x: number, y: number) => void
   /** Travel to a world/realm by name (e.g. `boedo.dcl.eth`). */
   changeRealm: (realm: string) => void
+  /** Teleport to a Genesis City place: returns to Genesis first when the player is in a World. */
+  teleportToPlace: (x: number, y: number) => void
 }
 
 /** Live player pose for the minimap: position in world metres, yaws in degrees. */
@@ -764,10 +768,30 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
           break
         case 'genesis':
-          driverRef.current?.send({ kind: 'changeRealm', realm: DEFAULT_REALM })
+          // Genesis Plaza, not merely the Genesis realm. A bare realm change names no destination,
+          // and the engine then keeps the parcel you were standing on, clamped into the new realm's
+          // bounds (scene_runner initialize_scene.rs, RealmInitialLocation::Base) — from a World
+          // that means landing on whatever Genesis parcel matches the world coordinates you
+          // happened to be at, often an empty one.
+          //
+          // Default is the plaza's base parcel (0,0). `handle_out_of_world` used to accept a
+          // ScenePointers entry from whichever realm produced it, so 0,0 — also where a World's own
+          // scene usually sits — could resolve against that stale World-realm pointer and drop the
+          // player in before Genesis Plaza had even spawned (no loading screen, empty land). Fixed
+          // engine-side by #1042 (handle_out_of_world now only accepts a pointer tagged with the
+          // realm the player is actually in). `/goto genesis x,y` overrides the default, for testing
+          // other parcels.
+          driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x: cmd.x ?? 0, y: cmd.y ?? 0 })
           break
         case 'world':
-          driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
+          // With x,y (`/goto <world> x,y`), the bridge holds the teleport until the realm change
+          // lands — see the `teleport` handler in bridge-scene/src/domains/world.ts. Without, the
+          // realm's own default spawn applies (RealmInitialLocation::Base), unchanged from before.
+          if (cmd.x != null && cmd.y != null) {
+            driverRef.current?.send({ kind: 'teleport', realm: cmd.realm, x: cmd.x, y: cmd.y })
+          } else {
+            driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
+          }
           break
         case 'reload':
           driverRef.current?.send({ kind: 'reloadScene' })
@@ -896,8 +920,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setGalleryPhotos((list) => list.filter((p) => p.id !== id))
     setGalleryStorage((s) => ({ ...s, current: Math.max(0, s.current - 1) }))
   }, [])
+  // Same request, and the same engine op behind it: the two differ only in whether the parcel
+  // carries the realm it belongs to. Without one the scene teleports inside the current realm.
   const teleport = useCallback((x: number, y: number) => {
     driverRef.current?.send({ kind: 'teleport', x, y })
+  }, [])
+  // With one, the scene travels there first. These coordinates are Genesis City's, so from inside a
+  // World a bare teleport would land on the world's own x,y. The realm switch is skipped when we're
+  // already in Genesis.
+  const teleportToPlace = useCallback((x: number, y: number) => {
+    driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
   }, [])
   const changeRealm = useCallback((realm: string) => {
     driverRef.current?.send({ kind: 'changeRealm', realm })
@@ -1436,7 +1468,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       saveOutfit, deleteOutfit, equipOutfit
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
-    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
+    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace },
     minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },
     gallery: {

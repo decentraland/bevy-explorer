@@ -41,9 +41,33 @@ describe('parseChatCommand', () => {
     expect(parseChatCommand('/goto foo.eth')).toEqual({ kind: 'world', realm: 'foo.eth' })
   })
 
-  it('/world behaves like /goto <world> but takes no coordinates', () => {
+  it('/world behaves like /goto <world> but takes no bare coordinates', () => {
     expect(parseChatCommand('/world boedo')).toEqual({ kind: 'world', realm: 'boedo.dcl.eth' })
     expect(parseChatCommand('/world genesis')).toEqual({ kind: 'genesis' })
+  })
+
+  // A trailing x,y after a destination targets a specific parcel there instead of its default
+  // spawn — added for testing the realm-arrival-wait/stale-pointer behavior (backlog 45).
+  it('/goto <world> x,y and /goto genesis x,y carry the override parcel', () => {
+    expect(parseChatCommand('/goto pablo 3,1')).toEqual({ kind: 'world', realm: 'pablo.dcl.eth', x: 3, y: 1 })
+    expect(parseChatCommand('/goto main -3,-2')).toEqual({ kind: 'genesis', x: -3, y: -2 })
+    expect(parseChatCommand('/goto genesis 0,0')).toEqual({ kind: 'genesis', x: 0, y: 0 })
+    // /world shares the same trailing-coords parsing as /goto.
+    expect(parseChatCommand('/world pablo 3,1')).toEqual({ kind: 'world', realm: 'pablo.dcl.eth', x: 3, y: 1 })
+  })
+
+  it('bare /goto <world> and /goto genesis (no coords) carry no x,y', () => {
+    const world = parseChatCommand('/goto pablo')
+    expect(world).toEqual({ kind: 'world', realm: 'pablo.dcl.eth' })
+    expect(world).not.toHaveProperty('x')
+    const genesis = parseChatCommand('/goto main')
+    expect(genesis).toEqual({ kind: 'genesis' })
+    expect(genesis).not.toHaveProperty('x')
+  })
+
+  it('an invalid trailing arg after a destination is a system message, never a broadcast', () => {
+    expect(parseChatCommand('/goto pablo notcoords').kind).toBe('system')
+    expect(parseChatCommand('/goto main 3').kind).toBe('system')
   })
 
   it('missing/invalid args → a system usage message, never a broadcast', () => {
