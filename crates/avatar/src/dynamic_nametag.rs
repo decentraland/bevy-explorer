@@ -1,7 +1,15 @@
 use std::collections::VecDeque;
 
-use bevy::{math::FloatOrd, prelude::*, render::primitives::Aabb};
+use bevy::{
+    math::FloatOrd,
+    pbr::{NotShadowCaster, NotShadowReceiver},
+    prelude::*,
+    render::primitives::Aabb,
+};
 use common::{sets::PostUpdateSets, structs::AttachPoints};
+use dcl_component::proto_components::sdk::components::AvatarAnchorPointType;
+
+use crate::attach::AvatarAttachment;
 
 pub struct DynamicNametagPlugin;
 
@@ -9,12 +17,16 @@ impl Plugin for DynamicNametagPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PostUpdate,
-            dynamic_nametag_position
+            (
+                dynamic_nametag_position,
+                insert_not_shadow_caster_to_new_nametags,
+            )
                 .chain()
                 .in_set(PostUpdateSets::Nametag),
         );
 
         app.add_observer(add_nametag_height_history);
+        app.add_observer(mark_nametags);
     }
 }
 
@@ -150,5 +162,44 @@ fn nametag_offset(
         y + model_radius + 0.125
     } else {
         y + 40. * transform.scale.y
+    }
+}
+
+/// Added to entities that have [`AvatarAttachment`] with
+/// [`anchor_point_id`](dcl_component::proto_components::sdk::components::PbAvatarAttach::anchor_point_id)
+/// equal to [`AvatarAnchorPointType::AaptNameTag`]
+#[derive(Component)]
+struct Nametag;
+
+fn mark_nametags(
+    trigger: Trigger<OnAdd, AvatarAttachment>,
+    mut commands: Commands,
+    avatar_attachments: Query<&AvatarAttachment>,
+) {
+    let entity = trigger.target();
+    let Ok(avatar_attachment) = avatar_attachments.get(entity) else {
+        unreachable!("Infallible query.");
+    };
+    if avatar_attachment.0.anchor_point_id() == AvatarAnchorPointType::AaptNameTag {
+        commands.entity(entity).insert(Nametag);
+    }
+}
+
+#[expect(clippy::type_complexity)]
+fn insert_not_shadow_caster_to_new_nametags(
+    mut commands: Commands,
+    new_nametags: Populated<
+        Entity,
+        (
+            With<Nametag>,
+            Or<(Without<NotShadowCaster>, Without<NotShadowReceiver>)>,
+        ),
+    >,
+) {
+    for new_nametag in new_nametags.into_inner() {
+        commands
+            .entity(new_nametag)
+            .try_insert((NotShadowCaster, NotShadowReceiver))
+            .log_components();
     }
 }
