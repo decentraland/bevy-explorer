@@ -106,7 +106,7 @@ fn initiate_room_connection(
     let address = format!(
         "{}://{}{}",
         url.scheme_str().unwrap_or_default(),
-        url.host().unwrap_or_default(),
+        url.authority().map(|a| a.as_str()).unwrap_or_default(),
         url.path()
     );
     let params: HashMap<_, _, bevy::platform::hash::FixedHasher> =
