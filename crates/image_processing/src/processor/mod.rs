@@ -35,7 +35,7 @@ pub(crate) async fn process_events(
             ProcessingAssetType::Gltf => match process_gltf(&raw_bytes) {
                 Ok(gltf) => gltf,
                 Err(e) => {
-                    error!("failed to process image {:?}: {:?}", req.base_path, e);
+                    error!("failed to process gltf {:?}: {:?}", req.base_path, e);
                     let _ = resp_sx.send(Err(()));
                     continue;
                 }
@@ -43,7 +43,7 @@ pub(crate) async fn process_events(
             ProcessingAssetType::Image => match process_image(&raw_bytes) {
                 Ok(dds) => dds,
                 Err(e) => {
-                    error!("failed to process gltf {:?}: {:?}", req.base_path, e);
+                    error!("failed to process image {:?}: {:?}", req.base_path, e);
                     let _ = resp_sx.send(Err(()));
                     continue;
                 }

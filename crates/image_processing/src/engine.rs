@@ -83,6 +83,7 @@ struct ImgReprocessStats {
     alive: bool,
     total: usize,
     skip_imposter: usize,
+    skip_label: usize,
     skip_unloaded: usize,
     skip_tiny: usize,
     skip_unknown: usize,
@@ -152,13 +153,21 @@ fn check_assets(
                 continue;
             }
 
-            let (ty, asset_path) = if asset_path.to_string().contains("#Texture") {
-                (
+            let (ty, asset_path) = match asset_path.label() {
+                None => (ProcessingAssetType::Image, asset_path.clone_owned()),
+                Some(label) if label.starts_with("Texture") => (
                     ProcessingAssetType::Gltf,
                     asset_path.without_label().clone_owned(),
-                )
-            } else {
-                (ProcessingAssetType::Image, asset_path.clone_owned())
+                ),
+                // labeled image subassets that aren't gltf textures (e.g.
+                // `Mesh{}/Primitive{}/MorphTargets`) are raw data, not compressible
+                // pictures. processing one would fail against the source file's bytes,
+                // and its entry in `paths_processed` would block texture compression
+                // for the whole source file
+                Some(_) => {
+                    stats.skip_label += 1;
+                    continue;
+                }
             };
             let Ok(Some(ipfs_path)) = IpfsPath::new_from_path(asset_path.path()) else {
                 // skip ... ?
