@@ -36,13 +36,33 @@ impl Plugin for LivestreamManagerPlugin {
             Update,
             (
                 transmission_mode_test,
-                manage_streams
-                    .run_if(in_state(TransmissionKind::Stream).and(in_state(Transmitter::Off))),
-                manage_casts.run_if(in_state(TransmissionKind::Cast)),
+                manage_streams.run_if(in_state(TransmissionState::NeedStream)),
+                manage_casts.run_if(in_state(TransmissionState::Cast)),
             )
                 .chain(),
         );
-        app.add_systems(OnEnter(TransmissionKind::Off), drop_transmissions);
+        app.add_systems(OnEnter(Receiver::Off), drop_transmissions);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum TransmissionState {
+    Off,
+    NeedStream,
+    Stream,
+    Cast,
+}
+
+impl ComputedStates for TransmissionState {
+    type SourceStates = (TransmissionKind, Transmitter, Receiver);
+
+    fn compute(sources: Self::SourceStates) -> Option<Self> {
+        match sources {
+            (TransmissionKind::Off, _, _) | (_, _, Receiver::Off) => Some(TransmissionState::Off),
+            (TransmissionKind::Stream, Transmitter::Off, _) => Some(TransmissionState::NeedStream),
+            (TransmissionKind::Stream, Transmitter::On, _) => Some(TransmissionState::Stream),
+            (TransmissionKind::Cast, _, _) => Some(TransmissionState::Cast),
+        }
     }
 }
 
