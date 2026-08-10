@@ -40,8 +40,8 @@ impl Plugin for VideoPlayerPlugin {
 
         app.add_observer(new_player_source::<AudioStream>);
         app.add_observer(new_player_source::<VideoPlayer>);
-        app.add_observer(player_source_removed::<AudioStream>);
-        app.add_observer(player_source_removed::<VideoPlayer>);
+        app.add_observer(player_source_replaced::<AudioStream>);
+        app.add_observer(player_source_replaced::<VideoPlayer>);
         app.add_observer(player_config_added::<AudioStream>);
         app.add_observer(player_config_added::<VideoPlayer>);
         app.add_observer(player_position_added::<AudioStream>);
@@ -69,6 +69,7 @@ fn new_player_source<T: AVPlayer>(
         &ContainerEntity,
         Option<&VideoTextureOutput>,
         Option<&AVSinks<T>>,
+        Has<Stream>,
     )>,
     scenes: Query<&RendererSceneContext>,
     mut images: ResMut<Assets<Image>>,
@@ -76,7 +77,7 @@ fn new_player_source<T: AVPlayer>(
 ) {
     let entity = trigger.target();
 
-    let Ok((source, container_entity, maybe_video_texture_output, maybe_sinks)) =
+    let Ok((source, container_entity, maybe_video_texture_output, maybe_sinks, has_stream)) =
         av_players.get(entity)
     else {
         unreachable!("Infallible query");
@@ -91,6 +92,17 @@ fn new_player_source<T: AVPlayer>(
         }
         if let Some(video_sink) = &sinks.video {
             video_sink.command_sender.send(AVCommand::Dispose).report();
+        }
+    }
+
+    let livestream = &**source == LIVEKIT_VIDEO_STREAM;
+    if livestream != has_stream {
+        if livestream {
+            debug!("AVPlayer {} now a stream.", entity);
+            commands.entity(entity).insert(Stream);
+        } else {
+            debug!("AVPlayer {} no longer a stream.", entity);
+            commands.entity(entity).remove::<Stream>();
         }
     }
 
@@ -141,8 +153,8 @@ fn new_player_source<T: AVPlayer>(
     ));
 }
 
-fn player_source_removed<T: AVPlayer>(
-    trigger: Trigger<OnRemove, T::Source>,
+fn player_source_replaced<T: AVPlayer>(
+    trigger: Trigger<OnReplace, T::Source>,
     mut commands: Commands,
     av_players: Query<Option<&AVSinks<T>>, With<T::Source>>,
 ) {

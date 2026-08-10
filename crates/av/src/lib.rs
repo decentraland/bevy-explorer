@@ -473,36 +473,22 @@ fn av_player_on_insert<T: AVPlayer>(
         Option<&T::Source>,
         Option<&T::Config>,
         Option<&T::Position>,
-        Has<Stream>,
     )>,
 ) {
     let entity = trigger.target();
     debug!("AVPlayer {} updated.", entity);
-    let Ok((av_player, maybe_source, mut maybe_config, mut maybe_position, has_stream)) =
+    let Ok((av_player, maybe_source, mut maybe_config, mut maybe_position)) =
         av_players.get_mut(entity)
     else {
         return;
     };
 
     let source_url = av_player.url();
-    let livestream = source_url == LIVEKIT_VIDEO_STREAM;
     let mut entity_cmd = commands.entity(entity);
 
     if maybe_source.is_none_or(|src| &(**src) != source_url) {
         debug!("AVPlayer {}'s sources diverged", entity);
         let new_source = av_player.source();
-
-        if livestream != has_stream {
-            if livestream {
-                debug!("AVPlayer {} now a stream.", entity);
-                entity_cmd.insert(Stream);
-            } else {
-                debug!("AVPlayer {} no longer a stream.", entity);
-                entity_cmd.remove::<Stream>();
-            }
-        }
-
-        // Order on insertion matters
         entity_cmd.insert(new_source);
 
         let _ = maybe_config.take();
