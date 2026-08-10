@@ -96,7 +96,7 @@ pub async fn op_comms_recv_binary(
 
     if !state.has::<BinaryBusReceiver>() {
         let (sx, rx) =
-            RpcStreamSender::<(String, Vec<u8>)>::bounded_channel(MAX_NETWORK_MESSAGE_QUEUE);
+            RpcStreamSender::<(String, Vec<u8>)>::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
             .push(RpcCall::SubscribeBinaryBus { hash, sender: sx });

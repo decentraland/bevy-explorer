@@ -1,32 +1,39 @@
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc, Mutex,
-};
+use std::sync::{Arc, Mutex};
+
+use bevy::log::warn;
 
 use crate::rpc::*;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use tokio_util::sync::CancellationToken;
 
-// In-flight counter for a bounded stream: the sender drops when full, the receiver decrements as it drains.
-#[derive(Debug)]
-struct QueueGaugeInner {
-    len: AtomicUsize,
-    cap: usize,
-}
+// All stream channels are bounded: once `cap` items are in flight, further sends are dropped.
+// The default is sized so it is never approached by well-behaved producers; channels fed by
+// untrusted peer traffic should pass a tighter explicit capacity.
+const DEFAULT_CHANNEL_CAP: usize = 4096;
 
-type QueueGauge = Arc<QueueGaugeInner>;
+// Dropping on a full channel is expected never to happen in normal operation, so leave a
+// diagnostic trace of what was lost.
+fn warn_dropped<T: Serialize>(val: &T) {
+    let mut preview = serde_json::to_string(val).unwrap_or_else(|_| "<unserializable>".to_owned());
+    if preview.len() > 100 {
+        let mut end = 100;
+        while !preview.is_char_boundary(end) {
+            end -= 1;
+        }
+        preview.truncate(end);
+        preview.push('…');
+    }
+    warn!("channel full, dropping message starting {preview}");
+}
 
 #[derive(Clone)]
 pub enum LocalChannel<T> {
-    Channel(tokio::sync::mpsc::UnboundedSender<T>),
+    Channel(tokio::sync::mpsc::Sender<T>),
     Serialized(u64),
 }
 
 impl<T> LocalChannel<T> {
-    fn serialize_with<F: FnOnce(tokio::sync::mpsc::UnboundedSender<T>) -> u64>(
-        &mut self,
-        f: F,
-    ) -> u64 {
+    fn serialize_with<F: FnOnce(tokio::sync::mpsc::Sender<T>) -> u64>(&mut self, f: F) -> u64 {
         let id = match std::mem::replace(self, LocalChannel::Serialized(u64::MAX)) {
             LocalChannel::Channel(sender) => (f)(sender),
             LocalChannel::Serialized(id) => id,
@@ -42,7 +49,6 @@ pub enum RpcStreamSender<T> {
     Local {
         channel: Arc<Mutex<LocalChannel<T>>>,
         cancel: CancellationToken,
-        gauge: Option<QueueGauge>,
     },
     Remote {
         id: u64,
@@ -59,30 +65,17 @@ impl<T> std::fmt::Debug for RpcStreamSender<T> {
 }
 
 pub struct RpcStreamReceiver<T> {
-    channel: tokio::sync::mpsc::UnboundedReceiver<T>,
+    channel: tokio::sync::mpsc::Receiver<T>,
     cancel: CancellationToken,
-    gauge: Option<QueueGauge>,
 }
 
 impl<T> RpcStreamReceiver<T> {
     pub fn try_recv(&mut self) -> Result<T, tokio::sync::mpsc::error::TryRecvError> {
-        let result = self.channel.try_recv();
-        if result.is_ok() {
-            if let Some(gauge) = &self.gauge {
-                gauge.len.fetch_sub(1, Ordering::Relaxed);
-            }
-        }
-        result
+        self.channel.try_recv()
     }
 
     pub async fn recv(&mut self) -> Option<T> {
-        let result = self.channel.recv().await;
-        if result.is_some() {
-            if let Some(gauge) = &self.gauge {
-                gauge.len.fetch_sub(1, Ordering::Relaxed);
-            }
-        }
-        result
+        self.channel.recv().await
     }
 }
 
@@ -96,67 +89,41 @@ impl<T> Drop for RpcStreamReceiver<T> {
 
 impl<T: Serialize> RpcStreamSender<T> {
     pub fn channel() -> (Self, RpcStreamReceiver<T>) {
-        let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let cancel = CancellationToken::new();
-
-        (
-            Self::Local {
-                channel: Arc::new(Mutex::new(LocalChannel::Channel(sx))),
-                cancel: cancel.clone(),
-                gauge: None,
-            },
-            RpcStreamReceiver {
-                channel: rx,
-                cancel,
-                gauge: None,
-            },
-        )
+        Self::channel_with_capacity(DEFAULT_CHANNEL_CAP)
     }
 
-    // Caps in-flight items at `cap`; once full the sender drops further messages (fail closed).
-    pub fn bounded_channel(cap: usize) -> (Self, RpcStreamReceiver<T>) {
-        let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    pub fn channel_with_capacity(cap: usize) -> (Self, RpcStreamReceiver<T>) {
+        let (sx, rx) = tokio::sync::mpsc::channel(cap.max(1));
         let cancel = CancellationToken::new();
-        let gauge: QueueGauge = Arc::new(QueueGaugeInner {
-            len: AtomicUsize::new(0),
-            cap: cap.max(1),
-        });
 
         (
             Self::Local {
                 channel: Arc::new(Mutex::new(LocalChannel::Channel(sx))),
                 cancel: cancel.clone(),
-                gauge: Some(gauge.clone()),
             },
             RpcStreamReceiver {
                 channel: rx,
                 cancel,
-                gauge: Some(gauge),
             },
         )
     }
 
     pub fn send(&self, val: T) -> Result<(), tokio::sync::mpsc::error::SendError<T>> {
         match self {
-            RpcStreamSender::Local { channel, gauge, .. } => {
-                if let Some(gauge) = gauge {
-                    if gauge.len.load(Ordering::Relaxed) >= gauge.cap {
-                        return Ok(());
+            RpcStreamSender::Local { channel, .. } => match &*channel.lock().unwrap() {
+                LocalChannel::Channel(sender) => match sender.try_send(val) {
+                    Ok(()) => Ok(()),
+                    // full: drop the message, that's the bound
+                    Err(tokio::sync::mpsc::error::TrySendError::Full(val)) => {
+                        warn_dropped(&val);
+                        Ok(())
                     }
-                }
-                match &*channel.lock().unwrap() {
-                    LocalChannel::Channel(unbounded_sender) => {
-                        let result = unbounded_sender.send(val);
-                        if result.is_ok() {
-                            if let Some(gauge) = gauge {
-                                gauge.len.fetch_add(1, Ordering::Relaxed);
-                            }
-                        }
-                        result
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(val)) => {
+                        Err(tokio::sync::mpsc::error::SendError(val))
                     }
-                    LocalChannel::Serialized(_) => panic!(),
-                }
-            }
+                },
+                LocalChannel::Serialized(_) => panic!(),
+            },
             RpcStreamSender::Remote {
                 id,
                 router,
@@ -177,7 +144,7 @@ impl<T: Serialize> RpcStreamSender<T> {
     pub fn is_closed(&self) -> bool {
         match self {
             RpcStreamSender::Local { channel, .. } => match &*channel.lock().unwrap() {
-                LocalChannel::Channel(unbounded_sender) => unbounded_sender.is_closed(),
+                LocalChannel::Channel(sender) => sender.is_closed(),
                 LocalChannel::Serialized(_) => panic!(),
             },
             RpcStreamSender::Remote {
@@ -188,23 +155,18 @@ impl<T: Serialize> RpcStreamSender<T> {
     }
 }
 
-struct IpcStreamCallback<T: DeserializeOwned + Send + 'static> {
-    sender: tokio::sync::mpsc::UnboundedSender<T>,
-    gauge: Option<QueueGauge>,
+struct IpcStreamCallback<T: Serialize + DeserializeOwned + Send + 'static> {
+    sender: tokio::sync::mpsc::Sender<T>,
 }
 
-impl<T: DeserializeOwned + Send + 'static> IpcEndpoint for IpcStreamCallback<T> {
+impl<T: Serialize + DeserializeOwned + Send + 'static> IpcEndpoint for IpcStreamCallback<T> {
     fn send(&mut self, raw_bytes: Vec<u8>) {
         if let Ok(val) = rmp_serde::from_slice::<T>(&raw_bytes) {
-            if let Some(gauge) = &self.gauge {
-                if gauge.len.load(Ordering::Relaxed) >= gauge.cap {
-                    return;
-                }
-            }
-            if self.sender.send(val).is_ok() {
-                if let Some(gauge) = &self.gauge {
-                    gauge.len.fetch_add(1, Ordering::Relaxed);
-                }
+            // full: drop the message, that's the bound
+            if let Err(tokio::sync::mpsc::error::TrySendError::Full(val)) =
+                self.sender.try_send(val)
+            {
+                warn_dropped(&val);
             }
         }
     }
@@ -215,18 +177,12 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcStreamSe
     where
         S: serde::Serializer,
     {
-        let RpcStreamSender::Local {
-            channel,
-            cancel,
-            gauge,
-        } = self
-        else {
+        let RpcStreamSender::Local { channel, cancel } = self else {
             panic!();
         };
 
-        let gauge = gauge.clone();
-        let id = channel.lock().unwrap().serialize_with(move |sender| {
-            let endpoint = IpcStreamCallback { sender, gauge };
+        let id = channel.lock().unwrap().serialize_with(|sender| {
+            let endpoint = IpcStreamCallback { sender };
             let (id, close_sender) = ipc_register(endpoint);
 
             let cancel = cancel.clone();

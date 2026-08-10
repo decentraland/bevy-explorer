@@ -97,12 +97,12 @@ pub fn op_subscribe(state: &mut impl State, id: &str) {
         RpcCall::SubscribePlayerClicked { sender }
     });
 
-    // MessageBus carries untrusted peer traffic, so bound it rather than use the unbounded event channel.
+    // MessageBus carries untrusted peer traffic, so use a tighter bound than the default event channel.
     if id == <MessageBus as EventType>::label() {
         if state.has::<EventReceiver<MessageBus>>() {
             return;
         }
-        let (sender, rx) = RpcEventSender::bounded_channel(MAX_NETWORK_MESSAGE_QUEUE);
+        let (sender, rx) = RpcEventSender::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
             .push(RpcCall::SubscribeMessageBus { sender, hash });
