@@ -87,10 +87,13 @@ fn track_published(
 
     let room_entity = hosted_by.get();
 
+    let identity = participant.identity();
+    let identity_str = identity.as_str();
+
     debug!(
         "{} ({}) published {:?} ({:?}) track {}.",
         participant.sid(),
-        participant.identity(),
+        identity,
         track.kind(),
         track.source(),
         track.sid(),
@@ -116,21 +119,18 @@ fn track_published(
         }
         TrackSource::Camera => {
             entity_cmd.try_insert(Camera);
-            if has_active_speaker {
+            if identity_str.starts_with("stream:") {
                 entity_cmd.try_insert(VideoCast);
+            } else if identity_str.ends_with("-streamer") {
+                entity_cmd.try_insert(VideoStream);
             }
-            entity_cmd.try_insert(VideoStream);
         }
         TrackSource::ScreenshareAudio => {
             entity_cmd.try_insert(ScreenshareAudio);
         }
         TrackSource::Screenshare => {
             entity_cmd.try_insert(ScreenshareVideo);
-            if participant
-                .identity()
-                .as_str()
-                .starts_with("presentation-bot:")
-            {
+            if identity_str.starts_with("presentation-bot:") {
                 entity_cmd.try_insert(Presentation);
             } else {
                 entity_cmd.try_insert(Screenshare);
@@ -140,7 +140,7 @@ fn track_published(
     }
     let entity = entity_cmd.id();
 
-    let maybe_address = participant.identity().as_str().as_h160();
+    let maybe_address = identity_str.as_h160();
     if track.kind() == TrackKind::Audio {
         if maybe_address.is_some() {
             #[expect(
@@ -174,7 +174,7 @@ fn track_published(
             debug!(
                 "Subscribing to Audio for non-player participant {} ({})",
                 participant.sid(),
-                participant.identity()
+                identity
             );
             commands.trigger_targets(SubscribeToTrack, entity);
         }

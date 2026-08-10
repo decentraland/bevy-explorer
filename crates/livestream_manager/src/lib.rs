@@ -15,6 +15,10 @@ pub struct Screenshare;
 #[derive(Component)]
 pub struct VideoCast;
 
+/// Marker component for an entity with an active cast camera stream
+#[derive(Component)]
+pub struct ActiveVideoCast;
+
 /// Marker component for an entity with a stream from a source
 /// that is not a cast. Stream entities can only be active
 /// if there is no cast active.

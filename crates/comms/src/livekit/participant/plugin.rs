@@ -10,7 +10,7 @@ use common::{
 use dcl_component::proto_components::kernel::comms::rfc4;
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::prelude::Participant;
-use livestream_manager::VideoCast;
+use livestream_manager::ActiveVideoCast;
 use prost::Message;
 use system_bridge::VoiceMessage;
 
@@ -392,7 +392,7 @@ fn is_now_speaking(
     } else if let Some(publishing) = maybe_publishing {
         for published in publishing.collection() {
             if tracks.contains(*published) {
-                commands.entity(*published).insert(VideoCast);
+                commands.entity(*published).insert(ActiveVideoCast);
             }
         }
     }
@@ -406,7 +406,7 @@ fn is_no_longer_speaking(
         (&LivekitParticipant, Option<&HostedBy>, Option<&Publishing>),
         With<ActiveSpeaker>,
     >,
-    tracks: Query<(), (With<Video>, With<CameraTrack>, With<VideoCast>)>,
+    tracks: Query<(), (With<Video>, With<CameraTrack>, With<ActiveVideoCast>)>,
     scene_rooms: Query<&SceneRoom>,
     senders: Res<VoiceMessageStreams>,
 ) {
@@ -446,7 +446,7 @@ fn is_no_longer_speaking(
     } else if let Some(publishing) = maybe_publishing {
         for published in publishing.collection() {
             if tracks.contains(*published) {
-                commands.entity(*published).try_remove::<VideoCast>();
+                commands.entity(*published).try_remove::<ActiveVideoCast>();
             }
         }
     }
