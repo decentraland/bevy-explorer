@@ -24,15 +24,20 @@ use fetch_response_body_resource::FetchResponseBodyResource;
 
 use dcl::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
 
-// we have to provide fetch perm structs even though we don't use them
+// We have to provide these perm structs for the deno extensions even though the ops we
+// actually expose don't route through them. They DENY rather than panic: the ops that
+// consult them (`deno_net`'s socket ops in particular) are registered on the runtime and
+// callable from JS, and a `panic!()` there unwinds across the V8 boundary -- which is
+// `panic_cannot_unwind`, i.e. an immediate process abort, not a catchable error. Scene
+// input must never be able to reach that, so refusing is the only safe answer.
 pub struct FP;
 impl FetchPermissions for FP {
     fn check_net_url(&mut self, _: &deno_core::url::Url, _: &str) -> Result<(), AnyError> {
-        panic!();
+        anyhow::bail!("network access is not available to scenes through this API")
     }
 
     fn check_read(&mut self, _: &std::path::Path, _: &str) -> Result<(), AnyError> {
-        panic!();
+        anyhow::bail!("file access is not available to scenes")
     }
 }
 
@@ -50,15 +55,15 @@ impl NetPermissions for NP {
         _host: &(T, Option<u16>),
         _api_name: &str,
     ) -> Result<(), AnyError> {
-        panic!();
+        anyhow::bail!("raw socket access is not available to scenes")
     }
 
     fn check_read(&mut self, _p: &std::path::Path, _api_name: &str) -> Result<(), AnyError> {
-        panic!();
+        anyhow::bail!("file access is not available to scenes")
     }
 
     fn check_write(&mut self, _p: &std::path::Path, _api_name: &str) -> Result<(), AnyError> {
-        panic!();
+        anyhow::bail!("file access is not available to scenes")
     }
 }
 
@@ -130,7 +135,10 @@ where
     // authoritative-server mode only: never auto-follow redirects, so a 3xx onto a
     // private host can't bypass the per-request SSRF check or leak signed headers. The
     // desktop/web client keeps the default redirect-following behaviour unchanged.
-    let is_server = state.borrow::<CrdtContext>().is_server;
+    let (is_server, preview) = {
+        let ctx = state.borrow::<CrdtContext>();
+        (ctx.is_server, ctx.preview)
+    };
 
     let client = if let Some(rid) = client_rid {
         let r = state.resource_table.get::<ClientResource>(rid)?;
@@ -139,13 +147,7 @@ where
         match state.try_borrow::<ServerHttpClient>() {
             Some(client) => client.0.clone(),
             None => {
-                let client = reqwest::Client::builder()
-                    .connect_timeout(Duration::from_secs(5))
-                    .use_native_tls()
-                    .user_agent("DCLExplorer/0.1")
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .unwrap();
+                let client = build_server_client(preview);
                 state.put(ServerHttpClient(client.clone()));
                 client
             }
@@ -429,6 +431,47 @@ impl deno_core::Resource for ClientResource {}
 /// from the client-mode `reqwest::Client` so client/web behaviour is unchanged.
 struct ServerHttpClient(reqwest::Client);
 
+/// DNS resolver that only ever hands back public addresses.
+///
+/// `assert_public_url` runs before the request is sent, but the client resolves the host
+/// AGAIN when it connects — nothing ties the two lookups together. A hostile authoritative
+/// nameserver can therefore answer the pre-flight check with a public address and the
+/// connect with 169.254.169.254 (DNS rebinding), and no scene-side trickery is needed to
+/// reach it: plain `fetch()` from the SDK is enough. Enforcing inside the resolver makes
+/// the checked answer and the dialled answer the same answer by construction.
+struct PublicOnlyResolver {
+    allow_loopback: bool,
+}
+
+impl reqwest::dns::Resolve for PublicOnlyResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let allow_loopback = self.allow_loopback;
+        let host = name.as_str().to_owned();
+        Box::pin(async move {
+            // port 0: reqwest fills in the real port after resolution
+            let addrs = common::util::resolve_public_addrs(&host, 0, allow_loopback)
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                    e.to_string().into()
+                })?;
+            Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+/// The http client used for every scene request on the authoritative server: no
+/// auto-redirects, and public-only DNS.
+fn build_server_client(allow_loopback: bool) -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .use_native_tls()
+        .user_agent("DCLExplorer/0.1")
+        .redirect(reqwest::redirect::Policy::none())
+        .dns_resolver(std::sync::Arc::new(PublicOnlyResolver { allow_loopback }))
+        .build()
+        .unwrap()
+}
+
 #[op2]
 #[serde]
 pub fn op_fetch_custom_client(
@@ -436,11 +479,44 @@ pub fn op_fetch_custom_client(
     #[serde] args: CreateHttpClientOptions,
 ) -> Result<ResourceId, AnyError> {
     debug!("op_fetch_custom_client");
-    let mut builder = reqwest::Client::builder().use_native_tls();
-    // server mode: no auto-redirects (SSRF), matching the default server client
-    if state.borrow::<CrdtContext>().is_server {
-        builder = builder.redirect(reqwest::redirect::Policy::none());
+
+    // A custom client is scene-supplied transport configuration, and on the shared
+    // authoritative server none of it may be honoured:
+    //
+    // * `proxy` re-targets the connection at an address the SSRF guard never sees. The
+    //   guard inspects the request URL; the proxy is what actually gets dialled. Pointing
+    //   it at 169.254.169.254 reaches cloud metadata with a perfectly public-looking URL,
+    //   and disabling redirects does nothing about it.
+    // * `ca_certs` makes the scene a trust root for the server's outbound TLS.
+    // * `cert_chain`/`private_key` let a scene present a client identity as the server.
+    //
+    // Refused rather than ignored so a scene that tries gets an error it can see.
+    // Everything else (the plain `createHttpClient()` case) still works.
+    let (is_server, preview) = {
+        let ctx = state.borrow::<CrdtContext>();
+        (ctx.is_server, ctx.preview)
+    };
+    if is_server {
+        if args.proxy.is_some() {
+            anyhow::bail!("custom fetch clients may not set a proxy on the authoritative server");
+        }
+        if !args.ca_certs.is_empty() {
+            anyhow::bail!(
+                "custom fetch clients may not add root certificates on the authoritative server"
+            );
+        }
+        if args.cert_chain.is_some() || args.private_key.is_some() {
+            anyhow::bail!(
+                "custom fetch clients may not set a client identity on the authoritative server"
+            );
+        }
+        // same transport rules as the default server client: no redirects, public-only DNS
+        return Ok(state
+            .resource_table
+            .add(ClientResource(build_server_client(preview))));
     }
+
+    let mut builder = reqwest::Client::builder().use_native_tls();
     if let Some(proxy_def) = args.proxy {
         let mut proxy = reqwest::Proxy::http(proxy_def.url)?;
         if let Some(creds) = proxy_def.basic_auth {

@@ -697,7 +697,6 @@ pub fn is_forbidden_ip(ip: &std::net::IpAddr) -> bool {
 /// wasm/web client relies on the browser's own network sandbox.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn assert_public_url(url_str: &str, allow_loopback: bool) -> Result<(), anyhow::Error> {
-    use std::net::ToSocketAddrs;
     let url = url::Url::parse(url_str)?;
     match url.scheme() {
         "https" | "http" | "wss" | "ws" => {}
@@ -711,6 +710,26 @@ pub async fn assert_public_url(url_str: &str, allow_loopback: bool) -> Result<()
         .ok_or_else(|| anyhow::anyhow!("request URL has no host"))?
         .to_owned();
     let port = url.port_or_known_default().unwrap_or(443);
+    resolve_public_addrs(&host, port, allow_loopback).await?;
+    Ok(())
+}
+
+/// Resolve `host:port` and reject the answer unless EVERY address is public.
+///
+/// Rejecting the whole answer rather than filtering out the bad records is deliberate: a
+/// host that replies with a mix of public and private addresses is doing so on purpose,
+/// and silently dropping the private ones would let the request proceed looking legitimate.
+///
+/// This is the shared primitive behind [`assert_public_url`] (pre-flight, by URL) and the
+/// connect-time resolver used by the authoritative server's http client, so both reach the
+/// same verdict from the same code.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn resolve_public_addrs(
+    host: &str,
+    port: u16,
+    allow_loopback: bool,
+) -> Result<Vec<std::net::SocketAddr>, anyhow::Error> {
+    use std::net::ToSocketAddrs;
     // std resolver on the blocking pool (avoids pulling tokio's `net` feature into the
     // wasm-shared workspace dependency)
     let hostport = format!("{host}:{port}");
@@ -722,12 +741,15 @@ pub async fn assert_public_url(url_str: &str, allow_loopback: bool) -> Result<()
     if addrs.is_empty() {
         anyhow::bail!("host `{host}` did not resolve to any address");
     }
-    for addr in addrs {
+    for addr in &addrs {
+        if allow_loopback && addr.ip().is_loopback() {
+            continue;
+        }
         if is_forbidden_ip(&addr.ip()) {
             anyhow::bail!("request to a non-public address is not allowed");
         }
     }
-    Ok(())
+    Ok(addrs)
 }
 
 /// A colour ramp keyed by a normalized parameter in `[0, 1)` (e.g. time of day).

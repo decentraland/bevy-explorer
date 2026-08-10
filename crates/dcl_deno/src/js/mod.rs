@@ -164,6 +164,18 @@ pub fn create_runtime(
         ..Default::default()
     });
 
+    // Deno extension permission objects. These must be in the op state from the moment the
+    // runtime exists: the ops that consult them look the type up unconditionally, and a
+    // missing type is itself a panic -- which across the V8 boundary aborts the process
+    // rather than raising a JS error. Put here rather than at scene setup so no entry point
+    // can forget them.
+    {
+        let state = runtime.op_state();
+        let mut state = state.borrow_mut();
+        state.put(TP);
+        state.put(NP);
+    }
+
     // On approaching the cap, terminate this isolate's execution so its JS unwinds and the
     // scene ends cleanly; raise the reported limit so V8 has headroom to run the
     // termination itself instead of hard-aborting the whole sidecar process.
@@ -252,9 +264,6 @@ pub(crate) fn scene_thread(
         super_user,
         scene_origin,
     );
-
-    // store deno permission objects
-    state.borrow_mut().put(TP);
 
     let span = info_span!("js startup").entered();
     state.borrow_mut().put(span);
@@ -586,4 +595,162 @@ fn op_log(state: Rc<RefCell<OpState>>, #[string] message: String) {
 #[op2(fast)]
 fn op_error(state: Rc<RefCell<OpState>>, #[string] message: String) {
     dcl::js::op_error(state, message);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use dcl::{interface::crdt_context::CrdtContext, SceneId};
+    use deno_core::ascii_str;
+    use ipfs::SceneJsFile;
+
+    use super::create_runtime;
+
+    fn context(is_server: bool) -> CrdtContext {
+        CrdtContext::new(
+            SceneId(bevy::prelude::Entity::from_raw(0)),
+            "hash".to_owned(),
+            "title".to_owned(),
+            false,
+            false,
+            is_server,
+        )
+    }
+
+    /// Boot a scene runtime and evaluate `scene_js` exactly the way a deployed scene bundle
+    /// is evaluated (`op_require("~scene.js")` -> `evalContext`). A `throw` in the scene
+    /// surfaces as `Err`.
+    fn run_scene(is_server: bool, scene_js: &str) -> Result<(), String> {
+        let (mut runtime, _) = create_runtime(false, false, "test-scene-realm");
+        {
+            let state = runtime.op_state();
+            let mut state = state.borrow_mut();
+            state.put(context(is_server));
+            state.put(SceneJsFile(Arc::new(scene_js.to_owned())));
+        }
+        runtime
+            .execute_script("<test>", ascii_str!("require(\"~scene.js\")"))
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// The scene bundle shares a realm with the runtime, so anything left on the global
+    /// object is scene-reachable -- and `Deno.core.ops` is every op with none of the checks
+    /// the `~system/*` wrappers apply. This is the property, not an implementation detail.
+    #[test]
+    fn scene_cannot_reach_the_ops_table_on_the_server() {
+        run_scene(
+            true,
+            r#"
+            if (typeof Deno !== "undefined") { throw new Error("`Deno` is reachable"); }
+            if (typeof __bootstrap !== "undefined") { throw new Error("`__bootstrap` is reachable"); }
+            if (typeof __infra !== "undefined") { throw new Error("`__infra` is reachable"); }
+            // the global object itself, reached the indirect way
+            const g = Function("return this")();
+            if (g.Deno !== undefined) { throw new Error("`Deno` is reachable via globalThis"); }
+            if (g.__bootstrap !== undefined) { throw new Error("`__bootstrap` is reachable via globalThis"); }
+            "#,
+        )
+        .unwrap();
+    }
+
+    /// ...while the modules the scene is *supposed* to use still get it, via the `Deno`
+    /// parameter `require` injects. Required from scene code, i.e. after the seal.
+    #[test]
+    fn system_modules_still_work_after_sealing() {
+        run_scene(
+            true,
+            r#"
+            const engine = require("~system/EngineApi");
+            if (typeof engine.crdtSendToRenderer !== "function") {
+                throw new Error("EngineApi did not load");
+            }
+            if (typeof require("~system/Runtime").readFile !== "function") {
+                throw new Error("Runtime did not load");
+            }
+            "#,
+        )
+        .unwrap();
+    }
+
+    /// The seal is scoped to the authoritative server on purpose: the desktop client runs on
+    /// the user's own machine, and narrowing the change keeps preview and every deployed
+    /// scene behaving exactly as they do today. Pinned so the scoping is a decision rather
+    /// than something that drifts.
+    #[test]
+    fn client_realm_is_left_alone() {
+        run_scene(
+            false,
+            r#"if (typeof Deno === "undefined") { throw new Error("client behaviour changed"); }"#,
+        )
+        .unwrap();
+    }
+
+    /// `deno_net`'s ops are registered, unwrapped, and reachable from any scene that gets at
+    /// the ops table. They used to `panic!()` in the permission check -- across the V8
+    /// boundary that is `panic_cannot_unwind`, i.e. SIGABRT, and on the client one sidecar
+    /// hosts every scene and losing it exits the engine. It must be an ordinary JS error.
+    #[test]
+    fn raw_socket_ops_raise_instead_of_aborting() {
+        let err = run_scene(
+            false,
+            r#"Deno.core.ops.op_net_listen_tcp({ hostname: "127.0.0.1", port: 9999, transport: "tcp" }, false, false)"#,
+        )
+        .expect_err("raw socket access must be refused");
+        assert!(err.contains("raw socket access"), "unexpected error: {err}");
+    }
+
+    /// A scene-supplied proxy is dialled instead of the URL host, so it walks straight past
+    /// the per-request `assert_public_url` check -- the check only ever sees the URL. On the
+    /// authoritative server the option must be refused outright.
+    #[test]
+    fn server_refuses_a_scene_supplied_proxy() {
+        let (mut runtime, _) = create_runtime(false, false, "test-custom-client");
+        runtime.op_state().borrow_mut().put(context(true));
+        let err = runtime
+            .execute_script(
+                "<test>",
+                ascii_str!(
+                    r#"Deno.core.ops.op_fetch_custom_client({ caCerts: [], proxy: { url: "http://169.254.169.254:80" } })"#
+                ),
+            )
+            .expect_err("proxy must be refused on the authoritative server")
+            .to_string();
+        assert!(err.contains("proxy"), "unexpected error: {err}");
+    }
+
+    /// Same for a scene-supplied trust root: it would make the scene a CA for the server's
+    /// own outbound TLS.
+    #[test]
+    fn server_refuses_scene_supplied_ca_certs() {
+        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-ca");
+        runtime.op_state().borrow_mut().put(context(true));
+        let err = runtime
+            .execute_script(
+                "<test>",
+                ascii_str!(
+                    r#"Deno.core.ops.op_fetch_custom_client({ caCerts: ["-----BEGIN CERTIFICATE-----"] })"#
+                ),
+            )
+            .expect_err("ca_certs must be refused on the authoritative server")
+            .to_string();
+        assert!(err.contains("root certificates"), "unexpected error: {err}");
+    }
+
+    /// The desktop/web client runs on the user's own machine and keeps the old behaviour --
+    /// this restriction is server-only.
+    #[test]
+    fn client_still_allows_custom_clients() {
+        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-clientmode");
+        runtime.op_state().borrow_mut().put(context(false));
+        runtime
+            .execute_script(
+                "<test>",
+                ascii_str!(
+                    r#"Deno.core.ops.op_fetch_custom_client({ caCerts: [], proxy: { url: "http://localhost:8080" } })"#
+                ),
+            )
+            .expect("client mode must keep working");
+    }
 }
