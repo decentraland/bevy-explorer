@@ -5,18 +5,15 @@ use bevy::{
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 
-use crate::{
-    states::*, ActiveReceiver, ActiveTransmitter, Presentation, ReceiverImage, Screenshare,
-    VideoCast, VideoStream,
-};
+use crate::{states::*, *};
 
 pub struct LivestreamManagerPlugin;
 
 impl Plugin for LivestreamManagerPlugin {
     fn build(&self, app: &mut App) {
+        app.init_state::<TransmissionKind>();
         app.init_state::<Transmitter>();
         app.init_state::<Receiver>();
-        app.add_computed_state::<Transmission>();
 
         app.add_systems(Startup, setup_manager);
 
@@ -26,6 +23,8 @@ impl Plugin for LivestreamManagerPlugin {
         app.add_observer(component_on_remove::<Screenshare, Screensharer>);
         app.add_observer(component_on_add::<VideoCast, VideoCaster>);
         app.add_observer(component_on_remove::<VideoCast, VideoCaster>);
+        app.add_observer(component_on_add::<ActiveVideoCast, ActiveVideoCaster>);
+        app.add_observer(component_on_remove::<ActiveVideoCast, ActiveVideoCaster>);
         app.add_observer(component_on_add::<VideoStream, VideoStreamer>);
         app.add_observer(component_on_remove::<VideoStream, VideoStreamer>);
         app.add_observer(transmitter_on);
@@ -35,9 +34,13 @@ impl Plugin for LivestreamManagerPlugin {
 
         app.add_systems(
             Update,
-            manage_streams.run_if(not(in_state(Transmission::Off))),
+            (
+                transmission_mode_test,
+                manage_streams.run_if(in_state(TransmissionKind::Cast)),
+            )
+                .chain(),
         );
-        app.add_systems(OnEnter(Transmission::Off), drop_transmissions);
+        app.add_systems(OnEnter(TransmissionKind::Off), drop_transmissions);
     }
 }
 
@@ -59,6 +62,14 @@ struct ManagingScreenshare(Vec<Entity>);
 #[derive(Component)]
 #[relationship(relationship_target = ManagingScreenshare)]
 struct Screensharer(Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = ActiveVideoCaster)]
+struct ManagingActiveCasts(Vec<Entity>);
+
+#[derive(Component)]
+#[relationship(relationship_target = ManagingActiveCasts)]
+struct ActiveVideoCaster(Entity);
 
 #[derive(Component)]
 #[relationship_target(relationship = VideoCaster)]
@@ -161,6 +172,41 @@ fn receiver_off(
 }
 
 #[expect(clippy::type_complexity)]
+fn transmission_mode_test(
+    livestream_manager: Single<
+        AnyOf<(
+            &ManagingPresentations,
+            &ManagingScreenshare,
+            &ManagingActiveCasts,
+            &ManagingCasts,
+            &ManagingVideoStreams,
+        )>,
+        With<LivestreamManager>,
+    >,
+    transmission_kind: Res<State<TransmissionKind>>,
+    mut next_transmission_kind: ResMut<NextState<TransmissionKind>>,
+) {
+    let has_presentations = livestream_manager.0.is_some();
+    let has_screenshares = livestream_manager.1.is_some();
+    let has_active_casts = livestream_manager.2.is_some();
+    let has_casts = livestream_manager.3.is_some();
+    let has_streams = livestream_manager.4.is_some();
+    let new_transmission_kind =
+        if has_presentations || has_screenshares || has_active_casts || has_casts {
+            TransmissionKind::Cast
+        } else if has_streams {
+            TransmissionKind::Stream
+        } else {
+            TransmissionKind::Off
+        };
+
+    if new_transmission_kind != **transmission_kind {
+        debug!("Changing transmission mode to {:?}", new_transmission_kind);
+        next_transmission_kind.set(new_transmission_kind);
+    }
+}
+
+#[expect(clippy::type_complexity)]
 fn manage_streams(
     mut commands: Commands,
     livestream_manager: Single<(
@@ -168,6 +214,7 @@ fn manage_streams(
         AnyOf<(
             &ManagingPresentations,
             &ManagingScreenshare,
+            &ManagingActiveCasts,
             &ManagingCasts,
             &ManagingVideoStreams,
         )>,
@@ -176,10 +223,11 @@ fn manage_streams(
 ) {
     let (livestream_manager, any_streamer) = livestream_manager.into_inner();
     let collection = match any_streamer {
-        (Some(presentations), _, _, _) => presentations.collection(),
-        (_, Some(screenshares), _, _) => screenshares.collection(),
-        (_, _, Some(casts), _) => casts.collection(),
-        (_, _, _, Some(videos)) => videos.collection(),
+        (Some(presentations), _, _, _, _) => presentations.collection(),
+        (_, Some(screenshares), _, _, _) => screenshares.collection(),
+        (_, _, Some(active_casts), _, _) => active_casts.collection(),
+        (_, _, _, Some(casts), _) => casts.collection(),
+        (_, _, _, _, Some(videos)) => videos.collection(),
         _ => unreachable!("Infallible"),
     };
 
