@@ -35,7 +35,7 @@ impl Plugin for LivestreamManagerPlugin {
         app.add_systems(
             Update,
             (
-                transmission_mode_test,
+                transmission_kind,
                 manage_streams.run_if(in_state(TransmissionState::NeedStream)),
                 manage_casts.run_if(in_state(TransmissionState::Cast)),
             )
@@ -194,7 +194,7 @@ fn receiver_off(
 }
 
 #[expect(clippy::type_complexity)]
-fn transmission_mode_test(
+fn transmission_kind(
     livestream_manager: Single<
         AnyOf<(
             &ManagingPresentations,
@@ -223,7 +223,7 @@ fn transmission_mode_test(
         };
 
     if new_transmission_kind != **transmission_kind {
-        debug!("Changing transmission mode to {:?}", new_transmission_kind);
+        debug!("Changing transmission kind to {:?}", new_transmission_kind);
         next_transmission_kind.set(new_transmission_kind);
     }
 }
