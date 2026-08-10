@@ -36,7 +36,9 @@ impl Plugin for LivestreamManagerPlugin {
             Update,
             (
                 transmission_mode_test,
-                manage_streams.run_if(in_state(TransmissionKind::Cast)),
+                manage_streams
+                    .run_if(in_state(TransmissionKind::Stream).and(in_state(Transmitter::Off))),
+                manage_casts.run_if(in_state(TransmissionKind::Cast)),
             )
                 .chain(),
         );
@@ -207,7 +209,7 @@ fn transmission_mode_test(
 }
 
 #[expect(clippy::type_complexity)]
-fn manage_streams(
+fn manage_casts(
     mut commands: Commands,
     livestream_manager: Single<(
         &LivestreamManager,
@@ -257,4 +259,33 @@ fn drop_transmissions(
     commands
         .entity(*transmission)
         .try_remove::<ActiveTransmitter>();
+}
+
+fn manage_streams(
+    mut commands: Commands,
+    livestream_manager: Single<(&LivestreamManager, &ManagingVideoStreams)>,
+    maybe_active_transmitter: Option<Single<Entity, With<ActiveTransmitter>>>,
+) {
+    let (livestream_manager, managing_video_streams) = livestream_manager.into_inner();
+    let Some(stream) = managing_video_streams.collection().first() else {
+        // It is possible to be in TransmissionKind::Stream an not
+        // have a stream because states changes happen on the start of
+        // the next frame
+        trace!("No available streams");
+        return;
+    };
+
+    if let Some(active_transmitter) = maybe_active_transmitter {
+        debug!(
+            "{} replaced by {} as ActiveTransmitter",
+            *active_transmitter, *stream
+        );
+        commands
+            .entity(*active_transmitter)
+            .try_remove::<ActiveTransmitter>();
+    }
+    debug!("{} now ActiveTransmitter", *stream);
+    commands
+        .entity(*stream)
+        .try_insert(ActiveTransmitter((*livestream_manager).clone()));
 }
