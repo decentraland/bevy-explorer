@@ -45,7 +45,6 @@ use crate::{
     SceneRoom,
 };
 
-const MAX_INBOUND_PACKET_BYTES: usize = 128 * 1024;
 const INBOUND_RATE_WINDOW_SECS: f64 = 1.0;
 const MAX_MESSAGES_PER_WINDOW: usize = 300;
 const MAX_RATE_ENTRIES: usize = 4096;
@@ -260,16 +259,6 @@ fn participant_payload(
         participant,
         payload,
     } = trigger.event();
-
-    if payload.len() > MAX_INBOUND_PACKET_BYTES {
-        warn!(
-            "dropping oversized ({} bytes) payload from participant {} ({}).",
-            payload.len(),
-            participant.sid(),
-            participant.identity()
-        );
-        return;
-    }
 
     if !rate_limiter.allow(participant.identity().as_str(), time.elapsed_secs_f64()) {
         trace!(
