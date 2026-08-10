@@ -476,8 +476,8 @@ fn av_player_on_insert<T: AVPlayer>(
         Has<Stream>,
     )>,
 ) {
-    debug!("AVPlayer updated.");
     let entity = trigger.target();
+    debug!("AVPlayer {} updated.", entity);
     let Ok((av_player, maybe_source, mut maybe_config, mut maybe_position, has_stream)) =
         av_players.get_mut(entity)
     else {
@@ -489,13 +489,15 @@ fn av_player_on_insert<T: AVPlayer>(
     let mut entity_cmd = commands.entity(entity);
 
     if maybe_source.is_none_or(|src| &(**src) != source_url) {
-        debug!("AVPlayer sources diverge");
+        debug!("AVPlayer {}'s sources diverged", entity);
         let new_source = av_player.source();
 
         if livestream != has_stream {
             if livestream {
+                debug!("AVPlayer {} now a stream.", entity);
                 entity_cmd.insert(Stream);
             } else {
+                debug!("AVPlayer {} no longer a stream.", entity);
                 entity_cmd.remove::<Stream>();
             }
         }
@@ -509,13 +511,13 @@ fn av_player_on_insert<T: AVPlayer>(
 
     let new_config = av_player.config();
     if maybe_config.is_none_or(|config| (*config) != new_config) {
-        debug!("AVPlayer config update");
+        debug!("AVPlayer {}'s config updated", entity);
         entity_cmd.insert(new_config);
     }
 
     let new_position = av_player.position();
     if maybe_position.is_none_or(|position| ((**position) - *new_position).abs() >= 0.5) {
-        debug!("AVPlayer position update");
+        debug!("AVPlayer {}'s position updated", entity);
         entity_cmd.insert(new_position);
     }
 }
