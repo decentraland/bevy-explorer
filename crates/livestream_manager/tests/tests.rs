@@ -271,9 +271,30 @@ fn test_add_stream() {
     );
     assert_eq!(
         **app.world().resource::<State<Transmitter>>(),
-        Transmitter::On
+        Transmitter::Off
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+
+    assert!(!app
+        .world()
+        .entity(video_stream)
+        .contains::<ActiveTransmitter>());
+
+    app.world_mut().spawn(ActiveReceiver);
+
+    app.update();
+    app.update();
+    app.update();
+
+    assert_eq!(
+        **app.world().resource::<State<TransmissionKind>>(),
+        TransmissionKind::Stream
+    );
+    assert_eq!(
+        **app.world().resource::<State<Transmitter>>(),
+        Transmitter::On
+    );
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -309,9 +330,30 @@ fn test_add_cast() {
     );
     assert_eq!(
         **app.world().resource::<State<Transmitter>>(),
-        Transmitter::On
+        Transmitter::Off
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+
+    assert!(!app
+        .world()
+        .entity(video_cast)
+        .contains::<ActiveTransmitter>());
+
+    app.world_mut().spawn(ActiveReceiver);
+
+    app.update();
+    app.update();
+    app.update();
+
+    assert_eq!(
+        **app.world().resource::<State<TransmissionKind>>(),
+        TransmissionKind::Cast
+    );
+    assert_eq!(
+        **app.world().resource::<State<Transmitter>>(),
+        Transmitter::On
+    );
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -347,9 +389,30 @@ fn test_add_screenshare() {
     );
     assert_eq!(
         **app.world().resource::<State<Transmitter>>(),
-        Transmitter::On
+        Transmitter::Off
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+
+    assert!(!app
+        .world()
+        .entity(video_cast)
+        .contains::<ActiveTransmitter>());
+
+    app.world_mut().spawn(ActiveReceiver);
+
+    app.update();
+    app.update();
+    app.update();
+
+    assert_eq!(
+        **app.world().resource::<State<TransmissionKind>>(),
+        TransmissionKind::Cast
+    );
+    assert_eq!(
+        **app.world().resource::<State<Transmitter>>(),
+        Transmitter::On
+    );
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -385,9 +448,30 @@ fn test_add_presentation() {
     );
     assert_eq!(
         **app.world().resource::<State<Transmitter>>(),
-        Transmitter::On
+        Transmitter::Off
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+
+    assert!(!app
+        .world()
+        .entity(video_cast)
+        .contains::<ActiveTransmitter>());
+
+    app.world_mut().spawn(ActiveReceiver);
+
+    app.update();
+    app.update();
+    app.update();
+
+    assert_eq!(
+        **app.world().resource::<State<TransmissionKind>>(),
+        TransmissionKind::Cast
+    );
+    assert_eq!(
+        **app.world().resource::<State<Transmitter>>(),
+        Transmitter::On
+    );
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -411,6 +495,7 @@ fn test_add_stream_then_cast() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let video_stream = app.world_mut().spawn(VideoStream).id();
 
     app.update();
@@ -425,7 +510,7 @@ fn test_add_stream_then_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -446,7 +531,7 @@ fn test_add_stream_then_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(!app
         .world()
@@ -474,6 +559,7 @@ fn test_add_cast_then_cast() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let video_cast1 = app.world_mut().spawn(VideoCast).id();
 
     app.update();
@@ -488,7 +574,7 @@ fn test_add_cast_then_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -509,7 +595,7 @@ fn test_add_cast_then_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -537,6 +623,7 @@ fn test_add_cast_then_active_cast() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let video_cast1 = app.world_mut().spawn(VideoCast).id();
 
     app.update();
@@ -551,7 +638,7 @@ fn test_add_cast_then_active_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -572,7 +659,7 @@ fn test_add_cast_then_active_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(!app
         .world()
@@ -600,6 +687,7 @@ fn test_add_active_cast_then_cast() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let video_cast1 = app.world_mut().spawn((VideoCast, ActiveVideoCast)).id();
 
     app.update();
@@ -614,7 +702,7 @@ fn test_add_active_cast_then_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -635,7 +723,7 @@ fn test_add_active_cast_then_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -663,6 +751,7 @@ fn test_add_active_cast_then_active_cast() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let video_cast1 = app.world_mut().spawn((VideoCast, ActiveVideoCast)).id();
 
     app.update();
@@ -677,7 +766,7 @@ fn test_add_active_cast_then_active_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -698,7 +787,7 @@ fn test_add_active_cast_then_active_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -726,6 +815,7 @@ fn test_add_cast_then_screenshare() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let video_cast = app.world_mut().spawn(VideoCast).id();
 
     app.update();
@@ -740,7 +830,7 @@ fn test_add_cast_then_screenshare() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -761,7 +851,7 @@ fn test_add_cast_then_screenshare() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(!app
         .world()
@@ -789,6 +879,7 @@ fn test_add_screenshare_then_cast() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let screenshare = app.world_mut().spawn(Screenshare).id();
 
     app.update();
@@ -803,7 +894,7 @@ fn test_add_screenshare_then_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -824,7 +915,7 @@ fn test_add_screenshare_then_cast() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -852,6 +943,7 @@ fn test_add_screenshare_then_screenshare() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let screenshare1 = app.world_mut().spawn(Screenshare).id();
 
     app.update();
@@ -866,7 +958,7 @@ fn test_add_screenshare_then_screenshare() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -887,7 +979,7 @@ fn test_add_screenshare_then_screenshare() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -915,6 +1007,7 @@ fn test_add_screenshare_then_presentation() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let screenshare = app.world_mut().spawn(Screenshare).id();
 
     app.update();
@@ -929,7 +1022,7 @@ fn test_add_screenshare_then_presentation() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -950,7 +1043,7 @@ fn test_add_screenshare_then_presentation() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(!app
         .world()
@@ -978,6 +1071,7 @@ fn test_add_presentation_then_screenshare() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let presentation = app.world_mut().spawn(Presentation).id();
 
     app.update();
@@ -992,7 +1086,7 @@ fn test_add_presentation_then_screenshare() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -1013,7 +1107,7 @@ fn test_add_presentation_then_screenshare() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -1041,6 +1135,7 @@ fn test_add_presentation_then_presentation() {
     );
     assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
 
+    app.world_mut().spawn(ActiveReceiver);
     let presentation1 = app.world_mut().spawn(Presentation).id();
 
     app.update();
@@ -1055,7 +1150,7 @@ fn test_add_presentation_then_presentation() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
@@ -1076,7 +1171,7 @@ fn test_add_presentation_then_presentation() {
         **app.world().resource::<State<Transmitter>>(),
         Transmitter::On
     );
-    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::Off);
+    assert_eq!(**app.world().resource::<State<Receiver>>(), Receiver::On);
 
     assert!(app
         .world()
