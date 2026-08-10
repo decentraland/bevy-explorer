@@ -1,5 +1,3 @@
-mod states;
-
 use bevy::{
     asset::RenderAssetUsages,
     ecs::relationship::Relationship,
@@ -8,7 +6,7 @@ use bevy::{
 };
 
 use crate::{
-    plugin::states::*, ActiveReceiver, ActiveTransmitter, Presentation, ReceiverImage, Screenshare,
+    states::*, ActiveReceiver, ActiveTransmitter, Presentation, ReceiverImage, Screenshare,
     VideoCast, VideoStream,
 };
 

@@ -1,4 +1,5 @@
 pub mod plugin;
+pub mod states;
 
 use bevy::prelude::*;
 
