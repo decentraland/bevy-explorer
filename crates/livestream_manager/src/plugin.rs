@@ -14,6 +14,7 @@ impl Plugin for LivestreamManagerPlugin {
         app.init_state::<TransmissionKind>();
         app.init_state::<Transmitter>();
         app.init_state::<Receiver>();
+        app.add_computed_state::<TransmissionState>();
 
         app.add_systems(Startup, setup_manager);
 
