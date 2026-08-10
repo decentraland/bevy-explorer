@@ -49,17 +49,18 @@ const INBOUND_RATE_WINDOW_SECS: f64 = 1.0;
 const MAX_MESSAGES_PER_WINDOW: usize = 300;
 
 // Per-peer sliding-window rate limit; entries are evicted when the participant entity is removed,
-// which bounds the map by the number of connected participants.
+// which bounds the map by the number of connected participants. Keyed per room as well as
+// identity so the same identity string in two rooms (island + scene) can't share a window.
 #[derive(Resource, Default)]
 struct InboundRateLimiter {
-    windows: HashMap<String, VecDeque<f64>>,
+    windows: HashMap<(Entity, String), VecDeque<f64>>,
 }
 
 impl InboundRateLimiter {
-    fn allow(&mut self, identity: &str, now: f64) -> bool {
+    fn allow(&mut self, room: Entity, identity: &str, now: f64) -> bool {
         let cutoff = now - INBOUND_RATE_WINDOW_SECS;
 
-        let times = self.windows.entry(identity.to_owned()).or_default();
+        let times = self.windows.entry((room, identity.to_owned())).or_default();
         while times.front().is_some_and(|&t| t < cutoff) {
             times.pop_front();
         }
@@ -195,11 +196,23 @@ fn participant_disconnected(
 // rate-limiter entries can't outlive their participant.
 fn participant_entity_removed(
     trigger: Trigger<OnRemove, LivekitParticipant>,
-    participants: Query<&LivekitParticipant>,
+    participants: Query<(&LivekitParticipant, Option<&HostedBy>)>,
     mut rate_limiter: ResMut<InboundRateLimiter>,
 ) {
-    if let Ok(participant) = participants.get(trigger.target()) {
-        rate_limiter.windows.remove(participant.identity().as_str());
+    let Ok((participant, maybe_hosted)) = participants.get(trigger.target()) else {
+        return;
+    };
+    let identity = participant.identity();
+    match maybe_hosted {
+        Some(hosted) => {
+            rate_limiter
+                .windows
+                .remove(&(hosted.get(), identity.as_str().to_owned()));
+        }
+        // no room to scope by; over-evicting just forgets ≤1s of history
+        None => rate_limiter
+            .windows
+            .retain(|(_, id), _| id != identity.as_str()),
     }
 }
 
@@ -261,7 +274,11 @@ fn participant_payload(
         payload,
     } = trigger.event();
 
-    if !rate_limiter.allow(participant.identity().as_str(), time.elapsed_secs_f64()) {
+    if !rate_limiter.allow(
+        *room_entity,
+        participant.identity().as_str(),
+        time.elapsed_secs_f64(),
+    ) {
         trace!(
             "rate-limited payload from participant {} ({}).",
             participant.sid(),
