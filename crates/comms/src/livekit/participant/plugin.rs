@@ -47,9 +47,9 @@ use crate::{
 
 const INBOUND_RATE_WINDOW_SECS: f64 = 1.0;
 const MAX_MESSAGES_PER_WINDOW: usize = 300;
-const MAX_RATE_ENTRIES: usize = 4096;
 
-// Per-peer sliding-window rate limit; `windows` is bounded by MAX_RATE_ENTRIES against an identity flood.
+// Per-peer sliding-window rate limit; entries are evicted when the participant entity is removed,
+// which bounds the map by the number of connected participants.
 #[derive(Resource, Default)]
 struct InboundRateLimiter {
     windows: HashMap<String, VecDeque<f64>>,
@@ -58,18 +58,6 @@ struct InboundRateLimiter {
 impl InboundRateLimiter {
     fn allow(&mut self, identity: &str, now: f64) -> bool {
         let cutoff = now - INBOUND_RATE_WINDOW_SECS;
-
-        if !self.windows.contains_key(identity) && self.windows.len() >= MAX_RATE_ENTRIES {
-            self.windows.retain(|_, times| {
-                while times.front().is_some_and(|&t| t < cutoff) {
-                    times.pop_front();
-                }
-                !times.is_empty()
-            });
-            if !self.windows.contains_key(identity) && self.windows.len() >= MAX_RATE_ENTRIES {
-                return false;
-            }
-        }
 
         let times = self.windows.entry(identity.to_owned()).or_default();
         while times.front().is_some_and(|&t| t < cutoff) {
@@ -90,6 +78,7 @@ impl Plugin for LivekitParticipantPlugin {
         app.init_resource::<InboundRateLimiter>();
         app.add_observer(participant_connected);
         app.add_observer(participant_disconnected);
+        app.add_observer(participant_entity_removed);
         app.add_observer(participant_connection_quality_changed);
         app.add_observer(participant_payload);
         app.add_observer(participant_metadata_changed);
@@ -200,6 +189,18 @@ fn participant_disconnected(
     };
 
     commands.entity(entity).despawn();
+}
+
+// Covers both explicit disconnects and relationship-cascade despawns on room teardown, so
+// rate-limiter entries can't outlive their participant.
+fn participant_entity_removed(
+    trigger: Trigger<OnRemove, LivekitParticipant>,
+    participants: Query<&LivekitParticipant>,
+    mut rate_limiter: ResMut<InboundRateLimiter>,
+) {
+    if let Ok(participant) = participants.get(trigger.target()) {
+        rate_limiter.windows.remove(participant.identity().as_str());
+    }
 }
 
 fn participant_connection_quality_changed(
