@@ -15,14 +15,12 @@ name: Publish headless server
 # publish of a new name has to be bootstrapped manually (npm requires the package to exist
 # before a trusted publisher can be attached).
 #
-# ONE-TIME BOOTSTRAP (per new package name): trusted publishing can't attach to a name
-# that doesn't exist yet, so the first publish authenticates with a token instead. Add an
-# `NPM_TOKEN` repo secret (a granular automation token with publish rights on the
-# @dcl-regenesislabs org) and run this workflow once via workflow_dispatch. The publish
-# steps read it as NODE_AUTH_TOKEN; when the secret is absent it expands to empty, which is
-# exactly today's OIDC path — so nothing here needs reverting. After the run: attach the
-# trusted publisher (repo decentraland/bevy-explorer, workflow publish-headless.yml) to all
-# five names on npmjs.com, then DELETE the NPM_TOKEN secret. Every subsequent run is OIDC.
+# The five current names were bootstrapped and now publish via OIDC only (no token in this
+# workflow). ADDING A NEW PACKAGE NAME later needs a one-time bootstrap first, since trusted
+# publishing can't attach to a name that doesn't exist: publish its first version manually
+# (`npm publish` while logged in), or temporarily add an `NPM_TOKEN` secret + read it as
+# NODE_AUTH_TOKEN on the publish steps for a single run, then attach the trusted publisher on
+# npmjs.com and remove the token again.
 #
 # Only the launcher's dist-tag matters to installers: it pins the platform packages by
 # exact version, so their tags are cosmetic.
@@ -194,12 +192,7 @@ jobs:
           merge-multiple: true
 
       - name: Publish platform packages
-        # platform packages first: the launcher pins them by exact version.
-        # NODE_AUTH_TOKEN is set only during the one-time bootstrap (see header): with the
-        # NPM_TOKEN secret present it authenticates by token; absent, it expands to empty
-        # and npm falls back to OIDC trusted publishing — the normal path.
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # platform packages first: the launcher pins them by exact version
         run: |
           set -euo pipefail
           for tgz in deploy/headless/artifacts/*.tgz; do
@@ -208,9 +201,6 @@ jobs:
 
       - name: Publish launcher
         uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         with:
           cwd: './deploy/headless/launcher'
           deterministic-snapshot: true
