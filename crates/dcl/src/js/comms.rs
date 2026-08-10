@@ -13,6 +13,26 @@ use super::State;
 
 const MAX_COMMS_MESSAGE_BYTES: usize = 30_000;
 const MAX_NETWORK_MESSAGE_QUEUE: usize = 1024;
+const MAX_SEND_MESSAGES_PER_TICK: usize = 512;
+
+// Outbound message budget, reset each tick by `crdt_send_to_renderer`. Enforced in the op (not
+// the JS wrapper) so a scene calling the op directly is still bounded.
+#[derive(Default)]
+pub struct CommsSendBudget {
+    pub sent: usize,
+}
+
+fn try_spend_budget(state: &mut impl State) -> bool {
+    if !state.has::<CommsSendBudget>() {
+        state.put(CommsSendBudget::default());
+    }
+    let budget = state.borrow_mut::<CommsSendBudget>();
+    if budget.sent >= MAX_SEND_MESSAGES_PER_TICK {
+        return false;
+    }
+    budget.sent += 1;
+    true
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
@@ -36,6 +56,10 @@ pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: Strin
         return;
     }
     let mut state = state.borrow_mut();
+    if !try_spend_budget(&mut *state) {
+        debug!("op_comms_send_string: message budget exhausted, dropping");
+        return;
+    }
     let scene = state.borrow::<CrdtContext>().scene_id.0;
     let mut data = vec![CommsMessageType::String as u8];
     data.extend(message.into_bytes());
@@ -62,6 +86,10 @@ pub async fn op_comms_send_binary_single(
         return;
     }
     let mut state = state.borrow_mut();
+    if !try_spend_budget(&mut *state) {
+        debug!("op_comms_send_binary_single: message budget exhausted, dropping");
+        return;
+    }
 
     let context = state.borrow::<CrdtContext>();
     let scene = context.scene_id.0;

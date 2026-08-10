@@ -101,6 +101,10 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
 
     let rpc_calls = std::mem::take(op_state.borrow_mut::<RpcCalls>());
 
+    if let Some(budget) = op_state.try_borrow_mut::<super::comms::CommsSendBudget>() {
+        budget.sent = 0;
+    }
+
     let sender = op_state.borrow_mut::<SceneResponseSender>();
     sender
         .try_send(SceneResponse::Ok(
