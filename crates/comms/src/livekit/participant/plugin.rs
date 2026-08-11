@@ -1,3 +1,5 @@
+use std::collections::{HashMap, VecDeque};
+
 use bevy::{
     ecs::{entity::EntityHashSet, relationship::Relationship},
     platform::collections::HashSet,
@@ -43,12 +45,41 @@ use crate::{
     SceneRoom,
 };
 
+const INBOUND_RATE_WINDOW_SECS: f64 = 1.0;
+const MAX_MESSAGES_PER_WINDOW: usize = 300;
+
+// Per-peer sliding-window rate limit; entries are evicted when the participant entity is removed,
+// which bounds the map by the number of connected participants. Keyed per room as well as
+// identity so the same identity string in two rooms (island + scene) can't share a window.
+#[derive(Resource, Default)]
+struct InboundRateLimiter {
+    windows: HashMap<(Entity, String), VecDeque<f64>>,
+}
+
+impl InboundRateLimiter {
+    fn allow(&mut self, room: Entity, identity: &str, now: f64) -> bool {
+        let cutoff = now - INBOUND_RATE_WINDOW_SECS;
+
+        let times = self.windows.entry((room, identity.to_owned())).or_default();
+        while times.front().is_some_and(|&t| t < cutoff) {
+            times.pop_front();
+        }
+        if times.len() >= MAX_MESSAGES_PER_WINDOW {
+            return false;
+        }
+        times.push_back(now);
+        true
+    }
+}
+
 pub struct LivekitParticipantPlugin;
 
 impl Plugin for LivekitParticipantPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<InboundRateLimiter>();
         app.add_observer(participant_connected);
         app.add_observer(participant_disconnected);
+        app.add_observer(participant_entity_removed);
         app.add_observer(participant_connection_quality_changed);
         app.add_observer(participant_payload);
         app.add_observer(participant_metadata_changed);
@@ -161,6 +192,30 @@ fn participant_disconnected(
     commands.entity(entity).despawn();
 }
 
+// Covers both explicit disconnects and relationship-cascade despawns on room teardown, so
+// rate-limiter entries can't outlive their participant.
+fn participant_entity_removed(
+    trigger: Trigger<OnRemove, LivekitParticipant>,
+    participants: Query<(&LivekitParticipant, Option<&HostedBy>)>,
+    mut rate_limiter: ResMut<InboundRateLimiter>,
+) {
+    let Ok((participant, maybe_hosted)) = participants.get(trigger.target()) else {
+        return;
+    };
+    let identity = participant.identity();
+    match maybe_hosted {
+        Some(hosted) => {
+            rate_limiter
+                .windows
+                .remove(&(hosted.get(), identity.as_str().to_owned()));
+        }
+        // no room to scope by; over-evicting just forgets ≤1s of history
+        None => rate_limiter
+            .windows
+            .retain(|(_, id), _| id != identity.as_str()),
+    }
+}
+
 fn participant_connection_quality_changed(
     trigger: Trigger<ParticipantConnectionQuality>,
     mut commands: Commands,
@@ -210,12 +265,27 @@ fn participant_payload(
     global_crdt_state: Res<GlobalCrdtState>,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
     livekit_runtime: Res<LivekitRuntime>,
+    mut rate_limiter: ResMut<InboundRateLimiter>,
+    time: Res<Time>,
 ) {
     let ParticipantPayload {
         room: room_entity,
         participant,
         payload,
     } = trigger.event();
+
+    if !rate_limiter.allow(
+        *room_entity,
+        participant.identity().as_str(),
+        time.elapsed_secs_f64(),
+    ) {
+        trace!(
+            "rate-limited payload from participant {} ({}).",
+            participant.sid(),
+            participant.identity()
+        );
+        return;
+    }
 
     let packet = match rfc4::Packet::decode(payload.as_slice()) {
         Ok(packet) => packet,
