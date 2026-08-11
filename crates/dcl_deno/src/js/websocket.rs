@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, rc::Rc, time::Duration};
 
 use common::{
     rpc::{RpcCall, RpcResultSender},
@@ -9,9 +9,45 @@ use deno_websocket::{CreateResponse, WebSocketPermissions};
 
 use dcl::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
 
+const MAX_OPEN_SOCKETS: usize = 32;
+const MAX_WS_BUFFERED_BYTES: usize = 8 * 1024 * 1024;
+const WS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
+// Inbound message size (per frame and per fragmented total) is capped at 1 MiB by the
+// fastwebsockets fork default (see the workspace [patch.crates-io] entry); an oversized
+// message errors and closes the socket without the payload ever being buffered.
+
 // list of op declarations
 pub fn override_ops() -> Vec<OpDecl> {
-    vec![op_ws_create::<WebSocketPerms>()]
+    vec![
+        op_ws_create::<WebSocketPerms>(),
+        op_ws_send_binary(),
+        op_ws_send_binary_ab(),
+        op_ws_send_text(),
+        op_ws_close(),
+        op_ws_next_event(),
+    ]
+}
+
+// per-scene: each scene runs in its own isolate with its own OpState
+#[derive(Default)]
+struct SceneWsState {
+    open: HashSet<ResourceId>,
+    // Reserved slots for handshakes still in flight, so a burst of `new WebSocket()` can't
+    // race past the cap before any rid exists.
+    connecting: usize,
+}
+
+fn scene_ws_state(state: &mut OpState) -> &mut SceneWsState {
+    if state.try_borrow::<SceneWsState>().is_none() {
+        state.put(SceneWsState::default());
+    }
+    state.borrow_mut::<SceneWsState>()
+}
+
+fn release_ws_slot(state: &mut OpState, ws_rid: ResourceId) {
+    if let Some(ws_state) = state.try_borrow_mut::<SceneWsState>() {
+        ws_state.open.remove(&ws_rid);
+    }
 }
 
 pub struct WebSocketPerms {
@@ -93,18 +129,124 @@ where
         headers.push(("accept".into(), "*/*".into()));
     }
 
-    let response = deno_websocket::op_ws_create__raw_fn::<WP>(
-        state.clone(),
-        api_name,
-        url,
-        protocols,
-        cancel_handle,
-        Some(headers),
+    // Reserve a per-scene slot (reject, never queue, at the cap) so an unbounded
+    // `new WebSocket()` loop cannot outrun the process FD ulimit.
+    {
+        let mut op_state = state.borrow_mut();
+        let ws_state = scene_ws_state(&mut op_state);
+        if ws_state.open.len() + ws_state.connecting >= MAX_OPEN_SOCKETS {
+            anyhow::bail!("WebSocket refused: scene already holds {MAX_OPEN_SOCKETS} open sockets");
+        }
+        ws_state.connecting += 1;
+    }
+
+    // Bound the handshake so a black-hole host cannot pin the connect (and its slot).
+    let result = tokio::time::timeout(
+        WS_HANDSHAKE_TIMEOUT,
+        deno_websocket::op_ws_create__raw_fn::<WP>(
+            state.clone(),
+            api_name,
+            url,
+            protocols,
+            cancel_handle,
+            Some(headers),
+        ),
     )
-    .await?;
+    .await;
+
+    {
+        let mut op_state = state.borrow_mut();
+        let ws_state = scene_ws_state(&mut op_state);
+        ws_state.connecting = ws_state.connecting.saturating_sub(1);
+    }
+
+    let response = match result {
+        Ok(result) => result?,
+        Err(_) => anyhow::bail!("WebSocket handshake timed out"),
+    };
+
     state
         .borrow_mut()
         .borrow_mut::<SceneResourceCounters>()
         .ws_opened += 1;
+
+    let ws_rid = serde_json::to_value(&response)
+        .ok()
+        .and_then(|v| v.get("rid").and_then(|r| r.as_u64()))
+        .map(|rid| rid as ResourceId);
+
+    // Track the live socket so its slot is held until close/terminal-event/teardown.
+    if let Some(ws_rid) = ws_rid {
+        let mut op_state = state.borrow_mut();
+        scene_ws_state(&mut op_state).open.insert(ws_rid);
+    }
+
     Ok(response)
+}
+
+// Refuse a send that would push still-pending outbound bytes past the buffered cap, so a scene
+// writing faster than the peer drains cannot grow the sidecar heap without bound.
+fn guard_ws_buffer(state: &mut OpState, rid: ResourceId, len: usize) -> Result<(), AnyError> {
+    let buffered = deno_websocket::op_ws_get_buffered_amount__raw_fn(state, rid) as usize;
+    if buffered.saturating_add(len) > MAX_WS_BUFFERED_BYTES {
+        anyhow::bail!(
+            "WebSocket send refused: outbound buffer exceeds {MAX_WS_BUFFERED_BYTES} bytes"
+        );
+    }
+    Ok(())
+}
+
+#[op2]
+pub fn op_ws_send_binary(
+    state: &mut OpState,
+    #[smi] rid: ResourceId,
+    #[anybuffer] data: &[u8],
+) -> Result<(), AnyError> {
+    guard_ws_buffer(state, rid, data.len())?;
+    deno_websocket::op_ws_send_binary__raw_fn(state, rid, data);
+    Ok(())
+}
+
+#[op2(fast)]
+pub fn op_ws_send_binary_ab(
+    state: &mut OpState,
+    #[smi] rid: ResourceId,
+    #[arraybuffer] data: &[u8],
+) -> Result<(), AnyError> {
+    guard_ws_buffer(state, rid, data.len())?;
+    deno_websocket::op_ws_send_binary_ab__raw_fn(state, rid, data);
+    Ok(())
+}
+
+#[op2(fast)]
+pub fn op_ws_send_text(
+    state: &mut OpState,
+    #[smi] rid: ResourceId,
+    #[string] data: String,
+) -> Result<(), AnyError> {
+    guard_ws_buffer(state, rid, data.len())?;
+    deno_websocket::op_ws_send_text__raw_fn(state, rid, data);
+    Ok(())
+}
+
+#[op2(async(lazy))]
+pub async fn op_ws_close(
+    state: Rc<RefCell<OpState>>,
+    #[smi] rid: ResourceId,
+    #[smi] code: Option<u16>,
+    #[string] reason: Option<String>,
+) -> Result<(), AnyError> {
+    release_ws_slot(&mut state.borrow_mut(), rid);
+    deno_websocket::op_ws_close__raw_fn(state, rid, code, reason).await
+}
+
+#[op2(async)]
+pub async fn op_ws_next_event(state: Rc<RefCell<OpState>>, #[smi] rid: ResourceId) -> u16 {
+    let kind = deno_websocket::op_ws_next_event__raw_fn(state.clone(), rid).await;
+    // every close path goes through op_ws_close, but the JS glue's error branch tears the
+    // socket down with core.tryClose alone, so the slot must be freed here.
+    if kind == deno_websocket::MessageKind::Error as u16 {
+        release_ws_slot(&mut state.borrow_mut(), rid);
+    }
+    kind
 }
