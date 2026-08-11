@@ -34,6 +34,8 @@ use crate::{
     SceneRoom,
 };
 
+const GRACE_PERIOD: f32 = 3.;
+
 pub struct LivekitParticipantPlugin;
 
 impl Plugin for LivekitParticipantPlugin {
@@ -53,8 +55,8 @@ impl Plugin for LivekitParticipantPlugin {
     }
 }
 
-#[derive(Component, Deref)]
-struct ActiveSpeakerGracePeriod(f64);
+#[derive(Component, Deref, DerefMut)]
+struct ActiveSpeakerGracePeriod(Timer);
 
 fn participant_connected(
     trigger: Trigger<ParticipantConnected>,
@@ -420,7 +422,6 @@ fn is_no_longer_speaking(
     tracks: Query<(), (With<Video>, With<CameraTrack>, With<ActiveVideoCast>)>,
     scene_rooms: Query<&SceneRoom>,
     senders: Res<VoiceMessageStreams>,
-    time: Res<Time<Real>>,
 ) {
     let entity = trigger.target();
 
@@ -460,7 +461,10 @@ fn is_no_longer_speaking(
             if tracks.contains(*published) {
                 commands
                     .entity(*published)
-                    .try_insert(ActiveSpeakerGracePeriod(time.elapsed_secs_wrapped_f64()));
+                    .try_insert(ActiveSpeakerGracePeriod(Timer::from_seconds(
+                        GRACE_PERIOD,
+                        TimerMode::Once,
+                    )));
             }
         }
     }
@@ -468,19 +472,13 @@ fn is_no_longer_speaking(
 
 fn verify_active_speaker_grace_period(
     mut commands: Commands,
-    active_speakers: Populated<(Entity, &ActiveSpeakerGracePeriod)>,
+    active_speakers: Populated<(Entity, &mut ActiveSpeakerGracePeriod)>,
     time: Res<Time<Real>>,
 ) {
-    const GRACE_PERIOD: f64 = 3.;
-
-    let elapsed = time.elapsed_secs_wrapped_f64();
-    let wrap_period = time.wrap_period().as_secs_f64();
-    for (entity, active_speaker_grace_period) in active_speakers.into_inner() {
-        let mut active_speaker_grace_period = **active_speaker_grace_period;
-        if active_speaker_grace_period >= wrap_period - GRACE_PERIOD {
-            active_speaker_grace_period -= wrap_period;
-        }
-        if elapsed - active_speaker_grace_period > GRACE_PERIOD {
+    let delta = time.delta();
+    for (entity, mut active_speaker_grace_period) in active_speakers.into_inner() {
+        active_speaker_grace_period.tick(delta);
+        if active_speaker_grace_period.finished() {
             debug!("Grace period for {} has passed.", entity);
             commands
                 .entity(entity)
