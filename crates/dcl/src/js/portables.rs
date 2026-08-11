@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use bevy::log::debug;
 use common::rpc::{PortableLocation, RpcCall, RpcResultSender, SpawnResponse};
+use common::util::ReportErr;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -30,7 +31,7 @@ pub async fn op_portable_spawn(
             location,
             spawner: scene,
             response: sx,
-        });
+        })?;
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
 }
@@ -51,7 +52,7 @@ pub async fn op_portable_kill(
             scene,
             location: PortableLocation::Urn(pid.clone()),
             response: sx,
-        });
+        })?;
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
@@ -63,7 +64,8 @@ pub async fn op_portable_list(state: Rc<RefCell<impl State>>) -> Vec<SpawnRespon
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::ListPortables { response: sx });
+        .push(RpcCall::ListPortables { response: sx })
+        .report();
 
     let res = rx.await.unwrap_or_default();
     bevy::log::debug!("portable list res: {res:?}");

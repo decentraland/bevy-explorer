@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use bevy::log::{debug, warn};
 use common::rpc::{RpcCall, RpcEventSender, RpcStreamReceiver};
+use common::util::ReportErr;
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -53,7 +54,7 @@ pub fn op_subscribe(state: &mut impl State, id: &str) {
                 let (sx, rx) = RpcEventSender::channel();
 
                 #[allow(clippy::redundant_closure_call)]
-                state.borrow_mut::<RpcCalls>().push($call(sx));
+                state.borrow_mut::<RpcCalls>().push($call(sx)).report();
 
                 state.put(EventReceiver::<$marker> {
                     inner: rx,
@@ -105,7 +106,8 @@ pub fn op_subscribe(state: &mut impl State, id: &str) {
         let (sender, rx) = RpcEventSender::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::SubscribeMessageBus { sender, hash });
+            .push(RpcCall::SubscribeMessageBus { sender, hash })
+            .report();
         state.put(EventReceiver::<MessageBus> {
             inner: rx,
             _p: Default::default(),

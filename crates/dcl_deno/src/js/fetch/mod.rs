@@ -306,7 +306,7 @@ async fn fetch_send_inner(
             ty: common::structs::PermissionType::Fetch,
             message: Some(url.clone()),
             response: sx,
-        });
+        })?;
     let permit = rx.await?;
     if !permit {
         anyhow::bail!("User denied fetch request");

@@ -81,7 +81,7 @@ pub async fn scene_information(
         .push(RpcCall::EntityDefinition {
             urn: urn.clone(),
             response: sx,
-        });
+        })?;
 
     let entity_definition = rx.await?;
 

@@ -56,7 +56,7 @@ pub async fn op_get_user_data(state: Rc<RefCell<impl State>>) -> Result<UserData
             user: None, // current user
             scene,
             response: sx,
-        });
+        })?;
 
     let profile = rx
         .await
@@ -89,7 +89,7 @@ pub async fn op_get_player_data(
             user: Some(id),
             scene,
             response: sx,
-        });
+        })?;
 
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?

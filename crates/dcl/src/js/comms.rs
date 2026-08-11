@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use bevy::log::debug;
 use common::{
     rpc::{RpcCall, RpcStreamReceiver, RpcStreamSender},
-    util::AsH160,
+    util::{AsH160, ReportErr},
 };
 use serde::{Deserialize, Serialize};
 
@@ -72,7 +72,8 @@ pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: Strin
             scene,
             data,
             recipient: None,
-        });
+        })
+        .report();
 }
 
 pub async fn op_comms_send_binary_single(
@@ -108,7 +109,8 @@ pub async fn op_comms_send_binary_single(
             scene,
             data,
             recipient,
-        });
+        })
+        .report();
 }
 
 pub async fn op_comms_recv_binary(
@@ -127,7 +129,7 @@ pub async fn op_comms_recv_binary(
             RpcStreamSender::<(String, Vec<u8>)>::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::SubscribeBinaryBus { hash, sender: sx });
+            .push(RpcCall::SubscribeBinaryBus { hash, sender: sx })?;
         state.put(BinaryBusReceiver(rx));
     }
 

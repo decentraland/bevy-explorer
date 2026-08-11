@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use bevy::log::debug;
 use common::rpc::{CompareSnapshot, CompareSnapshotResult, RpcCall, RpcResultSender};
+use common::util::ReportErr;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot::error::TryRecvError;
 
@@ -48,22 +49,28 @@ pub fn op_log_test_plan(state: &mut impl State, body: SceneTestPlan) {
     debug!("op_log_test_plan");
     let scene = state.borrow::<CrdtContext>().scene_id.0;
 
-    state.borrow_mut::<RpcCalls>().push(RpcCall::TestPlan {
-        scene,
-        plan: body.tests.into_iter().map(|p| p.name).collect(),
-    });
+    state
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::TestPlan {
+            scene,
+            plan: body.tests.into_iter().map(|p| p.name).collect(),
+        })
+        .report();
 }
 
 pub fn op_log_test_result(state: &mut impl State, body: SceneTestResult) {
     debug!("op_log_test_results");
     let scene = state.borrow::<CrdtContext>().scene_id.0;
 
-    state.borrow_mut::<RpcCalls>().push(RpcCall::TestResult {
-        scene,
-        name: body.name,
-        success: body.ok,
-        error: body.error,
-    });
+    state
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::TestResult {
+            scene,
+            name: body.name,
+            success: body.ok,
+            error: body.error,
+        })
+        .report();
 }
 
 #[derive(Debug, Deserialize, Serialize)]

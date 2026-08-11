@@ -5,7 +5,7 @@ use ethers_providers::{Provider, Ws};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use tokio::sync::Mutex;
 
-use crate::interface::crdt_context::CrdtContext;
+use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 use super::State;
 
@@ -27,12 +27,12 @@ pub async fn op_send_async(
 
             state
                 .borrow_mut()
-                .borrow_mut::<Vec<RpcCall>>()
+                .borrow_mut::<RpcCalls>()
                 .push(RpcCall::SendAsync {
                     body: RPCSendableMessage { method, params },
                     scene,
                     response: sx,
-                });
+                })?;
 
             rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
         }

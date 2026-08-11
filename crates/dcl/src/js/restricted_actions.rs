@@ -5,6 +5,7 @@ use bevy::{
     transform::components::Transform,
 };
 use common::rpc::{RpcCall, RpcResultSender, RpcUiFocusAction};
+use common::util::ReportErr;
 use dcl_component::proto_components::common::Vector3 as DclVector3;
 use serde::Serialize;
 use std::{cell::RefCell, rc::Rc};
@@ -44,17 +45,21 @@ pub async fn op_move_player_to(
     {
         let mut op_state = state.borrow_mut();
         let scene = op_state.borrow::<CrdtContext>().scene_id.0;
-        op_state.borrow_mut::<RpcCalls>().push(RpcCall::MovePlayer {
-            scene: Some(scene),
-            to,
-            looking_at,
-            duration,
-            response,
-        });
+        op_state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::MovePlayer {
+                scene: Some(scene),
+                to,
+                looking_at,
+                duration,
+                response,
+            })
+            .report();
         if let Some(facing) = camera_rotation {
             op_state
                 .borrow_mut::<RpcCalls>()
-                .push(RpcCall::MoveCamera { scene, facing });
+                .push(RpcCall::MoveCamera { scene, facing })
+                .report();
         }
     }
 
@@ -79,13 +84,16 @@ pub async fn op_walk_player_to(
     {
         let mut op_state = state.borrow_mut();
         let scene = op_state.borrow::<CrdtContext>().scene_id.0;
-        op_state.borrow_mut::<RpcCalls>().push(RpcCall::WalkPlayer {
-            scene: Some(scene),
-            to,
-            stop_threshold,
-            timeout,
-            response: sx,
-        });
+        op_state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::WalkPlayer {
+                scene: Some(scene),
+                to,
+                stop_threshold,
+                timeout,
+                response: sx,
+            })
+            .report();
     }
 
     matches!(rx.await, Ok(true))
@@ -106,7 +114,8 @@ pub async fn op_teleport_to(
             scene: Some(scene),
             to: IVec2::new(position_x, position_y),
             response: sx,
-        });
+        })
+        .report();
 
     matches!(rx.await, Ok(Ok(_)))
 }
@@ -127,7 +136,8 @@ pub async fn op_change_realm(
             to: realm,
             message,
             response: sx,
-        });
+        })
+        .report();
 
     matches!(rx.await, Ok(Ok(_)))
 }
@@ -143,7 +153,8 @@ pub async fn op_external_url(state: Rc<RefCell<impl State>>, url: String) -> boo
             scene,
             url,
             response: sx,
-        });
+        })
+        .report();
 
     matches!(rx.await, Ok(Ok(_)))
 }
@@ -190,7 +201,8 @@ pub fn send_emote(op_state: &mut impl State, urn: String, r#loop: bool) {
 
     op_state
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::TriggerEmote { scene, urn, r#loop });
+        .push(RpcCall::TriggerEmote { scene, urn, r#loop })
+        .report();
 }
 
 pub async fn op_open_nft_dialog(
@@ -205,11 +217,13 @@ pub async fn op_open_nft_dialog(
         let context = state.borrow::<CrdtContext>();
         let scene = context.scene_id.0;
 
-        state.borrow_mut::<RpcCalls>().push(RpcCall::OpenNftDialog {
-            scene,
-            urn,
-            response: sx,
-        });
+        state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::OpenNftDialog {
+                scene,
+                urn,
+                response: sx,
+            })?;
     }
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
@@ -245,7 +259,7 @@ pub async fn op_ui_focus(
             scene,
             action,
             response: sx,
-        });
+        })?;
     }
 
     rx.await
@@ -271,7 +285,7 @@ pub async fn op_copy_to_clipboard(
                 scene,
                 text,
                 response: sx,
-            });
+            })?;
     }
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
