@@ -86,6 +86,7 @@ impl Plugin for GlobalCrdtPlugin {
         app.add_systems(Update, process_transport_updates);
         app.add_systems(Update, despawn_players);
         app.add_observer(remove_transport_from_foreign_audio_source);
+        app.add_observer(remove_transport_from_foreign_players);
         app.add_systems(Update, handle_foreign_audio);
         app.add_systems(
             Update,
@@ -144,6 +145,10 @@ pub struct NonPlayerUpdate {
 pub enum NetworkUpdate {
     Player(PlayerUpdate),
     NonPlayer(NonPlayerUpdate),
+    PlayerLeft {
+        transport_id: Entity,
+        address: Address,
+    },
 }
 
 impl From<PlayerUpdate> for NetworkUpdate {
@@ -276,7 +281,10 @@ impl GlobalCrdtState {
 #[derive(Component, Debug)]
 pub struct ForeignPlayer {
     pub address: Address,
-    pub transport_id: Entity,
+    /// Transports this player is currently connected through. Membership is implied
+    /// by receiving data; transports report explicit departures (`NetworkUpdate::PlayerLeft`)
+    /// and transport despawn removes the entity from every set. Empty set = disconnected.
+    pub transports: HashSet<Entity>,
     pub last_update: f32,
     pub scene_id: SceneEntityId,
     pub profile_version: u32,
@@ -431,7 +439,7 @@ pub fn process_transport_updates(
                 } else if let Some(existing) = state.lookup.get_by_left(&update.address) {
                     let mut foreign_player = players.get_mut(*existing).unwrap();
                     foreign_player.last_update = time.elapsed_secs();
-                    foreign_player.transport_id = update.transport_id;
+                    foreign_player.transports.insert(update.transport_id);
                     (
                         *existing,
                         foreign_player.scene_id,
@@ -461,7 +469,7 @@ pub fn process_transport_updates(
                             Visibility::default(),
                             ForeignPlayer {
                                 address: update.address,
-                                transport_id: update.transport_id,
+                                transports: HashSet::from_iter([update.transport_id]),
                                 last_update: time.elapsed_secs(),
                                 scene_id: next_free,
                                 profile_version: 0,
@@ -773,6 +781,19 @@ pub fn process_transport_updates(
                     &mut binary_senders,
                 );
             }
+            NetworkUpdate::PlayerLeft {
+                transport_id,
+                address,
+            } => {
+                // players spawned earlier this frame aren't in the query yet; they
+                // fall back to the inactivity timeout in despawn_players
+                if let Some(entity) = state.lookup.get_by_left(&address) {
+                    if let Ok(mut foreign_player) = players.get_mut(*entity) {
+                        debug!("player {address:#x} left transport {transport_id}");
+                        foreign_player.transports.remove(&transport_id);
+                    }
+                }
+            }
         }
     }
 }
@@ -928,15 +949,31 @@ fn despawn_players(
     time: Res<Time>,
 ) {
     for (entity, player) in players.iter() {
-        if player.last_update + 10.0 < time.elapsed_secs() {
+        // transports report disconnects explicitly; the inactivity timeout is a backstop
+        // for departures the server hasn't noticed yet (server-side timeouts for other
+        // clients' connections are not under our control)
+        let disconnected = player.transports.is_empty();
+        let stale = player.last_update + 15.0 < time.elapsed_secs();
+        if disconnected || stale {
             if let Ok(mut commands) = commands.get_entity(entity) {
-                info!("removing stale player: {entity:?} : {player:?}");
+                info!("removing disconnected player: {entity:?} : {player:?}");
                 commands.despawn();
             }
 
             state.delete_entity(player.scene_id);
             state.lookup.remove_by_right(&entity);
         }
+    }
+}
+
+fn remove_transport_from_foreign_players(
+    trigger: Trigger<OnReplace, Transport>,
+    mut players: Query<&mut ForeignPlayer>,
+) {
+    let transport_id = trigger.target();
+
+    for mut player in players.iter_mut() {
+        player.transports.remove(&transport_id);
     }
 }
 

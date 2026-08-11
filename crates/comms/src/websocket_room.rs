@@ -86,7 +86,6 @@ pub fn start_ws_room(
                 transport_type: TransportType::WebsocketRoom,
                 sender,
                 control: None,
-                foreign_aliases: Default::default(),
             },
             WebsocketRoomTransport {
                 address: ev.address.to_owned(),
@@ -123,6 +122,7 @@ fn connect_websocket(
 }
 
 fn reconnect_websocket(
+    mut commands: Commands,
     mut websockets: Query<(
         Entity,
         &mut WebsocketRoomTransport,
@@ -153,8 +153,10 @@ fn reconnect_websocket(
             }
         } else if transport.retries == 3 {
             if let Some((_, err)) = conn.0.complete() {
-                transport.retries += 1;
                 warn!("websocket room error: {err}, giving up");
+                // despawning the transport scrubs it from all foreign players' transport
+                // sets, so members don't linger on a connection that will never recover
+                commands.entity(transport_id).despawn();
             }
         }
     }
@@ -321,7 +323,15 @@ async fn websocket_room_handler_inner(
                         peer.alias,
                         foreign_aliases.get_by_left(&peer.alias)
                     );
-                    foreign_aliases.remove_by_left(&peer.alias);
+                    if let Some((_, address)) = foreign_aliases.remove_by_left(&peer.alias) {
+                        sender
+                            .send(NetworkUpdate::PlayerLeft {
+                                transport_id,
+                                address,
+                            })
+                            .await
+                            .map_err(|_| anyhow!("Send error"))?;
+                    }
                 }
                 ws_packet::Message::PeerUpdateMessage(update) => {
                     let packet = match rfc4::Packet::decode(update.body.as_slice()) {
