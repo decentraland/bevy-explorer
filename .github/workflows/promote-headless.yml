@@ -5,12 +5,14 @@ name: Promote headless server to latest
 # `sdk-commands start`) only move when someone runs this — main pushes keep landing on
 # `next` (see publish-headless.yml) and never change what previews run.
 #
-# Only the launcher's dist-tag matters: it pins the platform packages by exact version,
-# so their tags are cosmetic and are left untouched.
+# The launcher pins the platform packages by exact version, so only its dist-tag affects
+# installers; the platform packages are re-tagged too purely so npmjs.com shows a
+# coherent `latest` across the family. The launcher is promoted last: if a platform
+# re-tag fails midway, the tag that matters has not moved.
 #
 # Auth: npm OIDC trusted publishing only covers `npm publish`, not `npm dist-tag`, so
 # this workflow needs an NPM_TOKEN secret — a granular automation token with read/write
-# access to @dcl-regenesislabs/bevy-headless-server.
+# access to the @dcl-regenesislabs/bevy-headless-server* packages.
 
 on:
   workflow_dispatch:
@@ -21,7 +23,8 @@ on:
         default: ''
 
 env:
-  PACKAGE: '@dcl-regenesislabs/bevy-headless-server'
+  LAUNCHER: '@dcl-regenesislabs/bevy-headless-server'
+  PLATFORMS: 'darwin-arm64 darwin-x64 linux-x64 win32-x64'
 
 jobs:
   promote:
@@ -39,12 +42,19 @@ jobs:
           set -euo pipefail
           version="${{ inputs.version }}"
           if [ -z "$version" ]; then
-            version="$(npm view "$PACKAGE@next" version)"
+            version="$(npm view "$LAUNCHER@next" version)"
           fi
           echo "Current dist-tags:"
-          npm view "$PACKAGE" dist-tags
-          # fails if the version was never published, so a typo can't create a dead tag
-          npm view "$PACKAGE@$version" version >/dev/null
-          npm dist-tag add "$PACKAGE@$version" latest
-          echo "Promoted $PACKAGE@$version to latest. Dist-tags now:"
-          npm view "$PACKAGE" dist-tags
+          npm view "$LAUNCHER" dist-tags
+          # every package must have this version published — a typo or a partial
+          # publish fails here before any tag moves
+          for platform in $PLATFORMS; do
+            npm view "$LAUNCHER-$platform@$version" version >/dev/null
+          done
+          npm view "$LAUNCHER@$version" version >/dev/null
+          for platform in $PLATFORMS; do
+            npm dist-tag add "$LAUNCHER-$platform@$version" latest
+          done
+          npm dist-tag add "$LAUNCHER@$version" latest
+          echo "Promoted $LAUNCHER@$version (and platform packages) to latest. Dist-tags now:"
+          npm view "$LAUNCHER" dist-tags
