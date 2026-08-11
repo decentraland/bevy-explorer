@@ -1,16 +1,10 @@
-use std::{
-    borrow::Cow,
-    cell::{Cell, RefCell},
-    collections::HashMap,
-    rc::Rc,
-    time::Duration,
-};
+use std::{cell::RefCell, collections::HashSet, rc::Rc, time::Duration};
 
 use common::{
     rpc::{RpcCall, RpcResultSender},
     util::UrlLoopbackExt,
 };
-use deno_core::{anyhow, error::AnyError, op2, ByteString, OpDecl, OpState, Resource, ResourceId};
+use deno_core::{anyhow, error::AnyError, op2, ByteString, OpDecl, OpState, ResourceId};
 use deno_websocket::{CreateResponse, WebSocketPermissions};
 
 use dcl::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
@@ -18,7 +12,9 @@ use dcl::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters}
 const MAX_OPEN_SOCKETS: usize = 32;
 const MAX_WS_BUFFERED_BYTES: usize = 8 * 1024 * 1024;
 const WS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
-const MAX_WS_MESSAGE_BYTES: usize = 1024 * 1024;
+// Inbound message size (per frame and per fragmented total) is capped at 1 MiB by the
+// fastwebsockets fork default (see the workspace [patch.crates-io] entry); an oversized
+// message errors and closes the socket without the payload ever being buffered.
 
 // list of op declarations
 pub fn override_ops() -> Vec<OpDecl> {
@@ -29,60 +25,28 @@ pub fn override_ops() -> Vec<OpDecl> {
         op_ws_send_text(),
         op_ws_close(),
         op_ws_next_event(),
-        op_ws_get_buffer_as_string(),
     ]
 }
 
+// per-scene: each scene runs in its own isolate with its own OpState
 #[derive(Default)]
-struct WsOpenSockets {
-    per_scene: HashMap<u64, Rc<Cell<usize>>>,
-    guards: HashMap<ResourceId, ResourceId>,
+struct SceneWsState {
+    open: HashSet<ResourceId>,
+    // Reserved slots for handshakes still in flight, so a burst of `new WebSocket()` can't
+    // race past the cap before any rid exists.
+    connecting: usize,
 }
 
-// One open-socket slot; the count is decremented once, on Drop, so isolate teardown of a
-// panicking scene still reclaims the slot.
-struct WsSlotGuard {
-    counter: Rc<Cell<usize>>,
-}
-
-impl WsSlotGuard {
-    fn acquire(counter: Rc<Cell<usize>>) -> Self {
-        counter.set(counter.get() + 1);
-        Self { counter }
+fn scene_ws_state(state: &mut OpState) -> &mut SceneWsState {
+    if state.try_borrow::<SceneWsState>().is_none() {
+        state.put(SceneWsState::default());
     }
-}
-
-impl Drop for WsSlotGuard {
-    fn drop(&mut self) {
-        self.counter.set(self.counter.get().saturating_sub(1));
-    }
-}
-
-impl Resource for WsSlotGuard {
-    fn name(&self) -> Cow<'_, str> {
-        "dclWsSlotGuard".into()
-    }
-}
-
-fn scene_socket_counter(state: &mut OpState, scene_key: u64) -> Rc<Cell<usize>> {
-    if state.try_borrow::<WsOpenSockets>().is_none() {
-        state.put(WsOpenSockets::default());
-    }
-    state
-        .borrow_mut::<WsOpenSockets>()
-        .per_scene
-        .entry(scene_key)
-        .or_default()
-        .clone()
+    state.borrow_mut::<SceneWsState>()
 }
 
 fn release_ws_slot(state: &mut OpState, ws_rid: ResourceId) {
-    let guard_rid = match state.try_borrow_mut::<WsOpenSockets>() {
-        Some(reg) => reg.guards.remove(&ws_rid),
-        None => return,
-    };
-    if let Some(guard_rid) = guard_rid {
-        let _ = state.resource_table.take::<WsSlotGuard>(guard_rid);
+    if let Some(ws_state) = state.try_borrow_mut::<SceneWsState>() {
+        ws_state.open.remove(&ws_rid);
     }
 }
 
@@ -167,18 +131,17 @@ where
 
     // Reserve a per-scene slot (reject, never queue, at the cap) so an unbounded
     // `new WebSocket()` loop cannot outrun the process FD ulimit.
-    let guard = {
+    {
         let mut op_state = state.borrow_mut();
-        let counter = scene_socket_counter(&mut op_state, scene.to_bits());
-        if counter.get() >= MAX_OPEN_SOCKETS {
+        let ws_state = scene_ws_state(&mut op_state);
+        if ws_state.open.len() + ws_state.connecting >= MAX_OPEN_SOCKETS {
             anyhow::bail!("WebSocket refused: scene already holds {MAX_OPEN_SOCKETS} open sockets");
         }
-        WsSlotGuard::acquire(counter)
-    };
+        ws_state.connecting += 1;
+    }
 
-    // Bound the handshake so a black-hole host cannot pin the connect (and its slot); on timeout
-    // or error `guard` drops here and releases the slot.
-    let response = match tokio::time::timeout(
+    // Bound the handshake so a black-hole host cannot pin the connect (and its slot).
+    let result = tokio::time::timeout(
         WS_HANDSHAKE_TIMEOUT,
         deno_websocket::op_ws_create__raw_fn::<WP>(
             state.clone(),
@@ -189,8 +152,15 @@ where
             Some(headers),
         ),
     )
-    .await
+    .await;
+
     {
+        let mut op_state = state.borrow_mut();
+        let ws_state = scene_ws_state(&mut op_state);
+        ws_state.connecting = ws_state.connecting.saturating_sub(1);
+    }
+
+    let response = match result {
         Ok(result) => result?,
         Err(_) => anyhow::bail!("WebSocket handshake timed out"),
     };
@@ -205,18 +175,10 @@ where
         .and_then(|v| v.get("rid").and_then(|r| r.as_u64()))
         .map(|rid| rid as ResourceId);
 
-    // Park the guard keyed to the live socket so its slot is held for the socket's lifetime and
-    // released on close/terminal-event/teardown.
+    // Track the live socket so its slot is held until close/terminal-event/teardown.
     if let Some(ws_rid) = ws_rid {
         let mut op_state = state.borrow_mut();
-        let guard_rid = op_state.resource_table.add(guard);
-        if op_state.try_borrow::<WsOpenSockets>().is_none() {
-            op_state.put(WsOpenSockets::default());
-        }
-        op_state
-            .borrow_mut::<WsOpenSockets>()
-            .guards
-            .insert(ws_rid, guard_rid);
+        scene_ws_state(&mut op_state).open.insert(ws_rid);
     }
 
     Ok(response)
@@ -281,27 +243,10 @@ pub async fn op_ws_close(
 #[op2(async)]
 pub async fn op_ws_next_event(state: Rc<RefCell<OpState>>, #[smi] rid: ResourceId) -> u16 {
     let kind = deno_websocket::op_ws_next_event__raw_fn(state.clone(), rid).await;
-    // >= 3 is Error or a close code: the read loop is finished, so free the slot now.
-    if kind >= 3 {
+    // every close path goes through op_ws_close, but the JS glue's error branch tears the
+    // socket down with core.tryClose alone, so the slot must be freed here.
+    if kind == deno_websocket::MessageKind::Error as u16 {
         release_ws_slot(&mut state.borrow_mut(), rid);
     }
     kind
-}
-
-// Enforce the inbound message-size cap on a text frame (binary frames are opaque post-hoc and
-// cannot be sized through the public API); an oversized message force-closes the socket.
-#[op2]
-#[string]
-pub fn op_ws_get_buffer_as_string(state: &mut OpState, #[smi] rid: ResourceId) -> Option<String> {
-    let data = deno_websocket::op_ws_get_buffer_as_string__raw_fn(state, rid);
-    if let Some(text) = &data {
-        if text.len() > MAX_WS_MESSAGE_BYTES {
-            release_ws_slot(state, rid);
-            if let Ok(resource) = state.resource_table.take_any(rid) {
-                resource.close();
-            }
-            return None;
-        }
-    }
-    data
 }
