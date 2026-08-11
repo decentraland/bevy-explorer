@@ -132,9 +132,10 @@ where
         }
     }
 
-    // authoritative-server mode only: never auto-follow redirects, so a 3xx onto a
-    // private host can't bypass the per-request SSRF check or leak signed headers. The
-    // desktop/web client keeps the default redirect-following behaviour unchanged.
+    // On the authoritative server redirects are never auto-followed, so a 3xx onto a private
+    // host can't bypass the per-request SSRF check or leak signed headers. The desktop/web
+    // client still follows them, but under the public-only redirect policy (see
+    // `build_scene_client` / `public_only_redirect`).
     let (is_server, preview) = {
         let ctx = state.borrow::<CrdtContext>();
         (ctx.is_server, ctx.preview)
@@ -455,31 +456,68 @@ fn scene_client_builder(allow_private: bool) -> reqwest::ClientBuilder {
 }
 
 /// The default client for a scene's own requests. On the authoritative server redirects are
-/// disabled as well (a 3xx must not silently re-target or forward signed headers); the
-/// desktop client keeps following them, which the resolver makes safe — every hop
-/// re-resolves through the same public-only check.
+/// disabled entirely (a 3xx must not silently re-target or forward signed headers). The
+/// desktop client keeps following them — matching the browser — but through
+/// [`public_only_redirect`]: a hostname hop is re-resolved by [`PublicOnlyResolver`] at
+/// connect, and an IP-literal hop (dialled with no DNS lookup, so the resolver never sees it)
+/// is vetted by the policy.
 fn build_scene_client(allow_private: bool, is_server: bool) -> reqwest::Client {
-    let mut builder = scene_client_builder(allow_private);
-    if is_server {
-        builder = builder.redirect(reqwest::redirect::Policy::none());
-    }
-    builder.build().unwrap()
+    scene_client_builder(allow_private)
+        .redirect(if is_server {
+            reqwest::redirect::Policy::none()
+        } else {
+            public_only_redirect(allow_private)
+        })
+        .build()
+        .unwrap()
 }
 
-/// A proxy given as a literal IP is dialled without a DNS lookup, so [`PublicOnlyResolver`]
-/// never sees it. Vet it synchronously: a forbidden (non-public) IP literal is refused unless
-/// `allow_private` (preview) permits the local network. A hostname proxy passes here — the
-/// resolver vets it when the connection is actually made.
+/// Parse a URL host component as an IP literal, tolerating the brackets the `url` crate keeps
+/// around an IPv6 literal (`[::1]`). Returns `None` for a hostname.
+fn host_ip_literal(host: &str) -> Option<std::net::IpAddr> {
+    host.strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host)
+        .parse()
+        .ok()
+}
+
+/// Redirect policy for the desktop client. Redirects are followed (as the browser would), but
+/// a hop onto a non-public IP *literal* is refused: reqwest dials an IP literal with no DNS
+/// lookup, so [`PublicOnlyResolver`] — which vets every hostname hop at connect — never sees
+/// it. This is the redirect-time twin of [`reject_non_public_proxy`]. `allow_private`
+/// (preview) permits the local network but never link-local / metadata.
+fn public_only_redirect(allow_private: bool) -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(move |attempt| {
+        // Policy::custom replaces reqwest's built-in hop cap, so re-impose the default of 10.
+        if attempt.previous().len() >= 10 {
+            return attempt.error("too many redirects".to_string());
+        }
+        if let Some(ip) = attempt.url().host_str().and_then(host_ip_literal) {
+            let permitted = allow_private && common::util::is_private_lan(&ip);
+            if !permitted && common::util::is_forbidden_ip(&ip) {
+                return attempt.error(format!(
+                    "redirect to non-public address {ip} is not allowed"
+                ));
+            }
+        }
+        attempt.follow()
+    })
+}
+
+/// Vet a scene-supplied proxy endpoint. Only an IP *literal* needs checking here: reqwest's
+/// proxy connector is an `HttpConnector<DynResolver>`, which dials an IP literal directly but
+/// routes a *hostname* endpoint through [`PublicOnlyResolver`] at connect — so a hostname
+/// proxy is already egress-checked there and a literal is the one case that skips it. (A
+/// `socks*://` proxy needs no handling: the `socks` feature is off, so `reqwest::Proxy::http`
+/// rejects it before we get here.) `allow_private` (preview) permits the local network but
+/// never link-local / metadata.
 fn reject_non_public_proxy(proxy_url: &str, allow_private: bool) -> Result<(), AnyError> {
     let url = deno_core::url::Url::parse(proxy_url)?;
-    if let Some(host) = url.host_str() {
-        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-            if allow_private && common::util::is_private_lan(&ip) {
-                return Ok(());
-            }
-            if common::util::is_forbidden_ip(&ip) {
-                anyhow::bail!("custom fetch client proxy may not target a non-public address");
-            }
+    if let Some(ip) = url.host_str().and_then(host_ip_literal) {
+        let permitted = allow_private && common::util::is_private_lan(&ip);
+        if !permitted && common::util::is_forbidden_ip(&ip) {
+            anyhow::bail!("custom fetch client proxy may not target a non-public address");
         }
     }
     Ok(())
@@ -530,10 +568,11 @@ pub fn op_fetch_custom_client(
     }
 
     // Client mode: the scene may still tune TLS trust/identity for its own machine, but its
-    // connections stay public-only via the resolver (unless preview). A proxy given as a
-    // literal IP skips the resolver — reqwest dials the IP without a lookup — so a private
-    // proxy endpoint is refused here; a hostname proxy is caught at connect by the resolver.
-    let mut builder = scene_client_builder(preview);
+    // connections stay public-only via the resolver (unless preview), and redirects are held
+    // to the same egress policy as the default client (see `public_only_redirect`). A proxy
+    // endpoint given as an IP literal skips that resolver, so it is vetted synchronously by
+    // `reject_non_public_proxy` (a hostname endpoint is resolved through the resolver).
+    let mut builder = scene_client_builder(preview).redirect(public_only_redirect(preview));
     if let Some(proxy_def) = args.proxy {
         reject_non_public_proxy(&proxy_def.url, preview)?;
         let mut proxy = reqwest::Proxy::http(proxy_def.url)?;
