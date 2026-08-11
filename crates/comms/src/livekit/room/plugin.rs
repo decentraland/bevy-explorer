@@ -172,7 +172,17 @@ async fn connect_to_room(
     .await
 }
 
-fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mut LivekitRoom)>) {
+/// Marker for a room that hit a terminal disconnect (kicked / identity conflict) while
+/// running as an authoritative server: no in-process reconnect is possible (the token is
+/// spent); the supervisor must tear the transport down and re-mint.
+#[derive(Component)]
+pub struct ServerRoomTerminal;
+
+fn process_room_events(
+    mut commands: Commands,
+    livekit_rooms: Query<(Entity, &mut LivekitRoom)>,
+    is_server: Res<common::structs::IsServer>,
+) {
     for (entity, mut livekit_room) in livekit_rooms {
         while let Ok(room_event) = livekit_room.room_event_receiver.try_recv() {
             trace!("in: {:?}", room_event);
@@ -199,7 +209,13 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                         reason,
                         DisconnectReason::DuplicateIdentity | DisconnectReason::ParticipantRemoved
                     ) {
-                        commands.set_state(ConnectionAvailability::Unavailable);
+                        if is_server.0 {
+                            // a server has no "connected in another tab" UX: mark the room
+                            // terminal so the headless supervisor reaps it and re-mints
+                            commands.entity(entity).try_insert(ServerRoomTerminal);
+                        } else {
+                            commands.set_state(ConnectionAvailability::Unavailable);
+                        }
                     }
                 }
                 RoomEvent::ConnectionStateChanged(state) => match state {

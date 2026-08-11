@@ -3,6 +3,10 @@
 // Import the wasm-bindgen generated JS glue code.
 import init, * as wasm_bindgen_exports from "./pkg/webgpu_build.js";
 
+// The capability the trusted super-user scene is given below. Captured before the scrub so the
+// constructor survives while the global does not.
+const RealBroadcastChannel = self.BroadcastChannel;
+
 // self.WebSocket = {}
 
 console.log("[Sandbox Worker] Starting");
@@ -66,15 +70,78 @@ const allowListES2020 = [
   "WeakSet",
 ];
 
+// Remove an inherited property. Interface objects (BroadcastChannel, Worker) are own properties of
+// the global and go with a plain delete; attributes like navigator.storage live on a prototype, and
+// deleting them off the instance silently succeeds without removing anything.
+function deleteFromPrototypeChain(obj, name) {
+  for (let o = obj; o != null; o = Object.getPrototypeOf(o)) {
+    if (Object.prototype.hasOwnProperty.call(o, name)) return delete o[name];
+  }
+  return false;
+}
+
 const jsContext = Object.create(null);
 var jsProxy = undefined;
 var jsPreamble = undefined;
 function createJsContext(wasmApi, context) {
   const isSuper = wasmApi.is_super(context);
-  // BroadcastChannel is a same-origin, serverless side channel — exposed ONLY to the trusted
+
+  // The allowlist below cannot withhold a capability: jsProxy is only consulted for
+  // `globalThis.X` property lookups, so a bare identifier in scene code resolves straight
+  // through to the real worker global. Withholding therefore has to be a deletion from that
+  // global. `Worker` goes with it — a nested worker is a fresh realm whose global has
+  // BroadcastChannel back, which would undo the deletion in one line. (SharedWorker isn't
+  // exposed to dedicated workers in Chromium, but delete it too for other engines.)
+  //
+  // Runs before preloadModules and before any scene code, so nothing untrusted has observed
+  // the pre-scrub global. Deleting for super-user scenes as well keeps one code path: the
+  // trusted scene gets the captured constructor back through jsContext, below.
+  delete self.BroadcastChannel;
+  delete self.Worker;
+  delete self.SharedWorker;
+
+  // OPFS is the origin's storage: config.json, the ipfs cache and every scene's localStorage all
+  // hang off the one root that navigator.storage.getDirectory() hands out. The scene's own storage
+  // no longer goes through it from here — crates/dcl_wasm/src/inner/local_storage.rs took a handle
+  // to just the local_storage/ subtree during wasm_init_scene, above, and that handle stays live
+  // once the accessor is gone.
+  //
+  // `delete navigator.storage` would return true and do nothing: WorkerNavigator exposes it on its
+  // prototype, so the own-property delete succeeds against a property that was never there. Walk to
+  // the prototype that actually holds it. (Same reason `delete self.navigator` is a no-op.)
+  //
+  // storageBuckets is the second door to the same API — navigator.storageBuckets.open(name) hands
+  // back a bucket with its own getDirectory(). A named bucket can't reach the default bucket's
+  // contents, so it isn't a route to engine state, but it is unmetered scene-controlled storage and
+  // two scenes agreeing on a bucket name would have a shared filesystem.
+  deleteFromPrototypeChain(self.navigator, "storage");
+  deleteFromPrototypeChain(self.navigator, "storageBuckets");
+
+  // IndexedDB is same-origin too, and holds more than its own data: platform/src/web_save.js keeps
+  // the FileSystemDirectoryHandle for the user's picked scene folder there (db `dcl-editor`, store
+  // `handles`), with readwrite permission already granted. A handle read back out of IndexedDB is
+  // as live as the one that was stored, so a scene reaching it would get the user's real
+  // filesystem, not origin-private storage. Nothing in this worker uses IndexedDB — web_save.js and
+  // gpu_cache.js both run on the main thread.
+  deleteFromPrototypeChain(self, "indexedDB");
+
+  // CacheStorage is the last same-origin store the sandbox could see — it holds the ipfs fetch
+  // cache (`ipfs-path-cache-v1`), so a scene could read every asset the client has pulled and, more
+  // to the point, write to keys the loader later serves. Its users are elsewhere:
+  // image_processing/src/processor/wasm_fs.rs runs under asset_processor.js, which engine.js spawns
+  // as its own worker, and service_worker.js is a different context entirely.
+  deleteFromPrototypeChain(self, "caches");
+
+  // BroadcastChannel is a same-origin, serverless side channel — handed ONLY to the trusted
   // super-user (--ui) scene, so an embedded host page can drive it; ordinary scenes never see it
   // (it would otherwise let an untrusted scene coordinate with the page / other scenes off-network).
-  const allowList = isSuper ? [...allowListES2020, "BroadcastChannel"] : allowListES2020;
+  if (isSuper) {
+    Object.defineProperty(jsContext, "BroadcastChannel", {
+      configurable: false,
+      value: RealBroadcastChannel,
+    });
+  }
+
   const sceneLabel = context.get_scene_title();
   const sceneStartTime = performance.now();
   function scenePrefix() {
@@ -179,7 +246,7 @@ function createJsContext(wasmApi, context) {
       if (propKey === "global") return jsProxy;
       if (propKey === "undefined") return undefined;
       if (jsContext[propKey] !== undefined) return jsContext[propKey];
-      if (allowList.includes(propKey)) {
+      if (allowListES2020.includes(propKey)) {
         return globalThis[propKey];
       }
       return undefined;
@@ -187,7 +254,7 @@ function createJsContext(wasmApi, context) {
   });
 
   const contextKeys = Object.getOwnPropertyNames(jsContext);
-  const allGlobals = [...new Set([...allowList, ...contextKeys])];
+  const allGlobals = [...new Set([...allowListES2020, ...contextKeys])];
   jsPreamble = allGlobals
     .map((key) => `const ${key} = globalThis.${key};`)
     .join("\n");
@@ -202,7 +269,7 @@ async function runWithScope(code) {
     "globalThis",
     "module",
     "exports",
-    `${jsPreamble}\n\n${code}`
+    `${jsPreamble}\n\n;(function (globalThis, module, exports) {\n${code}\n}).call(globalThis, globalThis, module, exports);`
   );
 
   await defer(() => func.call(jsProxy, jsProxy, module, module.exports));
@@ -451,4 +518,3 @@ function createWebStorageProxy(ops) {
   );
 }
 
-postMessage({ type: `READY` });

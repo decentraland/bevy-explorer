@@ -195,8 +195,88 @@ jobs:
         if: runner.os == 'macos'
         with:
           command: test
-          args: --all --release --locked -- --test-threads=1 
-      
+          args: --all --release --locked -- --test-threads=1
+
+  # The headless server is otherwise built only by publish-headless.yml, which runs on
+  # main pushes and publishes the result to npm — so a PR that breaks it goes green and
+  # the breakage is discovered by consumers. `cargo build` alone is not enough: the
+  # failures this binary actually has are runtime system-param validation panics (a
+  # plugin gated out while a system still requests its resource), which compile clean.
+  # So this builds the shipped configuration and runs it against a real realm until it
+  # ticks. ubuntu-22.04 and the feature set mirror publish-headless.yml's linux-x64 leg.
+  headless-smoke:
+    name: Headless Smoke
+    runs-on: ubuntu-22.04
+    concurrency:
+      group: ${{ github.workflow }}-headless-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: headless-linux-x64
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # NOT apt protobuf-compiler: ubuntu-22.04 ships protoc 3.12, which rejects the
+      # proto3 optional fields in billboard.proto. The rest of this workflow uses the
+      # action for the same reason.
+      - name: Install protoc
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # No CEF or ffmpeg: --no-default-features drops them.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake pkg-config \
+            libasound2-dev libudev-dev libgl-dev libx11-dev libxext-dev
+      # headless spawns the sidecar from its own directory, so both land in target/release.
+      - name: Build sidecar
+        run: cargo build --release --locked -p dcl_deno_ipc
+      - name: Build engine
+        run: >
+          cargo build --release --locked
+          --bin headless --no-default-features --features headless,livekit
+      # scene-explorer-tests is a static GitHub Pages site already relied on by Test
+      # Scenes above, so this adds no new infrastructure dependency. 52,-52 co-tenants
+      # 8 scenes, which exercises the multi-scene scheduling path rather than just boot.
+      - name: Smoke test
+        run: |
+          set -o pipefail
+          ./target/release/headless \
+            --realm https://decentraland.github.io/scene-explorer-tests/scene-explorer-tests \
+            --location 52,-52 --server-mode --timeout 90 2>&1 | tee smoke.log
+      - name: Assert scenes ticked
+        run: |
+          if ! grep -q "first tick reached" smoke.log; then
+            echo "::error::headless never reached first tick"
+            exit 1
+          fi
+          if grep -q "panicked at" smoke.log; then
+            echo "::error::headless panicked"
+            grep -m5 -A5 "panicked at" smoke.log
+            exit 1
+          fi
+          # a scene that ticks once then wedges must fail too, so require progress
+          ticks=$(grep -o "max_tick=[0-9]*" smoke.log | cut -d= -f2)
+          first=$(echo "$ticks" | head -1)
+          last=$(echo "$ticks" | tail -1)
+          if [ -z "$last" ] || [ "$last" -le "$first" ]; then
+            echo "::error::scene ticks stalled (first=$first last=$last)"
+            exit 1
+          fi
+          echo "ok: ticks advanced $first -> $last"
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-smoke-log
+          path: smoke.log
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
@@ -326,6 +406,30 @@ jobs:
           rm -f ./deploy/web/engine/pkg/.gitignore
           WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm)
           echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
+          # Inline the glue into the sandbox worker: scene code shares that worker's realm and
+          # can re-import any module in it by URL, which for pkg/webgpu_build.js hands back our
+          # INITIALISED instance and with it the shared engine heap. Inlining turns the glue's
+          # exports into module-scope bindings of the bundle. Re-runs on every wasm build,
+          # since it embeds a copy of the generated glue.
+          npx --yes esbuild@0.28.1 ./deploy/web/engine/sandbox_worker.js \
+            --bundle --format=esm --log-level=error \
+            --metafile="${RUNNER_TEMP:-/tmp}/sandbox_worker.meta.json" \
+            --outfile=./deploy/web/engine/pkg/sandbox_worker.bundle.js
+          # A scene can still import the bundle's OWN url, and a namespace object hands out
+          # exactly the module's exports — so the entire guarantee reduces to "this entry
+          # exports nothing". Enforce that instead of trusting a comment to hold: an `export`
+          # added to sandbox_worker.js (worst case a re-export of the glue) would silently
+          # undo the fix. esbuild's metafile is authoritative, so nothing has to be executed.
+          node -e '
+            const meta = require(process.argv[1]);
+            const [out] = Object.values(meta.outputs).filter((o) => o.entryPoint);
+            if (!out) { console.error("no entry output found in esbuild metafile"); process.exit(1); }
+            if (out.exports.length) {
+              console.error("sandbox_worker bundle must export nothing, or scene code can import it and reach the live wasm instance. Found: " + out.exports.join(", "));
+              process.exit(1);
+            }
+            console.log("sandbox worker bundle exports nothing - ok");
+          ' "${RUNNER_TEMP:-/tmp}/sandbox_worker.meta.json"
       - name: Install
         run: npm i
         working-directory: deploy/web

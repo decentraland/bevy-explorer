@@ -24,7 +24,7 @@ use bevy::{
 };
 use common::{
     anim_last_system,
-    structs::{AppConfig, PrimaryUser},
+    structs::{AppConfig, NoRenderApp, PrimaryUser},
     util::{ModifyComponentExt, SceneSpawnerPlus},
 };
 use rapier3d_f64::prelude::*;
@@ -80,6 +80,86 @@ impl From<PbGltfContainer> for GltfDefinition {
     }
 }
 
+/// The mesh/skin/material/animation names a scene sees in `GltfContainerLoadingState`.
+///
+/// Extracted once per glTF, after which `Gltf::source` is dropped: bevy retains the whole
+/// parsed document *and* the GLB binary blob there for the asset's lifetime, and these four
+/// lists were the only thing we ever read from it (24MB on cleantheclub, 57MB on flagtag,
+/// measured headless). Cached rather than re-read because a second container sharing the
+/// same glTF arrives after the source is gone.
+#[derive(Clone, Default)]
+pub struct GltfNames {
+    pub meshes: Vec<String>,
+    pub skins: Vec<String>,
+    pub materials: Vec<String>,
+    pub animations: Vec<String>,
+}
+
+impl GltfNames {
+    /// Empty when the source is already absent — callers get the same shape either way.
+    fn extract(gltf: &Gltf) -> Self {
+        let Some(src) = gltf.source.as_ref() else {
+            return Self::default();
+        };
+        let named = |name: Option<&str>, prefix: &str, ix: usize| {
+            name.map(ToOwned::to_owned)
+                .unwrap_or_else(|| format!("{prefix}{ix}"))
+        };
+        Self {
+            meshes: src
+                .meshes()
+                .enumerate()
+                .map(|(ix, m)| named(m.name(), "Mesh", ix))
+                .collect(),
+            skins: src
+                .skins()
+                .enumerate()
+                .map(|(ix, s)| named(s.name(), "Skin", ix))
+                .collect(),
+            materials: src
+                .materials()
+                .enumerate()
+                .map(|(ix, m)| named(m.name(), "Material", ix))
+                .collect(),
+            animations: src
+                .animations()
+                .enumerate()
+                .map(|(ix, a)| named(a.name(), "Animation", ix))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+pub struct GltfNameCache(HashMap<AssetId<Gltf>, GltfNames>);
+
+/// Keep the name cache honest across asset lifetime changes. `Modified` needs care: dropping
+/// the source is itself a mutation and fires it, so only a reload — which repopulates
+/// `source` — invalidates the entry.
+fn maintain_gltf_name_cache(
+    mut events: EventReader<AssetEvent<Gltf>>,
+    mut cache: ResMut<GltfNameCache>,
+    gltfs: Res<Assets<Gltf>>,
+) {
+    for ev in events.read() {
+        match ev {
+            // deliberately not `Unused`: an unused asset can be resurrected by a fresh
+            // handle without reloading, and its source is already gone, so a purge there
+            // would leave the next container with no names at all. `AssetId` is
+            // generational, so an entry kept until `Removed` can never match a later asset.
+            AssetEvent::Removed { id } => {
+                cache.0.remove(id);
+            }
+            AssetEvent::Modified { id }
+                if gltfs.get(*id).is_some_and(|gltf| gltf.source.is_some()) =>
+            {
+                cache.0.remove(id);
+            }
+            _ => (),
+        }
+    }
+}
+
 impl Plugin for GltfDefinitionPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbGltfContainer, GltfDefinition>(
@@ -97,7 +177,9 @@ impl Plugin for GltfDefinitionPlugin {
             ComponentPosition::EntityOnly,
         );
 
+        app.init_resource::<GltfNameCache>();
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, maintain_gltf_name_cache);
         app.add_systems(SpawnScene, update_ready_gltfs.after(scene_spawner_system));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
         app.add_systems(
@@ -176,6 +258,28 @@ fn on_gltf_container_removed(trigger: Trigger<OnRemove, GltfDefinition>, mut com
         .try_remove::<(GltfLoaded, GltfProcessed, GltfReady)>();
 }
 
+// assets are keyed by path and the first load's settings win, so every gltf that might
+// also be used by a GltfContainer (e.g. AssetLoad preloads) must load with these settings
+pub fn scene_gltf_loader_settings(
+    transfer_priority: RenderAssetTransferPriority,
+    no_render_app: bool,
+) -> impl Fn(&mut GltfLoaderSettings) + Send + Sync + 'static {
+    move |s| {
+        s.load_cameras = false;
+        s.load_lights = true;
+        s.load_meshes = RenderAssetUsages::MAIN_WORLD; // we'll modify then upload
+                                                       // no renderer can ever sample a material, and empty usages also tell the
+                                                       // loader to register embedded textures as 1x1 placeholders instead of decoding them
+        s.load_materials = if no_render_app {
+            RenderAssetUsages::empty()
+        } else {
+            RenderAssetUsages::RENDER_WORLD
+        };
+        s.include_source = true;
+        s.transfer_priority = transfer_priority;
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_gltf(
     mut commands: Commands,
@@ -206,6 +310,7 @@ fn update_gltf(
     mut contexts: Query<(Entity, &mut RendererSceneContext, Has<SceneResourceLookup>)>,
     containing_scenes: ContainingScene,
     oow_player: Query<Entity, (With<OutOfWorld>, With<PrimaryUser>)>,
+    no_render_app: Option<Res<NoRenderApp>>,
 ) {
     let immediate_scene = oow_player
         .single()
@@ -271,14 +376,7 @@ fn update_gltf(
         let h_gltf = ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
             &gltf.0.src,
             &scene_def.id,
-            move |s| {
-                s.load_cameras = false;
-                s.load_lights = true;
-                s.load_meshes = RenderAssetUsages::MAIN_WORLD; // we'll modify then upload
-                s.load_materials = RenderAssetUsages::RENDER_WORLD;
-                s.include_source = true;
-                s.transfer_priority = transfer_priority;
-            },
+            scene_gltf_loader_settings(transfer_priority, no_render_app.is_some()),
         );
 
         let h_gltf = match h_gltf {
@@ -314,7 +412,12 @@ fn update_gltf(
             }
         }
 
-        let gltf = gltfs.get(h_gltf.0.id()).unwrap();
+        let Some(gltf) = gltfs.get(h_gltf.0.id()) else {
+            warn!("gltf {} unloaded between load state and lookup", def.0.src);
+            set_state(scene_ent, LoadingState::FinishedWithError);
+            commands.entity(ent).try_insert(GltfLoaded(None));
+            continue;
+        };
         let gltf_scene_handle = gltf.default_scene.as_ref();
 
         // validate texture types
@@ -423,10 +526,13 @@ fn update_ready_gltfs(
     )>,
     asset_server: Res<AssetServer>,
     config: Res<AppConfig>,
-    gltfs: Res<Assets<Gltf>>,
+    mut gltfs: ResMut<Assets<Gltf>>,
     animation_clips: Res<Assets<AnimationClip>>,
+    mut name_cache: ResMut<GltfNameCache>,
 ) {
     let mut failed = Vec::default();
+    // sources are dropped after the loop: `gltf` is borrowed from `gltfs` throughout it
+    let mut drop_sources = Vec::default();
 
     'outer: for (bevy_scene_entity, dcl_scene_entity, loaded, definition, h_gltf) in
         ready_gltfs.iter()
@@ -691,7 +797,10 @@ fn update_ready_gltfs(
                             }
                         }
 
-                        let shape = mesh_to_parry_shape(mesh_data);
+                        let shape = mesh_to_parry_shape(mesh_data).unwrap_or_else(|| {
+                            warn!("gltf mesh has no positions; using placeholder collider");
+                            SharedShape::ball(0.01)
+                        });
 
                         let maybe_collider = if is_skinned {
                             let mut new_mesh = Mesh::new(
@@ -938,58 +1047,24 @@ fn update_ready_gltfs(
                 }
             }
 
-            // collect named assets and assign names to unnamed
-            let mesh_names = gltf
-                .source
-                .as_ref()
-                .unwrap()
-                .meshes()
-                .enumerate()
-                .map(|(ix, m)| {
-                    m.name()
-                        .map(ToOwned::to_owned)
-                        .unwrap_or_else(|| format!("Mesh{ix}"))
-                })
-                .collect::<Vec<_>>();
-
-            let skin_names = gltf
-                .source
-                .as_ref()
-                .unwrap()
-                .skins()
-                .enumerate()
-                .map(|(ix, s)| {
-                    s.name()
-                        .map(ToOwned::to_owned)
-                        .unwrap_or_else(|| format!("Skin{ix}"))
-                })
-                .collect::<Vec<_>>();
-
-            let material_names = gltf
-                .source
-                .as_ref()
-                .unwrap()
-                .materials()
-                .enumerate()
-                .map(|(ix, m)| {
-                    m.name()
-                        .map(ToOwned::to_owned)
-                        .unwrap_or_else(|| format!("Material{ix}"))
-                })
-                .collect::<Vec<_>>();
-
-            let animation_names = gltf
-                .source
-                .as_ref()
-                .unwrap()
-                .animations()
-                .enumerate()
-                .map(|(ix, a)| {
-                    a.name()
-                        .map(ToOwned::to_owned)
-                        .unwrap_or_else(|| format!("Animation{ix}"))
-                })
-                .collect::<Vec<_>>();
+            // names for the loading-state message; extracted once, then the source is
+            // dropped after this loop (see GltfNames)
+            let id = h_gltf.0.id();
+            let names = match name_cache.0.get(&id) {
+                Some(names) => names.clone(),
+                None => {
+                    let names = GltfNames::extract(gltf);
+                    name_cache.0.insert(id, names.clone());
+                    drop_sources.push(id);
+                    names
+                }
+            };
+            let GltfNames {
+                meshes: mesh_names,
+                skins: skin_names,
+                materials: material_names,
+                animations: animation_names,
+            } = names;
 
             // collect named skins and assign names to unnamed meshes
             context.update_crdt(
@@ -1052,6 +1127,15 @@ fn update_ready_gltfs(
     for (bevy_scene_entity, instance) in failed {
         commands.entity(bevy_scene_entity).remove::<()>();
         scene_spawner.despawn_instance(*instance);
+    }
+
+    // now that nothing borrows `gltfs`, release the parsed documents + GLB blobs whose
+    // names we just cached. `get_mut` marks the asset Modified; nothing listens for that
+    // on Gltf, and maintain_gltf_name_cache distinguishes it from a real reload.
+    for id in drop_sources {
+        if let Some(gltf) = gltfs.get_mut(id) {
+            gltf.source = None;
+        }
     }
 }
 
@@ -1173,12 +1257,16 @@ fn _node_graph(
     format!("{dot:?}")
 }
 
-pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
+/// Returns None when the mesh has no POSITION attribute — a crafted glTF can produce
+/// such a primitive (the lenient fork loader accepts accessors with no bufferView), and
+/// panicking here would abort the shared engine and every co-tenant scene.
+pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> Option<SharedShape> {
     // create collider shape
     let VertexAttributeValues::Float32x3(positions_ref) =
-        mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+        mesh_data.attribute(Mesh::ATTRIBUTE_POSITION)?
     else {
-        panic!("no positions")
+        warn!("gltf collider mesh POSITION is not Float32x3; skipping");
+        return None;
     };
 
     let positions_parry: Vec<_> = positions_ref
@@ -1191,22 +1279,36 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
         Some(Indices::U16(ixs)) => ixs.iter().map(|ix| *ix as u32).collect(),
         Some(Indices::U32(ixs)) => ixs.to_vec(),
     };
+    // parry indexes vertices directly (TriMesh::triangle) and its builder rejects only
+    // empty index buffers, so a triangle pointing past the position count panics inside
+    // trimesh_with_flags rather than erroring. drop those triangles.
+    let vertex_count = positions_ref.len() as u32;
+    let total_triangles = indices.len() / 3;
     let indices_parry: Vec<_> = indices
         .chunks_exact(3)
+        .filter(|chunk| chunk.iter().all(|ix| *ix < vertex_count))
         .map(|chunk| chunk.try_into().unwrap())
         .collect();
+    if indices_parry.len() < total_triangles {
+        warn!(
+            "gltf collider mesh: dropped {} triangle(s) indexing past {vertex_count} vertices",
+            total_triangles - indices_parry.len()
+        );
+    }
 
-    SharedShape::trimesh_with_flags(
-        positions_parry,
-        indices_parry,
-        TriMeshFlags::DELETE_DEGENERATE_TRIANGLES
-            | TriMeshFlags::DELETE_DUPLICATE_TRIANGLES
-            | TriMeshFlags::MERGE_DUPLICATE_VERTICES,
+    Some(
+        SharedShape::trimesh_with_flags(
+            positions_parry,
+            indices_parry,
+            TriMeshFlags::DELETE_DEGENERATE_TRIANGLES
+                | TriMeshFlags::DELETE_DUPLICATE_TRIANGLES
+                | TriMeshFlags::MERGE_DUPLICATE_VERTICES,
+        )
+        .unwrap_or_else(|_| {
+            warn!("empty indices, can't generate collider");
+            SharedShape::ball(0.01)
+        }),
     )
-    .unwrap_or_else(|_| {
-        warn!("empty indices, can't generate collider");
-        SharedShape::ball(0.01)
-    })
 }
 
 #[derive(Component, Debug)]
@@ -2052,14 +2154,15 @@ fn update_gltf_linked_transforms(
                         debug!("[{gltf_ent:?}] s -> r {:?}", gltf_node_transform);
 
                         // and update stored state with the rrt we will compute next frame, to avoid rounding errors
-                        stored_transforms_and_parents.get_mut(&gltf_ent).unwrap().0 = gt_helper
-                            .compute_global_transform_with_overrides(
-                                gltf_ent,
-                                Some(data.transform_root),
-                                &updated_transforms,
-                            )
-                            .unwrap()
-                            .compute_transform();
+                        let Ok(gltf_global) = gt_helper.compute_global_transform_with_overrides(
+                            gltf_ent,
+                            Some(data.transform_root),
+                            &updated_transforms,
+                        ) else {
+                            return None;
+                        };
+                        stored_transforms_and_parents.get_mut(&gltf_ent).unwrap().0 =
+                            gltf_global.compute_transform();
                         None
                     }
                 }

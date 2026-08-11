@@ -7,6 +7,9 @@ wasm:
     wasm-pack build --target web --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social"
     rm -f ./deploy/web/engine/pkg/.gitignore
     WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm) && echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
+    # inline the glue into the sandbox worker — the engine loads pkg/sandbox_worker.bundle.js,
+    # so this must re-run on every wasm build (it embeds a copy of the generated glue).
+    npx --yes esbuild@0.28.1 ./deploy/web/engine/sandbox_worker.js --bundle --format=esm --log-level=error --outfile=./deploy/web/engine/pkg/sandbox_worker.bundle.js
     cd react-web && npm install
     cd react-web/bridge-scene && npm install
     cd react-web && npm run dev -- --open

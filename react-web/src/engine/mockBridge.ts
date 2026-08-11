@@ -224,6 +224,8 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
 
   // An in-flight loginNew approval (so loginCancel/logout can abort it).
   let pendingAuth: { id: string; timer: ReturnType<typeof setTimeout> } | null = null
+  // Drives the mock pose stream (see spawnPlayer) so the minimap is developable without an engine.
+  let poseTimer: ReturnType<typeof setInterval> | null = null
 
   // No engine in mock mode, so stand in for the engine's 'Cancel' system action: relay a DOM Escape
   // as the same message the real bridge sends from getSystemActionStream (closes the topmost popup).
@@ -256,6 +258,25 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       }
       tick(0)
     }, 500)
+
+    // No engine in mock mode, so no real pose stream: walk a slow circle near Genesis
+    // Plaza at the same ~20/s cadence the real bridge uses, so the minimap has something
+    // to follow, centre on, and rotate with. Genesis City, so the DOM tile styles apply.
+    reply({ kind: 'realmInfo', realm: 'https://realm-provider.decentraland.org/main', isWorld: false })
+    // The real bridge resolves this per parcel from the live scene list; the mock circles
+    // inside one scene, so a single push is the whole story.
+    reply({ kind: 'sceneInfo', title: 'Genesis Plaza' })
+    let t = 0
+    poseTimer = setInterval(() => {
+      t += 0.05
+      const a = t * 0.08
+      const x = Math.cos(a) * 40
+      const z = Math.sin(a) * 40
+      // Heading = the tangent of the circle. SDK yaw is degrees about Y with 0 facing +Z.
+      const yaw = (Math.atan2(-Math.sin(a), Math.cos(a)) * 180) / Math.PI
+      reply({ kind: 'playerPose', x, z, yaw, camYaw: yaw })
+    }, 50)
+
     // Fake nearby roster → drives the "Nearby · N" count + members list, and lets
     // chat bubbles resolve sender addresses to names.
     setTimeout(
@@ -445,6 +466,11 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     }
     if (msg.kind === 'engineViewport') {
       // No engine in mock mode — nothing to render into the cutout.
+      return
+    }
+    if (msg.kind === 'minimapConfig') {
+      // No engine in mock mode — the Camera style has nothing to render. The DOM styles
+      // are unaffected: React draws those from map tiles without the scene's help.
       return
     }
     if (msg.kind === 'previewAvatar') {
@@ -650,6 +676,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
 
   return () => {
     window.removeEventListener('keydown', onEscape)
+    if (poseTimer != null) clearInterval(poseTimer)
     ch.close()
   }
 }

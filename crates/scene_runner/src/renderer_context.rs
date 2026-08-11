@@ -6,7 +6,7 @@ use common::{
 };
 use dcl::{
     interface::{CrdtStore, CrdtType},
-    SceneId, SceneLogMessage,
+    SceneId, SceneLogMessage, SceneResourceCounters,
 };
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
 use scene_material::BoundRegion;
@@ -112,6 +112,9 @@ pub struct RendererSceneContext {
 
     // does the scene use an authoritative multiplayer server
     pub authoritative_multiplayer: bool,
+
+    // latest cumulative resource-counter snapshot from the scene thread
+    pub resource_counters: Option<SceneResourceCounters>,
 }
 
 /// Block reason used by /freeze_scene and /tick_scene.
@@ -164,7 +167,7 @@ impl RendererSceneContext {
             death_row: Default::default(),
             outbound_born: Default::default(),
             outbound_died: Default::default(),
-            live_entities: vec![(0, None); u16::MAX as usize],
+            live_entities: vec![(0, None); SceneEntityId::LIVE_TABLE_LEN],
             unparented_entities: HashSet::new(),
             hierarchy_changed: false,
             last_sent: 0.0,
@@ -187,6 +190,7 @@ impl RendererSceneContext {
             sdk_version,
             inspected,
             authoritative_multiplayer,
+            resource_counters: None,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =
@@ -195,12 +199,12 @@ impl RendererSceneContext {
     }
 
     fn entity_entry(&self, id: u16) -> &(u16, Option<Entity>) {
-        // SAFETY: live entities has u16::MAX members
+        // SAFETY: live_entities has LIVE_TABLE_LEN (u16::MAX + 1) entries, so any u16 index is in bounds
         unsafe { self.live_entities.get_unchecked(id as usize) }
     }
 
     fn entity_entry_mut(&mut self, id: u16) -> &mut (u16, Option<Entity>) {
-        // SAFETY: live entities has u16::MAX members
+        // SAFETY: live_entities has LIVE_TABLE_LEN (u16::MAX + 1) entries, so any u16 index is in bounds
         unsafe { self.live_entities.get_unchecked_mut(id as usize) }
     }
 

@@ -29,13 +29,15 @@ function workerCrashHandler(name) {
  * Fetches a URL with download progress tracking.
  * @param {string} url - URL to fetch
  * @param {function} onProgress - Callback with percentage (0-100)
- * @param {number|null} expectedSize - Expected uncompressed size in bytes (fallback when Content-Length is missing due to content-encoding)
+ * @param {number|null} expectedSize - Expected decoded size in bytes. Preferred over
+ *   Content-Length, which under CDN compression counts compressed bytes while the body
+ *   reader yields decoded bytes.
  * @returns {Promise<ArrayBuffer>}
  */
 async function fetchWithProgress(url, onProgress, expectedSize) {
   const response = await fetch(url);
   const contentLength = response.headers.get('Content-Length');
-  const total = contentLength ? parseInt(contentLength, 10) : expectedSize;
+  const total = expectedSize || (contentLength ? parseInt(contentLength, 10) : null);
 
   if (!total || !response.body) {
     // Fallback if no size info available or no streaming support
@@ -69,6 +71,71 @@ async function fetchWithProgress(url, onProgress, expectedSize) {
 }
 
 /**
+ * Downloads and compiles the engine WASM.
+ *
+ * Compiles with WebAssembly.compileStreaming on the live network response, so
+ * compilation overlaps the download and — because the response keeps its URL
+ * identity — the browser may persist the compiled module in its code cache and
+ * skip the compile on repeat visits. The progress callback is fed from a clone
+ * of the response; wrapping a byte-counting stream in a synthesized Response
+ * instead would discard the URL identity and with it the code cache.
+ *
+ * @param {string} url - WASM URL
+ * @param {number|null} expectedSize - Expected decoded size in bytes (from the manifest)
+ * @param {function} onProgress - Callback with percentage (0-100)
+ * @param {function} onDownloaded - Called once the last byte has arrived, before the compile tail
+ * @returns {Promise<WebAssembly.Module>}
+ */
+async function compileWasmWithProgress(url, expectedSize, onProgress, onDownloaded) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`WASM fetch failed: ${response.status} ${response.statusText}`);
+  }
+
+  const contentLength = response.headers.get('Content-Length');
+  const total = expectedSize || (contentLength ? parseInt(contentLength, 10) : null);
+
+  if (typeof WebAssembly.compileStreaming === 'function' && response.body) {
+    let cancelProgress = () => {};
+    let progressTask = Promise.resolve();
+    if (total) {
+      const reader = response.clone().body.getReader();
+      cancelProgress = () => reader.cancel().catch(() => {});
+      progressTask = (async () => {
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received += value.length;
+          onProgress(Math.min((received / total) * 100, 100));
+        }
+      })().catch(() => {});
+    }
+
+    try {
+      const module = await WebAssembly.compileStreaming(response);
+      await progressTask;
+      onProgress(100);
+      onDownloaded();
+      return module;
+    } catch (e) {
+      // typically a server not sending Content-Type: application/wasm — refetch
+      // (usually straight from the HTTP cache) and compile from a buffer instead
+      cancelProgress();
+      console.warn('[Main JS] compileStreaming failed, falling back to buffered compile', e);
+    }
+  } else {
+    try {
+      response.body?.cancel();
+    } catch (e) { /* body already consumed or locked */ }
+  }
+
+  const buffer = await fetchWithProgress(url, onProgress, total);
+  onDownloaded();
+  return WebAssembly.compile(buffer);
+}
+
+/**
  * Initializes the WASM engine, shared memory, and worker threads.
  * @returns {Promise<void>}
  */
@@ -88,18 +155,20 @@ export async function initEngine() {
     console.warn("Could not load manifest.json, progress may not be accurate", e);
   }
 
-  // Step 1: Download WASM with progress
+  // Steps 1+2: Download and compile WASM. Compilation streams alongside the download,
+  // so the 'compile' step only covers the tail left after the last byte arrives.
   setLoadingStepActive('download');
-  const wasmBytes = await fetchWithProgress(wasmUrl, (percent) => {
-    setLoadingStepProgress('download', percent);
-  }, expectedWasmSize);
-  setLoadingStepCompleted('download');
-
-  // Step 2: Compile WASM
-  setLoadingStepActive('compile');
   console.time("compileTime")
-  const compiledModule = await WebAssembly.compile(wasmBytes);
-  console.timeEnd("compileTime") // 70 ms
+  const compiledModule = await compileWasmWithProgress(
+    wasmUrl,
+    expectedWasmSize,
+    (percent) => setLoadingStepProgress('download', percent),
+    () => {
+      setLoadingStepCompleted('download');
+      setLoadingStepActive('compile');
+    }
+  );
+  console.timeEnd("compileTime")
   setLoadingStepCompleted('compile');
 
   const initialMemoryPages = 1280; // setting initial memory high causes malloc failures
@@ -159,9 +228,16 @@ export async function initEngine() {
   window.spawn_and_init_sandbox = async () => {
     var timeoutId;
     return new Promise((resolve, _reject) => {
-      const sandboxWorkerPath = new URL("./sandbox_worker.js", import.meta.url);
-      var sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
-      sandboxWorker.onerror = workerCrashHandler("sandbox");
+      // The BUNDLE, not sandbox_worker.js. Scene code shares this worker's realm, and any
+      // module in that realm can be re-imported by URL — which for "./pkg/webgpu_build.js"
+      // hands back OUR initialised instance (wasm-bindgen's init returns the cached exports),
+      // shared engine heap and all. Inlining makes the glue's exports ordinary module-scope
+      // bindings of the bundle instead. A scene can still import the bundle's URL, but a
+      // namespace object exposes only that module's *exports*, and this entry has none — so
+      // it gets an empty object. Keep sandbox_worker.js export-free or that stops being true.
+      // Built alongside the wasm (see react-web/README.md); lives in pkg/ so the glue's
+      // relative paths still resolve. sandbox_worker.js is unchanged, just no longer the entry.
+      const sandboxWorkerPath = new URL("./pkg/sandbox_worker.bundle.js", import.meta.url);
 
       var timeoutCount = 0;
       let logTimeout = () => {
@@ -174,25 +250,36 @@ export async function initEngine() {
       };
       timeoutId = setTimeout(logTimeout, 5000);
 
-      sandboxWorker.onmessage = (workerEvent) => {
-        if (workerEvent.data.type === "READY") {
-          sandboxWorker.postMessage({
-            type: "INIT_WORKER",
-            payload: {
-              compiledModule,
-              sharedMemory,
-            },
-          });
-        }
-        if (workerEvent.data.type === "INIT_COMPLETE") {
-          resolve();
-        }
-        if (workerEvent.data.type === "INIT_FAILED") {
-          console.log("[Main JS] Sandbox init failed; retrying");
-          sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
-          sandboxWorker.onerror = workerCrashHandler("sandbox");
-        }
+      // Payload goes out unprompted — a worker queues messages posted before it has a listener,
+      // so nothing needs to ask for it. Scene code shares this worker's realm and reaches the
+      // real worker global (bare `postMessage` is the platform's, not ours), so any request we
+      // honoured would be forgeable, and sharedMemory is the engine heap. The handler drops at
+      // INIT_COMPLETE, which the worker posts before it builds the js context: this side is not
+      // listening while scene code runs.
+      const spawn = () => {
+        const sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
+        sandboxWorker.onerror = workerCrashHandler("sandbox");
+        sandboxWorker.postMessage({
+          type: "INIT_WORKER",
+          payload: {
+            compiledModule,
+            sharedMemory,
+          },
+        });
+        sandboxWorker.onmessage = (workerEvent) => {
+          if (workerEvent.data.type === "INIT_COMPLETE") {
+            sandboxWorker.onmessage = null;
+            resolve();
+          }
+          if (workerEvent.data.type === "INIT_FAILED") {
+            // The failed worker closes itself; this replaces it, wired the same way.
+            sandboxWorker.onmessage = null;
+            console.log("[Main JS] Sandbox init failed; retrying");
+            spawn();
+          }
+        };
       };
+      spawn();
     }).finally(() => {
       clearTimeout(timeoutId);
     });
@@ -220,17 +307,17 @@ export async function initEngine() {
 
     const assetLoader = new Worker(assetLoaderPath, { type: "module" });
     assetLoader.onerror = workerCrashHandler("asset loader");
+    // Unprompted, as for the sandbox above.
+    assetLoader.postMessage({
+      type: "INIT_ASSET_LOADER",
+      payload: {
+        compiledModule,
+        sharedMemory,
+      },
+    });
     assetLoader.onmessage = (workerEvent) => {
-      if (workerEvent.data.type === "READY") {
-        assetLoader.postMessage({
-          type: "INIT_ASSET_LOADER",
-          payload: {
-            compiledModule,
-            sharedMemory,
-          },
-        });
-      }
       if (workerEvent.data.type === "INITIALIZED") {
+        assetLoader.onmessage = null;
         resolve();
       }
     };
@@ -243,17 +330,16 @@ export async function initEngine() {
 
     const assetProcessor = new Worker(assetProcessorPath, { type: "module" });
     assetProcessor.onerror = workerCrashHandler("asset processor");
+    assetProcessor.postMessage({
+      type: "INIT_ASSET_PROCESSOR",
+      payload: {
+        compiledModule,
+        sharedMemory,
+      },
+    });
     assetProcessor.onmessage = (workerEvent) => {
-      if (workerEvent.data.type === "READY") {
-        assetProcessor.postMessage({
-          type: "INIT_ASSET_PROCESSOR",
-          payload: {
-            compiledModule,
-            sharedMemory,
-          },
-        });
-      }
       if (workerEvent.data.type === "INITIALIZED") {
+        assetProcessor.onmessage = null;
         resolve();
       }
     };

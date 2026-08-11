@@ -9,7 +9,7 @@ use dcl::{
         engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, SceneResponseSender,
         ShuttingDown, SuperUserScene,
     },
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneResponse,
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneResourceCounters, SceneResponse,
 };
 use deno_core::{
     anyhow::anyhow,
@@ -49,6 +49,7 @@ pub fn create_runtime(
     inspect: bool,
     super_user: bool,
     storage_root: &str,
+    preview: bool,
 ) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
     let net = deno_net::deno_net::init_ops_and_esm::<NP>(None, None);
@@ -145,6 +146,12 @@ pub fn create_runtime(
         ..Default::default()
     };
 
+    // Per-isolate V8 heap cap. Every scene runs in its own isolate on its own thread, so
+    // a cap here bounds ONE scene's memory and stops a single runaway/hostile scene from
+    // OOM-killing the shared sidecar (and every co-tenant scene with it). The near-limit
+    // callback below terminates just that isolate instead of aborting the process.
+    const MAX_SCENE_HEAP_BYTES: usize = 512 * 1024 * 1024;
+
     // create runtime
     #[allow(unused_mut)]
     let mut runtime = JsRuntime::new(RuntimeOptions {
@@ -152,8 +159,47 @@ pub fn create_runtime(
             webidl, url, console, web, net, fetch, websocket, webstorage, ext,
         ],
         inspector: inspect,
+        create_params: Some(
+            deno_core::v8::CreateParams::default().heap_limits(0, MAX_SCENE_HEAP_BYTES),
+        ),
         ..Default::default()
     });
+
+    // Deno extension permission objects. These must be in the op state from the moment the
+    // runtime exists: the ops that consult them look the type up unconditionally, and a
+    // missing type is itself a panic -- which across the V8 boundary aborts the process
+    // rather than raising a JS error. Put here rather than at scene setup so no entry point
+    // can forget them.
+    {
+        let state = runtime.op_state();
+        let mut state = state.borrow_mut();
+        state.put(TP);
+        state.put(NP);
+        state.put(WebSocketPerms { preview });
+    }
+
+    // On approaching the cap, terminate this isolate's execution so its JS unwinds and the
+    // scene ends cleanly; raise the reported limit so V8 has headroom to run the
+    // termination itself instead of hard-aborting the whole sidecar process.
+    {
+        let terminate_handle = runtime.v8_isolate().thread_safe_handle();
+        let granted = std::sync::atomic::AtomicBool::new(false);
+        runtime.add_near_heap_limit_callback(move |current, _initial| {
+            let first_trip = !granted.swap(true, std::sync::atomic::Ordering::SeqCst);
+            if first_trip {
+                bevy::prelude::error!("scene exceeded its {MAX_SCENE_HEAP_BYTES}-byte heap cap; terminating the scene isolate");
+            }
+            terminate_handle.terminate_execution();
+            if first_trip {
+                // one-time margin so the termination unwind can run rather than hard-aborting
+                current + 8 * 1024 * 1024
+            } else {
+                // kill already latched: stop re-granting, so a scene that keeps allocating
+                // through termination can't ratchet the cap upward on every callback
+                current
+            }
+        });
+    }
 
     #[cfg(feature = "inspect")]
     if inspect {
@@ -198,7 +244,8 @@ pub(crate) fn scene_thread(
 ) {
     let scene_id = scene_context.scene_id;
     let preview = scene_context.preview;
-    let (mut runtime, inspector) = create_runtime(inspect, super_user.is_some(), &storage_root);
+    let (mut runtime, inspector) =
+        create_runtime(inspect, super_user.is_some(), &storage_root, preview);
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
@@ -221,9 +268,6 @@ pub(crate) fn scene_thread(
         scene_origin,
     );
 
-    // store deno permission objects
-    state.borrow_mut().put(TP);
-
     let span = info_span!("js startup").entered();
     state.borrow_mut().put(span);
 
@@ -231,9 +275,6 @@ pub(crate) fn scene_thread(
     state
         .borrow_mut()
         .put(runtime.v8_isolate().thread_safe_handle());
-
-    // store websocket permissions object
-    state.borrow_mut().put(WebSocketPerms { preview });
 
     if inspector.is_some() {
         let _ = state
@@ -279,8 +320,13 @@ pub(crate) fn scene_thread(
     crdt_send_to_renderer(state.clone(), &[]);
 
     // run startup function
+    let run_start = thread_cpu_us();
     let result =
         rt.block_on(async { run_script(&mut runtime, &script, "onStart", |_| Vec::new()).await });
+    state
+        .borrow_mut()
+        .borrow_mut::<SceneResourceCounters>()
+        .run_us += thread_cpu_us().saturating_sub(run_start);
 
     debug!(
         "[scene thread {scene_id:?}] post startup, {} rpc calls",
@@ -307,6 +353,7 @@ pub(crate) fn scene_thread(
     let mut prev_time = start_time;
     let mut elapsed;
     let mut reported_errors = 0;
+    let mut last_heap_sample: Option<std::time::Instant> = None;
     loop {
         let now = std::time::Instant::now();
         let dt = now.saturating_duration_since(prev_time).min(MAX_SCENE_DT);
@@ -317,13 +364,29 @@ pub(crate) fn scene_thread(
             .borrow_mut()
             .put(SceneElapsedTime(elapsed.as_secs_f32()));
 
+        // heap gauges: sampling walks the isolate's spaces, so cap it at ~once per 5s
+        if last_heap_sample.is_none_or(|at| now.saturating_duration_since(at).as_secs() >= 5) {
+            last_heap_sample = Some(now);
+            let mut heap = v8::HeapStatistics::default();
+            runtime.v8_isolate().get_heap_statistics(&mut heap);
+            let mut guard = state.borrow_mut();
+            let counters = guard.borrow_mut::<SceneResourceCounters>();
+            counters.heap_used = heap.used_heap_size() as u64;
+            counters.heap_limit = heap.heap_size_limit() as u64;
+        }
+
         // run the onUpdate function
+        let run_start = thread_cpu_us();
         let result = rt.block_on(async {
             run_script(&mut runtime, &script, "onUpdate", |scope| {
                 vec![v8::Number::new(scope, dt.as_secs_f64()).into()]
             })
             .await
         });
+        state
+            .borrow_mut()
+            .borrow_mut::<SceneResourceCounters>()
+            .run_us += thread_cpu_us().saturating_sub(run_start);
 
         if state.borrow().try_borrow::<ShuttingDown>().is_some() {
             rt.block_on(async move {
@@ -363,6 +426,36 @@ pub(crate) fn scene_thread(
         }
 
         state.borrow_mut().try_take::<CommunicatedWithRenderer>();
+    }
+}
+
+/// Microseconds of CPU time consumed by the calling thread. The scene loop runs
+/// lockstep with the renderer (run_script blocks on the crdt round-trip inside a
+/// tick), so wall time would count idle waiting as script time; thread CPU time
+/// only advances while JS actually executes. Non-unix targets fall back to wall
+/// time.
+fn thread_cpu_us() -> u64 {
+    #[cfg(unix)]
+    {
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // SAFETY: ts is a valid, writable timespec
+        if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) } == 0 {
+            (ts.tv_sec as u64) * 1_000_000 + (ts.tv_nsec as u64) / 1_000
+        } else {
+            0
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        use std::sync::OnceLock;
+        static START: OnceLock<std::time::Instant> = OnceLock::new();
+        START
+            .get_or_init(std::time::Instant::now)
+            .elapsed()
+            .as_micros() as u64
     }
 }
 
@@ -502,4 +595,162 @@ fn op_log(state: Rc<RefCell<OpState>>, #[string] message: String) {
 #[op2(fast)]
 fn op_error(state: Rc<RefCell<OpState>>, #[string] message: String) {
     dcl::js::op_error(state, message);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use dcl::{interface::crdt_context::CrdtContext, SceneId};
+    use deno_core::ascii_str;
+    use ipfs::SceneJsFile;
+
+    use super::create_runtime;
+
+    fn context(is_server: bool) -> CrdtContext {
+        CrdtContext::new(
+            SceneId(bevy::prelude::Entity::from_raw(0)),
+            "hash".to_owned(),
+            "title".to_owned(),
+            false,
+            false,
+            is_server,
+        )
+    }
+
+    /// Boot a scene runtime and evaluate `scene_js` exactly the way a deployed scene bundle
+    /// is evaluated (`op_require("~scene.js")` -> `evalContext`). A `throw` in the scene
+    /// surfaces as `Err`.
+    fn run_scene(is_server: bool, scene_js: &str) -> Result<(), String> {
+        let (mut runtime, _) = create_runtime(false, false, "test-scene-realm", false);
+        {
+            let state = runtime.op_state();
+            let mut state = state.borrow_mut();
+            state.put(context(is_server));
+            state.put(SceneJsFile(Arc::new(scene_js.to_owned())));
+        }
+        runtime
+            .execute_script("<test>", ascii_str!("require(\"~scene.js\")"))
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// The scene bundle shares a realm with the runtime, so anything left on the global
+    /// object is scene-reachable -- and `Deno.core.ops` is every op with none of the checks
+    /// the `~system/*` wrappers apply. This is the property, not an implementation detail.
+    #[test]
+    fn scene_cannot_reach_the_ops_table_on_the_server() {
+        run_scene(
+            true,
+            r#"
+            if (typeof Deno !== "undefined") { throw new Error("`Deno` is reachable"); }
+            if (typeof __bootstrap !== "undefined") { throw new Error("`__bootstrap` is reachable"); }
+            if (typeof __infra !== "undefined") { throw new Error("`__infra` is reachable"); }
+            // the global object itself, reached the indirect way
+            const g = Function("return this")();
+            if (g.Deno !== undefined) { throw new Error("`Deno` is reachable via globalThis"); }
+            if (g.__bootstrap !== undefined) { throw new Error("`__bootstrap` is reachable via globalThis"); }
+            "#,
+        )
+        .unwrap();
+    }
+
+    /// ...while the modules the scene is *supposed* to use still get it, via the `Deno`
+    /// parameter `require` injects. Required from scene code, i.e. after the seal.
+    #[test]
+    fn system_modules_still_work_after_sealing() {
+        run_scene(
+            true,
+            r#"
+            const engine = require("~system/EngineApi");
+            if (typeof engine.crdtSendToRenderer !== "function") {
+                throw new Error("EngineApi did not load");
+            }
+            if (typeof require("~system/Runtime").readFile !== "function") {
+                throw new Error("Runtime did not load");
+            }
+            "#,
+        )
+        .unwrap();
+    }
+
+    /// The seal is scoped to the authoritative server on purpose: the desktop client runs on
+    /// the user's own machine, and narrowing the change keeps preview and every deployed
+    /// scene behaving exactly as they do today. Pinned so the scoping is a decision rather
+    /// than something that drifts.
+    #[test]
+    fn client_realm_is_left_alone() {
+        run_scene(
+            false,
+            r#"if (typeof Deno === "undefined") { throw new Error("client behaviour changed"); }"#,
+        )
+        .unwrap();
+    }
+
+    /// `deno_net`'s ops are registered, unwrapped, and reachable from any scene that gets at
+    /// the ops table. They used to `panic!()` in the permission check -- across the V8
+    /// boundary that is `panic_cannot_unwind`, i.e. SIGABRT, and on the client one sidecar
+    /// hosts every scene and losing it exits the engine. It must be an ordinary JS error.
+    #[test]
+    fn raw_socket_ops_raise_instead_of_aborting() {
+        let err = run_scene(
+            false,
+            r#"Deno.core.ops.op_net_listen_tcp({ hostname: "127.0.0.1", port: 9999, transport: "tcp" }, false, false)"#,
+        )
+        .expect_err("raw socket access must be refused");
+        assert!(err.contains("raw socket access"), "unexpected error: {err}");
+    }
+
+    /// A scene-supplied proxy is dialled instead of the URL host, so it walks straight past
+    /// the per-request `assert_public_url` check -- the check only ever sees the URL. On the
+    /// authoritative server the option must be refused outright.
+    #[test]
+    fn server_refuses_a_scene_supplied_proxy() {
+        let (mut runtime, _) = create_runtime(false, false, "test-custom-client", false);
+        runtime.op_state().borrow_mut().put(context(true));
+        let err = runtime
+            .execute_script(
+                "<test>",
+                ascii_str!(
+                    r#"Deno.core.ops.op_fetch_custom_client({ caCerts: [], proxy: { url: "http://169.254.169.254:80" } })"#
+                ),
+            )
+            .expect_err("proxy must be refused on the authoritative server")
+            .to_string();
+        assert!(err.contains("proxy"), "unexpected error: {err}");
+    }
+
+    /// Same for a scene-supplied trust root: it would make the scene a CA for the server's
+    /// own outbound TLS.
+    #[test]
+    fn server_refuses_scene_supplied_ca_certs() {
+        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-ca", false);
+        runtime.op_state().borrow_mut().put(context(true));
+        let err = runtime
+            .execute_script(
+                "<test>",
+                ascii_str!(
+                    r#"Deno.core.ops.op_fetch_custom_client({ caCerts: ["-----BEGIN CERTIFICATE-----"] })"#
+                ),
+            )
+            .expect_err("ca_certs must be refused on the authoritative server")
+            .to_string();
+        assert!(err.contains("root certificates"), "unexpected error: {err}");
+    }
+
+    /// The desktop/web client runs on the user's own machine and keeps the old behaviour --
+    /// this restriction is server-only.
+    #[test]
+    fn client_still_allows_custom_clients() {
+        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-clientmode", false);
+        runtime.op_state().borrow_mut().put(context(false));
+        runtime
+            .execute_script(
+                "<test>",
+                ascii_str!(
+                    r#"Deno.core.ops.op_fetch_custom_client({ caCerts: [], proxy: { url: "http://localhost:8080" } })"#
+                ),
+            )
+            .expect("client mode must keep working");
+    }
 }

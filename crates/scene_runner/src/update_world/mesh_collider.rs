@@ -1015,18 +1015,25 @@ fn update_colliders<T: ColliderType>(
                     ..Default::default()
                 }
                 .into();
-                let VertexAttributeValues::Float32x3(positions) =
-                    mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+                let Some(VertexAttributeValues::Float32x3(positions)) =
+                    mesh.attribute(Mesh::ATTRIBUTE_POSITION)
                 else {
-                    panic!()
+                    warn!("cylinder collider mesh has no positions; skipping");
+                    continue;
                 };
-                ColliderBuilder::convex_hull(
+                // scene-set radii can be degenerate (e.g. both zero → collinear points);
+                // parry returns None rather than a hull. Skip instead of panicking the
+                // whole engine (which would take down every co-tenant scene).
+                let Some(builder) = ColliderBuilder::convex_hull(
                     &positions
                         .iter()
                         .map(|p| Point::from([p[0] as f64, p[1] as f64, p[2] as f64]))
                         .collect::<Vec<_>>(),
-                )
-                .unwrap()
+                ) else {
+                    warn!("degenerate cylinder collider (convex hull failed); skipping");
+                    continue;
+                };
+                builder
             }
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.005),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
@@ -1039,8 +1046,13 @@ fn update_colliders<T: ColliderType>(
                 else {
                     continue;
                 };
-                let mesh = meshes.get(&h_mesh).unwrap();
-                let shape = mesh_to_parry_shape(mesh);
+                let Some(mesh) = meshes.get(&h_mesh) else {
+                    continue;
+                };
+                let Some(shape) = mesh_to_parry_shape(mesh) else {
+                    warn!("gltf collider mesh has no usable positions; skipping");
+                    continue;
+                };
                 ColliderBuilder::new(shape)
             }
         }

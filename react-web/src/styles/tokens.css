@@ -74,7 +74,11 @@
   --z-modal: 1000;
   --z-loading: 9998;
   --z-login: 9999;
-  --z-fatal: 10010; /* engine crash / boot-panic popup — above login + loading */
+  /* The imperative popup layer (PopupHost). Above login/loading/picker — a popup must be able to
+     open over any phase (e.g. the world-not-found dialog over the destination picker), mirroring
+     bevy-ui-scene's PopupStack at MAX_ZINDEX-1. Below --z-fatal: a crash outranks everything. */
+  --z-popup: 10000;
+  --z-fatal: 10010; /* engine crash / boot-panic popup — above login + loading + popups */
 
   /* ---- typography (Inter scale) ---- */
   --font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;

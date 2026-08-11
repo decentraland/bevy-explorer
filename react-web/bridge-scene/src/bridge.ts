@@ -47,7 +47,11 @@ export function startBridge(register: (ctx: Ctx) => void): void {
     return
   }
 
-  const handlers = new Map<string, AnyHandler>()
+  // A list per kind, not a single handler: more than one domain legitimately listens to the
+  // same message — `engineViewport` is shared by the avatar preview and the minimap, which
+  // each filter on `region`. Keeping one handler per kind meant the later registration
+  // silently replaced the earlier one, and the domain that lost simply stopped working.
+  const handlers = new Map<string, AnyHandler[]>()
   const ctx: Ctx = {
     send: (msg) => {
       channel.postMessage({ to: 'page', msg } satisfies Envelope)
@@ -55,10 +59,25 @@ export function startBridge(register: (ctx: Ctx) => void): void {
     // The dispatcher routes by `kind`, so the narrowed handler always receives a message of
     // the kind it registered for — the single cast here is sound.
     on: (kind, handler) => {
-      handlers.set(kind, handler as AnyHandler)
+      const list = handlers.get(kind)
+      if (list == null) handlers.set(kind, [handler as AnyHandler])
+      else list.push(handler as AnyHandler)
     },
     push: (system) => {
-      engine.addSystem(system)
+      // A system that throws takes the whole scene's frame loop down with it — and this scene
+      // IS the HUD's data source, so that costs the user every panel at once, not just the one
+      // feature. Contain the failure to the offending system and stop re-running it, rather
+      // than logging the same error every frame.
+      let failed = false
+      engine.addSystem((dt: number) => {
+        if (failed) return
+        try {
+          system(dt)
+        } catch (err) {
+          failed = true
+          console.error('[bridge] a per-frame system threw and has been disabled', err)
+        }
+      })
     }
   }
 
@@ -67,17 +86,21 @@ export function startBridge(register: (ctx: Ctx) => void): void {
   channel.onmessage = (e): void => {
     const env = e.data as Envelope | null
     if (env === null || env.to !== 'scene') return
-    const handler = handlers.get(env.msg.kind)
-    if (handler == null) return
-    try {
-      const r = handler(env.msg)
-      if (r instanceof Promise) {
-        r.catch((err) => {
-          console.error(`[bridge] ${env.msg.kind} failed`, err)
-        })
+    const list = handlers.get(env.msg.kind)
+    if (list == null) return
+    // Each handler is isolated: one domain throwing must not stop the others from seeing the
+    // message they also registered for.
+    for (const handler of list) {
+      try {
+        const r = handler(env.msg)
+        if (r instanceof Promise) {
+          r.catch((err) => {
+            console.error(`[bridge] ${env.msg.kind} failed`, err)
+          })
+        }
+      } catch (err) {
+        console.error(`[bridge] ${env.msg.kind} failed`, err)
       }
-    } catch (err) {
-      console.error(`[bridge] ${env.msg.kind} failed`, err)
     }
   }
 }

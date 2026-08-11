@@ -1,27 +1,11 @@
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  background: var(--modal-scrim);
-  backdrop-filter: blur(2px);
-  display: flex;
-  padding: 20px;
-  overflow: auto;
-  animation: fadeIn 0.3s linear;
-}
-
+/* The dialog card — presentational only. The scrim, DPI scale and entrance animation are owned by the
+   host (PopupHost's .dim/.pop, or a self-contained surface like CrashModal). */
 .card {
-  margin: auto;
-  max-height: calc(100dvh - 40px);
+  /* Cap against the host's .pop box (100% = the DPI-scaled reference canvas = the visible screen),
+     NOT dvh: viewport units ignore the ancestor scale transform, so at --ui-scale > 1 a dvh-capped
+     card renders taller than the screen with the overflow unreachable. Content taller than the cap
+     scrolls INSIDE the card (overflow-y below). */
+  max-height: calc(100% - 40px);
   overflow-y: auto;
   background: var(--modal-bg);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -31,10 +15,6 @@
   box-shadow: var(--shadow-modal);
   color: var(--text);
   max-width: 100%;
-  /* DPI-match the rest of the HUD (scaled by --ui-scale = innerHeight/1080), else the modal
-     renders oversized against the scaled-down chrome. Centred, so scaling keeps it centred. */
-  transform: scale(var(--ui-scale));
-  animation: fadeIn 0.3s linear;
 }
 .card:focus,
 .card:focus-visible {
@@ -42,13 +22,10 @@
 }
 
 @media (max-height: 540px) {
-  .backdrop {
-    padding: 8px;
-  }
   .card {
     padding: 18px;
     border-radius: var(--r-control);
-    max-height: calc(100dvh - 16px);
+    max-height: calc(100% - 16px);
   }
 }
 

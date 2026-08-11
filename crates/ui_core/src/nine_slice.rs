@@ -6,7 +6,7 @@ use bevy::{
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate, NodeMap};
 use bevy_ecss::StyleSheetAsset;
-// use common::util::TryInsertEx;
+use common::asset_cache::{clean_asset_cache, AssetCache};
 
 /// specify a background image using 9-slice scaling
 /// https://en.wikipedia.org/wiki/9-slice_scaling
@@ -42,12 +42,32 @@ impl Plugin for Ui9SlicePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup);
         app.add_plugins(UiMaterialPlugin::<NineSliceMaterial>::default());
-        app.add_systems(PostUpdate, update_slices.after(UiSystem::Layout));
+        app.init_resource::<AssetCache<NineSliceKey, NineSliceMaterial>>();
+        app.add_systems(
+            PostUpdate,
+            (
+                update_slices.after(UiSystem::Layout),
+                clean_asset_cache::<NineSliceKey, NineSliceMaterial>.after(update_slices),
+            ),
+        );
     }
 }
 
 #[derive(Component)]
 struct Retry9Slice;
+
+#[derive(PartialEq, Eq, Hash, Clone)]
+struct NineSliceKey {
+    image: AssetId<Image>,
+    bounds: [u32; 4],
+    surface: [u32; 2],
+    color: [u32; 4],
+}
+
+// quantize to whole pixels so equal-sized nodes share a material
+fn whole_pixel_size(node: &ComputedNode) -> Vec2 {
+    node.unrounded_size().round()
+}
 
 #[allow(clippy::type_complexity)]
 fn update_slices(
@@ -69,6 +89,7 @@ fn update_slices(
     >,
     mut removed: RemovedComponents<Ui9Slice>,
     mut mats: ResMut<Assets<NineSliceMaterial>>,
+    mut cache: ResMut<AssetCache<NineSliceKey, NineSliceMaterial>>,
 ) {
     // clean up removed slices
     for ent in removed.read() {
@@ -84,43 +105,59 @@ fn update_slices(
         };
         commands.entity(ent).remove::<Retry9Slice>();
 
-        let new_mat = NineSliceMaterial {
-            image: slice.image.clone(),
-            bounds: GpuSliceData {
-                bounds: Vec4::new(
-                    slice
-                        .center_region
-                        .left
-                        .resolve(image_size.x, Vec2::ZERO)
-                        .unwrap_or(0.0),
-                    slice
-                        .center_region
-                        .left
-                        .resolve(image_size.x, Vec2::ZERO)
-                        .unwrap_or(0.0),
-                    slice
-                        .center_region
-                        .left
-                        .resolve(image_size.x, Vec2::ZERO)
-                        .unwrap_or(0.0),
-                    slice
-                        .center_region
-                        .left
-                        .resolve(image_size.x, Vec2::ZERO)
-                        .unwrap_or(0.0),
-                ),
-                surface: node.unrounded_size().extend(0.0).extend(0.0),
-            },
-            color: slice.tint.unwrap_or(Color::WHITE).to_linear().to_vec4(),
+        let bounds = Vec4::new(
+            slice
+                .center_region
+                .left
+                .resolve(image_size.x, Vec2::ZERO)
+                .unwrap_or(0.0),
+            slice
+                .center_region
+                .left
+                .resolve(image_size.x, Vec2::ZERO)
+                .unwrap_or(0.0),
+            slice
+                .center_region
+                .left
+                .resolve(image_size.x, Vec2::ZERO)
+                .unwrap_or(0.0),
+            slice
+                .center_region
+                .left
+                .resolve(image_size.x, Vec2::ZERO)
+                .unwrap_or(0.0),
+        );
+        let surface = whole_pixel_size(node);
+        let color = slice.tint.unwrap_or(Color::WHITE).to_linear().to_vec4();
+
+        let key = NineSliceKey {
+            image: slice.image.id(),
+            bounds: bounds.to_array().map(f32::to_bits),
+            surface: surface.to_array().map(f32::to_bits),
+            color: color.to_array().map(f32::to_bits),
         };
 
-        if let Some(mat) = maybe_material.and_then(|h| mats.get_mut(h)) {
-            *mat = new_mat;
-        } else {
-            commands
-                .entity(ent)
-                .try_insert(MaterialNode(mats.add(new_mat)))
-                .remove::<BackgroundColor>();
+        let material = cache.get_or_add(key, &mut mats, || NineSliceMaterial {
+            image: slice.image.clone(),
+            bounds: GpuSliceData {
+                bounds,
+                surface: surface.extend(0.0).extend(0.0),
+            },
+            color,
+        });
+
+        // materials are shared, so swap handles instead of mutating in place
+        match maybe_material {
+            Some(existing) if existing.0.id() == material.id() => (),
+            Some(_) => {
+                commands.entity(ent).try_insert(MaterialNode(material));
+            }
+            None => {
+                commands
+                    .entity(ent)
+                    .try_insert(MaterialNode(material))
+                    .remove::<BackgroundColor>();
+            }
         }
     }
 }

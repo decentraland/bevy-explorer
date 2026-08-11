@@ -1,36 +1,52 @@
-import { Fragment, useSyncExternalStore, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { ModalShell } from './Modal'
 import { Button } from './Button'
+import { useFocusTrap } from '../lib/useFocusTrap'
+import { isInputLocked, subscribeInputLock } from '../lib/inputLock'
 import styles from './popups.module.css'
 
 /** A popup is a render function given its own `close` callback; it returns the overlay to render. */
 type PopupRender = (close: () => void) => ReactNode
 
-/** Per-popup options. By default the popup layer draws a full-screen backdrop that closes the popup
- *  when clicked; set `backdrop: false` for popups that draw their own scrim (dialogs / the passport). */
+/** Per-popup options. By default the popup layer draws a full-screen, dimmed+blurred backdrop that
+ *  closes the popup when clicked. Set `dim: false` for an anchored popover (transparent click-catcher,
+ *  e.g. the profile card); set `backdrop: false` for content that owns its own scrim (dialogs). */
 export interface PopupOptions {
   backdrop?: boolean
+  /** The backdrop is the shared dimmed+blurred modal scrim (default). `false` → transparent
+   *  click-catcher, for an anchored popover that must not dim the HUD behind it. */
+  dim?: boolean
   backdropClickCloses?: boolean
+  /** Dismiss contract: run once when the popup leaves the stack by ANY path — backdrop click, the
+   *  returned handle, or the central Escape. Owners that hold state behind the popup settle it here
+   *  (e.g. showDialog resolves its promise), so a keyboard/Escape close never leaks. */
+  onClose?: () => void
 }
-const DEFAULTS: Required<PopupOptions> = { backdrop: true, backdropClickCloses: true }
+type ResolvedOptions = Required<Omit<PopupOptions, 'onClose'>> & Pick<PopupOptions, 'onClose'>
+const DEFAULTS: Required<Omit<PopupOptions, 'onClose'>> = { backdrop: true, dim: true, backdropClickCloses: true }
+type PopupNode = { id: number; render: PopupRender; options: ResolvedOptions }
 
 // Module-level popup stack — a single HUD-wide layer (like the hoverPos store), NOT React state.
 // Plain functions mutate it and notify subscribers, so a popup can be opened from anywhere (a
 // component, an event handler, a util) without prop-threading or a hook — and a popup can open
 // another (community → passport → confirm). <PopupHost/>, mounted once, subscribes and renders it.
-let stack: { id: number; render: PopupRender; options: Required<PopupOptions> }[] = []
+let stack: PopupNode[] = []
 let nextId = 0
 const listeners = new Set<() => void>()
 const emit = (): void => listeners.forEach((l) => l())
+// Remove the node first, then run its onClose, so every close path is idempotent: a re-entrant close
+// (an owner whose onClose fires its own handle) finds no node and stops here.
 const closeById = (id: number): void => {
+  const node = stack.find((n) => n.id === id)
+  if (!node) return
   stack = stack.filter((n) => n.id !== id)
   emit()
+  node.options.onClose?.()
 }
 
-/** Close the topmost popup (no-op if the stack is empty). Driven by the engine's 'Cancel' system
- *  action (Escape) relayed through the bridge — see useEngineSession — so it works even while the
- *  engine holds keyboard focus. Closes one layer at a time, so stacked popups dismiss in order. */
+/** Close the topmost popup (no-op if the stack is empty). Fired by PopupHost's own Escape handler
+ *  (below) — the DOM listener sees Escape wherever focus sits, so the old engine 'Cancel' relay is
+ *  gone. Closes one layer at a time, so stacked popups dismiss in order. */
 export function closeTopPopup(): void {
   if (stack.length > 0) closeById(stack[stack.length - 1].id)
 }
@@ -50,7 +66,8 @@ export function openPopup(render: PopupRender, options?: PopupOptions): () => vo
   return () => closeById(id)
 }
 
-/** Clear the popup stack — for tests (the store is a module singleton, so it leaks across tests). */
+/** Hard-clear the popup stack, skipping the `onClose` contract — for tests only (the store is a
+ *  module singleton, so it leaks across tests). */
 export function resetPopups(): void {
   stack = []
   emit()
@@ -64,25 +81,59 @@ const subscribe = (cb: () => void): (() => void) => {
 }
 const getSnapshot = (): typeof stack => stack
 
-/** Mounted once (see main.tsx) — the single React subscriber that renders the popup stack. */
+/** One rendered popup layer. The topmost popup with a backdrop owns the focus trap: it focuses itself
+ *  on open, cycles Tab/Shift+Tab within its content, and restores focus to the opener on close — so no
+ *  popup needs its own trap. A `backdrop:false` popup renders bare, with no trap of its own. */
+function PopupLayer({ node, isTop, locked }: { node: PopupNode; isTop: boolean; locked: boolean }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const close = (): void => closeById(node.id)
+  const content = node.render(close)
+
+  // Only the top backdrop popup traps focus (bare content, if any, has no ref → the hook no-ops).
+  // Stands down while a fatal error modal holds input: it registers its own Tab-cycling trap after
+  // this one, so a still-active trap here would let Tab boundary-cycle within the hidden popup and
+  // leak focus out of the crash modal's trap instead of staying put — see inputLock.
+  useFocusTrap(ref, isTop && !locked)
+
+  // No backdrop → the content owns its own scrim (dialogs). Otherwise the popup layer draws it:
+  // `.dim` is the shared dimmed+blurred modal scrim; without `dim` it's a transparent click-catcher
+  // for an anchored popover (the profile card).
+  if (!node.options.backdrop) return <>{content}</>
+  const className = node.options.dim ? `${styles.backdrop} ${styles.dim}` : styles.backdrop
+  return (
+    <div ref={ref} className={className} tabIndex={-1} onClick={node.options.backdropClickCloses ? close : undefined}>
+      {/* dim popups scale in via the pop layer; an anchored popover (dim:false) just appears. */}
+      {node.options.dim ? <div className={styles.pop}>{content}</div> : content}
+    </div>
+  )
+}
+
+/** Mounted once at the HUD root (see App) — the single React subscriber that renders the popup stack.
+ *  It has no transformed ancestor, so a popup's own `position: fixed` resolves against the viewport;
+ *  no portal is needed (the passport / dialogs already rely on that for their inline scrims). */
 export function PopupHost(): React.JSX.Element {
   const snap = useSyncExternalStore(subscribe, getSnapshot)
+  const locked = useSyncExternalStore(subscribeInputLock, isInputLocked)
+  // The single, DOM-level Escape handler for every popup — so no popup needs its own. Capture phase
+  // + stopPropagation so it wins over (and suppresses) the engine's Cancel relay and Modal's own key
+  // handler, closing exactly one layer. Only acts while a popup is open; otherwise Escape passes
+  // through to whatever else wants it (the engine, an App-local Modal). Stands down while a fatal
+  // error modal holds input — see inputLock — so whatever's underneath stays exactly as it was.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || !hasOpenPopup() || isInputLocked()) return
+      e.stopPropagation()
+      e.preventDefault()
+      closeTopPopup()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [])
   return (
     <>
-      {snap.map((n) => {
-        const close = (): void => closeById(n.id)
-        const content = n.render(close)
-        // No backdrop → the content owns its own portal/scrim (dialogs, passport). Otherwise the popup
-        // layer draws a full-screen backdrop (portaled to <body> to escape the HUD transform) behind it.
-        if (!n.options.backdrop) return <Fragment key={n.id}>{content}</Fragment>
-        return createPortal(
-          <div className={styles.backdrop} onClick={n.options.backdropClickCloses ? close : undefined}>
-            {content}
-          </div>,
-          document.body,
-          String(n.id)
-        )
-      })}
+      {snap.map((n, i) => (
+        <PopupLayer key={n.id} node={n} isTop={i === snap.length - 1} locked={locked} />
+      ))}
     </>
   )
 }
@@ -113,22 +164,27 @@ export interface DialogOptions {
 export function showDialog(opts: DialogOptions): Promise<string | null> {
   return new Promise((resolve) => {
     let settled = false
-    const done = (value: string | null, close: () => void): void => {
-      if (!settled) {
-        settled = true
-        resolve(value)
-      }
-      close()
+    const settle = (value: string | null): void => {
+      if (settled) return
+      settled = true
+      resolve(value)
     }
     openPopup(
       (close) => (
         <ModalShell
           title={opts.title}
-          onClose={() => done(null, close)}
+          onClose={close}
           width={opts.width ?? 420}
           actionsEqual={opts.actionsEqual ?? opts.actions.length === 2}
           actions={opts.actions.map((a) => (
-            <Button key={a.id} variant={a.variant ?? 'primary'} onClick={() => done(a.id, close)}>
+            <Button
+              key={a.id}
+              variant={a.variant ?? 'primary'}
+              onClick={() => {
+                settle(a.id)
+                close()
+              }}
+            >
               {a.label}
             </Button>
           ))}
@@ -136,7 +192,7 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
           {opts.body}
         </ModalShell>
       ),
-      { backdrop: false } // ModalShell draws its own scrim
+      { onClose: () => settle(null) } // default dim scrim from PopupHost
     )
   })
 }

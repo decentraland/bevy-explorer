@@ -3,9 +3,10 @@
 // ANNOUNCEMENTS / MEMBERS / PLACES / PHOTOS tabs, and an Upcoming Events sidebar. Data
 // (members/posts/places/events) arrives via the bridge `communityDetail` relay.
 
-import { useState } from 'react'
-import { Avatar, Button } from '../../design'
+import { useEffect, useState } from 'react'
+import { Avatar, Button, openPopup } from '../../design'
 import { nameColor } from '../../lib/identity'
+import { useSession } from '../session/SessionContext'
 import type {
   Community,
   CommunityDetailMessage,
@@ -219,100 +220,142 @@ export function CommunityModal({
   }
 
   return (
-    <div className={styles.scrim} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.main}>
-          <header className={styles.header}>
-            <div className={styles.thumb} style={{ background: showCover ? undefined : nameColor(community.id) }}>
-              {showCover ? (
-                <img src={community.thumbnail} alt="" onError={() => setCoverFailed(true)} />
-              ) : (
-                <span>{community.name.charAt(0).toUpperCase()}</span>
-              )}
-            </div>
-            <div className={styles.headInfo}>
-              <h2 className={styles.name} title={community.name}>{community.name}</h2>
-              <div className={styles.meta}>
-                <span className={styles.privacy}>{isPrivate ? <><LockIcon /> Private</> : <><GlobeIcon /> Public</>}</span>
-                <span className={styles.bar}>|</span>
-                <span><b>{compact(community.membersCount)}</b> Members</span>
-              </div>
-              {community.description && <p className={styles.desc}>{community.description}</p>}
-            </div>
-            <div className={styles.headActions}>
-              {member && (
-                <button type="button" className={styles.iconBtn} aria-label="Open chat" onClick={onOpenChat}><ChatIcon /></button>
-              )}
-              {member ? (
-                <Button size="sm" variant="ghost" className={styles.joined} disabled>✓ Joined</Button>
-              ) : (
-                <Button size="sm" onClick={() => onJoin(community.id)}>{isPrivate ? 'Request to Join' : 'Join'}</Button>
-              )}
-              <div className={styles.kebabWrap}>
-                <button type="button" className={styles.kebab} aria-label="More" onClick={() => setMenuOpen((o) => !o)}>⋮</button>
-                {menuOpen && (
-                  <div className={styles.menu}>
-                    <button type="button" className={styles.menuItem} onClick={copyLink}>Copy link</button>
-                    {member && (
-                      <button type="button" className={`${styles.menuItem} ${styles.menuDanger}`} onClick={() => { setMenuOpen(false); onLeave(community.id); onClose() }}>
-                        Leave community
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </header>
-
-          <nav className={styles.tabs}>
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`${styles.tab} ${tab === t.id ? styles.tabActive : ''}`.trim()}
-                onClick={() => setTab(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </nav>
-
-          <div className={styles.tabBody}>
-            {loading ? (
-              <div className={styles.empty}>Loading…</div>
-            ) : tab === 'announcements' ? (
-              detail.posts.length > 0 ? detail.posts.map((p) => <PostRow key={p.id} post={p} />) : <div className={styles.empty}>No announcements yet.</div>
-            ) : tab === 'members' ? (
-              detail.members.length > 0 ? (
-                <div className={styles.memberGrid}>{detail.members.map((m) => <MemberRow key={m.address} member={m} requested={requested.has(m.address)} onAdd={() => addFriend(m.address)} />)}</div>
-              ) : <div className={styles.empty}>No members to show.</div>
-            ) : tab === 'places' ? (
-              detail.places.length > 0 ? (
-                <div className={styles.placeGrid}>{detail.places.map((p) => <PlaceCard key={p.id} place={p} />)}</div>
-              ) : <div className={styles.empty}>No places shared yet.</div>
-            ) : detail.photos.length > 0 ? (
-              <div className={styles.photoGrid}>{detail.photos.map((ph) => <PhotoTile key={ph.id} photo={ph} />)}</div>
+    // Just the card: the popup layer (PopupHost .dim/.pop) draws the scrim, DPI-scales it and animates
+    // it in. stopPropagation keeps a click on the card from reaching the scrim (and closing it).
+    <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div className={styles.main}>
+        <header className={styles.header}>
+          <div className={styles.thumb} style={{ background: showCover ? undefined : nameColor(community.id) }}>
+            {showCover ? (
+              <img src={community.thumbnail} alt="" onError={() => setCoverFailed(true)} />
             ) : (
-              <div className={styles.empty}>No photos shared yet.</div>
+              <span>{community.name.charAt(0).toUpperCase()}</span>
             )}
           </div>
+          <div className={styles.headInfo}>
+            <h2 className={styles.name} title={community.name}>{community.name}</h2>
+            <div className={styles.meta}>
+              <span className={styles.privacy}>{isPrivate ? <><LockIcon /> Private</> : <><GlobeIcon /> Public</>}</span>
+              <span className={styles.bar}>|</span>
+              <span><b>{compact(community.membersCount)}</b> Members</span>
+            </div>
+            {community.description && <p className={styles.desc}>{community.description}</p>}
+          </div>
+          <div className={styles.headActions}>
+            {member && (
+              <button type="button" className={styles.iconBtn} aria-label="Open chat" onClick={onOpenChat}><ChatIcon /></button>
+            )}
+            {member ? (
+              <Button size="sm" variant="ghost" className={styles.joined} disabled>✓ Joined</Button>
+            ) : (
+              <Button size="sm" onClick={() => onJoin(community.id)}>{isPrivate ? 'Request to Join' : 'Join'}</Button>
+            )}
+            <div className={styles.kebabWrap}>
+              <button type="button" className={styles.kebab} aria-label="More" onClick={() => setMenuOpen((o) => !o)}>⋮</button>
+              {menuOpen && (
+                <div className={styles.menu}>
+                  <button type="button" className={styles.menuItem} onClick={copyLink}>Copy link</button>
+                  {member && (
+                    <button type="button" className={`${styles.menuItem} ${styles.menuDanger}`} onClick={() => { setMenuOpen(false); onLeave(community.id); onClose() }}>
+                      Leave community
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        <nav className={styles.tabs}>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`${styles.tab} ${tab === t.id ? styles.tabActive : ''}`.trim()}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className={styles.tabBody}>
+          {loading ? (
+            <div className={styles.empty}>Loading…</div>
+          ) : tab === 'announcements' ? (
+            detail.posts.length > 0 ? detail.posts.map((p) => <PostRow key={p.id} post={p} />) : <div className={styles.empty}>No announcements yet.</div>
+          ) : tab === 'members' ? (
+            detail.members.length > 0 ? (
+              <div className={styles.memberGrid}>{detail.members.map((m) => <MemberRow key={m.address} member={m} requested={requested.has(m.address)} onAdd={() => addFriend(m.address)} />)}</div>
+            ) : <div className={styles.empty}>No members to show.</div>
+          ) : tab === 'places' ? (
+            detail.places.length > 0 ? (
+              <div className={styles.placeGrid}>{detail.places.map((p) => <PlaceCard key={p.id} place={p} />)}</div>
+            ) : <div className={styles.empty}>No places shared yet.</div>
+          ) : detail.photos.length > 0 ? (
+            <div className={styles.photoGrid}>{detail.photos.map((ph) => <PhotoTile key={ph.id} photo={ph} />)}</div>
+          ) : (
+            <div className={styles.empty}>No photos shared yet.</div>
+          )}
         </div>
-
-        <aside className={styles.events}>
-          <div className={styles.eventsHead}>Upcoming Events</div>
-          <div className={styles.eventsList}>
-            {loading ? (
-              <div className={styles.empty}>Loading…</div>
-            ) : detail.events.length > 0 ? (
-              detail.events.map((e) => <EventRow key={e.id} event={e} />)
-            ) : (
-              <div className={styles.empty}>No upcoming events.</div>
-            )}
-          </div>
-        </aside>
-
-        <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>×</button>
       </div>
+
+      <aside className={styles.events}>
+        <div className={styles.eventsHead}>Upcoming Events</div>
+        <div className={styles.eventsList}>
+          {loading ? (
+            <div className={styles.empty}>Loading…</div>
+          ) : detail.events.length > 0 ? (
+            detail.events.map((e) => <EventRow key={e.id} event={e} />)
+          ) : (
+            <div className={styles.empty}>No upcoming events.</div>
+          )}
+        </div>
+      </aside>
+
+      <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>×</button>
     </div>
   )
+}
+
+/** Reads live community data + the pending detail from the session and renders the card. Mirrors
+ *  ProfileCard/Passport: the popup closure captures only the static id; everything reactive (detail
+ *  arriving async, membership/role changing) comes from useSession(), so the popup content re-renders
+ *  in place — never a frozen snapshot from when it was opened. */
+function CommunityModalContainer({ communityId, onClose }: { communityId: string; onClose: () => void }): React.JSX.Element | null {
+  const session = useSession()
+  const { communities, friends, chat } = session
+  const { loadDetail } = communities
+
+  useEffect(() => {
+    loadDetail(communityId)
+  }, [loadDetail, communityId])
+
+  const community = communities.list.find((c) => c.id === communityId)
+  if (!community) return null // e.g. the community disappeared from the list while open
+
+  const detail = communities.detail != null && communities.detail.id === communityId ? communities.detail : null
+
+  return (
+    <CommunityModal
+      community={community}
+      detail={detail}
+      onJoin={communities.join}
+      onLeave={communities.leave}
+      onAddFriend={(address) => friends.act('request', address)}
+      onOpenChat={() => {
+        onClose()
+        chat.toggle()
+      }}
+      onClose={onClose}
+    />
+  )
+}
+
+/** Open a community's detail modal as a popup; returns the close handle. `onClose` fires exactly once
+ *  whichever way the popup goes away (× button, Leave, Escape, scrim-click) — the caller (CommunitiesPage)
+ *  uses it to clear its own "which community is open" state, so re-selecting the same community after
+ *  closing it still opens (a same-value setState wouldn't otherwise re-trigger the opening effect). */
+export function openCommunityModal(communityId: string, onClose: () => void): () => void {
+  return openPopup((close) => <CommunityModalContainer communityId={communityId} onClose={close} />, { onClose })
 }

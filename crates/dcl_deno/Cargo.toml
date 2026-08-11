@@ -47,3 +47,6 @@ hyper = { version = "0.14.26", features = [
   "server",
 ], optional = true }
 uuid = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }

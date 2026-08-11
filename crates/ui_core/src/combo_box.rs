@@ -80,7 +80,7 @@ fn setup(mut dui: ResMut<DuiRegistry>) {
 
 #[derive(SystemParam)]
 pub struct TargetCameraHelper<'w, 's> {
-    target_camera: Query<'w, 's, &'static UiTargetCamera>,
+    target_camera: Query<'w, 's, &'static ComputedNodeTarget>,
     cameras: Query<'w, 's, &'static Camera>,
     all_windows: Query<'w, 's, &'static Window>,
     primary_window: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
@@ -95,10 +95,14 @@ pub struct TargetCameraProps {
 
 impl TargetCameraHelper<'_, '_> {
     fn get_props(&self, e: Entity) -> Option<TargetCameraProps> {
-        let target_camera = self.target_camera.get(e).ok().cloned();
-        let (window_ref, texture_ref) = match &target_camera {
-            Some(target) => {
-                let camera = self.cameras.get(target.0).ok()?;
+        let camera = self
+            .target_camera
+            .get(e)
+            .ok()
+            .and_then(ComputedNodeTarget::camera);
+        let (window_ref, texture_ref) = match camera {
+            Some(camera) => {
+                let camera = self.cameras.get(camera).ok()?;
 
                 match &camera.target {
                     RenderTarget::Window(window_ref) => (Some(*window_ref), None),
@@ -121,8 +125,9 @@ impl TargetCameraHelper<'_, '_> {
             window?.size().as_uvec2()
         };
 
+        // only pin popups to texture-target cameras; window targets use the default camera
         Some(TargetCameraProps {
-            target_camera,
+            target_camera: texture_ref.and(camera).map(UiTargetCamera),
             size,
             scale_factor,
         })
