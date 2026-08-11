@@ -4,7 +4,7 @@ use common::{
     rpc::{RpcCall, RpcResultSender},
     util::UrlLoopbackExt,
 };
-use deno_core::{anyhow, error::AnyError, op2, ByteString, OpDecl, OpState, ResourceId};
+use deno_core::{anyhow, error::AnyError, op2, ByteString, JsBuffer, OpDecl, OpState, ResourceId};
 use deno_websocket::{CreateResponse, WebSocketPermissions};
 
 use dcl::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
@@ -23,6 +23,8 @@ pub fn override_ops() -> Vec<OpDecl> {
         op_ws_send_binary(),
         op_ws_send_binary_ab(),
         op_ws_send_text(),
+        op_ws_send_binary_async(),
+        op_ws_send_text_async(),
         op_ws_close(),
         op_ws_next_event(),
     ]
@@ -227,6 +229,29 @@ pub fn op_ws_send_text(
     guard_ws_buffer(state, rid, data.len())?;
     deno_websocket::op_ws_send_text__raw_fn(state, rid, data);
     Ok(())
+}
+
+// The async send ops (used by `WebSocketStream`, and reachable directly through the ops
+// table) must apply the same outbound-buffer cap as the sync sends above; otherwise a scene
+// can send without limit through them and defeat the bound.
+#[op2(async)]
+pub async fn op_ws_send_binary_async(
+    state: Rc<RefCell<OpState>>,
+    #[smi] rid: ResourceId,
+    #[buffer] data: JsBuffer,
+) -> Result<(), AnyError> {
+    guard_ws_buffer(&mut state.borrow_mut(), rid, data.len())?;
+    deno_websocket::op_ws_send_binary_async__raw_fn(state, rid, data).await
+}
+
+#[op2(async)]
+pub async fn op_ws_send_text_async(
+    state: Rc<RefCell<OpState>>,
+    #[smi] rid: ResourceId,
+    #[string] data: String,
+) -> Result<(), AnyError> {
+    guard_ws_buffer(&mut state.borrow_mut(), rid, data.len())?;
+    deno_websocket::op_ws_send_text_async__raw_fn(state, rid, data).await
 }
 
 #[op2(async(lazy))]
