@@ -1,0 +1,50 @@
+name: Promote headless server to latest
+
+# Promotes an already-published @dcl-regenesislabs/bevy-headless-server snapshot to the
+# `latest` dist-tag. Consumers that track `latest` (the SDK preview: js-sdk-toolchain's
+# `sdk-commands start`) only move when someone runs this — main pushes keep landing on
+# `next` (see publish-headless.yml) and never change what previews run.
+#
+# Only the launcher's dist-tag matters: it pins the platform packages by exact version,
+# so their tags are cosmetic and are left untouched.
+#
+# Auth: npm OIDC trusted publishing only covers `npm publish`, not `npm dist-tag`, so
+# this workflow needs an NPM_TOKEN secret — a granular automation token with read/write
+# access to @dcl-regenesislabs/bevy-headless-server.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact version to promote (empty = whatever `next` points to)
+        type: string
+        default: ''
+
+env:
+  PACKAGE: '@dcl-regenesislabs/bevy-headless-server'
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Promote to latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then
+            version="$(npm view "$PACKAGE@next" version)"
+          fi
+          echo "Current dist-tags:"
+          npm view "$PACKAGE" dist-tags
+          # fails if the version was never published, so a typo can't create a dead tag
+          npm view "$PACKAGE@$version" version >/dev/null
+          npm dist-tag add "$PACKAGE@$version" latest
+          echo "Promoted $PACKAGE@$version to latest. Dist-tags now:"
+          npm view "$PACKAGE" dist-tags
