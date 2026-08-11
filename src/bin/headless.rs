@@ -64,6 +64,7 @@ use scene_runner::{
     SceneRunnerPlugin,
 };
 use system_bridge::SystemBridgePlugin;
+use tween::TweenPlugin;
 use user_input::avatar_movement::{
     ActivePlayerComponent, AvatarMovement, AvatarMovementInfo, FromConfig, GroundCollider,
 };
@@ -327,6 +328,9 @@ fn main() {
         .add_plugins(GizmoPlugin)
         .add_plugins(UtilsPlugin)
         .add_plugins(SceneRunnerPlugin)
+        // tweens drive transforms (moving platforms → colliders), so they run headless
+        // like AnimatorPlugin; texture-move no-ops without material components
+        .add_plugins(TweenPlugin)
         .add_plugins(SceneBoundPlugin)
         .add_plugins(RestrictedActionsPlugin);
 
