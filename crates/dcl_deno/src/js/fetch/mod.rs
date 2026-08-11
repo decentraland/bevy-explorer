@@ -143,31 +143,17 @@ where
     let client = if let Some(rid) = client_rid {
         let r = state.resource_table.get::<ClientResource>(rid)?;
         r.0.clone()
-    } else if is_server {
-        match state.try_borrow::<ServerHttpClient>() {
+    } else {
+        // One guarded default client for both modes: public-only DNS (unless preview), so a
+        // scene can never reach loopback / private / metadata from a plain `fetch()`.
+        match state.try_borrow::<SceneHttpClient>() {
             Some(client) => client.0.clone(),
             None => {
-                let client = build_server_client(preview);
-                state.put(ServerHttpClient(client.clone()));
+                let client = build_scene_client(preview, is_server);
+                state.put(SceneHttpClient(client.clone()));
                 client
             }
         }
-    } else {
-        match state.try_borrow::<reqwest::Client>() {
-            Some(client) => client,
-            None => {
-                state.put(
-                    reqwest::Client::builder()
-                        .connect_timeout(Duration::from_secs(5))
-                        .use_native_tls()
-                        .user_agent("DCLExplorer/0.1")
-                        .build()
-                        .unwrap(),
-                );
-                state.borrow::<reqwest::Client>()
-            }
-        }
-        .clone()
     };
 
     if method.len() > 50 {
@@ -325,19 +311,16 @@ async fn fetch_send_inner(
         anyhow::bail!("User denied fetch request");
     }
 
-    // SSRF guard — SERVER MODE ONLY. On the shared multi-tenant server a scene must not
-    // reach cloud metadata / loopback / private ranges. The desktop and web clients run
-    // on the user's own machine (and the browser sandboxes the web build), so they keep
-    // unrestricted behaviour. Auto-redirects are disabled for the server client above,
-    // so this check can't be bypassed by a 3xx onto a private host.
-    let (is_server, allow_loopback) = {
+    // SSRF guard — every scene, every mode. No deployed scene may reach cloud metadata /
+    // loopback / private ranges, on the shared server OR the desktop client (a scene is
+    // untrusted code with the user's network position — the web build is already held to
+    // this by the browser's Private Network Access rules). `preview` widens the allowance
+    // to the local network for local development, but never to link-local / metadata.
+    let preview = {
         let op_state = state.borrow();
-        let ctx = op_state.borrow::<CrdtContext>();
-        (ctx.is_server, ctx.preview)
+        op_state.borrow::<CrdtContext>().preview
     };
-    if is_server {
-        common::util::assert_public_url(&url, allow_loopback).await?;
-    }
+    common::util::assert_public_url(&url, preview).await?;
 
     let async_req = if let Some(body_id) = request_body_rid {
         let body = state.borrow_mut().resource_table.take_any(body_id)?;
@@ -426,10 +409,10 @@ pub struct BasicAuth {
 pub struct ClientResource(reqwest::Client);
 impl deno_core::Resource for ClientResource {}
 
-/// Cached default fetch client for authoritative-server mode: redirects disabled so the
-/// per-request SSRF guard can't be bypassed by a 3xx onto a private host. Kept separate
-/// from the client-mode `reqwest::Client` so client/web behaviour is unchanged.
-struct ServerHttpClient(reqwest::Client);
+/// Cached default client for a scene's own requests, in both server and client mode. Its
+/// connections are public-only (see [`PublicOnlyResolver`]) unless `preview` widened them to
+/// the local network; on the server, redirects are disabled too.
+struct SceneHttpClient(reqwest::Client);
 
 /// DNS resolver that only ever hands back public addresses.
 ///
@@ -440,16 +423,16 @@ struct ServerHttpClient(reqwest::Client);
 /// reach it: plain `fetch()` from the SDK is enough. Enforcing inside the resolver makes
 /// the checked answer and the dialled answer the same answer by construction.
 struct PublicOnlyResolver {
-    allow_loopback: bool,
+    allow_private: bool,
 }
 
 impl reqwest::dns::Resolve for PublicOnlyResolver {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
-        let allow_loopback = self.allow_loopback;
+        let allow_private = self.allow_private;
         let host = name.as_str().to_owned();
         Box::pin(async move {
             // port 0: reqwest fills in the real port after resolution
-            let addrs = common::util::resolve_public_addrs(&host, 0, allow_loopback)
+            let addrs = common::util::resolve_public_addrs(&host, 0, allow_private)
                 .await
                 .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
                     e.to_string().into()
@@ -459,17 +442,47 @@ impl reqwest::dns::Resolve for PublicOnlyResolver {
     }
 }
 
-/// The http client used for every scene request on the authoritative server: no
-/// auto-redirects, and public-only DNS.
-fn build_server_client(allow_loopback: bool) -> reqwest::Client {
+/// Shared base for every scene http client: connect timeout, native TLS, UA, and the
+/// resolver that refuses any non-public address at connect time, so the address that was
+/// checked is the address that is dialled. `allow_private` (preview) widens this to the
+/// local network but never to link-local / metadata.
+fn scene_client_builder(allow_private: bool) -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(5))
         .use_native_tls()
         .user_agent("DCLExplorer/0.1")
-        .redirect(reqwest::redirect::Policy::none())
-        .dns_resolver(std::sync::Arc::new(PublicOnlyResolver { allow_loopback }))
-        .build()
-        .unwrap()
+        .dns_resolver(std::sync::Arc::new(PublicOnlyResolver { allow_private }))
+}
+
+/// The default client for a scene's own requests. On the authoritative server redirects are
+/// disabled as well (a 3xx must not silently re-target or forward signed headers); the
+/// desktop client keeps following them, which the resolver makes safe — every hop
+/// re-resolves through the same public-only check.
+fn build_scene_client(allow_private: bool, is_server: bool) -> reqwest::Client {
+    let mut builder = scene_client_builder(allow_private);
+    if is_server {
+        builder = builder.redirect(reqwest::redirect::Policy::none());
+    }
+    builder.build().unwrap()
+}
+
+/// A proxy given as a literal IP is dialled without a DNS lookup, so [`PublicOnlyResolver`]
+/// never sees it. Vet it synchronously: a forbidden (non-public) IP literal is refused unless
+/// `allow_private` (preview) permits the local network. A hostname proxy passes here — the
+/// resolver vets it when the connection is actually made.
+fn reject_non_public_proxy(proxy_url: &str, allow_private: bool) -> Result<(), AnyError> {
+    let url = deno_core::url::Url::parse(proxy_url)?;
+    if let Some(host) = url.host_str() {
+        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+            if allow_private && common::util::is_private_lan(&ip) {
+                return Ok(());
+            }
+            if common::util::is_forbidden_ip(&ip) {
+                anyhow::bail!("custom fetch client proxy may not target a non-public address");
+            }
+        }
+    }
+    Ok(())
 }
 
 #[op2]
@@ -513,11 +526,16 @@ pub fn op_fetch_custom_client(
         // same transport rules as the default server client: no redirects, public-only DNS
         return Ok(state
             .resource_table
-            .add(ClientResource(build_server_client(preview))));
+            .add(ClientResource(build_scene_client(preview, true))));
     }
 
-    let mut builder = reqwest::Client::builder().use_native_tls();
+    // Client mode: the scene may still tune TLS trust/identity for its own machine, but its
+    // connections stay public-only via the resolver (unless preview). A proxy given as a
+    // literal IP skips the resolver — reqwest dials the IP without a lookup — so a private
+    // proxy endpoint is refused here; a hostname proxy is caught at connect by the resolver.
+    let mut builder = scene_client_builder(preview);
     if let Some(proxy_def) = args.proxy {
+        reject_non_public_proxy(&proxy_def.url, preview)?;
         let mut proxy = reqwest::Proxy::http(proxy_def.url)?;
         if let Some(creds) = proxy_def.basic_auth {
             proxy = proxy.basic_auth(&creds.username, &creds.password);

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashSet, rc::Rc, time::Duration};
+use std::{cell::RefCell, collections::HashSet, net::SocketAddr, rc::Rc, time::Duration};
 
 use common::{
     rpc::{RpcCall, RpcResultSender},
@@ -69,6 +69,13 @@ impl WebSocketPermissions for WebSocketPerms {
             Err(anyhow::anyhow!("URL scheme must be `wss`"))
         }
     }
+
+    fn check_resolved(&mut self, addrs: &[SocketAddr], _api_name: &str) -> Result<(), AnyError> {
+        // These are the exact addresses the handshake is about to dial, so vetting them here
+        // closes the DNS-rebind window a pre-flight check leaves open. `preview` widens the
+        // allowance to the local network, never link-local / metadata.
+        common::util::validate_public_addrs(addrs, self.preview)
+    }
 }
 
 #[op2(async)]
@@ -101,18 +108,11 @@ where
         anyhow::bail!("User denied fetch request");
     }
 
-    // SSRF guard — SERVER MODE ONLY (client/web keep the browser-like behaviour). The
-    // scheme check above still lets `wss://<private-ip>` through; resolve and refuse any
-    // non-public destination on the shared server. Loopback stays reachable in preview,
-    // where the whole point is talking to a local dev server — same rule as fetch.
-    let (is_server, allow_loopback) = {
-        let op_state = state.borrow();
-        let ctx = op_state.borrow::<CrdtContext>();
-        (ctx.is_server, ctx.preview)
-    };
-    if is_server {
-        common::util::assert_public_url(&url, allow_loopback).await?;
-    }
+    // SSRF guard — every scene, every mode (same rule as fetch). Enforced at the connection
+    // itself: `WebSocketPerms::resolve_checked` (called inside the deno handshake) resolves +
+    // validates and returns only public addresses, and those exact addresses are what get
+    // dialled — so it cannot be beaten by a rebinding nameserver the way a pre-flight can.
+    // `preview` widens the allowance to the local network there (never link-local / metadata).
 
     // set default headers
     let mut headers = headers.unwrap_or_default();

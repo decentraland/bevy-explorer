@@ -49,6 +49,7 @@ pub fn create_runtime(
     inspect: bool,
     super_user: bool,
     storage_root: &str,
+    preview: bool,
 ) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
     let net = deno_net::deno_net::init_ops_and_esm::<NP>(None, None);
@@ -174,6 +175,7 @@ pub fn create_runtime(
         let mut state = state.borrow_mut();
         state.put(TP);
         state.put(NP);
+        state.put(WebSocketPerms { preview });
     }
 
     // On approaching the cap, terminate this isolate's execution so its JS unwinds and the
@@ -242,7 +244,8 @@ pub(crate) fn scene_thread(
 ) {
     let scene_id = scene_context.scene_id;
     let preview = scene_context.preview;
-    let (mut runtime, inspector) = create_runtime(inspect, super_user.is_some(), &storage_root);
+    let (mut runtime, inspector) =
+        create_runtime(inspect, super_user.is_some(), &storage_root, preview);
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
@@ -272,9 +275,6 @@ pub(crate) fn scene_thread(
     state
         .borrow_mut()
         .put(runtime.v8_isolate().thread_safe_handle());
-
-    // store websocket permissions object
-    state.borrow_mut().put(WebSocketPerms { preview });
 
     if inspector.is_some() {
         let _ = state
@@ -622,7 +622,7 @@ mod tests {
     /// is evaluated (`op_require("~scene.js")` -> `evalContext`). A `throw` in the scene
     /// surfaces as `Err`.
     fn run_scene(is_server: bool, scene_js: &str) -> Result<(), String> {
-        let (mut runtime, _) = create_runtime(false, false, "test-scene-realm");
+        let (mut runtime, _) = create_runtime(false, false, "test-scene-realm", false);
         {
             let state = runtime.op_state();
             let mut state = state.borrow_mut();
@@ -706,7 +706,7 @@ mod tests {
     /// authoritative server the option must be refused outright.
     #[test]
     fn server_refuses_a_scene_supplied_proxy() {
-        let (mut runtime, _) = create_runtime(false, false, "test-custom-client");
+        let (mut runtime, _) = create_runtime(false, false, "test-custom-client", false);
         runtime.op_state().borrow_mut().put(context(true));
         let err = runtime
             .execute_script(
@@ -724,7 +724,7 @@ mod tests {
     /// own outbound TLS.
     #[test]
     fn server_refuses_scene_supplied_ca_certs() {
-        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-ca");
+        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-ca", false);
         runtime.op_state().borrow_mut().put(context(true));
         let err = runtime
             .execute_script(
@@ -742,7 +742,7 @@ mod tests {
     /// this restriction is server-only.
     #[test]
     fn client_still_allows_custom_clients() {
-        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-clientmode");
+        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-clientmode", false);
         runtime.op_state().borrow_mut().put(context(false));
         runtime
             .execute_script(
