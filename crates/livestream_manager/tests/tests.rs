@@ -6,8 +6,8 @@ use bevy::{
 use livestream_manager::{
     plugin::LivestreamManagerPlugin,
     states::{Receiver, TransmissionKind, Transmitter},
-    ActiveReceiver, ActiveTransmitter, ActiveVideoCast, Presentation, ReceiverImage, Screenshare,
-    VideoCast, VideoStream,
+    ActiveAudioTransmitter, ActiveReceiver, ActiveTransmitter, ActiveVideoCast,
+    AudioTransmitterKind, ReceiverImage, TransmitterKind,
 };
 
 fn min_app() -> App {
@@ -233,7 +233,7 @@ fn test_add_stream() {
         Receiver::Off,
     );
 
-    let video_stream = app.world_mut().spawn(VideoStream).id();
+    let video_stream = app.world_mut().spawn(TransmitterKind::Stream).id();
 
     app.update();
     app.update();
@@ -283,7 +283,7 @@ fn test_add_cast() {
         Receiver::Off,
     );
 
-    let video_cast = app.world_mut().spawn(VideoCast).id();
+    let video_cast = app.world_mut().spawn(TransmitterKind::VideoCast).id();
 
     app.update();
     app.update();
@@ -333,7 +333,7 @@ fn test_add_screenshare() {
         Receiver::Off,
     );
 
-    let video_cast = app.world_mut().spawn(Screenshare).id();
+    let video_cast = app.world_mut().spawn(TransmitterKind::Screenshare).id();
 
     app.update();
     app.update();
@@ -383,7 +383,7 @@ fn test_add_presentation() {
         Receiver::Off,
     );
 
-    let video_cast = app.world_mut().spawn(Presentation).id();
+    let video_cast = app.world_mut().spawn(TransmitterKind::Presentation).id();
 
     app.update();
     app.update();
@@ -434,7 +434,7 @@ fn test_add_stream_then_cast() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let video_stream = app.world_mut().spawn(VideoStream).id();
+    let video_stream = app.world_mut().spawn(TransmitterKind::Stream).id();
 
     app.update();
     app.update();
@@ -452,7 +452,7 @@ fn test_add_stream_then_cast() {
         .entity(video_stream)
         .contains::<ActiveTransmitter>());
 
-    let video_cast = app.world_mut().spawn(VideoCast).id();
+    let video_cast = app.world_mut().spawn(TransmitterKind::VideoCast).id();
 
     app.update();
     app.update();
@@ -489,7 +489,7 @@ fn test_add_cast_then_cast() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let video_cast1 = app.world_mut().spawn(VideoCast).id();
+    let video_cast1 = app.world_mut().spawn(TransmitterKind::VideoCast).id();
 
     app.update();
     app.update();
@@ -507,7 +507,7 @@ fn test_add_cast_then_cast() {
         .entity(video_cast1)
         .contains::<ActiveTransmitter>());
 
-    let video_cast2 = app.world_mut().spawn(VideoCast).id();
+    let video_cast2 = app.world_mut().spawn(TransmitterKind::VideoCast).id();
 
     app.update();
     app.update();
@@ -544,7 +544,7 @@ fn test_add_cast_then_active_cast() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let video_cast1 = app.world_mut().spawn(VideoCast).id();
+    let video_cast1 = app.world_mut().spawn(TransmitterKind::VideoCast).id();
 
     app.update();
     app.update();
@@ -562,7 +562,10 @@ fn test_add_cast_then_active_cast() {
         .entity(video_cast1)
         .contains::<ActiveTransmitter>());
 
-    let video_cast2 = app.world_mut().spawn((VideoCast, ActiveVideoCast)).id();
+    let video_cast2 = app
+        .world_mut()
+        .spawn((TransmitterKind::VideoCast, ActiveVideoCast))
+        .id();
 
     app.update();
     app.update();
@@ -599,7 +602,10 @@ fn test_add_active_cast_then_cast() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let video_cast1 = app.world_mut().spawn((VideoCast, ActiveVideoCast)).id();
+    let video_cast1 = app
+        .world_mut()
+        .spawn((TransmitterKind::VideoCast, ActiveVideoCast))
+        .id();
 
     app.update();
     app.update();
@@ -617,7 +623,7 @@ fn test_add_active_cast_then_cast() {
         .entity(video_cast1)
         .contains::<ActiveTransmitter>());
 
-    let video_cast2 = app.world_mut().spawn(VideoCast).id();
+    let video_cast2 = app.world_mut().spawn(TransmitterKind::VideoCast).id();
 
     app.update();
     app.update();
@@ -654,7 +660,10 @@ fn test_add_active_cast_then_active_cast() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let video_cast1 = app.world_mut().spawn((VideoCast, ActiveVideoCast)).id();
+    let video_cast1 = app
+        .world_mut()
+        .spawn((TransmitterKind::VideoCast, ActiveVideoCast))
+        .id();
 
     app.update();
     app.update();
@@ -672,7 +681,10 @@ fn test_add_active_cast_then_active_cast() {
         .entity(video_cast1)
         .contains::<ActiveTransmitter>());
 
-    let video_cast2 = app.world_mut().spawn((VideoCast, ActiveVideoCast)).id();
+    let video_cast2 = app
+        .world_mut()
+        .spawn((TransmitterKind::VideoCast, ActiveVideoCast))
+        .id();
 
     app.update();
     app.update();
@@ -709,7 +721,7 @@ fn test_add_cast_then_screenshare() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let video_cast = app.world_mut().spawn(VideoCast).id();
+    let video_cast = app.world_mut().spawn(TransmitterKind::VideoCast).id();
 
     app.update();
     app.update();
@@ -727,7 +739,7 @@ fn test_add_cast_then_screenshare() {
         .entity(video_cast)
         .contains::<ActiveTransmitter>());
 
-    let screenshare = app.world_mut().spawn(Screenshare).id();
+    let screenshare = app.world_mut().spawn(TransmitterKind::Screenshare).id();
 
     app.update();
     app.update();
@@ -764,7 +776,7 @@ fn test_add_screenshare_then_cast() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let screenshare = app.world_mut().spawn(Screenshare).id();
+    let screenshare = app.world_mut().spawn(TransmitterKind::Screenshare).id();
 
     app.update();
     app.update();
@@ -782,7 +794,7 @@ fn test_add_screenshare_then_cast() {
         .entity(screenshare)
         .contains::<ActiveTransmitter>());
 
-    let video_cast = app.world_mut().spawn(VideoCast).id();
+    let video_cast = app.world_mut().spawn(TransmitterKind::VideoCast).id();
 
     app.update();
     app.update();
@@ -819,7 +831,7 @@ fn test_add_screenshare_then_screenshare() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let screenshare1 = app.world_mut().spawn(Screenshare).id();
+    let screenshare1 = app.world_mut().spawn(TransmitterKind::Screenshare).id();
 
     app.update();
     app.update();
@@ -837,7 +849,7 @@ fn test_add_screenshare_then_screenshare() {
         .entity(screenshare1)
         .contains::<ActiveTransmitter>());
 
-    let screenshare2 = app.world_mut().spawn(Screenshare).id();
+    let screenshare2 = app.world_mut().spawn(TransmitterKind::Screenshare).id();
 
     app.update();
     app.update();
@@ -874,7 +886,7 @@ fn test_add_screenshare_then_presentation() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let screenshare = app.world_mut().spawn(Screenshare).id();
+    let screenshare = app.world_mut().spawn(TransmitterKind::Screenshare).id();
 
     app.update();
     app.update();
@@ -892,7 +904,7 @@ fn test_add_screenshare_then_presentation() {
         .entity(screenshare)
         .contains::<ActiveTransmitter>());
 
-    let presentation = app.world_mut().spawn(Presentation).id();
+    let presentation = app.world_mut().spawn(TransmitterKind::Presentation).id();
 
     app.update();
     app.update();
@@ -929,7 +941,7 @@ fn test_add_presentation_then_screenshare() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let presentation = app.world_mut().spawn(Presentation).id();
+    let presentation = app.world_mut().spawn(TransmitterKind::Presentation).id();
 
     app.update();
     app.update();
@@ -947,7 +959,7 @@ fn test_add_presentation_then_screenshare() {
         .entity(presentation)
         .contains::<ActiveTransmitter>());
 
-    let screenshare = app.world_mut().spawn(Screenshare).id();
+    let screenshare = app.world_mut().spawn(TransmitterKind::Screenshare).id();
 
     app.update();
     app.update();
@@ -984,7 +996,7 @@ fn test_add_presentation_then_presentation() {
     );
 
     app.world_mut().spawn(ActiveReceiver);
-    let presentation1 = app.world_mut().spawn(Presentation).id();
+    let presentation1 = app.world_mut().spawn(TransmitterKind::Presentation).id();
 
     app.update();
     app.update();
@@ -1002,7 +1014,7 @@ fn test_add_presentation_then_presentation() {
         .entity(presentation1)
         .contains::<ActiveTransmitter>());
 
-    let presentation2 = app.world_mut().spawn(Presentation).id();
+    let presentation2 = app.world_mut().spawn(TransmitterKind::Presentation).id();
 
     app.update();
     app.update();
@@ -1023,4 +1035,350 @@ fn test_add_presentation_then_presentation() {
         .world()
         .entity(presentation2)
         .contains::<ActiveTransmitter>());
+}
+
+#[test]
+fn test_despawns() {
+    let mut app = min_app();
+
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Off,
+        Transmitter::Off,
+        Receiver::Off,
+    );
+
+    app.world_mut().spawn(ActiveReceiver);
+    let stream = app.world_mut().spawn(TransmitterKind::Stream).id();
+    let video_cast = app.world_mut().spawn(TransmitterKind::VideoCast).id();
+    let active_video_cast = app
+        .world_mut()
+        .spawn((ActiveVideoCast, TransmitterKind::VideoCast))
+        .id();
+    let screenshare = app.world_mut().spawn(TransmitterKind::Screenshare).id();
+    let presentation = app.world_mut().spawn(TransmitterKind::Presentation).id();
+
+    app.update();
+    app.update();
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Cast,
+        Transmitter::On,
+        Receiver::On,
+    );
+
+    assert!(!app.world().entity(stream).contains::<ActiveTransmitter>());
+    assert!(!app
+        .world()
+        .entity(video_cast)
+        .contains::<ActiveTransmitter>());
+    assert!(!app
+        .world()
+        .entity(active_video_cast)
+        .contains::<ActiveTransmitter>());
+    assert!(!app
+        .world()
+        .entity(screenshare)
+        .contains::<ActiveTransmitter>());
+    assert!(app
+        .world()
+        .entity(presentation)
+        .contains::<ActiveTransmitter>());
+
+    app.world_mut().entity_mut(presentation).despawn();
+
+    app.update();
+    app.update();
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Cast,
+        Transmitter::On,
+        Receiver::On,
+    );
+
+    assert!(!app.world().entity(stream).contains::<ActiveTransmitter>());
+    assert!(!app
+        .world()
+        .entity(video_cast)
+        .contains::<ActiveTransmitter>());
+    assert!(!app
+        .world()
+        .entity(active_video_cast)
+        .contains::<ActiveTransmitter>());
+    assert!(app
+        .world()
+        .entity(screenshare)
+        .contains::<ActiveTransmitter>());
+
+    app.world_mut().entity_mut(screenshare).despawn();
+
+    app.update();
+    app.update();
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Cast,
+        Transmitter::On,
+        Receiver::On,
+    );
+
+    assert!(!app.world().entity(stream).contains::<ActiveTransmitter>());
+    assert!(!app
+        .world()
+        .entity(video_cast)
+        .contains::<ActiveTransmitter>());
+    assert!(app
+        .world()
+        .entity(active_video_cast)
+        .contains::<ActiveTransmitter>());
+
+    app.world_mut().entity_mut(active_video_cast).despawn();
+
+    app.update();
+    app.update();
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Cast,
+        Transmitter::On,
+        Receiver::On,
+    );
+
+    assert!(!app.world().entity(stream).contains::<ActiveTransmitter>());
+    assert!(app
+        .world()
+        .entity(video_cast)
+        .contains::<ActiveTransmitter>());
+
+    app.world_mut().entity_mut(video_cast).despawn();
+
+    app.update();
+    app.update();
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Stream,
+        Transmitter::On,
+        Receiver::On,
+    );
+
+    assert!(app.world().entity(stream).contains::<ActiveTransmitter>());
+
+    app.world_mut().entity_mut(stream).despawn();
+
+    app.update();
+    app.update();
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Off,
+        Transmitter::Off,
+        Receiver::On,
+    );
+}
+
+#[test]
+fn test_audios_without_receiver() {
+    let mut app = min_app();
+
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Off,
+        Transmitter::Off,
+        Receiver::Off,
+    );
+
+    let audio_casts = app
+        .world_mut()
+        .spawn_batch(std::array::repeat::<AudioTransmitterKind, 5>(
+            AudioTransmitterKind::Cast,
+        ))
+        .collect::<Vec<_>>();
+    let audio_streams = app
+        .world_mut()
+        .spawn_batch(std::array::repeat::<AudioTransmitterKind, 5>(
+            AudioTransmitterKind::Stream,
+        ))
+        .collect::<Vec<_>>();
+
+    for cast in &audio_casts {
+        assert!(!app
+            .world()
+            .entity(*cast)
+            .contains::<ActiveAudioTransmitter>());
+    }
+    for stream in &audio_streams {
+        assert!(!app
+            .world()
+            .entity(*stream)
+            .contains::<ActiveAudioTransmitter>());
+    }
+}
+
+#[test]
+fn test_audios_on_transmission_kind_change() {
+    let mut app = min_app();
+
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Off,
+        Transmitter::Off,
+        Receiver::Off,
+    );
+
+    let audio_casts = app
+        .world_mut()
+        .spawn_batch(std::array::repeat::<AudioTransmitterKind, 5>(
+            AudioTransmitterKind::Cast,
+        ))
+        .collect::<Vec<_>>();
+    let audio_streams = app
+        .world_mut()
+        .spawn_batch(std::array::repeat::<AudioTransmitterKind, 5>(
+            AudioTransmitterKind::Stream,
+        ))
+        .collect::<Vec<_>>();
+
+    app.world_mut().spawn(ActiveReceiver);
+
+    // From Off to Cast
+    let video_cast = app.world_mut().spawn(TransmitterKind::VideoCast).id();
+
+    app.update();
+    app.update();
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Cast,
+        Transmitter::On,
+        Receiver::On,
+    );
+
+    for cast in &audio_casts {
+        assert!(app
+            .world()
+            .entity(*cast)
+            .contains::<ActiveAudioTransmitter>());
+    }
+    for stream in &audio_streams {
+        assert!(!app
+            .world()
+            .entity(*stream)
+            .contains::<ActiveAudioTransmitter>());
+    }
+
+    // From Cast to Off
+    app.world_mut().entity_mut(video_cast).despawn();
+
+    app.update();
+    app.update();
+    app.update();
+
+    for cast in &audio_casts {
+        assert!(!app
+            .world()
+            .entity(*cast)
+            .contains::<ActiveAudioTransmitter>());
+    }
+    for stream in &audio_streams {
+        assert!(!app
+            .world()
+            .entity(*stream)
+            .contains::<ActiveAudioTransmitter>());
+    }
+
+    // From Off to Stream
+    let stream = app.world_mut().spawn(TransmitterKind::Stream).id();
+
+    app.update();
+    app.update();
+    app.update();
+
+    for cast in &audio_casts {
+        assert!(!app
+            .world()
+            .entity(*cast)
+            .contains::<ActiveAudioTransmitter>());
+    }
+    for stream in &audio_streams {
+        assert!(app
+            .world()
+            .entity(*stream)
+            .contains::<ActiveAudioTransmitter>());
+    }
+
+    // From Stream to Cast
+    let video_cast = app.world_mut().spawn(TransmitterKind::VideoCast).id();
+
+    app.update();
+    app.update();
+    app.update();
+
+    for cast in &audio_casts {
+        assert!(app
+            .world()
+            .entity(*cast)
+            .contains::<ActiveAudioTransmitter>());
+    }
+    for stream in &audio_streams {
+        assert!(!app
+            .world()
+            .entity(*stream)
+            .contains::<ActiveAudioTransmitter>());
+    }
+
+    // From Cast to Stream
+    app.world_mut().entity_mut(video_cast).despawn();
+
+    app.update();
+    app.update();
+    app.update();
+
+    for cast in &audio_casts {
+        assert!(!app
+            .world()
+            .entity(*cast)
+            .contains::<ActiveAudioTransmitter>());
+    }
+    for stream in &audio_streams {
+        assert!(app
+            .world()
+            .entity(*stream)
+            .contains::<ActiveAudioTransmitter>());
+    }
+
+    // From Stream to Off
+    app.world_mut().entity_mut(stream).despawn();
+
+    app.update();
+    app.update();
+    app.update();
+
+    for cast in &audio_casts {
+        assert!(!app
+            .world()
+            .entity(*cast)
+            .contains::<ActiveAudioTransmitter>());
+    }
+    for stream in &audio_streams {
+        assert!(!app
+            .world()
+            .entity(*stream)
+            .contains::<ActiveAudioTransmitter>());
+    }
 }

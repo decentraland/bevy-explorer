@@ -1,6 +1,6 @@
 use bevy::{
     asset::RenderAssetUsages,
-    ecs::relationship::Relationship,
+    ecs::relationship::RelationshipSourceCollection,
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
@@ -18,16 +18,12 @@ impl Plugin for LivestreamManagerPlugin {
 
         app.add_systems(Startup, setup_manager);
 
-        app.add_observer(component_on_add::<Presentation, PresentationCaster>);
-        app.add_observer(component_on_remove::<Presentation, PresentationCaster>);
-        app.add_observer(component_on_add::<Screenshare, Screensharer>);
-        app.add_observer(component_on_remove::<Screenshare, Screensharer>);
-        app.add_observer(component_on_add::<VideoCast, VideoCaster>);
-        app.add_observer(component_on_remove::<VideoCast, VideoCaster>);
-        app.add_observer(component_on_add::<ActiveVideoCast, ActiveVideoCaster>);
-        app.add_observer(component_on_remove::<ActiveVideoCast, ActiveVideoCaster>);
-        app.add_observer(component_on_add::<VideoStream, VideoStreamer>);
-        app.add_observer(component_on_remove::<VideoStream, VideoStreamer>);
+        app.add_observer(transmitter_kind_on_insert);
+        app.add_observer(transmitter_kind_on_replace);
+        app.add_observer(audio_transmitter_kind_on_insert);
+        app.add_observer(audio_transmitter_kind_on_replace);
+        app.add_observer(active_video_cast_on_add);
+        app.add_observer(active_video_cast_on_remove);
         app.add_observer(transmitter_on);
         app.add_observer(transmitter_off);
         app.add_observer(receiver_on);
@@ -43,6 +39,22 @@ impl Plugin for LivestreamManagerPlugin {
                 .chain(),
         );
         app.add_systems(OnEnter(Receiver::Off), drop_transmissions);
+        app.add_systems(
+            OnEnter(TransmissionState::Cast),
+            enter_transmission_kind::<ManagingAudioCasts>,
+        );
+        app.add_systems(
+            OnExit(TransmissionState::Cast),
+            exit_transmission_kind::<ManagingAudioCasts>,
+        );
+        app.add_systems(
+            OnEnter(TransmissionState::Stream),
+            enter_transmission_kind::<ManagingAudioStreams>,
+        );
+        app.add_systems(
+            OnExit(TransmissionState::Stream),
+            exit_transmission_kind::<ManagingAudioStreams>,
+        );
     }
 }
 
@@ -110,6 +122,22 @@ struct ManagingVideoStreams(Vec<Entity>);
 #[relationship(relationship_target = ManagingVideoStreams)]
 struct VideoStreamer(Entity);
 
+#[derive(Component)]
+#[relationship_target(relationship = AudioCaster)]
+struct ManagingAudioCasts(Vec<Entity>);
+
+#[derive(Component)]
+#[relationship(relationship_target = ManagingAudioCasts)]
+struct AudioCaster(Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = AudioStreamer)]
+struct ManagingAudioStreams(Vec<Entity>);
+
+#[derive(Component)]
+#[relationship(relationship_target = ManagingAudioStreams)]
+struct AudioStreamer(Entity);
+
 fn setup_manager(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let handle = images.add(Image::new_fill(
         Extent3d {
@@ -127,23 +155,108 @@ fn setup_manager(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     debug!("LivestreamManager setup");
 }
 
-fn component_on_add<T: Component, R: Relationship>(
-    trigger: Trigger<OnAdd, T>,
+fn transmitter_kind_on_insert(
+    trigger: Trigger<OnInsert, TransmitterKind>,
+    mut commands: Commands,
+    livestream_manager: Single<Entity, With<LivestreamManager>>,
+    transmitter: Query<&TransmitterKind>,
+) {
+    let entity = trigger.target();
+    let Ok(transmitter_kind) = transmitter.get(entity) else {
+        unreachable!("Infallible query");
+    };
+
+    let mut entity_cmd = commands.entity(trigger.target());
+
+    match transmitter_kind {
+        TransmitterKind::Presentation => {
+            entity_cmd.insert(PresentationCaster(*livestream_manager));
+        }
+        TransmitterKind::Screenshare => {
+            entity_cmd.insert(Screensharer(*livestream_manager));
+        }
+        TransmitterKind::VideoCast => {
+            entity_cmd.insert(VideoCaster(*livestream_manager));
+        }
+        TransmitterKind::Stream => {
+            entity_cmd.insert(VideoStreamer(*livestream_manager));
+        }
+    }
+}
+
+fn transmitter_kind_on_replace(
+    trigger: Trigger<OnReplace, TransmitterKind>,
+    mut commands: Commands,
+) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<(
+        PresentationCaster,
+        Screensharer,
+        ActiveVideoCaster,
+        VideoCaster,
+        VideoStreamer,
+        ActiveVideoCast,
+        ActiveTransmitter,
+    )>();
+}
+
+fn audio_transmitter_kind_on_insert(
+    trigger: Trigger<OnInsert, AudioTransmitterKind>,
+    mut commands: Commands,
+    livestream_manager: Single<Entity, With<LivestreamManager>>,
+    transmitter: Query<&AudioTransmitterKind>,
+    transmission_kind: Res<State<TransmissionKind>>,
+) {
+    let entity = trigger.target();
+    let Ok(transmitter_kind) = transmitter.get(entity) else {
+        unreachable!("Infallible query");
+    };
+
+    let mut entity_cmd = commands.entity(trigger.target());
+
+    match transmitter_kind {
+        AudioTransmitterKind::Cast => {
+            entity_cmd.insert(AudioCaster(*livestream_manager));
+            if *transmission_kind == TransmissionKind::Cast {
+                entity_cmd.insert(ActiveAudioTransmitter);
+            }
+        }
+        AudioTransmitterKind::Stream => {
+            entity_cmd.insert(AudioStreamer(*livestream_manager));
+            if *transmission_kind == TransmissionKind::Stream {
+                entity_cmd.insert(ActiveAudioTransmitter);
+            }
+        }
+    }
+}
+
+fn audio_transmitter_kind_on_replace(
+    trigger: Trigger<OnReplace, TransmitterKind>,
+    mut commands: Commands,
+) {
+    let entity = trigger.target();
+    commands
+        .entity(entity)
+        .try_remove::<(AudioCaster, AudioStreamer, ActiveAudioTransmitter)>();
+}
+
+fn active_video_cast_on_add(
+    trigger: Trigger<OnAdd, ActiveVideoCast>,
     mut commands: Commands,
     livestream_manager: Single<Entity, With<LivestreamManager>>,
 ) {
     commands
         .entity(trigger.target())
-        .insert(R::from(*livestream_manager));
+        .insert(ActiveVideoCaster(*livestream_manager));
 }
 
-fn component_on_remove<T: Component, R: Relationship>(
-    trigger: Trigger<OnRemove, T>,
+fn active_video_cast_on_remove(
+    trigger: Trigger<OnRemove, ActiveVideoCast>,
     mut commands: Commands,
 ) {
     commands
         .entity(trigger.target())
-        .try_remove::<(R, ActiveTransmitter)>();
+        .try_remove::<ActiveVideoCaster>();
 }
 
 fn transmitter_on(
@@ -197,13 +310,13 @@ fn receiver_off(
 #[expect(clippy::type_complexity)]
 fn transmission_kind(
     livestream_manager: Single<
-        AnyOf<(
-            &ManagingPresentations,
-            &ManagingScreenshare,
-            &ManagingActiveCasts,
-            &ManagingCasts,
-            &ManagingVideoStreams,
-        )>,
+        (
+            Option<&ManagingPresentations>,
+            Option<&ManagingScreenshare>,
+            Option<&ManagingActiveCasts>,
+            Option<&ManagingCasts>,
+            Option<&ManagingVideoStreams>,
+        ),
         With<LivestreamManager>,
     >,
     transmission_kind: Res<State<TransmissionKind>>,
@@ -254,7 +367,7 @@ fn manage_casts(
         _ => unreachable!("Infallible"),
     };
 
-    let highest_priority = collection.iter().next().copied();
+    let highest_priority = collection.iter().next();
 
     let old_active = active_transmission.as_deref().copied();
 
@@ -309,4 +422,24 @@ fn manage_streams(
     commands
         .entity(*stream)
         .try_insert(ActiveTransmitter((*livestream_manager).clone()));
+}
+
+fn enter_transmission_kind<'w, R: RelationshipTarget>(
+    mut commands: Commands,
+    livestream_manager: Single<'w, &R, With<LivestreamManager>>,
+) {
+    for entity in livestream_manager.collection().iter() {
+        commands.entity(entity).try_insert(ActiveAudioTransmitter);
+    }
+}
+
+fn exit_transmission_kind<'w, R: RelationshipTarget>(
+    mut commands: Commands,
+    livestream_manager: Single<'w, &R, With<LivestreamManager>>,
+) {
+    for entity in livestream_manager.collection().iter() {
+        commands
+            .entity(entity)
+            .try_remove::<ActiveAudioTransmitter>();
+    }
 }

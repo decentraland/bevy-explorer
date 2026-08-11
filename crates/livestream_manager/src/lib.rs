@@ -3,32 +3,37 @@ pub mod states;
 
 use bevy::prelude::*;
 
-/// Marker component for an entity streaming a presentation
-#[derive(Component)]
-pub struct Presentation;
+/// Component for the kind of transmitter that the entity is
+#[derive(Clone, Copy, Component)]
+#[component(immutable)]
+pub enum TransmitterKind {
+    Presentation,
+    Screenshare,
+    VideoCast,
+    Stream,
+}
 
-/// Marker component for an entity screensharing
-#[derive(Component)]
-pub struct Screenshare;
-
-/// Marker component for an entity with a cast camera stream
-#[derive(Component)]
-pub struct VideoCast;
-
-/// Marker component for an entity with an active cast camera stream
+/// Extra marker component for [`TransmitterKind::VideoCast`] that
+/// are active
 #[derive(Component)]
 pub struct ActiveVideoCast;
 
-/// Marker component for an entity with a stream from a source
-/// that is not a cast. Stream entities can only be active
-/// if there is no cast active.
-#[derive(Component)]
-pub struct VideoStream;
+/// Component for the kind of transmitter that the entity is
+#[derive(Clone, Copy, Component)]
+#[component(immutable)]
+pub enum AudioTransmitterKind {
+    Cast,
+    Stream,
+}
 
 /// Component with the handle to the image that the transmitter
 /// should write to
 #[derive(Component, Deref)]
 pub struct ActiveTransmitter(Handle<Image>);
+
+/// Marker component for audio transmitters that should be playing
+#[derive(Component)]
+pub struct ActiveAudioTransmitter;
 
 /// An active receiver entity
 #[derive(Component)]

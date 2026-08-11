@@ -1,9 +1,12 @@
 use bevy::{
-    ecs::{relationship::Relationship, system::entity_command},
+    ecs::{error::debug, relationship::Relationship, system::entity_command},
     prelude::*,
 };
 use common::{debug_panic, util::AsH160};
-use livestream_manager::{ActiveTransmitter, Presentation, Screenshare, VideoCast, VideoStream};
+use livestream_manager::{
+    ActiveAudioTransmitter, ActiveTransmitter, ActiveVideoCast, AudioTransmitterKind,
+    TransmitterKind,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use {
     bevy::{ecs::world::OnDespawn, render::render_resource::Extent3d},
@@ -65,6 +68,9 @@ impl Plugin for LivekitTrackPlugin {
 
         #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(Update, copy_frame);
+
+        app.add_observer(on_active_audio_transmitter_add);
+        app.add_observer(on_active_audio_transmitter_remove);
     }
 }
 
@@ -116,68 +122,71 @@ fn track_published(
     match track.source() {
         TrackSource::Microphone => {
             entity_cmd.try_insert(Microphone);
+            if identity_str.starts_with("presentation-bot:") || identity_str.starts_with("stream:")
+            {
+                entity_cmd.insert(AudioTransmitterKind::Cast);
+            } else if identity_str.ends_with("-streamer") {
+                entity_cmd.insert(AudioTransmitterKind::Stream);
+            }
         }
         TrackSource::Camera => {
             entity_cmd.try_insert(Camera);
             if identity_str.starts_with("stream:") {
-                entity_cmd.try_insert(VideoCast);
+                entity_cmd.try_insert(TransmitterKind::VideoCast);
+                if has_active_speaker {
+                    entity_cmd.try_insert(ActiveVideoCast);
+                }
             } else if identity_str.ends_with("-streamer") {
-                entity_cmd.try_insert(VideoStream);
+                entity_cmd.try_insert(TransmitterKind::Stream);
             }
         }
         TrackSource::ScreenshareAudio => {
             entity_cmd.try_insert(ScreenshareAudio);
+            if identity_str.starts_with("presentation-bot:") || identity_str.starts_with("stream:")
+            {
+                entity_cmd.insert(AudioTransmitterKind::Cast);
+            } else if identity_str.ends_with("-streamer") {
+                entity_cmd.insert(AudioTransmitterKind::Stream);
+            }
         }
         TrackSource::Screenshare => {
             entity_cmd.try_insert(ScreenshareVideo);
             if identity_str.starts_with("presentation-bot:") {
-                entity_cmd.try_insert(Presentation);
+                entity_cmd.try_insert(TransmitterKind::Presentation);
             } else {
-                entity_cmd.try_insert(Screenshare);
+                entity_cmd.try_insert(TransmitterKind::Screenshare);
             }
         }
         source => warn!("Track {} had {:?} source.", track.sid(), source),
     }
-    let entity = entity_cmd.id();
 
     let maybe_address = identity_str.as_h160();
-    if track.kind() == TrackKind::Audio {
-        if maybe_address.is_some() {
-            #[expect(
-                clippy::unnecessary_unwrap,
-                reason = "No let chains in current version."
-            )]
-            let address = maybe_address.unwrap();
+    if track.kind() == TrackKind::Audio && maybe_address.is_some() {
+        #[expect(
+            clippy::unnecessary_unwrap,
+            reason = "No let chains in current version."
+        )]
+        let address = maybe_address.unwrap();
 
-            let sender = player_state.get_sender();
-            let task = livekit_runtime.spawn(async move {
-                sender
-                    .send(
-                        PlayerUpdate {
-                            transport_id: room_entity,
-                            message: PlayerMessage::AudioStreamAvailable {
-                                transport: room_entity,
-                            },
-                            address,
-                        }
-                        .into(),
-                    )
-                    .await
-            });
-            player_update_tasks.push(PlayerUpdateTask {
-                runtime: (*livekit_runtime).clone(),
-                task,
-            });
-        } else {
-            // Any audio track that does not come from a H160
-            // identity must run always
-            debug!(
-                "Subscribing to Audio for non-player participant {} ({})",
-                participant.sid(),
-                identity
-            );
-            commands.trigger_targets(SubscribeToTrack, entity);
-        }
+        let sender = player_state.get_sender();
+        let task = livekit_runtime.spawn(async move {
+            sender
+                .send(
+                    PlayerUpdate {
+                        transport_id: room_entity,
+                        message: PlayerMessage::AudioStreamAvailable {
+                            transport: room_entity,
+                        },
+                        address,
+                    }
+                    .into(),
+                )
+                .await
+        });
+        player_update_tasks.push(PlayerUpdateTask {
+            runtime: (*livekit_runtime).clone(),
+            task,
+        });
     }
 }
 
@@ -597,4 +606,33 @@ fn copy_frame(
             image.data = Some(frame.rgba_data());
         }
     }
+}
+
+fn on_active_audio_transmitter_add(
+    trigger: Trigger<OnAdd, ActiveAudioTransmitter>,
+    mut commands: Commands,
+    tracks: Query<(), (With<LivekitTrack>, With<Audio>)>,
+) {
+    let entity = trigger.target();
+    if !tracks.contains(entity) {
+        debug!("ActiveAudioTransmitter added to something that is not an LivekitTrack.");
+        return;
+    }
+
+    commands.entity(entity).trigger(SubscribeToTrack);
+}
+
+fn on_active_audio_transmitter_remove(
+    trigger: Trigger<OnRemove, ActiveAudioTransmitter>,
+    mut commands: Commands,
+    tracks: Query<(), (With<LivekitTrack>, With<Audio>)>,
+) {
+    let entity = trigger.target();
+    if !tracks.contains(entity) {
+        return;
+    }
+
+    commands
+        .entity(entity)
+        .queue_handled(entity_command::trigger(UnsubscribeToTrack), debug);
 }

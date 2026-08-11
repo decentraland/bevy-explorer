@@ -48,8 +48,13 @@ impl Plugin for LivekitParticipantPlugin {
         app.add_observer(is_no_longer_speaking);
 
         app.add_observer(change_volume_of_tracks);
+
+        app.add_systems(Update, verify_active_speaker_grace_period);
     }
 }
+
+#[derive(Component, Deref)]
+struct ActiveSpeakerGracePeriod(f64);
 
 fn participant_connected(
     trigger: Trigger<ParticipantConnected>,
@@ -352,7 +357,7 @@ fn is_now_speaking(
         (&LivekitParticipant, Option<&HostedBy>, Option<&Publishing>),
         With<ActiveSpeaker>,
     >,
-    tracks: Query<(), (With<Video>, With<CameraTrack>)>,
+    tracks: Query<Has<ActiveVideoCast>, (With<Video>, With<CameraTrack>)>,
     scene_rooms: Query<&SceneRoom>,
     senders: Res<VoiceMessageStreams>,
 ) {
@@ -391,8 +396,14 @@ fn is_now_speaking(
         }
     } else if let Some(publishing) = maybe_publishing {
         for published in publishing.collection() {
-            if tracks.contains(*published) {
-                commands.entity(*published).insert(ActiveVideoCast);
+            if let Ok(has_active_video_cast) = tracks.get(*published) {
+                if has_active_video_cast {
+                    commands
+                        .entity(*published)
+                        .try_remove::<ActiveSpeakerGracePeriod>();
+                } else {
+                    commands.entity(*published).insert(ActiveVideoCast);
+                }
             }
         }
     }
@@ -409,6 +420,7 @@ fn is_no_longer_speaking(
     tracks: Query<(), (With<Video>, With<CameraTrack>, With<ActiveVideoCast>)>,
     scene_rooms: Query<&SceneRoom>,
     senders: Res<VoiceMessageStreams>,
+    time: Res<Time<Real>>,
 ) {
     let entity = trigger.target();
 
@@ -446,8 +458,33 @@ fn is_no_longer_speaking(
     } else if let Some(publishing) = maybe_publishing {
         for published in publishing.collection() {
             if tracks.contains(*published) {
-                commands.entity(*published).try_remove::<ActiveVideoCast>();
+                commands
+                    .entity(*published)
+                    .try_insert(ActiveSpeakerGracePeriod(time.elapsed_secs_wrapped_f64()));
             }
+        }
+    }
+}
+
+fn verify_active_speaker_grace_period(
+    mut commands: Commands,
+    active_speakers: Populated<(Entity, &ActiveSpeakerGracePeriod)>,
+    time: Res<Time<Real>>,
+) {
+    const GRACE_PERIOD: f64 = 3.;
+
+    let elapsed = time.elapsed_secs_wrapped_f64();
+    let wrap_period = time.wrap_period().as_secs_f64();
+    for (entity, active_speaker_grace_period) in active_speakers.into_inner() {
+        let mut active_speaker_grace_period = **active_speaker_grace_period;
+        if active_speaker_grace_period >= wrap_period - GRACE_PERIOD {
+            active_speaker_grace_period -= wrap_period;
+        }
+        if elapsed - active_speaker_grace_period > GRACE_PERIOD {
+            debug!("Grace period for {} has passed.", entity);
+            commands
+                .entity(entity)
+                .try_remove::<(ActiveSpeakerGracePeriod, ActiveVideoCast)>();
         }
     }
 }
