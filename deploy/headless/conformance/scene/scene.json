@@ -1,0 +1,17 @@
+{
+  "ecs7": true,
+  "runtimeVersion": "7",
+  "main": "bin/index.js",
+  "scene": {
+    "base": "0,0",
+    "parcels": ["0,0"]
+  },
+  "display": {
+    "title": "headless-conformance-fixture",
+    "description": "CI fixture: asserts isServer, tweens and raycasts inside the headless engine"
+  },
+  "authoritativeMultiplayer": true,
+  "multiplayerId": "headless-conformance",
+  "logsPermissions": [],
+  "tags": []
+}
