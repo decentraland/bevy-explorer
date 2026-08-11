@@ -293,30 +293,37 @@ pub(crate) fn load_scene_javascript(
 
         let portable = portable_scenes.get(&definition.id);
 
-        let (base_x, base_y) = meta.scene.base.split_once(',').unwrap();
-        let base_x = base_x.parse::<i32>().unwrap();
-        let base_y = base_y.parse::<i32>().unwrap();
-        let base = IVec2::new(base_x, base_y);
+        let Some(base) = meta
+            .scene
+            .base
+            .split_once(',')
+            .and_then(|(x, y)| Some(IVec2::new(x.parse().ok()?, y.parse().ok()?)))
+        else {
+            fail("malformed base coordinate in scene.json");
+            continue;
+        };
 
         // populate pointers
         let mut extent_min = IVec2::MAX;
         let mut extent_max = IVec2::MIN;
-        let parcels: HashSet<_> = meta
+        let parcels: Option<HashSet<_>> = meta
             .scene
             .parcels
             .iter()
             .map(|pointer| {
-                let (x, y) = pointer.split_once(',').unwrap();
-                let x = x.parse::<i32>().unwrap();
-                let y = y.parse::<i32>().unwrap();
-                let parcel = IVec2::new(x, y);
+                let (x, y) = pointer.split_once(',')?;
+                let parcel = IVec2::new(x.parse().ok()?, y.parse().ok()?);
 
                 extent_min = extent_min.min(parcel);
                 extent_max = extent_max.max(parcel);
 
-                parcel
+                Some(parcel)
             })
             .collect();
+        let Some(parcels) = parcels else {
+            fail("malformed parcel coordinate in scene.json");
+            continue;
+        };
 
         let bounds = if portable.is_some() {
             Vec::default()
@@ -1439,7 +1446,7 @@ fn load_active_entities(
                 .parcels
                 .iter()
                 .filter_map(|pointer| {
-                    let (x, y) = pointer.split_once(',').unwrap();
+                    let (x, y) = pointer.split_once(',')?;
                     let x = x.parse::<i32>().ok()?;
                     let y = y.parse::<i32>().ok()?;
                     Some(IVec2::new(x, y))
