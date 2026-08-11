@@ -91,6 +91,13 @@ pub struct CommunicatedWithRenderer;
 // scene-elapsed time (seconds) of the last SceneResponse::Stats flush
 pub struct SceneStatsFlush(pub f32);
 
+// Ingest total (SceneResourceCounters::crdt_bytes) at which the retained store could next
+// reach its cap. Retained bytes grow at most 1:1 with ingest, so after a measurement finds
+// `retained` bytes the store cannot breach until `cap - retained` more bytes arrive. Storing
+// that projected point lets `crdt_send_to_renderer` skip the O(entries) walk in proportion to
+// how far below the cap the scene sits.
+pub struct CrdtStoreNextCheck(pub u64);
+
 pub trait State {
     fn borrow<T: 'static>(&self) -> &T;
     fn try_borrow<T: 'static>(&self) -> Option<&T>;
@@ -446,5 +453,81 @@ mod scene_log_budget_tests {
             _ => None,
         });
         assert_eq!(set, (5, 64));
+    }
+
+    // full op-state for driving `crdt_send_to_renderer`.
+    fn crdt_state() -> TestState {
+        use crate::interface::crdt_context::CrdtContext;
+        let ctx = || {
+            CrdtContext::new(
+                crate::SceneId::DUMMY,
+                Default::default(),
+                Default::default(),
+                false,
+                false,
+                false,
+            )
+        };
+        let mut s = state();
+        s.put(crate::SceneElapsedTime(0.0));
+        s.put(ctx());
+        s.put(crate::CrdtStore::default());
+        s.put(FilteredCrdtStore::default());
+        s.put(AllocatorContext(ctx()));
+        s.put(crate::CrdtComponentInterfaces::default());
+        s.put(crate::RpcCalls::default());
+        s.put(SceneStatsFlush(0.0));
+        s
+    }
+
+    // An oversized batch is refused at ingress: the scene is reported as errored and flagged
+    // for shutdown, and no Ok frame is built — so the offending scene dies without a giant
+    // frame ever reaching the shared connection.
+    #[test]
+    fn oversized_crdt_batch_terminates_the_scene() {
+        let (sx, mut rx) = scene_response_channel();
+        let mut s = crdt_state();
+        s.put(sx);
+        let state = std::rc::Rc::new(std::cell::RefCell::new(s));
+
+        let oversized = vec![0u8; super::engine::MAX_CRDT_BATCH_BYTES + 1];
+        super::engine::crdt_send_to_renderer(state.clone(), &oversized);
+
+        match rx.try_recv() {
+            Ok(crate::SceneResponse::Error(id, msg)) => {
+                assert_eq!(id, crate::SceneId::DUMMY);
+                assert!(msg.contains("CRDT batch"), "unexpected message: {msg}");
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+        assert!(
+            state.borrow().has::<ShuttingDown>(),
+            "oversized batch must flag the scene for shutdown"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "no Ok frame must be built for a rejected batch"
+        );
+    }
+
+    // A normal batch flows through untouched: an Ok frame is produced and the scene is not
+    // flagged for shutdown.
+    #[test]
+    fn normal_crdt_batch_is_forwarded_and_scene_survives() {
+        let (sx, mut rx) = scene_response_channel();
+        let mut s = crdt_state();
+        s.put(sx);
+        let state = std::rc::Rc::new(std::cell::RefCell::new(s));
+
+        super::engine::crdt_send_to_renderer(state.clone(), &[]);
+
+        match rx.try_recv() {
+            Ok(crate::SceneResponse::Ok(id, ..)) => assert_eq!(id, crate::SceneId::DUMMY),
+            other => panic!("expected Ok, got {other:?}"),
+        }
+        assert!(
+            !state.borrow().has::<ShuttingDown>(),
+            "a normal batch must not shut the scene down"
+        );
     }
 }
