@@ -25,13 +25,13 @@ use crate::{
     },
     livekit::{
         participant::{
-            ActiveSpeaker, ActiveSpeakersChanged, ChangeVolume, HostedBy, HostingParticipants,
+            ActiveSpeaker, ActiveSpeakersChanged, HostedBy, HostingParticipants,
             LivekitParticipant, Local, ParticipantConnected, ParticipantConnectionQuality,
             ParticipantDisconnected, ParticipantMetadataChanged, ParticipantPayload,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
-        track::{Audio, Camera as CameraTrack, Publishing, TrackVolume, Video},
+        track::{Camera as CameraTrack, Publishing, Video},
         LivekitRuntime,
     },
     SceneRoom,
@@ -79,8 +79,6 @@ impl Plugin for LivekitParticipantPlugin {
         app.add_observer(active_speakers_changed);
         app.add_observer(is_now_speaking);
         app.add_observer(is_no_longer_speaking);
-
-        app.add_observer(change_volume_of_tracks);
 
         app.add_systems(Update, verify_active_speaker_grace_period);
     }
@@ -381,29 +379,6 @@ fn participant_metadata_changed(
                 task,
             });
         }
-    }
-}
-
-fn change_volume_of_tracks(
-    trigger: Trigger<ChangeVolume>,
-    mut commands: Commands,
-    participants: Query<&Publishing>,
-    tracks: Query<(), With<Audio>>,
-) {
-    let entity = trigger.target();
-    let event = trigger.event();
-
-    let Ok(publishing) = participants.get(entity) else {
-        error!("{} is not publishing any tracks.", entity);
-        return;
-    };
-
-    for track in publishing.collection() {
-        if !tracks.contains(*track) {
-            continue;
-        }
-
-        commands.entity(*track).try_insert(TrackVolume(event.0));
     }
 }
 

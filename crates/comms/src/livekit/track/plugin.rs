@@ -5,7 +5,7 @@ use bevy::{
 use common::{debug_panic, util::AsH160};
 use livestream_manager::{
     ActiveAudioTransmitter, ActiveTransmitter, ActiveVideoCast, AudioTransmitterKind,
-    TransmitterKind,
+    AudioTransmitterVolume, TransmitterKind,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -71,6 +71,9 @@ impl Plugin for LivekitTrackPlugin {
 
         app.add_observer(on_active_audio_transmitter_add);
         app.add_observer(on_active_audio_transmitter_remove);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(Update, update_track_volume);
     }
 }
 
@@ -635,4 +638,14 @@ fn on_active_audio_transmitter_remove(
     commands
         .entity(entity)
         .queue_handled(entity_command::trigger(UnsubscribeToTrack), debug);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn update_track_volume(tracks: Populated<(&mut AudioStreamingHandle, &AudioTransmitterVolume)>) {
+    use kira::tween::Tween;
+    for (mut audio_streaming_handle, audio_transmitter_volume) in tracks.into_inner() {
+        audio_streaming_handle
+            .handle
+            .set_volume(**audio_transmitter_volume as f64, Tween::default());
+    }
 }
