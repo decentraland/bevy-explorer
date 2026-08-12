@@ -55,6 +55,11 @@ impl Plugin for LivestreamManagerPlugin {
             OnExit(TransmissionState::Stream),
             exit_transmission_kind::<ManagingAudioStreams>,
         );
+
+        app.add_systems(
+            Update,
+            transfer_receiver_volume.run_if(not(in_state(TransmissionState::Off))),
+        );
     }
 }
 
@@ -305,7 +310,9 @@ fn receiver_off(
 ) {
     let entity = trigger.target();
     debug!("Receiver {} removed", entity);
-    commands.entity(entity).try_remove::<ReceiverImage>();
+    commands
+        .entity(entity)
+        .try_remove::<(ReceiverImage, ReceiverVolume)>();
     if receivers.iter().len() == 1 {
         debug!("Receivers are now Off");
         next_state.set(Receiver::Off);
@@ -446,5 +453,19 @@ fn exit_transmission_kind<'w, R: RelationshipTarget>(
         commands
             .entity(entity)
             .try_remove::<ActiveAudioTransmitter>();
+    }
+}
+
+fn transfer_receiver_volume(
+    receivers: Populated<&ReceiverVolume>,
+    audio_transmitters: Populated<&mut AudioTransmitterVolume>,
+) {
+    let mut global_volume = 0.0_f32;
+    for receiver_volume in receivers.into_inner() {
+        global_volume = global_volume.max(**receiver_volume);
+    }
+
+    for mut audio_transmitter_volume in audio_transmitters.into_inner() {
+        audio_transmitter_volume.0 = global_volume;
     }
 }
