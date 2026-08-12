@@ -411,6 +411,26 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
         Some(slf)
     }
 
+    pub fn new_noop(source: String, image: Handle<Image>) -> Self {
+        let media = web_sys::window()
+            .unwrap()
+            .document()
+            .and_then(|doc| {
+                let container = doc
+                    .get_element_by_id(VIDEO_CONTAINER_ID)
+                    .expect("video container should exist");
+                let video = doc.create_element("video").unwrap();
+                container.append_child(&video).unwrap();
+                video.dyn_into::<HtmlMediaElement>().ok()
+            })
+            .expect("Couldn't create video element");
+
+        let mut slf = Self::common_init(source, media);
+        slf.video = None;
+        slf.image = Some(image);
+        slf
+    }
+
     pub fn set_loop(&mut self, looping: bool) {
         self.media.set_loop(looping)
     }
@@ -522,28 +542,41 @@ fn new_player_source<T: AVPlayer>(
         &(**player_source)
     );
     match &(**player_source) {
-        "" | LIVEKIT_VIDEO_STREAM => (),
+        LIVEKIT_VIDEO_STREAM => (),
         _ => {
             let source_url = &(**player_source);
-            let source = ipfs
-                .content_url(source_url, &context.hash)
-                .unwrap_or_else(|| source_url.to_owned());
-
-            if T::has_video() {
+            if source_url.is_empty() {
                 let image = create_image_handle();
                 let video_output = VideoTextureOutput(image.clone());
                 commands.entity(entity).try_insert((
                     video_output,
-                    HtmlMediaEntity::<T>::new_video(&source, source_url.to_owned(), image.clone()),
+                    HtmlMediaEntity::<T>::new_noop((**player_source).to_owned(), image.clone()),
                 ));
             } else {
-                commands
-                    .entity(entity)
-                    .try_insert(HtmlMediaEntity::<T>::new_audio(
-                        &source,
-                        source_url.to_owned(),
+                let source = ipfs
+                    .content_url(source_url, &context.hash)
+                    .unwrap_or_else(|| source_url.to_owned());
+
+                if T::has_video() {
+                    let image = create_image_handle();
+                    let video_output = VideoTextureOutput(image.clone());
+                    commands.entity(entity).try_insert((
+                        video_output,
+                        HtmlMediaEntity::<T>::new_video(
+                            &source,
+                            source_url.to_owned(),
+                            image.clone(),
+                        ),
                     ));
-            };
+                } else {
+                    commands
+                        .entity(entity)
+                        .try_insert(HtmlMediaEntity::<T>::new_audio(
+                            &source,
+                            source_url.to_owned(),
+                        ));
+                };
+            }
         }
     };
 }
