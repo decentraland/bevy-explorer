@@ -12,8 +12,8 @@ use crate::{
     crdt::{append_component, delete_entity, put_component},
     interface::{crdt_context::CrdtContext, CrdtType},
     js::{
-        AllocatorContext, CommunicatedWithRenderer, CrdtStoreNextCheck, FilteredCrdtStore,
-        RendererStore, SceneResponseSender, SceneStatsFlush, ShuttingDown,
+        AllocatorContext, CommunicatedWithRenderer, CrdtSentThisTick, CrdtStoreNextCheck,
+        FilteredCrdtStore, RendererStore, SceneResponseSender, SceneStatsFlush, ShuttingDown,
     },
     AllocError, CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResourceCounters, SceneResponse,
@@ -92,6 +92,24 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
     if op_state.has::<ShuttingDown>() {
         return;
     }
+
+    // One batch per tick: a scene that sends again without an intervening tick boundary is
+    // breaching the runtime contract — and un-awaited send spam would otherwise stack frames
+    // onto the bounded response channel, whose overflow panics inside an op and takes down
+    // the shared sidecar. The marker is cleared by the scene loop at each tick boundary.
+    if op_state.has::<CrdtSentThisTick>() {
+        let scene_id = op_state.borrow::<CrdtContext>().scene_id;
+        error!("[{scene_id:?}] multiple CRDT batches in one tick; terminating the scene");
+        let _ = op_state
+            .borrow_mut::<SceneResponseSender>()
+            .try_send(SceneResponse::Error(
+                scene_id,
+                "scene sent more than one CRDT batch in a tick".to_owned(),
+            ));
+        op_state.put(ShuttingDown);
+        return;
+    }
+    op_state.put(CrdtSentThisTick);
 
     // Reject an oversized batch before it is copied into the store, serialised, and framed
     // onto the shared connection. Report it as a scene error and flag the scene for shutdown
