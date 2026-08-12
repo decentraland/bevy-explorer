@@ -17,6 +17,7 @@ use dcl_component::{
     SceneComponentId,
 };
 use ipfs::IpfsResource;
+use livestream_manager::ReceiverVolume;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::material::{update_materials, VideoTextureOutput},
@@ -183,16 +184,22 @@ fn player_config_added<T: AVPlayer>(
         Option<&mut AVSinks<T>>,
         Has<ShouldBePlaying<T>>,
         Has<Stream>,
+        Option<&mut ReceiverVolume>,
     )>,
 ) {
     let entity = trigger.target();
-    let Ok((config, maybe_sinks, has_should_be_playing, has_stream)) = av_players.get_mut(entity)
+    let Ok((config, maybe_sinks, has_should_be_playing, has_stream, maybe_receiver_volume)) =
+        av_players.get_mut(entity)
     else {
         unreachable!("Infallible query");
     };
     let Some(mut sinks) = maybe_sinks else {
         if !has_stream {
             debug_panic!("Non-stream AVPlayer did not have sinks.");
+        }
+        if let Some(mut receiver_volume) = maybe_receiver_volume {
+            debug!("Updated volume of stream.");
+            **receiver_volume = config.volume();
         }
         return;
     };
