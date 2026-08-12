@@ -41,7 +41,7 @@ use common::{
     structs::{
         AppConfig, AvatarDynamicState, EditorMode, HeadSync, PointAtSync, PreviewMode,
         PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance,
-        StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
+        ShowOutOfBounds, StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
     util::UtilsPlugin,
 };
@@ -157,6 +157,10 @@ pub struct DecentralandArguments {
     pub fps_target: Option<usize>,
     pub gpu_bytes_per_frame: Option<usize>,
     pub is_preview: bool,
+    /// running embedded in a scene editor (creator hub): freeze scenes after main() has
+    /// run once; the editor unfreezes on play. Distinct from preview — plain previews
+    /// must free-run.
+    pub editor: bool,
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
     pub startup_scenes_preview: bool,
@@ -230,10 +234,12 @@ impl DecentralandApp {
         info!("Bevy-Explorer version {}", version);
 
         let boot_server = map_realm_name(decentraland_app_config.boot_server());
-        // We're an editor when running a preview or a loopback realm (editor /
-        // local dev), never on a public realm. Computed before boot_server moves.
-        let editor_mode =
-            decentraland_app_config.arguments.is_preview || is_loopback_realm(&boot_server);
+        // Show out-of-bounds geometry in preview, on a loopback realm (local dev) and in
+        // the editor, never on a public realm. Computed before boot_server moves.
+        let editor_mode = decentraland_app_config.arguments.editor;
+        let show_out_of_bounds = editor_mode
+            || decentraland_app_config.arguments.is_preview
+            || is_loopback_realm(&boot_server);
 
         // Resources
         app.insert_resource(Version(version))
@@ -274,6 +280,7 @@ impl DecentralandApp {
                 preview_parcel: None,
             })
             .insert_resource(EditorMode(editor_mode))
+            .insert_resource(ShowOutOfBounds(show_out_of_bounds))
             .insert_resource(SceneLoadDistance {
                 load: if decentraland_app_config.arguments.is_preview {
                     1.0

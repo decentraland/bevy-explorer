@@ -1655,7 +1655,12 @@ pub fn process_scene_lifecycle(
             }
         }
 
-        let still_loading = maybe_ctx.is_none_or(|ctx| ctx.tick_number <= 6 && !ctx.broken());
+        // a frozen scene never advances its tick, so it's as loaded as it's going to get;
+        // without the exemption a scene frozen before tick 7 defers other scenes (and
+        // imposters) forever
+        let still_loading = maybe_ctx.is_none_or(|ctx| {
+            ctx.tick_number <= 6 && !ctx.broken() && !ctx.blocked.contains(FROZEN_BLOCK)
+        });
 
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {

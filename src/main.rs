@@ -182,6 +182,7 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
             .value_from_str::<_, usize>("--gpu_bytes_per_frame")
             .ok(),
         is_preview: args.contains("--preview"),
+        editor: args.contains("--editor"),
         sysinfo_visible: args.contains("--sysinfo"),
         scene_log_to_console: args.contains("--scene_log_to_console"),
         startup_scenes_preview,

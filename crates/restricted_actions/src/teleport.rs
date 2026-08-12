@@ -12,7 +12,7 @@ use scene_runner::{
     },
     permissions::Permission,
     renderer_context::{RendererSceneContext, FROZEN_BLOCK},
-    update_world::mesh_collider::SceneColliderData,
+    update_world::{gltf_container::GLTF_LOADING, mesh_collider::SceneColliderData},
     OutOfWorld,
 };
 use wallet::Wallet;
@@ -148,11 +148,13 @@ pub fn handle_out_of_world(
     let (maybe_context, maybe_loadstate, maybe_collider_data) = scenes.get_mut(*scene).unwrap();
 
     if let Some(context) = maybe_context {
-        // A scene the inspector has paused is as loaded as it's going to get — keeping the player
-        // out-of-world (behind the loading screen) is wrong, and a frozen scene never advances its
-        // tick or clears `blocked` to become "ready" on its own. FROZEN_BLOCK is only ever set by the
-        // inspector's /freeze_scene + /tick_scene, so this only affects inspector-paused scenes.
-        let frozen = context.blocked.contains(FROZEN_BLOCK);
+        // A frozen scene (inspector /freeze_scene, or the editor-mode auto-freeze at tick 3) is as
+        // loaded as it's going to get — it never advances its tick or clears `blocked` to become
+        // "ready" on its own, so don't keep the player out-of-world behind the loading screen. Do
+        // still wait for gltfs though: they keep processing renderer-side while the scene is frozen,
+        // and releasing early would drop the player in before the ground colliders exist.
+        let frozen =
+            context.blocked.contains(FROZEN_BLOCK) && !context.blocked.contains(GLTF_LOADING);
         // A broken scene (hung past the not-responding timeout, errored, or unreachable) will
         // never become ready; stop holding the player behind the loading screen and let them
         // into the world. An inspected scene never gates the player at all: it's a debugging

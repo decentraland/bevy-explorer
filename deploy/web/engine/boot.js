@@ -4,7 +4,7 @@
 //
 // Contract with the host page (react-web/src/engine/engineRpc.ts):
 //   set BEFORE injecting:  window.PUBLIC_URL   — base for pkg/ fetches (versioned CDN in prod)
-//                          window.__bevyBootConfig = { systemScene, portables, preview }
+//                          window.__bevyBootConfig = { systemScene, portables, preview, editor }
 //   provided by this module:
 //     __bevyLoadProgress / __bevyLoadStep  — weighted boot progress for the login bar
 //     __bevyReadyToLaunch / __bevyLaunch(realm?, position?) — deferred engine_run
@@ -234,7 +234,7 @@ const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'
 const WORLDS_PREFIX = 'https://worlds-content-server.decentraland.org/world/'
 // captured from the ENTRY url (later syncs rewrite location.search)
 const explicitSystemScene = new URLSearchParams(window.location.search).has('systemScene')
-window.set_url_params = (position, server, system_scene, portables, preview) => {
+window.set_url_params = (position, server, system_scene, portables, preview, editor) => {
   try {
     if (server.startsWith(WORLDS_PREFIX)) server = server.slice(WORLDS_PREFIX.length)
     const urlParams = new URLSearchParams(window.location.search)
@@ -252,6 +252,8 @@ window.set_url_params = (position, server, system_scene, portables, preview) => 
     else urlParams.delete('portables')
     if (preview) urlParams.set('preview', true)
     else urlParams.delete('preview')
+    if (editor) urlParams.set('editor', true)
+    else urlParams.delete('editor')
     history.replaceState(null, '', window.location.pathname + '?' + urlParams.toString())
   } catch (e) {
     console.log(`set url params failed: ${e}`)
@@ -280,7 +282,7 @@ initEngine()
     window.setLoadingStepCompleted('gpu')
     // Deferred launch: the host calls this once the user picks a destination — avoiding a wasted
     // default-realm load. One engine per page (see start()'s __bevyStarted guard).
-    window.__bevyLaunch = (realm, position) => start({ realm, position, systemScene: config.systemScene, portables: config.portables, preview: config.preview })
+    window.__bevyLaunch = (realm, position) => start({ realm, position, systemScene: config.systemScene, portables: config.portables, preview: config.preview, editor: config.editor })
     window.__bevyReadyToLaunch = true
   })
   .catch((e) => {
