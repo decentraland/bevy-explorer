@@ -96,7 +96,11 @@ pub async fn handle_preview_socket(
         let msg = msg?;
         info!("preview server message: {msg}");
 
-        if let Ok(value) = serde_json::Value::from_str(msg.into_text()?.as_str()) {
+        // the dev server interleaves protobuf binary frames (WsSceneMessage) with the
+        // legacy JSON text frames we speak; erroring here killed the socket before the
+        // SCENE_UPDATE text frame arrived, so hot reload never fired
+        let Ok(text) = msg.into_text() else { continue };
+        if let Ok(value) = serde_json::Value::from_str(text.as_str()) {
             let Some(ty) = value
                 .get("type")
                 .and_then(|v| v.as_str().map(ToOwned::to_owned))

@@ -83,6 +83,8 @@ function deleteFromPrototypeChain(obj, name) {
 const jsContext = Object.create(null);
 var jsProxy = undefined;
 var jsPreamble = undefined;
+// Per-boot bridge session id from engine.js (INIT_WORKER payload); see the isSuper block below.
+var bridgeSession = undefined;
 function createJsContext(wasmApi, context) {
   const isSuper = wasmApi.is_super(context);
 
@@ -135,10 +137,23 @@ function createJsContext(wasmApi, context) {
   // BroadcastChannel is a same-origin, serverless side channel — handed ONLY to the trusted
   // super-user (--ui) scene, so an embedded host page can drive it; ordinary scenes never see it
   // (it would otherwise let an untrusted scene coordinate with the page / other scenes off-network).
+  //
+  // Same-origin means same-origin across ALL tabs, so when the host page provided a session id
+  // (react-web seeds window.__bridgeSession; engine.js forwards it), channel names are suffixed
+  // with it — otherwise one tab's HUD drives every tab's bridge scene (issue #1089). Wrapping the
+  // constructor here keeps the scene code unchanged; the page appends the same suffix
+  // (bridgeChannelName()). No session id → bare names, for embedders whose bus partner is a
+  // different document that can't see the engine window's id (creator-hub's inspector iframe).
   if (isSuper) {
     Object.defineProperty(jsContext, "BroadcastChannel", {
       configurable: false,
-      value: RealBroadcastChannel,
+      value: bridgeSession
+        ? class BroadcastChannel extends RealBroadcastChannel {
+            constructor(name) {
+              super(`${name}#${bridgeSession}`);
+            }
+          }
+        : RealBroadcastChannel,
     });
   }
 
@@ -324,6 +339,7 @@ function require(moduleName) {
 self.onmessage = async (event) => {
   if (event.data && event.data.type === "INIT_WORKER") {
     const { compiledModule, sharedMemory } = event.data.payload;
+    bridgeSession = event.data.payload.bridgeSession;
 
     if (!compiledModule || !sharedMemory) {
       console.error("[Sandbox Worker] Invalid payload received.");
@@ -396,6 +412,9 @@ self.onmessage = async (event) => {
 
       // send any initial rpc requests
       ops.op_crdt_send_to_renderer([]);
+
+      // the initial send consumed the tick's batch allowance; give onStart its own
+      ops.op_set_elapsed(0);
 
       await module.onStart();
 

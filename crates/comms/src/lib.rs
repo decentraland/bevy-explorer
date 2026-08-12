@@ -20,12 +20,11 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use bimap::BiMap;
 use common::{
     structs::{CurrentRealm, MicState},
     util::{TaskCompat, TaskExt},
 };
-use ethers_core::types::{Address, H160};
+use ethers_core::types::H160;
 use http::{StatusCode, Uri};
 use preview::PreviewPlugin;
 use serde::{Deserialize, Serialize};
@@ -152,7 +151,6 @@ pub struct Transport {
     pub transport_type: TransportType,
     pub sender: Sender<NetworkMessage>,
     pub control: Option<Sender<ChannelControl>>,
-    pub foreign_aliases: BiMap<u32, Address>,
 }
 
 fn process_realm_change(

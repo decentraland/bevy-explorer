@@ -412,7 +412,12 @@ fn update_gltf(
             }
         }
 
-        let gltf = gltfs.get(h_gltf.0.id()).unwrap();
+        let Some(gltf) = gltfs.get(h_gltf.0.id()) else {
+            warn!("gltf {} unloaded between load state and lookup", def.0.src);
+            set_state(scene_ent, LoadingState::FinishedWithError);
+            commands.entity(ent).try_insert(GltfLoaded(None));
+            continue;
+        };
         let gltf_scene_handle = gltf.default_scene.as_ref();
 
         // validate texture types
@@ -1274,10 +1279,22 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> Option<SharedShape> {
         Some(Indices::U16(ixs)) => ixs.iter().map(|ix| *ix as u32).collect(),
         Some(Indices::U32(ixs)) => ixs.to_vec(),
     };
+    // parry indexes vertices directly (TriMesh::triangle) and its builder rejects only
+    // empty index buffers, so a triangle pointing past the position count panics inside
+    // trimesh_with_flags rather than erroring. drop those triangles.
+    let vertex_count = positions_ref.len() as u32;
+    let total_triangles = indices.len() / 3;
     let indices_parry: Vec<_> = indices
         .chunks_exact(3)
+        .filter(|chunk| chunk.iter().all(|ix| *ix < vertex_count))
         .map(|chunk| chunk.try_into().unwrap())
         .collect();
+    if indices_parry.len() < total_triangles {
+        warn!(
+            "gltf collider mesh: dropped {} triangle(s) indexing past {vertex_count} vertices",
+            total_triangles - indices_parry.len()
+        );
+    }
 
     Some(
         SharedShape::trimesh_with_flags(
@@ -2137,14 +2154,15 @@ fn update_gltf_linked_transforms(
                         debug!("[{gltf_ent:?}] s -> r {:?}", gltf_node_transform);
 
                         // and update stored state with the rrt we will compute next frame, to avoid rounding errors
-                        stored_transforms_and_parents.get_mut(&gltf_ent).unwrap().0 = gt_helper
-                            .compute_global_transform_with_overrides(
-                                gltf_ent,
-                                Some(data.transform_root),
-                                &updated_transforms,
-                            )
-                            .unwrap()
-                            .compute_transform();
+                        let Ok(gltf_global) = gt_helper.compute_global_transform_with_overrides(
+                            gltf_ent,
+                            Some(data.transform_root),
+                            &updated_transforms,
+                        ) else {
+                            return None;
+                        };
+                        stored_transforms_and_parents.get_mut(&gltf_ent).unwrap().0 =
+                            gltf_global.compute_transform();
                         None
                     }
                 }

@@ -220,7 +220,7 @@ pub async fn op_kernel_fetch_headers(
             meta,
             scene: None,
             response: sx,
-        });
+        })?;
 
     rx.await?.map_err(|e| anyhow!(e))
 }
@@ -477,7 +477,7 @@ pub async fn op_get_profile_extras(
             user: None, // current user
             scene,
             response: sx,
-        });
+        })?;
 
     let profile = rx
         .await

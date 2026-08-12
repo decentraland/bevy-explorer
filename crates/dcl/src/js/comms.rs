@@ -11,6 +11,29 @@ use crate::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounter
 
 use super::State;
 
+const MAX_COMMS_MESSAGE_BYTES: usize = 30_000;
+const MAX_NETWORK_MESSAGE_QUEUE: usize = 1024;
+const MAX_SEND_MESSAGES_PER_TICK: usize = 512;
+
+// Outbound message budget, reset each tick by `crdt_send_to_renderer`. Enforced in the op (not
+// the JS wrapper) so a scene calling the op directly is still bounded.
+#[derive(Default)]
+pub struct CommsSendBudget {
+    pub sent: usize,
+}
+
+fn try_spend_budget(state: &mut impl State) -> bool {
+    if !state.has::<CommsSendBudget>() {
+        state.put(CommsSendBudget::default());
+    }
+    let budget = state.borrow_mut::<CommsSendBudget>();
+    if budget.sent >= MAX_SEND_MESSAGES_PER_TICK {
+        return false;
+    }
+    budget.sent += 1;
+    true
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum CommsMessageType {
@@ -26,9 +49,21 @@ pub struct MessageBusMessage {
 
 struct BinaryBusReceiver(RpcStreamReceiver<(String, Vec<u8>)>);
 
-pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: String) {
+pub async fn op_comms_send_string(
+    state: Rc<RefCell<impl State>>,
+    message: String,
+) -> Result<(), anyhow::Error> {
     debug!("op_comms_send_string");
+    if message.len() > MAX_COMMS_MESSAGE_BYTES {
+        anyhow::bail!(
+            "message too large ({} > {MAX_COMMS_MESSAGE_BYTES} bytes)",
+            message.len()
+        );
+    }
     let mut state = state.borrow_mut();
+    if !try_spend_budget(&mut *state) {
+        anyhow::bail!("per-tick message budget exhausted ({MAX_SEND_MESSAGES_PER_TICK})");
+    }
     let scene = state.borrow::<CrdtContext>().scene_id.0;
     let mut data = vec![CommsMessageType::String as u8];
     data.extend(message.into_bytes());
@@ -41,16 +76,25 @@ pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: Strin
             scene,
             data,
             recipient: None,
-        });
+        })
 }
 
 pub async fn op_comms_send_binary_single(
     state: Rc<RefCell<impl State>>,
     message: impl AsRef<[u8]>,
     recipient: Option<String>,
-) {
+) -> Result<(), anyhow::Error> {
     debug!("op_comms_send_binary_single");
+    if message.as_ref().len() > MAX_COMMS_MESSAGE_BYTES {
+        anyhow::bail!(
+            "message too large ({} > {MAX_COMMS_MESSAGE_BYTES} bytes)",
+            message.as_ref().len()
+        );
+    }
     let mut state = state.borrow_mut();
+    if !try_spend_budget(&mut *state) {
+        anyhow::bail!("per-tick message budget exhausted ({MAX_SEND_MESSAGES_PER_TICK})");
+    }
 
     let context = state.borrow::<CrdtContext>();
     let scene = context.scene_id.0;
@@ -69,7 +113,7 @@ pub async fn op_comms_send_binary_single(
             scene,
             data,
             recipient,
-        });
+        })
 }
 
 pub async fn op_comms_recv_binary(
@@ -84,10 +128,11 @@ pub async fn op_comms_recv_binary(
     let mut results = Vec::default();
 
     if !state.has::<BinaryBusReceiver>() {
-        let (sx, rx) = RpcStreamSender::<(String, Vec<u8>)>::channel();
+        let (sx, rx) =
+            RpcStreamSender::<(String, Vec<u8>)>::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::SubscribeBinaryBus { hash, sender: sx });
+            .push(RpcCall::SubscribeBinaryBus { hash, sender: sx })?;
         state.put(BinaryBusReceiver(rx));
     }
 

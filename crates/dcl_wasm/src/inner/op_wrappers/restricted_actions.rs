@@ -9,7 +9,7 @@ pub async fn op_move_player_to(
     camera_target: JsValue,
     avatar_target: JsValue,
     duration: Option<f32>,
-) -> bool {
+) -> Result<bool, WasmError> {
     let position: DclVector3 = serde_wasm_bindgen::from_value(position).unwrap_or_default();
     let camera_target: Option<DclVector3> = serde_wasm_bindgen::from_value(camera_target).ok();
     let avatar_target: Option<DclVector3> = serde_wasm_bindgen::from_value(avatar_target).ok();
@@ -21,6 +21,7 @@ pub async fn op_move_player_to(
         duration,
     )
     .await
+    .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -29,15 +30,22 @@ pub async fn op_walk_player_to(
     position: JsValue,
     stop_threshold: f32,
     timeout: Option<f32>,
-) -> bool {
+) -> Result<bool, WasmError> {
     let position: DclVector3 = serde_wasm_bindgen::from_value(position).unwrap_or_default();
     dcl::js::restricted_actions::op_walk_player_to(op_state.rc(), position, stop_threshold, timeout)
         .await
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
-pub async fn op_teleport_to(state: &WorkerContext, position_x: i32, position_y: i32) -> bool {
-    dcl::js::restricted_actions::op_teleport_to(state.rc(), position_x, position_y).await
+pub async fn op_teleport_to(
+    state: &WorkerContext,
+    position_x: i32,
+    position_y: i32,
+) -> Result<bool, WasmError> {
+    dcl::js::restricted_actions::op_teleport_to(state.rc(), position_x, position_y)
+        .await
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -45,18 +53,23 @@ pub async fn op_change_realm(
     state: &WorkerContext,
     realm: String,
     message: Option<String>,
-) -> bool {
-    dcl::js::restricted_actions::op_change_realm(state.rc(), realm, message).await
+) -> Result<bool, WasmError> {
+    dcl::js::restricted_actions::op_change_realm(state.rc(), realm, message)
+        .await
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
-pub async fn op_external_url(state: &WorkerContext, url: String) -> bool {
-    dcl::js::restricted_actions::op_external_url(state.rc(), url).await
+pub async fn op_external_url(state: &WorkerContext, url: String) -> Result<bool, WasmError> {
+    dcl::js::restricted_actions::op_external_url(state.rc(), url)
+        .await
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
-pub fn op_emote(op_state: &WorkerContext, emote: String) {
-    dcl::js::restricted_actions::op_emote(&mut *op_state.state.borrow_mut(), emote);
+pub fn op_emote(op_state: &WorkerContext, emote: String) -> Result<(), WasmError> {
+    dcl::js::restricted_actions::op_emote(&mut *op_state.state.borrow_mut(), emote)
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

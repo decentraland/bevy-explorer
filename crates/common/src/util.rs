@@ -692,18 +692,18 @@ pub fn is_forbidden_ip(ip: &std::net::IpAddr) -> bool {
 /// SSRF guard for scene-controlled URLs (fetch / signedFetch / readFile). Enforces an
 /// http(s)/ws(s) scheme and resolves the host, rejecting if ANY resolved address is
 /// non-public (defeats a literal private IP and static-DNS pointers to internal hosts).
-/// `allow_loopback` is for local preview only. Returns Ok for a public destination.
+/// `allow_private` widens the allowance to the local network for local preview only (never
+/// to link-local / metadata). Returns Ok for a public destination.
 /// Native-only: it is invoked exclusively from the native request-executing ops; the
 /// wasm/web client relies on the browser's own network sandbox.
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn assert_public_url(url_str: &str, allow_loopback: bool) -> Result<(), anyhow::Error> {
-    use std::net::ToSocketAddrs;
+pub async fn assert_public_url(url_str: &str, allow_private: bool) -> Result<(), anyhow::Error> {
     let url = url::Url::parse(url_str)?;
     match url.scheme() {
         "https" | "http" | "wss" | "ws" => {}
         other => anyhow::bail!("scheme `{other}` is not allowed"),
     }
-    if allow_loopback && url.is_loopback() {
+    if allow_private && url.is_loopback() {
         return Ok(());
     }
     let host = url
@@ -711,6 +711,66 @@ pub async fn assert_public_url(url_str: &str, allow_loopback: bool) -> Result<()
         .ok_or_else(|| anyhow::anyhow!("request URL has no host"))?
         .to_owned();
     let port = url.port_or_known_default().unwrap_or(443);
+    resolve_public_addrs(&host, port, allow_private).await?;
+    Ok(())
+}
+
+/// True for addresses on this machine or its local network: loopback and RFC1918 / IPv6
+/// unique-local. Deliberately EXCLUDES link-local (`169.254/16`, `fe80::/10`) so cloud
+/// metadata (`169.254.169.254`) stays unreachable even where local network is permitted
+/// (i.e. preview). This is the set that `allow_private` opens up.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn is_private_lan(ip: &std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => v4.is_loopback() || v4.is_private(),
+        IpAddr::V6(v6) => {
+            if let Some(mapped) = v6.to_ipv4_mapped() {
+                return is_private_lan(&IpAddr::V4(mapped));
+            }
+            // unique local fc00::/7
+            v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00
+        }
+    }
+}
+
+/// Reject the set unless EVERY address is public (or, under `allow_private`, on the local
+/// network). Whole-set rejection is deliberate — see [`resolve_public_addrs`]. This is the
+/// pure validation step, shared by the fetch resolver (which resolves first) and the
+/// WebSocket `check_resolved` hook (which is handed addresses already resolved by deno).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn validate_public_addrs(
+    addrs: &[std::net::SocketAddr],
+    allow_private: bool,
+) -> Result<(), anyhow::Error> {
+    for addr in addrs {
+        if allow_private && is_private_lan(&addr.ip()) {
+            continue;
+        }
+        if is_forbidden_ip(&addr.ip()) {
+            anyhow::bail!("request to a non-public address is not allowed");
+        }
+    }
+    Ok(())
+}
+
+/// Resolve `host:port` and reject the answer unless EVERY address is public.
+///
+/// Rejecting the whole answer rather than filtering out the bad records is deliberate: a
+/// host that replies with a mix of public and private addresses is doing so on purpose,
+/// and silently dropping the private ones would let the request proceed looking legitimate.
+///
+/// This is the shared primitive behind [`assert_public_url`] (pre-flight, by URL) and the
+/// connect-time resolver used by every scene http client, so both reach the same verdict
+/// from the same code. `allow_private` (preview only) permits [`is_private_lan`] addresses
+/// but never link-local, so metadata stays blocked in every mode.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn resolve_public_addrs(
+    host: &str,
+    port: u16,
+    allow_private: bool,
+) -> Result<Vec<std::net::SocketAddr>, anyhow::Error> {
+    use std::net::ToSocketAddrs;
     // std resolver on the blocking pool (avoids pulling tokio's `net` feature into the
     // wasm-shared workspace dependency)
     let hostport = format!("{host}:{port}");
@@ -722,12 +782,8 @@ pub async fn assert_public_url(url_str: &str, allow_loopback: bool) -> Result<()
     if addrs.is_empty() {
         anyhow::bail!("host `{host}` did not resolve to any address");
     }
-    for addr in addrs {
-        if is_forbidden_ip(&addr.ip()) {
-            anyhow::bail!("request to a non-public address is not allowed");
-        }
-    }
-    Ok(())
+    validate_public_addrs(&addrs, allow_private)?;
+    Ok(addrs)
 }
 
 /// A colour ramp keyed by a normalized parameter in `[0, 1)` (e.g. time of day).
@@ -803,6 +859,53 @@ impl Curve {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The egress policy hinges on this split: `allow_private` (preview) opens loopback and
+    /// the local network, but link-local — including cloud metadata `169.254.169.254` — is
+    /// NOT `is_private_lan`, so it stays `is_forbidden_ip` and is refused in every mode.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn private_lan_excludes_link_local_metadata() {
+        use std::net::IpAddr;
+        let lan: &[&str] = &["127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.5.4", "::1"];
+        for s in lan {
+            let ip: IpAddr = s.parse().unwrap();
+            assert!(is_private_lan(&ip), "{s} should count as local network");
+        }
+        // fc00::/7 unique-local is local network; fe80::/10 link-local is not
+        assert!(is_private_lan(&"fc00::1".parse().unwrap()));
+        assert!(!is_private_lan(&"fe80::1".parse().unwrap()));
+
+        // the metadata endpoint: never local network, always forbidden — so a preview
+        // `allow_private` skip never reaches it.
+        let meta: IpAddr = "169.254.169.254".parse().unwrap();
+        assert!(!is_private_lan(&meta), "metadata must not be local network");
+        assert!(is_forbidden_ip(&meta), "metadata must stay forbidden");
+
+        // ordinary public address is neither
+        let pubip: IpAddr = "8.8.8.8".parse().unwrap();
+        assert!(!is_private_lan(&pubip));
+        assert!(!is_forbidden_ip(&pubip));
+    }
+
+    /// End-to-end on the shared primitive both the fetch resolver and the WebSocket
+    /// `resolve_checked` hook depend on: literal private/loopback is refused normally and
+    /// allowed only under `allow_private` (preview), while cloud metadata stays refused even
+    /// under preview. Uses literal IPs so no network lookup happens.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn resolve_public_addrs_enforces_egress_policy() {
+        assert!(resolve_public_addrs("127.0.0.1", 80, false).await.is_err());
+        assert!(resolve_public_addrs("127.0.0.1", 80, true).await.is_ok());
+        assert!(resolve_public_addrs("192.168.1.1", 80, false)
+            .await
+            .is_err());
+        assert!(resolve_public_addrs("192.168.1.1", 80, true).await.is_ok());
+        // link-local / metadata: refused in every mode, preview included
+        assert!(resolve_public_addrs("169.254.169.254", 80, true)
+            .await
+            .is_err());
+    }
 
     #[test]
     fn inverted_scale() {

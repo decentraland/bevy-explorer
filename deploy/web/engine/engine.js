@@ -264,6 +264,12 @@ export async function initEngine() {
           payload: {
             compiledModule,
             sharedMemory,
+            // Set by host pages that want the super-user scene's BroadcastChannel names scoped
+            // to this tab (react-web seeds it before booting — issue #1089). Left unset, channel
+            // names stay bare — embedders like creator-hub's inspector share the bus with the
+            // scene from a DIFFERENT document (parent of the engine iframe), which can't see
+            // this window's session id.
+            bridgeSession: window.__bridgeSession,
           },
         });
         sandboxWorker.onmessage = (workerEvent) => {

@@ -422,6 +422,10 @@ deno_url = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_webidl = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_web = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_websocket = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
+# 0.8.1 + upstream bc39c1f (fragmented-message size cap, unreleased) + 1 MiB default cap.
+# deno_websocket's pinned API exposes no set_max_message_size hook, so the fork default is
+# how scene websocket inbound message size is bounded.
+fastwebsockets = { git = "https://github.com/robtfm/fastwebsockets", branch = "0_8_hotfix" }
 deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 
 # deno_console = { path = "../deno/ext/console" }

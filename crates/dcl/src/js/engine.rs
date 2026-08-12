@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 // Engine module
-use bevy::log::{debug, info, warn};
+use bevy::log::{debug, error, info, warn};
 #[cfg(feature = "span_scene_loop")]
 use bevy::log::{info_span, tracing::span::EnteredSpan};
 use common::structs::{CameraFov, GlobalCrdtStateUpdate, TimeOfDay};
@@ -12,14 +12,29 @@ use crate::{
     crdt::{append_component, delete_entity, put_component},
     interface::{crdt_context::CrdtContext, CrdtType},
     js::{
-        AllocatorContext, CommunicatedWithRenderer, FilteredCrdtStore, RendererStore,
-        SceneResponseSender, SceneStatsFlush, ShuttingDown,
+        AllocatorContext, CommunicatedWithRenderer, CrdtSentThisTick, CrdtStoreNextCheck,
+        FilteredCrdtStore, RendererStore, SceneResponseSender, SceneStatsFlush, ShuttingDown,
     },
     AllocError, CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResourceCounters, SceneResponse,
 };
 
 use super::State;
+
+// Upper bound on a single CRDT batch a scene submits per tick. A well-behaved scene's
+// per-tick delta is orders of magnitude smaller; this only rejects pathological batches
+// that would build an IPC frame large enough to threaten the sidecar<->engine socket —
+// which every co-tenant scene shares. Bounding here, at the JS ingress, keeps the cost
+// attributable to the offending scene and lets us terminate only that scene, rather than
+// tearing down the shared connection after the frame has already been built. Tunable;
+// sized generously to leave headroom over legitimate bulk updates.
+pub(crate) const MAX_CRDT_BATCH_BYTES: usize = 64 * 1024 * 1024;
+
+// Upper bound on a scene's cumulative retained CRDT store. The store mirrors the scene's
+// live heap state, so a stock-SDK scene cannot grow it past the isolate's 512 MiB heap cap;
+// only a scene that pushes CRDT data without holding it in its own heap can. Set to the heap
+// cap so legitimate scenes are never clipped and only that cheating pattern is caught.
+pub(crate) const MAX_CRDT_STORE_BYTES: usize = 512 * 1024 * 1024;
 
 /// Returns whether this scene runs in authoritative-server role. Read synchronously
 /// from the scene's CrdtContext (seeded from the `IsServer` engine resource). MUST stay
@@ -70,6 +85,52 @@ fn localize_crdt_message(
 
 pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
+
+    // Once flagged for shutdown the scene is inert: ingest nothing further and emit no
+    // frames, so a scene that ignores the unwind can't keep growing the store or pushing
+    // frames at a scene the renderer has already marked broken.
+    if op_state.has::<ShuttingDown>() {
+        return;
+    }
+
+    // One batch per tick: a scene that sends again without an intervening tick boundary is
+    // breaching the runtime contract — and un-awaited send spam would otherwise stack frames
+    // onto the bounded response channel, whose overflow panics inside an op and takes down
+    // the shared sidecar. The marker is cleared by the scene loop at each tick boundary.
+    if op_state.has::<CrdtSentThisTick>() {
+        let scene_id = op_state.borrow::<CrdtContext>().scene_id;
+        error!("[{scene_id:?}] multiple CRDT batches in one tick; terminating the scene");
+        let _ = op_state
+            .borrow_mut::<SceneResponseSender>()
+            .try_send(SceneResponse::Error(
+                scene_id,
+                "scene sent more than one CRDT batch in a tick".to_owned(),
+            ));
+        op_state.put(ShuttingDown);
+        return;
+    }
+    op_state.put(CrdtSentThisTick);
+
+    // Reject an oversized batch before it is copied into the store, serialised, and framed
+    // onto the shared connection. Report it as a scene error and flag the scene for shutdown
+    // so only this isolate is torn down; the frame is never built and co-tenant scenes are
+    // untouched.
+    if messages.len() > MAX_CRDT_BATCH_BYTES {
+        let scene_id = op_state.borrow::<CrdtContext>().scene_id;
+        error!(
+            "[{scene_id:?}] CRDT batch of {} bytes exceeds the {MAX_CRDT_BATCH_BYTES}-byte ingress cap; terminating the scene",
+            messages.len()
+        );
+        let _ = op_state
+            .borrow_mut::<SceneResponseSender>()
+            .try_send(SceneResponse::Error(
+                scene_id,
+                format!("scene exceeded the {MAX_CRDT_BATCH_BYTES}-byte CRDT batch limit"),
+            ));
+        op_state.put(ShuttingDown);
+        return;
+    }
+
     let elapsed_time = op_state.borrow::<SceneElapsedTime>().0;
     let logs = op_state.take::<Vec<SceneLogMessage>>();
     op_state.put(Vec::<SceneLogMessage>::default());
@@ -97,9 +158,17 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
 
     let census = entity_map.take_census();
     crdt_store.clean_up(&census.died);
+    // also reap the sidecar: scene-sent DeleteEntity messages clean it inline, but
+    // engine-initiated deletes only reach the stores via this census, and there's no value
+    // in retaining custom components for dead entities.
+    filtered_store.0.clean_up(&census.died);
     let updates = crdt_store.take_updates();
 
     let rpc_calls = std::mem::take(op_state.borrow_mut::<RpcCalls>());
+
+    if let Some(budget) = op_state.try_borrow_mut::<super::comms::CommsSendBudget>() {
+        budget.sent = 0;
+    }
 
     let sender = op_state.borrow_mut::<SceneResponseSender>();
     sender
@@ -134,6 +203,40 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
     op_state.put(crdt_store);
     op_state.put(filtered_store);
     op_state.put(allocator);
+
+    // Cumulative footprint guard. Measuring the retained store is O(entries), so amortise it:
+    // retained bytes grow at most 1:1 with ingest, so once a measurement finds `retained` bytes
+    // the store cannot reach the cap until `cap - retained` more are ingested. Only walk when the
+    // ingest total reaches that projected point (floored a batch ahead so a scene sitting just
+    // under the cap doesn't walk every tick). A scene well below the cap rarely walks at all.
+    if !op_state.has::<CrdtStoreNextCheck>() {
+        op_state.put(CrdtStoreNextCheck(MAX_CRDT_STORE_BYTES as u64));
+    }
+    let ingested = op_state.borrow::<SceneResourceCounters>().crdt_bytes;
+    if ingested >= op_state.borrow::<CrdtStoreNextCheck>().0 {
+        let retained = op_state.borrow::<CrdtStore>().retained_data_bytes()
+            + op_state
+                .borrow::<FilteredCrdtStore>()
+                .0
+                .retained_data_bytes();
+        if retained > MAX_CRDT_STORE_BYTES {
+            error!(
+                "[{scene_id:?}] retained CRDT store of {retained} bytes exceeds the {MAX_CRDT_STORE_BYTES}-byte cap; terminating the scene"
+            );
+            let _ = op_state
+                .borrow_mut::<SceneResponseSender>()
+                .try_send(SceneResponse::Error(
+                    scene_id,
+                    format!("scene exceeded the {MAX_CRDT_STORE_BYTES}-byte CRDT store limit"),
+                ));
+            op_state.put(ShuttingDown);
+        } else {
+            let headroom = (MAX_CRDT_STORE_BYTES - retained) as u64;
+            op_state.put(CrdtStoreNextCheck(
+                ingested + headroom.max(MAX_CRDT_BATCH_BYTES as u64),
+            ));
+        }
+    }
 }
 
 pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Vec<Vec<u8>> {
@@ -144,6 +247,14 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     }
 
     debug!("op_crdt_recv_from_renderer");
+
+    // A scene flagged for shutdown must not park on the renderer channel — the renderer marks
+    // it broken and never responds, which would leave the isolate resident until scene unload.
+    // Return an empty batch instead, so the tick unwinds to the scene loop, whose ShuttingDown
+    // check tears the runtime down.
+    if op_state.borrow().has::<ShuttingDown>() {
+        return Vec::new();
+    }
 
     // Receive messages in a loop, handling snapshot/allocation requests immediately (no RefMut held
     // across the await point) and looping for the next.  Exits with the first Ok/shutdown response —

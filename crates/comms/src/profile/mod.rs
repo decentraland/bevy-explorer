@@ -376,7 +376,11 @@ fn request_missing_profiles(
             }
         }
 
-        if let Ok(transport) = transports.get(player.transport_id) {
+        if let Some(transport) = player
+            .transports
+            .iter()
+            .find_map(|t| transports.get(*t).ok())
+        {
             let request = rfc4::Packet {
                 message: Some(rfc4::packet::Message::ProfileRequest(
                     rfc4::ProfileRequest {
@@ -424,15 +428,19 @@ pub fn process_profile_events(
                         let Ok((player, _)) = players.get(ev.sender) else {
                             continue;
                         };
-                        if last_sent_request.get(&player.transport_id).is_some() {
-                            debug!("ignoring request for my profile (sent recently)");
-                            continue;
-                        }
-
-                        let Ok(transport) = transports.get(player.transport_id) else {
+                        let Some((transport_id, transport)) = player
+                            .transports
+                            .iter()
+                            .find_map(|t| transports.get(*t).ok().map(|transport| (*t, transport)))
+                        else {
                             debug!("not sending profile, no transport");
                             continue;
                         };
+
+                        if last_sent_request.get(&transport_id).is_some() {
+                            debug!("ignoring request for my profile (sent recently)");
+                            continue;
+                        }
 
                         let Some(current_profile) = current_profile.profile.as_ref() else {
                             return;
@@ -454,7 +462,7 @@ pub fn process_profile_events(
                         let _ = transport
                             .sender
                             .try_send(NetworkMessage::reliable(&response));
-                        last_sent_request.insert(player.transport_id, time.elapsed_secs());
+                        last_sent_request.insert(transport_id, time.elapsed_secs());
                     }
                 }
             }

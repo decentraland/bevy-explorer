@@ -109,7 +109,8 @@ impl kira::sound::streaming::Decoder for AudioTrackKiraBridge {
                 warn!("frame has {} channels", frame.num_channels);
             }
 
-            for i in 0..frame.samples_per_channel as usize {
+            let samples = (frame.samples_per_channel as usize).min(frame.data.len());
+            for i in 0..samples {
                 let sample = frame.data[i] as f32 / i16::MAX as f32;
                 frames.push(kira::Frame::new(sample, sample));
             }

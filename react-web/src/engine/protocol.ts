@@ -11,6 +11,27 @@ import type { SceneLoadingUi } from './generated'
 
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
+/**
+ * The channel name to actually open: BRIDGE_CHANNEL plus a per-boot session suffix.
+ * BroadcastChannel is same-origin across ALL tabs, so the bare name lets one tab's HUD drive
+ * every tab's bridge scene (issue #1089). The id lives on `window.__bridgeSession` — lazily
+ * created by whichever page-side caller touches it first (this helper, or the e2e spy's init
+ * script). engine.js only FORWARDS it to the scene sandbox, which appends the same suffix
+ * (deploy/web/engine/sandbox_worker.js) — it never generates one, so embedders that share the
+ * bus across documents (creator-hub's inspector) keep bare names. EngineHost calls this before
+ * booting the engine, which is what opts this page in.
+ */
+export function bridgeChannelName(): string {
+  // Structural globalThis, not window/crypto: this module is also compiled into the bridge
+  // scene's program (type-only imports), whose tsconfig has no DOM lib. (The scene never calls
+  // this at runtime — its suffix is applied by the sandbox's injected BroadcastChannel wrapper.)
+  const g = globalThis as { __bridgeSession?: string; crypto?: { randomUUID?(): string } }
+  // The id needs uniqueness, not unpredictability — Math.random covers insecure contexts
+  // (plain-http LAN testing), where crypto.randomUUID is absent.
+  g.__bridgeSession ??= g.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10)
+  return `${BRIDGE_CHANNEL}#${g.__bridgeSession}`
+}
+
 /** Mirrors SystemApi.getPreviousLogin(): userId is absent for a fresh user. */
 export interface PreviousLogin {
   userId: string | null

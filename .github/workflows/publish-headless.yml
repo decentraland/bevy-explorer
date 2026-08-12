@@ -8,12 +8,26 @@ name: Publish headless server
 #
 # Versioning and publishing mirror the web client (ci.yml build-deploy-web): every main
 # push that touches engine code publishes a deterministic oddish snapshot
-# (X.Y.Z-<ts>.commit-<sha>, same on every job of a commit) on the `next` dist-tag, via
-# npm OIDC trusted publishing — no NPM_TOKEN. Promote a proven snapshot to `latest` with
-# `npm dist-tag add` when consumers should get it unpinned. Each package name must have
+# (X.Y.Z-<run-id>.commit-<sha>, same on every job of a commit) on the `next` dist-tag, via
+# npm OIDC trusted publishing — no NPM_TOKEN.
+#
+# RELEASING TO CONSUMERS: the SDK preview (js-sdk-toolchain `sdk-commands start`) tracks
+# `latest`, which only moves when someone dispatches this workflow with dist_tag=latest
+# (+ publish=true). That publishes a fresh build of the chosen ref as a NEW version
+# (the version embeds the run id, so there is no collision with the `next` snapshot of
+# the same commit) tagged latest — promotion stays tokenless because it is a plain
+# OIDC-covered `npm publish`, not an `npm dist-tag` (which trusted publishing does not
+# cover). Each package name must have
 # this repo + workflow configured as a trusted publisher on npmjs.com; the very first
 # publish of a new name has to be bootstrapped manually (npm requires the package to exist
 # before a trusted publisher can be attached).
+#
+# The five current names were bootstrapped and now publish via OIDC only (no token in this
+# workflow). ADDING A NEW PACKAGE NAME later needs a one-time bootstrap first, since trusted
+# publishing can't attach to a name that doesn't exist: publish its first version manually
+# (`npm publish` while logged in), or temporarily add an `NPM_TOKEN` secret + read it as
+# NODE_AUTH_TOKEN on the publish steps for a single run, then attach the trusted publisher on
+# npmjs.com and remove the token again.
 #
 # Only the launcher's dist-tag matters to installers: it pins the platform packages by
 # exact version, so their tags are cosmetic.
@@ -25,6 +39,13 @@ on:
         description: Publish to npm (otherwise build and upload artifacts only)
         type: boolean
         default: false
+      dist_tag:
+        description: npm dist-tag for the published packages (latest = release to SDK previews)
+        type: choice
+        options:
+          - next
+          - latest
+        default: next
   push:
     branches:
       - main
@@ -189,7 +210,7 @@ jobs:
         run: |
           set -euo pipefail
           for tgz in deploy/headless/artifacts/*.tgz; do
-            npm publish "$tgz" --access public --tag next
+            npm publish "$tgz" --access public --tag "${{ inputs.dist_tag || 'next' }}"
           done
 
       - name: Publish launcher
@@ -199,3 +220,6 @@ jobs:
           deterministic-snapshot: true
           registry-url: https://registry.npmjs.org
           access: public
+          # push events have no inputs -> snapshots stay on next; a manual dispatch
+          # with dist_tag=latest is the release path (see header)
+          custom-tag: ${{ inputs.dist_tag || 'next' }}

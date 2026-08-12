@@ -91,6 +91,19 @@ pub struct CommunicatedWithRenderer;
 // scene-elapsed time (seconds) of the last SceneResponse::Stats flush
 pub struct SceneStatsFlush(pub f32);
 
+// Set by `crdt_send_to_renderer`, cleared at each tick boundary by the scene loop: a scene
+// may send at most one CRDT batch per tick (the response channel is sized for that contract,
+// and un-awaited send spam could otherwise fill it). A second send in one tick is a breach
+// that shuts the scene down.
+pub struct CrdtSentThisTick;
+
+// Ingest total (SceneResourceCounters::crdt_bytes) at which the retained store could next
+// reach its cap. Retained bytes grow at most 1:1 with ingest, so after a measurement finds
+// `retained` bytes the store cannot breach until `cap - retained` more bytes arrive. Storing
+// that projected point lets `crdt_send_to_renderer` skip the O(entries) walk in proportion to
+// how far below the cap the scene sits.
+pub struct CrdtStoreNextCheck(pub u64);
+
 pub trait State {
     fn borrow<T: 'static>(&self) -> &T;
     fn try_borrow<T: 'static>(&self) -> Option<&T>;
@@ -446,5 +459,194 @@ mod scene_log_budget_tests {
             _ => None,
         });
         assert_eq!(set, (5, 64));
+    }
+
+    // full op-state for driving `crdt_send_to_renderer`.
+    fn crdt_state() -> TestState {
+        use crate::interface::crdt_context::CrdtContext;
+        let ctx = || {
+            CrdtContext::new(
+                crate::SceneId::DUMMY,
+                Default::default(),
+                Default::default(),
+                false,
+                false,
+                false,
+            )
+        };
+        let mut s = state();
+        s.put(crate::SceneElapsedTime(0.0));
+        s.put(ctx());
+        s.put(crate::CrdtStore::default());
+        s.put(FilteredCrdtStore::default());
+        s.put(AllocatorContext(ctx()));
+        s.put(crate::CrdtComponentInterfaces::default());
+        s.put(crate::RpcCalls::default());
+        s.put(SceneStatsFlush(0.0));
+        s
+    }
+
+    // An oversized batch is refused at ingress: the scene is reported as errored and flagged
+    // for shutdown, and no Ok frame is built — so the offending scene dies without a giant
+    // frame ever reaching the shared connection.
+    #[test]
+    fn oversized_crdt_batch_terminates_the_scene() {
+        let (sx, mut rx) = scene_response_channel();
+        let mut s = crdt_state();
+        s.put(sx);
+        let state = std::rc::Rc::new(std::cell::RefCell::new(s));
+
+        let oversized = vec![0u8; super::engine::MAX_CRDT_BATCH_BYTES + 1];
+        super::engine::crdt_send_to_renderer(state.clone(), &oversized);
+
+        match rx.try_recv() {
+            Ok(crate::SceneResponse::Error(id, msg)) => {
+                assert_eq!(id, crate::SceneId::DUMMY);
+                assert!(msg.contains("CRDT batch"), "unexpected message: {msg}");
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+        assert!(
+            state.borrow().has::<ShuttingDown>(),
+            "oversized batch must flag the scene for shutdown"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "no Ok frame must be built for a rejected batch"
+        );
+
+        // the follow-up recv must not park on the renderer channel (the renderer marks the
+        // scene broken and never responds): it returns an empty batch immediately — the test
+        // state holds no renderer channel at all, so reaching for it would panic — letting
+        // the tick unwind to the scene loop's ShuttingDown check.
+        let batch = futures_lite::future::block_on(super::engine::op_crdt_recv_from_renderer(
+            state.clone(),
+        ));
+        assert!(
+            batch.is_empty(),
+            "a shutting-down scene must receive an empty batch"
+        );
+
+        // and further sends are inert: a scene that ignores the unwind can neither grow the
+        // store nor push frames at the broken scene.
+        super::engine::crdt_send_to_renderer(state, &[]);
+        assert!(
+            rx.try_recv().is_err(),
+            "a shutting-down scene must not emit further frames"
+        );
+    }
+
+    // Engine-initiated deletes reach the stores only via the census (the scene never sends a
+    // DeleteEntity message for them) — the sidecar must be reaped there too, so custom
+    // components aren't retained for dead entities.
+    #[test]
+    fn census_deaths_reap_the_filtered_store() {
+        use crate::interface::{crdt_context::CrdtContext, CrdtType};
+        use dcl_component::{DclReader, SceneComponentId, SceneCrdtTimestamp, SceneEntityId};
+
+        let (sx, _rx) = scene_response_channel();
+        let mut s = crdt_state();
+        s.put(sx);
+
+        let entity = SceneEntityId {
+            id: 600,
+            generation: 0,
+        };
+        s.borrow_mut::<FilteredCrdtStore>().0.try_update(
+            SceneComponentId(9999),
+            CrdtType::LWW_ANY,
+            entity,
+            SceneCrdtTimestamp(1),
+            Some(&mut DclReader::new(&[0u8; 16])),
+        );
+        // mimic an engine-initiated delete: killed directly in the context, no DeleteEntity
+        // stream message
+        {
+            let ctx = s.borrow_mut::<CrdtContext>();
+            ctx.init(entity);
+            ctx.take_census();
+            ctx.kill(entity);
+        }
+        let state = std::rc::Rc::new(std::cell::RefCell::new(s));
+
+        super::engine::crdt_send_to_renderer(state.clone(), &[]);
+
+        assert_eq!(
+            state
+                .borrow()
+                .borrow::<FilteredCrdtStore>()
+                .0
+                .retained_data_bytes(),
+            0,
+            "dead entities' custom components must not be retained"
+        );
+    }
+
+    // A scene may send at most one CRDT batch per tick: a second send with no intervening
+    // tick boundary is a contract breach that terminates the scene — un-awaited send spam
+    // must not stack frames onto the bounded response channel.
+    #[test]
+    fn second_send_in_one_tick_terminates_the_scene() {
+        let (sx, mut rx) = scene_response_channel();
+        let mut s = crdt_state();
+        s.put(sx);
+        let state = std::rc::Rc::new(std::cell::RefCell::new(s));
+
+        super::engine::crdt_send_to_renderer(state.clone(), &[]);
+        assert!(matches!(rx.try_recv(), Ok(crate::SceneResponse::Ok(..))));
+
+        super::engine::crdt_send_to_renderer(state.clone(), &[]);
+        match rx.try_recv() {
+            Ok(crate::SceneResponse::Error(id, msg)) => {
+                assert_eq!(id, crate::SceneId::DUMMY);
+                assert!(
+                    msg.contains("more than one CRDT batch"),
+                    "unexpected message: {msg}"
+                );
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+        assert!(
+            state.borrow().has::<ShuttingDown>(),
+            "a second send in one tick must flag the scene for shutdown"
+        );
+    }
+
+    // The scene loop clears the allowance at each tick boundary, so one send per tick flows.
+    #[test]
+    fn one_send_per_tick_boundary_is_fine() {
+        let (sx, mut rx) = scene_response_channel();
+        let mut s = crdt_state();
+        s.put(sx);
+        let state = std::rc::Rc::new(std::cell::RefCell::new(s));
+
+        for _ in 0..3 {
+            super::engine::crdt_send_to_renderer(state.clone(), &[]);
+            assert!(matches!(rx.try_recv(), Ok(crate::SceneResponse::Ok(..))));
+            // what the scene loop does at each tick boundary
+            state.borrow_mut().try_take::<CrdtSentThisTick>();
+        }
+        assert!(!state.borrow().has::<ShuttingDown>());
+    }
+
+    // A normal batch flows through untouched: an Ok frame is produced and the scene is not
+    // flagged for shutdown.
+    #[test]
+    fn normal_crdt_batch_is_forwarded_and_scene_survives() {
+        let (sx, mut rx) = scene_response_channel();
+        let mut s = crdt_state();
+        s.put(sx);
+        let state = std::rc::Rc::new(std::cell::RefCell::new(s));
+
+        super::engine::crdt_send_to_renderer(state.clone(), &[]);
+
+        match rx.try_recv() {
+            Ok(crate::SceneResponse::Ok(id, ..)) => assert_eq!(id, crate::SceneId::DUMMY),
+            other => panic!("expected Ok, got {other:?}"),
+        }
+        assert!(
+            !state.borrow().has::<ShuttingDown>(),
+            "a normal batch must not shut the scene down"
+        );
     }
 }
