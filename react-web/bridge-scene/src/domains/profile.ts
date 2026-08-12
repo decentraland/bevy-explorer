@@ -5,6 +5,8 @@
 //       + camera-reel       GET camera-reel-service.decentraland.org/api/users/:id/images
 import { getPlayer } from '@dcl/sdk/players'
 import { catalystBase, getJson } from '../http'
+import { resolveEquippedSet } from './wearables'
+import { equippedSlots, resolveEquippedEmotes } from './emotes'
 import type { Badge, Profile } from '../../../src/engine/protocol'
 import type { Ctx } from '../bridge'
 
@@ -15,7 +17,13 @@ type CatalystAvatar = {
   nameColor?: { r: number; g: number; b: number }
   description?: string
   links?: Array<{ title: string; url: string }>
-  avatar?: { snapshots?: { face256?: string; body?: string } }
+  avatar?: {
+    snapshots?: { face256?: string; body?: string }
+    /** Deployed equipped-wearables urns — resolved into the passport's Equipped Wearables section. */
+    wearables?: string[]
+    /** Deployed equipped-emotes wheel slots — resolved into the passport's Equipped Emotes section. */
+    emotes?: Array<{ slot: number; urn: string }>
+  }
 }
 export type ProfileResponse = { avatars?: CatalystAvatar[] }
 
@@ -104,10 +112,30 @@ export function registerProfile(ctx: Ctx): void {
       ctx.send({ kind: 'userProfile', address: msg.address, profile: null })
       return
     }
+    // Your OWN passport: read the live avatar (getPlayer()) rather than the deployed catalyst
+    // profile, so it matches the Backpack exactly — a just-equipped item shows immediately instead
+    // of waiting for the profile to redeploy and the catalyst to reindex it. Other users have no
+    // live source (getPlayer(userId) only resolves nearby avatars), so they stay catalyst-only.
+    const me = getPlayer()
+    const isSelf = me != null && me.userId.toLowerCase() === msg.address.toLowerCase()
+    const wearableUrns = isSelf ? (me.wearables ?? []).map(String) : (av?.avatar?.wearables ?? [])
+    // Through equippedSlots, not me.emotes: the bevy runtime leaves a fresh profile's wheel empty
+    // and the emote wheel fills it with the 10 base emotes, so reading the raw array would show an
+    // empty Equipped Emotes section in your own passport while the wheel shows ten.
+    const emoteEntries = isSelf
+      ? equippedSlots(me.emotes).map((urn, slot) => ({ slot, urn }))
+      : (av?.avatar?.emotes ?? [])
+    const [equippedWearables, equippedEmotes] = await Promise.all([
+      // indexTokens only for our OWN urns: another user's tokenIds must never reach the map the
+      // equip handler deploys from. shopUrls because the passport is the only surface that renders
+      // a SHOP action (see resolveEquippedSet).
+      resolveEquippedSet(wearableUrns, { indexTokens: isSelf, shopUrls: true }).catch(() => undefined),
+      resolveEquippedEmotes(emoteEntries).catch(() => undefined)
+    ])
     ctx.send({
       kind: 'userProfile',
       address: msg.address,
-      profile: { ...toProfile(av, msg.address, false, av?.name ?? msg.address), badges, photos }
+      profile: { ...toProfile(av, msg.address, false, av?.name ?? msg.address), badges, photos, equippedWearables, equippedEmotes }
     })
   })
 }

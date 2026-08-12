@@ -289,6 +289,10 @@ export interface Profile {
   mutuals?: number
   /** Camera-reel photo URLs (Photos tab). */
   photos?: string[]
+  /** Currently-equipped wearables (category slots), resolved from the deployed avatar. */
+  equippedWearables?: Wearable[]
+  /** Currently-equipped emotes (wheel slots), resolved from the deployed avatar. */
+  equippedEmotes?: Emote[]
 }
 
 export interface ProfileMessage {
@@ -348,6 +352,9 @@ export interface Emote {
   rarity?: string
   /** Owned quantity (×N badge). */
   count?: number
+  /** Marketplace deep link (…/shop/item/<contract>/<itemId>) — set only for on-chain collectibles;
+   *  base emotes have no listing. Resolved scene-side (see resolveShopUrls). */
+  shopUrl?: string
 }
 
 export interface EmotesMessage {
@@ -672,6 +679,9 @@ export interface Wearable {
   thumbnail?: string
   count?: number
   equipped: boolean
+  /** Marketplace deep link (…/shop/item/<contract>/<itemId>) — set only for on-chain collectibles;
+   *  base/off-chain items have no listing. Resolved scene-side (see resolveShopUrls). */
+  shopUrl?: string
 }
 
 /** Currently-equipped wearables, resolved by urn independently of the (paginated) grid so every
