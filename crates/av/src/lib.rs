@@ -32,7 +32,7 @@ pub mod video_player;
 #[cfg(feature = "av_player_debug")]
 pub mod av_player_debug;
 
-use std::{borrow::Borrow, marker::PhantomData, ops::Deref};
+use std::{borrow::Borrow, cmp::Ordering, collections::BTreeSet, marker::PhantomData, ops::Deref};
 
 #[cfg(feature = "ffmpeg")]
 use crate::{audio_sink::AudioSink, video_stream::VideoSink};
@@ -619,6 +619,31 @@ fn audio_stream_should_be_playing(
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ShouldBePlayingCandidate {
+    entity: Entity,
+    in_scene: bool,
+    has_should_be_playing: bool,
+    distance_to_player: FloatOrd,
+}
+
+impl PartialOrd for ShouldBePlayingCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ShouldBePlayingCandidate {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match other.in_scene.cmp(&self.in_scene) {
+            Ordering::Equal => (),
+            cmp => return cmp,
+        }
+
+        self.distance_to_player.cmp(&other.distance_to_player)
+    }
+}
+
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn video_player_should_be_playing(
     mut commands: Commands,
@@ -632,68 +657,62 @@ fn video_player_should_be_playing(
     )>,
     user: Single<&GlobalTransform, With<PrimaryUser>>,
     config: Res<AppConfig>,
+    mut scratch_should_be_playing: Local<BTreeSet<ShouldBePlayingCandidate>>,
+    mut scratch_shouldnt_be_playing: Local<Vec<Entity>>,
 ) {
-    let mut sorted_players = av_players
-        .iter()
-        .filter_map(
-            |(
-                ent,
-                player_source,
-                player_config,
-                has_in_scene,
-                has_should_be_playing,
-                transform,
-            )| {
-                if player_config.playing() {
-                    let distance = if !has_in_scene && &(**player_source) == LIVEKIT_VIDEO_STREAM {
-                        f32::MAX
-                    } else {
-                        transform.translation().distance(user.translation())
-                    };
-                    Some((has_in_scene, has_should_be_playing, distance, ent))
-                } else {
-                    None
-                }
-            },
-        )
-        .collect::<Vec<_>>();
+    for (entity, source, config, has_in_scene, has_should_be_playing, global_transform) in
+        av_players
+    {
+        if !config.playing() || (&**source == LIVEKIT_VIDEO_STREAM && !has_in_scene) {
+            if has_should_be_playing {
+                scratch_shouldnt_be_playing.push(entity);
+            }
+            continue;
+        }
 
-    // prioritise av in current scene (false < true), then by distance
-    sorted_players.sort_by_key(|(in_scene, _, distance, _)| (!in_scene, FloatOrd(*distance)));
+        scratch_should_be_playing.insert(ShouldBePlayingCandidate {
+            entity,
+            in_scene: has_in_scene,
+            has_should_be_playing,
+            distance_to_player: FloatOrd(
+                global_transform.translation().distance(user.translation()),
+            ),
+        });
+    }
 
     // Removing first for better Trigger ordering
-    for ent in sorted_players
+    for ent in scratch_should_be_playing
         .iter()
         .skip(config.max_videos)
         // Only call remove on those that have `ShouldBePlaying`
         // The `filter` MUST be after the `skip`
-        .filter(|(_, has_should_be_playing, _, _)| *has_should_be_playing)
-        .map(|(_, _, _, ent)| *ent)
+        .filter(|candidate| candidate.has_should_be_playing)
+        .map(|candidate| candidate.entity)
+        .chain(scratch_shouldnt_be_playing.drain(..))
     {
         commands
             .entity(ent)
             .try_remove::<ShouldBePlaying<VideoPlayer>>();
     }
 
-    for (ent, distance, has_should_be_playing) in sorted_players
-        .iter()
-        .take(config.max_videos)
-        .map(|(_, has_should_be_playing, distance, ent)| (*ent, *distance, *has_should_be_playing))
-    {
-        if distance == f32::MAX {
-            if has_should_be_playing {
+    for candidate in scratch_should_be_playing.iter().take(config.max_videos) {
+        if candidate.distance_to_player == FloatOrd(f32::MAX) {
+            if candidate.has_should_be_playing {
                 commands
-                    .entity(ent)
+                    .entity(candidate.entity)
                     .try_remove::<ShouldBePlaying<VideoPlayer>>();
             }
         } else {
-            if !has_should_be_playing {
+            if !candidate.has_should_be_playing {
                 commands
-                    .entity(ent)
+                    .entity(candidate.entity)
                     .try_insert(ShouldBePlaying::<VideoPlayer>::default());
             }
         }
     }
+
+    scratch_should_be_playing.clear();
+    scratch_shouldnt_be_playing.clear();
 }
 
 fn receiver_image_added(
@@ -719,5 +738,290 @@ fn video_texture_output_image_changed(video_texture_outputs: Populated<&mut Vide
     // TODO make it so that this workaround isn't needed
     for mut video_texture_output in video_texture_outputs.into_inner() {
         video_texture_output.set_changed();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_world() -> World {
+        let mut world = World::new();
+
+        world.insert_resource(AppConfig {
+            max_videos: 1,
+            ..Default::default()
+        });
+
+        world.spawn((
+            Transform::from_translation(Vec3::ZERO),
+            PrimaryUser::default(),
+        ));
+
+        world
+    }
+
+    #[test]
+    fn none_initialy_with_should_be_playing() {
+        let mut world = base_world();
+
+        let screen_1 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                InScene,
+                Transform::from_translation(Vec3::new(1., 0., 0.)),
+            ))
+            .id();
+        let screen_2 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                InScene,
+                Transform::from_translation(Vec3::new(0., 1., 0.)),
+            ))
+            .id();
+        let screen_3 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                Transform::from_translation(Vec3::new(2., 0., 0.)),
+            ))
+            .id();
+
+        world
+            .run_system_cached(video_player_should_be_playing)
+            .unwrap();
+
+        assert!(world
+            .entity(screen_1)
+            .contains::<ShouldBePlaying<VideoPlayer>>());
+        assert!(!world
+            .entity(screen_2)
+            .contains::<ShouldBePlaying<VideoPlayer>>());
+        assert!(!world
+            .entity(screen_3)
+            .contains::<ShouldBePlaying<VideoPlayer>>());
+    }
+
+    #[test]
+    fn closest_initialy_with_should_be_playing() {
+        let mut world = base_world();
+
+        let screen_1 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                InScene,
+                ShouldBePlaying::<VideoPlayer>::default(),
+                Transform::from_translation(Vec3::new(1., 0., 0.)),
+            ))
+            .id();
+        let screen_2 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                InScene,
+                Transform::from_translation(Vec3::new(0., 1., 0.)),
+            ))
+            .id();
+        let screen_3 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                Transform::from_translation(Vec3::new(2., 0., 0.)),
+            ))
+            .id();
+
+        world
+            .run_system_cached(video_player_should_be_playing)
+            .unwrap();
+
+        assert!(world
+            .entity(screen_1)
+            .contains::<ShouldBePlaying<VideoPlayer>>());
+        assert!(!world
+            .entity(screen_2)
+            .contains::<ShouldBePlaying<VideoPlayer>>());
+        assert!(!world
+            .entity(screen_3)
+            .contains::<ShouldBePlaying<VideoPlayer>>());
+    }
+
+    #[test]
+    fn ordering_shouldnt_change() {
+        let mut world = base_world();
+
+        let screen_1 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                InScene,
+                ShouldBePlaying::<VideoPlayer>::default(),
+                Transform::from_translation(Vec3::new(1., 0., 0.)),
+            ))
+            .id();
+        let screen_2 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                InScene,
+                Transform::from_translation(Vec3::new(0., 1., 0.)),
+            ))
+            .id();
+        let screen_3 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                Transform::from_translation(Vec3::new(2., 0., 0.)),
+            ))
+            .id();
+
+        for _ in 0..1000 {
+            world
+                .run_system_cached(video_player_should_be_playing)
+                .unwrap();
+
+            assert!(world
+                .entity(screen_1)
+                .contains::<ShouldBePlaying<VideoPlayer>>());
+            assert!(!world
+                .entity(screen_2)
+                .contains::<ShouldBePlaying<VideoPlayer>>());
+            assert!(!world
+                .entity(screen_3)
+                .contains::<ShouldBePlaying<VideoPlayer>>());
+        }
+    }
+
+    #[test]
+    fn closest_paused() {
+        let mut world = base_world();
+
+        let screen_1 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: false,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                InScene,
+                ShouldBePlaying::<VideoPlayer>::default(),
+                Transform::from_translation(Vec3::new(1., 0., 0.)),
+            ))
+            .id();
+        let screen_2 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                InScene,
+                Transform::from_translation(Vec3::new(0., 1., 0.)),
+            ))
+            .id();
+        let screen_3 = world
+            .spawn((
+                VideoPlayerSource("https://example.org".to_owned()),
+                VideoPlayerConfig {
+                    playing: true,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                Transform::from_translation(Vec3::new(2., 0., 0.)),
+            ))
+            .id();
+
+        world
+            .run_system_cached(video_player_should_be_playing)
+            .unwrap();
+
+        assert!(!world
+            .entity(screen_1)
+            .contains::<ShouldBePlaying<VideoPlayer>>());
+        assert!(world
+            .entity(screen_2)
+            .contains::<ShouldBePlaying<VideoPlayer>>());
+        assert!(!world
+            .entity(screen_3)
+            .contains::<ShouldBePlaying<VideoPlayer>>());
+    }
+
+    #[test]
+    fn stream_out_of_scene() {
+        let mut world = base_world();
+
+        let screen_1 = world
+            .spawn((
+                VideoPlayerSource(LIVEKIT_VIDEO_STREAM.to_owned()),
+                VideoPlayerConfig {
+                    playing: false,
+                    volume: 1.,
+                    playback_rate: 1.,
+                    r#loop: false,
+                },
+                ShouldBePlaying::<VideoPlayer>::default(),
+                Transform::from_translation(Vec3::new(1., 0., 0.)),
+            ))
+            .id();
+
+        world
+            .run_system_cached(video_player_should_be_playing)
+            .unwrap();
+
+        assert!(!world
+            .entity(screen_1)
+            .contains::<ShouldBePlaying<VideoPlayer>>());
     }
 }
