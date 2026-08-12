@@ -2,7 +2,6 @@ use std::{cell::RefCell, rc::Rc};
 
 use anyhow::anyhow;
 use common::rpc::{RpcCall, RpcResultSender};
-use common::util::ReportErr;
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -15,7 +14,10 @@ pub struct TextureSize {
     height: f32,
 }
 
-pub async fn op_get_texture_size(state: Rc<RefCell<impl State>>, src: String) -> TextureSize {
+pub async fn op_get_texture_size(
+    state: Rc<RefCell<impl State>>,
+    src: String,
+) -> Result<TextureSize, anyhow::Error> {
     let (sx, rx) = RpcResultSender::channel();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
 
@@ -26,17 +28,16 @@ pub async fn op_get_texture_size(state: Rc<RefCell<impl State>>, src: String) ->
             scene,
             src,
             response: sx,
-        })
-        .report();
+        })?;
 
     let Ok(result) = rx.await.map_err(|e| anyhow::anyhow!(e)) else {
-        return TextureSize {
+        return Ok(TextureSize {
             width: 1.0,
             height: 1.0,
-        };
+        });
     };
 
-    result
+    Ok(result
         .map_err(|e| anyhow!(e))
         .map(|v| TextureSize {
             width: v.x,
@@ -45,5 +46,5 @@ pub async fn op_get_texture_size(state: Rc<RefCell<impl State>>, src: String) ->
         .unwrap_or(TextureSize {
             width: 1.0,
             height: 1.0,
-        })
+        }))
 }

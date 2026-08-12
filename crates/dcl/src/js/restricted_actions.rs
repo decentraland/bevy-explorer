@@ -5,7 +5,6 @@ use bevy::{
     transform::components::Transform,
 };
 use common::rpc::{RpcCall, RpcResultSender, RpcUiFocusAction};
-use common::util::ReportErr;
 use dcl_component::proto_components::common::Vector3 as DclVector3;
 use serde::Serialize;
 use std::{cell::RefCell, rc::Rc};
@@ -21,7 +20,7 @@ pub async fn op_move_player_to(
     camera_target: Option<DclVector3>,
     avatar_target: Option<DclVector3>,
     duration: Option<f32>,
-) -> bool {
+) -> Result<bool, anyhow::Error> {
     debug!("move player to {position:?}, camera: {camera_target:?}, rotate: {avatar_target:?}, duration: {duration:?}");
 
     let to = DclTranslation([position.x, position.y, position.z]).to_bevy_translation();
@@ -53,21 +52,19 @@ pub async fn op_move_player_to(
                 looking_at,
                 duration,
                 response,
-            })
-            .report();
+            })?;
         if let Some(facing) = camera_rotation {
             op_state
                 .borrow_mut::<RpcCalls>()
-                .push(RpcCall::MoveCamera { scene, facing })
-                .report();
+                .push(RpcCall::MoveCamera { scene, facing })?;
         }
     }
 
-    if let Some(rx) = rx {
+    Ok(if let Some(rx) = rx {
         matches!(rx.await, Ok(true))
     } else {
         true
-    }
+    })
 }
 
 pub async fn op_walk_player_to(
@@ -75,7 +72,7 @@ pub async fn op_walk_player_to(
     position: DclVector3,
     stop_threshold: f32,
     timeout: Option<f32>,
-) -> bool {
+) -> Result<bool, anyhow::Error> {
     debug!("walk player to {position:?}, stop_threshold: {stop_threshold:?}, timeout: {timeout:?}");
 
     let to = DclTranslation([position.x, position.y, position.z]).to_bevy_translation();
@@ -92,18 +89,17 @@ pub async fn op_walk_player_to(
                 stop_threshold,
                 timeout,
                 response: sx,
-            })
-            .report();
+            })?;
     }
 
-    matches!(rx.await, Ok(true))
+    Ok(matches!(rx.await, Ok(true)))
 }
 
 pub async fn op_teleport_to(
     state: Rc<RefCell<impl State>>,
     position_x: i32,
     position_y: i32,
-) -> bool {
+) -> Result<bool, anyhow::Error> {
     debug!("op_teleport_to");
     let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
@@ -114,17 +110,16 @@ pub async fn op_teleport_to(
             scene: Some(scene),
             to: IVec2::new(position_x, position_y),
             response: sx,
-        })
-        .report();
+        })?;
 
-    matches!(rx.await, Ok(Ok(_)))
+    Ok(matches!(rx.await, Ok(Ok(_))))
 }
 
 pub async fn op_change_realm(
     state: Rc<RefCell<impl State>>,
     realm: String,
     message: Option<String>,
-) -> bool {
+) -> Result<bool, anyhow::Error> {
     debug!("op_change_realm");
     let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
@@ -136,13 +131,15 @@ pub async fn op_change_realm(
             to: realm,
             message,
             response: sx,
-        })
-        .report();
+        })?;
 
-    matches!(rx.await, Ok(Ok(_)))
+    Ok(matches!(rx.await, Ok(Ok(_))))
 }
 
-pub async fn op_external_url(state: Rc<RefCell<impl State>>, url: String) -> bool {
+pub async fn op_external_url(
+    state: Rc<RefCell<impl State>>,
+    url: String,
+) -> Result<bool, anyhow::Error> {
     debug!("op_external_url");
     let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
@@ -153,15 +150,14 @@ pub async fn op_external_url(state: Rc<RefCell<impl State>>, url: String) -> boo
             scene,
             url,
             response: sx,
-        })
-        .report();
+        })?;
 
-    matches!(rx.await, Ok(Ok(_)))
+    Ok(matches!(rx.await, Ok(Ok(_))))
 }
 
-pub fn op_emote(op_state: &mut impl State, emote: String) {
+pub fn op_emote(op_state: &mut impl State, emote: String) -> Result<(), anyhow::Error> {
     debug!("op_emote");
-    send_emote(op_state, emote, false);
+    send_emote(op_state, emote, false)
 }
 
 pub async fn op_scene_emote(
@@ -191,18 +187,20 @@ pub async fn op_scene_emote(
     let emote_urn =
         format!("urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-{looping}");
 
-    send_emote(&mut *op_state.borrow_mut(), emote_urn, looping);
-    Ok(())
+    send_emote(&mut *op_state.borrow_mut(), emote_urn, looping)
 }
 
-pub fn send_emote(op_state: &mut impl State, urn: String, r#loop: bool) {
+pub fn send_emote(
+    op_state: &mut impl State,
+    urn: String,
+    r#loop: bool,
+) -> Result<(), anyhow::Error> {
     let context = op_state.borrow::<CrdtContext>();
     let scene = context.scene_id.0;
 
     op_state
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::TriggerEmote { scene, urn, r#loop })
-        .report();
 }
 
 pub async fn op_open_nft_dialog(

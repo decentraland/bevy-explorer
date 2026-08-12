@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use bevy::log::debug;
 use common::{
     rpc::{RpcCall, RpcStreamReceiver, RpcStreamSender},
-    util::{AsH160, ReportErr},
+    util::AsH160,
 };
 use serde::{Deserialize, Serialize};
 
@@ -49,16 +49,20 @@ pub struct MessageBusMessage {
 
 struct BinaryBusReceiver(RpcStreamReceiver<(String, Vec<u8>)>);
 
-pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: String) {
+pub async fn op_comms_send_string(
+    state: Rc<RefCell<impl State>>,
+    message: String,
+) -> Result<(), anyhow::Error> {
     debug!("op_comms_send_string");
     if message.len() > MAX_COMMS_MESSAGE_BYTES {
-        debug!("op_comms_send_string: dropping oversized message");
-        return;
+        anyhow::bail!(
+            "message too large ({} > {MAX_COMMS_MESSAGE_BYTES} bytes)",
+            message.len()
+        );
     }
     let mut state = state.borrow_mut();
     if !try_spend_budget(&mut *state) {
-        debug!("op_comms_send_string: message budget exhausted, dropping");
-        return;
+        anyhow::bail!("per-tick message budget exhausted ({MAX_SEND_MESSAGES_PER_TICK})");
     }
     let scene = state.borrow::<CrdtContext>().scene_id.0;
     let mut data = vec![CommsMessageType::String as u8];
@@ -73,23 +77,23 @@ pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: Strin
             data,
             recipient: None,
         })
-        .report();
 }
 
 pub async fn op_comms_send_binary_single(
     state: Rc<RefCell<impl State>>,
     message: impl AsRef<[u8]>,
     recipient: Option<String>,
-) {
+) -> Result<(), anyhow::Error> {
     debug!("op_comms_send_binary_single");
     if message.as_ref().len() > MAX_COMMS_MESSAGE_BYTES {
-        debug!("op_comms_send_binary_single: dropping oversized message");
-        return;
+        anyhow::bail!(
+            "message too large ({} > {MAX_COMMS_MESSAGE_BYTES} bytes)",
+            message.as_ref().len()
+        );
     }
     let mut state = state.borrow_mut();
     if !try_spend_budget(&mut *state) {
-        debug!("op_comms_send_binary_single: message budget exhausted, dropping");
-        return;
+        anyhow::bail!("per-tick message budget exhausted ({MAX_SEND_MESSAGES_PER_TICK})");
     }
 
     let context = state.borrow::<CrdtContext>();
@@ -110,7 +114,6 @@ pub async fn op_comms_send_binary_single(
             data,
             recipient,
         })
-        .report();
 }
 
 pub async fn op_comms_recv_binary(
