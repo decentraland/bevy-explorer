@@ -231,7 +231,7 @@ fn audio_transmitter_kind_on_insert(
 }
 
 fn audio_transmitter_kind_on_replace(
-    trigger: Trigger<OnReplace, TransmitterKind>,
+    trigger: Trigger<OnReplace, AudioTransmitterKind>,
     mut commands: Commands,
 ) {
     let entity = trigger.target();
