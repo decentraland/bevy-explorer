@@ -28,7 +28,8 @@ use crate::livekit::participant::{StreamImage, StreamViewer};
 use crate::livekit::web::Participant;
 use crate::{
     global_crdt::{
-        GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate, VoiceMessageStreams,
+        GlobalCrdtState, NetworkUpdate, NonPlayerUpdate, PlayerMessage, PlayerUpdate,
+        VoiceMessageStreams,
     },
     livekit::{
         participant::{
@@ -152,6 +153,9 @@ fn participant_disconnected(
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant)>,
     rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
+    global_crdt_state: Res<GlobalCrdtState>,
+    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let ParticipantDisconnected {
         participant,
@@ -166,6 +170,23 @@ fn participant_disconnected(
         participant.identity(),
         room.name()
     );
+
+    if let Some(address) = participant.identity().as_str().as_h160() {
+        let transport_id = *room_entity;
+        let sender = global_crdt_state.get_sender();
+        let task = livekit_runtime.spawn(async move {
+            sender
+                .send(NetworkUpdate::PlayerLeft {
+                    transport_id,
+                    address,
+                })
+                .await
+        });
+        player_update_tasks.push(PlayerUpdateTask {
+            runtime: livekit_runtime.clone(),
+            task,
+        });
+    }
 
     let Some(hosting_participants) = maybe_hosting_participants else {
         debug_panic!("Room {} is not hosting participants.", room.name());
