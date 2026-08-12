@@ -9,10 +9,11 @@ pub enum AudioTransmitterKind {
 
 /// Marker component for audio transmitters that should be playing
 #[derive(Component)]
+#[require(AudioTransmitterVolume)]
 pub struct ActiveAudioTransmitter;
 
 /// Volume of the transmitter, is matched to the value of [`ReceiverVolume`]
 ///
 /// [`ReceiverVolume`]: crate::video_receiver::ReceiverVolume
-#[derive(Component, Deref)]
+#[derive(Default, Component, Deref)]
 pub struct AudioTransmitterVolume(pub(crate) f32);

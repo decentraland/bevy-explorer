@@ -245,9 +245,12 @@ fn audio_transmitter_kind_on_replace(
     mut commands: Commands,
 ) {
     let entity = trigger.target();
-    commands
-        .entity(entity)
-        .try_remove::<(AudioCaster, AudioStreamer, ActiveAudioTransmitter)>();
+    commands.entity(entity).try_remove::<(
+        AudioCaster,
+        AudioStreamer,
+        ActiveAudioTransmitter,
+        AudioTransmitterVolume,
+    )>();
 }
 
 fn active_video_cast_on_add(
@@ -452,7 +455,7 @@ fn exit_transmission_kind<'w, R: RelationshipTarget>(
     for entity in livestream_manager.collection().iter() {
         commands
             .entity(entity)
-            .try_remove::<ActiveAudioTransmitter>();
+            .try_remove::<(ActiveAudioTransmitter, AudioTransmitterVolume)>();
     }
 }
 
