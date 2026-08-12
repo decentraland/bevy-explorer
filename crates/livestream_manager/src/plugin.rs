@@ -166,6 +166,7 @@ fn transmitter_kind_on_insert(
         unreachable!("Infallible query");
     };
 
+    debug!("New {:?} {}", transmitter_kind, entity);
     let mut entity_cmd = commands.entity(trigger.target());
 
     match transmitter_kind {
@@ -189,6 +190,7 @@ fn transmitter_kind_on_replace(
     mut commands: Commands,
 ) {
     let entity = trigger.target();
+    debug!("TransmitterKind replaced on {}", entity);
     commands.entity(entity).try_remove::<(
         PresentationCaster,
         Screensharer,

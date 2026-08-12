@@ -6,7 +6,7 @@ mod tests;
 use bevy::prelude::*;
 
 /// Component for the kind of transmitter that the entity is
-#[derive(Clone, Copy, Component)]
+#[derive(Debug, Clone, Copy, Component)]
 #[component(immutable)]
 pub enum TransmitterKind {
     Presentation,
