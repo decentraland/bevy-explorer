@@ -427,10 +427,7 @@ impl Plugin for AVPlayerPlugin {
         app.add_systems(
             Update,
             (
-                (
-                    av_player_is_in_scene::<AudioStream>,
-                    av_player_is_in_scene::<VideoPlayer>,
-                ),
+                av_player_is_in_scene,
                 (
                     audio_stream_should_be_playing,
                     video_player_should_be_playing,
@@ -565,9 +562,13 @@ fn should_be_playing_on_remove<T: AVPlayer>(
     commands.entity(entity).try_remove::<ActiveReceiver>();
 }
 
-fn av_player_is_in_scene<T: AVPlayer>(
+#[expect(clippy::type_complexity)]
+fn av_player_is_in_scene(
     mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, &T::Config, Has<InScene>)>,
+    av_players: Query<
+        (Entity, &ContainerEntity, Has<InScene>),
+        Or<(With<AudioStream>, With<VideoPlayer>)>,
+    >,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
@@ -577,17 +578,14 @@ fn av_player_is_in_scene<T: AVPlayer>(
     };
     let containing_scenes = containing_scene.get_position(user.translation());
 
-    for (ent, container, _, has_in_scene) in av_players
-        .iter()
-        .filter(|(_, _, av_player, _)| av_player.playing())
-    {
+    for (ent, container, has_in_scene) in av_players.iter() {
         let contained = containing_scenes.contains(&container.root);
         if contained && !has_in_scene {
             // Only call `insert` on those that do not have `InScene`
             commands.entity(ent).try_insert(InScene);
         } else if !contained && has_in_scene {
             // Only call `remove` on those that have `InScene`
-            commands.entity(ent).remove::<InScene>();
+            commands.entity(ent).try_remove::<InScene>();
         }
     }
 }
