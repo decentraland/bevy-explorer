@@ -7,7 +7,7 @@
 
 import type { AuthIdentity } from '../features/auth/sso'
 import {
-  BRIDGE_CHANNEL,
+  bridgeChannelName,
   type Envelope,
   type LoginPreviousResult,
   type PageToScene,
@@ -23,7 +23,7 @@ export class BridgeClient {
   private readonly pending = new Map<string, Pending>()
   private readonly listeners = new Set<(msg: SceneToPage) => void>()
 
-  constructor(channel: string = BRIDGE_CHANNEL) {
+  constructor(channel: string = bridgeChannelName()) {
     this.ch = new BroadcastChannel(channel)
     this.ch.onmessage = (e: MessageEvent<Envelope>) => {
       const env = e.data

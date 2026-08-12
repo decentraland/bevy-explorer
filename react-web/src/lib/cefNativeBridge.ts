@@ -5,7 +5,7 @@
 //
 // No-op when window.cef is absent (web).
 
-import { BRIDGE_CHANNEL } from '../engine/protocol'
+import { bridgeChannelName } from '../engine/protocol'
 
 interface CefApi {
   emit: (payload: unknown) => void
@@ -16,7 +16,7 @@ export function installCefNativeBridge(): void {
   const cef = (window as Window & { cef?: CefApi }).cef
   if (!cef?.emit || !cef?.listen) return
 
-  const ch = new BroadcastChannel(BRIDGE_CHANNEL)
+  const ch = new BroadcastChannel(bridgeChannelName())
   // page -> engine: only scene-bound Envelopes cross the boundary
   ch.onmessage = (e) => {
     const env = e.data as { to?: string } | undefined

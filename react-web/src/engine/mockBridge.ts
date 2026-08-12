@@ -4,7 +4,7 @@
 // page-side BridgeClient does not change at all.
 
 import {
-  BRIDGE_CHANNEL,
+  bridgeChannelName,
   type Envelope,
   type Outfit,
   type OutfitsMetadata,
@@ -214,7 +214,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     ],
     namesForExtraSlots: []
   }
-  const ch = new BroadcastChannel(BRIDGE_CHANNEL)
+  const ch = new BroadcastChannel(bridgeChannelName())
   const wait = (ms: number): Promise<void> =>
     new Promise((r) => setTimeout(r, ms))
 

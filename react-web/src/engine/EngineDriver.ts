@@ -9,7 +9,7 @@ import { getStoredLogin, rootAddress, type AuthIdentity } from '../features/auth
 import type { LoginDriver } from './driver'
 import type { EngineRpc } from './engineRpc'
 import {
-  BRIDGE_CHANNEL,
+  bridgeChannelName,
   type Envelope,
   type PageToScene,
   type SceneToPage
@@ -29,7 +29,7 @@ export class EngineDriver implements LoginDriver {
   private readyFallbackTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(private readonly rpc: EngineRpc) {
-    this.ch = new BroadcastChannel(BRIDGE_CHANNEL)
+    this.ch = new BroadcastChannel(bridgeChannelName())
     this.ch.onmessage = (e: MessageEvent<Envelope>) => {
       const env = e.data
       if (env?.to !== 'page') return

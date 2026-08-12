@@ -6,6 +6,7 @@
 
 import { useEffect } from 'react'
 import type { EngineRpc } from '../../engine/engineRpc'
+import { bridgeChannelName } from '../../engine/protocol'
 import { bootMode } from '../../lib/bootMode'
 import { PAGE_DIR } from '../../lib/publicUrl'
 // Moved to lib/systemScene.ts, which also decides whether a link is allowed to override it.
@@ -28,6 +29,11 @@ function injectEngine(): void {
   // Once per page — the engine is a singleton (StrictMode remounts and HMR must not double-boot).
   if (injected || window.__bevyBootConfig != null) return
   injected = true
+
+  // Seed window.__bridgeSession BEFORE the engine boots: engine.js forwards it to the scene
+  // sandbox, which then scopes the bridge BroadcastChannel to this tab (issue #1089). The suffix
+  // is opt-in per host page — engine.js never generates one — so this call is what turns it on.
+  bridgeChannelName()
 
   const params = new URLSearchParams(location.search)
   // pkg/ fetch base: the versioned CDN in prod builds (BASE_URL), the served engine dir otherwise.
