@@ -510,6 +510,52 @@ mod scene_log_budget_tests {
         );
     }
 
+    // Engine-initiated deletes reach the stores only via the census (the scene never sends a
+    // DeleteEntity message for them) — the sidecar must be reaped there too, so custom
+    // components aren't retained for dead entities.
+    #[test]
+    fn census_deaths_reap_the_filtered_store() {
+        use crate::interface::{crdt_context::CrdtContext, CrdtType};
+        use dcl_component::{DclReader, SceneComponentId, SceneCrdtTimestamp, SceneEntityId};
+
+        let (sx, _rx) = scene_response_channel();
+        let mut s = crdt_state();
+        s.put(sx);
+
+        let entity = SceneEntityId {
+            id: 600,
+            generation: 0,
+        };
+        s.borrow_mut::<FilteredCrdtStore>().0.try_update(
+            SceneComponentId(9999),
+            CrdtType::LWW_ANY,
+            entity,
+            SceneCrdtTimestamp(1),
+            Some(&mut DclReader::new(&[0u8; 16])),
+        );
+        // mimic an engine-initiated delete: killed directly in the context, no DeleteEntity
+        // stream message
+        {
+            let ctx = s.borrow_mut::<CrdtContext>();
+            ctx.init(entity);
+            ctx.take_census();
+            ctx.kill(entity);
+        }
+        let state = std::rc::Rc::new(std::cell::RefCell::new(s));
+
+        super::engine::crdt_send_to_renderer(state.clone(), &[]);
+
+        assert_eq!(
+            state
+                .borrow()
+                .borrow::<FilteredCrdtStore>()
+                .0
+                .retained_data_bytes(),
+            0,
+            "dead entities' custom components must not be retained"
+        );
+    }
+
     // A normal batch flows through untouched: an Ok frame is produced and the scene is not
     // flagged for shutdown.
     #[test]

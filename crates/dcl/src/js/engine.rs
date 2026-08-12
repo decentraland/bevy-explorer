@@ -133,6 +133,10 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
 
     let census = entity_map.take_census();
     crdt_store.clean_up(&census.died);
+    // also reap the sidecar: scene-sent DeleteEntity messages clean it inline, but
+    // engine-initiated deletes only reach the stores via this census, and there's no value
+    // in retaining custom components for dead entities.
+    filtered_store.0.clean_up(&census.died);
     let updates = crdt_store.take_updates();
 
     let rpc_calls = std::mem::take(op_state.borrow_mut::<RpcCalls>());
