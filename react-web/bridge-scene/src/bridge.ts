@@ -13,6 +13,8 @@
 import { engine } from '@dcl/sdk/ecs'
 import type { Envelope, PageToScene, SceneToPage } from '../../src/engine/protocol'
 
+// The bare name: the sandbox's injected BroadcastChannel appends a per-tab session suffix
+// (sandbox_worker.js), matching the page's bridgeChannelName() — so two tabs never share a bridge.
 const CHANNEL = 'bevy-ui-bridge'
 
 // BroadcastChannel is a runtime global injected only into the super-user (--ui) scene

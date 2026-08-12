@@ -64,7 +64,11 @@ export async function installBridgeSpy(page: Page): Promise<void> {
     if (w.__bridgeLog) return
     w.__bridgeLog = []
     try {
-      const ch = new BroadcastChannel(channel)
+      // Same lazy per-boot suffix as the app's bridgeChannelName() — the init script runs first,
+      // so it seeds __bridgeSession and the app's `??=` picks it up.
+      const ws = window as unknown as { __bridgeSession?: string }
+      ws.__bridgeSession ??= crypto.randomUUID().slice(0, 8)
+      const ch = new BroadcastChannel(`${channel}#${ws.__bridgeSession}`)
       ch.onmessage = (e: MessageEvent) => w.__bridgeLog!.push(e.data)
     } catch {
       /* BroadcastChannel unavailable — spy disabled */
