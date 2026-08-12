@@ -23,12 +23,12 @@ export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
  */
 export function bridgeChannelName(): string {
   // Structural globalThis, not window/crypto: this module is also compiled into the bridge
-  // scene's program (type-only imports), whose tsconfig has no DOM lib. There crypto is absent
-  // and this falls back to the bare name — the scene never calls it anyway; its suffix is
-  // applied by the sandbox's injected BroadcastChannel wrapper.
-  const g = globalThis as { __bridgeSession?: string; crypto?: { randomUUID(): string } }
-  if (!g.crypto?.randomUUID) return BRIDGE_CHANNEL
-  g.__bridgeSession ??= g.crypto.randomUUID().slice(0, 8)
+  // scene's program (type-only imports), whose tsconfig has no DOM lib. (The scene never calls
+  // this at runtime — its suffix is applied by the sandbox's injected BroadcastChannel wrapper.)
+  const g = globalThis as { __bridgeSession?: string; crypto?: { randomUUID?(): string } }
+  // The id needs uniqueness, not unpredictability — Math.random covers insecure contexts
+  // (plain-http LAN testing), where crypto.randomUUID is absent.
+  g.__bridgeSession ??= g.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10)
   return `${BRIDGE_CHANNEL}#${g.__bridgeSession}`
 }
 
