@@ -732,7 +732,9 @@ fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut command
     commands.entity(entity).try_remove::<VideoTextureOutput>();
 }
 
-fn video_texture_output_image_changed(video_texture_outputs: Populated<&mut VideoTextureOutput>) {
+fn video_texture_output_image_changed(
+    video_texture_outputs: Populated<&mut VideoTextureOutput, With<Stream>>,
+) {
     // TODO make it so that this workaround isn't needed
     for mut video_texture_output in video_texture_outputs.into_inner() {
         video_texture_output.set_changed();
