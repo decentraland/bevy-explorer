@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 
 use bevy::log::{debug, warn};
 use common::rpc::{RpcCall, RpcEventSender, RpcStreamReceiver};
-use common::util::ReportErr;
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -43,25 +42,27 @@ impl_event!(RealmChanged, "onRealmChanged");
 impl_event!(PlayerClicked, "playerClicked");
 impl_event!(MessageBus, "comms");
 
-pub fn op_subscribe(state: &mut impl State, id: &str) {
+pub fn op_subscribe(state: &mut impl State, id: &str) -> Result<(), anyhow::Error> {
     macro_rules! register {
         ($id: expr, $state: expr, $marker: ty, $call: expr) => {{
             if id == <$marker as EventType>::label() {
                 if $state.has::<EventReceiver<$marker>>() {
                     // already subscribed
-                    return;
+                    return Ok(());
                 }
                 let (sx, rx) = RpcEventSender::channel();
 
+                // propagate failure without storing the receiver, so the scene observes the
+                // error and a later resubscribe isn't blocked by the already-subscribed check
                 #[allow(clippy::redundant_closure_call)]
-                state.borrow_mut::<RpcCalls>().push($call(sx)).report();
+                state.borrow_mut::<RpcCalls>().push($call(sx))?;
 
                 state.put(EventReceiver::<$marker> {
                     inner: rx,
                     _p: Default::default(),
                 });
                 debug!("subscribed to {}", <$marker as EventType>::label());
-                return;
+                return Ok(());
             }
         }};
     }
@@ -101,22 +102,22 @@ pub fn op_subscribe(state: &mut impl State, id: &str) {
     // MessageBus carries untrusted peer traffic, so use a tighter bound than the default event channel.
     if id == <MessageBus as EventType>::label() {
         if state.has::<EventReceiver<MessageBus>>() {
-            return;
+            return Ok(());
         }
         let (sender, rx) = RpcEventSender::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::SubscribeMessageBus { sender, hash })
-            .report();
+            .push(RpcCall::SubscribeMessageBus { sender, hash })?;
         state.put(EventReceiver::<MessageBus> {
             inner: rx,
             _p: Default::default(),
         });
         debug!("subscribed to {}", <MessageBus as EventType>::label());
-        return;
+        return Ok(());
     }
 
     warn!("subscribe to unrecognised event {id}");
+    Ok(())
 }
 
 pub fn op_unsubscribe(state: &mut impl State, id: &str) {

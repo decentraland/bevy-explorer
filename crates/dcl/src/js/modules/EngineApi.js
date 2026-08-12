@@ -1,6 +1,6 @@
 // engine module
 
-const { op_crdt_recv_from_renderer, op_crdt_send_to_renderer, op_subscribe, op_send_batch, op_is_server } = Deno.core.ops;
+const { op_crdt_recv_from_renderer, op_crdt_send_to_renderer, op_subscribe, op_unsubscribe, op_send_batch, op_is_server } = Deno.core.ops;
 
 module.exports.crdtSendToRenderer = async function(messages) {
     op_crdt_send_to_renderer(messages.data);
@@ -40,7 +40,7 @@ module.exports.subscribe = async function(message) {
  * This function unsubscribe to an event from the renderer
  */
 module.exports.unsubscribe = async function(message) {
-    op_subscribe(message.eventId);
+    op_unsubscribe(message.eventId);
 }
 
 /**
