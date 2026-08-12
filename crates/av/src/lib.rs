@@ -521,17 +521,18 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
 fn stream_on_add<T: AVPlayer>(
     trigger: Trigger<OnAdd, Stream>,
     mut commands: Commands,
-    av_players: Query<(Has<ShouldBePlaying<T>>, &T::Config), (With<T>, With<Stream>)>,
+    av_players: Query<(Has<ShouldBePlaying<T>>, Option<&T::Config>), (With<T>, With<Stream>)>,
 ) {
     let entity = trigger.target();
-    let Ok((has_should_be_playing, config)) = av_players.get(entity) else {
+    let Ok((has_should_be_playing, maybe_config)) = av_players.get(entity) else {
         unreachable!("Infallible query");
     };
 
     if has_should_be_playing {
-        commands
-            .entity(entity)
-            .insert((ActiveReceiver, ReceiverVolume(config.volume())));
+        commands.entity(entity).insert((
+            ActiveReceiver,
+            ReceiverVolume(maybe_config.map(|config| config.volume()).unwrap_or(0.)),
+        ));
     }
 }
 
@@ -544,17 +545,18 @@ fn stream_on_remove(trigger: Trigger<OnRemove, Stream>, mut commands: Commands) 
 fn should_be_playing_on_add<T: AVPlayer>(
     trigger: Trigger<OnAdd, ShouldBePlaying<T>>,
     mut commands: Commands,
-    av_players: Query<(Has<Stream>, &T::Config), (With<T>, With<ShouldBePlaying<T>>)>,
+    av_players: Query<(Has<Stream>, Option<&T::Config>), (With<T>, With<ShouldBePlaying<T>>)>,
 ) {
     let entity = trigger.target();
-    let Ok((has_stream, config)) = av_players.get(entity) else {
+    let Ok((has_stream, maybe_config)) = av_players.get(entity) else {
         unreachable!("Infallible query");
     };
 
     if has_stream {
-        commands
-            .entity(entity)
-            .insert((ActiveReceiver, ReceiverVolume(config.volume())));
+        commands.entity(entity).insert((
+            ActiveReceiver,
+            ReceiverVolume(maybe_config.map(|config| config.volume()).unwrap_or(0.)),
+        ));
     }
 }
 
