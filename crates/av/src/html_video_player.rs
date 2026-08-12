@@ -44,7 +44,7 @@ use web_sys::{
 
 use crate::{
     audio_stream_should_be_playing, video_player_should_be_playing, AVPlayer, AVPlayerConfig,
-    AudioStream, ShouldBePlaying, VideoPlayer, LIVEKIT_VIDEO_STREAM,
+    AudioStream, ShouldBePlaying, Stream, VideoPlayer, LIVEKIT_VIDEO_STREAM,
 };
 
 type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
@@ -459,23 +459,41 @@ impl<T: AVPlayer> Drop for HtmlMediaEntity<T> {
     }
 }
 
+#[expect(clippy::type_complexity)]
 fn new_player_source<T: AVPlayer>(
     trigger: Trigger<OnInsert, T::Source>,
     mut commands: Commands,
-    av_players: Query<(&T::Source, &ContainerEntity, Option<&VideoTextureOutput>)>,
+    av_players: Query<(
+        &T::Source,
+        &ContainerEntity,
+        Option<&VideoTextureOutput>,
+        Has<Stream>,
+    )>,
     scenes: Query<&RendererSceneContext>,
     mut images: ResMut<Assets<Image>>,
     ipfs: Res<IpfsResource>,
 ) {
     let entity = trigger.target();
 
-    let Ok((player_source, container_entity, maybe_video_texture_output)) = av_players.get(entity)
+    let Ok((player_source, container_entity, maybe_video_texture_output, has_stream)) =
+        av_players.get(entity)
     else {
         unreachable!("Infallible query");
     };
     let Ok(context) = scenes.get(container_entity.root) else {
         debug_panic!("AVPlayer has an invalid link to RendererSceneContext");
     };
+
+    let livestream = &**player_source == LIVEKIT_VIDEO_STREAM;
+    if livestream != has_stream {
+        if livestream {
+            debug!("AVPlayer {} now a stream.", entity);
+            commands.entity(entity).insert(Stream);
+        } else {
+            debug!("AVPlayer {} no longer a stream.", entity);
+            commands.entity(entity).remove::<Stream>();
+        }
+    }
 
     let mut create_image_handle = || match maybe_video_texture_output {
         None => {
