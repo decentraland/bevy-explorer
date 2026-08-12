@@ -251,7 +251,7 @@ fn participant_payload(
     };
 
     player_update_tasks.push(PlayerUpdateTask {
-        runtime: livekit_runtime.clone(),
+        runtime: (*livekit_runtime).clone(),
         task,
     });
 }
@@ -287,7 +287,7 @@ fn participant_metadata_changed(
                     .await
             });
             player_update_tasks.push(PlayerUpdateTask {
-                runtime: livekit_runtime.clone(),
+                runtime: (*livekit_runtime).clone(),
                 task,
             });
         }
