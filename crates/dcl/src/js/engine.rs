@@ -86,6 +86,13 @@ fn localize_crdt_message(
 pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
 
+    // Once flagged for shutdown the scene is inert: ingest nothing further and emit no
+    // frames, so a scene that ignores the unwind can't keep growing the store or pushing
+    // frames at a scene the renderer has already marked broken.
+    if op_state.has::<ShuttingDown>() {
+        return;
+    }
+
     // Reject an oversized batch before it is copied into the store, serialised, and framed
     // onto the shared connection. Report it as a scene error and flag the scene for shutdown
     // so only this isolate is torn down; the frame is never built and co-tenant scenes are
@@ -222,6 +229,14 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     }
 
     debug!("op_crdt_recv_from_renderer");
+
+    // A scene flagged for shutdown must not park on the renderer channel — the renderer marks
+    // it broken and never responds, which would leave the isolate resident until scene unload.
+    // Return an empty batch instead, so the tick unwinds to the scene loop, whose ShuttingDown
+    // check tears the runtime down.
+    if op_state.borrow().has::<ShuttingDown>() {
+        return Vec::new();
+    }
 
     // Receive messages in a loop, handling snapshot/allocation requests immediately (no RefMut held
     // across the await point) and looping for the next.  Exits with the first Ok/shutdown response —

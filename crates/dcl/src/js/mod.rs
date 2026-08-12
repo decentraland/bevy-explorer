@@ -508,6 +508,26 @@ mod scene_log_budget_tests {
             rx.try_recv().is_err(),
             "no Ok frame must be built for a rejected batch"
         );
+
+        // the follow-up recv must not park on the renderer channel (the renderer marks the
+        // scene broken and never responds): it returns an empty batch immediately — the test
+        // state holds no renderer channel at all, so reaching for it would panic — letting
+        // the tick unwind to the scene loop's ShuttingDown check.
+        let batch = futures_lite::future::block_on(super::engine::op_crdt_recv_from_renderer(
+            state.clone(),
+        ));
+        assert!(
+            batch.is_empty(),
+            "a shutting-down scene must receive an empty batch"
+        );
+
+        // and further sends are inert: a scene that ignores the unwind can neither grow the
+        // store nor push frames at the broken scene.
+        super::engine::crdt_send_to_renderer(state, &[]);
+        assert!(
+            rx.try_recv().is_err(),
+            "a shutting-down scene must not emit further frames"
+        );
     }
 
     // Engine-initiated deletes reach the stores only via the census (the scene never sends a
