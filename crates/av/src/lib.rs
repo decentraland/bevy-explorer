@@ -1006,7 +1006,7 @@ mod tests {
             .spawn((
                 VideoPlayerSource(LIVEKIT_VIDEO_STREAM.to_owned()),
                 VideoPlayerConfig {
-                    playing: false,
+                    playing: true,
                     volume: 1.,
                     playback_rate: 1.,
                     r#loop: false,
