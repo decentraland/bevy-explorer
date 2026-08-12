@@ -26,7 +26,7 @@ async fn op_move_player_to(
     #[serde] camera_target: Option<DclVector3>,
     #[serde] avatar_target: Option<DclVector3>,
     duration: Option<f32>,
-) -> bool {
+) -> Result<bool, anyhow::Error> {
     dcl::js::restricted_actions::op_move_player_to(
         state,
         position,
@@ -43,12 +43,16 @@ async fn op_walk_player_to(
     #[serde] position: DclVector3,
     stop_threshold: f32,
     timeout: Option<f32>,
-) -> bool {
+) -> Result<bool, anyhow::Error> {
     dcl::js::restricted_actions::op_walk_player_to(state, position, stop_threshold, timeout).await
 }
 
 #[op2(async)]
-async fn op_teleport_to(state: Rc<RefCell<OpState>>, position_x: i32, position_y: i32) -> bool {
+async fn op_teleport_to(
+    state: Rc<RefCell<OpState>>,
+    position_x: i32,
+    position_y: i32,
+) -> Result<bool, anyhow::Error> {
     dcl::js::restricted_actions::op_teleport_to(state, position_x, position_y).await
 }
 
@@ -57,18 +61,21 @@ async fn op_change_realm(
     state: Rc<RefCell<OpState>>,
     #[string] realm: String,
     #[string] message: Option<String>,
-) -> bool {
+) -> Result<bool, anyhow::Error> {
     dcl::js::restricted_actions::op_change_realm(state, realm, message).await
 }
 
 #[op2(async)]
-async fn op_external_url(state: Rc<RefCell<OpState>>, #[string] url: String) -> bool {
+async fn op_external_url(
+    state: Rc<RefCell<OpState>>,
+    #[string] url: String,
+) -> Result<bool, anyhow::Error> {
     dcl::js::restricted_actions::op_external_url(state, url).await
 }
 
 #[op2(fast)]
-fn op_emote(op_state: &mut OpState, #[string] emote: String) {
-    dcl::js::restricted_actions::op_emote(op_state, emote);
+fn op_emote(op_state: &mut OpState, #[string] emote: String) -> Result<(), anyhow::Error> {
+    dcl::js::restricted_actions::op_emote(op_state, emote)
 }
 
 #[op2(async)]

@@ -49,16 +49,20 @@ pub struct MessageBusMessage {
 
 struct BinaryBusReceiver(RpcStreamReceiver<(String, Vec<u8>)>);
 
-pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: String) {
+pub async fn op_comms_send_string(
+    state: Rc<RefCell<impl State>>,
+    message: String,
+) -> Result<(), anyhow::Error> {
     debug!("op_comms_send_string");
     if message.len() > MAX_COMMS_MESSAGE_BYTES {
-        debug!("op_comms_send_string: dropping oversized message");
-        return;
+        anyhow::bail!(
+            "message too large ({} > {MAX_COMMS_MESSAGE_BYTES} bytes)",
+            message.len()
+        );
     }
     let mut state = state.borrow_mut();
     if !try_spend_budget(&mut *state) {
-        debug!("op_comms_send_string: message budget exhausted, dropping");
-        return;
+        anyhow::bail!("per-tick message budget exhausted ({MAX_SEND_MESSAGES_PER_TICK})");
     }
     let scene = state.borrow::<CrdtContext>().scene_id.0;
     let mut data = vec![CommsMessageType::String as u8];
@@ -72,23 +76,24 @@ pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: Strin
             scene,
             data,
             recipient: None,
-        });
+        })
 }
 
 pub async fn op_comms_send_binary_single(
     state: Rc<RefCell<impl State>>,
     message: impl AsRef<[u8]>,
     recipient: Option<String>,
-) {
+) -> Result<(), anyhow::Error> {
     debug!("op_comms_send_binary_single");
     if message.as_ref().len() > MAX_COMMS_MESSAGE_BYTES {
-        debug!("op_comms_send_binary_single: dropping oversized message");
-        return;
+        anyhow::bail!(
+            "message too large ({} > {MAX_COMMS_MESSAGE_BYTES} bytes)",
+            message.as_ref().len()
+        );
     }
     let mut state = state.borrow_mut();
     if !try_spend_budget(&mut *state) {
-        debug!("op_comms_send_binary_single: message budget exhausted, dropping");
-        return;
+        anyhow::bail!("per-tick message budget exhausted ({MAX_SEND_MESSAGES_PER_TICK})");
     }
 
     let context = state.borrow::<CrdtContext>();
@@ -108,7 +113,7 @@ pub async fn op_comms_send_binary_single(
             scene,
             data,
             recipient,
-        });
+        })
 }
 
 pub async fn op_comms_recv_binary(
@@ -127,7 +132,7 @@ pub async fn op_comms_recv_binary(
             RpcStreamSender::<(String, Vec<u8>)>::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::SubscribeBinaryBus { hash, sender: sx });
+            .push(RpcCall::SubscribeBinaryBus { hash, sender: sx })?;
         state.put(BinaryBusReceiver(rx));
     }
 

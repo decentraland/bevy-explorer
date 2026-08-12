@@ -63,7 +63,7 @@ pub async fn op_signed_fetch_headers(
         .push(RpcCall::EntityDefinition {
             urn: urn.clone(),
             response: sx,
-        });
+        })?;
 
     let entity_definition = rx.await?.ok_or_else(|| anyhow!("no entity definition"))?;
 
@@ -98,7 +98,7 @@ pub async fn op_signed_fetch_headers(
             meta: Some(serde_json::to_string(&meta).unwrap()),
             scene: Some(urn),
             response: sx,
-        });
+        })?;
 
     rx.await?.map_err(|e| anyhow!(e))
 }

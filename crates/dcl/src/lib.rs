@@ -57,7 +57,93 @@ pub enum RendererResponse {
     },
 }
 
-pub type RpcCalls = Vec<RpcCall>;
+/// Ceiling on the RpcCalls a scene may enqueue in one tick. RpcCalls are drained into the
+/// outbound `SceneResponse` at the crdt_send flush, so an unbounded count means an unbounded
+/// frame (and unbounded engine-side work for side-effectful calls) — none of it requiring
+/// scene-side retention. A well-behaved scene issues a handful per tick.
+pub const MAX_RPC_CALLS_PER_TICK: usize = 1000;
+
+/// Per-tick queue of scene-issued RpcCalls. `push` is bounded: the queue is drained (via
+/// `std::mem::take`) each tick at the flush, so its current length is exactly this tick's
+/// count, and no separate budget/reset is needed.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RpcCalls(Vec<RpcCall>);
+
+impl RpcCalls {
+    /// Enqueue a call for the next flush. Over the per-tick ceiling it returns an error the op
+    /// propagates to its caller (`push(..)?`), so a scene spamming RPCs sees its own call fail
+    /// rather than growing an unbounded outbound frame.
+    pub fn push(&mut self, call: RpcCall) -> Result<(), anyhow::Error> {
+        if self.0.len() >= MAX_RPC_CALLS_PER_TICK {
+            anyhow::bail!("exceeded the per-tick RPC call limit ({MAX_RPC_CALLS_PER_TICK})");
+        }
+        self.0.push(call);
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for RpcCalls {
+    type Target = Vec<RpcCall>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for RpcCalls {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl IntoIterator for RpcCalls {
+    type Item = RpcCall;
+    type IntoIter = std::vec::IntoIter<RpcCall>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+#[cfg(test)]
+mod rpc_calls_tests {
+    use super::*;
+    use bevy::prelude::{Entity, Quat};
+
+    fn a_call() -> RpcCall {
+        RpcCall::MoveCamera {
+            scene: Entity::PLACEHOLDER,
+            facing: Quat::IDENTITY,
+        }
+    }
+
+    // push accepts up to the per-tick ceiling then rejects, without enqueuing the rejected call;
+    // draining (the flush) resets the count so the next tick accepts again.
+    #[test]
+    fn push_is_bounded_and_resets_on_drain() {
+        let mut calls = RpcCalls::default();
+        for _ in 0..MAX_RPC_CALLS_PER_TICK {
+            calls.push(a_call()).unwrap();
+        }
+        assert_eq!(calls.len(), MAX_RPC_CALLS_PER_TICK);
+
+        assert!(
+            calls.push(a_call()).is_err(),
+            "over-budget push is rejected"
+        );
+        assert_eq!(
+            calls.len(),
+            MAX_RPC_CALLS_PER_TICK,
+            "a rejected call must not be enqueued"
+        );
+
+        let drained = std::mem::take(&mut calls);
+        assert_eq!(drained.len(), MAX_RPC_CALLS_PER_TICK);
+        assert!(
+            calls.push(a_call()).is_ok(),
+            "a fresh tick accepts calls again"
+        );
+    }
+}
 
 #[allow(clippy::large_enum_variant)] // we don't care since the error case is very rare
 // data from scene to renderer

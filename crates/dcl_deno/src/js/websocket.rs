@@ -104,7 +104,7 @@ where
             ty: common::structs::PermissionType::Websocket,
             message: Some(url.clone()),
             response: sx,
-        });
+        })?;
     let permit = rx.await?;
     if !permit {
         anyhow::bail!("User denied fetch request");
