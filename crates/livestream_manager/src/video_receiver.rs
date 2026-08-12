@@ -7,7 +7,7 @@ pub struct ActiveReceiver;
 
 /// Audio volume of the receiver
 #[derive(Component, Deref, DerefMut)]
-pub struct ReceiverVolume(f32);
+pub struct ReceiverVolume(pub f32);
 
 impl Default for ReceiverVolume {
     fn default() -> Self {
