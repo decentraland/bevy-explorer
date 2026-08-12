@@ -150,6 +150,26 @@ impl CrdtStore {
         }
     }
 
+    /// Total bytes of component payload currently retained: LWW last-write values plus any
+    /// grow-only entries. `Vec::len` is O(1), so this is O(retained entries). Used to bound
+    /// a scene's cumulative CRDT footprint.
+    pub fn retained_data_bytes(&self) -> usize {
+        let lww: usize = self
+            .lww
+            .values()
+            .flat_map(|state| state.last_write.values())
+            .map(|entry| entry.data.len())
+            .sum();
+        let go: usize = self
+            .go
+            .values()
+            .flat_map(|state| state.0.values())
+            .flat_map(|queue| queue.iter())
+            .map(|entry| entry.data.len())
+            .sum();
+        lww + go
+    }
+
     pub fn take_updates(&mut self) -> CrdtStore {
         let mut lww = HashMap::new();
         for (component_id, state) in self.lww.iter_mut() {
@@ -464,5 +484,66 @@ mod test {
         assert!(context.init(max));
         context.kill(max);
         assert!(context.is_dead(max));
+    }
+
+    fn entity(id: u16) -> SceneEntityId {
+        SceneEntityId { id, generation: 0 }
+    }
+
+    // retained_data_bytes must sum LWW last-write payloads and grow-only entries, and must
+    // reflect overwrites/deletes so a store that churns without growing doesn't inflate.
+    #[test]
+    fn retained_data_bytes_counts_lww_and_go() {
+        let mut store = CrdtStore::default();
+        let comp = SceneComponentId(1);
+        let ts = SceneCrdtTimestamp(1);
+
+        // two LWW entries of 10 and 25 bytes
+        store.try_update(
+            comp,
+            CrdtType::LWW_ANY,
+            entity(0),
+            ts,
+            Some(&mut DclReader::new(&[0u8; 10])),
+        );
+        store.try_update(
+            comp,
+            CrdtType::LWW_ANY,
+            entity(1),
+            ts,
+            Some(&mut DclReader::new(&[0u8; 25])),
+        );
+        assert_eq!(store.retained_data_bytes(), 35);
+
+        // a grow-only append of 40 bytes adds to the total
+        let go_comp = SceneComponentId(2);
+        store.try_update(
+            go_comp,
+            CrdtType::GO_ANY,
+            entity(0),
+            ts,
+            Some(&mut DclReader::new(&[0u8; 40])),
+        );
+        assert_eq!(store.retained_data_bytes(), 75);
+
+        // overwriting an LWW entry replaces, not adds: 10 -> 4 shrinks the total
+        store.try_update(
+            comp,
+            CrdtType::LWW_ANY,
+            entity(0),
+            SceneCrdtTimestamp(2),
+            Some(&mut DclReader::new(&[0u8; 4])),
+        );
+        assert_eq!(store.retained_data_bytes(), 69);
+
+        // a delete (None) frees the entry's payload
+        store.try_update(
+            comp,
+            CrdtType::LWW_ANY,
+            entity(1),
+            SceneCrdtTimestamp(2),
+            None,
+        );
+        assert_eq!(store.retained_data_bytes(), 44);
     }
 }

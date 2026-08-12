@@ -8,7 +8,10 @@ use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
 use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
-    js::{CommunicatedWithRenderer, SceneResponseSender, ShuttingDown, SuperUserScene},
+    js::{
+        CommunicatedWithRenderer, CrdtSentThisTick, SceneResponseSender, ShuttingDown,
+        SuperUserScene,
+    },
     RendererResponse, SceneElapsedTime,
 };
 use gotham_state::GothamState;
@@ -215,7 +218,10 @@ impl From<WasmError> for JsValue {
 
 #[wasm_bindgen]
 pub fn op_set_elapsed(state: &WorkerContext, elapsed: f32) {
-    state.state.borrow_mut().put(SceneElapsedTime(elapsed));
+    let mut state = state.state.borrow_mut();
+    state.put(SceneElapsedTime(elapsed));
+    // tick boundary: reset the one-batch-per-tick send allowance
+    state.try_take::<CrdtSentThisTick>();
 }
 
 #[wasm_bindgen]
