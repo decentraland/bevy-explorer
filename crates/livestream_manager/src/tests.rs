@@ -3,7 +3,8 @@ use bevy::{
     prelude::*,
     state::app::StatesPlugin,
 };
-use livestream_manager::{
+
+use crate::{
     plugin::LivestreamManagerPlugin,
     states::{Receiver, TransmissionKind, Transmitter},
     ActiveAudioTransmitter, ActiveReceiver, ActiveTransmitter, ActiveVideoCast,

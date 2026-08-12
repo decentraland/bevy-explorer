@@ -1,5 +1,7 @@
 pub mod plugin;
 pub mod states;
+#[cfg(test)]
+mod tests;
 
 use bevy::prelude::*;
 
