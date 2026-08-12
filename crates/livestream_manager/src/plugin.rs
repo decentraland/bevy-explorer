@@ -207,7 +207,7 @@ fn audio_transmitter_kind_on_insert(
     mut commands: Commands,
     livestream_manager: Single<Entity, With<LivestreamManager>>,
     transmitter: Query<&AudioTransmitterKind>,
-    transmission_kind: Res<State<TransmissionKind>>,
+    transmission_state: Res<State<TransmissionState>>,
 ) {
     let entity = trigger.target();
     let Ok(transmitter_kind) = transmitter.get(entity) else {
@@ -219,13 +219,16 @@ fn audio_transmitter_kind_on_insert(
     match transmitter_kind {
         AudioTransmitterKind::Cast => {
             entity_cmd.insert(AudioCaster(*livestream_manager));
-            if *transmission_kind == TransmissionKind::Cast {
+            if *transmission_state == TransmissionState::Cast {
                 entity_cmd.insert(ActiveAudioTransmitter);
             }
         }
         AudioTransmitterKind::Stream => {
             entity_cmd.insert(AudioStreamer(*livestream_manager));
-            if *transmission_kind == TransmissionKind::Stream {
+            if matches!(
+                **transmission_state,
+                TransmissionState::NeedStream | TransmissionState::Stream
+            ) {
                 entity_cmd.insert(ActiveAudioTransmitter);
             }
         }

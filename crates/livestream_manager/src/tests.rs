@@ -1201,6 +1201,114 @@ fn test_audios_without_receiver() {
         Receiver::Off,
     );
 
+    app.update();
+
+    let audio_casts = app
+        .world_mut()
+        .spawn_batch(std::array::repeat::<AudioTransmitterKind, 5>(
+            AudioTransmitterKind::Cast,
+        ))
+        .collect::<Vec<_>>();
+    let audio_streams = app
+        .world_mut()
+        .spawn_batch(std::array::repeat::<AudioTransmitterKind, 5>(
+            AudioTransmitterKind::Stream,
+        ))
+        .collect::<Vec<_>>();
+
+    for cast in &audio_casts {
+        assert!(!app
+            .world()
+            .entity(*cast)
+            .contains::<ActiveAudioTransmitter>());
+    }
+    for stream in &audio_streams {
+        assert!(!app
+            .world()
+            .entity(*stream)
+            .contains::<ActiveAudioTransmitter>());
+    }
+}
+
+#[test]
+fn test_audios_with_stream_without_receiver() {
+    let mut app = min_app();
+
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Off,
+        Transmitter::Off,
+        Receiver::Off,
+    );
+
+    app.world_mut().spawn(TransmitterKind::Stream);
+
+    app.update();
+    app.update();
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Stream,
+        Transmitter::Off,
+        Receiver::Off,
+    );
+
+    let audio_casts = app
+        .world_mut()
+        .spawn_batch(std::array::repeat::<AudioTransmitterKind, 5>(
+            AudioTransmitterKind::Cast,
+        ))
+        .collect::<Vec<_>>();
+    let audio_streams = app
+        .world_mut()
+        .spawn_batch(std::array::repeat::<AudioTransmitterKind, 5>(
+            AudioTransmitterKind::Stream,
+        ))
+        .collect::<Vec<_>>();
+
+    for cast in &audio_casts {
+        assert!(!app
+            .world()
+            .entity(*cast)
+            .contains::<ActiveAudioTransmitter>());
+    }
+    for stream in &audio_streams {
+        assert!(!app
+            .world()
+            .entity(*stream)
+            .contains::<ActiveAudioTransmitter>());
+    }
+}
+
+#[test]
+fn test_audios_with_cast_without_receiver() {
+    let mut app = min_app();
+
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Off,
+        Transmitter::Off,
+        Receiver::Off,
+    );
+
+    app.world_mut().spawn(TransmitterKind::VideoCast);
+
+    app.update();
+    app.update();
+    app.update();
+
+    test_states(
+        &mut app,
+        TransmissionKind::Cast,
+        Transmitter::Off,
+        Receiver::Off,
+    );
+
     let audio_casts = app
         .world_mut()
         .spawn_batch(std::array::repeat::<AudioTransmitterKind, 5>(
