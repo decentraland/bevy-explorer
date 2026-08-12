@@ -159,7 +159,7 @@ fn participant_disconnected(
                 .await
         });
         player_update_tasks.push(PlayerUpdateTask {
-            runtime: livekit_runtime.clone(),
+            runtime: (*livekit_runtime).clone(),
             task,
         });
     }
