@@ -179,6 +179,8 @@ function createJsContext(wasmApi, context) {
             Atomics.store(killFlags, IN_RUST, 1);
             if (Atomics.load(killFlags, KILL) === 1) {
               Atomics.store(killFlags, IN_RUST, 0);
+              // last words: nothing after the wait ever runs
+              console.warn(`[Sandbox Worker] scene ${sceneId}: kill flag set; parking until terminate`);
               Atomics.wait(killFlags, PARK, 0);
             }
             try {
@@ -377,15 +379,23 @@ function tearDown() {
   toreDown = true;
   // claim the thread-destroy against engine.js's force-terminate path (whoever wins the
   // CAS does it); IN_RUST covers the wasm section so the engine never terminates mid-destroy
-  if (wasm_init && Atomics.compareExchange(killFlags, DESTROY_CLAIM, 0, 1) === 0) {
-    Atomics.store(killFlags, IN_RUST, 1);
-    try {
-      if (wasmContext !== undefined) wasm_init.drop_context(wasmContext);
-    } catch (e) { }
-    wasmContext = undefined;
-    wasm_init.__wbindgen_thread_destroy();
-    Atomics.store(killFlags, IN_RUST, 0);
+  if (wasm_init) {
+    if (Atomics.compareExchange(killFlags, DESTROY_CLAIM, 0, 1) === 0) {
+      Atomics.store(killFlags, IN_RUST, 1);
+      try {
+        if (wasmContext !== undefined) wasm_init.drop_context(wasmContext);
+      } catch (e) {
+        // scene state can't be freed (something still holds it); the thread still dies
+        console.error(`[Sandbox Worker] scene ${sceneId}: error dropping scene context:`, e);
+      }
+      wasmContext = undefined;
+      wasm_init.__wbindgen_thread_destroy();
+      Atomics.store(killFlags, IN_RUST, 0);
+    } else {
+      console.warn(`[Sandbox Worker] scene ${sceneId}: thread-destroy already claimed by the engine; skipping`);
+    }
   }
+  console.debug(`[Sandbox Worker] scene ${sceneId}: teardown complete`);
   postToEngine({ type: "SHUTDOWN_COMPLETE", sceneId });
   self.close();
 }

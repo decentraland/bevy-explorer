@@ -296,9 +296,11 @@ export async function initEngine() {
   window.terminate_sandbox = (sceneId) => {
     const entry = sandboxWorkers.get(sceneId);
     if (!entry) {
+      console.debug(`[Main JS] kill requested for scene ${sceneId} before its worker reported in; deferred to SCENE_READY`);
       pendingKills.add(sceneId);
       return;
     }
+    console.debug(`[Main JS] kill requested for scene ${sceneId}; awaiting graceful exit`);
     entry.timer = setTimeout(() => {
       console.warn(`[Main JS] scene ${sceneId} still running after kill; posting SHUTDOWN`);
       entry.worker.postMessage({ type: "SHUTDOWN" });
@@ -363,8 +365,17 @@ export async function initEngine() {
             killToken,
           },
         });
+        let warnedForgery = false;
         sandboxWorker.onmessage = (workerEvent) => {
-          if (workerEvent.data.killToken !== killToken) return;
+          if (workerEvent.data.killToken !== killToken) {
+            // scene code can reach the bare postMessage; drop (and note) anything the
+            // worker script didn't token
+            if (!warnedForgery) {
+              warnedForgery = true;
+              console.warn("[Main JS] dropped untokened message from a sandbox worker (scene code posting to the engine?)", workerEvent.data && workerEvent.data.type);
+            }
+            return;
+          }
           if (workerEvent.data.type === "INIT_COMPLETE") {
             resolve();
           }
@@ -375,6 +386,7 @@ export async function initEngine() {
             spawn();
           }
           if (workerEvent.data.type === "SCENE_READY") {
+            console.debug(`[Main JS] sandbox worker running scene ${workerEvent.data.sceneId}`);
             sandboxWorkers.set(workerEvent.data.sceneId, {
               worker: sandboxWorker,
               timer: undefined,
@@ -389,6 +401,7 @@ export async function initEngine() {
           if (workerEvent.data.type === "SHUTDOWN_COMPLETE") {
             const entry = sandboxWorkers.get(workerEvent.data.sceneId);
             if (entry && entry.worker === sandboxWorker) {
+              console.debug(`[Main JS] scene ${workerEvent.data.sceneId} worker exited cleanly`);
               clearTimeout(entry.timer);
               sandboxWorkers.delete(workerEvent.data.sceneId);
             }
