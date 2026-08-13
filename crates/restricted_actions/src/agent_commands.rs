@@ -191,7 +191,11 @@ fn connected_players_cmd(
 ) {
     if let Some(Ok(_)) = input.take() {
         let (response, rx) = RpcResultSender::<Vec<String>>::channel();
-        events.write(RpcCall::GetConnectedPlayers { response });
+        // console command has no scene context; in partitioned mode it reports nobody
+        events.write(RpcCall::GetConnectedPlayers {
+            scene: Entity::PLACEHOLDER,
+            response,
+        });
         let responder = input.take_responder();
         pending.push_receiver(
             rx,

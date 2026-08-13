@@ -13,10 +13,17 @@ pub async fn op_get_connected_players(
     debug!("op_get_connected_players");
     let (sx, rx) = RpcResultSender::channel();
 
-    state
-        .borrow_mut()
-        .borrow_mut::<RpcCalls>()
-        .push(RpcCall::GetConnectedPlayers { response: sx })?;
+    {
+        let mut state = state.borrow_mut();
+        let scene = state.borrow::<CrdtContext>().scene_id.0;
+
+        state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::GetConnectedPlayers {
+                scene,
+                response: sx,
+            })?;
+    }
 
     Ok(rx.await.unwrap_or_default())
 }

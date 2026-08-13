@@ -72,10 +72,10 @@ pub fn op_subscribe(state: &mut impl State, id: &str) -> Result<(), anyhow::Erro
     let hash = context.hash.clone();
 
     register!(id, state, PlayerConnected, |sender| {
-        RpcCall::SubscribePlayerConnected { sender }
+        RpcCall::SubscribePlayerConnected { sender, scene }
     });
     register!(id, state, PlayerDisconnected, |sender| {
-        RpcCall::SubscribePlayerDisconnected { sender }
+        RpcCall::SubscribePlayerDisconnected { sender, scene }
     });
     register!(id, state, PlayerEnteredScene, |sender| {
         RpcCall::SubscribePlayerEnteredScene { sender, scene }

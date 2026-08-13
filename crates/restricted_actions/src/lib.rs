@@ -9,6 +9,7 @@ use std::{
 use anyhow::anyhow;
 use bevy::{
     asset::{io::AssetReader, AsyncReadExt, LoadState},
+    ecs::system::SystemParam,
     math::Vec3Swizzles,
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -33,7 +34,8 @@ use comms::{
     global_crdt::ForeignPlayer,
     preview::handle_preview_socket,
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
-    NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
+    NetworkMessage, NetworkMessageRecipient, PartitionPresenceByScene, SceneRoom, ServerSceneRooms,
+    Transport,
 };
 use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
@@ -1142,6 +1144,7 @@ fn get_user_data(
     >,
     mut scenes: Query<&mut RendererSceneContext>,
     mut profile_manager: ProfileManager,
+    presence: ScenePresence,
 ) {
     for (user, scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetUserData {
@@ -1174,10 +1177,10 @@ fn get_user_data(
                 }
             },
             Some(address) => {
-                if let Some((_, profile)) = others
-                    .iter()
-                    .find(|(fp, _)| *address == format!("{:#x}", fp.address))
-                {
+                // partitioned mode: don't serve a co-tenant room's cached profile
+                if let Some((_, profile)) = others.iter().find(|(fp, _)| {
+                    *address == format!("{:#x}", fp.address) && presence.visible(*scene, fp)
+                }) {
                     response.send(Ok(profile.content.clone()));
                     return;
                 }
@@ -1229,17 +1232,49 @@ fn get_user_data(
     });
 }
 
+/// Presence scoping: in partitioned mode a scene only sees players connected through its
+/// own room transport; a scene with no room yet sees nobody (fail closed).
+#[derive(SystemParam)]
+struct ScenePresence<'w, 's> {
+    partition: Res<'w, PartitionPresenceByScene>,
+    rooms: Res<'w, ServerSceneRooms>,
+    scenes: Query<'w, 's, &'static RendererSceneContext>,
+}
+
+impl ScenePresence<'_, '_> {
+    fn transport_of(&self, scene: Entity) -> Option<Entity> {
+        let hash = &self.scenes.get(scene).ok()?.hash;
+        self.rooms.0.get(hash).map(|(_, transport)| *transport)
+    }
+
+    fn visible_from(&self, scene: Entity, transports: &HashSet<Entity>) -> bool {
+        if !self.partition.0 {
+            return true;
+        }
+        self.transport_of(scene)
+            .is_some_and(|transport| transports.contains(&transport))
+    }
+
+    fn visible(&self, scene: Entity, player: &ForeignPlayer) -> bool {
+        self.visible_from(scene, &player.transports)
+    }
+}
+
 fn get_connected_players(
     me: Res<Wallet>,
     others: Query<&ForeignPlayer>,
     mut events: EventReader<RpcCall>,
     is_server: Res<IsServer>,
+    presence: ScenePresence,
 ) {
-    for response in events.read().filter_map(|ev| match ev {
-        RpcCall::GetConnectedPlayers { response } => Some(response),
+    for (scene, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::GetConnectedPlayers { scene, response } => Some((scene, response)),
         _ => None,
     }) {
-        let others = others.iter().map(|f| format!("{:#x}", f.address));
+        let others = others
+            .iter()
+            .filter(|f| presence.visible(*scene, f))
+            .map(|f| format!("{:#x}", f.address));
         // a headless server has no real local player — don't report its fake player as
         // a connected peer (it would appear as a ghost to every scene)
         let own = (!is_server.0)
@@ -1257,6 +1292,7 @@ fn get_players_in_scene(
     mut events: EventReader<RpcCall>,
     containing_scene: ContainingScene,
     is_server: Res<IsServer>,
+    presence: ScenePresence,
 ) {
     for (scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetPlayersInScene { scene, response } => Some((scene, response)),
@@ -1274,10 +1310,18 @@ fn get_players_in_scene(
             }
         }
 
+        // partitioned mode: membership is the scene's room (the positional
+        // ContainingScene path is meaningless there — portables union into every position)
         results.extend(
             others
                 .iter()
-                .filter(|(e, _)| containing_scene.get(*e).contains(scene))
+                .filter(|(e, f)| {
+                    if presence.partition.0 {
+                        presence.visible(*scene, f)
+                    } else {
+                        containing_scene.get(*e).contains(scene)
+                    }
+                })
                 .map(|(_, f)| format!("{:#x}", f.address)),
         );
         response.send(results);
@@ -1286,19 +1330,23 @@ fn get_players_in_scene(
 
 // todo: move this to global_crdt to do it all in one place?
 fn event_player_connected(
-    mut senders: Local<Vec<RpcEventSender>>,
+    mut senders: Local<Vec<(Entity, RpcEventSender)>>,
     mut events: EventReader<RpcCall>,
     players: Query<&ForeignPlayer, Added<ForeignPlayer>>,
+    presence: ScenePresence,
 ) {
-    for sender in events.read().filter_map(|ev| match ev {
-        RpcCall::SubscribePlayerConnected { sender } => Some(sender),
+    for (scene, sender) in events.read().filter_map(|ev| match ev {
+        RpcCall::SubscribePlayerConnected { scene, sender } => Some((scene, sender)),
         _ => None,
     }) {
-        senders.push(sender.clone());
+        senders.push((*scene, sender.clone()));
     }
 
-    senders.retain_mut(|sender| {
+    senders.retain_mut(|(scene, sender)| {
         for player in players.iter() {
+            if !presence.visible(*scene, player) {
+                continue;
+            }
             let data = json!({
                 "userId": format!("{:#x}", player.address)
             })
@@ -1312,33 +1360,39 @@ fn event_player_connected(
 
 // todo: move this to global_crdt to do it all in one place?
 fn event_player_disconnected(
-    mut senders: Local<Vec<RpcEventSender>>,
+    mut senders: Local<Vec<(Entity, RpcEventSender)>>,
     mut events: EventReader<RpcCall>,
-    players: Query<(Entity, &ForeignPlayer), Added<ForeignPlayer>>,
+    players: Query<(Entity, &ForeignPlayer), Changed<ForeignPlayer>>,
     mut removed: RemovedComponents<ForeignPlayer>,
-    mut last_players: Local<HashMap<Entity, Address>>,
+    // (address, transports) recorded while the player still exists — the component is
+    // already gone by the time the removal is visible
+    mut last_players: Local<HashMap<Entity, (Address, HashSet<Entity>)>>,
+    presence: ScenePresence,
 ) {
     // gather new receivers
-    for sender in events.read().filter_map(|ev| match ev {
-        RpcCall::SubscribePlayerDisconnected { sender } => Some(sender),
+    for (scene, sender) in events.read().filter_map(|ev| match ev {
+        RpcCall::SubscribePlayerDisconnected { scene, sender } => Some((scene, sender)),
         _ => None,
     }) {
-        senders.push(sender.clone());
+        senders.push((*scene, sender.clone()));
     }
 
-    // add new players to our local record
+    // refresh on change: room membership can change over a player's life
     for (ent, player) in players.iter() {
-        last_players.insert(ent, player.address);
+        last_players.insert(ent, (player.address, player.transports.clone()));
     }
 
-    // gather addresses of removed players
+    // gather removed players with their last known room membership
     let removed = removed
         .read()
         .flat_map(|e| last_players.remove(&e))
         .collect::<Vec<_>>();
 
-    senders.retain_mut(|sender| {
-        for address in removed.iter() {
+    senders.retain_mut(|(scene, sender)| {
+        for (address, transports) in removed.iter() {
+            if !presence.visible_from(*scene, transports) {
+                continue;
+            }
             let data = json!({
                 "userId": format!("{:#x}", address)
             })

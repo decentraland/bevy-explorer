@@ -249,11 +249,12 @@ pub(crate) fn load_scene_javascript(
     ipfas: IpfsAssetServer,
     crdt_component_interfaces: Res<CrdtExtractors>,
     mut scene_updates: ResMut<SceneUpdates>,
-    global_scene: Res<GlobalCrdtState>,
+    mut global_scene: ResMut<GlobalCrdtState>,
     portable_scenes: Res<PortableScenes>,
     realm: Res<CurrentRealm>,
     frame: Res<FrameCount>,
     preview_mode: Res<PreviewMode>,
+    partition_presence: Res<comms::PartitionPresenceByScene>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -425,7 +426,12 @@ pub(crate) fn load_scene_javascript(
         // start from the global shared crdt state, with position data localized for this scene
         // Scene origin in DCL proto-space (z-forward, matching proto Vector3 coordinates)
         let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
-        let (mut initial_crdt, global_updates) = global_scene.subscribe(scene_origin);
+        // partitioned mode: only this scene's own room slice, not co-tenants' players
+        let (mut initial_crdt, global_updates) = if partition_presence.0 {
+            global_scene.subscribe_room(&definition.id, scene_origin)
+        } else {
+            global_scene.subscribe(scene_origin)
+        };
 
         // set the world origin (for parents of world-space entities, using world-space coords as local coords)
         let mut buf = Vec::new();

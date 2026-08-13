@@ -71,6 +71,7 @@ impl Plugin for CommsPlugin {
         app.add_event::<SetCurrentScene>()
             .init_resource::<SceneRoomConnection>()
             .init_resource::<ServerSceneRooms>()
+            .init_resource::<PartitionPresenceByScene>()
             .init_resource::<DisableSceneRoomGatekeeper>();
 
         app.add_plugins((
@@ -224,6 +225,12 @@ pub struct ServerSceneRooms(pub bevy::platform::collections::HashMap<String, (St
 /// trusted parent — the engine must never sign gatekeeper handshakes itself in that mode.
 #[derive(Resource, Default)]
 pub struct DisableSceneRoomGatekeeper(pub bool);
+
+/// Orchestrated multi-tenant servers only: partition player presence per scene room, so
+/// each scene sees ONLY players in its own LiveKit room. Off everywhere else (client,
+/// single-realm server), keeping the shared "nearby players" view unchanged.
+#[derive(Resource, Default)]
+pub struct PartitionPresenceByScene(pub bool);
 
 /// When set (headless servers only), the engine never joins realm-wide comms
 /// (archipelago / world room / preview ws-room) — scene rooms via per-scene

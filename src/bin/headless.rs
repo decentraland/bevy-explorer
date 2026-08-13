@@ -427,6 +427,9 @@ fn main() {
             // structural gate: the engine must never sign gatekeeper handshakes in
             // orchestrated mode — adapters are always minted by the trusted parent
             .insert_resource(comms::DisableSceneRoomGatekeeper(true))
+            // scenes here belong to different worlds: a scene must never observe a
+            // co-tenant room's players (docs/PRESENCE_ISOLATION.md)
+            .insert_resource(comms::PartitionPresenceByScene(true))
             .add_systems(
                 Update,
                 (
@@ -645,12 +648,13 @@ fn drain_permissions(mut manager: ResMut<PermissionManager>, config: Res<AppConf
 /// render-bound and omitted headless; without this, SDK getPlayer()/onEnterScene never
 /// see names or wearables.
 fn replicate_avatar_info(
-    updated_players: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
+    updated_players: Query<(Entity, Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
     mut global_state: ResMut<GlobalCrdtState>,
 ) {
-    for (player, profile) in &updated_players {
+    for (entity, player, profile) in &updated_players {
         let avatar = &profile.content.avatar;
-        global_state.update_crdt(
+        global_state.update_crdt_player(
+            entity,
             SceneComponentId::AVATAR_BASE,
             CrdtType::LWW_ANY,
             player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
@@ -666,7 +670,8 @@ fn replicate_avatar_info(
                     .unwrap_or(base_wearables::default_bodyshape_urn().to_string()),
             },
         );
-        global_state.update_crdt(
+        global_state.update_crdt_player(
+            entity,
             SceneComponentId::AVATAR_EQUIPPED_DATA,
             CrdtType::LWW_ANY,
             player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),

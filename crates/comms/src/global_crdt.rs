@@ -35,7 +35,10 @@ use dcl_component::{
     DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
 
-use crate::{movement_compressed::MovementCompressed, profile::ProfileMetaCache, Transport};
+use crate::{
+    movement_compressed::MovementCompressed, profile::ProfileMetaCache, PartitionPresenceByScene,
+    SceneRoom, Transport,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
@@ -76,6 +79,8 @@ impl Plugin for GlobalCrdtPlugin {
             lookup: Default::default(),
             realm_bounds: (IVec2::MAX, IVec2::MIN),
             localizers: Default::default(),
+            rooms: Default::default(),
+            player_rooms: Default::default(),
         });
 
         let (sender, _) = tokio::sync::broadcast::channel(1_000);
@@ -163,13 +168,30 @@ impl From<NonPlayerUpdate> for NetworkUpdate {
     }
 }
 
+/// Per-scene-room slice of foreign-player CRDT state (`PartitionPresenceByScene` mode).
+/// The `SceneEntityId` allocator and `Address→Entity` lookup stay global.
+struct RoomCrdt {
+    store: CrdtStore,
+    int_sender: broadcast::Sender<GlobalCrdtStateUpdate>,
+}
+
+impl Default for RoomCrdt {
+    fn default() -> Self {
+        let (int_sender, _) = broadcast::channel(1000);
+        Self {
+            store: Default::default(),
+            int_sender,
+        }
+    }
+}
+
 #[derive(Resource)]
 pub struct GlobalCrdtState {
     // receiver from sockets
     ext_receiver: mpsc::Receiver<NetworkUpdate>,
     // sender for sockets to post to
     ext_sender: mpsc::Sender<NetworkUpdate>,
-    // sender for broadcast updates
+    // sender for broadcast updates (client / non-partitioned path)
     int_sender: broadcast::Sender<GlobalCrdtStateUpdate>,
     context: CrdtContext,
     store: CrdtStore,
@@ -177,6 +199,11 @@ pub struct GlobalCrdtState {
     pub(crate) realm_bounds: (IVec2, IVec2),
     // per-component localizer registry (populated as components are first sent)
     localizers: HashMap<SceneComponentId, Localizer>,
+    // per-scene-hash CRDT slices; empty unless PartitionPresenceByScene
+    rooms: HashMap<String, RoomCrdt>,
+    // room slices each foreign player was written into — kept here because the
+    // transport (and its SceneRoom) may be gone by despawn time
+    player_rooms: HashMap<Entity, HashSet<String>>,
 }
 
 impl GlobalCrdtState {
@@ -192,9 +219,27 @@ impl GlobalCrdtState {
         scene_origin: bevy::prelude::Vec3,
     ) -> (CrdtStore, broadcast::Receiver<GlobalCrdtStateUpdate>) {
         let mut store = self.store.clone();
-        let origin = SceneOrigin(scene_origin);
+        self.localize_store(&mut store, scene_origin);
+        (store, self.int_sender.subscribe())
+    }
 
-        // Localize position-containing entries in the initial store snapshot
+    /// Partitioned subscribe: only the given scene room's players. The room slice is
+    /// created lazily so a scene that loads before anyone joins gets an empty view.
+    pub fn subscribe_room(
+        &mut self,
+        hash: &str,
+        scene_origin: bevy::prelude::Vec3,
+    ) -> (CrdtStore, broadcast::Receiver<GlobalCrdtStateUpdate>) {
+        let room = self.room_entry(hash);
+        let mut store = room.store.clone();
+        let receiver = room.int_sender.subscribe();
+        self.localize_store(&mut store, scene_origin);
+        (store, receiver)
+    }
+
+    // localize position-containing entries in an initial store snapshot
+    fn localize_store(&self, store: &mut CrdtStore, scene_origin: bevy::prelude::Vec3) {
+        let origin = SceneOrigin(scene_origin);
         for (component_id, localizer) in &self.localizers {
             if matches!(localizer, Localizer::None | Localizer::Unimplemented) {
                 continue;
@@ -207,8 +252,24 @@ impl GlobalCrdtState {
                 }
             }
         }
+    }
 
-        (store, self.int_sender.subscribe())
+    fn room_entry(&mut self, hash: &str) -> &mut RoomCrdt {
+        self.rooms.entry(hash.to_owned()).or_default()
+    }
+
+    // the store and sender an update should be written to: a room slice, or the global pair
+    fn slice(
+        &mut self,
+        room: Option<&str>,
+    ) -> (&mut CrdtStore, &broadcast::Sender<GlobalCrdtStateUpdate>) {
+        match room {
+            Some(hash) => {
+                let room = self.room_entry(hash);
+                (&mut room.store, &room.int_sender)
+            }
+            None => (&mut self.store, &self.int_sender),
+        }
     }
 
     pub fn set_bounds(&mut self, min: IVec2, max: IVec2) {
@@ -216,8 +277,11 @@ impl GlobalCrdtState {
         self.realm_bounds = (min, max);
     }
 
+    /// Write a component into the CRDT store and broadcast it. `room` = scene hash routes
+    /// to that room's slice (partitioned mode); `None` = the global store.
     pub fn update_crdt<T: GlobalCrdtData>(
         &mut self,
+        room: Option<&str>,
         component_id: SceneComponentId,
         crdt_type: CrdtType,
         id: SceneEntityId,
@@ -236,43 +300,78 @@ impl GlobalCrdtState {
 
         let mut buf = Vec::new();
         DclWriter::new(&mut buf).write(data);
+        let (store, sender) = self.slice(room);
         let timestamp =
-            self.store
-                .force_update(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)));
+            store.force_update(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)));
         let crdt_message = match crdt_type {
             CrdtType::LWW(_) => put_component(&id, &component_id, &timestamp, Some(&buf)),
             CrdtType::GO(_) => append_component(&id, &component_id, &buf),
         };
-        self.send_update(
+        Self::send_on(
+            sender,
             GlobalCrdtStateUpdate::Crdt(crdt_message, localizer),
             "foreign player",
         );
     }
 
-    pub fn delete_entity(&mut self, id: SceneEntityId) {
-        self.store.clean_up(&HashSet::from_iter(Some(id)));
+    /// Write a component for a player entity, fanning out to the room slices the player
+    /// is in. No recorded rooms (client path, or the local player) → the global store.
+    pub fn update_crdt_player<T: GlobalCrdtData>(
+        &mut self,
+        player: Entity,
+        component_id: SceneComponentId,
+        crdt_type: CrdtType,
+        id: SceneEntityId,
+        data: &T,
+    ) {
+        let rooms = self.player_rooms.get(&player).cloned().unwrap_or_default();
+        if rooms.is_empty() {
+            self.update_crdt(None, component_id, crdt_type, id, data);
+        } else {
+            for hash in &rooms {
+                self.update_crdt(Some(hash), component_id, crdt_type, id, data);
+            }
+        }
+    }
+
+    pub fn delete_entity(&mut self, room: Option<&str>, id: SceneEntityId) {
+        let (store, sender) = self.slice(room);
+        store.clean_up(&HashSet::from_iter(Some(id)));
         let crdt_message = delete_entity(&id);
-        self.send_update(
+        Self::send_on(
+            sender,
             GlobalCrdtStateUpdate::Crdt(crdt_message, Localizer::None),
             "foreign player",
         );
     }
 
     pub fn update_time(&mut self, time: f32) {
-        self.send_update(GlobalCrdtStateUpdate::Time(time), "time");
+        self.broadcast_shared(GlobalCrdtStateUpdate::Time(time), "time");
     }
 
     pub fn update_camera_fov(&mut self, fov_y: f32) {
-        self.send_update(GlobalCrdtStateUpdate::CameraFov(fov_y), "camera fov");
+        self.broadcast_shared(GlobalCrdtStateUpdate::CameraFov(fov_y), "camera fov");
+    }
+
+    // time/fov are not room-scoped: fan out to the global sender and every room sender
+    fn broadcast_shared(&self, update: GlobalCrdtStateUpdate, what: &str) {
+        Self::send_on(&self.int_sender, update.clone(), what);
+        for room in self.rooms.values() {
+            Self::send_on(&room.int_sender, update.clone(), what);
+        }
     }
 
     // a broadcast send fails exactly when there are no subscribers, which is the
     // normal state whenever no scenes are live — not an error, just nobody listening
-    fn send_update(&self, update: GlobalCrdtStateUpdate, what: &str) {
-        if self.int_sender.receiver_count() == 0 {
+    fn send_on(
+        sender: &broadcast::Sender<GlobalCrdtStateUpdate>,
+        update: GlobalCrdtStateUpdate,
+        what: &str,
+    ) {
+        if sender.receiver_count() == 0 {
             return;
         }
-        if let Err(e) = self.int_sender.send(update) {
+        if let Err(e) = sender.send(update) {
             error!("failed to send {what} update to scenes: {e}");
         }
     }
@@ -404,7 +503,16 @@ pub fn process_transport_updates(
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
     mut last_remote_anim: Local<HashMap<Entity, CachedRemoteAnim>>,
     discard_player_updates: Res<DiscardPlayerUpdates>,
+    partition: Res<PartitionPresenceByScene>,
+    scene_rooms: Query<&SceneRoom>,
 ) {
+    // partitioned mode: scene hash of the room an update arrived on; None = global path
+    let room_of = |transport: Entity| -> Option<String> {
+        if !partition.0 {
+            return None;
+        }
+        scene_rooms.get(transport).ok().map(|r| r.0.clone())
+    };
     // gather any event receivers
     for ev in subscribers.read() {
         match ev {
@@ -431,6 +539,8 @@ pub fn process_transport_updates(
                 if discard_player_updates.0 {
                     continue;
                 }
+                let room = room_of(update.transport_id);
+                let room = room.as_deref();
                 // create/update timestamp/transport_id on the foreign player
                 let (entity, scene_id, audio_channel) = if let Some((entity, scene_id, channel)) =
                     created_this_frame.get(&update.address)
@@ -452,6 +562,7 @@ pub fn process_transport_updates(
                     };
 
                     state.update_crdt(
+                        room,
                         SceneComponentId::PLAYER_IDENTITY_DATA,
                         CrdtType::LWW_ANY,
                         next_free,
@@ -500,6 +611,14 @@ pub fn process_transport_updates(
                     (new_entity, next_free, audio_sender)
                 };
 
+                if let Some(hash) = room {
+                    state
+                        .player_rooms
+                        .entry(entity)
+                        .or_default()
+                        .insert(hash.to_owned());
+                }
+
                 // process update
                 match update.message {
                     PlayerMessage::MetaData(str) => {
@@ -547,6 +666,7 @@ pub fn process_transport_updates(
                         //     .entity(entity)
                         //     .insert(dcl_transform.to_bevy_transform());
                         state.update_crdt(
+                            room,
                             SceneComponentId::TRANSFORM,
                             CrdtType::LWW_ANY,
                             scene_id,
@@ -608,6 +728,17 @@ pub fn process_transport_updates(
                     }
                     PlayerMessage::PlayerData(Message::Scene(scene)) => {
                         let address = format!("{:#x}", update.address);
+                        // a client may only address the scene owning its arrival room —
+                        // rejects cross-room bus injection via a forged scene_id
+                        if let Some(arrival_hash) = room {
+                            if scene.scene_id != arrival_hash {
+                                debug!(
+                                    "dropping cross-room bus message from {address}: declared scene {} != arrival room {arrival_hash}",
+                                    scene.scene_id
+                                );
+                                continue;
+                            }
+                        }
                         process_messagebus(
                             scene,
                             address,
@@ -647,6 +778,7 @@ pub fn process_transport_updates(
                         };
 
                         state.update_crdt(
+                            room,
                             SceneComponentId::TRANSFORM,
                             CrdtType::LWW_ANY,
                             scene_id,
@@ -718,6 +850,7 @@ pub fn process_transport_updates(
                         debug!("player: {:#x} -> {} -> {}", update.address, pos, vel);
 
                         state.update_crdt(
+                            room,
                             SceneComponentId::TRANSFORM,
                             CrdtType::LWW_ANY,
                             scene_id,
@@ -960,7 +1093,15 @@ fn despawn_players(
                 commands.despawn();
             }
 
-            state.delete_entity(player.scene_id);
+            // delete from the room slices this player was written into; empty = global
+            let rooms = state.player_rooms.remove(&entity).unwrap_or_default();
+            if rooms.is_empty() {
+                state.delete_entity(None, player.scene_id);
+            } else {
+                for hash in &rooms {
+                    state.delete_entity(Some(hash), player.scene_id);
+                }
+            }
             state.lookup.remove_by_right(&entity);
         }
     }

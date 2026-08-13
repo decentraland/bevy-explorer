@@ -893,6 +893,7 @@ fn broadcast_movement_info(
     debug!("broadcast {:?}", info.0);
 
     global_crdt.update_crdt(
+        None,
         SceneComponentId::AVATAR_MOVEMENT_INFO,
         CrdtType::LWW_ANY,
         SceneEntityId::PLAYER,

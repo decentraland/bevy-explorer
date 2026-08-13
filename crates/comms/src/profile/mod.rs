@@ -200,8 +200,9 @@ pub fn setup_primary_profile(
             // update cache
             cache.update(profile.clone());
 
-            // send to scenes
+            // send to scenes — the local player is visible to every scene (global store)
             global_crdt.update_crdt(
+                None,
                 SceneComponentId::PLAYER_IDENTITY_DATA,
                 CrdtType::LWW_ANY,
                 SceneEntityId::PLAYER,
@@ -343,7 +344,8 @@ fn request_missing_profiles(
             Ok(Some(profile)) => {
                 // catalyst fetch complete
                 if profile.version >= player.profile_version {
-                    global_crdt.update_crdt(
+                    global_crdt.update_crdt_player(
+                        ent,
                         SceneComponentId::PLAYER_IDENTITY_DATA,
                         CrdtType::LWW_ANY,
                         player.scene_id,
@@ -507,7 +509,8 @@ pub fn process_profile_events(
                         base_url: r.base_url.clone(),
                     };
 
-                    global_crdt.update_crdt(
+                    global_crdt.update_crdt_player(
+                        ev.sender,
                         SceneComponentId::PLAYER_IDENTITY_DATA,
                         CrdtType::LWW_ANY,
                         player.scene_id,
