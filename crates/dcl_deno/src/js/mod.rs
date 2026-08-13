@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-use bevy::log::{debug, error, info_span};
+use bevy::log::{debug, error, info_span, warn};
 use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
@@ -249,8 +249,9 @@ pub(crate) fn scene_thread(
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
+    let kill_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut guard = VM_HANDLES.lock().unwrap();
-    guard.insert(scene_id, vm_handle);
+    guard.insert(scene_id, (vm_handle, kill_flag.clone()));
     drop(guard);
 
     let state = runtime.op_state();
@@ -393,6 +394,16 @@ pub(crate) fn scene_thread(
             .run_us += thread_cpu_us().saturating_sub(run_start);
 
         if state.borrow().try_borrow::<ShuttingDown>().is_some() {
+            rt.block_on(async move {
+                drop(runtime);
+            });
+            return;
+        }
+
+        // killed by the renderer (wedged or despawned): exit instead of running
+        // another tick, which would re-enter a deterministic wedge
+        if kill_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            warn!("[{scene_id:?}] scene terminated by renderer; exiting");
             rt.block_on(async move {
                 drop(runtime);
             });

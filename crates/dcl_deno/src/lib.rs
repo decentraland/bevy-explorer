@@ -2,7 +2,10 @@ pub mod js;
 
 use std::{
     panic::{self, AssertUnwindSafe},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use bevy::{log::error, platform::collections::HashMap};
@@ -22,8 +25,24 @@ use dcl::{
 
 use crate::js::scene_thread;
 
-pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, IsolateHandle>>> =
+#[allow(clippy::type_complexity)]
+pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, (IsolateHandle, Arc<AtomicBool>)>>> =
     Lazy::new(Default::default);
+
+/// interrupt the scene's isolate even if it is stuck in a JS loop, so the scene
+/// thread unwinds and exits. no-op if the scene thread has already exited, or
+/// for a worker blocked inside a rust op (the termination takes effect when
+/// control returns to JS). the kill flag must be set as well as terminating:
+/// v8's termination request is consumed once the stack unwinds, and the scene
+/// loop doesn't exit on uncaught errors, so without the flag a deterministic
+/// wedge would just re-enter its loop on the next tick.
+pub fn terminate_scene(scene_id: SceneId) {
+    if let Some((handle, kill_flag)) = VM_HANDLES.lock().unwrap().get(&scene_id) {
+        bevy::log::warn!("[{scene_id:?}] scene thread still running after kill; force-terminating");
+        kill_flag.store(true, Ordering::SeqCst);
+        handle.terminate_execution();
+    }
+}
 
 /// must be called from main thread on linux before any isolates are created
 pub fn init_runtime() {
@@ -69,6 +88,8 @@ pub fn spawn_scene(
             if let Err(e) = thread_result {
                 error!("[{id:?}] caught scene thread panic: {e:?}");
             }
+
+            VM_HANDLES.lock().unwrap().remove(&id);
         })
         .unwrap();
 

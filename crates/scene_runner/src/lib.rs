@@ -431,6 +431,7 @@ fn update_scene_priority(
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
     containing_scene: ContainingScene,
+    mut commands: Commands,
 ) {
     updates.eligible_jobs = 0;
     updates.frames += 1;
@@ -460,6 +461,9 @@ fn update_scene_priority(
             context.broken = true;
             context.in_flight = false;
             updates.jobs_in_flight.remove(&ent);
+            // dropping the thread handle closes the scene's renderer channel, which
+            // signals the scene host to terminate the worker's isolate
+            commands.entity(ent).try_remove::<SceneThreadHandle>();
         }
     }
 
@@ -793,6 +797,7 @@ fn send_scene_updates(
     preview_mode: Res<PreviewMode>,
     mut buf: Local<Vec<u8>>,
     mut realm_info_cache: Local<RealmInfoCache>,
+    mut commands: Commands,
 ) {
     let updates = &mut *updates;
     let buf = &mut *buf;
@@ -1027,7 +1032,7 @@ fn send_scene_updates(
             context.base
         );
         context.broken = true;
-        // TODO: clean up
+        commands.entity(ent).try_remove::<SceneThreadHandle>();
     } else {
         context.in_flight = true;
         context.last_sent = time.elapsed_secs();
@@ -1091,6 +1096,7 @@ fn receive_scene_updates(
                         if let Ok(mut context) = scenes.get_mut(*root) {
                             context.broken = true;
                             context.in_flight = false;
+                            commands.entity(*root).try_remove::<SceneThreadHandle>();
                             let timestamp = context.total_runtime as f64 + 1.0;
                             error!("[{scene_id:?} @ {}] error: {message}", context.tick_number);
                             context.log(SceneLogMessage {
