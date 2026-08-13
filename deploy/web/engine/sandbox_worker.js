@@ -413,7 +413,7 @@ self.onmessage = async (event) => {
       // send any initial rpc requests
       ops.op_crdt_send_to_renderer([]);
 
-      // the initial send consumed the tick's batch allowance; give onStart its own
+      // the initial send drew on the tick's send allowance; give onStart a full one
       ops.op_set_elapsed(0);
 
       await module.onStart();
