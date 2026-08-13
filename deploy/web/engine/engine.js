@@ -232,15 +232,67 @@ export async function initEngine() {
   // Scenes killed before their worker reported in; the escalation arms on SCENE_READY.
   const pendingKills = new Set();
   const KILL_GRACE_MS = 5000;
+  // The main thread's raw wasm exports (set at init below); a forcibly terminated worker's
+  // TLS/stack live in the shared wasm memory and are reclaimed from here.
+  let wasmExports;
+
+  // killFlags layout (Int32Array over a per-worker SharedArrayBuffer, shared with the worker
+  // script — NOT with scene code, which can't see the worker's module scope):
+  //   [0] KILL: engine has decided to terminate; the worker's op wrapper parks instead of
+  //       entering the engine wasm
+  //   [1] IN_RUST: the worker is inside a wasm call (op wrapper / teardown)
+  //   [2] park target for Atomics.wait — never written
+  //   [3] DESTROY_CLAIM: CAS'd by whoever runs __wbindgen_thread_destroy for this thread,
+  //       so a worker tearing itself down and this side's force-path can't double-free
+  const KILL = 0, IN_RUST = 1, DESTROY_CLAIM = 3;
+
+  // Tier-2 forceful kill: a worker that ignored SHUTDOWN is stuck in a sync spin. A naive
+  // Worker.terminate() could land mid-op while the worker holds a lock inside the shared
+  // engine wasm memory (allocator, channel mutex) and corrupt the engine, so handshake
+  // first: set KILL, then wait for IN_RUST to clear. Once KILL is visible the op wrapper
+  // parks before entering rust, so IN_RUST == 0 means the worker can never re-enter — the
+  // spin is pure JS and terminate is safe. The worker's few unwrapped wasm calls all sit in
+  // its bounded init path (pre-scene-code), where a 20s-unresponsive scene cannot be.
+  const forceTerminate = (sceneId) => {
+    const entry = sandboxWorkers.get(sceneId);
+    if (!entry) return;
+    Atomics.store(entry.killFlags, KILL, 1);
+    const startedAt = performance.now();
+    const tryTerminate = () => {
+      // acked in the meantime — the worker got out on its own
+      if (!sandboxWorkers.get(sceneId)) return;
+      if (Atomics.load(entry.killFlags, IN_RUST) === 1) {
+        if (performance.now() - startedAt > 10000) {
+          console.error(`[Main JS] scene ${sceneId} is blocked inside engine wasm; leaving worker running`);
+          return;
+        }
+        setTimeout(tryTerminate, 100);
+        return;
+      }
+      if (Atomics.compareExchange(entry.killFlags, DESTROY_CLAIM, 0, 1) !== 0) {
+        // the worker is tearing itself down right now; its ack will clean up
+        return;
+      }
+      entry.worker.terminate();
+      try {
+        // wasm memory never shrinks — without this the dead thread's TLS + stack leak
+        wasmExports.__wbindgen_thread_destroy(entry.tls, entry.stackAlloc);
+      } catch (e) {
+        console.error(`[Main JS] failed to reclaim scene ${sceneId} thread state:`, e);
+      }
+      sandboxWorkers.delete(sceneId);
+      console.warn(`[Main JS] scene ${sceneId} forcibly terminated`);
+    };
+    // defer so a SHUTDOWN_COMPLETE already queued by the worker gets processed first
+    setTimeout(tryTerminate, 100);
+  };
 
   // Called from the engine when it drops a scene's handle (despawn, or the watchdog marking
   // it broken). The kill flag is already set in shared wasm memory, so a healthy scene needs
   // nothing from us: it exits at its next tick boundary and acks with SHUTDOWN_COMPLETE. No
   // ack within the grace period means the scene is wedged in an await — post SHUTDOWN so the
   // worker tears itself down from its event loop. A worker that ignores that too is stuck in
-  // a sync spin; forceful termination isn't implemented yet (Worker.terminate() needs an
-  // atomics handshake first — the worker shares the engine's wasm memory, and terminating
-  // mid-op while it holds a shared lock would corrupt the engine).
+  // a sync spin: forcefully terminate it (forceTerminate above).
   window.terminate_sandbox = (sceneId) => {
     const entry = sandboxWorkers.get(sceneId);
     if (!entry) {
@@ -251,7 +303,8 @@ export async function initEngine() {
       console.warn(`[Main JS] scene ${sceneId} still running after kill; posting SHUTDOWN`);
       entry.worker.postMessage({ type: "SHUTDOWN" });
       entry.timer = setTimeout(() => {
-        console.error(`[Main JS] scene ${sceneId} did not respond to SHUTDOWN (sync spin?); leaving worker running`);
+        console.error(`[Main JS] scene ${sceneId} did not respond to SHUTDOWN (sync spin?); force-terminating`);
+        forceTerminate(sceneId);
       }, KILL_GRACE_MS);
     }, KILL_GRACE_MS);
   };
@@ -294,11 +347,13 @@ export async function initEngine() {
         const sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
         sandboxWorker.onerror = workerCrashHandler("sandbox");
         const killToken = crypto.randomUUID();
+        const killFlags = new Int32Array(new SharedArrayBuffer(16));
         sandboxWorker.postMessage({
           type: "INIT_WORKER",
           payload: {
             compiledModule,
             sharedMemory,
+            killFlags: killFlags.buffer,
             // Set by host pages that want the super-user scene's BroadcastChannel names scoped
             // to this tab (react-web seeds it before booting — issue #1089). Left unset, channel
             // names stay bare — embedders like creator-hub's inspector share the bus with the
@@ -320,7 +375,13 @@ export async function initEngine() {
             spawn();
           }
           if (workerEvent.data.type === "SCENE_READY") {
-            sandboxWorkers.set(workerEvent.data.sceneId, { worker: sandboxWorker, timer: undefined });
+            sandboxWorkers.set(workerEvent.data.sceneId, {
+              worker: sandboxWorker,
+              timer: undefined,
+              killFlags,
+              tls: workerEvent.data.tls,
+              stackAlloc: workerEvent.data.stackAlloc,
+            });
             if (pendingKills.delete(workerEvent.data.sceneId)) {
               window.terminate_sandbox(workerEvent.data.sceneId);
             }
@@ -342,7 +403,7 @@ export async function initEngine() {
 
   // Step 3: Initialize engine
   setLoadingStepActive('init');
-  await init({ module_or_path: compiledModule, memory: sharedMemory });
+  wasmExports = await init({ module_or_path: compiledModule, memory: sharedMemory });
   console.log("[Main JS] Main application WebAssembly module initialized.");
 
   let res = await engine_init();

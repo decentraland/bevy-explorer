@@ -171,8 +171,22 @@ function createJsContext(wasmApi, context) {
         configurable: false,
         get() {
           return (...args) => {
-            // wrap ops to inject context arg
-            return wasmApi[exportName](context, ...args);
+            // Tier-2 handshake (see forceTerminate in engine.js): flag the wasm entry, and
+            // once the engine has decided to terminate this worker, park instead of entering
+            // — never throw, scene code could catch. IN_RUST-first ordering pairs with the
+            // engine's KILL-first + wait-for-IN_RUST==0, so a terminate can never land while
+            // this thread holds a lock inside the shared engine wasm.
+            Atomics.store(killFlags, IN_RUST, 1);
+            if (Atomics.load(killFlags, KILL) === 1) {
+              Atomics.store(killFlags, IN_RUST, 0);
+              Atomics.wait(killFlags, PARK, 0);
+            }
+            try {
+              // wrap ops to inject context arg
+              return wasmApi[exportName](context, ...args);
+            } finally {
+              Atomics.store(killFlags, IN_RUST, 0);
+            }
           };
         },
       });
@@ -347,6 +361,12 @@ function postToEngine(message) {
   postMessage({ ...message, killToken });
 }
 
+// Tier-2 handshake flags, shared with engine.js (layout documented there; the dummy is
+// replaced by the real SharedArrayBuffer from the INIT_WORKER payload). Module-scoped, so
+// scene code can't reach them.
+var killFlags = new Int32Array(new SharedArrayBuffer(16));
+const KILL = 0, IN_RUST = 1, PARK = 2, DESTROY_CLAIM = 3;
+
 // Single teardown for every exit path: the graceful loop exit, the scene-error exit, and
 // the engine's SHUTDOWN escalation. Posts the ack in all cases — it tells engine.js not to
 // escalate further, that this side already destroyed its wasm thread state, and to drop
@@ -355,12 +375,16 @@ var toreDown = false;
 function tearDown() {
   if (toreDown) return;
   toreDown = true;
-  if (wasm_init) {
+  // claim the thread-destroy against engine.js's force-terminate path (whoever wins the
+  // CAS does it); IN_RUST covers the wasm section so the engine never terminates mid-destroy
+  if (wasm_init && Atomics.compareExchange(killFlags, DESTROY_CLAIM, 0, 1) === 0) {
+    Atomics.store(killFlags, IN_RUST, 1);
     try {
       if (wasmContext !== undefined) wasm_init.drop_context(wasmContext);
     } catch (e) { }
     wasmContext = undefined;
     wasm_init.__wbindgen_thread_destroy();
+    Atomics.store(killFlags, IN_RUST, 0);
   }
   postToEngine({ type: "SHUTDOWN_COMPLETE", sceneId });
   self.close();
@@ -379,6 +403,7 @@ self.onmessage = async (event) => {
     const { compiledModule, sharedMemory } = event.data.payload;
     bridgeSession = event.data.payload.bridgeSession;
     killToken = event.data.payload.killToken;
+    killFlags = new Int32Array(event.data.payload.killFlags);
 
     if (!compiledModule || !sharedMemory) {
       console.error("[Sandbox Worker] Invalid payload received.");
@@ -435,9 +460,15 @@ self.onmessage = async (event) => {
 
     // report which scene this worker picked up (workers pop from a shared queue, so the
     // mapping isn't knowable at spawn time) — engine.js keeps a sceneId -> Worker map for
-    // kill escalation
+    // kill escalation. tls/stackAlloc are this thread's allocations in the shared wasm
+    // memory, so engine.js can reclaim them after a forceful terminate.
     sceneId = wasmContext.get_scene_id();
-    postToEngine({ type: "SCENE_READY", sceneId });
+    postToEngine({
+      type: "SCENE_READY",
+      sceneId,
+      tls: wasm_init.__tls_base.value,
+      stackAlloc: wasm_init.__stack_alloc.value,
+    });
 
     try {
       createJsContext(wasm_bindgen_exports, wasmContext);
