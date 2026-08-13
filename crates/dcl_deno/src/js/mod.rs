@@ -50,6 +50,7 @@ pub fn create_runtime(
     super_user: bool,
     storage_root: &str,
     preview: bool,
+    kill_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
     let net = deno_net::deno_net::init_ops_and_esm::<NP>(None, None);
@@ -189,6 +190,11 @@ pub fn create_runtime(
             if first_trip {
                 bevy::prelude::error!("scene exceeded its {MAX_SCENE_HEAP_BYTES}-byte heap cap; terminating the scene isolate");
             }
+            // termination alone only unwinds the current js: the heap stays rooted by the
+            // scene globals and the scene loop keeps ticking through uncaught errors, so it
+            // would re-trip this callback forever. the kill flag makes the loop exit, which
+            // drops the runtime and actually releases the heap.
+            kill_flag.store(true, std::sync::atomic::Ordering::SeqCst);
             terminate_handle.terminate_execution();
             if first_trip {
                 // one-time margin so the termination unwind can run rather than hard-aborting
@@ -244,12 +250,17 @@ pub(crate) fn scene_thread(
 ) {
     let scene_id = scene_context.scene_id;
     let preview = scene_context.preview;
-    let (mut runtime, inspector) =
-        create_runtime(inspect, super_user.is_some(), &storage_root, preview);
+    let kill_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (mut runtime, inspector) = create_runtime(
+        inspect,
+        super_user.is_some(),
+        &storage_root,
+        preview,
+        kill_flag.clone(),
+    );
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
-    let kill_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut guard = VM_HANDLES.lock().unwrap();
     guard.insert(scene_id, (vm_handle, kill_flag.clone()));
     drop(guard);
@@ -637,7 +648,8 @@ mod tests {
     /// is evaluated (`op_require("~scene.js")` -> `evalContext`). A `throw` in the scene
     /// surfaces as `Err`.
     fn run_scene(is_server: bool, scene_js: &str) -> Result<(), String> {
-        let (mut runtime, _) = create_runtime(false, false, "test-scene-realm", false);
+        let (mut runtime, _) =
+            create_runtime(false, false, "test-scene-realm", false, Default::default());
         {
             let state = runtime.op_state();
             let mut state = state.borrow_mut();
@@ -721,7 +733,13 @@ mod tests {
     /// authoritative server the option must be refused outright.
     #[test]
     fn server_refuses_a_scene_supplied_proxy() {
-        let (mut runtime, _) = create_runtime(false, false, "test-custom-client", false);
+        let (mut runtime, _) = create_runtime(
+            false,
+            false,
+            "test-custom-client",
+            false,
+            Default::default(),
+        );
         runtime.op_state().borrow_mut().put(context(true));
         let err = runtime
             .execute_script(
@@ -739,7 +757,13 @@ mod tests {
     /// own outbound TLS.
     #[test]
     fn server_refuses_scene_supplied_ca_certs() {
-        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-ca", false);
+        let (mut runtime, _) = create_runtime(
+            false,
+            false,
+            "test-custom-client-ca",
+            false,
+            Default::default(),
+        );
         runtime.op_state().borrow_mut().put(context(true));
         let err = runtime
             .execute_script(
@@ -757,7 +781,13 @@ mod tests {
     /// this restriction is server-only.
     #[test]
     fn client_still_allows_custom_clients() {
-        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-clientmode", false);
+        let (mut runtime, _) = create_runtime(
+            false,
+            false,
+            "test-custom-client-clientmode",
+            false,
+            Default::default(),
+        );
         runtime.op_state().borrow_mut().put(context(false));
         runtime
             .execute_script(
