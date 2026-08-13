@@ -160,7 +160,7 @@ export function fakeSession(): EngineSession {
     emotes: { list: [], open: false, toggle: vi.fn(), play: vi.fn(), equip: vi.fn() },
     backpack: { list: [], total: 0, loading: false, query: vi.fn(), equipped: [], open: false, toggle: vi.fn(), equip: vi.fn(), preview: vi.fn(), outfits: [], outfitSlots: 5, saveOutfit: vi.fn(), deleteOutfit: vi.fn(), equipOutfit: vi.fn() },
     communities: { list: [], open: false, toggle: vi.fn(), create: vi.fn(), join: vi.fn(), leave: vi.fn(), detail: null, loadDetail: vi.fn() },
-    map: { x: 0, y: 0, open: false, toggle: vi.fn(), teleport: vi.fn(), changeRealm: vi.fn() },
+    map: { x: 0, y: 0, open: false, toggle: vi.fn(), teleport: vi.fn(), changeRealm: vi.fn(), teleportToPlace: vi.fn() },
     minimap: { pose: { current: { x: 0, z: 0, yaw: 0, camYaw: 0 } }, isWorld: false, sceneTitle: '', setConfig: vi.fn() },
     places: { open: false, toggle: vi.fn() },
     gallery: { list: [], current: 0, max: 0, loaded: false, open: false, toggle: vi.fn(), metas: {}, loadPhoto: vi.fn(), remove: vi.fn() },

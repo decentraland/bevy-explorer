@@ -40,11 +40,14 @@ function GlobeGlyph(): React.JSX.Element {
   )
 }
 
+// An arrow entering a door frame (the "log in" glyph) — reads as "jump in" to a place. The
+// previous path drew a pencil-with-tip shape (a copy/paste of an edit icon), not an entry arrow.
 function JumpInGlyph(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M5 12l9-9 4 4-9 9-5 1z" />
-      <path d="M13 4l3 3M5 12l-1 7 7-1" />
+      <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4" />
+      <path d="M10 17l5-5-5-5" />
+      <path d="M15 12H3" />
     </svg>
   )
 }

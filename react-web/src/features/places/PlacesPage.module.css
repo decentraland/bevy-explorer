@@ -1,6 +1,6 @@
-/* Places browser body — "What's On" layout: Live Now + Featured highlight sections, then a toolbar
-   (section tabs + search + Any Category + Sort by) over a purple grid panel. Shared by the in-world
-   PlacesPage and the picker. */
+/* Places browser body — "What's On" layout: a toolbar (section tabs + search + Any Category +
+   Sort by) up top, then Live Now + Featured highlight sections, then a purple grid panel. Shared
+   by the in-world PlacesPage and the picker. */
 
 /* Live Now / Featured Places highlight sections. */
 .section {

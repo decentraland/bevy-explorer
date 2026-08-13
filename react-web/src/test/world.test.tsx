@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { act } from '@testing-library/react'
 import { renderSession, enterAsGuest } from './harness'
+import { DEFAULT_REALM } from '../features/engine/EngineHost'
 
 // DOMAIN: world — map state (parcel), teleport, microphone toggle/state.
 describe('world domain', () => {
@@ -23,6 +24,16 @@ describe('world domain', () => {
     await enterAsGuest(h)
     act(() => h.session().map.teleport(5, -3))
     expect(h.driver.last('teleport')).toEqual({ kind: 'teleport', x: 5, y: -3 })
+  })
+
+  // A place picked from a listing is a Genesis City parcel, so the realm travels with it — a bare
+  // teleport from inside a World would land on that world's own 5,-3.
+  it('teleporting to a place posts the parcel together with the Genesis realm', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    act(() => h.session().map.teleportToPlace(5, -3))
+    // The realm rides along; without it the scene would move the player inside the World.
+    expect(h.driver.last('teleport')).toEqual({ kind: 'teleport', realm: DEFAULT_REALM, x: 5, y: -3 })
   })
 
   it('sceneInfo drives the minimap title, and re-pushes as the player crosses scenes', async () => {
