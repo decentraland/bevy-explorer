@@ -13,7 +13,7 @@ use crate::{
     interface::{crdt_context::CrdtContext, CrdtType},
     js::{
         AllocatorContext, CommunicatedWithRenderer, CrdtSentThisTick, CrdtStoreNextCheck,
-        FilteredCrdtStore, RendererStore, SceneResponseSender, SceneStatsFlush, ShuttingDown,
+        FilteredCrdtStore, KillFlag, RendererStore, SceneResponseSender, SceneStatsFlush,
     },
     AllocError, CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResourceCounters, SceneResponse,
@@ -89,7 +89,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
     // Once flagged for shutdown the scene is inert: ingest nothing further and emit no
     // frames, so a scene that ignores the unwind can't keep growing the store or pushing
     // frames at a scene the renderer has already marked broken.
-    if op_state.has::<ShuttingDown>() {
+    if op_state.borrow::<KillFlag>().killed() {
         return;
     }
 
@@ -106,7 +106,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
                 scene_id,
                 "scene sent more than one CRDT batch in a tick".to_owned(),
             ));
-        op_state.put(ShuttingDown);
+        op_state.borrow::<KillFlag>().kill();
         return;
     }
     op_state.put(CrdtSentThisTick);
@@ -127,7 +127,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
                 scene_id,
                 format!("scene exceeded the {MAX_CRDT_BATCH_BYTES}-byte CRDT batch limit"),
             ));
-        op_state.put(ShuttingDown);
+        op_state.borrow::<KillFlag>().kill();
         return;
     }
 
@@ -229,7 +229,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
                     scene_id,
                     format!("scene exceeded the {MAX_CRDT_STORE_BYTES}-byte CRDT store limit"),
                 ));
-            op_state.put(ShuttingDown);
+            op_state.borrow::<KillFlag>().kill();
         } else {
             let headroom = (MAX_CRDT_STORE_BYTES - retained) as u64;
             op_state.put(CrdtStoreNextCheck(
@@ -250,9 +250,9 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
 
     // A scene flagged for shutdown must not park on the renderer channel — the renderer marks
     // it broken and never responds, which would leave the isolate resident until scene unload.
-    // Return an empty batch instead, so the tick unwinds to the scene loop, whose ShuttingDown
+    // Return an empty batch instead, so the tick unwinds to the scene loop, whose kill-flag
     // check tears the runtime down.
-    if op_state.borrow().has::<ShuttingDown>() {
+    if op_state.borrow().borrow::<KillFlag>().killed() {
         return Vec::new();
     }
 
@@ -439,7 +439,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                 "{}: shutting down",
                 std::thread::current().name().unwrap_or("(webworker)")
             );
-            op_state.put(ShuttingDown);
+            op_state.borrow::<KillFlag>().kill();
             Default::default()
         }
         // GetCrdtSnapshot is handled before this match in the loop above.

@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use common::structs::PrimaryUser;
 use dcl::interface::CrdtStore;
 use dcl_component::{SceneComponentId, SceneEntityId};
-use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, SceneThreadHandle};
+use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 
 use crate::snapshot::{
     AllocCallback, PendingEntityAllocations, PendingSnapshotRequests, SnapshotCallback,
@@ -18,7 +18,6 @@ pub struct ActiveInspectionScene(pub Option<Entity>);
 pub struct SceneResolver<'w, 's> {
     pub active: Res<'w, ActiveInspectionScene>,
     pub scenes: Query<'w, 's, (Entity, &'static mut RendererSceneContext)>,
-    pub handles: Query<'w, 's, &'static SceneThreadHandle>,
     pub containing_scene: ContainingScene<'w, 's>,
     pub player: Query<'w, 's, Entity, With<PrimaryUser>>,
 }
@@ -67,13 +66,10 @@ impl SceneResolver<'_, '_> {
     where
         F: FnOnce(&CrdtStore) + Send + Sync + 'static,
     {
-        let entity = self.resolve_entity()?;
-        let handle = self
-            .handles
-            .get(entity)
-            .map_err(|_| "scene has no thread handle".to_string())?;
-        handle
-            .sender
+        let (entity, context) = self.resolve()?;
+        context
+            .sender()
+            .ok_or_else(|| "scene has no thread handle".to_string())?
             .send(dcl::RendererResponse::GetCrdtSnapshot)
             .map_err(|_| "failed to send snapshot request to scene".to_string())?;
         pending.push(entity, Box::new(callback) as SnapshotCallback);
@@ -94,13 +90,10 @@ impl SceneResolver<'_, '_> {
     where
         F: FnOnce(&[Result<SceneEntityId, dcl::AllocError>]) + Send + Sync + 'static,
     {
-        let entity = self.resolve_entity()?;
-        let handle = self
-            .handles
-            .get(entity)
-            .map_err(|_| "scene has no thread handle".to_string())?;
-        handle
-            .sender
+        let (entity, context) = self.resolve()?;
+        context
+            .sender()
+            .ok_or_else(|| "scene has no thread handle".to_string())?
             .send(dcl::RendererResponse::AllocateEntity {
                 component_id,
                 data,

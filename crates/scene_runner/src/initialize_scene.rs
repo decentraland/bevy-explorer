@@ -44,7 +44,7 @@ use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets
 use crate::{
     bounds_calc::scene_regions,
     parcel_to_vec3,
-    renderer_context::{RendererSceneContext, FROZEN_BLOCK},
+    renderer_context::{RendererSceneContext, SceneState, FROZEN_BLOCK},
     update_world::{visibility::VisibilityComponent, ComponentTracker},
     vec3_to_parcel, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
     SceneThreadHandle,
@@ -712,16 +712,16 @@ pub(crate) fn initialize_scene(
             scene_origin,
         );
 
-        // mark context as in flight so we wait for initial RPC requests
-        context.in_flight = true;
         context.inspected = inspected;
         // set last_sent so the scene doesn't get extreme starvation priority
         // when it first becomes eligible after initialization completes
         context.last_sent = time.elapsed_secs();
+        // spawn in flight so we wait for initial RPC requests
+        context.state = SceneState::Live {
+            handle: SceneThreadHandle { sender: main_sx },
+            in_flight: true,
+        };
 
-        commands
-            .entity(root)
-            .try_insert((SceneThreadHandle { sender: main_sx },));
         commands.entity(root).remove::<SceneLoading>();
     }
 }
@@ -1630,7 +1630,7 @@ pub fn process_scene_lifecycle(
             }
         }
 
-        let still_loading = maybe_ctx.is_none_or(|ctx| ctx.tick_number <= 6 && !ctx.broken);
+        let still_loading = maybe_ctx.is_none_or(|ctx| ctx.tick_number <= 6 && !ctx.broken());
 
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {
@@ -1754,7 +1754,7 @@ fn animate_ready_scene(
         // or paused by the inspector. Without the frozen case, a scene frozen before tick 5 has its
         // (already-spawned) main.crdt content stuck underground and looks empty until unfrozen.
         let frozen = ctx.blocked.contains(FROZEN_BLOCK);
-        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken || frozen) {
+        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken() || frozen) {
             if transform.translation.y == -1000.0 {
                 for child in children.map(|c| c.iter()).unwrap_or_default() {
                     if loading_quads.get(child).is_ok() {
@@ -1938,7 +1938,7 @@ pub fn handle_live_scene_info(
                 .map(|v| dcl_component::proto_components::common::Vector2::from(v.as_vec2()))
                 .collect(),
             is_portable: ctx.is_portable,
-            is_broken: ctx.broken,
+            is_broken: ctx.broken(),
             is_blocked: !ctx.blocked.is_empty(),
             is_super: maybe_super.is_some(),
             sdk_version: ctx.sdk_version.to_string(),

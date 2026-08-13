@@ -60,8 +60,23 @@ mod response_channel {
 
 pub use response_channel::*;
 
-// marker to indicate shutdown has been triggered
-pub struct ShuttingDown;
+// signal that the scene should exit. set cooperatively by the ops (renderer channel
+// closed, contract-breach policy kills) or externally by the scene host (watchdog
+// kill, heap cap) — external setters pair it with v8 terminate_execution since the
+// scene may never run an op again. once set, the crdt ops go inert and the scene
+// loop tears the runtime down.
+#[derive(Clone, Default)]
+pub struct KillFlag(pub std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl KillFlag {
+    pub fn kill(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn killed(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
 
 pub struct RendererStore(pub CrdtStore);
 
@@ -165,6 +180,7 @@ pub fn init_state(
     global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
+    kill_flag: KillFlag,
 ) {
     // Allocator context: a parallel CrdtContext used solely for entity allocation. It's populated
     // with every entity (recognized + filtered) on the send path, but the scene's authored entities
@@ -214,6 +230,7 @@ pub fn init_state(
     state.put(TimeOfDay { time: 0. });
     state.put(CameraFov::default());
     state.put(dcl_component::SceneOrigin(scene_origin));
+    state.put(kill_flag);
     if let Some(super_user) = super_user {
         state.put(SuperUserScene(super_user));
     }
@@ -483,6 +500,7 @@ mod scene_log_budget_tests {
         s.put(crate::CrdtComponentInterfaces::default());
         s.put(crate::RpcCalls::default());
         s.put(SceneStatsFlush(0.0));
+        s.put(KillFlag::default());
         s
     }
 
@@ -507,7 +525,7 @@ mod scene_log_budget_tests {
             other => panic!("expected Error, got {other:?}"),
         }
         assert!(
-            state.borrow().has::<ShuttingDown>(),
+            state.borrow().borrow::<KillFlag>().killed(),
             "oversized batch must flag the scene for shutdown"
         );
         assert!(
@@ -518,7 +536,7 @@ mod scene_log_budget_tests {
         // the follow-up recv must not park on the renderer channel (the renderer marks the
         // scene broken and never responds): it returns an empty batch immediately — the test
         // state holds no renderer channel at all, so reaching for it would panic — letting
-        // the tick unwind to the scene loop's ShuttingDown check.
+        // the tick unwind to the scene loop's kill-flag check.
         let batch = futures_lite::future::block_on(super::engine::op_crdt_recv_from_renderer(
             state.clone(),
         ));
@@ -607,7 +625,7 @@ mod scene_log_budget_tests {
             other => panic!("expected Error, got {other:?}"),
         }
         assert!(
-            state.borrow().has::<ShuttingDown>(),
+            state.borrow().borrow::<KillFlag>().killed(),
             "a second send in one tick must flag the scene for shutdown"
         );
     }
@@ -626,7 +644,7 @@ mod scene_log_budget_tests {
             // what the scene loop does at each tick boundary
             state.borrow_mut().try_take::<CrdtSentThisTick>();
         }
-        assert!(!state.borrow().has::<ShuttingDown>());
+        assert!(!state.borrow().borrow::<KillFlag>().killed());
     }
 
     // A normal batch flows through untouched: an Ok frame is produced and the scene is not
@@ -645,7 +663,7 @@ mod scene_log_budget_tests {
             other => panic!("expected Ok, got {other:?}"),
         }
         assert!(
-            !state.borrow().has::<ShuttingDown>(),
+            !state.borrow().borrow::<KillFlag>().killed(),
             "a normal batch must not shut the scene down"
         );
     }

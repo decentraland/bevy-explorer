@@ -19,6 +19,10 @@ use std::{env, sync::Arc};
 use system_bridge::SystemApi;
 use tokio::io::AsyncReadExt;
 
+// how long a killed scene gets to exit cleanly (finish its in-flight tick after its
+// renderer channel closes) before its isolate is forcibly terminated
+const KILL_GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(5);
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("info")))
@@ -139,6 +143,15 @@ async fn scene_ipc_in(
             }
             EngineToScene::KillScene(id) => {
                 renderer_senders.remove(&id);
+                // dropping the sender lets a healthy scene finish its current tick and
+                // exit cleanly; force-terminate only if the thread is still around after
+                // a grace period (wedged in js, or stuck awaiting something external)
+                tokio::spawn(async move {
+                    tokio::time::sleep(KILL_GRACE_PERIOD).await;
+                    dcl_deno::terminate_scene(dcl::SceneId(bevy::ecs::entity::Entity::from_bits(
+                        id,
+                    )));
+                });
             }
             EngineToScene::SceneUpdate(id, renderer_response) => {
                 let Some(sender) = renderer_senders.get(&id) else {

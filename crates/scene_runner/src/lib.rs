@@ -56,7 +56,7 @@ use self::{
     initialize_scene::{
         LiveScenes, PointerResult, SceneLifecyclePlugin, SceneLoading, ScenePointers, PARCEL_SIZE,
     },
-    renderer_context::RendererSceneContext,
+    renderer_context::{RendererSceneContext, SceneState},
     update_scene::SceneInputPlugin,
     update_world::{CrdtExtractors, SceneOutputPlugin},
 };
@@ -111,7 +111,7 @@ impl SceneUpdates {
     }
 }
 
-#[derive(Component)]
+#[derive(Debug)]
 pub struct SceneThreadHandle {
     pub sender: tokio::sync::mpsc::UnboundedSender<RendererResponse>,
 }
@@ -440,6 +440,29 @@ fn update_scene_priority(
         .map(|(e, gt)| (containing_scene.get(e), gt.translation()))
         .unwrap_or_default();
 
+    // mark scenes that have been in-flight past the timeout as broken and free their
+    // slot, so a wedged scene worker can't hold a scene thread forever
+    let elapsed = time.elapsed_secs();
+    for (ent, _, mut context, _) in scenes.iter_mut() {
+        if context.in_flight()
+            && !context.inspected
+            && elapsed - context.last_sent
+                > renderer_context::SCENE_NOT_RESPONDING_TIMEOUT.as_secs_f32()
+        {
+            warn!(
+                "scene {} ({} @ {}) has not responded for {:.0}s, marking broken",
+                context.hash,
+                context.title,
+                context.base,
+                elapsed - context.last_sent
+            );
+            // dropping the thread handle closes the scene's renderer channel, which
+            // signals the scene host to terminate the worker's isolate
+            context.state = SceneState::Broken;
+            updates.jobs_in_flight.remove(&ent);
+        }
+    }
+
     // check all in-flight scenes still exist
     let mut missing_in_flight = updates.jobs_in_flight.clone();
 
@@ -453,10 +476,10 @@ fn update_scene_priority(
         .iter_mut()
         .filter(|(ent, _, context, maybe_super)| {
             missing_in_flight.remove(ent);
-            let allow = !context.in_flight
-                && !context.broken
+            let allow = !context.in_flight()
+                && !context.broken()
                 && (context.blocked.is_empty() || maybe_super.is_some());
-            if context.in_flight {
+            if context.in_flight() {
                 skipped_in_flight += 1;
             }
             if !allow {
@@ -464,8 +487,8 @@ fn update_scene_priority(
                     "skipping {ent} (@{}) on {:?}",
                     context.base,
                     (
-                        context.in_flight,
-                        context.broken,
+                        context.in_flight(),
+                        context.broken(),
                         &context.blocked,
                         maybe_super.is_some()
                     )
@@ -487,11 +510,11 @@ fn update_scene_priority(
             };
             let not_yet_run = context.last_sent < time.elapsed_secs();
 
-            if !context.in_flight && !not_yet_run {
+            if !context.in_flight() && !not_yet_run {
                 skipped_already_sent += 1;
             }
 
-            (!context.in_flight && not_yet_run).then(|| {
+            (!context.in_flight() && not_yet_run).then(|| {
                 updates.eligible_jobs += 1;
                 let priority =
                     FloatOrd(context.priority / (time.elapsed_secs() - context.last_sent));
@@ -752,7 +775,6 @@ fn send_scene_updates(
     mut scenes: Query<(
         Entity,
         &mut RendererSceneContext,
-        &SceneThreadHandle,
         &GlobalTransform,
         Has<SuperUserScene>,
     )>,
@@ -850,7 +872,12 @@ fn send_scene_updates(
 
     updates.scene_queue.pop_front();
 
-    let (_, mut context, handle, scene_transform, is_super) = scenes.get_mut(ent).unwrap();
+    let (_, mut context, scene_transform, is_super) = scenes.get_mut(ent).unwrap();
+
+    // only live scenes are queued, so this only fails if the scene broke this frame
+    let Some(sender) = context.sender().cloned() else {
+        return;
+    };
 
     // collect components
 
@@ -995,7 +1022,7 @@ fn send_scene_updates(
         died: std::mem::take(&mut context.outbound_died),
     };
 
-    if let Err(e) = handle.sender.send(RendererResponse::Ok(
+    if let Err(e) = sender.send(RendererResponse::Ok(
         context.crdt_store.take_updates(),
         census,
     )) {
@@ -1003,10 +1030,9 @@ fn send_scene_updates(
             "failed to send updates to scene {ent:?} [{:?}]: {e:?}",
             context.base
         );
-        context.broken = true;
-        // TODO: clean up
+        context.state = SceneState::Broken;
     } else {
-        context.in_flight = true;
+        context.set_in_flight(true);
         context.last_sent = time.elapsed_secs();
         dcl_assert!(!updates.jobs_in_flight.contains(&ent));
         updates.jobs_in_flight.insert(ent);
@@ -1066,8 +1092,7 @@ fn receive_scene_updates(
                 SceneResponse::Error(scene_id, message) => {
                     if let Some(root) = updates.scene_ids.get(&scene_id) {
                         if let Ok(mut context) = scenes.get_mut(*root) {
-                            context.broken = true;
-                            context.in_flight = false;
+                            context.state = SceneState::Broken;
                             let timestamp = context.total_runtime as f64 + 1.0;
                             error!("[{scene_id:?} @ {}] error: {message}", context.tick_number);
                             context.log(SceneLogMessage {
@@ -1092,47 +1117,59 @@ fn receive_scene_updates(
                         rpc_calls.len(),
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
-                        context.tick_number = context.tick_number.wrapping_add(1);
-                        if context
-                            .refreeze_at_tick
-                            .is_some_and(|t| context.tick_number >= t)
-                        {
-                            context.blocked.insert(renderer_context::FROZEN_BLOCK);
-                            context.refreeze_at_tick = None;
-                        }
-                        context.last_update_dt = runtime.0 - context.total_runtime;
-                        context.total_runtime = runtime.0;
-                        context.last_update_frame = frame.0;
-                        context.in_flight = false;
-                        // extend (not assign) so renderer-side births (the inspector's /new_entity
-                        // adds the freshly-allocated ids straight to `nascent`) aren't clobbered by
-                        // the scene's reported births. `nascent` is drained every lifecycle pass, so
-                        // this matches assignment for scene-reported births.
-                        context.nascent.extend(census.born);
-                        // Merge externally-queued deaths (e.g. /delete_entity) with
-                        // scene-reported deaths, draining the old set so entries are
-                        // only processed once.
-                        let mut died = census.died;
-                        died.extend(std::mem::take(&mut context.death_row));
-                        context.death_row = died;
-                        for message in messages.into_iter() {
-                            context.log(message);
-                        }
-                        // Sync scene timestamps into crdt_store so renderer writes (e.g.
-                        // /set_component) use a base timestamp that wins over the scene's current.
-                        // Must happen before updates_to_entity drains `crdt`.
-                        context.crdt_store.sync_lww_timestamps_from(&crdt);
+                        // this reply is the scene's in-flight tick coming back (a no-op for
+                        // broken scenes, whose state holds no in-flight bit)
+                        context.set_in_flight(false);
+                        if context.broken() {
+                            // drop late replies from a scene already marked broken so they
+                            // can't un-break it; still fall through to free the job slot
+                            debug!("[{scene_id:?}] discarding update for broken scene");
+                        } else {
+                            context.tick_number = context.tick_number.wrapping_add(1);
+                            if context
+                                .refreeze_at_tick
+                                .is_some_and(|t| context.tick_number >= t)
+                            {
+                                context.blocked.insert(renderer_context::FROZEN_BLOCK);
+                                context.refreeze_at_tick = None;
+                            }
+                            context.last_update_dt = runtime.0 - context.total_runtime;
+                            context.total_runtime = runtime.0;
+                            context.last_update_frame = frame.0;
+                            // extend (not assign) so renderer-side births (the inspector's /new_entity
+                            // adds the freshly-allocated ids straight to `nascent`) aren't clobbered by
+                            // the scene's reported births. `nascent` is drained every lifecycle pass, so
+                            // this matches assignment for scene-reported births.
+                            context.nascent.extend(census.born);
+                            // Merge externally-queued deaths (e.g. /delete_entity) with
+                            // scene-reported deaths, draining the old set so entries are
+                            // only processed once.
+                            let mut died = census.died;
+                            died.extend(std::mem::take(&mut context.death_row));
+                            context.death_row = died;
+                            for message in messages.into_iter() {
+                                context.log(message);
+                            }
+                            // Sync scene timestamps into crdt_store so renderer writes (e.g.
+                            // /set_component) use a base timestamp that wins over the scene's current.
+                            // Must happen before updates_to_entity drains `crdt`.
+                            context.crdt_store.sync_lww_timestamps_from(&crdt);
 
-                        let mut commands = commands.entity(*root);
-                        for (component_id, interface) in crdt_interfaces.0.iter() {
-                            interface.updates_to_entity(*component_id, &mut crdt, &mut commands);
-                        }
-                        // dcl_assert!(
-                        //     updates.jobs_in_flight.contains(root) || context.tick_number <= 2
-                        // );
+                            let mut commands = commands.entity(*root);
+                            for (component_id, interface) in crdt_interfaces.0.iter() {
+                                interface.updates_to_entity(
+                                    *component_id,
+                                    &mut crdt,
+                                    &mut commands,
+                                );
+                            }
+                            // dcl_assert!(
+                            //     updates.jobs_in_flight.contains(root) || context.tick_number <= 2
+                            // );
 
-                        for rpc_call in rpc_calls {
-                            rpc_call_events.write(rpc_call);
+                            for rpc_call in rpc_calls {
+                                rpc_call_events.write(rpc_call);
+                            }
                         }
                     } else {
                         debug!(

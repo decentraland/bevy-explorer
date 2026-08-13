@@ -9,8 +9,7 @@ use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     js::{
-        CommunicatedWithRenderer, CrdtSentThisTick, SceneResponseSender, ShuttingDown,
-        SuperUserScene,
+        CommunicatedWithRenderer, CrdtSentThisTick, KillFlag, SceneResponseSender, SuperUserScene,
     },
     RendererResponse, SceneElapsedTime,
 };
@@ -123,6 +122,7 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
         scene_initialization_data.global_update_receiver,
         scene_initialization_data.super_user,
         scene_initialization_data.scene_origin,
+        Default::default(),
     );
 
     local_storage::init(&context).await;
@@ -226,7 +226,7 @@ pub fn op_set_elapsed(state: &WorkerContext, elapsed: f32) {
 
 #[wasm_bindgen]
 pub fn op_continue_running(state: &WorkerContext) -> bool {
-    !state.state.borrow().has::<ShuttingDown>()
+    !state.state.borrow().borrow::<KillFlag>().killed()
 }
 
 #[wasm_bindgen]
