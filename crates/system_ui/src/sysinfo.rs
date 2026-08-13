@@ -279,7 +279,7 @@ fn update_scene_load_state(
             if loading_scenes.get(scene).is_ok() {
                 "Loading"
             } else if let Ok(scene) = running_scenes.get(scene) {
-                if scene.broken {
+                if scene.broken() {
                     "Broken"
                 } else if !scene.blocked.is_empty() {
                     "Blocked"
@@ -294,15 +294,15 @@ fn update_scene_load_state(
         let loading = loading_scenes.iter().count();
         let running = running_scenes
             .iter()
-            .filter(|context| !context.broken && context.blocked.is_empty())
+            .filter(|context| !context.broken() && context.blocked.is_empty())
             .count();
         let blocked = running_scenes
             .iter()
-            .filter(|context| !context.broken && !context.blocked.is_empty())
+            .filter(|context| !context.broken() && !context.blocked.is_empty())
             .count();
         let broken = running_scenes
             .iter()
-            .filter(|context| context.broken)
+            .filter(|context| context.broken())
             .count();
         let transports = transports.iter().count();
         let players = players.iter().count() + 1;
@@ -490,7 +490,7 @@ fn update_minimap(
     let sdk = scene.map(|(context, _)| context.sdk_version).unwrap_or("");
     let state = scene
         .map(|(context, gltf_count)| {
-            if context.broken {
+            if context.broken() {
                 "Broken".to_owned()
             } else if !context.blocked.is_empty() {
                 format!("Loading [{}]", gltf_count.map(|c| c.0).unwrap_or_default())

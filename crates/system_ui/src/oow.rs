@@ -43,7 +43,7 @@ fn get_scene_loading_info(
     if let Some((context, _)) = scene {
         let in_flight_for = now - context.last_sent;
         if pending_assets.unwrap_or(0) == 0
-            && context.in_flight
+            && context.in_flight()
             && in_flight_for >= SCENE_NOT_RESPONDING_DISPLAY_AFTER.as_secs_f32()
         {
             let remaining = (SCENE_NOT_RESPONDING_TIMEOUT.as_secs_f32() - in_flight_for).max(0.0);

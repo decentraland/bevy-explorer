@@ -156,10 +156,10 @@ pub fn handle_out_of_world(
         let frozen = context.blocked.contains(FROZEN_BLOCK);
         // A scene whose tick has been in-flight past the not-responding timeout is hung; stop
         // holding the player behind the loading screen and let them into the world.
-        let not_responding = context.in_flight
+        let not_responding = context.in_flight()
             && time.elapsed_secs() - context.last_sent > SCENE_NOT_RESPONDING_TIMEOUT.as_secs_f32();
         if !not_responding
-            && !context.broken
+            && !context.broken()
             && !frozen
             && (context.tick_number <= 5 || !context.blocked.is_empty())
         {

@@ -6,7 +6,7 @@ use common::{
 };
 use dcl::{
     interface::{CrdtStore, CrdtType},
-    SceneId, SceneLogMessage, SceneResourceCounters,
+    RendererResponse, SceneId, SceneLogMessage, SceneResourceCounters,
 };
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
 use scene_material::BoundRegion;
@@ -17,7 +17,7 @@ use crate::{
         mesh_collider::DisableCollisions,
         transform_and_parent::{ParentPositionSync, SceneProxyStage},
     },
-    ContainerEntity, SceneEntity, TargetParent,
+    ContainerEntity, SceneEntity, SceneThreadHandle, TargetParent,
 };
 
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
@@ -29,6 +29,23 @@ use crate::{
 // or if they are required for hierarchy parenting
 // TODO - consider Vec<Option<page>>
 type LiveEntityTable = Vec<(u16, Option<Entity>)>;
+
+// scene worker lifecycle. `Broken` consumes the thread handle, so marking a scene broken
+// structurally drops the renderer channel, which signals the scene host to terminate the
+// worker (after a grace period for an in-flight tick to complete). `in_flight` (a tick has
+// been sent and not yet answered) lives inside `Live` since only a live scene can have a
+// tick outstanding — `Init` and `Broken` scenes are never in flight by construction.
+#[derive(Debug, Default)]
+pub enum SceneState {
+    // scene thread not yet spawned
+    #[default]
+    Init,
+    Live {
+        handle: SceneThreadHandle,
+        in_flight: bool,
+    },
+    Broken,
+}
 
 // mapping from script entity -> bevy entity
 // note - be careful with size as this struct is moved into/out of js runtimes
@@ -74,10 +91,9 @@ pub struct RendererSceneContext {
     pub last_sent_camera_transform: Option<Transform>,
     // time of last updates to bevy world from scene
     pub last_update_frame: u32,
-    // currently running?
-    pub in_flight: bool,
-    // currently broken (record and keep for debug purposes and to avoid spamming reloads)
-    pub broken: bool,
+    // scene worker state; broken scenes are recorded and kept for debug purposes and to
+    // avoid spamming reloads
+    pub state: SceneState,
 
     pub crdt_store: CrdtStore,
 
@@ -134,6 +150,34 @@ pub const SCENE_NOT_RESPONDING_DISPLAY_AFTER: std::time::Duration =
     std::time::Duration::from_secs(2);
 
 impl RendererSceneContext {
+    pub fn broken(&self) -> bool {
+        matches!(self.state, SceneState::Broken)
+    }
+
+    pub fn sender(&self) -> Option<&tokio::sync::mpsc::UnboundedSender<RendererResponse>> {
+        match &self.state {
+            SceneState::Live { handle, .. } => Some(&handle.sender),
+            _ => None,
+        }
+    }
+
+    pub fn in_flight(&self) -> bool {
+        matches!(
+            self.state,
+            SceneState::Live {
+                in_flight: true,
+                ..
+            }
+        )
+    }
+
+    // no-op unless the scene is live: `Init` and `Broken` scenes have no in-flight bit
+    pub fn set_in_flight(&mut self, value: bool) {
+        if let SceneState::Live { in_flight, .. } = &mut self.state {
+            *in_flight = value;
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         scene_id: SceneId,
@@ -175,8 +219,7 @@ impl RendererSceneContext {
             last_sent_player_transform: None,
             last_sent_camera_transform: None,
             last_update_frame: 0,
-            in_flight: false,
-            broken: false,
+            state: SceneState::Init,
             priority,
             crdt_store: Default::default(),
             initial_crdt: None,

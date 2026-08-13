@@ -283,7 +283,7 @@ pub fn spawn_imposters(
             if ctx.is_portable {
                 return None;
             }
-            if !ctx.broken && (ctx.tick_number <= 5 || !ctx.blocked.is_empty()) {
+            if !ctx.broken() && (ctx.tick_number <= 5 || !ctx.blocked.is_empty()) {
                 // not ready
                 return None;
             }

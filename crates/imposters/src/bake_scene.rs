@@ -190,7 +190,7 @@ fn make_scene_oven(
         }
         let spawning_forever = tick.0 > start_tick.as_ref().unwrap().1 + 10000;
 
-        if context.tick_number < SCENE_BAKE_TICK && !context.broken && !spawning_forever {
+        if context.tick_number < SCENE_BAKE_TICK && !context.broken() && !spawning_forever {
             return;
         }
 
@@ -250,7 +250,7 @@ fn make_scene_oven(
         }
 
         context.blocked.insert("imposter_baking");
-        if context.in_flight && !context.broken && !spawning_forever {
+        if context.in_flight() && !spawning_forever {
             return;
         }
 

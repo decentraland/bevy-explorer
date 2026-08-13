@@ -588,7 +588,7 @@ fn supervisor(
     for ctx in scenes.iter() {
         count += 1;
         max_tick = max_tick.max(ctx.tick_number);
-        if ctx.broken {
+        if ctx.broken() {
             any_broken = true;
             error!("[headless] scene {} is broken", ctx.hash);
         }
@@ -949,7 +949,7 @@ fn drain_control_commands(
                 for ctx in scenes.iter() {
                     ctl_emit(&serde_json::json!({
                         "type": "scene-status", "scene": ctx.hash,
-                        "tick": ctx.tick_number, "broken": ctx.broken,
+                        "tick": ctx.tick_number, "broken": ctx.broken(),
                     }));
                 }
             }
@@ -1026,7 +1026,7 @@ fn emit_scene_status(
             live.insert(ctx.hash.clone());
             ctl_emit(&serde_json::json!({"type": "scene-live", "scene": ctx.hash}));
         }
-        if ctx.broken && !broken.contains(&ctx.hash) {
+        if ctx.broken() && !broken.contains(&ctx.hash) {
             broken.insert(ctx.hash.clone());
             ctl_emit(&serde_json::json!({"type": "scene-broken", "scene": ctx.hash}));
         }
@@ -1038,7 +1038,7 @@ fn emit_scene_status(
         for ctx in scenes.iter() {
             ctl_emit(&serde_json::json!({
                 "type": "scene-status", "scene": ctx.hash,
-                "tick": ctx.tick_number, "broken": ctx.broken,
+                "tick": ctx.tick_number, "broken": ctx.broken(),
             }));
         }
     }
