@@ -30,7 +30,6 @@ use dcl::{
 };
 use dcl_component::{
     proto_components::sdk::components::{PbMainCamera, PbRealmInfo, PbVisibilityComponent},
-    transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use ipfs::{
@@ -427,19 +426,6 @@ pub(crate) fn load_scene_javascript(
         let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
         let (mut initial_crdt, global_updates) = global_scene.subscribe(scene_origin);
 
-        // set the world origin (for parents of world-space entities, using world-space coords as local coords)
-        let mut buf = Vec::new();
-        DclWriter::new(&mut buf).write(&DclTransformAndParent::from_bevy_transform_and_parent(
-            &Transform::from_translation(Vec3::new(-initial_position.x, 0.0, initial_position.y)),
-            SceneEntityId::ROOT,
-        ));
-        initial_crdt.force_update(
-            SceneComponentId::TRANSFORM,
-            CrdtType::LWW_ANY,
-            SceneEntityId::WORLD_ORIGIN,
-            Some(&mut DclReader::new(&buf)),
-        );
-
         // set initial realm info
         let base_url = realm
             .about_url
@@ -463,7 +449,7 @@ pub(crate) fn load_scene_javascript(
             room: None,
             is_connected_scene_room: None,
         };
-        buf.clear();
+        let mut buf = Vec::new();
         DclWriter::new(&mut buf).write(&realm_info);
         initial_crdt.force_update(
             SceneComponentId::REALM_INFO,
