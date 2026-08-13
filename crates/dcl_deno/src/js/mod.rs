@@ -6,7 +6,7 @@ use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     js::{
-        engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, CrdtSentThisTick,
+        engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, CrdtSendsThisTick,
         KillFlag, SceneResponseSender, SuperUserScene,
     },
     RendererResponse, RpcCalls, SceneElapsedTime, SceneResourceCounters, SceneResponse,
@@ -331,8 +331,8 @@ pub(crate) fn scene_thread(
 
     // send any initial rpc requests
     crdt_send_to_renderer(state.clone(), &[]);
-    // the initial send consumed the tick's batch allowance; give onStart its own
-    state.borrow_mut().try_take::<CrdtSentThisTick>();
+    // the initial send drew on the tick's send allowance; give onStart a full one
+    state.borrow_mut().try_take::<CrdtSendsThisTick>();
 
     // run startup function
     let run_start = thread_cpu_us();
@@ -378,8 +378,8 @@ pub(crate) fn scene_thread(
         state
             .borrow_mut()
             .put(SceneElapsedTime(elapsed.as_secs_f32()));
-        // tick boundary: reset the one-batch-per-tick send allowance
-        state.borrow_mut().try_take::<CrdtSentThisTick>();
+        // tick boundary: reset the bounded per-tick send allowance
+        state.borrow_mut().try_take::<CrdtSendsThisTick>();
 
         // heap gauges: sampling walks the isolate's spaces, so cap it at ~once per 5s
         if last_heap_sample.is_none_or(|at| now.saturating_duration_since(at).as_secs() >= 5) {
