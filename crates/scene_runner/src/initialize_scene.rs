@@ -1388,12 +1388,20 @@ fn load_active_entities(
         let retrieved_parcels = match task_result {
             Ok(res) => {
                 *consecutive_fetch_fail_count = 0;
-                *fetch_count = (*fetch_count * 2).min(3200);
+                *fetch_count = (*fetch_count * 2).min(1000);
                 res
             }
             Err(e) => {
-                warn!("failed to retrieve active scenes, will retry");
+                warn!(
+                    "failed to retrieve active scenes ({} parcels), will retry",
+                    requested_parcels.len()
+                );
                 warn!("error: {e:?}");
+                // re-append the failed batch to the fetch end of the stored list so it is
+                // retried with the reduced fetch_count
+                stored_parcels
+                    .1
+                    .extend(requested_parcels.into_iter().map(|parcel| (0.0, parcel)));
                 *fetch_count = (*fetch_count / 2).max(100);
                 if *fetch_count == 100 {
                     *consecutive_fetch_fail_count += 1;
