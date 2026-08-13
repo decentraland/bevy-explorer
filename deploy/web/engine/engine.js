@@ -232,9 +232,6 @@ export async function initEngine() {
   // Scenes killed before their worker reported in; the escalation arms on SCENE_READY.
   const pendingKills = new Set();
   const KILL_GRACE_MS = 5000;
-  // The main thread's raw wasm exports (set at init below); a forcibly terminated worker's
-  // TLS/stack live in the shared wasm memory and are reclaimed from here.
-  let wasmExports;
 
   // killFlags layout (Int32Array over a per-worker SharedArrayBuffer, shared with the worker
   // script — NOT with scene code, which can't see the worker's module scope):
@@ -242,9 +239,7 @@ export async function initEngine() {
   //       entering the engine wasm
   //   [1] IN_RUST: the worker is inside a wasm call (op wrapper / teardown)
   //   [2] park target for Atomics.wait — never written
-  //   [3] DESTROY_CLAIM: CAS'd by whoever runs __wbindgen_thread_destroy for this thread,
-  //       so a worker tearing itself down and this side's force-path can't double-free
-  const KILL = 0, IN_RUST = 1, DESTROY_CLAIM = 3;
+  const KILL = 0, IN_RUST = 1;
 
   // Tier-2 forceful kill: a worker that ignored SHUTDOWN is stuck in a sync spin. A naive
   // Worker.terminate() could land mid-op while the worker holds a lock inside the shared
@@ -253,6 +248,10 @@ export async function initEngine() {
   // parks before entering rust, so IN_RUST == 0 means the worker can never re-enter — the
   // spin is pure JS and terminate is safe. The worker's few unwrapped wasm calls all sit in
   // its bounded init path (pre-scene-code), where a 20s-unresponsive scene cannot be.
+  //
+  // The dead thread's state in the shared wasm memory is deliberately leaked: a parked
+  // async op future may still reference it, and its waker can fire after the terminate
+  // (channel close, comms), so freeing the stack/TLS here would corrupt the engine.
   const forceTerminate = (sceneId) => {
     const entry = sandboxWorkers.get(sceneId);
     if (!entry) return;
@@ -269,19 +268,9 @@ export async function initEngine() {
         setTimeout(tryTerminate, 100);
         return;
       }
-      if (Atomics.compareExchange(entry.killFlags, DESTROY_CLAIM, 0, 1) !== 0) {
-        // the worker is tearing itself down right now; its ack will clean up
-        return;
-      }
       entry.worker.terminate();
-      try {
-        // wasm memory never shrinks — without this the dead thread's TLS + stack leak
-        wasmExports.__wbindgen_thread_destroy(entry.tls, entry.stackAlloc);
-      } catch (e) {
-        console.error(`[Main JS] failed to reclaim scene ${sceneId} thread state:`, e);
-      }
       sandboxWorkers.delete(sceneId);
-      console.warn(`[Main JS] scene ${sceneId} forcibly terminated`);
+      console.warn(`[Main JS] scene ${sceneId} forcibly terminated; thread state leaked`);
     };
     // defer so a SHUTDOWN_COMPLETE already queued by the worker gets processed first
     setTimeout(tryTerminate, 100);
@@ -391,8 +380,6 @@ export async function initEngine() {
               worker: sandboxWorker,
               timer: undefined,
               killFlags,
-              tls: workerEvent.data.tls,
-              stackAlloc: workerEvent.data.stackAlloc,
             });
             if (pendingKills.delete(workerEvent.data.sceneId)) {
               window.terminate_sandbox(workerEvent.data.sceneId);
@@ -416,7 +403,7 @@ export async function initEngine() {
 
   // Step 3: Initialize engine
   setLoadingStepActive('init');
-  wasmExports = await init({ module_or_path: compiledModule, memory: sharedMemory });
+  await init({ module_or_path: compiledModule, memory: sharedMemory });
   console.log("[Main JS] Main application WebAssembly module initialized.");
 
   let res = await engine_init();

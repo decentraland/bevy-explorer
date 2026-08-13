@@ -176,6 +176,13 @@ impl WorkerContext {
             .to_bits()
     }
 
+    /// live references to the scene state: 1 = only this context, +1 per in-flight or
+    /// parked op future (every op clones via rc()). teardown is safe to free the state
+    /// only once this drains to 1.
+    pub fn ref_count(&self) -> usize {
+        Rc::strong_count(&self.state)
+    }
+
     pub(crate) fn rc(&self) -> Rc<RefCell<GothamState>> {
         self.state.clone()
     }

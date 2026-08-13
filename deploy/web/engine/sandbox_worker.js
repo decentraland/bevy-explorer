@@ -367,33 +367,63 @@ function postToEngine(message) {
 // replaced by the real SharedArrayBuffer from the INIT_WORKER payload). Module-scoped, so
 // scene code can't reach them.
 var killFlags = new Int32Array(new SharedArrayBuffer(16));
-const KILL = 0, IN_RUST = 1, PARK = 2, DESTROY_CLAIM = 3;
+const KILL = 0, IN_RUST = 1, PARK = 2;
 
 // Single teardown for every exit path: the graceful loop exit, the scene-error exit, and
 // the engine's SHUTDOWN escalation. Posts the ack in all cases — it tells engine.js not to
-// escalate further, that this side already destroyed its wasm thread state, and to drop
-// its worker map entry.
+// escalate further and to drop its worker map entry.
+//
+// The state can only be freed once nothing else references it: async ops hold a state
+// reference (and the context wrapper's borrow) for as long as their future lives. The
+// engine has already closed the channels and set the kill flag by the time this runs, so
+// parked ops resume, complete inertly and drop their references — wait for that (bounded,
+// under engine.js's escalation grace). A future awaiting something that never resolves
+// keeps its reference forever; then freeing this thread's stack/TLS would corrupt the
+// engine when the future's waker later fires, so leak the thread state instead.
+const DRAIN_TIMEOUT_MS = 4000;
 var toreDown = false;
 function tearDown() {
   if (toreDown) return;
   toreDown = true;
-  // claim the thread-destroy against engine.js's force-terminate path (whoever wins the
-  // CAS does it); IN_RUST covers the wasm section so the engine never terminates mid-destroy
-  if (wasm_init) {
-    if (Atomics.compareExchange(killFlags, DESTROY_CLAIM, 0, 1) === 0) {
-      Atomics.store(killFlags, IN_RUST, 1);
-      try {
-        if (wasmContext !== undefined) wasm_bindgen_exports.drop_context(wasmContext);
-      } catch (e) {
-        // scene state can't be freed (something still holds it); the thread still dies
-        console.error(`[Sandbox Worker] scene ${sceneId}: error dropping scene context:`, e);
-      }
-      wasmContext = undefined;
-      wasm_init.__wbindgen_thread_destroy();
-      Atomics.store(killFlags, IN_RUST, 0);
-    } else {
-      console.warn(`[Sandbox Worker] scene ${sceneId}: thread-destroy already claimed by the engine; skipping`);
+  if (!wasm_init || wasmContext === undefined) {
+    finishTearDown(wasm_init !== undefined);
+    return;
+  }
+  const startedAt = performance.now();
+  const drain = () => {
+    // IN_RUST covers every wasm call here so the engine never terminates mid-call
+    Atomics.store(killFlags, IN_RUST, 1);
+    const refs = wasmContext.ref_count();
+    Atomics.store(killFlags, IN_RUST, 0);
+    if (refs > 1 && performance.now() - startedAt < DRAIN_TIMEOUT_MS) {
+      setTimeout(drain, 100);
+      return;
     }
+    if (refs > 1) {
+      console.warn(`[Sandbox Worker] scene ${sceneId}: ${refs - 1} op future(s) still hold scene state after ${DRAIN_TIMEOUT_MS}ms`);
+    }
+    Atomics.store(killFlags, IN_RUST, 1);
+    let stateFreed = false;
+    try {
+      wasm_bindgen_exports.drop_context(wasmContext);
+      stateFreed = true;
+    } catch (e) {
+      console.error(`[Sandbox Worker] scene ${sceneId}: error dropping scene context:`, e);
+    }
+    wasmContext = undefined;
+    Atomics.store(killFlags, IN_RUST, 0);
+    finishTearDown(stateFreed);
+  };
+  drain();
+}
+
+function finishTearDown(destroyThread) {
+  if (destroyThread) {
+    Atomics.store(killFlags, IN_RUST, 1);
+    wasm_init.__wbindgen_thread_destroy();
+    Atomics.store(killFlags, IN_RUST, 0);
+  } else if (wasm_init) {
+    console.warn(`[Sandbox Worker] scene ${sceneId}: scene state still in use; leaking thread state`);
   }
   console.debug(`[Sandbox Worker] scene ${sceneId}: teardown complete`);
   postToEngine({ type: "SHUTDOWN_COMPLETE", sceneId });
@@ -470,15 +500,9 @@ self.onmessage = async (event) => {
 
     // report which scene this worker picked up (workers pop from a shared queue, so the
     // mapping isn't knowable at spawn time) — engine.js keeps a sceneId -> Worker map for
-    // kill escalation. tls/stackAlloc are this thread's allocations in the shared wasm
-    // memory, so engine.js can reclaim them after a forceful terminate.
+    // kill escalation
     sceneId = wasmContext.get_scene_id();
-    postToEngine({
-      type: "SCENE_READY",
-      sceneId,
-      tls: wasm_init.__tls_base.value,
-      stackAlloc: wasm_init.__stack_alloc.value,
-    });
+    postToEngine({ type: "SCENE_READY", sceneId });
 
     try {
       createJsContext(wasm_bindgen_exports, wasmContext);
