@@ -383,7 +383,7 @@ function tearDown() {
     if (Atomics.compareExchange(killFlags, DESTROY_CLAIM, 0, 1) === 0) {
       Atomics.store(killFlags, IN_RUST, 1);
       try {
-        if (wasmContext !== undefined) wasm_init.drop_context(wasmContext);
+        if (wasmContext !== undefined) wasm_bindgen_exports.drop_context(wasmContext);
       } catch (e) {
         // scene state can't be freed (something still holds it); the thread still dies
         console.error(`[Sandbox Worker] scene ${sceneId}: error dropping scene context:`, e);
