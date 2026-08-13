@@ -110,6 +110,11 @@
   gap: 18px;
   align-content: start;
 }
+/* Fixed 4-up row: auto-fill would take the column count from the viewport (3 at 1440px, 7 at 2560px).
+   minmax(0, 1fr) keeps a long title/world pill from widening its track. */
+.gridLive {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 
 .center {
   display: flex;
