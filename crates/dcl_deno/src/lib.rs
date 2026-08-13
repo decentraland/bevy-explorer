@@ -2,10 +2,7 @@ pub mod js;
 
 use std::{
     panic::{self, AssertUnwindSafe},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
+    sync::Mutex,
 };
 
 use bevy::{log::error, platform::collections::HashMap};
@@ -19,14 +16,13 @@ use ipfs::SceneJsFile;
 
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
-    js::SceneResponseSender,
+    js::{KillFlag, SceneResponseSender},
     RendererResponse, SceneId,
 };
 
 use crate::js::scene_thread;
 
-#[allow(clippy::type_complexity)]
-pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, (IsolateHandle, Arc<AtomicBool>)>>> =
+pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, (IsolateHandle, KillFlag)>>> =
     Lazy::new(Default::default);
 
 /// interrupt the scene's isolate even if it is stuck in a JS loop, so the scene
@@ -39,7 +35,7 @@ pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, (IsolateHandle, Arc<At
 pub fn terminate_scene(scene_id: SceneId) {
     if let Some((handle, kill_flag)) = VM_HANDLES.lock().unwrap().get(&scene_id) {
         bevy::log::warn!("[{scene_id:?}] scene thread still running after kill; force-terminating");
-        kill_flag.store(true, Ordering::SeqCst);
+        kill_flag.kill();
         handle.terminate_execution();
     }
 }

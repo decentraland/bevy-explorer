@@ -1,13 +1,13 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-use bevy::log::{debug, error, info_span, warn};
+use bevy::log::{debug, error, info_span};
 use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     js::{
         engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, CrdtSentThisTick,
-        SceneResponseSender, ShuttingDown, SuperUserScene,
+        KillFlag, SceneResponseSender, SuperUserScene,
     },
     RendererResponse, RpcCalls, SceneElapsedTime, SceneResourceCounters, SceneResponse,
 };
@@ -50,7 +50,7 @@ pub fn create_runtime(
     super_user: bool,
     storage_root: &str,
     preview: bool,
-    kill_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    kill_flag: KillFlag,
 ) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
     let net = deno_net::deno_net::init_ops_and_esm::<NP>(None, None);
@@ -194,7 +194,7 @@ pub fn create_runtime(
             // scene globals and the scene loop keeps ticking through uncaught errors, so it
             // would re-trip this callback forever. the kill flag makes the loop exit, which
             // drops the runtime and actually releases the heap.
-            kill_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            kill_flag.kill();
             terminate_handle.terminate_execution();
             if first_trip {
                 // one-time margin so the termination unwind can run rather than hard-aborting
@@ -250,7 +250,7 @@ pub(crate) fn scene_thread(
 ) {
     let scene_id = scene_context.scene_id;
     let preview = scene_context.preview;
-    let kill_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let kill_flag = KillFlag::default();
     let (mut runtime, inspector) = create_runtime(
         inspect,
         super_user.is_some(),
@@ -278,6 +278,7 @@ pub(crate) fn scene_thread(
         global_update_receiver,
         super_user,
         scene_origin,
+        kill_flag.clone(),
     );
 
     let span = info_span!("js startup").entered();
@@ -404,17 +405,12 @@ pub(crate) fn scene_thread(
             .borrow_mut::<SceneResourceCounters>()
             .run_us += thread_cpu_us().saturating_sub(run_start);
 
-        if state.borrow().try_borrow::<ShuttingDown>().is_some() {
-            rt.block_on(async move {
-                drop(runtime);
-            });
-            return;
-        }
-
-        // killed by the renderer (wedged or despawned): exit instead of running
-        // another tick, which would re-enter a deterministic wedge
-        if kill_flag.load(std::sync::atomic::Ordering::SeqCst) {
-            warn!("[{scene_id:?}] scene terminated by renderer; exiting");
+        // set cooperatively by the ops (renderer channel closed, policy kill) or
+        // externally with terminate_execution (watchdog kill, heap cap); either way
+        // exit instead of running another tick, which for a terminated scene would
+        // re-enter a deterministic wedge
+        if kill_flag.killed() {
+            debug!("[{scene_id:?}] scene loop exiting");
             rt.block_on(async move {
                 drop(runtime);
             });
