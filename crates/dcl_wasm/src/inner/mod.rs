@@ -33,6 +33,7 @@ pub struct SceneInitializationData {
     pub storage_root: String,
     pub super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     pub scene_origin: bevy::prelude::Vec3,
+    pub kill_flag: KillFlag,
 }
 
 // Static storage shared data
@@ -57,9 +58,15 @@ pub fn spawn_scene(
     _inspect: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
-) -> UnboundedSender<RendererResponse> {
+) -> (
+    UnboundedSender<RendererResponse>,
+    Option<tokio::sync::oneshot::Sender<()>>,
+) {
+    let scene_id = scene_context.scene_id;
     // create engine channel
     let (thread_sx, thread_rx) = unbounded_channel();
+    let kill_flag = KillFlag::default();
+    let (kill_guard, killed) = tokio::sync::oneshot::channel();
 
     IoTaskPool::get()
         .spawn(async move {
@@ -80,14 +87,23 @@ pub fn spawn_scene(
                     storage_root,
                     super_user,
                     scene_origin,
+                    kill_flag: kill_flag.clone(),
                 });
 
             // spin up a scene thread to consume it
-            spawn_and_init_sandbox().await
+            spawn_and_init_sandbox().await;
+
+            // the guard is never sent on; this resolves when the engine drops the
+            // scene handle. set the kill flag (shared wasm memory, so the worker sees
+            // it at its next tick boundary and tears itself down), and hand engine.js
+            // the job of escalating if that doesn't happen
+            let _ = killed.await;
+            kill_flag.kill();
+            terminate_sandbox(scene_id.0.to_bits());
         })
         .detach();
 
-    thread_sx
+    (thread_sx, Some(kill_guard))
 }
 
 use wasm_bindgen::prelude::*;
@@ -97,6 +113,8 @@ use wasm_bindgen::prelude::*;
 extern "C" {
     #[wasm_bindgen(js_name = spawn_and_init_sandbox)]
     async fn spawn_and_init_sandbox();
+    #[wasm_bindgen(js_name = terminate_sandbox)]
+    fn terminate_sandbox(scene_id: u64);
 }
 
 #[wasm_bindgen]
@@ -124,7 +142,7 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
         scene_initialization_data.global_update_receiver,
         scene_initialization_data.super_user,
         scene_initialization_data.scene_origin,
-        Default::default(),
+        scene_initialization_data.kill_flag,
     );
 
     local_storage::init(&context).await;
@@ -147,6 +165,15 @@ impl WorkerContext {
 
     pub fn get_scene_title(&self) -> String {
         self.state.borrow().borrow::<CrdtContext>().title.clone()
+    }
+
+    pub fn get_scene_id(&self) -> u64 {
+        self.state
+            .borrow()
+            .borrow::<CrdtContext>()
+            .scene_id
+            .0
+            .to_bits()
     }
 
     pub(crate) fn rc(&self) -> Rc<RefCell<GothamState>> {

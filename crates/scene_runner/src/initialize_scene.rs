@@ -697,7 +697,7 @@ pub(crate) fn initialize_scene(
             server_mode(),
         );
 
-        let main_sx = spawn_scene(
+        let (main_sx, kill_guard) = spawn_scene(
             context.crdt_store.clone(),
             scene_context,
             crdt_context.to_bits(),
@@ -717,7 +717,10 @@ pub(crate) fn initialize_scene(
         context.last_sent = time.elapsed_secs();
         // spawn in flight so we wait for initial RPC requests
         context.state = SceneState::Live {
-            handle: SceneThreadHandle { sender: main_sx },
+            handle: SceneThreadHandle {
+                sender: main_sx,
+                kill_guard,
+            },
             in_flight: true,
         };
 

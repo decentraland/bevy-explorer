@@ -224,6 +224,38 @@ export async function initEngine() {
     }
   };
 
+  // Live sandbox workers by scene id (BigInt), for kill escalation — see terminate_sandbox.
+  // Entries are added on SCENE_READY (a worker reports which scene it popped from the shared
+  // queue) and removed on SHUTDOWN_COMPLETE (the worker's dying ack, posted on every exit
+  // path just before it closes itself).
+  const sandboxWorkers = new Map();
+  // Scenes killed before their worker reported in; the escalation arms on SCENE_READY.
+  const pendingKills = new Set();
+  const KILL_GRACE_MS = 5000;
+
+  // Called from the engine when it drops a scene's handle (despawn, or the watchdog marking
+  // it broken). The kill flag is already set in shared wasm memory, so a healthy scene needs
+  // nothing from us: it exits at its next tick boundary and acks with SHUTDOWN_COMPLETE. No
+  // ack within the grace period means the scene is wedged in an await — post SHUTDOWN so the
+  // worker tears itself down from its event loop. A worker that ignores that too is stuck in
+  // a sync spin; forceful termination isn't implemented yet (Worker.terminate() needs an
+  // atomics handshake first — the worker shares the engine's wasm memory, and terminating
+  // mid-op while it holds a shared lock would corrupt the engine).
+  window.terminate_sandbox = (sceneId) => {
+    const entry = sandboxWorkers.get(sceneId);
+    if (!entry) {
+      pendingKills.add(sceneId);
+      return;
+    }
+    entry.timer = setTimeout(() => {
+      console.warn(`[Main JS] scene ${sceneId} still running after kill; posting SHUTDOWN`);
+      entry.worker.postMessage({ type: "SHUTDOWN" });
+      entry.timer = setTimeout(() => {
+        console.error(`[Main JS] scene ${sceneId} did not respond to SHUTDOWN (sync spin?); leaving worker running`);
+      }, KILL_GRACE_MS);
+    }, KILL_GRACE_MS);
+  };
+
   // Setup sandbox worker spawn callback
   window.spawn_and_init_sandbox = async () => {
     var timeoutId;
@@ -253,12 +285,15 @@ export async function initEngine() {
       // Payload goes out unprompted — a worker queues messages posted before it has a listener,
       // so nothing needs to ask for it. Scene code shares this worker's realm and reaches the
       // real worker global (bare `postMessage` is the platform's, not ours), so any request we
-      // honoured would be forgeable, and sharedMemory is the engine heap. The handler drops at
-      // INIT_COMPLETE, which the worker posts before it builds the js context: this side is not
-      // listening while scene code runs.
+      // honoured would be forgeable, and sharedMemory is the engine heap. This side keeps
+      // listening while scene code runs (for the SCENE_READY / SHUTDOWN_COMPLETE kill-tracking
+      // messages), so every message the worker script posts carries killToken — a per-worker
+      // secret held in the worker's module scope, where scene code can't see it — and anything
+      // without it is dropped as a forgery.
       const spawn = () => {
         const sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
         sandboxWorker.onerror = workerCrashHandler("sandbox");
+        const killToken = crypto.randomUUID();
         sandboxWorker.postMessage({
           type: "INIT_WORKER",
           payload: {
@@ -270,11 +305,12 @@ export async function initEngine() {
             // scene from a DIFFERENT document (parent of the engine iframe), which can't see
             // this window's session id.
             bridgeSession: window.__bridgeSession,
+            killToken,
           },
         });
         sandboxWorker.onmessage = (workerEvent) => {
+          if (workerEvent.data.killToken !== killToken) return;
           if (workerEvent.data.type === "INIT_COMPLETE") {
-            sandboxWorker.onmessage = null;
             resolve();
           }
           if (workerEvent.data.type === "INIT_FAILED") {
@@ -282,6 +318,19 @@ export async function initEngine() {
             sandboxWorker.onmessage = null;
             console.log("[Main JS] Sandbox init failed; retrying");
             spawn();
+          }
+          if (workerEvent.data.type === "SCENE_READY") {
+            sandboxWorkers.set(workerEvent.data.sceneId, { worker: sandboxWorker, timer: undefined });
+            if (pendingKills.delete(workerEvent.data.sceneId)) {
+              window.terminate_sandbox(workerEvent.data.sceneId);
+            }
+          }
+          if (workerEvent.data.type === "SHUTDOWN_COMPLETE") {
+            const entry = sandboxWorkers.get(workerEvent.data.sceneId);
+            if (entry && entry.worker === sandboxWorker) {
+              clearTimeout(entry.timer);
+              sandboxWorkers.delete(workerEvent.data.sceneId);
+            }
           }
         };
       };

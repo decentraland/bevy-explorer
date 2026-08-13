@@ -374,7 +374,10 @@ pub fn spawn_scene(
     inspect: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
-) -> tokio::sync::mpsc::UnboundedSender<RendererResponse> {
+) -> (
+    tokio::sync::mpsc::UnboundedSender<RendererResponse>,
+    Option<tokio::sync::oneshot::Sender<()>>,
+) {
     let is_super = super_user.is_some();
     let id = scene_context.scene_id;
 
@@ -383,7 +386,7 @@ pub fn spawn_scene(
     let ipc_out = NEW_SCENE_SENDER.read().unwrap();
     let Some(ipc_out) = ipc_out.as_ref() else {
         error!("scene {id:?} not started: ipc runtime is not initialized");
-        return main_sx;
+        return (main_sx, None);
     };
 
     if let Err(e) = ipc_out.send(NewSceneCommand {
@@ -407,7 +410,7 @@ pub fn spawn_scene(
         error!("scene {id:?} not started: ipc channel closed ({e})");
     }
 
-    main_sx
+    (main_sx, None)
 }
 
 pub async fn write_msg<T: Serialize>(stream: &mut SendHalf, value: &T) {

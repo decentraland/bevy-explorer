@@ -114,6 +114,10 @@ impl SceneUpdates {
 #[derive(Debug)]
 pub struct SceneThreadHandle {
     pub sender: tokio::sync::mpsc::UnboundedSender<RendererResponse>,
+    // never sent on; dropping it with the handle is the kill signal the scene host
+    // listens for. None on native, where the sender drop itself crosses the IPC
+    // boundary and triggers the kill.
+    pub kill_guard: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 /// Emitted by [`receive_scene_updates`] when the scene thread responds to a

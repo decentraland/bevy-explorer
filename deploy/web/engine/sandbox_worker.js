@@ -336,17 +336,55 @@ function require(moduleName) {
   return code;
 }
 
+var wasm_init = undefined;
+var wasmContext = undefined;
+var sceneId = undefined;
+// Per-worker secret from engine.js (INIT_WORKER payload). Scene code shares this realm and
+// can reach the bare postMessage, but module-scope vars are invisible to it (`new Function`
+// scopes to the global only) — so the token proves a message came from this script.
+var killToken = undefined;
+function postToEngine(message) {
+  postMessage({ ...message, killToken });
+}
+
+// Single teardown for every exit path: the graceful loop exit, the scene-error exit, and
+// the engine's SHUTDOWN escalation. Posts the ack in all cases — it tells engine.js not to
+// escalate further, that this side already destroyed its wasm thread state, and to drop
+// its worker map entry.
+var toreDown = false;
+function tearDown() {
+  if (toreDown) return;
+  toreDown = true;
+  if (wasm_init) {
+    try {
+      if (wasmContext !== undefined) wasm_init.drop_context(wasmContext);
+    } catch (e) { }
+    wasmContext = undefined;
+    wasm_init.__wbindgen_thread_destroy();
+  }
+  postToEngine({ type: "SHUTDOWN_COMPLETE", sceneId });
+  self.close();
+}
+
 self.onmessage = async (event) => {
+  if (event.data && event.data.type === "SHUTDOWN") {
+    // engine kill escalation: the kill flag is already set, but the scene never came back
+    // to the loop check (wedged in an await). This handler runs with an empty JS stack, so
+    // no op is in flight; close() discards the parked scene task.
+    console.warn("[Sandbox Worker] SHUTDOWN received, tearing down");
+    tearDown();
+    return;
+  }
   if (event.data && event.data.type === "INIT_WORKER") {
     const { compiledModule, sharedMemory } = event.data.payload;
     bridgeSession = event.data.payload.bridgeSession;
+    killToken = event.data.payload.killToken;
 
     if (!compiledModule || !sharedMemory) {
       console.error("[Sandbox Worker] Invalid payload received.");
       return;
     }
 
-    var wasm_init;
     try {
       // init wasm
       wasm_init = await init({
@@ -358,12 +396,12 @@ self.onmessage = async (event) => {
         "[Scene Worker] Error during Wasm instantiation or setup:",
         e
       );
-      postMessage({ type: `INIT_FAILED` });
+      postToEngine({ type: `INIT_FAILED` });
       self.close();
       return;
     }
 
-    postMessage({ type: `INIT_COMPLETE` });
+    postToEngine({ type: `INIT_COMPLETE` });
 
     // add listener to clean up on unhandled rejections
     self.addEventListener("unhandledrejection", (event) => {
@@ -387,18 +425,19 @@ self.onmessage = async (event) => {
       // self.close();
     });
 
-    var wasmContext;
     try {
       wasmContext = await wasm_bindgen_exports.wasm_init_scene();
     } catch (e) {
       console.error("[Scene Worker] Error during scene construction:", e);
-      try {
-        wasm_init.drop_context(wasmContext);
-      } catch (e) { }
-      wasm_init.__wbindgen_thread_destroy();
-      self.close();
+      tearDown();
       return;
     }
+
+    // report which scene this worker picked up (workers pop from a shared queue, so the
+    // mapping isn't knowable at spawn time) — engine.js keeps a sceneId -> Worker map for
+    // kill escalation
+    sceneId = wasmContext.get_scene_id();
+    postToEngine({ type: "SCENE_READY", sceneId });
 
     try {
       createJsContext(wasm_bindgen_exports, wasmContext);
@@ -466,11 +505,7 @@ self.onmessage = async (event) => {
       console.error("[Sandbox Worker] Error during scene execution:", e);
     }
 
-    try {
-      wasm_init.drop_context(wasmContext);
-    } catch (e) { }
-    wasm_init.__wbindgen_thread_destroy();
-    self.close();
+    tearDown();
   }
 };
 
