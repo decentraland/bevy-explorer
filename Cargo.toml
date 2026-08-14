@@ -435,6 +435,13 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 # deno_websocket = { path = "../deno/ext/websocket" }
 # deno_webstorage = { path = "../deno/ext/webstorage" }
 
+# gltf 1.4.1 (latest release, 2024-05) predates gltf-rs/gltf#449 "allow empty accessors"
+# (robtfm, merged 2025-05): dense accessors with no bufferView (zero-filled per spec,
+# blender emits them for morph targets) get NO reader, so MorphTargetImage comes up
+# short and texture upload panics. Pin the #449 merge commit until a release ships it.
+gltf = { git = "https://github.com/gltf-rs/gltf", rev = "12fc1b7c" }
+gltf-json = { git = "https://github.com/gltf-rs/gltf", rev = "12fc1b7c" }
+
 winit = { git = "https://github.com/robtfm/winit", branch = "v0.30.x" }
 wgpu = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 wgpu-types = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
