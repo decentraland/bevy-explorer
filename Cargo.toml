@@ -316,6 +316,7 @@ http = { workspace = true }
 # present only to enable the naga_oil `override_any` feature graph-wide (see
 # [workspace.dependencies]); not referenced from Rust.
 naga_oil = { workspace = true }
+bevy_kira_audio = { workspace = true }
 
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
