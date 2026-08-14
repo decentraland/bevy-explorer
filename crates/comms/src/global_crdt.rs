@@ -13,6 +13,7 @@ use common::{
         avatar_tilt_quat, AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync,
         MoveKind, PointAtSync, SceneDrivenAnimationRequest,
     },
+    util::ModifyComponentExt,
 };
 use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
@@ -285,7 +286,6 @@ pub struct ForeignPlayer {
     /// by receiving data; transports report explicit departures (`NetworkUpdate::PlayerLeft`)
     /// and transport despawn removes the entity from every set. Empty set = disconnected.
     pub transports: HashSet<Entity>,
-    pub last_update: f32,
     pub scene_id: SceneEntityId,
     pub profile_version: u32,
     audio_sender: mpsc::Sender<ForeignAudioData>,
@@ -438,7 +438,6 @@ pub fn process_transport_updates(
                     (*entity, *scene_id, channel.clone())
                 } else if let Some(existing) = state.lookup.get_by_left(&update.address) {
                     let mut foreign_player = players.get_mut(*existing).unwrap();
-                    foreign_player.last_update = time.elapsed_secs();
                     foreign_player.transports.insert(update.transport_id);
                     (
                         *existing,
@@ -470,7 +469,6 @@ pub fn process_transport_updates(
                             ForeignPlayer {
                                 address: update.address,
                                 transports: HashSet::from_iter([update.transport_id]),
-                                last_update: time.elapsed_secs(),
                                 scene_id: next_free,
                                 profile_version: 0,
                                 audio_sender: audio_sender.clone(),
@@ -785,12 +783,17 @@ pub fn process_transport_updates(
                 transport_id,
                 address,
             } => {
-                // players spawned earlier this frame aren't in the query yet; they
-                // fall back to the inactivity timeout in despawn_players
                 if let Some(entity) = state.lookup.get_by_left(&address) {
+                    debug!("player {address:#x} left transport {transport_id}");
                     if let Ok(mut foreign_player) = players.get_mut(*entity) {
-                        debug!("player {address:#x} left transport {transport_id}");
                         foreign_player.transports.remove(&transport_id);
+                    } else {
+                        // players spawned earlier this frame aren't in the query yet
+                        commands.entity(*entity).modify_component(
+                            move |foreign_player: &mut ForeignPlayer| {
+                                foreign_player.transports.remove(&transport_id);
+                            },
+                        );
                     }
                 }
             }
@@ -946,15 +949,9 @@ fn despawn_players(
     mut commands: Commands,
     players: Query<(Entity, &ForeignPlayer)>,
     mut state: ResMut<GlobalCrdtState>,
-    time: Res<Time>,
 ) {
     for (entity, player) in players.iter() {
-        // transports report disconnects explicitly; the inactivity timeout is a backstop
-        // for departures the server hasn't noticed yet (server-side timeouts for other
-        // clients' connections are not under our control)
-        let disconnected = player.transports.is_empty();
-        let stale = player.last_update + 15.0 < time.elapsed_secs();
-        if disconnected || stale {
+        if player.transports.is_empty() {
             if let Ok(mut commands) = commands.get_entity(entity) {
                 info!("removing disconnected player: {entity:?} : {player:?}");
                 commands.despawn();
