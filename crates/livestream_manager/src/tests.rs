@@ -3,6 +3,8 @@ use bevy::{
     prelude::*,
     state::app::StatesPlugin,
 };
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::*;
 
 use crate::{
     plugin::LivestreamManagerPlugin,
@@ -10,6 +12,9 @@ use crate::{
     ActiveAudioTransmitter, ActiveReceiver, ActiveTransmitter, ActiveVideoCast,
     AudioTransmitterKind, ReceiverImage, TransmitterKind,
 };
+
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test_configure!(run_in_browser);
 
 fn min_app() -> App {
     let mut app = App::new();
@@ -47,6 +52,7 @@ fn test_states(
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_receiver() {
     let mut app = min_app();
 
@@ -76,6 +82,7 @@ fn test_add_receiver() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_multiple_receivers() {
     let mut app = min_app();
 
@@ -113,6 +120,7 @@ fn test_add_multiple_receivers() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_remove_a_receivers() {
     let mut app = min_app();
 
@@ -168,6 +176,7 @@ fn test_remove_a_receivers() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_remove_all_receivers() {
     let mut app = min_app();
 
@@ -222,6 +231,7 @@ fn test_remove_all_receivers() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_stream() {
     let mut app = min_app();
 
@@ -272,6 +282,7 @@ fn test_add_stream() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_cast() {
     let mut app = min_app();
 
@@ -322,6 +333,7 @@ fn test_add_cast() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_screenshare() {
     let mut app = min_app();
 
@@ -372,6 +384,7 @@ fn test_add_screenshare() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_presentation() {
     let mut app = min_app();
 
@@ -422,6 +435,7 @@ fn test_add_presentation() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_stream_then_cast() {
     let mut app = min_app();
 
@@ -477,6 +491,7 @@ fn test_add_stream_then_cast() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_cast_then_cast() {
     let mut app = min_app();
 
@@ -532,6 +547,7 @@ fn test_add_cast_then_cast() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_cast_then_active_cast() {
     let mut app = min_app();
 
@@ -590,6 +606,7 @@ fn test_add_cast_then_active_cast() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_active_cast_then_cast() {
     let mut app = min_app();
 
@@ -648,6 +665,7 @@ fn test_add_active_cast_then_cast() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_active_cast_then_active_cast() {
     let mut app = min_app();
 
@@ -709,6 +727,7 @@ fn test_add_active_cast_then_active_cast() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_cast_then_screenshare() {
     let mut app = min_app();
 
@@ -764,6 +783,7 @@ fn test_add_cast_then_screenshare() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_screenshare_then_cast() {
     let mut app = min_app();
 
@@ -819,6 +839,7 @@ fn test_add_screenshare_then_cast() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_screenshare_then_screenshare() {
     let mut app = min_app();
 
@@ -874,6 +895,7 @@ fn test_add_screenshare_then_screenshare() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_screenshare_then_presentation() {
     let mut app = min_app();
 
@@ -929,6 +951,7 @@ fn test_add_screenshare_then_presentation() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_presentation_then_screenshare() {
     let mut app = min_app();
 
@@ -984,6 +1007,7 @@ fn test_add_presentation_then_screenshare() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_add_presentation_then_presentation() {
     let mut app = min_app();
 
@@ -1039,6 +1063,7 @@ fn test_add_presentation_then_presentation() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_despawns() {
     let mut app = min_app();
 
@@ -1189,6 +1214,7 @@ fn test_despawns() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_audios_without_receiver() {
     let mut app = min_app();
 
@@ -1231,6 +1257,7 @@ fn test_audios_without_receiver() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_audios_with_stream_without_receiver() {
     let mut app = min_app();
 
@@ -1284,6 +1311,7 @@ fn test_audios_with_stream_without_receiver() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_audios_with_cast_without_receiver() {
     let mut app = min_app();
 
@@ -1337,6 +1365,7 @@ fn test_audios_with_cast_without_receiver() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_audios_on_transmission_kind_change() {
     let mut app = min_app();
 
