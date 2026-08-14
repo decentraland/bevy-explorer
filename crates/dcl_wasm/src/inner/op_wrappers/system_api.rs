@@ -378,6 +378,22 @@ pub async fn op_get_avatar_modifiers(state: &WorkerContext) -> Result<js_sys::Ar
         .map_err(WasmError::from)
 }
 
+#[wasm_bindgen]
+pub async fn op_get_player_profiles(
+    state: &WorkerContext,
+    addresses: JsValue,
+) -> Result<js_sys::Array, WasmError> {
+    serde_parse!(addresses);
+    dcl::js::system_api::op_get_player_profiles(state.rc(), addresses)
+        .await
+        .map(|r| {
+            r.into_iter()
+                .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
+                .collect()
+        })
+        .map_err(WasmError::from)
+}
+
 // Social / Friends
 
 #[wasm_bindgen]

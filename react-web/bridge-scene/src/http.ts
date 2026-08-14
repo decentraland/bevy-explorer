@@ -47,19 +47,6 @@ export async function getJson<T>(url: string): Promise<T | undefined> {
   return JSON.parse(r.body) as T
 }
 
-// Catalyst/public JSON POST — same kernelFetch reasoning as getJson. Used for the batch
-// lambdas (POST /lambdas/profiles), where one request replaces N per-address GETs.
-export async function postJson<T>(url: string, body: object): Promise<T | undefined> {
-  const r = await BevyApi.kernelFetch({
-    url,
-    init: { headers: { 'Content-Type': 'application/json' }, method: 'POST', body: JSON.stringify(body) },
-    meta: META
-  })
-  if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText ?? r.body}`)
-  if (!r.body) return undefined
-  return JSON.parse(r.body) as T
-}
-
 export async function signed<T>(
   url: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',

@@ -188,6 +188,20 @@ pub struct NameColor {
     pub b: f32,
 }
 
+/// Display identity for one address, resolved through the engine's shared profile cache.
+/// `address` is the address that was ASKED for, not the one the profile metadata claims
+/// (that field is written by whoever deployed the profile).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub struct PlayerProfileData {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]

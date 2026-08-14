@@ -1,19 +1,19 @@
 // Profile: the local player's profile card + any user's passport (View Profile).
 //   from: @dcl/sdk getPlayer() (address/name/isGuest)
 //       + catalyst lambda  GET /lambdas/profiles/:userId  (avatar face + body, name, links)
-//       + catalyst lambda  POST /lambdas/profiles         (batch — display identity for a list)
+//       + the ENGINE's profile cache via BevyApi.getPlayerProfiles (display identity for a list)
 //       + badges service   GET badges.decentraland.org/users/:id/badges
 //       + camera-reel       GET camera-reel-service.decentraland.org/api/users/:id/images
 import { getPlayer } from '@dcl/sdk/players'
-import { catalystBase, getJson, postJson } from '../http'
+import { BevyApi } from '../bevy-api'
+import { catalystBase, getJson } from '../http'
+import type { PlayerProfileData } from '../bevy-api'
 import type { Badge, Profile } from '../../../src/engine/protocol'
 import type { Ctx } from '../bridge'
 
 type CatalystAvatar = {
   name?: string
   hasClaimedName?: boolean
-  /** Set by the lambda from the entity pointer, so it — not the deployed metadata — is the identity. */
-  ethAddress?: string
   /** Profile-set custom name colour (claimed names only), 0–1 floats. */
   nameColor?: { r: number; g: number; b: number }
   description?: string
@@ -40,44 +40,28 @@ export async function fetchProfile(userId: string): Promise<ProfileResponse | un
 /** What a list row needs to show a person: their name, face, and claimed-name seal. */
 export type ProfileIdentity = { name: string; picture?: string; hasClaimedName: boolean }
 
-// The lambda caps a batch at 1000 ids; chunk well under it so a long list still resolves.
-const BATCH = 100
-
 /**
- * Resolve display identity for a list of addresses in one round trip, and return a lookup
- * that always answers — an address with no (or an unresolvable) profile falls back to its
- * shortened form. Results share the per-address cache with fetchProfile.
+ * Resolve display identity for a list of addresses through the ENGINE's profile cache —
+ * the one the nametags, chat and passport UI already read, so whoever is on screen costs
+ * nothing and the rest goes out as a single batched request. Returns a lookup that always
+ * answers: an address with no (or an unresolvable) profile falls back to its shortened form.
  */
 export async function fetchIdentities(addresses: string[]): Promise<(address: string) => ProfileIdentity> {
-  const wanted = new Set(addresses.filter((a) => a !== '').map(profileKey))
-  const missing = [...wanted].filter((a) => !cache.has(a))
-  const base = await catalystBase()
-  const batches: Array<Promise<void>> = []
-  for (let i = 0; i < missing.length; i += BATCH) {
-    const ids = missing.slice(i, i + BATCH)
-    batches.push(
-      postJson<ProfileResponse[]>(`${base}/lambdas/profiles`, { ids })
-        .catch(() => undefined)
-        .then((profiles) => {
-          // The batch answers in its own order and omits the profiles that don't exist, so each
-          // one is filed under the address the lambda reports — and only if we asked for it.
-          for (const profile of profiles ?? []) {
-            const address = profile.avatars?.[0]?.ethAddress
-            if (address != null && wanted.has(profileKey(address))) cache.set(profileKey(address), profile)
-          }
-        })
-    )
+  const wanted = [...new Set(addresses.filter((a) => a !== '').map(profileKey))]
+  const resolved = new Map<string, PlayerProfileData>()
+  if (wanted.length > 0) {
+    const profiles = await BevyApi.getPlayerProfiles(wanted).catch(() => [])
+    // The engine keys each entry by the address we asked about, not by the deployed metadata.
+    for (const profile of profiles) resolved.set(profileKey(profile.address), profile)
   }
-  await Promise.all(batches)
-  return (address) => identityOf(cache.get(profileKey(address)), address)
+  return (address) => identityOf(resolved.get(profileKey(address)), address)
 }
 
-function identityOf(data: ProfileResponse | undefined, address: string): ProfileIdentity {
-  const av = data?.avatars?.[0]
+function identityOf(data: PlayerProfileData | undefined, address: string): ProfileIdentity {
   return {
-    name: av?.name != null && av.name !== '' ? av.name : shortAddress(address),
-    picture: httpOrUndef(av?.avatar?.snapshots?.face256),
-    hasClaimedName: av?.hasClaimedName ?? false
+    name: data?.name != null && data.name !== '' ? data.name : shortAddress(address),
+    picture: httpOrUndef(data?.profilePictureUrl),
+    hasClaimedName: data?.hasClaimedName ?? false
   }
 }
 

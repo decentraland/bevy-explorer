@@ -11,8 +11,8 @@ use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
     FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, ProximityEvent, SceneLoadingUi, SetAvatarData,
-    VoiceMessage,
+    PermanentPermissionItem, PermissionRequest, PlayerProfileData, ProximityEvent, SceneLoadingUi,
+    SetAvatarData, VoiceMessage,
 };
 
 // list of op declarations
@@ -70,6 +70,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_scene_loading_ui_stream(),
             op_read_scene_loading_ui_stream(),
             op_get_avatar_modifiers(),
+            op_get_player_profiles(),
             // Social / Friends
             op_get_friendship_event_stream(),
             op_read_friendship_event_stream(),
@@ -460,6 +461,15 @@ pub async fn op_get_avatar_modifiers(
     state: Rc<RefCell<OpState>>,
 ) -> Result<Vec<AvatarModifierState>, anyhow::Error> {
     dcl::js::system_api::op_get_avatar_modifiers(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_player_profiles(
+    state: Rc<RefCell<OpState>>,
+    #[serde] addresses: Vec<String>,
+) -> Result<Vec<PlayerProfileData>, anyhow::Error> {
+    dcl::js::system_api::op_get_player_profiles(state, addresses).await
 }
 
 // Social / Friends
