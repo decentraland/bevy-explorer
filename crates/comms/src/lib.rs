@@ -71,7 +71,10 @@ impl Plugin for CommsPlugin {
         app.add_event::<SetCurrentScene>()
             .init_resource::<SceneRoomConnection>()
             .init_resource::<ServerSceneRooms>()
-            .init_resource::<DisableSceneRoomGatekeeper>();
+            .init_resource::<DisableSceneRoomGatekeeper>()
+            .insert_resource(SceneRoomAdapterOverride(
+                std::env::var("DCL_SCENE_ROOM_ADAPTER").ok(),
+            ));
 
         app.add_plugins((
             WebsocketRoomPlugin,
@@ -242,6 +245,14 @@ pub struct DisableSceneRoomGatekeeper(pub bool);
 #[derive(Resource, Default)]
 pub struct DisableRealmComms(pub bool);
 
+/// When set (via the `DCL_SCENE_ROOM_ADAPTER` env var), the client scene-room path uses
+/// this adapter string directly instead of minting one from the comms gatekeeper — a
+/// local/offline testing escape hatch that avoids any network round-trip. Only consulted
+/// on the client path (`connect_scene_room`); orchestrated servers disable that path
+/// entirely, so this never affects the authoritative-server adapter flow.
+#[derive(Resource, Default)]
+pub struct SceneRoomAdapterOverride(pub Option<String>);
+
 #[allow(clippy::type_complexity)]
 #[allow(clippy::too_many_arguments)]
 fn connect_scene_room(
@@ -254,6 +265,7 @@ fn connect_scene_room(
     ipfs: IpfsAssetServer,
     is_server: Res<common::structs::IsServer>,
     disabled: Res<DisableSceneRoomGatekeeper>,
+    adapter_override: Res<SceneRoomAdapterOverride>,
     contexts: Query<Entity, With<global_crdt::GlobalCrdtState>>,
 ) {
     if disabled.0 {
@@ -275,6 +287,19 @@ fn connect_scene_room(
         }
         if ev.scene_id.is_empty() {
             *gatekeeper_task = None;
+        } else if let Some(adapter) = adapter_override.0.clone() {
+            // local/offline testing: skip the gatekeeper HTTP mint and connect the given
+            // adapter directly. Scene rooms feed the single shared client context.
+            *gatekeeper_task = None;
+            let Ok(context) = contexts.single() else {
+                return;
+            };
+            if let Some(ent) = manager.connect(&adapter, context) {
+                commands
+                    .entity(ent)
+                    .try_insert(SceneRoom(ev.scene_id.clone()));
+                current.0 = Some((ev, adapter, ent));
+            }
         } else {
             let wallet = wallet.clone();
             let preview = ev.scene_id.starts_with("b64-");
