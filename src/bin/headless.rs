@@ -140,9 +140,6 @@ fn finalize_guest_wallet(wallet: &mut Wallet, seed: Option<u64>) {
     }
 }
 
-#[derive(Resource)]
-struct WalletSeed(Option<u64>);
-
 // ---------------- orchestrator control protocol ----------------
 // stdin: one JSON command per line. stdout: control events as single lines with a
 // reserved `@bevy-ctl ` prefix; scene logs as `@scene-log ` lines keyed by scene hash.
@@ -414,7 +411,6 @@ fn main() {
             preview_parcel: None,
         })
         .insert_resource(IsServer(args.server_mode))
-        .insert_resource(WalletSeed(args.wallet_seed))
         // servers must never join realm-wide comms (archipelago / world room) — they would
         // show up as a ghost participant. A non-server headless follows its realm about's
         // fixed_adapter like any client (offline about ⇒ no comms), so it can act as a
@@ -526,9 +522,8 @@ fn setup(
     mut player_resource: ResMut<PrimaryPlayerRes>,
     mut cam_resource: ResMut<PrimaryCameraRes>,
     config: Res<AppConfig>,
-    mut wallet: ResMut<Wallet>,
+    wallet: Res<Wallet>,
     mut current_profile: ResMut<CurrentUserProfile>,
-    wallet_seed: Res<WalletSeed>,
 ) {
     // fake player: process_scene_lifecycle early-returns without a PrimaryUser,
     // and PrimaryEntities::player() panics without the marker. Placed at the scene
@@ -568,7 +563,7 @@ fn setup(
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
 
-    finalize_guest_wallet(&mut wallet, wallet_seed.0);
+    // wallet is already finalized in main(); build the profile from its address
     println!("[headless] guest address: {:#x}", wallet.address().unwrap());
     current_profile.profile = Some(UserProfile {
         version: 0,
