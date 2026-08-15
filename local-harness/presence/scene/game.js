@@ -7,8 +7,12 @@
 const engine = require("~system/EngineApi");
 const players = require("~system/Players");
 
-// getConnectedPlayers is an async RPC; toggle on once the base scene is proven stable.
-const WANT_CONNECTED_PLAYERS = false;
+// getConnectedPlayers is an async RPC. It must NOT be awaited inline: scene-issued
+// RpcCalls only reach the engine on the next crdtSendToRenderer, so awaiting the reply
+// inside onUpdate parks the loop before that flush and self-deadlocks. We fire it and
+// store the result, letting later onUpdate ticks keep pumping the flush; the reply lands
+// a frame or two later and is logged then.
+const WANT_CONNECTED_PLAYERS = true;
 
 const PLAYER_IDENTITY_DATA = 1089;
 const PUT_COMPONENT = 1;
@@ -78,6 +82,27 @@ async function drainCrdt() {
 
 let ticks = 0;
 
+// getConnectedPlayers result plumbing: `connectedInFlight` guards against stacking
+// calls, and each resolved reply is logged from the promise callback (not awaited).
+let connectedInFlight = false;
+
+function pollConnectedPlayers(tick) {
+  if (connectedInFlight) return;
+  connectedInFlight = true;
+  players
+    .getConnectedPlayers()
+    .then((connected) => {
+      log("connected-players", {
+        tick: tick,
+        players: connected.players.map((p) => p.userId),
+      });
+    })
+    .catch((e) => log("connected-players-error", { tick: tick, msg: String(e) }))
+    .finally(() => {
+      connectedInFlight = false;
+    });
+}
+
 module.exports.onStart = async function () {
   log("scene-start", {});
   // SDK6-style event subscriptions; polled each frame via sendBatch. No CRDT recv here:
@@ -110,14 +135,11 @@ module.exports.onUpdate = async function (_dt) {
     // once things are stable — the CRDT roster is the source of truth.
     if (ticks % 30 === 0) {
       log("identity-roster", { tick: ticks, players: rosterAddrs() });
-      // NOTE: getConnectedPlayers (async RPC) is added back once the base scene is stable;
-      // the CRDT roster above is the authoritative isolation signal.
+      // getConnectedPlayers is fired, NOT awaited (see pollConnectedPlayers): awaiting it
+      // here would stall this frame's next crdtSendToRenderer flush and deadlock the RPC.
+      // The CRDT roster above is the authoritative isolation signal; this cross-checks it.
       if (WANT_CONNECTED_PLAYERS) {
-        const connected = await players.getConnectedPlayers();
-        log("connected-players", {
-          tick: ticks,
-          players: connected.players.map((p) => p.userId),
-        });
+        pollConnectedPlayers(ticks);
       }
     }
   } catch (e) {

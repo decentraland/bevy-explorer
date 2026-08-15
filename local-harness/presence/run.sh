@@ -263,6 +263,16 @@ srv_scene_has "$SCENE_A" "FORGERY"; check "scene A dropped forged cross-room bus
 # 4. client-regression — non-orchestrated observer's scene sees its room peer (shared ctx)
 client_scene_has "$LOGS/obsC.log" "$ADDR_PEER_C"; check "regression: observer's scene sees peer (shared ctx)" $?
 
+# 5. getConnectedPlayers RPC — resolves (an inline await here used to self-deadlock the
+# scene: RpcCalls flush only on crdtSendToRenderer) and is room-scoped like the CRDT view
+srv_has_line() { # <scene-hash> <line-kind> <needle> -> 0 if a line of that kind matches
+  grep -a "@scene-log {\"scene\":\"$1\"" "$LOGS/server.log" | grep "$2" | grep -q "$3"
+}
+srv_has_line "$SCENE_A" "connected-players" "$ADDR_A"; check "getConnectedPlayers on scene A resolved and lists client A" $?
+srv_has_line "$SCENE_A" "connected-players" "$ADDR_B"; check "getConnectedPlayers on scene A never lists client B"       $(neg $?)
+srv_has_line "$SCENE_B" "connected-players" "$ADDR_B"; check "getConnectedPlayers on scene B resolved and lists client B" $?
+srv_has_line "$SCENE_B" "connected-players" "$ADDR_A"; check "getConnectedPlayers on scene B never lists client A"       $(neg $?)
+
 echo
 if [ $FAIL = 0 ]; then printf '\033[1;32m==== ALL PASS ====\033[0m\n'
 else printf '\033[1;31m==== FAILURES ====\033[0m  (logs in %s)\n' "$LOGS"; fi
