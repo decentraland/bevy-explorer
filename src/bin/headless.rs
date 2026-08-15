@@ -23,7 +23,6 @@ use bevy::{
     time::TimePlugin,
 };
 use bevy_dui::DuiPlugin;
-use collectibles::base_wearables;
 use common::{
     inputs::InputMap,
     profile::SerializedProfile,
@@ -39,18 +38,12 @@ use common::{
     util::{TaskCompat, TaskExt, UtilsPlugin},
 };
 use comms::{
-    global_crdt::{ForeignPlayer, GlobalCrdtState},
     profile::{CurrentUserProfile, ProfileCache, UserProfile},
     AdapterManager, CommsPlugin, ServerSceneRooms,
 };
 use console::ConsolePlugin;
-use dcl::interface::CrdtType;
 use dcl::SceneLogMessage;
 use dcl::SceneResourceCounters;
-use dcl_component::{
-    proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData},
-    SceneComponentId, SceneEntityId,
-};
 use dcl_deno_ipc::init_runtime;
 use input_manager::{CumulativeAxisData, InputPriorities};
 use ipfs::{map_realm_name, IpfsAssetServer, IpfsIoPlugin};
@@ -87,6 +80,8 @@ struct Args {
     /// base64 world-storage delegation (hammurabi envelope); single-scene runs only —
     /// orchestrated scenes receive theirs via the control channel
     storage_delegation: Option<String>,
+    /// deterministic guest wallet (test harness): address derivable offline from the seed
+    wallet_seed: Option<u64>,
 }
 
 fn parse_args() -> Args {
@@ -117,6 +112,7 @@ fn parse_args() -> Args {
         .value_from_str("--storage-delegation")
         .ok()
         .or_else(|| std::env::var("PROCESS_STORAGE_DELEGATION").ok());
+    let wallet_seed: Option<u64> = args.value_from_str("--wallet-seed").ok();
     Args {
         realm,
         location,
@@ -127,8 +123,25 @@ fn parse_args() -> Args {
         scene_threads,
         tick_hz,
         storage_delegation,
+        wallet_seed,
     }
 }
+
+/// harness support: a seeded wallet gives a deterministic address, so livekit tokens
+/// (identity == address) can be minted before the process starts
+fn finalize_guest_wallet(wallet: &mut Wallet, seed: Option<u64>) {
+    match seed {
+        Some(seed) => {
+            let mut bytes = [0u8; 32];
+            bytes[..8].copy_from_slice(&seed.to_le_bytes());
+            wallet.finalize_as_guest_with_seed(bytes);
+        }
+        None => wallet.finalize_as_guest(),
+    }
+}
+
+#[derive(Resource)]
+struct WalletSeed(Option<u64>);
 
 // ---------------- orchestrator control protocol ----------------
 // stdin: one JSON command per line. stdout: control events as single lines with a
@@ -362,7 +375,7 @@ fn main() {
 
     // ---- resources & events the scene runtime needs (no render/UI plugins) ----
     let mut wallet = Wallet::default();
-    wallet.finalize_as_guest();
+    finalize_guest_wallet(&mut wallet, args.wallet_seed);
     // KEY-3: the orchestrated engine must only ever hold a throwaway identity — the
     // authoritative key lives in the orchestrator and never reaches this process.
     assert!(
@@ -401,9 +414,12 @@ fn main() {
             preview_parcel: None,
         })
         .insert_resource(IsServer(args.server_mode))
-        // never join realm-wide comms (archipelago / world room): a server would be a
-        // ghost participant. Scene rooms use per-scene adapters and are unaffected.
-        .insert_resource(comms::DisableRealmComms(true))
+        .insert_resource(WalletSeed(args.wallet_seed))
+        // servers must never join realm-wide comms (archipelago / world room) — they would
+        // show up as a ghost participant. A non-server headless follows its realm about's
+        // fixed_adapter like any client (offline about ⇒ no comms), so it can act as a
+        // synthetic client. Scene rooms are a separate, authoritative-presence concern.
+        .insert_resource(comms::DisableRealmComms(args.server_mode))
         .insert_resource(delegations)
         .add_event::<RpcCall>()
         .add_event::<SystemAudio>()
@@ -512,6 +528,7 @@ fn setup(
     config: Res<AppConfig>,
     mut wallet: ResMut<Wallet>,
     mut current_profile: ResMut<CurrentUserProfile>,
+    wallet_seed: Res<WalletSeed>,
 ) {
     // fake player: process_scene_lifecycle early-returns without a PrimaryUser,
     // and PrimaryEntities::player() panics without the marker. Placed at the scene
@@ -551,7 +568,8 @@ fn setup(
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
 
-    wallet.finalize_as_guest();
+    finalize_guest_wallet(&mut wallet, wallet_seed.0);
+    println!("[headless] guest address: {:#x}", wallet.address().unwrap());
     current_profile.profile = Some(UserProfile {
         version: 0,
         content: SerializedProfile {

@@ -1,0 +1,126 @@
+// Presence-isolation assertion scene (raw SDK7 ops, no @dcl/sdk toolchain).
+// Logs greppable HARNESS| lines the run.sh matrix parses. All player-visibility
+// facts (getConnectedPlayers, connect/disconnect events, PLAYER_IDENTITY_DATA
+// entities in the scene's own CRDT view, comms bus messages) are surfaced here so
+// the harness can prove that a scene only ever sees its own room's clients.
+
+const engine = require("~system/EngineApi");
+const players = require("~system/Players");
+
+// getConnectedPlayers is an async RPC; toggle on once the base scene is proven stable.
+const WANT_CONNECTED_PLAYERS = false;
+
+const PLAYER_IDENTITY_DATA = 1089;
+const PUT_COMPONENT = 1;
+const DELETE_COMPONENT = 2;
+const DELETE_ENTITY = 3;
+const APPEND_VALUE = 4;
+
+// entity number -> address, built from the CRDT stream the renderer feeds this scene
+const identityByEntity = {};
+
+function log(kind, payload) {
+  console.log("HARNESS|" + kind + "|" + JSON.stringify(payload));
+}
+
+// PbPlayerIdentityData: field 1 (address) is a length-delimited string (tag 0x0a).
+function parseIdentityAddress(bytes) {
+  if (bytes.length < 2 || bytes[0] !== 0x0a) return null;
+  const len = bytes[1];
+  return new TextDecoder().decode(bytes.slice(2, 2 + len));
+}
+
+// Walk one renderer->scene buffer, which may hold several concatenated CRDT
+// messages, and fold PLAYER_IDENTITY_DATA puts/deletes into identityByEntity.
+function ingestCrdt(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let off = 0;
+  while (off + 8 <= bytes.length) {
+    const len = view.getUint32(off, true);
+    if (len < 8 || off + len > bytes.length) break;
+    const type = view.getUint32(off + 4, true);
+    if (type === PUT_COMPONENT || type === DELETE_COMPONENT) {
+      const entityNum = view.getUint16(off + 8, true);
+      const componentId = view.getUint32(off + 12, true);
+      if (componentId === PLAYER_IDENTITY_DATA) {
+        if (type === PUT_COMPONENT) {
+          const contentLen = view.getUint32(off + 20, true);
+          const content = bytes.slice(off + 24, off + 24 + contentLen);
+          const address = parseIdentityAddress(content);
+          if (address) {
+            identityByEntity[entityNum] = address;
+            log("identity-put", { entity: entityNum, address: address });
+          }
+        } else {
+          const gone = identityByEntity[entityNum];
+          delete identityByEntity[entityNum];
+          log("identity-delete", { entity: entityNum, address: gone || null });
+        }
+      }
+    } else if (type === DELETE_ENTITY) {
+      const entityNum = view.getUint16(off + 8, true);
+      if (identityByEntity[entityNum]) {
+        log("identity-delete", { entity: entityNum, address: identityByEntity[entityNum] });
+        delete identityByEntity[entityNum];
+      }
+    }
+    off += len;
+  }
+}
+
+async function drainCrdt() {
+  // send an empty batch and read back the renderer's CRDT for this frame; the first
+  // call returns the initial snapshot, later calls return deltas. This pairs one send
+  // with one recv — never a bare recv, which can park onStart on the renderer channel.
+  const res = await engine.crdtSendToRenderer({ data: new Uint8Array(0) });
+  for (const item of res.data) ingestCrdt(item);
+}
+
+let ticks = 0;
+
+module.exports.onStart = async function () {
+  log("scene-start", {});
+  // SDK6-style event subscriptions; polled each frame via sendBatch. No CRDT recv here:
+  // the initial snapshot is drained by the first onUpdate.
+  await engine.subscribe({ eventId: "playerConnected" });
+  await engine.subscribe({ eventId: "playerDisconnected" });
+  await engine.subscribe({ eventId: "comms" });
+  log("scene-subscribed", {});
+};
+
+function rosterAddrs() {
+  return Object.keys(identityByEntity).map((e) => identityByEntity[e]);
+}
+
+module.exports.onUpdate = async function (_dt) {
+  ticks += 1;
+  try {
+    await drainCrdt();
+
+    const batch = await engine.sendBatch();
+    for (const ev of batch.events) {
+      if (ev.generic) {
+        log("event", { id: ev.generic.eventId, data: ev.generic.eventData });
+      }
+    }
+
+    // Report the scene's authoritative player view (PLAYER_IDENTITY_DATA entities in
+    // its own CRDT) once a second. This is the isolation signal: a scene must only ever
+    // carry its own room's clients. Emitted separately (getConnectedPlayers, an async RPC)
+    // once things are stable — the CRDT roster is the source of truth.
+    if (ticks % 30 === 0) {
+      log("identity-roster", { tick: ticks, players: rosterAddrs() });
+      // NOTE: getConnectedPlayers (async RPC) is added back once the base scene is stable;
+      // the CRDT roster above is the authoritative isolation signal.
+      if (WANT_CONNECTED_PLAYERS) {
+        const connected = await players.getConnectedPlayers();
+        log("connected-players", {
+          tick: ticks,
+          players: connected.players.map((p) => p.userId),
+        });
+      }
+    }
+  } catch (e) {
+    log("error", { tick: ticks, msg: String(e), stack: e && e.stack });
+  }
+};
