@@ -1319,8 +1319,10 @@ fn set_ui_constraints(
     }
 }
 
-fn push_time_to_crdt(time_of_day: Res<TimeOfDay>, mut global_crdt_state: ResMut<GlobalCrdtState>) {
-    global_crdt_state.update_time(time_of_day.time);
+fn push_time_to_crdt(time_of_day: Res<TimeOfDay>, mut contexts: Query<&mut GlobalCrdtState>) {
+    for mut global_crdt_state in contexts.iter_mut() {
+        global_crdt_state.update_time(time_of_day.time);
+    }
 }
 
 /// Push the active camera's vertical FOV to scene workers via GlobalCrdtState.
@@ -1328,7 +1330,7 @@ fn push_time_to_crdt(time_of_day: Res<TimeOfDay>, mut global_crdt_state: ResMut<
 /// that scenes loaded after a change still see the latest value.
 fn push_camera_fov_to_crdt(
     camera: Query<&Projection, With<PrimaryCamera>>,
-    mut global_crdt_state: ResMut<GlobalCrdtState>,
+    mut contexts: Query<&mut GlobalCrdtState>,
     time: Res<Time>,
     mut last_pushed: Local<Option<(f32, f32)>>,
 ) {
@@ -1341,7 +1343,9 @@ fn push_camera_fov_to_crdt(
         Some((last_fov, last_time)) => last_fov != p.fov || now - last_time >= 2.0,
     };
     if should_push {
-        global_crdt_state.update_camera_fov(p.fov);
+        for mut global_crdt_state in contexts.iter_mut() {
+            global_crdt_state.update_camera_fov(p.fov);
+        }
         *last_pushed = Some((p.fov, now));
     }
 }

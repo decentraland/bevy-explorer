@@ -23,7 +23,7 @@ use common::{
     },
     util::{TaskExt, TryPushChildrenEx},
 };
-use comms::global_crdt::GlobalCrdtState;
+use comms::global_crdt::{CrdtContexts, GlobalCrdtState};
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore, CrdtType},
     SceneElapsedTime, SceneId, SceneResponse,
@@ -248,7 +248,8 @@ pub(crate) fn load_scene_javascript(
     ipfas: IpfsAssetServer,
     crdt_component_interfaces: Res<CrdtExtractors>,
     mut scene_updates: ResMut<SceneUpdates>,
-    global_scene: Res<GlobalCrdtState>,
+    crdt_contexts: Res<CrdtContexts>,
+    global_scenes: Query<&GlobalCrdtState>,
     portable_scenes: Res<PortableScenes>,
     realm: Res<CurrentRealm>,
     frame: Res<FrameCount>,
@@ -421,9 +422,16 @@ pub(crate) fn load_scene_javascript(
 
         scene_updates.scene_ids.insert(scene_id, root);
 
-        // start from the global shared crdt state, with position data localized for this scene
+        // start from this scene's crdt context (its own room's on a multi-tenant server,
+        // the shared context otherwise), with position data localized for this scene.
         // Scene origin in DCL proto-space (z-forward, matching proto Vector3 coordinates)
         let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
+        let Ok(global_scene) = global_scenes.get(crdt_contexts.for_scene_hash(&definition.id))
+        else {
+            // context spawned this frame and not yet flushed — retry next frame
+            debug!("{root:?} waiting for crdt context");
+            continue;
+        };
         let (mut initial_crdt, global_updates) = global_scene.subscribe(scene_origin);
 
         // set initial realm info
@@ -626,6 +634,7 @@ pub(crate) fn initialize_scene(
     is_server: Res<IsServer>,
     su_bridge: Res<SystemBridge>,
     time: Res<Time>,
+    crdt_contexts: Res<CrdtContexts>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
@@ -688,6 +697,7 @@ pub(crate) fn initialize_scene(
         let main_sx = spawn_scene(
             context.crdt_store.clone(),
             scene_context,
+            crdt_contexts.for_scene_hash(&context.hash).to_bits(),
             js_file.clone(),
             crdt_component_interfaces,
             thread_sx,
@@ -1107,7 +1117,7 @@ fn load_active_entities(
     mut pointers: ResMut<ScenePointers>,
     mut pointer_request: Local<Option<(HashSet<IVec2>, HashMap<String, String>, ActiveEntityTask)>>,
     ipfas: IpfsAssetServer,
-    mut global_crdt: ResMut<GlobalCrdtState>,
+    mut global_crdt: Query<&mut GlobalCrdtState>,
     mut consecutive_fetch_fail_count: Local<usize>,
     mut commands: Commands,
     mut fetch_count: Local<usize>,
@@ -1159,7 +1169,9 @@ fn load_active_entities(
             }
         }
         pointers.set_realm(bounds_min, bounds_max);
-        global_crdt.set_bounds(bounds_min, bounds_max);
+        for mut context in global_crdt.iter_mut() {
+            context.set_bounds(bounds_min, bounds_max);
+        }
 
         if !current_realm.about_url.is_empty() && *teleport_target == RealmInitialLocation::Base {
             let has_scene_urns = !current_realm
@@ -1472,7 +1484,9 @@ fn load_active_entities(
                         urn: urn.clone(),
                     },
                 ) {
-                    global_crdt.set_bounds(new_bounds.0, new_bounds.1);
+                    for mut context in global_crdt.iter_mut() {
+                        context.set_bounds(new_bounds.0, new_bounds.1);
+                    }
                 }
             }
         }

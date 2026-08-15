@@ -16,6 +16,7 @@ platform = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }
+futures-util = { workspace = true }
 once_cell = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

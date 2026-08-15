@@ -117,7 +117,8 @@ async fn scene_ipc_in(
 ) {
     let mut renderer_senders = HashMap::new();
 
-    let (global_sx, _global_rx) = tokio::sync::broadcast::channel(1000);
+    // one broadcast channel per presence context; scenes subscribe to their own
+    let mut global_senders: HashMap<u64, tokio::sync::broadcast::Sender<_>> = HashMap::new();
 
     while let Ok(len) = stream.read_u64_le().await {
         let mut buffer = vec![0u8; len as usize];
@@ -126,6 +127,9 @@ async fn scene_ipc_in(
 
         match msg {
             EngineToScene::NewScene(id, new_scene_info) => {
+                let global_sx = global_senders
+                    .entry(new_scene_info.presence_context)
+                    .or_insert_with(|| tokio::sync::broadcast::channel(1000).0);
                 let response_sx = dcl_deno::spawn_scene(
                     new_scene_info.initial_crdt_store,
                     new_scene_info.scene_context,
@@ -161,8 +165,14 @@ async fn scene_ipc_in(
 
                 let _ = sender.send(renderer_response);
             }
-            EngineToScene::GlobalUpdate(data) => {
-                let _ = global_sx.send(data);
+            EngineToScene::GlobalUpdate(presence_context, data) => {
+                // send fails only with no live subscribers: every scene of the context
+                // is gone, so drop the channel (the engine side stops sending too)
+                if let Some(sender) = global_senders.get(&presence_context) {
+                    if sender.send(data).is_err() {
+                        global_senders.remove(&presence_context);
+                    }
+                }
             }
             EngineToScene::IpcMessage(id, ipc_message) => {
                 SCENE_IPC_CONTEXT.with(|ctx| {

@@ -45,6 +45,8 @@ impl Plugin for WebsocketRoomPlugin {
 #[derive(Event)]
 pub struct StartWsRoom {
     pub address: String,
+    /// crdt context this room's transport feeds
+    pub context: Entity,
 }
 
 #[derive(Component)]
@@ -86,6 +88,7 @@ pub fn start_ws_room(
                 transport_type: TransportType::WebsocketRoom,
                 sender,
                 control: None,
+                context: ev.context,
             },
             WebsocketRoomTransport {
                 address: ev.address.to_owned(),
@@ -99,11 +102,17 @@ pub fn start_ws_room(
 #[allow(clippy::type_complexity)]
 fn connect_websocket(
     mut commands: Commands,
-    mut new_websockets: Query<(Entity, &mut WebsocketRoomTransport), Without<WebSocketConnection>>,
+    mut new_websockets: Query<
+        (Entity, &mut WebsocketRoomTransport, &Transport),
+        Without<WebSocketConnection>,
+    >,
     wallet: Res<Wallet>,
-    player_state: Res<GlobalCrdtState>,
+    contexts: Query<&GlobalCrdtState>,
 ) {
-    for (transport_id, mut new_transport) in new_websockets.iter_mut() {
+    for (transport_id, mut new_transport, transport) in new_websockets.iter_mut() {
+        let Ok(player_state) = contexts.get(transport.context) else {
+            continue;
+        };
         let remote_address = new_transport.address.to_owned();
         let wallet = wallet.clone();
         let receiver = new_transport.receiver.take().unwrap();
@@ -127,11 +136,12 @@ fn reconnect_websocket(
         Entity,
         &mut WebsocketRoomTransport,
         &mut WebSocketConnection,
+        &Transport,
     )>,
     wallet: Res<Wallet>,
-    player_state: Res<GlobalCrdtState>,
+    contexts: Query<&GlobalCrdtState>,
 ) {
-    for (transport_id, mut transport, mut conn) in websockets.iter_mut() {
+    for (transport_id, mut transport, mut conn, base_transport) in websockets.iter_mut() {
         if transport.retries < 3 {
             if let Some((receiver, err)) = conn.0.complete() {
                 transport.retries += 1;
@@ -139,6 +149,9 @@ fn reconnect_websocket(
                     "websocket room error: {err}, retrying [{}]",
                     transport.address
                 );
+                let Ok(player_state) = contexts.get(base_transport.context) else {
+                    continue;
+                };
                 let remote_address = transport.address.to_owned();
                 let wallet = wallet.clone();
                 let sender = player_state.get_sender();

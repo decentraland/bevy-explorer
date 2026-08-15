@@ -416,7 +416,9 @@ fn main() {
         Update,
         (
             drain_permissions,
-            replicate_avatar_info,
+            // AvatarPlugin (render-bound) is omitted headless; without this, SDK
+            // getPlayer()/onEnterScene never see names or wearables
+            avatar::update_avatar_info,
             reap_terminal_scene_rooms,
         ),
     );
@@ -640,56 +642,6 @@ fn drain_permissions(mut manager: ResMut<PermissionManager>, config: Res<AppConf
     }
 }
 
-/// Forward player profile data into scene CRDTs as AVATAR_BASE / AVATAR_EQUIPPED_DATA.
-/// Copy of avatar::update_avatar_info — the AvatarPlugin that normally registers it is
-/// render-bound and omitted headless; without this, SDK getPlayer()/onEnterScene never
-/// see names or wearables.
-fn replicate_avatar_info(
-    updated_players: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
-    mut global_state: ResMut<GlobalCrdtState>,
-) {
-    for (player, profile) in &updated_players {
-        let avatar = &profile.content.avatar;
-        global_state.update_crdt(
-            SceneComponentId::AVATAR_BASE,
-            CrdtType::LWW_ANY,
-            player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
-            &PbAvatarBase {
-                name: profile.content.name.clone(),
-                skin_color: avatar.skin.map(|c| c.color),
-                eyes_color: avatar.eyes.map(|c| c.color),
-                hair_color: avatar.hair.map(|c| c.color),
-                body_shape_urn: avatar
-                    .body_shape
-                    .as_deref()
-                    .map(ToString::to_string)
-                    .unwrap_or(base_wearables::default_bodyshape_urn().to_string()),
-            },
-        );
-        global_state.update_crdt(
-            SceneComponentId::AVATAR_EQUIPPED_DATA,
-            CrdtType::LWW_ANY,
-            player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
-            &PbAvatarEquippedData {
-                wearable_urns: avatar.wearables.to_vec(),
-                emote_urns: (0..10)
-                    .map(|ix| {
-                        avatar
-                            .emotes
-                            .as_ref()
-                            .unwrap_or(&Vec::default())
-                            .iter()
-                            .find(|emote| emote.slot == ix)
-                            .map(|emote| emote.urn.clone())
-                            .unwrap_or_default()
-                    })
-                    .collect(),
-                force_render: avatar.force_render.clone().unwrap_or_default(),
-            },
-        )
-    }
-}
-
 /// Tear down scene-room transports whose LiveKit room hit a terminal disconnect
 /// (DuplicateIdentity / kicked): the access token is spent, so no in-process reconnect
 /// is possible. Orchestrated mode notifies the parent (which re-adds the scene with a
@@ -765,6 +717,7 @@ fn drain_control_commands(
     mut manager: AdapterManager,
     mut commands: Commands,
     mut server_rooms: ResMut<ServerSceneRooms>,
+    mut crdt_contexts: ResMut<comms::global_crdt::CrdtContexts>,
     wallet: Res<Wallet>,
     ipfs: IpfsAssetServer,
     preview: Res<PreviewMode>,
@@ -805,7 +758,8 @@ fn drain_control_commands(
                    adapter: &str,
                    manager: &mut AdapterManager,
                    commands: &mut Commands,
-                   server_rooms: &mut ServerSceneRooms| {
+                   server_rooms: &mut ServerSceneRooms,
+                   crdt_contexts: &mut comms::global_crdt::CrdtContexts| {
         // ONLY livekit adapters: any other protocol (signed-login, ws-room,
         // fixed-adapter recursion) could make the engine sign a remote-chosen
         // payload with its identity. Applies to orchestrator input AND
@@ -817,7 +771,18 @@ fn drain_control_commands(
             }));
             return;
         }
-        if let Some(ent) = manager.connect(adapter) {
+        // each scene room gets its own crdt context (player-presence view), reused
+        // across reconnects so scene subscriptions and player state survive re-mints
+        let context = crdt_contexts.0.get(scene_id).copied().unwrap_or_else(|| {
+            let context = commands
+                .spawn(comms::global_crdt::GlobalCrdtState::new(Some(
+                    scene_id.to_owned(),
+                )))
+                .id();
+            crdt_contexts.0.insert(scene_id.to_owned(), context);
+            context
+        });
+        if let Some(ent) = manager.connect(adapter, context) {
             commands
                 .entity(ent)
                 .try_insert(comms::SceneRoom(scene_id.to_owned()));
@@ -844,6 +809,7 @@ fn drain_control_commands(
                     &mut manager,
                     &mut commands,
                     &mut server_rooms,
+                    &mut crdt_contexts,
                 ),
                 Err(e) => ctl_emit(&serde_json::json!({
                     "type": "error", "scene": scene_id, "error": format!("gatekeeper mint failed: {e}")
@@ -886,6 +852,7 @@ fn drain_control_commands(
                         &mut manager,
                         &mut commands,
                         &mut server_rooms,
+                        &mut crdt_contexts,
                     );
                 } else if !preview.is_preview {
                     // production: the adapter MUST be minted by the trusted orchestrator.
@@ -940,6 +907,11 @@ fn drain_control_commands(
                 delegations.by_scene.remove(&scene_id);
                 if let Some((_, ent)) = server_rooms.0.remove(&scene_id) {
                     if let Ok(mut c) = commands.get_entity(ent) {
+                        c.despawn();
+                    }
+                }
+                if let Some(context) = crdt_contexts.0.remove(&scene_id) {
+                    if let Ok(mut c) = commands.get_entity(context) {
                         c.despawn();
                     }
                 }

@@ -18,7 +18,7 @@ use common::{
 };
 use wallet::Wallet;
 
-use crate::{AdapterManager, Transport, TransportType};
+use crate::{global_crdt::GlobalCrdtState, AdapterManager, Transport, TransportType};
 
 use super::NetworkMessage;
 
@@ -89,7 +89,16 @@ pub struct ArchipelagoTransport {
 #[derive(Component)]
 pub struct ArchipelagoConnection(Task<(Receiver<NetworkMessage>, anyhow::Error)>);
 
-pub fn start_archipelago(mut commands: Commands, mut archi_events: EventReader<StartArchipelago>) {
+pub fn start_archipelago(
+    mut commands: Commands,
+    mut archi_events: EventReader<StartArchipelago>,
+    contexts: Query<Entity, With<GlobalCrdtState>>,
+) {
+    // archipelago is realm comms, primary-player driven: client-only (headless sets
+    // DisableRealmComms), so the single shared context is its feed
+    let Ok(context) = contexts.single() else {
+        return;
+    };
     if let Some(ev) = archi_events.read().last() {
         info!("starting archipelago protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
@@ -99,6 +108,7 @@ pub fn start_archipelago(mut commands: Commands, mut archi_events: EventReader<S
                 transport_type: TransportType::Archipelago,
                 sender,
                 control: None,
+                context,
             },
             ArchipelagoTransport {
                 address: ev.address.to_owned(),
@@ -109,11 +119,13 @@ pub fn start_archipelago(mut commands: Commands, mut archi_events: EventReader<S
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn manage_islands(
     mut commands: Commands,
     mut manager: AdapterManager,
     mut channel: ResMut<IslandChannel>,
     mut current_island: Local<HashMap<Entity, Entity>>,
+    contexts: Query<Entity, With<GlobalCrdtState>>,
     current_realm: Res<CurrentRealm>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut events: EventReader<RpcCall>,
@@ -129,7 +141,11 @@ fn manage_islands(
         if let Some(entity) = current_island.remove(&island.owner) {
             commands.entity(entity).despawn();
         }
-        if let Some(entity) = manager.connect(&island.connect_str) {
+        // client-only (see start_archipelago): islands feed the single shared context
+        let Ok(context) = contexts.single() else {
+            continue;
+        };
+        if let Some(entity) = manager.connect(&island.connect_str, context) {
             current_island.insert(island.owner, entity);
         }
 

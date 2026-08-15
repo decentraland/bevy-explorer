@@ -165,6 +165,8 @@ pub enum RpcCall {
         response: RpcResultSender<Result<SerializedProfile, ()>>,
     },
     GetConnectedPlayers {
+        /// calling scene — scopes the answer to its own room in partitioned mode
+        scene: Entity,
         response: RpcResultSender<Vec<String>>,
     },
     GetPlayersInScene {
@@ -177,9 +179,11 @@ pub enum RpcCall {
         response: RpcResultSender<Result<(), String>>,
     },
     SubscribePlayerConnected {
+        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribePlayerDisconnected {
+        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribePlayerEnteredScene {

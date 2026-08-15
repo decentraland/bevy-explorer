@@ -9,6 +9,7 @@ use std::{
 use anyhow::anyhow;
 use bevy::{
     asset::{io::AssetReader, AsyncReadExt, LoadState},
+    ecs::system::SystemParam,
     math::Vec3Swizzles,
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -30,7 +31,7 @@ use common::{
     util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
-    global_crdt::ForeignPlayer,
+    global_crdt::{CrdtContexts, ForeignPlayer},
     preview::handle_preview_socket,
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
     NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
@@ -1142,6 +1143,7 @@ fn get_user_data(
     >,
     mut scenes: Query<&mut RendererSceneContext>,
     mut profile_manager: ProfileManager,
+    contexts: Res<CrdtContexts>,
 ) {
     for (user, scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetUserData {
@@ -1174,10 +1176,17 @@ fn get_user_data(
                 }
             },
             Some(address) => {
-                if let Some((_, profile)) = others
-                    .iter()
-                    .find(|(fp, _)| *address == format!("{:#x}", fp.address))
-                {
+                // only serve cached profiles of players in the calling scene's own
+                // context — a co-tenant room's players aren't served from cache.
+                // resolved inline (not via ScenePresence) as this system already holds a
+                // mutable RendererSceneContext query
+                let scene_context = scenes
+                    .get(*scene)
+                    .map(|ctx| contexts.for_scene_hash(&ctx.hash))
+                    .unwrap_or_else(|_| contexts.shared());
+                if let Some((_, profile)) = others.iter().find(|(fp, _)| {
+                    fp.context == scene_context && *address == format!("{:#x}", fp.address)
+                }) {
                     response.send(Ok(profile.content.clone()));
                     return;
                 }
@@ -1229,17 +1238,41 @@ fn get_user_data(
     });
 }
 
+/// Resolves the crdt context (player-presence view) a scene reads. On the client every
+/// scene resolves to the shared context, so every player is visible to every scene; on a
+/// multi-tenant server each scene resolves to its own room's context. An unresolvable
+/// scene falls back to the shared context — which on a server holds no players.
+#[derive(SystemParam)]
+struct ScenePresence<'w, 's> {
+    contexts: Res<'w, CrdtContexts>,
+    scenes: Query<'w, 's, &'static RendererSceneContext>,
+}
+
+impl ScenePresence<'_, '_> {
+    fn context_of(&self, scene: Entity) -> Entity {
+        self.scenes
+            .get(scene)
+            .map(|ctx| self.contexts.for_scene_hash(&ctx.hash))
+            .unwrap_or_else(|_| self.contexts.shared())
+    }
+}
+
 fn get_connected_players(
     me: Res<Wallet>,
     others: Query<&ForeignPlayer>,
     mut events: EventReader<RpcCall>,
     is_server: Res<IsServer>,
+    presence: ScenePresence,
 ) {
-    for response in events.read().filter_map(|ev| match ev {
-        RpcCall::GetConnectedPlayers { response } => Some(response),
+    for (scene, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::GetConnectedPlayers { scene, response } => Some((scene, response)),
         _ => None,
     }) {
-        let others = others.iter().map(|f| format!("{:#x}", f.address));
+        let scene_context = presence.context_of(*scene);
+        let others = others
+            .iter()
+            .filter(|f| f.context == scene_context)
+            .map(|f| format!("{:#x}", f.address));
         // a headless server has no real local player — don't report its fake player as
         // a connected peer (it would appear as a ghost to every scene)
         let own = (!is_server.0)
@@ -1257,6 +1290,7 @@ fn get_players_in_scene(
     mut events: EventReader<RpcCall>,
     containing_scene: ContainingScene,
     is_server: Res<IsServer>,
+    presence: ScenePresence,
 ) {
     for (scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetPlayersInScene { scene, response } => Some((scene, response)),
@@ -1274,10 +1308,21 @@ fn get_players_in_scene(
             }
         }
 
+        // a room-scoped scene's players are its context's members (the positional check
+        // is meaningless on a multi-tenant server, where scenes host as portables);
+        // otherwise membership is positional as ever
+        let scene_context = presence.context_of(*scene);
+        let room_scoped = scene_context != presence.contexts.shared();
         results.extend(
             others
                 .iter()
-                .filter(|(e, _)| containing_scene.get(*e).contains(scene))
+                .filter(|(e, f)| {
+                    if room_scoped {
+                        f.context == scene_context
+                    } else {
+                        containing_scene.get(*e).contains(scene)
+                    }
+                })
                 .map(|(_, f)| format!("{:#x}", f.address)),
         );
         response.send(results);
@@ -1286,19 +1331,29 @@ fn get_players_in_scene(
 
 // todo: move this to global_crdt to do it all in one place?
 fn event_player_connected(
-    mut senders: Local<Vec<RpcEventSender>>,
+    mut senders: Local<Vec<(Entity, RpcEventSender)>>,
     mut events: EventReader<RpcCall>,
     players: Query<&ForeignPlayer, Added<ForeignPlayer>>,
+    presence: ScenePresence,
 ) {
-    for sender in events.read().filter_map(|ev| match ev {
-        RpcCall::SubscribePlayerConnected { sender } => Some(sender),
+    for (scene, sender) in events.read().filter_map(|ev| match ev {
+        RpcCall::SubscribePlayerConnected { scene, sender } => Some((scene, sender)),
         _ => None,
     }) {
-        senders.push(sender.clone());
+        senders.push((*scene, sender.clone()));
     }
 
-    senders.retain_mut(|sender| {
+    if players.is_empty() {
+        senders.retain(|(_, sender)| !sender.is_closed());
+        return;
+    }
+
+    senders.retain_mut(|(scene, sender)| {
+        let scene_context = presence.context_of(*scene);
         for player in players.iter() {
+            if player.context != scene_context {
+                continue;
+            }
             let data = json!({
                 "userId": format!("{:#x}", player.address)
             })
@@ -1312,33 +1367,45 @@ fn event_player_connected(
 
 // todo: move this to global_crdt to do it all in one place?
 fn event_player_disconnected(
-    mut senders: Local<Vec<RpcEventSender>>,
+    mut senders: Local<Vec<(Entity, RpcEventSender)>>,
     mut events: EventReader<RpcCall>,
     players: Query<(Entity, &ForeignPlayer), Added<ForeignPlayer>>,
     mut removed: RemovedComponents<ForeignPlayer>,
-    mut last_players: Local<HashMap<Entity, Address>>,
+    // (address, context) recorded while the player still exists — the component is
+    // already gone by the time the removal is visible
+    mut last_players: Local<HashMap<Entity, (Address, Entity)>>,
+    presence: ScenePresence,
 ) {
     // gather new receivers
-    for sender in events.read().filter_map(|ev| match ev {
-        RpcCall::SubscribePlayerDisconnected { sender } => Some(sender),
+    for (scene, sender) in events.read().filter_map(|ev| match ev {
+        RpcCall::SubscribePlayerDisconnected { scene, sender } => Some((scene, sender)),
         _ => None,
     }) {
-        senders.push(sender.clone());
+        senders.push((*scene, sender.clone()));
     }
 
     // add new players to our local record
     for (ent, player) in players.iter() {
-        last_players.insert(ent, player.address);
+        last_players.insert(ent, (player.address, player.context));
     }
 
-    // gather addresses of removed players
+    // gather removed players
     let removed = removed
         .read()
         .flat_map(|e| last_players.remove(&e))
         .collect::<Vec<_>>();
 
-    senders.retain_mut(|sender| {
-        for address in removed.iter() {
+    if removed.is_empty() {
+        senders.retain(|(_, sender)| !sender.is_closed());
+        return;
+    }
+
+    senders.retain_mut(|(scene, sender)| {
+        let scene_context = presence.context_of(*scene);
+        for (address, context) in removed.iter() {
+            if *context != scene_context {
+                continue;
+            }
             let data = json!({
                 "userId": format!("{:#x}", address)
             })

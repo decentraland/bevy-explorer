@@ -3504,6 +3504,7 @@ dependencies = [
  "dcl_deno",
  "ethers-core",
  "fastrand",
+ "futures-util",
  "http 1.4.0",
  "interprocess",
  "ipfs",
