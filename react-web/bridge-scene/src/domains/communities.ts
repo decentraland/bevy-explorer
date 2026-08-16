@@ -85,12 +85,15 @@ async function detail(id: string): Promise<{ members: CommunityMember[]; posts: 
   const zone = await isZone()
   const eventsBase = zone ? EVENTS_ZONE : EVENTS_ORG
   const reelBase = zone ? REEL_ZONE : REEL_ORG
+  // The id reaches us from the service (a uuid), but it lands in a URL — encode it so it
+  // can only ever be one path segment / one query value.
+  const cid = encodeURIComponent(id)
   const [membersRes, postsRes, placesRes, eventsRes, photosRes] = await Promise.all([
-    signed<{ results?: MemberRaw[] }>(`${b}/${id}/members?limit=100`).catch(() => undefined),
-    signed<{ posts?: PostRaw[] }>(`${b}/${id}/posts?limit=20`).catch(() => undefined),
-    signed<{ results?: PlaceRaw[] }>(`${placesBase}/${id}/places?limit=20`).catch(() => undefined),
-    getJson<{ data?: { events?: EventRaw[] } }>(`${eventsBase}?community_id=${id}&list=upcoming`).catch(() => undefined),
-    signed<{ images?: PhotoRaw[] }>(`${reelBase}/${id}/images?limit=30`).catch(() => undefined)
+    signed<{ results?: MemberRaw[] }>(`${b}/${cid}/members?limit=100`).catch(() => undefined),
+    signed<{ posts?: PostRaw[] }>(`${b}/${cid}/posts?limit=20`).catch(() => undefined),
+    signed<{ results?: PlaceRaw[] }>(`${placesBase}/${cid}/places?limit=20`).catch(() => undefined),
+    getJson<{ data?: { events?: EventRaw[] } }>(`${eventsBase}?community_id=${cid}&list=upcoming`).catch(() => undefined),
+    signed<{ images?: PhotoRaw[] }>(`${reelBase}/${cid}/images?limit=30`).catch(() => undefined)
   ])
   const memberRows = membersRes?.results ?? []
   const postRows = postsRes?.posts ?? []
@@ -152,12 +155,14 @@ export function registerCommunities(ctx: Ctx): void {
     ctx.send({ kind: 'communities', communities: await list() })
   })
   ctx.on('joinCommunity', async (msg) => {
-    await signed(`${await base('v1')}/${msg.id}/members`, 'POST')
+    await signed(`${await base('v1')}/${encodeURIComponent(msg.id)}/members`, 'POST')
     ctx.send({ kind: 'communities', communities: await list() })
   })
   ctx.on('leaveCommunity', async (msg) => {
     const me = getPlayer()?.userId
-    if (me != null && me !== '') await signed(`${await base('v1')}/${msg.id}/members/${me}`, 'DELETE').catch(() => undefined)
+    if (me != null && me !== '') {
+      await signed(`${await base('v1')}/${encodeURIComponent(msg.id)}/members/${encodeURIComponent(me)}`, 'DELETE').catch(() => undefined)
+    }
     ctx.send({ kind: 'communities', communities: await list() })
   })
   ctx.on('getCommunityDetail', async (msg) => {
