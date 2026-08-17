@@ -117,10 +117,11 @@ impl Plugin for VideoPlayerPlugin {
 
         app.insert_resource(FrameCopyRequestQueue(sx));
 
-        let render_app = app.sub_app_mut(RenderApp);
-        render_app
-            .insert_resource(FrameCopyReceiveQueue(rx))
-            .add_systems(Render, perform_video_copies.in_set(RenderSet::Queue));
+        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+            render_app
+                .insert_resource(FrameCopyReceiveQueue(rx))
+                .add_systems(Render, perform_video_copies.in_set(RenderSet::Queue));
+        }
     }
 }
 
