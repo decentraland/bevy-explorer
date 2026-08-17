@@ -265,6 +265,7 @@ fn connect_scene_room(
     ipfs: IpfsAssetServer,
     disabled: Res<DisableSceneRoomGatekeeper>,
     adapter_override: Res<SceneRoomAdapterOverride>,
+    preview_mode: Res<common::structs::PreviewMode>,
     contexts: Query<Entity, With<global_crdt::GlobalCrdtState>>,
 ) {
     if disabled.0 {
@@ -284,12 +285,26 @@ fn connect_scene_room(
             }
             warn!("disconnected scene channel {ev:?}");
         }
+        if adapter_override.0.is_some() && !preview_mode.is_preview {
+            warn_once!("DCL_SCENE_ROOM_ADAPTER is ignored outside preview mode");
+        }
         if ev.scene_id.is_empty() {
             *gatekeeper_task = None;
-        } else if let Some(adapter) = adapter_override.0.clone() {
-            // local/offline testing: skip the gatekeeper HTTP mint and connect the given
-            // adapter directly. Scene rooms feed the single shared client context.
+        } else if let Some(adapter) = adapter_override
+            .0
+            .clone()
+            .filter(|_| preview_mode.is_preview)
+        {
+            // local/offline testing (preview only): skip the gatekeeper HTTP mint and
+            // connect the given adapter directly. Scene rooms feed the single shared
+            // client context. ONLY livekit adapters, mirroring the orchestrated-server
+            // gate: any other protocol (signed-login, ws-room, fixed-adapter recursion)
+            // could make the engine sign a remote-chosen payload with its identity.
             *gatekeeper_task = None;
+            if !adapter.starts_with("livekit:") {
+                warn_once!("ignoring non-livekit scene room adapter override");
+                return;
+            }
             let Ok(context) = contexts.single() else {
                 return;
             };
