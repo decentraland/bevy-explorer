@@ -94,12 +94,13 @@ pub fn start_archipelago(
     mut archi_events: EventReader<StartArchipelago>,
     contexts: Query<Entity, With<GlobalCrdtState>>,
 ) {
-    // archipelago is realm comms, primary-player driven: client-only (headless sets
-    // DisableRealmComms), so the single shared context is its feed
-    let Ok(context) = contexts.single() else {
-        return;
-    };
     if let Some(ev) = archi_events.read().last() {
+        // archipelago is realm comms, primary-player driven: client-only (headless sets
+        // DisableRealmComms), so the single shared context is its feed. Checked after
+        // draining events so a failed lookup can't leave the reader cursor behind.
+        let Ok(context) = contexts.single() else {
+            return;
+        };
         info!("starting archipelago protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
 
@@ -138,13 +139,15 @@ fn manage_islands(
     }
 
     while let Ok(island) = channel.receiver.try_recv() {
-        if let Some(entity) = current_island.remove(&island.owner) {
-            commands.entity(entity).despawn();
-        }
-        // client-only (see start_archipelago): islands feed the single shared context
+        // client-only (see start_archipelago): islands feed the single shared context.
+        // Checked before despawning the previous island so a failed lookup can't leave
+        // no island transport at all.
         let Ok(context) = contexts.single() else {
             continue;
         };
+        if let Some(entity) = current_island.remove(&island.owner) {
+            commands.entity(entity).despawn();
+        }
         if let Some(entity) = manager.connect(&island.connect_str, context) {
             current_island.insert(island.owner, entity);
         }
