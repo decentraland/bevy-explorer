@@ -16,6 +16,16 @@ use scene_runner::{update_world::mesh_collider::SceneColliderData, ContainingSce
 /// we re-sync to it instead of freezing; smaller backward steps are reordered/duplicate datagrams.
 const TIMESTAMP_RESET_SECS: f64 = 60.0;
 
+/// Time constant for dead-reckoning a foreign avatar past its last observation. The extrapolated
+/// offset saturates at `velocity * COAST_SECS` instead of growing with the silence, and the
+/// reported velocity decays to match, so a peer whose updates stop coasts a plausible distance and
+/// settles rather than departing in a straight line forever.
+///
+/// Sized so ordinary operation is untouched: between 10Hz packets the staleness is a frame or two,
+/// where this is within ~1% of plain `velocity * elapsed`. Damping only becomes visible once an
+/// update is genuinely late — which is exactly when extrapolating a stale velocity is unsound.
+const COAST_SECS: f32 = 1.0;
+
 pub struct PlayerMovementPlugin;
 
 impl Plugin for PlayerMovementPlugin {
@@ -251,8 +261,16 @@ fn update_foreign_user_actual_position(
             let t1 = target.time + target.update_freq;
 
             if t1 < t0 + time.delta_secs() * 2.0 {
-                actual.translation = target.translation + velocity * (t0 - t1);
-                dynamic_state.velocity = velocity;
+                // Past the goalpost: dead-reckon forward from the last observation. `stale` is
+                // unbounded while no packet arrives, so the offset is saturated rather than linear
+                // (see `COAST_SECS`) — a single missed update used to walk the peer away at full
+                // speed indefinitely. `decay` is the derivative of that offset, so the velocity we
+                // report stays consistent with the motion we render and the walk/run blend winds
+                // down with it instead of animating a sprint on a stationary avatar.
+                let stale = t0 - t1;
+                let decay = (-stale / COAST_SECS).exp();
+                actual.translation = target.translation + velocity * (COAST_SECS * (1.0 - decay));
+                dynamic_state.velocity = velocity * decay;
                 turn_time = 0.0;
             } else {
                 // use some extrapolation but slow it down so we don't overcompensate for missed packets
