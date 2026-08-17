@@ -172,21 +172,22 @@ fn participant_disconnected(
 
     if let Some(address) = participant.identity().as_str().as_h160() {
         let transport_id = *room_entity;
-        let Some(sender) = transport_senders.get(transport_id) else {
-            return;
-        };
-        let task = livekit_runtime.spawn(async move {
-            sender
-                .send(NetworkUpdate::PlayerLeft {
-                    transport_id,
-                    address,
-                })
-                .await
-        });
-        player_update_tasks.push(PlayerUpdateTask {
-            runtime: livekit_runtime.clone(),
-            task,
-        });
+        // the transport (or its context) may already be torn down; skip only the
+        // notification — the participant entity below must still be despawned
+        if let Some(sender) = transport_senders.get(transport_id) {
+            let task = livekit_runtime.spawn(async move {
+                sender
+                    .send(NetworkUpdate::PlayerLeft {
+                        transport_id,
+                        address,
+                    })
+                    .await
+            });
+            player_update_tasks.push(PlayerUpdateTask {
+                runtime: livekit_runtime.clone(),
+                task,
+            });
+        }
     }
 
     let Some(hosting_participants) = maybe_hosting_participants else {
