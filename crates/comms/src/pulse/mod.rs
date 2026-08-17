@@ -127,6 +127,12 @@ pub enum PulseEvent {
         address: Address,
         movement: Box<rfc4::Movement>,
         teleport: bool,
+        /// The server tick this state belongs to, in seconds. Carried here rather than on the
+        /// `rfc4::Movement` because that field is a proto `float`, and the tick is absolute
+        /// milliseconds (~2.4e9): an `f32` mantissa cannot resolve consecutive ticks at that
+        /// magnitude — deltas milliseconds apart round to the same value, and the receiver's
+        /// strictly-newer gate then discards the later one as a stale duplicate.
+        timestamp: f64,
     },
     /// Subject entered the interest set (or connected). Establishes the subject↔wallet alias.
     Joined {
@@ -375,7 +381,7 @@ impl PulseDecoder {
         };
 
         let baseline = SubjectState::from_player_state(&state);
-        let movement = self.to_movement(&baseline, full.server_tick);
+        let movement = self.to_movement(&baseline);
         self.subjects.insert(
             full.subject_id,
             Subject {
@@ -395,6 +401,7 @@ impl PulseDecoder {
                 address,
                 movement: Box::new(movement),
                 teleport: false,
+                timestamp: Self::tick_secs(full.server_tick),
             },
         ]
     }
@@ -428,11 +435,12 @@ impl PulseDecoder {
         subject.baseline = SubjectState::from_player_state(&state);
         subject.last_seq = sequence;
         let address = subject.wallet;
-        let movement = self.to_movement_for(subject_id, server_tick);
+        let movement = self.to_movement_for(subject_id);
         vec![PulseEvent::Movement {
             address,
             movement: Box::new(movement),
             teleport,
+            timestamp: Self::tick_secs(server_tick),
         }]
     }
 
@@ -462,7 +470,7 @@ impl PulseDecoder {
         subject.baseline.apply_delta(&delta);
         subject.last_seq = delta.new_seq;
         let address = subject.wallet;
-        let mut movement = self.to_movement_for(delta.subject_id, delta.server_tick);
+        let mut movement = self.to_movement_for(delta.subject_id);
         // A delta carries position quantized to the parcel grid, so the true position is only known
         // to within ±half a step. Hand that box to the interpolator (via the rfc4 carrier) so it
         // dead-reckons inside the box instead of snapping to the quantized centre every packet.
@@ -476,6 +484,7 @@ impl PulseDecoder {
             address,
             movement: Box::new(movement),
             teleport: false,
+            timestamp: Self::tick_secs(delta.server_tick),
         }]
     }
 
@@ -490,14 +499,20 @@ impl PulseDecoder {
     }
 
     /// Convenience: convert an already-stored subject baseline.
-    fn to_movement_for(&self, subject_id: u32, server_tick: u32) -> rfc4::Movement {
-        self.to_movement(&self.subjects[&subject_id].baseline, server_tick)
+    fn to_movement_for(&self, subject_id: u32) -> rfc4::Movement {
+        self.to_movement(&self.subjects[&subject_id].baseline)
+    }
+
+    /// A server tick (absolute milliseconds) as seconds. `f64` throughout — see
+    /// [`PulseEvent::Movement`]'s `timestamp`.
+    fn tick_secs(server_tick: u32) -> f64 {
+        server_tick as f64 / 1000.0
     }
 
     /// Reconstruct an `rfc4::Movement` from a subject's float baseline. Position is parcel-decoded
     /// to world; `state_flags` is unpacked into the rfc4 bool fields; the animation rider is left
     /// empty (it arrives over LiveKit).
-    fn to_movement(&self, state: &SubjectState, server_tick: u32) -> rfc4::Movement {
+    fn to_movement(&self, state: &SubjectState) -> rfc4::Movement {
         let world = self
             .grid
             .decode_to_world(state.parcel_index, state.position);
@@ -508,7 +523,10 @@ impl PulseDecoder {
         rfc4::Movement {
             // Pulse has no client-side send timestamp; the unified server clock (ms→s) is
             // monotonic per subject, which is what the interpolator needs.
-            timestamp: server_tick as f32 / 1000.0,
+            // The Pulse server tick rides `PulseEvent::Movement::timestamp` as an `f64`; this
+            // proto float is too narrow to hold it (see there). Left at 0: nothing reads it on
+            // this path, and the LiveKit path sets its own sender-clock value.
+            timestamp: 0.0,
             position_x: world.x,
             position_y: world.y,
             position_z: world.z,

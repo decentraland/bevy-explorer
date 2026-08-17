@@ -107,6 +107,9 @@ pub(crate) struct PulseSession {
     /// work: `ForeignPlayer.transports` holds it, so despawning it on a realm change drops every
     /// Pulse peer from their presence set, exactly as it does for LiveKit and ws-room.
     routing_transport: Option<Entity>,
+    /// The realm `routing_transport` was spawned for. `StartPulse` also fires for archipelago
+    /// island hops within one realm, and those must NOT rebuild the transport — see `start_pulse`.
+    routing_realm: Option<String>,
     /// World ↔ parcel mapping, used to build our own `TeleportRequest`.
     grid: PulseParcelGrid,
     /// Where to (re)connect — kept so we can rebuild the driver without the `PulseConfig` resource.
@@ -277,6 +280,7 @@ fn connect_pulse(
         context,
         sender: crdt.get_sender(),
         routing_transport: None,
+        routing_realm: None,
         grid: config.parcel_grid,
         transport_config: config.transport.clone(),
         server_id: config.server_id.clone(),
@@ -304,6 +308,7 @@ fn start_pulse(
     realm: Res<CurrentRealm>,
     player: Query<&GlobalTransform, With<PrimaryUser>>,
     out_of_world: Query<(), (With<PrimaryUser>, With<OutOfWorld>)>,
+    routing: Query<(), With<PulseOutbox>>,
 ) {
     if events.is_empty() {
         return;
@@ -314,6 +319,39 @@ fn start_pulse(
         // change re-fires `StartPulse`, so a missed first event self-heals on the next one.
         return;
     };
+
+    // `StartPulse` fires whenever a livekit realm island connects — which includes an archipelago
+    // island hop *within* the same realm. Only a realm change sweeps the transports
+    // (`process_realm_change` despawns everything `With<Transport>`), so only then is a new routing
+    // entity needed.
+    //
+    // Rebuilding it on an island hop would be actively harmful. Pulse peers are held in
+    // `ForeignPlayer.transports` by this entity alone, and a player with an empty set is despawned
+    // on the spot now that the inactivity grace period is gone — so an island hop would despawn and
+    // respawn every peer, firing `playerDisconnected`/`onLeaveScene` for people who never left. Peers
+    // riding Pulse are precisely the ones who should survive the hop: unlike a livekit island, their
+    // transport does not change. Leaving it alone also avoids re-teleporting for a realm that hasn't
+    // changed, and the churn of a fresh channel per hop.
+    let realm_changed = session.routing_realm.as_deref() != Some(realm.address.as_str());
+    // Confirmed against the world rather than trusted from the id alone. Nothing sweeps transports
+    // while the realm is unchanged, so this particular check cannot race a deferred despawn — and if
+    // the entity did go away for some other reason, falling through rebuilds it instead of leaving
+    // Pulse silently holding a dead id with nothing to send on.
+    let routing_alive = session
+        .routing_transport
+        .is_some_and(|entity| routing.contains(entity));
+    if !realm_changed && routing_alive {
+        return;
+    }
+
+    // A realm change: the sweep above already queued our old entity for despawn, but that is a
+    // deferred command we cannot observe yet — so drop the one we own explicitly (idempotent) and
+    // spawn fresh, rather than presence-checking and racing the flush.
+    if let Some(previous) = session.routing_transport.take() {
+        if let Ok(mut entity) = commands.get_entity(previous) {
+            entity.despawn();
+        }
+    }
 
     let (sender, receiver) = mpsc::channel(1000);
     let routing_transport = commands
@@ -332,6 +370,7 @@ fn start_pulse(
         .id();
 
     session.routing_transport = Some(routing_transport);
+    session.routing_realm = Some(realm.address.clone());
     session.wanted = true;
     // Already up (a later realm) → re-teleport now, unless out of world (position provisional behind
     // the loading screen); the spawn `PlayerTeleported` re-announces realm + position. Otherwise the
@@ -538,7 +577,15 @@ fn drain_inbound(
                     address,
                     movement,
                     teleport,
-                } => session.forward(address, PlayerMessage::Movement { movement, teleport }),
+                    timestamp,
+                } => session.forward(
+                    address,
+                    PlayerMessage::Movement {
+                        movement,
+                        teleport,
+                        timestamp,
+                    },
+                ),
                 // A sequence gap was detected — ask the server to replay full state, reliably.
                 PulseEvent::Resync(request) => {
                     let message = pulse::ClientMessage {

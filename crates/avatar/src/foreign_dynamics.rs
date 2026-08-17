@@ -14,7 +14,7 @@ use scene_runner::{update_world::mesh_collider::SceneColliderData, ContainingSce
 
 /// A backward jump beyond this reads as a server restart (the Pulse `server_tick` resets to ~0), so
 /// we re-sync to it instead of freezing; smaller backward steps are reordered/duplicate datagrams.
-const TIMESTAMP_RESET_SECS: f32 = 60.0;
+const TIMESTAMP_RESET_SECS: f64 = 60.0;
 
 pub struct PlayerMovementPlugin;
 
@@ -35,7 +35,8 @@ impl Plugin for PlayerMovementPlugin {
 #[derive(Component)]
 struct PlayerTargetPosition {
     time: f32,
-    timestamp: Option<f32>,
+    /// The source clock of the last applied update, seconds (see `PlayerPositionEvent`).
+    timestamp: Option<f64>,
     velocity: Option<Vec3>,
     /// Already box-resolved against the quantization grid when the packet landed (see
     /// `update_foreign_user_target_position`); the interpolator treats it as an exact, stable

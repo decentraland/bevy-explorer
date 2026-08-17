@@ -134,6 +134,9 @@ pub enum PlayerMessage {
     Movement {
         movement: Box<rfc4::Movement>,
         teleport: bool,
+        /// Server tick in seconds. `f64`, and carried beside the `rfc4::Movement` rather than in
+        /// its proto `float` timestamp, which is too narrow for an absolute millisecond tick.
+        timestamp: f64,
     },
     AudioStreamAvailable {
         transport: Entity,
@@ -148,10 +151,15 @@ impl std::fmt::Debug for PlayerMessage {
         let var_name = match self {
             Self::MetaData(arg0) => f.debug_tuple("MetaData").field(arg0).finish(),
             Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
-            Self::Movement { movement, teleport } => f
+            Self::Movement {
+                movement,
+                teleport,
+                timestamp,
+            } => f
                 .debug_struct("Movement")
                 .field("movement", movement)
                 .field("teleport", teleport)
+                .field("timestamp", timestamp)
                 .finish(),
             Self::AudioStreamAvailable { transport } => f
                 .debug_tuple("AudioStreamAvailable")
@@ -479,8 +487,15 @@ pub struct PlayerPositionEvent {
     pub player: Entity,
     /// Local receive time (`time.elapsed_secs()`) — drives the interpolation catch-up window.
     pub time: f32,
-    /// Server tick (seconds) — orders updates and anchors the shared clock SDA aligns against.
-    pub timestamp: f32,
+    /// The source clock for this update, in seconds: the Pulse server tick, or the sender's own
+    /// clock on the LiveKit path. Only ever compared against a previous value from the same
+    /// source, to reject reordered/duplicate packets.
+    ///
+    /// `f64` because a Pulse tick is absolute milliseconds (~2.4e9). In `f32` that has a 256ms
+    /// quantum, so consecutive deltas collapse onto one value and the strictly-newer gate drops
+    /// them — which stranded foreign avatars mid-slide when the update that zeroed their velocity
+    /// was discarded.
+    pub timestamp: f64,
     pub translation: DclTranslation,
     pub rotation: DclQuat,
     pub velocity: Vec3,
@@ -564,6 +579,7 @@ fn apply_foreign_movement(
     entity: Entity,
     scene_id: SceneEntityId,
     now: f32,
+    timestamp: f64,
     teleport: bool,
     commands: &mut Commands,
     state: &mut GlobalCrdtState,
@@ -626,7 +642,7 @@ fn apply_foreign_movement(
     position_events.write(PlayerPositionEvent {
         player: entity,
         time: now,
-        timestamp: m.timestamp,
+        timestamp,
         translation: dcl_transform.translation,
         rotation: dcl_transform.rotation,
         velocity: vel,
@@ -790,6 +806,8 @@ pub fn process_transport_updates(
                             entity,
                             scene_id,
                             time.elapsed_secs(),
+                            // the sender's own clock, seconds since their client started
+                            m.timestamp as f64,
                             false,
                             &mut commands,
                             &mut state,
@@ -862,11 +880,16 @@ pub fn process_transport_updates(
                             );
                         }
                         PlayerMessage::PlayerData(Message::Voice(_)) => (),
-                        PlayerMessage::Movement { movement, teleport } => apply_foreign_movement(
+                        PlayerMessage::Movement {
+                            movement,
+                            teleport,
+                            timestamp,
+                        } => apply_foreign_movement(
                             &movement,
                             entity,
                             scene_id,
                             time.elapsed_secs(),
+                            timestamp,
                             teleport,
                             &mut commands,
                             &mut state,

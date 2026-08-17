@@ -59,6 +59,62 @@ fn approx(a: f32, b: f32) {
     assert!((a - b).abs() < 0.05, "expected ~{b}, got {a}");
 }
 
+fn movement_timestamps(events: Vec<PulseEvent>) -> Vec<f64> {
+    events
+        .into_iter()
+        .filter_map(|event| match event {
+            PulseEvent::Movement { timestamp, .. } => Some(timestamp),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Real ticks captured from a live session, where a peer's stop went missing. They are milliseconds
+/// and only ~100ms apart at ~2.35e9, which is past the point where an `f32` can tell them apart:
+/// all three collapse onto 2350530.75. The receiver drops any update that is not strictly newer
+/// than the last applied one, so the deltas that decelerated and then zeroed the peer's velocity
+/// were discarded, and the avatar kept dead-reckoning at its last-known speed indefinitely.
+#[test]
+fn consecutive_ticks_stay_distinct_at_realistic_magnitudes() {
+    const TICKS: [u32; 3] = [2350530722, 2350530821, 2350530940];
+
+    let mut decoder = PulseDecoder::new(PulseParcelGrid::default());
+    decoder.handle(server_msg(joined(5, (1.0, 2.0, 3.0), 0)));
+
+    let stamps: Vec<f64> = TICKS
+        .iter()
+        .enumerate()
+        .flat_map(|(i, tick)| {
+            let delta = pulse::PlayerStateDeltaTier0 {
+                subject_id: SUBJECT,
+                baseline_seq: 5 + i as u32,
+                new_seq: 6 + i as u32,
+                server_tick: *tick,
+                position_x: Some(128 + i as u32),
+                ..Default::default()
+            };
+            movement_timestamps(decoder.handle(server_msg(
+                pulse::server_message::Message::PlayerStateDelta(delta),
+            )))
+        })
+        .collect();
+
+    assert_eq!(
+        stamps.len(),
+        TICKS.len(),
+        "every delta should emit movement"
+    );
+    for (a, b) in stamps.iter().zip(stamps.iter().skip(1)) {
+        assert!(
+            b > a,
+            "ticks must stay strictly increasing after conversion, got {a} then {b}"
+        );
+    }
+    // and the gaps must survive intact, not just be non-zero
+    assert!((stamps[1] - stamps[0] - 0.099).abs() < 1e-6);
+    assert!((stamps[2] - stamps[1] - 0.119).abs() < 1e-6);
+}
+
 #[test]
 fn parcel_decode_matches_server_scheme() {
     let grid = PulseParcelGrid::default();
