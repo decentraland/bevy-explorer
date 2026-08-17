@@ -651,12 +651,14 @@ fn player_position_added<T: AVPlayer>(
         return;
     };
 
-
     debug!("Seeking AVPlayer to {}", **position);
     html_media_entity.current_time = **position;
 }
 
-fn html_media_entity_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, HtmlMediaEntity<T>>, mut commands: Commands) {
+fn html_media_entity_on_remove<T: AVPlayer>(
+    trigger: Trigger<OnRemove, HtmlMediaEntity<T>>,
+    mut commands: Commands,
+) {
     let entity = trigger.target();
     commands.entity(entity).try_remove::<VideoTextureOutput>();
 }
