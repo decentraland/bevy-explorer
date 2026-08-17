@@ -101,8 +101,8 @@ impl Plugin for VideoPlayerPlugin {
 
         app.add_observer(new_player_source::<AudioStream>);
         app.add_observer(new_player_source::<VideoPlayer>);
-        app.add_observer(player_source_removed::<AudioStream>);
-        app.add_observer(player_source_removed::<VideoPlayer>);
+        app.add_observer(player_source_replaced::<AudioStream>);
+        app.add_observer(player_source_replaced::<VideoPlayer>);
         app.add_observer(player_config_added::<AudioStream>);
         app.add_observer(player_config_added::<VideoPlayer>);
         app.add_observer(player_position_added::<AudioStream>);
@@ -586,8 +586,8 @@ fn new_player_source<T: AVPlayer>(
     };
 }
 
-fn player_source_removed<T: AVPlayer>(
-    trigger: Trigger<OnRemove, T::Source>,
+fn player_source_replaced<T: AVPlayer>(
+    trigger: Trigger<OnReplace, T::Source>,
     mut commands: Commands,
 ) {
     let entity = trigger.target();
