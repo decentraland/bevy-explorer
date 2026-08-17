@@ -97,6 +97,14 @@ fn parse_args() -> Args {
     let orchestrated = args.contains("--orchestrated");
     // orchestrated mode is always a server
     let server_mode = args.contains("--server-mode") || orchestrated;
+    // standalone server mode is a local-dev flow (single scene on the shared context,
+    // self-minted scene room); production servers are always orchestrated
+    if server_mode && !orchestrated && !preview {
+        eprintln!(
+            "--server-mode without --orchestrated is a local-dev mode and requires --preview"
+        );
+        std::process::exit(2);
+    }
     // latch the process-global server-role flags before the app is built
     if server_mode {
         common::structs::set_server_mode();
