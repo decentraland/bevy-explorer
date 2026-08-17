@@ -107,6 +107,8 @@ impl Plugin for VideoPlayerPlugin {
         app.add_observer(player_config_added::<VideoPlayer>);
         app.add_observer(player_position_added::<AudioStream>);
         app.add_observer(player_position_added::<VideoPlayer>);
+        app.add_observer(html_media_entity_on_remove::<AudioStream>);
+        app.add_observer(html_media_entity_on_remove::<VideoPlayer>);
         app.add_observer(av_player_should_be_playing_on_add::<AudioStream>);
         app.add_observer(av_player_should_be_playing_on_add::<VideoPlayer>);
         app.add_observer(av_player_should_be_playing_on_remove::<AudioStream>);
@@ -652,6 +654,11 @@ fn player_position_added<T: AVPlayer>(
 
     debug!("Seeking AVPlayer to {}", **position);
     html_media_entity.current_time = **position;
+}
+
+fn html_media_entity_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, HtmlMediaEntity<T>>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<VideoTextureOutput>();
 }
 
 fn av_player_should_be_playing_on_add<T: AVPlayer>(
