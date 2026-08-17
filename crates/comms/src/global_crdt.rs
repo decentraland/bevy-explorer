@@ -1,4 +1,4 @@
-use std::{f32::consts::TAU, ops::RangeInclusive, sync::Arc};
+use std::{f32::consts::TAU, sync::Arc};
 
 use bevy::{
     app::Propagate,
@@ -23,9 +23,8 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dcl::{
     crdt::{append_component, delete_entity, put_component},
-    interface::{crdt_context::CrdtContext, CrdtStore, CrdtType},
+    interface::{CrdtStore, CrdtType},
     js::comms::CommsMessageType,
-    SceneId,
 };
 use dcl_component::{
     proto_components::{
@@ -44,7 +43,34 @@ use kira::sound::streaming::StreamingSoundData;
 #[cfg(target_arch = "wasm32")]
 pub struct StreamingSoundData<T>(std::marker::PhantomData<fn() -> T>);
 
-const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=406;
+/// Allocates foreign-player entity ids within `SceneEntityId::FOREIGN_PLAYER_RANGE` for a
+/// single crdt context. Freed ids are re-issued with a bumped generation so scenes treat
+/// the recycled id as a fresh entity.
+#[derive(Default)]
+struct PlayerIdAllocator {
+    free: Vec<SceneEntityId>,
+    next_fresh: u16,
+}
+
+impl PlayerIdAllocator {
+    fn alloc(&mut self) -> Option<SceneEntityId> {
+        if let Some(id) = self.free.pop() {
+            return Some(id);
+        }
+        let range = SceneEntityId::FOREIGN_PLAYER_RANGE;
+        let id = range.start().checked_add(self.next_fresh)?;
+        if id > *range.end() {
+            return None;
+        }
+        self.next_fresh += 1;
+        Some(SceneEntityId::new(id, 0))
+    }
+
+    fn free(&mut self, id: SceneEntityId) {
+        self.free
+            .push(SceneEntityId::new(id.id, id.generation.wrapping_add(1)));
+    }
+}
 
 pub struct GlobalCrdtPlugin;
 
@@ -58,26 +84,17 @@ pub struct DiscardPlayerUpdates(pub bool);
 
 impl Plugin for GlobalCrdtPlugin {
     fn build(&self, app: &mut App) {
-        let (ext_sender, ext_receiver) = mpsc::channel(1000);
-        let (int_sender, _) = broadcast::channel(1000);
         app.init_resource::<DiscardPlayerUpdates>();
-        app.insert_resource(GlobalCrdtState {
-            ext_receiver,
-            ext_sender,
-            int_sender,
-            context: CrdtContext::new(
-                SceneId::DUMMY,
-                "Global Crdt".into(),
-                "Global Crdt".into(),
-                false,
-                false,
-                false,
-            ),
-            store: Default::default(),
-            lookup: Default::default(),
-            realm_bounds: (IVec2::MAX, IVec2::MIN),
-            localizers: Default::default(),
-        });
+
+        // the shared context: the client's single player view, which every transport and
+        // scene resolves to unless a room-specific context exists for its hash. An
+        // orchestrated server spawns one additional context per scene room.
+        let shared = app.world_mut().spawn(GlobalCrdtState::new(None)).id();
+        let mut contexts = CrdtContexts::default();
+        contexts.0.insert(String::new(), shared);
+        app.insert_resource(contexts);
+
+        app.add_observer(remove_context_players);
 
         let (sender, _) = tokio::sync::broadcast::channel(1_000);
         app.insert_resource(LocalAudioSource { sender });
@@ -164,20 +181,88 @@ impl From<NonPlayerUpdate> for NetworkUpdate {
     }
 }
 
-#[derive(Resource)]
+/// One player-presence view: a crdt store of foreign players plus the channels feeding
+/// it (from transports) and fanning it out (to scenes). The client has exactly one (the
+/// shared context); an orchestrated multi-tenant server spawns one per scene room, so a
+/// scene can only ever observe players connected to its own room — packets cannot reach
+/// another context's store because routing is fixed when a transport binds to a context.
+#[derive(Component)]
 pub struct GlobalCrdtState {
+    /// scene-room hash this context serves; `None` = the shared context
+    pub room: Option<String>,
     // receiver from sockets
     ext_receiver: mpsc::Receiver<NetworkUpdate>,
     // sender for sockets to post to
     ext_sender: mpsc::Sender<NetworkUpdate>,
     // sender for broadcast updates
     int_sender: broadcast::Sender<GlobalCrdtStateUpdate>,
-    context: CrdtContext,
+    allocator: PlayerIdAllocator,
     store: CrdtStore,
     lookup: BiMap<Address, Entity>,
     pub(crate) realm_bounds: (IVec2, IVec2),
     // per-component localizer registry (populated as components are first sent)
     localizers: HashMap<SceneComponentId, Localizer>,
+}
+
+impl GlobalCrdtState {
+    pub fn new(room: Option<String>) -> Self {
+        let (ext_sender, ext_receiver) = mpsc::channel(1000);
+        let (int_sender, _) = broadcast::channel(1000);
+        Self {
+            room,
+            ext_receiver,
+            ext_sender,
+            int_sender,
+            allocator: Default::default(),
+            store: Default::default(),
+            lookup: Default::default(),
+            realm_bounds: (IVec2::MAX, IVec2::MIN),
+            localizers: Default::default(),
+        }
+    }
+}
+
+/// Resolves the network-update sender of the crdt context a given transport feeds —
+/// the only route by which transport-scoped systems may inject player updates.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct TransportSenders<'w, 's> {
+    transports: Query<'w, 's, &'static Transport>,
+    contexts: Query<'w, 's, &'static GlobalCrdtState>,
+}
+
+impl TransportSenders<'_, '_> {
+    pub fn get(&self, transport: Entity) -> Option<mpsc::Sender<NetworkUpdate>> {
+        let transport = self.transports.get(transport).ok()?;
+        Some(self.contexts.get(transport.context).ok()?.get_sender())
+    }
+}
+
+/// Index of live crdt contexts: scene-room hash (`""` = the shared context; scene hashes
+/// are never empty) → the entity holding its `GlobalCrdtState`. The shared context
+/// always exists; room contexts are spawned/despawned by the orchestrated server
+/// alongside their scene rooms.
+#[derive(Resource, Default)]
+pub struct CrdtContexts(pub HashMap<String, Entity>);
+
+impl CrdtContexts {
+    pub fn shared(&self) -> Entity {
+        *self.0.get("").expect("shared crdt context missing")
+    }
+
+    /// The context a scene with the given hash should use. On the client (and on a
+    /// standalone single-scene server) room contexts never exist, so every scene
+    /// resolves to the single shared context. On a multi-tenant server every scene's
+    /// room context is registered before the scene is queued and lives until the scene
+    /// is gone, so a miss is an ordering bug — and falling back to the shared context
+    /// would silently cross-contaminate room presence, so panic instead.
+    pub fn for_scene_hash(&self, hash: &str) -> Entity {
+        self.0.get(hash).copied().unwrap_or_else(|| {
+            if common::structs::multi_tenant() {
+                panic!("no crdt context for scene {hash} on a multi-tenant server");
+            }
+            self.shared()
+        })
+    }
 }
 
 impl GlobalCrdtState {
@@ -282,6 +367,9 @@ impl GlobalCrdtState {
 #[derive(Component, Debug)]
 pub struct ForeignPlayer {
     pub address: Address,
+    /// the crdt context (player-presence view) this player entity belongs to; the same
+    /// wallet connected to several rooms is a separate entity in each room's context
+    pub context: Entity,
     /// Transports this player is currently connected through. Membership is implied
     /// by receiving data; transports report explicit departures (`NetworkUpdate::PlayerLeft`)
     /// and transport despawn removes the entity from every set. Empty set = disconnected.
@@ -391,7 +479,7 @@ pub struct VoiceMessageStreams {
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_transport_updates(
     mut commands: Commands,
-    mut state: ResMut<GlobalCrdtState>,
+    mut contexts: Query<(Entity, &mut GlobalCrdtState)>,
     mut players: Query<&mut ForeignPlayer>,
     time: Res<Time>,
     mut profile_events: EventWriter<ProfileEvent>,
@@ -420,380 +508,415 @@ pub fn process_transport_updates(
     string_senders.retain(|_, s| !s.is_closed());
     binary_senders.retain(|_, s| !s.is_closed());
 
-    let mut created_this_frame: HashMap<
-        Address,
-        (Entity, SceneEntityId, mpsc::Sender<ForeignAudioData>),
-    > = HashMap::new();
+    // each context is fully independent: its own transports feed it, its own player
+    // entities live in it, and only its own scenes observe it
+    for (context_entity, mut state) in contexts.iter_mut() {
+        let mut created_this_frame: HashMap<
+            Address,
+            (Entity, SceneEntityId, mpsc::Sender<ForeignAudioData>),
+        > = HashMap::new();
 
-    while let Ok(network_update) = state.ext_receiver.try_recv() {
-        match network_update {
-            NetworkUpdate::Player(update) => {
-                if discard_player_updates.0 {
-                    continue;
+        while let Ok(network_update) = state.ext_receiver.try_recv() {
+            match network_update {
+                NetworkUpdate::Player(update) => {
+                    if discard_player_updates.0 {
+                        continue;
+                    }
+                    // create/update timestamp/transport_id on the foreign player
+                    let (entity, scene_id, audio_channel) =
+                        if let Some((entity, scene_id, channel)) =
+                            created_this_frame.get(&update.address)
+                        {
+                            (*entity, *scene_id, channel.clone())
+                        } else if let Some(existing) = state.lookup.get_by_left(&update.address) {
+                            let mut foreign_player = players.get_mut(*existing).unwrap();
+                            foreign_player.transports.insert(update.transport_id);
+                            (
+                                *existing,
+                                foreign_player.scene_id,
+                                foreign_player.audio_sender.clone(),
+                            )
+                        } else {
+                            let Some(next_free) = state.allocator.alloc() else {
+                                warn!("no space for any more players!");
+                                continue;
+                            };
+
+                            state.update_crdt(
+                                SceneComponentId::PLAYER_IDENTITY_DATA,
+                                CrdtType::LWW_ANY,
+                                next_free,
+                                &PbPlayerIdentityData {
+                                    address: format!("{:#x}", update.address),
+                                    is_guest: true,
+                                },
+                            );
+
+                            let (audio_sender, audio_receiver) =
+                                mpsc::channel::<ForeignAudioData>(10);
+
+                            let new_entity = commands
+                                .spawn((
+                                    Transform::default(),
+                                    Visibility::default(),
+                                    ForeignPlayer {
+                                        address: update.address,
+                                        context: context_entity,
+                                        transports: HashSet::from_iter([update.transport_id]),
+                                        scene_id: next_free,
+                                        profile_version: 0,
+                                        audio_sender: audio_sender.clone(),
+                                    },
+                                    ForeignAudioSource {
+                                        audio_available_receiver: audio_receiver,
+                                        audio_receiver: None,
+                                        available_transports: Default::default(),
+                                        current_transport: None,
+                                    },
+                                    HeadSync::default(),
+                                    PointAtSync::default(),
+                                    Propagate(RenderLayers::default()),
+                                ))
+                                .id();
+
+                            state.lookup.insert(update.address, new_entity);
+
+                            info!(
+                                "creating new player: {} -> {:?} / {}",
+                                update.address, new_entity, next_free
+                            );
+                            created_this_frame.insert(
+                                update.address,
+                                (new_entity, next_free, audio_sender.clone()),
+                            );
+                            (new_entity, next_free, audio_sender)
+                        };
+
+                    // process update
+                    match update.message {
+                        PlayerMessage::MetaData(str) => {
+                            if let Ok(meta) = serde_json::from_str::<ForeignMetaData>(&str) {
+                                debug!("foreign player metadata: {scene_id:?}: {meta:?}");
+                                profile_meta_cache
+                                    .0
+                                    .insert(update.address, meta.lambdas_endpoint);
+                            }
+                        }
+                        PlayerMessage::AudioStreamAvailable { transport } => {
+                            // pass through
+                            debug!("{transport} available for {entity}!");
+                            let _ = audio_channel
+                                .try_send(ForeignAudioData::TransportAvailable(transport));
+                        }
+                        PlayerMessage::AudioStreamUnavailable { transport } => {
+                            // pass through
+                            debug!("{transport} not available for {entity}!");
+                            let _ = audio_channel
+                                .try_send(ForeignAudioData::TransportUnavailable(transport));
+                        }
+                        PlayerMessage::PlayerData(Message::Position(pos)) => {
+                            let dcl_transform = DclTransformAndParent {
+                                translation: DclTranslation([
+                                    pos.position_x,
+                                    pos.position_y,
+                                    pos.position_z,
+                                ]),
+                                rotation: DclQuat([
+                                    pos.rotation_x,
+                                    pos.rotation_y,
+                                    pos.rotation_z,
+                                    pos.rotation_w,
+                                ]),
+                                scale: Vec3::ONE,
+                                parent: SceneEntityId::WORLD_ORIGIN,
+                            };
+                            debug!(
+                                "player: {:#x} -> {}",
+                                update.address,
+                                Vec3::new(pos.position_x, pos.position_y, pos.position_z)
+                            );
+                            // commands
+                            //     .entity(entity)
+                            //     .insert(dcl_transform.to_bevy_transform());
+                            state.update_crdt(
+                                SceneComponentId::TRANSFORM,
+                                CrdtType::LWW_ANY,
+                                scene_id,
+                                &dcl_transform,
+                            );
+                            position_events.write(PlayerPositionEvent {
+                                index: Some(pos.index),
+                                time: time.elapsed_secs(),
+                                timestamp: None,
+                                player: entity,
+                                translation: DclTranslation([
+                                    pos.position_x,
+                                    pos.position_y,
+                                    pos.position_z,
+                                ]),
+                                rotation: DclQuat([
+                                    pos.rotation_x,
+                                    pos.rotation_y,
+                                    pos.rotation_z,
+                                    pos.rotation_w,
+                                ]),
+                                velocity: None,
+                                grounded: None,
+                                remote_move_kind: None,
+                                scene_anim: None,
+                            });
+                        }
+                        PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
+                            profile_events.write(ProfileEvent {
+                                sender: entity,
+                                event: ProfileEventType::Version(version),
+                            });
+                        }
+                        PlayerMessage::PlayerData(Message::ProfileRequest(request)) => {
+                            profile_events.write(ProfileEvent {
+                                sender: entity,
+                                event: ProfileEventType::Request(request),
+                            });
+                        }
+                        PlayerMessage::PlayerData(Message::ProfileResponse(response)) => {
+                            profile_events.write(ProfileEvent {
+                                sender: entity,
+                                event: ProfileEventType::Response(response),
+                            });
+                        }
+                        PlayerMessage::PlayerData(Message::Chat(chat)) => {
+                            let last = duplicate_chat_filter.entry(entity).or_default();
+
+                            if *last < chat.timestamp {
+                                debug!("chat data: `{chat:#?}`");
+                                chat_events.write(ChatEvent {
+                                    sender: entity,
+                                    timestamp: chat.timestamp,
+                                    channel: "Nearby".to_owned(),
+                                    message: chat.message,
+                                });
+                                *last = chat.timestamp;
+                            }
+                        }
+                        PlayerMessage::PlayerData(Message::Scene(scene)) => {
+                            let address = format!("{:#x}", update.address);
+                            if let Some(room_hash) = &state.room {
+                                // a client may only address the scene owning this context's
+                                // room — rejects bus injection via a forged scene_id
+                                if scene.scene_id != *room_hash {
+                                    debug!(
+                                        "dropping cross-room bus message from {address}: declared scene {} != room {room_hash}",
+                                        scene.scene_id
+                                    );
+                                    continue;
+                                }
+                            }
+                            process_messagebus(
+                                scene,
+                                address,
+                                &mut string_senders,
+                                &mut binary_senders,
+                            );
+                        }
+                        PlayerMessage::PlayerData(Message::Voice(_)) => (),
+                        PlayerMessage::PlayerData(Message::Movement(m)) => {
+                            debug!("movement data: {m:?}");
+                            commands.entity(entity).try_insert((
+                                HeadSync {
+                                    yaw_deg: m.head_yaw,
+                                    pitch_deg: m.head_pitch,
+                                    yaw_enabled: m.head_ik_yaw_enabled,
+                                    pitch_enabled: m.head_ik_pitch_enabled,
+                                },
+                                PointAtSync {
+                                    target_world: Vec3::new(
+                                        m.point_at_x,
+                                        m.point_at_y,
+                                        m.point_at_z,
+                                    ),
+                                    is_pointing: m.is_pointing_at,
+                                },
+                            ));
+                            let pos = Vec3::new(m.position_x, m.position_y, -m.position_z);
+                            let vel = Vec3::new(m.velocity_x, m.velocity_y, -m.velocity_z);
+                            // Compose the render-only lean on top of yaw; absent/old senders → upright.
+                            let tilt = m
+                                .scene_driven_animation
+                                .as_ref()
+                                .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
+                                .unwrap_or(Quat::IDENTITY);
+                            let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU) * tilt;
+                            let dcl_transform = DclTransformAndParent {
+                                translation: DclTranslation::from_bevy_translation(pos),
+                                rotation: DclQuat::from_bevy_quat(rot),
+                                scale: Vec3::ONE,
+                                parent: SceneEntityId::WORLD_ORIGIN,
+                            };
+
+                            state.update_crdt(
+                                SceneComponentId::TRANSFORM,
+                                CrdtType::LWW_ANY,
+                                scene_id,
+                                &dcl_transform,
+                            );
+                            // Glide is checked before DoubleJump because Unity keeps `jump_count`
+                            // at its last value (usually 2) through the whole glide — so the
+                            // DoubleJump-first ordering would mask an active glide.
+                            let remote_move_kind = match (
+                                m.glide_state(),
+                                m.jump_count,
+                                m.is_jumping || m.is_long_jump,
+                            ) {
+                                (
+                                    rfc4::movement::GlideState::OpeningProp
+                                    | rfc4::movement::GlideState::Gliding,
+                                    _,
+                                    _,
+                                ) => Some(MoveKind::Glide),
+                                (_, c, _) if c >= 2 => Some(MoveKind::DoubleJump),
+                                (_, _, true) => Some(MoveKind::Jump),
+                                _ => None,
+                            };
+                            let scene_anim = resolve_remote_anim(
+                                entity,
+                                update.address,
+                                &mut last_remote_anim,
+                                m.scene_driven_animation,
+                            );
+                            position_events.write(PlayerPositionEvent {
+                                index: None,
+                                time: time.elapsed_secs(),
+                                timestamp: Some(m.timestamp),
+                                player: entity,
+                                translation: dcl_transform.translation,
+                                rotation: dcl_transform.rotation,
+                                velocity: Some(vel),
+                                grounded: Some(m.is_grounded),
+                                remote_move_kind,
+                                scene_anim,
+                            });
+                        }
+                        PlayerMessage::PlayerData(Message::MovementCompressed(mut m)) => {
+                            debug!("movement compressed data: {m:?}");
+                            // Compose the render-only lean on top of yaw; absent/old senders → upright.
+                            // Read tilt before `take()` below empties the field.
+                            let tilt = m
+                                .scene_driven_animation
+                                .as_ref()
+                                .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
+                                .unwrap_or(Quat::IDENTITY);
+                            let scene_anim = resolve_remote_anim(
+                                entity,
+                                update.address,
+                                &mut last_remote_anim,
+                                m.scene_driven_animation.take(),
+                            );
+                            let movement = MovementCompressed::from_proto(m);
+                            let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
+                            let vel = movement.velocity();
+                            let rot =
+                                Quat::from_rotation_y(movement.temporal.rotation_f32()) * tilt;
+                            let dcl_transform = DclTransformAndParent {
+                                translation: DclTranslation::from_bevy_translation(pos),
+                                rotation: DclQuat::from_bevy_quat(rot),
+                                scale: Vec3::ONE,
+                                parent: SceneEntityId::WORLD_ORIGIN,
+                            };
+
+                            debug!("player: {:#x} -> {} -> {}", update.address, pos, vel);
+
+                            state.update_crdt(
+                                SceneComponentId::TRANSFORM,
+                                CrdtType::LWW_ANY,
+                                scene_id,
+                                &dcl_transform,
+                            );
+                            position_events.write(PlayerPositionEvent {
+                                index: None,
+                                time: time.elapsed_secs(),
+                                timestamp: Some(movement.temporal.timestamp_f32()),
+                                player: entity,
+                                translation: dcl_transform.translation,
+                                rotation: dcl_transform.rotation,
+                                velocity: Some(vel),
+                                grounded: movement.temporal.grounded_or_err().ok(),
+                                remote_move_kind: match movement
+                                    .temporal
+                                    .jump_or_err()
+                                    .ok()
+                                    .max(movement.temporal.long_jump_or_err().ok())
+                                {
+                                    Some(true) => Some(MoveKind::Jump),
+                                    _ => None,
+                                },
+                                scene_anim,
+                            });
+                        }
+                        PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
+                            debug!("emote: {emote:?}");
+                            commands.entity(entity).try_insert(EmoteCommand {
+                                timestamp: emote.incremental_id as i64,
+                                urn: emote.urn,
+                                r#loop: false,
+                            });
+                        }
+                        PlayerMessage::PlayerData(Message::SceneEmote(scene_emote)) => {
+                            debug!("scene emote: {scene_emote:?}");
+                        }
+                    }
                 }
-                // create/update timestamp/transport_id on the foreign player
-                let (entity, scene_id, audio_channel) = if let Some((entity, scene_id, channel)) =
-                    created_this_frame.get(&update.address)
-                {
-                    (*entity, *scene_id, channel.clone())
-                } else if let Some(existing) = state.lookup.get_by_left(&update.address) {
-                    let mut foreign_player = players.get_mut(*existing).unwrap();
-                    foreign_player.transports.insert(update.transport_id);
-                    (
-                        *existing,
-                        foreign_player.scene_id,
-                        foreign_player.audio_sender.clone(),
-                    )
-                } else {
-                    let Some(next_free) = state.context.new_in_range(&FOREIGN_PLAYER_RANGE) else {
-                        warn!("no space for any more players!");
+                NetworkUpdate::NonPlayer(update) => {
+                    if update.address != "authoritative-server" {
+                        warn!(
+                            "skipping unexpected update from {}: {:?}",
+                            update.address, update.message
+                        );
+                        continue;
+                    }
+
+                    let Message::Scene(scene) = update.message else {
+                        warn!(
+                            "skipping unexpected update from {}: {:?}",
+                            update.address, update.message
+                        );
                         continue;
                     };
 
-                    state.update_crdt(
-                        SceneComponentId::PLAYER_IDENTITY_DATA,
-                        CrdtType::LWW_ANY,
-                        next_free,
-                        &PbPlayerIdentityData {
-                            address: format!("{:#x}", update.address),
-                            is_guest: true,
-                        },
-                    );
+                    // same cross-room guard as the Player arm: the message may only
+                    // address the scene owning this context's room
+                    if let Some(room_hash) = &state.room {
+                        if scene.scene_id != *room_hash {
+                            debug!(
+                                "dropping cross-room message from {}: declared scene {} != room {room_hash}",
+                                update.address, scene.scene_id
+                            );
+                            continue;
+                        }
+                    }
 
-                    let (audio_sender, audio_receiver) = mpsc::channel::<ForeignAudioData>(10);
-
-                    let new_entity = commands
-                        .spawn((
-                            Transform::default(),
-                            Visibility::default(),
-                            ForeignPlayer {
-                                address: update.address,
-                                transports: HashSet::from_iter([update.transport_id]),
-                                scene_id: next_free,
-                                profile_version: 0,
-                                audio_sender: audio_sender.clone(),
-                            },
-                            ForeignAudioSource {
-                                audio_available_receiver: audio_receiver,
-                                audio_receiver: None,
-                                available_transports: Default::default(),
-                                current_transport: None,
-                            },
-                            HeadSync::default(),
-                            PointAtSync::default(),
-                            Propagate(RenderLayers::default()),
-                        ))
-                        .id();
-
-                    state.lookup.insert(update.address, new_entity);
-
-                    info!(
-                        "creating new player: {} -> {:?} / {}",
-                        update.address, new_entity, next_free
-                    );
-                    created_this_frame.insert(
+                    process_messagebus(
+                        scene,
                         update.address,
-                        (new_entity, next_free, audio_sender.clone()),
+                        &mut string_senders,
+                        &mut binary_senders,
                     );
-                    (new_entity, next_free, audio_sender)
-                };
-
-                // process update
-                match update.message {
-                    PlayerMessage::MetaData(str) => {
-                        if let Ok(meta) = serde_json::from_str::<ForeignMetaData>(&str) {
-                            debug!("foreign player metadata: {scene_id:?}: {meta:?}");
-                            profile_meta_cache
-                                .0
-                                .insert(update.address, meta.lambdas_endpoint);
-                        }
-                    }
-                    PlayerMessage::AudioStreamAvailable { transport } => {
-                        // pass through
-                        debug!("{transport} available for {entity}!");
-                        let _ =
-                            audio_channel.try_send(ForeignAudioData::TransportAvailable(transport));
-                    }
-                    PlayerMessage::AudioStreamUnavailable { transport } => {
-                        // pass through
-                        debug!("{transport} not available for {entity}!");
-                        let _ = audio_channel
-                            .try_send(ForeignAudioData::TransportUnavailable(transport));
-                    }
-                    PlayerMessage::PlayerData(Message::Position(pos)) => {
-                        let dcl_transform = DclTransformAndParent {
-                            translation: DclTranslation([
-                                pos.position_x,
-                                pos.position_y,
-                                pos.position_z,
-                            ]),
-                            rotation: DclQuat([
-                                pos.rotation_x,
-                                pos.rotation_y,
-                                pos.rotation_z,
-                                pos.rotation_w,
-                            ]),
-                            scale: Vec3::ONE,
-                            parent: SceneEntityId::WORLD_ORIGIN,
-                        };
-                        debug!(
-                            "player: {:#x} -> {}",
-                            update.address,
-                            Vec3::new(pos.position_x, pos.position_y, pos.position_z)
-                        );
-                        // commands
-                        //     .entity(entity)
-                        //     .insert(dcl_transform.to_bevy_transform());
-                        state.update_crdt(
-                            SceneComponentId::TRANSFORM,
-                            CrdtType::LWW_ANY,
-                            scene_id,
-                            &dcl_transform,
-                        );
-                        position_events.write(PlayerPositionEvent {
-                            index: Some(pos.index),
-                            time: time.elapsed_secs(),
-                            timestamp: None,
-                            player: entity,
-                            translation: DclTranslation([
-                                pos.position_x,
-                                pos.position_y,
-                                pos.position_z,
-                            ]),
-                            rotation: DclQuat([
-                                pos.rotation_x,
-                                pos.rotation_y,
-                                pos.rotation_z,
-                                pos.rotation_w,
-                            ]),
-                            velocity: None,
-                            grounded: None,
-                            remote_move_kind: None,
-                            scene_anim: None,
-                        });
-                    }
-                    PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
-                        profile_events.write(ProfileEvent {
-                            sender: entity,
-                            event: ProfileEventType::Version(version),
-                        });
-                    }
-                    PlayerMessage::PlayerData(Message::ProfileRequest(request)) => {
-                        profile_events.write(ProfileEvent {
-                            sender: entity,
-                            event: ProfileEventType::Request(request),
-                        });
-                    }
-                    PlayerMessage::PlayerData(Message::ProfileResponse(response)) => {
-                        profile_events.write(ProfileEvent {
-                            sender: entity,
-                            event: ProfileEventType::Response(response),
-                        });
-                    }
-                    PlayerMessage::PlayerData(Message::Chat(chat)) => {
-                        let last = duplicate_chat_filter.entry(entity).or_default();
-
-                        if *last < chat.timestamp {
-                            debug!("chat data: `{chat:#?}`");
-                            chat_events.write(ChatEvent {
-                                sender: entity,
-                                timestamp: chat.timestamp,
-                                channel: "Nearby".to_owned(),
-                                message: chat.message,
-                            });
-                            *last = chat.timestamp;
-                        }
-                    }
-                    PlayerMessage::PlayerData(Message::Scene(scene)) => {
-                        let address = format!("{:#x}", update.address);
-                        process_messagebus(
-                            scene,
-                            address,
-                            &mut string_senders,
-                            &mut binary_senders,
-                        );
-                    }
-                    PlayerMessage::PlayerData(Message::Voice(_)) => (),
-                    PlayerMessage::PlayerData(Message::Movement(m)) => {
-                        debug!("movement data: {m:?}");
-                        commands.entity(entity).try_insert((
-                            HeadSync {
-                                yaw_deg: m.head_yaw,
-                                pitch_deg: m.head_pitch,
-                                yaw_enabled: m.head_ik_yaw_enabled,
-                                pitch_enabled: m.head_ik_pitch_enabled,
-                            },
-                            PointAtSync {
-                                target_world: Vec3::new(m.point_at_x, m.point_at_y, m.point_at_z),
-                                is_pointing: m.is_pointing_at,
-                            },
-                        ));
-                        let pos = Vec3::new(m.position_x, m.position_y, -m.position_z);
-                        let vel = Vec3::new(m.velocity_x, m.velocity_y, -m.velocity_z);
-                        // Compose the render-only lean on top of yaw; absent/old senders → upright.
-                        let tilt = m
-                            .scene_driven_animation
-                            .as_ref()
-                            .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
-                            .unwrap_or(Quat::IDENTITY);
-                        let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU) * tilt;
-                        let dcl_transform = DclTransformAndParent {
-                            translation: DclTranslation::from_bevy_translation(pos),
-                            rotation: DclQuat::from_bevy_quat(rot),
-                            scale: Vec3::ONE,
-                            parent: SceneEntityId::WORLD_ORIGIN,
-                        };
-
-                        state.update_crdt(
-                            SceneComponentId::TRANSFORM,
-                            CrdtType::LWW_ANY,
-                            scene_id,
-                            &dcl_transform,
-                        );
-                        // Glide is checked before DoubleJump because Unity keeps `jump_count`
-                        // at its last value (usually 2) through the whole glide — so the
-                        // DoubleJump-first ordering would mask an active glide.
-                        let remote_move_kind = match (
-                            m.glide_state(),
-                            m.jump_count,
-                            m.is_jumping || m.is_long_jump,
-                        ) {
-                            (
-                                rfc4::movement::GlideState::OpeningProp
-                                | rfc4::movement::GlideState::Gliding,
-                                _,
-                                _,
-                            ) => Some(MoveKind::Glide),
-                            (_, c, _) if c >= 2 => Some(MoveKind::DoubleJump),
-                            (_, _, true) => Some(MoveKind::Jump),
-                            _ => None,
-                        };
-                        let scene_anim = resolve_remote_anim(
-                            entity,
-                            update.address,
-                            &mut last_remote_anim,
-                            m.scene_driven_animation,
-                        );
-                        position_events.write(PlayerPositionEvent {
-                            index: None,
-                            time: time.elapsed_secs(),
-                            timestamp: Some(m.timestamp),
-                            player: entity,
-                            translation: dcl_transform.translation,
-                            rotation: dcl_transform.rotation,
-                            velocity: Some(vel),
-                            grounded: Some(m.is_grounded),
-                            remote_move_kind,
-                            scene_anim,
-                        });
-                    }
-                    PlayerMessage::PlayerData(Message::MovementCompressed(mut m)) => {
-                        debug!("movement compressed data: {m:?}");
-                        // Compose the render-only lean on top of yaw; absent/old senders → upright.
-                        // Read tilt before `take()` below empties the field.
-                        let tilt = m
-                            .scene_driven_animation
-                            .as_ref()
-                            .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
-                            .unwrap_or(Quat::IDENTITY);
-                        let scene_anim = resolve_remote_anim(
-                            entity,
-                            update.address,
-                            &mut last_remote_anim,
-                            m.scene_driven_animation.take(),
-                        );
-                        let movement = MovementCompressed::from_proto(m);
-                        let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
-                        let vel = movement.velocity();
-                        let rot = Quat::from_rotation_y(movement.temporal.rotation_f32()) * tilt;
-                        let dcl_transform = DclTransformAndParent {
-                            translation: DclTranslation::from_bevy_translation(pos),
-                            rotation: DclQuat::from_bevy_quat(rot),
-                            scale: Vec3::ONE,
-                            parent: SceneEntityId::WORLD_ORIGIN,
-                        };
-
-                        debug!("player: {:#x} -> {} -> {}", update.address, pos, vel);
-
-                        state.update_crdt(
-                            SceneComponentId::TRANSFORM,
-                            CrdtType::LWW_ANY,
-                            scene_id,
-                            &dcl_transform,
-                        );
-                        position_events.write(PlayerPositionEvent {
-                            index: None,
-                            time: time.elapsed_secs(),
-                            timestamp: Some(movement.temporal.timestamp_f32()),
-                            player: entity,
-                            translation: dcl_transform.translation,
-                            rotation: dcl_transform.rotation,
-                            velocity: Some(vel),
-                            grounded: movement.temporal.grounded_or_err().ok(),
-                            remote_move_kind: match movement
-                                .temporal
-                                .jump_or_err()
-                                .ok()
-                                .max(movement.temporal.long_jump_or_err().ok())
-                            {
-                                Some(true) => Some(MoveKind::Jump),
-                                _ => None,
-                            },
-                            scene_anim,
-                        });
-                    }
-                    PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
-                        debug!("emote: {emote:?}");
-                        commands.entity(entity).try_insert(EmoteCommand {
-                            timestamp: emote.incremental_id as i64,
-                            urn: emote.urn,
-                            r#loop: false,
-                        });
-                    }
-                    PlayerMessage::PlayerData(Message::SceneEmote(scene_emote)) => {
-                        debug!("scene emote: {scene_emote:?}");
-                    }
                 }
-            }
-            NetworkUpdate::NonPlayer(update) => {
-                if update.address != "authoritative-server" {
-                    warn!(
-                        "skipping unexpected update from {}: {:?}",
-                        update.address, update.message
-                    );
-                    continue;
-                }
-
-                let Message::Scene(scene) = update.message else {
-                    warn!(
-                        "skipping unexpected update from {}: {:?}",
-                        update.address, update.message
-                    );
-                    continue;
-                };
-
-                process_messagebus(
-                    scene,
-                    update.address,
-                    &mut string_senders,
-                    &mut binary_senders,
-                );
-            }
-            NetworkUpdate::PlayerLeft {
-                transport_id,
-                address,
-            } => {
-                if let Some(entity) = state.lookup.get_by_left(&address) {
-                    debug!("player {address:#x} left transport {transport_id}");
-                    if let Ok(mut foreign_player) = players.get_mut(*entity) {
-                        foreign_player.transports.remove(&transport_id);
-                    } else {
-                        // players spawned earlier this frame aren't in the query yet
-                        commands.entity(*entity).modify_component(
-                            move |foreign_player: &mut ForeignPlayer| {
-                                foreign_player.transports.remove(&transport_id);
-                            },
-                        );
+                NetworkUpdate::PlayerLeft {
+                    transport_id,
+                    address,
+                } => {
+                    if let Some(entity) = state.lookup.get_by_left(&address) {
+                        debug!("player {address:#x} left transport {transport_id}");
+                        if let Ok(mut foreign_player) = players.get_mut(*entity) {
+                            foreign_player.transports.remove(&transport_id);
+                        } else {
+                            // players spawned earlier this frame aren't in the query yet
+                            commands.entity(*entity).modify_component(
+                                move |foreign_player: &mut ForeignPlayer| {
+                                    foreign_player.transports.remove(&transport_id);
+                                },
+                            );
+                        }
                     }
                 }
             }
@@ -948,7 +1071,7 @@ fn process_messagebus(
 fn despawn_players(
     mut commands: Commands,
     players: Query<(Entity, &ForeignPlayer)>,
-    mut state: ResMut<GlobalCrdtState>,
+    mut contexts: Query<&mut GlobalCrdtState>,
 ) {
     for (entity, player) in players.iter() {
         if player.transports.is_empty() {
@@ -957,8 +1080,26 @@ fn despawn_players(
                 commands.despawn();
             }
 
-            state.delete_entity(player.scene_id);
-            state.lookup.remove_by_right(&entity);
+            // context may already be gone if its scene room was torn down
+            if let Ok(mut state) = contexts.get_mut(player.context) {
+                state.delete_entity(player.scene_id);
+                state.allocator.free(player.scene_id);
+                state.lookup.remove_by_right(&entity);
+            }
+        }
+    }
+}
+
+/// A despawned context (scene room torn down) takes its player entities with it.
+fn remove_context_players(
+    trigger: Trigger<OnReplace, GlobalCrdtState>,
+    players: Query<(Entity, &ForeignPlayer)>,
+    mut commands: Commands,
+) {
+    let context = trigger.target();
+    for (entity, player) in players.iter() {
+        if player.context == context {
+            commands.entity(entity).try_despawn();
         }
     }
 }

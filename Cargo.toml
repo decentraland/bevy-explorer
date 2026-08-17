@@ -75,7 +75,7 @@ type_complexity = "allow"
 
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = ["crates/*", "local-harness/presence/harness-util"]
 
 [workspace.dependencies]
 analytics = { path = "crates/analytics" }

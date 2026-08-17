@@ -28,8 +28,7 @@ use crate::livekit::participant::{StreamImage, StreamViewer};
 use crate::livekit::web::Participant;
 use crate::{
     global_crdt::{
-        GlobalCrdtState, NetworkUpdate, NonPlayerUpdate, PlayerMessage, PlayerUpdate,
-        VoiceMessageStreams,
+        NetworkUpdate, NonPlayerUpdate, PlayerMessage, PlayerUpdate, VoiceMessageStreams,
     },
     livekit::{
         participant::{
@@ -153,7 +152,7 @@ fn participant_disconnected(
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant)>,
     rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
-    global_crdt_state: Res<GlobalCrdtState>,
+    transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
@@ -173,19 +172,22 @@ fn participant_disconnected(
 
     if let Some(address) = participant.identity().as_str().as_h160() {
         let transport_id = *room_entity;
-        let sender = global_crdt_state.get_sender();
-        let task = livekit_runtime.spawn(async move {
-            sender
-                .send(NetworkUpdate::PlayerLeft {
-                    transport_id,
-                    address,
-                })
-                .await
-        });
-        player_update_tasks.push(PlayerUpdateTask {
-            runtime: livekit_runtime.clone(),
-            task,
-        });
+        // the transport (or its context) may already be torn down; skip only the
+        // notification — the participant entity below must still be despawned
+        if let Some(sender) = transport_senders.get(transport_id) {
+            let task = livekit_runtime.spawn(async move {
+                sender
+                    .send(NetworkUpdate::PlayerLeft {
+                        transport_id,
+                        address,
+                    })
+                    .await
+            });
+            player_update_tasks.push(PlayerUpdateTask {
+                runtime: livekit_runtime.clone(),
+                task,
+            });
+        }
     }
 
     let Some(hosting_participants) = maybe_hosting_participants else {
@@ -283,7 +285,7 @@ fn participant_connection_quality_changed(
 
 fn participant_payload(
     trigger: Trigger<ParticipantPayload>,
-    global_crdt_state: Res<GlobalCrdtState>,
+    transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
     livekit_runtime: Res<LivekitRuntime>,
     mut rate_limiter: ResMut<InboundRateLimiter>,
@@ -328,7 +330,9 @@ fn participant_payload(
         return;
     };
     let room = *room_entity;
-    let sender = global_crdt_state.get_sender();
+    let Some(sender) = transport_senders.get(room) else {
+        return;
+    };
 
     let task = if let Some(address) = participant.identity().as_str().as_h160() {
         trace!(
@@ -372,7 +376,7 @@ fn participant_payload(
 
 fn participant_metadata_changed(
     trigger: Trigger<ParticipantMetadataChanged>,
-    global_crdt_state: Res<GlobalCrdtState>,
+    transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
@@ -387,7 +391,9 @@ fn participant_metadata_changed(
         );
         if let Some(address) = participant.identity().as_str().as_h160() {
             let room = *room;
-            let sender = global_crdt_state.get_sender();
+            let Some(sender) = transport_senders.get(room) else {
+                return;
+            };
             let task = livekit_runtime.spawn(async move {
                 sender
                     .send(

@@ -3504,6 +3504,7 @@ dependencies = [
  "dcl_deno",
  "ethers-core",
  "fastrand",
+ "futures-util",
  "http 1.4.0",
  "interprocess",
  "ipfs",
@@ -4446,7 +4447,7 @@ dependencies = [
  "hashers",
  "http 0.2.12",
  "instant",
- "jsonwebtoken",
+ "jsonwebtoken 8.3.0",
  "once_cell",
  "pin-project",
  "reqwest 0.11.27",
@@ -5491,6 +5492,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "harness-util"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dcl_component",
+ "livekit",
+ "livekit-api",
+ "pico-args",
+ "prost 0.11.9",
+ "tokio",
+ "wallet",
+]
+
+[[package]]
 name = "hash32"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6442,6 +6457,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonwebtoken"
+version = "9.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a87cc7a48537badeae96744432de36f4be2b4a34a05a5ef32e9dd8a1c169dde"
+dependencies = [
+ "base64 0.22.1",
+ "js-sys",
+ "ring 0.17.14",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "k256"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6739,8 +6767,10 @@ version = "0.4.0"
 source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#3db4328ac42dee8e09c1b497f15a0cbe60ef90f1"
 dependencies = [
  "async-tungstenite",
+ "base64 0.21.7",
  "futures-util",
  "http 0.2.12",
+ "jsonwebtoken 9.3.1",
  "livekit-protocol",
  "livekit-runtime",
  "log",
@@ -6749,6 +6779,7 @@ dependencies = [
  "reqwest 0.11.27",
  "scopeguard",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror 1.0.69",
  "tokio",

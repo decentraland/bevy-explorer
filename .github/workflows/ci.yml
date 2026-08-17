@@ -249,7 +249,7 @@ jobs:
           set -o pipefail
           ./target/release/headless \
             --realm https://decentraland.github.io/scene-explorer-tests/scene-explorer-tests \
-            --location 52,-52 --server-mode --timeout 90 2>&1 | tee smoke.log
+            --location 52,-52 --server-mode --preview --timeout 90 2>&1 | tee smoke.log
       - name: Assert scenes ticked
         run: |
           if ! grep -q "first tick reached" smoke.log; then

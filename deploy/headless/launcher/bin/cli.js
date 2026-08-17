@@ -107,6 +107,11 @@ function translate(argv) {
   if (position && !/^-?\d+,-?\d+$/.test(position)) {
     fail(`--position must be "x,y", got: ${position}`, EXIT_UNAVAILABLE)
   }
+  // standalone (non-orchestrated) serving is a local-dev preview flow; the engine
+  // refuses --server-mode without --preview
+  if (production && !orchestrated) {
+    fail('--production requires --orchestrated (standalone serving is preview-only)', EXIT_UNAVAILABLE)
+  }
 
   const args = orchestrated ? ['--orchestrated'] : ['--server-mode']
   if (realm) args.unshift('--realm', realm)

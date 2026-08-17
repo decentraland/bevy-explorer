@@ -26,6 +26,8 @@ use crate::{ChannelControl, NetworkMessage};
 pub struct StartLivekit {
     pub entity: Entity,
     pub address: String,
+    /// crdt context this room's transport feeds
+    pub context: Entity,
 }
 
 #[derive(Component)]

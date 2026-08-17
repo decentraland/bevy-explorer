@@ -287,11 +287,6 @@ pub struct SceneDrivenAnimationFeedback {
     pub state: Option<SceneDrivenAnimationFeedbackState>,
 }
 
-/// When true, scenes run in authoritative-server role: `isServer()` returns true
-/// to scene JS. Set by the headless server binary; defaults to false everywhere else.
-#[derive(Resource, Default)]
-pub struct IsServer(pub bool);
-
 /// Marker: present when the app has no render app. Render-only scene plugins are then
 /// skipped — nothing displays their output and none of them feed results back to the
 /// scene, so their components stay in the scene-side filtered store and never cross the
@@ -303,15 +298,16 @@ pub struct IsServer(pub bool);
 /// but keeps `DefaultPlugins` and a camera to bake imposters, so it must NOT insert this.
 /// Doing so would strip every imposter texture with no panic and no test failure.
 ///
-/// Also distinct from [`IsServer`]: the headless binary never has a render app, but is
-/// only `IsServer` when run with --server-mode.
+/// Also distinct from [`server_mode`]: the headless binary never has a render app, but
+/// is only in server mode when run with --server-mode.
 #[derive(Resource)]
 pub struct NoRenderApp;
 
 static SERVER_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Latch this process as an authoritative scene server. Irreversible by design;
-/// mirrors [`IsServer`] for code paths (e.g. the ipfs crate) that have no ECS access.
+/// Latch this process as an authoritative scene server: scenes run in server role and
+/// `isServer()` returns true to scene JS. Set by the headless server binary before the
+/// app is built; irreversible by design.
 pub fn set_server_mode() {
     SERVER_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
 }
@@ -319,6 +315,21 @@ pub fn set_server_mode() {
 /// True once [`set_server_mode`] has been called.
 pub fn server_mode() -> bool {
     SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+static MULTI_TENANT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Latch this process as a multi-tenant (orchestrated) scene server: every scene has its
+/// own room's crdt context, registered before the scene is queued. A standalone server
+/// (`--server-mode` without `--orchestrated`) is NOT multi-tenant — its single scene
+/// legitimately rides the shared context. Irreversible like [`set_server_mode`].
+pub fn set_multi_tenant() {
+    MULTI_TENANT.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// True once [`set_multi_tenant`] has been called.
+pub fn multi_tenant() -> bool {
+    MULTI_TENANT.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 #[derive(Debug, Clone)]

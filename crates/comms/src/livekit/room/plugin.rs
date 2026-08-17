@@ -106,7 +106,8 @@ fn initiate_room_connection(
     let address = format!(
         "{}://{}{}",
         url.scheme_str().unwrap_or_default(),
-        url.host().unwrap_or_default(),
+        // authority, not host: host() drops an explicit port (breaks e.g. ws://localhost:7880)
+        url.authority().map(|a| a.as_str()).unwrap_or_default(),
         url.path()
     );
     let params: HashMap<_, _, bevy::platform::hash::FixedHasher> =
@@ -178,11 +179,7 @@ async fn connect_to_room(
 #[derive(Component)]
 pub struct ServerRoomTerminal;
 
-fn process_room_events(
-    mut commands: Commands,
-    livekit_rooms: Query<(Entity, &mut LivekitRoom)>,
-    is_server: Res<common::structs::IsServer>,
-) {
+fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mut LivekitRoom)>) {
     for (entity, mut livekit_room) in livekit_rooms {
         while let Ok(room_event) = livekit_room.room_event_receiver.try_recv() {
             trace!("in: {:?}", room_event);
@@ -209,7 +206,7 @@ fn process_room_events(
                         reason,
                         DisconnectReason::DuplicateIdentity | DisconnectReason::ParticipantRemoved
                     ) {
-                        if is_server.0 {
+                        if common::structs::server_mode() {
                             // a server has no "connected in another tab" UX: mark the room
                             // terminal so the headless supervisor reaps it and re-mints
                             commands.entity(entity).try_insert(ServerRoomTerminal);

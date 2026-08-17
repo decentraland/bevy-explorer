@@ -245,6 +245,12 @@ fn update_foreign_user_actual_position(
         if let Some(grounded) = target.grounded {
             dynamic_state.ground_height = if grounded { 0.0 } else { 1.0 };
             dynamic_state.jump_time = -1.0;
+        } else if common::structs::server_mode() {
+            // a server trusts the broadcast position verbatim: no visual ground-snap or
+            // fall. Scene colliders must not be consulted here — co-tenant scenes
+            // physically overlap, so the lookup below would read other rooms' geometry
+            // (and pay a raycast per player per scene per frame).
+            dynamic_state.ground_height = 0.0;
         } else {
             // update ground height
             dynamic_state.ground_height = actual.translation.y;

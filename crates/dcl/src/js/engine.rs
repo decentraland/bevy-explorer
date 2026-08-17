@@ -45,7 +45,7 @@ pub(crate) const MAX_CRDT_STORE_BYTES: usize = 512 * 1024 * 1024;
 pub(crate) const MAX_CRDT_SENDS_PER_TICK: u32 = 4;
 
 /// Returns whether this scene runs in authoritative-server role. Read synchronously
-/// from the scene's CrdtContext (seeded from the `IsServer` engine resource). MUST stay
+/// from the scene's CrdtContext (seeded from the engine's server-mode flag). MUST stay
 /// synchronous — an async op would return a Promise to JS, and `!!Promise` is always
 /// true, making every client believe it is the server.
 pub fn op_is_server(state: Rc<RefCell<impl State>>) -> bool {
