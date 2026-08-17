@@ -1305,20 +1305,16 @@ fn get_players_in_scene(
             }
         }
 
-        // a room-scoped scene's players are its context's members (the positional check
-        // is meaningless on a multi-tenant server, where scenes host as portables);
-        // otherwise membership is positional as ever
+        // a scene's players must be in its crdt context (its own room's on a
+        // multi-tenant server; the shared context otherwise, where every player
+        // qualifies) AND positionally inside the scene (vacuously true for orchestrated
+        // server scenes, which host as portables)
         let scene_context = presence.context_of(*scene);
-        let room_scoped = scene_context != presence.contexts.shared();
         results.extend(
             others
                 .iter()
                 .filter(|(e, f)| {
-                    if room_scoped {
-                        f.context == scene_context
-                    } else {
-                        containing_scene.get(*e).contains(scene)
-                    }
+                    f.context == scene_context && containing_scene.get(*e).contains(scene)
                 })
                 .map(|(_, f)| format!("{:#x}", f.address)),
         );

@@ -321,6 +321,10 @@ fn main() {
         })
         .add_plugins(WalletPlugin)
         .add_plugins(CommsPlugin)
+        // foreign avatar bevy transforms (render-free, unlike the rest of AvatarPlugin):
+        // without these, engine-side position logic — scene membership, avatar colliders,
+        // trigger areas — sees every remote player at the origin
+        .add_plugins(avatar::foreign_dynamics::PlayerMovementPlugin)
         .add_plugins(DuiPlugin)
         .add_plugins(SystemBridgePlugin { bare: true });
 
