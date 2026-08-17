@@ -39,7 +39,9 @@ use super::transport::{
     PulseTransportConfig,
 };
 use super::{PulseCtx, PulseDecoder, PulseEvent, PulseParcelGrid};
-use crate::global_crdt::{GlobalCrdtState, NetworkUpdate, PlayerMessage, PlayerUpdate};
+use crate::global_crdt::{
+    CrdtContexts, GlobalCrdtState, NetworkUpdate, PlayerMessage, PlayerUpdate,
+};
 use crate::profile::CurrentUserProfile;
 use crate::{NetworkMessage, Transport, TransportType};
 
@@ -91,10 +93,20 @@ pub(crate) struct PulseSession {
     /// every (re)connect — this is the "machinery" we reinitialise when the pipe closes.
     _driver: Option<PulseDriverHandle>,
     decoder: PulseDecoder,
-    /// Sink into the shared foreign-player pipeline — the same channel every transport feeds.
+    /// The crdt context this session feeds. Pulse is the *realm's* avatar-state transport, so on a
+    /// client that is always the shared context. A multi-tenant server has one context per scene
+    /// room and stays on LiveKit for now — see the module docs.
+    context: Entity,
+    /// Sink into `context`'s foreign-player pipeline — the same channel every transport feeds.
     sender: mpsc::Sender<NetworkUpdate>,
-    /// Synthetic transport entity used as the foreign players' `transport_id`.
-    foreign_transport: Entity,
+    /// The realm's routing `Transport` entity, which doubles as the `transport_id` every inbound
+    /// Pulse update is attributed to. `None` off a Pulse realm (the entity is despawned with the
+    /// realm's transports), which is also when inbound is gated off by the liveness anchor.
+    ///
+    /// Using the real transport entity — rather than a synthetic marker — is what makes presence
+    /// work: `ForeignPlayer.transports` holds it, so despawning it on a realm change drops every
+    /// Pulse peer from their presence set, exactly as it does for LiveKit and ws-room.
+    routing_transport: Option<Entity>,
     /// World ↔ parcel mapping, used to build our own `TeleportRequest`.
     grid: PulseParcelGrid,
     /// Where to (re)connect — kept so we can rebuild the driver without the `PulseConfig` resource.
@@ -116,16 +128,30 @@ pub(crate) struct PulseSession {
     state: Connection,
 }
 
+impl PulseSession {
+    /// Forward an inbound Pulse update into this session's crdt context, attributed to the realm's
+    /// routing transport. Dropped when there is no routing transport — we're off a Pulse realm, and
+    /// a straggling packet must not resurrect a peer whose transport is already gone.
+    fn forward(&self, address: Address, message: PlayerMessage) {
+        let Some(transport_id) = self.routing_transport else {
+            return;
+        };
+        let _ = self.sender.try_send(
+            PlayerUpdate {
+                transport_id,
+                message,
+                address,
+            }
+            .into(),
+        );
+    }
+}
+
 /// The realm's Pulse routing entity holds this while it exists (i.e. while we're on a Pulse realm).
 /// It's a strong clone of [`PulseSession::liveness`]; despawning the entity drops it, which the driver
 /// observes via its `Weak` to stop surfacing inbound peer state. See [`PulseSession::liveness`].
 #[derive(Component)]
 struct PulsePresence(#[expect(dead_code)] Arc<()>);
-
-/// Marker for the synthetic Pulse transport entity used as foreign players' `transport_id`. Distinct
-/// from the routing `Transport` entity (which carries [`PulseOutbox`]); this one is never despawned.
-#[derive(Component)]
-struct PulseTransport;
 
 /// The drain end of the Pulse routing `Transport` entity's channel — its companion, like
 /// `WebsocketRoomTransport.receiver`. `drain_pulse_outbox` decodes and bridges what lands here.
@@ -183,6 +209,13 @@ fn dev_cert_hash() -> Option<Vec<u8>> {
 /// `PULSE_SERVER` overrides it. The grid is the Decentraland Genesis City `ParcelEncoder` from the
 /// server's appsettings ([`PulseParcelGrid::default`]).
 fn configure_pulse(mut commands: Commands) {
+    // An authoritative server never joins Pulse: it ingests avatar state from its scene rooms over
+    // LiveKit (clients target it with `NetworkMessageRecipient::AuthServer`), and its per-room crdt
+    // contexts have no realm-wide equivalent for a single Pulse connection to feed. Leaving the
+    // config absent keeps the whole plugin inert rather than relying on `StartPulse` never firing.
+    if common::structs::server_mode() {
+        return;
+    }
     let endpoint =
         std::env::var("PULSE_SERVER").unwrap_or_else(|_| DEFAULT_PULSE_SERVER.to_owned());
     let Some((host, port)) = endpoint.rsplit_once(':') else {
@@ -221,7 +254,8 @@ fn spawn_driver(
 /// the first tick, so initial connect and reconnect share one path.
 fn connect_pulse(
     mut commands: Commands,
-    crdt: Res<GlobalCrdtState>,
+    contexts: Res<CrdtContexts>,
+    crdt: Query<&GlobalCrdtState>,
     config: Option<Res<PulseConfig>>,
     session: Option<Res<PulseSession>>,
 ) {
@@ -229,14 +263,20 @@ fn connect_pulse(
         return;
     };
 
-    let foreign_transport = commands.spawn(PulseTransport).id();
+    // client-only (`configure_pulse` bails in server mode): the realm's avatar state feeds the
+    // single shared context, which is spawned with the plugin and outlives every session.
+    let context = contexts.shared();
+    let Ok(crdt) = crdt.get(context) else {
+        return;
+    };
 
     commands.insert_resource(PulseSession {
         link: None,
         _driver: None,
         decoder: PulseDecoder::new(config.parcel_grid),
+        context,
         sender: crdt.get_sender(),
-        foreign_transport,
+        routing_transport: None,
         grid: config.parcel_grid,
         transport_config: config.transport.clone(),
         server_id: config.server_id.clone(),
@@ -276,19 +316,22 @@ fn start_pulse(
     };
 
     let (sender, receiver) = mpsc::channel(1000);
-    commands.spawn((
-        Transport {
-            transport_type: TransportType::Pulse,
-            sender,
-            control: None,
-            foreign_aliases: Default::default(),
-        },
-        PulseOutbox(receiver),
-        // While this entity lives (i.e. we're on a Pulse realm) the driver sees a strong ref and
-        // surfaces inbound peer state; despawn (realm change away from Pulse) drops it.
-        PulsePresence(session.liveness.clone()),
-    ));
+    let routing_transport = commands
+        .spawn((
+            Transport {
+                transport_type: TransportType::Pulse,
+                sender,
+                control: None,
+                context: session.context,
+            },
+            PulseOutbox(receiver),
+            // While this entity lives (i.e. we're on a Pulse realm) the driver sees a strong ref and
+            // surfaces inbound peer state; despawn (realm change away from Pulse) drops it.
+            PulsePresence(session.liveness.clone()),
+        ))
+        .id();
 
+    session.routing_transport = Some(routing_transport);
     session.wanted = true;
     // Already up (a later realm) → re-teleport now, unless out of world (position provisional behind
     // the loading screen); the spawn `PlayerTeleported` re-announces realm + position. Otherwise the
@@ -495,14 +538,7 @@ fn drain_inbound(
                     address,
                     movement,
                     teleport,
-                } => {
-                    let update = PlayerUpdate {
-                        transport_id: session.foreign_transport,
-                        message: PlayerMessage::Movement { movement, teleport },
-                        address,
-                    };
-                    let _ = session.sender.try_send(update.into());
-                }
+                } => session.forward(address, PlayerMessage::Movement { movement, teleport }),
                 // A sequence gap was detected — ask the server to replay full state, reliably.
                 PulseEvent::Resync(request) => {
                     let message = pulse::ClientMessage {
@@ -518,36 +554,28 @@ fn drain_inbound(
                 // Emote start/stop are bridged as an rfc4 `PlayerEmote` so they reuse the same
                 // foreign-emote handling as the LiveKit path (`global_crdt`); a stop carries
                 // `is_stopping`, which removes the foreign `EmoteCommand`.
-                PulseEvent::EmoteStart { address, urn, tick } => {
-                    let update = PlayerUpdate {
-                        transport_id: session.foreign_transport,
-                        message: PlayerMessage::PlayerData(rfc4::packet::Message::PlayerEmote(
-                            rfc4::PlayerEmote {
-                                incremental_id: tick,
-                                urn,
-                                timestamp: 0.0,
-                                is_stopping: Some(false),
-                            },
-                        )),
-                        address,
-                    };
-                    let _ = session.sender.try_send(update.into());
-                }
-                PulseEvent::EmoteStop { address } => {
-                    let update = PlayerUpdate {
-                        transport_id: session.foreign_transport,
-                        message: PlayerMessage::PlayerData(rfc4::packet::Message::PlayerEmote(
-                            rfc4::PlayerEmote {
-                                incremental_id: 0,
-                                urn: String::new(),
-                                timestamp: 0.0,
-                                is_stopping: Some(true),
-                            },
-                        )),
-                        address,
-                    };
-                    let _ = session.sender.try_send(update.into());
-                }
+                PulseEvent::EmoteStart { address, urn, tick } => session.forward(
+                    address,
+                    PlayerMessage::PlayerData(rfc4::packet::Message::PlayerEmote(
+                        rfc4::PlayerEmote {
+                            incremental_id: tick,
+                            urn,
+                            timestamp: 0.0,
+                            is_stopping: Some(false),
+                        },
+                    )),
+                ),
+                PulseEvent::EmoteStop { address } => session.forward(
+                    address,
+                    PlayerMessage::PlayerData(rfc4::packet::Message::PlayerEmote(
+                        rfc4::PlayerEmote {
+                            incremental_id: 0,
+                            urn: String::new(),
+                            timestamp: 0.0,
+                            is_stopping: Some(true),
+                        },
+                    )),
+                ),
                 // A peer's profile version — on join (the initial version) or a later announcement.
                 // Bridged as an rfc4 `AnnounceProfileVersion` so it reuses the LiveKit/websocket
                 // profile path; the set is idempotent, so we don't dedupe against any LiveKit copy.
@@ -559,8 +587,17 @@ fn drain_inbound(
                 PulseEvent::ProfileVersion { address, version } => {
                     bridge_profile_version(session, address, version)
                 }
-                // TODO(pulse): PlayerLeft cleanup of the foreign player.
-                PulseEvent::Left { .. } => {}
+                // The peer left our interest set (or disconnected). Report the departure on the
+                // routing transport: presence is the union of the transports a peer is seen on, so
+                // this drops them from the set and — once no transport is left — despawns them.
+                PulseEvent::Left { address } => {
+                    if let Some(transport_id) = session.routing_transport {
+                        let _ = session.sender.try_send(NetworkUpdate::PlayerLeft {
+                            transport_id,
+                            address,
+                        });
+                    }
+                }
             }
         }
     }
@@ -570,16 +607,14 @@ fn drain_inbound(
 /// `AnnounceProfileVersion`, reusing the same handling as the LiveKit/websocket profile-version path
 /// (`global_crdt` → `ProfileEvent::Version`). The address resolves to (or creates) the foreign player.
 fn bridge_profile_version(session: &PulseSession, address: Address, version: i32) {
-    let update = PlayerUpdate {
-        transport_id: session.foreign_transport,
-        message: PlayerMessage::PlayerData(rfc4::packet::Message::ProfileVersion(
+    session.forward(
+        address,
+        PlayerMessage::PlayerData(rfc4::packet::Message::ProfileVersion(
             rfc4::AnnounceProfileVersion {
                 profile_version: version.max(0) as u32,
             },
         )),
-        address,
-    };
-    let _ = session.sender.try_send(update.into());
+    );
 }
 
 /// The transport is gone — tear the driver/link down and decide what's next: schedule a rebuild from

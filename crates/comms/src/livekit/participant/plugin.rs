@@ -330,21 +330,25 @@ fn participant_payload(
         return;
     };
 
-    // Movement and player emotes now come from the Pulse transport; fully drop the legacy LiveKit
-    // copies so the two inbound pipes don't both drive the foreign avatar (double-applied position /
-    // double-played emote). We no longer send either over LiveKit (both go to PRIMARY =
-    // websocket + Pulse); this guards against peers still emitting them here. Movement still carries
-    // the scene-animation rider on the send side, as before; SceneEmote is unaffected.
-    if matches!(
-        message,
-        rfc4::packet::Message::Movement(_)
-            | rfc4::packet::Message::MovementCompressed(_)
-            | rfc4::packet::Message::PlayerEmote(_)
-    ) {
+    let room = *room_entity;
+
+    // Where avatar state already arrives over Pulse, drop the legacy LiveKit copies so the two
+    // inbound pipes don't both drive the foreign avatar (double-applied position / double-played
+    // emote). Gated on the *receiving context* rather than unconditionally: an authoritative server
+    // never joins Pulse and these packets — which clients send it with
+    // `NetworkMessageRecipient::AuthServer` — are its only source of player presence. SceneEmote is
+    // unaffected either way.
+    if transport_senders.is_pulse_fed(room)
+        && matches!(
+            message,
+            rfc4::packet::Message::Movement(_)
+                | rfc4::packet::Message::MovementCompressed(_)
+                | rfc4::packet::Message::PlayerEmote(_)
+        )
+    {
         return;
     }
 
-    let room = *room_entity;
     let Some(sender) = transport_senders.get(room) else {
         return;
     };

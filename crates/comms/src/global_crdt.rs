@@ -256,6 +256,24 @@ impl TransportSenders<'_, '_> {
         let transport = self.transports.get(transport).ok()?;
         Some(self.contexts.get(transport.context).ok()?.get_sender())
     }
+
+    /// Whether the crdt context `transport` feeds also has a live Pulse transport, i.e. avatar
+    /// state for those players arrives over Pulse. Callers use this to decide whether a legacy
+    /// rfc4 avatar-state packet on a byte transport is a duplicate (drop it) or the only copy
+    /// (keep it). False on an authoritative server, which never joins Pulse, and on a client
+    /// while it is off a Pulse realm.
+    ///
+    /// True from the moment the routing transport is spawned, which is slightly ahead of the
+    /// handshake completing. That window drops nothing in practice: a peer that speaks Pulse has
+    /// already stopped broadcasting rfc4 movement, and one that hasn't is not on Pulse at all.
+    pub fn is_pulse_fed(&self, transport: Entity) -> bool {
+        let Ok(transport) = self.transports.get(transport) else {
+            return false;
+        };
+        self.transports
+            .iter()
+            .any(|t| t.transport_type == TransportType::Pulse && t.context == transport.context)
+    }
 }
 
 /// Index of live crdt contexts: scene-room hash (`""` = the shared context; scene hashes
