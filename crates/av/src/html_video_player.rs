@@ -29,7 +29,7 @@ use dcl_component::{
     SceneComponentId,
 };
 use ipfs::IpfsResource;
-use livestream_manager::ReceiverImage;
+use livestream_manager::{ReceiverImage, ReceiverVolume};
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::material::{update_materials, VideoTextureOutput},
@@ -595,12 +595,34 @@ fn player_source_removed<T: AVPlayer>(
 #[expect(clippy::type_complexity)]
 fn player_config_added<T: AVPlayer>(
     trigger: Trigger<OnInsert, T::Config>,
-    mut av_players: Query<(&T::Config, &mut HtmlMediaEntity<T>, Has<ShouldBePlaying<T>>)>,
+    mut av_players: Query<(
+        &T::Config,
+        Option<&mut HtmlMediaEntity<T>>,
+        Has<ShouldBePlaying<T>>,
+        Has<Stream>,
+        Option<&mut ReceiverVolume>,
+    )>,
 ) {
     let entity = trigger.target();
-    let Ok((config, mut html_media_entity, has_should_be_playing)) = av_players.get_mut(entity)
+    let Ok((
+        config,
+        maybe_html_media_entity,
+        has_should_be_playing,
+        has_stream,
+        maybe_receiver_volume,
+    )) = av_players.get_mut(entity)
     else {
         unreachable!("Infallible query");
+    };
+    let Some(mut html_media_entity) = maybe_html_media_entity else {
+        if !has_stream {
+            debug_panic!("Non-stream AVPlayer did not have html media entity.");
+        }
+        if let Some(mut receiver_volume) = maybe_receiver_volume {
+            debug!("Updated volume of stream.");
+            **receiver_volume = config.volume();
+        }
+        return;
     };
 
     if config.playing() && has_should_be_playing {
@@ -614,12 +636,19 @@ fn player_config_added<T: AVPlayer>(
 
 fn player_position_added<T: AVPlayer>(
     trigger: Trigger<OnInsert, T::Position>,
-    mut av_players: Query<(&T::Position, &mut HtmlMediaEntity<T>)>,
+    mut av_players: Query<(&T::Position, Option<&mut HtmlMediaEntity<T>>, Has<Stream>)>,
 ) {
     let entity = trigger.target();
-    let Ok((position, mut html_media_entity)) = av_players.get_mut(entity) else {
+    let Ok((position, maybe_html_media_entity, has_stream)) = av_players.get_mut(entity) else {
         unreachable!("Infallible query");
     };
+    let Some(mut html_media_entity) = maybe_html_media_entity else {
+        if !has_stream {
+            debug_panic!("Non-stream AVPlayer did not have html media entity.");
+        }
+        return;
+    };
+
 
     debug!("Seeking AVPlayer to {}", **position);
     html_media_entity.current_time = **position;
