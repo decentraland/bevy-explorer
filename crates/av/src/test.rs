@@ -15,13 +15,20 @@ use scene_runner::{
     renderer_context::RendererSceneContext, update_world::material::VideoTextureOutput,
     ContainerEntity, SceneRunnerPlugin,
 };
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::*;
 
+#[cfg(feature = "html")]
+use crate::html_video_player::HtmlMediaEntity;
 #[cfg(feature = "ffmpeg")]
-use crate::video_context::VideoContext;
+use crate::{video_context::VideoContext, AVSinks};
 use crate::{
-    AVPlayerPlugin, AVSinks, InScene, ShouldBePlaying, Stream, VideoPlayer, VideoPlayerConfig,
+    AVPlayerPlugin, InScene, ShouldBePlaying, Stream, VideoPlayer, VideoPlayerConfig,
     VideoPlayerPosition, VideoPlayerSource, LIVEKIT_VIDEO_STREAM,
 };
+
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test_configure!(run_in_browser);
 
 #[cfg(feature = "ffmpeg")]
 #[test]
@@ -66,7 +73,10 @@ macro_rules! test_components {
         test_component!($app, $entity, ActiveReceiver, $active_receiver);
         test_component!($app, $entity, ReceiverImage, $receiver_image);
         test_component!($app, $entity, VideoTextureOutput, $video_texture_output);
+        #[cfg(feature = "ffmpeg")]
         test_component!($app, $entity, AVSinks<VideoPlayer>, $av_sinks);
+        #[cfg(feature = "html")]
+        test_component!($app, $entity, HtmlMediaEntity<VideoPlayer>, $av_sinks);
     };
 }
 
@@ -79,6 +89,7 @@ macro_rules! test_component {
     };
 }
 
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 fn min_test_app() -> App {
     let mut app = App::new();
 
@@ -118,7 +129,9 @@ fn min_test_app() -> App {
     app
 }
 
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_insert_video_player() {
     let mut app = min_test_app();
 
@@ -176,7 +189,9 @@ fn test_insert_video_player() {
     );
 }
 
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_insert_empty_video_player() {
     let mut app = min_test_app();
 
@@ -234,7 +249,9 @@ fn test_insert_empty_video_player() {
     );
 }
 
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_insert_livekit_video_player() {
     let mut app = min_test_app();
 
@@ -292,7 +309,9 @@ fn test_insert_livekit_video_player() {
     );
 }
 
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_removing_video_player() {
     let mut app = min_test_app();
 
@@ -370,7 +389,9 @@ fn test_removing_video_player() {
     );
 }
 
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_removing_livekit_video_player() {
     let mut app = min_test_app();
 
@@ -448,7 +469,9 @@ fn test_removing_livekit_video_player() {
     );
 }
 
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_livekit_video_player_without_should_be_playing_should_not_be_receiver() {
     let mut app = min_test_app();
 
@@ -582,7 +605,9 @@ fn test_livekit_video_player_without_should_be_playing_should_not_be_receiver() 
     );
 }
 
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_source_change() {
     let mut app = min_test_app();
 
