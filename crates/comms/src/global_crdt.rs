@@ -882,6 +882,18 @@ pub fn process_transport_updates(
                         continue;
                     };
 
+                    // same cross-room guard as the Player arm: the message may only
+                    // address the scene owning this context's room
+                    if let Some(room_hash) = &state.room {
+                        if scene.scene_id != *room_hash {
+                            debug!(
+                                "dropping cross-room message from {}: declared scene {} != room {room_hash}",
+                                update.address, scene.scene_id
+                            );
+                            continue;
+                        }
+                    }
+
                     process_messagebus(
                         scene,
                         update.address,
