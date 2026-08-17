@@ -20,6 +20,7 @@ LK_HTTP="http://localhost:7880"
 ROOM_A="harness-room-a"
 ROOM_B="harness-room-b"
 ROOM_C="harness-room-c"          # client-regression room
+REALM_C="harness-c"              # shared realm name for the regression pair (Pulse visibility)
 # content-derived suffix so editing game.js auto-busts the engine's on-disk content
 # cache (which is keyed by hash) — a stale hash would serve old scene JS
 VER=$(md5 -q "$(cd "$(dirname "$0")" && pwd)/scene/game.js" 2>/dev/null | cut -c1-10)
@@ -64,6 +65,15 @@ trap cleanup EXIT
 # ---- preflight ----
 command -v livekit-server >/dev/null || die "livekit-server not found (brew install livekit)"
 command -v python3 >/dev/null || die "python3 not found"
+# A client runs its scene in-process and its `HARNESS|` lines ride tracing at INFO, so a
+# RUST_LOG that filters those out silently fails every client-side assertion — while the
+# server's assertions keep passing, because its scene logs are @scene-log frames written
+# straight to stdout. Refuse rather than report that as a presence failure.
+if [ -n "${RUST_LOG:-}" ]; then
+  die "RUST_LOG is set ('$RUST_LOG'); it overrides the engine's log filter and can mute the
+     scenes' INFO-level HARNESS lines, which reads as a client-side presence failure. Unset
+     it, or include scene_runner::renderer_context=info and re-run."
+fi
 
 rm -rf "$WORK"; mkdir -p "$LOGS" "$WORK/content/contents"
 
@@ -100,18 +110,50 @@ write_entity "$SCENE_D" "0,0"
 # ---- realm abouts ----
 mkdir -p "$WORK/content/server" "$WORK/content/clientA" "$WORK/content/clientB" \
          "$WORK/content/peerC" "$WORK/content/obsC"
-write_about() { # <dir> <fixed-adapter|-> <scenes-urn-json>
+write_about() { # <dir> <fixed-adapter|-> <scenes-urn-json> [realm-name]
   local adapter_json="null"
   [ "$2" != "-" ] && adapter_json="\"$2\""
+  # Pulse partitions peer visibility by realm name, so two clients that must see each
+  # other's movement have to announce the same one even though they read different
+  # `about` documents (each needs its own livekit token, hence its own document).
+  local realm_name="${4:-harness-$1}"
   cat >"$WORK/content/$1/about" <<JSON
 {
   "content": {"healthy": true, "publicUrl": "http://localhost:${CONTENT_PORT}/content/contents/"},
   "lambdas": {"healthy": true, "publicUrl": "http://localhost:${CONTENT_PORT}/content/lambdas/"},
   "comms": {"healthy": true, "protocol": "v3", "fixedAdapter": $adapter_json, "adapter": null},
-  "configurations": {"realmName": "harness-$1", "scenesUrn": $3, "map": {"minimapEnabled": false, "sizes": [{"left": 0, "right": 2, "top": 0, "bottom": 0}]}}
+  "configurations": {"realmName": "$realm_name", "scenesUrn": $3, "map": {"minimapEnabled": false, "sizes": [{"left": 0, "right": 2, "top": 0, "bottom": 0}]}}
 }
 JSON
 }
+
+# ---- pulse server ----
+# Client avatar state (movement/emotes) rides Pulse, not livekit, so the client-regression
+# scenario needs a reachable Pulse instance to introduce the two peers. The orchestrated
+# server never joins Pulse (it ingests its clients' state from their livekit scene rooms,
+# addressed to `authoritative-server`), so this is a client-side dependency only.
+#
+# Defaults to the shared dev server rather than a local one: bevy's native ENet client
+# cannot reach a Pulse server running on macOS (the mac `libenet.dylib` drops the CONNECT
+# before it reaches the C# layer), so a local instance only works on Linux. Override with
+# PULSE_SERVER=host:port — e.g. a Linux container, or `127.0.0.1:7777` on Linux.
+PULSE_HOST="${PULSE_SERVER:-pulse-server.decentraland.zone:7777}"
+PULSE_PORT="${PULSE_HOST##*:}"
+PULSE_NAME="${PULSE_HOST%:*}"
+# Resolve once and pin both regression clients to the SAME address: the dev endpoint is an
+# NLB whose name can resolve differently per lookup, and two clients on two instances never
+# see each other (peer visibility is per-instance). Pinning removes that source of flakiness
+# — though an NLB may still route two UDP flows to different backends, in which case the
+# regression assertions fail even though each client connected fine.
+if [[ "$PULSE_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  PULSE_ADDR="$PULSE_NAME"
+else
+  PULSE_ADDR=$(dig +short "$PULSE_NAME" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+  [ -n "$PULSE_ADDR" ] || die "could not resolve Pulse host '$PULSE_NAME' (set PULSE_SERVER=host:port)"
+fi
+PULSE_SERVER="${PULSE_ADDR}:${PULSE_PORT}"
+export PULSE_SERVER
+say "using Pulse server at $PULSE_SERVER ($PULSE_NAME)"
 
 # ---- livekit dev server ----
 pkill -f "livekit-server --dev" 2>/dev/null; sleep 0.3
@@ -162,10 +204,13 @@ TOK_SCENE_C=$(mint_seed "$ROOM_SCENE_C" $SEED_OBS_C)
 write_about server - "[]"
 write_about clientA "livekit:${LK_URL}?access_token=${TOK_CLI_A}" "[]"
 write_about clientB "livekit:${LK_URL}?access_token=${TOK_CLI_B}" "[]"
-write_about peerC   "livekit:${LK_URL}?access_token=${TOK_PEER_C}" "[]"
+# the regression pair shares one realm name (see write_about): they sit in one livekit
+# room, but their avatar state rides Pulse, which would otherwise treat them as being in
+# two different realms and never introduce them
+write_about peerC   "livekit:${LK_URL}?access_token=${TOK_PEER_C}" "[]" "$REALM_C"
 # observer loads the regression scene as a world scene so it can read its shared-context roster
 write_about obsC "livekit:${LK_URL}?access_token=${TOK_OBS_C}" \
-  "[\"urn:decentraland:entity:${SCENE_C}?=&baseUrl=${BASEURL}\"]"
+  "[\"urn:decentraland:entity:${SCENE_C}?=&baseUrl=${BASEURL}\"]" "$REALM_C"
 
 # ================= scenario 1: orchestrated isolation =================
 say "starting orchestrated server (2 scenes / 2 rooms)..."
@@ -297,11 +342,38 @@ srv_has_line "$SCENE_B" "connected-players" "$ADDR_A"; check "getConnectedPlayer
 # comms-side (independent of the avatar plugin, which headless omits). Clients spawn at
 # their parcel's center, so the SCENE-RELATIVE position is always [8,0,8]; for scene C
 # (based at 2,0, world x 40) this also proves scene-origin localization.
-srv_has_line "$SCENE_A" "player-transform" "$ADDR_A.*\[8,0,8\]"
+#
+# Matched with a tolerance rather than exactly, because the carrier decides the precision:
+# a transform relayed over LiveKit is the sender's raw floats, but one relayed over Pulse
+# has been through the position quantizer (a parcel index plus 8 bits over the parcel's 16m
+# => 0.0625m steps), so a peer sitting exactly on 8 reports 8.031 — dead centre of its
+# quantization box. TOL is one whole step, comfortably clear of a wrong scene origin (which
+# would be out by a multiple of 16) while accepting any legitimate quantization residue.
+TOL=0.0625
+transform_near() { # <log> <address> <x> <y> <z> -> 0 if a transform for that address is within TOL
+  # The payload is JSON, but its escaping depends on the source: a client logs it once-escaped
+  # while the server wraps it in an @scene-log frame (twice-escaped). Pull the numbers out
+  # positionally instead of unescaping, so one matcher handles both.
+  grep -a 'HARNESS|player-transform' "$1" | grep "$2" | python3 -c '
+import re, sys
+want = [float(a) for a in sys.argv[1:4]]
+tol = float(sys.argv[4])
+pat = re.compile(r"pos[^[]*\[([-0-9.eE]+),([-0-9.eE]+),([-0-9.eE]+)\]")
+for line in sys.stdin:
+    m = pat.search(line)
+    if m and all(abs(float(g) - w) <= tol for g, w in zip(m.groups(), want)):
+        sys.exit(0)
+sys.exit(1)
+' "$3" "$4" "$5" "$TOL"
+}
+# the server writes all its scenes into one stream, so scope to the scene first
+grep -a "@scene-log {\"scene\":\"$SCENE_A\"" "$LOGS/server.log" >"$WORK/sceneA.log"
+grep -a "@scene-log {\"scene\":\"$SCENE_B\"" "$LOGS/server.log" >"$WORK/sceneB.log"
+transform_near "$WORK/sceneA.log" "$ADDR_A" 8 0 8
 check "scene A sees client A's avatar transform at spawn" $?
-srv_has_line "$SCENE_B" "player-transform" "$ADDR_B.*\[8,0,8\]"
+transform_near "$WORK/sceneB.log" "$ADDR_B" 8 0 8
 check "scene B sees client B's avatar transform at spawn" $?
-grep -a 'HARNESS|player-transform' "$LOGS/obsC.log" | grep "$ADDR_PEER_C" | grep -qF "[8,0,8]"
+transform_near "$LOGS/obsC.log" "$ADDR_PEER_C" 8 0 8
 check "regression: peer transform localized to scene C's origin" $?
 
 # 6b. getPlayersInScene — room-scoped on the server (context membership), positional on
