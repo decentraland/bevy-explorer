@@ -12,8 +12,8 @@ use crate::{
     crdt::{append_component, delete_entity, put_component},
     interface::{crdt_context::CrdtContext, CrdtType},
     js::{
-        AllocatorContext, CommunicatedWithRenderer, CrdtSentThisTick, CrdtStoreNextCheck,
-        FilteredCrdtStore, RendererStore, SceneResponseSender, SceneStatsFlush, ShuttingDown,
+        AllocatorContext, CommunicatedWithRenderer, CrdtSendsThisTick, CrdtStoreNextCheck,
+        FilteredCrdtStore, KillFlag, RendererStore, SceneResponseSender, SceneStatsFlush,
     },
     AllocError, CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResourceCounters, SceneResponse,
@@ -36,8 +36,16 @@ pub(crate) const MAX_CRDT_BATCH_BYTES: usize = 64 * 1024 * 1024;
 // cap so legitimate scenes are never clipped and only that cheating pattern is caught.
 pub(crate) const MAX_CRDT_STORE_BYTES: usize = 512 * 1024 * 1024;
 
+// Upper bound on CRDT batches a scene sends within one tick. Each send is paired with an
+// awaited receive in the EngineApi glue, so multiple sends per tick are renderer-paced and
+// don't stack the response channel — but a scene that loops renderer comms without surfacing
+// to the top-level scene loop escapes diagnostics, dt accounting and shutdown tracking, so
+// the number is kept small. Four is the most any known-legitimate runtime uses: the sdk6
+// adaption layer pumps exactly four engine updates inside onStart to bootstrap the scene.
+pub(crate) const MAX_CRDT_SENDS_PER_TICK: u32 = 4;
+
 /// Returns whether this scene runs in authoritative-server role. Read synchronously
-/// from the scene's CrdtContext (seeded from the `IsServer` engine resource). MUST stay
+/// from the scene's CrdtContext (seeded from the engine's server-mode flag). MUST stay
 /// synchronous — an async op would return a Promise to JS, and `!!Promise` is always
 /// true, making every client believe it is the server.
 pub fn op_is_server(state: Rc<RefCell<impl State>>) -> bool {
@@ -89,27 +97,33 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
     // Once flagged for shutdown the scene is inert: ingest nothing further and emit no
     // frames, so a scene that ignores the unwind can't keep growing the store or pushing
     // frames at a scene the renderer has already marked broken.
-    if op_state.has::<ShuttingDown>() {
+    if op_state.borrow::<KillFlag>().killed() {
         return;
     }
 
-    // One batch per tick: a scene that sends again without an intervening tick boundary is
-    // breaching the runtime contract — and un-awaited send spam would otherwise stack frames
-    // onto the bounded response channel, whose overflow panics inside an op and takes down
-    // the shared sidecar. The marker is cleared by the scene loop at each tick boundary.
-    if op_state.has::<CrdtSentThisTick>() {
+    // Bounded batches per tick: a scene that keeps sending without surfacing to the scene
+    // loop is breaching the runtime contract — un-awaited send spam would stack frames onto
+    // the bounded response channel, whose overflow panics inside an op and takes down the
+    // shared sidecar, and even awaited in-loop comms escape diagnostics and shutdown
+    // tracking. The counter is cleared by the scene loop at each tick boundary.
+    let sends = op_state
+        .try_take::<CrdtSendsThisTick>()
+        .unwrap_or_default()
+        .0
+        + 1;
+    op_state.put(CrdtSendsThisTick(sends));
+    if sends > MAX_CRDT_SENDS_PER_TICK {
         let scene_id = op_state.borrow::<CrdtContext>().scene_id;
-        error!("[{scene_id:?}] multiple CRDT batches in one tick; terminating the scene");
+        error!("[{scene_id:?}] more than {MAX_CRDT_SENDS_PER_TICK} CRDT batches in one tick; terminating the scene");
         let _ = op_state
             .borrow_mut::<SceneResponseSender>()
             .try_send(SceneResponse::Error(
                 scene_id,
-                "scene sent more than one CRDT batch in a tick".to_owned(),
+                format!("scene sent more than {MAX_CRDT_SENDS_PER_TICK} CRDT batches in a tick"),
             ));
-        op_state.put(ShuttingDown);
+        op_state.borrow::<KillFlag>().kill();
         return;
     }
-    op_state.put(CrdtSentThisTick);
 
     // Reject an oversized batch before it is copied into the store, serialised, and framed
     // onto the shared connection. Report it as a scene error and flag the scene for shutdown
@@ -127,7 +141,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
                 scene_id,
                 format!("scene exceeded the {MAX_CRDT_BATCH_BYTES}-byte CRDT batch limit"),
             ));
-        op_state.put(ShuttingDown);
+        op_state.borrow::<KillFlag>().kill();
         return;
     }
 
@@ -229,7 +243,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
                     scene_id,
                     format!("scene exceeded the {MAX_CRDT_STORE_BYTES}-byte CRDT store limit"),
                 ));
-            op_state.put(ShuttingDown);
+            op_state.borrow::<KillFlag>().kill();
         } else {
             let headroom = (MAX_CRDT_STORE_BYTES - retained) as u64;
             op_state.put(CrdtStoreNextCheck(
@@ -250,9 +264,9 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
 
     // A scene flagged for shutdown must not park on the renderer channel — the renderer marks
     // it broken and never responds, which would leave the isolate resident until scene unload.
-    // Return an empty batch instead, so the tick unwinds to the scene loop, whose ShuttingDown
+    // Return an empty batch instead, so the tick unwinds to the scene loop, whose kill-flag
     // check tears the runtime down.
-    if op_state.borrow().has::<ShuttingDown>() {
+    if op_state.borrow().borrow::<KillFlag>().killed() {
         return Vec::new();
     }
 
@@ -439,7 +453,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                 "{}: shutting down",
                 std::thread::current().name().unwrap_or("(webworker)")
             );
-            op_state.put(ShuttingDown);
+            op_state.borrow::<KillFlag>().kill();
             Default::default()
         }
         // GetCrdtSnapshot is handled before this match in the loop above.

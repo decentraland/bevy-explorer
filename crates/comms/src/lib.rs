@@ -71,7 +71,10 @@ impl Plugin for CommsPlugin {
         app.add_event::<SetCurrentScene>()
             .init_resource::<SceneRoomConnection>()
             .init_resource::<ServerSceneRooms>()
-            .init_resource::<DisableSceneRoomGatekeeper>();
+            .init_resource::<DisableSceneRoomGatekeeper>()
+            .insert_resource(SceneRoomAdapterOverride(
+                std::env::var("DCL_SCENE_ROOM_ADAPTER").ok(),
+            ));
 
         app.add_plugins((
             WebsocketRoomPlugin,
@@ -151,6 +154,9 @@ pub struct Transport {
     pub transport_type: TransportType,
     pub sender: Sender<NetworkMessage>,
     pub control: Option<Sender<ChannelControl>>,
+    /// the crdt context (player-presence view) this transport feeds; fixed at connect
+    /// time, so packets cannot reach another context's store
+    pub context: Entity,
 }
 
 fn process_realm_change(
@@ -160,6 +166,7 @@ fn process_realm_change(
     mut manager: AdapterManager,
     wallet: Res<Wallet>,
     disable_realm_comms: Option<Res<DisableRealmComms>>,
+    contexts: Query<Entity, With<global_crdt::GlobalCrdtState>>,
 ) {
     // headless servers must never join realm-wide comms (archipelago / world room /
     // preview ws-room) — they would show up as a ghost participant. Scene rooms are
@@ -185,9 +192,16 @@ fn process_realm_change(
                     .split_once(':')
                     .map(|(_, tail)| tail)
                     .unwrap_or(adapter.as_str());
-                manager.connect(real_adapter);
+                // realm transports are client-only (gate above): the single shared context
+                let Ok(context) = contexts.single() else {
+                    return;
+                };
+                manager.connect(real_adapter, context);
             } else if let Some(adapter) = comms.fixed_adapter.as_ref() {
-                manager.connect(adapter);
+                let Ok(context) = contexts.single() else {
+                    return;
+                };
+                manager.connect(adapter, context);
             }
         } else {
             debug!("missing comms!");
@@ -231,6 +245,14 @@ pub struct DisableSceneRoomGatekeeper(pub bool);
 #[derive(Resource, Default)]
 pub struct DisableRealmComms(pub bool);
 
+/// When set (via the `DCL_SCENE_ROOM_ADAPTER` env var), the client scene-room path uses
+/// this adapter string directly instead of minting one from the comms gatekeeper — a
+/// local/offline testing escape hatch that avoids any network round-trip. Only consulted
+/// on the client path (`connect_scene_room`); orchestrated servers disable that path
+/// entirely, so this never affects the authoritative-server adapter flow.
+#[derive(Resource, Default)]
+pub struct SceneRoomAdapterOverride(pub Option<String>);
+
 #[allow(clippy::type_complexity)]
 #[allow(clippy::too_many_arguments)]
 fn connect_scene_room(
@@ -241,8 +263,10 @@ fn connect_scene_room(
     mut scene: EventReader<SetCurrentScene>,
     wallet: Res<Wallet>,
     ipfs: IpfsAssetServer,
-    is_server: Res<common::structs::IsServer>,
     disabled: Res<DisableSceneRoomGatekeeper>,
+    adapter_override: Res<SceneRoomAdapterOverride>,
+    preview_mode: Res<common::structs::PreviewMode>,
+    contexts: Query<Entity, With<global_crdt::GlobalCrdtState>>,
 ) {
     if disabled.0 {
         // orchestrated servers receive pre-minted adapters over the control channel and
@@ -261,12 +285,39 @@ fn connect_scene_room(
             }
             warn!("disconnected scene channel {ev:?}");
         }
+        if adapter_override.0.is_some() && !preview_mode.is_preview {
+            warn_once!("DCL_SCENE_ROOM_ADAPTER is ignored outside preview mode");
+        }
         if ev.scene_id.is_empty() {
             *gatekeeper_task = None;
+        } else if let Some(adapter) = adapter_override
+            .0
+            .clone()
+            .filter(|_| preview_mode.is_preview)
+        {
+            // local/offline testing (preview only): skip the gatekeeper HTTP mint and
+            // connect the given adapter directly. Scene rooms feed the single shared
+            // client context. ONLY livekit adapters, mirroring the orchestrated-server
+            // gate: any other protocol (signed-login, ws-room, fixed-adapter recursion)
+            // could make the engine sign a remote-chosen payload with its identity.
+            *gatekeeper_task = None;
+            if !adapter.starts_with("livekit:") {
+                warn_once!("ignoring non-livekit scene room adapter override");
+                return;
+            }
+            let Ok(context) = contexts.single() else {
+                return;
+            };
+            if let Some(ent) = manager.connect(&adapter, context) {
+                commands
+                    .entity(ent)
+                    .try_insert(SceneRoom(ev.scene_id.clone()));
+                current.0 = Some((ev, adapter, ent));
+            }
         } else {
             let wallet = wallet.clone();
             let preview = ev.scene_id.starts_with("b64-");
-            let url = match (is_server.0, preview) {
+            let url = match (common::structs::server_mode(), preview) {
                 (true, true) => PREVIEW_SERVER_GATEKEEPER_URL,
                 (true, false) => SERVER_GATEKEEPER_URL,
                 (false, true) => PREVIEW_GATEKEEPER_URL,
@@ -277,7 +328,7 @@ fn connect_scene_room(
             // The authoritative-server gatekeeper endpoint validates the full comms-handshake
             // metadata (intent/signer/realm) that the client `get-scene-adapter` path omits;
             // signing the bare SetCurrentScene there returns 401. Mirror hammurabi's payload.
-            let meta = if is_server.0 {
+            let meta = if common::structs::server_mode() {
                 serde_json::json!({
                     "intent": "dcl:explorer:comms-handshake",
                     "signer": "dcl:explorer",
@@ -316,7 +367,12 @@ fn connect_scene_room(
             None => *gatekeeper_task = Some(task),
             Some(Err(e)) => warn!("failed to get scene room from gatekeeper: {e}"),
             Some(Ok((adapter, ev))) => {
-                if let Some(ent) = manager.connect(&adapter) {
+                // client-only (gatekeeper is disabled on servers): the client's scene
+                // rooms feed its single shared context, all scenes share one view
+                let Ok(context) = contexts.single() else {
+                    return;
+                };
+                if let Some(ent) = manager.connect(&adapter, context) {
                     warn!("added scene channel {ev:?}");
                     commands
                         .entity(ent)
@@ -342,7 +398,7 @@ pub struct AdapterManager<'w, 's> {
 }
 
 impl AdapterManager<'_, '_> {
-    pub fn connect(&mut self, adapter: &str) -> Option<Entity> {
+    pub fn connect(&mut self, adapter: &str, context: Entity) -> Option<Entity> {
         let Some((protocol, address)) = adapter.split_once(':') else {
             warn!("unrecognised adapter string: {adapter}");
             return None;
@@ -352,11 +408,13 @@ impl AdapterManager<'_, '_> {
             "ws-room" => {
                 self.ws_room_events.write(StartWsRoom {
                     address: address.to_owned(),
+                    context,
                 });
             }
             "signed-login" => {
                 self.signed_login_events.send(StartSignedLogin {
                     address: address.to_owned(),
+                    context,
                 });
             }
             #[cfg(feature = "livekit")]
@@ -365,6 +423,7 @@ impl AdapterManager<'_, '_> {
                 self.livekit_events.write(StartLivekit {
                     entity,
                     address: address.to_owned(),
+                    context,
                 });
                 return Some(entity);
             }
@@ -377,13 +436,15 @@ impl AdapterManager<'_, '_> {
             }
             "archipelago" => {
                 debug!("arch starting: {address}");
+                // realm comms, client-only: archipelago transports resolve the shared
+                // context themselves, `context` is not forwarded
                 self.archipelago_events.write(StartArchipelago {
                     address: address.to_owned(),
                 });
             }
             "fixed-adapter" => {
                 // fixed-adapter should be ignored and we use the tail as the full protocol:address
-                return self.connect(address);
+                return self.connect(address, context);
             }
             _ => {
                 warn!("unrecognised adapter protocol: {protocol}");

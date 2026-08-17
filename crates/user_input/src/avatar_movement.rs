@@ -873,7 +873,7 @@ fn broadcast_movement_info(
         With<PrimaryUser>,
     >,
     feedback: Res<SceneDrivenAnimationFeedback>,
-    mut global_crdt: ResMut<GlobalCrdtState>,
+    mut contexts: Query<&mut GlobalCrdtState>,
     time: Res<Time>,
 ) {
     let (maybe_locomotion, maybe_modifier) = active_components.single().unwrap_or_default();
@@ -892,12 +892,14 @@ fn broadcast_movement_info(
 
     debug!("broadcast {:?}", info.0);
 
-    global_crdt.update_crdt(
-        SceneComponentId::AVATAR_MOVEMENT_INFO,
-        CrdtType::LWW_ANY,
-        SceneEntityId::PLAYER,
-        &info.0,
-    );
+    for mut global_crdt in contexts.iter_mut() {
+        global_crdt.update_crdt(
+            SceneComponentId::AVATAR_MOVEMENT_INFO,
+            CrdtType::LWW_ANY,
+            SceneEntityId::PLAYER,
+            &info.0,
+        );
+    }
     info.0 = PbAvatarMovementInfo {
         step_time: time.delta_secs(),
         previous_step_time: info.0.step_time,

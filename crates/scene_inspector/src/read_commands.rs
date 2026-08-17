@@ -97,7 +97,7 @@ fn scene_stats_cmd(mut input: ConsoleCommand<SceneStatsCommand>, resolver: Scene
                 };
                 input.reply_ok(format!(
                     "scene: '{}'\nhash: {}\ntick: {}\nentities: {}\nstatus: {}\nbroken: {}\nin_flight: {}",
-                    ctx.title, ctx.hash, ctx.tick_number, entity_count, blocked, ctx.broken, ctx.in_flight,
+                    ctx.title, ctx.hash, ctx.tick_number, entity_count, blocked, ctx.broken(), ctx.in_flight(),
                 ));
             }
         }

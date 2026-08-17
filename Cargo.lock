@@ -3514,6 +3514,7 @@ dependencies = [
  "dcl_deno",
  "ethers-core",
  "fastrand",
+ "futures-util",
  "http 1.4.0",
  "interprocess",
  "ipfs",
@@ -4458,7 +4459,7 @@ dependencies = [
  "hashers",
  "http 0.2.12",
  "instant",
- "jsonwebtoken",
+ "jsonwebtoken 8.3.0",
  "once_cell",
  "pin-project",
  "reqwest 0.11.27",
@@ -5324,8 +5325,7 @@ dependencies = [
 [[package]]
 name = "gltf"
 version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3ce1918195723ce6ac74e80542c5a96a40c2b26162c1957a5cd70799b8cacf7"
+source = "git+https://github.com/gltf-rs/gltf?rev=12fc1b7c#12fc1b7ce28c7b4c6d1b881a30df24060dccfbda"
 dependencies = [
  "base64 0.13.1",
  "byteorder",
@@ -5339,8 +5339,7 @@ dependencies = [
 [[package]]
 name = "gltf-derive"
 version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14070e711538afba5d6c807edb74bcb84e5dbb9211a3bf5dea0dfab5b24f4c51"
+source = "git+https://github.com/gltf-rs/gltf?rev=12fc1b7c#12fc1b7ce28c7b4c6d1b881a30df24060dccfbda"
 dependencies = [
  "inflections",
  "proc-macro2",
@@ -5351,8 +5350,7 @@ dependencies = [
 [[package]]
 name = "gltf-json"
 version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6176f9d60a7eab0a877e8e96548605dedbde9190a7ae1e80bbcc1c9af03ab14"
+source = "git+https://github.com/gltf-rs/gltf?rev=12fc1b7c#12fc1b7ce28c7b4c6d1b881a30df24060dccfbda"
 dependencies = [
  "gltf-derive",
  "serde",
@@ -5503,6 +5501,20 @@ dependencies = [
  "cfg-if",
  "crunchy",
  "zerocopy",
+]
+
+[[package]]
+name = "harness-util"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dcl_component",
+ "livekit",
+ "livekit-api",
+ "pico-args",
+ "prost 0.11.9",
+ "tokio",
+ "wallet",
 ]
 
 [[package]]
@@ -6457,6 +6469,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonwebtoken"
+version = "9.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a87cc7a48537badeae96744432de36f4be2b4a34a05a5ef32e9dd8a1c169dde"
+dependencies = [
+ "base64 0.22.1",
+ "js-sys",
+ "ring 0.17.14",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "k256"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6754,8 +6779,10 @@ version = "0.4.0"
 source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#3db4328ac42dee8e09c1b497f15a0cbe60ef90f1"
 dependencies = [
  "async-tungstenite",
+ "base64 0.21.7",
  "futures-util",
  "http 0.2.12",
+ "jsonwebtoken 9.3.1",
  "livekit-protocol",
  "livekit-runtime",
  "log",
@@ -6764,6 +6791,7 @@ dependencies = [
  "reqwest 0.11.27",
  "scopeguard",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror 1.0.69",
  "tokio",

@@ -6,8 +6,8 @@ use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     js::{
-        engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, CrdtSentThisTick,
-        SceneResponseSender, ShuttingDown, SuperUserScene,
+        engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, CrdtSendsThisTick,
+        KillFlag, SceneResponseSender, SuperUserScene,
     },
     RendererResponse, RpcCalls, SceneElapsedTime, SceneResourceCounters, SceneResponse,
 };
@@ -50,6 +50,7 @@ pub fn create_runtime(
     super_user: bool,
     storage_root: &str,
     preview: bool,
+    kill_flag: KillFlag,
 ) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
     let net = deno_net::deno_net::init_ops_and_esm::<NP>(None, None);
@@ -189,6 +190,11 @@ pub fn create_runtime(
             if first_trip {
                 bevy::prelude::error!("scene exceeded its {MAX_SCENE_HEAP_BYTES}-byte heap cap; terminating the scene isolate");
             }
+            // termination alone only unwinds the current js: the heap stays rooted by the
+            // scene globals and the scene loop keeps ticking through uncaught errors, so it
+            // would re-trip this callback forever. the kill flag makes the loop exit, which
+            // drops the runtime and actually releases the heap.
+            kill_flag.kill();
             terminate_handle.terminate_execution();
             if first_trip {
                 // one-time margin so the termination unwind can run rather than hard-aborting
@@ -244,13 +250,19 @@ pub(crate) fn scene_thread(
 ) {
     let scene_id = scene_context.scene_id;
     let preview = scene_context.preview;
-    let (mut runtime, inspector) =
-        create_runtime(inspect, super_user.is_some(), &storage_root, preview);
+    let kill_flag = KillFlag::default();
+    let (mut runtime, inspector) = create_runtime(
+        inspect,
+        super_user.is_some(),
+        &storage_root,
+        preview,
+        kill_flag.clone(),
+    );
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
     let mut guard = VM_HANDLES.lock().unwrap();
-    guard.insert(scene_id, vm_handle);
+    guard.insert(scene_id, (vm_handle, kill_flag.clone()));
     drop(guard);
 
     let state = runtime.op_state();
@@ -266,6 +278,7 @@ pub(crate) fn scene_thread(
         global_update_receiver,
         super_user,
         scene_origin,
+        kill_flag.clone(),
     );
 
     let span = info_span!("js startup").entered();
@@ -318,8 +331,8 @@ pub(crate) fn scene_thread(
 
     // send any initial rpc requests
     crdt_send_to_renderer(state.clone(), &[]);
-    // the initial send consumed the tick's batch allowance; give onStart its own
-    state.borrow_mut().try_take::<CrdtSentThisTick>();
+    // the initial send drew on the tick's send allowance; give onStart a full one
+    state.borrow_mut().try_take::<CrdtSendsThisTick>();
 
     // run startup function
     let run_start = thread_cpu_us();
@@ -365,8 +378,8 @@ pub(crate) fn scene_thread(
         state
             .borrow_mut()
             .put(SceneElapsedTime(elapsed.as_secs_f32()));
-        // tick boundary: reset the one-batch-per-tick send allowance
-        state.borrow_mut().try_take::<CrdtSentThisTick>();
+        // tick boundary: reset the bounded per-tick send allowance
+        state.borrow_mut().try_take::<CrdtSendsThisTick>();
 
         // heap gauges: sampling walks the isolate's spaces, so cap it at ~once per 5s
         if last_heap_sample.is_none_or(|at| now.saturating_duration_since(at).as_secs() >= 5) {
@@ -392,7 +405,12 @@ pub(crate) fn scene_thread(
             .borrow_mut::<SceneResourceCounters>()
             .run_us += thread_cpu_us().saturating_sub(run_start);
 
-        if state.borrow().try_borrow::<ShuttingDown>().is_some() {
+        // set cooperatively by the ops (renderer channel closed, policy kill) or
+        // externally with terminate_execution (watchdog kill, heap cap); either way
+        // exit instead of running another tick, which for a terminated scene would
+        // re-enter a deterministic wedge
+        if kill_flag.killed() {
+            debug!("[{scene_id:?}] scene loop exiting");
             rt.block_on(async move {
                 drop(runtime);
             });
@@ -626,7 +644,8 @@ mod tests {
     /// is evaluated (`op_require("~scene.js")` -> `evalContext`). A `throw` in the scene
     /// surfaces as `Err`.
     fn run_scene(is_server: bool, scene_js: &str) -> Result<(), String> {
-        let (mut runtime, _) = create_runtime(false, false, "test-scene-realm", false);
+        let (mut runtime, _) =
+            create_runtime(false, false, "test-scene-realm", false, Default::default());
         {
             let state = runtime.op_state();
             let mut state = state.borrow_mut();
@@ -710,7 +729,13 @@ mod tests {
     /// authoritative server the option must be refused outright.
     #[test]
     fn server_refuses_a_scene_supplied_proxy() {
-        let (mut runtime, _) = create_runtime(false, false, "test-custom-client", false);
+        let (mut runtime, _) = create_runtime(
+            false,
+            false,
+            "test-custom-client",
+            false,
+            Default::default(),
+        );
         runtime.op_state().borrow_mut().put(context(true));
         let err = runtime
             .execute_script(
@@ -728,7 +753,13 @@ mod tests {
     /// own outbound TLS.
     #[test]
     fn server_refuses_scene_supplied_ca_certs() {
-        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-ca", false);
+        let (mut runtime, _) = create_runtime(
+            false,
+            false,
+            "test-custom-client-ca",
+            false,
+            Default::default(),
+        );
         runtime.op_state().borrow_mut().put(context(true));
         let err = runtime
             .execute_script(
@@ -746,7 +777,13 @@ mod tests {
     /// this restriction is server-only.
     #[test]
     fn client_still_allows_custom_clients() {
-        let (mut runtime, _) = create_runtime(false, false, "test-custom-client-clientmode", false);
+        let (mut runtime, _) = create_runtime(
+            false,
+            false,
+            "test-custom-client-clientmode",
+            false,
+            Default::default(),
+        );
         runtime.op_state().borrow_mut().put(context(false));
         runtime
             .execute_script(

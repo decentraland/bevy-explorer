@@ -93,8 +93,8 @@ export function PlacesBrowser({
     return list.filter((p) => !liveIds.has(p.id) && !featuredIds.has(p.id))
   }, [list, showHighlights, liveIds, featured])
 
-  const renderGrid = (items: DiscoverPlace[]): React.JSX.Element => (
-    <div className={styles.grid}>
+  const renderGrid = (items: DiscoverPlace[], className = ''): React.JSX.Element => (
+    <div className={`${styles.grid} ${className}`.trim()}>
       {items.map((place) => (
         <PlaceCard key={place.id} place={place} onClick={() => onPick(place)} />
       ))}
@@ -108,7 +108,7 @@ export function PlacesBrowser({
           <h2 className={styles.sectionTitle}>
             <span className={styles.liveDot} /> Live Now
           </h2>
-          {renderGrid(liveNow)}
+          {renderGrid(liveNow, styles.gridLive)}
         </section>
       )}
 

@@ -75,15 +75,18 @@ fn broadcast_position(
     mut last_index: Local<u32>,
     mut last_anim: Local<LastAnim>,
     time: Res<Time>,
-    global_crdt: Res<GlobalCrdtState>,
+    contexts: Query<&GlobalCrdtState>,
     wallet: Res<Wallet>,
-    is_server: Res<common::structs::IsServer>,
 ) {
     // An authoritative server has no avatar to announce — hammurabi's reportPosition is
     // a no-op. Suppress so clients never see a ghost server player.
-    if is_server.0 {
+    if common::structs::server_mode() {
         return;
     }
+    // client-only system (see above): the single shared context holds the realm bounds
+    let Ok(global_crdt) = contexts.single() else {
+        return;
+    };
     let Ok((player, dynamics, scene_anim, head_sync, point_at)) = player.single() else {
         return;
     };

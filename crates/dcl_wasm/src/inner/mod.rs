@@ -9,8 +9,7 @@ use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     js::{
-        CommunicatedWithRenderer, CrdtSentThisTick, SceneResponseSender, ShuttingDown,
-        SuperUserScene,
+        CommunicatedWithRenderer, CrdtSendsThisTick, KillFlag, SceneResponseSender, SuperUserScene,
     },
     RendererResponse, SceneElapsedTime,
 };
@@ -45,9 +44,11 @@ pub fn init_runtime() {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
     initial_crdt_store: CrdtStore,
     scene_context: CrdtContext,
+    _presence_context: u64,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
@@ -123,6 +124,7 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
         scene_initialization_data.global_update_receiver,
         scene_initialization_data.super_user,
         scene_initialization_data.scene_origin,
+        Default::default(),
     );
 
     local_storage::init(&context).await;
@@ -220,13 +222,13 @@ impl From<WasmError> for JsValue {
 pub fn op_set_elapsed(state: &WorkerContext, elapsed: f32) {
     let mut state = state.state.borrow_mut();
     state.put(SceneElapsedTime(elapsed));
-    // tick boundary: reset the one-batch-per-tick send allowance
-    state.try_take::<CrdtSentThisTick>();
+    // tick boundary: reset the bounded per-tick send allowance
+    state.try_take::<CrdtSendsThisTick>();
 }
 
 #[wasm_bindgen]
 pub fn op_continue_running(state: &WorkerContext) -> bool {
-    !state.state.borrow().has::<ShuttingDown>()
+    !state.state.borrow().borrow::<KillFlag>().killed()
 }
 
 #[wasm_bindgen]

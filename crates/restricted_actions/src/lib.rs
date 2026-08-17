@@ -9,6 +9,7 @@ use std::{
 use anyhow::anyhow;
 use bevy::{
     asset::{io::AssetReader, AsyncReadExt, LoadState},
+    ecs::system::SystemParam,
     math::Vec3Swizzles,
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -24,13 +25,13 @@ use common::{
     },
     sets::SceneSets,
     structs::{
-        AvatarDynamicState, EngineMovementControl, IsServer, PermissionType, PreviewCommand,
+        server_mode, AvatarDynamicState, EngineMovementControl, PermissionType, PreviewCommand,
         PrimaryCamera, PrimaryUser, StartupScenes, ZOrder,
     },
     util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
-    global_crdt::ForeignPlayer,
+    global_crdt::{CrdtContexts, ForeignPlayer},
     preview::handle_preview_socket,
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
     NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
@@ -813,7 +814,6 @@ fn spawn_portable(
         RpcResultSender<Result<SpawnResponse, String>>,
     )>,
     ipfas: IpfsAssetServer,
-    is_server: Res<IsServer>,
 ) {
     let mut new_portables = HashMap::new();
     let mut failed_portables = HashSet::new();
@@ -829,7 +829,7 @@ fn spawn_portable(
     }) {
         // authoritative-server mode: a tenant scene must not spawn arbitrary portables
         // in the shared engine (cross-tenant resource-exhaustion DoS).
-        if is_server.0 {
+        if server_mode() {
             response.send(Err(
                 "portable experiences are disabled in server mode".to_owned()
             ));
@@ -1142,6 +1142,7 @@ fn get_user_data(
     >,
     mut scenes: Query<&mut RendererSceneContext>,
     mut profile_manager: ProfileManager,
+    contexts: Res<CrdtContexts>,
 ) {
     for (user, scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetUserData {
@@ -1174,10 +1175,17 @@ fn get_user_data(
                 }
             },
             Some(address) => {
-                if let Some((_, profile)) = others
-                    .iter()
-                    .find(|(fp, _)| *address == format!("{:#x}", fp.address))
-                {
+                // only serve cached profiles of players in the calling scene's own
+                // context — a co-tenant room's players aren't served from cache.
+                // resolved inline (not via ScenePresence) as this system already holds a
+                // mutable RendererSceneContext query
+                let scene_context = scenes
+                    .get(*scene)
+                    .map(|ctx| contexts.for_scene_hash(&ctx.hash))
+                    .unwrap_or_else(|_| contexts.shared());
+                if let Some((_, profile)) = others.iter().find(|(fp, _)| {
+                    fp.context == scene_context && *address == format!("{:#x}", fp.address)
+                }) {
                     response.send(Ok(profile.content.clone()));
                     return;
                 }
@@ -1229,20 +1237,43 @@ fn get_user_data(
     });
 }
 
+/// Resolves the crdt context (player-presence view) a scene reads. On the client every
+/// scene resolves to the shared context, so every player is visible to every scene; on a
+/// multi-tenant server each scene resolves to its own room's context. An unresolvable
+/// scene falls back to the shared context — which on a server holds no players.
+#[derive(SystemParam)]
+struct ScenePresence<'w, 's> {
+    contexts: Res<'w, CrdtContexts>,
+    scenes: Query<'w, 's, &'static RendererSceneContext>,
+}
+
+impl ScenePresence<'_, '_> {
+    fn context_of(&self, scene: Entity) -> Entity {
+        self.scenes
+            .get(scene)
+            .map(|ctx| self.contexts.for_scene_hash(&ctx.hash))
+            .unwrap_or_else(|_| self.contexts.shared())
+    }
+}
+
 fn get_connected_players(
     me: Res<Wallet>,
     others: Query<&ForeignPlayer>,
     mut events: EventReader<RpcCall>,
-    is_server: Res<IsServer>,
+    presence: ScenePresence,
 ) {
-    for response in events.read().filter_map(|ev| match ev {
-        RpcCall::GetConnectedPlayers { response } => Some(response),
+    for (scene, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::GetConnectedPlayers { scene, response } => Some((scene, response)),
         _ => None,
     }) {
-        let others = others.iter().map(|f| format!("{:#x}", f.address));
+        let scene_context = presence.context_of(*scene);
+        let others = others
+            .iter()
+            .filter(|f| f.context == scene_context)
+            .map(|f| format!("{:#x}", f.address));
         // a headless server has no real local player — don't report its fake player as
         // a connected peer (it would appear as a ghost to every scene)
-        let own = (!is_server.0)
+        let own = (!server_mode())
             .then(|| me.address().map(|address| format!("{address:#x}")))
             .flatten();
         let results = others.chain(own).collect();
@@ -1256,7 +1287,7 @@ fn get_players_in_scene(
     others: Query<(Entity, &ForeignPlayer)>,
     mut events: EventReader<RpcCall>,
     containing_scene: ContainingScene,
-    is_server: Res<IsServer>,
+    presence: ScenePresence,
 ) {
     for (scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetPlayersInScene { scene, response } => Some((scene, response)),
@@ -1264,7 +1295,7 @@ fn get_players_in_scene(
     }) {
         let mut results = Vec::default();
         // skip the fake local player in server mode (see get_connected_players)
-        if !is_server.0 {
+        if !server_mode() {
             if let Ok(player) = me.single() {
                 if containing_scene.get(player).contains(scene) {
                     if let Some(address) = wallet.address() {
@@ -1274,10 +1305,17 @@ fn get_players_in_scene(
             }
         }
 
+        // a scene's players must be in its crdt context (its own room's on a
+        // multi-tenant server; the shared context otherwise, where every player
+        // qualifies) AND positionally inside the scene (vacuously true for orchestrated
+        // server scenes, which host as portables)
+        let scene_context = presence.context_of(*scene);
         results.extend(
             others
                 .iter()
-                .filter(|(e, _)| containing_scene.get(*e).contains(scene))
+                .filter(|(e, f)| {
+                    f.context == scene_context && containing_scene.get(*e).contains(scene)
+                })
                 .map(|(_, f)| format!("{:#x}", f.address)),
         );
         response.send(results);
@@ -1286,19 +1324,29 @@ fn get_players_in_scene(
 
 // todo: move this to global_crdt to do it all in one place?
 fn event_player_connected(
-    mut senders: Local<Vec<RpcEventSender>>,
+    mut senders: Local<Vec<(Entity, RpcEventSender)>>,
     mut events: EventReader<RpcCall>,
     players: Query<&ForeignPlayer, Added<ForeignPlayer>>,
+    presence: ScenePresence,
 ) {
-    for sender in events.read().filter_map(|ev| match ev {
-        RpcCall::SubscribePlayerConnected { sender } => Some(sender),
+    for (scene, sender) in events.read().filter_map(|ev| match ev {
+        RpcCall::SubscribePlayerConnected { scene, sender } => Some((scene, sender)),
         _ => None,
     }) {
-        senders.push(sender.clone());
+        senders.push((*scene, sender.clone()));
     }
 
-    senders.retain_mut(|sender| {
+    if players.is_empty() {
+        senders.retain(|(_, sender)| !sender.is_closed());
+        return;
+    }
+
+    senders.retain_mut(|(scene, sender)| {
+        let scene_context = presence.context_of(*scene);
         for player in players.iter() {
+            if player.context != scene_context {
+                continue;
+            }
             let data = json!({
                 "userId": format!("{:#x}", player.address)
             })
@@ -1312,33 +1360,45 @@ fn event_player_connected(
 
 // todo: move this to global_crdt to do it all in one place?
 fn event_player_disconnected(
-    mut senders: Local<Vec<RpcEventSender>>,
+    mut senders: Local<Vec<(Entity, RpcEventSender)>>,
     mut events: EventReader<RpcCall>,
     players: Query<(Entity, &ForeignPlayer), Added<ForeignPlayer>>,
     mut removed: RemovedComponents<ForeignPlayer>,
-    mut last_players: Local<HashMap<Entity, Address>>,
+    // (address, context) recorded while the player still exists — the component is
+    // already gone by the time the removal is visible
+    mut last_players: Local<HashMap<Entity, (Address, Entity)>>,
+    presence: ScenePresence,
 ) {
     // gather new receivers
-    for sender in events.read().filter_map(|ev| match ev {
-        RpcCall::SubscribePlayerDisconnected { sender } => Some(sender),
+    for (scene, sender) in events.read().filter_map(|ev| match ev {
+        RpcCall::SubscribePlayerDisconnected { scene, sender } => Some((scene, sender)),
         _ => None,
     }) {
-        senders.push(sender.clone());
+        senders.push((*scene, sender.clone()));
     }
 
     // add new players to our local record
     for (ent, player) in players.iter() {
-        last_players.insert(ent, player.address);
+        last_players.insert(ent, (player.address, player.context));
     }
 
-    // gather addresses of removed players
+    // gather removed players
     let removed = removed
         .read()
         .flat_map(|e| last_players.remove(&e))
         .collect::<Vec<_>>();
 
-    senders.retain_mut(|sender| {
-        for address in removed.iter() {
+    if removed.is_empty() {
+        senders.retain(|(_, sender)| !sender.is_closed());
+        return;
+    }
+
+    senders.retain_mut(|(scene, sender)| {
+        let scene_context = presence.context_of(*scene);
+        for (address, context) in removed.iter() {
+            if *context != scene_context {
+                continue;
+            }
             let data = json!({
                 "userId": format!("{:#x}", address)
             })
@@ -1359,8 +1419,9 @@ fn event_player_moved_scene(
     players: Query<(Entity, Option<&ForeignPlayer>), Or<(With<PrimaryUser>, With<ForeignPlayer>)>>,
     me: Res<Wallet>,
     containing_scene: ContainingScene,
+    scenes: Query<(Entity, &RendererSceneContext)>,
+    contexts: Res<CrdtContexts>,
     mut events: EventReader<RpcCall>,
-    is_server: Res<IsServer>,
 ) {
     // gather new receivers
     for (enter, scene, sender) in events.read().filter_map(|ev| match ev {
@@ -1375,12 +1436,28 @@ fn event_player_moved_scene(
         }
     }
 
+    // room-scoped scenes (multi-tenant server) resolve membership by context: a client
+    // holds a scene room only while that scene is its current scene, so room membership
+    // relays the client-side positional enter/leave signal — and get_parcel can't
+    // resolve them anyway (they host as portables)
+    let shared = contexts.shared();
+    let scene_of_context: HashMap<Entity, Entity> = scenes
+        .iter()
+        .filter_map(|(scene_ent, ctx)| {
+            let context = contexts.for_scene_hash(&ctx.hash);
+            (context != shared).then_some((context, scene_ent))
+        })
+        .collect();
+
     // gather current scene (skip the fake local player in server mode — a `None`
     // ForeignPlayer is the PrimaryUser, which is not a real participant on a server)
     let new_scene: HashMap<_, _> = players
         .iter()
-        .filter(|(_, f)| !(is_server.0 && f.is_none()))
+        .filter(|(_, f)| !(server_mode() && f.is_none()))
         .flat_map(|(p, f)| {
+            if let Some(scene) = f.and_then(|f| scene_of_context.get(&f.context)) {
+                return Some((f.unwrap().address, *scene));
+            }
             containing_scene.get_parcel(p).map(|parcel| {
                 (
                     f.map(|f| f.address)
@@ -1472,7 +1549,6 @@ fn send_scene_messages(
     mut events: EventReader<RpcCall>,
     transports: Query<(&Transport, Option<&SceneRoom>)>,
     scenes: Query<&RendererSceneContext>,
-    is_server: Res<IsServer>,
 ) {
     for (scene, data, recipient) in events.read().filter_map(|c| match c {
         RpcCall::SendMessageBus {
@@ -1506,7 +1582,7 @@ fn send_scene_messages(
         // A client routes authoritative-scene traffic to the auth server. WE are the
         // auth server, so keep the scene's intended recipient (targeted peer or broadcast)
         // — otherwise the server would address messages to itself and clients never receive them.
-        if ctx.authoritative_multiplayer && !is_server.0 {
+        if ctx.authoritative_multiplayer && !server_mode() {
             recipient = NetworkMessageRecipient::AuthServer;
         }
 
@@ -1514,7 +1590,7 @@ fn send_scene_messages(
             // Client (prod) path unchanged: send to any scene room. When serving, also
             // require the room to belong to this scene so N scenes in one engine don't
             // cross-talk (a server may hold several scene rooms; a client holds one).
-            let send = if is_server.0 {
+            let send = if server_mode() {
                 scene_room.is_some_and(|r| &r.0 == hash)
             } else {
                 scene_room.is_some()
@@ -1534,7 +1610,6 @@ fn open_nft_dialog(
     containing_scene: ContainingScene,
     primary_user: Query<Entity, With<PrimaryUser>>,
     asset_server: Res<AssetServer>,
-    is_server: Res<IsServer>,
 ) {
     for (scene, urn, response) in events.read().filter_map(|c| match c {
         RpcCall::OpenNftDialog {
@@ -1547,7 +1622,7 @@ fn open_nft_dialog(
         // headless server: the "nft" asset source and the DUI template registry are
         // absent, so proceeding would hit apply_template(...).unwrap() and panic the
         // shared engine, taking down every co-tenant scene. Deny cleanly instead.
-        if is_server.0 {
+        if server_mode() {
             response.send(Err(
                 "openNftDialog is not supported on a headless server".to_owned()
             ));
@@ -1656,7 +1731,6 @@ pub fn handle_eth_async(
     scenes: Query<&RendererSceneContext>,
     wallet: Res<Wallet>,
     time: Res<Time>,
-    is_server: Res<IsServer>,
     mut tasks: Local<
         Vec<(
             RpcResultSender<Result<serde_json::Value, String>>,
@@ -1674,7 +1748,7 @@ pub fn handle_eth_async(
         _ => None,
     }) {
         // The engine wallet is AUTHORITATIVE_SERVER_KEY on a server; never sign for a scene.
-        if is_server.0 {
+        if server_mode() {
             response.send(Err(
                 "eth signing is not available on the authoritative server".to_owned(),
             ));
@@ -2079,7 +2153,6 @@ fn handle_read_file(
         )>,
     >,
     ipfs: IpfsAssetServer,
-    is_server: Res<IsServer>,
 ) {
     for ev in events.read() {
         if let RpcCall::ReadFile {
@@ -2096,7 +2169,7 @@ fn handle_read_file(
             // RFC1918 on the shared task. Refuse any scheme://-shaped filename on the
             // authoritative server; desktop and web keep their existing behaviour (own
             // machine / browser sandbox).
-            if is_server.0 && filename_looks_like_url(filename) {
+            if server_mode() && filename_looks_like_url(filename) {
                 response.send(Err(format!(
                     "readFile: absolute URLs are not permitted on the authoritative server ({filename})"
                 )));

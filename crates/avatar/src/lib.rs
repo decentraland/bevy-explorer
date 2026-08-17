@@ -179,14 +179,23 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>, mut view: ResMut
         .id();
 }
 
-// send received avatar info into scenes
-fn update_avatar_info(
+/// Send player avatar info into scene crdts — a foreign player's into their own context,
+/// the local player's (`PLAYER`) into the client's single context (a multi-context
+/// server has no real local player: skip). Also registered directly by the headless
+/// server, where the rest of AvatarPlugin (render-bound) is omitted.
+pub fn update_avatar_info(
     updated_players: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
-    mut global_state: ResMut<GlobalCrdtState>,
+    mut contexts: Query<&mut GlobalCrdtState>,
 ) {
     for (player, profile) in &updated_players {
+        let Some(mut state) = (match player {
+            Some(player) => contexts.get_mut(player.context).ok(),
+            None => contexts.single_mut().ok(),
+        }) else {
+            continue;
+        };
         let avatar = &profile.content.avatar;
-        global_state.update_crdt(
+        state.update_crdt(
             SceneComponentId::AVATAR_BASE,
             CrdtType::LWW_ANY,
             player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
@@ -202,7 +211,7 @@ fn update_avatar_info(
                     .unwrap_or(base_wearables::default_bodyshape_urn().to_string()),
             },
         );
-        global_state.update_crdt(
+        state.update_crdt(
             SceneComponentId::AVATAR_EQUIPPED_DATA,
             CrdtType::LWW_ANY,
             player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),

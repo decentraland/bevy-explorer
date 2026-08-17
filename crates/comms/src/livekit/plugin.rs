@@ -87,6 +87,7 @@ fn start_livekit(
                 transport_type: TransportType::Livekit,
                 sender,
                 control: Some(control_sender),
+                context: ev.context,
             },
             LivekitTransport {
                 address: ev.address.to_owned(),

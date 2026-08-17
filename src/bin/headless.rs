@@ -23,7 +23,6 @@ use bevy::{
     time::TimePlugin,
 };
 use bevy_dui::DuiPlugin;
-use collectibles::base_wearables;
 use common::{
     inputs::InputMap,
     profile::SerializedProfile,
@@ -31,26 +30,19 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CursorLocks, EngineMovementControl,
-        GraphicsSettings, HeadSync, IsServer, NoRenderApp, PermissionType, PermissionUsed,
-        PermissionValue, PointAtSync, PreviewMode, PrimaryCamera, PrimaryCameraRes,
-        PrimaryPlayerRes, PrimaryUser, SceneGlobalLight, SceneLoadDistance, SystemAudio, TimeOfDay,
-        ToolTips,
+        GraphicsSettings, HeadSync, NoRenderApp, PermissionType, PermissionUsed, PermissionValue,
+        PointAtSync, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
+        SceneGlobalLight, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::{TaskCompat, TaskExt, UtilsPlugin},
 };
 use comms::{
-    global_crdt::{ForeignPlayer, GlobalCrdtState},
     profile::{CurrentUserProfile, ProfileCache, UserProfile},
     AdapterManager, CommsPlugin, ServerSceneRooms,
 };
 use console::ConsolePlugin;
-use dcl::interface::CrdtType;
 use dcl::SceneLogMessage;
 use dcl::SceneResourceCounters;
-use dcl_component::{
-    proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData},
-    SceneComponentId, SceneEntityId,
-};
 use dcl_deno_ipc::init_runtime;
 use input_manager::{CumulativeAxisData, InputPriorities};
 use ipfs::{map_realm_name, IpfsAssetServer, IpfsIoPlugin};
@@ -87,6 +79,8 @@ struct Args {
     /// base64 world-storage delegation (hammurabi envelope); single-scene runs only —
     /// orchestrated scenes receive theirs via the control channel
     storage_delegation: Option<String>,
+    /// deterministic guest wallet (test harness): address derivable offline from the seed
+    wallet_seed: Option<u64>,
 }
 
 fn parse_args() -> Args {
@@ -103,9 +97,20 @@ fn parse_args() -> Args {
     let orchestrated = args.contains("--orchestrated");
     // orchestrated mode is always a server
     let server_mode = args.contains("--server-mode") || orchestrated;
-    // latch the process-global mirror of IsServer so ECS-less code (ipfs) sees server role
+    // standalone server mode is a local-dev flow (single scene on the shared context,
+    // self-minted scene room); production servers are always orchestrated
+    if server_mode && !orchestrated && !preview {
+        eprintln!(
+            "--server-mode without --orchestrated is a local-dev mode and requires --preview"
+        );
+        std::process::exit(2);
+    }
+    // latch the process-global server-role flags before the app is built
     if server_mode {
         common::structs::set_server_mode();
+    }
+    if orchestrated {
+        common::structs::set_multi_tenant();
     }
     let timeout: Option<f32> = args.value_from_str("--timeout").ok();
     let scene_threads: usize = args
@@ -117,6 +122,7 @@ fn parse_args() -> Args {
         .value_from_str("--storage-delegation")
         .ok()
         .or_else(|| std::env::var("PROCESS_STORAGE_DELEGATION").ok());
+    let wallet_seed: Option<u64> = args.value_from_str("--wallet-seed").ok();
     Args {
         realm,
         location,
@@ -127,6 +133,20 @@ fn parse_args() -> Args {
         scene_threads,
         tick_hz,
         storage_delegation,
+        wallet_seed,
+    }
+}
+
+/// harness support: a seeded wallet gives a deterministic address, so livekit tokens
+/// (identity == address) can be minted before the process starts
+fn finalize_guest_wallet(wallet: &mut Wallet, seed: Option<u64>) {
+    match seed {
+        Some(seed) => {
+            let mut bytes = [0u8; 32];
+            bytes[..8].copy_from_slice(&seed.to_le_bytes());
+            wallet.finalize_as_guest_with_seed(bytes);
+        }
+        None => wallet.finalize_as_guest(),
     }
 }
 
@@ -171,10 +191,10 @@ enum ControlCommand {
 #[derive(Resource)]
 struct ControlChannel(std::sync::Mutex<std::sync::mpsc::Receiver<ControlCommand>>);
 
-/// scenes the orchestrator asked for: hash -> pending adapter (taken when connected)
+/// scenes the orchestrator asked for, queued once their room is connected
 #[derive(Resource, Default)]
 struct OrchestratedScenes {
-    wanted: std::collections::HashMap<String, Option<String>>,
+    wanted: std::collections::HashSet<String>,
 }
 
 fn ctl_emit(event: &serde_json::Value) {
@@ -309,6 +329,10 @@ fn main() {
         })
         .add_plugins(WalletPlugin)
         .add_plugins(CommsPlugin)
+        // foreign avatar bevy transforms (render-free, unlike the rest of AvatarPlugin):
+        // without these, engine-side position logic — scene membership, avatar colliders,
+        // trigger areas — sees every remote player at the origin
+        .add_plugins(avatar::foreign_dynamics::PlayerMovementPlugin)
         .add_plugins(DuiPlugin)
         .add_plugins(SystemBridgePlugin { bare: true });
 
@@ -362,7 +386,7 @@ fn main() {
 
     // ---- resources & events the scene runtime needs (no render/UI plugins) ----
     let mut wallet = Wallet::default();
-    wallet.finalize_as_guest();
+    finalize_guest_wallet(&mut wallet, args.wallet_seed);
     // KEY-3: the orchestrated engine must only ever hold a throwaway identity — the
     // authoritative key lives in the orchestrator and never reaches this process.
     assert!(
@@ -400,10 +424,11 @@ fn main() {
             is_preview: args.preview,
             preview_parcel: None,
         })
-        .insert_resource(IsServer(args.server_mode))
-        // never join realm-wide comms (archipelago / world room): a server would be a
-        // ghost participant. Scene rooms use per-scene adapters and are unaffected.
-        .insert_resource(comms::DisableRealmComms(true))
+        // servers must never join realm-wide comms (archipelago / world room) — they would
+        // show up as a ghost participant. A non-server headless follows its realm about's
+        // fixed_adapter like any client (offline about ⇒ no comms), so it can act as a
+        // synthetic client. Scene rooms are a separate, authoritative-presence concern.
+        .insert_resource(comms::DisableRealmComms(args.server_mode))
         .insert_resource(delegations)
         .add_event::<RpcCall>()
         .add_event::<SystemAudio>()
@@ -416,7 +441,9 @@ fn main() {
         Update,
         (
             drain_permissions,
-            replicate_avatar_info,
+            // AvatarPlugin (render-bound) is omitted headless; without this, SDK
+            // getPlayer()/onEnterScene never see names or wearables
+            avatar::update_avatar_info,
             reap_terminal_scene_rooms,
         ),
     );
@@ -431,6 +458,7 @@ fn main() {
                 Update,
                 (
                     drain_control_commands,
+                    reap_scene_contexts,
                     demux_scene_logs,
                     request_delegation_renewals,
                 ),
@@ -508,7 +536,7 @@ fn setup(
     mut player_resource: ResMut<PrimaryPlayerRes>,
     mut cam_resource: ResMut<PrimaryCameraRes>,
     config: Res<AppConfig>,
-    mut wallet: ResMut<Wallet>,
+    wallet: Res<Wallet>,
     mut current_profile: ResMut<CurrentUserProfile>,
 ) {
     // fake player: process_scene_lifecycle early-returns without a PrimaryUser,
@@ -549,7 +577,8 @@ fn setup(
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
 
-    wallet.finalize_as_guest();
+    // wallet is already finalized in main(); build the profile from its address
+    println!("[headless] guest address: {:#x}", wallet.address().unwrap());
     current_profile.profile = Some(UserProfile {
         version: 0,
         content: SerializedProfile {
@@ -588,7 +617,7 @@ fn supervisor(
     for ctx in scenes.iter() {
         count += 1;
         max_tick = max_tick.max(ctx.tick_number);
-        if ctx.broken {
+        if ctx.broken() {
             any_broken = true;
             error!("[headless] scene {} is broken", ctx.hash);
         }
@@ -640,54 +669,33 @@ fn drain_permissions(mut manager: ResMut<PermissionManager>, config: Res<AppConf
     }
 }
 
-/// Forward player profile data into scene CRDTs as AVATAR_BASE / AVATAR_EQUIPPED_DATA.
-/// Copy of avatar::update_avatar_info — the AvatarPlugin that normally registers it is
-/// render-bound and omitted headless; without this, SDK getPlayer()/onEnterScene never
-/// see names or wearables.
-fn replicate_avatar_info(
-    updated_players: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
-    mut global_state: ResMut<GlobalCrdtState>,
+/// A room's crdt context must outlive its scene: scenes resolve their context strictly
+/// on a multi-tenant server (a miss panics), and a removed scene tears down over several
+/// frames during which it still resolves. Reap a context only once nothing references
+/// its hash — not queued (portables), not loading, not live.
+fn reap_scene_contexts(
+    mut commands: Commands,
+    mut crdt_contexts: ResMut<comms::global_crdt::CrdtContexts>,
+    portables: Res<PortableScenes>,
+    live: Query<&RendererSceneContext>,
+    loading: Query<&SceneHash, With<SceneLoading>>,
 ) {
-    for (player, profile) in &updated_players {
-        let avatar = &profile.content.avatar;
-        global_state.update_crdt(
-            SceneComponentId::AVATAR_BASE,
-            CrdtType::LWW_ANY,
-            player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
-            &PbAvatarBase {
-                name: profile.content.name.clone(),
-                skin_color: avatar.skin.map(|c| c.color),
-                eyes_color: avatar.eyes.map(|c| c.color),
-                hair_color: avatar.hair.map(|c| c.color),
-                body_shape_urn: avatar
-                    .body_shape
-                    .as_deref()
-                    .map(ToString::to_string)
-                    .unwrap_or(base_wearables::default_bodyshape_urn().to_string()),
-            },
-        );
-        global_state.update_crdt(
-            SceneComponentId::AVATAR_EQUIPPED_DATA,
-            CrdtType::LWW_ANY,
-            player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
-            &PbAvatarEquippedData {
-                wearable_urns: avatar.wearables.to_vec(),
-                emote_urns: (0..10)
-                    .map(|ix| {
-                        avatar
-                            .emotes
-                            .as_ref()
-                            .unwrap_or(&Vec::default())
-                            .iter()
-                            .find(|emote| emote.slot == ix)
-                            .map(|emote| emote.urn.clone())
-                            .unwrap_or_default()
-                    })
-                    .collect(),
-                force_render: avatar.force_render.clone().unwrap_or_default(),
-            },
-        )
-    }
+    crdt_contexts.0.retain(|hash, context| {
+        if hash.is_empty() {
+            // the shared context
+            return true;
+        }
+        if portables.contains_key(hash)
+            || live.iter().any(|ctx| &ctx.hash == hash)
+            || loading.iter().any(|loading_hash| &loading_hash.0 == hash)
+        {
+            return true;
+        }
+        if let Ok(mut c) = commands.get_entity(*context) {
+            c.despawn();
+        }
+        false
+    });
 }
 
 /// Tear down scene-room transports whose LiveKit room hit a terminal disconnect
@@ -765,13 +773,20 @@ fn drain_control_commands(
     mut manager: AdapterManager,
     mut commands: Commands,
     mut server_rooms: ResMut<ServerSceneRooms>,
+    mut crdt_contexts: ResMut<comms::global_crdt::CrdtContexts>,
     wallet: Res<Wallet>,
     ipfs: IpfsAssetServer,
     preview: Res<PreviewMode>,
     scenes: Query<&RendererSceneContext>,
     mut delegations: ResMut<StorageDelegations>,
     config: Res<AppConfig>,
-    mut mint_tasks: Local<Vec<(String, bevy::tasks::Task<Result<String, anyhow::Error>>)>>,
+    mut mint_tasks: Local<
+        Vec<(
+            String,
+            String,
+            bevy::tasks::Task<Result<String, anyhow::Error>>,
+        )>,
+    >,
 ) {
     let store_delegation = |scene_id: &str, encoded: &str, delegations: &mut StorageDelegations| {
         match StorageDelegation::parse(encoded, &map_realm_name(&config.server)) {
@@ -801,11 +816,17 @@ fn drain_control_commands(
             })),
         }
     };
+    // connect the scene's room, registering its crdt context first; returns whether the
+    // scene may be queued — a scene must never load without its room context (scenes
+    // resolve their context strictly on a multi-tenant server; a fallback to the shared
+    // context would see cross-room presence)
     let connect = |scene_id: &str,
                    adapter: &str,
                    manager: &mut AdapterManager,
                    commands: &mut Commands,
-                   server_rooms: &mut ServerSceneRooms| {
+                   server_rooms: &mut ServerSceneRooms,
+                   crdt_contexts: &mut comms::global_crdt::CrdtContexts|
+     -> bool {
         // ONLY livekit adapters: any other protocol (signed-login, ws-room,
         // fixed-adapter recursion) could make the engine sign a remote-chosen
         // payload with its identity. Applies to orchestrator input AND
@@ -815,9 +836,20 @@ fn drain_control_commands(
                 "type": "scene-failed", "scene": scene_id,
                 "error": format!("refusing non-livekit adapter: {}", adapter.chars().take(24).collect::<String>())
             }));
-            return;
+            return false;
         }
-        if let Some(ent) = manager.connect(adapter) {
+        // each scene room gets its own crdt context (player-presence view), reused
+        // across reconnects so scene subscriptions and player state survive re-mints
+        let context = crdt_contexts.0.get(scene_id).copied().unwrap_or_else(|| {
+            let context = commands
+                .spawn(comms::global_crdt::GlobalCrdtState::new(Some(
+                    scene_id.to_owned(),
+                )))
+                .id();
+            crdt_contexts.0.insert(scene_id.to_owned(), context);
+            context
+        });
+        if let Some(ent) = manager.connect(adapter, context) {
             commands
                 .entity(ent)
                 .try_insert(comms::SceneRoom(scene_id.to_owned()));
@@ -825,26 +857,49 @@ fn drain_control_commands(
                 .0
                 .insert(scene_id.to_owned(), (adapter.to_owned(), ent));
             ctl_emit(&serde_json::json!({"type": "scene-room-connected", "scene": scene_id}));
+            true
         } else {
             ctl_emit(&serde_json::json!({
                 "type": "error", "scene": scene_id, "error": "adapter connect failed"
             }));
+            false
         }
     };
+    let queue_scene = |scene_id: &str,
+                       urn: String,
+                       portables: &mut PortableScenes,
+                       orch: &mut OrchestratedScenes| {
+        portables.insert(
+            scene_id.to_owned(),
+            PortableSource {
+                pid: urn,
+                parent_scene: None,
+                ens: None,
+                super_user: false,
+            },
+        );
+        orch.wanted.insert(scene_id.to_owned());
+    };
 
-    // poll pending preview-gatekeeper mints
+    // poll pending preview-gatekeeper mints; the scene is only queued once its room
+    // context exists
     let mut i = 0;
     while i < mint_tasks.len() {
-        if let Some(result) = mint_tasks[i].1.complete() {
-            let (scene_id, _) = mint_tasks.swap_remove(i);
+        if let Some(result) = mint_tasks[i].2.complete() {
+            let (scene_id, urn, _) = mint_tasks.swap_remove(i);
             match result {
-                Ok(adapter) => connect(
-                    &scene_id,
-                    &adapter,
-                    &mut manager,
-                    &mut commands,
-                    &mut server_rooms,
-                ),
+                Ok(adapter) => {
+                    if connect(
+                        &scene_id,
+                        &adapter,
+                        &mut manager,
+                        &mut commands,
+                        &mut server_rooms,
+                        &mut crdt_contexts,
+                    ) {
+                        queue_scene(&scene_id, urn, &mut portables, &mut orch);
+                    }
+                }
                 Err(e) => ctl_emit(&serde_json::json!({
                     "type": "error", "scene": scene_id, "error": format!("gatekeeper mint failed: {e}")
                 })),
@@ -863,16 +918,6 @@ fn drain_control_commands(
                 adapter,
                 storage_delegation,
             } => {
-                portables.insert(
-                    scene_id.clone(),
-                    PortableSource {
-                        pid: urn,
-                        parent_scene: None,
-                        ens: None,
-                        super_user: false,
-                    },
-                );
-                orch.wanted.insert(scene_id.clone(), adapter.clone());
                 if let Some(encoded) = &storage_delegation {
                     store_delegation(&scene_id, encoded, &mut delegations);
                 }
@@ -880,13 +925,16 @@ fn drain_control_commands(
 
                 if let Some(adapter) = adapter {
                     // pre-minted by the trusted orchestrator: never sign anything ourselves
-                    connect(
+                    if connect(
                         &scene_id,
                         &adapter,
                         &mut manager,
                         &mut commands,
                         &mut server_rooms,
-                    );
+                        &mut crdt_contexts,
+                    ) {
+                        queue_scene(&scene_id, urn, &mut portables, &mut orch);
+                    }
                 } else if !preview.is_preview {
                     // production: the adapter MUST be minted by the trusted orchestrator.
                     // The engine never signs gatekeeper handshakes outside local preview.
@@ -931,25 +979,29 @@ fn drain_control_commands(
                             .map(ToOwned::to_owned)
                             .ok_or_else(|| anyhow::anyhow!("no adapter in response"))
                     });
-                    mint_tasks.push((scene_id, task));
+                    mint_tasks.push((scene_id, urn, task));
                 }
             }
             ControlCommand::RemoveScene { scene_id } => {
                 portables.remove(&scene_id);
                 orch.wanted.remove(&scene_id);
                 delegations.by_scene.remove(&scene_id);
+                mint_tasks.retain(|(sid, _, _)| sid != &scene_id);
                 if let Some((_, ent)) = server_rooms.0.remove(&scene_id) {
                     if let Ok(mut c) = commands.get_entity(ent) {
                         c.despawn();
                     }
                 }
+                // the crdt context is NOT despawned here: the scene tears down over the
+                // following frames and must still resolve it; reap_scene_contexts
+                // collects it once nothing references the hash
                 ctl_emit(&serde_json::json!({"type": "scene-removed", "scene": scene_id}));
             }
             ControlCommand::Status => {
                 for ctx in scenes.iter() {
                     ctl_emit(&serde_json::json!({
                         "type": "scene-status", "scene": ctx.hash,
-                        "tick": ctx.tick_number, "broken": ctx.broken,
+                        "tick": ctx.tick_number, "broken": ctx.broken(),
                     }));
                 }
             }
@@ -1026,7 +1078,7 @@ fn emit_scene_status(
             live.insert(ctx.hash.clone());
             ctl_emit(&serde_json::json!({"type": "scene-live", "scene": ctx.hash}));
         }
-        if ctx.broken && !broken.contains(&ctx.hash) {
+        if ctx.broken() && !broken.contains(&ctx.hash) {
             broken.insert(ctx.hash.clone());
             ctl_emit(&serde_json::json!({"type": "scene-broken", "scene": ctx.hash}));
         }
@@ -1038,7 +1090,7 @@ fn emit_scene_status(
         for ctx in scenes.iter() {
             ctl_emit(&serde_json::json!({
                 "type": "scene-status", "scene": ctx.hash,
-                "tick": ctx.tick_number, "broken": ctx.broken,
+                "tick": ctx.tick_number, "broken": ctx.broken(),
             }));
         }
     }

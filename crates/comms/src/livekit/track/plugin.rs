@@ -28,7 +28,7 @@ use crate::livekit::{
     LivekitAudioManager,
 };
 use crate::{
-    global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
+    global_crdt::{PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{ActiveSpeaker, HostedBy, LivekitParticipant},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
@@ -81,7 +81,7 @@ fn track_published(
     trigger: Trigger<TrackPublished>,
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant, &HostedBy, Has<ActiveSpeaker>)>,
-    player_state: Res<GlobalCrdtState>,
+    transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
@@ -171,7 +171,9 @@ fn track_published(
         )]
         let address = maybe_address.unwrap();
 
-        let sender = player_state.get_sender();
+        let Some(sender) = transport_senders.get(room_entity) else {
+            return;
+        };
         let task = livekit_runtime.spawn(async move {
             sender
                 .send(
@@ -198,7 +200,7 @@ fn track_unpublished(
     mut commands: Commands,
     tracks: Query<(Entity, &LivekitTrack, &PublishedBy)>,
     participants: Query<(Entity, &LivekitParticipant, &HostedBy)>,
-    player_state: Res<GlobalCrdtState>,
+    transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
@@ -251,7 +253,9 @@ fn track_unpublished(
         )]
         let address = maybe_address.unwrap();
 
-        let sender = player_state.get_sender();
+        let Some(sender) = transport_senders.get(room_entity) else {
+            return;
+        };
         let task = livekit_runtime.spawn(async move {
             sender
                 .send(

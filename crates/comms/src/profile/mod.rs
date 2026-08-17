@@ -50,10 +50,14 @@ impl Plugin for UserProfilePlugin {
             (request_missing_profiles, process_profile_events).before(process_transport_updates), // .in_set(TODO)
         );
 
-        app.add_systems(
-            Update,
-            setup_primary_profile.in_set(SceneSets::RestrictedActions), // in restricted actions so we get profile updates from login before a scene tick runs
-        );
+        // a server has no real local player: never insert/announce/deploy the fake
+        // player's profile or write PLAYER identity into scene crdts
+        if !common::structs::server_mode() {
+            app.add_systems(
+                Update,
+                setup_primary_profile.in_set(SceneSets::RestrictedActions), // in restricted actions so we get profile updates from login before a scene tick runs
+            );
+        }
 
         app.insert_resource(CurrentUserProfile::default());
         app.init_resource::<ProfileCache>()
@@ -174,7 +178,7 @@ pub fn setup_primary_profile(
     mut deploy_task: Local<Option<(u32, Task<Result<(), anyhow::Error>>)>>,
     wallet: Res<Wallet>,
     ipfas: IpfsAssetServer,
-    mut global_crdt: ResMut<GlobalCrdtState>,
+    mut contexts: Query<&mut GlobalCrdtState>,
     mut cache: ProfileManager,
     mut last_announce: Local<f32>,
     time: Res<Time>,
@@ -200,16 +204,18 @@ pub fn setup_primary_profile(
             // update cache
             cache.update(profile.clone());
 
-            // send to scenes
-            global_crdt.update_crdt(
-                SceneComponentId::PLAYER_IDENTITY_DATA,
-                CrdtType::LWW_ANY,
-                SceneEntityId::PLAYER,
-                &PbPlayerIdentityData {
-                    address: profile.content.eth_address.clone(),
-                    is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
-                },
-            );
+            // send to scenes (every context: the local player is `PLAYER` in all of them)
+            for mut global_crdt in contexts.iter_mut() {
+                global_crdt.update_crdt(
+                    SceneComponentId::PLAYER_IDENTITY_DATA,
+                    CrdtType::LWW_ANY,
+                    SceneEntityId::PLAYER,
+                    &PbPlayerIdentityData {
+                        address: profile.content.eth_address.clone(),
+                        is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
+                    },
+                );
+            }
 
             // send over network
             debug!("sending profile new version {:?}", profile.version);
@@ -306,7 +312,7 @@ fn request_missing_profiles(
     versioned: Query<(Entity, &ForeignPlayer, &UserProfile)>,
     mut stale: ResMut<StaleProfiles>,
     mut manager: ProfileManager,
-    mut global_crdt: ResMut<GlobalCrdtState>,
+    mut contexts: Query<&mut GlobalCrdtState>,
     mut requested: Local<HashMap<Address, f32>>,
     transports: Query<&Transport>,
     time: Res<Time>,
@@ -343,15 +349,17 @@ fn request_missing_profiles(
             Ok(Some(profile)) => {
                 // catalyst fetch complete
                 if profile.version >= player.profile_version {
-                    global_crdt.update_crdt(
-                        SceneComponentId::PLAYER_IDENTITY_DATA,
-                        CrdtType::LWW_ANY,
-                        player.scene_id,
-                        &PbPlayerIdentityData {
-                            address: format!("{:#x}", player.address),
-                            is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
-                        },
-                    );
+                    if let Ok(mut global_crdt) = contexts.get_mut(player.context) {
+                        global_crdt.update_crdt(
+                            SceneComponentId::PLAYER_IDENTITY_DATA,
+                            CrdtType::LWW_ANY,
+                            player.scene_id,
+                            &PbPlayerIdentityData {
+                                address: format!("{:#x}", player.address),
+                                is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
+                            },
+                        );
+                    }
 
                     commands.entity(ent).try_insert(profile.clone());
                 } else {
@@ -416,7 +424,7 @@ pub fn process_profile_events(
     wallet: Res<Wallet>,
     transports: Query<&Transport>,
     current_profile: Res<CurrentUserProfile>,
-    mut global_crdt: ResMut<GlobalCrdtState>,
+    mut contexts: Query<&mut GlobalCrdtState>,
     mut cache: ProfileManager,
     mut stale: ResMut<StaleProfiles>,
 ) {
@@ -507,15 +515,17 @@ pub fn process_profile_events(
                         base_url: r.base_url.clone(),
                     };
 
-                    global_crdt.update_crdt(
-                        SceneComponentId::PLAYER_IDENTITY_DATA,
-                        CrdtType::LWW_ANY,
-                        player.scene_id,
-                        &PbPlayerIdentityData {
-                            address: format!("{:#x}", player.address),
-                            is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
-                        },
-                    );
+                    if let Ok(mut global_crdt) = contexts.get_mut(player.context) {
+                        global_crdt.update_crdt(
+                            SceneComponentId::PLAYER_IDENTITY_DATA,
+                            CrdtType::LWW_ANY,
+                            player.scene_id,
+                            &PbPlayerIdentityData {
+                                address: format!("{:#x}", player.address),
+                                is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
+                            },
+                        );
+                    }
 
                     cache.update(profile.clone());
 
