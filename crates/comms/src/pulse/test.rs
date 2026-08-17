@@ -41,6 +41,8 @@ fn joined(sequence: u32, local: (f32, f32, f32), flags: u32) -> pulse::server_me
             server_tick: 1000,
             state: Some(player_state(local, flags)),
         }),
+        // announced by the server since protocol #31; the decoder does not read it yet
+        realm: String::new(),
     })
 }
 
@@ -203,6 +205,7 @@ fn head_angles_round_trip_signed() {
                 server_tick: 1000,
                 state: Some(state),
             }),
+            realm: String::new(),
         }),
     )));
 

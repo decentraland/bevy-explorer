@@ -84,6 +84,7 @@ message PlayerJoined {
   string user_id = 1;
   int32 profile_version = 2;
   PlayerStateFull state = 3;
+  string realm = 4;
 }
 
 // Notification to the client, that a peer has left, it can mean disconnection or leaving the area of interest
@@ -125,6 +126,7 @@ message TeleportPerformed {
   uint32 sequence = 2;
   uint32 server_tick = 3;
   PlayerState state = 4;
+  string realm = 5;
 }
 
 message ServerMessage {
