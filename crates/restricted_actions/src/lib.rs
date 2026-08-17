@@ -25,7 +25,7 @@ use common::{
     },
     sets::SceneSets,
     structs::{
-        AvatarDynamicState, EngineMovementControl, IsServer, PermissionType, PreviewCommand,
+        server_mode, AvatarDynamicState, EngineMovementControl, PermissionType, PreviewCommand,
         PrimaryCamera, PrimaryUser, StartupScenes, ZOrder,
     },
     util::{AsH160, TaskCompat, TaskExt},
@@ -814,7 +814,6 @@ fn spawn_portable(
         RpcResultSender<Result<SpawnResponse, String>>,
     )>,
     ipfas: IpfsAssetServer,
-    is_server: Res<IsServer>,
 ) {
     let mut new_portables = HashMap::new();
     let mut failed_portables = HashSet::new();
@@ -830,7 +829,7 @@ fn spawn_portable(
     }) {
         // authoritative-server mode: a tenant scene must not spawn arbitrary portables
         // in the shared engine (cross-tenant resource-exhaustion DoS).
-        if is_server.0 {
+        if server_mode() {
             response.send(Err(
                 "portable experiences are disabled in server mode".to_owned()
             ));
@@ -1261,7 +1260,6 @@ fn get_connected_players(
     me: Res<Wallet>,
     others: Query<&ForeignPlayer>,
     mut events: EventReader<RpcCall>,
-    is_server: Res<IsServer>,
     presence: ScenePresence,
 ) {
     for (scene, response) in events.read().filter_map(|ev| match ev {
@@ -1275,7 +1273,7 @@ fn get_connected_players(
             .map(|f| format!("{:#x}", f.address));
         // a headless server has no real local player — don't report its fake player as
         // a connected peer (it would appear as a ghost to every scene)
-        let own = (!is_server.0)
+        let own = (!server_mode())
             .then(|| me.address().map(|address| format!("{address:#x}")))
             .flatten();
         let results = others.chain(own).collect();
@@ -1289,7 +1287,6 @@ fn get_players_in_scene(
     others: Query<(Entity, &ForeignPlayer)>,
     mut events: EventReader<RpcCall>,
     containing_scene: ContainingScene,
-    is_server: Res<IsServer>,
     presence: ScenePresence,
 ) {
     for (scene, response) in events.read().filter_map(|ev| match ev {
@@ -1298,7 +1295,7 @@ fn get_players_in_scene(
     }) {
         let mut results = Vec::default();
         // skip the fake local player in server mode (see get_connected_players)
-        if !is_server.0 {
+        if !server_mode() {
             if let Ok(player) = me.single() {
                 if containing_scene.get(player).contains(scene) {
                     if let Some(address) = wallet.address() {
@@ -1427,7 +1424,6 @@ fn event_player_moved_scene(
     me: Res<Wallet>,
     containing_scene: ContainingScene,
     mut events: EventReader<RpcCall>,
-    is_server: Res<IsServer>,
 ) {
     // gather new receivers
     for (enter, scene, sender) in events.read().filter_map(|ev| match ev {
@@ -1446,7 +1442,7 @@ fn event_player_moved_scene(
     // ForeignPlayer is the PrimaryUser, which is not a real participant on a server)
     let new_scene: HashMap<_, _> = players
         .iter()
-        .filter(|(_, f)| !(is_server.0 && f.is_none()))
+        .filter(|(_, f)| !(server_mode() && f.is_none()))
         .flat_map(|(p, f)| {
             containing_scene.get_parcel(p).map(|parcel| {
                 (
@@ -1539,7 +1535,6 @@ fn send_scene_messages(
     mut events: EventReader<RpcCall>,
     transports: Query<(&Transport, Option<&SceneRoom>)>,
     scenes: Query<&RendererSceneContext>,
-    is_server: Res<IsServer>,
 ) {
     for (scene, data, recipient) in events.read().filter_map(|c| match c {
         RpcCall::SendMessageBus {
@@ -1573,7 +1568,7 @@ fn send_scene_messages(
         // A client routes authoritative-scene traffic to the auth server. WE are the
         // auth server, so keep the scene's intended recipient (targeted peer or broadcast)
         // — otherwise the server would address messages to itself and clients never receive them.
-        if ctx.authoritative_multiplayer && !is_server.0 {
+        if ctx.authoritative_multiplayer && !server_mode() {
             recipient = NetworkMessageRecipient::AuthServer;
         }
 
@@ -1581,7 +1576,7 @@ fn send_scene_messages(
             // Client (prod) path unchanged: send to any scene room. When serving, also
             // require the room to belong to this scene so N scenes in one engine don't
             // cross-talk (a server may hold several scene rooms; a client holds one).
-            let send = if is_server.0 {
+            let send = if server_mode() {
                 scene_room.is_some_and(|r| &r.0 == hash)
             } else {
                 scene_room.is_some()
@@ -1601,7 +1596,6 @@ fn open_nft_dialog(
     containing_scene: ContainingScene,
     primary_user: Query<Entity, With<PrimaryUser>>,
     asset_server: Res<AssetServer>,
-    is_server: Res<IsServer>,
 ) {
     for (scene, urn, response) in events.read().filter_map(|c| match c {
         RpcCall::OpenNftDialog {
@@ -1614,7 +1608,7 @@ fn open_nft_dialog(
         // headless server: the "nft" asset source and the DUI template registry are
         // absent, so proceeding would hit apply_template(...).unwrap() and panic the
         // shared engine, taking down every co-tenant scene. Deny cleanly instead.
-        if is_server.0 {
+        if server_mode() {
             response.send(Err(
                 "openNftDialog is not supported on a headless server".to_owned()
             ));
@@ -1723,7 +1717,6 @@ pub fn handle_eth_async(
     scenes: Query<&RendererSceneContext>,
     wallet: Res<Wallet>,
     time: Res<Time>,
-    is_server: Res<IsServer>,
     mut tasks: Local<
         Vec<(
             RpcResultSender<Result<serde_json::Value, String>>,
@@ -1741,7 +1734,7 @@ pub fn handle_eth_async(
         _ => None,
     }) {
         // The engine wallet is AUTHORITATIVE_SERVER_KEY on a server; never sign for a scene.
-        if is_server.0 {
+        if server_mode() {
             response.send(Err(
                 "eth signing is not available on the authoritative server".to_owned(),
             ));
@@ -2146,7 +2139,6 @@ fn handle_read_file(
         )>,
     >,
     ipfs: IpfsAssetServer,
-    is_server: Res<IsServer>,
 ) {
     for ev in events.read() {
         if let RpcCall::ReadFile {
@@ -2163,7 +2155,7 @@ fn handle_read_file(
             // RFC1918 on the shared task. Refuse any scheme://-shaped filename on the
             // authoritative server; desktop and web keep their existing behaviour (own
             // machine / browser sandbox).
-            if is_server.0 && filename_looks_like_url(filename) {
+            if server_mode() && filename_looks_like_url(filename) {
                 response.send(Err(format!(
                     "readFile: absolute URLs are not permitted on the authoritative server ({filename})"
                 )));

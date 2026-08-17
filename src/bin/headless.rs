@@ -30,10 +30,9 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CursorLocks, EngineMovementControl,
-        GraphicsSettings, HeadSync, IsServer, NoRenderApp, PermissionType, PermissionUsed,
-        PermissionValue, PointAtSync, PreviewMode, PrimaryCamera, PrimaryCameraRes,
-        PrimaryPlayerRes, PrimaryUser, SceneGlobalLight, SceneLoadDistance, SystemAudio, TimeOfDay,
-        ToolTips,
+        GraphicsSettings, HeadSync, NoRenderApp, PermissionType, PermissionUsed, PermissionValue,
+        PointAtSync, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
+        SceneGlobalLight, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::{TaskCompat, TaskExt, UtilsPlugin},
 };
@@ -98,7 +97,7 @@ fn parse_args() -> Args {
     let orchestrated = args.contains("--orchestrated");
     // orchestrated mode is always a server
     let server_mode = args.contains("--server-mode") || orchestrated;
-    // latch the process-global mirror of IsServer so ECS-less code (ipfs) sees server role
+    // latch the process-global server-role flags before the app is built
     if server_mode {
         common::structs::set_server_mode();
     }
@@ -410,7 +409,6 @@ fn main() {
             is_preview: args.preview,
             preview_parcel: None,
         })
-        .insert_resource(IsServer(args.server_mode))
         // servers must never join realm-wide comms (archipelago / world room) — they would
         // show up as a ghost participant. A non-server headless follows its realm about's
         // fixed_adapter like any client (offline about ⇒ no comms), so it can act as a

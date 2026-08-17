@@ -18,8 +18,8 @@ use bevy::{
 use common::{
     sets::RealmLifecycle,
     structs::{
-        AppConfig, AppError, CurrentRealm, GlobalCrdtStateUpdate, IVec2Arg, IsServer, PreviewMode,
-        SceneLoadDistance, SceneMeta, SceneTime,
+        server_mode, AppConfig, AppError, CurrentRealm, GlobalCrdtStateUpdate, IVec2Arg,
+        PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
     },
     util::{TaskExt, TryPushChildrenEx},
 };
@@ -631,7 +631,6 @@ pub(crate) fn initialize_scene(
     asset_server: Res<AssetServer>,
     testing_data: Res<TestingData>,
     preview_mode: Res<PreviewMode>,
-    is_server: Res<IsServer>,
     su_bridge: Res<SystemBridge>,
     time: Res<Time>,
     crdt_contexts: Res<CrdtContexts>,
@@ -691,7 +690,7 @@ pub(crate) fn initialize_scene(
             context.title.clone(),
             testing_data.test_mode,
             preview_mode.is_preview,
-            is_server.0,
+            server_mode(),
         );
 
         let main_sx = spawn_scene(

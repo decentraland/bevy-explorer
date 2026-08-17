@@ -263,7 +263,6 @@ fn connect_scene_room(
     mut scene: EventReader<SetCurrentScene>,
     wallet: Res<Wallet>,
     ipfs: IpfsAssetServer,
-    is_server: Res<common::structs::IsServer>,
     disabled: Res<DisableSceneRoomGatekeeper>,
     adapter_override: Res<SceneRoomAdapterOverride>,
     contexts: Query<Entity, With<global_crdt::GlobalCrdtState>>,
@@ -303,7 +302,7 @@ fn connect_scene_room(
         } else {
             let wallet = wallet.clone();
             let preview = ev.scene_id.starts_with("b64-");
-            let url = match (is_server.0, preview) {
+            let url = match (common::structs::server_mode(), preview) {
                 (true, true) => PREVIEW_SERVER_GATEKEEPER_URL,
                 (true, false) => SERVER_GATEKEEPER_URL,
                 (false, true) => PREVIEW_GATEKEEPER_URL,
@@ -314,7 +313,7 @@ fn connect_scene_room(
             // The authoritative-server gatekeeper endpoint validates the full comms-handshake
             // metadata (intent/signer/realm) that the client `get-scene-adapter` path omits;
             // signing the bare SetCurrentScene there returns 401. Mirror hammurabi's payload.
-            let meta = if is_server.0 {
+            let meta = if common::structs::server_mode() {
                 serde_json::json!({
                     "intent": "dcl:explorer:comms-handshake",
                     "signer": "dcl:explorer",
