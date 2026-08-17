@@ -249,12 +249,19 @@ impl CrdtContexts {
         *self.0.get("").expect("shared crdt context missing")
     }
 
-    /// The context a scene with the given hash should use: its own room's context if one
-    /// exists, otherwise the shared context. On the client room contexts never exist, so
-    /// every scene shares one view; on a server the shared context has no transports
-    /// bound, so an (unexpected) roomless scene sees nobody.
+    /// The context a scene with the given hash should use. On the client (and on a
+    /// standalone single-scene server) room contexts never exist, so every scene
+    /// resolves to the single shared context. On a multi-tenant server every scene's
+    /// room context is registered before the scene is queued and lives until the scene
+    /// is gone, so a miss is an ordering bug — and falling back to the shared context
+    /// would silently cross-contaminate room presence, so panic instead.
     pub fn for_scene_hash(&self, hash: &str) -> Entity {
-        self.0.get(hash).copied().unwrap_or_else(|| self.shared())
+        self.0.get(hash).copied().unwrap_or_else(|| {
+            if common::structs::multi_tenant() {
+                panic!("no crdt context for scene {hash} on a multi-tenant server");
+            }
+            self.shared()
+        })
     }
 }
 

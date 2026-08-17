@@ -129,6 +129,9 @@ pub enum SceneLoading {
     Javascript {
         global_updates: Option<tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>>,
         scene_origin: Vec3,
+        // the context the receiver was subscribed to, so the ipc stream tag can never
+        // disagree with the stream it labels
+        crdt_context: Entity,
     },
     Failed,
 }
@@ -426,8 +429,8 @@ pub(crate) fn load_scene_javascript(
         // the shared context otherwise), with position data localized for this scene.
         // Scene origin in DCL proto-space (z-forward, matching proto Vector3 coordinates)
         let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
-        let Ok(global_scene) = global_scenes.get(crdt_contexts.for_scene_hash(&definition.id))
-        else {
+        let crdt_context = crdt_contexts.for_scene_hash(&definition.id);
+        let Ok(global_scene) = global_scenes.get(crdt_context) else {
             // context spawned this frame and not yet flushed — retry next frame
             debug!("{root:?} waiting for crdt context");
             continue;
@@ -563,6 +566,7 @@ pub(crate) fn load_scene_javascript(
             SceneLoading::Javascript {
                 global_updates: Some(global_updates),
                 scene_origin,
+                crdt_context,
             },
         ));
     }
@@ -633,7 +637,6 @@ pub(crate) fn initialize_scene(
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
     time: Res<Time>,
-    crdt_contexts: Res<CrdtContexts>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
@@ -664,11 +667,12 @@ pub(crate) fn initialize_scene(
 
         let thread_sx = scene_updates.sender.clone();
 
-        let (global_updates, scene_origin) = match *state {
+        let (global_updates, scene_origin, crdt_context) = match *state {
             SceneLoading::Javascript {
                 ref mut global_updates,
                 scene_origin,
-            } => (global_updates.take().unwrap(), scene_origin),
+                crdt_context,
+            } => (global_updates.take().unwrap(), scene_origin, crdt_context),
             _ => panic!("bad state"),
         };
 
@@ -696,7 +700,7 @@ pub(crate) fn initialize_scene(
         let main_sx = spawn_scene(
             context.crdt_store.clone(),
             scene_context,
-            crdt_contexts.for_scene_hash(&context.hash).to_bits(),
+            crdt_context.to_bits(),
             js_file.clone(),
             crdt_component_interfaces,
             thread_sx,

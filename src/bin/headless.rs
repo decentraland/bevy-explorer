@@ -101,6 +101,9 @@ fn parse_args() -> Args {
     if server_mode {
         common::structs::set_server_mode();
     }
+    if orchestrated {
+        common::structs::set_multi_tenant();
+    }
     let timeout: Option<f32> = args.value_from_str("--timeout").ok();
     let scene_threads: usize = args
         .value_from_str("--scene-threads")
@@ -180,10 +183,10 @@ enum ControlCommand {
 #[derive(Resource)]
 struct ControlChannel(std::sync::Mutex<std::sync::mpsc::Receiver<ControlCommand>>);
 
-/// scenes the orchestrator asked for: hash -> pending adapter (taken when connected)
+/// scenes the orchestrator asked for, queued once their room is connected
 #[derive(Resource, Default)]
 struct OrchestratedScenes {
-    wanted: std::collections::HashMap<String, Option<String>>,
+    wanted: std::collections::HashSet<String>,
 }
 
 fn ctl_emit(event: &serde_json::Value) {
@@ -443,6 +446,7 @@ fn main() {
                 Update,
                 (
                     drain_control_commands,
+                    reap_scene_contexts,
                     demux_scene_logs,
                     request_delegation_renewals,
                 ),
@@ -653,6 +657,35 @@ fn drain_permissions(mut manager: ResMut<PermissionManager>, config: Res<AppConf
     }
 }
 
+/// A room's crdt context must outlive its scene: scenes resolve their context strictly
+/// on a multi-tenant server (a miss panics), and a removed scene tears down over several
+/// frames during which it still resolves. Reap a context only once nothing references
+/// its hash — not queued (portables), not loading, not live.
+fn reap_scene_contexts(
+    mut commands: Commands,
+    mut crdt_contexts: ResMut<comms::global_crdt::CrdtContexts>,
+    portables: Res<PortableScenes>,
+    live: Query<&RendererSceneContext>,
+    loading: Query<&SceneHash, With<SceneLoading>>,
+) {
+    crdt_contexts.0.retain(|hash, context| {
+        if hash.is_empty() {
+            // the shared context
+            return true;
+        }
+        if portables.contains_key(hash)
+            || live.iter().any(|ctx| &ctx.hash == hash)
+            || loading.iter().any(|loading_hash| &loading_hash.0 == hash)
+        {
+            return true;
+        }
+        if let Ok(mut c) = commands.get_entity(*context) {
+            c.despawn();
+        }
+        false
+    });
+}
+
 /// Tear down scene-room transports whose LiveKit room hit a terminal disconnect
 /// (DuplicateIdentity / kicked): the access token is spent, so no in-process reconnect
 /// is possible. Orchestrated mode notifies the parent (which re-adds the scene with a
@@ -735,7 +768,13 @@ fn drain_control_commands(
     scenes: Query<&RendererSceneContext>,
     mut delegations: ResMut<StorageDelegations>,
     config: Res<AppConfig>,
-    mut mint_tasks: Local<Vec<(String, bevy::tasks::Task<Result<String, anyhow::Error>>)>>,
+    mut mint_tasks: Local<
+        Vec<(
+            String,
+            String,
+            bevy::tasks::Task<Result<String, anyhow::Error>>,
+        )>,
+    >,
 ) {
     let store_delegation = |scene_id: &str, encoded: &str, delegations: &mut StorageDelegations| {
         match StorageDelegation::parse(encoded, &map_realm_name(&config.server)) {
@@ -765,12 +804,17 @@ fn drain_control_commands(
             })),
         }
     };
+    // connect the scene's room, registering its crdt context first; returns whether the
+    // scene may be queued — a scene must never load without its room context (scenes
+    // resolve their context strictly on a multi-tenant server; a fallback to the shared
+    // context would see cross-room presence)
     let connect = |scene_id: &str,
                    adapter: &str,
                    manager: &mut AdapterManager,
                    commands: &mut Commands,
                    server_rooms: &mut ServerSceneRooms,
-                   crdt_contexts: &mut comms::global_crdt::CrdtContexts| {
+                   crdt_contexts: &mut comms::global_crdt::CrdtContexts|
+     -> bool {
         // ONLY livekit adapters: any other protocol (signed-login, ws-room,
         // fixed-adapter recursion) could make the engine sign a remote-chosen
         // payload with its identity. Applies to orchestrator input AND
@@ -780,7 +824,7 @@ fn drain_control_commands(
                 "type": "scene-failed", "scene": scene_id,
                 "error": format!("refusing non-livekit adapter: {}", adapter.chars().take(24).collect::<String>())
             }));
-            return;
+            return false;
         }
         // each scene room gets its own crdt context (player-presence view), reused
         // across reconnects so scene subscriptions and player state survive re-mints
@@ -801,27 +845,49 @@ fn drain_control_commands(
                 .0
                 .insert(scene_id.to_owned(), (adapter.to_owned(), ent));
             ctl_emit(&serde_json::json!({"type": "scene-room-connected", "scene": scene_id}));
+            true
         } else {
             ctl_emit(&serde_json::json!({
                 "type": "error", "scene": scene_id, "error": "adapter connect failed"
             }));
+            false
         }
     };
+    let queue_scene = |scene_id: &str,
+                       urn: String,
+                       portables: &mut PortableScenes,
+                       orch: &mut OrchestratedScenes| {
+        portables.insert(
+            scene_id.to_owned(),
+            PortableSource {
+                pid: urn,
+                parent_scene: None,
+                ens: None,
+                super_user: false,
+            },
+        );
+        orch.wanted.insert(scene_id.to_owned());
+    };
 
-    // poll pending preview-gatekeeper mints
+    // poll pending preview-gatekeeper mints; the scene is only queued once its room
+    // context exists
     let mut i = 0;
     while i < mint_tasks.len() {
-        if let Some(result) = mint_tasks[i].1.complete() {
-            let (scene_id, _) = mint_tasks.swap_remove(i);
+        if let Some(result) = mint_tasks[i].2.complete() {
+            let (scene_id, urn, _) = mint_tasks.swap_remove(i);
             match result {
-                Ok(adapter) => connect(
-                    &scene_id,
-                    &adapter,
-                    &mut manager,
-                    &mut commands,
-                    &mut server_rooms,
-                    &mut crdt_contexts,
-                ),
+                Ok(adapter) => {
+                    if connect(
+                        &scene_id,
+                        &adapter,
+                        &mut manager,
+                        &mut commands,
+                        &mut server_rooms,
+                        &mut crdt_contexts,
+                    ) {
+                        queue_scene(&scene_id, urn, &mut portables, &mut orch);
+                    }
+                }
                 Err(e) => ctl_emit(&serde_json::json!({
                     "type": "error", "scene": scene_id, "error": format!("gatekeeper mint failed: {e}")
                 })),
@@ -840,16 +906,6 @@ fn drain_control_commands(
                 adapter,
                 storage_delegation,
             } => {
-                portables.insert(
-                    scene_id.clone(),
-                    PortableSource {
-                        pid: urn,
-                        parent_scene: None,
-                        ens: None,
-                        super_user: false,
-                    },
-                );
-                orch.wanted.insert(scene_id.clone(), adapter.clone());
                 if let Some(encoded) = &storage_delegation {
                     store_delegation(&scene_id, encoded, &mut delegations);
                 }
@@ -857,14 +913,16 @@ fn drain_control_commands(
 
                 if let Some(adapter) = adapter {
                     // pre-minted by the trusted orchestrator: never sign anything ourselves
-                    connect(
+                    if connect(
                         &scene_id,
                         &adapter,
                         &mut manager,
                         &mut commands,
                         &mut server_rooms,
                         &mut crdt_contexts,
-                    );
+                    ) {
+                        queue_scene(&scene_id, urn, &mut portables, &mut orch);
+                    }
                 } else if !preview.is_preview {
                     // production: the adapter MUST be minted by the trusted orchestrator.
                     // The engine never signs gatekeeper handshakes outside local preview.
@@ -909,23 +967,22 @@ fn drain_control_commands(
                             .map(ToOwned::to_owned)
                             .ok_or_else(|| anyhow::anyhow!("no adapter in response"))
                     });
-                    mint_tasks.push((scene_id, task));
+                    mint_tasks.push((scene_id, urn, task));
                 }
             }
             ControlCommand::RemoveScene { scene_id } => {
                 portables.remove(&scene_id);
                 orch.wanted.remove(&scene_id);
                 delegations.by_scene.remove(&scene_id);
+                mint_tasks.retain(|(sid, _, _)| sid != &scene_id);
                 if let Some((_, ent)) = server_rooms.0.remove(&scene_id) {
                     if let Ok(mut c) = commands.get_entity(ent) {
                         c.despawn();
                     }
                 }
-                if let Some(context) = crdt_contexts.0.remove(&scene_id) {
-                    if let Ok(mut c) = commands.get_entity(context) {
-                        c.despawn();
-                    }
-                }
+                // the crdt context is NOT despawned here: the scene tears down over the
+                // following frames and must still resolve it; reap_scene_contexts
+                // collects it once nothing references the hash
                 ctl_emit(&serde_json::json!({"type": "scene-removed", "scene": scene_id}));
             }
             ControlCommand::Status => {

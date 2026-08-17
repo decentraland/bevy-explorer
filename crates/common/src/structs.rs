@@ -317,6 +317,21 @@ pub fn server_mode() -> bool {
     SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+static MULTI_TENANT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Latch this process as a multi-tenant (orchestrated) scene server: every scene has its
+/// own room's crdt context, registered before the scene is queued. A standalone server
+/// (`--server-mode` without `--orchestrated`) is NOT multi-tenant — its single scene
+/// legitimately rides the shared context. Irreversible like [`set_server_mode`].
+pub fn set_multi_tenant() {
+    MULTI_TENANT.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// True once [`set_multi_tenant`] has been called.
+pub fn multi_tenant() -> bool {
+    MULTI_TENANT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Debug, Clone)]
 pub struct SceneDrivenAnimationFeedbackState {
     pub src: String,
