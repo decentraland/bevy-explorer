@@ -1419,6 +1419,8 @@ fn event_player_moved_scene(
     players: Query<(Entity, Option<&ForeignPlayer>), Or<(With<PrimaryUser>, With<ForeignPlayer>)>>,
     me: Res<Wallet>,
     containing_scene: ContainingScene,
+    scenes: Query<(Entity, &RendererSceneContext)>,
+    contexts: Res<CrdtContexts>,
     mut events: EventReader<RpcCall>,
 ) {
     // gather new receivers
@@ -1434,12 +1436,28 @@ fn event_player_moved_scene(
         }
     }
 
+    // room-scoped scenes (multi-tenant server) resolve membership by context: a client
+    // holds a scene room only while that scene is its current scene, so room membership
+    // relays the client-side positional enter/leave signal — and get_parcel can't
+    // resolve them anyway (they host as portables)
+    let shared = contexts.shared();
+    let scene_of_context: HashMap<Entity, Entity> = scenes
+        .iter()
+        .filter_map(|(scene_ent, ctx)| {
+            let context = contexts.for_scene_hash(&ctx.hash);
+            (context != shared).then_some((context, scene_ent))
+        })
+        .collect();
+
     // gather current scene (skip the fake local player in server mode — a `None`
     // ForeignPlayer is the PrimaryUser, which is not a real participant on a server)
     let new_scene: HashMap<_, _> = players
         .iter()
         .filter(|(_, f)| !(server_mode() && f.is_none()))
         .flat_map(|(p, f)| {
+            if let Some(scene) = f.and_then(|f| scene_of_context.get(&f.context)) {
+                return Some((f.unwrap().address, *scene));
+            }
             containing_scene.get_parcel(p).map(|parcel| {
                 (
                     f.map(|f| f.address)
