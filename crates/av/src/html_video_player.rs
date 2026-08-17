@@ -260,6 +260,7 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
         Self::common_init(source, media)
     }
 
+    #[cfg_attr(test, expect(unused_variables))]
     pub fn new_video(url: &str, source: String, image: Handle<Image>) -> Self {
         let media = web_sys::window()
             .unwrap()
@@ -326,6 +327,7 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
             .unwrap();
         *callback_handle.borrow_mut() = initial_handle.as_f64().map(|f| f as u32);
 
+        #[cfg(not(test))]
         set_video_source(&video, url);
 
         let mut slf = Self::common_init(source, media);
