@@ -15,6 +15,7 @@ const players = require("~system/Players");
 const WANT_CONNECTED_PLAYERS = true;
 
 const PLAYER_IDENTITY_DATA = 1089;
+const TRANSFORM = 1;
 const PUT_COMPONENT = 1;
 const DELETE_COMPONENT = 2;
 const DELETE_ENTITY = 3;
@@ -22,6 +23,9 @@ const APPEND_VALUE = 4;
 
 // entity number -> address, built from the CRDT stream the renderer feeds this scene
 const identityByEntity = {};
+// entity number -> [x,y,z], from TRANSFORM puts: proves foreign avatar positions reach
+// the scene's CRDT view (they are written comms-side, independent of the avatar plugin)
+const transformByEntity = {};
 
 function log(kind, payload) {
   console.log("HARNESS|" + kind + "|" + JSON.stringify(payload));
@@ -60,6 +64,21 @@ function ingestCrdt(bytes) {
           delete identityByEntity[entityNum];
           log("identity-delete", { entity: entityNum, address: gone || null });
         }
+      } else if (componentId === TRANSFORM) {
+        if (type === PUT_COMPONENT) {
+          const contentLen = view.getUint32(off + 20, true);
+          if (contentLen >= 12) {
+            // raw transform struct: translation is the first three LE f32s
+            const round = (v) => Math.round(v * 1000) / 1000;
+            transformByEntity[entityNum] = [
+              round(view.getFloat32(off + 24, true)),
+              round(view.getFloat32(off + 28, true)),
+              round(view.getFloat32(off + 32, true)),
+            ];
+          }
+        } else {
+          delete transformByEntity[entityNum];
+        }
       }
     } else if (type === DELETE_ENTITY) {
       const entityNum = view.getUint16(off + 8, true);
@@ -67,6 +86,7 @@ function ingestCrdt(bytes) {
         log("identity-delete", { entity: entityNum, address: identityByEntity[entityNum] });
         delete identityByEntity[entityNum];
       }
+      delete transformByEntity[entityNum];
     }
     off += len;
   }
@@ -103,12 +123,36 @@ function pollConnectedPlayers(tick) {
     });
 }
 
+// getPlayersInScene: same async-RPC rules as getConnectedPlayers (fire, never await
+// inline). Unlike the roster, this passes through the engine's scene-membership filter,
+// so it exercises the positional/context branch the roster can't.
+let inSceneInFlight = false;
+
+function pollPlayersInScene(tick) {
+  if (inSceneInFlight) return;
+  inSceneInFlight = true;
+  players
+    .getPlayersInScene({})
+    .then((res) => {
+      log("players-in-scene", {
+        tick: tick,
+        players: res.players.map((p) => p.userId),
+      });
+    })
+    .catch((e) => log("players-in-scene-error", { tick: tick, msg: String(e) }))
+    .finally(() => {
+      inSceneInFlight = false;
+    });
+}
+
 module.exports.onStart = async function () {
   log("scene-start", {});
   // SDK6-style event subscriptions; polled each frame via sendBatch. No CRDT recv here:
   // the initial snapshot is drained by the first onUpdate.
   await engine.subscribe({ eventId: "playerConnected" });
   await engine.subscribe({ eventId: "playerDisconnected" });
+  await engine.subscribe({ eventId: "onEnterScene" });
+  await engine.subscribe({ eventId: "onLeaveScene" });
   await engine.subscribe({ eventId: "comms" });
   log("scene-subscribed", {});
 };
@@ -135,11 +179,19 @@ module.exports.onUpdate = async function (_dt) {
     // once things are stable — the CRDT roster is the source of truth.
     if (ticks % 30 === 0) {
       log("identity-roster", { tick: ticks, players: rosterAddrs() });
+      // per-player scene-visible avatar position (null until a position update lands)
+      for (const e of Object.keys(identityByEntity)) {
+        log("player-transform", {
+          address: identityByEntity[e],
+          pos: transformByEntity[e] || null,
+        });
+      }
       // getConnectedPlayers is fired, NOT awaited (see pollConnectedPlayers): awaiting it
       // here would stall this frame's next crdtSendToRenderer flush and deadlock the RPC.
       // The CRDT roster above is the authoritative isolation signal; this cross-checks it.
       if (WANT_CONNECTED_PLAYERS) {
         pollConnectedPlayers(ticks);
+        pollPlayersInScene(ticks);
       }
     }
   } catch (e) {

@@ -27,6 +27,7 @@ VER="${VER:-00000harns}"
 SCENE_A="bafkharnessa${VER}aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 SCENE_B="bafkharnessb${VER}bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 SCENE_C="bafkharnessc${VER}cccccccccccccccccccccccccccccc"
+SCENE_D="bafkharnessd${VER}dddddddddddddddddddddddddddddd"
 GAMEJS="bafkharnessg${VER}gggggggggggggggggggggggggggggg"
 # NOTE: the regression observer loads scene C as a client, so when it enters the scene it
 # asks the comms gatekeeper for a scene-room adapter. Online, that mints a real (empty)
@@ -91,7 +92,10 @@ JSON
 }
 write_entity "$SCENE_A" "0,0"
 write_entity "$SCENE_B" "0,0"
-write_entity "$SCENE_C" "0,0"
+# scene C is deliberately NOT at 0,0: its clients spawn at parcel 2,0 (world x 32..48),
+# so positional scene-membership and scene-origin localization can't pass by luck
+write_entity "$SCENE_C" "2,0"
+write_entity "$SCENE_D" "0,0"
 
 # ---- realm abouts ----
 mkdir -p "$WORK/content/server" "$WORK/content/clientA" "$WORK/content/clientB" \
@@ -104,7 +108,7 @@ write_about() { # <dir> <fixed-adapter|-> <scenes-urn-json>
   "content": {"healthy": true, "publicUrl": "http://localhost:${CONTENT_PORT}/content/contents/"},
   "lambdas": {"healthy": true, "publicUrl": "http://localhost:${CONTENT_PORT}/content/lambdas/"},
   "comms": {"healthy": true, "protocol": "v3", "fixedAdapter": $adapter_json, "adapter": null},
-  "configurations": {"realmName": "harness-$1", "scenesUrn": $3, "map": {"minimapEnabled": false, "sizes": []}}
+  "configurations": {"realmName": "harness-$1", "scenesUrn": $3, "map": {"minimapEnabled": false, "sizes": [{"left": 0, "right": 2, "top": 0, "bottom": 0}]}}
 }
 JSON
 }
@@ -173,6 +177,10 @@ exec 8>"$SRV_IN"   # hold the write end open
 sleep 3
 printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_A\",\"urn\":\"urn:decentraland:entity:${SCENE_A}?=&baseUrl=${BASEURL}\",\"adapter\":\"livekit:${LK_URL}?access_token=${TOK_SRV_A}\"}" >&8
 printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_B\",\"urn\":\"urn:decentraland:entity:${SCENE_B}?=&baseUrl=${BASEURL}\",\"adapter\":\"livekit:${LK_URL}?access_token=${TOK_SRV_B}\"}" >&8
+# adapterless add-scene: the server runs without --preview, so this must be refused —
+# scene-failed emitted, and the scene must never load (it would bind the shared context
+# and see cross-room presence)
+printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_D\",\"urn\":\"urn:decentraland:entity:${SCENE_D}?=&baseUrl=${BASEURL}\"}" >&8
 
 # wait for both scenes to start ticking (ctl emits {"type":"scene-live",...})
 say "waiting for scenes to start..."
@@ -186,13 +194,21 @@ done
 say "starting synthetic clients..."
 "$HEADLESS" --realm "http://localhost:${CONTENT_PORT}/content/clientA" \
   --wallet-seed $SEED_CLIENT_A \
-  >"$LOGS/clientA.log" 2>&1 & PIDS+=($!)
+  >"$LOGS/clientA.log" 2>&1 & CLIA_PID=$!; PIDS+=($CLIA_PID)
 "$HEADLESS" --realm "http://localhost:${CONTENT_PORT}/content/clientB" \
   --wallet-seed $SEED_CLIENT_B \
   >"$LOGS/clientB.log" 2>&1 & PIDS+=($!)
 
 say "letting presence propagate (12s)..."
 sleep 12
+
+# stop client A: scene A must observe onLeaveScene for it (room departure = scene
+# departure on a room-scoped scene). A killed client drops TCP without a livekit
+# leave message, so detection waits out the server's reconnect grace (~15s) — killed
+# here so the remaining scenario time covers it. All client-A-presence assertions
+# have their data by now.
+say "stopping client A (expect onLeaveScene in scene A)..."
+kill $CLIA_PID 2>/dev/null
 
 # legitimate bus (positive control): client A's room, correct scene id
 say "sending legit bus message into room A..."
@@ -209,16 +225,20 @@ sleep 4
 # ================= scenario 2: client-regression =================
 say "starting client-regression (observer + peer in one room)..."
 "$HEADLESS" --realm "http://localhost:${CONTENT_PORT}/content/peerC" \
-  --wallet-seed $SEED_PEER_C \
+  --wallet-seed $SEED_PEER_C --location 2,0 \
   >"$LOGS/peerC.log" 2>&1 & PIDS+=($!)
 # the observer loads scene C; DCL_SCENE_ROOM_ADAPTER makes its scene-room connection a
 # local livekit room instead of a gatekeeper-minted prod one, so the test stays offline
+# --preview: the DCL_SCENE_ROOM_ADAPTER override is only honored in preview mode
 DCL_SCENE_ROOM_ADAPTER="livekit:${LK_URL}?access_token=${TOK_SCENE_C}" \
 "$HEADLESS" --realm "http://localhost:${CONTENT_PORT}/content/obsC" \
-  --wallet-seed $SEED_OBS_C \
+  --wallet-seed $SEED_OBS_C --location 2,0 --preview \
   >"$LOGS/obsC.log" 2>&1 & PIDS+=($!)
 sleep 12
 
+# extra drain before shutdown: client A's leave detection (reconnect grace, see above)
+# must complete before the server exits
+sleep 4
 exec 8>&-   # close stdin → server exits
 sleep 1
 
@@ -272,6 +292,43 @@ srv_has_line "$SCENE_A" "connected-players" "$ADDR_A"; check "getConnectedPlayer
 srv_has_line "$SCENE_A" "connected-players" "$ADDR_B"; check "getConnectedPlayers on scene A never lists client B"       $(neg $?)
 srv_has_line "$SCENE_B" "connected-players" "$ADDR_B"; check "getConnectedPlayers on scene B resolved and lists client B" $?
 srv_has_line "$SCENE_B" "connected-players" "$ADDR_A"; check "getConnectedPlayers on scene B never lists client A"       $(neg $?)
+
+# 6. foreign avatar transforms reach the scene's CRDT view — positions are written
+# comms-side (independent of the avatar plugin, which headless omits). Clients spawn at
+# their parcel's center, so the SCENE-RELATIVE position is always [8,0,8]; for scene C
+# (based at 2,0, world x 40) this also proves scene-origin localization.
+srv_has_line "$SCENE_A" "player-transform" "$ADDR_A.*\[8,0,8\]"
+check "scene A sees client A's avatar transform at spawn" $?
+srv_has_line "$SCENE_B" "player-transform" "$ADDR_B.*\[8,0,8\]"
+check "scene B sees client B's avatar transform at spawn" $?
+grep -a 'HARNESS|player-transform' "$LOGS/obsC.log" | grep "$ADDR_PEER_C" | grep -qF "[8,0,8]"
+check "regression: peer transform localized to scene C's origin" $?
+
+# 6b. getPlayersInScene — room-scoped on the server (context membership), positional on
+# the client. The client case needs engine-side foreign transforms (PlayerMovementPlugin
+# on headless): scene C is at 2,0, so a peer stuck at a default transform is not "in" it.
+srv_has_line "$SCENE_A" "players-in-scene" "$ADDR_A"; check "getPlayersInScene on scene A lists client A"       $?
+srv_has_line "$SCENE_A" "players-in-scene" "$ADDR_B"; check "getPlayersInScene on scene A never lists client B" $(neg $?)
+srv_has_line "$SCENE_B" "players-in-scene" "$ADDR_B"; check "getPlayersInScene on scene B lists client B"       $?
+srv_has_line "$SCENE_B" "players-in-scene" "$ADDR_A"; check "getPlayersInScene on scene B never lists client A" $(neg $?)
+grep -a 'HARNESS|players-in-scene' "$LOGS/obsC.log" | grep -q "$ADDR_PEER_C"
+check "regression: getPlayersInScene on scene C lists peer" $?
+
+# 7. onEnterScene / onLeaveScene — room-scoped scenes resolve membership by context
+# (room departure = scene departure); the client observer resolves positionally.
+srv_has_line "$SCENE_A" "onEnterScene" "$ADDR_A"; check "scene A onEnterScene fired for client A"    $?
+srv_has_line "$SCENE_A" "onEnterScene" "$ADDR_B"; check "scene A onEnterScene never for client B"    $(neg $?)
+srv_has_line "$SCENE_B" "onEnterScene" "$ADDR_B"; check "scene B onEnterScene fired for client B"    $?
+srv_has_line "$SCENE_A" "onLeaveScene" "$ADDR_A"; check "scene A onLeaveScene fired for stopped client A" $?
+grep -a 'HARNESS|event' "$LOGS/obsC.log" | grep onEnterScene | grep -q "$ADDR_PEER_C"
+check "regression: observer scene C onEnterScene for peer (positional)" $?
+
+# 8. adapterless add-scene outside preview — refused AND not loaded. A scene queued
+# without a room adapter would fall back to the shared crdt context.
+grep -a '"type":"scene-failed"' "$LOGS/server.log" | grep -q "$SCENE_D"
+check "adapterless scene D emits scene-failed" $?
+grep -aq "scene-live\".*\"$SCENE_D\"\|\"$SCENE_D\".*scene-live" "$LOGS/server.log"
+check "adapterless scene D never goes live" $(neg $?)
 
 echo
 if [ $FAIL = 0 ]; then printf '\033[1;32m==== ALL PASS ====\033[0m\n'
