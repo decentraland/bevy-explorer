@@ -449,8 +449,6 @@ impl Plugin for AVPlayerPlugin {
         app.add_observer(receiver_image_added);
         app.add_observer(receiver_image_removed);
 
-        app.add_systems(FixedUpdate, video_texture_output_image_changed);
-
         #[cfg(feature = "av_player_debug")]
         app.add_plugins(av_player_debug::AvPlayerDebugPlugin);
     }
@@ -731,15 +729,6 @@ fn receiver_image_added(
 fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut commands: Commands) {
     let entity = trigger.target();
     commands.entity(entity).try_remove::<VideoTextureOutput>();
-}
-
-fn video_texture_output_image_changed(
-    video_texture_outputs: Populated<&mut VideoTextureOutput, With<Stream>>,
-) {
-    // TODO make it so that this workaround isn't needed
-    for mut video_texture_output in video_texture_outputs.into_inner() {
-        video_texture_output.set_changed();
-    }
 }
 
 #[cfg(test)]
