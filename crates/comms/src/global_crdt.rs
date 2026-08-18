@@ -421,15 +421,6 @@ pub struct ForeignPlayer {
     /// by receiving data; transports report explicit departures (`NetworkUpdate::PlayerLeft`)
     /// and transport despawn removes the entity from every set. Empty set = disconnected.
     pub transports: HashSet<Entity>,
-    /// The transport this peer last announced their profile over. `None` until we receive a
-    /// profile-version announcement over a profile-capable transport — profile request/response
-    /// are sent here, so it's always a transport the peer is provably present on and that can
-    /// carry profile request/response payloads (never Pulse, which only relays version
-    /// announcements).
-    ///
-    /// Distinct from `transports`, which answers presence: a peer can be present on a transport
-    /// that cannot carry a profile payload.
-    pub profile_transport: Option<Entity>,
     pub scene_id: SceneEntityId,
     pub profile_version: u32,
     audio_sender: mpsc::Sender<ForeignAudioData>,
@@ -534,7 +525,13 @@ pub struct PlayerSceneAnimEvent {
 }
 
 pub enum ProfileEventType {
-    Request(rfc4::ProfileRequest),
+    Request {
+        request: rfc4::ProfileRequest,
+        /// The transport the request arrived on — where the response is sent. A peer only
+        /// reaches us over a transport we share, so this is the one channel we know works,
+        /// rather than a guess made when some earlier message happened to arrive.
+        transport: Entity,
+    },
     Version(rfc4::AnnounceProfileVersion),
     Response(rfc4::ProfileResponse),
 }
@@ -658,7 +655,6 @@ pub fn process_transport_updates(
     mut commands: Commands,
     mut contexts: Query<(Entity, &mut GlobalCrdtState)>,
     mut players: Query<&mut ForeignPlayer>,
-    transports: Query<&Transport>,
     time: Res<Time>,
     mut profile_events: EventWriter<ProfileEvent>,
     mut position_events: EventWriter<PlayerPositionEvent>,
@@ -742,7 +738,6 @@ pub fn process_transport_updates(
                                         address: update.address,
                                         context: context_entity,
                                         transports: HashSet::from_iter([update.transport_id]),
-                                        profile_transport: None,
                                         scene_id: next_free,
                                         profile_version: 0,
                                         audio_sender: audio_sender.clone(),
@@ -814,20 +809,6 @@ pub fn process_transport_updates(
                             &mut position_events,
                         ),
                         PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
-                            // Adopt the transport this announcement arrived on as the peer's profile
-                            // transport, but only if it can carry profile request/response. Pulse
-                            // only relays version announcements (the bridge can't encode a
-                            // `ProfileRequest`), so skip it and leave `profile_transport` pointing at
-                            // whatever data transport (livekit/websocket/scene room) the peer also
-                            // announces on.
-                            let profile_capable = transports
-                                .get(update.transport_id)
-                                .is_ok_and(|t| t.transport_type != TransportType::Pulse);
-                            if profile_capable {
-                                if let Ok(mut foreign_player) = players.get_mut(entity) {
-                                    foreign_player.profile_transport = Some(update.transport_id);
-                                }
-                            }
                             profile_events.write(ProfileEvent {
                                 sender: entity,
                                 event: ProfileEventType::Version(version),
@@ -836,7 +817,10 @@ pub fn process_transport_updates(
                         PlayerMessage::PlayerData(Message::ProfileRequest(request)) => {
                             profile_events.write(ProfileEvent {
                                 sender: entity,
-                                event: ProfileEventType::Request(request),
+                                event: ProfileEventType::Request {
+                                    request,
+                                    transport: update.transport_id,
+                                },
                             });
                         }
                         PlayerMessage::PlayerData(Message::ProfileResponse(response)) => {

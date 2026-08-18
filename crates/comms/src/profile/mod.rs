@@ -24,7 +24,8 @@ use crate::{
 use super::{
     broadcast,
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
-    BroadcastTarget, NetworkMessage, ProfileUpdate, Transport,
+    BroadcastTarget, NetworkMessage, NetworkMessageRecipient, ProfileUpdate, Transport,
+    TransportType,
 };
 use common::{
     profile::{LambdaProfiles, SerializedProfile},
@@ -391,9 +392,16 @@ fn request_missing_profiles(
             }
         }
 
+        // Pick a transport at request time rather than remembering one. `player.transports` is the
+        // set this peer is actually on — joined rooms are added, departures remove them — so any
+        // non-Pulse member is a channel we provably share; Pulse itself is excluded because it
+        // relays version announcements only (its bridge can't encode a `ProfileRequest`). Nothing
+        // is cached, so a room joined later is picked up on the next retry.
         if let Some(transport) = player
-            .profile_transport
-            .and_then(|t| transports.get(t).ok())
+            .transports
+            .iter()
+            .filter_map(|transport| transports.get(*transport).ok())
+            .find(|t| t.transport_type != TransportType::Pulse)
         {
             let request = rfc4::Packet {
                 message: Some(rfc4::packet::Message::ProfileRequest(
@@ -404,10 +412,10 @@ fn request_missing_profiles(
                 )),
                 protocol_version: 100,
             };
-            match transport
-                .sender
-                .try_send(NetworkMessage::unreliable(&request))
-            {
+            match transport.sender.try_send(NetworkMessage {
+                recipient: NetworkMessageRecipient::Peer(player.address),
+                ..NetworkMessage::unreliable(&request)
+            }) {
                 Err(e) => {
                     warn!("failed to send request: {e}");
                 }
@@ -436,23 +444,22 @@ pub fn process_profile_events(
 ) {
     for ev in events.read() {
         match &ev.event {
-            ProfileEventType::Request(r) => {
+            ProfileEventType::Request {
+                request: r,
+                transport: request_transport,
+            } => {
                 if let Some(req_address) = r.address.as_h160() {
                     if Some(req_address) == wallet.address() {
-                        let Ok((player, _)) = players.get(ev.sender) else {
-                            continue;
-                        };
-                        let Some(profile_transport) = player.profile_transport else {
-                            debug!("not sending profile, no profile transport");
-                            continue;
-                        };
-
-                        let Ok(transport) = transports.get(profile_transport) else {
+                        // Answer on the transport the request arrived on — the one channel we know
+                        // we share with the asker. Still `recipient: All`: anyone else in that room
+                        // needing our profile gets it for free, which is what the per-transport
+                        // debounce below is rate-limiting.
+                        let Ok(transport) = transports.get(*request_transport) else {
                             debug!("not sending profile, no transport");
                             continue;
                         };
 
-                        if last_sent_request.get(&profile_transport).is_some() {
+                        if last_sent_request.get(request_transport).is_some() {
                             debug!("ignoring request for my profile (sent recently)");
                             continue;
                         }
@@ -477,7 +484,7 @@ pub fn process_profile_events(
                         let _ = transport
                             .sender
                             .try_send(NetworkMessage::reliable(&response));
-                        last_sent_request.insert(profile_transport, time.elapsed_secs());
+                        last_sent_request.insert(*request_transport, time.elapsed_secs());
                     }
                 }
             }
