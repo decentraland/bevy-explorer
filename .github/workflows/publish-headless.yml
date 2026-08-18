@@ -12,10 +12,9 @@ name: Publish headless server
 # npm OIDC trusted publishing — no NPM_TOKEN.
 #
 # RELEASING TO CONSUMERS: the SDK preview (js-sdk-toolchain `sdk-commands start`) tracks
-# `latest`, which only moves when someone dispatches this workflow with publish=true
-# (a manual dispatch IS the release path — pushes already cover `next`, so there is
-# nothing else a dispatched publish could mean). That publishes a fresh build of the
-# chosen ref as a NEW version
+# `latest`, which only moves when someone manually dispatches this workflow — a
+# dispatch IS a release; pushes already cover `next`, so there is nothing else a
+# dispatch could mean. That publishes a fresh build of the chosen ref as a NEW version
 # (the version embeds the run id, so there is no collision with the `next` snapshot of
 # the same commit) tagged latest — promotion stays tokenless because it is a plain
 # OIDC-covered `npm publish`, not an `npm dist-tag` (which trusted publishing does not
@@ -35,12 +34,8 @@ name: Publish headless server
 # exact version, so their tags are cosmetic.
 
 on:
+  # dispatch = release: builds the chosen ref and publishes it to `latest`
   workflow_dispatch:
-    inputs:
-      publish:
-        description: Publish to npm as `latest` (release to SDK previews; otherwise build and upload artifacts only)
-        type: boolean
-        default: false
   push:
     branches:
       - main
@@ -162,7 +157,7 @@ jobs:
   publish:
     # all-or-nothing: never advertise a version that is missing a platform
     needs: build
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.publish
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       id-token: write # npm OIDC trusted publishing — no token secret
