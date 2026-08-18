@@ -171,8 +171,40 @@ function createJsContext(wasmApi, context) {
         configurable: false,
         get() {
           return (...args) => {
-            // wrap ops to inject context arg
-            return wasmApi[exportName](context, ...args);
+            // Tier-2 handshake (see forceTerminate in engine.js): flag the wasm entry, and
+            // once the engine has decided to terminate this worker, park instead of entering
+            // — never throw, scene code could catch. IN_RUST-first ordering pairs with the
+            // engine's KILL-first + wait-for-IN_RUST==0, so a terminate can never land while
+            // this thread holds a lock inside the shared engine wasm.
+            Atomics.store(killFlags, IN_RUST, 1);
+            if (Atomics.load(killFlags, KILL) === 1) {
+              Atomics.store(killFlags, IN_RUST, 0);
+              // last words: nothing after the wait ever runs
+              console.warn(`[Sandbox Worker] scene ${sceneId}: kill flag set; parking until terminate`);
+              Atomics.wait(killFlags, PARK, 0);
+            }
+            let result;
+            try {
+              // wrap ops to inject context arg
+              result = wasmApi[exportName](context, ...args);
+            } finally {
+              Atomics.store(killFlags, IN_RUST, 0);
+            }
+            if (result && typeof result.then === "function") {
+              // async op: track it while its future is live, so the teardown drain can
+              // name what is still holding scene state if it fails to drain.
+              // .then(dec, dec) not .finally: the derived promise must never reject
+              // (the caller handles the original; a rejecting clone would surface as
+              // an unhandled rejection)
+              outstandingOps.set(exportName, (outstandingOps.get(exportName) || 0) + 1);
+              const dec = () => {
+                const n = outstandingOps.get(exportName) || 0;
+                if (n > 1) outstandingOps.set(exportName, n - 1);
+                else outstandingOps.delete(exportName);
+              };
+              result.then(dec, dec);
+            }
+            return result;
           };
         },
       });
@@ -336,17 +368,140 @@ function require(moduleName) {
   return code;
 }
 
+var wasm_init = undefined;
+var wasmContext = undefined;
+var sceneId = undefined;
+// Per-worker secrets from engine.js (INIT_WORKER payload). Scene code shares this realm and
+// can reach the bare postMessage and dispatchEvent, but module-scope vars are invisible to
+// it (`new Function` scopes to the global only) — so killToken proves an outbound message
+// came from this script, and shutdownToken proves an inbound SHUTDOWN came from engine.js.
+// They are separate secrets: killToken never travels inbound after scene code runs, so a
+// scene that listens for messages and observes a genuine SHUTDOWN (learning shutdownToken)
+// still can't forge the SHUTDOWN_COMPLETE ack and pass itself off as exited.
+var killToken = undefined;
+var shutdownToken = undefined;
+function postToEngine(message) {
+  postMessage({ ...message, killToken });
+}
+
+// Tier-2 handshake flags, shared with engine.js (layout documented there; the dummy is
+// replaced by the real SharedArrayBuffer from the INIT_WORKER payload). Module-scoped, so
+// scene code can't reach them.
+var killFlags = new Int32Array(new SharedArrayBuffer(16));
+const KILL = 0, IN_RUST = 1, PARK = 2;
+
+// Async ops whose futures are currently live (name -> count), maintained by the op
+// wrapper. Purely diagnostic: names what still holds scene state when the teardown
+// drain gives up (e.g. read-stream ops whose engine-side sender is never dropped).
+const outstandingOps = new Map();
+
+// Single teardown for every exit path: the graceful loop exit, the scene-error exit, and
+// the engine's SHUTDOWN escalation. Posts the ack in all cases — it tells engine.js not to
+// escalate further and to drop its worker map entry.
+//
+// The state can only be freed once nothing else references it: async ops hold a state
+// reference (and the context wrapper's borrow) for as long as their future lives. The
+// engine has already closed the channels and set the kill flag by the time this runs, so
+// parked ops resume, complete inertly and drop their references — wait for that (bounded,
+// under engine.js's escalation grace). A future awaiting something that never resolves
+// keeps its reference forever; then freeing this thread's stack/TLS would corrupt the
+// engine when the future's waker later fires, so leak the thread state instead.
+const DRAIN_TIMEOUT_MS = 4000;
+var toreDown = false;
+function tearDown() {
+  if (toreDown) return;
+  toreDown = true;
+  // IN_RUST is held for the ENTIRE teardown, not per wasm call: the drain's setTimeout gaps
+  // exist so the executor can poll draining op futures, and those polls enter the engine
+  // wasm without setting any flag — a terminate landing mid-poll would be exactly the
+  // corruption forceTerminate exists to avoid. Never cleared: the worker closes itself at
+  // the end, and the SHUTDOWN_COMPLETE ack (not the flag) tells the engine this worker is
+  // done. Re-asserted each drain tick in case a scene op resumed in a gap and its
+  // finally-clear clobbered it.
+  Atomics.store(killFlags, IN_RUST, 1);
+  if (!wasm_init || wasmContext === undefined) {
+    finishTearDown(wasm_init !== undefined);
+    return;
+  }
+  const startedAt = performance.now();
+  const drain = () => {
+    Atomics.store(killFlags, IN_RUST, 1);
+    const refs = wasmContext.ref_count();
+    if (refs > 1 && performance.now() - startedAt < DRAIN_TIMEOUT_MS) {
+      setTimeout(drain, 100);
+      return;
+    }
+    if (refs > 1) {
+      // dropping under live references would panic (and freeing would corrupt the engine
+      // when a parked future's waker later fires) — skip the drop and leak
+      const parked = [...outstandingOps].map(([op, n]) => (n > 1 ? `${op} x${n}` : op)).join(", ");
+      console.warn(`[Sandbox Worker] scene ${sceneId}: ${refs - 1} op future(s) still hold scene state after ${DRAIN_TIMEOUT_MS}ms (${parked || "untracked"})`);
+      wasmContext = undefined;
+      finishTearDown(false);
+      return;
+    }
+    // refs == 1 still holds at the drop: nothing interleaves a sync block
+    let stateFreed = false;
+    try {
+      wasm_bindgen_exports.drop_context(wasmContext);
+      stateFreed = true;
+    } catch (e) {
+      console.error(`[Sandbox Worker] scene ${sceneId}: error dropping scene context:`, e);
+    }
+    wasmContext = undefined;
+    finishTearDown(stateFreed);
+  };
+  drain();
+}
+
+function finishTearDown(destroyThread) {
+  if (destroyThread) {
+    wasm_init.__wbindgen_thread_destroy();
+  } else if (wasm_init) {
+    console.warn(`[Sandbox Worker] scene ${sceneId}: scene state still in use; leaking thread state`);
+  }
+  console.debug(`[Sandbox Worker] scene ${sceneId}: teardown complete`);
+  postToEngine({ type: "SHUTDOWN_COMPLETE", sceneId });
+  self.close();
+}
+
+var initialized = false;
 self.onmessage = async (event) => {
+  if (event.data && event.data.type === "SHUTDOWN") {
+    // scene code can synthesize message events (dispatchEvent resolves through to the real
+    // worker global); only engine.js knows shutdownToken, so anything without it is a forgery
+    if (!shutdownToken || event.data.shutdownToken !== shutdownToken) {
+      console.warn("[Sandbox Worker] dropped SHUTDOWN without valid token (scene code dispatching events?)");
+      return;
+    }
+    // engine kill escalation: the kill flag is already set, but the scene never came back
+    // to the loop check (wedged in an await). A genuine SHUTDOWN runs with an empty JS
+    // stack, so no op is in flight; close() discards the parked scene task.
+    console.warn("[Sandbox Worker] SHUTDOWN received, tearing down");
+    tearDown();
+    return;
+  }
   if (event.data && event.data.type === "INIT_WORKER") {
+    // one-shot: a synthetic re-INIT from scene code could swap killFlags/killToken out from
+    // under the kill handshake, decoupling the flags the engine reads from the ones the op
+    // wrapper sets — which would make a forceful terminate land mid-op. The genuine
+    // INIT_WORKER always arrives before scene code exists, so latching closes this.
+    if (initialized) {
+      console.warn("[Sandbox Worker] dropped duplicate INIT_WORKER (scene code dispatching events?)");
+      return;
+    }
+    initialized = true;
     const { compiledModule, sharedMemory } = event.data.payload;
     bridgeSession = event.data.payload.bridgeSession;
+    killToken = event.data.payload.killToken;
+    shutdownToken = event.data.payload.shutdownToken;
+    killFlags = new Int32Array(event.data.payload.killFlags);
 
     if (!compiledModule || !sharedMemory) {
       console.error("[Sandbox Worker] Invalid payload received.");
       return;
     }
 
-    var wasm_init;
     try {
       // init wasm
       wasm_init = await init({
@@ -358,12 +513,12 @@ self.onmessage = async (event) => {
         "[Scene Worker] Error during Wasm instantiation or setup:",
         e
       );
-      postMessage({ type: `INIT_FAILED` });
+      postToEngine({ type: `INIT_FAILED` });
       self.close();
       return;
     }
 
-    postMessage({ type: `INIT_COMPLETE` });
+    postToEngine({ type: `INIT_COMPLETE` });
 
     // add listener to clean up on unhandled rejections
     self.addEventListener("unhandledrejection", (event) => {
@@ -387,18 +542,19 @@ self.onmessage = async (event) => {
       // self.close();
     });
 
-    var wasmContext;
     try {
       wasmContext = await wasm_bindgen_exports.wasm_init_scene();
     } catch (e) {
       console.error("[Scene Worker] Error during scene construction:", e);
-      try {
-        wasm_init.drop_context(wasmContext);
-      } catch (e) { }
-      wasm_init.__wbindgen_thread_destroy();
-      self.close();
+      tearDown();
       return;
     }
+
+    // report which scene this worker picked up (workers pop from a shared queue, so the
+    // mapping isn't knowable at spawn time) — engine.js keeps a sceneId -> Worker map for
+    // kill escalation
+    sceneId = wasmContext.get_scene_id();
+    postToEngine({ type: "SCENE_READY", sceneId });
 
     try {
       createJsContext(wasm_bindgen_exports, wasmContext);
@@ -466,11 +622,7 @@ self.onmessage = async (event) => {
       console.error("[Sandbox Worker] Error during scene execution:", e);
     }
 
-    try {
-      wasm_init.drop_context(wasmContext);
-    } catch (e) { }
-    wasm_init.__wbindgen_thread_destroy();
-    self.close();
+    tearDown();
   }
 };
 
