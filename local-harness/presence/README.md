@@ -14,6 +14,16 @@ KEEP=1 ./run.sh     # leave livekit/server/clients up and logs in .work/logs for
 Requires `livekit-server` on PATH (`brew install livekit`) and `python3`. Builds the
 engine itself, so the first run is slow; artifacts are cached after.
 
+Also needs a reachable **Pulse** server, because client avatar state rides Pulse rather
+than LiveKit — without one the two regression peers never see each other's positions.
+Defaults to the shared dev endpoint `pulse-server.decentraland.zone:7777`, resolved once
+and pinned so both peers land on the same instance; each run therefore puts two
+short-lived synthetic players on that dev service (in realm `harness-c`). Override with
+`PULSE_SERVER=host:port`. A *local* server only works on Linux: bevy's native ENet client
+cannot reach one running on macOS (the mac `libenet.dylib` drops the CONNECT before it
+reaches the C# layer). The orchestrated server never joins Pulse at all — it ingests its
+clients' avatar state from their LiveKit scene rooms, addressed to `authoritative-server`.
+
 ## What it stands up
 
 - **`livekit-server --dev`** — local SFU (devkey/secret, rooms auto-create on join).
@@ -48,12 +58,23 @@ line to the right scene.
    forged one (published into room B but declaring scene A's id) is dropped by the
    per-context room-hash guard.
 4. Client-regression: a non-orchestrated observer sharing a room with a peer still sees
-   that peer through the single shared context.
+   that peer through the single shared context — roster and profile over LiveKit, position
+   over Pulse.
+
+Transform assertions match within one Pulse quantization step (0.0625m) rather than
+exactly. That tolerance is also a signal: a scene-A/B transform arrives over LiveKit as raw
+floats and reads exactly `[8,0,8]`, while scene C's arrives over Pulse and reads `[8.031,
+0, 8.031]` — the centre of its quantization box. Both paths are live and distinguishable.
 
 ## Notes
 
 - Scene/js content hashes embed `md5(game.js)` so editing the scene auto-busts the
   engine's on-disk content cache.
+- Don't set `RUST_LOG` (the script refuses if you do). It replaces the engine's whole log
+  filter, and the clients' `HARNESS|` scene lines are tracing INFO — muting them looks
+  exactly like the observer failing to see its peer. The server's scene lines are
+  `@scene-log` stdout frames and survive any filter, so only the client-side assertions
+  break, which makes the symptom especially misleading.
 - `getConnectedPlayers()` is currently disabled in the scene (`WANT_CONNECTED_PLAYERS`):
   that async RPC does not resolve on the orchestrated server (the scene then wedges and is
   marked broken). The CRDT `PLAYER_IDENTITY_DATA` roster is the stronger isolation signal

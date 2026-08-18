@@ -42,6 +42,13 @@ pub mod common {
     include!(concat!(env!("OUT_DIR"), "/decentraland.common.rs"));
 }
 
+#[allow(clippy::all)]
+pub mod pulse {
+    include!(concat!(env!("OUT_DIR"), "/decentraland.pulse.rs"));
+    // Dequantization accessors generated from the (decentraland.common.quantized) proto options.
+    include!(concat!(env!("OUT_DIR"), "/pulse_quant.rs"));
+}
+
 pub mod social {
     include!(concat!(
         env!("OUT_DIR"),

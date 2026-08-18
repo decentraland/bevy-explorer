@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use common::{debug_panic, structs::AudioSettings};
-use dcl_component::proto_components::kernel::comms::rfc4;
 use kira::{
     manager::{AudioManager, AudioManagerSettings, DefaultBackend},
     tween::Tween,
@@ -18,8 +17,7 @@ use crate::{
         LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
         StartLivekit,
     },
-    profile::CurrentUserProfile,
-    NetworkMessage, Transport, TransportType,
+    Transport, TransportType,
 };
 
 pub struct LivekitPlugin;
@@ -57,30 +55,16 @@ pub(super) struct PlayerUpdateTask {
     pub task: JoinHandle<Result<(), mpsc::error::SendError<NetworkUpdate>>>,
 }
 
-fn start_livekit(
-    mut commands: Commands,
-    mut room_events: EventReader<StartLivekit>,
-    current_profile: Res<CurrentUserProfile>,
-) {
+fn start_livekit(mut commands: Commands, mut room_events: EventReader<StartLivekit>) {
     for ev in room_events.read() {
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
         let (control_sender, control_receiver) = tokio::sync::mpsc::channel(128);
 
-        let Some(current_profile) = current_profile.profile.as_ref() else {
-            return;
-        };
-
-        // queue a profile version message
-        let response = rfc4::Packet {
-            message: Some(rfc4::packet::Message::ProfileVersion(
-                rfc4::AnnounceProfileVersion {
-                    profile_version: current_profile.version,
-                },
-            )),
-            protocol_version: 100,
-        };
-        let _ = sender.try_send(NetworkMessage::reliable(&response));
+        // No connect-time profile announce here — `profile::mod` periodically announces the version
+        // over PRIMARY (Pulse + websocket dev server), and the Pulse handshake carries the
+        // connect-time version. Peers reach this transport for guest profile request/response by
+        // picking a profile-capable transport at request time, not off any announcement of ours.
 
         commands.entity(ev.entity).try_insert((
             Transport {

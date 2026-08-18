@@ -22,8 +22,10 @@ use crate::{
 };
 
 use super::{
+    broadcast,
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
-    NetworkMessage, Transport,
+    BroadcastTarget, NetworkMessage, NetworkMessageRecipient, ProfileUpdate, Transport,
+    TransportType,
 };
 use common::{
     profile::{LambdaProfiles, SerializedProfile},
@@ -217,22 +219,26 @@ pub fn setup_primary_profile(
                 );
             }
 
-            // send over network
-            debug!("sending profile new version {:?}", profile.version);
-            let response = rfc4::Packet {
-                message: Some(rfc4::packet::Message::ProfileResponse(
-                    rfc4::ProfileResponse {
-                        serialized_profile: serde_json::to_string(&profile.content).unwrap(),
-                        base_url: profile.base_url.clone(),
-                    },
-                )),
-                protocol_version: 100,
-            };
-            for transport in &transports {
-                let _ = transport
-                    .sender
-                    .try_send(NetworkMessage::reliable(&response));
-            }
+            // Push the profile update over PRIMARY (not LiveKit, not Archipelago). The websocket dev
+            // server gets the full `ProfileResponse`; Pulse gets a `ProfileVersionAnnouncement` (the
+            // peer refetches from catalyst). LiveKit is deliberately excluded so `broadcast`'s
+            // auth-server fanout carries it to the `authoritative-server` participant alone: peers
+            // that see a profile announcement arrive over LiveKit answer it with LiveKit movement,
+            // which is exactly the traffic Pulse is meant to replace.
+            // Reset the keepalive timer so the periodic re-announce below doesn't immediately fire
+            // again.
+            debug!("announcing profile new version {:?}", profile.version);
+            broadcast(
+                transports.iter(),
+                BroadcastTarget::PRIMARY,
+                false,
+                ProfileUpdate {
+                    serialized_profile: serde_json::to_string(&profile.content).unwrap(),
+                    base_url: profile.base_url.clone(),
+                    version: profile.version,
+                },
+            );
+            *last_announce = time.elapsed_secs();
 
             // send to event receivers
             senders.retain(|sender| {
@@ -260,17 +266,18 @@ pub fn setup_primary_profile(
             let now = time.elapsed_secs();
             if now > *last_announce + 5.0 {
                 debug!("announcing profile v {}", current_profile.version);
-                let packet = rfc4::Packet {
-                    message: Some(rfc4::packet::Message::ProfileVersion(
-                        rfc4::AnnounceProfileVersion {
-                            profile_version: current_profile.version,
-                        },
-                    )),
-                    protocol_version: 100,
-                };
-                for transport in transports.iter() {
-                    let _ = transport.sender.try_send(NetworkMessage::reliable(&packet));
-                }
+                // Avatar state rides PRIMARY (websocket + Pulse), matching movement/emote — Pulse
+                // converts this to a `ProfileVersionAnnouncement`, the websocket dev server carries
+                // it as an rfc4 `AnnounceProfileVersion`. Not LiveKit (see above: it only reaches the
+                // auth server, via `broadcast`'s fanout), not Archipelago.
+                broadcast(
+                    transports.iter(),
+                    BroadcastTarget::PRIMARY,
+                    false,
+                    rfc4::AnnounceProfileVersion {
+                        profile_version: current_profile.version,
+                    },
+                );
                 *last_announce = now;
             }
         }
@@ -384,10 +391,16 @@ fn request_missing_profiles(
             }
         }
 
+        // Pick a transport at request time rather than remembering one. `player.transports` is the
+        // set this peer is actually on — joined rooms are added, departures remove them — so any
+        // non-Pulse member is a channel we provably share; Pulse itself is excluded because it
+        // relays version announcements only (its bridge can't encode a `ProfileRequest`). Nothing
+        // is cached, so a room joined later is picked up on the next retry.
         if let Some(transport) = player
             .transports
             .iter()
-            .find_map(|t| transports.get(*t).ok())
+            .filter_map(|transport| transports.get(*transport).ok())
+            .find(|t| t.transport_type != TransportType::Pulse)
         {
             let request = rfc4::Packet {
                 message: Some(rfc4::packet::Message::ProfileRequest(
@@ -398,10 +411,10 @@ fn request_missing_profiles(
                 )),
                 protocol_version: 100,
             };
-            match transport
-                .sender
-                .try_send(NetworkMessage::unreliable(&request))
-            {
+            match transport.sender.try_send(NetworkMessage {
+                recipient: NetworkMessageRecipient::Peer(player.address),
+                ..NetworkMessage::unreliable(&request)
+            }) {
                 Err(e) => {
                     warn!("failed to send request: {e}");
                 }
@@ -430,22 +443,22 @@ pub fn process_profile_events(
 ) {
     for ev in events.read() {
         match &ev.event {
-            ProfileEventType::Request(r) => {
+            ProfileEventType::Request {
+                request: r,
+                transport: request_transport,
+            } => {
                 if let Some(req_address) = r.address.as_h160() {
                     if Some(req_address) == wallet.address() {
-                        let Ok((player, _)) = players.get(ev.sender) else {
-                            continue;
-                        };
-                        let Some((transport_id, transport)) = player
-                            .transports
-                            .iter()
-                            .find_map(|t| transports.get(*t).ok().map(|transport| (*t, transport)))
-                        else {
+                        // Answer on the transport the request arrived on — the one channel we know
+                        // we share with the asker. Still `recipient: All`: anyone else in that room
+                        // needing our profile gets it for free, which is what the per-transport
+                        // debounce below is rate-limiting.
+                        let Ok(transport) = transports.get(*request_transport) else {
                             debug!("not sending profile, no transport");
                             continue;
                         };
 
-                        if last_sent_request.get(&transport_id).is_some() {
+                        if last_sent_request.get(request_transport).is_some() {
                             debug!("ignoring request for my profile (sent recently)");
                             continue;
                         }
@@ -470,7 +483,7 @@ pub fn process_profile_events(
                         let _ = transport
                             .sender
                             .try_send(NetworkMessage::reliable(&response));
-                        last_sent_request.insert(transport_id, time.elapsed_secs());
+                        last_sent_request.insert(*request_transport, time.elapsed_secs());
                     }
                 }
             }
