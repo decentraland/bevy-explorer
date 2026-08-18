@@ -416,7 +416,7 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
         Some(slf)
     }
 
-    pub fn new_noop(source: String, image: Handle<Image>) -> Self {
+    pub fn new_noop(source: String, image: Option<Handle<Image>>) -> Self {
         let media = web_sys::window()
             .unwrap()
             .document()
@@ -432,7 +432,7 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
 
         let mut slf = Self::common_init(source, media);
         slf.video = None;
-        slf.image = Some(image);
+        slf.image = image;
         slf
     }
 
@@ -550,16 +550,28 @@ fn new_player_source<T: AVPlayer>(
         &(**player_source)
     );
     match &(**player_source) {
-        LIVEKIT_VIDEO_STREAM => (),
+        LIVEKIT_VIDEO_STREAM if T::ALLOWS_LIVESTREAM => (),
         _ => {
             let source_url = &(**player_source);
             if source_url.is_empty() {
-                let image = create_image_handle();
-                let video_output = VideoTextureOutput(image.clone());
-                commands.entity(entity).try_insert((
-                    video_output,
-                    HtmlMediaEntity::<T>::new_noop((**player_source).to_owned(), image.clone()),
-                ));
+                if T::has_video() {
+                    let image = create_image_handle();
+                    let video_output = VideoTextureOutput(image.clone());
+                    commands.entity(entity).try_insert((
+                        video_output,
+                        HtmlMediaEntity::<T>::new_noop(
+                            (**player_source).to_owned(),
+                            Some(image.clone()),
+                        ),
+                    ));
+                } else {
+                    commands
+                        .entity(entity)
+                        .try_insert(HtmlMediaEntity::<T>::new_noop(
+                            (**player_source).to_owned(),
+                            None,
+                        ));
+                }
             } else {
                 let source = ipfs
                     .content_url(source_url, &context.hash)
