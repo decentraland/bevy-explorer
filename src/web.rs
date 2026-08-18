@@ -379,14 +379,42 @@ fn decentraland_app_config(
 }
 
 fn decentraland_serialized_app_config() -> AppConfig {
-    INIT_DATA.get().cloned().unwrap_or_else(|| AppConfig {
+    let mut config = INIT_DATA.get().cloned().unwrap_or_else(|| AppConfig {
         graphics: common::structs::GraphicsSettings {
             shadow_distance: 20.0,
             shadow_settings: common::structs::ShadowSetting::Low,
             ..Default::default()
         },
         ..Default::default()
-    })
+    });
+    // `?packs=<url>` overrides the configured scene-pack server ("off"/"0" disables)
+    if let Some(packs) = scene_packs_from_url() {
+        config.scene_packs_url = match packs.as_str() {
+            "off" | "0" => None,
+            _ => Some(packs),
+        };
+        info!("scene packs url override: {:?}", config.scene_packs_url);
+    }
+    // a root-relative pack url is resolved against the page origin
+    if let Some(packs) = config.scene_packs_url.as_mut() {
+        if packs.starts_with('/') {
+            if let Some(origin) = web_sys::window().and_then(|w| w.location().origin().ok()) {
+                *packs = format!("{origin}{packs}");
+            }
+        }
+    }
+    config
+}
+
+fn scene_packs_from_url() -> Option<String> {
+    let search = web_sys::window()?.location().search().ok()?;
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(k, _)| *k == "packs")
+        .and_then(|(_, v)| urlencoding::decode(v).ok())
+        .map(|v| v.into_owned())
 }
 
 fn decentraland_app_arguments(
@@ -401,6 +429,7 @@ fn decentraland_app_arguments(
     DecentralandArguments {
         server: Some(server.to_owned()),
         content_server_override: None,
+        scene_packs_url: None,
         location: IVec2Arg::from_str(location)
             .map(|location_arg| location_arg.0)
             .ok(),

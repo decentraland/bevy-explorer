@@ -3633,6 +3633,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-fs",
+ "web-sys",
  "web-time",
  "wgpu",
  "world_ui",
@@ -6290,7 +6291,10 @@ dependencies = [
  "url",
  "urlencoding",
  "urn",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-fs",
+ "web-sys",
  "web-time",
 ]
 
@@ -8415,6 +8419,7 @@ dependencies = [
  "async-compat",
  "async-tungstenite",
  "bevy",
+ "bytes",
  "directories",
  "futures-lite",
  "futures-timer",
