@@ -17,6 +17,10 @@ use {
     },
     tokio::sync::{mpsc, oneshot},
 };
+#[cfg(target_arch = "wasm32")]
+use {
+    common::structs::AudioSettings
+};
 
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{RemoteTrack, TrackKind, TrackSource};
@@ -657,11 +661,12 @@ fn update_track_volume(tracks: Populated<(&mut AudioStreamingHandle, &AudioTrans
 #[expect(clippy::type_complexity)]
 fn update_track_volume(
     tracks: Populated<(&LivekitTrack, &AudioTransmitterVolume), (With<Audio>, With<Subscribed>)>,
+    audio_settings: Res<AudioSettings>
 ) {
     for (livekit_track, audio_transmitter_volume) in tracks.into_inner() {
         let Some(RemoteTrack::Audio(audio)) = livekit_track.track() else {
             debug_panic!("A subscribed audio track did not have an audio RemoteTrack.");
         };
-        audio.set_volume(**audio_transmitter_volume);
+        audio.set_volume(**audio_transmitter_volume * audio_settings.scene());
     }
 }
