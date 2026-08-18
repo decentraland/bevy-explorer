@@ -441,7 +441,10 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
     }
 
     pub fn set_volume(&self, volume: f32) {
-        self.media.set_volume(volume.clamp(0.0, 1.0) as f64)
+        self.media.set_volume(volume.clamp(0.0, 1.0) as f64);
+        if let Some(media) = &self.video {
+            media.set_volume(volume.clamp(0.0, 1.0) as f64);
+        }
     }
 
     pub fn play(&mut self) {
@@ -604,6 +607,7 @@ fn player_config_added<T: AVPlayer>(
         Has<Stream>,
         Option<&mut ReceiverVolume>,
     )>,
+    audio_settings: Res<AudioSettings>,
 ) {
     let entity = trigger.target();
     let Ok((
@@ -616,15 +620,17 @@ fn player_config_added<T: AVPlayer>(
     else {
         unreachable!("Infallible query");
     };
-    let Some(mut html_media_entity) = maybe_html_media_entity else {
-        if !has_stream {
-            debug_panic!("Non-stream AVPlayer did not have html media entity.");
-        }
+    if has_stream {
         if let Some(mut receiver_volume) = maybe_receiver_volume {
             debug!("Updated volume of stream.");
-            **receiver_volume = config.volume();
+            **receiver_volume = config.volume() * audio_settings.scene();
         }
-        return;
+        if maybe_html_media_entity.is_none () {
+            return;
+        }
+    }
+    let Some(mut html_media_entity) = maybe_html_media_entity else {
+        debug_panic!("Non-stream AVPlayer did not have html media entity.");
     };
 
     if config.playing() && has_should_be_playing {
@@ -632,7 +638,7 @@ fn player_config_added<T: AVPlayer>(
     } else {
         html_media_entity.stop();
     }
-    html_media_entity.set_volume(config.volume());
+    html_media_entity.set_volume(config.volume() * audio_settings.scene());
     html_media_entity.set_loop(config.r#loop());
 }
 
