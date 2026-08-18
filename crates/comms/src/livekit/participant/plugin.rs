@@ -105,6 +105,9 @@ fn participant_connected(
     trigger: Trigger<ParticipantConnected>,
     mut commands: Commands,
     rooms: Query<&LivekitRoom>,
+    transport_senders: crate::global_crdt::TransportSenders,
+    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let ParticipantConnected {
         participant,
@@ -139,6 +142,34 @@ fn participant_connected(
             participant.clone(),
             <HostedBy as Relationship>::from(*room_entity),
         ));
+    }
+
+    // Register presence explicitly. Membership is otherwise implied by a `PlayerUpdate` arriving,
+    // and the only one this path used to emit was the metadata message below — which is skipped
+    // when the token carries no metadata, so a peer whose avatar state rides Pulse could sit in the
+    // room without ever being recorded as being in it. `PlayerLeft` on disconnect is the mirror.
+    if !is_local {
+        if let Some(address) = participant.identity().as_str().as_h160() {
+            let transport_id = *room_entity;
+            if let Some(sender) = transport_senders.get(transport_id) {
+                let task = livekit_runtime.spawn(async move {
+                    sender
+                        .send(
+                            PlayerUpdate {
+                                transport_id,
+                                message: PlayerMessage::Joined,
+                                address,
+                            }
+                            .into(),
+                        )
+                        .await
+                });
+                player_update_tasks.push(PlayerUpdateTask {
+                    runtime: livekit_runtime.clone(),
+                    task,
+                });
+            }
+        }
     }
 
     commands.trigger(ParticipantMetadataChanged {

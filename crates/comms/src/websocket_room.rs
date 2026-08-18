@@ -284,6 +284,24 @@ async fn websocket_room_handler_inner(
     }
     dcl_assert!(from_alias != u32::MAX);
 
+    // Register everyone the welcome listed. Membership is otherwise implied by a `PlayerUpdate`
+    // arriving, so a peer who joined before us and then says nothing would go unrecorded.
+    // collected first: the `BiMap` iterator isn't `Send`, so it can't be held across the await
+    let joined: Vec<_> = foreign_aliases.right_values().copied().collect();
+    for address in joined {
+        sender
+            .send(
+                PlayerUpdate {
+                    transport_id,
+                    message: PlayerMessage::Joined,
+                    address,
+                }
+                .into(),
+            )
+            .await
+            .map_err(|_| anyhow!("Send error"))?;
+    }
+
     let (mut write, mut read) = stream.split();
 
     // wrap and transmit outbound messages
@@ -329,6 +347,18 @@ async fn websocket_room_handler_inner(
                     debug!("peer joined: {} -> {}", peer.alias, peer.address);
                     if let Some(h160) = peer.address.as_h160() {
                         foreign_aliases.insert(peer.alias, h160);
+                        // presence, without waiting for them to send anything
+                        sender
+                            .send(
+                                PlayerUpdate {
+                                    transport_id,
+                                    message: PlayerMessage::Joined,
+                                    address: h160,
+                                }
+                                .into(),
+                            )
+                            .await
+                            .map_err(|_| anyhow!("Send error"))?;
                     } else {
                         warn!("failed to parse hash: {}", peer.address);
                     }

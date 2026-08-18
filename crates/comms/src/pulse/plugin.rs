@@ -623,14 +623,19 @@ fn drain_inbound(
                         },
                     )),
                 ),
-                // A peer's profile version — on join (the initial version) or a later announcement.
-                // Bridged as an rfc4 `AnnounceProfileVersion` so it reuses the LiveKit/websocket
-                // profile path; the set is idempotent, so we don't dedupe against any LiveKit copy.
+                // A peer entered our interest set. Report the arrival, then their initial profile
+                // version; the version alone would register presence, but saying so explicitly
+                // matches the other transports and doesn't depend on it carrying one.
                 PulseEvent::Joined {
                     address,
                     profile_version,
                     ..
-                } => bridge_profile_version(session, address, profile_version),
+                } => {
+                    session.forward(address, PlayerMessage::Joined);
+                    bridge_profile_version(session, address, profile_version);
+                }
+                // A later announcement. Bridged as an rfc4 `AnnounceProfileVersion` so it reuses the
+                // same profile path as the byte transports; the set is idempotent.
                 PulseEvent::ProfileVersion { address, version } => {
                     bridge_profile_version(session, address, version)
                 }

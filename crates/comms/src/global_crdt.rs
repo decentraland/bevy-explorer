@@ -126,6 +126,11 @@ impl Plugin for GlobalCrdtPlugin {
 // message — this is the hot path — so keep it inline and silence the size-difference lint.
 #[allow(clippy::large_enum_variant)]
 pub enum PlayerMessage {
+    /// The transport saw this peer join, with nothing to report beyond that. Presence is registered
+    /// by a `PlayerUpdate` arriving at all (see `NetworkUpdate::Player`), so this carries no payload
+    /// — it exists so a transport can say "they are here" without waiting for them to send data.
+    /// Transports that learn about joins should emit it; `PlayerLeft` is the counterpart.
+    Joined,
     MetaData(String),
     PlayerData(rfc4::packet::Message),
     /// Pulse-decoded movement, delivered natively rather than as an rfc4 `Movement` packet (those
@@ -149,6 +154,7 @@ pub enum PlayerMessage {
 impl std::fmt::Debug for PlayerMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let var_name = match self {
+            Self::Joined => f.write_str("Joined"),
             Self::MetaData(arg0) => f.debug_tuple("MetaData").field(arg0).finish(),
             Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
             Self::Movement {
@@ -769,6 +775,8 @@ pub fn process_transport_updates(
 
                     // process update
                     match update.message {
+                        // presence only — registering the transport above was the whole point
+                        PlayerMessage::Joined => (),
                         PlayerMessage::MetaData(str) => {
                             if let Ok(meta) = serde_json::from_str::<ForeignMetaData>(&str) {
                                 debug!("foreign player metadata: {scene_id:?}: {meta:?}");
