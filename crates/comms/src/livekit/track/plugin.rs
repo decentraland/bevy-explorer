@@ -654,6 +654,7 @@ fn update_track_volume(tracks: Populated<(&mut AudioStreamingHandle, &AudioTrans
 }
 
 #[cfg(target_arch = "wasm32")]
+#[expect(clippy::type_complexity)]
 fn update_track_volume(
     tracks: Populated<(&LivekitTrack, &AudioTransmitterVolume), (With<Audio>, With<Subscribed>)>,
 ) {
