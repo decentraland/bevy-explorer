@@ -625,7 +625,7 @@ fn player_config_added<T: AVPlayer>(
             debug!("Updated volume of stream.");
             **receiver_volume = config.volume() * audio_settings.scene();
         }
-        if maybe_html_media_entity.is_none () {
+        if maybe_html_media_entity.is_none() {
             return;
         }
     }
@@ -660,7 +660,9 @@ fn player_position_added<T: AVPlayer>(
 
     debug!("Seeking AVPlayer to {}", **position);
     html_media_entity.current_time = **position;
-    html_media_entity.media.set_current_time((**position).into());
+    html_media_entity
+        .media
+        .set_current_time((**position).into());
     if let Some(media) = &mut html_media_entity.video {
         media.set_current_time((**position).into());
     }
