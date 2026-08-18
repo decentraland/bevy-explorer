@@ -936,7 +936,7 @@ fn receiver_image_added(
 ) {
     let entity = trigger.target();
     let Ok(receiver_image) = video_players.get(entity) else {
-        unreachable!("Infallible query");
+        unreachable!("Non-VideoPlayer entities must never receiver ReceiverImage.");
     };
 
     if let Some(html_media_entity) = HtmlMediaEntity::<VideoPlayer>::new_stream(
