@@ -5,7 +5,7 @@ use bevy::{
 use common::{debug_panic, util::AsH160};
 use livestream_manager::{
     ActiveAudioTransmitter, ActiveTransmitter, ActiveVideoCast, AudioTransmitterKind,
-    AudioTransmitterVolume, TransmitterKind,
+    TransmitterKind,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -15,6 +15,7 @@ use {
         track::{RemoteTrack, TrackKind, TrackSource},
         webrtc::video_frame::VideoBuffer,
     },
+    livestream_manager::AudioTransmitterVolume,
     tokio::sync::{mpsc, oneshot},
 };
 

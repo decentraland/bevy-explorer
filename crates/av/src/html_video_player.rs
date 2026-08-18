@@ -636,6 +636,7 @@ fn player_config_added<T: AVPlayer>(
     html_media_entity.set_loop(config.r#loop());
 }
 
+#[expect(clippy::type_complexity)]
 fn player_position_added<T: AVPlayer>(
     trigger: Trigger<OnInsert, T::Position>,
     mut av_players: Query<(&T::Position, Option<&mut HtmlMediaEntity<T>>, Has<Stream>)>,
