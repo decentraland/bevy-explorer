@@ -422,7 +422,8 @@ pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
     // participant exists), targeted at the auth server alone rather than `All`: human peers already
     // get avatar state via Pulse, so re-broadcasting to them here would only double up. Skipped when
     // the target already includes LIVEKIT (the auth server is covered by that `All` send). This is
-    // what makes `PRIMARY` (movement, emote) reach the auth server; temporary until it speaks Pulse.
+    // what makes `PRIMARY` (movement, emote, profile) reach the auth server; temporary until it
+    // speaks Pulse.
     let auth_server_fanout =
         target.contains(BroadcastTarget::PULSE) && !target.contains(BroadcastTarget::LIVEKIT);
 
