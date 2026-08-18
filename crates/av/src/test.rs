@@ -4,9 +4,12 @@ use bevy::{
     prelude::*,
     state::app::StatesPlugin,
 };
-use common::structs::PrimaryCameraRes;
+use common::structs::{AudioSettings, PrimaryCameraRes};
 use dcl::SceneId;
-use dcl_component::{proto_components::sdk::components::PbVideoPlayer, SceneEntityId};
+use dcl_component::{
+    proto_components::sdk::components::{PbAudioStream, PbVideoPlayer},
+    SceneEntityId,
+};
 #[cfg(feature = "ffmpeg")]
 use ffmpeg_next::format::input;
 use ipfs::IpfsIoPlugin;
@@ -23,7 +26,8 @@ use crate::html_video_player::HtmlMediaEntity;
 #[cfg(feature = "ffmpeg")]
 use crate::{video_context::VideoContext, AVSinks};
 use crate::{
-    AVPlayer, AVPlayerPlugin, InScene, ShouldBePlaying, Stream, VideoPlayer, LIVEKIT_VIDEO_STREAM,
+    AVPlayer, AVPlayerPlugin, AudioStream, InScene, ShouldBePlaying, Stream, VideoPlayer,
+    LIVEKIT_VIDEO_STREAM,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -113,12 +117,193 @@ fn min_test_app() -> App {
     ));
 
     app.insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER));
+    app.init_resource::<AudioSettings>();
 
     app.finish();
 
     app.world_mut().run_schedule(Startup);
 
     app
+}
+
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
+#[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+fn test_insert_audio_stream() {
+    let mut app = min_test_app();
+
+    let renderer_context = app
+        .world_mut()
+        .spawn(RendererSceneContext::new(
+            SceneId::DUMMY,
+            "hash".to_owned(),
+            "storage_root".to_owned(),
+            false,
+            0,
+            "title".to_owned(),
+            IVec2::splat(0),
+            HashSet::from_iter([IVec2::splat(0)]),
+            vec![],
+            vec![],
+            Entity::PLACEHOLDER,
+            0.,
+            false,
+            "sdk_version",
+            false,
+            false,
+        ))
+        .id();
+
+    let audio_stream = app
+        .world_mut()
+        .spawn((
+            AudioStream(PbAudioStream {
+                url: "https://example.com".to_owned(),
+                ..Default::default()
+            }),
+            ContainerEntity {
+                container: renderer_context,
+                root: renderer_context,
+                container_id: SceneEntityId::new(0, 0),
+            },
+        ))
+        .id();
+
+    test_components::<AudioStream>(
+        &mut app,
+        audio_stream,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        cfg!(not(target_arch = "wasm32")),
+        true,
+    );
+}
+
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
+#[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+fn test_insert_empty_audio_stream() {
+    let mut app = min_test_app();
+
+    let renderer_context = app
+        .world_mut()
+        .spawn(RendererSceneContext::new(
+            SceneId::DUMMY,
+            "hash".to_owned(),
+            "storage_root".to_owned(),
+            false,
+            0,
+            "title".to_owned(),
+            IVec2::splat(0),
+            HashSet::from_iter([IVec2::splat(0)]),
+            vec![],
+            vec![],
+            Entity::PLACEHOLDER,
+            0.,
+            false,
+            "sdk_version",
+            false,
+            false,
+        ))
+        .id();
+
+    let audio_stream = app
+        .world_mut()
+        .spawn((
+            AudioStream(PbAudioStream {
+                url: "".to_owned(),
+                ..Default::default()
+            }),
+            ContainerEntity {
+                container: renderer_context,
+                root: renderer_context,
+                container_id: SceneEntityId::new(0, 0),
+            },
+        ))
+        .id();
+
+    test_components::<AudioStream>(
+        &mut app,
+        audio_stream,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        cfg!(not(target_arch = "wasm32")),
+        true,
+    );
+}
+
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
+#[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+fn test_insert_livekit_audio_stream() {
+    let mut app = min_test_app();
+
+    let renderer_context = app
+        .world_mut()
+        .spawn(RendererSceneContext::new(
+            SceneId::DUMMY,
+            "hash".to_owned(),
+            "storage_root".to_owned(),
+            false,
+            0,
+            "title".to_owned(),
+            IVec2::splat(0),
+            HashSet::from_iter([IVec2::splat(0)]),
+            vec![],
+            vec![],
+            Entity::PLACEHOLDER,
+            0.,
+            false,
+            "sdk_version",
+            false,
+            false,
+        ))
+        .id();
+
+    let audio_stream = app
+        .world_mut()
+        .spawn((
+            AudioStream(PbAudioStream {
+                url: LIVEKIT_VIDEO_STREAM.to_owned(),
+                ..Default::default()
+            }),
+            ContainerEntity {
+                container: renderer_context,
+                root: renderer_context,
+                container_id: SceneEntityId::new(0, 0),
+            },
+        ))
+        .id();
+
+    test_components::<AudioStream>(
+        &mut app,
+        audio_stream,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        cfg!(not(target_arch = "wasm32")),
+        true,
+    );
 }
 
 #[cfg(any(feature = "ffmpeg", feature = "html"))]
