@@ -513,7 +513,7 @@ fn new_player_source<T: AVPlayer>(
     };
 
     let livestream = &**player_source == LIVEKIT_VIDEO_STREAM;
-    if livestream != has_stream {
+    if T::ALLOWS_LIVESTREAM && livestream != has_stream {
         if livestream {
             debug!("AVPlayer {} now a stream.", entity);
             commands.entity(entity).insert(Stream);

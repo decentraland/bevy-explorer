@@ -76,6 +76,8 @@ pub trait AVPlayer: Component {
     type Config: Component + AVPlayerConfig + PartialEq;
     type Position: Component + Deref<Target = f32> + PartialEq;
 
+    const ALLOWS_LIVESTREAM: bool;
+
     fn url(&self) -> &str;
     fn source(&self) -> Self::Source;
     fn config(&self) -> Self::Config;
@@ -147,6 +149,8 @@ impl AVPlayer for AudioStream {
     type Config = AudioStreamConfig;
     type Position = AudioStreamPosition;
 
+    const ALLOWS_LIVESTREAM: bool = false;
+
     fn url(&self) -> &str {
         &self.url
     }
@@ -195,6 +199,8 @@ impl AVPlayer for VideoPlayer {
     type Source = VideoPlayerSource;
     type Config = VideoPlayerConfig;
     type Position = VideoPlayerPosition;
+
+    const ALLOWS_LIVESTREAM: bool = true;
 
     fn url(&self) -> &str {
         &self.src

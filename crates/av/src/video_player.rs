@@ -97,7 +97,7 @@ fn new_player_source<T: AVPlayer>(
     }
 
     let livestream = &**source == LIVEKIT_VIDEO_STREAM;
-    if livestream != has_stream {
+    if T::ALLOWS_LIVESTREAM && livestream != has_stream {
         if livestream {
             debug!("AVPlayer {} now a stream.", entity);
             commands.entity(entity).insert(Stream);
@@ -135,7 +135,7 @@ fn new_player_source<T: AVPlayer>(
     );
     let (video_sink, audio_sink) = match &(**source) {
         "" => noop_sinks((**source).to_owned(), create_image_handle(), 1.),
-        LIVEKIT_VIDEO_STREAM => return,
+        LIVEKIT_VIDEO_STREAM if T::ALLOWS_LIVESTREAM => return,
         other => av_sinks(
             (*ipfs).clone(),
             other.to_owned(),
