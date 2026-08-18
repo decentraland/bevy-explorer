@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 
 use bevy::{prelude::*, render::view::RenderLayers};
 use common::{
-    debug_panic,
     structs::{AudioDecoderError, AudioSettings, PrimaryUser},
     util::VolumePanning,
 };
@@ -15,7 +14,7 @@ use kira::{
 use scene_runner::{ContainingScene, SceneEntity};
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::{stream_processor::AVCommand, AVPlayer, AVPlayerSinks, AVSinks, InScene};
+use crate::{stream_processor::AVCommand, AVPlayer, AVPlayerSinks, AVSinks};
 
 pub struct AudioSink {
     pub volume: f32,
@@ -62,12 +61,6 @@ impl<T> Drop for AudioSpawned<T> {
             handle.stop(Tween::default());
         }
     }
-}
-
-#[derive(Event)]
-pub struct ChangeAudioSinkVolume<T: AVPlayer> {
-    pub volume: f32,
-    pub _phantom: PhantomData<T>,
 }
 
 // TODO integrate better with bevy_kira_audio to avoid logic on a main-thread system (NonSendMut forces this system to the main thread)
@@ -190,40 +183,6 @@ pub fn spawn_and_locate_foreign_streams<T: AVPlayer>(
 
             handle.set_volume(volume as f64, Tween::default());
             handle.set_panning(panning as f64, Tween::default());
-        }
-    }
-}
-
-#[expect(clippy::type_complexity)]
-pub fn change_audio_sink_volume<T: AVPlayer>(
-    trigger: Trigger<ChangeAudioSinkVolume<T>>,
-    mut audio_sinks: Query<(Mut<AVSinks<T>>, Option<&mut AudioSpawned<T>>, Has<InScene>)>,
-    audio_settings: Res<AudioSettings>,
-) {
-    let entity = trigger.target();
-    if entity == Entity::PLACEHOLDER {
-        debug_panic!("ChangeAudioSinkVolume is an entity event. Trigger it with `Commands::trigger_targets`.");
-    }
-    let ChangeAudioSinkVolume { volume, .. } = trigger.event();
-
-    let Ok((mut av_player_sinks, maybe_audio_spawned, in_scene)) = audio_sinks.get_mut(entity)
-    else {
-        debug_panic!("{entity} is not an AudioSink.");
-    };
-
-    // AudioSink is causing problems with change detection
-    // so we bypass it here
-    let av_player_sinks = av_player_sinks.bypass_change_detection();
-    let audio_sink = av_player_sinks.audio_sink_mut().unwrap();
-    audio_sink.volume = *volume;
-
-    if let Some(mut audio_spawned) = maybe_audio_spawned {
-        if let Some(handle) = audio_spawned.handle.as_mut() {
-            if in_scene {
-                handle.set_volume((volume * audio_settings.scene()) as f64, Tween::default());
-            } else {
-                handle.set_volume(0.0, Tween::default());
-            }
         }
     }
 }

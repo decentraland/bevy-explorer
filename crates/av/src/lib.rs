@@ -446,11 +446,6 @@ impl Plugin for AVPlayerPlugin {
         app.add_observer(should_be_playing_on_add::<VideoPlayer>);
         app.add_observer(should_be_playing_on_remove::<VideoPlayer>);
 
-        #[cfg(feature = "ffmpeg")]
-        app.add_observer(audio_sink::change_audio_sink_volume::<AudioStream>);
-        #[cfg(feature = "ffmpeg")]
-        app.add_observer(audio_sink::change_audio_sink_volume::<VideoPlayer>);
-
         app.add_observer(receiver_image_added);
         app.add_observer(receiver_image_removed);
 
