@@ -716,17 +716,20 @@ fn av_player_should_be_playing_on_remove<T: AVPlayer>(
 fn update_av_players<T: AVPlayer>(
     mut commands: Commands,
     mut av_players: Query<
-        (Entity, &ContainerEntity, Option<&mut HtmlMediaEntity<T>>),
-        (With<T>, With<ShouldBePlaying<T>>),
+        (
+            Entity,
+            &ContainerEntity,
+            &mut HtmlMediaEntity<T>,
+            Has<ShouldBePlaying<T>>,
+        ),
+        With<T>,
     >,
     mut images: ResMut<Assets<Image>>,
     mut scenes: Query<&mut RendererSceneContext>,
     send_queue: Res<FrameCopyRequestQueue>,
     frame: Res<FrameCount>,
 ) {
-    for (ent, container, maybe_av) in av_players.iter_mut() {
-        let Some(mut av) = maybe_av else { continue };
-
+    for (ent, container, mut av, has_should_be_playing) in av_players.iter_mut() {
         let state = av.state();
 
         if av.source == LIVEKIT_VIDEO_STREAM && state == VideoState::VsError {
@@ -739,6 +742,14 @@ fn update_av_players<T: AVPlayer>(
         }
 
         let is_playing = state == VideoState::VsPlaying;
+
+        if has_should_be_playing
+            && (state == VideoState::VsLoading || state == VideoState::VsBuffering)
+        {
+            av.play();
+        } else if !has_should_be_playing && is_playing {
+            av.stop();
+        }
 
         if is_playing {
             #[allow(clippy::collapsible_else_if)]
