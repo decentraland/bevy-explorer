@@ -5,7 +5,7 @@ use bevy::{
 use common::{debug_panic, util::AsH160};
 use livestream_manager::{
     ActiveAudioTransmitter, ActiveTransmitter, ActiveVideoCast, AudioTransmitterKind,
-    TransmitterKind,
+    AudioTransmitterVolume, TransmitterKind,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -15,12 +15,11 @@ use {
         track::{RemoteTrack, TrackKind, TrackSource},
         webrtc::video_frame::VideoBuffer,
     },
-    livestream_manager::AudioTransmitterVolume,
     tokio::sync::{mpsc, oneshot},
 };
 
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{TrackKind, TrackSource};
+use crate::livekit::web::{RemoteTrack, TrackKind, TrackSource};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
     kira_bridge::kira_thread,
@@ -73,7 +72,6 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(on_active_audio_transmitter_add);
         app.add_observer(on_active_audio_transmitter_remove);
 
-        #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(Update, update_track_volume);
     }
 }
@@ -652,5 +650,17 @@ fn update_track_volume(tracks: Populated<(&mut AudioStreamingHandle, &AudioTrans
         audio_streaming_handle
             .handle
             .set_volume(**audio_transmitter_volume as f64, Tween::default());
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn update_track_volume(
+    tracks: Populated<(&LivekitTrack, &AudioTransmitterVolume), (With<Audio>, With<Subscribed>)>,
+) {
+    for (livekit_track, audio_transmitter_volume) in tracks.into_inner() {
+        let Some(RemoteTrack::Audio(audio)) = livekit_track.track() else {
+            debug_panic!("A subscribed audio track did not have an audio RemoteTrack.");
+        };
+        audio.set_volume(**audio_transmitter_volume);
     }
 }
