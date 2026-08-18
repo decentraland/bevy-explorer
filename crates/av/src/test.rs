@@ -23,8 +23,7 @@ use crate::html_video_player::HtmlMediaEntity;
 #[cfg(feature = "ffmpeg")]
 use crate::{video_context::VideoContext, AVSinks};
 use crate::{
-    AVPlayerPlugin, InScene, ShouldBePlaying, Stream, VideoPlayer, VideoPlayerConfig,
-    VideoPlayerPosition, VideoPlayerSource, LIVEKIT_VIDEO_STREAM,
+    AVPlayer, AVPlayerPlugin, InScene, ShouldBePlaying, Stream, VideoPlayer, LIVEKIT_VIDEO_STREAM,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -42,51 +41,44 @@ fn test_ffmpeg() {
     VideoContext::init(&context, sx).unwrap();
 }
 
-macro_rules! test_components {
-    (
-        $app:expr,
-        $entity:expr,
-        $video_player:tt,
-        $video_player_source:tt,
-        $video_player_config:tt,
-        $video_player_position:tt,
-        $stream:tt,
-        $in_scene:tt,
-        $should_be_playing:tt,
-        $active_receiver:tt,
-        $receiver_image:tt,
-        $video_texture_output:tt,
-        $av_sinks:tt
-    ) => {
-        test_component!($app, $entity, VideoPlayer, $video_player);
-        test_component!($app, $entity, VideoPlayerSource, $video_player_source);
-        test_component!($app, $entity, VideoPlayerConfig, $video_player_config);
-        test_component!($app, $entity, VideoPlayerPosition, $video_player_position);
-        test_component!($app, $entity, Stream, $stream);
-        test_component!($app, $entity, InScene, $in_scene);
-        test_component!(
-            $app,
-            $entity,
-            ShouldBePlaying<VideoPlayer>,
-            $should_be_playing
+macro_rules! test_component {
+    ($app:expr, $entity:expr, $component:ty, $expected:expr) => {
+        assert_eq!(
+            $app.world().entity($entity).contains::<$component>(),
+            $expected
         );
-        test_component!($app, $entity, ActiveReceiver, $active_receiver);
-        test_component!($app, $entity, ReceiverImage, $receiver_image);
-        test_component!($app, $entity, VideoTextureOutput, $video_texture_output);
-        #[cfg(feature = "ffmpeg")]
-        test_component!($app, $entity, AVSinks<VideoPlayer>, $av_sinks);
-        #[cfg(feature = "html")]
-        test_component!($app, $entity, HtmlMediaEntity<VideoPlayer>, $av_sinks);
     };
 }
 
-macro_rules! test_component {
-    ($app:expr, $entity:expr, $component:ty, true) => {
-        assert!($app.world().entity($entity).contains::<$component>());
-    };
-    ($app:expr, $entity:expr, $component:ty, false) => {
-        assert!(!$app.world().entity($entity).contains::<$component>());
-    };
+fn test_components<T: AVPlayer>(
+    app: &mut App,
+    entity: Entity,
+    component: bool,
+    source: bool,
+    config: bool,
+    position: bool,
+    stream: bool,
+    in_scene: bool,
+    should_be_playing: bool,
+    active_receiver: bool,
+    receiver_image: bool,
+    video_texture_output: bool,
+    media: bool,
+) {
+    test_component!(app, entity, T, component);
+    test_component!(app, entity, T::Source, source);
+    test_component!(app, entity, T::Config, config);
+    test_component!(app, entity, T::Position, position);
+    test_component!(app, entity, Stream, stream);
+    test_component!(app, entity, InScene, in_scene);
+    test_component!(app, entity, ShouldBePlaying<T>, should_be_playing);
+    test_component!(app, entity, ActiveReceiver, active_receiver);
+    test_component!(app, entity, ReceiverImage, receiver_image);
+    test_component!(app, entity, VideoTextureOutput, video_texture_output);
+    #[cfg(feature = "ffmpeg")]
+    test_component!(app, entity, AVSinks<T>, media);
+    #[cfg(feature = "html")]
+    test_component!(app, entity, HtmlMediaEntity<T>, media);
 }
 
 #[cfg(any(feature = "ffmpeg", feature = "html"))]
@@ -172,8 +164,8 @@ fn test_insert_video_player() {
         ))
         .id();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -185,7 +177,7 @@ fn test_insert_video_player() {
         false,
         false,
         true,
-        true
+        true,
     );
 }
 
@@ -232,8 +224,8 @@ fn test_insert_empty_video_player() {
         ))
         .id();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -245,7 +237,7 @@ fn test_insert_empty_video_player() {
         false,
         false,
         true,
-        true
+        true,
     );
 }
 
@@ -292,8 +284,8 @@ fn test_insert_livekit_video_player() {
         ))
         .id();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -305,7 +297,7 @@ fn test_insert_livekit_video_player() {
         false,
         false,
         false,
-        false
+        false,
     );
 }
 
@@ -352,8 +344,8 @@ fn test_removing_video_player() {
         ))
         .id();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -365,15 +357,15 @@ fn test_removing_video_player() {
         false,
         false,
         true,
-        true
+        true,
     );
 
     app.world_mut()
         .entity_mut(video_player)
         .remove::<VideoPlayer>();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         false,
         false,
@@ -385,7 +377,7 @@ fn test_removing_video_player() {
         false,
         false,
         false,
-        false
+        false,
     );
 }
 
@@ -432,8 +424,8 @@ fn test_removing_livekit_video_player() {
         ))
         .id();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -445,15 +437,15 @@ fn test_removing_livekit_video_player() {
         false,
         false,
         false,
-        false
+        false,
     );
 
     app.world_mut()
         .entity_mut(video_player)
         .remove::<VideoPlayer>();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         false,
         false,
@@ -465,7 +457,7 @@ fn test_removing_livekit_video_player() {
         false,
         false,
         false,
-        false
+        false,
     );
 }
 
@@ -512,8 +504,8 @@ fn test_livekit_video_player_without_should_be_playing_should_not_be_receiver() 
         ))
         .id();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -525,13 +517,13 @@ fn test_livekit_video_player_without_should_be_playing_should_not_be_receiver() 
         false,
         false,
         false,
-        false
+        false,
     );
 
     app.world_mut().entity_mut(video_player).insert(InScene);
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -543,15 +535,15 @@ fn test_livekit_video_player_without_should_be_playing_should_not_be_receiver() 
         false,
         false,
         false,
-        false
+        false,
     );
 
     app.world_mut()
         .entity_mut(video_player)
         .insert(ShouldBePlaying::<VideoPlayer>::default());
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -563,15 +555,15 @@ fn test_livekit_video_player_without_should_be_playing_should_not_be_receiver() 
         true,
         true,
         true,
-        false
+        false,
     );
 
     app.world_mut()
         .entity_mut(video_player)
         .remove::<ShouldBePlaying<VideoPlayer>>();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -583,13 +575,13 @@ fn test_livekit_video_player_without_should_be_playing_should_not_be_receiver() 
         false,
         false,
         false,
-        false
+        false,
     );
 
     app.world_mut().entity_mut(video_player).remove::<InScene>();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -601,7 +593,7 @@ fn test_livekit_video_player_without_should_be_playing_should_not_be_receiver() 
         false,
         false,
         false,
-        false
+        false,
     );
 }
 
@@ -650,8 +642,8 @@ fn test_source_change() {
         ))
         .id();
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -663,7 +655,7 @@ fn test_source_change() {
         false,
         false,
         true,
-        true
+        true,
     );
 
     app.world_mut()
@@ -673,8 +665,8 @@ fn test_source_change() {
             ..Default::default()
         }));
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -686,7 +678,7 @@ fn test_source_change() {
         true,
         true,
         true,
-        false
+        false,
     );
 
     app.world_mut()
@@ -696,8 +688,8 @@ fn test_source_change() {
             ..Default::default()
         }));
 
-    test_components!(
-        app,
+    test_components::<VideoPlayer>(
+        &mut app,
         video_player,
         true,
         true,
@@ -709,6 +701,6 @@ fn test_source_change() {
         false,
         false,
         true,
-        true
+        true,
     );
 }
