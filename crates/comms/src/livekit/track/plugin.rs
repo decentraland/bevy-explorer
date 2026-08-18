@@ -2,6 +2,8 @@ use bevy::{
     ecs::{error::debug, relationship::Relationship, system::entity_command},
     prelude::*,
 };
+#[cfg(target_arch = "wasm32")]
+use common::structs::AudioSettings;
 use common::{debug_panic, util::AsH160};
 use livestream_manager::{
     ActiveAudioTransmitter, ActiveTransmitter, ActiveVideoCast, AudioTransmitterKind,
@@ -16,10 +18,6 @@ use {
         webrtc::video_frame::VideoBuffer,
     },
     tokio::sync::{mpsc, oneshot},
-};
-#[cfg(target_arch = "wasm32")]
-use {
-    common::structs::AudioSettings
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -661,7 +659,7 @@ fn update_track_volume(tracks: Populated<(&mut AudioStreamingHandle, &AudioTrans
 #[expect(clippy::type_complexity)]
 fn update_track_volume(
     tracks: Populated<(&LivekitTrack, &AudioTransmitterVolume), (With<Audio>, With<Subscribed>)>,
-    audio_settings: Res<AudioSettings>
+    audio_settings: Res<AudioSettings>,
 ) {
     for (livekit_track, audio_transmitter_volume) in tracks.into_inner() {
         let Some(RemoteTrack::Audio(audio)) = livekit_track.track() else {
