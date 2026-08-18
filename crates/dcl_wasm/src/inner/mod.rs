@@ -279,7 +279,7 @@ pub fn drop_context(state: WorkerContext) {
     let span = state.state.borrow_mut().try_take::<EnteredSpan>();
     drop(span);
     let strong_count = Rc::strong_count(&state.state);
-    let weak_count = Rc::strong_count(&state.state);
+    let weak_count = Rc::weak_count(&state.state);
 
     let Ok(inner) = Rc::try_unwrap(state.state) else {
         panic!("strong: {strong_count}, weak: {weak_count}");

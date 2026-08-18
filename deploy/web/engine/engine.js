@@ -231,13 +231,20 @@ export async function initEngine() {
   const sandboxWorkers = new Map();
   // Scenes killed before their worker reported in; the escalation arms on SCENE_READY.
   const pendingKills = new Set();
+  // Scenes whose worker exited on its own (scene error / graceful end) before the engine's
+  // kill request arrived. The eventual terminate_sandbox call consumes the entry and
+  // resolves immediately, instead of parking in pendingKills waiting on a SCENE_READY that
+  // will never come.
+  const completedScenes = new Set();
   const KILL_GRACE_MS = 5000;
 
   // killFlags layout (Int32Array over a per-worker SharedArrayBuffer, shared with the worker
   // script — NOT with scene code, which can't see the worker's module scope):
   //   [0] KILL: engine has decided to terminate; the worker's op wrapper parks instead of
   //       entering the engine wasm
-  //   [1] IN_RUST: the worker is inside a wasm call (op wrapper / teardown)
+  //   [1] IN_RUST: the worker is inside a wasm call (op wrapper), or anywhere in its
+  //       teardown — held across the whole teardown because the drain's timer gaps let the
+  //       executor poll draining op futures, and those polls enter the engine wasm unflagged
   //   [2] park target for Atomics.wait — never written
   const KILL = 0, IN_RUST = 1;
 
@@ -285,6 +292,10 @@ export async function initEngine() {
   window.terminate_sandbox = (sceneId) => {
     const entry = sandboxWorkers.get(sceneId);
     if (!entry) {
+      if (completedScenes.delete(sceneId)) {
+        console.debug(`[Main JS] kill requested for scene ${sceneId}; worker already exited`);
+        return;
+      }
       console.debug(`[Main JS] kill requested for scene ${sceneId} before its worker reported in; deferred to SCENE_READY`);
       pendingKills.add(sceneId);
       return;
@@ -292,7 +303,7 @@ export async function initEngine() {
     console.debug(`[Main JS] kill requested for scene ${sceneId}; awaiting graceful exit`);
     entry.timer = setTimeout(() => {
       console.warn(`[Main JS] scene ${sceneId} still running after kill; posting SHUTDOWN`);
-      entry.worker.postMessage({ type: "SHUTDOWN" });
+      entry.worker.postMessage({ type: "SHUTDOWN", shutdownToken: entry.shutdownToken });
       entry.timer = setTimeout(() => {
         console.error(`[Main JS] scene ${sceneId} did not respond to SHUTDOWN (sync spin?); force-terminating`);
         forceTerminate(sceneId);
@@ -338,6 +349,11 @@ export async function initEngine() {
         const sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
         sandboxWorker.onerror = workerCrashHandler("sandbox");
         const killToken = crypto.randomUUID();
+        // Separate secret authenticating the inbound SHUTDOWN (scene code can synthesize
+        // message events inside the worker via dispatchEvent). Deliberately NOT killToken:
+        // a scene listening for messages observes a genuine SHUTDOWN and learns this token,
+        // and must not thereby gain the ability to forge the worker→engine ack.
+        const shutdownToken = crypto.randomUUID();
         const killFlags = new Int32Array(new SharedArrayBuffer(16));
         sandboxWorker.postMessage({
           type: "INIT_WORKER",
@@ -352,6 +368,7 @@ export async function initEngine() {
             // this window's session id.
             bridgeSession: window.__bridgeSession,
             killToken,
+            shutdownToken,
           },
         });
         let warnedForgery = false;
@@ -380,17 +397,25 @@ export async function initEngine() {
               worker: sandboxWorker,
               timer: undefined,
               killFlags,
+              shutdownToken,
             });
             if (pendingKills.delete(workerEvent.data.sceneId)) {
               window.terminate_sandbox(workerEvent.data.sceneId);
             }
           }
           if (workerEvent.data.type === "SHUTDOWN_COMPLETE") {
-            const entry = sandboxWorkers.get(workerEvent.data.sceneId);
+            const sid = workerEvent.data.sceneId;
+            const entry = sandboxWorkers.get(sid);
             if (entry && entry.worker === sandboxWorker) {
-              console.debug(`[Main JS] scene ${workerEvent.data.sceneId} worker exited cleanly`);
+              console.debug(`[Main JS] scene ${sid} worker exited cleanly`);
               clearTimeout(entry.timer);
-              sandboxWorkers.delete(workerEvent.data.sceneId);
+              sandboxWorkers.delete(sid);
+            } else if (sid !== undefined && !pendingKills.delete(sid)) {
+              // no entry: the worker exited before the engine asked (scene error / graceful
+              // end). Remember it so the eventual kill request resolves immediately.
+              // (sid is undefined when init_scene failed before the worker knew its scene —
+              // nothing to correlate.)
+              completedScenes.add(sid);
             }
           }
         };
