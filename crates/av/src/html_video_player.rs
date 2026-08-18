@@ -623,7 +623,7 @@ fn player_config_added<T: AVPlayer>(
     if has_stream {
         if let Some(mut receiver_volume) = maybe_receiver_volume {
             debug!("Updated volume of stream.");
-            **receiver_volume = config.volume() * audio_settings.scene();
+            **receiver_volume = config.volume();
         }
         if maybe_html_media_entity.is_none() {
             return;
