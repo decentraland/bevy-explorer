@@ -75,6 +75,18 @@ pub async fn handle_preview_socket(
     server: String,
     sender: tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
 ) -> Result<(), anyhow::Error> {
+    let result = preview_socket(server, sender).await;
+    // back off on every exit path, not just a clean disconnect: a preview server with
+    // no ws endpoint fails the upgrade immediately and the caller respawns us as soon
+    // as the task completes, so an early error spins one attempt per frame
+    async_std::task::sleep(Duration::from_secs(5)).await;
+    result
+}
+
+async fn preview_socket(
+    server: String,
+    sender: tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+) -> Result<(), anyhow::Error> {
     let (protocol, rest) = server
         .split_once("//")
         .ok_or(anyhow!("invalid preview server address `{server}`"))?;
@@ -127,6 +139,5 @@ pub async fn handle_preview_socket(
     }
 
     warn!("preview socket disconnected, waiting 5 secs to attempt reconnect");
-    async_std::task::sleep(Duration::from_secs(5)).await;
     Ok(())
 }
