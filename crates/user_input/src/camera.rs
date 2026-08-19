@@ -249,10 +249,7 @@ pub fn update_camera_position(
             .and_then(|e| gt_helper.compute_global_transform(e).ok())
         {
             Transform::IDENTITY
-                .looking_at(
-                    look_at_transform.translation() - camera_transform.translation,
-                    Vec3::Y,
-                )
+                .looking_at(look_at_transform.translation() - translation, Vec3::Y)
                 .rotation
         } else {
             let yaw = cine
