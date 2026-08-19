@@ -492,7 +492,7 @@ export async function initEngine() {
  * Starts the game engine. Values come from the caller (boot.js's __bevyLaunch, fed by the React
  * host) — the old boot page's form inputs are gone.
  */
-export function start({ realm, position, systemScene, portables, preview } = {}) {
+export function start({ realm, position, systemScene, portables, preview, editor } = {}) {
   // Launch at most once per page: a second engine_run re-runs init_runtime, whose OnceCell is
   // already set, and panics ("can't init wasm queue"). One engine per page — ignore re-entry.
   if (window.__bevyStarted) {
@@ -506,6 +506,7 @@ export function start({ realm, position, systemScene, portables, preview } = {})
   const systemSceneValue = systemScene ?? '';
   const portablesValue = portables ?? 'basiccontroller.dcl.eth';
   const previewValue = preview === true;
+  const editorValue = editor === true;
 
   // Build params from URL, overriding with form field values
   const urlParams = new URLSearchParams(window.location.search);
@@ -520,6 +521,11 @@ export function start({ realm, position, systemScene, portables, preview } = {})
     urlParams.set("preview", "true");
   } else {
     urlParams.delete("preview");
+  }
+  if (editorValue) {
+    urlParams.set("editor", "true");
+  } else {
+    urlParams.delete("editor");
   }
   const params = urlParams.toString();
   console.log(
@@ -582,7 +588,7 @@ export function start({ realm, position, systemScene, portables, preview } = {})
     delete window._buildEngineApi;
   };
 
-  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, 1e7, params);
+  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, editorValue, 1e7, params);
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {

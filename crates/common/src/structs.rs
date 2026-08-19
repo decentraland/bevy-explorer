@@ -1338,10 +1338,19 @@ pub struct PreviewMode {
     pub preview_parcel: Option<IVec2>,
 }
 
-/// Render out-of-bounds geometry (dithered) instead of culling it. Set at startup;
-/// read by scene_material's show-outside-bounds observer.
+/// Render out-of-bounds geometry (dithered) instead of culling it. Set at startup
+/// (preview, a loopback realm, or editor mode — never a public realm); read by
+/// scene_material's show-outside-bounds observer.
 #[derive(Debug, Resource, Default)]
 pub struct ShowOutOfBounds(pub bool);
+
+/// True when the explorer is embedded in a scene editor (the explicit `--editor` arg /
+/// `editor` web boot param — the editor host is expected to unfreeze scenes when the
+/// user hits play). Set once at startup; freezes a scene after main() has run once so
+/// the initial state is deterministic. Default false; NOT implied by preview or a
+/// loopback realm — plain previews must free-run.
+#[derive(Debug, Resource, Default)]
+pub struct EditorMode(pub bool);
 
 // resource into which systems can add debug info
 #[derive(Resource, Default, Debug)]

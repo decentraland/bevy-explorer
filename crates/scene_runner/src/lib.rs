@@ -20,8 +20,8 @@ use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
     structs::{
-        AppConfig, AppError, CurrentRealm, DebugInfo, NoRenderApp, PreviewMode, PrimaryCamera,
-        PrimaryUser, TimeOfDay,
+        AppConfig, AppError, CurrentRealm, DebugInfo, EditorMode, NoRenderApp, PreviewMode,
+        PrimaryCamera, PrimaryUser, TimeOfDay,
     },
     util::{dcl_assert, TryPushChildrenEx},
 };
@@ -268,6 +268,8 @@ impl Plugin for SceneRunnerPlugin {
         // trigger areas keep working when the pointer-result systems are skipped
         app.init_resource::<update_scene::pointer_results::AvatarColliders>();
         app.init_resource::<update_scene::pointer_results::PointerRay>();
+        // Default false; the app entry overrides it from the --editor arg / boot param.
+        app.init_resource::<EditorMode>();
 
         // let (sender, receiver) = tokio::sync::mpsc::channel(1000);
         let (sender, receiver) = scene_response_channel();
