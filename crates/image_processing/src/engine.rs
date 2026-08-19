@@ -1,5 +1,5 @@
 use bevy::{
-    asset::AssetPath,
+    asset::{AssetLoadFailedEvent, AssetPath},
     diagnostic::FrameCount,
     image::TextureFormatPixelInfo,
     platform::collections::{HashMap, HashSet},
@@ -99,6 +99,7 @@ struct ImgReprocessStats {
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn check_assets(
     mut a: EventReader<AssetEvent<Image>>,
+    mut failed_gltfs: EventReader<AssetLoadFailedEvent<Gltf>>,
     images: Res<Assets<Image>>,
     mut w: EventWriter<AssetForProcessing>,
     ipfas: IpfsAssetServer,
@@ -190,6 +191,35 @@ fn check_assets(
 
             assets_to_process.push((ty, ipfs_path, asset_path.to_owned()));
         }
+    }
+
+    // a gltf that fails to load because it is draco-compressed (the loader
+    // rejects the extension by name, and spec-compliant draco files must list
+    // it in extensionsRequired) is run through the processor once, which
+    // decompresses and persists it. the processor independently verifies the
+    // extension against the actual bytes.
+    for ev in failed_gltfs.read() {
+        if !format!("{}", ev.error).contains("KHR_draco_mesh_compression") {
+            continue;
+        }
+        let asset_path = ev.path.clone();
+        let Ok(Some(ipfs_path)) = IpfsPath::new_from_path(asset_path.path()) else {
+            stats.skip_unknown += 1;
+            continue;
+        };
+
+        if paths_processed.contains(&ipfs_path) {
+            continue;
+        }
+        paths_processed.insert(ipfs_path.clone());
+
+        if let Ok(None) = ipfs_path.context_free_hash() {
+            stats.skip_unhashable += 1;
+            continue;
+        }
+
+        stats.total += 1;
+        assets_to_process.push((ProcessingAssetType::DracoGltf, ipfs_path, asset_path));
     }
 
     if task.is_none() && !assets_to_process.is_empty() {
@@ -310,6 +340,9 @@ fn pipe_events(
                             processing_gltfs.insert(asset_server.load(cache_path), h.id());
                         }
                     }
+                    // the original never loaded, so a plain reload picks up the
+                    // repaired cache bytes (no need for the image-swap below)
+                    ProcessingAssetType::DracoGltf => asset_server.reload(req.base_path),
                     ProcessingAssetType::Image => asset_server.reload(req.base_path),
                 };
             }

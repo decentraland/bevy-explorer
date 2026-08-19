@@ -236,6 +236,9 @@ async-compat = "0.2"
 async-fs = "2.0"
 base64 = "0.22"
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
+# pinned: alpha releases make no api stability promises between versions
+draco-oxide-decoder = "=0.1.0-alpha.9"
+draco-oxide-core = "=0.1.0-alpha.9"
 strum = "0.27"
 strum_macros = "0.27"
 wasm-bindgen = "0.2.92"
@@ -390,6 +393,14 @@ prost-build = "0.11.8"
 # carried on a fork branch off the 0.17.1 tag. not an upstream backport —
 # naga_oil main is 0.22; revisit only if bevy's pinned naga_oil moves.
 naga_oil = { git = "https://github.com/robtfm/naga_oil", branch = "fix/deterministic-override-emit-order" }
+# rANS refill never refills on 32-bit targets (wasm32), corrupting every stream
+# whose encoder chose the branchless refill strategy. fix PR'd upstream as
+# reearth/draco-oxide#34; drop these patches when it lands in a release.
+# core and nd-vector carry no changes but must come from the same source as the
+# decoder or the workspace resolves two copies of core and types don't unify.
+draco-oxide-decoder = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
+draco-oxide-core = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
+draco-nd-vector = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
 # mess required by ecosystem crates referencing bevy subcrates directly
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_a11y = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }

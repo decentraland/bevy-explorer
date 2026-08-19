@@ -38,7 +38,9 @@ block_compression = { version = "0.7", default-features = false, features = [
 image = { workspace = true }
 ddsfile = "0.5.2"
 gltf = "1.4"
-gltf-json = "1.4"
+gltf-json = { version = "1.4", features = ["extensions"] }
+draco-oxide-decoder = { workspace = true }
+draco-oxide-core = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-fs = { workspace = true }
