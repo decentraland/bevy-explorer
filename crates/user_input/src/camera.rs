@@ -257,11 +257,11 @@ pub fn update_camera_position(
                 .map(|r| options.yaw.clamp(-r, r))
                 .unwrap_or(options.yaw);
             let pitch = cine
-                .yaw_range
+                .pitch_range
                 .map(|r| options.pitch.clamp(-r, r))
                 .unwrap_or(options.pitch);
             let roll = cine
-                .yaw_range
+                .roll_range
                 .map(|r| options.roll.clamp(-r, r))
                 .unwrap_or(options.roll);
             rotation * Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll)
