@@ -638,6 +638,7 @@ pub(crate) fn initialize_scene(
     su_bridge: Res<SystemBridge>,
     time: Res<Time>,
     editor_mode: Res<EditorMode>,
+    portable_scenes: Res<PortableScenes>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
@@ -730,8 +731,14 @@ pub(crate) fn initialize_scene(
         // engine handshake (init + onStart/composite instancing, no scene frame),
         // and the third is the first real scene update that runs main() + one system
         // pass — so 3 lands on "main ran, one frame". Super scenes (the editor
-        // agent) are exempt — they must keep ticking.
-        if editor_mode.0 && super_user.is_none() {
+        // agent) and startup portables (the default controller — parent_scene is
+        // None) are exempt: they aren't the scene being edited and must keep
+        // ticking. Portables spawned BY a scene still freeze with it.
+        let startup_portable = context.is_portable
+            && portable_scenes
+                .get(&context.hash)
+                .is_some_and(|source| source.parent_scene.is_none());
+        if editor_mode.0 && super_user.is_none() && !startup_portable {
             context.refreeze_at_tick = Some(3);
         }
 
