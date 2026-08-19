@@ -622,7 +622,7 @@ fn audio_stream_should_be_playing(
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ShouldBePlayingCandidate {
     entity: Entity,
     in_scene: bool,
@@ -643,7 +643,12 @@ impl Ord for ShouldBePlayingCandidate {
             cmp => return cmp,
         }
 
-        self.distance_to_player.cmp(&other.distance_to_player)
+        match self.distance_to_player.cmp(&other.distance_to_player) {
+            Ordering::Equal => (),
+            cmp => return cmp,
+        }
+
+        self.entity.cmp(&other.entity)
     }
 }
 
@@ -739,6 +744,9 @@ fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut command
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::*;
+
     use super::*;
 
     fn base_world() -> World {
@@ -1019,5 +1027,88 @@ mod tests {
         assert!(!world
             .entity(screen_1)
             .contains::<ShouldBePlaying<VideoPlayer>>());
+    }
+
+    #[test]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    fn test_candidate_ordering() {
+        let mut set = BTreeSet::new();
+
+        let entity_1 = ShouldBePlayingCandidate {
+            in_scene: true,
+            has_should_be_playing: true,
+            distance_to_player: FloatOrd(1.),
+            entity: Entity::from_bits(0x0000000100000001),
+        };
+        let entity_2 = ShouldBePlayingCandidate {
+            in_scene: false,
+            has_should_be_playing: false,
+            distance_to_player: FloatOrd(2.),
+            entity: Entity::from_bits(0x0000000100000002),
+        };
+        let entity_3 = ShouldBePlayingCandidate {
+            in_scene: true,
+            has_should_be_playing: true,
+            distance_to_player: FloatOrd(3.),
+            entity: Entity::from_bits(0x0000000100000003),
+        };
+        let entity_4 = ShouldBePlayingCandidate {
+            in_scene: false,
+            has_should_be_playing: false,
+            distance_to_player: FloatOrd(4.),
+            entity: Entity::from_bits(0x0000000100000004),
+        };
+        let entity_5 = ShouldBePlayingCandidate {
+            in_scene: false,
+            has_should_be_playing: false,
+            distance_to_player: FloatOrd(4.),
+            entity: Entity::from_bits(0x0000000100000005),
+        };
+
+        set.insert(entity_1);
+        set.insert(entity_2);
+        set.insert(entity_3);
+        set.insert(entity_4);
+        set.insert(entity_5);
+
+        for (candidate, expected) in set
+            .into_iter()
+            .zip([entity_1, entity_3, entity_2, entity_4, entity_5])
+        {
+            assert_eq!(candidate, expected);
+        }
+    }
+
+    #[test]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    fn test_equidistant_candidates() {
+        let mut set = BTreeSet::new();
+
+        let entity_1 = ShouldBePlayingCandidate {
+            in_scene: true,
+            has_should_be_playing: true,
+            distance_to_player: FloatOrd(1.),
+            entity: Entity::from_bits(0x0000000100000001),
+        };
+        let entity_2 = ShouldBePlayingCandidate {
+            in_scene: true,
+            has_should_be_playing: true,
+            distance_to_player: FloatOrd(1.),
+            entity: Entity::from_bits(0x0000000100000002),
+        };
+        let entity_3 = ShouldBePlayingCandidate {
+            in_scene: false,
+            has_should_be_playing: false,
+            distance_to_player: FloatOrd(1.),
+            entity: Entity::from_bits(0x0000000100000003),
+        };
+
+        set.insert(entity_1);
+        set.insert(entity_2);
+        set.insert(entity_3);
+
+        assert_eq!(set.get(&entity_1).unwrap(), &entity_1);
+        assert_eq!(set.get(&entity_2).unwrap(), &entity_2);
+        assert_eq!(set.get(&entity_3).unwrap(), &entity_3);
     }
 }
