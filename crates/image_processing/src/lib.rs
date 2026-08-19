@@ -15,6 +15,9 @@ use bevy::{asset::AssetPath, prelude::*};
 #[derive(Clone, Copy)]
 pub enum ProcessingAssetType {
     Gltf,
+    // a gltf that failed to load, presumed draco-compressed; unlike `Gltf` the
+    // original asset never loaded, so on success it is reloaded in place
+    DracoGltf,
     Image,
 }
 

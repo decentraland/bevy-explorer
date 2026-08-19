@@ -1,3 +1,4 @@
+mod draco;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_fs;
 #[cfg(target_arch = "wasm32")]
@@ -32,14 +33,17 @@ pub(crate) async fn process_events(
         };
 
         let data = match req.ty {
-            ProcessingAssetType::Gltf => match process_gltf(&raw_bytes) {
-                Ok(gltf) => gltf,
-                Err(e) => {
-                    error!("failed to process gltf {:?}: {:?}", req.base_path, e);
-                    let _ = resp_sx.send(Err(()));
-                    continue;
+            ProcessingAssetType::Gltf | ProcessingAssetType::DracoGltf => {
+                let expect_draco = matches!(req.ty, ProcessingAssetType::DracoGltf);
+                match process_gltf(&raw_bytes, expect_draco) {
+                    Ok(gltf) => gltf,
+                    Err(e) => {
+                        error!("failed to process gltf {:?}: {:?}", req.base_path, e);
+                        let _ = resp_sx.send(Err(()));
+                        continue;
+                    }
                 }
-            },
+            }
             ProcessingAssetType::Image => match process_image(&raw_bytes) {
                 Ok(dds) => dds,
                 Err(e) => {
@@ -150,10 +154,13 @@ fn process_image(raw_bytes: &[u8]) -> Result<Vec<u8>, ImageProcessError> {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // we use the ignored debug impl
 enum GltfProcessError {
-    #[allow(dead_code)] // we use the ignored debug impl
     ImageError(ImageProcessError),
     InvalidHeader,
+    ParseFailed,
+    Draco(draco::DracoError),
+    NotDraco,
 }
 
 impl From<ImageProcessError> for GltfProcessError {
@@ -162,16 +169,19 @@ impl From<ImageProcessError> for GltfProcessError {
     }
 }
 
-fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
+fn process_gltf(raw_bytes: &[u8], expect_draco: bool) -> Result<Vec<u8>, GltfProcessError> {
+    // failed-load (draco) requests can hand us arbitrary bytes, so parse fallibly
     let (mut root, mut old_bin): (gltf_json::Root, Vec<u8>) = if raw_bytes.starts_with(b"glTF") {
-        let glb = Glb::from_slice(raw_bytes).unwrap();
+        let glb = Glb::from_slice(raw_bytes).map_err(|_| GltfProcessError::ParseFailed)?;
         (
-            gltf_json::deserialize::from_slice(&glb.json).unwrap(),
+            gltf_json::deserialize::from_slice(&glb.json)
+                .map_err(|_| GltfProcessError::ParseFailed)?,
             glb.bin.map(|b| b.into_owned()).unwrap_or_default(),
         )
     } else if raw_bytes.starts_with(b"{") {
         (
-            gltf_json::deserialize::from_slice(raw_bytes).unwrap(),
+            gltf_json::deserialize::from_slice(raw_bytes)
+                .map_err(|_| GltfProcessError::ParseFailed)?,
             Vec::default(),
         )
     } else {
@@ -186,7 +196,9 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
                 // This is a .gltf with embedded binary.
                 // We should decode it and make it the "real" binary chunk.
                 let parts: Vec<&str> = uri.split(',').collect();
-                let decoded = general_purpose::STANDARD.decode(parts[1]).unwrap();
+                let decoded = general_purpose::STANDARD
+                    .decode(parts[1])
+                    .map_err(|_| GltfProcessError::ParseFailed)?;
 
                 // If we already had a binary chunk (from a GLB), append this.
                 // If we came from JSON, 'old_bin' was empty, so this becomes the start.
@@ -203,10 +215,31 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
         }
     }
 
+    // decompress draco geometry before the texture pass so the rebuilt binary
+    // chunk contains the decoded accessor data
+    let draco_views = if root
+        .extensions_used
+        .iter()
+        .any(|e| e == "KHR_draco_mesh_compression")
+    {
+        draco::decompress(&mut root, &mut old_bin).map_err(GltfProcessError::Draco)?
+    } else {
+        Vec::default()
+    };
+    if expect_draco && draco_views.is_empty() {
+        // the gltf failed to load for some reason other than draco compression;
+        // there is nothing we can do to fix it
+        return Err(GltfProcessError::NotDraco);
+    }
+
     // collect all Raw Image Data first
     // store them in a temp vector so we can safely mutate the JSON later.
     let mut raw_images: Vec<Option<Vec<u8>>> = Vec::new();
     let mut zombie_views = vec![false; root.buffer_views.len()];
+    for view in draco_views {
+        // drop the compressed draco data; the decoded views replace it
+        zombie_views[view] = true;
+    }
 
     for image in &root.images {
         let pixels = extract_pixels_safe(image, &root.buffer_views, &old_bin);

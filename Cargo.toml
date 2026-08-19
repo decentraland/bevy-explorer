@@ -236,6 +236,9 @@ async-compat = "0.2"
 async-fs = "2.0"
 base64 = "0.22"
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
+# pinned: alpha releases make no api stability promises between versions
+draco-oxide-decoder = "=0.1.0-alpha.9"
+draco-oxide-core = "=0.1.0-alpha.9"
 strum = "0.27"
 strum_macros = "0.27"
 wasm-bindgen = "0.2.92"
