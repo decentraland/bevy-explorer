@@ -54,6 +54,8 @@ macro_rules! test_component {
     };
 }
 
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
+#[expect(clippy::too_many_arguments)]
 fn test_components<T: AVPlayer>(
     app: &mut App,
     entity: Entity,
