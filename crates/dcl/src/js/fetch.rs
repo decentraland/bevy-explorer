@@ -37,6 +37,15 @@ pub struct SignedFetchMeta {
     signer: String,
 }
 
+// the server's fake player has no identity crdt (#1102), and the server never signs as a guest
+fn signed_fetch_is_guest(state: &impl State) -> Result<bool, anyhow::Error> {
+    match player_identity(state) {
+        Ok(identity) => Ok(identity.is_guest),
+        Err(_) if state.borrow::<CrdtContext>().is_server => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
 pub async fn op_signed_fetch_headers(
     state: Rc<RefCell<impl State>>,
     uri: String,
@@ -52,7 +61,7 @@ pub async fn op_signed_fetch_headers(
 
     let realm_info = realm_information(state.clone()).await?;
 
-    let player_identity = player_identity(&*state.borrow())?;
+    let is_guest = signed_fetch_is_guest(&*state.borrow())?;
 
     let urn = state.borrow().borrow::<CrdtContext>().hash.clone();
 
@@ -76,7 +85,7 @@ pub async fn op_signed_fetch_headers(
         parcel: Some(scene_meta.scene.base.clone()),
         tld: Some("org".to_owned()),
         network: Some("mainnet".to_owned()),
-        is_guest: Some(player_identity.is_guest),
+        is_guest: Some(is_guest),
         realm: SignedFetchMetaRealm {
             hostname: realm_info.base_url,
             protocol: "v3".to_owned(),
@@ -101,4 +110,62 @@ pub async fn op_signed_fetch_headers(
         })?;
 
     rx.await?.map_err(|e| anyhow!(e))
+}
+
+#[cfg(test)]
+mod signed_fetch_identity_tests {
+    use super::*;
+    use crate::{
+        interface::{CrdtStore, CrdtType},
+        js::{test_state::TestState, RendererStore},
+        SceneId,
+    };
+    use dcl_component::{
+        proto_components::sdk::components::PbPlayerIdentityData, DclReader, DclWriter,
+        SceneComponentId, SceneEntityId, ToDclWriter,
+    };
+
+    fn state(is_server: bool, identity: Option<PbPlayerIdentityData>) -> TestState {
+        let mut store = CrdtStore::default();
+        if let Some(identity) = identity {
+            let mut buf = Vec::new();
+            identity.to_writer(&mut DclWriter::new(&mut buf));
+            store.force_update(
+                SceneComponentId::PLAYER_IDENTITY_DATA,
+                CrdtType::LWW_ANY,
+                SceneEntityId::PLAYER,
+                Some(&mut DclReader::new(&buf)),
+            );
+        }
+        let mut s = TestState::default();
+        s.put(RendererStore(store));
+        s.put(CrdtContext::new(
+            SceneId::DUMMY,
+            Default::default(),
+            Default::default(),
+            false,
+            false,
+            is_server,
+        ));
+        s
+    }
+
+    #[test]
+    fn server_without_identity_is_not_guest() {
+        assert!(!signed_fetch_is_guest(&state(true, None)).unwrap());
+    }
+
+    #[test]
+    fn client_without_identity_still_errors() {
+        assert!(signed_fetch_is_guest(&state(false, None)).is_err());
+    }
+
+    #[test]
+    fn present_identity_wins_over_fallback() {
+        let identity = PbPlayerIdentityData {
+            address: "0x1234".to_owned(),
+            is_guest: true,
+        };
+        assert!(signed_fetch_is_guest(&state(true, Some(identity))).unwrap());
+    }
 }
