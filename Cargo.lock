@@ -4124,8 +4124,7 @@ source = "git+https://github.com/robtfm/winit?branch=v0.30.x#a8c6812b563f9c0974a
 [[package]]
 name = "draco-nd-vector"
 version = "0.1.0-alpha.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4564672e9738d0f8050b9480ec1d1ccbde72ae7e55ce925ab20b9db896ebc30"
+source = "git+https://github.com/robtfm/draco-oxide?branch=fix%2Fwasm32-rans-refill#5acfcf680d4bd17222d910b74ff8bf76a8161575"
 dependencies = [
  "quote",
  "seq-macro",
@@ -4135,8 +4134,7 @@ dependencies = [
 [[package]]
 name = "draco-oxide-core"
 version = "0.1.0-alpha.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c0cee8775cb7c8bf283562163fee5ae1bc8448836774b615604ffce958028c5"
+source = "git+https://github.com/robtfm/draco-oxide?branch=fix%2Fwasm32-rans-refill#5acfcf680d4bd17222d910b74ff8bf76a8161575"
 dependencies = [
  "draco-nd-vector",
  "kiddo",
@@ -4151,8 +4149,7 @@ dependencies = [
 [[package]]
 name = "draco-oxide-decoder"
 version = "0.1.0-alpha.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f64caba64a067cfaf83d61d85dd9551482cae56670f0b1d0ac5fa0ed75eea16"
+source = "git+https://github.com/robtfm/draco-oxide?branch=fix%2Fwasm32-rans-refill#5acfcf680d4bd17222d910b74ff8bf76a8161575"
 dependencies = [
  "draco-oxide-core",
  "remain",
