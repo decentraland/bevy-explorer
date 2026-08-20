@@ -9,6 +9,7 @@ use std::{
 };
 
 use bevy::{
+    asset::RenderAssetTransferPriority,
     color::palettes::basic,
     diagnostic::FrameCount,
     platform::collections::HashMap,
@@ -21,13 +22,14 @@ use bevy::{
         Render, RenderApp, RenderSet,
     },
 };
-use common::{sets::SceneSets, structs::AudioSettings, util::ReportErr};
+use common::{debug_panic, sets::SceneSets, structs::AudioSettings, util::ReportErr};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbAudioEvent, PbVideoEvent, VideoState},
     SceneComponentId,
 };
 use ipfs::IpfsResource;
+use livestream_manager::{ReceiverImage, ReceiverVolume};
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::material::{update_materials, VideoTextureOutput},
@@ -39,23 +41,18 @@ use web_sys::{
     wasm_bindgen::{prelude::Closure, JsCast, JsValue},
     HtmlMediaElement, HtmlVideoElement, VideoFrame,
 };
-#[cfg(feature = "livekit")]
-use {
-    bevy::ecs::relationship::Relationship,
-    comms::livekit::participant::{ChangeVolume, StreamViewer},
-};
 
 use crate::{
-    audio_stream_should_be_playing, av_player_is_in_scene, video_player_should_be_playing,
-    AVPlayer, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
+    audio_stream_should_be_playing, video_player_should_be_playing, AVPlayer, AVPlayerConfig,
+    AudioStream, ShouldBePlaying, Stream, VideoPlayer, LIVEKIT_VIDEO_STREAM,
 };
 
 type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
 
-pub struct VideoPlayerPlugin;
-
 const VIDEO_CONTAINER_ID: &str = "video-player-container";
 const STREAM_CONTAINER_ID: &str = "stream-player-container";
+
+pub struct VideoPlayerPlugin;
 
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
@@ -83,12 +80,7 @@ impl Plugin for VideoPlayerPlugin {
         app.add_systems(
             Update,
             (
-                (
-                    rebuild_html_media_entities::<AudioStream>
-                        .before(av_player_is_in_scene::<AudioStream>),
-                    rebuild_html_media_entities::<VideoPlayer>
-                        .before(av_player_is_in_scene::<VideoPlayer>),
-                ),
+                players_waiting_for_stream,
                 (
                     update_av_players::<AudioStream>.after(audio_stream_should_be_playing),
                     update_av_players::<VideoPlayer>.after(video_player_should_be_playing),
@@ -107,19 +99,31 @@ impl Plugin for VideoPlayerPlugin {
                 .run_if(resource_exists_and_changed::<AudioSettings>),
         );
 
+        app.add_observer(new_player_source::<AudioStream>);
+        app.add_observer(new_player_source::<VideoPlayer>);
+        app.add_observer(player_source_replaced::<AudioStream>);
+        app.add_observer(player_source_replaced::<VideoPlayer>);
+        app.add_observer(player_config_added::<AudioStream>);
+        app.add_observer(player_config_added::<VideoPlayer>);
+        app.add_observer(player_position_added::<AudioStream>);
+        app.add_observer(player_position_added::<VideoPlayer>);
+        app.add_observer(html_media_entity_on_remove::<AudioStream>);
+        app.add_observer(html_media_entity_on_remove::<VideoPlayer>);
+        app.add_observer(av_player_should_be_playing_on_add::<AudioStream>);
+        app.add_observer(av_player_should_be_playing_on_add::<VideoPlayer>);
+        app.add_observer(av_player_should_be_playing_on_remove::<AudioStream>);
+        app.add_observer(av_player_should_be_playing_on_remove::<VideoPlayer>);
+        app.add_observer(receiver_image_added);
+
         let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
 
         app.insert_resource(FrameCopyRequestQueue(sx));
 
-        app.add_observer(av_player_on_insert::<AudioStream>);
-        app.add_observer(av_player_on_insert::<VideoPlayer>);
-        app.add_observer(av_player_on_remove::<AudioStream>);
-        app.add_observer(av_player_on_remove::<VideoPlayer>);
-
-        let render_app = app.sub_app_mut(RenderApp);
-        render_app
-            .insert_resource(FrameCopyReceiveQueue(rx))
-            .add_systems(Render, perform_video_copies.in_set(RenderSet::Queue));
+        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+            render_app
+                .insert_resource(FrameCopyReceiveQueue(rx))
+                .add_systems(Render, perform_video_copies.in_set(RenderSet::Queue));
+        }
     }
 }
 
@@ -258,6 +262,7 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
         Self::common_init(source, media)
     }
 
+    #[cfg_attr(test, expect(unused_variables))]
     pub fn new_video(url: &str, source: String, image: Handle<Image>) -> Self {
         let media = web_sys::window()
             .unwrap()
@@ -324,6 +329,7 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
             .unwrap();
         *callback_handle.borrow_mut() = initial_handle.as_f64().map(|f| f as u32);
 
+        #[cfg(not(test))]
         set_video_source(&video, url);
 
         let mut slf = Self::common_init(source, media);
@@ -410,7 +416,7 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
         Some(slf)
     }
 
-    pub fn new_noop(source: String, image: Handle<Image>) -> Self {
+    pub fn new_noop(source: String, image: Option<Handle<Image>>) -> Self {
         let media = web_sys::window()
             .unwrap()
             .document()
@@ -426,7 +432,7 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
 
         let mut slf = Self::common_init(source, media);
         slf.video = None;
-        slf.image = Some(image);
+        slf.image = image;
         slf
     }
 
@@ -435,7 +441,10 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
     }
 
     pub fn set_volume(&self, volume: f32) {
-        self.media.set_volume(volume.clamp(0.0, 1.0) as f64)
+        self.media.set_volume(volume.clamp(0.0, 1.0) as f64);
+        if let Some(media) = &self.video {
+            media.set_volume(volume.clamp(0.0, 1.0) as f64);
+        }
     }
 
     pub fn play(&mut self) {
@@ -478,150 +487,229 @@ impl<T: AVPlayer> Drop for HtmlMediaEntity<T> {
     }
 }
 
-#[cfg(not(feature = "livekit"))]
-type AVPlayerOnInsertQuery<'a, T> = (&'a T, &'a mut HtmlMediaEntity<T>);
-#[cfg(feature = "livekit")]
-type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a StreamViewer>, &'a mut HtmlMediaEntity<T>);
-
-fn av_player_on_insert<T: AVPlayer>(
-    trigger: Trigger<OnInsert, T>,
+#[expect(clippy::type_complexity)]
+fn new_player_source<T: AVPlayer>(
+    trigger: Trigger<OnInsert, T::Source>,
     mut commands: Commands,
-    mut av_players: Query<AVPlayerOnInsertQuery<T>>,
-    audio_settings: Res<AudioSettings>,
+    av_players: Query<(
+        &T::Source,
+        &ContainerEntity,
+        Option<&VideoTextureOutput>,
+        Has<Stream>,
+    )>,
+    scenes: Query<&RendererSceneContext>,
+    mut images: ResMut<Assets<Image>>,
+    ipfs: Res<IpfsResource>,
 ) {
-    info!("AVPlayer updated.");
     let entity = trigger.target();
-    let Ok(query) = av_players.get_mut(entity) else {
-        return;
+
+    let Ok((player_source, container_entity, maybe_video_texture_output, has_stream)) =
+        av_players.get(entity)
+    else {
+        unreachable!("Infallible query");
     };
-    #[cfg(not(feature = "livekit"))]
-    let (av_player, mut html_media_entity) = query;
-    #[cfg(feature = "livekit")]
-    let (av_player, maybe_stream_viewer, mut html_media_entity) = query;
+    let Ok(context) = scenes.get(container_entity.root) else {
+        debug_panic!("AVPlayer has an invalid link to RendererSceneContext");
+    };
 
-    let source_url = av_player.source();
-
-    if source_url == html_media_entity.source {
-        debug!("Updating html media entity {entity}.");
-        let av_player_volume = av_player.volume();
-        if source_url.starts_with("livekit-video://") {
-            html_media_entity.set_loop(av_player.r#loop());
-            html_media_entity.set_volume(av_player_volume * audio_settings.scene());
-            #[cfg(feature = "livekit")]
-            if let Some(stream_viewer) = maybe_stream_viewer {
-                commands.trigger_targets(ChangeVolume(av_player_volume), stream_viewer.get());
-            }
+    let livestream = &**player_source == LIVEKIT_VIDEO_STREAM;
+    if T::ALLOWS_LIVESTREAM && livestream != has_stream {
+        if livestream {
+            debug!("AVPlayer {} now a stream.", entity);
+            commands.entity(entity).insert(Stream);
         } else {
-            // This forces an update on the entity
-            commands.entity(entity).try_remove::<ShouldBePlaying<T>>();
-            html_media_entity.stop();
-            html_media_entity.set_loop(av_player.r#loop());
-            html_media_entity.set_volume(av_player_volume * audio_settings.scene());
+            debug!("AVPlayer {} no longer a stream.", entity);
+            commands.entity(entity).remove::<Stream>();
         }
-    } else {
-        debug!("Removing html media entity {entity} due to diverging source.");
-        commands
-            .entity(trigger.target())
-            .try_remove::<(HtmlMediaEntity<T>, ShouldBePlaying<T>)>();
-        #[cfg(feature = "livekit")]
-        commands.entity(entity).try_remove::<StreamViewer>();
     }
+
+    let mut create_image_handle = || match maybe_video_texture_output {
+        None => {
+            let mut image = Image::new_fill(
+                bevy::render::render_resource::Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                TextureDimension::D2,
+                &basic::FUCHSIA.to_u8_array(),
+                TextureFormat::Rgba8UnormSrgb,
+                RenderAssetUsages::all(),
+            );
+            image.texture_descriptor.usage =
+                TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
+            image.transfer_priority = RenderAssetTransferPriority::Immediate;
+            images.add(image)
+        }
+        Some(texture) => texture.0.clone(),
+    };
+
+    debug!(
+        "Creating new html media entity for {} targeting \"{}\"",
+        entity,
+        &(**player_source)
+    );
+    match &(**player_source) {
+        LIVEKIT_VIDEO_STREAM if T::ALLOWS_LIVESTREAM => (),
+        _ => {
+            let source_url = &(**player_source);
+            if source_url.is_empty() {
+                if T::has_video() {
+                    let image = create_image_handle();
+                    let video_output = VideoTextureOutput(image.clone());
+                    commands.entity(entity).try_insert((
+                        video_output,
+                        HtmlMediaEntity::<T>::new_noop(
+                            (**player_source).to_owned(),
+                            Some(image.clone()),
+                        ),
+                    ));
+                } else {
+                    commands
+                        .entity(entity)
+                        .try_insert(HtmlMediaEntity::<T>::new_noop(
+                            (**player_source).to_owned(),
+                            None,
+                        ));
+                }
+            } else {
+                let source = ipfs
+                    .content_url(source_url, &context.hash)
+                    .unwrap_or_else(|| source_url.to_owned());
+
+                if T::has_video() {
+                    let image = create_image_handle();
+                    let video_output = VideoTextureOutput(image.clone());
+                    commands.entity(entity).try_insert((
+                        video_output,
+                        HtmlMediaEntity::<T>::new_video(
+                            &source,
+                            source_url.to_owned(),
+                            image.clone(),
+                        ),
+                    ));
+                } else {
+                    commands
+                        .entity(entity)
+                        .try_insert(HtmlMediaEntity::<T>::new_audio(
+                            &source,
+                            source_url.to_owned(),
+                        ));
+                };
+            }
+        }
+    };
 }
 
-fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands: Commands) {
+fn player_source_replaced<T: AVPlayer>(
+    trigger: Trigger<OnReplace, T::Source>,
+    mut commands: Commands,
+) {
     let entity = trigger.target();
-    commands.entity(entity).try_remove::<(
-        InScene,
-        ShouldBePlaying<T>,
-        HtmlMediaEntity<T>,
-        VideoTextureOutput,
-    )>();
-    #[cfg(feature = "livekit")]
-    commands.entity(entity).try_remove::<StreamViewer>();
+    commands.entity(entity).try_remove::<HtmlMediaEntity<T>>();
 }
 
 #[expect(clippy::type_complexity)]
-fn rebuild_html_media_entities<T: AVPlayer>(
-    mut commands: Commands,
-    av_players: Populated<
-        (Entity, &ContainerEntity, &T, Option<&VideoTextureOutput>),
-        Without<HtmlMediaEntity<T>>,
-    >,
-    scenes: Query<&RendererSceneContext>,
-    ipfs: Res<IpfsResource>,
-    mut images: ResMut<Assets<Image>>,
+fn player_config_added<T: AVPlayer>(
+    trigger: Trigger<OnInsert, T::Config>,
+    mut av_players: Query<(
+        &T::Config,
+        Option<&mut HtmlMediaEntity<T>>,
+        Has<ShouldBePlaying<T>>,
+        Has<Stream>,
+        Option<&mut ReceiverVolume>,
+    )>,
     audio_settings: Res<AudioSettings>,
 ) {
-    let scene_volume = audio_settings.scene();
-    for (ent, container, player, maybe_texture) in av_players.iter() {
-        let Ok(context) = scenes.get(container.root) else {
-            continue;
-        };
-
-        let source_url = player.source();
-        let source = ipfs
-            .content_url(source_url, &context.hash)
-            .unwrap_or_else(|| source_url.to_owned());
-
-        if T::has_video() {
-            let image_handle = match maybe_texture {
-                None => {
-                    let mut image = Image::new_fill(
-                        bevy::render::render_resource::Extent3d {
-                            width: 8,
-                            height: 8,
-                            depth_or_array_layers: 1,
-                        },
-                        TextureDimension::D2,
-                        &basic::FUCHSIA.to_u8_array(),
-                        TextureFormat::Rgba8UnormSrgb,
-                        RenderAssetUsages::all(),
-                    );
-                    image.texture_descriptor.usage = TextureUsages::COPY_DST
-                        | TextureUsages::TEXTURE_BINDING
-                        | TextureUsages::RENDER_ATTACHMENT;
-                    image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Immediate;
-                    image.data = None;
-                    images.add(image)
-                }
-                Some(texture) => texture.0.clone(),
-            };
-
-            let mut video = if source_url.starts_with("livekit-video://") {
-                let Some(video) =
-                    HtmlMediaEntity::<T>::new_stream(source_url.to_owned(), image_handle.clone())
-                else {
-                    continue;
-                };
-                debug!("stream video {}", source_url);
-                video
-            } else if source_url.is_empty() {
-                debug!("noop video {}", source_url);
-                HtmlMediaEntity::<T>::new_noop(source_url.to_owned(), image_handle.clone())
-            } else {
-                debug!("https video {}", source_url);
-                HtmlMediaEntity::<T>::new_video(
-                    &source,
-                    source_url.to_owned(),
-                    image_handle.clone(),
-                )
-            };
-
-            let video_volume = player.volume();
-            video.set_loop(player.r#loop());
-            video.set_volume(video_volume * scene_volume);
-            let video_output = VideoTextureOutput(image_handle);
-
-            commands.entity(ent).try_insert((video, video_output));
-        } else {
-            let mut audio = HtmlMediaEntity::<T>::new_audio(&source, source_url.to_owned());
-            let audio_volume = player.volume();
-            audio.set_loop(player.r#loop());
-            audio.set_volume(audio_volume * scene_volume);
-
-            commands.entity(ent).try_insert(audio);
+    let entity = trigger.target();
+    let Ok((
+        config,
+        maybe_html_media_entity,
+        has_should_be_playing,
+        has_stream,
+        maybe_receiver_volume,
+    )) = av_players.get_mut(entity)
+    else {
+        unreachable!("Infallible query");
+    };
+    if has_stream {
+        if let Some(mut receiver_volume) = maybe_receiver_volume {
+            debug!("Updated volume of stream.");
+            **receiver_volume = config.volume();
+        }
+        if maybe_html_media_entity.is_none() {
+            return;
         }
     }
+    let Some(mut html_media_entity) = maybe_html_media_entity else {
+        debug_panic!("Non-stream AVPlayer did not have html media entity.");
+    };
+
+    if config.playing() && has_should_be_playing {
+        html_media_entity.play();
+    } else {
+        html_media_entity.stop();
+    }
+    html_media_entity.set_volume(config.volume() * audio_settings.scene());
+    html_media_entity.set_loop(config.r#loop());
+}
+
+#[expect(clippy::type_complexity)]
+fn player_position_added<T: AVPlayer>(
+    trigger: Trigger<OnInsert, T::Position>,
+    mut av_players: Query<(&T::Position, Option<&mut HtmlMediaEntity<T>>, Has<Stream>)>,
+) {
+    let entity = trigger.target();
+    let Ok((position, maybe_html_media_entity, has_stream)) = av_players.get_mut(entity) else {
+        unreachable!("Infallible query");
+    };
+    let Some(mut html_media_entity) = maybe_html_media_entity else {
+        if !has_stream {
+            debug_panic!("Non-stream AVPlayer did not have html media entity.");
+        }
+        return;
+    };
+
+    debug!("Seeking AVPlayer to {}", **position);
+    html_media_entity.current_time = **position;
+    html_media_entity
+        .media
+        .set_current_time((**position).into());
+    if let Some(media) = &mut html_media_entity.video {
+        media.set_current_time((**position).into());
+    }
+}
+
+fn html_media_entity_on_remove<T: AVPlayer>(
+    trigger: Trigger<OnRemove, HtmlMediaEntity<T>>,
+    mut commands: Commands,
+) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<VideoTextureOutput>();
+}
+
+fn av_player_should_be_playing_on_add<T: AVPlayer>(
+    trigger: Trigger<OnAdd, ShouldBePlaying<T>>,
+    mut av_players: Query<&mut HtmlMediaEntity<T>, With<T>>,
+) {
+    let entity = trigger.target();
+    let Ok(mut html_media_entity) = av_players.get_mut(entity) else {
+        return;
+    };
+
+    html_media_entity.play();
+}
+
+fn av_player_should_be_playing_on_remove<T: AVPlayer>(
+    trigger: Trigger<OnRemove, ShouldBePlaying<T>>,
+    mut av_players: Query<&mut HtmlMediaEntity<T>, With<T>>,
+) {
+    let entity = trigger.target();
+    let Ok(mut html_media_entity) = av_players.get_mut(entity) else {
+        return;
+    };
+
+    html_media_entity.stop();
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -631,7 +719,7 @@ fn update_av_players<T: AVPlayer>(
         (
             Entity,
             &ContainerEntity,
-            Option<&mut HtmlMediaEntity<T>>,
+            &mut HtmlMediaEntity<T>,
             Has<ShouldBePlaying<T>>,
         ),
         With<T>,
@@ -641,91 +729,92 @@ fn update_av_players<T: AVPlayer>(
     send_queue: Res<FrameCopyRequestQueue>,
     frame: Res<FrameCount>,
 ) {
-    for (ent, container, maybe_av, should_be_playing) in av_players.iter_mut() {
-        let Some(mut av) = maybe_av else { continue };
-
+    for (ent, container, mut av, has_should_be_playing) in av_players.iter_mut() {
         let state = av.state();
 
-        if av.source.starts_with("livekit-video://") && state == VideoState::VsError {
+        if av.source == LIVEKIT_VIDEO_STREAM && state == VideoState::VsError {
             error!("Stream is erroring, retrying.");
-            commands.entity(ent).try_remove::<HtmlMediaEntity<T>>();
+            commands
+                .entity(ent)
+                .try_remove::<HtmlMediaEntity<T>>()
+                .insert(WaitingForStream);
             continue;
         }
 
         let is_playing = state == VideoState::VsPlaying;
-        let can_play = matches!(state, VideoState::VsReady | VideoState::VsPaused);
 
-        if !is_playing && should_be_playing && can_play {
-            av.play()
-        } else if is_playing {
-            if !should_be_playing {
-                av.stop();
-            } else {
-                #[allow(clippy::collapsible_else_if)]
-                if let Some(video) = av.video.as_ref() {
-                    let new_time = av.new_frame_time.swap(0, Ordering::Relaxed);
-                    if new_time != 0 {
-                        // new frame is ready
-                        let new_time = f32::from_bits(new_time);
-                        trace!("got new frame -> {new_time}");
+        if has_should_be_playing
+            && (state == VideoState::VsLoading || state == VideoState::VsBuffering)
+        {
+            av.play();
+        } else if !has_should_be_playing && is_playing {
+            av.stop();
+        }
 
-                        let Ok(frame) = VideoFrame::new_with_html_video_element(video) else {
-                            warn!("failed to extract frame");
-                            continue;
-                        };
+        if is_playing {
+            #[allow(clippy::collapsible_else_if)]
+            if let Some(video) = av.video.as_ref() {
+                let new_time = av.new_frame_time.swap(0, Ordering::Relaxed);
+                if new_time != 0 {
+                    // new frame is ready
+                    let new_time = f32::from_bits(new_time);
+                    trace!("got new frame -> {new_time}");
 
-                        let image_id = av.image.as_ref().unwrap().id();
-                        let visible_rect = frame.visible_rect().unwrap();
-                        let video_size =
-                            (visible_rect.width() as u32, visible_rect.height() as u32);
+                    let Ok(frame) = VideoFrame::new_with_html_video_element(video) else {
+                        warn!("failed to extract frame");
+                        continue;
+                    };
 
-                        // check size
-                        if av.size.is_none_or(|sz| sz != video_size) {
-                            let mut image = Image::new_fill(
-                                bevy::render::render_resource::Extent3d {
-                                    width: video_size.0,
-                                    height: video_size.1,
-                                    depth_or_array_layers: 1,
-                                },
-                                TextureDimension::D2,
-                                &basic::FUCHSIA.to_u8_array(),
-                                TextureFormat::Rgba8UnormSrgb,
-                                RenderAssetUsages::all(),
-                            );
-                            image.texture_descriptor.usage = TextureUsages::COPY_DST
-                                | TextureUsages::TEXTURE_BINDING
-                                | TextureUsages::RENDER_ATTACHMENT;
-                            image.transfer_priority =
-                                bevy::asset::RenderAssetTransferPriority::Immediate;
-                            image.data = None;
-                            let image = images.add(image);
-                            av.size = Some(video_size);
-                            commands
-                                .entity(ent)
-                                .try_insert(VideoTextureOutput(image.clone()));
-                            av.image = Some(image);
+                    let image_id = av.image.as_ref().unwrap().id();
+                    let visible_rect = frame.visible_rect().unwrap();
+                    let video_size = (visible_rect.width() as u32, visible_rect.height() as u32);
 
-                            trace!("queue resized frame {:?}", video_size);
-                        }
+                    // check size
+                    if av.size.is_none_or(|sz| sz != video_size) {
+                        let mut image = Image::new_fill(
+                            bevy::render::render_resource::Extent3d {
+                                width: video_size.0,
+                                height: video_size.1,
+                                depth_or_array_layers: 1,
+                            },
+                            TextureDimension::D2,
+                            &basic::FUCHSIA.to_u8_array(),
+                            TextureFormat::Rgba8UnormSrgb,
+                            RenderAssetUsages::all(),
+                        );
+                        image.texture_descriptor.usage = TextureUsages::COPY_DST
+                            | TextureUsages::TEXTURE_BINDING
+                            | TextureUsages::RENDER_ATTACHMENT;
+                        image.transfer_priority =
+                            bevy::asset::RenderAssetTransferPriority::Immediate;
+                        image.data = None;
+                        let image = images.add(image);
+                        av.size = Some(video_size);
+                        commands
+                            .entity(ent)
+                            .try_insert(VideoTextureOutput(image.clone()));
+                        av.image = Some(image);
 
-                        // queue copy
-                        trace!("queue frame {:?}", video_size);
-                        send_queue
-                            .0
-                            .send(FrameCopyRequest {
-                                video_frame: WgpuWrapper::new(frame),
-                                target: image_id,
-                            })
-                            .report();
-
-                        av.current_time = new_time;
-                    } else {
-                        trace!("no frame (new_time == 0)");
+                        trace!("queue resized frame {:?}", video_size);
                     }
+
+                    // queue copy
+                    trace!("queue frame {:?}", video_size);
+                    send_queue
+                        .0
+                        .send(FrameCopyRequest {
+                            video_frame: WgpuWrapper::new(frame),
+                            target: image_id,
+                        })
+                        .report();
+
+                    av.current_time = new_time;
                 } else {
-                    debug!("no video");
-                    // we don't report audio timestamps, otherwise would need to grab it here
+                    trace!("no frame (new_time == 0)");
                 }
+            } else {
+                debug!("no video");
+                // we don't report audio timestamps, otherwise would need to grab it here
             }
         }
 
@@ -839,11 +928,59 @@ fn perform_video_copies(
 
 fn update_html_video_player_volumes<T: AVPlayer>(
     audio_settings: Res<AudioSettings>,
-    html_video_players: Query<(&T, &mut HtmlMediaEntity<T>)>,
+    html_video_players: Query<(&T::Config, &mut HtmlMediaEntity<T>)>,
 ) {
     let scene_volume = audio_settings.scene();
     for (av_player, html_video_player) in html_video_players {
         let volume = av_player.volume();
         html_video_player.set_volume(volume * scene_volume);
+    }
+}
+
+#[derive(Component)]
+struct WaitingForStream;
+
+fn receiver_image_added(
+    trigger: Trigger<OnAdd, ReceiverImage>,
+    mut commands: Commands,
+    video_players: Query<&ReceiverImage, With<VideoPlayer>>,
+) {
+    let entity = trigger.target();
+    let Ok(receiver_image) = video_players.get(entity) else {
+        unreachable!("Non-VideoPlayer entities must never receiver ReceiverImage.");
+    };
+
+    if let Some(html_media_entity) = HtmlMediaEntity::<VideoPlayer>::new_stream(
+        LIVEKIT_VIDEO_STREAM.to_owned(),
+        (*receiver_image).clone(),
+    ) {
+        commands.entity(entity).insert((
+            html_media_entity,
+            VideoTextureOutput((*receiver_image).clone()),
+        ));
+    } else {
+        debug!("No stream available, waiting for it to become available");
+        commands.entity(entity).insert(WaitingForStream);
+    }
+}
+
+fn players_waiting_for_stream(
+    mut commands: Commands,
+    video_players: Populated<(Entity, &ReceiverImage), With<WaitingForStream>>,
+) {
+    for (entity, receiver_image) in video_players.into_inner() {
+        if let Some(html_media_entity) = HtmlMediaEntity::<VideoPlayer>::new_stream(
+            LIVEKIT_VIDEO_STREAM.to_owned(),
+            (*receiver_image).clone(),
+        ) {
+            debug!("Stream became available");
+            commands
+                .entity(entity)
+                .insert((
+                    html_media_entity,
+                    VideoTextureOutput((*receiver_image).clone()),
+                ))
+                .remove::<WaitingForStream>();
+        }
     }
 }

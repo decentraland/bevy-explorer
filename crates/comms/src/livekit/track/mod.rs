@@ -26,11 +26,6 @@ pub struct LivekitTrack {
     track: RemoteTrackPublication,
 }
 
-/// Volume of an audio track
-#[derive(Clone, Copy, Component, Deref)]
-#[component(immutable)]
-pub struct TrackVolume(pub f32);
-
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Component)]
 #[component(on_replace=Self::on_replace)]
@@ -134,6 +129,12 @@ pub struct Microphone;
 
 #[derive(Component)]
 pub struct Camera;
+
+#[derive(Component)]
+pub struct ScreenshareAudio;
+
+#[derive(Component)]
+pub struct ScreenshareVideo;
 
 #[derive(Event)]
 pub struct TrackPublished {
