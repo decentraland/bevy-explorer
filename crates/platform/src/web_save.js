@@ -98,7 +98,7 @@ function sceneMatches(sceneJson, target) {
 // project path as suffixes — handle == project root (empty suffix) first, then handle == its parent,
 // grandparent, … — and matching scene.json. Returns the dir handle, or null.
 async function findProjectDir(handle, target) {
-  const segs = (target.root || '').split('/').filter(Boolean)
+  const segs = (target.root || '').split(/[\\/]/).filter(Boolean)
   for (let i = segs.length; i >= 0; i--) {
     let dir
     try {
