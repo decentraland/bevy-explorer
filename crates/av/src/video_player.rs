@@ -17,6 +17,7 @@ use dcl_component::{
     SceneComponentId,
 };
 use ipfs::IpfsResource;
+use media::{AVCommand, VideoData, VideoInfo};
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::material::{update_materials, VideoTextureOutput},
@@ -30,10 +31,7 @@ use {
 
 use crate::{
     audio_sink::ChangeAudioSinkVolume,
-    audio_stream_should_be_playing,
-    stream_processor::AVCommand,
-    video_context::{VideoData, VideoInfo},
-    video_player_should_be_playing,
+    audio_stream_should_be_playing, video_player_should_be_playing,
     video_stream::{av_sinks, noop_sinks},
     AVPlayer, AVPlayerSinks, AVSinks, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
 };
@@ -42,7 +40,6 @@ pub struct VideoPlayerPlugin;
 
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, init_ffmpeg);
         app.add_systems(Update, play_videos.before(update_materials));
         app.add_systems(
             Update,
@@ -66,11 +63,6 @@ impl Plugin for VideoPlayerPlugin {
         #[cfg(feature = "livekit")]
         app.add_observer(copy_stream_image);
     }
-}
-
-fn init_ffmpeg() {
-    ffmpeg_next::init().unwrap();
-    ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Error);
 }
 
 #[cfg(not(feature = "livekit"))]
@@ -205,7 +197,7 @@ fn play_videos(
     frame: Res<FrameCount>,
 ) {
     enum FrameSource {
-        Video(ffmpeg_next::frame::Video),
+        Video(media::Video),
     }
 
     impl FrameSource {

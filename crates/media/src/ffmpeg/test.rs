@@ -1,10 +1,7 @@
-#[cfg(feature = "ffmpeg")]
 use ffmpeg_next::format::input;
 
-#[cfg(feature = "ffmpeg")]
-use crate::video_context::VideoContext;
+use crate::ffmpeg::video_context::VideoContext;
 
-#[cfg(feature = "ffmpeg")]
 #[test]
 fn test_ffmpeg() {
     let context = input(

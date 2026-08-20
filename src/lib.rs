@@ -212,6 +212,9 @@ impl DecentralandApp {
         #[cfg(target_arch = "wasm32")]
         app.add_plugins(wasm_default_plugins(&decentraland_app_config));
 
+        #[cfg(all(not(target_arch = "wasm32"), feature = "ffmpeg"))]
+        media::init_ffmpeg();
+
         // POC: react-web HUD composited in-engine from CEF offscreen rendering. Skipped in test
         // mode (automated scene tests run headless and must not boot CEF or gate input) and when
         // an explicit --ui opted out of the HUD in favour of the engine-side ui.

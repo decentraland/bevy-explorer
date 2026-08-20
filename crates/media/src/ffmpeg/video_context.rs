@@ -1,15 +1,15 @@
 use std::collections::VecDeque;
 
-use bevy::prelude::*;
 use common::util::ReportErr;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::ffi::AVPixelFormat;
 use ffmpeg_next::format::Pixel;
 use ffmpeg_next::software::scaling::{context::Context, flag::Flags};
-use ffmpeg_next::{decoder, format::context::Input, media::Type, util::frame, Packet};
+use ffmpeg_next::{Packet, decoder, format::context::Input, media::Type, util::frame};
+use log::{debug, error, trace};
 use thiserror::Error;
 
-use crate::stream_processor::FfmpegContext;
+use crate::ffmpeg::stream_processor::FfmpegContext;
 
 pub struct VideoInfo {
     pub width: u32,

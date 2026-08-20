@@ -1,20 +1,3 @@
-#[cfg(test)]
-pub mod test;
-
-// util
-#[cfg(feature = "ffmpeg")]
-pub mod audio_context;
-#[cfg(feature = "ffmpeg")]
-pub mod audio_sink;
-#[cfg(feature = "ffmpeg")]
-pub mod ffmpeg_util;
-#[cfg(feature = "ffmpeg")]
-pub mod stream_processor;
-#[cfg(feature = "ffmpeg")]
-pub mod video_context;
-#[cfg(feature = "ffmpeg")]
-pub mod video_stream;
-
 // audio source (non-streaming audio)
 pub mod audio_loader;
 pub mod audio_source;
@@ -26,16 +9,20 @@ pub mod audio_source_wasm;
 // video
 #[cfg(feature = "html")]
 pub mod html_video_player;
+
+// ffmpeg
+#[cfg(feature = "ffmpeg")]
+pub mod audio_sink;
 #[cfg(feature = "ffmpeg")]
 pub mod video_player;
+#[cfg(feature = "ffmpeg")]
+pub mod video_stream;
 
 #[cfg(feature = "av_player_debug")]
 pub mod av_player_debug;
 
 use std::marker::PhantomData;
 
-#[cfg(feature = "ffmpeg")]
-use crate::{audio_sink::AudioSink, video_stream::VideoSink};
 use audio_source::AudioSourcePlugin;
 #[cfg(not(feature = "html"))]
 use audio_source_native::AudioSourcePluginImpl;
@@ -54,10 +41,13 @@ use dcl_component::{
 use scene_runner::{update_world::AddCrdtInterfaceExt, ContainerEntity, ContainingScene};
 
 #[cfg(feature = "ffmpeg")]
-use {
-    audio_sink::{spawn_and_locate_foreign_streams, spawn_audio_streams},
-    video_player::VideoPlayerPlugin,
+use crate::{
+    audio_sink::{spawn_and_locate_foreign_streams, spawn_audio_streams, AudioSink},
+    video_stream::VideoSink,
 };
+#[cfg(feature = "ffmpeg")]
+use video_player::VideoPlayerPlugin;
+
 #[cfg(feature = "html")]
 use {
     // foreign players

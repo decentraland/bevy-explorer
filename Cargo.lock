@@ -648,9 +648,9 @@ dependencies = [
  "dcl",
  "dcl_component",
  "ethers-core",
- "ffmpeg-next",
  "ipfs",
  "kira",
+ "media",
  "reqwest 0.12.15",
  "scene_runner",
  "system_bridge",
@@ -3622,6 +3622,7 @@ dependencies = [
  "ipfs",
  "log",
  "log-panics",
+ "media",
  "mimalloc",
  "naga_oil",
  "nft",
@@ -7034,6 +7035,23 @@ checksum = "8ea1f30cedd69f0a2954655f7188c6a834246d2bcf1e315e2ac40c4b24dc9519"
 dependencies = [
  "cfg-if",
  "rayon",
+]
+
+[[package]]
+name = "media"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "common",
+ "dcl_component",
+ "ffmpeg-next",
+ "ipfs",
+ "kira",
+ "log",
+ "reqwest 0.12.15",
+ "thiserror 1.0.69",
+ "tokio",
+ "urlencoding",
 ]
 
 [[package]]

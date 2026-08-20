@@ -12,10 +12,11 @@ use kira::{
     sound::{streaming::StreamingSoundData, PlaybackState},
     tween::Tween,
 };
+use media::AVCommand;
 use scene_runner::{ContainingScene, SceneEntity};
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::{stream_processor::AVCommand, AVPlayer, AVPlayerSinks, AVSinks, InScene};
+use crate::{AVPlayer, AVPlayerSinks, AVSinks, InScene};
 
 pub struct AudioSink {
     pub volume: f32,

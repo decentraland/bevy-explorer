@@ -1,11 +1,11 @@
 use anyhow::bail;
-use bevy::log::{debug, info, trace};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::Packet;
+use log::{debug, info, trace};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::ffmpeg_util::{PacketIter, BUFFER_TIME};
+use crate::ffmpeg::util::{BUFFER_TIME, PacketIter};
 
 #[derive(Debug)]
 pub enum AVCommand {
@@ -19,6 +19,7 @@ pub enum AVCommand {
 pub trait FfmpegContext {
     fn is_live(&self) -> bool;
     fn stream_index(&self) -> Option<usize>;
+    #[expect(dead_code)]
     fn has_frame(&self) -> bool;
     fn buffered_time(&self) -> f64;
     fn receive_packet(&mut self, packet: Packet) -> Result<(), anyhow::Error>;
@@ -193,15 +194,15 @@ pub fn process_streams(
 
             if let Some(sleep_time) = next_frame_time.checked_duration_since(Instant::now()) {
                 std::thread::sleep(sleep_time);
-            } else if let Some(lost_time) = Instant::now().checked_duration_since(next_frame_time) {
-                if lost_time > Duration::from_secs(1) {
-                    // we lost time - reset start frame and instant
-                    debug!("reset on loss");
-                    for stream in streams.iter_mut() {
-                        stream.set_start_frame();
-                    }
-                    start_instant = Some(now);
+            } else if let Some(lost_time) = Instant::now().checked_duration_since(next_frame_time)
+                && lost_time > Duration::from_secs(1)
+            {
+                // we lost time - reset start frame and instant
+                debug!("reset on loss");
+                for stream in streams.iter_mut() {
+                    stream.set_start_frame();
                 }
+                start_instant = Some(now);
             }
 
             if let Some(index) = next_index {
