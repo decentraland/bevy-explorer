@@ -1344,10 +1344,12 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> Option<SharedShape> {
     // trimesh_with_flags rather than erroring. drop those triangles.
     let vertex_count = positions_ref.len() as u32;
     let total_triangles = indices.len() / 3;
-    let indices_parry: Vec<_> = indices
-        .chunks_exact(3)
+    let indices_parry: Vec<[u32; 3]> = indices
+        .as_chunks::<3>()
+        .0
+        .iter()
         .filter(|chunk| chunk.iter().all(|ix| *ix < vertex_count))
-        .map(|chunk| chunk.try_into().unwrap())
+        .copied()
         .collect();
     if indices_parry.len() < total_triangles {
         warn!(
