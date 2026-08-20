@@ -72,8 +72,12 @@ impl Plugin for UserProfilePlugin {
 enum ProfileDisplayState {
     Loaded(Box<UserProfile>),
     Loading(Task<Result<Option<UserProfile>, anyhow::Error>>),
-    Failed,
+    Failed(web_time::Instant),
 }
+
+/// Failures are cached, so without a retry one transient error (timeout, dns, registry
+/// lag) would leave the address unresolvable for the engine's whole uptime.
+const PROFILE_FETCH_RETRY: std::time::Duration = std::time::Duration::from_secs(30);
 
 #[derive(Resource, Default)]
 pub struct ProfileCache(HashMap<Address, ProfileDisplayState>);
@@ -101,6 +105,13 @@ impl ProfileManager<'_, '_> {
         &mut self,
         address: Address,
     ) -> Result<Option<&UserProfile>, ProfileMissingError> {
+        // dropping the expired failure makes the entry below re-spawn the fetch
+        if let Some(ProfileDisplayState::Failed(at)) = self.cache.0.get(&address) {
+            if at.elapsed() >= PROFILE_FETCH_RETRY {
+                self.cache.0.remove(&address);
+            }
+        }
+
         let state = self.cache.0.entry(address).or_insert_with(|| {
             ProfileDisplayState::Loading(IoTaskPool::get().spawn_compat(get_remote_profile(
                 address,
@@ -112,7 +123,14 @@ impl ProfileManager<'_, '_> {
         if let ProfileDisplayState::Loading(task) = state {
             match task.complete() {
                 Some(Ok(Some(profile))) => *state = ProfileDisplayState::Loaded(Box::new(profile)),
-                Some(Ok(None)) | Some(Err(_)) => *state = ProfileDisplayState::Failed,
+                Some(Ok(None)) => {
+                    debug!("registry has no profile for {address:#x}");
+                    *state = ProfileDisplayState::Failed(web_time::Instant::now());
+                }
+                Some(Err(e)) => {
+                    warn!("profile fetch failed for {address:#x}: {e}");
+                    *state = ProfileDisplayState::Failed(web_time::Instant::now());
+                }
                 None => (),
             }
         }
@@ -120,7 +138,7 @@ impl ProfileManager<'_, '_> {
         Ok(match state {
             ProfileDisplayState::Loaded(data) => Some(data),
             ProfileDisplayState::Loading(_) => None,
-            ProfileDisplayState::Failed => return Err(ProfileMissingError),
+            ProfileDisplayState::Failed(_) => return Err(ProfileMissingError),
         })
     }
 
@@ -353,34 +371,35 @@ fn request_missing_profiles(
 
         let dbb = manager.meta_cache.0.get(&player.address).cloned();
         match manager.get_data(player.address) {
-            Ok(Some(profile)) => {
+            Ok(Some(profile)) if profile.version >= player.profile_version => {
                 // catalyst fetch complete
-                if profile.version >= player.profile_version {
-                    if let Ok(mut global_crdt) = contexts.get_mut(player.context) {
-                        global_crdt.update_crdt(
-                            SceneComponentId::PLAYER_IDENTITY_DATA,
-                            CrdtType::LWW_ANY,
-                            player.scene_id,
-                            &PbPlayerIdentityData {
-                                address: format!("{:#x}", player.address),
-                                is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
-                            },
-                        );
-                    }
-
-                    commands.entity(ent).try_insert(profile.clone());
-                } else {
-                    warn!(
-                        "removing stale profile {} != {} (meta = {:?})",
-                        profile.version, player.profile_version, dbb,
+                if let Ok(mut global_crdt) = contexts.get_mut(player.context) {
+                    global_crdt.update_crdt(
+                        SceneComponentId::PLAYER_IDENTITY_DATA,
+                        CrdtType::LWW_ANY,
+                        player.scene_id,
+                        &PbPlayerIdentityData {
+                            address: format!("{:#x}", player.address),
+                            is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
+                        },
                     );
-                    manager.remove(player.address);
-                    // debounce the re-fetch: remove() cleared the cache, so without
-                    // this the next frame would re-spawn the catalyst request (and
-                    // its POST) every tick until the registry serves the new version.
-                    requested.insert(player.address, time.elapsed_secs());
                 }
+
+                commands.entity(ent).try_insert(profile.clone());
                 continue;
+            }
+            Ok(Some(profile)) => {
+                warn!(
+                    "removing stale profile {} != {} (meta = {:?})",
+                    profile.version, player.profile_version, dbb,
+                );
+                manager.remove(player.address);
+                // debounce the re-fetch: remove() cleared the cache, so without
+                // this the next frame would re-spawn the catalyst request (and
+                // its POST) every tick until the registry serves the new version.
+                requested.insert(player.address, time.elapsed_secs());
+                // fall through to the comms profile request: the announcing peer is the
+                // authority on its own latest profile, so a lagging registry can't deadlock us
             }
             Ok(None) => {
                 // catalyst fetch in progress
@@ -693,11 +712,18 @@ pub async fn get_remote_profile(
         Some(endpoint) => endpoint,
         None => ipfs.lambda_endpoint().ok_or(anyhow!("not connected"))?,
     };
-    debug!("requesting profile from {}", endpoint);
+    // the .zone and .org registries hold separate profile namespaces, so the registry
+    // must match the peer's environment
+    let registry_url = if endpoint.contains(".decentraland.zone") {
+        "https://asset-bundle-registry.decentraland.zone/profiles"
+    } else {
+        "https://asset-bundle-registry.decentraland.org/profiles"
+    };
+    debug!("requesting profile for {address:#x} from {registry_url} (endpoint {endpoint})");
 
     let response = ipfs
         .client()
-        .post("https://asset-bundle-registry.decentraland.org/profiles")
+        .post(registry_url)
         .timeout(std::time::Duration::from_secs(10))
         .body(format!("{{ \"ids\": [\"{:#x}\"] }}", address))
         .header("content-type", "application/json")
