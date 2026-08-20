@@ -64,10 +64,11 @@ impl AssetLoader for SvgLoader {
             let data = image
                 .data
                 .unwrap()
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| {
-                    (u16::from_le_bytes([pair[0], pair[1]]) as f32 / u16::MAX as f32
-                        * u8::MAX as f32) as u8
+                    (u16::from_le_bytes(*pair) as f32 / u16::MAX as f32 * u8::MAX as f32) as u8
                 })
                 .collect::<Vec<_>>();
             image = Image::new(

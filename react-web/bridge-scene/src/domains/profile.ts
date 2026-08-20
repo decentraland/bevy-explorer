@@ -1,10 +1,13 @@
 // Profile: the local player's profile card + any user's passport (View Profile).
 //   from: @dcl/sdk getPlayer() (address/name/isGuest)
 //       + catalyst lambda  GET /lambdas/profiles/:userId  (avatar face + body, name, links)
+//       + the ENGINE's profile cache via ~system/Players getPlayerData (display identity for a list)
 //       + badges service   GET badges.decentraland.org/users/:id/badges
 //       + camera-reel       GET camera-reel-service.decentraland.org/api/users/:id/images
 import { getPlayer } from '@dcl/sdk/players'
+import { getPlayerData } from '~system/Players'
 import { catalystBase, getJson } from '../http'
+import type { UserData } from '~system/Players'
 import type { Badge, Profile } from '../../../src/engine/protocol'
 import type { Ctx } from '../bridge'
 
@@ -19,17 +22,69 @@ type CatalystAvatar = {
 }
 export type ProfileResponse = { avatars?: CatalystAvatar[] }
 
+/** Addresses are the cache key, always lowercased — the same wallet reaches us in either case. */
+export const profileKey = (address: string): string => address.toLowerCase()
+
 const cache = new Map<string, ProfileResponse>()
 export { cache as profileCache }
 
 export async function fetchProfile(userId: string): Promise<ProfileResponse | undefined> {
-  const cached = cache.get(userId)
+  const cached = cache.get(profileKey(userId))
   if (cached != null) return cached
   const base = await catalystBase()
   const data = await getJson<ProfileResponse>(`${base}/lambdas/profiles/${userId}`).catch(() => undefined)
-  if (data != null) cache.set(userId, data)
+  if (data != null) cache.set(profileKey(userId), data)
   return data
 }
+
+/** What a list row needs to show a person: their name, face, and claimed-name seal. */
+export type ProfileIdentity = { name: string; picture?: string; hasClaimedName: boolean }
+
+/** `hasClaimedName` rides the same payload, but isn't in the SDK's `UserData` typing. */
+type PlayerData = UserData & { hasClaimedName?: boolean }
+
+/**
+ * Ceiling on one lookup. Each address costs a slot in the scene's per-tick RPC budget
+ * (1000, shared with every other call the bridge makes that tick), so a service that
+ * ignores its `limit` param has to cost a truncated list rather than a broken tick. The
+ * real callers ask for at most 120 — 100 members plus 20 post authors. Anything dropped
+ * still renders, as its shortened address.
+ */
+const MAX_IDENTITIES = 200
+
+/**
+ * Resolve display identity for a list of addresses through the ENGINE's profile cache —
+ * the one the nametags, chat and passport UI already read. `getPlayerData` asks about one
+ * address, but the engine batches every address it doesn't already hold into a single
+ * registry request, so asking about a whole list at once still costs one round trip and
+ * anyone already on screen costs nothing. Returns a lookup that always answers: an address
+ * with no (or an unresolvable) profile falls back to its shortened form.
+ */
+export async function fetchIdentities(addresses: string[]): Promise<(address: string) => ProfileIdentity> {
+  const unique = [...new Set(addresses.filter((a) => a !== '').map(profileKey))]
+  if (unique.length > MAX_IDENTITIES) console.error(`[profile] ${unique.length} addresses asked for, resolving the first ${MAX_IDENTITIES}`)
+  const wanted = unique.slice(0, MAX_IDENTITIES)
+  const resolved = new Map<string, PlayerData>()
+  await Promise.all(
+    wanted.map(async (address) => {
+      const data = await getPlayerData({ userId: address })
+        .then((res) => res.data)
+        .catch(() => undefined)
+      if (data != null) resolved.set(address, data)
+    })
+  )
+  return (address) => identityOf(resolved.get(profileKey(address)), address)
+}
+
+function identityOf(data: PlayerData | undefined, address: string): ProfileIdentity {
+  return {
+    name: data?.displayName != null && data.displayName !== '' ? data.displayName : shortAddress(address),
+    picture: httpOrUndef(data?.avatar?.snapshots?.face256),
+    hasClaimedName: data?.hasClaimedName ?? false
+  }
+}
+
+const shortAddress = (a: string): string => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a)
 
 const httpOrUndef = (s?: string | null): string | undefined => (typeof s === 'string' && s.startsWith('http') ? s : undefined)
 
