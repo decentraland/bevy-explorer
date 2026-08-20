@@ -20,8 +20,33 @@ enabled; you rarely need to run it by hand.
 | `--production` | Production mode; disables preview-only behaviour. |
 | `--tick-hz <n>` | Scene tick rate. Defaults to 30. |
 | `--timeout <secs>` | Exit cleanly after N seconds. |
+| `--viewer` | Open a window rendering the server's own world. Preview, single-scene only. |
 
 `--scene-id`, `--private-key` and `--env` are accepted for hammurabi compatibility and ignored.
+
+## Debug viewer
+
+`--viewer` (or a truthy `DCL_SERVER_VIEWER`) opens a window showing what the server sees:
+the scene, remote players as capsules at the positions the server trusts, a clickable
+player list that focuses and orbit-follows a selection, and a free-fly camera.
+
+`sdk-commands start` forwards the whole environment to the server it spawns, so no SDK
+flag is needed:
+
+```bash
+DCL_SERVER_VIEWER=1 npm start
+```
+
+Controls: `WASD`/`Q`/`E` fly (`shift` faster, `ctrl` slower), right-drag to look, wheel to
+zoom, `Tab` to cycle players, `F` to frame everyone, `Esc` back to the free camera.
+
+It is a debug mode, not a second server: the process is still the authoritative server and
+every server-mode rule still applies (no avatar broadcast, no Pulse, server gatekeeper).
+But the render plugins it switches on are the client's, so a viewer run is not
+production-identical and its memory and CPU profile are not the ones measured for
+headless. Refused with `--orchestrated` (scenes overlap in world space) and without
+`--preview` — the launcher always passes `--preview` for standalone serving, so this only
+constrains hand-rolled engine invocations.
 
 ## Orchestrated mode (multiplayer-server)
 

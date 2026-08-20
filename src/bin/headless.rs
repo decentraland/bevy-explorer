@@ -57,13 +57,22 @@ use scene_runner::{
 };
 use system_bridge::SystemBridgePlugin;
 use tween::TweenPlugin;
+use ui_core::UiCorePlugin;
 use user_input::avatar_movement::{
     ActivePlayerComponent, AvatarMovement, AvatarMovementInfo, FromConfig, GroundCollider,
 };
+use visuals::VisualsPlugin;
 use wallet::{
     delegation::{StorageDelegation, StorageDelegations},
     sign_request, Wallet, WalletPlugin,
 };
+use world_ui::WorldUiPlugin;
+
+// `src/bin/headless.rs` is a crate root, so a bare `mod viewer;` would resolve to
+// `src/bin/viewer.rs` — which cargo would then auto-discover as another binary.
+// The explicit path keeps the module beside its binary without creating a bin target.
+#[path = "headless/viewer.rs"]
+mod viewer;
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
@@ -73,6 +82,8 @@ struct Args {
     preview: bool,
     server_mode: bool,
     orchestrated: bool,
+    /// open a window and render the server's own world (local debugging)
+    viewer: bool,
     timeout: Option<f32>,
     scene_threads: usize,
     tick_hz: u32,
@@ -105,6 +116,24 @@ fn parse_args() -> Args {
         );
         std::process::exit(2);
     }
+    // Windowed debug viewer. Single-scene only: under --orchestrated, co-tenant scenes
+    // physically overlap in world space (see foreign_dynamics.rs) so a window would render
+    // every scene superimposed, and CrdtContexts::for_scene_hash panics on a context miss.
+    let viewer = args.contains("--viewer") || viewer::env_enabled();
+    if viewer && orchestrated {
+        eprintln!(
+            "--viewer is a single-scene local-dev mode and cannot be used with --orchestrated"
+        );
+        std::process::exit(2);
+    }
+    // Outside preview, SceneBoundPlugin and WorldUiPlugin add the imposter-BAKE material
+    // plugins, whose render resources only DclImposterPlugin registers — with a render app
+    // present and no imposter plugin, that is a startup panic. Preview is the only flow
+    // --viewer is for anyway, so require it rather than half-support the other one.
+    if viewer && !preview {
+        eprintln!("--viewer is a local-dev mode and requires --preview");
+        std::process::exit(2);
+    }
     // latch the process-global server-role flags before the app is built
     if server_mode {
         common::structs::set_server_mode();
@@ -129,11 +158,23 @@ fn parse_args() -> Args {
         preview,
         server_mode,
         orchestrated,
+        viewer,
         timeout,
         scene_threads,
         tick_hz,
         storage_delegation,
         wallet_seed,
+    }
+}
+
+/// The preview-mode resource, built from the CLI. Factored out because viewer mode has to
+/// insert it *before* the plugin block (several plugins read it at plugin-build time),
+/// while the render-free path inserts it with the other resources afterwards.
+fn preview_mode_resource(args: &Args) -> PreviewMode {
+    PreviewMode {
+        server: args.preview.then(|| map_realm_name(&args.realm)),
+        is_preview: args.preview,
+        preview_parcel: None,
     }
 }
 
@@ -259,9 +300,19 @@ fn main() {
     TIMEOUT.set(args.timeout).ok();
 
     println!(
-        "[headless] realm={} location={} preview={} server_mode={} tick_hz={}",
-        args.realm, args.location, args.preview, args.server_mode, args.tick_hz
+        "[headless] realm={} location={} preview={} server_mode={} tick_hz={} viewer={}",
+        args.realm, args.location, args.preview, args.server_mode, args.tick_hz, args.viewer
     );
+    if args.viewer {
+        // Say it plainly: viewer mode puts the server on the client's presentation code
+        // path (scene UI, materials, textures, pointer results all come back). Every
+        // server_mode() gate still applies, but this is not a production-identical server
+        // and its memory/CPU profile is not the one measured in docs/headless-sdk-preview.md.
+        println!(
+            "[headless] VIEWER MODE: render plugins are active — this is a debug build of \
+             the server, not a production-identical one"
+        );
+    }
 
     let config = AppConfig {
         server: args.realm.clone(),
@@ -303,54 +354,93 @@ fn main() {
         ..default()
     });
 
-    // ---- render-free plugin set (mirrors scene_runner TestPlugins) ----
-    app.add_plugins(TaskPoolPlugin::default())
-        .add_plugins(FrameCountPlugin)
-        .add_plugins(TimePlugin)
-        .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
-        .add_plugins(TransformPlugin)
-        .add_plugins(DiagnosticsPlugin)
-        .add_plugins(IpfsIoPlugin {
-            preview: args.preview,
-            assets_root: None,
-            starting_realm: Some(map_realm_name(&args.realm)),
-            content_server_override: None,
-            num_slots: config.max_concurrent_remotes,
-        })
-        .add_plugins(AssetPlugin::default())
-        .add_plugins(MeshPlugin)
-        .add_plugins(GltfPlugin::default())
-        .add_plugins(AnimationPlugin)
-        .add_plugins(InputPlugin)
-        .add_plugins(ScenePlugin)
-        .add_plugins(StatesPlugin)
-        .add_plugins(ConsolePlugin {
-            add_bevy_console: false,
-        })
-        .add_plugins(WalletPlugin)
-        .add_plugins(CommsPlugin)
-        // foreign avatar bevy transforms (render-free, unlike the rest of AvatarPlugin):
-        // without these, engine-side position logic — scene membership, avatar colliders,
-        // trigger areas — sees every remote player at the origin
-        .add_plugins(avatar::foreign_dynamics::PlayerMovementPlugin)
-        .add_plugins(DuiPlugin)
-        .add_plugins(SystemBridgePlugin { bare: true });
+    if args.viewer {
+        // ---- windowed viewer: DefaultPlugins brings the render app back ----
+        // The bevy dependency always compiles bevy_render/bevy_winit in (see Cargo.toml),
+        // so this needs no extra cargo feature — headless just never *adds* these.
+        app.add_plugins(viewer::default_plugins(
+            &args.realm,
+            args.preview,
+            config.max_concurrent_remotes,
+        ));
 
-    // manual asset inits the scene runtime needs (from init_test_app). The text stack
-    // (Font/TextPipeline/CosmicFontSystem) and StretchUvMaterial went with the scene-UI
-    // and TextShape plugins below.
-    app.init_asset::<Shader>()
-        .init_asset::<AnimationClip>()
-        .init_asset::<Image>();
+        // The client inserts these before its plugins; headless normally inserts them with
+        // the other resources below, which is harmless with no render app. With one, three
+        // plugins read them at plugin-BUILD time and get the wrong answer from their
+        // absence:
+        //   - VisualsPlugin      reads AppConfig.graphics.gpu_bytes_per_frame
+        //   - SceneBoundPlugin   } read PreviewMode to decide whether to add the imposter
+        //   - WorldUiPlugin      } BAKE material plugin, which panics without the render
+        //                          resources that only DclImposterPlugin registers
+        // Both are re-inserted with identical values in the resource block below.
+        app.insert_resource(config.clone());
+        app.insert_resource(preview_mode_resource(&args));
+    } else {
+        // ---- render-free plugin set (mirrors scene_runner TestPlugins) ----
+        app.add_plugins(TaskPoolPlugin::default())
+            .add_plugins(FrameCountPlugin)
+            .add_plugins(TimePlugin)
+            .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
+            .add_plugins(TransformPlugin)
+            .add_plugins(DiagnosticsPlugin)
+            .add_plugins(IpfsIoPlugin {
+                preview: args.preview,
+                assets_root: None,
+                starting_realm: Some(map_realm_name(&args.realm)),
+                content_server_override: None,
+                num_slots: config.max_concurrent_remotes,
+            })
+            .add_plugins(AssetPlugin::default())
+            .add_plugins(MeshPlugin)
+            .add_plugins(GltfPlugin::default())
+            .add_plugins(AnimationPlugin)
+            .add_plugins(InputPlugin)
+            .add_plugins(ScenePlugin)
+            .add_plugins(StatesPlugin);
+    }
 
-    // Skip the render-only scene plugins (scene UI, TextShape, scene materials, billboards,
-    // lights, visibility, pointer results). Must precede SceneRunnerPlugin: the gates are
-    // read at plugin-build time.
-    app.insert_resource(NoRenderApp);
+    // Shared from here down. The render-free branch's plugin ORDER is deliberately
+    // unchanged from before `--viewer` existed — it is the shipped production server.
+    app.add_plugins(ConsolePlugin {
+        add_bevy_console: false,
+    })
+    .add_plugins(WalletPlugin)
+    .add_plugins(CommsPlugin)
+    // foreign avatar bevy transforms (render-free, unlike the rest of AvatarPlugin):
+    // without these, engine-side position logic — scene membership, avatar colliders,
+    // trigger areas — sees every remote player at the origin.
+    // NOTE for viewer mode: this is also why AvatarPlugin must NOT be added there — it
+    // re-adds this plugin, which bevy rejects as a duplicate.
+    .add_plugins(avatar::foreign_dynamics::PlayerMovementPlugin);
 
-    app.add_plugins(MaterialPlugin::<StandardMaterial>::default())
-        .add_plugins(GizmoPlugin)
-        .add_plugins(UtilsPlugin)
+    if args.viewer {
+        // UiCorePlugin adds DuiPlugin itself; adding both panics on duplicate plugin
+        app.add_plugins(UiCorePlugin);
+    } else {
+        app.add_plugins(DuiPlugin);
+    }
+
+    app.add_plugins(SystemBridgePlugin { bare: true });
+
+    if !args.viewer {
+        // manual asset inits the scene runtime needs (from init_test_app). The text stack
+        // (Font/TextPipeline/CosmicFontSystem) and StretchUvMaterial went with the scene-UI
+        // and TextShape plugins below. With a render app present these are all registered
+        // for us, and re-registering would be the only place the two paths could drift.
+        app.init_asset::<Shader>()
+            .init_asset::<AnimationClip>()
+            .init_asset::<Image>();
+
+        // Skip the render-only scene plugins (scene UI, TextShape, scene materials, billboards,
+        // lights, visibility, pointer results). Must precede SceneRunnerPlugin: the gates are
+        // read at plugin-build time.
+        app.insert_resource(NoRenderApp);
+
+        app.add_plugins(MaterialPlugin::<StandardMaterial>::default())
+            .add_plugins(GizmoPlugin);
+    }
+
+    app.add_plugins(UtilsPlugin)
         .add_plugins(SceneRunnerPlugin)
         // tweens drive transforms (moving platforms → colliders), so they run headless
         // like AnimatorPlugin; texture-move no-ops without material components
@@ -358,7 +448,18 @@ fn main() {
         .add_plugins(SceneBoundPlugin)
         .add_plugins(RestrictedActionsPlugin);
 
-    register_gltf_scene_types(&mut app);
+    if args.viewer {
+        // TextShapePlugin (ungated once NoRenderApp is absent) calls world_ui::spawn_world_ui_view
+        app.add_plugins(WorldUiPlugin)
+            .add_plugins(VisualsPlugin { no_fog: false })
+            .add_plugins(viewer::ViewerPlugin {
+                tick_hz: args.tick_hz,
+            });
+    } else {
+        // RenderPlugin/PbrPlugin/VisibilityPlugin register these when they are present;
+        // only the render-free path has to do it by hand.
+        register_gltf_scene_types(&mut app);
+    }
 
     // embedded assets: the scene-loading material (grid.png / loading.wgsl)
     app.add_plugins(assets::EmbedAssetsPlugin);
@@ -419,11 +520,7 @@ fn main() {
             unload: 0.0,
             load_imposter: 0.0,
         })
-        .insert_resource(PreviewMode {
-            server: args.preview.then(|| map_realm_name(&args.realm)),
-            is_preview: args.preview,
-            preview_parcel: None,
-        })
+        .insert_resource(preview_mode_resource(&args))
         // servers must never join realm-wide comms (archipelago / world room) — they would
         // show up as a ghost participant. A non-server headless follows its realm about's
         // fixed_adapter like any client (offline about ⇒ no comms), so it can act as a
