@@ -49,9 +49,9 @@ pub fn av_sinks(
     );
 
     if playing {
-        command_sender.send(AVCommand::Play).unwrap();
+        command_sender.send(AVCommand::Play).report();
     }
-    command_sender.send(AVCommand::Repeat(repeat)).unwrap();
+    command_sender.send(AVCommand::Repeat(repeat)).report();
 
     (
         VideoSink {
