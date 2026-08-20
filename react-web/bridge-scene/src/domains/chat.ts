@@ -4,7 +4,7 @@
 import { engine, PlayerIdentityData, PointerLock } from '@dcl/sdk/ecs'
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
-import { fetchProfile, profileCache } from './profile'
+import { fetchProfile, profileCache, profileKey } from './profile'
 import { setChatBubble } from './nametags'
 import { onSystemAction } from './systemAction'
 import type { Ctx } from '../bridge'
@@ -73,10 +73,10 @@ export function registerChat(ctx: Ctx): void {
     const members: NearbyMember[] = []
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) {
       const address = data.address
-      if (!profileCache.has(address)) {
+      if (!profileCache.has(profileKey(address))) {
         void fetchProfile(address).catch(() => undefined)
       }
-      const face = profileCache.get(address)?.avatars?.[0]?.avatar?.snapshots?.face256
+      const face = profileCache.get(profileKey(address))?.avatars?.[0]?.avatar?.snapshots?.face256
       members.push({
         address,
         name: getPlayer({ userId: address })?.name ?? '',
