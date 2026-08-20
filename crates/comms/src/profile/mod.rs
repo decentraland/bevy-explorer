@@ -49,7 +49,11 @@ impl Plugin for UserProfilePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (request_missing_profiles, process_profile_events).before(process_transport_updates), // .in_set(TODO)
+            (
+                (drive_profile_fetches, request_missing_profiles).chain(),
+                process_profile_events,
+            )
+                .before(process_transport_updates), // .in_set(TODO)
         );
 
         // a server has no real local player: never insert/announce/deploy the fake
@@ -64,28 +68,134 @@ impl Plugin for UserProfilePlugin {
         app.insert_resource(CurrentUserProfile::default());
         app.init_resource::<ProfileCache>()
             .init_resource::<ProfileMetaCache>()
-            .init_resource::<StaleProfiles>()
             .add_event::<ProfileDeployedEvent>();
     }
 }
 
-enum ProfileDisplayState {
-    Loaded(Box<UserProfile>),
-    Loading(Task<Result<Option<UserProfile>, anyhow::Error>>),
-    Failed,
+/// Pacing for the fetch cascade: how long an unsatisfied entry waits after its last
+/// cascade concluded before running another. Covers both failure retry (without it one
+/// transient error would leave an address unresolvable for the engine's whole uptime)
+/// and the convergence re-probe of data the registry hasn't confirmed yet.
+const PROFILE_FETCH_RETRY: std::time::Duration = std::time::Duration::from_secs(30);
+/// The registry serves many ids per request; keep a batch well under any server-side cap
+/// and split anything longer across requests.
+const PROFILE_REQUEST_BATCH: usize = 100;
+
+/// Where held profile data came from. Declared in ascending order of authority so the
+/// derived `Ord` ranks them: an equal-version answer only displaces held data when it
+/// comes from a more authoritative source.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum ProfileSource {
+    Peer,
+    Catalyst,
+    Registry,
+}
+
+fn profile_is_guest(profile: &UserProfile) -> bool {
+    !profile.content.has_connected_web3.unwrap_or(false)
+}
+
+#[derive(Default)]
+struct ProfileEntry {
+    /// highest version any announcement or response has claimed for this address
+    announced: u32,
+    /// best data we hold and where it came from
+    data: Option<(Box<UserProfile>, ProfileSource)>,
+    /// fetch strategy currently in flight (`Registry` = member of a batch POST,
+    /// `Catalyst` = a single GET); p2p is fire-and-forget, tracked by `last_p2p`
+    fetching: Option<ProfileSource>,
+    /// when the next cascade may start; None = due now. Irrelevant once satisfied.
+    next_fetch: Option<web_time::Instant>,
+    /// `time.elapsed_secs()` of the last `ProfileRequest` sent to the peer
+    last_p2p: Option<f32>,
+}
+
+impl ProfileEntry {
+    fn profile(&self) -> Option<&UserProfile> {
+        self.data.as_ref().map(|(profile, _)| profile.as_ref())
+    }
+
+    /// nothing better to look for: registry-confirmed data, or a guest peer's own
+    /// answer (which no registry will ever hold), at the announced version
+    fn satisfied(&self) -> bool {
+        self.data.as_ref().is_some_and(|(profile, source)| {
+            profile.version >= self.announced
+                && (*source == ProfileSource::Registry
+                    || (*source == ProfileSource::Peer && profile_is_guest(profile)))
+        })
+    }
+
+    fn due(&self, now: web_time::Instant) -> bool {
+        self.next_fetch.is_none_or(|at| at <= now)
+    }
+
+    fn wants_fetch(&self, now: web_time::Instant) -> bool {
+        !self.satisfied() && self.fetching.is_none() && self.due(now)
+    }
+
+    /// catalyst is worth asking when we hold nothing, hold only p2p data, or are behind
+    /// the announcement; catalyst-sourced data at the announced version re-probes the
+    /// registry alone
+    fn include_catalyst(&self) -> bool {
+        match &self.data {
+            None => true,
+            Some((profile, _)) if profile.version < self.announced => true,
+            Some((_, ProfileSource::Peer)) => true,
+            _ => false,
+        }
+    }
+
+    /// accept a newer version from anywhere, and an equal version only from a more
+    /// authoritative source; also lifts `announced` so a response can't be outranked by
+    /// an announcement we haven't seen
+    fn apply(&mut self, profile: UserProfile, source: ProfileSource) -> bool {
+        self.announced = self.announced.max(profile.version);
+        let improvement = match &self.data {
+            None => true,
+            Some((held, held_source)) => {
+                profile.version > held.version
+                    || (profile.version == held.version && source > *held_source)
+            }
+        };
+        if improvement {
+            self.data = Some((Box::new(profile), source));
+        }
+        improvement
+    }
+
+    /// ask the peer directly when we're missing or behind the announcement: for guests
+    /// this is the only source there is, for everyone else the peer is the authority on
+    /// its own latest profile. Held back until the first cascade concludes so the
+    /// authoritative sources get first go, except when we already hold (stale) data —
+    /// then the request rides alongside the re-fetch.
+    fn wants_p2p(&self, now: f32) -> bool {
+        let behind = self
+            .data
+            .as_ref()
+            .is_none_or(|(profile, _)| profile.version < self.announced);
+        if !behind {
+            return false;
+        }
+        let concluded = self.fetching.is_none() && self.next_fetch.is_some();
+        if self.data.is_none() && !concluded {
+            return false;
+        }
+        self.last_p2p.is_none_or(|at| now - at >= 10.0)
+    }
+}
+
+type CatalystFetch = Task<Result<Option<UserProfile>, anyhow::Error>>;
+type RegistryBatch = Task<Vec<(Address, Result<Option<UserProfile>, anyhow::Error>)>>;
+
+#[derive(Resource, Default)]
+pub struct ProfileCache {
+    entries: HashMap<Address, ProfileEntry>,
+    registry_batches: Vec<RegistryBatch>,
+    catalyst_fetches: HashMap<Address, CatalystFetch>,
 }
 
 #[derive(Resource, Default)]
-pub struct ProfileCache(HashMap<Address, ProfileDisplayState>);
-#[derive(Resource, Default)]
 pub struct ProfileMetaCache(pub HashMap<Address, String>);
-
-/// Players whose announced profile_version is newer than the UserProfile we
-/// hold. Maintained by `process_profile_events` so `request_missing_profiles`
-/// doesn't have to version-check every player every frame; players with no
-/// UserProfile at all are found by an archetype-filtered (Without) query.
-#[derive(Resource, Default)]
-pub struct StaleProfiles(bevy::platform::collections::HashSet<Entity>);
 
 #[derive(SystemParam)]
 pub struct ProfileManager<'w, 's> {
@@ -97,31 +207,29 @@ pub struct ProfileManager<'w, 's> {
 pub struct ProfileMissingError;
 
 impl ProfileManager<'_, '_> {
+    /// Serve the best data we hold (however stale); creating the entry queues the fetch
+    /// cascade, which `drive_profile_fetches` runs. Ok(None) while a fetch is pending;
+    /// Err once a cascade has concluded with nothing (until the retry comes due).
     pub fn get_data(
         &mut self,
         address: Address,
     ) -> Result<Option<&UserProfile>, ProfileMissingError> {
-        let state = self.cache.0.entry(address).or_insert_with(|| {
-            ProfileDisplayState::Loading(IoTaskPool::get().spawn_compat(get_remote_profile(
-                address,
-                self.ipfs.ipfs().clone(),
-                self.meta_cache.0.get(&address).cloned(),
-            )))
-        });
-
-        if let ProfileDisplayState::Loading(task) = state {
-            match task.complete() {
-                Some(Ok(Some(profile))) => *state = ProfileDisplayState::Loaded(Box::new(profile)),
-                Some(Ok(None)) | Some(Err(_)) => *state = ProfileDisplayState::Failed,
-                None => (),
-            }
+        let entry = self.cache.entries.entry(address).or_default();
+        if entry.data.is_none() && entry.fetching.is_none() && !entry.due(web_time::Instant::now())
+        {
+            return Err(ProfileMissingError);
         }
+        Ok(entry.profile())
+    }
 
-        Ok(match state {
-            ProfileDisplayState::Loaded(data) => Some(data),
-            ProfileDisplayState::Loading(_) => None,
-            ProfileDisplayState::Failed => return Err(ProfileMissingError),
-        })
+    /// Record that this address' profile is claimed to exist at `version`; a version
+    /// ahead of what we hold makes the fetch cascade due immediately.
+    pub fn announce(&mut self, address: Address, version: u32) {
+        let entry = self.cache.entries.entry(address).or_default();
+        if version > entry.announced {
+            entry.announced = version;
+            entry.next_fetch = None;
+        }
     }
 
     pub fn get_image(
@@ -156,16 +264,27 @@ impl ProfileManager<'_, '_> {
         Ok(self.get_data(address)?.map(|profile| &profile.content.name))
     }
 
+    /// Record an authoritative profile (our own, which we deploy ourselves).
+    /// Unconditional: even a same-version edit replaces what the cache holds.
     pub fn update(&mut self, profile: UserProfile) {
         if let Some(address) = profile.content.eth_address.as_h160() {
-            self.cache
-                .0
-                .insert(address, ProfileDisplayState::Loaded(Box::new(profile)));
+            let entry = self.cache.entries.entry(address).or_default();
+            entry.announced = entry.announced.max(profile.version);
+            entry.data = Some((Box::new(profile), ProfileSource::Registry));
         }
     }
 
-    pub fn remove(&mut self, address: Address) {
-        self.cache.0.remove(&address);
+    /// Record a profile received directly from the owning peer. `apply`'s authority
+    /// ranking keeps a room-broadcast response from displacing an equal-version
+    /// registry answer; a guest's own answer counts as final via `satisfied`.
+    pub fn update_from_peer(&mut self, profile: UserProfile) {
+        if let Some(address) = profile.content.eth_address.as_h160() {
+            self.cache
+                .entries
+                .entry(address)
+                .or_default()
+                .apply(profile, ProfileSource::Peer);
+        }
     }
 }
 
@@ -312,50 +431,152 @@ pub struct CurrentUserProfile {
     pub is_deployed: bool,
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Run the fetch cascade for every entry that wants one: registry batches (grouped by
+/// registry host, since .zone and .org hold separate namespaces), escalating a registry
+/// miss to a single catalyst fetch where that's worth asking, and pacing unsatisfied
+/// entries with `PROFILE_FETCH_RETRY`. All fetch policy lives here — the fetchers
+/// themselves are dumb HTTP.
+fn drive_profile_fetches(mut manager: ProfileManager) {
+    let ProfileManager {
+        cache,
+        meta_cache,
+        ipfs,
+    } = &mut manager;
+    let ProfileCache {
+        entries,
+        registry_batches,
+        catalyst_fetches,
+    } = &mut **cache;
+    let own_endpoint = ipfs.ipfs().lambda_endpoint();
+
+    // apply landed registry batches, escalating misses to a catalyst fetch
+    registry_batches.retain_mut(|batch| {
+        let Some(results) = batch.complete() else {
+            return true;
+        };
+        for (address, result) in results {
+            let Some(entry) = entries.get_mut(&address) else {
+                continue;
+            };
+            entry.fetching = None;
+            match result {
+                Ok(Some(profile)) => {
+                    debug!("applying registry response for {address:#x}");
+                    entry.apply(profile, ProfileSource::Registry);
+                }
+                Ok(None) => debug!("registry has no profile for {address:#x}"),
+                Err(e) => {
+                    if entry.data.is_none() {
+                        warn!("profile fetch failed for {address:#x}: {e}");
+                    } else {
+                        debug!("profile re-fetch failed for {address:#x}: {e}");
+                    }
+                }
+            }
+            if entry.satisfied() {
+                continue;
+            }
+            let endpoint = meta_cache
+                .0
+                .get(&address)
+                .cloned()
+                .or_else(|| own_endpoint.clone());
+            if let Some(endpoint) = entry.include_catalyst().then_some(endpoint).flatten() {
+                entry.fetching = Some(ProfileSource::Catalyst);
+                catalyst_fetches.insert(
+                    address,
+                    IoTaskPool::get().spawn_compat(fetch_catalyst_profile(
+                        endpoint,
+                        address,
+                        ipfs.ipfs().clone(),
+                    )),
+                );
+            } else {
+                entry.next_fetch = Some(web_time::Instant::now() + PROFILE_FETCH_RETRY);
+            }
+        }
+        false
+    });
+
+    // apply landed catalyst fetches; the cascade concludes here either way
+    catalyst_fetches.retain(|address, task| {
+        let Some(result) = task.complete() else {
+            return true;
+        };
+        if let Some(entry) = entries.get_mut(address) {
+            entry.fetching = None;
+            match result {
+                Ok(Some(profile)) => {
+                    entry.apply(profile, ProfileSource::Catalyst);
+                }
+                Ok(None) => debug!("catalyst has no profile for {address:#x}"),
+                Err(e) => {
+                    if entry.data.is_none() {
+                        warn!("profile fetch failed for {address:#x}: {e}");
+                    } else {
+                        debug!("profile re-fetch failed for {address:#x}: {e}");
+                    }
+                }
+            }
+            if !entry.satisfied() {
+                entry.next_fetch = Some(web_time::Instant::now() + PROFILE_FETCH_RETRY);
+            }
+        }
+        false
+    });
+
+    // collect due entries into registry batches, one set per registry host
+    let now = web_time::Instant::now();
+    let mut wants: HashMap<&'static str, Vec<Address>> = HashMap::default();
+    for (address, entry) in entries.iter_mut() {
+        if entry.wants_fetch(now) {
+            entry.fetching = Some(ProfileSource::Registry);
+            let endpoint = meta_cache
+                .0
+                .get(address)
+                .map(String::as_str)
+                .or(own_endpoint.as_deref());
+            wants
+                .entry(registry_url(endpoint))
+                .or_default()
+                .push(*address);
+        }
+    }
+    for (url, addresses) in wants {
+        for chunk in addresses.chunks(PROFILE_REQUEST_BATCH) {
+            registry_batches.push(IoTaskPool::get().spawn_compat(fetch_registry_profiles(
+                url,
+                chunk.to_vec(),
+                ipfs.ipfs().clone(),
+            )));
+        }
+    }
+}
+
 fn request_missing_profiles(
     mut commands: Commands,
     missing: Query<(Entity, &ForeignPlayer), Without<UserProfile>>,
     versioned: Query<(Entity, &ForeignPlayer, &UserProfile)>,
-    mut stale: ResMut<StaleProfiles>,
     mut manager: ProfileManager,
     mut contexts: Query<&mut GlobalCrdtState>,
-    mut requested: Local<HashMap<Address, f32>>,
     transports: Query<&Transport>,
     time: Res<Time>,
 ) {
-    // drop stale-set entries that resolved (or despawned) since last frame
-    if !stale.0.is_empty() {
-        stale.0.retain(|e| {
-            versioned
-                .get(*e)
-                .is_ok_and(|(_, player, profile)| player.profile_version > profile.version)
-        });
-    }
-    if missing.is_empty() && stale.0.is_empty() {
-        if !requested.is_empty() {
-            requested.clear();
-        }
-        return;
-    }
+    let now = time.elapsed_secs();
 
-    let stale_players = stale
-        .0
-        .iter()
-        .filter_map(|e| versioned.get(*e).ok().map(|(ent, player, _)| (ent, player)));
+    // resolved players: push cache movement, but diff before any push — only real
+    // changes reach the entity/scenes
+    for (ent, player, current) in versioned.iter() {
+        manager.announce(player.address, player.profile_version);
+        let Some(entry) = manager.cache.entries.get_mut(&player.address) else {
+            continue;
+        };
 
-    for (ent, player) in missing.iter().chain(stale_players) {
-        if let Some(req_time) = requested.get(&player.address) {
-            if time.elapsed_secs() - req_time < 10.0 {
-                continue;
-            }
-        }
-
-        let dbb = manager.meta_cache.0.get(&player.address).cloned();
-        match manager.get_data(player.address) {
-            Ok(Some(profile)) => {
-                // catalyst fetch complete
-                if profile.version >= player.profile_version {
+        if let Some(data) = entry.profile() {
+            if data.version >= current.version && data != current {
+                let was_guest = profile_is_guest(current);
+                let is_guest = profile_is_guest(data);
+                if was_guest != is_guest {
                     if let Ok(mut global_crdt) = contexts.get_mut(player.context) {
                         global_crdt.update_crdt(
                             SceneComponentId::PLAYER_IDENTITY_DATA,
@@ -363,68 +584,86 @@ fn request_missing_profiles(
                             player.scene_id,
                             &PbPlayerIdentityData {
                                 address: format!("{:#x}", player.address),
-                                is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
+                                is_guest,
                             },
                         );
                     }
-
-                    commands.entity(ent).try_insert(profile.clone());
-                } else {
-                    warn!(
-                        "removing stale profile {} != {} (meta = {:?})",
-                        profile.version, player.profile_version, dbb,
-                    );
-                    manager.remove(player.address);
-                    // debounce the re-fetch: remove() cleared the cache, so without
-                    // this the next frame would re-spawn the catalyst request (and
-                    // its POST) every tick until the registry serves the new version.
-                    requested.insert(player.address, time.elapsed_secs());
                 }
-                continue;
-            }
-            Ok(None) => {
-                // catalyst fetch in progress
-                continue;
-            }
-            Err(_) => {
-                // catalyst doesn't have the data, fallback to comms profile request
+                commands.entity(ent).try_insert(data.clone());
             }
         }
 
-        // Pick a transport at request time rather than remembering one. `player.transports` is the
-        // set this peer is actually on — joined rooms are added, departures remove them — so any
-        // non-Pulse member is a channel we provably share; Pulse itself is excluded because it
-        // relays version announcements only (its bridge can't encode a `ProfileRequest`). Nothing
-        // is cached, so a room joined later is picked up on the next retry.
-        if let Some(transport) = player
-            .transports
-            .iter()
-            .filter_map(|transport| transports.get(*transport).ok())
-            .find(|t| t.transport_type != TransportType::Pulse)
-        {
-            let request = rfc4::Packet {
-                message: Some(rfc4::packet::Message::ProfileRequest(
-                    rfc4::ProfileRequest {
-                        address: format!("{:#x}", player.address),
-                        profile_version: player.profile_version,
-                    },
-                )),
-                protocol_version: 100,
-            };
-            match transport.sender.try_send(NetworkMessage {
-                recipient: NetworkMessageRecipient::Peer(player.address),
-                ..NetworkMessage::unreliable(&request)
-            }) {
-                Err(e) => {
-                    warn!("failed to send request: {e}");
-                }
-                Ok(_) => {
-                    debug!("sent profile request for player {player:?}");
-                }
-            };
-            requested.insert(player.address, time.elapsed_secs());
+        if entry.wants_p2p(now) && send_profile_request(player, &transports) {
+            entry.last_p2p = Some(now);
         }
     }
+
+    // unresolved players: push the first data that lands, even when it's older than the
+    // announced version — a name beats a truncated address, and the fetch cascade keeps
+    // working toward the announced version
+    for (ent, player) in missing.iter() {
+        manager.announce(player.address, player.profile_version);
+        let Some(entry) = manager.cache.entries.get_mut(&player.address) else {
+            continue;
+        };
+
+        if let Some(data) = entry.profile() {
+            if let Ok(mut global_crdt) = contexts.get_mut(player.context) {
+                global_crdt.update_crdt(
+                    SceneComponentId::PLAYER_IDENTITY_DATA,
+                    CrdtType::LWW_ANY,
+                    player.scene_id,
+                    &PbPlayerIdentityData {
+                        address: format!("{:#x}", player.address),
+                        is_guest: profile_is_guest(data),
+                    },
+                );
+            }
+            commands.entity(ent).try_insert(data.clone());
+        }
+
+        if entry.wants_p2p(now) && send_profile_request(player, &transports) {
+            entry.last_p2p = Some(now);
+        }
+    }
+}
+
+/// Pick a transport at request time rather than remembering one. `player.transports` is the
+/// set this peer is actually on — joined rooms are added, departures remove them — so any
+/// non-Pulse member is a channel we provably share; Pulse itself is excluded because it
+/// relays version announcements only (its bridge can't encode a `ProfileRequest`). Nothing
+/// is cached, so a room joined later is picked up on the next retry.
+fn send_profile_request(player: &ForeignPlayer, transports: &Query<&Transport>) -> bool {
+    let Some(transport) = player
+        .transports
+        .iter()
+        .filter_map(|transport| transports.get(*transport).ok())
+        .find(|t| t.transport_type != TransportType::Pulse)
+    else {
+        return false;
+    };
+
+    let request = rfc4::Packet {
+        message: Some(rfc4::packet::Message::ProfileRequest(
+            rfc4::ProfileRequest {
+                address: format!("{:#x}", player.address),
+                profile_version: player.profile_version,
+            },
+        )),
+        protocol_version: 100,
+    };
+    match transport.sender.try_send(NetworkMessage {
+        recipient: NetworkMessageRecipient::Peer(player.address),
+        ..NetworkMessage::unreliable(&request)
+    }) {
+        Err(e) => {
+            warn!("failed to send request: {e}");
+        }
+        Ok(_) => {
+            debug!("sent profile request for player {player:?}");
+        }
+    };
+    true
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -439,7 +678,6 @@ pub fn process_profile_events(
     current_profile: Res<CurrentUserProfile>,
     mut contexts: Query<&mut GlobalCrdtState>,
     mut cache: ProfileManager,
-    mut stale: ResMut<StaleProfiles>,
 ) {
     for ev in events.read() {
         match &ev.event {
@@ -488,16 +726,12 @@ pub fn process_profile_events(
                 }
             }
             ProfileEventType::Version(v) => {
-                if let Ok((mut player, maybe_profile)) = players.get_mut(ev.sender) {
+                if let Ok((mut player, _)) = players.get_mut(ev.sender) {
                     if player.profile_version != v.profile_version {
                         player.profile_version = v.profile_version;
                     }
-                    // flag for re-fetch when the announced version is ahead of
-                    // what we hold (request_missing_profiles drains this set)
-                    if maybe_profile.is_some_and(|profile| player.profile_version > profile.version)
-                    {
-                        stale.0.insert(ev.sender);
-                    }
+                    // a version ahead of what we hold makes the fetch cascade due
+                    cache.announce(player.address, v.profile_version);
                 } else {
                     warn!("profile version for unknown player {:?}", ev.sender);
                 }
@@ -528,19 +762,28 @@ pub fn process_profile_events(
                         base_url: r.base_url.clone(),
                     };
 
-                    if let Ok(mut global_crdt) = contexts.get_mut(player.context) {
-                        global_crdt.update_crdt(
-                            SceneComponentId::PLAYER_IDENTITY_DATA,
-                            CrdtType::LWW_ANY,
-                            player.scene_id,
-                            &PbPlayerIdentityData {
-                                address: format!("{:#x}", player.address),
-                                is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
-                            },
-                        );
+                    // diff before any push: only write the identity crdt when the guest
+                    // flag actually changes (or on first sight of this player's profile)
+                    let is_guest = !(profile.content.has_connected_web3.unwrap_or(false));
+                    let guest_changed = maybe_profile.as_ref().is_none_or(|existing| {
+                        let was_guest = !existing.content.has_connected_web3.unwrap_or(false);
+                        was_guest != is_guest
+                    });
+                    if guest_changed {
+                        if let Ok(mut global_crdt) = contexts.get_mut(player.context) {
+                            global_crdt.update_crdt(
+                                SceneComponentId::PLAYER_IDENTITY_DATA,
+                                CrdtType::LWW_ANY,
+                                player.scene_id,
+                                &PbPlayerIdentityData {
+                                    address: format!("{:#x}", player.address),
+                                    is_guest,
+                                },
+                            );
+                        }
                     }
 
-                    cache.update(profile.clone());
+                    cache.update_from_peer(profile.clone());
 
                     if let Some(mut existing_profile) = maybe_profile {
                         if existing_profile.as_ref() != &profile {
@@ -681,67 +924,171 @@ async fn deploy_profile(
     }
 }
 
-/// Ok(None) means the registry authoritatively reports no profile for the address; any
-/// failure to get a well-formed answer (no realm, transport error, bad status, parse
-/// failure) is an Err, so callers can tell "no profile" from "couldn't fetch".
+const REGISTRY_ORG: &str = "https://asset-bundle-registry.decentraland.org/profiles";
+const REGISTRY_ZONE: &str = "https://asset-bundle-registry.decentraland.zone/profiles";
+
+/// The .zone and .org registries hold separate profile namespaces, so the registry must
+/// match the profile owner's environment, judged by their announced lambdas endpoint:
+/// a host under the zone tld uses the zone registry.
+fn registry_url(endpoint: Option<&str>) -> &'static str {
+    let is_zone = endpoint
+        .and_then(|e| reqwest::Url::parse(e).ok())
+        .is_some_and(|url| url.host_str().and_then(|host| host.rsplit('.').next()) == Some("zone"));
+    if is_zone {
+        REGISTRY_ZONE
+    } else {
+        REGISTRY_ORG
+    }
+}
+
+/// One registry POST for a chunk of ids, reported per item: Ok(Some) found, Ok(None)
+/// authoritatively absent, Err a chunk-wide transport/parse failure. Results only cover
+/// the addresses that were asked for — the response identifies each profile by its
+/// deployed metadata, which is written by whoever deployed it.
+async fn fetch_registry_profiles(
+    registry_url: &'static str,
+    addresses: Vec<Address>,
+    ipfs: std::sync::Arc<IpfsIo>,
+) -> Vec<(Address, Result<Option<UserProfile>, anyhow::Error>)> {
+    let base_url = ipfs.contents_endpoint().unwrap_or_default();
+    let ids = addresses
+        .iter()
+        .map(|address| format!("{address:#x}"))
+        .collect::<Vec<_>>();
+    debug!("requesting {} profiles from {registry_url}", ids.len());
+
+    let outcome: Result<Vec<LambdaProfiles>, anyhow::Error> = async {
+        let response = ipfs
+            .client()
+            .post(registry_url)
+            .timeout(std::time::Duration::from_secs(10))
+            .body(serde_json::json!({ "ids": ids }).to_string())
+            .header("content-type", "application/json")
+            .send()
+            .await?;
+        if response.status() != StatusCode::OK {
+            anyhow::bail!("bad response: {}", response.status());
+        }
+        Ok(response.json::<Vec<LambdaProfiles>>().await?)
+    }
+    .await;
+
+    match outcome {
+        Err(e) => {
+            let message = format!("registry fetch from {registry_url}: {e}");
+            addresses
+                .into_iter()
+                .map(|address| (address, Err(anyhow!(message.clone()))))
+                .collect()
+        }
+        Ok(batches) => {
+            let mut found = HashMap::<Address, SerializedProfile>::default();
+            for batch in batches {
+                let Some(content) = batch.avatars.into_iter().next() else {
+                    continue;
+                };
+                let Some(address) = content.eth_address.as_h160() else {
+                    continue;
+                };
+                // never let a later entry displace an earlier one
+                found.entry(address).or_insert(content);
+            }
+            addresses
+                .into_iter()
+                .map(|address| {
+                    let profile = found.remove(&address).map(|content| UserProfile {
+                        version: content.version as u32,
+                        content,
+                        base_url: base_url.clone(),
+                    });
+                    (address, Ok(profile))
+                })
+                .collect()
+        }
+    }
+}
+
+/// One catalyst lambdas GET for one address: Ok(None) means the catalyst
+/// authoritatively has no profile.
+async fn fetch_catalyst_profile(
+    endpoint: String,
+    address: Address,
+    ipfs: std::sync::Arc<IpfsIo>,
+) -> Result<Option<UserProfile>, anyhow::Error> {
+    let url = format!("{}/profiles/{address:#x}", endpoint.trim_end_matches('/'));
+    debug!("requesting profile from {url}");
+
+    let response = ipfs
+        .client()
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| anyhow!("catalyst fetch from {url}: {e}"))?;
+    if response.status() == StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if response.status() != StatusCode::OK {
+        anyhow::bail!(
+            "catalyst fetch from {url}: bad response: {}",
+            response.status()
+        );
+    }
+
+    let content = response.json::<LambdaProfiles>().await?;
+    let base_url = ipfs.contents_endpoint().unwrap_or_default();
+    Ok(content
+        .avatars
+        .into_iter()
+        .next()
+        .map(|content| UserProfile {
+            version: content.version as u32,
+            content,
+            base_url,
+        }))
+}
+
+/// Resolve one profile through the registry -> catalyst chain without the engine cache
+/// (used at login, before any player entities exist). Ok(None) means both sources
+/// authoritatively report no profile; a failure with no other source answering is an
+/// Err, so callers can tell "no profile" from "couldn't fetch".
 pub async fn get_remote_profile(
     address: Address,
     ipfs: std::sync::Arc<IpfsIo>,
     endpoint: Option<String>,
 ) -> Result<Option<UserProfile>, anyhow::Error> {
-    let endpoint = match endpoint {
-        Some(endpoint) => endpoint,
-        None => ipfs.lambda_endpoint().ok_or(anyhow!("not connected"))?,
-    };
-    debug!("requesting profile from {}", endpoint);
+    let endpoint = endpoint.or_else(|| ipfs.lambda_endpoint());
 
-    let response = ipfs
-        .client()
-        .post("https://asset-bundle-registry.decentraland.org/profiles")
-        .timeout(std::time::Duration::from_secs(10))
-        .body(format!("{{ \"ids\": [\"{:#x}\"] }}", address))
-        .header("content-type", "application/json")
-        .send()
-        .await?;
-
-    if response.status() != StatusCode::OK {
-        anyhow::bail!("bad response: {}", response.status());
+    let mut fetch_error = None;
+    match fetch_registry_profiles(
+        registry_url(endpoint.as_deref()),
+        vec![address],
+        ipfs.clone(),
+    )
+    .await
+    .pop()
+    {
+        Some((_, Ok(Some(profile)))) => return Ok(Some(profile)),
+        Some((_, Err(e))) => fetch_error = Some(e),
+        _ => (),
     }
 
-    let mut content = response.json::<Vec<LambdaProfiles>>().await?;
-    if content.is_empty() {
-        return Ok(None);
+    if let Some(endpoint) = endpoint {
+        match fetch_catalyst_profile(endpoint, address, ipfs).await {
+            Ok(Some(profile)) => return Ok(Some(profile)),
+            Ok(None) => (),
+            Err(e) => {
+                if fetch_error.is_none() {
+                    fetch_error = Some(e);
+                }
+            }
+        }
+    } else if fetch_error.is_none() {
+        fetch_error = Some(anyhow!("not connected"));
     }
 
-    let Some(content) = content.remove(0).avatars.into_iter().next() else {
-        return Ok(None);
-    };
-
-    // debug!("loaded profile content preclean: {content:#?}");
-    // // clean up the lambda result
-    // if let Some(snapshots) = content.avatar.snapshots.as_mut() {
-    //     if let Some(hash) = snapshots
-    //         .body
-    //         .rsplit_once('/')
-    //         .map(|(_, hash)| hash.to_owned())
-    //     {
-    //         snapshots.body = hash;
-    //     }
-    //     if let Some(hash) = snapshots
-    //         .face256
-    //         .rsplit_once('/')
-    //         .map(|(_, hash)| hash.to_owned())
-    //     {
-    //         snapshots.face256 = hash;
-    //     }
-    // }
-
-    let profile = UserProfile {
-        version: content.version as u32,
-        content,
-        base_url: ipfs.contents_endpoint().unwrap_or_default(),
-    };
-
-    debug!("loaded profile: {profile:#?}");
-    Ok(Some(profile))
+    match fetch_error {
+        Some(e) => Err(e),
+        None => Ok(None),
+    }
 }
