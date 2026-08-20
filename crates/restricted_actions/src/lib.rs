@@ -1216,7 +1216,7 @@ fn get_user_data(
                     fp.context == scene_context && *address == format!("{:#x}", fp.address)
                 }) {
                     response.send(Ok(profile.content.clone()));
-                    return;
+                    continue;
                 }
 
                 if let Some(my_address) = me.address() {
