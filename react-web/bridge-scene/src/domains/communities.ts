@@ -1,6 +1,6 @@
 // Communities: browse list, joining, and per-community detail (members/posts/places).
 //   from: social-api communities service via BevyApi.kernelFetch (signed GETs / POST join)
-//       + the catalyst profile cache (profile.ts) for the names and faces those reads no
+//       + the engine's profile cache (profile.ts) for the names and faces those reads no
 //         longer carry — the v2 endpoints answer with addresses only.
 import { getPlayer } from '@dcl/sdk/players'
 import { getJson, isZone, signed, signedForm } from '../http'

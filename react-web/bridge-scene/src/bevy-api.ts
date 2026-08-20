@@ -14,7 +14,6 @@ import type {
   HoverEvent,
   LiveSceneInfo,
   PermissionRequest,
-  PlayerProfileData,
   ProximityEvent,
   SceneLoadingUi,
   SetAvatarData,
@@ -30,10 +29,6 @@ export type BlockingStatus = BlockingStatusData
 // e.g. hideProfile means the local player is standing in a DISABLE_PASSPORTS area, so `userId`'s
 // passport should not be opened. Only present in the array when at least one flag is set.
 export type { AvatarModifierState }
-
-// Display identity for a list of addresses, served from the engine's own profile cache —
-// the same one the nametags, chat and passport UI read, so anything already on screen is free.
-export type { PlayerProfileData }
 
 export type SocialApi = {
   getSocialInitialized: () => Promise<boolean>
@@ -106,7 +101,6 @@ export type BevyApiInterface = {
   getMicState: () => Promise<MicState>
   setMicEnabled: (enabled: boolean) => void
   getAvatarModifiers: () => Promise<AvatarModifierState[]>
-  getPlayerProfiles: (addresses: string[]) => Promise<PlayerProfileData[]>
   getPermissionRequestStream: () => Promise<AsyncIterable<PermissionRequestRaw>>
   setSinglePermission: (body: SetSinglePermission) => void
   setPermanentPermission: (body: SetPermanentPermissionBody) => void

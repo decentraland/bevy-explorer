@@ -330,15 +330,6 @@ module.exports.getAvatarModifiers = async function() {
     return await Deno.core.ops.op_get_avatar_modifiers();
 }
 
-// Display identity for a list of addresses, served from the engine's shared profile cache
-// (whatever isn't cached yet is fetched as ONE request). Resolves once every address has
-// loaded or failed; addresses with no profile are absent from the result.
-// arg: string[]
-// returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string }[]
-module.exports.getPlayerProfiles = async function(addresses) {
-    return await Deno.core.ops.op_get_player_profiles(addresses);
-}
-
 // Returns key-value params passed via --params (desktop) or URL query string (web)
 module.exports.getParams = async function() {
     return await Deno.core.ops.op_get_params();

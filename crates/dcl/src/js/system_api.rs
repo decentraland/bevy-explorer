@@ -17,8 +17,8 @@ use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
     FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, PlayerProfileData, ProximityEvent, SceneLoadingUi,
-    SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
+    PermanentPermissionItem, PermissionRequest, ProximityEvent, SceneLoadingUi, SetAvatarData,
+    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -824,20 +824,6 @@ pub async fn op_get_avatar_modifiers(
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::GetAvatarModifiers(sx))?;
-
-    Ok(rx.await?)
-}
-
-pub async fn op_get_player_profiles(
-    state: Rc<RefCell<impl State>>,
-    addresses: Vec<String>,
-) -> Result<Vec<PlayerProfileData>, anyhow::Error> {
-    let (sx, rx) = RpcResultSender::channel();
-
-    state
-        .borrow_mut()
-        .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetPlayerProfiles(addresses, sx))?;
 
     Ok(rx.await?)
 }

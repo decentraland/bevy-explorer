@@ -112,9 +112,6 @@ pub enum SystemApi {
     GetMicState(RpcResultSender<MicState>),
     SetMicEnabled(bool),
     GetAvatarModifiers(RpcResultSender<Vec<AvatarModifierState>>),
-    /// Display identity (name / face / claimed) for a set of addresses, served from the
-    /// engine's shared profile cache — whatever isn't cached yet goes out as ONE request.
-    GetPlayerProfiles(Vec<String>, RpcResultSender<Vec<PlayerProfileData>>),
     // Social / Friends
     GetFriends(RpcResultSender<Vec<FriendData>>),
     GetSentFriendRequests(RpcResultSender<Vec<FriendRequestData>>),

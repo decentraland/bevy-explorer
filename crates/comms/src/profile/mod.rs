@@ -5,7 +5,7 @@ use std::{io::Read, path::PathBuf, sync::Arc};
 use anyhow::anyhow;
 use bevy::{
     ecs::system::SystemParam,
-    platform::collections::{HashMap, HashSet},
+    platform::collections::HashMap,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
@@ -29,7 +29,7 @@ use super::{
 };
 use common::{
     profile::{LambdaProfiles, SerializedProfile},
-    rpc::{RpcEventSender, RpcResultSender},
+    rpc::RpcEventSender,
     sets::SceneSets,
     structs::PrimaryUser,
     util::{TaskCompat, TaskExt},
@@ -41,7 +41,6 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
-use system_bridge::{PlayerProfileData, SystemApi};
 use wallet::Wallet;
 
 pub struct UserProfilePlugin;
@@ -51,12 +50,7 @@ impl Plugin for UserProfilePlugin {
         app.add_systems(
             Update,
             (
-                (
-                    handle_player_profile_requests,
-                    drive_profile_fetches,
-                    request_missing_profiles,
-                )
-                    .chain(),
+                (drive_profile_fetches, request_missing_profiles).chain(),
                 process_profile_events,
             )
                 .before(process_transport_updates), // .in_set(TODO)
@@ -292,92 +286,6 @@ impl ProfileManager<'_, '_> {
                 .apply(profile, ProfileSource::Peer);
         }
     }
-}
-
-/// A GetPlayerProfiles request, still waiting on the addresses it named.
-type PendingProfileRequest = (Vec<Address>, RpcResultSender<Vec<PlayerProfileData>>);
-
-/// A pending request is rescanned every frame until it resolves, so bound what one caller
-/// can put in it. The lists this exists for are a community's members (100) and a page of
-/// post authors (20); anything past this is a caller bug, so drop the tail and say so.
-const MAX_PROFILES_PER_REQUEST: usize = 1000;
-
-/// Serve `SystemApi::GetPlayerProfiles` from the shared cache. A request is held until
-/// every address it named has resolved (or its cascade has concluded with nothing), so
-/// the caller gets one answer for the whole list rather than having to poll.
-fn handle_player_profile_requests(
-    mut events: EventReader<SystemApi>,
-    mut pending: Local<Vec<PendingProfileRequest>>,
-    mut profiles: ProfileManager,
-) {
-    for ev in events.read() {
-        let SystemApi::GetPlayerProfiles(addresses, sender) = ev else {
-            continue;
-        };
-
-        // Unique addresses only: a repeat costs nothing to fetch (the cache collapses it)
-        // but would be rescanned and answered once per occurrence.
-        let mut seen = HashSet::<Address>::default();
-        let mut addresses = addresses
-            .iter()
-            .filter_map(|address| address.as_h160())
-            .filter(|address| seen.insert(*address))
-            .collect::<Vec<_>>();
-
-        if addresses.len() > MAX_PROFILES_PER_REQUEST {
-            warn!(
-                "GetPlayerProfiles asked for {} addresses, serving the first {}",
-                addresses.len(),
-                MAX_PROFILES_PER_REQUEST
-            );
-            addresses.truncate(MAX_PROFILES_PER_REQUEST);
-        }
-
-        pending.push((addresses, sender.clone()));
-    }
-
-    pending.retain_mut(|(addresses, sender)| {
-        // Reading an address the cache has never seen creates its entry, which is all it
-        // takes to queue the fetch: `drive_profile_fetches` collects every due entry into
-        // as few registry requests as it can, so a list costs no more than a batch.
-        // Ok(None) is "still fetching"; Err is "the cascade concluded with nothing", which
-        // mustn't hold up the rest of the list.
-        if addresses
-            .iter()
-            .any(|address| matches!(profiles.get_data(*address), Ok(None)))
-        {
-            return true;
-        }
-
-        let data = addresses
-            .iter()
-            .filter_map(|address| {
-                let profile = profiles.get_data(*address).ok().flatten()?;
-                Some(PlayerProfileData {
-                    // The address we were asked about, not the one the metadata claims.
-                    address: format!("{address:#x}"),
-                    name: profile.content.name.clone(),
-                    has_claimed_name: profile.content.has_claimed_name,
-                    profile_picture_url: profile_picture_url(profile),
-                })
-            })
-            .collect();
-        sender.send(data);
-        false
-    });
-}
-
-/// The registry serves absolute snapshot URLs, but a profile can also arrive carrying a
-/// bare content hash — in that case it resolves against the realm's content endpoint.
-fn profile_picture_url(profile: &UserProfile) -> String {
-    let Some(snapshots) = profile.content.avatar.snapshots.as_ref() else {
-        return String::default();
-    };
-    let face = &snapshots.face256;
-    if face.is_empty() || face.starts_with("http") {
-        return face.clone();
-    }
-    format!("{}{}", profile.base_url, face)
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
