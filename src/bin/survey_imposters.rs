@@ -167,10 +167,7 @@ fn analyse(path: &Path, level: u32) -> Result<Stats> {
         let palette_w_rgba8 = palette.width() as usize;
         let palette_h = palette.height() as usize;
         let palette_bytes = palette.into_raw();
-        let palette_entries: Vec<[u8; 8]> = palette_bytes
-            .chunks_exact(8)
-            .map(|c| c.try_into().unwrap())
-            .collect();
+        let palette_entries: Vec<[u8; 8]> = palette_bytes.as_chunks::<8>().0.to_vec();
 
         let pixels_x = palette_w_rgba8 / 2;
         let pixels_y = palette_h;
@@ -204,7 +201,7 @@ fn analyse(path: &Path, level: u32) -> Result<Stats> {
         let img =
             image::load_from_memory_with_format(&tex_png, image::ImageFormat::Png)?.into_rgba8();
         let raw = img.into_raw();
-        raw.chunks_exact(8).map(|c| c.try_into().unwrap()).collect()
+        raw.as_chunks::<8>().0.to_vec()
     };
 
     let mut full: HashSet<[u8; 8]> = HashSet::new();

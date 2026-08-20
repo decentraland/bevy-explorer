@@ -156,6 +156,7 @@ fn poll_connecting_rooms(
     }
 }
 
+#[allow(clippy::result_large_err)] // RoomError is livekit's, and connect failures are rare
 async fn connect_to_room(
     address: String,
     token: String,
