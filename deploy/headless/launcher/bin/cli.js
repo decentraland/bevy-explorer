@@ -25,13 +25,32 @@ const USAGE = `
                            (the multiplayer-server worker contract).
     --tick-hz <n>          Scene tick rate. Default 30.
     --timeout <secs>       Exit cleanly after N seconds.
+    --viewer               Open a window rendering the server's own world, for
+                           local debugging. Preview, single-scene only.
     --version              Print version and exit.
     -h, --help             This message.
 
   Environment:
     DCL_BEVY_SERVER_PATH   Absolute path to a pre-installed \`headless\` binary,
                            bypassing the bundled platform package.
+    DCL_SERVER_VIEWER      Truthy (1/true/yes/on, or any non-zero number) enables
+                           --viewer. \`sdk-commands start\` forwards the whole
+                           environment, so \`DCL_SERVER_VIEWER=1 npm start\` works.
 `
+
+/**
+ * Mirrors `viewer::env_enabled` in the engine, including hammurabi's leniency: a leftover
+ * port value (`DCL_SERVER_VIEWER=8080`) enables rather than erroring. There is no port to
+ * bind here — the window IS the viewer — so the value is only ever truthy/falsy.
+ */
+function viewerFromEnv() {
+  const value = (process.env.DCL_SERVER_VIEWER ?? '').trim().toLowerCase()
+  if (!value) return false
+  if (['0', 'false', 'no', 'off'].includes(value)) return false
+  if (['1', 'true', 'yes', 'on'].includes(value)) return true
+  const asNumber = Number(value)
+  return Number.isNaN(asNumber) ? true : asNumber !== 0
+}
 
 function fail(message, code) {
   process.stderr.write(`bevy-headless-server: ${message}\n`)
@@ -45,6 +64,7 @@ function translate(argv) {
   let position = null
   let production = false
   let orchestrated = false
+  let viewer = viewerFromEnv()
   const passthrough = { '--tick-hz': true, '--timeout': true, '--scene-threads': true }
 
   for (let i = 0; i < argv.length; i++) {
@@ -67,6 +87,9 @@ function translate(argv) {
         break
       case '--orchestrated':
         orchestrated = true
+        break
+      case '--viewer':
+        viewer = true
         break
       case '-h':
       case '--help':
@@ -113,10 +136,17 @@ function translate(argv) {
     fail('--production requires --orchestrated (standalone serving is preview-only)', EXIT_UNAVAILABLE)
   }
 
+  // A multi-tenant engine holds several scenes that physically overlap in world space, so
+  // one window would render them superimposed. Refuse rather than draw a lie.
+  if (viewer && orchestrated) {
+    fail('--viewer is a single-scene local-dev mode and cannot be combined with --orchestrated', EXIT_UNAVAILABLE)
+  }
+
   const args = orchestrated ? ['--orchestrated'] : ['--server-mode']
   if (realm) args.unshift('--realm', realm)
   if (position) args.push('--location', position)
   if (!production) args.push('--preview')
+  if (viewer) args.push('--viewer')
   return args.concat(out)
 }
 

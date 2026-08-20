@@ -83,6 +83,92 @@ watch for `[Game] Connected to server`:
 headless --realm http://localhost:8000 --preview --location 0,0
 ```
 
+## Debug viewer: seeing what the server sees
+
+Hammurabi ships a debug viewer (`HAMMURABI_DEBUG_VIEWER=8080`) that serves an HTML page and
+streams a 15 Hz JSON snapshot of its scene graph to a browser, because its host runs
+`BABYLON.NullEngine` and has no pixels to show.
+
+Bevy needs none of that. The `headless` binary already links wgpu and winit — the `bevy`
+dependency's feature list always includes `bevy_render`/`bevy_winit`, and the `headless`
+feature only adds `configurable_error_handler` — it simply never *adds*
+`RenderPlugin`/`WinitPlugin`. So the viewer is a plugin-set swap in the same process, and
+the window is drawing the server's own ECS rather than a copy of it.
+
+```bash
+DCL_SERVER_VIEWER=1 npm start          # from the scene directory
+```
+
+`sdk-commands start` spreads the whole `process.env` into the server it spawns, so this
+needs **no js-sdk-toolchain change**. The launcher turns the env var into `--viewer`; the
+engine also reads it directly, so a manual run works the same:
+
+```bash
+DCL_SERVER_VIEWER=1 headless --realm http://localhost:8000 --preview --server-mode --location 0,0
+# equivalently: headless ... --viewer
+```
+
+What you get: the scene geometry, remote players as capsules with nametags, a clickable
+player list that focuses and orbit-follows a selection, and a HUD showing the scene hash,
+scene state and tick number. Controls are `WASD`/`Q`/`E` to fly (`shift` faster, `ctrl`
+slower), right-drag to look, wheel to zoom, `Tab` to cycle players, `F` to frame everyone,
+`Esc` for the free camera.
+
+The viewer opens already following the first player who connects. That default matters:
+the server's fake player sits at the base parcel centre, which on a large scene is nowhere
+near where players actually are (flagtag's base parcel centre is `(8, 0, -8)`; its spawn
+point is `(≈385, 95, ≈391)`).
+
+Players are capsules, not avatars, on purpose. The server holds a transform, a name and an
+address per player and nothing else, so drawing avatars would invent detail it does not
+have. `AvatarPlugin` is also structurally excluded: it re-adds `PlayerMovementPlugin`,
+which headless already adds, and bevy rejects duplicate plugins.
+
+### What it does and does not change
+
+Unchanged: `set_server_mode()` is latched before the app is built, so every `server_mode()`
+gate still applies — no position broadcast (flying the camera cannot produce a ghost
+player), no Pulse, no local profile, the server gatekeeper URL, the SSRF guards, and the
+fake player stays hidden from `getConnectedPlayers`. Remote players are still placed by
+`foreign_dynamics`, which in server mode trusts the broadcast position verbatim with no
+ground snap — so the capsule shows what the server believes, not what a client would draw.
+That divergence is the point.
+
+Changed: dropping `NoRenderApp` puts the server on the client's presentation code path.
+Scene UI entities get built, materials and textures are decoded, and `PointerEventsPlugin`
+/ `VisibilityComponentPlugin` results cross the IPC boundary again. **A viewer run is not a
+production-identical server**, and its memory and CPU are not the figures in the table
+above (glTF textures are decoded again, which was most of the 234 MB → 175 MB saving). The
+binary prints a `VIEWER MODE` banner at boot to keep this visible.
+
+Tick pacing is deliberately preserved: the window presents on vblank, but
+`AppConfig.graphics.vsync` stays `false` with `fps_target = tick_hz`, and `WinitSettings`
+pins app frames to `tick_hz` with input reactivity off — otherwise wiggling the mouse would
+make the server tick faster. The HUD's tick number is there so a divergence is visible
+rather than silent.
+
+`--viewer` is refused with `--orchestrated` (co-tenant scenes physically overlap in world
+space, so one window would render them superimposed) and without `--preview` (see below).
+
+### Two resources must be inserted before the plugin block
+
+Headless inserts `AppConfig` and `PreviewMode` *after* it adds its plugins, which is
+harmless with no render app. With one, three plugins read them at plugin-**build** time and
+get the wrong answer from their absence:
+
+| Plugin | Reads | If absent |
+| --- | --- | --- |
+| `VisualsPlugin` | `AppConfig.graphics` | panics — the read is unconditional |
+| `SceneBoundPlugin` | `PreviewMode` | adds `ImposterBakeMaterialPlugin` |
+| `WorldUiPlugin` | `PreviewMode` | adds `ImposterBakeMaterialPlugin` |
+
+The imposter-bake material plugins need render resources that only `DclImposterPlugin`
+registers, so with a render app and no imposter plugin they panic in `Plugin::finish`
+(`DrawFunctions<ImposterPhaseItem<Opaque3d>> must be added to the world as a resource`).
+The client dodges all three by inserting both resources before its plugins; viewer mode now
+does the same. It also explains the `--preview` requirement: outside preview those two
+plugins add the bake plugin regardless of when the resource is inserted.
+
 ## Validation (2026-07-31, towerofmadness)
 
 Verified against a real `sdk-commands start` preview with an identical headless client
