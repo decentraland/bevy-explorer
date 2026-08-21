@@ -71,7 +71,8 @@ impl HtmlMedia {
         let video = video.dyn_into::<HtmlVideoElement>().unwrap();
 
         let mut slf = HtmlMedia::common_init(source, media);
-        slf.video_init(url, video);
+        set_video_source(&video, url);
+        slf.video_init(video);
 
         slf.set_image(Some(image));
 
@@ -83,14 +84,14 @@ impl HtmlMedia {
     }
 
     pub fn video_from_element(
-        media: HtmlVideoElement,
+        media: HtmlMediaElement,
         source: String,
         image: Handle<Image>,
     ) -> Self {
         let video = media.clone().dyn_into::<HtmlVideoElement>().unwrap();
 
         let mut slf = HtmlMedia::common_init(source, media);
-        slf.video_init(url, video);
+        slf.video_init(video);
 
         slf.set_image(Some(image));
 
@@ -171,7 +172,7 @@ impl HtmlMedia {
         }
     }
 
-    fn video_init(&mut self, url: &str, video: HtmlVideoElement) {
+    fn video_init(&mut self, video: HtmlVideoElement) {
         video.set_cross_origin(Some("anonymous"));
 
         let frame_time = Arc::new(AtomicU32::default());
@@ -221,8 +222,6 @@ impl HtmlMedia {
             )
             .unwrap();
         *callback_handle.borrow_mut() = initial_handle.as_f64().map(|f| f as u32);
-
-        set_video_source(&video, url);
 
         self.set_new_frame_time(frame_time);
         self.set_frame_closure(callback);
