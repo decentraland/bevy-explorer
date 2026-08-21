@@ -7,7 +7,7 @@ edition = "2021"
 
 [features]
 ffmpeg = []
-html = ["dep:web-sys", "dep:wasm-bindgen"]
+html = ["media/html", "dep:web-sys"]
 livekit = ["comms/livekit"]
 av_player_debug = ["bevy/bevy_picking"]
 
@@ -33,6 +33,7 @@ ethers-core = { workspace = true }
 
 thiserror = { workspace = true }
 
+#[target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { workspace = true, optional = true, features = [
   "HtmlMediaElement",
   "HtmlVideoElement",
@@ -47,4 +48,3 @@ web-sys = { workspace = true, optional = true, features = [
   "AudioParam",
   "VideoFrame",
 ] }
-wasm-bindgen = { workspace = true, optional = true }

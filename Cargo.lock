@@ -657,7 +657,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "urlencoding",
- "wasm-bindgen",
  "web-sys",
  "wgpu",
 ]
@@ -7042,16 +7041,20 @@ name = "media"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bevy",
  "common",
  "dcl_component",
  "ffmpeg-next",
  "ipfs",
+ "js-sys",
  "kira",
  "log",
  "reqwest 0.12.15",
  "thiserror 1.0.69",
  "tokio",
  "urlencoding",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
