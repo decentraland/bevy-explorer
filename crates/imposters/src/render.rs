@@ -146,6 +146,7 @@ impl Drop for ImposterLoadTask {
 impl ImposterLoadTask {
     pub fn new_mip(
         ipfas: &IpfsAssetServer,
+        source: Option<&str>,
         address: &str,
         parcel: IVec2,
         level: usize,
@@ -155,6 +156,7 @@ impl ImposterLoadTask {
         let cancel = CancellationToken::new();
         let task = IoTaskPool::get().spawn_compat(load_imposter(
             ipfas.ipfs().clone(),
+            source.map(ToOwned::to_owned),
             address.to_string(),
             parcel,
             level,
@@ -535,6 +537,7 @@ pub struct ImposterSpecManager<'w, 's> {
     commands: Commands<'w, 's>,
     data: ResMut<'w, ImposterManagerData>,
     current_realm: Res<'w, CurrentRealm>,
+    config: Res<'w, AppConfig>,
     pub(crate) pointers: ResMut<'w, ScenePointers>,
     ipfas: IpfsAssetServer<'w, 's>,
     focus: Res<'w, ImposterFocus>,
@@ -622,6 +625,10 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         };
 
         {
+            // fetch tiles from the configured source if set; the local cache
+            // stays keyed by the current realm either way
+            let source = self.config.imposter_source.as_deref();
+
             let Some(crc) = self.pointers.crc(req.parcel, req.level) else {
                 return ImposterSpecState::Pending;
             };
@@ -680,6 +687,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                             debug!("start local fetch {req:?}");
                             v.insert(ImposterSpecLoadState::Local(ImposterLoadTask::new_mip(
                                 &self.ipfas,
+                                source,
                                 &self.current_realm.about_url,
                                 req.parcel,
                                 req.level,
@@ -984,6 +992,8 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         }
 
         if self.plugin.download {
+            let source = self.config.imposter_source.as_deref();
+
             // count current downloads
             let active = loading_mips
                 .values()
@@ -1028,6 +1038,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                     (parcel, level, crc),
                     ImposterSpecLoadState::Remote(ImposterLoadTask::new_mip(
                         &self.ipfas,
+                        source,
                         &self.current_realm.about_url,
                         parcel,
                         level,
