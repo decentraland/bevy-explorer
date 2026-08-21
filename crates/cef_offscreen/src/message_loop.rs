@@ -30,7 +30,7 @@ impl Plugin for MessageLoopPlugin {
         app.add_systems(Main, cef_do_message_loop_work);
         // .before so cef_shutdown's on_event condition sees the AppExit written here in the
         // same frame — the runner exits right after it, so a lost race skips cef shutdown
-        #[cfg(target_os = "macos")]
+        #[cfg(unix)]
         app.add_systems(Update, exit_on_shutdown_signal.before(cef_shutdown));
     }
 }
@@ -93,8 +93,8 @@ impl Default for MessageLoopPlugin {
             ),
             1
         );
-        #[cfg(target_os = "macos")]
-        macos::install_shutdown_signal_handlers();
+        #[cfg(unix)]
+        unix::install_shutdown_signal_handlers();
 
         Self {
             _app: Box::new(app),
@@ -203,9 +203,9 @@ fn cef_do_message_loop_work(_: NonSend<RunOnMainThread>) {
     cef::do_message_loop_work();
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn exit_on_shutdown_signal(mut sent: Local<bool>, mut exit: EventWriter<AppExit>) {
-    if !*sent && macos::shutdown_signal_received() {
+    if !*sent && unix::shutdown_signal_received() {
         *sent = true;
         exit.write_default();
     }
@@ -214,6 +214,41 @@ fn exit_on_shutdown_signal(mut sent: Local<bool>, mut exit: EventWriter<AppExit>
 fn cef_shutdown(_: NonSend<RunOnMainThread>, cache_dir: Res<CefCacheDir>) {
     shutdown();
     let _ = std::fs::remove_dir_all(&cache_dir.0);
+}
+
+#[cfg(unix)]
+mod unix {
+    use core::sync::atomic::AtomicBool;
+    use std::sync::atomic::Ordering;
+
+    static SHUTDOWN_SIGNAL: AtomicBool = AtomicBool::new(false);
+
+    pub fn shutdown_signal_received() -> bool {
+        SHUTDOWN_SIGNAL.load(Ordering::Relaxed)
+    }
+
+    extern "C" fn flag_shutdown_signal(signal: libc::c_int) {
+        if SHUTDOWN_SIGNAL.swap(true, Ordering::Relaxed) {
+            // a repeated signal means the graceful exit isn't getting there; bail out hard
+            unsafe { libc::_exit(128 + signal) };
+        }
+    }
+
+    /// Chromium installs SIGINT/SIGTERM/SIGHUP handlers during cef initialize, and they tear the
+    /// process down through Chromium's own quit path rather than ours, so ctrl+c never reaches
+    /// bevy: cef shutdown doesn't run, and on macos it wedges outright. There the handler calls
+    /// -[NSApplication terminate:] from the message pump, re-entering winit's
+    /// applicationWillTerminate delegate from inside cef_do_message_loop_work (itself inside a
+    /// winit event-loop callback); it panics across a cannot-unwind boundary and the abort()
+    /// hangs in __pthread_kill, leaving an unkillable zombie. Replace the handlers: flag the
+    /// signal and let the app wind down through AppExit, which already runs cef shutdown.
+    pub fn install_shutdown_signal_handlers() {
+        unsafe {
+            for sig in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+                libc::signal(sig, flag_shutdown_signal as *const () as libc::sighandler_t);
+            }
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -242,34 +277,6 @@ mod macos {
 
     extern "C" fn set_handling_send_event(_: &Object, _: Sel, flag: bool) {
         IS_HANDLING_SEND_EVENT.swap(flag, Ordering::Relaxed);
-    }
-
-    static SHUTDOWN_SIGNAL: AtomicBool = AtomicBool::new(false);
-
-    pub fn shutdown_signal_received() -> bool {
-        SHUTDOWN_SIGNAL.load(Ordering::Relaxed)
-    }
-
-    extern "C" fn flag_shutdown_signal(signal: libc::c_int) {
-        if SHUTDOWN_SIGNAL.swap(true, Ordering::Relaxed) {
-            // a repeated signal means the graceful exit isn't getting there; bail out hard
-            unsafe { libc::_exit(128 + signal) };
-        }
-    }
-
-    /// Chromium installs SIGINT/SIGTERM/SIGHUP handlers during cef initialize that call
-    /// -[NSApplication terminate:] from the message pump. winit's applicationWillTerminate
-    /// delegate is then re-entered from inside cef_do_message_loop_work (itself inside a winit
-    /// event-loop callback) and panics across a cannot-unwind boundary; the abort() wedges in
-    /// __pthread_kill, leaving an unkillable zombie that still holds the CEF cache singleton
-    /// and blocks every relaunch. Replace the handlers: flag the signal and let the app wind
-    /// down through AppExit, which already runs cef shutdown.
-    pub fn install_shutdown_signal_handlers() {
-        unsafe {
-            for sig in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
-                libc::signal(sig, flag_shutdown_signal as *const () as libc::sighandler_t);
-            }
-        }
     }
 
     pub fn install_cef_app_protocol() {
