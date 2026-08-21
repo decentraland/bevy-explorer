@@ -1981,15 +1981,23 @@ impl Drop for DeferredDropper {
     }
 }
 
-/// Splits a dev server's b64 hash payload — `"{projectRoot}{sep}{key}-{machineId}"` — at its
-/// `/{key}-` marker into (projectRoot, machineId), both in their original case and separators.
-/// The marker is matched case-insensitively (collection keys are lowercased while the encoded
-/// path keeps its casing) and separator-insensitively (a Windows dev server encodes backslash
-/// paths); both normalizations are byte-for-byte over the ASCII they rewrite, so an index found
-/// in the normalized copy still slices `decoded` itself.
+/// Splits a dev server's b64 hash payload — plain `"{projectRoot}{sep}{key}-{machineId}"` or
+/// content-versioned `"{projectRoot}{sep}{key}\0{mtime}-{machineId}"` (sdk-commands embeds the
+/// file's mtime after a NUL byte so the id changes when the file does; paths can't contain NUL,
+/// so the forms are unambiguous) — at its `/{key}` marker into (projectRoot, machineId), both in
+/// their original case and separators. The marker is matched case-insensitively (collection keys
+/// are lowercased while the encoded path keeps its casing) and separator-insensitively (a Windows
+/// dev server encodes backslash paths); both normalizations are byte-for-byte over the ASCII they
+/// rewrite, so an index found in the normalized copy still slices `decoded` itself.
 fn b64_split_at_key<'a>(decoded: &'a str, key: &str) -> Option<(&'a str, &'a str)> {
+    let normalized = decoded.replace('\\', "/").to_lowercase();
+    if let Some(idx) = normalized.rfind(&format!("/{key}\u{0}")) {
+        // mtime is digits only, so the first '-' after the NUL starts the machineId
+        let (_mtime, machine_id) = decoded[idx + key.len() + 2..].split_once('-')?;
+        return Some((&decoded[..idx], machine_id));
+    }
     let marker = format!("/{key}-");
-    let idx = decoded.replace('\\', "/").to_lowercase().rfind(&marker)?;
+    let idx = normalized.rfind(&marker)?;
     Some((&decoded[..idx], &decoded[idx + marker.len()..]))
 }
 
@@ -2017,5 +2025,19 @@ mod tests {
             b64_split_at_key(r"C:\Users\bob\scene\models\Tree.glb-pc", "scene.json"),
             None
         );
+    }
+
+    #[test]
+    fn splits_content_versioned_path() {
+        let decoded = "/Users/bob/scene/models/Tree.glb\u{0}1786032377138-my-mac";
+        let split = b64_split_at_key(decoded, "models/tree.glb");
+        assert_eq!(split, Some(("/Users/bob/scene", "my-mac")));
+    }
+
+    #[test]
+    fn splits_content_versioned_windows_path() {
+        let decoded = "C:\\Users\\bob\\scene\\models\\Tree.glb\u{0}1786032377138-my-pc";
+        let split = b64_split_at_key(decoded, "models/tree.glb");
+        assert_eq!(split, Some((r"C:\Users\bob\scene", "my-pc")));
     }
 }
