@@ -15,6 +15,7 @@ use cef::{Settings, api_hash, execute_process, initialize, shutdown, sys};
 ///   the main thread the CEF UI thread, so browsers are driven directly.
 pub struct MessageLoopPlugin {
     _app: Box<cef::App>,
+    cache_dir: std::path::PathBuf,
     #[cfg(target_os = "macos")]
     _loader: Box<DebugLibraryLoader>,
 }
@@ -22,6 +23,7 @@ pub struct MessageLoopPlugin {
 impl Plugin for MessageLoopPlugin {
     fn build(&self, app: &mut App) {
         app.insert_non_send_resource(RunOnMainThread)
+            .insert_resource(CefCacheDir(self.cache_dir.clone()))
             .add_systems(Update, cef_shutdown.run_if(on_event::<AppExit>));
 
         #[cfg(target_os = "macos")]
@@ -56,6 +58,9 @@ impl Default for MessageLoopPlugin {
         );
         assert_eq!(ret, -1, "cannot execute browser process");
 
+        reap_abandoned_cache_dirs();
+        let cache_dir = cef_cache_dir();
+
         let settings = Settings {
             #[cfg(target_os = "macos")]
             framework_dir_path: bundled_framework_dir()
@@ -71,19 +76,7 @@ impl Default for MessageLoopPlugin {
             // AppImage — with the sandbox left on, the zygote host FATALs at startup:
             // zygote_host_impl_linux.cc "Check failed: . : No such file or directory").
             no_sandbox: true as _,
-            // A per-executable cache dir: the default (shared) path triggers Chromium's process
-            // singleton across different host apps, which can strand/kill renderer subprocesses.
-            root_cache_path: std::env::temp_dir()
-                .join(format!(
-                    "cef-cache-{}",
-                    std::env::current_exe()
-                        .ok()
-                        .and_then(|p| p.file_name().map(|f| f.to_string_lossy().into_owned()))
-                        .unwrap_or_else(|| "app".to_string())
-                ))
-                .to_str()
-                .unwrap_or_default()
-                .into(),
+            root_cache_path: cache_dir.to_str().unwrap_or_default().into(),
             windowless_rendering_enabled: true as _,
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             multi_threaded_message_loop: true as _,
@@ -105,11 +98,67 @@ impl Default for MessageLoopPlugin {
 
         Self {
             _app: Box::new(app),
+            cache_dir,
             #[cfg(target_os = "macos")]
             _loader: Box::new(_loader),
         }
     }
 }
+
+/// The CEF profile lives at `$TMPDIR/cef-cache-<exe>-<pid>`, one dir per running client.
+/// A shared path puts every client on the same Chromium process singleton (and, on macos, the
+/// same mach service name, hashed from the path), so a second client - or a stuck one still
+/// holding the lock - fails to start: `bootstrap_check_in: Permission denied` and
+/// `Failed to open UKM database: database is locked`. Nothing in the profile has to outlive the
+/// run, so the dir is removed again in `cef_shutdown`.
+#[derive(Resource)]
+struct CefCacheDir(std::path::PathBuf);
+
+fn cef_cache_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("{}{}", cef_cache_prefix(), std::process::id()))
+}
+
+fn cef_cache_prefix() -> String {
+    format!(
+        "cef-cache-{}-",
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.file_name().map(|f| f.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "app".to_string())
+    )
+}
+
+/// A client that dies without running `cef_shutdown` (`kill -9`, a crash) strands its profile,
+/// ~70MB a time. Drop the ones whose owning process is gone before adding another.
+#[cfg(unix)]
+fn reap_abandoned_cache_dirs() {
+    let prefix = cef_cache_prefix();
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.strip_prefix(&prefix))
+            .and_then(|pid| pid.parse::<libc::pid_t>().ok())
+            .filter(|pid| *pid > 0)
+        else {
+            continue;
+        };
+        // signal 0 only probes: ESRCH means the owner is gone, so nothing is still writing there
+        // (EPERM - a live process we don't own - leaves it alone).
+        let gone = unsafe { libc::kill(pid, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+        if gone {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+// No cheap liveness probe without libc; stray profiles wait for %TEMP% to be cleared.
+#[cfg(not(unix))]
+fn reap_abandoned_cache_dirs() {}
 
 // The packaged layout: <exe>/../Frameworks/Chromium Embedded Framework.framework.
 #[cfg(target_os = "macos")]
@@ -162,8 +211,9 @@ fn exit_on_shutdown_signal(mut sent: Local<bool>, mut exit: EventWriter<AppExit>
     }
 }
 
-fn cef_shutdown(_: NonSend<RunOnMainThread>) {
+fn cef_shutdown(_: NonSend<RunOnMainThread>, cache_dir: Res<CefCacheDir>) {
     shutdown();
+    let _ = std::fs::remove_dir_all(&cache_dir.0);
 }
 
 #[cfg(target_os = "macos")]
