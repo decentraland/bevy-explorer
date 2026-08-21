@@ -41,10 +41,7 @@ use dcl_component::{
 use scene_runner::{update_world::AddCrdtInterfaceExt, ContainerEntity, ContainingScene};
 
 #[cfg(feature = "ffmpeg")]
-use crate::{
-    audio_sink::{spawn_and_locate_foreign_streams, spawn_audio_streams, AudioSink},
-    video_stream::VideoSink,
-};
+use crate::{audio_sink::AudioSink, video_stream::VideoSink};
 #[cfg(feature = "ffmpeg")]
 use video_player::VideoPlayerPlugin;
 
@@ -218,6 +215,8 @@ impl Plugin for AVPlayerPlugin {
     fn build(&self, app: &mut App) {
         #[cfg(any(feature = "ffmpeg", feature = "html"))]
         app.add_plugins(VideoPlayerPlugin);
+        #[cfg(feature = "ffmpeg")]
+        app.add_plugins(audio_sink::AudioSinkPlugin);
         app.add_plugins(AudioSourcePlugin);
         app.add_plugins(AudioSourcePluginImpl);
 
@@ -230,21 +229,6 @@ impl Plugin for AVPlayerPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        #[cfg(feature = "ffmpeg")]
-        app.add_systems(
-            PostUpdate,
-            (
-                (
-                    spawn_audio_streams::<AudioStream>,
-                    spawn_audio_streams::<VideoPlayer>,
-                ),
-                (
-                    spawn_and_locate_foreign_streams::<AudioStream>,
-                    spawn_and_locate_foreign_streams::<VideoPlayer>,
-                ),
-            )
-                .chain(),
-        );
         app.add_systems(
             Update,
             (
@@ -261,10 +245,6 @@ impl Plugin for AVPlayerPlugin {
                 .in_set(SceneSets::PostLoop),
         );
 
-        #[cfg(feature = "ffmpeg")]
-        app.add_observer(audio_sink::change_audio_sink_volume::<AudioStream>);
-        #[cfg(feature = "ffmpeg")]
-        app.add_observer(audio_sink::change_audio_sink_volume::<VideoPlayer>);
         #[cfg(feature = "livekit")]
         {
             app.add_observer(stream_should_be_played::<VideoPlayer>);
