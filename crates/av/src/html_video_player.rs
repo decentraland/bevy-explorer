@@ -1,12 +1,4 @@
-use std::{
-    cell::RefCell,
-    marker::PhantomData,
-    rc::Rc,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
-};
+use std::{marker::PhantomData, sync::atomic::Ordering};
 
 use bevy::{
     color::palettes::basic,
@@ -28,17 +20,13 @@ use dcl_component::{
     SceneComponentId,
 };
 use ipfs::IpfsResource;
-use media::{set_video_source, HtmlMedia, RcClosure};
+use media::HtmlMedia;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::material::{update_materials, VideoTextureOutput},
     ContainerEntity,
 };
-use web_sys::{
-    js_sys::Reflect,
-    wasm_bindgen::{prelude::Closure, JsCast, JsValue},
-    HtmlMediaElement, HtmlVideoElement, VideoFrame,
-};
+use web_sys::{wasm_bindgen::JsCast, VideoFrame};
 #[cfg(feature = "livekit")]
 use {
     bevy::ecs::relationship::Relationship,
@@ -148,82 +136,8 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
     }
 
     pub fn new_video(url: &str, source: String, image: Handle<Image>) -> Self {
-        let media = web_sys::window()
-            .unwrap()
-            .document()
-            .and_then(|doc| {
-                let container = doc
-                    .get_element_by_id(VIDEO_CONTAINER_ID)
-                    .expect("video container should exist");
-                let video = doc.create_element("video").unwrap();
-                container.append_child(&video).unwrap();
-                video.dyn_into::<HtmlMediaElement>().ok()
-            })
-            .expect("Couldn't create video element");
-
-        let video = media.clone().dyn_into::<HtmlVideoElement>().unwrap();
-
-        video.set_cross_origin(Some("anonymous"));
-
-        let frame_time = Arc::new(AtomicU32::default());
-
-        // video frame callback - no wasm_bindgen for this!
-        let rvc_prop = Reflect::get(&video, &"requestVideoFrameCallback".into()).unwrap();
-        if rvc_prop.is_undefined() {
-            panic!("no requestVideoFrameCallback");
-        }
-        let rvc_fn = rvc_prop.dyn_into::<web_sys::js_sys::Function>().unwrap();
-
-        let callback: RcClosure = Rc::new(RefCell::new(None));
-        let callback_handle: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
-        let callback_clone = callback.clone();
-        let handle_clone = callback_handle.clone();
-        let frame_time_clone = frame_time.clone();
-        let rvc_clone = rvc_fn.clone();
-
-        *callback.borrow_mut() = Some(Closure::wrap(Box::new({
-            let video = video.clone();
-            move |_now: f64, metadata: JsValue| {
-                trace!("frame received");
-                if let Some(media_time) = Reflect::get(&metadata, &"mediaTime".into())
-                    .ok()
-                    .and_then(|mt| mt.as_f64())
-                {
-                    trace!("frame received -> {media_time}");
-                    frame_time_clone.store(
-                        (media_time as f32).to_bits(),
-                        std::sync::atomic::Ordering::Relaxed,
-                    );
-                };
-
-                if let Some(cb) = callback_clone.borrow().as_ref() {
-                    if let Ok(new_handle) = rvc_clone.call1(&video, cb.as_ref().unchecked_ref()) {
-                        *handle_clone.borrow_mut() = new_handle.as_f64().map(|f| f as u32);
-                    }
-                } else {
-                    debug!("no cb - dropping");
-                }
-            }
-        }) as Box<dyn FnMut(f64, JsValue)>));
-        let initial_handle = rvc_fn
-            .call1(
-                &video,
-                callback.borrow().as_ref().unwrap().as_ref().unchecked_ref(),
-            )
-            .unwrap();
-        *callback_handle.borrow_mut() = initial_handle.as_f64().map(|f| f as u32);
-
-        set_video_source(&video, url);
-
-        let mut slf = HtmlMedia::common_init(source, media);
-        slf.set_video(Some(video));
-        slf.set_image(Some(image));
-        slf.set_new_frame_time(frame_time);
-        slf.set_frame_closure(callback);
-        slf.set_frame_callback_handle(callback_handle);
-
         Self {
-            media: slf,
+            media: HtmlMedia::new_video(url, source, image),
             _phantom: PhantomData,
         }
     }
@@ -307,24 +221,8 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
     }
 
     pub fn new_noop(source: String, image: Handle<Image>) -> Self {
-        let media = web_sys::window()
-            .unwrap()
-            .document()
-            .and_then(|doc| {
-                let container = doc
-                    .get_element_by_id(VIDEO_CONTAINER_ID)
-                    .expect("video container should exist");
-                let video = doc.create_element("video").unwrap();
-                container.append_child(&video).unwrap();
-                video.dyn_into::<HtmlMediaElement>().ok()
-            })
-            .expect("Couldn't create video element");
-
-        let mut slf = HtmlMedia::common_init(source, media);
-        slf.set_video(None);
-        slf.set_image(Some(image));
         Self {
-            media: slf,
+            media: HtmlMedia::new_noop(source, image),
             _phantom: PhantomData,
         }
     }
@@ -441,7 +339,8 @@ fn rebuild_html_media_entities<T: AVPlayer>(
 
             let mut video = if source_url.starts_with("livekit-video://") {
                 let Some(video) =
-                    HtmlMediaEntity::<T>::new_stream(source_url.to_owned(), image_handle.clone())
+                    // HtmlMediaEntity::<T>::new_stream(source_url.to_owned(), image_handle.clone())
+                    todo!()
                 else {
                     continue;
                 };

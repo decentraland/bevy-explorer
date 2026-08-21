@@ -37,10 +37,22 @@ unsafe impl Send for HtmlMedia {}
 #[wasm_bindgen(js_namespace = window)]
 extern "C" {
     #[wasm_bindgen(js_name = setVideoSource)]
-    pub fn set_video_source(elt: &HtmlVideoElement, src: &str);
+    fn set_video_source(elt: &HtmlVideoElement, src: &str);
 }
 
 impl HtmlMedia {
+    pub fn new_noop(source: String, image: Handle<Image>) -> Self {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+        let video = document.create_element("video").unwrap();
+        let media = video.clone().dyn_into::<HtmlMediaElement>().unwrap();
+
+        let mut slf = HtmlMedia::common_init(source, media);
+        slf.set_image(Some(image));
+
+        slf
+    }
+
     pub fn new_audio(url: &str, source: String) -> Self {
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
@@ -51,7 +63,22 @@ impl HtmlMedia {
         Self::common_init(source, media)
     }
 
-    pub fn common_init(source: String, media: HtmlMediaElement) -> Self {
+    pub fn new_video(url: &str, source: String, image: Handle<Image>) -> Self {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+        let video = document.create_element("video").unwrap();
+        let media = video.clone().dyn_into::<HtmlMediaElement>().unwrap();
+        let video = video.dyn_into::<HtmlVideoElement>().unwrap();
+
+        let mut slf = HtmlMedia::common_init(source, media);
+        slf.video_init(url, video);
+
+        slf.set_image(Some(image));
+
+        slf
+    }
+
+    fn common_init(source: String, media: HtmlMediaElement) -> Self {
         let mut closures = Vec::default();
         let state = Arc::new(Mutex::new(VideoState::VsLoading));
 
@@ -123,6 +150,65 @@ impl HtmlMedia {
             frame_closure: Default::default(),
             frame_callback_handle: Default::default(),
         }
+    }
+
+    fn video_init(&mut self, url: &str, video: HtmlVideoElement) {
+        video.set_cross_origin(Some("anonymous"));
+
+        let frame_time = Arc::new(AtomicU32::default());
+
+        // video frame callback - no wasm_bindgen for this!
+        let rvc_prop = Reflect::get(&video, &"requestVideoFrameCallback".into()).unwrap();
+        if rvc_prop.is_undefined() {
+            panic!("no requestVideoFrameCallback");
+        }
+        let rvc_fn = rvc_prop.dyn_into::<web_sys::js_sys::Function>().unwrap();
+
+        let callback: RcClosure = Rc::new(RefCell::new(None));
+        let callback_handle: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
+        let callback_clone = callback.clone();
+        let handle_clone = callback_handle.clone();
+        let frame_time_clone = frame_time.clone();
+        let rvc_clone = rvc_fn.clone();
+
+        *callback.borrow_mut() = Some(Closure::wrap(Box::new({
+            let video = video.clone();
+            move |_now: f64, metadata: JsValue| {
+                trace!("frame received");
+                if let Some(media_time) = Reflect::get(&metadata, &"mediaTime".into())
+                    .ok()
+                    .and_then(|mt| mt.as_f64())
+                {
+                    trace!("frame received -> {media_time}");
+                    frame_time_clone.store(
+                        (media_time as f32).to_bits(),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                };
+
+                if let Some(cb) = callback_clone.borrow().as_ref() {
+                    if let Ok(new_handle) = rvc_clone.call1(&video, cb.as_ref().unchecked_ref()) {
+                        *handle_clone.borrow_mut() = new_handle.as_f64().map(|f| f as u32);
+                    }
+                } else {
+                    debug!("no cb - dropping");
+                }
+            }
+        }) as Box<dyn FnMut(f64, JsValue)>));
+        let initial_handle = rvc_fn
+            .call1(
+                &video,
+                callback.borrow().as_ref().unwrap().as_ref().unchecked_ref(),
+            )
+            .unwrap();
+        *callback_handle.borrow_mut() = initial_handle.as_f64().map(|f| f as u32);
+
+        set_video_source(&video, url);
+
+        self.set_new_frame_time(frame_time);
+        self.set_frame_closure(callback);
+        self.set_frame_callback_handle(callback_handle);
+        self.set_video(Some(video));
     }
 
     pub fn set_loop(&mut self, looping: bool) {
