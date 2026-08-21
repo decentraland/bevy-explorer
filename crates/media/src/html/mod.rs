@@ -78,6 +78,21 @@ impl HtmlMedia {
         slf
     }
 
+    pub fn video_from_element(
+        media: HtmlVideoElement,
+        source: String,
+        image: Handle<Image>,
+    ) -> Self {
+        let video = media.clone().dyn_into::<HtmlVideoElement>().unwrap();
+
+        let mut slf = HtmlMedia::common_init(source, media);
+        slf.video_init(url, video);
+
+        slf.set_image(Some(image));
+
+        slf
+    }
+
     fn common_init(source: String, media: HtmlMediaElement) -> Self {
         let mut closures = Vec::default();
         let state = Arc::new(Mutex::new(VideoState::VsLoading));
