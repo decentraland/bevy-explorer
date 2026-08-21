@@ -78,6 +78,10 @@ impl HtmlMedia {
         slf
     }
 
+    pub fn audio_from_element(media: HtmlMediaElement, source: String) -> Self {
+        Self::common_init(source, media)
+    }
+
     pub fn video_from_element(
         media: HtmlVideoElement,
         source: String,
