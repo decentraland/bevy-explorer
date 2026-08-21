@@ -1,12 +1,12 @@
 use std::{collections::VecDeque, time::Duration};
 
+use bevy::log::{debug, error, trace};
 use common::{structs::AudioDecoderError, util::ReportErr};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::{
     Packet, decoder, ffi::AVSampleFormat, format::context::Input, media::Type, util::frame,
 };
 use kira::sound::streaming::StreamingSoundData;
-use log::{debug, error, trace};
 use thiserror::Error;
 use tokio::sync::mpsc::error::TryRecvError;
 

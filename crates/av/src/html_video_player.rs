@@ -3,14 +3,11 @@ use std::{marker::PhantomData, sync::atomic::Ordering};
 use bevy::{
     color::palettes::basic,
     diagnostic::FrameCount,
-    platform::collections::HashMap,
     prelude::*,
     render::{
-        render_asset::{RenderAssetUsages, RenderAssets},
-        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-        renderer::{RenderQueue, WgpuWrapper},
-        texture::GpuImage,
-        Render, RenderApp, RenderSet,
+        render_asset::RenderAssetUsages,
+        render_resource::{TextureDimension, TextureFormat, TextureUsages},
+        renderer::WgpuWrapper,
     },
 };
 use common::{sets::SceneSets, structs::AudioSettings, util::ReportErr};
@@ -20,7 +17,7 @@ use dcl_component::{
     SceneComponentId,
 };
 use ipfs::IpfsResource;
-use media::HtmlMedia;
+use media::{FrameCopyRequest, FrameCopyRequestQueue, HtmlMedia};
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::material::{update_materials, VideoTextureOutput},
@@ -93,31 +90,11 @@ impl Plugin for VideoPlayerPlugin {
                 .run_if(resource_exists_and_changed::<AudioSettings>),
         );
 
-        let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
-
-        app.insert_resource(FrameCopyRequestQueue(sx));
-
         app.add_observer(av_player_on_insert::<AudioStream>);
         app.add_observer(av_player_on_insert::<VideoPlayer>);
         app.add_observer(av_player_on_remove::<AudioStream>);
         app.add_observer(av_player_on_remove::<VideoPlayer>);
-
-        let render_app = app.sub_app_mut(RenderApp);
-        render_app
-            .insert_resource(FrameCopyReceiveQueue(rx))
-            .add_systems(Render, perform_video_copies.in_set(RenderSet::Queue));
     }
-}
-
-#[derive(Resource)]
-pub struct FrameCopyRequestQueue(tokio::sync::mpsc::UnboundedSender<FrameCopyRequest>);
-
-#[derive(Resource)]
-pub struct FrameCopyReceiveQueue(tokio::sync::mpsc::UnboundedReceiver<FrameCopyRequest>);
-
-pub struct FrameCopyRequest {
-    video_frame: WgpuWrapper<VideoFrame>,
-    target: AssetId<Image>,
 }
 
 #[derive(Component, Deref, DerefMut)]
@@ -377,7 +354,6 @@ fn update_av_players<T: AVPlayer>(
                         // queue copy
                         trace!("queue frame {:?}", video_size);
                         send_queue
-                            .0
                             .send(FrameCopyRequest {
                                 video_frame: WgpuWrapper::new(frame),
                                 target: image_id,
@@ -435,72 +411,6 @@ fn update_av_players<T: AVPlayer>(
             let current_time = av.current_time();
             av.set_last_reported_time(current_time);
         }
-    }
-}
-
-fn perform_video_copies(
-    mut requests: ResMut<FrameCopyReceiveQueue>,
-    images: Res<RenderAssets<GpuImage>>,
-    render_queue: Res<RenderQueue>,
-) {
-    let mut latest_requests: HashMap<AssetId<Image>, FrameCopyRequest> = HashMap::new();
-
-    while let Ok(request) = requests.0.try_recv() {
-        if let Some(prev) = latest_requests.get(&request.target) {
-            prev.video_frame.close();
-        }
-        latest_requests.insert(request.target, request);
-    }
-
-    for (_, request) in latest_requests.drain() {
-        let frame_copy = request.video_frame.clone();
-        let Some(gpu_image) = images.get(request.target) else {
-            warn!("missing gpu image");
-            continue;
-        };
-        let frame = request.video_frame.into_inner();
-        let visible_rect = frame.visible_rect().unwrap();
-        let source_size = (visible_rect.width() as u32, visible_rect.height() as u32);
-        let target_size = (gpu_image.size.width, gpu_image.size.height);
-
-        if source_size != target_size {
-            warn!("skip frame {source_size:?} != {target_size:?}");
-            continue;
-        }
-
-        trace!(
-            "{:?}/{:?} perform {:?} -> {:?}",
-            request.target,
-            gpu_image.texture_view,
-            source_size,
-            target_size
-        );
-
-        render_queue.copy_external_image_to_texture(
-            &wgpu::CopyExternalImageSourceInfo {
-                source: wgpu::ExternalImageSource::VideoFrame(frame),
-                origin: wgpu::Origin2d {
-                    x: visible_rect.x() as u32,
-                    y: visible_rect.y() as u32,
-                },
-                flip_y: false,
-            },
-            wgpu::CopyExternalImageDestInfo {
-                texture: &gpu_image.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-                premultiplied_alpha: false, // Video frames are not typically premultiplied.
-                color_space: wgpu::PredefinedColorSpace::Srgb,
-            },
-            Extent3d {
-                width: source_size.0,
-                height: source_size.1,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        frame_copy.close();
     }
 }
 

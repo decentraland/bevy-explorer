@@ -7,12 +7,12 @@ mod video_context;
 
 use std::path::Path;
 
+use bevy::log::{debug, trace};
 use common::{structs::AudioDecoderError, util::ReportErr};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
 use ipfs::IpfsIo;
 use kira::sound::streaming::StreamingSoundData;
-use log::{debug, trace};
 
 use crate::ffmpeg::{
     audio_context::{AudioContext, AudioError},

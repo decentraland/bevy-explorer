@@ -7048,13 +7048,13 @@ dependencies = [
  "ipfs",
  "js-sys",
  "kira",
- "log",
  "reqwest 0.12.15",
  "thiserror 1.0.69",
  "tokio",
  "urlencoding",
  "wasm-bindgen",
  "web-sys",
+ "wgpu",
 ]
 
 [[package]]

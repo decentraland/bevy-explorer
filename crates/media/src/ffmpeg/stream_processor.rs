@@ -1,7 +1,7 @@
 use anyhow::bail;
+use bevy::log::{debug, info, trace};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::Packet;
-use log::{debug, info, trace};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TryRecvError;
 

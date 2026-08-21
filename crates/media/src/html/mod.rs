@@ -1,15 +1,16 @@
+pub mod plugin;
+
+use bevy::{prelude::*, render::renderer::WgpuWrapper};
+use common::util::ReportErr;
+use dcl_component::proto_components::sdk::components::VideoState;
+use js_sys::{Function, Reflect};
 use std::{
     cell::RefCell,
     rc::Rc,
     sync::{Arc, Mutex, atomic::AtomicU32},
 };
-
-use bevy::prelude::*;
-use common::util::ReportErr;
-use dcl_component::proto_components::sdk::components::VideoState;
-use js_sys::{Function, Reflect};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure, prelude::wasm_bindgen};
-use web_sys::{HtmlMediaElement, HtmlVideoElement};
+use web_sys::{HtmlMediaElement, HtmlVideoElement, VideoFrame};
 
 pub type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
 
@@ -347,4 +348,12 @@ impl Drop for HtmlMedia {
         self.media.set_onended(None);
         self.media.remove();
     }
+}
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct FrameCopyRequestQueue(tokio::sync::mpsc::UnboundedSender<FrameCopyRequest>);
+
+pub struct FrameCopyRequest {
+    pub video_frame: WgpuWrapper<VideoFrame>,
+    pub target: AssetId<Image>,
 }
