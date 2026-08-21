@@ -141,24 +141,8 @@ pub struct HtmlMediaEntity<T: AVPlayer> {
 
 impl<T: AVPlayer> HtmlMediaEntity<T> {
     pub fn new_audio(url: &str, source: String) -> Self {
-        let media = web_sys::window()
-            .unwrap()
-            .document()
-            .and_then(|doc| {
-                let container = doc
-                    .get_element_by_id(VIDEO_CONTAINER_ID)
-                    .expect("video container should exist");
-                let video = doc.create_element("audio").unwrap();
-                container.append_child(&video).unwrap();
-                video.dyn_into::<HtmlMediaElement>().ok()
-            })
-            .expect("Couldn't create video element");
-
-        media.set_src(url);
-
-        let media = HtmlMedia::common_init(source, media);
         Self {
-            media,
+            media: HtmlMedia::new_audio(url, source),
             _phantom: PhantomData,
         }
     }

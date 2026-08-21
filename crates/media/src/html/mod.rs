@@ -41,6 +41,16 @@ extern "C" {
 }
 
 impl HtmlMedia {
+    pub fn new_audio(url: &str, source: String) -> Self {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+        let audio = document.create_element("audio").unwrap();
+        let media = audio.dyn_into::<HtmlMediaElement>().unwrap();
+        media.set_src(url);
+
+        Self::common_init(source, media)
+    }
+
     pub fn common_init(source: String, media: HtmlMediaElement) -> Self {
         let mut closures = Vec::default();
         let state = Arc::new(Mutex::new(VideoState::VsLoading));
