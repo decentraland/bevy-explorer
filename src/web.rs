@@ -460,7 +460,6 @@ fn decentraland_app_arguments(
         emote_wheel: false,
         chat: false,
         permissions: false,
-        profile: false,
         nametags: false,
         tooltips: false,
         loading_scene: false,
