@@ -197,7 +197,6 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
         emote_wheel: args.contains("--builtin-emotes"),
         chat: args.contains("--builtin-chat"),
         permissions: args.contains("--builtin-perms"),
-        profile: args.contains("--builtin-profile"),
         nametags: args.contains("--builtin-nametags"),
         tooltips: args.contains("--builtin-tooltips"),
         loading_scene: args.contains("--builtin-loading-scene-ui"),

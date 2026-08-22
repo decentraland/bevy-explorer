@@ -153,6 +153,12 @@ export function fakeSession(): EngineSession {
     chat: { messages: [], send: vi.fn(), open: true, toggle: vi.fn(), members: [], mention: vi.fn(), pendingMention: null, consumeMention: vi.fn(), unread: 0, focusTick: 0, requestFocus: vi.fn() },
     friends: { available: true, list: [], received: [], sent: [], blocked: [], open: false, toggle: vi.fn(), act: vi.fn() },
     settings: { list: [], open: false, toggle: vi.fn(), set: vi.fn() },
+    bindings: {
+      list: [],
+      set: vi.fn(),
+      reset: vi.fn(),
+      capture: vi.fn(() => ({ input: new Promise<string>(() => {}), cancel: vi.fn() }))
+    },
     profile: { data: null, open: false, toggle: vi.fn() },
     userProfiles: {},
     requestUserProfile: vi.fn(),

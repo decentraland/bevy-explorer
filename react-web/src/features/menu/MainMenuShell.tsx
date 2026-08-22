@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react'
 import { DclLogo, Icon, type IconName } from '../../design'
+import { keyHintFor, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { ProfileChip } from './ProfileChip'
 import styles from './MainMenuShell.module.css'
 
@@ -17,7 +18,8 @@ let openShells = 0
 export interface MenuItem {
   label: string
   icon: IconName
-  shortcut?: string
+  /** Engine SystemAction whose live binding renders as the [K] hint. */
+  hotkey?: string
   /** React page id this item opens. */
   page: string
 }
@@ -25,12 +27,12 @@ export interface MenuItem {
 // The menu pages we support (others hidden). Matches the Figma nav bar
 // (icon + LABEL [shortcut]). Every item is now a React page.
 export const MENU_ITEMS: MenuItem[] = [
-  { label: 'Communities', icon: 'communities', shortcut: 'O', page: 'communities' },
-  { label: 'Places', icon: 'places', shortcut: 'Z', page: 'places' },
-  { label: 'Map', icon: 'map', shortcut: 'M', page: 'map' },
-  { label: 'Backpack', icon: 'backpack', shortcut: 'I', page: 'backpack' },
-  { label: 'Gallery', icon: 'gallery', shortcut: 'G', page: 'gallery' },
-  { label: 'Settings', icon: 'settings', shortcut: 'P', page: 'settings' }
+  { label: 'Communities', icon: 'communities', hotkey: 'Communities', page: 'communities' },
+  { label: 'Places', icon: 'places', hotkey: 'Places', page: 'places' },
+  { label: 'Map', icon: 'map', hotkey: 'Map', page: 'map' },
+  { label: 'Backpack', icon: 'backpack', hotkey: 'Backpack', page: 'backpack' },
+  { label: 'Gallery', icon: 'gallery', hotkey: 'Gallery', page: 'gallery' },
+  { label: 'Settings', icon: 'settings', hotkey: 'Settings', page: 'settings' }
 ]
 
 export function MainMenuShell({
@@ -58,6 +60,7 @@ export function MainMenuShell({
 }): React.JSX.Element {
   // Animate the entrance only on a fresh open (no other shell mounted), not on page switches.
   const [animate] = useState(() => openShells === 0)
+  const bindingsSnap = useBindingsSnapshot()
   useEffect(() => {
     openShells++
     return () => {
@@ -73,20 +76,23 @@ export function MainMenuShell({
           <span className={styles.brandName}>Decentraland</span>
         </div>
         <nav className={styles.menu}>
-          {MENU_ITEMS.map((m) => (
-            <button
-              key={m.label}
-              type="button"
-              className={`${styles.menuItem} ${m.page === active ? styles.menuActive : ''}`.trim()}
-              onClick={() => m.page !== active && onNavigate(m.page)}
-            >
-              <Icon name={m.icon} size={20} />
-              <span className={styles.menuLabel}>
-                {m.label}
-                {m.shortcut && <span className={styles.menuKey}> [{m.shortcut}]</span>}
-              </span>
-            </button>
-          ))}
+          {MENU_ITEMS.map((m) => {
+            const shortcut = m.hotkey != null ? keyHintFor(bindingsSnap, m.hotkey) : undefined
+            return (
+              <button
+                key={m.label}
+                type="button"
+                className={`${styles.menuItem} ${m.page === active ? styles.menuActive : ''}`.trim()}
+                onClick={() => m.page !== active && onNavigate(m.page)}
+              >
+                <Icon name={m.icon} size={20} />
+                <span className={styles.menuLabel}>
+                  {m.label}
+                  {shortcut && <span className={styles.menuKey}> [{shortcut}]</span>}
+                </span>
+              </button>
+            )
+          })}
         </nav>
         {profileName && (
           <ProfileChip

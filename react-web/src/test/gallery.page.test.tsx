@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { GalleryPage } from '../features/gallery/GalleryPage'
+import { dispatchCancelLayer } from '../lib/cancelLayers'
 import type { GalleryState, ProfileState } from '../features/session/useEngineSession'
 import type { GalleryPhoto } from '../engine/protocol'
 
@@ -73,6 +74,18 @@ describe('GalleryPage', () => {
     // Download links the full-res url of the newest (February) photo.
     expect(within(dialog).getByRole('link', { name: /Download/i })).toHaveAttribute('href', 'https://img/feb.jpg')
     expect(g.loadPhoto).toHaveBeenCalledWith('p-feb')
+  })
+
+  it('the open lightbox is a cancel layer: one Cancel dispatch closes it, none registered after', async () => {
+    const g = gallery({ list: photos })
+    renderPage(g)
+    await userEvent.click(screen.getAllByRole('button', { name: 'Open photo' })[0])
+    expect(screen.getByRole('dialog', { name: 'Photo' })).toBeTruthy()
+    act(() => {
+      expect(dispatchCancelLayer()).toBe(true) // the lightbox registered itself
+    })
+    expect(screen.queryByRole('dialog', { name: 'Photo' })).toBeNull()
+    expect(dispatchCancelLayer()).toBe(false) // ...and unregistered on close
   })
 
   it('Jump In teleports to the photo parcel from its metadata', async () => {

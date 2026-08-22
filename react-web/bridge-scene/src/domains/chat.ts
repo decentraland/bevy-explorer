@@ -38,10 +38,10 @@ export function registerChat(ctx: Ctx): void {
     }
   })()
 
-  // Enter → focus chat. The engine reports its "Chat" action here regardless of DOM focus (the stream
-  // the old SDK7 scene used). This is the native path — there the engine reads keys off the OS window;
-  // on web the page-level Enter shortcut (useMenuShortcuts) focuses chat directly. systemAction.ts owns
-  // the stream (single-consumer per scene); we subscribe rather than open a second one.
+  // Enter → focus chat, on both native (the engine reads keys off the OS window) and web (winit
+  // sees window-level keys): the engine's "Chat" action becomes a dedicated focusChat message.
+  // The page deliberately doesn't map 'Chat' in its systemAction dispatcher — this is the one
+  // path. systemAction.ts owns the stream (single-consumer per scene); we subscribe here.
   let freeCursorPending = false
   onSystemAction((a) => {
     if (a.action === 'Chat' && a.pressed) {

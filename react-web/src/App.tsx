@@ -35,7 +35,6 @@ import { useEngineSession } from './features/session/useEngineSession'
 import { useExitGuard } from './lib/useExitGuard'
 import { useHudScale } from './lib/useHudScale'
 import { useWindowKeyDown } from './lib/useWindowKeyDown'
-import { useMenuShortcuts } from './lib/useMenuShortcuts'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
 import { hasUsableGpu } from './lib/gpu'
@@ -174,7 +173,6 @@ function Hud(): React.JSX.Element {
   }, [])
 
   const session = useEngineSession(createDriver)
-  useMenuShortcuts(session) // [O]/[M]/[I]/[G]/[P]/[B]/[L]/[T] hints in the nav + sidebar
   // Warn before the back gesture / Back button unloads the engine (only once in-world). Shown through
   // the popup layer so hasOpenPopup() covers it (Enter must not focus the chat behind it); Escape /
   // scrim-click resolve to "stay", which clears `confirming` and the effect closes the (already-closed) popup.
@@ -290,7 +288,7 @@ function Hud(): React.JSX.Element {
             onVisitWorld={(name) => openWorldVisit({ worldName: name, onConfirm: () => session.map.changeRealm(name) })}
           />
           <FriendsPanel friends={session.friends} />
-          <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
+          <SettingsPanel settings={session.settings} bindings={session.bindings} profile={session.profile} onNavigate={goToMenuPage} />
           <ProfilePanel profile={session.profile} />
           <NotificationsPanel notifications={session.notifications} />
           <EmotesWheel

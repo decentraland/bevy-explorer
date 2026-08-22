@@ -2,7 +2,7 @@
 // inside the super-user (--ui) scene sandbox. This is the ENGINE-side surface (raw shapes);
 // the wire shapes React sees live in the shared protocol. Only the methods the domains use
 // are declared — extend as needed.
-import type { Setting } from '../../src/engine/protocol'
+import type { ActionWire, Setting } from '../../src/engine/protocol'
 import type {
   AvatarModifierState,
   BlockedUserData,
@@ -89,6 +89,20 @@ export type SetPermanentPermissionBody = {
 export type BevyApiInterface = {
   getSettings: () => Promise<Setting[]>
   setSetting: (name: string, value: number) => Promise<void>
+  /** Full binding table: [Action, InputIdentifier[]] pairs, e.g. [{System:'Map'}, ['KeyM','Tab']].
+   *  Shapes pinned to crates/common/src/inputs.rs (see protocol.ts wire types). */
+  getInputBindings: () => Promise<{ bindings: Array<[ActionWire, string[]]> }>
+  /** Whole-table replace; persists engine-side. */
+  setInputBindings: (data: { bindings: Array<[ActionWire, string[]]> }) => Promise<void>
+  /** Resolves with the next physical input pressed (press-a-key capture). No cancel: a stale
+   *  request resolves on the next input, so callers must discard outdated resolutions. */
+  getNativeInput: () => Promise<string>
+  /** Declare HUD focus: `ui` = a menu/popup is active (input reserved above scenes, the
+   *  system-action stream keeps flowing); `text` = a HUD text field holds keyboard focus
+   *  (keys are typing — no actions resolve at all); `scroll` = the cursor is over a
+   *  scrollable HUD element (the Scroll ACTIONS are reserved, so every input bound to
+   *  them drives the panel rather than world consumers like camera zoom). */
+  setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean }) => Promise<void>
   sendChat: (message: string, channel: string) => void
   getChatStream: () => Promise<AsyncIterable<ChatStreamMessage>>
   getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>

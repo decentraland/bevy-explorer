@@ -300,6 +300,19 @@ pub async fn op_set_bindings(
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
 
+pub fn op_set_ui_focus(
+    state: Rc<RefCell<impl State>>,
+    ui: bool,
+    text: bool,
+    scroll: bool,
+) -> Result<(), anyhow::Error> {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetUiFocus { ui, text, scroll })?;
+    Ok(())
+}
+
 pub async fn op_console_command(
     state: Rc<RefCell<impl State>>,
     cmd: String,

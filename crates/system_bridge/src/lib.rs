@@ -84,6 +84,19 @@ pub enum SystemApi {
     GetNativeInput(RpcResultSender<InputIdentifier>),
     GetBindings(RpcResultSender<BindingsData>),
     SetBindings(BindingsData, RpcResultSender<()>),
+    /// HUD focus state. `ui`: a HUD surface (menu/popup) is active — all input is reserved
+    /// above scenes, while the system-action stream (which reads at the same level) keeps
+    /// flowing so the HUD still receives Cancel/hotkeys. `text`: a HUD text field holds
+    /// keyboard focus — the keyboard is reserved above the stream too, so keystrokes are
+    /// typing and resolve to no action at all. `scroll`: the cursor is over a scrollable
+    /// HUD element — the Scroll ACTIONS are reserved, so every input bound to them (wheel,
+    /// key, gamepad button) stands down for world consumers while the action stream still
+    /// resolves Scroll itself; the HUD scrolls the hovered panel from those edges.
+    SetUiFocus {
+        ui: bool,
+        text: bool,
+        scroll: bool,
+    },
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),
     SetHomeScene(HomeScene),
@@ -167,7 +180,6 @@ pub struct NativeUi {
     pub emote_wheel: bool,
     pub chat: bool,
     pub permissions: bool,
-    pub profile: bool,
     pub nametags: bool,
     pub tooltips: bool,
     pub loading_scene: bool,

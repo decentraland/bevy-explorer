@@ -36,6 +36,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_native_input(),
             op_get_bindings(),
             op_set_bindings(),
+            op_set_ui_focus(),
             op_console_command(),
             op_live_scene_info(),
             op_get_home_scene(),
@@ -211,6 +212,16 @@ pub async fn op_set_bindings(
     #[serde] bindings: JsBindingsData,
 ) -> Result<(), anyhow::Error> {
     dcl::js::system_api::op_set_bindings(state, bindings).await
+}
+
+#[op2(fast)]
+pub fn op_set_ui_focus(
+    state: Rc<RefCell<OpState>>,
+    ui: bool,
+    text: bool,
+    scroll: bool,
+) -> Result<(), AnyError> {
+    dcl::js::system_api::op_set_ui_focus(state, ui, text, scroll)
 }
 
 #[op2(async)]

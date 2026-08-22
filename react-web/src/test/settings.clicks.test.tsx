@@ -25,7 +25,14 @@ const SELECT = base({ name: 'quality', category: 'graphics', namedVariants: [{ n
 
 function renderPanel(): SettingsState {
   const settings: SettingsState = { ...fakeSession().settings, open: true, list: [TOGGLE, SLIDER, SELECT], set: vi.fn() }
-  render(<SettingsPanel settings={settings} profile={{ data: null, open: false, toggle: vi.fn() }} onNavigate={vi.fn()} />)
+  render(
+    <SettingsPanel
+      settings={settings}
+      bindings={fakeSession().bindings}
+      profile={{ data: null, open: false, toggle: vi.fn() }}
+      onNavigate={vi.fn()}
+    />
+  )
   return settings
 }
 

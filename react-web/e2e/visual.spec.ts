@@ -211,6 +211,16 @@ test.describe('visual — mock HUD', () => {
     })
   }
 
+  // The Key Bindings tab inside Settings: chip rows, pair/quad boxes, the fixed wheel chips —
+  // rendered from the mock's default binding table.
+  test('panel — settings key bindings', async ({ page }) => {
+    await enterWorld(page)
+    await openPanel(page, 'Settings')
+    await page.getByRole('button', { name: 'Key Bindings', exact: true }).click()
+    await settle(page)
+    await expect(page).toHaveScreenshot('panel-settings-keybindings.png')
+  })
+
   // Minimap — the HUD's newest surface, and the one `world-hud.png` covers worst: it is mostly
   // dark chrome over a dark HUD, so a whole missing minimap only moved ~6k pixels there, inside
   // the 1% tolerance. Baselined with the gear menu open, which is the densest state (header,

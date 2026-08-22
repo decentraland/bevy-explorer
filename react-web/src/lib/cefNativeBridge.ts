@@ -30,29 +30,8 @@ export function installCefNativeBridge(): void {
       /* malformed envelope; drop */
     }
   })
-  // Text-focus signal: while a HUD text field is focused, the engine keeps forwarding keys to
-  // the page even if the cursor drifts over the world (chat typing isn't cut off mid-word).
-  const typing = (t: EventTarget | null): boolean => {
-    const el = t as HTMLElement | null
-    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
-  }
-  document.addEventListener(
-    'focusin',
-    (e) => {
-      if (typing(e.target)) cef.emit({ to: 'engine', msg: { kind: 'textFocus', focused: true } })
-    },
-    true
-  )
-  document.addEventListener(
-    'focusout',
-    () => {
-      setTimeout(() => {
-        if (!typing(document.activeElement))
-          cef.emit({ to: 'engine', msg: { kind: 'textFocus', focused: false } })
-      }, 0)
-    },
-    true
-  )
+  // (HUD focus — including text focus — now flows through the bridge scene as a 'uiFocus'
+  // message on every platform; see useEngineSession. No engine-addressed messages remain.)
   // Engine fps for the perf overlay and logical height for --ui-scale (see useFps/useHudScale).
   cef.listen('engineFps', (v) => {
     ;(window as Window & { __nativeEngineFps?: number }).__nativeEngineFps = Number(v)
@@ -62,8 +41,8 @@ export function installCefNativeBridge(): void {
     window.dispatchEvent(new Event('resize'))
   })
   // Engine-side text focus (scene textinput / engine text box): keys forward to this page
-  // unconditionally, so useMenuShortcuts needs the same don't-treat-keys-as-shortcuts signal
-  // boot.js provides on web (see push_text_focus in src/react_hud_cef.rs).
+  // unconditionally, so the systemAction dispatcher needs the same don't-treat-keys-as-shortcuts
+  // signal boot.js provides on web (see push_text_focus in src/react_hud_cef.rs).
   cef.listen('engineTextFocus', (v) => {
     ;(window as Window & { __engineTextFocus?: boolean }).__engineTextFocus = v === 'true'
   })
