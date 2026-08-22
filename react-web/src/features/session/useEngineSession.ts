@@ -8,7 +8,7 @@ import type { FatalError } from '../error/fatalError'
 import { DEFAULT_REALM } from '../engine/EngineHost'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
 import { bootMode } from '../../lib/bootMode'
-import { isCancelKey, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
+import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { isInputLocked, subscribeInputLock } from '../../lib/inputLock'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
@@ -1449,17 +1449,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const locked = useSyncExternalStore(subscribeInputLock, isInputLocked)
   const [textFocused, setTextFocused] = useState(false)
   useEffect(() => {
-    const editable = (t: EventTarget | null): boolean => {
-      const el = t as HTMLElement | null
-      return el != null && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
-    }
-    const update = (): void => setTextFocused(editable(document.activeElement))
+    const update = (): void => setTextFocused(isEditableTarget(document.activeElement))
     const onFocusOut = (): void => void setTimeout(update, 0) // activeElement settles next tick
     // The cancel key blurs a focused text field (fields are otherwise sticky: while one
     // holds focus no actions resolve, so cancel could never escape it). Bubble phase, so a
     // widget that owns the key — chat's layered Escape — can stopPropagation first.
     const onKey = (e: KeyboardEvent): void => {
-      if (isCancelKey(e) && editable(e.target)) (e.target as HTMLElement).blur()
+      if (isCancelKey(e) && isEditableTarget(e.target)) (e.target as HTMLElement).blur()
     }
     document.addEventListener('focusin', update, true)
     document.addEventListener('focusout', onFocusOut, true)
@@ -1581,8 +1577,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       return
     }
     if (!pressed || phase !== 'world' || isInputLocked()) return
-    const el = document.activeElement as HTMLElement | null
-    if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.isContentEditable) return
+    if (isEditableTarget(document.activeElement)) return
     if ((window as EngineFocusWindow).__engineTextFocus) return
     // 'Cancel' is the one action handled even with a popup open: the engine resolved the
     // cancel key or gamepad button, and this is the single layered close — topmost popup

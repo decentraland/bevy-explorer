@@ -420,7 +420,7 @@ export function KeyBindingsTab({ bindings }: { bindings: BindingsState }): React
 
   const remove = (action: ActionWire, index: number): void => {
     const table = getBindingsSnapshot().bindings
-    const bound = bindingsForAction({ bindings: table, layout: null }, action).filter((_, i) => i !== index)
+    const bound = boundTo(table, action).filter((_, i) => i !== index)
     bindings.set(withBinding(table, action, bound))
   }
 

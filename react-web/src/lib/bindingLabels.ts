@@ -130,7 +130,8 @@ export function cancelKeyCodes(): string[] {
   return bindingsForAction(snapshot, { System: 'Cancel' }).filter(isKeyWire)
 }
 
-const isEditableTarget = (t: EventTarget | null | undefined): boolean =>
+/** Is this a text-entry element (keystrokes there are typing, not hotkeys/cancel)? */
+export const isEditableTarget = (t: EventTarget | null | undefined): boolean =>
   t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
 
 /** Does this keydown mean cancel? Matches the physical `code`; the `key` fallback keeps

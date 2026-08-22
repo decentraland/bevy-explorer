@@ -875,9 +875,10 @@ export interface CaptureInputRequest {
  *  active — the engine reserves all input above scenes, but keeps resolving system actions
  *  so the HUD still receives Cancel/hotkeys on the action stream. `text`: a HUD text field
  *  holds keyboard focus — keys are typing; the engine resolves no actions from them.
- *  `scroll`: the cursor is over a scrollable HUD element — the engine reserves the axes
- *  the Scroll actions are bound to (the wheel by default), so the scroll gesture drives
- *  the panel instead of e.g. camera zoom; key and button bindings stay live. */
+ *  `scroll`: the cursor is over a scrollable HUD element — the engine reserves the Scroll
+ *  ACTIONS, so every input bound to them (wheel, key, gamepad button) stands down for
+ *  world consumers (camera zoom on a shared wheel) while the action stream still resolves
+ *  Scroll for the HUD to drive the hovered panel. */
 export interface UiFocusMessage {
   kind: 'uiFocus'
   ui: boolean

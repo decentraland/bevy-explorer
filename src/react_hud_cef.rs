@@ -27,9 +27,9 @@
 // keys and unlocked-cursor mouse events are forwarded to the page — so outside-clicks defocus
 // text fields and page hotkeys (e.g. B for emotes) always work — while the engine takes world
 // input per-pixel (opaque HUD pixel under the cursor gates it off) and drops key-bound actions
-// while a HUD text field holds focus (InputPriorities reservation). Mouse wheel over a
-// SCROLLABLE HUD element stands down engine-side via the page's uiFocus `scroll` flag
-// (Axis(MouseWheel) reservation — see handle_set_ui_focus), same as on web.
+// while a HUD text field holds focus (InputPriorities reservation). Scroll-bound inputs over
+// a SCROLLABLE HUD element stand down engine-side via the page's uiFocus `scroll` flag
+// (Scroll-action reservation — see handle_set_ui_focus), same as on web.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
