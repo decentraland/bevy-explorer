@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react'
 import { Avatar, Button } from '../../design'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
+import { isCancelKey } from '../../lib/bindingLabels'
 import { photoTime } from '../session/useEngineSession'
 import type { GalleryPhoto, GalleryPhotoMeta } from '../../engine/protocol'
 import type { ChatUser } from '../chat/ProfileCardPresentation'
@@ -77,11 +78,11 @@ export function PhotoDetail({
     setConfirmDelete(false)
   }, [photo.id])
 
-  // Keyboard: Escape closes the lightbox (before the session closes the gallery),
+  // Keyboard: the Cancel key closes the lightbox (before the session closes the gallery),
   // arrows navigate. Capture phase + stopImmediatePropagation so we win over the
-  // session's window Escape handler.
+  // session's window cancel handler.
   useWindowKeyDown((e) => {
-    if (e.key === 'Escape') {
+    if (isCancelKey(e)) {
       e.preventDefault()
       e.stopImmediatePropagation()
       onClose()

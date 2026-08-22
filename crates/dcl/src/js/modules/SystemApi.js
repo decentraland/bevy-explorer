@@ -147,6 +147,19 @@ module.exports.setInputBindings = async function(bindings) {
     await Deno.core.ops.op_set_bindings(bindings)
 }
 
+// declare HUD focus state
+// arg: {
+//   ui: bool,     // a HUD surface (menu/popup) is active: input is reserved above scenes,
+//                 // but the system-action stream keeps flowing
+//   text: bool,   // a HUD text field has keyboard focus: keys are typing, no actions resolve
+//   scroll: bool, // the cursor is over a scrollable HUD element: the Scroll actions are
+//                 // reserved, so every input bound to them stands down for world consumers
+//                 // while the action stream still resolves Scroll for the HUD to consume
+// }
+module.exports.setUiFocus = async function(focus) {
+    Deno.core.ops.op_set_ui_focus(focus?.ui ?? false, focus?.text ?? false, focus?.scroll ?? false)
+}
+
 
 /// reload 
 // hash: string | undefined

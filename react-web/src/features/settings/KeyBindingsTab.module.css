@@ -1,0 +1,158 @@
+/* Key Bindings tab body (rendered inside SettingsPanel's card). Row labels match the
+   settings grid's field labels; the group heading is local to this tab — deliberately a
+   size up from the rows so sections scan at a glance. */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  max-width: 980px;
+}
+.root section:not(:first-of-type) {
+  border-top: 1px solid var(--fill-3);
+  padding-top: 24px;
+}
+.note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-7);
+}
+.groupTitle {
+  margin: 0 0 14px;
+  font-size: 21px;
+  font-weight: 800;
+  color: var(--text);
+}
+.rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  column-gap: clamp(24px, 6vw, 120px);
+  row-gap: 12px;
+  align-items: start;
+}
+/* An opposite pair (auto-bound together on analog capture) is boxed as one unit. */
+.pairBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--fill-3);
+  border-radius: 10px;
+}
+/* Unboxed rows get the box's horizontal inset (12px padding + 1px border) so all labels
+   and chips line up regardless of boxing. */
+.rows > .row {
+  padding: 0 13px;
+}
+/* The camera-direction 4-set: one box spanning the full grid row, its four rows side by
+   side (wrapping on narrow widths). Visual only — analog capture still mirrors per pair. */
+.quadBox {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  column-gap: 24px;
+  row-gap: 8px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+}
+.rowLabel {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.chipWrap {
+  position: relative;
+  display: inline-flex;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 30px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--fill-4);
+  border-radius: 6px;
+  background: var(--fill-3);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) ease;
+}
+.chip:hover {
+  background: var(--fill-4);
+}
+/* A fixed binding (the wheel's scroll role): displayed but not clickable or removable. */
+.chipFixed {
+  cursor: default;
+  color: var(--ink-7);
+}
+.chipFixed:hover {
+  background: var(--fill-3);
+}
+.chipConflict {
+  border-color: var(--accent);
+}
+.chipRemove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--fill-4);
+  color: var(--text);
+  font-size: 10px;
+  line-height: 14px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) ease;
+}
+.chipWrap:hover .chipRemove {
+  opacity: 1;
+}
+.chipAdd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px dashed var(--fill-4);
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-7);
+  font-size: 15px;
+  cursor: pointer;
+}
+.chipAdd:hover {
+  background: var(--fill-3);
+  color: var(--text);
+}
+.capturePrompt {
+  padding: 18px 0 8px;
+  text-align: center;
+  font-size: 15px;
+  color: var(--text);
+}
+.captureHint {
+  padding-bottom: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-7);
+}

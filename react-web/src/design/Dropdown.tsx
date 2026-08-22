@@ -3,6 +3,7 @@
 // dcl-react-ui; differs from Select in that options are plain strings.
 
 import { useEffect, useRef, useState } from 'react'
+import { isCancelKey } from '../lib/bindingLabels'
 import styles from './Dropdown.module.css'
 
 export interface DropdownProps {
@@ -44,9 +45,10 @@ export function Dropdown({ options, value, defaultValue, onChange }: DropdownPro
   }
 
   function onKey(e: React.KeyboardEvent<HTMLDivElement>): void {
-    if (e.key === 'Escape') {
+    if (isCancelKey(e)) {
       if (open) {
         e.preventDefault()
+        e.stopPropagation() // consumed here — must not travel on to the engine as Cancel
         setOpen(false)
       }
       return

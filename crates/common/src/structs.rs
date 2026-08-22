@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 pub use system_api_types::{PermissionLevel, PermissionType, PermissionValue, PointerTargetType};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::inputs::InputMapSerialized;
+use crate::inputs::{Action, InputIdentifier, InputMapSerialized, SystemAction};
 
 #[derive(Resource)]
 pub struct Version(pub String);
@@ -507,11 +507,17 @@ pub struct AppConfig {
     // rather than taking the current generation from the container-level default
     #[serde(default)]
     pub settings_generation: u32,
+    #[serde(default)]
+    pub inputs_generation: u32,
 }
 
 /// bump to force a one-time reset of the preset-managed settings in existing configs
 /// (see [`AppConfig::reset_outdated_settings`])
 pub const SETTINGS_GENERATION: u32 = 1;
+
+/// bump to run one-time migrations of saved input binding tables
+/// (see [`AppConfig::migrate_inputs`])
+pub const INPUTS_GENERATION: u32 = 1;
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -545,6 +551,7 @@ impl Default for AppConfig {
             point_at_marker_visibility: Default::default(),
             camera_smoothing: Default::default(),
             settings_generation: SETTINGS_GENERATION,
+            inputs_generation: INPUTS_GENERATION,
         }
     }
 }
@@ -576,6 +583,46 @@ impl AppConfig {
         self.max_avatars = default.max_avatars;
         self.max_videos = default.max_videos;
         self.settings_generation = SETTINGS_GENERATION;
+    }
+
+    /// migrate saved input tables: clear RollLeft/RollRight bindings still on their old
+    /// defaults (KeyT/KeyG are now ChatPanel/Gallery), and add defaults for any actions
+    /// the saved table doesn't mention
+    pub fn migrate_inputs(&mut self) {
+        if self.inputs_generation < INPUTS_GENERATION {
+            for (action, bindings) in self.inputs.0.iter_mut() {
+                let old_default = match action {
+                    Action::System(SystemAction::RollLeft) => InputIdentifier::Key(KeyCode::KeyT),
+                    Action::System(SystemAction::RollRight) => InputIdentifier::Key(KeyCode::KeyG),
+                    _ => continue,
+                };
+                if *bindings == [old_default] {
+                    bindings.clear();
+                }
+            }
+            self.inputs_generation = INPUTS_GENERATION;
+        }
+        for (action, bindings) in InputMapSerialized::default().0 {
+            if !self
+                .inputs
+                .0
+                .iter()
+                .any(|(existing, _)| *existing == action)
+            {
+                self.inputs.0.push((action, bindings));
+            }
+        }
+        // fixed bindings can never be removed — re-add any a saved table has lost.
+        for (action, id) in crate::inputs::FIXED_BINDINGS {
+            match self.inputs.0.iter_mut().find(|(a, _)| *a == action) {
+                Some((_, bindings)) => {
+                    if !bindings.contains(&id) {
+                        bindings.push(id);
+                    }
+                }
+                None => self.inputs.0.push((action, vec![id])),
+            }
+        }
     }
 
     pub fn get_permission(
@@ -1551,3 +1598,79 @@ impl CameraSmoothing {
 
 #[derive(Event)]
 pub struct PointAtMarkerVisibilityChanged;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrate_inputs_updates_old_tables() {
+        // a table saved before Places/Gallery/etc existed, with old roll defaults and
+        // one deliberate user customization
+        let mut config = AppConfig {
+            inputs: InputMapSerialized(
+                vec![
+                    (
+                        Action::System(SystemAction::RollLeft),
+                        vec![InputIdentifier::Key(KeyCode::KeyT)],
+                    ),
+                    (
+                        Action::System(SystemAction::RollRight),
+                        vec![InputIdentifier::Key(KeyCode::KeyR)],
+                    ),
+                    // a fixed binding the user managed to strip (older build)
+                    (Action::System(SystemAction::ScrollUp), vec![]),
+                ],
+                Default::default(),
+            ),
+            inputs_generation: 0,
+            ..Default::default()
+        };
+
+        config.migrate_inputs();
+
+        fn get(config: &AppConfig, action: SystemAction) -> Option<Vec<InputIdentifier>> {
+            config
+                .inputs
+                .0
+                .iter()
+                .find(|(a, _)| *a == Action::System(action))
+                .map(|(_, bindings)| bindings.clone())
+        }
+
+        // old default cleared, user customization preserved
+        assert_eq!(get(&config, SystemAction::RollLeft), Some(vec![]));
+        assert_eq!(
+            get(&config, SystemAction::RollRight),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyR)])
+        );
+        // missing actions merged in with their defaults
+        assert_eq!(
+            get(&config, SystemAction::Places),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyZ)])
+        );
+        assert_eq!(config.inputs_generation, INPUTS_GENERATION);
+        // fixed bindings restored: the wheel always scrolls
+        assert_eq!(
+            get(&config, SystemAction::ScrollUp),
+            Some(vec![InputIdentifier::Analog(
+                crate::inputs::AxisIdentifier::MouseWheel,
+                crate::inputs::InputDirection::Up
+            )])
+        );
+
+        // re-running after a deliberate rebind back to KeyT doesn't clear it again
+        let roll_left = config
+            .inputs
+            .0
+            .iter_mut()
+            .find(|(a, _)| *a == Action::System(SystemAction::RollLeft))
+            .unwrap();
+        roll_left.1 = vec![InputIdentifier::Key(KeyCode::KeyT)];
+        config.migrate_inputs();
+        assert_eq!(
+            get(&config, SystemAction::RollLeft),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyT)])
+        );
+    }
+}

@@ -5,11 +5,31 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { CameraIcon, WalkIcon } from '../../design'
 import type { HoverAction, ProximityTip } from '../../engine/protocol'
+import { bindingsForAction, labelForInput, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { subscribeCursor, getCursor, setCursorNotify } from './cursorStore'
 import styles from './Pointer.module.css'
 
-// Default DCL key bindings (custom rebinds aren't reflected yet — v1).
+// `button` is the scene InputAction id — map it to the engine action name, then to its live
+// binding (so custom rebinds show truthfully). The literal fallbacks cover the moment before
+// the binding table arrives.
 const IA_POINTER = 0
+const IA_NAME: Record<number, string> = {
+  0: 'IaPointer',
+  1: 'IaPrimary',
+  2: 'IaSecondary',
+  3: 'IaAny',
+  4: 'IaForward',
+  5: 'IaBackward',
+  6: 'IaRight',
+  7: 'IaLeft',
+  8: 'IaJump',
+  9: 'IaWalk',
+  10: 'IaAction3',
+  11: 'IaAction4',
+  12: 'IaAction5',
+  13: 'IaAction6',
+  14: 'IaModifier'
+}
 const KEY_LABEL: Record<number, string> = {
   1: 'E', // IA_PRIMARY
   2: 'F', // IA_SECONDARY
@@ -18,7 +38,6 @@ const KEY_LABEL: Record<number, string> = {
   6: 'D',
   7: 'A',
   8: 'Space', // IA_JUMP
-  9: 'Shift', // IA_WALK
   10: '1', // IA_ACTION_3
   11: '2',
   12: '3',
@@ -38,8 +57,15 @@ function MouseLeftIcon(): React.JSX.Element {
 }
 
 function KeyCap({ button }: { button: number }): React.JSX.Element {
-  if (button === IA_POINTER) return <MouseLeftIcon />
-  return <span className={styles.cap}>{KEY_LABEL[button] ?? '?'}</span>
+  const snap = useBindingsSnapshot()
+  const name = IA_NAME[button]
+  const first = name != null ? bindingsForAction(snap, { Scene: name })[0] : undefined
+  if (first === 'Mouse Left' || (first == null && button === IA_POINTER)) return <MouseLeftIcon />
+  return (
+    <span className={styles.cap}>
+      {first != null ? labelForInput(snap, first) : KEY_LABEL[button] ?? '?'}
+    </span>
+  )
 }
 
 // Radial tooltip slots around the free cursor — ported from bevy-ui-scene's hover-action-component:

@@ -27,6 +27,7 @@ import { registerWorld } from './domains/world'
 import { registerPointer } from './domains/pointer'
 import { registerProximity } from './domains/proximity'
 import { registerSystemAction } from './domains/systemAction'
+import { registerBindings } from './domains/bindings'
 import { registerAvatarPointer } from './domains/avatarPointer'
 import { registerPermissions } from './domains/permissions'
 import { initNametags } from './domains/nametags'
@@ -52,6 +53,7 @@ export function main(): void {
     registerPointer(ctx)
     registerProximity(ctx)
     registerSystemAction(ctx)
+    registerBindings(ctx)
     registerAvatarPointer(ctx)
     registerPermissions(ctx)
     registerAvatarPreview(ctx)

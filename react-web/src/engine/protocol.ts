@@ -108,6 +108,11 @@ export type PageToScene =
   | FriendActionRequest
   | GetSettingsRequest
   | SetSettingRequest
+  | GetBindingsRequest
+  | SetBindingsRequest
+  | ResetBindingsRequest
+  | CaptureInputRequest
+  | UiFocusMessage
   | GetProfileRequest
   | GetUserProfileRequest
   | GetNotificationsRequest
@@ -831,6 +836,55 @@ export interface SetSettingRequest {
   value: number
 }
 
+// ---- input bindings --------------------------------------------------------
+// Wire types pinned to crates/common/src/inputs.rs (hand-written: the Rust types are
+// bevy-dependent so ts-rs generation can't cover them).
+
+/** Externally-tagged serde `Action`: `{System:'Map'}` | `{Scene:'IaJump'}`. */
+export type ActionWire = { System: string } | { Scene: string }
+/** `InputIdentifier` string form: 'KeyZ' | 'Mouse Left' | 'Gamepad South' | 'MouseWheel Down' … */
+export type InputIdentifierWire = string
+/** One row of the engine's binding table. */
+export type BindingEntry = [ActionWire, InputIdentifierWire[]]
+
+export interface GetBindingsRequest {
+  kind: 'getBindings'
+}
+
+/** Whole-table replace: must round-trip every entry from the last BindingsMessage
+ *  (gamepad/mouse/analog rows included), with just the intended edits applied. */
+export interface SetBindingsRequest {
+  kind: 'setBindings'
+  bindings: BindingEntry[]
+}
+
+/** Reset the whole table to engine defaults (runs /reset_controls engine-side). */
+export interface ResetBindingsRequest {
+  kind: 'resetBindings'
+}
+
+/** Ask the engine for the next physical input pressed (press-a-key capture). The engine has
+ *  no cancel: a dismissed capture resolves on the next input, so responses carry the request
+ *  id and stale ids are dropped on both sides. */
+export interface CaptureInputRequest {
+  kind: 'captureInput'
+  id: string
+}
+
+/** HUD focus state (fire-and-forget, latest wins). `ui`: a HUD surface (menu/popup) is
+ *  active — the engine reserves all input above scenes, but keeps resolving system actions
+ *  so the HUD still receives Cancel/hotkeys on the action stream. `text`: a HUD text field
+ *  holds keyboard focus — keys are typing; the engine resolves no actions from them.
+ *  `scroll`: the cursor is over a scrollable HUD element — the engine reserves the axes
+ *  the Scroll actions are bound to (the wheel by default), so the scroll gesture drives
+ *  the panel instead of e.g. camera zoom; key and button bindings stay live. */
+export interface UiFocusMessage {
+  kind: 'uiFocus'
+  ui: boolean
+  text: boolean
+  scroll: boolean
+}
+
 /** One interaction hint (a single key binding) for a world entity: the button to press + its label.
  *  Shared by the reticle hover and the proximity tooltips. React maps `button` (an `InputAction` enum)
  *  to a glyph (E / 🖱 / 1…). */
@@ -859,12 +913,27 @@ export interface CursorLockMessage {
   locked: boolean
 }
 
-/** A HUD-relevant engine system action that fired (pressed). `action` is the engine's SystemAction
- *  variant name, e.g. 'Cancel' (bound to Escape) which closes the topmost popup. Relayed authoritatively
- *  from the engine's input stream so it works even while the engine holds keyboard focus. */
+/** A HUD-relevant engine system action edge. `action` is the engine's SystemAction variant name
+ *  (e.g. 'Places', 'Map', 'Cancel'); both press and release edges are relayed. Relayed
+ *  authoritatively from the engine's input stream so it works even while the engine holds
+ *  keyboard focus, and respects user rebinds. */
 export interface SystemActionMessage {
   kind: 'systemAction'
   action: string
+  pressed: boolean
+}
+
+/** The engine's full binding table (sent on request and after every set/reset). */
+export interface BindingsMessage {
+  kind: 'bindings'
+  bindings: BindingEntry[]
+}
+
+/** Result of a CaptureInputRequest: the input that was pressed, tagged with the request id. */
+export interface InputCapturedMessage {
+  kind: 'inputCaptured'
+  id: string
+  input: InputIdentifierWire
 }
 
 /** A proximity tooltip for an in-range world entity, anchored at its projected screen position
@@ -906,6 +975,8 @@ export type SceneToPage =
   | MenuVisibilityMessage
   | FriendsMessage
   | SettingsMessage
+  | BindingsMessage
+  | InputCapturedMessage
   | ProfileMessage
   | UserProfileMessage
   | NotificationsMessage

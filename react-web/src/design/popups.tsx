@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { ModalShell } from './Modal'
 import { Button } from './Button'
 import { useFocusTrap } from '../lib/useFocusTrap'
@@ -44,11 +44,19 @@ const closeById = (id: number): void => {
   node.options.onClose?.()
 }
 
-/** Close the topmost popup (no-op if the stack is empty). Fired by PopupHost's own Escape handler
- *  (below) — the DOM listener sees Escape wherever focus sits, so the old engine 'Cancel' relay is
- *  gone. Closes one layer at a time, so stacked popups dismiss in order. */
+/** Close the topmost popup (no-op if the stack is empty). Fired by the session's 'Cancel'
+ *  system-action handler in-world (the engine resolves the cancel key/button and streams the
+ *  action back), and by its DOM fallback pre-world where the stream doesn't exist yet — see
+ *  useEngineSession. Closes one layer at a time, so stacked popups dismiss in order. */
 export function closeTopPopup(): void {
   if (stack.length > 0) closeById(stack[stack.length - 1].id)
+}
+
+/** Subscribe to popup-stack changes — the module store changes outside React, so the session's
+ *  uiFocus relay (and any other imperative observer) needs its own subscription. */
+export function subscribePopups(cb: () => void): () => void {
+  listeners.add(cb)
+  return () => listeners.delete(cb)
 }
 
 /** Is any popup on the stack? Read at call time (the stack changes without a React render) by the
@@ -114,21 +122,10 @@ function PopupLayer({ node, isTop, locked }: { node: PopupNode; isTop: boolean; 
 export function PopupHost(): React.JSX.Element {
   const snap = useSyncExternalStore(subscribe, getSnapshot)
   const locked = useSyncExternalStore(subscribeInputLock, isInputLocked)
-  // The single, DOM-level Escape handler for every popup — so no popup needs its own. Capture phase
-  // + stopPropagation so it wins over (and suppresses) the engine's Cancel relay and Modal's own key
-  // handler, closing exactly one layer. Only acts while a popup is open; otherwise Escape passes
-  // through to whatever else wants it (the engine, an App-local Modal). Stands down while a fatal
-  // error modal holds input — see inputLock — so whatever's underneath stays exactly as it was.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape' || !hasOpenPopup() || isInputLocked()) return
-      e.stopPropagation()
-      e.preventDefault()
-      closeTopPopup()
-    }
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => document.removeEventListener('keydown', onKeyDown, true)
-  }, [])
+  // No DOM cancel handler here: the cancel key flows to the engine like any other input,
+  // resolves to the 'Cancel' system action, and the session closes the top popup from the
+  // action stream (one layered close for keyboard and gamepad alike). Pre-world, where the
+  // stream doesn't exist yet, the session installs a DOM fallback — see useEngineSession.
   return (
     <>
       {snap.map((n, i) => (

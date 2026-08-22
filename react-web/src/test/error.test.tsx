@@ -5,7 +5,7 @@ import { CrashModal } from '../features/error/CrashModal'
 import { openRealmError } from '../features/error/RealmErrorModal'
 import { ErrorBoundary } from '../features/error/ErrorBoundary'
 import { isInputLocked } from '../lib/inputLock'
-import { PopupHost, resetPopups } from '../design'
+import { PopupHost, closeTopPopup, resetPopups } from '../design'
 
 afterEach(resetPopups)
 
@@ -49,7 +49,7 @@ describe('openRealmError', () => {
     expect(screen.queryByText(/World not found/i)).toBeNull()
   })
 
-  it('is an ordinary popup: Escape closes it and it never takes the input lock', () => {
+  it('is an ordinary popup: a cancel-dismiss closes it and it never takes the input lock', () => {
     const onDismiss = vi.fn()
     render(<PopupHost />)
     act(() => {
@@ -57,9 +57,9 @@ describe('openRealmError', () => {
     })
     // Unlike a crash, a world-not-found freezes nothing behind it.
     expect(isInputLocked()).toBe(false)
-    act(() => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    })
+    // The cancel key resolves via the session (stream in-world, DOM fallback pre-world),
+    // both landing on closeTopPopup — see systemActionShortcuts.test.tsx.
+    act(() => closeTopPopup())
     expect(screen.queryByText(/World not found/i)).toBeNull()
     expect(onDismiss).toHaveBeenCalledTimes(1) // the dismiss contract still settles exactly once
   })

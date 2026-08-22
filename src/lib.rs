@@ -114,6 +114,7 @@ impl DecentralandAppConfig {
         #[cfg(target_arch = "wasm32")] wasm_loader_handle: Option<WasmLoaderHandle>,
     ) -> Self {
         update_app_config_from_arguments(&mut app_config, &arguments);
+        app_config.migrate_inputs();
 
         Self {
             app_config,

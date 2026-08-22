@@ -43,6 +43,13 @@ pub enum SystemAction {
     QuickEmote9,
     QuickEmote0,
     PointAt,
+    Places,
+    Communities,
+    Backpack,
+    Gallery,
+    Settings,
+    Friends,
+    ChatPanel,
 }
 
 impl From<SystemAction> for Action {
@@ -137,6 +144,29 @@ pub const SCROLL_SET: InputDirectionalSet = InputDirectionalSet {
         Some(Action::System(SystemAction::ScrollDown)),
     ],
 };
+/// Bindings that can never be removed: HUD and scene scrollables rely on native wheel
+/// scrolling, which can't follow rebinds — so the wheel directions always mean scroll,
+/// whatever else the user binds alongside or tries to remove. Enforced on config
+/// migration and on every SetBindings.
+pub const FIXED_BINDINGS: [(Action, InputIdentifier); 4] = [
+    (
+        Action::System(SystemAction::ScrollUp),
+        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Up),
+    ),
+    (
+        Action::System(SystemAction::ScrollDown),
+        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Down),
+    ),
+    (
+        Action::System(SystemAction::ScrollLeft),
+        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Left),
+    ),
+    (
+        Action::System(SystemAction::ScrollRight),
+        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Right),
+    ),
+];
+
 pub const POINTER_SET: InputDirectionalSet = InputDirectionalSet {
     label: InputDirectionSetLabel::Pointer,
     actions: [
@@ -409,14 +439,9 @@ impl Default for InputMap {
                     Action::System(SystemAction::HideNames),
                     vec![InputIdentifier::Key(KeyCode::KeyN)],
                 ),
-                (
-                    Action::System(SystemAction::RollLeft),
-                    vec![InputIdentifier::Key(KeyCode::KeyT)],
-                ),
-                (
-                    Action::System(SystemAction::RollRight),
-                    vec![InputIdentifier::Key(KeyCode::KeyG)],
-                ),
+                // unbound by default: KeyT/KeyG are used for ChatPanel/Gallery
+                (Action::System(SystemAction::RollLeft), vec![]),
+                (Action::System(SystemAction::RollRight), vec![]),
                 (
                     Action::System(SystemAction::PointAt),
                     vec![
@@ -574,6 +599,34 @@ impl Default for InputMap {
                 (
                     Action::System(SystemAction::QuickEmote9),
                     vec![InputIdentifier::Key(KeyCode::Digit9)],
+                ),
+                (
+                    Action::System(SystemAction::Places),
+                    vec![InputIdentifier::Key(KeyCode::KeyZ)],
+                ),
+                (
+                    Action::System(SystemAction::Communities),
+                    vec![InputIdentifier::Key(KeyCode::KeyO)],
+                ),
+                (
+                    Action::System(SystemAction::Backpack),
+                    vec![InputIdentifier::Key(KeyCode::KeyI)],
+                ),
+                (
+                    Action::System(SystemAction::Gallery),
+                    vec![InputIdentifier::Key(KeyCode::KeyG)],
+                ),
+                (
+                    Action::System(SystemAction::Settings),
+                    vec![InputIdentifier::Key(KeyCode::KeyP)],
+                ),
+                (
+                    Action::System(SystemAction::Friends),
+                    vec![InputIdentifier::Key(KeyCode::KeyL)],
+                ),
+                (
+                    Action::System(SystemAction::ChatPanel),
+                    vec![InputIdentifier::Key(KeyCode::KeyT)],
                 ),
             ]),
         }

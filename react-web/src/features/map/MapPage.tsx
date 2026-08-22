@@ -10,6 +10,7 @@ import { CAT_ICONS, CAT_PINS, WORLD_ICON } from './mapArt'
 import { GRID, ORIGIN_X, ORIGIN_Y, PARCELS_PER_TILE, SIZE, SPAN, tileUrl } from './atlas'
 import type { MapState, ProfileState } from '../session/useEngineSession'
 import { openWorldVisit } from '../../components/WorldVisitModal'
+import { isCancelKey } from '../../lib/bindingLabels'
 import styles from './MapPage.module.css'
 
 const PLACES_API = 'https://places.decentraland.org/api/places'
@@ -427,7 +428,12 @@ export function MapPage({
                 if (e.key === 'Enter') {
                   if (worldHits[0]) askVisitWorld(worldHits[0])
                   else if (placeHits[0]) pickPlace(placeHits[0])
-                } else if (e.key === 'Escape') setQuery('')
+                } else if (isCancelKey(e) && query !== '') {
+                  // consume the press: clearing is one step, the session's blur-on-cancel
+                  // rule takes the next one, and a third closes the map via Cancel.
+                  e.stopPropagation()
+                  setQuery('')
+                }
               }}
             />
             {query.trim().length >= 2 && (worldHits.length > 0 || placeHits.length > 0) && (

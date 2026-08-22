@@ -27,8 +27,9 @@
 // keys and unlocked-cursor mouse events are forwarded to the page — so outside-clicks defocus
 // text fields and page hotkeys (e.g. B for emotes) always work — while the engine takes world
 // input per-pixel (opaque HUD pixel under the cursor gates it off) and drops key-bound actions
-// while a HUD text field holds focus (InputPriorities reservation). Mouse wheel over the HUD
-// still also reaches the engine (known gap).
+// while a HUD text field holds focus (InputPriorities reservation). Mouse wheel over a
+// SCROLLABLE HUD element stands down engine-side via the page's uiFocus `scroll` flag
+// (Axis(MouseWheel) reservation — see handle_set_ui_focus), same as on web.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
@@ -43,7 +44,7 @@ use cef_offscreen::prelude::{
 };
 use common::rpc::{RpcResultReceiver, RpcResultSender, RpcStreamSender};
 use common::structs::PrimaryUser;
-use input_manager::{InputPriorities, InputPriority, InputType, MouseInteractionComponent};
+use input_manager::{InputPriorities, MouseInteractionComponent};
 use system_bridge::SystemApi;
 
 pub struct ReactHudCefPlugin {
@@ -121,9 +122,6 @@ struct ReactHudCef {
     // The page's bridge listener is live once it has sent us anything; until then events like
     // playerReady would be fired into the void (the page hasn't subscribed yet).
     page_seen: bool,
-    // A HUD text field is focused (page focusin/focusout via the shim) — the engine's key-bound
-    // actions are suppressed so WASD etc. type instead of moving the avatar.
-    text_focused: bool,
     // When the super-user bridge-scene is driving (the bundled default), this is its page->scene
     // stream; the relay becomes a pure Envelope pipe and the per-domain fallback is bypassed.
     bridge_sender: Option<RpcStreamSender<String>>,
@@ -229,7 +227,6 @@ fn spawn_hud(
         pending_code: Vec::new(),
         player_ready_sent: false,
         page_seen: false,
-        text_focused: false,
         bridge_sender: None,
     });
 }
@@ -503,7 +500,6 @@ fn pump_bridge(
 fn on_page_envelope(
     trigger: Trigger<PageEnvelope>,
     state: Option<ResMut<ReactHudCef>>,
-    mut priorities: ResMut<InputPriorities>,
     mut sys: EventWriter<SystemApi>,
     mut commands: Commands,
 ) {
@@ -511,27 +507,8 @@ fn on_page_envelope(
     state.page_seen = true;
     let env = &trigger.event().0;
     debug!("[react-hud-cef] page -> engine: {env}");
-    // engine-addressed control messages (not for the bridge scene)
-    if env.get("to").and_then(|t| t.as_str()) == Some("engine") {
-        let msg = env.get("msg").cloned().unwrap_or_default();
-        if msg.get("kind").and_then(|k| k.as_str()) == Some("textFocus") {
-            state.text_focused = msg
-                .get("focused")
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false);
-            // Keys still reach the page (CEF forwarding is unconditional), but the engine must
-            // not act on them while typing. TextEntry is the level the rest of the engine keys
-            // off: world consumers read at None/Scene, and input_manager's OS-shortcut
-            // suppression (which clobbers raw Shift state, breaking chords like Cmd+Shift+Z)
-            // switches off while the keyboard is claimed at >= TextEntry.
-            if state.text_focused {
-                priorities.reserve(InputType::Keyboard, InputPriority::TextEntry);
-            } else {
-                priorities.release(InputType::Keyboard, InputPriority::TextEntry);
-            }
-        }
-        return;
-    }
+    // HUD focus (incl. text focus) now flows page -> bridge scene -> SystemApi::SetUiFocus,
+    // the same route as on web — no engine-addressed control messages remain.
     if env.get("to").and_then(|t| t.as_str()) != Some("scene") {
         return;
     }

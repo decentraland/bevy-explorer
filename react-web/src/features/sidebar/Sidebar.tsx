@@ -7,56 +7,59 @@
 import { IconButton } from '../../design'
 import type { IconName } from '../../design'
 import type { NavAction } from '../../engine/protocol'
+import { keyHintFor, useBindingsSnapshot, type BindingsSnapshot } from '../../lib/bindingLabels'
 import type { EngineSession } from '../session/useEngineSession'
 import styles from './Sidebar.module.css'
 
+// `hotkey` names the engine SystemAction whose live binding renders as the tooltip hint.
 type Item =
-  | { kind: 'nav'; icon: IconName; label: string; action: NavAction; shortcut?: string }
-  | { kind: 'chat'; icon: IconName; label: string; shortcut?: string }
-  | { kind: 'friends'; icon: IconName; label: string; shortcut?: string }
-  | { kind: 'emotes'; icon: IconName; label: string; shortcut?: string }
+  | { kind: 'nav'; icon: IconName; label: string; action: NavAction; hotkey?: string }
+  | { kind: 'chat'; icon: IconName; label: string; hotkey?: string }
+  | { kind: 'friends'; icon: IconName; label: string; hotkey?: string }
+  | { kind: 'emotes'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'mic'; icon: IconName; label: string }
-  | { kind: 'settings'; icon: IconName; label: string; shortcut?: string }
+  | { kind: 'settings'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'profile'; icon: IconName; label: string }
   | { kind: 'notifications'; icon: IconName; label: string }
-  | { kind: 'backpack'; icon: IconName; label: string; shortcut?: string }
-  | { kind: 'communities'; icon: IconName; label: string; shortcut?: string }
-  | { kind: 'map'; icon: IconName; label: string; shortcut?: string }
-  | { kind: 'places'; icon: IconName; label: string; shortcut?: string }
-  | { kind: 'gallery'; icon: IconName; label: string; shortcut?: string }
+  | { kind: 'backpack'; icon: IconName; label: string; hotkey?: string }
+  | { kind: 'communities'; icon: IconName; label: string; hotkey?: string }
+  | { kind: 'map'; icon: IconName; label: string; hotkey?: string }
+  | { kind: 'places'; icon: IconName; label: string; hotkey?: string }
+  | { kind: 'gallery'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'help'; icon: IconName; label: string }
   | { kind: 'divider' }
 
 const TOP: Item[] = [
   { kind: 'profile', icon: 'profile', label: 'Profile' },
   { kind: 'notifications', icon: 'notifications', label: 'Notifications' },
-  { kind: 'map', icon: 'map', label: 'Map', shortcut: 'M' },
-  { kind: 'places', icon: 'places', label: 'Places', shortcut: 'Z' },
-  { kind: 'communities', icon: 'communities', label: 'Communities', shortcut: 'O' },
-  { kind: 'backpack', icon: 'backpack', label: 'Backpack', shortcut: 'I' },
-  { kind: 'gallery', icon: 'gallery', label: 'Gallery', shortcut: 'G' },
-  { kind: 'settings', icon: 'settings', label: 'Settings', shortcut: 'P' },
+  { kind: 'map', icon: 'map', label: 'Map', hotkey: 'Map' },
+  { kind: 'places', icon: 'places', label: 'Places', hotkey: 'Places' },
+  { kind: 'communities', icon: 'communities', label: 'Communities', hotkey: 'Communities' },
+  { kind: 'backpack', icon: 'backpack', label: 'Backpack', hotkey: 'Backpack' },
+  { kind: 'gallery', icon: 'gallery', label: 'Gallery', hotkey: 'Gallery' },
+  { kind: 'settings', icon: 'settings', label: 'Settings', hotkey: 'Settings' },
   { kind: 'divider' },
   { kind: 'help', icon: 'help', label: 'Help & Support' }
 ]
 
 const BOTTOM: Item[] = [
   { kind: 'mic', icon: 'mic', label: 'Voice chat' },
-  { kind: 'emotes', icon: 'emotes', label: 'Emotes', shortcut: 'B' },
+  { kind: 'emotes', icon: 'emotes', label: 'Emotes', hotkey: 'Emote' },
   { kind: 'divider' },
-  { kind: 'friends', icon: 'friends', label: 'Friends', shortcut: 'L' },
-  { kind: 'chat', icon: 'chat', label: 'Chat', shortcut: 'T' }
+  { kind: 'friends', icon: 'friends', label: 'Friends', hotkey: 'Friends' },
+  { kind: 'chat', icon: 'chat', label: 'Chat', hotkey: 'ChatPanel' }
 ]
 
-function renderItem(item: Item, i: number, session: EngineSession, onViewProfile?: () => void): React.JSX.Element {
+function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, onViewProfile?: () => void): React.JSX.Element {
   if (item.kind === 'divider') return <div key={`d${i}`} className={styles.divider} />
+  const shortcut = 'hotkey' in item && item.hotkey != null ? keyHintFor(snap, item.hotkey) : undefined
   if (item.kind === 'chat')
     return (
       <IconButton
         key="chat"
         icon={item.icon}
         label={item.label}
-        shortcut={item.shortcut}
+        shortcut={shortcut}
         badge={session.chat.unread}
         active={session.chat.open}
         onClick={session.chat.toggle}
@@ -68,7 +71,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         key="friends"
         icon={item.icon}
         label={item.label}
-        shortcut={item.shortcut}
+        shortcut={shortcut}
         badge={session.friends.received.length}
         active={session.friends.open}
         onClick={session.friends.toggle}
@@ -80,7 +83,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         key="settings"
         icon={item.icon}
         label={item.label}
-        shortcut={item.shortcut}
+        shortcut={shortcut}
         active={session.settings.open}
         onClick={session.settings.toggle}
       />
@@ -101,7 +104,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         key="backpack"
         icon={item.icon}
         label={item.label}
-        shortcut={item.shortcut}
+        shortcut={shortcut}
         active={session.backpack.open}
         onClick={session.backpack.toggle}
       />
@@ -112,7 +115,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         key="communities"
         icon={item.icon}
         label={item.label}
-        shortcut={item.shortcut}
+        shortcut={shortcut}
         active={session.communities.open}
         onClick={session.communities.toggle}
       />
@@ -123,7 +126,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         key="map"
         icon={item.icon}
         label={item.label}
-        shortcut={item.shortcut}
+        shortcut={shortcut}
         active={session.map.open}
         onClick={session.map.toggle}
       />
@@ -134,7 +137,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         key="places"
         icon={item.icon}
         label={item.label}
-        shortcut={item.shortcut}
+        shortcut={shortcut}
         active={session.places.open}
         onClick={session.places.toggle}
       />
@@ -145,7 +148,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         key="gallery"
         icon={item.icon}
         label={item.label}
-        shortcut={item.shortcut}
+        shortcut={shortcut}
         active={session.gallery.open}
         onClick={session.gallery.toggle}
       />
@@ -167,7 +170,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         key="emotes"
         icon={item.icon}
         label={item.label}
-        shortcut={item.shortcut}
+        shortcut={shortcut}
         active={session.emotes.open}
         onClick={session.emotes.toggle}
       />
@@ -196,7 +199,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
       key={item.action}
       icon={item.icon}
       label={item.label}
-      shortcut={item.shortcut}
+      shortcut={shortcut}
       onClick={() => session.nav(item.action)}
     />
   )
@@ -210,10 +213,11 @@ export function Sidebar({
   /** Open the local player's passport (the profile icon). */
   onViewProfile?: () => void
 }): React.JSX.Element {
+  const snap = useBindingsSnapshot()
   return (
     <nav className={styles.root} aria-label="Main navigation">
-      <div className={styles.group}>{TOP.map((item, i) => renderItem(item, i, session, onViewProfile))}</div>
-      <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, onViewProfile))}</div>
+      <div className={styles.group}>{TOP.map((item, i) => renderItem(item, i, session, snap, onViewProfile))}</div>
+      <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, onViewProfile))}</div>
     </nav>
   )
 }
