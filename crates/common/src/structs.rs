@@ -585,23 +585,59 @@ impl AppConfig {
         self.settings_generation = SETTINGS_GENERATION;
     }
 
-    /// migrate saved input tables: clear RollLeft/RollRight bindings still on their old
-    /// defaults (KeyT/KeyG are now ChatPanel/Gallery), and add defaults for any actions
-    /// the saved table doesn't mention
+    /// migrate saved input tables: replace bindings still on changed old defaults
+    /// (RollLeft/RollRight KeyT/KeyG freed for ChatPanel/Gallery, quick emotes moved off
+    /// the Action 3-6 digits onto the numpad), and add defaults for any actions the saved
+    /// table doesn't mention
     pub fn migrate_inputs(&mut self) {
         if self.inputs_generation < INPUTS_GENERATION {
             for (action, bindings) in self.inputs.0.iter_mut() {
-                let old_default = match action {
-                    Action::System(SystemAction::RollLeft) => InputIdentifier::Key(KeyCode::KeyT),
-                    Action::System(SystemAction::RollRight) => InputIdentifier::Key(KeyCode::KeyG),
+                let (old_default, new_default) = match action {
+                    Action::System(SystemAction::RollLeft) => (KeyCode::KeyT, None),
+                    Action::System(SystemAction::RollRight) => (KeyCode::KeyG, None),
+                    Action::System(SystemAction::QuickEmote0) => {
+                        (KeyCode::Digit0, Some(KeyCode::Numpad0))
+                    }
+                    Action::System(SystemAction::QuickEmote1) => {
+                        (KeyCode::Digit1, Some(KeyCode::Numpad1))
+                    }
+                    Action::System(SystemAction::QuickEmote2) => {
+                        (KeyCode::Digit2, Some(KeyCode::Numpad2))
+                    }
+                    Action::System(SystemAction::QuickEmote3) => {
+                        (KeyCode::Digit3, Some(KeyCode::Numpad3))
+                    }
+                    Action::System(SystemAction::QuickEmote4) => {
+                        (KeyCode::Digit4, Some(KeyCode::Numpad4))
+                    }
+                    Action::System(SystemAction::QuickEmote5) => {
+                        (KeyCode::Digit5, Some(KeyCode::Numpad5))
+                    }
+                    Action::System(SystemAction::QuickEmote6) => {
+                        (KeyCode::Digit6, Some(KeyCode::Numpad6))
+                    }
+                    Action::System(SystemAction::QuickEmote7) => {
+                        (KeyCode::Digit7, Some(KeyCode::Numpad7))
+                    }
+                    Action::System(SystemAction::QuickEmote8) => {
+                        (KeyCode::Digit8, Some(KeyCode::Numpad8))
+                    }
+                    Action::System(SystemAction::QuickEmote9) => {
+                        (KeyCode::Digit9, Some(KeyCode::Numpad9))
+                    }
                     _ => continue,
                 };
-                if *bindings == [old_default] {
-                    bindings.clear();
+                if *bindings == [InputIdentifier::Key(old_default)] {
+                    *bindings = new_default.map(InputIdentifier::Key).into_iter().collect();
                 }
             }
             self.inputs_generation = INPUTS_GENERATION;
         }
+        // ShowProfile is legacy (see the SystemAction variant): drop saved rows so the dead
+        // action neither lingers in tables nor resurfaces anywhere.
+        self.inputs
+            .0
+            .retain(|(action, _)| *action != Action::System(SystemAction::ShowProfile));
         for (action, bindings) in InputMapSerialized::default().0 {
             if !self
                 .inputs
@@ -1620,6 +1656,22 @@ mod tests {
                     ),
                     // a fixed binding the user managed to strip (older build)
                     (Action::System(SystemAction::ScrollUp), vec![]),
+                    // legacy action from an old default table
+                    (
+                        Action::System(SystemAction::ShowProfile),
+                        vec![InputIdentifier::Gamepad(
+                            bevy::input::gamepad::GamepadButton::North,
+                        )],
+                    ),
+                    // quick emote still on its old digit default, and one rebound
+                    (
+                        Action::System(SystemAction::QuickEmote3),
+                        vec![InputIdentifier::Key(KeyCode::Digit3)],
+                    ),
+                    (
+                        Action::System(SystemAction::QuickEmote4),
+                        vec![InputIdentifier::Key(KeyCode::KeyX)],
+                    ),
                 ],
                 Default::default(),
             ),
@@ -1657,6 +1709,17 @@ mod tests {
                 crate::inputs::AxisIdentifier::MouseWheel,
                 crate::inputs::InputDirection::Up
             )])
+        );
+        // the legacy ShowProfile row is stripped, not merged back
+        assert_eq!(get(&config, SystemAction::ShowProfile), None);
+        // quick emotes: old digit default remapped to the numpad, a rebind preserved
+        assert_eq!(
+            get(&config, SystemAction::QuickEmote3),
+            Some(vec![InputIdentifier::Key(KeyCode::Numpad3)])
+        );
+        assert_eq!(
+            get(&config, SystemAction::QuickEmote4),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyX)])
         );
 
         // re-running after a deliberate rebind back to KeyT doesn't clear it again

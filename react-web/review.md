@@ -154,6 +154,8 @@ Run through this on every diff (it encodes `AGENTS.md`):
 - [ ] **Both projects typecheck** (`npm run typecheck` + `cd bridge-scene && npx tsc --noEmit`).
 - [ ] **No secrets / `.env`** staged; commit follows `CLAUDE.md` (imperative, no AI attribution).
 
+- [ ] **Input routing** — follows the §7 contracts (no hand-rolled Escape/hotkey handlers).
+
 ---
 
 ## 6. Adding a domain
@@ -164,3 +166,29 @@ Run through this on every diff (it encodes `AGENTS.md`):
 4. Add a screenshot to `e2e/visual.spec.ts` and run `npm run test:visual:update`.
 5. If it's world-space (engine-drawn), add a line to the §4 checklist instead of a screenshot.
 6. List its expectations here.
+
+---
+
+## 7. Input routing contracts
+
+The ENGINE resolves input to actions; the HUD reacts to the action stream and declares its
+focus back (`uiFocus`). Keep it that way — the AZERTY bug and the CEF double-fire both came
+from HUD-side key matching. The rules:
+
+- **Never add a DOM hotkey or Escape handler.** Panel/menu keys arrive as `systemAction`
+  messages (dispatcher in `useEngineSession`); add a `case` there. Cancel/close behaviour
+  for leaf UI (a lightbox, an open dropdown) = register on the **cancel-layer stack**
+  (`src/lib/cancelLayers.ts`) while open — the dispatcher peels popup → layer → panels, one
+  per press, keyboard and gamepad alike.
+- **The only DOM key handling allowed is inside a focused text field** (chat, map search),
+  where the engine deliberately resolves nothing (`UiText`). There: match with
+  `isCancelKey`, and `stopPropagation()` anything you consumed so the blur rule doesn't
+  also fire on the same press.
+- **A new panel/popup/overlay must be visible to `uiFocus`** — panels via the session's
+  `anyPanelOpen`, dialogs via the popup stack (`openPopup`), full-screen input freezes via
+  `inputLock`. If the engine can't see that your surface is active, scenes keep receiving
+  input behind it.
+- **Scrollable HUD content** just needs real `overflow: auto` — hover detection, the
+  engine-side reservation and gamepad scrolling all key off that.
+- Key **labels** come from `bindingLabels` (`keyHintFor`/`labelForInput`), never hardcoded
+  letters — they follow the user's rebinds and keyboard layout.

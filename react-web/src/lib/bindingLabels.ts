@@ -91,6 +91,8 @@ export function labelForInput(snap: BindingsSnapshot, input: InputIdentifierWire
   const fromLayout = snap.layout?.get(input)
   if (fromLayout) return fromLayout.length === 1 ? fromLayout.toUpperCase() : fromLayout
   if (KEY_LABELS[input]) return KEY_LABELS[input]
+  const numpad = input.match(/^Numpad(.+)$/)
+  if (numpad) return `Num ${numpad[1]}`
   const stripped = input.replace(/^Key(?=[A-Z0-9]$)|^Digit(?=\d$)/, '')
   return stripped.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
 }

@@ -11,11 +11,6 @@
   border-top: 1px solid var(--fill-3);
   padding-top: 24px;
 }
-.note {
-  margin: 0;
-  font-size: 13px;
-  color: var(--ink-7);
-}
 .groupTitle {
   margin: 0 0 14px;
   font-size: 21px;

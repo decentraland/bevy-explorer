@@ -52,7 +52,6 @@ const INTERFACE_ACTIONS: [ActionWire, string][] = [
   [{ System: 'Friends' }, 'Friends'],
   [{ System: 'ChatPanel' }, 'Chat Panel'],
   [{ System: 'Chat' }, 'Focus Chat'],
-  [{ System: 'ShowProfile' }, 'Show Profile'],
   [{ System: 'HideUi' }, 'Hide UI'],
   [{ System: 'HideNames' }, 'Hide Nametags'],
   [{ System: 'Cancel' }, 'Cancel']
@@ -424,10 +423,6 @@ export function KeyBindingsTab({ bindings }: { bindings: BindingsState }): React
 
   return (
     <div className={styles.root}>
-      <p className={styles.note}>
-        Bindings are stored by physical key position, so they keep working on any keyboard
-        layout — the labels follow the keys on yours.
-      </p>
       {GROUPS.map(([group, actions]) => (
         <section key={group}>
           <h2 className={styles.groupTitle}>{group}</h2>

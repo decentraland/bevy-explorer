@@ -120,6 +120,29 @@ test.describe('react HUD ↔ real engine', () => {
     await expect.poll(async () => playerPosition(page)).not.toBe(before)
   })
 
+  // --- input: the full HUD hotkey pipeline ----------------------------------
+  // The one thing no deterministic tier can see: winit's web key listeners live ON the
+  // canvas, so a key pressed while DOM focus sits on a HUD element only reaches the engine
+  // via boot.js's forwarder, then comes back as a systemAction on the stream. If a winit
+  // upgrade moves its listeners (or the forwarder breaks), THIS test catches it.
+  test('input: a key pressed with DOM focus on the HUD round-trips via the engine action stream', async () => {
+    await sidebar(page, 'Map') // open via click — DOM focus is now the sidebar button, not the canvas
+    const search = page.getByPlaceholder('Search places & worlds')
+    await expect(search).toBeVisible()
+    await page.keyboard.press('KeyM') // forwarder → canvas → winit → engine resolve → stream → toggle
+    await expect(search).toBeHidden()
+  })
+
+  // --- bindings: the engine's table renders in the Key Bindings tab ----------
+  test('bindings: the Key Bindings tab renders the engine binding table', async () => {
+    await sidebar(page, 'Settings')
+    await page.getByRole('button', { name: 'Key Bindings', exact: true }).click()
+    await expectBridge(page, 'scene', 'getBindings')
+    // A default row straight from the engine's InputMap (Move Forward = KeyW → chip "W").
+    const row = page.locator('div', { hasText: /^Move Forward/ }).last()
+    await expect(row.getByRole('button', { name: 'W', exact: true })).toBeVisible()
+  })
+
   // pointer (hover) + nametags are world-space/data-dependent and not deterministically
   // reachable from a fresh guest in an empty parcel — their contracts are covered in
   // tier 1 (src/test/pointer.test.tsx, nametags.test.tsx).

@@ -180,7 +180,6 @@ pub struct NativeUi {
     pub emote_wheel: bool,
     pub chat: bool,
     pub permissions: bool,
-    pub profile: bool,
     pub nametags: bool,
     pub tooltips: bool,
     pub loading_scene: bool,
