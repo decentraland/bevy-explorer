@@ -6,6 +6,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { renderSession, enterAsGuest, type Harness } from './harness'
 import { openPopup, resetPopups, PopupHost } from '../design'
 import { setBindingsSnapshot } from '../lib/bindingLabels'
+import { registerCancelLayer } from '../lib/cancelLayers'
 import { lockInput } from '../lib/inputLock'
 
 async function world(): Promise<Harness> {
@@ -89,6 +90,36 @@ describe('system-action menu shortcuts', () => {
     expect(h.session().places.open).toBe(true)
     h.driver.emit(action('Cancel'))
     expect(h.session().places.open).toBe(false)
+  })
+
+  it("a 'Cancel' action peels one registered leaf layer (lightbox/dropdown) before panels", async () => {
+    const h = await world()
+    h.driver.emit(action('Gallery'))
+    expect(h.session().gallery.open).toBe(true)
+    const closed = vi.fn()
+    const unregister = registerCancelLayer(() => {
+      closed()
+      unregister() // the layer closes → it leaves the stack, like a real widget unmounting
+    })
+    h.driver.emit(action('Cancel'))
+    expect(closed).toHaveBeenCalledTimes(1)
+    expect(h.session().gallery.open).toBe(true) // one layer per press — the panel survives
+    h.driver.emit(action('Cancel'))
+    expect(h.session().gallery.open).toBe(false) // next press falls through to the panel
+  })
+
+  it("a popup wins over a registered leaf layer (it renders on top of everything)", async () => {
+    const h = await world()
+    render(<PopupHost />)
+    const closed = vi.fn()
+    const unregister = registerCancelLayer(closed)
+    act(() => {
+      openPopup(() => <div>a popup</div>)
+    })
+    act(() => h.driver.emit(action('Cancel')))
+    expect(screen.queryByText('a popup')).toBeNull()
+    expect(closed).not.toHaveBeenCalled() // the layer waits its turn
+    unregister()
   })
 
   it("a 'Cancel' action is ignored while the input lock is held (crash modal)", async () => {

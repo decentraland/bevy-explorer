@@ -13,9 +13,7 @@ import { ModalShell, openPopup } from '../../design'
 import type { ActionWire, BindingEntry, InputIdentifierWire } from '../../engine/protocol'
 import {
   bindingsForAction,
-  cancelKeyCodes,
   getBindingsSnapshot,
-  isCancelKey,
   labelForInput,
   sameAction,
   useBindingsSnapshot
@@ -301,30 +299,22 @@ const MOUSE_WIRE = ['Mouse Left', 'Mouse Middle', 'Mouse Right', 'Mouse Back', '
 // pointerUP so both edges get forwarded and the engine never sees a stuck-down button.
 // Forwarded clones are MARKED (canvasForward): a dispatched clone re-enters the same
 // window/document capture path as real input, so unmarked forwarding recurses into these
-// very handlers and lets the cancel clone close popups/panels behind the modal.
+// very handlers.
 //
-// Cancelling is owned HERE, on the Cancel action's own key (Escape by default): the trusted
-// keydown is suppressed before PopupHost or the session's panel handler can act on it, a
-// marked clone still goes to the canvas so the engine consumes it as the captured input (a
-// cancelled capture must not stay pending and swallow the next real keypress — the stale
-// result is dropped by request id), and the modal closes itself via onCancel.
+// Cancelling needs NO key handling here: keys flow to the engine and are captured like any
+// other input (the stream is muted at BindInput, so nothing else reacts), and `rebind`
+// interprets a Cancel-bound result as "abort" — see captureCancelInputs. That's also what
+// lets a gamepad-bound Cancel abort a capture.
 function CaptureModal({
-  action,
+  cancelHint,
   label,
-  onMouse,
-  onCancel
+  onMouse
 }: {
-  action: ActionWire
+  /** Label of the input that aborts the capture (absent when nothing does). */
+  cancelHint?: string
   label: string
   onMouse: (input: InputIdentifierWire) => void
-  onCancel: () => void
 }): React.JSX.Element {
-  const snap = useBindingsSnapshot()
-  // With Cancel unbound, Escape stands in so the modal stays escapable (the overlay
-  // suppresses clicks, so there's no backdrop dismiss) — EXCEPT when capturing for the
-  // Cancel action itself, where Escape must be capturable or it could never be re-bound.
-  const forCancel = sameAction(action, { System: 'Cancel' })
-  const escapeFallback = !forCancel && cancelKeyCodes().length === 0
   useEffect(() => {
     const canvas = document.getElementById('mygame-canvas')
     const suppress = (e: Event): void => {
@@ -353,20 +343,12 @@ function CaptureModal({
             : 'MouseWheel Right'
       )
     }
-    const onKeyDown = (e: KeyboardEvent): void => {
-      const isCancel = isCancelKey(e) || (escapeFallback && e.key === 'Escape')
-      if (isForwarded(e) || !isCancel) return
-      suppress(e)
-      canvas?.dispatchEvent(markForwarded(new KeyboardEvent('keydown', e)))
-      onCancel()
-    }
     window.addEventListener('pointerdown', onPointer, true)
     window.addEventListener('pointerup', onPointer, true)
     window.addEventListener('wheel', onWheel, { capture: true, passive: false })
     window.addEventListener('click', suppress, true)
     window.addEventListener('auxclick', suppress, true)
     window.addEventListener('contextmenu', suppress, true)
-    window.addEventListener('keydown', onKeyDown, true)
     return () => {
       window.removeEventListener('pointerdown', onPointer, true)
       window.removeEventListener('pointerup', onPointer, true)
@@ -374,39 +356,55 @@ function CaptureModal({
       window.removeEventListener('click', suppress, true)
       window.removeEventListener('auxclick', suppress, true)
       window.removeEventListener('contextmenu', suppress, true)
-      window.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [onMouse, onCancel, escapeFallback])
-  const cancelCode = cancelKeyCodes()[0] ?? (escapeFallback ? 'Escape' : undefined)
+  }, [onMouse])
   return (
     <ModalShell title={`Rebind ${label}`} width={400} closeButton={false} ariaLabel={`Rebind ${label}`}>
       <div className={styles.capturePrompt}>Press a key, mouse or gamepad button…</div>
-      {cancelCode != null && (
-        <div className={styles.captureHint}>{labelForInput(snap, cancelCode)} to cancel</div>
-      )}
+      {cancelHint != null && <div className={styles.captureHint}>{cancelHint} to cancel</div>}
     </ModalShell>
   )
+}
+
+/** The inputs that ABORT a capture instead of binding: whatever Cancel is bound to (key,
+ *  gamepad button — any type), or Escape while Cancel is unbound so the modal always stays
+ *  escapable (the overlay suppresses clicks, so there is no backdrop dismiss). Empty when
+ *  capturing for the Cancel action itself: everything must stay capturable there, or a
+ *  cleared Escape could never be re-bound. */
+function captureCancelInputs(action: ActionWire): InputIdentifierWire[] {
+  if (sameAction(action, { System: 'Cancel' })) return []
+  const bound = bindingsForAction(getBindingsSnapshot(), { System: 'Cancel' })
+  return bound.length > 0 ? bound : ['Escape']
 }
 
 export function KeyBindingsTab({ bindings }: { bindings: BindingsState }): React.JSX.Element {
   const rebind = (action: ActionWire, label: string, index: number): void => {
     const { input, cancel } = bindings.capture()
+    const cancels = captureCancelInputs(action)
     // Two resolution paths race — the engine capture (keyboard/gamepad, and mouse on
     // native) and the modal's DOM mouse handler — so the first result wins and the loser
-    // is dropped (`cancel` also makes any late engine result stale by request id).
+    // is dropped (`cancel` also makes any late engine result stale by request id). A
+    // Cancel-bound result means "abort": close without binding.
     let done = false
     const finish = (captured: string): void => {
       if (done) return
       done = true
       cancel()
       close()
+      if (cancels.includes(captured)) return
       // Read the freshest table (the store may have updated while the modal was up).
       bindings.set(applyCapture(getBindingsSnapshot().bindings, action, index, captured))
     }
     const close = openPopup(
-      (closeSelf) => <CaptureModal action={action} label={label} onMouse={finish} onCancel={closeSelf} />,
+      () => (
+        <CaptureModal
+          label={label}
+          cancelHint={cancels.length > 0 ? labelForInput(getBindingsSnapshot(), cancels[0]) : undefined}
+          onMouse={finish}
+        />
+      ),
       {
-        // dismissed (cancel key) → drop the pending capture's result
+        // closed some other way (resetPopups) → drop the pending capture's result
         onClose: () => {
           if (!done) {
             done = true

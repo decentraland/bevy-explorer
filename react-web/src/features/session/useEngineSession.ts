@@ -9,6 +9,7 @@ import { DEFAULT_REALM } from '../engine/EngineHost'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
 import { bootMode } from '../../lib/bootMode'
 import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
+import { dispatchCancelLayer } from '../../lib/cancelLayers'
 import { isInputLocked, subscribeInputLock } from '../../lib/inputLock'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
@@ -1581,10 +1582,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if ((window as EngineFocusWindow).__engineTextFocus) return
     // 'Cancel' is the one action handled even with a popup open: the engine resolved the
     // cancel key or gamepad button, and this is the single layered close — topmost popup
-    // first, else any open panels.
+    // first, else the topmost registered leaf layer (lightbox, open dropdown — see
+    // cancelLayers), else any open panels. One layer per press.
     if (action === 'Cancel') {
       if (hasOpenPopup()) closeTopPopup()
-      else panelSetters.forEach((set) => set(false))
+      else if (!dispatchCancelLayer()) panelSetters.forEach((set) => set(false))
       return
     }
     if (hasOpenPopup()) return
