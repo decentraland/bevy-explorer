@@ -138,7 +138,7 @@ impl Default for SerializedProfile {
         Self {
             user_id: Default::default(),
             name: "Bevy_User".to_string(),
-            version: 1,
+            version: 0,
             eth_address: "0x0000000000000000000000000000000000000000".to_owned(),
             has_claimed_name: Default::default(),
             has_connected_web3: Default::default(),
