@@ -45,8 +45,10 @@ version in multiplayer-server (`package.json` + both lockfiles) and walk the
 
 Post in **#multiplayer-server** with: the world/`sceneId` and a timestamp, the
 engine version (the pin, or `Engine binary:` in the startup log — the
-`commit-<sha>` suffix is the engine commit), and scene logs from `/logs` or the
-`/stats-ui` log panel. Engine bugs graduate to issues here; orchestrator bugs to
+`commit-<sha>` suffix is the engine commit), and scene logs from the
+creator-permissioned `/logs` stream (the scene's creator has to pull them —
+there is no operator log access). Engine bugs graduate to issues here;
+orchestrator bugs to
 [sdk-multiplayer-server](https://github.com/decentraland/sdk-multiplayer-server/issues).
 
 ## How to roll back
