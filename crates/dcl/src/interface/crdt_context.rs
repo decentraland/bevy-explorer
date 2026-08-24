@@ -141,11 +141,21 @@ impl CrdtContext {
     }
 
     pub fn new_in_range(&mut self, range: &RangeInclusive<u16>) -> Option<SceneEntityId> {
-        let mut next_new = self.last_new.wrapping_add(1);
-        if !range.contains(&self.last_new) {
-            self.last_new = *range.end();
-            next_new = *range.start();
+        if range.is_empty() {
+            return None;
         }
+        let (start, end) = (*range.start(), *range.end());
+
+        let mut next_new = if range.contains(&self.last_new) {
+            if self.last_new == end {
+                start
+            } else {
+                self.last_new + 1
+            }
+        } else {
+            self.last_new = end;
+            start
+        };
 
         while next_new != self.last_new {
             if !self.entity_entry(next_new).1 {
@@ -154,10 +164,7 @@ impl CrdtContext {
                 self.last_new = next_new;
                 return Some(new_id);
             }
-            next_new += 1;
-            if !range.contains(&self.last_new) {
-                self.last_new = *range.start();
-            }
+            next_new = if next_new == end { start } else { next_new + 1 };
         }
 
         None
