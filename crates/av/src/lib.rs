@@ -49,8 +49,10 @@ use scene_runner::{
     ContainerEntity, ContainingScene,
 };
 
+#[cfg(all(not(test), feature = "ffmpeg"))]
+use crate::audio_sink::AudioSinkPlugin;
 #[cfg(feature = "ffmpeg")]
-use crate::{audio_sink::AudioSinkPlugin, video_player::VideoPlayerPlugin};
+use crate::video_player::VideoPlayerPlugin;
 #[cfg(feature = "html")]
 use crate::{
     // foreign players
