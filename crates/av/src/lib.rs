@@ -43,7 +43,7 @@ use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoPlayer},
     SceneComponentId,
 };
-use livestream_manager::{ActiveReceiver, ReceiverImage, ReceiverVolume};
+use livestream_manager::{ActiveReceiver, ReceiverImage, ReceiverVolume, TransmissionUpdated};
 use scene_runner::{
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
@@ -435,6 +435,8 @@ impl Plugin for AVPlayerPlugin {
         app.add_observer(receiver_image_added);
         app.add_observer(receiver_image_removed);
 
+        app.add_systems(Update, receiver_image_updated);
+
         #[cfg(feature = "av_player_debug")]
         app.add_plugins(av_player_debug::AvPlayerDebugPlugin);
     }
@@ -753,6 +755,18 @@ fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut command
     let entity = trigger.target();
     debug!("ReceiverImage removed from {}", entity);
     commands.entity(entity).try_remove::<VideoTextureOutput>();
+}
+
+fn receiver_image_updated(
+    av_players: Query<(Entity, &mut VideoTextureOutput)>,
+    mut transmission_updated: EventReader<TransmissionUpdated>,
+) {
+    if transmission_updated.read().count() > 0 {
+        for (entity, mut video_texture_output) in av_players {
+            debug!("ReceiverImage of {entity} was updated.");
+            video_texture_output.set_changed();
+        }
+    }
 }
 
 #[cfg(test)]
