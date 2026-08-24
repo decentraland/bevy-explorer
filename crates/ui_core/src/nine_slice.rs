@@ -113,18 +113,18 @@ fn update_slices(
                 .unwrap_or(0.0),
             slice
                 .center_region
-                .left
+                .top
+                .resolve(image_size.y, Vec2::ZERO)
+                .unwrap_or(0.0),
+            slice
+                .center_region
+                .right
                 .resolve(image_size.x, Vec2::ZERO)
                 .unwrap_or(0.0),
             slice
                 .center_region
-                .left
-                .resolve(image_size.x, Vec2::ZERO)
-                .unwrap_or(0.0),
-            slice
-                .center_region
-                .left
-                .resolve(image_size.x, Vec2::ZERO)
+                .bottom
+                .resolve(image_size.y, Vec2::ZERO)
                 .unwrap_or(0.0),
         );
         let surface = whole_pixel_size(node);
