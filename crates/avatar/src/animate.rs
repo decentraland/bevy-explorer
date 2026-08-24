@@ -342,12 +342,15 @@ fn animate(
     ) in avatars.iter_mut()
     {
         let Some((mut active_emote, mut anim_state)) = active_emote else {
-            commands.entity(avatar_ent).try_insert((
-                ActiveEmote::default(),
-                AvatarAnimState::default(),
-                EmoteCommand::default(),
-                LastEmoteCommand::default(),
-            ));
+            // `EmoteCommand` keeps whatever is already there: an emote can land in the same command
+            // flush as the avatar's spawn — Pulse replays an in-progress emote right behind the
+            // `PlayerJoined` — and overwriting it here would drop it before it ever played. The
+            // server records that replay as sent and dedups on `(emote_id, start_seq)`, so it never
+            // comes again and the avatar stays idle until the emoter retriggers.
+            commands
+                .entity(avatar_ent)
+                .try_insert((ActiveEmote::default(), AvatarAnimState::default()))
+                .try_insert_if_new((EmoteCommand::default(), LastEmoteCommand::default()));
             continue;
         };
 
