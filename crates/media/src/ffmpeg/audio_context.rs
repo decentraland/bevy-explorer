@@ -1,16 +1,16 @@
 use std::{collections::VecDeque, time::Duration};
 
 use bevy::prelude::*;
-use common::structs::AudioDecoderError;
-use common::util::ReportErr;
+use common::{structs::AudioDecoderError, util::ReportErr};
 use dcl_component::proto_components::sdk::components::VideoState;
-use ffmpeg_next::ffi::AVSampleFormat;
-use ffmpeg_next::{decoder, format::context::Input, media::Type, util::frame, Packet};
+use ffmpeg_next::{
+    Packet, decoder, ffi::AVSampleFormat, format::context::Input, media::Type, util::frame,
+};
 use kira::sound::streaming::StreamingSoundData;
 use thiserror::Error;
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::stream_processor::FfmpegContext;
+use crate::ffmpeg::stream_processor::FfmpegContext;
 
 trait SampleFormatHelper {
     fn is_planar(&self) -> bool;

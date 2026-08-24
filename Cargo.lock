@@ -642,11 +642,12 @@ dependencies = [
  "comms",
  "dcl",
  "dcl_component",
+ "disqualified",
  "ethers-core",
- "ffmpeg-next",
  "ipfs",
  "kira",
  "livestream_manager",
+ "media",
  "reqwest 0.12.15",
  "scene_runner",
  "system_bridge",
@@ -3613,6 +3614,7 @@ dependencies = [
  "livestream_manager",
  "log",
  "log-panics",
+ "media",
  "mimalloc",
  "naga_oil",
  "nft",
@@ -6957,6 +6959,27 @@ checksum = "8ea1f30cedd69f0a2954655f7188c6a834246d2bcf1e315e2ac40c4b24dc9519"
 dependencies = [
  "cfg-if",
  "rayon",
+]
+
+[[package]]
+name = "media"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy",
+ "common",
+ "dcl_component",
+ "ffmpeg-next",
+ "ipfs",
+ "js-sys",
+ "kira",
+ "reqwest 0.12.15",
+ "thiserror 1.0.69",
+ "tokio",
+ "urlencoding",
+ "wasm-bindgen",
+ "web-sys",
+ "wgpu",
 ]
 
 [[package]]

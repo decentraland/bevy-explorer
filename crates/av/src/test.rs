@@ -10,8 +10,6 @@ use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoPlayer},
     SceneEntityId,
 };
-#[cfg(feature = "ffmpeg")]
-use ffmpeg_next::format::input;
 use ipfs::IpfsIoPlugin;
 use livestream_manager::{plugin::LivestreamManagerPlugin, ActiveReceiver, ReceiverImage};
 use scene_runner::{
@@ -24,7 +22,7 @@ use wasm_bindgen_test::*;
 #[cfg(feature = "html")]
 use crate::html_video_player::HtmlMediaEntity;
 #[cfg(feature = "ffmpeg")]
-use crate::{video_context::VideoContext, AVSinks};
+use crate::AVSinks;
 use crate::{
     AVPlayer, AVPlayerPlugin, AudioStream, InScene, ShouldBePlaying, Stream, VideoPlayer,
     LIVEKIT_VIDEO_STREAM,
@@ -33,17 +31,7 @@ use crate::{
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
 
-#[cfg(feature = "ffmpeg")]
-#[test]
-fn test_ffmpeg() {
-    let context = input(
-        &"https://vz-7c61c1b5-d59.b-cdn.net/ccea595a-b910-4de6-b160-092819db021d/play_480p.mp4"
-            .to_owned(),
-    )
-    .unwrap();
-    let (sx, _rx) = tokio::sync::mpsc::channel(1);
-    VideoContext::init(&context, sx).unwrap();
-}
+const EXAMPLE_VIDEO: &str = "https://example.com/video.mp4";
 
 macro_rules! test_component {
     ($app:expr, $entity:expr, $component:ty, $expected:expr) => {
@@ -160,7 +148,7 @@ fn test_insert_audio_stream() {
         .world_mut()
         .spawn((
             AudioStream(PbAudioStream {
-                url: "https://example.com".to_owned(),
+                url: EXAMPLE_VIDEO.to_owned(),
                 ..Default::default()
             }),
             ContainerEntity {
@@ -340,7 +328,7 @@ fn test_insert_video_player() {
         .world_mut()
         .spawn((
             VideoPlayer(PbVideoPlayer {
-                src: "https://example.com".to_owned(),
+                src: EXAMPLE_VIDEO.to_owned(),
                 ..Default::default()
             }),
             ContainerEntity {
@@ -520,7 +508,7 @@ fn test_removing_video_player() {
         .world_mut()
         .spawn((
             VideoPlayer(PbVideoPlayer {
-                src: "https://example.com".to_owned(),
+                src: EXAMPLE_VIDEO.to_owned(),
                 ..Default::default()
             }),
             ContainerEntity {
@@ -816,7 +804,7 @@ fn test_source_change() {
         .world_mut()
         .spawn((
             VideoPlayer(PbVideoPlayer {
-                src: "https://example.com".to_owned(),
+                src: "".to_owned(),
                 ..Default::default()
             }),
             ContainerEntity {
@@ -845,6 +833,46 @@ fn test_source_change() {
         true,
     );
 
+    let noop_handle = app
+        .world()
+        .entity(video_player)
+        .get::<VideoTextureOutput>()
+        .unwrap()
+        .0
+        .clone();
+
+    app.world_mut()
+        .entity_mut(video_player)
+        .insert(VideoPlayer(PbVideoPlayer {
+            src: EXAMPLE_VIDEO.to_owned(),
+            ..Default::default()
+        }));
+
+    test_components::<VideoPlayer>(
+        &mut app,
+        video_player,
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+        true,
+    );
+
+    let video_handle = app
+        .world()
+        .entity(video_player)
+        .get::<VideoTextureOutput>()
+        .unwrap()
+        .0
+        .clone();
+    assert_eq!(noop_handle, video_handle);
+
     app.world_mut()
         .entity_mut(video_player)
         .insert(VideoPlayer(PbVideoPlayer {
@@ -868,10 +896,19 @@ fn test_source_change() {
         false,
     );
 
+    let stream_handle = app
+        .world()
+        .entity(video_player)
+        .get::<VideoTextureOutput>()
+        .unwrap()
+        .0
+        .clone();
+    assert_ne!(video_handle, stream_handle);
+
     app.world_mut()
         .entity_mut(video_player)
         .insert(VideoPlayer(PbVideoPlayer {
-            src: "https://example.com".to_owned(),
+            src: EXAMPLE_VIDEO.to_owned(),
             ..Default::default()
         }));
 
@@ -890,4 +927,45 @@ fn test_source_change() {
         true,
         true,
     );
+
+    let video_handle = app
+        .world()
+        .entity(video_player)
+        .get::<VideoTextureOutput>()
+        .unwrap()
+        .0
+        .clone();
+    assert_ne!(stream_handle, video_handle);
+
+    app.world_mut()
+        .entity_mut(video_player)
+        .insert(VideoPlayer(PbVideoPlayer {
+            src: EXAMPLE_VIDEO.to_owned(),
+            ..Default::default()
+        }));
+
+    test_components::<VideoPlayer>(
+        &mut app,
+        video_player,
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+        true,
+    );
+
+    let repeat_video_handle = app
+        .world()
+        .entity(video_player)
+        .get::<VideoTextureOutput>()
+        .unwrap()
+        .0
+        .clone();
+    assert_eq!(video_handle, repeat_video_handle);
 }

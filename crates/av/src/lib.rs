@@ -3,15 +3,7 @@ pub mod test;
 
 // util
 #[cfg(feature = "ffmpeg")]
-pub mod audio_context;
-#[cfg(feature = "ffmpeg")]
 pub mod audio_sink;
-#[cfg(feature = "ffmpeg")]
-pub mod ffmpeg_util;
-#[cfg(feature = "ffmpeg")]
-pub mod stream_processor;
-#[cfg(feature = "ffmpeg")]
-pub mod video_context;
 #[cfg(feature = "ffmpeg")]
 pub mod video_stream;
 
@@ -58,12 +50,9 @@ use scene_runner::{
 };
 
 #[cfg(feature = "ffmpeg")]
-use {
-    audio_sink::{spawn_and_locate_foreign_streams, spawn_audio_streams},
-    video_player::VideoPlayerPlugin,
-};
+use crate::{audio_sink::AudioSinkPlugin, video_player::VideoPlayerPlugin};
 #[cfg(feature = "html")]
-use {
+use crate::{
     // foreign players
     audio_source_wasm::AudioSourcePluginImpl,
     html_video_player::VideoPlayerPlugin,
@@ -403,6 +392,8 @@ impl Plugin for AVPlayerPlugin {
     fn build(&self, app: &mut App) {
         #[cfg(any(feature = "ffmpeg", feature = "html"))]
         app.add_plugins(VideoPlayerPlugin);
+        #[cfg(all(not(test), feature = "ffmpeg"))]
+        app.add_plugins(AudioSinkPlugin);
         app.add_plugins(AudioSourcePlugin);
         app.add_plugins(AudioSourcePluginImpl);
 
@@ -415,21 +406,6 @@ impl Plugin for AVPlayerPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        #[cfg(feature = "ffmpeg")]
-        app.add_systems(
-            PostUpdate,
-            (
-                (
-                    spawn_audio_streams::<AudioStream>,
-                    spawn_audio_streams::<VideoPlayer>,
-                ),
-                (
-                    spawn_and_locate_foreign_streams::<AudioStream>,
-                    spawn_and_locate_foreign_streams::<VideoPlayer>,
-                ),
-            )
-                .chain(),
-        );
         app.add_systems(
             Update,
             (
@@ -449,6 +425,8 @@ impl Plugin for AVPlayerPlugin {
         app.add_observer(av_player_on_remove::<VideoPlayer>);
         app.add_observer(stream_on_add::<VideoPlayer>);
         app.add_observer(stream_on_remove);
+        app.add_observer(video_texture_output_inserted);
+        app.add_observer(video_texture_output_replaced);
         app.add_observer(should_be_playing_on_add::<VideoPlayer>);
         app.add_observer(should_be_playing_on_remove::<VideoPlayer>);
 
@@ -472,7 +450,7 @@ fn av_player_on_insert<T: AVPlayer>(
     )>,
 ) {
     let entity = trigger.target();
-    debug!("AVPlayer {} updated.", entity);
+    debug!("{} {} updated.", disqualified::ShortName::of::<T>(), entity);
     let Ok((av_player, maybe_source, mut maybe_config, mut maybe_position)) =
         av_players.get_mut(entity)
     else {
@@ -483,7 +461,12 @@ fn av_player_on_insert<T: AVPlayer>(
     let mut entity_cmd = commands.entity(entity);
 
     if maybe_source.is_none_or(|src| &(**src) != source_url) {
-        debug!("AVPlayer {}'s sources diverged", entity);
+        debug!(
+            "{}'s {} diverges",
+            entity,
+            disqualified::ShortName::of::<T::Source>()
+        );
+
         let new_source = av_player.source();
         entity_cmd.insert(new_source);
 
@@ -493,13 +476,21 @@ fn av_player_on_insert<T: AVPlayer>(
 
     let new_config = av_player.config();
     if maybe_config.is_none_or(|config| (*config) != new_config) {
-        debug!("AVPlayer {}'s config updated", entity);
+        debug!(
+            "{}'s {} updated",
+            entity,
+            disqualified::ShortName::of::<T::Config>(),
+        );
         entity_cmd.insert(new_config);
     }
 
     let new_position = av_player.position();
     if maybe_position.is_none_or(|position| ((**position) - *new_position).abs() >= 0.5) {
-        debug!("AVPlayer {}'s position updated", entity);
+        debug!(
+            "{}'s {} updated",
+            entity,
+            disqualified::ShortName::of::<T::Source>(),
+        );
         entity_cmd.insert(new_position);
     }
 }
@@ -514,6 +505,8 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
         ShouldBePlaying<T>,
         Stream,
     )>();
+    #[cfg(feature = "ffmpeg")]
+    commands.entity(entity).try_remove::<AVSinks<T>>();
 }
 
 #[expect(clippy::type_complexity)]
@@ -528,6 +521,7 @@ fn stream_on_add<T: AVPlayer>(
     };
 
     if has_should_be_playing {
+        debug!("New stream {} should be playing.", entity);
         commands.entity(entity).insert((
             ActiveReceiver,
             ReceiverVolume(maybe_config.map(|config| config.volume()).unwrap_or(0.)),
@@ -537,7 +531,20 @@ fn stream_on_add<T: AVPlayer>(
 
 fn stream_on_remove(trigger: Trigger<OnRemove, Stream>, mut commands: Commands) {
     let entity = trigger.target();
-    commands.entity(entity).try_remove::<ActiveReceiver>();
+    debug!("{} no longer stream.", entity);
+    commands
+        .entity(entity)
+        .try_remove::<(ActiveReceiver, ReceiverImage, VideoTextureOutput)>();
+}
+
+fn video_texture_output_inserted(trigger: Trigger<OnInsert, VideoTextureOutput>) {
+    let entity = trigger.target();
+    debug!("VideoTextureOutput inserted into {}", entity);
+}
+
+fn video_texture_output_replaced(trigger: Trigger<OnReplace, VideoTextureOutput>) {
+    let entity = trigger.target();
+    debug!("VideoTextureOutput replaced into {}", entity);
 }
 
 #[expect(clippy::type_complexity)]
@@ -552,6 +559,7 @@ fn should_be_playing_on_add<T: AVPlayer>(
     };
 
     if has_stream {
+        debug!("Stream {} should be playing.", entity);
         commands.entity(entity).insert((
             ActiveReceiver,
             ReceiverVolume(maybe_config.map(|config| config.volume()).unwrap_or(0.)),
@@ -564,6 +572,7 @@ fn should_be_playing_on_remove<T: AVPlayer>(
     mut commands: Commands,
 ) {
     let entity = trigger.target();
+    debug!("Stream {} no longer playing.", entity);
     commands.entity(entity).try_remove::<ActiveReceiver>();
 }
 
@@ -731,6 +740,7 @@ fn receiver_image_added(
     let entity = trigger.target();
 
     if let Ok(receiver_image) = video_players.get(entity) {
+        debug!("ReceiverImage added to {}", entity);
         commands
             .entity(entity)
             .insert(VideoTextureOutput((*receiver_image).clone()));
@@ -739,6 +749,7 @@ fn receiver_image_added(
 
 fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut commands: Commands) {
     let entity = trigger.target();
+    debug!("ReceiverImage removed from {}", entity);
     commands.entity(entity).try_remove::<VideoTextureOutput>();
 }
 

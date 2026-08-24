@@ -115,6 +115,7 @@ image_processing = { path = "crates/image_processing" }
 cef_offscreen = { path = "crates/cef_offscreen" }
 particle_system = { path = "crates/particle_system" }
 livestream_manager = { path = "crates/livestream_manager" }
+media = { path = "crates/media" }
 
 bevy = { version = "0.16.1", default-features = false, features = [
   "animation",
@@ -148,6 +149,7 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "pbr_light_textures",
   "reduce_image_sizes",
 ] }
+disqualified = "1.0"
 wgpu = "24"
 cef = "139"
 cef-dll-sys = { version = "139.0", features = ["sandbox"] }
@@ -172,6 +174,7 @@ libc = "0.2"
 tokio = { version = "1.44", features = ["sync", "macros", "rt"] }
 tokio-util = "*"
 anyhow = "1.0.70"
+thiserror = "1.0"
 url = "2"
 http = "1.4"
 urn = "0.7.0"
@@ -305,6 +308,7 @@ platform = { workspace = true }
 image_processing = { workspace = true }
 particle_system = { workspace = true }
 livestream_manager = { workspace = true }
+media = { workspace = true }
 
 bevy = { workspace = true }
 wgpu = { workspace = true }

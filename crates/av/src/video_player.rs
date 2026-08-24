@@ -18,6 +18,7 @@ use dcl_component::{
 };
 use ipfs::IpfsResource;
 use livestream_manager::ReceiverVolume;
+use media::{AVCommand, VideoData, VideoInfo};
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::material::{update_materials, VideoTextureOutput},
@@ -25,8 +26,6 @@ use scene_runner::{
 };
 
 use crate::{
-    stream_processor::AVCommand,
-    video_context::{VideoData, VideoInfo},
     video_stream::{av_sinks, noop_sinks},
     AVPlayer, AVPlayerConfig, AVPlayerSinks, AVSinks, AudioStream, ShouldBePlaying, Stream,
     VideoPlayer, LIVEKIT_VIDEO_STREAM,
@@ -36,7 +35,6 @@ pub struct VideoPlayerPlugin;
 
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, init_ffmpeg);
         app.add_systems(Update, play_videos.before(update_materials));
 
         app.add_observer(new_player_source::<AudioStream>);
@@ -56,11 +54,6 @@ impl Plugin for VideoPlayerPlugin {
     }
 }
 
-fn init_ffmpeg() {
-    ffmpeg_next::init().unwrap();
-    ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Error);
-}
-
 #[expect(clippy::type_complexity)]
 fn new_player_source<T: AVPlayer>(
     trigger: Trigger<OnInsert, T::Source>,
@@ -78,13 +71,16 @@ fn new_player_source<T: AVPlayer>(
 ) {
     let entity = trigger.target();
 
-    let Ok((source, container_entity, maybe_video_texture_output, maybe_sinks, has_stream)) =
+    let Ok((source, container_entity, mut maybe_video_texture_output, maybe_sinks, has_stream)) =
         av_players.get(entity)
     else {
         unreachable!("Infallible query");
     };
     let Ok(context) = scenes.get(container_entity.root) else {
-        debug_panic!("AVPlayer has an invalid link to RendererSceneContext");
+        debug_panic!(
+            "{} has an invalid link to RendererSceneContext",
+            disqualified::ShortName::of::<T::Source>()
+        );
     };
 
     if let Some(sinks) = maybe_sinks {
@@ -99,11 +95,20 @@ fn new_player_source<T: AVPlayer>(
     let livestream = &**source == LIVEKIT_VIDEO_STREAM;
     if T::ALLOWS_LIVESTREAM && livestream != has_stream {
         if livestream {
-            debug!("AVPlayer {} now a stream.", entity);
+            debug!(
+                "{} {} now a stream.",
+                disqualified::ShortName::of::<T>(),
+                entity
+            );
             commands.entity(entity).insert(Stream);
         } else {
-            debug!("AVPlayer {} no longer a stream.", entity);
+            debug!(
+                "{} {} no longer a stream.",
+                disqualified::ShortName::of::<T>(),
+                entity
+            );
             commands.entity(entity).remove::<Stream>();
+            let _ = maybe_video_texture_output.take();
         }
     }
 
@@ -125,14 +130,12 @@ fn new_player_source<T: AVPlayer>(
             image.transfer_priority = RenderAssetTransferPriority::Immediate;
             images.add(image)
         }
-        Some(texture) => texture.0.clone(),
+        Some(texture) => {
+            debug!("Reusing VideoTextureOutput.");
+            texture.0.clone()
+        }
     };
 
-    debug!(
-        "Creating new sinks for {} targeting \"{}\"",
-        entity,
-        &(**source)
-    );
     let (video_sink, audio_sink) = match &(**source) {
         "" => noop_sinks((**source).to_owned(), create_image_handle(), 1.),
         LIVEKIT_VIDEO_STREAM if T::ALLOWS_LIVESTREAM => return,
@@ -147,6 +150,11 @@ fn new_player_source<T: AVPlayer>(
         ),
     };
 
+    debug!(
+        "Creating new sinks for {} targeting \"{}\"",
+        entity,
+        &(**source)
+    );
     let video_output = VideoTextureOutput(video_sink.image.clone());
     commands.entity(entity).try_insert((
         video_output,
@@ -164,6 +172,11 @@ fn player_source_replaced<T: AVPlayer>(
         unreachable!("Infallible query");
     };
 
+    debug!(
+        "{}'s {} was replaced.",
+        entity,
+        disqualified::ShortName::of::<T::Source>(),
+    );
     commands.entity(entity).try_remove::<AVSinks<T>>();
 
     if let Some(sinks) = maybe_sinks {
@@ -195,7 +208,10 @@ fn player_config_added<T: AVPlayer>(
     };
     let Some(mut sinks) = maybe_sinks else {
         if !has_stream {
-            debug_panic!("Non-stream AVPlayer did not have sinks.");
+            debug_panic!(
+                "Non-stream {} did not have sinks.",
+                disqualified::ShortName::of::<T::Source>()
+            );
         }
         if let Some(mut receiver_volume) = maybe_receiver_volume {
             debug!("Updated volume of stream.");
@@ -241,12 +257,19 @@ fn player_position_added<T: AVPlayer>(
     };
     let Some(mut sinks) = maybe_sinks else {
         if !has_stream {
-            debug_panic!("Non-stream AVPlayer did not have sinks.");
+            debug_panic!(
+                "Non-stream {} did not have sinks.",
+                disqualified::ShortName::of::<T::Source>()
+            );
         }
         return;
     };
 
-    debug!("Seeking AVPlayer to {}", (**position));
+    debug!(
+        "Seeking {} to {}",
+        disqualified::ShortName::of::<T::Source>(),
+        (**position)
+    );
     if let Some(audio_sink) = &mut sinks.audio {
         audio_sink
             .command_sender
@@ -311,7 +334,7 @@ fn play_videos(
     frame: Res<FrameCount>,
 ) {
     enum FrameSource {
-        Video(ffmpeg_next::frame::Video),
+        Video(media::Video),
     }
 
     impl FrameSource {
