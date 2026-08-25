@@ -8,6 +8,8 @@ use bevy::{
 use common::structs::AudioDecoderError;
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::webrtc::prelude::I420Buffer;
+#[cfg(target_arch = "wasm32")]
+use media::HtmlMedia;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -116,6 +118,12 @@ struct AudioStreamingHandle {
 #[derive(Component, Deref, DerefMut)]
 struct VideoFrameReceiver {
     receiver: mpsc::Receiver<I420Buffer>,
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Component, Deref, DerefMut)]
+struct HtmlMediaEntity {
+    element: HtmlMedia,
 }
 
 #[derive(Component)]

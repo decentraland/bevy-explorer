@@ -1,19 +1,19 @@
+#[cfg(target_arch = "wasm32")]
+use std::sync::atomic::Ordering;
+
 use bevy::{
     ecs::{error::debug, relationship::Relationship, system::entity_command},
     prelude::*,
+    render::render_resource::Extent3d,
 };
-#[cfg(target_arch = "wasm32")]
-use common::structs::AudioSettings;
 use common::{debug_panic, util::AsH160};
-#[cfg(not(target_arch = "wasm32"))]
-use livestream_manager::TransmissionUpdated;
 use livestream_manager::{
     ActiveAudioTransmitter, ActiveTransmitter, ActiveVideoCast, AudioTransmitterKind,
-    AudioTransmitterVolume, TransmitterKind,
+    AudioTransmitterVolume, TransmissionUpdated, TransmitterKind,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use {
-    bevy::{ecs::world::OnDespawn, render::render_resource::Extent3d},
+    bevy::ecs::world::OnDespawn,
     kira::sound::streaming::StreamingSoundData,
     livekit::{
         track::{RemoteTrack, TrackKind, TrackSource},
@@ -21,15 +21,25 @@ use {
     },
     tokio::sync::{mpsc, oneshot},
 };
-
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{RemoteTrack, TrackKind, TrackSource};
+use {
+    bevy::render::renderer::WgpuWrapper,
+    common::{structs::AudioSettings, util::ReportErr},
+    media::{FrameCopyRequest, FrameCopyRequestQueue, HtmlMedia},
+    web_sys::VideoFrame,
+};
+
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
     kira_bridge::kira_thread,
     livekit_bridge::{livekit_video_thread, AudioTrackKiraBridge, I420BufferExt},
     track::{AudioStreamingHandle, LivekitTrackTask, OpenAudioSender, VideoFrameReceiver},
     LivekitAudioManager,
+};
+#[cfg(target_arch = "wasm32")]
+use crate::livekit::{
+    track::HtmlMediaEntity,
+    web::{RemoteTrack, TrackKind, TrackSource},
 };
 use crate::{
     global_crdt::{PlayerMessage, PlayerUpdate},
@@ -64,7 +74,6 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(audio_track_is_now_subscribed);
         #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(audio_track_unpublished);
-        #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(video_track_is_now_subscribed);
 
         app.add_observer(active_transmitter_added);
@@ -72,6 +81,8 @@ impl Plugin for LivekitTrackPlugin {
 
         #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(Update, copy_frame);
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(Update, queue_frame_copy);
 
         app.add_observer(on_active_audio_transmitter_add);
         app.add_observer(on_active_audio_transmitter_remove);
@@ -553,6 +564,106 @@ fn video_track_is_now_subscribed(
     commands
         .entity(entity)
         .try_insert((LivekitTrackTask(handle), VideoFrameReceiver { receiver }));
+}
+
+#[cfg(target_arch = "wasm32")]
+#[expect(clippy::type_complexity)]
+fn video_track_is_now_subscribed(
+    trigger: Trigger<OnAdd, Subscribed>,
+    mut commands: Commands,
+    tracks: Query<(&LivekitTrack, Has<Video>, Option<&ActiveTransmitter>), With<Subscribed>>,
+) {
+    let entity = trigger.target();
+    let Ok((track, is_video, maybe_active_transmitter)) = tracks.get(entity) else {
+        debug_panic!("Subscribed track did not have LivekitTrack.");
+    };
+    if !is_video {
+        trace!("Subscribed track was not a video track.");
+        return;
+    }
+    let Some(active_transmitter) = maybe_active_transmitter else {
+        debug!("Video subscribbed to without being active transmitter.");
+        return;
+    };
+
+    let Some(RemoteTrack::Video(video)) = track.track() else {
+        debug_panic!("A subscribed video track did not have a video RemoteTrack.");
+    };
+
+    let Some(video_element) = video.html_video_element() else {
+        debug!("Could not build HtmlMedia from livekit track.");
+        return;
+    };
+    let html_media =
+        HtmlMedia::video_from_element(video_element, String::new(), (*active_transmitter).clone());
+    commands.entity(entity).try_insert(HtmlMediaEntity {
+        element: html_media,
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn queue_frame_copy(
+    mut video_tracks: Query<&mut HtmlMediaEntity, (With<Video>, With<Subscribed>)>,
+    mut images: ResMut<Assets<Image>>,
+    send_queue: Res<FrameCopyRequestQueue>,
+    mut transmission_updated: EventWriter<TransmissionUpdated>,
+) {
+    for mut html_media_entity in video_tracks.iter_mut() {
+        #[allow(clippy::collapsible_else_if)]
+        if let Some(video) = html_media_entity.video().as_ref() {
+            let new_time = html_media_entity
+                .new_frame_time()
+                .swap(0, Ordering::Relaxed);
+            if new_time != 0 {
+                // new frame is ready
+                let new_time = f32::from_bits(new_time);
+                trace!("got new frame -> {new_time}");
+
+                let Ok(frame) = VideoFrame::new_with_html_video_element(video) else {
+                    warn!("failed to extract frame");
+                    continue;
+                };
+
+                let image_id = html_media_entity.image().as_ref().unwrap().id();
+                let visible_rect = frame.visible_rect().unwrap();
+                let video_size = (visible_rect.width() as u32, visible_rect.height() as u32);
+
+                // check size
+                if html_media_entity.size().is_none_or(|sz| sz != video_size) {
+                    let Some(image) = images.get_mut(image_id) else {
+                        continue;
+                    };
+                    debug!("Resizing active transmitter image.");
+                    image.resize(Extent3d {
+                        width: video_size.0,
+                        height: video_size.1,
+                        depth_or_array_layers: 1,
+                    });
+                    html_media_entity.set_size(Some(video_size));
+
+                    trace!("queue resized frame {:?}", video_size);
+                    transmission_updated.write(TransmissionUpdated);
+                }
+
+                // queue copy
+                trace!("queue frame {:?}", video_size);
+                send_queue
+                    .send(FrameCopyRequest {
+                        video_frame: WgpuWrapper::new(frame),
+                        target: image_id,
+                    })
+                    .report();
+
+                html_media_entity.set_current_time(new_time);
+            } else {
+                trace!("no frame (new_time == 0)");
+            }
+        } else {
+            debug!("no video");
+            // we don't report audio timestamps, otherwise would need to grab it here
+        }
+    }
 }
 
 fn active_transmitter_added(trigger: Trigger<OnAdd, ActiveTransmitter>, mut commands: Commands) {

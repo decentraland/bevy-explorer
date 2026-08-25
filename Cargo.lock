@@ -2773,6 +2773,7 @@ dependencies = [
  "kira",
  "livekit",
  "livestream_manager",
+ "media",
  "modular-bitfield",
  "multihash-codetable",
  "multipart",
@@ -2789,6 +2790,7 @@ dependencies = [
  "wallet",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
 ]
 
