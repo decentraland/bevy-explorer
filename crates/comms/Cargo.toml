@@ -62,7 +62,6 @@ wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 web-sys = { workspace = true, features = ["HtmlVideoElement"] }
 js-sys = { workspace = true }
-web-sys = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde_bytes = { workspace = true }
 gloo-timers = { version = "0.3", features = ["futures"] }
