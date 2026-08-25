@@ -304,7 +304,10 @@ fn html_media_entity_on_remove<T: AVPlayer>(
     mut commands: Commands,
 ) {
     let entity = trigger.target();
-    debug!("{} was removed.", disqualified::ShortName::of::<HtmlMediaEntity<T>>());
+    debug!(
+        "{} was removed.",
+        disqualified::ShortName::of::<HtmlMediaEntity<T>>()
+    );
     commands.entity(entity).try_remove::<VideoTextureOutput>();
 }
 
@@ -317,7 +320,10 @@ fn av_player_should_be_playing_on_add<T: AVPlayer>(
         return;
     };
 
-    debug!("{} now playing.", disqualified::ShortName::of::<HtmlMediaEntity<T>>());
+    debug!(
+        "{} now playing.",
+        disqualified::ShortName::of::<HtmlMediaEntity<T>>()
+    );
     html_media_entity.play();
 }
 
@@ -330,7 +336,10 @@ fn av_player_should_be_playing_on_remove<T: AVPlayer>(
         return;
     };
 
-    debug!("{} now paused.", disqualified::ShortName::of::<HtmlMediaEntity<T>>());
+    debug!(
+        "{} now paused.",
+        disqualified::ShortName::of::<HtmlMediaEntity<T>>()
+    );
     html_media_entity.stop();
 }
 
