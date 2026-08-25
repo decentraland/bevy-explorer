@@ -113,18 +113,24 @@ fn min_test_app() -> App {
 
     app.world_mut().run_schedule(Startup);
 
-    let set_video_source = wasm_bindgen::closure::Closure::new(Box::new(set_video_source) as Box<dyn FnMut(wasm_bindgen::JsValue, wasm_bindgen::JsValue)>).into_js_value();
-    let window = web_sys::window().unwrap();
-    js_sys::Reflect::set(
-        &window,
-        &wasm_bindgen::JsValue::from_str("setVideoSource"),
-        &set_video_source,
-    )
-    .unwrap();
+    #[cfg(target_arch = "wasm32")]
+    {
+        let set_video_source = wasm_bindgen::closure::Closure::new(Box::new(set_video_source)
+            as Box<dyn FnMut(wasm_bindgen::JsValue, wasm_bindgen::JsValue)>)
+        .into_js_value();
+        let window = web_sys::window().unwrap();
+        js_sys::Reflect::set(
+            &window,
+            &wasm_bindgen::JsValue::from_str("setVideoSource"),
+            &set_video_source,
+        )
+        .unwrap();
+    }
 
     app
 }
 
+#[cfg(target_arch = "wasm32")]
 fn set_video_source(_p0: wasm_bindgen::JsValue, _p1: wasm_bindgen::JsValue) {
     debug!("set_video_source");
 }
