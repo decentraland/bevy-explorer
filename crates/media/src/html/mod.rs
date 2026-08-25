@@ -338,6 +338,7 @@ impl Drop for HtmlMedia {
                 .unwrap()
                 .call1(video, &JsValue::from(handle))
                 .unwrap();
+            let _ = video.pause();
         }
         self.frame_closure.take();
         self.media.set_oncanplay(None);
@@ -347,6 +348,7 @@ impl Drop for HtmlMedia {
         self.media.set_onplaying(None);
         self.media.set_onpause(None);
         self.media.set_onended(None);
+        let _ = self.media.pause();
         self.media.remove();
     }
 }
