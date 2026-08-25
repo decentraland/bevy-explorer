@@ -156,6 +156,10 @@ cef-dll-sys = { version = "139.0", features = ["sandbox"] }
 # default-features = false drops the egui console window (we only use the
 # command/print plumbing, piped to chat); this keeps egui out of the build entirely
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16", default-features = false }
+# robtfm fork of rusty_enet, retargeted from upstream lsalzman ENet 1.3.x to the
+# nxrighthere/SoftwareGuy ENet-CSharp "modified protocol" fork that Decentraland's
+# Pulse server runs (header flag bits only — see src/c/protocol.rs). Native only.
+rusty_enet = { git = "https://github.com/robtfm/rusty_enet", branch = "decentraland-pulse" }
 # enables naga_oil function overrides on non-`virtual` bevy_pbr functions (e.g.
 # our shadow-darkness override in bound_material.wgsl). feature-unifies into the
 # naga_oil that bevy builds its shader composer with. version must match bevy's.
@@ -182,6 +186,7 @@ ethers-signers = "2.0.3"
 ethers-core = "2.0.3"
 futures-lite = "2.6"
 bimap = "0.6.3"
+bitflags = "2"
 prost = "0.11.8"
 prost-reflect = "0.11"
 clap = "4.6"
@@ -235,6 +240,9 @@ async-compat = "0.2"
 async-fs = "2.0"
 base64 = "0.22"
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
+# pinned: alpha releases make no api stability promises between versions
+draco-oxide-decoder = "=0.1.0-alpha.9"
+draco-oxide-core = "=0.1.0-alpha.9"
 strum = "0.27"
 strum_macros = "0.27"
 wasm-bindgen = "0.2.92"
@@ -271,6 +279,18 @@ web-sys = { version = "0.3", features = [
   "WorkerGlobalScope",
   "WorkerNavigator",
   "WritableStream",
+  # WebTransport, the wasm Pulse driver's wire (crates/comms/src/pulse/wasm.rs).
+  "ReadableStream",
+  "ReadableStreamDefaultReader",
+  "WritableStreamDefaultWriter",
+  "WebTransport",
+  "WebTransportOptions",
+  "WebTransportHash",
+  "WebTransportBidirectionalStream",
+  "WebTransportReceiveStream",
+  "WebTransportSendStream",
+  "WebTransportDatagramDuplexStream",
+  "WebTransportCloseInfo",
 ] }
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
@@ -381,6 +401,14 @@ prost-build = "0.11.8"
 # carried on a fork branch off the 0.17.1 tag. not an upstream backport —
 # naga_oil main is 0.22; revisit only if bevy's pinned naga_oil moves.
 naga_oil = { git = "https://github.com/robtfm/naga_oil", branch = "fix/deterministic-override-emit-order" }
+# rANS refill never refills on 32-bit targets (wasm32), corrupting every stream
+# whose encoder chose the branchless refill strategy. fix PR'd upstream as
+# reearth/draco-oxide#34; drop these patches when it lands in a release.
+# core and nd-vector carry no changes but must come from the same source as the
+# decoder or the workspace resolves two copies of core and types don't unify.
+draco-oxide-decoder = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
+draco-oxide-core = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
+draco-nd-vector = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
 # mess required by ecosystem crates referencing bevy subcrates directly
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_a11y = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }

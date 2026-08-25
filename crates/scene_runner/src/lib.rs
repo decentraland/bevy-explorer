@@ -20,8 +20,8 @@ use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
     structs::{
-        AppConfig, AppError, CurrentRealm, DebugInfo, NoRenderApp, PreviewMode, PrimaryCamera,
-        PrimaryUser, TimeOfDay,
+        AppConfig, AppError, CurrentRealm, DebugInfo, EditorMode, NoRenderApp, PreviewMode,
+        PrimaryCamera, PrimaryUser, TimeOfDay,
     },
     util::{dcl_assert, TryPushChildrenEx},
 };
@@ -114,6 +114,10 @@ impl SceneUpdates {
 #[derive(Debug)]
 pub struct SceneThreadHandle {
     pub sender: tokio::sync::mpsc::UnboundedSender<RendererResponse>,
+    // never sent on; dropping it with the handle is the kill signal the scene host
+    // listens for. None on native, where the sender drop itself crosses the IPC
+    // boundary and triggers the kill.
+    pub kill_guard: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 /// Emitted by [`receive_scene_updates`] when the scene thread responds to a
@@ -264,6 +268,8 @@ impl Plugin for SceneRunnerPlugin {
         // trigger areas keep working when the pointer-result systems are skipped
         app.init_resource::<update_scene::pointer_results::AvatarColliders>();
         app.init_resource::<update_scene::pointer_results::PointerRay>();
+        // Default false; the app entry overrides it from the --editor arg / boot param.
+        app.init_resource::<EditorMode>();
 
         // let (sender, receiver) = tokio::sync::mpsc::channel(1000);
         let (sender, receiver) = scene_response_channel();
@@ -541,8 +547,7 @@ fn update_scene_priority(
 // - see if we can get v8 single threaded / no native threads working
 // const MAX_CONCURRENT_SCENES: usize = 8;
 
-#[derive(Component)]
-pub struct OutOfWorld;
+pub use common::structs::OutOfWorld;
 
 // helper to get the scene entity containing a given world position
 #[derive(SystemParam)]

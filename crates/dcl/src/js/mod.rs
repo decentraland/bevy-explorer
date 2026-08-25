@@ -332,13 +332,13 @@ pub fn player_identity(state: &impl State) -> Result<PbPlayerIdentityData, anyho
 }
 
 #[cfg(test)]
-mod scene_log_budget_tests {
-    use super::*;
+pub(crate) mod test_state {
+    use super::State;
     use std::any::{Any, TypeId};
     use std::collections::HashMap;
 
     #[derive(Default)]
-    struct TestState(HashMap<TypeId, Box<dyn Any>>);
+    pub struct TestState(HashMap<TypeId, Box<dyn Any>>);
 
     impl State for TestState {
         fn borrow<T: 'static>(&self) -> &T {
@@ -372,6 +372,11 @@ mod scene_log_budget_tests {
                 .map(|v| *v.downcast().unwrap())
         }
     }
+}
+
+#[cfg(test)]
+mod scene_log_budget_tests {
+    use super::{test_state::TestState, *};
 
     fn state() -> TestState {
         let mut s = TestState::default();

@@ -179,6 +179,12 @@ impl Plugin for GltfDefinitionPlugin {
 
         app.init_resource::<GltfNameCache>();
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
+        app.add_systems(
+            Update,
+            retry_repaired_gltfs
+                .in_set(SceneSets::PostLoop)
+                .before(update_gltf),
+        );
         app.add_systems(Update, maintain_gltf_name_cache);
         app.add_systems(SpawnScene, update_ready_gltfs.after(scene_spawner_system));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
@@ -255,7 +261,7 @@ fn despawn_instance_non_recursive(commands: &mut Commands, entities: impl Iterat
 fn on_gltf_container_removed(trigger: Trigger<OnRemove, GltfDefinition>, mut commands: Commands) {
     commands
         .entity(trigger.target())
-        .try_remove::<(GltfLoaded, GltfProcessed, GltfReady)>();
+        .try_remove::<(GltfLoaded, GltfProcessed, GltfReady, GltfAssetFailed)>();
 }
 
 // assets are keyed by path and the first load's settings win, so every gltf that might
@@ -347,7 +353,8 @@ fn update_gltf(
         commands
             .entity(ent)
             .remove::<GltfLoaded>()
-            .remove::<GltfProcessed>();
+            .remove::<GltfProcessed>()
+            .remove::<GltfAssetFailed>();
 
         if let Some(GltfLoaded(Some(instance_id))) = maybe_loaded {
             if !has_gltf_processed {
@@ -402,7 +409,11 @@ fn update_gltf(
             bevy::asset::LoadState::Failed(e) => {
                 warn!("failed to process gltf {}: {}", def.0.src, e);
                 set_state(scene_ent, LoadingState::FinishedWithError);
-                commands.entity(ent).try_insert(GltfLoaded(None));
+                // the marker lets retry_repaired_gltfs pick this up if the asset
+                // is repaired and reloaded (see below)
+                commands
+                    .entity(ent)
+                    .try_insert((GltfLoaded(None), GltfAssetFailed));
                 continue;
             }
             bevy::asset::LoadState::Loading => continue,
@@ -456,6 +467,55 @@ fn update_gltf(
                 set_state(scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).try_insert(GltfLoaded(None));
             }
+        }
+    }
+}
+
+// marks a container whose underlying gltf asset failed to load, so that
+// retry_repaired_gltfs watches it for a repair
+#[derive(Component)]
+struct GltfAssetFailed;
+
+// a gltf that failed to load may be repaired externally (draco-compressed
+// geometry is decompressed into the cache by the image_processing plugin,
+// which then reloads the asset). when a marked container's asset is loading
+// (or has finished loading) again, run it back through the load flow. the
+// marker is only applied when the asset itself failed, so a non-failed state
+// can only mean a repair-reload happened.
+fn retry_repaired_gltfs(
+    mut commands: Commands,
+    failed_gltfs: Query<
+        (Entity, &SceneEntity, &GltfHandle, &GltfLoaded),
+        (With<GltfDefinition>, With<GltfAssetFailed>),
+    >,
+    ipfas: IpfsAssetServer,
+    mut contexts: Query<&mut RendererSceneContext>,
+) {
+    for (ent, scene_ent, h_gltf, loaded) in failed_gltfs.iter() {
+        if loaded.0.is_some()
+            || !matches!(
+                ipfas.load_state(h_gltf.0.id()),
+                LoadState::Loading | LoadState::Loaded
+            )
+        {
+            continue;
+        }
+
+        debug!("retrying repaired gltf for {}", scene_ent.id);
+        commands
+            .entity(ent)
+            .try_remove::<(GltfLoaded, GltfProcessed, GltfReady, GltfAssetFailed)>();
+
+        if let Ok(mut context) = contexts.get_mut(scene_ent.root) {
+            context.update_crdt(
+                SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+                CrdtType::LWW_ANY,
+                scene_ent.id,
+                &PbGltfContainerLoadingState {
+                    current_state: LoadingState::Loading as i32,
+                    ..Default::default()
+                },
+            );
         }
     }
 }
@@ -1284,10 +1344,12 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> Option<SharedShape> {
     // trimesh_with_flags rather than erroring. drop those triangles.
     let vertex_count = positions_ref.len() as u32;
     let total_triangles = indices.len() / 3;
-    let indices_parry: Vec<_> = indices
-        .chunks_exact(3)
+    let indices_parry: Vec<[u32; 3]> = indices
+        .as_chunks::<3>()
+        .0
+        .iter()
         .filter(|chunk| chunk.iter().all(|ix| *ix < vertex_count))
-        .map(|chunk| chunk.try_into().unwrap())
+        .copied()
         .collect();
     if indices_parry.len() < total_triangles {
         warn!(

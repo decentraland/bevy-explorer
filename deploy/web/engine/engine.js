@@ -224,6 +224,93 @@ export async function initEngine() {
     }
   };
 
+  // Live sandbox workers by scene id (BigInt), for kill escalation — see terminate_sandbox.
+  // Entries are added on SCENE_READY (a worker reports which scene it popped from the shared
+  // queue) and removed on SHUTDOWN_COMPLETE (the worker's dying ack, posted on every exit
+  // path just before it closes itself).
+  const sandboxWorkers = new Map();
+  // Scenes killed before their worker reported in; the escalation arms on SCENE_READY.
+  const pendingKills = new Set();
+  // Scenes whose worker exited on its own (scene error / graceful end) before the engine's
+  // kill request arrived. The eventual terminate_sandbox call consumes the entry and
+  // resolves immediately, instead of parking in pendingKills waiting on a SCENE_READY that
+  // will never come.
+  const completedScenes = new Set();
+  const KILL_GRACE_MS = 5000;
+
+  // killFlags layout (Int32Array over a per-worker SharedArrayBuffer, shared with the worker
+  // script — NOT with scene code, which can't see the worker's module scope):
+  //   [0] KILL: engine has decided to terminate; the worker's op wrapper parks instead of
+  //       entering the engine wasm
+  //   [1] IN_RUST: the worker is inside a wasm call (op wrapper), or anywhere in its
+  //       teardown — held across the whole teardown because the drain's timer gaps let the
+  //       executor poll draining op futures, and those polls enter the engine wasm unflagged
+  //   [2] park target for Atomics.wait — never written
+  const KILL = 0, IN_RUST = 1;
+
+  // Tier-2 forceful kill: a worker that ignored SHUTDOWN is stuck in a sync spin. A naive
+  // Worker.terminate() could land mid-op while the worker holds a lock inside the shared
+  // engine wasm memory (allocator, channel mutex) and corrupt the engine, so handshake
+  // first: set KILL, then wait for IN_RUST to clear. Once KILL is visible the op wrapper
+  // parks before entering rust, so IN_RUST == 0 means the worker can never re-enter — the
+  // spin is pure JS and terminate is safe. The worker's few unwrapped wasm calls all sit in
+  // its bounded init path (pre-scene-code), where a 20s-unresponsive scene cannot be.
+  //
+  // The dead thread's state in the shared wasm memory is deliberately leaked: a parked
+  // async op future may still reference it, and its waker can fire after the terminate
+  // (channel close, comms), so freeing the stack/TLS here would corrupt the engine.
+  const forceTerminate = (sceneId) => {
+    const entry = sandboxWorkers.get(sceneId);
+    if (!entry) return;
+    Atomics.store(entry.killFlags, KILL, 1);
+    const startedAt = performance.now();
+    const tryTerminate = () => {
+      // acked in the meantime — the worker got out on its own
+      if (!sandboxWorkers.get(sceneId)) return;
+      if (Atomics.load(entry.killFlags, IN_RUST) === 1) {
+        if (performance.now() - startedAt > 10000) {
+          console.error(`[Main JS] scene ${sceneId} is blocked inside engine wasm; leaving worker running`);
+          return;
+        }
+        setTimeout(tryTerminate, 100);
+        return;
+      }
+      entry.worker.terminate();
+      sandboxWorkers.delete(sceneId);
+      console.warn(`[Main JS] scene ${sceneId} forcibly terminated; thread state leaked`);
+    };
+    // defer so a SHUTDOWN_COMPLETE already queued by the worker gets processed first
+    setTimeout(tryTerminate, 100);
+  };
+
+  // Called from the engine when it drops a scene's handle (despawn, or the watchdog marking
+  // it broken). The kill flag is already set in shared wasm memory, so a healthy scene needs
+  // nothing from us: it exits at its next tick boundary and acks with SHUTDOWN_COMPLETE. No
+  // ack within the grace period means the scene is wedged in an await — post SHUTDOWN so the
+  // worker tears itself down from its event loop. A worker that ignores that too is stuck in
+  // a sync spin: forcefully terminate it (forceTerminate above).
+  window.terminate_sandbox = (sceneId) => {
+    const entry = sandboxWorkers.get(sceneId);
+    if (!entry) {
+      if (completedScenes.delete(sceneId)) {
+        console.debug(`[Main JS] kill requested for scene ${sceneId}; worker already exited`);
+        return;
+      }
+      console.debug(`[Main JS] kill requested for scene ${sceneId} before its worker reported in; deferred to SCENE_READY`);
+      pendingKills.add(sceneId);
+      return;
+    }
+    console.debug(`[Main JS] kill requested for scene ${sceneId}; awaiting graceful exit`);
+    entry.timer = setTimeout(() => {
+      console.warn(`[Main JS] scene ${sceneId} still running after kill; posting SHUTDOWN`);
+      entry.worker.postMessage({ type: "SHUTDOWN", shutdownToken: entry.shutdownToken });
+      entry.timer = setTimeout(() => {
+        console.error(`[Main JS] scene ${sceneId} did not respond to SHUTDOWN (sync spin?); force-terminating`);
+        forceTerminate(sceneId);
+      }, KILL_GRACE_MS);
+    }, KILL_GRACE_MS);
+  };
+
   // Setup sandbox worker spawn callback
   window.spawn_and_init_sandbox = async () => {
     var timeoutId;
@@ -253,28 +340,49 @@ export async function initEngine() {
       // Payload goes out unprompted — a worker queues messages posted before it has a listener,
       // so nothing needs to ask for it. Scene code shares this worker's realm and reaches the
       // real worker global (bare `postMessage` is the platform's, not ours), so any request we
-      // honoured would be forgeable, and sharedMemory is the engine heap. The handler drops at
-      // INIT_COMPLETE, which the worker posts before it builds the js context: this side is not
-      // listening while scene code runs.
+      // honoured would be forgeable, and sharedMemory is the engine heap. This side keeps
+      // listening while scene code runs (for the SCENE_READY / SHUTDOWN_COMPLETE kill-tracking
+      // messages), so every message the worker script posts carries killToken — a per-worker
+      // secret held in the worker's module scope, where scene code can't see it — and anything
+      // without it is dropped as a forgery.
       const spawn = () => {
         const sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
         sandboxWorker.onerror = workerCrashHandler("sandbox");
+        const killToken = crypto.randomUUID();
+        // Separate secret authenticating the inbound SHUTDOWN (scene code can synthesize
+        // message events inside the worker via dispatchEvent). Deliberately NOT killToken:
+        // a scene listening for messages observes a genuine SHUTDOWN and learns this token,
+        // and must not thereby gain the ability to forge the worker→engine ack.
+        const shutdownToken = crypto.randomUUID();
+        const killFlags = new Int32Array(new SharedArrayBuffer(16));
         sandboxWorker.postMessage({
           type: "INIT_WORKER",
           payload: {
             compiledModule,
             sharedMemory,
+            killFlags: killFlags.buffer,
             // Set by host pages that want the super-user scene's BroadcastChannel names scoped
             // to this tab (react-web seeds it before booting — issue #1089). Left unset, channel
             // names stay bare — embedders like creator-hub's inspector share the bus with the
             // scene from a DIFFERENT document (parent of the engine iframe), which can't see
             // this window's session id.
             bridgeSession: window.__bridgeSession,
+            killToken,
+            shutdownToken,
           },
         });
+        let warnedForgery = false;
         sandboxWorker.onmessage = (workerEvent) => {
+          if (workerEvent.data.killToken !== killToken) {
+            // scene code can reach the bare postMessage; drop (and note) anything the
+            // worker script didn't token
+            if (!warnedForgery) {
+              warnedForgery = true;
+              console.warn("[Main JS] dropped untokened message from a sandbox worker (scene code posting to the engine?)", workerEvent.data && workerEvent.data.type);
+            }
+            return;
+          }
           if (workerEvent.data.type === "INIT_COMPLETE") {
-            sandboxWorker.onmessage = null;
             resolve();
           }
           if (workerEvent.data.type === "INIT_FAILED") {
@@ -282,6 +390,33 @@ export async function initEngine() {
             sandboxWorker.onmessage = null;
             console.log("[Main JS] Sandbox init failed; retrying");
             spawn();
+          }
+          if (workerEvent.data.type === "SCENE_READY") {
+            console.debug(`[Main JS] sandbox worker running scene ${workerEvent.data.sceneId}`);
+            sandboxWorkers.set(workerEvent.data.sceneId, {
+              worker: sandboxWorker,
+              timer: undefined,
+              killFlags,
+              shutdownToken,
+            });
+            if (pendingKills.delete(workerEvent.data.sceneId)) {
+              window.terminate_sandbox(workerEvent.data.sceneId);
+            }
+          }
+          if (workerEvent.data.type === "SHUTDOWN_COMPLETE") {
+            const sid = workerEvent.data.sceneId;
+            const entry = sandboxWorkers.get(sid);
+            if (entry && entry.worker === sandboxWorker) {
+              console.debug(`[Main JS] scene ${sid} worker exited cleanly`);
+              clearTimeout(entry.timer);
+              sandboxWorkers.delete(sid);
+            } else if (sid !== undefined && !pendingKills.delete(sid)) {
+              // no entry: the worker exited before the engine asked (scene error / graceful
+              // end). Remember it so the eventual kill request resolves immediately.
+              // (sid is undefined when init_scene failed before the worker knew its scene —
+              // nothing to correlate.)
+              completedScenes.add(sid);
+            }
           }
         };
       };
@@ -357,7 +492,7 @@ export async function initEngine() {
  * Starts the game engine. Values come from the caller (boot.js's __bevyLaunch, fed by the React
  * host) — the old boot page's form inputs are gone.
  */
-export function start({ realm, position, systemScene, portables, preview } = {}) {
+export function start({ realm, position, systemScene, portables, preview, editor } = {}) {
   // Launch at most once per page: a second engine_run re-runs init_runtime, whose OnceCell is
   // already set, and panics ("can't init wasm queue"). One engine per page — ignore re-entry.
   if (window.__bevyStarted) {
@@ -371,6 +506,7 @@ export function start({ realm, position, systemScene, portables, preview } = {})
   const systemSceneValue = systemScene ?? '';
   const portablesValue = portables ?? 'basiccontroller.dcl.eth';
   const previewValue = preview === true;
+  const editorValue = editor === true;
 
   // Build params from URL, overriding with form field values
   const urlParams = new URLSearchParams(window.location.search);
@@ -385,6 +521,11 @@ export function start({ realm, position, systemScene, portables, preview } = {})
     urlParams.set("preview", "true");
   } else {
     urlParams.delete("preview");
+  }
+  if (editorValue) {
+    urlParams.set("editor", "true");
+  } else {
+    urlParams.delete("editor");
   }
   const params = urlParams.toString();
   console.log(
@@ -447,7 +588,7 @@ export function start({ realm, position, systemScene, portables, preview } = {})
     delete window._buildEngineApi;
   };
 
-  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, 1e7, params);
+  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, editorValue, 1e7, params);
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {

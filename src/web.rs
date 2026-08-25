@@ -12,7 +12,8 @@ use bevy_console::ConsoleConfiguration;
 use common::{
     rpc::RpcResultSender,
     structs::{
-        AppConfig, CurrentRealm, IVec2Arg, PreviewMode, PrimaryUser, StartupScene, StartupScenes,
+        AppConfig, CurrentRealm, EditorMode, IVec2Arg, PreviewMode, PrimaryUser, StartupScene,
+        StartupScenes,
     },
 };
 use dcl_wasm::init_runtime;
@@ -46,6 +47,7 @@ extern "C" {
         system_scene: Option<String>,
         portables: Option<String>,
         is_preview: bool,
+        is_editor: bool,
     );
 
     #[wasm_bindgen(js_name = "allowADummyPipeline")]
@@ -119,6 +121,7 @@ pub fn engine_run(
     portables: &str,
     with_thread_loader: bool,
     is_preview: bool,
+    is_editor: bool,
     gpu_bytes_per_frame: usize,
     params: &str,
 ) {
@@ -142,6 +145,7 @@ pub fn engine_run(
         portables,
         gpu_bytes_per_frame,
         is_preview,
+        is_editor,
         params,
         with_thread_loader.then(|| WASM_ASSET_LOADER_HANDLE.get().unwrap().clone()),
     );
@@ -286,6 +290,7 @@ struct UrlParams {
     ui_scene: Option<String>,
     portables: Option<String>,
     preview: bool,
+    editor: bool,
 }
 
 fn update_url_params(
@@ -293,6 +298,7 @@ fn update_url_params(
     current_realm: Res<CurrentRealm>,
     startup_scenes: Option<Res<StartupScenes>>,
     preview: Res<PreviewMode>,
+    editor: Res<EditorMode>,
     mut prev: Local<UrlParams>,
 ) {
     // realms with fixed scene urns (worlds) spawn at their base scene and ignore an explicit
@@ -337,6 +343,7 @@ fn update_url_params(
         ui_scene,
         portables,
         preview,
+        editor: editor.0,
     };
 
     if params != *prev {
@@ -349,6 +356,7 @@ fn update_url_params(
             params.ui_scene,
             params.portables,
             params.preview,
+            params.editor,
         );
     }
 }
@@ -361,6 +369,7 @@ fn decentraland_app_config(
     portables: &str,
     gpu_bytes_per_frame: usize,
     is_preview: bool,
+    is_editor: bool,
     params: &str,
     wasm_loader_handle: Option<WasmLoaderHandle>,
 ) -> DecentralandAppConfig {
@@ -372,6 +381,7 @@ fn decentraland_app_config(
         portables,
         gpu_bytes_per_frame,
         is_preview,
+        is_editor,
         params,
     );
 
@@ -389,6 +399,7 @@ fn decentraland_serialized_app_config() -> AppConfig {
     })
 }
 
+#[expect(clippy::too_many_arguments)]
 fn decentraland_app_arguments(
     server: &str,
     location: &str,
@@ -396,6 +407,7 @@ fn decentraland_app_arguments(
     portables: &str,
     gpu_bytes_per_frame: usize,
     is_preview: bool,
+    is_editor: bool,
     params: &str,
 ) -> DecentralandArguments {
     DecentralandArguments {
@@ -433,6 +445,7 @@ fn decentraland_app_arguments(
         fps_target: None,
         gpu_bytes_per_frame: Some(gpu_bytes_per_frame),
         is_preview,
+        editor: is_editor,
         sysinfo_visible: false,
         scene_log_to_console: false,
         startup_scenes_preview: false,

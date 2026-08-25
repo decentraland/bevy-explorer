@@ -25,8 +25,8 @@ use common::{
     },
     sets::SceneSets,
     structs::{
-        server_mode, AvatarDynamicState, EngineMovementControl, PermissionType, PreviewCommand,
-        PrimaryCamera, PrimaryUser, StartupScenes, ZOrder,
+        server_mode, AvatarDynamicState, EngineMovementControl, PermissionType, PlayerTeleported,
+        PreviewCommand, PrimaryCamera, PrimaryUser, StartupScenes, ZOrder,
     },
     util::{AsH160, TaskCompat, TaskExt},
 };
@@ -52,7 +52,7 @@ use scene_runner::{
     permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
-    ContainingScene, SceneEntity,
+    ContainingScene, OutOfWorld, SceneEntity,
 };
 use serde_json::{json, Value};
 use teleport::{handle_out_of_world, teleport_player};
@@ -89,6 +89,7 @@ impl Plugin for RestrictedActionsPlugin {
                     send_scene_messages,
                     teleport_player.after(change_realm),
                     handle_out_of_world,
+                    announce_returned_to_world.after(handle_out_of_world),
                     open_nft_dialog,
                 ),
                 (
@@ -206,6 +207,7 @@ pub fn handle_player_move_requests(
     mut perms: Permission<PendingPlayerMove>,
     mut movement_control: ResMut<EngineMovementControl>,
     mut movement_info: ResMut<AvatarMovementInfo>,
+    mut teleport_events: EventWriter<PlayerTeleported>,
     time: Res<Time>,
 ) {
     // Engine dispatch clock, matching RendererSceneContext::last_sent. Constant
@@ -263,6 +265,7 @@ pub fn handle_player_move_requests(
                     &mut player,
                     &mut movement_control,
                     &mut movement_info,
+                    &mut teleport_events,
                     now,
                 );
             }
@@ -318,6 +321,7 @@ pub fn handle_player_move_requests(
             &mut player,
             &mut movement_control,
             &mut movement_info,
+            &mut teleport_events,
             now,
         );
     }
@@ -345,6 +349,7 @@ fn apply_player_move(
     >,
     movement_control: &mut EngineMovementControl,
     movement_info: &mut AvatarMovementInfo,
+    teleport_events: &mut EventWriter<PlayerTeleported>,
     now: f32,
 ) {
     let (_, mut player_transform, mut dynamics, maybe_active) = player.single_mut().unwrap();
@@ -382,6 +387,10 @@ fn apply_player_move(
             } else {
                 player_transform.translation = world_target;
                 debug!("player teleported to {world_target}");
+                // Instant reposition → announce as a Pulse teleport so peers snap rather than lerp.
+                teleport_events.write(PlayerTeleported {
+                    position: world_target,
+                });
                 if let Some(r) = response {
                     r.send(true);
                 }
@@ -418,6 +427,26 @@ fn apply_player_move(
                     stop_threshold,
                     timeout,
                 },
+            });
+        }
+    }
+}
+
+/// A teleport / spawn completes when `OutOfWorld` is removed — the player has just been placed at
+/// their final in-world position by `handle_out_of_world`. Announce it so comms sends a Pulse
+/// teleport and peers snap to the new position rather than interpolating across the jump. This is the
+/// single funnel for every `OutOfWorld`-based reposition (`teleport_player` / `/goto`, the `/teleport`
+/// console command, and scene-change spawns); durationless `move_player_to` (which never goes
+/// `OutOfWorld`) announces itself directly in `apply_player_move`.
+fn announce_returned_to_world(
+    mut returned: RemovedComponents<OutOfWorld>,
+    players: Query<&Transform, With<PrimaryUser>>,
+    mut teleport_events: EventWriter<PlayerTeleported>,
+) {
+    for entity in returned.read() {
+        if let Ok(transform) = players.get(entity) {
+            teleport_events.write(PlayerTeleported {
+                position: transform.translation,
             });
         }
     }
@@ -1187,7 +1216,7 @@ fn get_user_data(
                     fp.context == scene_context && *address == format!("{:#x}", fp.address)
                 }) {
                     response.send(Ok(profile.content.clone()));
-                    return;
+                    continue;
                 }
 
                 if let Some(my_address) = me.address() {

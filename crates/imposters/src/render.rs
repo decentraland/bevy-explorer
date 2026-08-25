@@ -28,7 +28,7 @@ use scene_runner::{
         CurrentImposterScene, CurrentSceneLoading, LiveScenes, PointerResult, SceneLoading,
         ScenePointers, PARCEL_SIZE,
     },
-    renderer_context::RendererSceneContext,
+    renderer_context::{RendererSceneContext, FROZEN_BLOCK},
 };
 
 use tokio_util::sync::CancellationToken;
@@ -283,7 +283,10 @@ pub fn spawn_imposters(
             if ctx.is_portable {
                 return None;
             }
-            if !ctx.broken() && (ctx.tick_number <= 5 || !ctx.blocked.is_empty()) {
+            // a frozen scene counts as ready: it never advances its tick, and its content
+            // is rendered, so its parcels must be live or an imposter draws over it
+            let frozen = ctx.blocked.contains(FROZEN_BLOCK);
+            if !ctx.broken() && !frozen && (ctx.tick_number <= 5 || !ctx.blocked.is_empty()) {
                 // not ready
                 return None;
             }

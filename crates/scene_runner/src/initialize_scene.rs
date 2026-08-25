@@ -18,8 +18,8 @@ use bevy::{
 use common::{
     sets::RealmLifecycle,
     structs::{
-        server_mode, AppConfig, AppError, CurrentRealm, GlobalCrdtStateUpdate, IVec2Arg,
-        PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
+        server_mode, AppConfig, AppError, CurrentRealm, EditorMode, GlobalCrdtStateUpdate,
+        IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
     },
     util::{TaskExt, TryPushChildrenEx},
 };
@@ -637,6 +637,8 @@ pub(crate) fn initialize_scene(
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
     time: Res<Time>,
+    editor_mode: Res<EditorMode>,
+    portable_scenes: Res<PortableScenes>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
@@ -697,7 +699,7 @@ pub(crate) fn initialize_scene(
             server_mode(),
         );
 
-        let main_sx = spawn_scene(
+        let (main_sx, kill_guard) = spawn_scene(
             context.crdt_store.clone(),
             scene_context,
             crdt_context.to_bits(),
@@ -717,9 +719,31 @@ pub(crate) fn initialize_scene(
         context.last_sent = time.elapsed_secs();
         // spawn in flight so we wait for initial RPC requests
         context.state = SceneState::Live {
-            handle: SceneThreadHandle { sender: main_sx },
+            handle: SceneThreadHandle {
+                sender: main_sx,
+                kill_guard,
+            },
             in_flight: true,
         };
+
+        // In the editor a project scene must not silently run a racy number of
+        // frames before the user hits play. Auto-freeze after main() has run once
+        // (its entities / one-shot setup appear) but before the scene free-runs, so
+        // the initial state is deterministic. refreeze fires when tick_number
+        // reaches the target after a scene update; the first two updates are the
+        // engine handshake (init + onStart/composite instancing, no scene frame),
+        // and the third is the first real scene update that runs main() + one system
+        // pass — so 3 lands on "main ran, one frame". Super scenes (the editor
+        // agent) and startup portables (the default controller — parent_scene is
+        // None) are exempt: they aren't the scene being edited and must keep
+        // ticking. Portables spawned BY a scene still freeze with it.
+        let startup_portable = context.is_portable
+            && portable_scenes
+                .get(&context.hash)
+                .is_some_and(|source| source.parent_scene.is_none());
+        if editor_mode.0 && super_user.is_none() && !startup_portable {
+            context.refreeze_at_tick = Some(3);
+        }
 
         commands.entity(root).remove::<SceneLoading>();
     }
@@ -1641,7 +1665,12 @@ pub fn process_scene_lifecycle(
             }
         }
 
-        let still_loading = maybe_ctx.is_none_or(|ctx| ctx.tick_number <= 6 && !ctx.broken());
+        // a frozen scene never advances its tick, so it's as loaded as it's going to get;
+        // without the exemption a scene frozen before tick 7 defers other scenes (and
+        // imposters) forever
+        let still_loading = maybe_ctx.is_none_or(|ctx| {
+            ctx.tick_number <= 6 && !ctx.broken() && !ctx.blocked.contains(FROZEN_BLOCK)
+        });
 
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {

@@ -341,7 +341,8 @@ fn main() {
     // and TextShape plugins below.
     app.init_asset::<Shader>()
         .init_asset::<AnimationClip>()
-        .init_asset::<Image>();
+        .init_asset::<Image>()
+        .register_asset_loader(StubImageLoader);
 
     // Skip the render-only scene plugins (scene UI, TextShape, scene materials, billboards,
     // lights, visibility, pointer results). Must precede SceneRunnerPlugin: the gates are
@@ -485,6 +486,42 @@ fn main() {
         .ok();
 
     app.run();
+}
+
+/// Stands in for the render-only `ImageLoader`: without it the asset server errors
+/// per gltf texture. Nothing samples textures here, so don't decode them.
+struct StubImageLoader;
+
+impl bevy::asset::AssetLoader for StubImageLoader {
+    type Asset = Image;
+    type Settings = bevy::image::ImageLoaderSettings;
+    type Error = std::convert::Infallible;
+
+    async fn load(
+        &self,
+        _reader: &mut dyn bevy::asset::io::Reader,
+        _settings: &Self::Settings,
+        _load_context: &mut bevy::asset::LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        use bevy::asset::RenderAssetUsages;
+        use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+
+        Ok(Image::new_fill(
+            Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            &[255, 255, 255, 255],
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::empty(),
+        ))
+    }
+
+    fn extensions(&self) -> &[&str] {
+        bevy::image::ImageLoader::SUPPORTED_FILE_EXTENSIONS
+    }
 }
 
 /// GLTF scenes are written into the world via bevy's SceneSpawner, which reflects
@@ -849,7 +886,8 @@ fn drain_control_commands(
             crdt_contexts.0.insert(scene_id.to_owned(), context);
             context
         });
-        if let Some(ent) = manager.connect(adapter, context) {
+        // a scene room, never the realm island: it must not bring up Pulse
+        if let Some(ent) = manager.connect_scene(adapter, context) {
             commands
                 .entity(ent)
                 .try_insert(comms::SceneRoom(scene_id.to_owned()));

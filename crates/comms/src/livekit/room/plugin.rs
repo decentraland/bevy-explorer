@@ -156,6 +156,7 @@ fn poll_connecting_rooms(
     }
 }
 
+#[allow(clippy::result_large_err)] // RoomError is livekit's, and connect failures are rare
 async fn connect_to_room(
     address: String,
     token: String,
@@ -350,6 +351,9 @@ fn process_network_message(
         loop {
             match network_message.try_recv() {
                 Ok(outgoing) => {
+                    let Some(payload) = outgoing.message.to_rfc4() else {
+                        continue;
+                    };
                     let destination_identities = match outgoing.recipient {
                         NetworkMessageRecipient::All => Vec::default(),
                         NetworkMessageRecipient::Peer(address) => {
@@ -361,7 +365,7 @@ fn process_network_message(
                     };
 
                     let packet = DataPacket {
-                        payload: outgoing.data,
+                        payload,
                         topic: None,
                         reliable: !outgoing.unreliable,
                         destination_identities,

@@ -12,8 +12,9 @@ name: Publish headless server
 # npm OIDC trusted publishing — no NPM_TOKEN.
 #
 # RELEASING TO CONSUMERS: the SDK preview (js-sdk-toolchain `sdk-commands start`) tracks
-# `latest`, which only moves when someone dispatches this workflow with dist_tag=latest
-# (+ publish=true). That publishes a fresh build of the chosen ref as a NEW version
+# `latest`, which only moves when someone manually dispatches this workflow — a
+# dispatch IS a release; pushes already cover `next`, so there is nothing else a
+# dispatch could mean. That publishes a fresh build of the chosen ref as a NEW version
 # (the version embeds the run id, so there is no collision with the `next` snapshot of
 # the same commit) tagged latest — promotion stays tokenless because it is a plain
 # OIDC-covered `npm publish`, not an `npm dist-tag` (which trusted publishing does not
@@ -33,19 +34,8 @@ name: Publish headless server
 # exact version, so their tags are cosmetic.
 
 on:
+  # dispatch = release: builds the chosen ref and publishes it to `latest`
   workflow_dispatch:
-    inputs:
-      publish:
-        description: Publish to npm (otherwise build and upload artifacts only)
-        type: boolean
-        default: false
-      dist_tag:
-        description: npm dist-tag for the published packages (latest = release to SDK previews)
-        type: choice
-        options:
-          - next
-          - latest
-        default: next
   push:
     branches:
       - main
@@ -167,7 +157,7 @@ jobs:
   publish:
     # all-or-nothing: never advertise a version that is missing a platform
     needs: build
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.publish
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       id-token: write # npm OIDC trusted publishing — no token secret
@@ -210,7 +200,7 @@ jobs:
         run: |
           set -euo pipefail
           for tgz in deploy/headless/artifacts/*.tgz; do
-            npm publish "$tgz" --access public --tag "${{ inputs.dist_tag || 'next' }}"
+            npm publish "$tgz" --access public --tag "${{ github.event_name == 'workflow_dispatch' && 'latest' || 'next' }}"
           done
 
       - name: Publish launcher
@@ -220,6 +210,10 @@ jobs:
           deterministic-snapshot: true
           registry-url: https://registry.npmjs.org
           access: public
-          # push events have no inputs -> snapshots stay on next; a manual dispatch
-          # with dist_tag=latest is the release path (see header)
-          custom-tag: ${{ inputs.dist_tag || 'next' }}
+          # push -> next snapshot; manual dispatch = release to latest (see header).
+          # custom-tag cannot do this: oddish ignores it on main (only
+          # main-branch-latest-tag selects the tag there) and refuses the value
+          # 'latest' outright, so the old custom-tag release path silently
+          # published to next. Release dispatches must run from main — oddish
+          # skips the launcher publish on other branches.
+          main-branch-latest-tag: ${{ github.event_name == 'workflow_dispatch' }}

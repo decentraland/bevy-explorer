@@ -1,3 +1,4 @@
+mod draco;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_fs;
 #[cfg(target_arch = "wasm32")]
@@ -32,14 +33,17 @@ pub(crate) async fn process_events(
         };
 
         let data = match req.ty {
-            ProcessingAssetType::Gltf => match process_gltf(&raw_bytes) {
-                Ok(gltf) => gltf,
-                Err(e) => {
-                    error!("failed to process gltf {:?}: {:?}", req.base_path, e);
-                    let _ = resp_sx.send(Err(()));
-                    continue;
+            ProcessingAssetType::Gltf | ProcessingAssetType::DracoGltf => {
+                let expect_draco = matches!(req.ty, ProcessingAssetType::DracoGltf);
+                match process_gltf(&raw_bytes, expect_draco) {
+                    Ok(gltf) => gltf,
+                    Err(e) => {
+                        error!("failed to process gltf {:?}: {:?}", req.base_path, e);
+                        let _ = resp_sx.send(Err(()));
+                        continue;
+                    }
                 }
-            },
+            }
             ProcessingAssetType::Image => match process_image(&raw_bytes) {
                 Ok(dds) => dds,
                 Err(e) => {
@@ -71,6 +75,10 @@ fn process_image(raw_bytes: &[u8]) -> Result<Vec<u8>, ImageProcessError> {
         return Err(ImageProcessError::CantLoad);
     };
 
+    compress_decoded(img)
+}
+
+fn compress_decoded(img: image::DynamicImage) -> Result<Vec<u8>, ImageProcessError> {
     let initial_width = img.width();
     let initial_height = img.height();
     let resized = if initial_width > 1024
@@ -79,8 +87,9 @@ fn process_image(raw_bytes: &[u8]) -> Result<Vec<u8>, ImageProcessError> {
         || !initial_height.is_multiple_of(4)
     {
         let downratio = (1024.0 / initial_width.max(initial_height) as f32).min(1.0);
-        let resized_width = (initial_width as f32 * downratio * 0.25).round() as u32 * 4;
-        let resized_height = (initial_height as f32 * downratio * 0.25).round() as u32 * 4;
+        // clamp to one block: extreme aspect ratios can round a dimension to zero
+        let resized_width = ((initial_width as f32 * downratio * 0.25).round() as u32).max(1) * 4;
+        let resized_height = ((initial_height as f32 * downratio * 0.25).round() as u32).max(1) * 4;
         img.resize_exact(
             resized_width,
             resized_height,
@@ -150,10 +159,13 @@ fn process_image(raw_bytes: &[u8]) -> Result<Vec<u8>, ImageProcessError> {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // we use the ignored debug impl
 enum GltfProcessError {
-    #[allow(dead_code)] // we use the ignored debug impl
     ImageError(ImageProcessError),
     InvalidHeader,
+    ParseFailed,
+    Draco(draco::DracoError),
+    NotDraco,
 }
 
 impl From<ImageProcessError> for GltfProcessError {
@@ -162,16 +174,19 @@ impl From<ImageProcessError> for GltfProcessError {
     }
 }
 
-fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
+fn process_gltf(raw_bytes: &[u8], expect_draco: bool) -> Result<Vec<u8>, GltfProcessError> {
+    // failed-load (draco) requests can hand us arbitrary bytes, so parse fallibly
     let (mut root, mut old_bin): (gltf_json::Root, Vec<u8>) = if raw_bytes.starts_with(b"glTF") {
-        let glb = Glb::from_slice(raw_bytes).unwrap();
+        let glb = Glb::from_slice(raw_bytes).map_err(|_| GltfProcessError::ParseFailed)?;
         (
-            gltf_json::deserialize::from_slice(&glb.json).unwrap(),
+            gltf_json::deserialize::from_slice(&glb.json)
+                .map_err(|_| GltfProcessError::ParseFailed)?,
             glb.bin.map(|b| b.into_owned()).unwrap_or_default(),
         )
     } else if raw_bytes.starts_with(b"{") {
         (
-            gltf_json::deserialize::from_slice(raw_bytes).unwrap(),
+            gltf_json::deserialize::from_slice(raw_bytes)
+                .map_err(|_| GltfProcessError::ParseFailed)?,
             Vec::default(),
         )
     } else {
@@ -186,7 +201,9 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
                 // This is a .gltf with embedded binary.
                 // We should decode it and make it the "real" binary chunk.
                 let parts: Vec<&str> = uri.split(',').collect();
-                let decoded = general_purpose::STANDARD.decode(parts[1]).unwrap();
+                let decoded = general_purpose::STANDARD
+                    .decode(parts[1])
+                    .map_err(|_| GltfProcessError::ParseFailed)?;
 
                 // If we already had a binary chunk (from a GLB), append this.
                 // If we came from JSON, 'old_bin' was empty, so this becomes the start.
@@ -203,10 +220,31 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
         }
     }
 
+    // decompress draco geometry before the texture pass so the rebuilt binary
+    // chunk contains the decoded accessor data
+    let draco_views = if root
+        .extensions_used
+        .iter()
+        .any(|e| e == "KHR_draco_mesh_compression")
+    {
+        draco::decompress(&mut root, &mut old_bin).map_err(GltfProcessError::Draco)?
+    } else {
+        Vec::default()
+    };
+    if expect_draco && draco_views.is_empty() {
+        // the gltf failed to load for some reason other than draco compression;
+        // there is nothing we can do to fix it
+        return Err(GltfProcessError::NotDraco);
+    }
+
     // collect all Raw Image Data first
     // store them in a temp vector so we can safely mutate the JSON later.
     let mut raw_images: Vec<Option<Vec<u8>>> = Vec::new();
     let mut zombie_views = vec![false; root.buffer_views.len()];
+    for view in draco_views {
+        // drop the compressed draco data; the decoded views replace it
+        zombie_views[view] = true;
+    }
 
     for image in &root.images {
         let pixels = extract_pixels_safe(image, &root.buffer_views, &old_bin);
@@ -249,20 +287,42 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
     // compress & append textures
     for (i, raw_opt) in raw_images.into_iter().enumerate() {
         if let Some(raw_pixels) = raw_opt {
-            let bc7_data = process_image(&raw_pixels)?;
+            // apply the same worth-compressing gate as engine::check_assets: bc7
+            // saves nothing on tiny images, and a 1-pixel dimension would resize
+            // to zero. tiny or undecodable images keep their original bytes
+            // instead of failing the whole gltf
+            let decoded = image::load_from_memory(&raw_pixels).ok().filter(|img| {
+                img.width() > 2
+                    && img.height() > 2
+                    && img.width() as usize * img.height() as usize * 4 > 1024
+            });
+
+            let new_data = match decoded {
+                Some(img) => {
+                    let bc7_data = compress_decoded(img)?;
+                    root.images[i].mime_type =
+                        Some(gltf_json::image::MimeType("image/vnd-ms.dds".into()));
+                    bc7_data
+                }
+                // the original view was zombied above, so carry the bytes over
+                // unchanged (mime type stays as declared)
+                None if root.images[i].buffer_view.is_some() => raw_pixels,
+                // data-uri image: the untouched json still points at it
+                None => continue,
+            };
 
             // append to new_bin
             while !new_bin.len().is_multiple_of(4) {
                 new_bin.push(0);
             }
             let offset = new_bin.len() as u64;
-            new_bin.extend_from_slice(&bc7_data);
+            new_bin.extend_from_slice(&new_data);
 
             // Create NEW BufferView
             let new_view_idx = root.buffer_views.len();
             root.buffer_views.push(gltf_json::buffer::View {
                 buffer: gltf_json::Index::new(0),
-                byte_length: bc7_data.len().into(),
+                byte_length: new_data.len().into(),
                 byte_offset: Some(offset.into()),
                 byte_stride: None,
                 name: Some("BC7_Data".into()),
@@ -274,7 +334,6 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
             // Update Image to point to new View
             root.images[i].buffer_view = Some(gltf_json::Index::new(new_view_idx as u32));
             root.images[i].uri = None;
-            root.images[i].mime_type = Some(gltf_json::image::MimeType("image/vnd-ms.dds".into()));
         }
     }
 
@@ -365,4 +424,103 @@ pub fn write_glb<W: Write>(
     writer.write_all(&bin_data)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            width,
+            height,
+            image::Rgba([255, 255, 255, 255]),
+        ));
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    }
+
+    fn parse_glb(bytes: &[u8]) -> (gltf_json::Root, Vec<u8>) {
+        let glb = Glb::from_slice(bytes).unwrap();
+        (
+            gltf_json::deserialize::from_slice(&glb.json).unwrap(),
+            glb.bin.map(|b| b.into_owned()).unwrap_or_default(),
+        )
+    }
+
+    fn view_bytes<'a>(root: &gltf_json::Root, bin: &'a [u8], image: usize) -> &'a [u8] {
+        let view = &root.buffer_views[root.images[image].buffer_view.unwrap().value()];
+        let start = view.byte_offset.unwrap_or_default().0 as usize;
+        &bin[start..start + view.byte_length.0 as usize]
+    }
+
+    #[test]
+    fn resize_never_rounds_a_dimension_to_zero() {
+        assert!(process_image(&png_bytes(1, 1)).is_ok());
+        assert!(process_image(&png_bytes(2048, 2)).is_ok());
+    }
+
+    #[test]
+    fn tiny_data_uri_image_passes_through_untouched() {
+        let json = format!(
+            r#"{{"asset":{{"version":"2.0"}},"images":[
+                {{"mimeType":"image/png","uri":"data:image/png;base64,{}"}},
+                {{"mimeType":"image/png","uri":"data:image/png;base64,{}"}}]}}"#,
+            general_purpose::STANDARD.encode(png_bytes(1, 1)),
+            general_purpose::STANDARD.encode(png_bytes(32, 32)),
+        );
+
+        let output = process_gltf(json.as_bytes(), false).unwrap();
+        let (root, bin) = parse_glb(&output);
+
+        // tiny image untouched
+        assert!(root.images[0].uri.as_ref().unwrap().starts_with("data:"));
+        assert!(root.images[0].buffer_view.is_none());
+        // large image compressed
+        assert_eq!(
+            root.images[1].mime_type.as_ref().unwrap().0,
+            "image/vnd-ms.dds"
+        );
+        assert!(view_bytes(&root, &bin, 1).starts_with(b"DDS "));
+    }
+
+    #[test]
+    fn tiny_buffer_view_image_keeps_original_bytes() {
+        let png = png_bytes(1, 1);
+        let mut root = gltf_json::Root::default();
+        root.buffers.push(gltf_json::Buffer {
+            byte_length: png.len().into(),
+            name: None,
+            uri: None,
+            extensions: None,
+            extras: Default::default(),
+        });
+        root.buffer_views.push(gltf_json::buffer::View {
+            buffer: gltf_json::Index::new(0),
+            byte_length: png.len().into(),
+            byte_offset: None,
+            byte_stride: None,
+            name: None,
+            target: None,
+            extensions: None,
+            extras: Default::default(),
+        });
+        root.images.push(gltf_json::Image {
+            buffer_view: Some(gltf_json::Index::new(0)),
+            mime_type: Some(gltf_json::image::MimeType("image/png".into())),
+            name: None,
+            uri: None,
+            extensions: None,
+            extras: Default::default(),
+        });
+        let mut input = Vec::new();
+        write_glb(&mut input, &root, &png).unwrap();
+
+        let output = process_gltf(&input, false).unwrap();
+        let (root, bin) = parse_glb(&output);
+
+        assert_eq!(root.images[0].mime_type.as_ref().unwrap().0, "image/png");
+        assert_eq!(view_bytes(&root, &bin, 0), png);
+    }
 }

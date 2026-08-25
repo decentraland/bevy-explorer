@@ -224,8 +224,12 @@ impl AssetLoader for SceneJsLoader {
 pub struct ContentMap(pub HashMap<String, String>);
 
 impl ContentMap {
+    // keys are stored lowercase with '/' separators (the dev server normalizes the
+    // same way); lookups mirror that so backslashed srcs still resolve
     pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, str>> {
-        self.0.get(file.to_lowercase().as_str()).map(Into::into)
+        self.0
+            .get(file.replace('\\', "/").to_lowercase().as_str())
+            .map(Into::into)
     }
 
     pub fn files(&self) -> impl Iterator<Item = &String> {
@@ -241,7 +245,7 @@ impl ContentMap {
     }
 
     pub fn with(mut self, file: String, hash: String) -> Self {
-        self.0.insert(file.to_lowercase(), hash);
+        self.0.insert(file.replace('\\', "/").to_lowercase(), hash);
         self
     }
 }
@@ -1276,14 +1280,9 @@ impl IpfsIo {
             let Ok(decoded) = String::from_utf8(decoded) else {
                 continue;
             };
-            // decoded == "{projectRoot}/{key-original-case}-{machineId}"; the key is lowercased, so
-            // locate "/{key}-" case-insensitively, then slice the original to keep the real casing.
-            let marker = format!("/{key}-");
-            let Some(idx) = decoded.to_lowercase().rfind(&marker) else {
+            let Some((project_root, machine_id)) = b64_split_at_key(&decoded, key) else {
                 continue;
             };
-            let project_root = &decoded[..idx];
-            let machine_id = &decoded[idx + marker.len()..];
             let abs = format!("{project_root}/{rel}-{machine_id}");
             return Some(format!("b64-{}", BASE64_STANDARD.encode(abs.as_bytes())));
         }
@@ -1309,9 +1308,8 @@ impl IpfsIo {
             let Ok(decoded) = String::from_utf8(decoded) else {
                 continue;
             };
-            let marker = format!("/{key}-");
-            if let Some(idx) = decoded.to_lowercase().rfind(&marker) {
-                return Some(decoded[..idx].to_string());
+            if let Some((project_root, _)) = b64_split_at_key(&decoded, key) {
+                return Some(project_root.to_string());
             }
         }
         None
@@ -1980,5 +1978,44 @@ impl DeferredDropper {
 impl Drop for DeferredDropper {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Splits a dev server's b64 hash payload — `"{projectRoot}{sep}{key}-{machineId}"` — at its
+/// `/{key}-` marker into (projectRoot, machineId), both in their original case and separators.
+/// The marker is matched case-insensitively (collection keys are lowercased while the encoded
+/// path keeps its casing) and separator-insensitively (a Windows dev server encodes backslash
+/// paths); both normalizations are byte-for-byte over the ASCII they rewrite, so an index found
+/// in the normalized copy still slices `decoded` itself.
+fn b64_split_at_key<'a>(decoded: &'a str, key: &str) -> Option<(&'a str, &'a str)> {
+    let marker = format!("/{key}-");
+    let idx = decoded.replace('\\', "/").to_lowercase().rfind(&marker)?;
+    Some((&decoded[..idx], &decoded[idx + marker.len()..]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::b64_split_at_key;
+
+    #[test]
+    fn splits_unix_path() {
+        let decoded = "/Users/bob/scene/models/Tree.glb-my-mac";
+        let split = b64_split_at_key(decoded, "models/tree.glb");
+        assert_eq!(split, Some(("/Users/bob/scene", "my-mac")));
+    }
+
+    #[test]
+    fn splits_windows_path() {
+        let decoded = r"C:\Users\bob\scene\models\Tree.glb-my-pc";
+        let split = b64_split_at_key(decoded, "models/tree.glb");
+        assert_eq!(split, Some((r"C:\Users\bob\scene", "my-pc")));
+    }
+
+    #[test]
+    fn no_split_for_other_key() {
+        assert_eq!(
+            b64_split_at_key(r"C:\Users\bob\scene\models\Tree.glb-pc", "scene.json"),
+            None
+        );
     }
 }

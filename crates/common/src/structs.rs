@@ -1190,6 +1190,20 @@ pub enum PreviewCommand {
     ReloadScene { hash: String },
 }
 
+/// The local player was instantly repositioned — a durationless `move_player_to`, a `teleport_player`,
+/// or a spawn snap — rather than walking there. Comms turns this into a Pulse `TeleportRequest` so peers
+/// snap to the new position instead of interpolating across the gap. `position` is Bevy world space.
+#[derive(Event)]
+pub struct PlayerTeleported {
+    pub position: Vec3,
+}
+
+/// Marks the local player as behind the loading screen — teleported or spawning, with a provisional
+/// position — until the destination scene resolves and they're placed in-world. Lives here (rather
+/// than `scene_runner`) so lower-level crates like `comms` can read it; `scene_runner` re-exports it.
+#[derive(Component)]
+pub struct OutOfWorld;
+
 pub struct StartupScene {
     pub source: String,
     pub super_user: bool,
@@ -1324,10 +1338,19 @@ pub struct PreviewMode {
     pub preview_parcel: Option<IVec2>,
 }
 
-/// Render out-of-bounds geometry (dithered) instead of culling it. Set at startup;
-/// read by scene_material's show-outside-bounds observer.
+/// Render out-of-bounds geometry (dithered) instead of culling it. Set at startup
+/// (preview, a loopback realm, or editor mode — never a public realm); read by
+/// scene_material's show-outside-bounds observer.
 #[derive(Debug, Resource, Default)]
 pub struct ShowOutOfBounds(pub bool);
+
+/// True when the explorer is embedded in a scene editor (the explicit `--editor` arg /
+/// `editor` web boot param — the editor host is expected to unfreeze scenes when the
+/// user hits play). Set once at startup; freezes a scene after main() has run once so
+/// the initial state is deterministic. Default false; NOT implied by preview or a
+/// loopback realm — plain previews must free-run.
+#[derive(Debug, Resource, Default)]
+pub struct EditorMode(pub bool);
 
 // resource into which systems can add debug info
 #[derive(Resource, Default, Debug)]

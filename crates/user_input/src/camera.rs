@@ -249,10 +249,7 @@ pub fn update_camera_position(
             .and_then(|e| gt_helper.compute_global_transform(e).ok())
         {
             Transform::IDENTITY
-                .looking_at(
-                    look_at_transform.translation() - camera_transform.translation,
-                    Vec3::Y,
-                )
+                .looking_at(look_at_transform.translation() - translation, Vec3::Y)
                 .rotation
         } else {
             let yaw = cine
@@ -260,11 +257,11 @@ pub fn update_camera_position(
                 .map(|r| options.yaw.clamp(-r, r))
                 .unwrap_or(options.yaw);
             let pitch = cine
-                .yaw_range
+                .pitch_range
                 .map(|r| options.pitch.clamp(-r, r))
                 .unwrap_or(options.pitch);
             let roll = cine
-                .yaw_range
+                .roll_range
                 .map(|r| options.roll.clamp(-r, r))
                 .unwrap_or(options.roll);
             rotation * Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll)
