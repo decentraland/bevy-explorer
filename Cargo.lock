@@ -645,6 +645,7 @@ dependencies = [
  "disqualified",
  "ethers-core",
  "ipfs",
+ "js-sys",
  "kira",
  "livestream_manager",
  "media",

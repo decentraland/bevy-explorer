@@ -118,7 +118,7 @@ fn new_player_source<T: AVPlayer>(
 ) {
     let entity = trigger.target();
 
-    let Ok((player_source, container_entity, maybe_video_texture_output, has_stream)) =
+    let Ok((player_source, container_entity, mut maybe_video_texture_output, has_stream)) =
         av_players.get(entity)
     else {
         unreachable!("Infallible query");
@@ -130,11 +130,20 @@ fn new_player_source<T: AVPlayer>(
     let livestream = &**player_source == LIVEKIT_VIDEO_STREAM;
     if T::ALLOWS_LIVESTREAM && livestream != has_stream {
         if livestream {
-            debug!("AVPlayer {} now a stream.", entity);
+            debug!(
+                "{} {} now a stream.",
+                disqualified::ShortName::of::<T>(),
+                entity
+            );
             commands.entity(entity).insert(Stream);
         } else {
-            debug!("AVPlayer {} no longer a stream.", entity);
+            debug!(
+                "{} {} no longer a stream.",
+                disqualified::ShortName::of::<T>(),
+                entity
+            );
             commands.entity(entity).remove::<Stream>();
+            let _ = maybe_video_texture_output.take();
         }
     }
 
@@ -156,17 +165,20 @@ fn new_player_source<T: AVPlayer>(
             image.transfer_priority = RenderAssetTransferPriority::Immediate;
             images.add(image)
         }
-        Some(texture) => texture.0.clone(),
+        Some(texture) => {
+            debug!("Reusing VideoTextureOutput.");
+            texture.0.clone()
+        }
     };
 
-    debug!(
-        "Creating new html media entity for {} targeting \"{}\"",
-        entity,
-        &(**player_source)
-    );
     match &(**player_source) {
         LIVEKIT_VIDEO_STREAM if T::ALLOWS_LIVESTREAM => (),
         _ => {
+            debug!(
+                "Creating new html media entity for {} targeting \"{}\"",
+                entity,
+                &(**player_source)
+            );
             let source_url = &(**player_source);
             if source_url.is_empty() {
                 let image = create_image_handle();
@@ -209,6 +221,12 @@ fn player_source_replaced<T: AVPlayer>(
     mut commands: Commands,
 ) {
     let entity = trigger.target();
+
+    debug!(
+        "{}'s {} was replaced.",
+        entity,
+        disqualified::ShortName::of::<T::Source>(),
+    );
     commands.entity(entity).try_remove::<HtmlMediaEntity<T>>();
 }
 
@@ -335,10 +353,7 @@ fn update_av_players<T: AVPlayer>(
 
         if av.source() == LIVEKIT_VIDEO_STREAM && state == VideoState::VsError {
             error!("Stream is erroring, retrying.");
-            commands
-                .entity(ent)
-                .try_remove::<HtmlMediaEntity<T>>()
-                .insert(WaitingForStream);
+            commands.entity(ent).try_remove::<HtmlMediaEntity<T>>();
             continue;
         }
 
@@ -471,6 +486,3 @@ fn update_html_video_player_volumes<T: AVPlayer>(
         html_video_player.set_volume(volume * scene_volume);
     }
 }
-
-#[derive(Component)]
-struct WaitingForStream;
