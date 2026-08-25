@@ -2,7 +2,7 @@ use bevy::{
     asset::RenderAssetUsages,
     ecs::relationship::RelationshipSourceCollection,
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
 };
 
 use crate::{states::*, *};
@@ -146,7 +146,7 @@ struct ManagingAudioStreams(Vec<Entity>);
 struct AudioStreamer(Entity);
 
 fn setup_manager(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
-    let handle = images.add(Image::new_fill(
+    let mut image = Image::new_fill(
         Extent3d {
             width: 8,
             height: 8,
@@ -156,7 +156,13 @@ fn setup_manager(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
         &[255, 0, 255, 255],
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::all(),
-    ));
+    );
+    image.texture_descriptor.usage = TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
+    #[cfg(target_arch = "wasm32")]
+    {
+        image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
+    }
+    let handle = images.add(image);
 
     commands.spawn(LivestreamManager(handle));
     debug!("LivestreamManager setup");
