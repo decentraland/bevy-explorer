@@ -107,7 +107,7 @@ fn new_player_source<T: AVPlayer>(
                 disqualified::ShortName::of::<T>(),
                 entity
             );
-            commands.entity(entity).remove::<Stream>();
+            commands.entity(entity).try_remove::<Stream>();
             let _ = maybe_video_texture_output.take();
         }
     }
