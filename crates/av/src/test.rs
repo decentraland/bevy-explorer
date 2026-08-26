@@ -1,4 +1,5 @@
 use bevy::{
+    diagnostic::FrameCountPlugin,
     log::{Level, LogPlugin},
     platform::collections::HashSet,
     prelude::*,
@@ -93,6 +94,7 @@ fn min_test_app() -> App {
         },
         AssetPlugin::default(),
         StatesPlugin,
+        FrameCountPlugin,
     ));
 
     app.init_asset::<Image>();
