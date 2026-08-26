@@ -311,12 +311,14 @@ pub struct SceneRealms(pub HashMap<String, String>);
 
 impl SceneRealms {
     /// The realm to announce for a scene: the one its orchestrator stated, or `default` — the realm
-    /// this process is on, which is the answer for every deployment that isn't orchestrated.
-    pub fn for_scene_hash(&self, hash: &str, default: &str) -> String {
+    /// this process is on, which is the answer for every deployment that isn't orchestrated. `None`
+    /// when neither applies: an orchestrated engine is on no realm of its own, so a scene it was
+    /// handed without one has no realm to fall back to.
+    pub fn for_scene_hash(&self, hash: &str, default: Option<&str>) -> Option<String> {
         self.0
             .get(hash)
             .cloned()
-            .unwrap_or_else(|| default.to_owned())
+            .or_else(|| default.map(str::to_owned))
     }
 }
 

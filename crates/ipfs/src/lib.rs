@@ -626,11 +626,20 @@ pub fn change_realm(
                     connected,
                 }) = &*realm_change.borrow_and_update()
                 {
+                    let mut config = about.configurations.clone().unwrap_or_default();
+                    // An orchestrated engine is on no realm of its own: it hosts scenes from
+                    // several at once, and its `--realm` is only where content is served from.
+                    // Leaving the name set would hand every one of those scenes a realm none of
+                    // them is in — the realm a scene belongs to arrives with it, on `add-scene`.
+                    if common::structs::multi_tenant() {
+                        config.realm_name = None;
+                    }
+
                     *current_realm = CurrentRealm {
                         about_url: about_url.clone(),
                         address: realm.clone(),
                         connected: *connected,
-                        config: about.configurations.clone().unwrap_or_default(),
+                        config,
                         comms: about.comms.clone(),
                         public_url: about
                             .content

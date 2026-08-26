@@ -1063,14 +1063,14 @@ fn update_listener_aoi(
     if session.role.listener_mut().is_none() {
         return;
     }
-    // The realm for a scene that didn't come with one of its own. On a local preview this is the
-    // LSD key, not the bare realm name every dev server advertises — a listener has to land in the
-    // same partition its clients announce. Not a resource, so it is compared rather than
-    // change-detected: `resolve_lsd_realm` can fill the key in at any time.
-    let Some(default_realm) = announced_realm(session, &realm) else {
-        return;
-    };
-    let default_changed = announced_default.as_deref() != Some(default_realm.as_str());
+    // The realm for a scene that didn't come with one of its own — the one this process is on. On a
+    // local preview that's the LSD key rather than the bare realm name every dev server advertises,
+    // so a listener lands in the same partition its clients announce. `None` on an orchestrated
+    // engine, which is on no realm at all: it hosts several at once and each scene states its own.
+    // Not a resource, so it is compared rather than change-detected: `resolve_lsd_realm` can fill
+    // the key in at any time.
+    let default_realm = announced_realm(session, &realm);
+    let default_changed = *announced_default != default_realm;
     if !definitions_changed
         && !default_changed
         && !crdt_contexts.is_changed()
@@ -1078,7 +1078,7 @@ fn update_listener_aoi(
     {
         return;
     }
-    *announced_default = Some(default_realm.clone());
+    announced_default.clone_from(&default_realm);
 
     let Some(listener) = session.role.listener_mut() else {
         return;
@@ -1101,9 +1101,14 @@ fn update_listener_aoi(
         let Some(context) = crdt_contexts.try_for_scene_hash(&definition.id) else {
             continue;
         };
-        let realm_parcels = context_by_parcel
-            .entry(scene_realms.for_scene_hash(&definition.id, &default_realm))
-            .or_default();
+        // A scene whose realm is neither stated nor inherited can't be announced — but it is the
+        // only thing that's unroutable, so skip it rather than dropping the whole AoI.
+        let Some(scene_realm) =
+            scene_realms.for_scene_hash(&definition.id, default_realm.as_deref())
+        else {
+            continue;
+        };
+        let realm_parcels = context_by_parcel.entry(scene_realm).or_default();
         for parcel in std::iter::once(first).chain(parcels) {
             realm_parcels.insert(parcel, context);
         }
@@ -1252,6 +1257,13 @@ fn set_listener_aoi(session: &mut PulseSession, aoi: Vec<pulse::SceneListenerAoi
 fn announced_realm(session: &PulseSession, realm: &CurrentRealm) -> Option<String> {
     if let Some(announced) = session.realm_override.as_ref() {
         return Some(announced.clone());
+    }
+
+    // An orchestrated engine is on no realm of its own — `change_realm` leaves the name unset there
+    // — and every scene it hosts states its own. Nothing to announce, and nothing missing, so this
+    // returns before the warning below.
+    if common::structs::multi_tenant() {
+        return None;
     }
 
     if is_local_realm(realm) {
