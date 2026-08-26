@@ -475,7 +475,7 @@ fn av_player_on_insert<T: AVPlayer>(
         );
 
         let new_source = av_player.source();
-        commands.entity(entity).insert(new_source);
+        commands.entity(entity).try_insert(new_source);
         commands.trigger(SetState::<T> {
             entity: *container_entity,
             state: VideoState::VsLoading,
@@ -493,7 +493,7 @@ fn av_player_on_insert<T: AVPlayer>(
             entity,
             disqualified::ShortName::of::<T::Config>(),
         );
-        commands.entity(entity).insert(new_config);
+        commands.entity(entity).try_insert(new_config);
     }
 
     let new_position = av_player.position();
@@ -503,7 +503,7 @@ fn av_player_on_insert<T: AVPlayer>(
             entity,
             disqualified::ShortName::of::<T::Source>(),
         );
-        commands.entity(entity).insert(new_position);
+        commands.entity(entity).try_insert(new_position);
     }
 }
 
@@ -548,7 +548,7 @@ fn stream_on_add<T: AVPlayer>(
 
     if has_should_be_playing {
         debug!("New stream {} should be playing.", entity);
-        commands.entity(entity).insert((
+        commands.entity(entity).try_insert((
             ActiveReceiver,
             ReceiverVolume(maybe_config.map(|config| config.volume()).unwrap_or(0.)),
         ));
@@ -586,7 +586,7 @@ fn should_be_playing_on_add<T: AVPlayer>(
 
     if has_stream {
         debug!("Stream {} should be playing.", entity);
-        commands.entity(entity).insert((
+        commands.entity(entity).try_insert((
             ActiveReceiver,
             ReceiverVolume(maybe_config.map(|config| config.volume()).unwrap_or(0.)),
         ));
@@ -769,7 +769,7 @@ fn receiver_image_added(
         debug!("ReceiverImage added to {}", entity);
         commands
             .entity(entity)
-            .insert(VideoTextureOutput((*receiver_image).clone()));
+            .try_insert(VideoTextureOutput((*receiver_image).clone()));
     }
 }
 

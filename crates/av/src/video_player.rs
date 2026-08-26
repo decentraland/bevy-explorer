@@ -100,7 +100,7 @@ fn new_player_source<T: AVPlayer>(
                 disqualified::ShortName::of::<T>(),
                 entity
             );
-            commands.entity(entity).insert(Stream);
+            commands.entity(entity).try_insert(Stream);
         } else {
             debug!(
                 "{} {} no longer a stream.",

@@ -120,7 +120,7 @@ fn av_sinks_inserted<T: AVPlayer>(
         if let Ok(sound_data) = audio_sink.sound_data.try_recv() {
             start_sound::<T>(entity, &mut commands, &mut audio_manager, sound_data);
         } else {
-            commands.entity(entity).insert(WaitingSoundData);
+            commands.entity(entity).try_insert(WaitingSoundData);
         }
     }
 }

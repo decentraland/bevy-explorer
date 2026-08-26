@@ -184,16 +184,16 @@ fn transmitter_kind_on_insert(
 
     match transmitter_kind {
         TransmitterKind::Presentation => {
-            entity_cmd.insert(PresentationCaster(*livestream_manager));
+            entity_cmd.try_insert(PresentationCaster(*livestream_manager));
         }
         TransmitterKind::Screenshare => {
-            entity_cmd.insert(Screensharer(*livestream_manager));
+            entity_cmd.try_insert(Screensharer(*livestream_manager));
         }
         TransmitterKind::VideoCast => {
-            entity_cmd.insert(VideoCaster(*livestream_manager));
+            entity_cmd.try_insert(VideoCaster(*livestream_manager));
         }
         TransmitterKind::Stream => {
-            entity_cmd.insert(VideoStreamer(*livestream_manager));
+            entity_cmd.try_insert(VideoStreamer(*livestream_manager));
         }
     }
 }
@@ -231,18 +231,18 @@ fn audio_transmitter_kind_on_insert(
 
     match transmitter_kind {
         AudioTransmitterKind::Cast => {
-            entity_cmd.insert(AudioCaster(*livestream_manager));
+            entity_cmd.try_insert(AudioCaster(*livestream_manager));
             if *transmission_state == TransmissionState::Cast {
-                entity_cmd.insert(ActiveAudioTransmitter);
+                entity_cmd.try_insert(ActiveAudioTransmitter);
             }
         }
         AudioTransmitterKind::Stream => {
-            entity_cmd.insert(AudioStreamer(*livestream_manager));
+            entity_cmd.try_insert(AudioStreamer(*livestream_manager));
             if matches!(
                 **transmission_state,
                 TransmissionState::NeedStream | TransmissionState::Stream
             ) {
-                entity_cmd.insert(ActiveAudioTransmitter);
+                entity_cmd.try_insert(ActiveAudioTransmitter);
             }
         }
     }
@@ -268,7 +268,7 @@ fn active_video_cast_on_add(
 ) {
     commands
         .entity(trigger.target())
-        .insert(ActiveVideoCaster(*livestream_manager));
+        .try_insert(ActiveVideoCaster(*livestream_manager));
 }
 
 fn active_video_cast_on_remove(
@@ -309,7 +309,7 @@ fn receiver_on(
     debug!("New receiver {}", entity);
     commands
         .entity(entity)
-        .insert(ReceiverImage((**livestream_manager).clone()));
+        .try_insert(ReceiverImage((**livestream_manager).clone()));
     next_state.set(Receiver::On);
 }
 
@@ -406,7 +406,7 @@ fn manage_casts(
         }
         commands
             .entity(highest_priority)
-            .insert(ActiveTransmitter((*livestream_manager).clone()));
+            .try_insert(ActiveTransmitter((*livestream_manager).clone()));
 
         transmission_updated.write(TransmissionUpdated);
     }
