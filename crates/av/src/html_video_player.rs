@@ -366,7 +366,9 @@ fn update_av_players<T: AVPlayer>(
         let is_playing = state == VideoState::VsPlaying;
 
         if has_should_be_playing
-            && (state == VideoState::VsLoading || state == VideoState::VsBuffering)
+            && (state == VideoState::VsLoading
+                || state == VideoState::VsBuffering
+                || state == VideoState::VsReady)
         {
             av.play();
         } else if !has_should_be_playing && is_playing {
