@@ -403,6 +403,12 @@ srv_has_line "$SCENE_B" "players-in-scene" "$ADDR_A"; check "getPlayersInScene o
 grep -a 'HARNESS|players-in-scene' "$LOGS/obsC.log" | grep -q "$ADDR_PEER_C"
 check "regression: getPlayersInScene on scene C lists peer" $?
 
+# 6c. getRealm — an orchestrated engine is in no realm itself, so each scene must be told
+# the one its add-scene stated, not the one the process was pointed at (harness-server).
+srv_has_line "$SCENE_A" 'HARNESS|realm|' "harness-clientA"; check "scene A getRealm reports its own realm" $?
+srv_has_line "$SCENE_A" 'HARNESS|realm|' "harness-server";  check "scene A getRealm never reports the process realm" $(neg $?)
+srv_has_line "$SCENE_B" 'HARNESS|realm|' "harness-clientB"; check "scene B getRealm reports its own realm" $?
+
 # 7. onEnterScene / onLeaveScene — room-scoped scenes resolve membership by context
 # (room departure = scene departure); the client observer resolves positionally.
 srv_has_line "$SCENE_A" "onEnterScene" "$ADDR_A"; check "scene A onEnterScene fired for client A"    $?
