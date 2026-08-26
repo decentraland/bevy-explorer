@@ -40,7 +40,9 @@ use common::{
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
-    proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState},
+    proto_components::sdk::components::{
+        PbAudioEvent, PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState,
+    },
     CrdtType, SceneComponentId,
 };
 use livestream_manager::{ActiveReceiver, ReceiverImage, ReceiverVolume, TransmissionUpdated};
@@ -80,7 +82,6 @@ pub trait AVPlayer: Component {
     where
         Self: Sized;
 
-    #[cfg(feature = "html")]
     fn has_video() -> bool;
 }
 
@@ -171,7 +172,6 @@ impl AVPlayer for AudioStream {
         }
     }
 
-    #[cfg(feature = "html")]
     fn has_video() -> bool {
         false
     }
@@ -224,7 +224,6 @@ impl AVPlayer for VideoPlayer {
         }
     }
 
-    #[cfg(feature = "html")]
     fn has_video() -> bool {
         true
     }
@@ -438,6 +437,9 @@ impl Plugin for AVPlayerPlugin {
 
         app.add_systems(Update, receiver_image_updated);
 
+        app.add_observer(set_state::<AudioStream>);
+        app.add_observer(set_state::<VideoPlayer>);
+
         #[cfg(feature = "av_player_debug")]
         app.add_plugins(av_player_debug::AvPlayerDebugPlugin);
     }
@@ -473,7 +475,10 @@ fn av_player_on_insert<T: AVPlayer>(
         );
 
         let new_source = av_player.source();
-        entity_cmd.insert(new_source);
+        entity_cmd.insert(new_source).trigger(SetState::<T> {
+            state: VideoState::VsLoading,
+            _phantom: PhantomData,
+        });
 
         let _ = maybe_config.take();
         let _ = maybe_position.take();
@@ -512,6 +517,11 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
     )>();
     #[cfg(feature = "ffmpeg")]
     commands.entity(entity).try_remove::<AVSinks<T>>();
+
+    commands.entity(entity).trigger(SetState::<T> {
+        state: VideoState::VsNone,
+        _phantom: PhantomData,
+    });
 }
 
 #[expect(clippy::type_complexity)]
@@ -759,37 +769,72 @@ fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut command
 }
 
 fn receiver_image_updated(
-    av_players: Query<(Entity, &ContainerEntity, &mut VideoTextureOutput)>,
-    mut renderer_context: Query<&mut RendererSceneContext>,
+    mut commands: Commands,
+    av_players: Query<(Entity, &mut VideoTextureOutput)>,
     mut transmission_updated: EventReader<TransmissionUpdated>,
-    frame: Res<FrameCount>,
 ) {
     if transmission_updated.read().count() > 0 {
-        for (entity, container_entity, mut video_texture_output) in av_players {
+        for (entity, mut video_texture_output) in av_players {
             debug!("ReceiverImage of {entity} was updated.");
             video_texture_output.set_changed();
 
-            let Ok(mut context) = renderer_context.get_mut(container_entity.root) else {
-                continue;
-            };
-            let tick_number = context.tick_number;
-
-            context.update_crdt(
-                SceneComponentId::VIDEO_EVENT,
-                CrdtType::GO_ANY,
-                container_entity.container_id,
-                &PbVideoEvent {
-                    timestamp: frame.0,
-                    tick_number,
-                    current_offset: 0.,
-                    video_length: 0.,
-                    state: VideoState::VsPlaying as i32,
-                },
-            );
+            commands.entity(entity).trigger(SetState::<VideoPlayer> {
+                state: VideoState::VsPlaying,
+                _phantom: PhantomData,
+            });
         }
     }
 }
 
+#[derive(Event)]
+struct SetState<T: AVPlayer> {
+    state: VideoState,
+    _phantom: PhantomData<T>,
+}
+
+fn set_state<T: AVPlayer>(
+    trigger: Trigger<SetState<T>>,
+    av_players: Query<&ContainerEntity, With<T>>,
+    mut renderer_context: Query<&mut RendererSceneContext>,
+    frame: Res<FrameCount>,
+) {
+    let entity = trigger.target();
+    let event = trigger.event();
+    let Ok(container_entity) = av_players.get(entity) else {
+        error!("Trying to set state for an entity that is not part of a scene.");
+        return;
+    };
+
+    let Ok(mut context) = renderer_context.get_mut(container_entity.root) else {
+        return;
+    };
+    let tick_number = context.tick_number;
+
+    if T::has_video() {
+        context.update_crdt(
+            SceneComponentId::VIDEO_EVENT,
+            CrdtType::GO_ANY,
+            container_entity.container_id,
+            &PbVideoEvent {
+                timestamp: frame.0,
+                tick_number,
+                current_offset: 0.,
+                video_length: 0.,
+                state: event.state as i32,
+            },
+        );
+    } else {
+        context.update_crdt(
+            SceneComponentId::AUDIO_EVENT,
+            CrdtType::GO_ANY,
+            container_entity.container_id,
+            &PbAudioEvent {
+                timestamp: frame.0,
+                state: event.state as i32,
+            },
+        );
+    }
+}
 #[cfg(test)]
 mod tests {
     #[cfg(target_arch = "wasm32")]
