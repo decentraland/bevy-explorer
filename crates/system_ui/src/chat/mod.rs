@@ -684,10 +684,14 @@ fn pipe_chats_to_scene(
             .iter()
             .any(|marker| ce.message.starts_with(*marker))
     }) {
-        let player_address = if chat_event.sender == Entity::PLACEHOLDER {
-            Some(Default::default())
+        // System/console messages (e.g. "Realm set to `...`") have no real player behind
+        // them. Previously these defaulted to the zero address, which the frontend rendered
+        // as a fake "0x0000...0000" sender bubble instead of a system message. Send the
+        // literal "system" sentinel the chat UI's `isSystem()` check recognizes instead.
+        let sender_address = if chat_event.sender == Entity::PLACEHOLDER {
+            "system".to_owned()
         } else {
-            players
+            let player_address = players
                 .get(chat_event.sender)
                 .ok()
                 .map(|fp| fp.address)
@@ -697,17 +701,19 @@ fn pipe_chats_to_scene(
                     } else {
                         None
                     }
-                })
-        };
+                });
 
-        let Some(player_address) = player_address else {
-            warn!("no player for {chat_event:?}");
-            continue;
+            let Some(player_address) = player_address else {
+                warn!("no player for {chat_event:?}");
+                continue;
+            };
+
+            format!("{player_address:#x}")
         };
 
         for sender in senders.iter() {
             let _ = sender.send(ChatMessage {
-                sender_address: format!("{player_address:#x}"),
+                sender_address: sender_address.clone(),
                 message: chat_event.message.clone(),
                 channel: chat_event.channel.clone(),
             });
