@@ -45,7 +45,9 @@ use dcl_component::{
     },
     CrdtType, SceneComponentId,
 };
-use livestream_manager::{ActiveReceiver, ReceiverImage, ReceiverVolume, TransmissionUpdated};
+use livestream_manager::{
+    ActiveReceiver, ReceiverImage, ReceiverVolume, TransmissionStopped, TransmissionUpdated,
+};
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
@@ -435,7 +437,7 @@ impl Plugin for AVPlayerPlugin {
         app.add_observer(receiver_image_added);
         app.add_observer(receiver_image_removed);
 
-        app.add_systems(Update, receiver_image_updated);
+        app.add_systems(Update, (receiver_image_updated, transmission_stopped));
 
         app.add_observer(set_state::<AudioStream>);
         app.add_observer(set_state::<VideoPlayer>);
@@ -792,6 +794,22 @@ fn receiver_image_updated(
             commands.trigger(SetState::<VideoPlayer> {
                 entity: *container_entity,
                 state: VideoState::VsPlaying,
+                _phantom: PhantomData,
+            });
+        }
+    }
+}
+
+fn transmission_stopped(
+    mut commands: Commands,
+    av_players: Query<&ContainerEntity, With<ReceiverImage>>,
+    mut transmission_stopped: EventReader<TransmissionStopped>,
+) {
+    if transmission_stopped.read().count() > 0 {
+        for container_entity in av_players {
+            commands.trigger(SetState::<VideoPlayer> {
+                entity: *container_entity,
+                state: VideoState::VsNone,
                 _phantom: PhantomData,
             });
         }

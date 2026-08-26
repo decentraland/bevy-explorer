@@ -12,6 +12,7 @@ pub struct LivestreamManagerPlugin;
 impl Plugin for LivestreamManagerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<TransmissionUpdated>();
+        app.add_event::<TransmissionStopped>();
 
         app.init_state::<TransmissionKind>();
         app.init_state::<Transmitter>();
@@ -62,6 +63,9 @@ impl Plugin for LivestreamManagerPlugin {
             Update,
             transfer_receiver_volume.run_if(not(in_state(TransmissionState::Off))),
         );
+
+        app.add_systems(OnEnter(Transmitter::On), send_update_event);
+        app.add_systems(OnEnter(Transmitter::Off), send_stopped_event);
     }
 }
 
@@ -482,4 +486,12 @@ fn transfer_receiver_volume(
     for mut audio_transmitter_volume in audio_transmitters.into_inner() {
         audio_transmitter_volume.0 = global_volume;
     }
+}
+
+fn send_update_event(mut transmission_updated: EventWriter<TransmissionUpdated>) {
+    transmission_updated.write(TransmissionUpdated);
+}
+
+fn send_stopped_event(mut transmission_stopped: EventWriter<TransmissionStopped>) {
+    transmission_stopped.write(TransmissionStopped);
 }
