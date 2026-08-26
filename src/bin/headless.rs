@@ -81,6 +81,9 @@ struct Args {
     storage_delegation: Option<String>,
     /// deterministic guest wallet (test harness): address derivable offline from the seed
     wallet_seed: Option<u64>,
+    /// Pulse realm to announce verbatim; `--server-mode` only. Orchestrated servers host several
+    /// realms at once and take one per scene on `add-scene` instead.
+    pulse_realm: Option<String>,
 }
 
 fn parse_args() -> Args {
@@ -123,6 +126,13 @@ fn parse_args() -> Args {
         .ok()
         .or_else(|| std::env::var("PROCESS_STORAGE_DELEGATION").ok());
     let wallet_seed: Option<u64> = args.value_from_str("--wallet-seed").ok();
+    let pulse_realm: Option<String> = args.value_from_str("--pulse-realm").ok();
+    if pulse_realm.is_some() && orchestrated {
+        eprintln!(
+            "--pulse-realm is a --server-mode flag; orchestrated scenes carry their own realm"
+        );
+        std::process::exit(2);
+    }
     Args {
         realm,
         location,
@@ -134,6 +144,7 @@ fn parse_args() -> Args {
         tick_hz,
         storage_delegation,
         wallet_seed,
+        pulse_realm,
     }
 }
 
@@ -440,6 +451,12 @@ fn main() {
         .add_event::<RpcCall>()
         .add_event::<SystemAudio>()
         .add_event::<PermissionUsed>();
+
+    // the orchestrator minted the realm key for this preview, so we announce it rather than
+    // waiting for a scene to load and deriving the same string from its entity id
+    if let Some(realm) = args.pulse_realm.clone() {
+        app.insert_resource(comms::pulse::plugin::PulseRealmOverride(realm));
+    }
 
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
     app.add_systems(Startup, setup.in_set(SetupSets::Init));

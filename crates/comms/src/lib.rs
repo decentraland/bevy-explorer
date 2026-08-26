@@ -700,9 +700,9 @@ impl AdapterManager<'_, '_> {
                     context,
                 });
                 // A ws-room *realm* (the `dcl start` preview server) is a Pulse realm too: avatar
-                // state rides Pulse there just as it does on a livekit realm, with the realm string
-                // qualified by the dev server's machine id so previews on different machines don't
-                // share a partition. A ws-room *scene room* must not touch Pulse, hence the gate.
+                // state rides Pulse there just as it does on a livekit realm, keyed by the preview
+                // scene's entity id so two previews don't share a partition. A ws-room *scene room*
+                // must not touch Pulse, hence the gate.
                 if is_realm_island {
                     self.pulse_events.write(pulse::plugin::StartPulse);
                 }

@@ -250,14 +250,6 @@ impl ContentMap {
     }
 }
 
-/// The dev server's machine id, recovered from one `b64-<base64(`{absolutePath}-{machineId}`)>`
-/// content hash (see @dcl/sdk-commands `b64HashingFunction`, `machineId = os.hostname() ||
-/// os.userInfo().username`). None for a deployed scene (no `b64-` hashes).
-pub fn machine_id_from_b64(file: &str, hash: &str) -> Option<String> {
-    let (_, machine_id) = b64_parts(file, hash)?;
-    (!machine_id.is_empty()).then_some(machine_id)
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum SceneIpfsLocation {
     Hash(String),

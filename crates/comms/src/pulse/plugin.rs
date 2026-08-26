@@ -31,7 +31,8 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use dcl_component::proto_components::pulse;
 use dcl_component::transform_and_parent::DclTranslation;
 use ethers_core::types::Address;
-use ipfs::{machine_id_from_b64, EntityDefinition};
+use ipfs::EntityDefinition;
+use multihash_codetable::MultihashDigest;
 use prost::Message as _;
 use tokio::sync::mpsc;
 use wallet::Wallet;
@@ -47,6 +48,14 @@ use crate::global_crdt::{
 use crate::profile::CurrentUserProfile;
 use crate::{NetworkMessage, Transport, TransportType};
 use bevy::platform::collections::HashMap;
+
+/// Realm to announce verbatim, instead of deriving one from the realm we're in — `--pulse-realm`
+/// on a `--server-mode` engine. The orchestrator that spawns a local-preview server already knows
+/// the LSD realm key (it mints it), so handing it over saves the server deriving it and works
+/// before any scene has loaded. Orchestrated servers don't use this: they host several realms at
+/// once and get one per scene on the `add-scene` command.
+#[derive(Resource)]
+pub struct PulseRealmOverride(pub String);
 
 /// Insert this resource to connect to a Pulse server. Absent → the plugin is fully inert.
 #[derive(Resource, Clone)]
@@ -99,12 +108,15 @@ pub(crate) struct PulseSession {
     /// What this session is on the wire — see [`PulseRole`]. Everything that differs between a
     /// player and a listening server lives in there.
     role: PulseRole,
-    /// The dev server's machine id on a locally served realm. Announced as
-    /// `{realm_name}-{machine_id}-{port}` so previews don't share a Pulse partition — every dev
-    /// server advertises the same `LocalPreview` realm name, the machine id separates two devs, and
-    /// the port separates two servers on one machine. `None` off a local realm, and until a `b64-`
-    /// addressed scene has loaded — `resolve_realm_qualifier` fills it in and re-announces.
-    realm_qualifier: Option<String>,
+    /// The realm announced on a locally served realm: the LSD key derived from the preview scene
+    /// entity id (see [`lsd_realm_key`]), so two `dcl start` previews don't share a Pulse partition
+    /// even though every dev server advertises the same realm name. `None` off a local realm, and
+    /// until a `b64-` addressed scene has loaded — `resolve_lsd_realm` fills it in and re-announces.
+    lsd_realm: Option<String>,
+    /// Realm announced verbatim, from [`PulseRealmOverride`]. A server told which realm it hosts
+    /// derives nothing: it is up before any scene has loaded, and in a local preview the key is
+    /// minted by the orchestrator that spawned it.
+    realm_override: Option<String>,
     /// World ↔ parcel mapping, used to build our own `TeleportRequest`.
     grid: PulseParcelGrid,
     /// Where to (re)connect — kept so we can rebuild the driver without the `PulseConfig` resource.
@@ -414,9 +426,9 @@ impl Plugin for PulsePlugin {
             (
                 connect_pulse,
                 update_listener_aoi,
-                // ahead of `start_pulse`: a realm change clears the qualifier here, so the
+                // ahead of `start_pulse`: a realm change clears the derived key here, so the
                 // re-announce that `start_pulse` may send can't carry the previous realm's one.
-                resolve_realm_qualifier,
+                resolve_lsd_realm,
                 start_pulse,
                 pump_pulse,
                 drain_pulse_outbox,
@@ -501,6 +513,7 @@ fn connect_pulse(
     crdt: Query<&GlobalCrdtState>,
     config: Option<Res<PulseConfig>>,
     session: Option<Res<PulseSession>>,
+    realm_override: Option<Res<PulseRealmOverride>>,
 ) {
     let (Some(config), None) = (config, session) else {
         return;
@@ -537,7 +550,8 @@ fn connect_pulse(
         _driver: None,
         decoder: PulseDecoder::new(config.parcel_grid),
         role,
-        realm_qualifier: None,
+        lsd_realm: None,
+        realm_override: realm_override.map(|announced| announced.0.clone()),
         grid: config.parcel_grid,
         transport_config: config.transport.clone(),
         server_id: config.server_id.clone(),
@@ -1011,7 +1025,7 @@ fn on_handshake_response(
 
 /// Whether the current realm serves scenes off a local `dcl start` dev server, which the preview
 /// server signals by listing the project's parcels in its `about`. Those realms all advertise the
-/// same realm name, so their Pulse partition needs qualifying — see `resolve_realm_qualifier`.
+/// same realm name, so their Pulse partition is keyed differently — see `resolve_lsd_realm`.
 fn is_local_realm(realm: &CurrentRealm) -> bool {
     realm
         .config
@@ -1050,9 +1064,9 @@ fn update_listener_aoi(
         return;
     }
     // The realm for a scene that didn't come with one of its own. On a local preview this is the
-    // machine-qualified name, not the bare `LocalPreview` every dev server advertises — a listener
-    // has to land in the same partition its clients announce. Not a resource, so it is compared
-    // rather than change-detected: `resolve_realm_qualifier` can fill the qualifier in at any time.
+    // LSD key, not the bare realm name every dev server advertises — a listener has to land in the
+    // same partition its clients announce. Not a resource, so it is compared rather than
+    // change-detected: `resolve_lsd_realm` can fill the key in at any time.
     let Some(default_realm) = announced_realm(session, &realm) else {
         return;
     };
@@ -1233,13 +1247,23 @@ fn set_listener_aoi(session: &mut PulseSession, aoi: Vec<pulse::SceneListenerAoi
 
 /// The realm string we announce to Pulse — the partition key every participant must derive
 /// identically (the server compares realms with an ordinal string match). Empty/missing is rejected
-/// by the server, and on a locally served realm it needs qualifying: every `dcl start` preview
-/// advertises the same `LocalPreview` name, so the dev server's machine id separates two devs and
-/// its port separates two servers on one machine. Both are properties of the *server*, so a LAN
-/// preview peer derives the same string — a locally computed machine id would not. `None` until the
-/// realm name is known, and on a local realm until a `b64-` addressed scene has loaded.
+/// by the server. `None` until the realm name is known, and on a locally served realm until a
+/// `b64-` addressed scene has loaded.
 fn announced_realm(session: &PulseSession, realm: &CurrentRealm) -> Option<String> {
-    let realm_name = realm
+    if let Some(announced) = session.realm_override.as_ref() {
+        return Some(announced.clone());
+    }
+
+    if is_local_realm(realm) {
+        // Every `dcl start` dev server advertises the same realm name, so a preview announces the
+        // LSD key derived from the scene it serves instead — see `resolve_lsd_realm`.
+        if session.lsd_realm.is_none() {
+            debug!("pulse: local realm without a preview scene id yet; deferring announce");
+        }
+        return session.lsd_realm.clone();
+    }
+
+    realm
         .config
         .realm_name
         .clone()
@@ -1247,34 +1271,37 @@ fn announced_realm(session: &PulseSession, realm: &CurrentRealm) -> Option<Strin
         .or_else(|| {
             warn!("pulse: no realm name yet (no peers will be visible)");
             None
-        })?;
-
-    if !is_local_realm(realm) {
-        return Some(realm_name);
-    }
-
-    let Some(qualifier) = session.realm_qualifier.as_ref() else {
-        debug!("pulse: local realm without a machine id yet; deferring announce");
-        return None;
-    };
-    Some(
-        match realm
-            .address
-            .parse::<http::Uri>()
-            .ok()
-            .and_then(|url| url.port_u16())
-        {
-            Some(port) => format!("{realm_name}-{qualifier}-{port}"),
-            None => format!("{realm_name}-{qualifier}"),
-        },
-    )
+        })
 }
 
-/// Recover the dev server's machine id from a loaded scene's `b64-` content hashes and cache it on
-/// the session, then re-announce if we already handshook without it. Every client served by one dev
-/// server sees the same hashes, so all of them derive the same qualifier — which is what a machine
-/// id computed locally could not do (a LAN/QR preview peer would compute its own).
-fn resolve_realm_qualifier(
+/// Pulse's `FieldValidator` `MaxRealmLength`.
+const PULSE_MAX_REALM_LENGTH: usize = 255;
+const LSD_REALM_PREFIX: &str = "lsd:";
+const LSD_REALM_HASHED_PREFIX: &str = "lsd:sha256:";
+
+/// The Local Scene Development realm key for a preview scene entity id — the same string
+/// `@dcl/sdk-commands` (`logic/lsd-realm.ts`) mints and unity-explorer derives, byte for byte.
+/// Nothing is exchanged at runtime: every party computes this independently, so an implementation
+/// that drifts doesn't error, its peers just never see it. Over the limit the id is hashed rather
+/// than truncated for the same reason — over the id *including* its `b64-` prefix, lowercase hex.
+fn lsd_realm_key(preview_scene_id: &str) -> String {
+    let key = format!("{LSD_REALM_PREFIX}{preview_scene_id}");
+    if key.len() <= PULSE_MAX_REALM_LENGTH {
+        return key;
+    }
+
+    let digest = multihash_codetable::Code::Sha2_256.digest(preview_scene_id.as_bytes());
+    let hex: String = digest.digest().iter().map(|b| format!("{b:02x}")).collect();
+    format!("{LSD_REALM_HASHED_PREFIX}{hex}")
+}
+
+/// Derive the LSD realm key from a loaded preview scene and cache it on the session, then
+/// re-announce if we already handshook without it. The key comes from the scene's *entity id* —
+/// `b64-<base64(`{projectRoot}-{machineId}`)>`, minted by the dev server and served identically to
+/// every client, so all of them land in the same partition. A locally computed machine id could
+/// not do that (a LAN/QR preview peer would compute its own), and the dev server's port could not
+/// either (it moves when the port is taken).
+fn resolve_lsd_realm(
     session: Option<ResMut<PulseSession>>,
     realm: Res<CurrentRealm>,
     definitions: Res<Assets<EntityDefinition>>,
@@ -1284,25 +1311,36 @@ fn resolve_realm_qualifier(
         return;
     };
     let session = session.into_inner();
-    if realm.is_changed() {
-        session.realm_qualifier = None;
+    if session.realm_override.is_some() {
+        return;
     }
-    if session.realm_qualifier.is_some() || !is_local_realm(&realm) {
+    if realm.is_changed() {
+        session.lsd_realm = None;
+    }
+    if session.lsd_realm.is_some() || !is_local_realm(&realm) {
         return;
     }
 
-    let Some(qualifier) = definitions.iter().find_map(|(_, definition)| {
-        definition
-            .content
-            .values()
-            .find_map(|(file, hash)| machine_id_from_b64(file, hash))
-    }) else {
+    // Smallest rather than first-found: with a workspace serving several projects, two clients
+    // would otherwise key off whichever of them each happened to load first.
+    let Some(preview_scene_id) = definitions
+        .iter()
+        .map(|(_, definition)| definition.id.as_str())
+        .filter(|id| id.starts_with("b64-"))
+        .min()
+    else {
         return;
     };
 
-    info!("pulse: local realm qualified by machine id {qualifier}");
-    session.realm_qualifier = Some(qualifier);
-    if matches!(session.state, Connection::Established) && in_world(&player) {
+    let key = lsd_realm_key(preview_scene_id);
+    info!("pulse: local scene development realm resolved to {key}");
+    session.lsd_realm = Some(key);
+    // A listener has no position to announce and is refused every message but `Resync`; the realm
+    // it just learned reaches the server as an AoI update from `update_listener_aoi` instead.
+    if matches!(session.role, PulseRole::Player(_))
+        && matches!(session.state, Connection::Established)
+        && in_world(&player)
+    {
         send_teleport(session, &realm, &player);
     }
 }
@@ -1453,4 +1491,42 @@ async fn build_auth_chain(wallet: &Wallet, server_id: &str) -> Result<Vec<u8>, S
         serde_json::Value::String("{}".to_owned()),
     );
     serde_json::to_vec(&dict).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lsd_realm_key;
+
+    /// The worked examples published in js-sdk-toolchain's `docs/lsd-identity-and-pulse-realm.md`
+    /// (`machineId = "dev-box"`). No party ever sends this key, so drifting from the CLI that mints
+    /// it and the other explorers that derive it is silent — hence pinning it here.
+    #[test]
+    fn matches_the_published_vectors() {
+        // project root `/home/dev/my-scene`
+        assert_eq!(
+            lsd_realm_key("b64-L2hvbWUvZGV2L215LXNjZW5lLWRldi1ib3g="),
+            "lsd:b64-L2hvbWUvZGV2L215LXNjZW5lLWRldi1ib3g="
+        );
+
+        // project root `/home/dev/` + 200 `a`s — 300 characters raw, so it collapses
+        assert_eq!(
+            lsd_realm_key(
+                "b64-L2hvbWUvZGV2L2FhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhLWRldi1ib3g="
+            ),
+            "lsd:sha256:783635fb50eadaed0300d80104920bfc55894d5ad2ab69ab6b48c6ff1ddb9da5"
+        );
+    }
+
+    /// Hashed strictly past `MaxRealmLength`, never at it — a boundary the server would enforce as
+    /// a disconnect and the other implementations only as invisibility.
+    #[test]
+    fn collapses_only_past_the_limit() {
+        let at_the_limit = format!("b64-{}", "a".repeat(247));
+        assert_eq!(lsd_realm_key(&at_the_limit).len(), 255);
+        assert!(lsd_realm_key(&at_the_limit).ends_with(&at_the_limit));
+
+        let over = format!("b64-{}", "a".repeat(248));
+        assert_eq!(lsd_realm_key(&over).len(), 75);
+        assert!(lsd_realm_key(&over).starts_with("lsd:sha256:"));
+    }
 }
