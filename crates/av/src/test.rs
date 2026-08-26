@@ -990,3 +990,51 @@ fn test_source_change() {
         .clone();
     assert_eq!(video_handle, repeat_video_handle);
 }
+
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
+#[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+fn test_despawn_av_player() {
+    let mut app = min_test_app();
+
+    let renderer_context = app
+        .world_mut()
+        .spawn(RendererSceneContext::new(
+            SceneId::DUMMY,
+            "hash".to_owned(),
+            "storage_root".to_owned(),
+            false,
+            0,
+            "title".to_owned(),
+            IVec2::splat(0),
+            HashSet::from_iter([IVec2::splat(0)]),
+            vec![],
+            vec![],
+            Entity::PLACEHOLDER,
+            0.,
+            false,
+            "sdk_version",
+            false,
+            false,
+        ))
+        .id();
+
+    let video_player = app
+        .world_mut()
+        .spawn((
+            VideoPlayer(PbVideoPlayer {
+                src: EXAMPLE_VIDEO.to_owned(),
+                ..Default::default()
+            }),
+            ContainerEntity {
+                container: renderer_context,
+                root: renderer_context,
+                container_id: SceneEntityId::new(0, 0),
+            },
+            InScene,
+            ShouldBePlaying::<VideoPlayer>::default(),
+        ))
+        .id();
+
+    app.world_mut().entity_mut(video_player).despawn();
+}

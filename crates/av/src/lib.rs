@@ -451,6 +451,7 @@ fn av_player_on_insert<T: AVPlayer>(
     mut commands: Commands,
     mut av_players: Query<(
         &T,
+        &ContainerEntity,
         Option<&T::Source>,
         Option<&T::Config>,
         Option<&T::Position>,
@@ -458,14 +459,13 @@ fn av_player_on_insert<T: AVPlayer>(
 ) {
     let entity = trigger.target();
     debug!("{} {} updated.", disqualified::ShortName::of::<T>(), entity);
-    let Ok((av_player, maybe_source, mut maybe_config, mut maybe_position)) =
+    let Ok((av_player, container_entity, maybe_source, mut maybe_config, mut maybe_position)) =
         av_players.get_mut(entity)
     else {
         return;
     };
 
     let source_url = av_player.url();
-    let mut entity_cmd = commands.entity(entity);
 
     if maybe_source.is_none_or(|src| &(**src) != source_url) {
         debug!(
@@ -475,7 +475,9 @@ fn av_player_on_insert<T: AVPlayer>(
         );
 
         let new_source = av_player.source();
-        entity_cmd.insert(new_source).trigger(SetState::<T> {
+        commands.entity(entity).insert(new_source);
+        commands.trigger(SetState::<T> {
+            entity: *container_entity,
             state: VideoState::VsLoading,
             _phantom: PhantomData,
         });
@@ -491,7 +493,7 @@ fn av_player_on_insert<T: AVPlayer>(
             entity,
             disqualified::ShortName::of::<T::Config>(),
         );
-        entity_cmd.insert(new_config);
+        commands.entity(entity).insert(new_config);
     }
 
     let new_position = av_player.position();
@@ -501,11 +503,15 @@ fn av_player_on_insert<T: AVPlayer>(
             entity,
             disqualified::ShortName::of::<T::Source>(),
         );
-        entity_cmd.insert(new_position);
+        commands.entity(entity).insert(new_position);
     }
 }
 
-fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands: Commands) {
+fn av_player_on_remove<T: AVPlayer>(
+    trigger: Trigger<OnRemove, T>,
+    mut commands: Commands,
+    av_players: Query<&ContainerEntity, With<T>>,
+) {
     let entity = trigger.target();
     commands.entity(entity).try_remove::<(
         T::Source,
@@ -518,7 +524,12 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
     #[cfg(feature = "ffmpeg")]
     commands.entity(entity).try_remove::<AVSinks<T>>();
 
-    commands.entity(entity).trigger(SetState::<T> {
+    let Ok(container_entity) = av_players.get(entity) else {
+        return;
+    };
+
+    commands.trigger(SetState::<T> {
+        entity: *container_entity,
         state: VideoState::VsNone,
         _phantom: PhantomData,
     });
@@ -770,15 +781,16 @@ fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut command
 
 fn receiver_image_updated(
     mut commands: Commands,
-    av_players: Query<(Entity, &mut VideoTextureOutput)>,
+    av_players: Query<(Entity, &ContainerEntity, &mut VideoTextureOutput)>,
     mut transmission_updated: EventReader<TransmissionUpdated>,
 ) {
     if transmission_updated.read().count() > 0 {
-        for (entity, mut video_texture_output) in av_players {
+        for (entity, container_entity, mut video_texture_output) in av_players {
             debug!("ReceiverImage of {entity} was updated.");
             video_texture_output.set_changed();
 
-            commands.entity(entity).trigger(SetState::<VideoPlayer> {
+            commands.trigger(SetState::<VideoPlayer> {
+                entity: *container_entity,
                 state: VideoState::VsPlaying,
                 _phantom: PhantomData,
             });
@@ -788,22 +800,21 @@ fn receiver_image_updated(
 
 #[derive(Event)]
 struct SetState<T: AVPlayer> {
+    entity: ContainerEntity,
     state: VideoState,
     _phantom: PhantomData<T>,
 }
 
 fn set_state<T: AVPlayer>(
     trigger: Trigger<SetState<T>>,
-    av_players: Query<&ContainerEntity, With<T>>,
     mut renderer_context: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {
-    let entity = trigger.target();
-    let event = trigger.event();
-    let Ok(container_entity) = av_players.get(entity) else {
-        error!("Trying to set state for an entity that is not part of a scene.");
-        return;
-    };
+    let SetState {
+        entity: container_entity,
+        state,
+        _phantom,
+    } = trigger.event();
 
     let Ok(mut context) = renderer_context.get_mut(container_entity.root) else {
         return;
@@ -820,7 +831,7 @@ fn set_state<T: AVPlayer>(
                 tick_number,
                 current_offset: 0.,
                 video_length: 0.,
-                state: event.state as i32,
+                state: *state as i32,
             },
         );
     } else {
@@ -830,7 +841,7 @@ fn set_state<T: AVPlayer>(
             container_entity.container_id,
             &PbAudioEvent {
                 timestamp: frame.0,
-                state: event.state as i32,
+                state: *state as i32,
             },
         );
     }
