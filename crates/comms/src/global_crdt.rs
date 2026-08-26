@@ -1191,6 +1191,10 @@ fn remove_context_players(
     let context = trigger.target();
     for (entity, player) in players.iter() {
         if player.context == context {
+            info!(
+                "removing player {:#x} with despawned context {context}",
+                player.address
+            );
             commands.entity(entity).try_despawn();
         }
     }

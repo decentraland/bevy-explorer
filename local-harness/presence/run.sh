@@ -285,6 +285,19 @@ DCL_SCENE_ROOM_ADAPTER="livekit:${LK_URL}?access_token=${TOK_SCENE_C}" \
   >"$LOGS/obsC.log" 2>&1 & PIDS+=($!)
 sleep 12
 
+# ---- remove-scene: the scene's transports go, and its players with them ----
+# Client B is still connected, so its player entity on the server is held up by exactly two
+# transports: scene B's room, despawned by remove-scene itself, and the Pulse transport for
+# scene B's crdt context, which goes when the scene's parcels leave the loaded definitions.
+# Those are different triggers, and a leak in either leaves the player with a non-empty
+# transport set — alive in a scene that no longer exists.
+say "removing scene B (expect its player to go with it)..."
+printf '%s\n' "{\"type\":\"remove-scene\",\"sceneId\":\"$SCENE_B\"}" >&8
+for _ in $(seq 1 30); do
+  grep -a "removing player" "$LOGS/server.log" | grep -q "$ADDR_B" && break
+  sleep 1
+done
+
 # extra drain before shutdown: client A's leave detection (reconnect grace, see above)
 # must complete before the server exits
 sleep 4
@@ -405,6 +418,21 @@ grep -a '"type":"scene-failed"' "$LOGS/server.log" | grep -q "$SCENE_D"
 check "adapterless scene D emits scene-failed" $?
 grep -aq "scene-live\".*\"$SCENE_D\"\|\"$SCENE_D\".*scene-live" "$LOGS/server.log"
 check "adapterless scene D never goes live" $(neg $?)
+
+# 9. remove-scene — the scene is torn down and the players it was carrying go with it,
+# rather than being stranded in a context nothing hosts any more. Client B is still
+# connected at this point, so its player entity is genuinely live until the teardown takes
+# it. The listener side must let go too: its announced AoI drops back to scene A's realm
+# alone, which is what stops the server observing parcels it no longer hosts.
+# Scene A is the control — it was never removed, so nothing may have swept it up.
+grep -a '"type":"scene-removed"' "$LOGS/server.log" | grep -q "$SCENE_B"
+check "remove-scene emits scene-removed for scene B" $?
+grep -a "removing player" "$LOGS/server.log" | grep -q "$ADDR_B"
+check "removing scene B despawned its player" $?
+grep -a "scene-listener AoI update sent" "$LOGS/server.log" | tail -1 | grep -q "1 realms"
+check "removing scene B shrank the listener AoI to one realm" $?
+grep -a '"type":"scene-removed"' "$LOGS/server.log" | grep -q "$SCENE_A"
+check "scene A was not removed" $(neg $?)
 
 echo
 if [ $FAIL = 0 ]; then printf '\033[1;32m==== ALL PASS ====\033[0m\n'

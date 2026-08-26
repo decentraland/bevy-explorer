@@ -60,6 +60,13 @@ line to the right scene.
 4. Client-regression: a non-orchestrated observer sharing a room with a peer still sees
    that peer through the single shared context — roster and profile over LiveKit, position
    over Pulse.
+5. `remove-scene` tears a scene down and takes its players with it, rather than stranding
+   them in a context nothing hosts. Client B is still connected when scene B is removed, so
+   its player entity is genuinely live until the teardown reaches it. The listener side has
+   to let go too: its announced AoI drops back to scene A's realm alone. Scene A is the
+   control — it was never removed. Note the players go via `remove_context_players` (the
+   crdt context is reaped once the scene releases it), *not* via the transport-emptied path
+   in `despawn_players`; asserting on the wrong one of those two looks exactly like a leak.
 
 Transform assertions match within one Pulse quantization step (0.0625m) rather than
 exactly. That tolerance is also a signal: a scene-A/B transform arrives over LiveKit as raw
