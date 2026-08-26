@@ -14,15 +14,16 @@ KEEP=1 ./run.sh     # leave livekit/server/clients up and logs in .work/logs for
 Requires `livekit-server` on PATH (`brew install livekit`) and `python3`. Builds the
 engine itself, so the first run is slow; artifacts are cached after.
 
-Also needs a reachable **Pulse** server, because client avatar state rides Pulse rather
-than LiveKit — without one the two regression peers never see each other's positions.
-Defaults to the shared dev endpoint `pulse-server.decentraland.zone:7777`, resolved once
-and pinned so both peers land on the same instance; each run therefore puts two
-short-lived synthetic players on that dev service (in realm `harness-c`). Override with
-`PULSE_SERVER=host:port`. A *local* server only works on Linux: bevy's native ENet client
-cannot reach one running on macOS (the mac `libenet.dylib` drops the CONNECT before it
-reaches the C# layer). The orchestrated server never joins Pulse at all — it ingests its
-clients' avatar state from their LiveKit scene rooms, addressed to `authoritative-server`.
+Also needs a reachable **Pulse** server, because avatar state rides Pulse alone: the
+synthetic clients announce their positions on it, and the orchestrated server ingests them
+from it as a *scene listener* (one AoI entry per hosted realm) rather than from the LiveKit
+scene rooms — without one nobody sees anybody's position. Defaults to the shared dev
+endpoint `pulse-server.decentraland.zone:7777`, resolved once and pinned so every peer
+lands on the same instance; each run therefore puts a handful of short-lived synthetic
+players and one listener on that dev service. Override with `PULSE_SERVER=host:port` — a
+local server (`127.0.0.1:7777`) works on macOS as well as Linux. Start a local one with
+`Transport__PeerTimeoutMs=8000`: its development default is 300s, which parks the
+leave assertions past the end of the run.
 
 ## What it stands up
 
@@ -31,8 +32,9 @@ clients' avatar state from their LiveKit scene rooms, addressed to `authoritativ
   shared `game.js`, and one realm `about` per engine instance. Answers the
   `entities/active` pointer query with `[]` so synthetic clients load no scene of their own.
 - **Orchestrated server** — `headless --orchestrated`, fed two `add-scene` commands on
-  stdin, each with a pre-minted `livekit:` adapter for a distinct room. One
-  `GlobalCrdtState` context per room.
+  stdin, each with a pre-minted `livekit:` adapter for a distinct room and the `realm` the
+  scene belongs to. One `GlobalCrdtState` context per room; one Pulse scene-listener
+  connection announcing both realms' parcels, demuxed into those contexts by (realm, parcel).
 - **Synthetic clients** — `headless` in client mode (`--realm-comms --no-scene-room
   --wallet-seed N`). A client-mode headless *is* a synthetic player: it broadcasts
   position/profile into whatever room its realm's `about.comms.fixedAdapter` points at.
@@ -69,9 +71,9 @@ line to the right scene.
    in `despawn_players`; asserting on the wrong one of those two looks exactly like a leak.
 
 Transform assertions match within one Pulse quantization step (0.0625m) rather than
-exactly. That tolerance is also a signal: a scene-A/B transform arrives over LiveKit as raw
-floats and reads exactly `[8,0,8]`, while scene C's arrives over Pulse and reads `[8.031,
-0, 8.031]` — the centre of its quantization box. Both paths are live and distinguishable.
+exactly: every transform arrives over Pulse — the server's via its listener, the observer's
+via its own player session — and reads `[8.031, 0, 8.031]`, the centre of the spawn
+parcel's quantization box, not the raw `[8,0,8]` the client broadcast.
 
 ## Notes
 
