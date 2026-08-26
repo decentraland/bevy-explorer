@@ -43,7 +43,10 @@ function injectEngine(): void {
   window.__bevyBootConfig = {
     systemScene: bootMode().systemScene ?? SYSTEM_SCENE,
     portables: params.get('portables') ?? undefined,
-    preview: params.has('preview')
+    preview: params.has('preview'),
+    // host:port of the Pulse server the engine joins (WebTransport port); a zone deploy points
+    // it at the zone server. Absent = the engine's built-in production default.
+    pulseServer: params.get('pulseServer') ?? undefined
   }
 
   for (const src of CDN_LIBS) {
@@ -61,7 +64,7 @@ function injectEngine(): void {
 declare global {
   interface Window {
     PUBLIC_URL?: string
-    __bevyBootConfig?: { systemScene?: string; portables?: string; preview?: boolean }
+    __bevyBootConfig?: { systemScene?: string; portables?: string; preview?: boolean; pulseServer?: string }
   }
 }
 

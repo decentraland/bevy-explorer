@@ -84,6 +84,8 @@ struct Args {
     /// Pulse realm to announce verbatim; `--server-mode` only. Orchestrated servers host several
     /// realms at once and take one per scene on `add-scene` instead.
     pulse_realm: Option<String>,
+    /// Pulse server as `host:port`; the orchestrator passes its deployment's (zone or prod)
+    pulse_server: Option<String>,
 }
 
 fn parse_args() -> Args {
@@ -127,6 +129,7 @@ fn parse_args() -> Args {
         .or_else(|| std::env::var("PROCESS_STORAGE_DELEGATION").ok());
     let wallet_seed: Option<u64> = args.value_from_str("--wallet-seed").ok();
     let pulse_realm: Option<String> = args.value_from_str("--pulse-realm").ok();
+    let pulse_server: Option<String> = args.value_from_str("--pulse-server").ok();
     if pulse_realm.is_some() && orchestrated {
         eprintln!(
             "--pulse-realm is a --server-mode flag; orchestrated scenes carry their own realm"
@@ -145,6 +148,7 @@ fn parse_args() -> Args {
         storage_delegation,
         wallet_seed,
         pulse_realm,
+        pulse_server,
     }
 }
 
@@ -456,6 +460,9 @@ fn main() {
     // waiting for a scene to load and deriving the same string from its entity id
     if let Some(realm) = args.pulse_realm.clone() {
         app.insert_resource(comms::pulse::plugin::PulseRealmOverride(realm));
+    }
+    if let Some(endpoint) = args.pulse_server.clone() {
+        app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(endpoint));
     }
 
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));

@@ -57,6 +57,14 @@ use bevy::platform::collections::HashMap;
 #[derive(Resource)]
 pub struct PulseRealmOverride(pub String);
 
+/// Which Pulse server to connect to, `host:port`, stated at startup — `--pulse-server` on native
+/// and the headless server, `?pulseServer=` on web. Wins over the `PULSE_SERVER` env var and the
+/// built-in default. Zone and prod are separate Pulse servers with identical realm names, so a
+/// zone deployment must be told to use the zone server or its players land among prod's; the
+/// realm a client is on is deliberately not used to infer it.
+#[derive(Resource)]
+pub struct PulseEndpointOverride(pub String);
+
 /// Insert this resource to connect to a Pulse server. Absent → the plugin is fully inert.
 #[derive(Resource, Clone)]
 pub struct PulseConfig {
@@ -500,18 +508,24 @@ fn dev_cert_hash() -> Option<Vec<u8>> {
 }
 
 /// Insert the [`PulseConfig`] that activates the transport, on clients and servers alike — a server
-/// joins as a scene listener rather than a subject (see [`ListenerRole`]). Targets
-/// [`DEFAULT_PULSE_SERVER`] unless `PULSE_SERVER` overrides it. The grid is the Decentraland
-/// Genesis City `ParcelEncoder` from the server's appsettings ([`PulseParcelGrid::default`]).
-fn configure_pulse(mut commands: Commands) {
-    let endpoint =
-        std::env::var("PULSE_SERVER").unwrap_or_else(|_| DEFAULT_PULSE_SERVER.to_owned());
+/// joins as a scene listener rather than a subject (see [`ListenerRole`]). Targets, in order of
+/// precedence, [`PulseEndpointOverride`] (a startup param), the `PULSE_SERVER` env var, then
+/// [`DEFAULT_PULSE_SERVER`]. The grid is the Decentraland Genesis City `ParcelEncoder` from the
+/// server's appsettings ([`PulseParcelGrid::default`]).
+fn configure_pulse(mut commands: Commands, endpoint: Option<Res<PulseEndpointOverride>>) {
+    let (endpoint, source) = match endpoint {
+        Some(endpoint) => (endpoint.0.clone(), "startup param"),
+        None => match std::env::var("PULSE_SERVER") {
+            Ok(endpoint) => (endpoint, "PULSE_SERVER"),
+            Err(_) => (DEFAULT_PULSE_SERVER.to_owned(), "default"),
+        },
+    };
     let Some((host, port)) = endpoint.rsplit_once(':') else {
-        warn!("pulse: PULSE_SERVER must be host:port, got {endpoint:?}");
+        warn!("pulse: server endpoint must be host:port, got {endpoint:?} ({source})");
         return;
     };
     let Ok(port) = port.parse::<u16>() else {
-        warn!("pulse: invalid port in PULSE_SERVER={endpoint:?}");
+        warn!("pulse: invalid port in server endpoint {endpoint:?} ({source})");
         return;
     };
     commands.insert_resource(PulseConfig {
@@ -523,7 +537,7 @@ fn configure_pulse(mut commands: Commands) {
         parcel_grid: PulseParcelGrid::default(),
         server_id: String::new(),
     });
-    info!("pulse: configured for {endpoint}");
+    info!("pulse: configured for {endpoint} ({source})");
 }
 
 /// Build a fresh driver + its protocol-side link for `config`. `presence` is a weak handle to the
@@ -1624,7 +1638,39 @@ async fn build_auth_chain(wallet: &Wallet, server_id: &str) -> Result<Vec<u8>, S
 
 #[cfg(test)]
 mod tests {
-    use super::lsd_realm_key;
+    use super::{
+        configure_pulse, lsd_realm_key, PulseConfig, PulseEndpointOverride, DEFAULT_PULSE_SERVER,
+    };
+    use bevy::prelude::*;
+
+    /// The endpoint `configure_pulse` settles on for a given override / env pair.
+    fn configured_endpoint(startup: Option<&str>, env: Option<&str>) -> String {
+        match env {
+            Some(env) => std::env::set_var("PULSE_SERVER", env),
+            None => std::env::remove_var("PULSE_SERVER"),
+        }
+        let mut app = App::new();
+        if let Some(startup) = startup {
+            app.insert_resource(PulseEndpointOverride(startup.to_owned()));
+        }
+        app.add_systems(Startup, configure_pulse);
+        app.update();
+        let config = app.world().resource::<PulseConfig>();
+        format!("{}:{}", config.transport.host, config.transport.port)
+    }
+
+    /// A startup param beats the env var beats the built-in default. One test rather than three
+    /// because the env var is process-wide: parallel tests would race on it.
+    #[test]
+    fn endpoint_precedence() {
+        assert_eq!(
+            configured_endpoint(Some("startup:1"), Some("env:2")),
+            "startup:1"
+        );
+        assert_eq!(configured_endpoint(None, Some("env:2")), "env:2");
+        assert_eq!(configured_endpoint(None, None), DEFAULT_PULSE_SERVER);
+        std::env::remove_var("PULSE_SERVER");
+    }
 
     /// The worked examples published in js-sdk-toolchain's `docs/lsd-identity-and-pulse-realm.md`
     /// (`machineId = "dev-box"`). No party ever sends this key, so drifting from the CLI that mints
