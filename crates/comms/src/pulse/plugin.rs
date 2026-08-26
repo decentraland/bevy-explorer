@@ -96,6 +96,12 @@ enum Connection {
 const RETRY_COOLDOWN_SECS: f64 = 2.0;
 /// How long to wait for the server's `HandshakeResponse` before assuming it was lost and retrying.
 const HANDSHAKE_RESPONSE_TIMEOUT_SECS: f64 = 5.0;
+/// Minimum spacing between a listener's `SceneListenerUpdate`s. An update rides the server's
+/// discrete-event bucket (20/s sustained, 16 burst) and overrunning it is a terminal disconnect,
+/// while a busy server's scene set changes many frames in a row — an orchestrator re-adding every
+/// scene after an engine restart, a scene reloading. So updates are coalesced: whatever the set is
+/// when the interval elapses is what goes out, never one per change.
+const AOI_UPDATE_MIN_INTERVAL_SECS: f64 = 1.0;
 
 #[derive(Resource)]
 pub(crate) struct PulseSession {
@@ -197,11 +203,17 @@ struct ListenerRole {
     /// well as parcel because a parcel index only means something inside one: every world numbers
     /// its parcels from 0,0, so a server cohosting two worlds has two different scenes at `0,0`.
     transport_by_parcel: HashMap<String, HashMap<IVec2, Entity>>,
-    /// Announced AoI: one entry per hosted realm, its parcels consolidated into one rect per
-    /// contiguous rectangular block ([`scene_regions`]). The rects tile each realm's parcel set
+    /// The AoI we want observed: one entry per hosted realm, its parcels consolidated into one rect
+    /// per contiguous rectangular block ([`scene_regions`]). The rects tile each realm's parcel set
     /// exactly — no overlap, no over-coverage — so consolidating them is purely a wire-size win
     /// against the server's Σ-area budget.
     aoi: Vec<pulse::SceneListenerAoi>,
+    /// The AoI the server holds: what the handshake carried, then what the last update carried.
+    /// `flush_listener_aoi` sends an update whenever `aoi` differs from this, so a change is never
+    /// lost — only deferred — however many frames it took to settle.
+    announced: Vec<pulse::SceneListenerAoi>,
+    /// Earliest time the next update may go out — see [`AOI_UPDATE_MIN_INTERVAL_SECS`].
+    next_update_at: f64,
     /// The transport each peer was last routed to, so moving between scenes reports a departure on
     /// the one it left. Pulse gives us positions, not scene membership; this turns the one into the
     /// other. Never pruned: an entry for a despawned transport simply stops resolving, and the
@@ -435,7 +447,6 @@ impl Plugin for PulsePlugin {
             Update,
             (
                 connect_pulse,
-                update_listener_aoi,
                 // ahead of `start_pulse`: a realm change clears the derived key here, so the
                 // re-announce that `start_pulse` may send can't carry the previous realm's one.
                 resolve_lsd_realm,
@@ -445,6 +456,18 @@ impl Plugin for PulsePlugin {
             )
                 .chain(),
         );
+        // Only a server listens, so only a server pays for keeping the listener's routing in step
+        // with its scenes — a client has no server contexts to route to and would sweep every
+        // entity definition it loads for nothing. Latched by the headless binary before the app
+        // is built, so it is fixed by the time this runs.
+        if common::structs::server_mode() {
+            app.add_systems(
+                Update,
+                update_listener_aoi
+                    .after(connect_pulse)
+                    .before(resolve_lsd_realm),
+            );
+        }
         app.add_systems(Update, pulse_teleport_on_local_move);
     }
 }
@@ -729,6 +752,7 @@ fn pump_pulse(
     drain_status(session, now);
     drive_connection(session, &wallet, profile_version, now);
     drain_inbound(session, &sinks, &realm, &player, in_world, now);
+    flush_listener_aoi(session, now);
 }
 
 /// Drain the driver's status channel into the connection state machine. `link`'s borrow ends at
@@ -794,6 +818,13 @@ fn drive_connection(session: &mut PulseSession, wallet: &Wallet, profile_version
             let Some(announcement) = session.role.announcement(profile_version) else {
                 return;
             };
+            // What the handshake carries is what the server will hold once it is accepted; a
+            // change that lands while it is in flight goes out as an update afterwards.
+            if let (Announcement::Listener { aoi }, Some(listener)) =
+                (&announcement, session.role.listener_mut())
+            {
+                listener.announced = aoi.clone();
+            }
             let wallet = wallet.clone();
             let server_id = session.server_id.clone();
             let task = IoTaskPool::get()
@@ -1046,7 +1077,7 @@ fn is_local_realm(realm: &CurrentRealm) -> bool {
 
 /// Keep a listening server's routing in step with the scenes it hosts: which context owns each
 /// hosted parcel, a Pulse `Transport` per context, and the AoI the whole lot adds up to.
-/// Client-side this never runs (no listener, no server contexts).
+/// Registered in server mode only — a client has no listener and no server contexts.
 #[allow(clippy::too_many_arguments)]
 fn update_listener_aoi(
     mut commands: Commands,
@@ -1214,10 +1245,9 @@ fn update_listener_aoi(
     set_listener_aoi(session, aoi);
 }
 
-/// Announce a new AoI: store it, and on a live connection tell the server about it.
-///
-/// The set is the announcement — before the handshake it just decides what the handshake carries,
-/// and whether there is anything to connect for at all.
+/// Record the AoI we want observed. Before the handshake it decides what the handshake carries,
+/// and whether there is anything to connect for at all; afterwards `flush_listener_aoi` tells the
+/// server, on its own schedule.
 fn set_listener_aoi(session: &mut PulseSession, aoi: Vec<pulse::SceneListenerAoi>) {
     let Some(listener) = session.role.listener_mut() else {
         return;
@@ -1225,33 +1255,46 @@ fn set_listener_aoi(session: &mut PulseSession, aoi: Vec<pulse::SceneListenerAoi
     if listener.aoi == aoi {
         return;
     }
-
     listener.aoi = aoi;
     // An empty set is not announceable — the server rejects a `SceneListenerUpdate` with no rects
     // and disconnects, and there is nothing to connect for either. On a live server it is also
     // nearly always momentary: a scene reload drops the old entity definition a frame before the
     // new one lands. So hold the last announced AoI and wait for the next non-empty one rather
-    // than cycling the connection over a reload.
-    let announced = (!listener.aoi.is_empty()).then(|| listener.aoi.clone());
-    // `drive_connection` stays idle until there is something to observe.
-    session.wanted = announced.is_some();
+    // than cycling the connection over a reload. `drive_connection` stays idle until there is
+    // something to observe.
+    session.wanted = !listener.aoi.is_empty();
+}
 
-    // Before the handshake there is nothing to update: the set we just stored is what it will
-    // announce. Afterwards the connection stays up and the server swaps the AoI in place, which
-    // costs no re-authentication and no gap in the positional stream.
-    let (Some(aoi), Some(link), Connection::Established) =
-        (announced, session.link.as_ref(), &session.state)
-    else {
+/// Bring the server's AoI up to date with ours: one `SceneListenerUpdate` carrying the current set
+/// whenever it differs from the announced one, no sooner than [`AOI_UPDATE_MIN_INTERVAL_SECS`]
+/// after the last. A run of changes inside one interval collapses into a single update of the
+/// final set. The connection stays up and the server swaps the AoI in place, which costs no
+/// re-authentication and no gap in the positional stream.
+fn flush_listener_aoi(session: &mut PulseSession, now: f64) {
+    let (Some(link), Connection::Established) = (session.link.as_ref(), &session.state) else {
         return;
     };
+    let Some(listener) = session.role.listener_mut() else {
+        return;
+    };
+    if listener.aoi.is_empty()
+        || listener.aoi == listener.announced
+        || now < listener.next_update_at
+    {
+        return;
+    }
 
+    listener.announced = listener.aoi.clone();
+    listener.next_update_at = now + AOI_UPDATE_MIN_INTERVAL_SECS;
     info!(
         "pulse: scene-listener AoI update sent ({})",
-        describe_aoi(&aoi)
+        describe_aoi(&listener.announced)
     );
     let message = pulse::ClientMessage {
         message: Some(pulse::client_message::Message::SceneListenerUpdate(
-            pulse::SceneListenerUpdate { aoi },
+            pulse::SceneListenerUpdate {
+                aoi: listener.announced.clone(),
+            },
         )),
     };
     let _ = link.outbound.try_send(PulseFrame {
