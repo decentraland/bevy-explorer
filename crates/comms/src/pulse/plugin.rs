@@ -23,6 +23,7 @@ use std::sync::{Arc, Weak};
 use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 use common::{
+    bounds_calc::scene_regions,
     structs::{CurrentRealm, OutOfWorld, PlayerTeleported, PrimaryUser},
     util::{TaskCompat, TaskExt},
 };
@@ -30,6 +31,7 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use dcl_component::proto_components::pulse;
 use dcl_component::transform_and_parent::DclTranslation;
 use ethers_core::types::Address;
+use ipfs::{machine_id_from_b64, EntityDefinition};
 use prost::Message as _;
 use tokio::sync::mpsc;
 use wallet::Wallet;
@@ -40,10 +42,11 @@ use super::transport::{
 };
 use super::{PulseCtx, PulseDecoder, PulseEvent, PulseParcelGrid};
 use crate::global_crdt::{
-    CrdtContexts, GlobalCrdtState, NetworkUpdate, PlayerMessage, PlayerUpdate,
+    CrdtContexts, GlobalCrdtState, NetworkUpdate, PlayerMessage, PlayerUpdate, SceneRealms,
 };
 use crate::profile::CurrentUserProfile;
 use crate::{NetworkMessage, Transport, TransportType};
+use bevy::platform::collections::HashMap;
 
 /// Insert this resource to connect to a Pulse server. Absent → the plugin is fully inert.
 #[derive(Resource, Clone)]
@@ -93,9 +96,9 @@ pub(crate) struct PulseSession {
     /// every (re)connect — this is the "machinery" we reinitialise when the pipe closes.
     _driver: Option<PulseDriverHandle>,
     decoder: PulseDecoder,
-    /// The crdt context this session feeds. Pulse is the *realm's* avatar-state transport, so on a
-    /// client that is always the shared context. A multi-tenant server has one context per scene
-    /// room and stays on LiveKit for now — see the module docs.
+    /// The crdt context this session feeds on a client: Pulse is the *realm's* avatar-state
+    /// transport, so that is always the shared context. Unused by a listening server, which routes
+    /// per context instead — see [`ListenerAoi`].
     context: Entity,
     /// Sink into `context`'s foreign-player pipeline — the same channel every transport feeds.
     sender: mpsc::Sender<NetworkUpdate>,
@@ -110,19 +113,35 @@ pub(crate) struct PulseSession {
     /// The realm `routing_transport` was spawned for. `StartPulse` also fires for archipelago
     /// island hops within one realm, and those must NOT rebuild the transport — see `start_pulse`.
     routing_realm: Option<String>,
+    /// The dev server's machine id on a locally served realm. Announced as
+    /// `{realm_name}-{machine_id}-{port}` so previews don't share a Pulse partition — every dev
+    /// server advertises the same `LocalPreview` realm name, the machine id separates two devs, and
+    /// the port separates two servers on one machine. `None` off a local realm, and until a `b64-`
+    /// addressed scene has loaded — `resolve_realm_qualifier` fills it in and re-announces.
+    realm_qualifier: Option<String>,
     /// World ↔ parcel mapping, used to build our own `TeleportRequest`.
     grid: PulseParcelGrid,
     /// Where to (re)connect — kept so we can rebuild the driver without the `PulseConfig` resource.
     transport_config: PulseTransportConfig,
     /// Server instance id, folded into the connect signature (re-signed on each attempt).
     server_id: String,
-    /// Latched true once we first enter a livekit (Pulse) realm. Gates the driver bring-up so we
+    /// Latched true once we first enter a Pulse realm. Gates the driver bring-up so we
     /// don't dial out until needed, then stays set so the connection is kept alive across non-Pulse
     /// realms (we simply stop sending to it there — the routing entity is gone).
     wanted: bool,
     /// Last `PlayerState` we sent, cached by movement's `Broadcast::to_pulse`. An outbound
     /// `EmoteStart` attaches this — the server rejects an emote with a null `player_state`.
     last_state: Option<pulse::PlayerState>,
+    /// Set on an authoritative server: the engine joins Pulse as a receive-only *scene listener*
+    /// over a parcel-rect AoI instead of as a subject, and demuxes what it receives into the
+    /// per-scene crdt contexts. `None` on a client.
+    listener: Option<ListenerAoi>,
+    /// A listener's own strong clone of [`PulseSession::liveness`]. A listener's connection is
+    /// governed by its AoI, not by any one transport entity — its per-context transports come and go
+    /// with the scenes — so the anchor lives with the session for as long as the session does,
+    /// rather than with a routing entity it doesn't have.
+    #[expect(dead_code)]
+    listener_anchor: Option<Arc<()>>,
     /// Liveness anchor for the realm's Pulse routing entity. The routing entity holds a strong clone
     /// (`PulsePresence`) while it exists; the driver holds a `Weak` and surfaces inbound only while
     /// `strong_count() > 1`. Lives here (not on the entity) so reconnects, which rebuild the driver,
@@ -131,15 +150,110 @@ pub(crate) struct PulseSession {
     state: Connection,
 }
 
+/// A scene listener's view of the world it hosts: which crdt context owns each parcel, the AoI those
+/// parcels add up to, and the per-context plumbing inbound state is routed through.
+///
+/// The AoI is announced in the handshake and reassigned afterwards with `SceneListenerUpdate`, the
+/// one post-auth message a listener may send besides `Resync`. The server swaps the set in place, so
+/// the connection, identity and realm all survive a change — see [`set_listener_aoi`].
+#[derive(Default)]
+struct ListenerAoi {
+    /// Realm → hosted parcel → the crdt context whose scene covers it. Pulse reports *where* a peer
+    /// is; this is what makes that *whose scene* it is in. Keyed by realm as well as parcel because
+    /// a parcel index only means something inside one: every world numbers its parcels from 0,0, so
+    /// a server cohosting two worlds has two different scenes at `0,0`. Also the change key:
+    /// rebuilding everything below is driven off this map differing from the last frame's.
+    context_by_parcel: HashMap<String, HashMap<IVec2, Entity>>,
+    /// Per crdt context: the routing `Transport` its Pulse state is attributed to, and its inbound
+    /// channel.
+    contexts: HashMap<Entity, ListenerContext>,
+    /// Announced AoI: one entry per hosted realm, its parcels consolidated into one rect per
+    /// contiguous rectangular block ([`scene_regions`]). The rects tile each realm's parcel set
+    /// exactly — no overlap, no over-coverage — so consolidating them is purely a wire-size win
+    /// against the server's Σ-area budget.
+    aoi: Vec<pulse::SceneListenerAoi>,
+    /// The context each peer was last routed to, so moving between scenes reports a departure from
+    /// the one it left. Pulse gives us positions, not scene membership; this turns the one into the
+    /// other.
+    peer_context: HashMap<Address, Entity>,
+}
+
+/// One crdt context's end of a listener's routing: the `Transport` entity that owns the context's
+/// Pulse presence and the channel its updates go down.
+struct ListenerContext {
+    transport: Entity,
+    sender: mpsc::Sender<NetworkUpdate>,
+}
+
 impl PulseSession {
-    /// Forward an inbound Pulse update into this session's crdt context, attributed to the realm's
-    /// routing transport. Dropped when there is no routing transport — we're off a Pulse realm, and
-    /// a straggling packet must not resurrect a peer whose transport is already gone.
+    /// Forward an inbound Pulse update for a peer standing in `parcel` of `realm`, re-homing it
+    /// first if that lands in a different scene than the one it was last routed to. A peer that has
+    /// left every hosted parcel is reported as departed and its state dropped.
+    ///
+    /// On a client the position is irrelevant — the realm is the AoI — so this is just
+    /// [`Self::forward`].
+    fn forward_at(&mut self, address: Address, realm: &str, parcel: IVec2, message: PlayerMessage) {
+        if let Some(listener) = self.listener.as_mut() {
+            let context = listener
+                .context_by_parcel
+                .get(realm)
+                .and_then(|parcels| parcels.get(&parcel))
+                .copied();
+
+            // Moving between scenes (or out of all of them) is a departure from the previous one:
+            // Pulse presence is per context, so the context it left has to be told.
+            if let Some(previous) = listener.peer_context.get(&address).copied() {
+                if Some(previous) != context {
+                    if let Some(slot) = listener.contexts.get(&previous) {
+                        let _ = slot.sender.try_send(NetworkUpdate::PlayerLeft {
+                            transport_id: slot.transport,
+                            address,
+                        });
+                    }
+                    listener.peer_context.remove(&address);
+                }
+            }
+
+            let Some(context) = context else {
+                return;
+            };
+            listener.peer_context.insert(address, context);
+        }
+
+        self.forward(address, message);
+    }
+
+    /// Forward an inbound Pulse update to whoever should see it.
+    ///
+    /// On a client that is this session's crdt context, attributed to the realm's routing transport;
+    /// dropped when there is no routing transport — we're off a Pulse realm, and a straggling packet
+    /// must not resurrect a peer whose transport is already gone.
+    ///
+    /// On a listening server it is the context the peer was last placed in by [`Self::forward_at`],
+    /// attributed to that context's own Pulse transport. Events that carry no position (emotes,
+    /// profile versions) ride the placement the peer's last movement established; a peer we have
+    /// never placed is not in any of our scenes, so its state is dropped.
     fn forward(&self, address: Address, message: PlayerMessage) {
-        let Some(transport_id) = self.routing_transport else {
-            return;
+        let (sender, transport_id) = match self.listener.as_ref() {
+            Some(listener) => {
+                let Some(slot) = listener
+                    .peer_context
+                    .get(&address)
+                    .and_then(|context| listener.contexts.get(context))
+                else {
+                    return;
+                };
+                (&slot.sender, slot.transport)
+            }
+            None => {
+                let Some(transport_id) = self.routing_transport else {
+                    return;
+                };
+                (&self.sender, transport_id)
+            }
         };
-        let _ = self.sender.try_send(
+
+        let _ = sender.try_send(
             PlayerUpdate {
                 transport_id,
                 message,
@@ -147,6 +261,36 @@ impl PulseSession {
             }
             .into(),
         );
+    }
+
+    /// Report a peer's departure from wherever it currently is, and forget it. Used for a Pulse
+    /// `Left` (it fell out of the AoI, or disconnected) — the peer stops being a member of the
+    /// context's Pulse transport, and once no transport is left it is despawned.
+    fn forget(&mut self, address: Address) {
+        let transport_id = match self.listener.as_mut() {
+            Some(listener) => {
+                let Some(slot) = listener
+                    .peer_context
+                    .remove(&address)
+                    .and_then(|context| listener.contexts.get(&context))
+                else {
+                    return;
+                };
+                let _ = slot.sender.try_send(NetworkUpdate::PlayerLeft {
+                    transport_id: slot.transport,
+                    address,
+                });
+                return;
+            }
+            None => self.routing_transport,
+        };
+
+        if let Some(transport_id) = transport_id {
+            let _ = self.sender.try_send(NetworkUpdate::PlayerLeft {
+                transport_id,
+                address,
+            });
+        }
     }
 }
 
@@ -175,7 +319,17 @@ impl Plugin for PulsePlugin {
         app.add_systems(Startup, configure_pulse);
         app.add_systems(
             Update,
-            (connect_pulse, start_pulse, pump_pulse, drain_pulse_outbox).chain(),
+            (
+                connect_pulse,
+                update_listener_aoi,
+                // ahead of `start_pulse`: a realm change clears the qualifier here, so the
+                // re-announce that `start_pulse` may send can't carry the previous realm's one.
+                resolve_realm_qualifier,
+                start_pulse,
+                pump_pulse,
+                drain_pulse_outbox,
+            )
+                .chain(),
         );
         app.add_systems(Update, pulse_teleport_on_local_move);
     }
@@ -208,17 +362,11 @@ fn dev_cert_hash() -> Option<Vec<u8>> {
     None
 }
 
-/// Insert the [`PulseConfig`] that activates the transport. Targets [`DEFAULT_PULSE_SERVER`] unless
-/// `PULSE_SERVER` overrides it. The grid is the Decentraland Genesis City `ParcelEncoder` from the
+/// Insert the [`PulseConfig`] that activates the transport, on clients and servers alike — a server
+/// joins as a scene listener rather than a subject (see [`ListenerAoi`]). Targets
+/// [`DEFAULT_PULSE_SERVER`] unless `PULSE_SERVER` overrides it. The grid is the Decentraland Genesis City `ParcelEncoder` from the
 /// server's appsettings ([`PulseParcelGrid::default`]).
 fn configure_pulse(mut commands: Commands) {
-    // An authoritative server never joins Pulse: it ingests avatar state from its scene rooms over
-    // LiveKit (clients target it with `NetworkMessageRecipient::AuthServer`), and its per-room crdt
-    // contexts have no realm-wide equivalent for a single Pulse connection to feed. Leaving the
-    // config absent keeps the whole plugin inert rather than relying on `StartPulse` never firing.
-    if common::structs::server_mode() {
-        return;
-    }
     let endpoint =
         std::env::var("PULSE_SERVER").unwrap_or_else(|_| DEFAULT_PULSE_SERVER.to_owned());
     let Some((host, port)) = endpoint.rsplit_once(':') else {
@@ -273,6 +421,9 @@ fn connect_pulse(
         return;
     };
 
+    let liveness = Arc::new(());
+    let listener = common::structs::server_mode().then(ListenerAoi::default);
+
     commands.insert_resource(PulseSession {
         link: None,
         _driver: None,
@@ -281,12 +432,17 @@ fn connect_pulse(
         sender: crdt.get_sender(),
         routing_transport: None,
         routing_realm: None,
+        realm_qualifier: None,
+        // A listener never spawns a routing transport, so nothing else would hold the anchor and the
+        // driver would drop every inbound frame — the handshake response included.
+        listener_anchor: listener.is_some().then(|| liveness.clone()),
+        listener,
         grid: config.parcel_grid,
         transport_config: config.transport.clone(),
         server_id: config.server_id.clone(),
         wanted: false,
         last_state: None,
-        liveness: Arc::new(()),
+        liveness,
         state: Connection::Down { respawn_at: 0.0 },
     });
 
@@ -414,6 +570,7 @@ fn drain_pulse_outbox(
 }
 
 /// Drain status + inbound bytes each frame; advance the connection; decode and dispatch.
+#[allow(clippy::too_many_arguments)]
 fn pump_pulse(
     session: Option<ResMut<PulseSession>>,
     realm: Res<CurrentRealm>,
@@ -501,16 +658,39 @@ fn drive_connection(session: &mut PulseSession, wallet: &Wallet, profile_version
             }
             let wallet = wallet.clone();
             let server_id = session.server_id.clone();
-            let task = IoTaskPool::get().spawn_compat(async move {
-                build_handshake_request(&wallet, &server_id, profile_version)
-                    .await
-                    .map(|request| {
-                        pulse::ClientMessage {
-                            message: Some(pulse::client_message::Message::Handshake(request)),
-                        }
-                        .encode_to_vec()
-                    })
-            });
+            let task = if let Some(listener) = session.listener.as_ref() {
+                // A listener announces its AoI up front and is never a subject: no initial state,
+                // no profile version, no teleport. Nothing to observe yet means nothing to announce
+                // — stay idle rather than burn a connection on an empty AoI. The AoI carries its
+                // own realms, one per hosted world, so there is no connection-wide realm to resolve.
+                if listener.aoi.is_empty() {
+                    return;
+                }
+                let aoi = listener.aoi.clone();
+                IoTaskPool::get().spawn_compat(async move {
+                    build_listener_handshake_request(&wallet, &server_id, aoi)
+                        .await
+                        .map(|request| {
+                            pulse::ClientMessage {
+                                message: Some(
+                                    pulse::client_message::Message::SceneListenerHandshake(request),
+                                ),
+                            }
+                            .encode_to_vec()
+                        })
+                })
+            } else {
+                IoTaskPool::get().spawn_compat(async move {
+                    build_handshake_request(&wallet, &server_id, profile_version)
+                        .await
+                        .map(|request| {
+                            pulse::ClientMessage {
+                                message: Some(pulse::client_message::Message::Handshake(request)),
+                            }
+                            .encode_to_vec()
+                        })
+                })
+            };
             session.state = Connection::Signing(task);
         }
         Connection::Signing(task) => {
@@ -523,7 +703,13 @@ fn drive_connection(session: &mut PulseSession, wallet: &Wallet, profile_version
                                 reliability: PulseReliability::Reliable,
                             });
                         }
-                        info!("pulse: handshake sent");
+                        match session.listener.as_ref() {
+                            Some(listener) => info!(
+                                "pulse: scene-listener handshake sent ({})",
+                                describe_aoi(&listener.aoi)
+                            ),
+                            None => info!("pulse: handshake sent"),
+                        }
                         session.state = Connection::AwaitingResponse {
                             timeout_at: now + HANDSHAKE_RESPONSE_TIMEOUT_SECS,
                         };
@@ -576,16 +762,28 @@ fn drain_inbound(
                 PulseEvent::Movement {
                     address,
                     movement,
+                    realm,
                     teleport,
                     timestamp,
-                } => session.forward(
-                    address,
-                    PlayerMessage::Movement {
-                        movement,
-                        teleport,
-                        timestamp,
-                    },
-                ),
+                } => {
+                    // Realm + position is the placement: together they decide which of the server's
+                    // scenes the peer is in, and so which context sees this and everything after it.
+                    let parcel = session.grid.parcel_coords(Vec3::new(
+                        movement.position_x,
+                        movement.position_y,
+                        movement.position_z,
+                    ));
+                    session.forward_at(
+                        address,
+                        &realm,
+                        parcel,
+                        PlayerMessage::Movement {
+                            movement,
+                            teleport,
+                            timestamp,
+                        },
+                    )
+                }
                 // A sequence gap was detected — ask the server to replay full state, reliably.
                 PulseEvent::Resync(request) => {
                     let message = pulse::ClientMessage {
@@ -598,30 +796,24 @@ fn drain_inbound(
                         });
                     }
                 }
-                // Emote start/stop are bridged as an rfc4 `PlayerEmote` so they reuse the same
-                // foreign-emote handling as the LiveKit path (`global_crdt`); a stop carries
-                // `is_stopping`, which removes the foreign `EmoteCommand`.
+                // Emote start/stop are delivered natively (`PlayerMessage::Emote`) rather than as an
+                // rfc4 `PlayerEmote`: byte-transport emotes are dropped as duplicates, so the Pulse
+                // copy has to be distinguishable from them by variant, exactly as movement is.
                 PulseEvent::EmoteStart { address, urn, tick } => session.forward(
                     address,
-                    PlayerMessage::PlayerData(rfc4::packet::Message::PlayerEmote(
-                        rfc4::PlayerEmote {
-                            incremental_id: tick,
-                            urn,
-                            timestamp: 0.0,
-                            is_stopping: Some(false),
-                        },
-                    )),
+                    PlayerMessage::Emote {
+                        urn,
+                        incremental_id: tick,
+                        stopping: false,
+                    },
                 ),
                 PulseEvent::EmoteStop { address } => session.forward(
                     address,
-                    PlayerMessage::PlayerData(rfc4::packet::Message::PlayerEmote(
-                        rfc4::PlayerEmote {
-                            incremental_id: 0,
-                            urn: String::new(),
-                            timestamp: 0.0,
-                            is_stopping: Some(true),
-                        },
-                    )),
+                    PlayerMessage::Emote {
+                        urn: String::new(),
+                        incremental_id: 0,
+                        stopping: true,
+                    },
                 ),
                 // A peer entered our interest set. Report the arrival, then their initial profile
                 // version; the version alone would register presence, but saying so explicitly
@@ -629,9 +821,11 @@ fn drain_inbound(
                 PulseEvent::Joined {
                     address,
                     profile_version,
+                    parcel,
+                    realm,
                     ..
                 } => {
-                    session.forward(address, PlayerMessage::Joined);
+                    session.forward_at(address, &realm, parcel, PlayerMessage::Joined);
                     bridge_profile_version(session, address, profile_version);
                 }
                 // A later announcement. Bridged as an rfc4 `AnnounceProfileVersion` so it reuses the
@@ -640,16 +834,11 @@ fn drain_inbound(
                     bridge_profile_version(session, address, version)
                 }
                 // The peer left our interest set (or disconnected). Report the departure on the
-                // routing transport: presence is the union of the transports a peer is seen on, so
-                // this drops them from the set and — once no transport is left — despawns them.
-                PulseEvent::Left { address } => {
-                    if let Some(transport_id) = session.routing_transport {
-                        let _ = session.sender.try_send(NetworkUpdate::PlayerLeft {
-                            transport_id,
-                            address,
-                        });
-                    }
-                }
+                // transport that was carrying it: presence is the union of the transports a peer is
+                // seen on, so this drops them from the set and — once no transport is left —
+                // despawns them. On a listening server that is the Pulse transport of whichever
+                // scene context it was last placed in.
+                PulseEvent::Left { address } => session.forget(address),
             }
         }
     }
@@ -718,6 +907,11 @@ fn on_handshake_response(
     }
     info!("pulse: handshake accepted");
     session.state = Connection::Established;
+    // A listener has no position to announce and is refused every message but `Resync`; its AoI went
+    // out with the handshake.
+    if session.listener.is_some() {
+        return;
+    }
     // Suppress the connect-time teleport while out of world — our position is provisional behind the
     // loading screen. The teleport sent when the player is placed in-world (`PlayerTeleported`, via
     // `pulse_teleport_on_local_move`) announces the real position + realm once we have one.
@@ -725,6 +919,283 @@ fn on_handshake_response(
         send_teleport(session, realm, player);
     } else {
         debug!("pulse: out of world at handshake, deferring teleport to spawn");
+    }
+}
+
+/// Whether the current realm serves scenes off a local `dcl start` dev server, which the preview
+/// server signals by listing the project's parcels in its `about`. Those realms all advertise the
+/// same realm name, so their Pulse partition needs qualifying — see `resolve_realm_qualifier`.
+fn is_local_realm(realm: &CurrentRealm) -> bool {
+    realm
+        .config
+        .local_scene_parcels
+        .as_ref()
+        .is_some_and(|parcels| !parcels.is_empty())
+}
+
+/// Keep a listening server's routing in step with the scenes it hosts: which context owns each
+/// hosted parcel, a Pulse `Transport` per context, and the AoI the whole lot adds up to.
+/// Client-side this never runs (no listener, no server contexts).
+fn update_listener_aoi(
+    mut commands: Commands,
+    session: Option<ResMut<PulseSession>>,
+    definitions: Res<Assets<EntityDefinition>>,
+    crdt_contexts: Res<CrdtContexts>,
+    scene_realms: Res<SceneRealms>,
+    realm: Res<CurrentRealm>,
+    states: Query<&GlobalCrdtState>,
+) {
+    let Some(session) = session else {
+        return;
+    };
+    let session = session.into_inner();
+    if session.listener.is_none() {
+        return;
+    }
+    // The realm for a scene that didn't come with one of its own. On a local preview this is the
+    // machine-qualified name, not the bare `LocalPreview` every dev server advertises — a listener
+    // has to land in the same partition its clients announce.
+    let Some(default_realm) = announced_realm(session, &realm) else {
+        return;
+    };
+    let Some(listener) = session.listener.as_mut() else {
+        return;
+    };
+
+    // Every loaded entity definition with parcel pointers — which on a server is exactly the scenes
+    // it hosts — mapped to the crdt context that scene runs on (one per room on an orchestrated
+    // server, the shared one on the standalone local-dev server). Non-scene entities (profiles,
+    // wearables) point at addresses and urns, so they fall out of the parse; a scene whose context
+    // isn't registered yet simply isn't routable yet, and gets picked up on a later frame.
+    let mut context_by_parcel: HashMap<String, HashMap<IVec2, Entity>> = HashMap::default();
+    for (_, definition) in definitions.iter() {
+        let mut parcels = definition.pointers.iter().filter_map(|pointer| {
+            let (x, z) = pointer.split_once(',')?;
+            Some(IVec2::new(x.trim().parse().ok()?, z.trim().parse().ok()?))
+        });
+        let Some(first) = parcels.next() else {
+            continue;
+        };
+        let Some(context) = crdt_contexts.try_for_scene_hash(&definition.id) else {
+            continue;
+        };
+        let realm_parcels = context_by_parcel
+            .entry(scene_realms.for_scene_hash(&definition.id, &default_realm))
+            .or_default();
+        for parcel in std::iter::once(first).chain(parcels) {
+            realm_parcels.insert(parcel, context);
+        }
+    }
+
+    if listener.context_by_parcel == context_by_parcel {
+        return;
+    }
+
+    // A context that no longer hosts anything loses its transport, which drops every peer it was
+    // carrying (the despawn observer sweeps them out of `ForeignPlayer.transports`) — the same
+    // teardown a scene room gets when its room goes away.
+    listener.contexts.retain(|context, slot| {
+        let keep = context_by_parcel
+            .values()
+            .any(|parcels| parcels.values().any(|c| c == context));
+        if !keep {
+            if let Ok(mut transport) = commands.get_entity(slot.transport) {
+                transport.despawn();
+            }
+        }
+        keep
+    });
+
+    for context in context_by_parcel
+        .values()
+        .flat_map(|parcels| parcels.values().copied())
+    {
+        if listener.contexts.contains_key(&context) {
+            continue;
+        }
+        let Ok(state) = states.get(context) else {
+            continue;
+        };
+        // A listener is never a subject, so nothing is ever sent on these: no `PulseOutbox` to drain
+        // them, and the receiver is dropped here so anything a broadcast does queue is refused
+        // rather than accumulating. They exist to own the context's Pulse presence and to be the
+        // `transport_id` its inbound state is attributed to.
+        let (sender, _) = mpsc::channel(1);
+        let transport = commands
+            .spawn(Transport {
+                transport_type: TransportType::Pulse,
+                sender,
+                control: None,
+                context,
+            })
+            .id();
+        listener.contexts.insert(
+            context,
+            ListenerContext {
+                transport,
+                sender: state.get_sender(),
+            },
+        );
+    }
+
+    // Peers placed in a context that just went away are already gone with its transport.
+    let live = &listener.contexts;
+    listener
+        .peer_context
+        .retain(|_, context| live.contains_key(context));
+
+    listener.context_by_parcel = context_by_parcel;
+
+    // One entry per realm, its parcels consolidated into one rect per contiguous rectangular block
+    // — blocks from adjacent scenes in the same realm merging is fine, the AoI is only a filter.
+    // Sorted so an unchanged AoI compares equal across frames (HashMap iteration order does not).
+    let mut aoi: Vec<_> = listener
+        .context_by_parcel
+        .iter()
+        .map(|(realm, parcels)| pulse::SceneListenerAoi {
+            realm: realm.clone(),
+            parcel_rects: scene_regions(parcels.keys().copied())
+                .into_iter()
+                .map(|region| pulse::ParcelRect {
+                    min_x: region.min.x,
+                    min_z: region.min.y,
+                    max_x: region.max.x,
+                    max_z: region.max.y,
+                })
+                .collect(),
+        })
+        .collect();
+    aoi.sort_by(|a, b| a.realm.cmp(&b.realm));
+
+    set_listener_aoi(session, aoi);
+}
+
+/// Announce a new AoI: store it, and on a live connection tell the server about it.
+///
+/// The set is the announcement — before the handshake it just decides what the handshake carries,
+/// and whether there is anything to connect for at all.
+fn set_listener_aoi(session: &mut PulseSession, aoi: Vec<pulse::SceneListenerAoi>) {
+    let Some(listener) = session.listener.as_mut() else {
+        return;
+    };
+    if listener.aoi == aoi {
+        return;
+    }
+
+    listener.aoi = aoi;
+    // Nothing hosted yet → nothing to announce; `drive_connection` stays idle until there is.
+    session.wanted = !listener.aoi.is_empty();
+    // Before the handshake there is nothing to update: the set we just stored is what it will
+    // announce. Afterwards the connection stays up and the server swaps the AoI in place.
+    //
+    // An empty set is not announceable — the server rejects a `SceneListenerUpdate` with no rects
+    // and disconnects. On a live server it is also nearly always momentary: a scene reload drops
+    // the old entity definition a frame before the new one lands. So hold the last announced AoI
+    // and wait for the next non-empty one rather than cycling the connection over a reload.
+    if session.wanted && matches!(session.state, Connection::Established) {
+        send_listener_aoi(session);
+    }
+}
+
+/// Announce the listener's current AoI on a live connection as a `SceneListenerUpdate`. The server
+/// replaces the announced parcel set wholesale, keeping the connection, identity and realm — so
+/// unlike a reconnect this costs no re-authentication and no gap in the positional stream.
+fn send_listener_aoi(session: &PulseSession) {
+    let (Some(link), Some(listener)) = (session.link.as_ref(), session.listener.as_ref()) else {
+        return;
+    };
+
+    let message = pulse::ClientMessage {
+        message: Some(pulse::client_message::Message::SceneListenerUpdate(
+            pulse::SceneListenerUpdate {
+                aoi: listener.aoi.clone(),
+            },
+        )),
+    };
+    let _ = link.outbound.try_send(PulseFrame {
+        bytes: message.encode_to_vec(),
+        reliability: PulseReliability::Reliable,
+    });
+    info!(
+        "pulse: scene-listener AoI update sent ({})",
+        describe_aoi(&listener.aoi)
+    );
+}
+
+/// The realm string we announce to Pulse — the partition key every participant must derive
+/// identically (the server compares realms with an ordinal string match). Empty/missing is rejected
+/// by the server, and on a locally served realm it needs qualifying: every `dcl start` preview
+/// advertises the same `LocalPreview` name, so the dev server's machine id separates two devs and
+/// its port separates two servers on one machine. Both are properties of the *server*, so a LAN
+/// preview peer derives the same string — a locally computed machine id would not. `None` until the
+/// realm name is known, and on a local realm until a `b64-` addressed scene has loaded.
+fn announced_realm(session: &PulseSession, realm: &CurrentRealm) -> Option<String> {
+    let realm_name = realm
+        .config
+        .realm_name
+        .clone()
+        .filter(|name| !name.is_empty())
+        .or_else(|| {
+            warn!("pulse: no realm name yet (no peers will be visible)");
+            None
+        })?;
+
+    if !is_local_realm(realm) {
+        return Some(realm_name);
+    }
+
+    let Some(qualifier) = session.realm_qualifier.as_ref() else {
+        debug!("pulse: local realm without a machine id yet; deferring announce");
+        return None;
+    };
+    Some(
+        match realm
+            .address
+            .parse::<http::Uri>()
+            .ok()
+            .and_then(|url| url.port_u16())
+        {
+            Some(port) => format!("{realm_name}-{qualifier}-{port}"),
+            None => format!("{realm_name}-{qualifier}"),
+        },
+    )
+}
+
+/// Recover the dev server's machine id from a loaded scene's `b64-` content hashes and cache it on
+/// the session, then re-announce if we already handshook without it. Every client served by one dev
+/// server sees the same hashes, so all of them derive the same qualifier — which is what a machine
+/// id computed locally could not do (a LAN/QR preview peer would compute its own).
+fn resolve_realm_qualifier(
+    session: Option<ResMut<PulseSession>>,
+    realm: Res<CurrentRealm>,
+    definitions: Res<Assets<EntityDefinition>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
+    out_of_world: Query<(), (With<PrimaryUser>, With<OutOfWorld>)>,
+) {
+    let Some(session) = session else {
+        return;
+    };
+    let session = session.into_inner();
+    if realm.is_changed() {
+        session.realm_qualifier = None;
+    }
+    if session.realm_qualifier.is_some() || !is_local_realm(&realm) {
+        return;
+    }
+
+    let Some(qualifier) = definitions.iter().find_map(|(_, definition)| {
+        definition
+            .content
+            .values()
+            .find_map(|(file, hash)| machine_id_from_b64(file, hash))
+    }) else {
+        return;
+    };
+
+    info!("pulse: local realm qualified by machine id {qualifier}");
+    session.realm_qualifier = Some(qualifier);
+    if matches!(session.state, Connection::Established) && out_of_world.is_empty() {
+        send_teleport(session, &realm, &player);
     }
 }
 
@@ -753,15 +1224,7 @@ fn send_teleport_at(session: &PulseSession, realm: &CurrentRealm, world: Vec3) {
         return;
     };
 
-    // The realm identifier must match what other clients announce (Unity sends
-    // `configurations.realmName`). Empty/missing realm is rejected by the server.
-    let Some(realm_name) = realm
-        .config
-        .realm_name
-        .clone()
-        .filter(|name| !name.is_empty())
-    else {
-        warn!("pulse: no realm name yet; skipping teleport (no peers will be visible)");
+    let Some(realm_name) = announced_realm(session, realm) else {
         return;
     };
 
@@ -777,7 +1240,7 @@ fn send_teleport_at(session: &PulseSession, realm: &CurrentRealm, world: Vec3) {
         position_x: pulse::TeleportRequest::position_x_quantized(local.x),
         position_y: pulse::TeleportRequest::position_y_quantized(local.y),
         position_z: pulse::TeleportRequest::position_z_quantized(local.z),
-        realm: realm_name,
+        realm: realm_name.clone(),
     };
     let message = pulse::ClientMessage {
         message: Some(pulse::client_message::Message::Teleport(teleport)),
@@ -786,7 +1249,7 @@ fn send_teleport_at(session: &PulseSession, realm: &CurrentRealm, world: Vec3) {
         bytes: message.encode_to_vec(),
         reliability: PulseReliability::Reliable,
     });
-    info!("pulse: teleport sent (parcel {parcel_index})");
+    info!("pulse: teleport sent (realm {realm_name}, parcel {parcel_index})");
 }
 
 /// The local player was instantly repositioned (durationless `move_player_to`, `teleport_player`, a
@@ -805,9 +1268,31 @@ fn pulse_teleport_on_local_move(
     let Some(session) = session else {
         return;
     };
-    if matches!(session.state, Connection::Established) {
+    // A listener is never a subject: it has no position to announce, and the server refuses every
+    // post-auth message but `Resync`.
+    if session.listener.is_none() && matches!(session.state, Connection::Established) {
         send_teleport_at(&session, &realm, position);
     }
+}
+
+/// Build a `SceneListenerHandshakeRequest`: the same signed-fetch auth chain as the player handshake
+/// (the server authenticates both through one pipeline), plus the announced AoI — the parcels this
+/// server hosts, per realm. No initial state — a listener is never a subject.
+async fn build_listener_handshake_request(
+    wallet: &Wallet,
+    server_id: &str,
+    aoi: Vec<pulse::SceneListenerAoi>,
+) -> Result<pulse::SceneListenerHandshakeRequest, String> {
+    Ok(pulse::SceneListenerHandshakeRequest {
+        auth_chain: build_auth_chain(wallet, server_id).await?,
+        aoi,
+    })
+}
+
+/// `2 realms, 5 rects` — the shape of an announcement, for logs.
+fn describe_aoi(aoi: &[pulse::SceneListenerAoi]) -> String {
+    let rects: usize = aoi.iter().map(|realm| realm.parcel_rects.len()).sum();
+    format!("{} realms, {rects} rects", aoi.len())
 }
 
 /// Build a `HandshakeRequest`: sign `connect:/{server_id}:{ts}:{}` with the local identity and pack
@@ -819,6 +1304,18 @@ async fn build_handshake_request(
     server_id: &str,
     profile_version: i32,
 ) -> Result<pulse::HandshakeRequest, String> {
+    Ok(pulse::HandshakeRequest {
+        auth_chain: build_auth_chain(wallet, server_id).await?,
+        profile_version,
+        initial_state: None,
+    })
+}
+
+/// The signed-fetch auth chain both handshakes carry: sign `connect:/{server_id}:{ts}:{}` with the
+/// local identity and pack the resulting chain into the platform's canonical `x-identity-*`
+/// dictionary (JSON object, every value a string) as UTF-8 bytes — identical in shape to the HTTP
+/// signed-fetch headers, just carried in a protobuf `bytes` field. Mirrors Unity's `BuildAuthChain`.
+async fn build_auth_chain(wallet: &Wallet, server_id: &str) -> Result<Vec<u8>, String> {
     let timestamp = web_time::SystemTime::now()
         .duration_since(web_time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -844,11 +1341,5 @@ async fn build_handshake_request(
         "x-identity-metadata".to_owned(),
         serde_json::Value::String("{}".to_owned()),
     );
-    let auth_chain = serde_json::to_vec(&dict).map_err(|e| e.to_string())?;
-
-    Ok(pulse::HandshakeRequest {
-        auth_chain,
-        profile_version,
-        initial_state: None,
-    })
+    serde_json::to_vec(&dict).map_err(|e| e.to_string())
 }

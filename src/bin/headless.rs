@@ -171,6 +171,12 @@ enum ControlCommand {
         /// base64 world-storage delegation minted by the orchestrator for this scene
         #[serde(rename = "storageDelegation")]
         storage_delegation: Option<String>,
+        /// The realm this scene belongs to — the same name a client reads from that realm's
+        /// `about`. Like `adapter`, it states how the scene is being served, which only the
+        /// orchestrator knows. Pulse partitions peer visibility by realm and every world numbers
+        /// its parcels from 0,0, so this is what tells two cohosted worlds' `0,0` apart — and
+        /// getting it wrong is silent, not loud, which is why it is not optional.
+        realm: String,
     },
     RemoveScene {
         #[serde(rename = "sceneId")]
@@ -811,6 +817,7 @@ fn drain_control_commands(
     mut commands: Commands,
     mut server_rooms: ResMut<ServerSceneRooms>,
     mut crdt_contexts: ResMut<comms::global_crdt::CrdtContexts>,
+    mut scene_realms: ResMut<comms::global_crdt::SceneRealms>,
     wallet: Res<Wallet>,
     ipfs: IpfsAssetServer,
     preview: Res<PreviewMode>,
@@ -955,10 +962,12 @@ fn drain_control_commands(
                 urn,
                 adapter,
                 storage_delegation,
+                realm,
             } => {
                 if let Some(encoded) = &storage_delegation {
                     store_delegation(&scene_id, encoded, &mut delegations);
                 }
+                scene_realms.0.insert(scene_id.clone(), realm);
                 ctl_emit(&serde_json::json!({"type": "scene-added", "scene": scene_id}));
 
                 if let Some(adapter) = adapter {

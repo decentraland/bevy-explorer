@@ -250,6 +250,14 @@ impl ContentMap {
     }
 }
 
+/// The dev server's machine id, recovered from one `b64-<base64(`{absolutePath}-{machineId}`)>`
+/// content hash (see @dcl/sdk-commands `b64HashingFunction`, `machineId = os.hostname() ||
+/// os.userInfo().username`). None for a deployed scene (no `b64-` hashes).
+pub fn machine_id_from_b64(file: &str, hash: &str) -> Option<String> {
+    let (_, machine_id) = b64_parts(file, hash)?;
+    (!machine_id.is_empty()).then_some(machine_id)
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum SceneIpfsLocation {
     Hash(String),
@@ -1271,16 +1279,7 @@ impl IpfsIo {
         let read = self.context.read().await;
         let collection = &read.entities.get(scene_hash)?.collection;
         for (key, h) in collection.0.iter() {
-            let Some(b64) = h.strip_prefix("b64-") else {
-                continue;
-            };
-            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
-                continue;
-            };
-            let Ok(decoded) = String::from_utf8(decoded) else {
-                continue;
-            };
-            let Some((project_root, machine_id)) = b64_split_at_key(&decoded, key) else {
+            let Some((project_root, machine_id)) = b64_parts(key, h) else {
                 continue;
             };
             let abs = format!("{project_root}/{rel}-{machine_id}");
@@ -1295,21 +1294,11 @@ impl IpfsIo {
     /// native/deployed scenes (entries aren't in the `b64-<path>-machineId` form). Lets the web save
     /// locate the project folder under a granted directory handle.
     pub async fn local_project_root(&self, scene_hash: &str) -> Option<String> {
-        use base64::{prelude::BASE64_STANDARD, Engine};
         let read = self.context.read().await;
         let collection = &read.entities.get(scene_hash)?.collection;
         for (key, h) in collection.0.iter() {
-            let Some(b64) = h.strip_prefix("b64-") else {
-                continue;
-            };
-            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
-                continue;
-            };
-            let Ok(decoded) = String::from_utf8(decoded) else {
-                continue;
-            };
-            if let Some((project_root, _)) = b64_split_at_key(&decoded, key) {
-                return Some(project_root.to_string());
+            if let Some((project_root, _)) = b64_parts(key, h) {
+                return Some(project_root);
             }
         }
         None
@@ -1979,6 +1968,17 @@ impl Drop for DeferredDropper {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::SeqCst);
     }
+}
+
+/// Decodes a dev server's `b64-<base64(`{projectRoot}{sep}{key}-{machineId}`)>` content hash for
+/// collection key `key` into its `(projectRoot, machineId)` parts. None for any hash not in that
+/// form — a native or deployed scene's entries are plain CIDs.
+fn b64_parts(key: &str, hash: &str) -> Option<(String, String)> {
+    use base64::{prelude::BASE64_STANDARD, Engine};
+    let b64 = hash.strip_prefix("b64-")?;
+    let decoded = String::from_utf8(BASE64_STANDARD.decode(b64).ok()?).ok()?;
+    let (project_root, machine_id) = b64_split_at_key(&decoded, key)?;
+    Some((project_root.to_owned(), machine_id.to_owned()))
 }
 
 /// Splits a dev server's b64 hash payload — plain `"{projectRoot}{sep}{key}-{machineId}"` or

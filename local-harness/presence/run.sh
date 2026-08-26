@@ -220,12 +220,16 @@ SRV_IN="$WORK/server.in"; mkfifo "$SRV_IN"
 SRV_PID=$!; PIDS+=($SRV_PID)
 exec 8>"$SRV_IN"   # hold the write end open
 sleep 3
-printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_A\",\"urn\":\"urn:decentraland:entity:${SCENE_A}?=&baseUrl=${BASEURL}\",\"adapter\":\"livekit:${LK_URL}?access_token=${TOK_SRV_A}\"}" >&8
-printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_B\",\"urn\":\"urn:decentraland:entity:${SCENE_B}?=&baseUrl=${BASEURL}\",\"adapter\":\"livekit:${LK_URL}?access_token=${TOK_SRV_B}\"}" >&8
+# Each scene carries the realm it belongs to — the same name the matching client reads from
+# its own `about`. The two scenes sit on the SAME parcel in DIFFERENT realms, which is what a
+# server cohosting two worlds looks like (every world numbers its parcels from 0,0) and what
+# the per-realm scene-listener AoI exists to express.
+printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_A\",\"urn\":\"urn:decentraland:entity:${SCENE_A}?=&baseUrl=${BASEURL}\",\"adapter\":\"livekit:${LK_URL}?access_token=${TOK_SRV_A}\",\"realm\":\"harness-clientA\"}" >&8
+printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_B\",\"urn\":\"urn:decentraland:entity:${SCENE_B}?=&baseUrl=${BASEURL}\",\"adapter\":\"livekit:${LK_URL}?access_token=${TOK_SRV_B}\",\"realm\":\"harness-clientB\"}" >&8
 # adapterless add-scene: the server runs without --preview, so this must be refused —
 # scene-failed emitted, and the scene must never load (it would bind the shared context
 # and see cross-room presence)
-printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_D\",\"urn\":\"urn:decentraland:entity:${SCENE_D}?=&baseUrl=${BASEURL}\"}" >&8
+printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_D\",\"urn\":\"urn:decentraland:entity:${SCENE_D}?=&baseUrl=${BASEURL}\",\"realm\":\"harness-clientA\"}" >&8
 
 # wait for both scenes to start ticking (ctl emits {"type":"scene-live",...})
 say "waiting for scenes to start..."
