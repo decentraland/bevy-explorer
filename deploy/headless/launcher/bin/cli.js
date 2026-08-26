@@ -25,6 +25,8 @@ const USAGE = `
                            (the multiplayer-server worker contract).
     --tick-hz <n>          Scene tick rate. Default 30.
     --timeout <secs>       Exit cleanly after N seconds.
+    --pulse-realm <key>    Pulse realm to announce verbatim (what sdk-commands mints for a
+                           local preview). Standalone only; orchestrated scenes carry their own.
     --version              Print version and exit.
     -h, --help             This message.
 
@@ -45,7 +47,7 @@ function translate(argv) {
   let position = null
   let production = false
   let orchestrated = false
-  const passthrough = { '--tick-hz': true, '--timeout': true, '--scene-threads': true }
+  const passthrough = { '--tick-hz': true, '--timeout': true, '--scene-threads': true, '--pulse-realm': true }
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
