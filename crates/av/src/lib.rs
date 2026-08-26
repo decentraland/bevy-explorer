@@ -33,18 +33,19 @@ use audio_source::AudioSourcePlugin;
 use audio_source_native::AudioSourcePluginImpl;
 #[cfg(feature = "ffmpeg")]
 use bevy::ecs::component::Mutable;
-use bevy::{math::FloatOrd, prelude::*};
+use bevy::{diagnostic::FrameCount, math::FloatOrd, prelude::*};
 use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
-    proto_components::sdk::components::{PbAudioStream, PbVideoPlayer},
-    SceneComponentId,
+    proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState},
+    CrdtType, SceneComponentId,
 };
 use livestream_manager::{ActiveReceiver, ReceiverImage, ReceiverVolume, TransmissionUpdated};
 use scene_runner::{
+    renderer_context::RendererSceneContext,
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
 };
@@ -758,13 +759,33 @@ fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut command
 }
 
 fn receiver_image_updated(
-    av_players: Query<(Entity, &mut VideoTextureOutput)>,
+    av_players: Query<(Entity, &ContainerEntity, &mut VideoTextureOutput)>,
+    mut renderer_context: Query<&mut RendererSceneContext>,
     mut transmission_updated: EventReader<TransmissionUpdated>,
+    frame: Res<FrameCount>,
 ) {
     if transmission_updated.read().count() > 0 {
-        for (entity, mut video_texture_output) in av_players {
+        for (entity, container_entity, mut video_texture_output) in av_players {
             debug!("ReceiverImage of {entity} was updated.");
             video_texture_output.set_changed();
+
+            let Ok(mut context) = renderer_context.get_mut(container_entity.root) else {
+                continue;
+            };
+            let tick_number = context.tick_number;
+
+            context.update_crdt(
+                SceneComponentId::VIDEO_EVENT,
+                CrdtType::GO_ANY,
+                container_entity.container_id,
+                &PbVideoEvent {
+                    timestamp: frame.0,
+                    tick_number,
+                    current_offset: 0.,
+                    video_length: 0.,
+                    state: VideoState::VsPlaying as i32,
+                },
+            );
         }
     }
 }
