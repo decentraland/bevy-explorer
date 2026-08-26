@@ -781,7 +781,7 @@ fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut command
 
 fn receiver_image_updated(
     mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, &mut VideoTextureOutput)>,
+    av_players: Query<(Entity, &ContainerEntity, &mut VideoTextureOutput), With<ReceiverImage>>,
     mut transmission_updated: EventReader<TransmissionUpdated>,
 ) {
     if transmission_updated.read().count() > 0 {
