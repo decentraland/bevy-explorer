@@ -126,7 +126,6 @@ impl Plugin for GlobalCrdtPlugin {
 // SceneDrivenAnimation) dwarf the others. Boxing it would add a heap allocation on every inbound
 // message — this is the hot path — so keep it inline and silence the size-difference lint.
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone)]
 pub enum PlayerMessage {
     /// The transport saw this peer join, with nothing to report beyond that. Presence is registered
     /// by a `PlayerUpdate` arriving at all (see `NetworkUpdate::Player`), so this carries no payload

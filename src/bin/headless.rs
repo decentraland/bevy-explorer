@@ -1050,6 +1050,7 @@ fn drain_control_commands(
                 portables.remove(&scene_id);
                 orch.wanted.remove(&scene_id);
                 delegations.by_scene.remove(&scene_id);
+                scene_realms.0.remove(&scene_id);
                 mint_tasks.retain(|(sid, _, _)| sid != &scene_id);
                 if let Some((_, ent)) = server_rooms.0.remove(&scene_id) {
                     if let Ok(mut c) = commands.get_entity(ent) {

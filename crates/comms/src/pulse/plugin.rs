@@ -31,7 +31,7 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use dcl_component::proto_components::pulse;
 use dcl_component::transform_and_parent::DclTranslation;
 use ethers_core::types::Address;
-use ipfs::EntityDefinition;
+use ipfs::{ActiveEntitiesRequest, EntityDefinition, IpfsAssetServer, IpfsIo};
 use multihash_codetable::MultihashDigest;
 use prost::Message as _;
 use tokio::sync::mpsc;
@@ -110,9 +110,9 @@ pub(crate) struct PulseSession {
     role: PulseRole,
     /// The realm announced on a locally served realm: the LSD key derived from the preview scene
     /// entity id (see [`lsd_realm_key`]), so two `dcl start` previews don't share a Pulse partition
-    /// even though every dev server advertises the same realm name. `None` off a local realm, and
-    /// until a `b64-` addressed scene has loaded — `resolve_lsd_realm` fills it in and re-announces.
-    lsd_realm: Option<String>,
+    /// even though every dev server advertises the same realm name. Resolved off the dev server
+    /// by `resolve_lsd_realm`, which re-announces once it lands; meaningless off a local realm.
+    lsd_realm: LsdRealm,
     /// Realm announced verbatim, from [`PulseRealmOverride`]. A server told which realm it hosts
     /// derives nothing: it is up before any scene has loaded, and in a local preview the key is
     /// minted by the orchestrator that spawned it.
@@ -138,6 +138,16 @@ pub(crate) struct PulseSession {
     /// can hand it a fresh `Weak` — the entity (and thus the signal) outlives any single driver.
     liveness: Arc<()>,
     state: Connection,
+}
+
+/// Where the LSD realm key for the realm we're on is at — see `resolve_lsd_realm`.
+enum LsdRealm {
+    /// Nothing in flight; the next tick after `retry_at` on a local realm starts a fetch.
+    Unresolved { retry_at: f64 },
+    /// Reading the preview scene's entity id off the dev server.
+    Fetching(Task<Result<String, String>>),
+    /// The key, as announced.
+    Resolved(String),
 }
 
 /// What a session joined Pulse as. The two roles share a connection and a decoder and almost
@@ -467,9 +477,9 @@ fn dev_cert_hash() -> Option<Vec<u8>> {
 }
 
 /// Insert the [`PulseConfig`] that activates the transport, on clients and servers alike — a server
-/// joins as a scene listener rather than a subject (see [`ListenerAoi`]). Targets
-/// [`DEFAULT_PULSE_SERVER`] unless `PULSE_SERVER` overrides it. The grid is the Decentraland Genesis City `ParcelEncoder` from the
-/// server's appsettings ([`PulseParcelGrid::default`]).
+/// joins as a scene listener rather than a subject (see [`ListenerRole`]). Targets
+/// [`DEFAULT_PULSE_SERVER`] unless `PULSE_SERVER` overrides it. The grid is the Decentraland
+/// Genesis City `ParcelEncoder` from the server's appsettings ([`PulseParcelGrid::default`]).
 fn configure_pulse(mut commands: Commands) {
     let endpoint =
         std::env::var("PULSE_SERVER").unwrap_or_else(|_| DEFAULT_PULSE_SERVER.to_owned());
@@ -550,7 +560,7 @@ fn connect_pulse(
         _driver: None,
         decoder: PulseDecoder::new(config.parcel_grid),
         role,
-        lsd_realm: None,
+        lsd_realm: LsdRealm::Unresolved { retry_at: 0.0 },
         realm_override: realm_override.map(|announced| announced.0.clone()),
         grid: config.parcel_grid,
         transport_config: config.transport.clone(),
@@ -1269,10 +1279,11 @@ fn announced_realm(session: &PulseSession, realm: &CurrentRealm) -> Option<Strin
     if is_local_realm(realm) {
         // Every `dcl start` dev server advertises the same realm name, so a preview announces the
         // LSD key derived from the scene it serves instead — see `resolve_lsd_realm`.
-        if session.lsd_realm.is_none() {
+        let LsdRealm::Resolved(key) = &session.lsd_realm else {
             debug!("pulse: local realm without a preview scene id yet; deferring announce");
-        }
-        return session.lsd_realm.clone();
+            return None;
+        };
+        return Some(key.clone());
     }
 
     realm
@@ -1307,16 +1318,23 @@ fn lsd_realm_key(preview_scene_id: &str) -> String {
     format!("{LSD_REALM_HASHED_PREFIX}{hex}")
 }
 
-/// Derive the LSD realm key from a loaded preview scene and cache it on the session, then
-/// re-announce if we already handshook without it. The key comes from the scene's *entity id* —
-/// `b64-<base64(`{projectRoot}-{machineId}`)>`, minted by the dev server and served identically to
-/// every client, so all of them land in the same partition. A locally computed machine id could
-/// not do that (a LAN/QR preview peer would compute its own), and the dev server's port could not
-/// either (it moves when the port is taken).
+/// Resolve the LSD realm key for the local realm we're on and cache it on the session, then
+/// re-announce if we already handshook without it. The key comes from the preview scene's *entity
+/// id* — `b64-<base64(`{projectRoot}-{machineId}`)>`, minted by the dev server and served
+/// identically to every client, so all of them land in the same partition. A locally computed
+/// machine id could not do that (a LAN/QR preview peer would compute its own), and the dev
+/// server's port could not either (it moves when the port is taken).
+///
+/// Which scene, and how it is looked up, follows unity-explorer's `LocalSceneEntityIdSource`
+/// exactly: the dev server's `scene.json` names the project's base parcel, and the active entity
+/// at that parcel is the scene. Asked of the server rather than picked out of whatever scenes
+/// happen to be loaded here, so a workspace serving several projects keys off the same one on
+/// every client.
 fn resolve_lsd_realm(
     session: Option<ResMut<PulseSession>>,
     realm: Res<CurrentRealm>,
-    definitions: Res<Assets<EntityDefinition>>,
+    ipfs: IpfsAssetServer,
+    time: Res<Time>,
     player: Query<(&GlobalTransform, Has<OutOfWorld>), With<PrimaryUser>>,
 ) {
     let Some(session) = session else {
@@ -1327,26 +1345,44 @@ fn resolve_lsd_realm(
         return;
     }
     if realm.is_changed() {
-        session.lsd_realm = None;
+        session.lsd_realm = LsdRealm::Unresolved { retry_at: 0.0 };
     }
-    if session.lsd_realm.is_some() || !is_local_realm(&realm) {
+    if !is_local_realm(&realm) {
         return;
     }
 
-    // Smallest rather than first-found: with a workspace serving several projects, two clients
-    // would otherwise key off whichever of them each happened to load first.
-    let Some(preview_scene_id) = definitions
-        .iter()
-        .map(|(_, definition)| definition.id.as_str())
-        .filter(|id| id.starts_with("b64-"))
-        .min()
-    else {
-        return;
+    let now = time.elapsed_secs_f64();
+    let preview_scene_id = match &mut session.lsd_realm {
+        LsdRealm::Resolved(_) => return,
+        LsdRealm::Unresolved { retry_at } if now < *retry_at => return,
+        LsdRealm::Unresolved { .. } => {
+            let base_url = realm
+                .about_url
+                .strip_suffix("/about")
+                .unwrap_or(&realm.about_url)
+                .to_owned();
+            session.lsd_realm =
+                LsdRealm::Fetching(fetch_preview_scene_id(ipfs.ipfs().clone(), base_url));
+            return;
+        }
+        LsdRealm::Fetching(task) => {
+            match task.complete() {
+                None => return,
+                Some(Ok(id)) => id,
+                Some(Err(err)) => {
+                    warn!("pulse: failed to resolve the local scene development realm, retrying: {err}");
+                    session.lsd_realm = LsdRealm::Unresolved {
+                        retry_at: now + RETRY_COOLDOWN_SECS,
+                    };
+                    return;
+                }
+            }
+        }
     };
 
-    let key = lsd_realm_key(preview_scene_id);
+    let key = lsd_realm_key(&preview_scene_id);
     info!("pulse: local scene development realm resolved to {key}");
-    session.lsd_realm = Some(key);
+    session.lsd_realm = LsdRealm::Resolved(key);
     // A listener has no position to announce and is refused every message but `Resync`; the realm
     // it just learned reaches the server as an AoI update from `update_listener_aoi` instead.
     if matches!(session.role, PulseRole::Player(_))
@@ -1357,11 +1393,44 @@ fn resolve_lsd_realm(
     }
 }
 
-/// Send a `TeleportRequest` announcing our current realm + position, so the server (re)starts
-/// streaming same-realm peers (peers in different realms never see each other). The `realm` string is
-/// the load-bearing field; a one-frame stale position is corrected by the next movement packet. Sent
-/// reliably. No-op without a live link or realm name. Used both on first handshake and on every later
-/// realm change (the server supports same-peer re-teleports).
+/// The dev server's two-step lookup of the preview scene's entity id, as unity-explorer does it:
+/// `GET {realm}/scene.json` for the project's base parcel, then the active entity at that parcel.
+fn fetch_preview_scene_id(ipfs: Arc<IpfsIo>, base_url: String) -> Task<Result<String, String>> {
+    #[derive(serde::Deserialize)]
+    struct SceneJson {
+        scene: SceneJsonScene,
+    }
+    #[derive(serde::Deserialize)]
+    struct SceneJsonScene {
+        base: String,
+    }
+
+    IoTaskPool::get().spawn_compat(async move {
+        let url = format!("{base_url}/scene.json");
+        let scene_json: SceneJson = ipfs
+            .client()
+            .get(&url)
+            .send()
+            .await
+            .and_then(|response| response.error_for_status())
+            .map_err(|e| format!("{url}: {e}"))?
+            .json()
+            .await
+            .map_err(|e| format!("{url}: {e}"))?;
+        let base = scene_json.scene.base;
+
+        let entities = ipfs
+            .active_entities(ActiveEntitiesRequest::Pointers(vec![base.clone()]), None)
+            .await
+            .map_err(|e| format!("active entities at {base}: {e}"))?;
+        entities
+            .into_iter()
+            .next()
+            .map(|entity| entity.id)
+            .ok_or_else(|| format!("no active entity at base parcel {base}"))
+    })
+}
+
 /// Whether the local player is placed in the world rather than sitting behind the loading screen on
 /// a provisional position. No player at all (a server) counts as in-world: there is nothing
 /// provisional about a position that does not exist.
@@ -1369,6 +1438,11 @@ fn in_world(player: &Query<(&GlobalTransform, Has<OutOfWorld>), With<PrimaryUser
     !player.single().map(|(_, out)| out).unwrap_or(false)
 }
 
+/// Send a `TeleportRequest` announcing our current realm + position, so the server (re)starts
+/// streaming same-realm peers (peers in different realms never see each other). The `realm` string is
+/// the load-bearing field; a one-frame stale position is corrected by the next movement packet. Sent
+/// reliably. No-op without a live link or realm name. Used both on first handshake and on every later
+/// realm change (the server supports same-peer re-teleports).
 fn send_teleport(
     session: &PulseSession,
     realm: &CurrentRealm,
