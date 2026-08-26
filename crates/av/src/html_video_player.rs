@@ -363,12 +363,6 @@ fn update_av_players<T: AVPlayer>(
     for (ent, container, mut av, has_should_be_playing) in av_players.iter_mut() {
         let state = av.state();
 
-        if av.source() == LIVEKIT_VIDEO_STREAM && state == VideoState::VsError {
-            error!("Stream is erroring, retrying.");
-            commands.entity(ent).try_remove::<HtmlMediaEntity<T>>();
-            continue;
-        }
-
         let is_playing = state == VideoState::VsPlaying;
 
         if has_should_be_playing
