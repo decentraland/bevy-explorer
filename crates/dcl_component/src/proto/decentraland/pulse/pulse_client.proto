@@ -92,11 +92,8 @@ message SceneListenerAoi {
 message SceneListenerHandshakeRequest {
   // Signed-fetch headers JSON — identical shape to HandshakeRequest.auth_chain.
   bytes auth_chain = 1;
-  // was `string realm` / `repeated ParcelRect parcel_rects`, one realm per connection
-  reserved 2, 3;
-  reserved "realm", "parcel_rects";
   // Announced AoI, one entry per realm; replaceable afterwards with SceneListenerUpdate.
-  repeated SceneListenerAoi aoi = 4;
+  repeated SceneListenerAoi aoi = 2;
 }
 
 // Scene-listener AoI reassignment: replaces the area of interest announced at connect, in
