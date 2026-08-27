@@ -709,7 +709,10 @@ fn update_map_visibilty(
         };
         *init = true;
         // todo this is really bad
-        if realm.about_url.ends_with("decentraland.org/main/about") {
+        if realm
+            .about_url
+            .ends_with(&format!("{}/main/about", common::base_domain::get()))
+        {
             style.display = Display::Flex;
         } else {
             style.display = Display::None;

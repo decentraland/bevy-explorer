@@ -58,15 +58,20 @@ use self::{
 #[cfg(feature = "livekit")]
 use self::livekit::{plugin::LivekitPlugin, StartLivekit};
 
-const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
-const PREVIEW_GATEKEEPER_URL: &str =
-    "https://comms-gatekeeper-local.decentraland.org/get-scene-adapter";
+fn gatekeeper_url() -> String {
+    common::base_domain::https_url_from_path("comms-gatekeeper", "/get-scene-adapter")
+}
+fn preview_gatekeeper_url() -> String {
+    common::base_domain::https_url_from_path("comms-gatekeeper-local", "/get-scene-adapter")
+}
 // Authoritative-server endpoints: yield a token with the LiveKit identity
 // `authoritative-server`, which clients target for authoritative-scene traffic.
-const SERVER_GATEKEEPER_URL: &str =
-    "https://comms-gatekeeper.decentraland.org/get-server-scene-adapter";
-const PREVIEW_SERVER_GATEKEEPER_URL: &str =
-    "https://comms-gatekeeper-local.decentraland.org/get-server-scene-adapter";
+fn server_gatekeeper_url() -> String {
+    common::base_domain::https_url_from_path("comms-gatekeeper", "/get-server-scene-adapter")
+}
+fn preview_server_gatekeeper_url() -> String {
+    common::base_domain::https_url_from_path("comms-gatekeeper-local", "/get-server-scene-adapter")
+}
 
 pub mod chat_marker_things {
     pub const EMOTE: char = '␐';
@@ -583,10 +588,10 @@ fn connect_scene_room(
             let wallet = wallet.clone();
             let preview = ev.scene_id.starts_with("b64-");
             let url = match (common::structs::server_mode(), preview) {
-                (true, true) => PREVIEW_SERVER_GATEKEEPER_URL,
-                (true, false) => SERVER_GATEKEEPER_URL,
-                (false, true) => PREVIEW_GATEKEEPER_URL,
-                (false, false) => GATEKEEPER_URL,
+                (true, true) => preview_server_gatekeeper_url(),
+                (true, false) => server_gatekeeper_url(),
+                (false, true) => preview_gatekeeper_url(),
+                (false, false) => gatekeeper_url(),
             };
             let uri = Uri::try_from(url).unwrap();
             let client = ipfs.ipfs().client();

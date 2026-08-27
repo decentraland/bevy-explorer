@@ -680,7 +680,10 @@ pub async fn lookup_ens(
     } else {
         lookup_portable(
             parent_scene,
-            format!("https://worlds-content-server.decentraland.org/world/{ens}"),
+            format!(
+                "{}/world/{ens}",
+                common::base_domain::https_url_from_path("worlds-content-server", "")
+            ),
             super_user,
             ipfs,
         )

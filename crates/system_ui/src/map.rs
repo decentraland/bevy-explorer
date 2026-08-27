@@ -193,8 +193,10 @@ fn set_map_content(
                     debug!("click parcel {}", parcel);
 
                     let url = format!(
-                        "https://places.decentraland.org/api/places?positions={},{}",
-                        parcel.x, parcel.y
+                        "{}/api/places?positions={},{}",
+                        common::base_domain::https_url_from_path("places", ""),
+                        parcel.x,
+                        parcel.y
                     );
 
                     let client = ipfas.ipfs().client();

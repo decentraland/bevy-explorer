@@ -82,7 +82,10 @@ impl AssetReader for NftReader {
                 ))));
             }
 
-            let remote = format!("https://opensea.decentraland.org/api/v2/chain/{chain}/contract/{address}/nfts/{token}");
+            let remote = format!(
+                "{}/api/v2/chain/{chain}/contract/{address}/nfts/{token}",
+                common::base_domain::https_url_from_path("opensea", "")
+            );
 
             let token = path;
 
@@ -136,7 +139,8 @@ impl AssetReader for NftReader {
 
             let reader = AsyncCursor::new(data);
             Ok(reader)
-        }).await
+        })
+        .await
     }
 
     async fn read_meta<'a>(

@@ -1064,8 +1064,10 @@ fn drain_control_commands(
                     let client = ipfs.ipfs().client();
                     let sid = scene_id.clone();
                     let task = IoTaskPool::get().spawn_compat(async move {
-                        let url =
-                            "https://comms-gatekeeper-local.decentraland.org/get-server-scene-adapter";
+                        let url = common::base_domain::https_url_from_path(
+                            "comms-gatekeeper-local",
+                            "/get-server-scene-adapter",
+                        );
                         let uri = http::Uri::try_from(url)?;
                         let meta = serde_json::json!({
                             "intent": "dcl:explorer:comms-handshake",

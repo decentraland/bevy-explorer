@@ -203,11 +203,10 @@ impl DiscoverSettings {
 
     fn request(&mut self) {
         let mut url = if self.worlds {
-            "https://places.decentraland.org/api/worlds/?limit=50"
+            common::base_domain::https_url_from_path("places", "/api/worlds/?limit=50")
         } else {
-            "https://places.decentraland.org/api/places/?limit=50"
-        }
-        .to_string();
+            common::base_domain::https_url_from_path("places", "/api/places/?limit=50")
+        };
 
         url = format!("{url}&offset={}", self.data.len());
 
@@ -433,7 +432,10 @@ impl DiscoverPage {
         Self {
             title: format!("({}, {})", coords.x, coords.y),
             base_position: format!("{},{}", coords.x, coords.y),
-            image: "https://realm-provider.decentraland.org/content/contents/bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y".to_owned(),
+            image: common::base_domain::https_url_from_path(
+                "realm-provider",
+                "/content/contents/bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y",
+            ),
             ..Default::default()
         }
     }
@@ -624,10 +626,11 @@ pub fn spawn_discover_popup(
 ) {
     let url = match &item.world_name {
         Some(name) => format!(
-            "https://worlds-content-server.decentraland.org/world/{}",
+            "{}/world/{}",
+            common::base_domain::https_url_from_path("worlds-content-server", ""),
             name.clone()
         ),
-        None => "https://realm-provider-ea.decentraland.org/main".to_owned(),
+        None => common::base_domain::https_url_from_path("realm-provider-ea", "/main"),
     };
 
     let Ok(to) = IVec2Arg::from_str(&item.base_position) else {
