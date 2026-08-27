@@ -85,6 +85,12 @@ just native-release            # bundles the HUD if stale, then builds + runs ev
 just native-release --server https://realm-provider.decentraland.org/main --location 52,-52
 ```
 
+`--base-domain` retargets every backend host (auth, comms, places, worlds, social, ...) at another deployment's domain:
+
+```bash
+just native-release --base-domain interconnected.online --location 0,0
+```
+
 Doing it by hand instead of via `just`:
 
 ```bash
