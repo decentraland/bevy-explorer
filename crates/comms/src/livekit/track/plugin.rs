@@ -604,11 +604,9 @@ fn video_track_is_now_subscribed(
 }
 
 #[cfg(target_arch = "wasm32")]
-#[expect(clippy::type_complexity)]
 fn video_track_is_now_unsubscribed(
     trigger: Trigger<OnReplace, Subscribed>,
     mut commands: Commands,
-    tracks: Query<(&LivekitTrack, Has<Video>, Option<&ActiveTransmitter>), With<Subscribed>>,
 ) {
     let entity = trigger.target();
     commands.entity(entity).try_remove::<HtmlMediaEntity>();
