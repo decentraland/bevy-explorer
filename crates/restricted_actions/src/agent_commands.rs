@@ -11,7 +11,7 @@ pub struct AgentCommandsPlugin;
 
 impl Plugin for AgentCommandsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_console_command::<MovePlayerToCommand, _>(move_player_to_cmd);
+        app.add_preview_console_command::<MovePlayerToCommand, _>(move_player_to_cmd);
         app.add_console_command::<WalkPlayerToCommand, _>(walk_player_to_cmd);
         app.add_console_command::<PlayerPositionCommand, _>(player_position_cmd);
         app.add_console_command::<ListPortablesCommand, _>(list_portables_cmd);
