@@ -46,7 +46,8 @@ use dcl_component::{
     CrdtType, SceneComponentId,
 };
 use livestream_manager::{
-    ActiveReceiver, ReceiverImage, ReceiverVolume, TransmissionStopped, TransmissionUpdated,
+    states::Transmitter, ActiveReceiver, ReceiverImage, ReceiverVolume, TransmissionStopped,
+    TransmissionUpdated,
 };
 use scene_runner::{
     renderer_context::RendererSceneContext,
@@ -760,18 +761,28 @@ fn video_player_should_be_playing(
     scratch_shouldnt_be_playing.clear();
 }
 
+#[expect(clippy::type_complexity)]
 fn receiver_image_added(
     trigger: Trigger<OnAdd, ReceiverImage>,
     mut commands: Commands,
-    video_players: Query<&ReceiverImage, (With<VideoPlayer>, With<Stream>)>,
+    video_players: Query<(&ContainerEntity, &ReceiverImage), (With<VideoPlayer>, With<Stream>)>,
+    transmitter_state: Res<State<Transmitter>>,
 ) {
     let entity = trigger.target();
 
-    if let Ok(receiver_image) = video_players.get(entity) {
+    if let Ok((container_entity, receiver_image)) = video_players.get(entity) {
         debug!("ReceiverImage added to {}", entity);
         commands
             .entity(entity)
             .try_insert(VideoTextureOutput((*receiver_image).clone()));
+
+        if transmitter_state.get() == &Transmitter::On {
+            commands.trigger(SetState::<VideoPlayer> {
+                entity: *container_entity,
+                state: VideoState::VsPlaying,
+                _phantom: PhantomData,
+            });
+        }
     }
 }
 
