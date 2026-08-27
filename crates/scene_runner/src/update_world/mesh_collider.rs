@@ -180,7 +180,7 @@ impl Plugin for MeshColliderPlugin {
         add_collider_systems::<CtCollider>(app);
 
         app.init_resource::<DebugColliders>();
-        app.add_console_command::<DebugColliderCommand, _>(debug_colliders);
+        app.add_preview_console_command::<DebugColliderCommand, _>(debug_colliders);
     }
 }
 

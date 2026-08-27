@@ -137,7 +137,7 @@ impl Plugin for PointerResultPlugin {
                 .chain()
                 .in_set(SceneSets::Input),
         );
-        app.add_console_command::<DebugPointerCommand, _>(debug_pointer_command);
+        app.add_preview_console_command::<DebugPointerCommand, _>(debug_pointer_command);
     }
 }
 

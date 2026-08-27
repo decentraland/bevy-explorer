@@ -148,7 +148,7 @@ impl Plugin for AvatarPlugin {
             ComponentPosition::Any,
         );
 
-        app.add_console_command::<DebugDumpAvatar, _>(debug_dump_avatar);
+        app.add_preview_console_command::<DebugDumpAvatar, _>(debug_dump_avatar);
 
         app.add_observer(add_attach_points_to_avatar_shape);
         app.add_observer(remove_attach_points_from_avatar_shape);

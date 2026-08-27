@@ -40,7 +40,7 @@ impl Plugin for RaycastResultPlugin {
         app.add_systems(Update, run_raycasts.in_set(SceneSets::Input));
         app.init_resource::<DebugRaycast>();
         app.init_resource::<SuperUserRaycastScene>();
-        app.add_console_command::<DebugRaycastCommand, _>(debug_raycast);
+        app.add_preview_console_command::<DebugRaycastCommand, _>(debug_raycast);
     }
 }
 

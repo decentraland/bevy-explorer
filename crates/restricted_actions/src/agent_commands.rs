@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
 use common::{
     rpc::{RpcCall, RpcResultSender, SpawnResponse},
-    structs::{EmoteCommand, PrimaryUser},
+    structs::PrimaryUser,
 };
 use console::{DoAddConsoleCommand, PendingConsoleResponses};
 use dcl_component::transform_and_parent::DclTranslation;
@@ -11,12 +11,11 @@ pub struct AgentCommandsPlugin;
 
 impl Plugin for AgentCommandsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_console_command::<MovePlayerToCommand, _>(move_player_to_cmd);
+        app.add_preview_console_command::<MovePlayerToCommand, _>(move_player_to_cmd);
         app.add_console_command::<WalkPlayerToCommand, _>(walk_player_to_cmd);
         app.add_console_command::<PlayerPositionCommand, _>(player_position_cmd);
         app.add_console_command::<ListPortablesCommand, _>(list_portables_cmd);
         app.add_console_command::<ConnectedPlayersCommand, _>(connected_players_cmd);
-        app.add_console_command::<TriggerEmoteCommand, _>(trigger_emote_cmd);
         app.add_console_command::<GetUserDataCommand, _>(get_user_data_cmd);
     }
 }
@@ -209,38 +208,6 @@ fn connected_players_cmd(
             },
             responder,
         );
-    }
-}
-
-// --- /emote ---
-
-#[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/emote")]
-struct TriggerEmoteCommand {
-    urn: String,
-    #[arg(long, default_value_t = false)]
-    r#loop: bool,
-}
-
-fn trigger_emote_cmd(
-    mut input: ConsoleCommand<TriggerEmoteCommand>,
-    mut player: Query<(Entity, Option<&EmoteCommand>), With<PrimaryUser>>,
-    mut commands: Commands,
-) {
-    if let Some(Ok(command)) = input.take() {
-        match player.single_mut() {
-            Ok((entity, maybe_prev)) => {
-                commands.entity(entity).try_insert(EmoteCommand {
-                    urn: command.urn.clone(),
-                    r#loop: command.r#loop,
-                    timestamp: maybe_prev
-                        .map(|prev| prev.timestamp + 1)
-                        .unwrap_or_default(),
-                });
-                input.reply_ok(format!("playing emote {}", command.urn));
-            }
-            Err(_) => input.reply_failed("player not found"),
-        }
     }
 }
 

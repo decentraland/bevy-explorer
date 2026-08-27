@@ -14,7 +14,7 @@ import { isInputLocked, subscribeInputLock } from '../../lib/inputLock'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
-import { parseChatCommand } from '../chat/chatCommands'
+import { formatConsoleReply, parseChatCommand } from '../chat/chatCommands'
 import type {
   AppNotification,
   BindingEntry,
@@ -686,6 +686,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           // it from a RAF loop, so it must not drive React renders.
           poseRef.current = { x: msg.x, z: msg.z, yaw: msg.yaw, camYaw: msg.camYaw }
           break
+        case 'consoleReply':
+          // Command feedback: a local "DCL System" line, never broadcast (same shape as pushSystemMessage).
+          setMessages((prev) =>
+            [
+              ...prev,
+              { sender: '', message: formatConsoleReply(msg.command, msg.args, msg.output), channel: 'Nearby', id: chatId.current++, ts: Date.now() }
+            ].slice(-MAX_CHAT_LINES)
+          )
+          break
         case 'realmInfo':
           setIsWorld(msg.isWorld)
           break
@@ -827,6 +836,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'commands':
           driverRef.current?.send({ kind: 'consoleCommand', command: 'help' })
+          break
+        case 'console':
+          driverRef.current?.send({ kind: 'consoleCommand', command: cmd.command, args: cmd.args })
           break
         case 'system':
           pushSystemMessage(cmd.message)
