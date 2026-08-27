@@ -114,6 +114,7 @@ impl DecentralandAppConfig {
         #[cfg(target_arch = "wasm32")] wasm_loader_handle: Option<WasmLoaderHandle>,
     ) -> Self {
         update_app_config_from_arguments(&mut app_config, &arguments);
+        app_config.migrate_inputs();
 
         Self {
             app_config,
@@ -175,7 +176,6 @@ pub struct DecentralandArguments {
     pub emote_wheel: bool,
     pub chat: bool,
     pub permissions: bool,
-    pub profile: bool,
     pub nametags: bool,
     pub tooltips: bool,
     pub loading_scene: bool,
@@ -349,7 +349,6 @@ impl DecentralandApp {
                 emote_wheel: decentraland_app_config.arguments.emote_wheel,
                 chat: decentraland_app_config.arguments.chat,
                 permissions: decentraland_app_config.arguments.permissions,
-                profile: decentraland_app_config.arguments.profile,
                 nametags: decentraland_app_config.arguments.nametags,
                 tooltips: decentraland_app_config.arguments.tooltips,
                 loading_scene: decentraland_app_config.arguments.loading_scene,
@@ -370,7 +369,6 @@ impl DecentralandApp {
                 emote_wheel: true,
                 chat: true,
                 permissions: true,
-                profile: true,
                 nametags: true,
                 tooltips: true,
                 loading_scene: true,
@@ -387,7 +385,6 @@ impl DecentralandApp {
                 emote_wheel: false,
                 chat: false,
                 permissions: false,
-                profile: false,
                 nametags: false,
                 tooltips: false,
                 loading_scene: false,

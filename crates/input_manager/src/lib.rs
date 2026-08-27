@@ -20,7 +20,7 @@ use common::{
     inputs::{
         Action, AxisIdentifier, BindingsData, CommonInputAction, InputDirection,
         InputDirectionalSet, InputIdentifier, InputMap, InputMapSerialized, SystemAction,
-        SystemActionEvent, POINTER_SET,
+        SystemActionEvent, FIXED_BINDINGS, POINTER_SET, SCROLL_SET,
     },
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{AppConfig, CursorLocks, PlayerModifiers},
@@ -33,9 +33,17 @@ pub enum InputPriority {
     #[default]
     None,
     Scene,
+    /// held (InputType::All) while an external HUD surface (react menu/popup) is active:
+    /// scenes and world consumers stop receiving input, but the system-action stream —
+    /// which reads at this level — keeps flowing so the HUD can react (Cancel, hotkeys).
+    Ui,
     Focus,
     AvatarCollider,
     TextEntry,
+    /// held (InputType::Keyboard) while an external HUD text field has keyboard focus.
+    /// A distinct level from TextEntry so HUD focus changes can't release the engine's
+    /// own text-entry reservation (both may be held at once; reservations are per-level).
+    UiText,
     Scroll,
     CancelFocus,
     BindInput,
@@ -144,6 +152,7 @@ impl Plugin for InputManagerPlugin {
                 handle_native_input,
                 handle_get_bindings,
                 handle_set_bindings,
+                handle_set_ui_focus,
                 handle_pointer_motion,
                 handle_system_input_stream,
             ),
@@ -462,8 +471,19 @@ impl InputManager<'_, '_> {
 }
 
 struct CurrentNativeInputRequest {
-    sender: RpcResultSender<InputIdentifier>,
+    // all pending requests resolve with the same captured input: there is no cancel, so a
+    // request whose UI was dismissed must not block a later one (callers discard stale
+    // results by request id)
+    senders: Vec<RpcResultSender<InputIdentifier>>,
     axes: HashMap<AxisIdentifier, Vec2>,
+}
+
+impl CurrentNativeInputRequest {
+    fn resolve(self, identifier: InputIdentifier) {
+        for sender in self.senders {
+            sender.send(identifier);
+        }
+    }
 }
 
 // While an unbound OS modifier (Cmd/Ctrl/Alt) is held, suppress non-modifier
@@ -647,7 +667,6 @@ fn handle_native_input(
     mouse_input: Res<ButtonInput<MouseButton>>,
     key_input: Res<ButtonInput<KeyCode>>,
     mut wheel_events: EventReader<MouseWheel>,
-    mut mouse_events: EventReader<MouseMotion>,
     gamepads: Query<&Gamepad>,
     mut priorities: ResMut<InputPriorities>,
 ) {
@@ -665,6 +684,15 @@ fn handle_native_input(
     }
 
     if let Some(mut current) = active.take() {
+        // a request arriving while a capture is pending joins it (no cancel exists, so a
+        // dismissed request must not block a later one; unread events would just expire)
+        current.senders.extend(events.read().filter_map(|e| {
+            if let SystemApi::GetNativeInput(sender) = e {
+                Some(sender.clone())
+            } else {
+                None
+            }
+        }));
         // Super (Cmd on Mac) is not accepted as a gameplay binding — see
         // handle_modifier_keys for the OS-shortcut suppression logic, which
         // assumes Super is never bound.
@@ -672,25 +700,17 @@ fn handle_native_input(
             .get_just_pressed()
             .find(|&&k| !matches!(k, KeyCode::SuperLeft | KeyCode::SuperRight))
         {
-            current.sender.send(InputIdentifier::Key(*key));
+            current.resolve(InputIdentifier::Key(*key));
             return;
         } else if let Some(mouse) = mouse_input.get_just_pressed().next() {
-            current.sender.send(InputIdentifier::Mouse(*mouse));
+            current.resolve(InputIdentifier::Mouse(*mouse));
             return;
         } else {
-            for ev in mouse_events.read() {
-                let axis = current.axes.entry(AxisIdentifier::MouseMove).or_default();
-                *axis += ev.delta;
-                if axis.abs().max_element() > 10.0 {
-                    current.sender.send(InputIdentifier::Analog(
-                        AxisIdentifier::MouseMove,
-                        vec2dir(*axis),
-                    ));
-                    return;
-                }
-            }
+            // mouse MOTION is deliberately not capturable: it can't help but move while the
+            // user reaches for their intended input, and button-style actions bound to a
+            // MouseMove direction have no press edge so they never fire anyway
             if let Some(ev) = wheel_events.read().next() {
-                current.sender.send(InputIdentifier::Analog(
+                current.resolve(InputIdentifier::Analog(
                     AxisIdentifier::MouseWheel,
                     vec2dir(Vec2::new(ev.x, ev.y)),
                 ));
@@ -698,9 +718,7 @@ fn handle_native_input(
             }
             for gamepad in gamepads.iter() {
                 if let Some(gamepad_button) = gamepad.get_just_pressed().next() {
-                    current
-                        .sender
-                        .send(InputIdentifier::Gamepad(*gamepad_button));
+                    current.resolve(InputIdentifier::Gamepad(*gamepad_button));
                     return;
                 }
 
@@ -725,9 +743,8 @@ fn handle_native_input(
                     let axis_val = current.axes.entry(axis).or_default();
                     *axis_val += value;
                     if axis_val.abs().max_element() > 10.0 {
-                        current
-                            .sender
-                            .send(InputIdentifier::Analog(axis, vec2dir(*axis_val)));
+                        let dir = vec2dir(*axis_val);
+                        current.resolve(InputIdentifier::Analog(axis, dir));
                         return;
                     }
                 }
@@ -738,11 +755,10 @@ fn handle_native_input(
         return;
     }
 
-    mouse_events.clear();
     wheel_events.clear();
     priorities.release(InputType::All, InputPriority::BindInput);
 
-    if let Some(sender) = events
+    let senders = events
         .read()
         .filter_map(|e| {
             if let SystemApi::GetNativeInput(sender) = e {
@@ -751,10 +767,10 @@ fn handle_native_input(
                 None
             }
         })
-        .last()
-    {
+        .collect::<Vec<_>>();
+    if !senders.is_empty() {
         *active = Some(CurrentNativeInputRequest {
-            sender,
+            senders,
             axes: Default::default(),
         });
         priorities.reserve(InputType::All, InputPriority::BindInput);
@@ -788,14 +804,62 @@ fn handle_set_bindings(
         }
     }) {
         map.inputs = binding_data.bindings.clone();
+        // fixed bindings can never be removed — re-assert over any client-supplied table
+        // (the echoed GetBindings then shows them restored).
+        for (action, id) in FIXED_BINDINGS {
+            let bindings = map.inputs.entry(action).or_default();
+            if !bindings.contains(&id) {
+                bindings.push(id);
+            }
+        }
         config.inputs = InputMapSerialized(
-            binding_data.bindings.clone().into_iter().collect(),
+            map.inputs.clone().into_iter().collect(),
             config.inputs.1.clone(),
         );
 
         platform::write_config_file(&*config);
 
         sender.send(());
+    }
+}
+
+fn handle_set_ui_focus(
+    mut events: EventReader<SystemApi>,
+    mut priorities: ResMut<InputPriorities>,
+) {
+    for (ui, text, scroll) in events.read().filter_map(|e| {
+        if let SystemApi::SetUiFocus { ui, text, scroll } = e {
+            Some((*ui, *text, *scroll))
+        } else {
+            None
+        }
+    }) {
+        // reserve/release are set-based, so re-asserting an unchanged state is a no-op.
+        if ui {
+            priorities.reserve(InputType::All, InputPriority::Ui);
+        } else {
+            priorities.release(InputType::All, InputPriority::Ui);
+        }
+        // keyboard only: mouse/gamepad still reach scenes while a HUD text field is
+        // focused (click the world while chat has the caret), matching engine text entry.
+        if text {
+            priorities.reserve(InputType::Keyboard, InputPriority::UiText);
+        } else {
+            priorities.release(InputType::Keyboard, InputPriority::UiText);
+        }
+        // over a scrollable HUD element the SCROLL gesture belongs to the panel: reserving
+        // the Scroll ACTIONS blocks every input bound to them — wheel axis, key, gamepad
+        // button alike — for world consumers (camera zoom on a shared wheel, movement on a
+        // shared key), while the action stream, reading at the same Ui level, still
+        // resolves the Scroll actions themselves and the HUD scrolls the hovered panel
+        // from those edges. The same mechanism scene scrollables use, one level down.
+        for action in SCROLL_SET.actions.iter().flatten() {
+            if scroll {
+                priorities.reserve(InputType::Action(*action), InputPriority::Ui);
+            } else {
+                priorities.release(InputType::Action(*action), InputPriority::Ui);
+            }
+        }
     }
 }
 
@@ -834,8 +898,14 @@ fn handle_system_input_stream(
 
     let new_pressed = SystemAction::iter()
         .filter(|a| {
-            input_manager.is_down(*a, InputPriority::Scene)
-                || input_manager.just_down(*a, InputPriority::Scene)
+            // an action ENTERS the set only on a fresh press edge, and STAYS while held.
+            // `is_down` alone must not admit it: a key already held when a higher-priority
+            // reservation releases (binding capture, text entry) would otherwise emit a
+            // phantom press the moment the reservation lifts.
+            // reads at Ui so the stream survives the HUD's own Ui reservation (which mutes
+            // scenes) but is muted by text entry and binding capture.
+            input_manager.just_down(*a, InputPriority::Ui)
+                || (pressed.contains(a) && input_manager.is_down(*a, InputPriority::Ui))
         })
         .filter(|a| !block_emote || a != &SystemAction::Emote)
         .collect::<HashSet<_>>();
@@ -874,6 +944,7 @@ fn reset_controls_command(
     if let Some(Ok(_)) = input.take() {
         map.inputs = InputMap::default().inputs;
         config.inputs.0 = map.inputs.clone().into_iter().collect();
+        config.inputs_generation = common::structs::INPUTS_GENERATION;
         platform::write_config_file(&*config);
         input.reply_ok("Controls reset to default");
     }

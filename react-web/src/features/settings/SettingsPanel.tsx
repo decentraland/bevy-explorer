@@ -4,11 +4,16 @@
 // of BevyApi.getSettings / setSetting.
 
 import { memo, useMemo, useState } from 'react'
-import { Select, Slider, Toggle } from '../../design'
+import { Select, Slider, Toggle, showConfirm } from '../../design'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import type { Setting } from '../../engine/protocol'
-import type { ProfileState, SettingsState } from '../session/useEngineSession'
+import type { BindingsState, ProfileState, SettingsState } from '../session/useEngineSession'
+import { KeyBindingsTab } from './KeyBindingsTab'
 import styles from './SettingsPanel.module.css'
+
+// Appended after the engine-derived categories: bindings are (action, keys[]) rows from the
+// bindings relay, not numeric engine settings, so they get their own tab + body.
+const KEY_BINDINGS_TAB = 'Key Bindings'
 
 function humanize(s: string): string {
   return s.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -59,21 +64,36 @@ const SettingField = memo(
 
 export function SettingsPanel({
   settings,
+  bindings,
   profile,
   onNavigate
 }: {
   settings: SettingsState
+  bindings: BindingsState
   profile: ProfileState
   onNavigate: (page: string) => void
 }): React.JSX.Element | null {
-  const categories = useMemo(() => [...new Set(settings.list.map((s) => s.category))], [settings.list])
+  const categories = useMemo(
+    () => [...new Set(settings.list.map((s) => s.category)), KEY_BINDINGS_TAB],
+    [settings.list]
+  )
   const [tab, setTab] = useState<string | null>(null)
 
   if (!settings.open) return null
 
   const activeTab = tab && categories.includes(tab) ? tab : categories[0]
   const items = settings.list.filter((s) => s.category === activeTab)
-  const resetAll = (): void => items.forEach((s) => settings.set(s.name, s.default))
+  const resetAll = (): void => {
+    if (activeTab === KEY_BINDINGS_TAB) {
+      void showConfirm({
+        title: 'Reset key bindings?',
+        body: 'All bindings return to their defaults. This cannot be undone.',
+        confirmLabel: 'Reset'
+      }).then((ok) => ok && bindings.reset())
+      return
+    }
+    items.forEach((s) => settings.set(s.name, s.default))
+  }
 
   const p = profile.data
   return (
@@ -101,7 +121,9 @@ export function SettingsPanel({
       </div>
 
       <div className={styles.card}>
-        {items.length === 0 ? (
+        {activeTab === KEY_BINDINGS_TAB ? (
+          <KeyBindingsTab bindings={bindings} />
+        ) : items.length === 0 ? (
           <div className={styles.empty}>No settings available.</div>
         ) : (
           <div className={styles.grid}>

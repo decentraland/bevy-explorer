@@ -6,18 +6,14 @@ use bevy::{
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
-    inputs::{CommonInputAction, SystemAction},
+    inputs::CommonInputAction,
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::{
-        PlayerModifiers, PointerTargetType, PrimaryCamera, PrimaryUser, ShowProfileEvent, ToolTips,
-        TooltipSource,
-    },
-    util::AsH160,
+    structs::{PlayerModifiers, PointerTargetType, PrimaryCamera, PrimaryUser},
 };
-use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
+use comms::global_crdt::ForeignPlayer;
 use dcl_component::{proto_components::sdk::components::ColliderLayer, SceneEntityId};
-use input_manager::{InputManager, InputPriority, InputType};
+use input_manager::{InputManager, InputPriority};
 use rapier3d_f64::{
     na::Isometry,
     prelude::{ColliderBuilder, Group, InteractionGroups, SharedShape},
@@ -28,7 +24,7 @@ use scene_runner::{
     update_world::mesh_collider::ColliderId,
 };
 use serde_json::json;
-use system_bridge::{AvatarModifierState, NativeUi, SystemApi};
+use system_bridge::{AvatarModifierState, SystemApi};
 
 pub struct AvatarColliderPlugin;
 
@@ -200,36 +196,18 @@ fn update_avatar_collider_actions(
     }
 }
 
-#[expect(clippy::too_many_arguments)]
 fn send_message_to_scene(
-    mut commands: Commands,
     pointer_target: Res<PointerTarget>,
-    profiles: Query<(&ForeignPlayer, &UserProfile)>,
+    profiles: Query<&ForeignPlayer>,
     camera: Single<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     senders: Res<PlayerClickedSenders>,
-    mut input_manager: InputManager,
-    native_ui: Res<NativeUi>,
-    mut tooltips: ResMut<ToolTips>,
+    input_manager: InputManager,
 ) {
-    tooltips.0.remove(&TooltipSource::Label("avatar_pointer"));
-
-    if native_ui.profile {
-        input_manager.priorities().reserve(
-            InputType::Action(SystemAction::ShowProfile.into()),
-            InputPriority::AvatarCollider,
-        );
-    }
-
-    input_manager.priorities().release(
-        InputType::Action(SystemAction::ShowProfile.into()),
-        InputPriority::AvatarCollider,
-    );
-
     let Some(target) = pointer_target.0.as_ref() else {
         return;
     };
 
-    let Ok((player, profile)) = profiles.get(target.container) else {
+    let Ok(player) = profiles.get(target.container) else {
         return;
     };
 
@@ -248,24 +226,6 @@ fn send_message_to_scene(
         }).to_string();
         for sender in senders.iter() {
             let _ = sender.send(event.clone());
-        }
-    }
-
-    if native_ui.profile {
-        tooltips.0.insert(
-            TooltipSource::Label("avatar_pointer"),
-            vec![("Middle Click : Profile".to_owned(), true)],
-        );
-    }
-
-    if native_ui.profile
-        && input_manager.just_down(SystemAction::ShowProfile, InputPriority::AvatarCollider)
-    {
-        // display profile
-        if let Some(address) = profile.content.eth_address.as_h160() {
-            commands.send_event(ShowProfileEvent(address));
-        } else {
-            warn!("Profile has a bad address {}", profile.content.eth_address);
         }
     }
 }

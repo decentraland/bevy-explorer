@@ -4,6 +4,11 @@ import { PopupHost, openPopup, closeTopPopup, showConfirm, resetPopups } from '.
 import { CrashModal } from '../features/error/CrashModal'
 import { openExitConfirm } from '../features/session/ExitConfirm'
 
+// The popup layer has NO keyboard handling of its own: the cancel key flows to the engine
+// like any other input and comes back as the 'Cancel' system action, which the session
+// dispatcher turns into closeTopPopup() — see systemActionShortcuts.test.tsx for that path
+// (and for the pre-world DOM fallback). These tests cover the stack semantics themselves.
+
 const pressEscape = (): void =>
   act(() => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -12,7 +17,7 @@ const pressEscape = (): void =>
 afterEach(resetPopups)
 
 describe('popup stack', () => {
-  it('closeTopPopup closes only the topmost popup (Escape is relayed here — see useEngineSession)', () => {
+  it('closeTopPopup closes only the topmost popup (the session Cancel handler calls this)', () => {
     render(<PopupHost />)
     act(() => {
       openPopup(() => <div>first</div>)
@@ -51,45 +56,27 @@ describe('popup stack', () => {
     expect(screen.getByText('locked')).toBeTruthy() // stayed open
   })
 
-  it('Escape closes the topmost popup, one layer at a time — the single central handler', () => {
+  it('a DOM Escape alone does not close popups — cancel is engine-resolved, and the key must reach the engine', () => {
     render(<PopupHost />)
-    act(() => {
-      openPopup(() => <div>first</div>)
-      openPopup(() => <div>second</div>)
-    })
-    pressEscape()
-    expect(screen.queryByText('second')).toBeNull()
-    expect(screen.getByText('first')).toBeTruthy()
-    pressEscape()
-    expect(screen.queryByText('first')).toBeNull()
-  })
-
-  it('Escape passes through to the engine (window) when no popup is open, but is suppressed when one is', () => {
-    render(<PopupHost />)
-    const onWindow = vi.fn() // stands in for the mock/engine Cancel relay + Modal's own key handler
+    const onWindow = vi.fn() // stands in for boot.js's forward-to-canvas listener
     window.addEventListener('keydown', onWindow)
-
-    pressEscape() // nothing open → not swallowed, the engine still gets it
-    expect(onWindow).toHaveBeenCalledTimes(1)
-
     act(() => {
-      openPopup(() => <div>x</div>)
+      openPopup(() => <div>popup</div>)
     })
-    pressEscape() // popup open → PopupHost captures + stops, so no double-close downstream
-    expect(onWindow).toHaveBeenCalledTimes(1) // unchanged: window never saw the second Escape
-    expect(screen.queryByText('x')).toBeNull() // ...and the popup closed
-
+    pressEscape()
+    expect(screen.getByText('popup')).toBeTruthy() // the layer itself never reacts to keys
+    expect(onWindow).toHaveBeenCalledTimes(1) // ...and nothing swallowed the key on its way out
     window.removeEventListener('keydown', onWindow)
   })
 
-  it('runs the popup onClose exactly once, on every close path (Escape, handle, backdrop)', () => {
+  it('runs the popup onClose exactly once, on every close path (closeTopPopup, handle, backdrop)', () => {
     render(<PopupHost />)
 
     const onClose = vi.fn()
     act(() => {
       openPopup(() => <div>a</div>, { onClose })
     })
-    pressEscape()
+    act(() => closeTopPopup())
     expect(onClose).toHaveBeenCalledTimes(1)
 
     const onClose2 = vi.fn()
@@ -109,19 +96,21 @@ describe('popup stack', () => {
     expect(onClose3).toHaveBeenCalledTimes(1)
   })
 
-  it('a showConfirm dismissed with Escape resolves false (no hanging promise)', async () => {
+  it('a showConfirm dismissed via closeTopPopup (the Cancel path) resolves false (no hanging promise)', async () => {
     render(<PopupHost />)
     let confirmed!: Promise<boolean>
     act(() => {
       confirmed = showConfirm({ title: 'Sure?' })
     })
     expect(screen.getByText('Sure?')).toBeTruthy()
-    pressEscape()
+    act(() => closeTopPopup())
     expect(await confirmed).toBe(false)
     expect(screen.queryByText('Sure?')).toBeNull()
   })
 
-  it('a crash modal freezes the popup layer: Escape stands down and the popup stays open underneath, then resumes once the crash is gone', () => {
+  it('a crash modal freezes the popup layer: the popup underneath stays exactly as it was', () => {
+    // (The input lock also gates the Cancel action in the session dispatcher — see
+    // systemActionShortcuts.test.tsx — so nothing can close the popup invisibly.)
     const onClose = vi.fn()
     const { rerender } = render(
       <>
@@ -133,26 +122,23 @@ describe('popup stack', () => {
     })
     expect(screen.getByText('passport')).toBeInTheDocument()
 
-    // The crash modal mounts on top — the popup underneath must stay exactly as it was so it's still
-    // visible in a screenshot, and its Escape/focus-trap contract must not fire invisibly.
     rerender(
       <>
         <PopupHost />
         <CrashModal error={{ message: 'boom', source: 'runtime' }} onReload={vi.fn()} onDismiss={vi.fn()} />
       </>
     )
-    pressEscape()
     expect(screen.getByText('passport')).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
 
-    // Once the crash modal is dismissed, Escape closes the popup normally again.
+    // Once the crash modal is dismissed, the popup closes normally again.
     rerender(<PopupHost />)
-    pressEscape()
+    act(() => closeTopPopup())
     expect(screen.queryByText('passport')).toBeNull()
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('openExitConfirm settles exactly one outcome: Leave never runs the stay contract, Escape stays once', async () => {
+  it('openExitConfirm settles exactly one outcome: Leave never runs the stay contract, a dismiss stays once', async () => {
     render(<PopupHost />)
 
     const onStay = vi.fn()
@@ -169,7 +155,7 @@ describe('popup stack', () => {
     act(() => {
       openExitConfirm(onStay2, onLeave2)
     })
-    pressEscape()
+    act(() => closeTopPopup())
     expect(onStay2).toHaveBeenCalledTimes(1)
     expect(onLeave2).not.toHaveBeenCalled()
   })

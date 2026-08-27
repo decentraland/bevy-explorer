@@ -3,12 +3,14 @@
 // and the reel actions (jump in · download · copy link · share to X · delete).
 //
 // Rendered INSIDE MainMenuShell's scaled reference-canvas body, so it's DPI-correct
-// without any portal/--ui-scale gymnastics. Escape closes the lightbox first (capture
-// phase + stopImmediatePropagation), leaving the session's Escape to close the gallery.
+// without any portal/--ui-scale gymnastics. While mounted it registers as a cancel layer,
+// so the engine's Cancel action closes the lightbox first (key or gamepad), leaving the
+// next press to close the gallery.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Avatar, Button } from '../../design'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
+import { registerCancelLayer } from '../../lib/cancelLayers'
 import { photoTime } from '../session/useEngineSession'
 import type { GalleryPhoto, GalleryPhotoMeta } from '../../engine/protocol'
 import type { ChatUser } from '../chat/ProfileCardPresentation'
@@ -77,15 +79,16 @@ export function PhotoDetail({
     setConfirmDelete(false)
   }, [photo.id])
 
-  // Keyboard: Escape closes the lightbox (before the session closes the gallery),
-  // arrows navigate. Capture phase + stopImmediatePropagation so we win over the
-  // session's window Escape handler.
+  // The engine's Cancel action closes the lightbox before the session closes the gallery —
+  // registered as a cancel layer for the lightbox's lifetime (ref: onClose is an inline
+  // prop, and re-registering per render would churn the layer stack).
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => registerCancelLayer(() => onCloseRef.current()), [])
+
+  // Keyboard: arrows navigate.
   useWindowKeyDown((e) => {
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      e.stopImmediatePropagation()
-      onClose()
-    } else if (e.key === 'ArrowLeft' && hasPrev) {
+    if (e.key === 'ArrowLeft' && hasPrev) {
       onIndex(index - 1)
     } else if (e.key === 'ArrowRight' && hasNext) {
       onIndex(index + 1)

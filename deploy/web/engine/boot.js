@@ -216,12 +216,44 @@ const config = window.__bevyBootConfig ?? {}
 
 // ---- engine text focus (CALLED BY THE WASM — src/web.rs update_text_focus) -----------------------
 // True while an engine-rendered text field (e.g. a scene textinput) holds keyboard focus. Those
-// fields live on the canvas, so DOM focus checks can't see them — HUD hotkey handlers read this
-// flag instead (useMenuShortcuts) to leave keys alone while the user is typing.
+// fields live on the canvas, so DOM focus checks can't see them — the HUD's systemAction
+// dispatcher reads this flag instead to leave keys alone while the user is typing.
 window.__engineTextFocus = false
 window.__setEngineTextFocus = (focused) => {
   window.__engineTextFocus = !!focused
 }
+
+// ---- keyboard forwarding to the engine -----------------------------------------------------------
+// winit attaches its keyboard listeners to the CANVAS element, so the engine only hears keys while
+// the canvas holds DOM focus — click any HUD control and movement + every engine binding (which
+// also drives the HUD hotkeys via the system-action stream) would go dead. Re-dispatch window-level
+// key events to the canvas when focus sits elsewhere. Bubble phase, so a handler that
+// stopPropagation()s (chat input, widgets that own a key locally) still withholds keys from the
+// engine; text inputs are skipped so typing never moves the avatar. Tab is left alone off-canvas —
+// there it is focus navigation, not a game key. The re-dispatched clone bubbles back here with the
+// canvas as target, which the target check drops (no loop).
+const forwardKeyToEngine = (e) => {
+  const canvas = document.getElementById('mygame-canvas')
+  if (!canvas || e.target === canvas) return
+  const t = e.target
+  if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  if (e.code === 'Tab') return
+  canvas.dispatchEvent(new KeyboardEvent(e.type, e))
+}
+window.addEventListener('keydown', forwardKeyToEngine)
+window.addEventListener('keyup', forwardKeyToEngine)
+
+// Wheel likewise: winit's wheel listener also lives on the canvas, so wheel over any HUD element
+// would never reach the engine (no camera zoom while the cursor rests on the sidebar). Forward a
+// clone; the original still scrolls whatever it was over. Over a SCROLLABLE panel the page
+// declares `scroll` focus and the engine stands the Scroll-bound axes down instead — so the wheel
+// scrolls chat without zooming, and zooms everywhere else. Same no-loop target check as keys.
+const forwardWheelToEngine = (e) => {
+  const canvas = document.getElementById('mygame-canvas')
+  if (!canvas || e.target === canvas) return
+  canvas.dispatchEvent(new WheelEvent('wheel', e))
+}
+window.addEventListener('wheel', forwardWheelToEngine)
 
 // ---- URL sync (CALLED BY THE WASM — src/web.rs set_url_params) -----------------------------------
 // Keeps the browser URL in step with the player's realm/position so a reload/share lands back at

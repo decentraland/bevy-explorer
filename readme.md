@@ -142,7 +142,7 @@ cargo build --release --bin headless --no-default-features --features headless,l
 **UI**
 - `--ui <scene|none>` — use a specific system scene, or `none` for no system scene. Any explicit `--ui` opts **out** of the React HUD; without it, HUD builds load the bundled bridge scene.
 - `--params "key1=value1&key2=value2"` — arbitrary parameters for the system scene, readable via `BevyApi.getParams()`. On web, URL query parameters are forwarded automatically (with decoding).
-- `--builtin-login`, `--builtin-chat`, `--builtin-emotes`, `--builtin-profile`, `--builtin-nametags`, `--builtin-perms`, `--builtin-tooltips`, `--builtin-loading-scene-ui` — force individual engine-drawn UI pieces back on.
+- `--builtin-login`, `--builtin-chat`, `--builtin-emotes`, `--builtin-nametags`, `--builtin-perms`, `--builtin-tooltips`, `--builtin-loading-scene-ui` — force individual engine-drawn UI pieces back on.
 
 **Debug**
 - `--inspect <scene_hash>` — pause that scene's js runtime until a debugger (e.g. `chrome://inspect`) attaches. Needs `--features inspect`.

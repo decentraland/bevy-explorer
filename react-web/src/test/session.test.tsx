@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { act, waitFor, render, screen } from '@testing-library/react'
+import { act, waitFor } from '@testing-library/react'
 import { renderSession, enterAsGuest, FakeDriver } from './harness'
 import { openProfileCard } from '../features/profileCard/ProfileCard'
-import { PopupHost, openPopup, resetPopups } from '../design'
+import { resetPopups } from '../design'
 
 // The avatarClick handler opens the world profile card as a popup; stub it so we can assert the call.
 vi.mock('../features/profileCard/ProfileCard', () => ({ openProfileCard: vi.fn() }))
@@ -229,18 +229,9 @@ describe('session domain', () => {
     expect(openProfileCard).toHaveBeenCalledWith('0xABC', 0, 0)
   })
 
-  it("a 'Cancel' system action no longer closes popups — PopupHost's DOM Escape owns that now", () => {
-    const h = renderSession({ userId: null })
-    render(<PopupHost />) // shares the module popup stack
-    act(() => {
-      openPopup(() => <div>a popup</div>)
-    })
-    expect(screen.getByText('a popup')).toBeTruthy()
-    // The engine still emits Cancel, but the session no longer relays it to closeTopPopup: popups are
-    // always open with the cursor freed, so the single DOM keydown handler in PopupHost suffices.
-    act(() => h.driver.emit({ kind: 'systemAction', action: 'Cancel' }))
-    expect(screen.getByText('a popup')).toBeTruthy() // unchanged — Cancel is a no-op
-  })
+  // The 'Cancel' system action (the engine resolves the cancel key/button; the HUD closes
+  // the topmost popup, then panels) is covered in systemActionShortcuts.test.tsx, along
+  // with the uiFocus declaration and the pre-world DOM fallback.
 
   it('chat.mention opens chat and queues the @name until consumed', async () => {
     const h = renderSession({ userId: null })

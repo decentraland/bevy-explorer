@@ -1,8 +1,10 @@
-// Dropdown — a string-option select with full keyboard nav (arrows, Home/End,
-// Enter, Escape), supporting controlled and uncontrolled use. Ported from
-// dcl-react-ui; differs from Select in that options are plain strings.
+// Dropdown — a string-option select with full keyboard nav (arrows, Home/End, Enter;
+// the Cancel action closes it via the cancel-layer stack), supporting controlled and
+// uncontrolled use. Ported from dcl-react-ui; differs from Select in that options are
+// plain strings.
 
 import { useEffect, useRef, useState } from 'react'
+import { registerCancelLayer } from '../lib/cancelLayers'
 import styles from './Dropdown.module.css'
 
 export interface DropdownProps {
@@ -36,6 +38,13 @@ export function Dropdown({ options, value, defaultValue, onChange }: DropdownPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
+  // While open, the engine's Cancel action (key or gamepad) closes just the options list —
+  // registered as a cancel layer so the same press doesn't also close the containing panel.
+  useEffect(() => {
+    if (!open) return
+    return registerCancelLayer(() => setOpen(false))
+  }, [open])
+
   function pick(opt: string): void {
     if (!isControlled) setInternal(opt)
     onChange?.(opt)
@@ -44,13 +53,6 @@ export function Dropdown({ options, value, defaultValue, onChange }: DropdownPro
   }
 
   function onKey(e: React.KeyboardEvent<HTMLDivElement>): void {
-    if (e.key === 'Escape') {
-      if (open) {
-        e.preventDefault()
-        setOpen(false)
-      }
-      return
-    }
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       if (!open) setOpen(true)

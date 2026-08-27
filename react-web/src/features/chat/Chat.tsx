@@ -13,6 +13,7 @@ import { searchByShortcode, SHORTCODE_RE, type Emoji } from './emojiData'
 import { MessageText, mentionsMe, buildNameIndex } from './chatText'
 import { type ChatUser } from './ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
+import { isCancelKey } from '../../lib/bindingLabels'
 import styles from './Chat.module.css'
 
 const MAX_LEN = 500
@@ -430,7 +431,7 @@ export function Chat({
       if (mentionSug.length > 0) applyMention(mentionSug[0])
       else if (suggestions.length > 0) applyEmoji(suggestions[0].emoji)
       else send()
-    } else if (e.key === 'Escape') {
+    } else if (isCancelKey(e)) {
       if (mentionQuery != null) {
         setMentionQuery(null)
         setMentionSug([])
@@ -442,7 +443,7 @@ export function Chat({
       // Opening chat already released camera-look (web: requestFocusChat exits pointer lock; native:
       // the bridge frees the cursor), so there's nothing to restore — and the browser won't re-lock
       // without a fresh gesture anyway. Just blur; re-engage camera-look with a click, same as leaving
-      // any panel. Enter refocuses chat from anywhere (useMenuShortcuts).
+      // any panel. Enter refocuses chat from anywhere (the engine's Chat action → focusChat).
       else inputRef.current?.blur()
     }
   }
