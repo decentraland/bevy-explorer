@@ -6,7 +6,7 @@ use bevy::{
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
-        camera::RenderTarget,
+        camera::{CameraProjection, RenderTarget, RenderTargetInfo},
         primitives::Aabb,
         render_asset::RenderAssetUsages,
         render_resource::{
@@ -147,6 +147,27 @@ pub fn spawn_world_ui_view(
     (camera, image)
 }
 
+/// Point a camera's computed target at `size` now, as bevy's `camera_system` would next frame.
+/// Render targets grow after ui layout, and `camera_system` runs before it, so without this
+/// the frame that first renders into the grown image has its main texture, ui projection and
+/// final blit sized to the old image, and everything sampling the image sees a stretched frame.
+pub fn set_camera_target_size(camera: &mut Camera, projection: &mut Projection, size: UVec2) {
+    let scale_factor = match &camera.target {
+        RenderTarget::Image(target) => target.scale_factor.0,
+        _ => 1.0,
+    };
+    camera.computed.target_info = Some(RenderTargetInfo {
+        physical_size: size,
+        scale_factor,
+    });
+    if let Some(size) = camera.logical_viewport_size() {
+        if size.x != 0.0 && size.y != 0.0 {
+            projection.update(size.x, size.y);
+            camera.computed.clip_from_view = projection.get_clip_from_view();
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct WorldUiMaterialRef(AssetId<TextShapeMaterial>, AssetId<Image>);
 
@@ -239,6 +260,7 @@ pub fn update_worldui_materials(
     mut quads: Query<(&MeshMaterial3d<TextShapeMaterial>, &mut Aabb)>,
     mut mats: ResMut<Assets<TextShapeMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    mut cameras: Query<(&mut Camera, &mut Projection, &WorldUiRenderTarget)>,
     frame: Res<FrameCount>,
     render_device: Res<RenderDevice>,
     mut prev_changed_targets: Local<HashSet<AssetId<Image>>>,
@@ -318,6 +340,11 @@ pub fn update_worldui_materials(
                     height: req_size.y,
                     depth_or_array_layers: 1,
                 };
+                for (mut camera, mut projection, target) in cameras.iter_mut() {
+                    if target.0.id() == id {
+                        set_camera_target_size(&mut camera, &mut projection, req_size);
+                    }
+                }
             }
 
             Some(id)
