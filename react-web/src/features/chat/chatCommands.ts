@@ -63,6 +63,7 @@ export const HUD_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
   'component_names',
   'component_default',
   'component_schema',
+  'screenshot',
   // scene inspector — write / assets
   'set_component',
   'set_component_raw',

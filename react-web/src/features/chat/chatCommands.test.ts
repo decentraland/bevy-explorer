@@ -65,7 +65,7 @@ describe('parseChatCommand', () => {
   })
 
   it('HUD-hidden engine commands → the unknown-command hint, never the console', () => {
-    for (const name of ['crdt_snapshot', 'set_component', 'lock_preview', 'logout', 'exit']) {
+    for (const name of ['crdt_snapshot', 'screenshot', 'set_component', 'lock_preview', 'logout', 'exit']) {
       expect(HUD_HIDDEN_COMMANDS.has(name)).toBe(true)
       const r = parseChatCommand(`/${name} 1 2`)
       expect(r.kind).toBe('system')
