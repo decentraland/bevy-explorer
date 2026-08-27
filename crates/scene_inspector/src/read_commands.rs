@@ -747,15 +747,14 @@ fn screenshot_cmd(
         let (tx, rx) = tokio::sync::oneshot::channel();
         // The capture completes on a later frame; encode + base64 in the observer
         // and hand the result to the pending console reply. `Option` so the FnMut
-        // observer can move the one-shot sender out on its single firing, and
-        // despawn the transient screenshot entity so it doesn't accumulate.
+        // observer can move the one-shot sender out on its single firing. Bevy
+        // despawns the screenshot entity itself once captured.
         let mut tx = Some(tx);
         commands.spawn(Screenshot::window(window)).observe(
-            move |mut trigger: Trigger<ScreenshotCaptured>, mut commands: Commands| {
+            move |mut trigger: Trigger<ScreenshotCaptured>| {
                 if let Some(tx) = tx.take() {
                     let _ = tx.send(encode_screenshot_png_base64(std::mem::take(&mut trigger.0)));
                 }
-                commands.entity(trigger.target()).despawn();
             },
         );
         console_responses.push_oneshot(rx, |r| r, input.take_responder());
