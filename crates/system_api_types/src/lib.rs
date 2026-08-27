@@ -356,6 +356,18 @@ pub struct PermissionRequest {
     pub id: usize,
 }
 
+#[derive(Clone, Serialize, Deserialize, ts_rs::TS)]
+#[serde(tag = "type")]
+#[ts(export)]
+pub enum PermissionRequestEvent {
+    #[serde(rename = "request")]
+    Request(PermissionRequest),
+    // a streamed request no longer needs a decision: the engine resolved it itself (e.g. a
+    // permanent rule set for an earlier request now covers it, or the scene went away)
+    #[serde(rename = "cancelled")]
+    Cancelled { id: usize },
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct SetSinglePermission {

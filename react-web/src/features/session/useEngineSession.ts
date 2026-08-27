@@ -703,6 +703,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'permissionRequest':
           setPermissionQueue((q) => (q.some((r) => r.id === msg.id) ? q : [...q, msg]))
           break
+        case 'permissionWithdrawn':
+          setPermissionQueue((q) => q.filter((r) => r.id !== msg.id))
+          break
       }
     })
 

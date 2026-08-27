@@ -489,6 +489,13 @@ export interface PermissionRequestMessage {
   additional?: string
 }
 
+/** A queued permission prompt the engine has already resolved (a permanent rule set for an earlier
+ *  prompt now covers it) — the HUD drops it without asking. */
+export interface PermissionWithdrawnMessage {
+  kind: 'permissionWithdrawn'
+  id: number
+}
+
 /** Which scope an Allow/Deny applies to. `once` = just this request; the rest persist a rule. */
 export type PermissionLevelChoice = 'once' | 'scene' | 'realm' | 'global'
 
@@ -995,6 +1002,7 @@ export type SceneToPage =
   | GalleryMessage
   | GalleryPhotoMessage
   | PermissionRequestMessage
+  | PermissionWithdrawnMessage
 
 // ---- envelope --------------------------------------------------------------
 
