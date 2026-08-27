@@ -63,6 +63,9 @@ static URN_GLIDE: std::sync::LazyLock<EmoteUrn> =
 pub struct AvatarAnimState {
     damped_velocity: Vec3,
     current_emote_min_velocity: f32,
+    /// A triggered emote is waiting to be reported to scenes. Set when the `EmoteCommand`
+    /// arrives, cleared once the emote resolves and the report goes out — see `animate`.
+    pending_emote_report: bool,
 }
 
 pub struct AvatarAnimationPlugin;
@@ -234,8 +237,9 @@ pub struct ActiveEmote {
     restart: bool,
     repeat: bool,
     finished: bool,
-    /// Resolved clip duration in milliseconds, stamped by `play_current_emote` for the local player.
-    /// `broadcast_emote` attaches it to a one-shot emote's start so observers know when it ends.
+    /// Resolved clip duration in milliseconds, stamped by `play_current_emote` once the clip is
+    /// playing. `broadcast_emote` attaches it to a one-shot emote's start so observers know when it
+    /// ends; `animate` uses its presence as the signal that `repeat` has settled.
     duration_ms: Option<u32>,
     transition_seconds: f32,
     initial_audio_mark: Option<f32>,
@@ -338,12 +342,15 @@ fn animate(
     ) in avatars.iter_mut()
     {
         let Some((mut active_emote, mut anim_state)) = active_emote else {
-            commands.entity(avatar_ent).try_insert((
-                ActiveEmote::default(),
-                AvatarAnimState::default(),
-                EmoteCommand::default(),
-                LastEmoteCommand::default(),
-            ));
+            // `EmoteCommand` keeps whatever is already there: an emote can land in the same command
+            // flush as the avatar's spawn — Pulse replays an in-progress emote right behind the
+            // `PlayerJoined` — and overwriting it here would drop it before it ever played. The
+            // server records that replay as sent and dedups on `(emote_id, start_seq)`, so it never
+            // comes again and the avatar stays idle until the emoter retriggers.
+            commands
+                .entity(avatar_ent)
+                .try_insert((ActiveEmote::default(), AvatarAnimState::default()))
+                .try_insert_if_new((EmoteCommand::default(), LastEmoteCommand::default()));
             continue;
         };
 
@@ -364,12 +371,89 @@ fn animate(
         // get requested emote
         let (mut requested_emote, given_urn, request_loop) =
             if let Some(EmoteCommand { urn, r#loop, .. }) = emote {
-                (EmoteUrn::new(urn.as_str()).ok(), Some(urn), *r#loop)
+                let parsed = EmoteUrn::new(urn.as_str()).ok();
+                // A scene emote's urn ends `-{loop}`. That trailing token is the only loop signal
+                // reaching a foreign avatar — rfc4 `PlayerEmote` has no loop field, so
+                // `EmoteCommand::loop` is always false there — and it's what keeps the emote
+                // looping until the wire stop instead of ending after one play.
+                let scene_loop = parsed
+                    .as_ref()
+                    .and_then(EmoteUrn::scene_emote)
+                    .is_some_and(|emote| emote.ends_with("-true"));
+                (parsed, Some(urn), *r#loop || scene_loop)
             } else {
                 (None, None, false)
             };
 
         let emote_changed = emote != last_emote.as_ref().map(|l| &l.0);
+
+        // Report a triggered emote to scenes once its loop state stops moving, rather than the
+        // frame the command lands. A wearable's loop flag lives in its `emoteDataADR74.loop`
+        // metadata, which `play_current_emote` only folds into `repeat` once the collectible
+        // loads, so reporting on arrival would publish `loop: false` for a looping emote.
+        // `broadcast_emote` gates the network announce on the same resolution.
+        if emote_changed {
+            anim_state.pending_emote_report = true;
+        }
+
+        // `active_emote` is still last frame's. Same urn with a stamped duration means the clip is
+        // playing and `repeat` is final; `finished` with no duration is a concrete resolution
+        // failure (urn missing, or no clip in the gltf) — report that too rather than going silent,
+        // carrying the loop state we do have. Still loading is neither, so we wait. Never on the
+        // arrival frame: `repeat` is rebuilt from the new `request_loop` below, so re-triggering the
+        // same urn would otherwise report the previous play's loop state.
+        //
+        // Sits ahead of the cancel checks deliberately — they clear `requested_emote` on
+        // `active_emote.finished`, which would drop a failed emote before it was ever reported.
+        let emote_settled = !emote_changed
+            && active_emote.source == ActiveEmoteSource::TriggeredEmote
+            && Some(&active_emote.urn) == requested_emote.as_ref()
+            && (active_emote.duration_ms.is_some() || active_emote.finished);
+
+        if anim_state.pending_emote_report && emote_settled {
+            anim_state.pending_emote_report = false;
+            let resolved_loop = active_emote.repeat;
+
+            let broadcast_urn = given_urn.unwrap();
+            debug!("broadcasting emote to scenes: {:?}", broadcast_urn);
+
+            let (scene, scene_id) = match (maybe_foreign, maybe_primary, maybe_container) {
+                (Some(f), ..) => (None, f.scene_id),
+                (None, Some(_), _) => (None, SceneEntityId::PLAYER),
+                (None, None, Some(container)) => {
+                    (Some(container.container), container.container_id)
+                }
+                _ => (Some(Entity::PLACEHOLDER), SceneEntityId::ROOT),
+            };
+
+            let report_scenes = match scene {
+                Some(scene) => vec![scene],
+                None => containing_scene
+                    .get_area(avatar_ent, PLAYER_COLLIDER_RADIUS)
+                    .into_iter()
+                    .collect(),
+            };
+
+            for scene_ent in report_scenes {
+                let Ok(mut scene) = scenes.get_mut(scene_ent) else {
+                    warn!("no scene to receive emote");
+                    continue;
+                };
+
+                let timestamp = scene.tick_number;
+                debug!("broadcast to scene {:?}", scene_ent);
+                scene.update_crdt(
+                    SceneComponentId::AVATAR_EMOTE_COMMAND,
+                    CrdtType::GO_ANY,
+                    scene_id,
+                    &PbAvatarEmoteCommand {
+                        emote_urn: broadcast_urn.to_string(),
+                        r#loop: resolved_loop,
+                        timestamp,
+                    },
+                );
+            }
+        }
 
         // check expired
         if !emote_changed && Some(&active_emote.urn) != requested_emote.as_ref() {
@@ -535,47 +619,6 @@ fn animate(
         *active_emote = if let Some(requested_emote) = requested_emote {
             if emote_changed {
                 dynamic_state.move_kind = MoveKind::Emote;
-
-                // send to scenes
-                let broadcast_urn = given_urn.unwrap();
-                debug!("broadcasting emote to scenes: {:?}", broadcast_urn);
-
-                let (scene, scene_id) = match (maybe_foreign, maybe_primary, maybe_container) {
-                    (Some(f), ..) => (None, f.scene_id),
-                    (None, Some(_), _) => (None, SceneEntityId::PLAYER),
-                    (None, None, Some(container)) => {
-                        (Some(container.container), container.container_id)
-                    }
-                    _ => (Some(Entity::PLACEHOLDER), SceneEntityId::ROOT),
-                };
-
-                let report_scenes = match scene {
-                    Some(scene) => vec![scene],
-                    None => containing_scene
-                        .get_area(avatar_ent, PLAYER_COLLIDER_RADIUS)
-                        .into_iter()
-                        .collect(),
-                };
-
-                for scene_ent in report_scenes {
-                    let Ok(mut scene) = scenes.get_mut(scene_ent) else {
-                        warn!("no scene to receive emote");
-                        continue;
-                    };
-
-                    let timestamp = scene.tick_number;
-                    debug!("broadcast to scene {:?}", scene_ent);
-                    scene.update_crdt(
-                        SceneComponentId::AVATAR_EMOTE_COMMAND,
-                        CrdtType::GO_ANY,
-                        scene_id,
-                        &PbAvatarEmoteCommand {
-                            emote_urn: broadcast_urn.to_string(),
-                            r#loop: request_loop,
-                            timestamp,
-                        },
-                    );
-                }
             }
             commands
                 .entity(avatar_ent)
@@ -1188,8 +1231,11 @@ fn play_current_emote(
             }
         }
 
+        // Stamped for every avatar: `animate` reads it back as "this emote resolved, so `repeat`
+        // now includes the collectible's `default_repeat`" before reporting the emote to scenes.
+        active_emote.duration_ms = Some((clip_duration * 1000.0) as u32);
+
         if maybe_primary.is_some() {
-            active_emote.duration_ms = Some((clip_duration * 1000.0) as u32);
             match active_emote.source {
                 ActiveEmoteSource::SceneMovementAnim => {
                     let loops = elapsed / clip_duration;
