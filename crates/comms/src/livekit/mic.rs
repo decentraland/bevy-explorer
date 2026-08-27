@@ -107,6 +107,13 @@ impl Plugin for MicPlugin {
             OnEnter(MicrophonePermission::Prompt),
             prompt_microphone_permission.run_if(in_state(MicrophoneState::Enabled)),
         );
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(OnEnter(MicrophoneAvailability::Available), setup_microphone);
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(
+            OnExit(MicrophoneAvailability::Available),
+            tear_down_microphone,
+        );
 
         #[cfg(not(target_arch = "wasm32"))]
         app.insert_state(MicrophonePermission::Granted);
@@ -166,11 +173,10 @@ fn verify_availability(mut commands: Commands, mut mic_state: ResMut<MicState>) 
             "Default microphone '{}' set as input device.",
             device
                 .name()
-                .expect("Shouldn't became unavailable in such a sort span.")
+                .expect("Shouldn't became unavailable in such a short span.")
         );
         mic_state.available = true;
         commands.set_state(MicrophoneAvailability::Available);
-        commands.insert_resource(MicrophoneDevice(device));
     }
 }
 
@@ -197,7 +203,6 @@ fn verify_microphone_device_health(
         debug!("Microphone device became unavailable due to '{err}'.");
         mic_state.available = false;
         commands.set_state(MicrophoneAvailability::Unavailable);
-        commands.remove_resource::<MicrophoneDevice>();
     }
 }
 
@@ -239,6 +244,21 @@ fn poll_microphone_permission(
         }
         other => panic!("Unknown microphone permission '{}'.", other),
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn setup_microphone(mut commands: Commands) {
+    let default_host = cpal::default_host();
+    let maybe_device = default_host.default_input_device();
+
+    if let Some(device) = maybe_device {
+        commands.insert_resource(MicrophoneDevice(device));
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn tear_down_microphone(mut commands: Commands) {
+    commands.remove_resource::<MicrophoneDevice>();
 }
 
 fn verify_enabled(mut commands: Commands, mic_state: Res<MicState>) {
