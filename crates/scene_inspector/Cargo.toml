@@ -25,3 +25,4 @@ serde_json = { workspace = true }
 prost = { workspace = true }
 tokio = { workspace = true }
 base64 = { workspace = true }
+image = { workspace = true }
