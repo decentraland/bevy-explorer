@@ -872,6 +872,7 @@ fn update_canvas_atlas(
     mut outputs: Query<&mut UiTextureOutput>,
     mut atlases: ResMut<SceneCanvasAtlases>,
     mut images: ResMut<Assets<Image>>,
+    mut cameras: Query<(&mut Camera, &mut Projection)>,
     // absent in headless tests (no render plugin); without a gpu there is nothing to overflow
     render_device: Option<Res<RenderDevice>>,
 ) {
@@ -917,6 +918,9 @@ fn update_canvas_atlas(
                 height: new_size.y,
                 depth_or_array_layers: 1,
             };
+            if let Ok((mut camera, mut projection)) = cameras.get_mut(atlas.camera) {
+                world_ui::set_camera_target_size(&mut camera, &mut projection, new_size);
+            }
             atlas.size = new_size;
         } else {
             atlas.size = current;
