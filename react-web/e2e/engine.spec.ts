@@ -89,8 +89,11 @@ test.describe('react HUD ↔ real engine', () => {
   // --- profile: passport relayed --------------------------------------------
   test('profile: the passport is relayed to the page', async () => {
     await expectBridge(page, 'page', 'profile')
+    // The sidebar's Profile icon opens the local player's passport popup (App's viewMyProfile,
+    // reading the relayed profile) — it never toggles the small profile panel, so the button has
+    // no pressed state.
     await sidebar(page, 'Profile')
-    await expect(page.getByRole('button', { name: 'Profile', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('button', { name: 'OVERVIEW', exact: true })).toBeVisible()
   })
 
   // --- notifications: open → fetch -------------------------------------------

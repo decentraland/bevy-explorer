@@ -10,12 +10,15 @@ import react from '@vitejs/plugin-react'
 // default systemScene in dev, with scene hot-reload) alongside vite, so `npm run dev` is the ONE
 // command. If :8100 is already serving (your own terminal, or Playwright's webServer), leave it
 // alone. The child is killed with the dev server (detached group so sdk-commands' own children
-// don't survive as orphans).
+// don't survive as orphans). BRIDGE_SCENE_PREVIEW=0 disables the auto-start entirely — Playwright
+// sets it because it runs :8100 as its own webServer, and a child spawned from here would outlive
+// its SIGKILL of the vite process group (own group, inherited stdio) and hang the test run's exit.
 function bridgeScenePreview(): Plugin {
   return {
     name: 'bridge-scene-preview',
     apply: 'serve',
     configureServer(server) {
+      if (process.env.BRIDGE_SCENE_PREVIEW === '0') return
       const probe = createConnection({ port: 8100, host: '127.0.0.1' })
       probe.once('connect', () => probe.destroy()) // already running — reuse it
       probe.once('error', () => {

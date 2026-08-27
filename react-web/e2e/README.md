@@ -27,8 +27,9 @@ npm run test:e2e
 ```
 
 `playwright.config.ts` starts both servers automatically (Vite dev on :5173 + the
-bridge scene on :8100) and reuses them if already running. To point at an
-already-running app, set `E2E_URL=http://localhost:5173`.
+bridge scene on :8100, with `BRIDGE_SCENE_PREVIEW=0` so Vite doesn't also start its
+own) and reuses them if already running. To point at an already-running app, set
+`E2E_URL=http://localhost:5173`.
 
 List the tests without launching the engine:
 
