@@ -51,6 +51,7 @@ use image_processing::ImageProcessingPlugin;
 use imposters::DclImposterPlugin;
 use input_manager::InputManagerPlugin;
 use ipfs::{map_realm_name, IpfsIoPlugin};
+use livestream_manager::plugin::LivestreamManagerPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use particle_system::plugin::ParticleSystemPlugin;
 use platform::default_camera_components;
@@ -211,6 +212,12 @@ impl DecentralandApp {
         app.add_plugins(desktop_default_plugins(&decentraland_app_config));
         #[cfg(target_arch = "wasm32")]
         app.add_plugins(wasm_default_plugins(&decentraland_app_config));
+
+        #[cfg(all(not(target_arch = "wasm32"), feature = "ffmpeg"))]
+        media::init_ffmpeg();
+
+        // we use kira for audio source asset management, regardless of native / wasm
+        app.add_plugins(bevy_kira_audio::AudioPlugin);
 
         // POC: react-web HUD composited in-engine from CEF offscreen rendering. Skipped in test
         // mode (automated scene tests run headless and must not boot CEF or gate input) and when
@@ -441,7 +448,9 @@ impl DecentralandApp {
             .add_plugins(SystemBridgePlugin { bare: false })
             .add_plugins(SceneInspectorPlugin)
             .add_plugins(EmbedAssetsPlugin)
-            .add_plugins(ParticleSystemPlugin);
+            .add_plugins(ParticleSystemPlugin)
+            .add_plugins(LivestreamManagerPlugin)
+            .add_plugins(media::plugin::MediaPlugin);
 
         if !decentraland_app_config.arguments.is_preview {
             app.add_plugins(DclImposterPlugin {

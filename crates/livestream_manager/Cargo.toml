@@ -1,0 +1,10 @@
+[package]
+name = "livestream_manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = { workspace = true }

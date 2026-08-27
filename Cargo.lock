@@ -642,15 +642,19 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bevy",
+ "bevy_console",
  "bevy_kira_audio",
  "common",
  "comms",
  "dcl",
  "dcl_component",
+ "disqualified",
  "ethers-core",
- "ffmpeg-next",
  "ipfs",
+ "js-sys",
  "kira",
+ "livestream_manager",
+ "media",
  "reqwest 0.12.15",
  "scene_runner",
  "system_bridge",
@@ -658,6 +662,7 @@ dependencies = [
  "tokio",
  "urlencoding",
  "wasm-bindgen",
+ "wasm-bindgen-test",
  "web-sys",
  "wgpu",
 ]
@@ -2415,6 +2420,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cast"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
+
+[[package]]
 name = "cc"
 version = "1.2.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2780,6 +2791,8 @@ dependencies = [
  "js-sys",
  "kira",
  "livekit",
+ "livestream_manager",
+ "media",
  "modular-bitfield",
  "multihash-codetable",
  "multipart",
@@ -3597,6 +3610,7 @@ dependencies = [
  "bevy",
  "bevy_console",
  "bevy_dui",
+ "bevy_kira_audio",
  "bevy_simple_text_input",
  "build-time",
  "cef_offscreen",
@@ -3620,8 +3634,10 @@ dependencies = [
  "imposters",
  "input_manager",
  "ipfs",
+ "livestream_manager",
  "log",
  "log-panics",
+ "media",
  "mimalloc",
  "naga_oil",
  "nft",
@@ -6911,6 +6927,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "livestream_manager"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "wasm-bindgen-test",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7037,6 +7061,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "media"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy",
+ "common",
+ "dcl_component",
+ "ffmpeg-next",
+ "ipfs",
+ "js-sys",
+ "kira",
+ "reqwest 0.12.15",
+ "thiserror 1.0.69",
+ "tokio",
+ "urlencoding",
+ "wasm-bindgen",
+ "web-sys",
+ "wgpu",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7098,6 +7143,16 @@ checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
 dependencies = [
  "mime",
  "unicase",
+]
+
+[[package]]
+name = "minicov"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4869b6a491569605d66d3952bcdf03df789e5b536e5f0cf7758a7f08a55ae24d"
+dependencies = [
+ "cc",
+ "walkdir",
 ]
 
 [[package]]
@@ -8010,6 +8065,12 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "oorandom"
+version = "11.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "open-fastrlp"
@@ -12431,6 +12492,45 @@ checksum = "75a326b8c223ee17883a4251907455a2431acc2791c98c26279376490c378c16"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "wasm-bindgen-test"
+version = "0.3.64"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6311c867385cc7d5602463b31825d454d0837a3aba7cdb5e56d5201792a3f7fe"
+dependencies = [
+ "async-trait",
+ "cast",
+ "js-sys",
+ "libm",
+ "minicov",
+ "nu-ansi-term",
+ "num-traits",
+ "oorandom",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test-macro",
+ "wasm-bindgen-test-shared",
+]
+
+[[package]]
+name = "wasm-bindgen-test-macro"
+version = "0.3.64"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67008cdde4769831958536b0f11b3bdd0380bde882be17fff9c2f34bb4549abd"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "wasm-bindgen-test-shared"
+version = "0.2.114"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe29135b180b72b04c74aa97b2b4a2ef275161eff9a6c7955ea9eaedc7e1d4e"
 
 [[package]]
 name = "wasm-encoder"

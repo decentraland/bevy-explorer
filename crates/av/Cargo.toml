@@ -6,9 +6,8 @@ edition = "2021"
 [lib]
 
 [features]
-ffmpeg = ["dep:ffmpeg-next"]
-html = ["dep:web-sys", "dep:wasm-bindgen"]
-livekit = ["comms/livekit"]
+ffmpeg = ["media/ffmpeg"]
+html = ["media/html", "dep:web-sys", "dep:wasm-bindgen"]
 av_player_debug = ["bevy/bevy_picking"]
 
 [dependencies]
@@ -19,8 +18,11 @@ ipfs = { workspace = true }
 scene_runner = { workspace = true }
 comms = { workspace = true }
 system_bridge = { workspace = true }
+livestream_manager = { workspace = true }
+media = { workspace = true }
 
 bevy = { workspace = true }
+disqualified = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
@@ -29,9 +31,7 @@ bevy_kira_audio = { workspace = true }
 kira = { workspace = true }
 wgpu = { workspace = true, features = ["webgpu"] }
 ethers-core = { workspace = true }
-
-ffmpeg-next = { version = "6.0.0", optional = true }
-thiserror = "1.0"
+thiserror = { workspace = true }
 
 web-sys = { workspace = true, optional = true, features = [
   "HtmlMediaElement",
@@ -48,3 +48,9 @@ web-sys = { workspace = true, optional = true, features = [
   "VideoFrame",
 ] }
 wasm-bindgen = { workspace = true, optional = true }
+
+[dev-dependencies]
+wasm-bindgen-test = { workspace = true }
+js-sys = { workspace = true }
+
+bevy_console = { workspace = true }
