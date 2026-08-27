@@ -34,8 +34,32 @@ export async function cmd(page: Page, line: string): Promise<string> {
 }
 
 // --- bevy world driving (deterministic — prefer these over synthetic input) ------
-export const movePlayerTo = (page: Page, x: number, y: number, z: number): Promise<string> =>
-  cmd(page, `move_player_to ${x} ${y} ${z}`)
+/** Walk the avatar to a world position via the movement controller (`move_player_to` is
+ *  preview-only). Resolves on arrival (0.5 m stop threshold) or rejects after `timeout` s. */
+export const walkPlayerTo = (page: Page, x: number, y: number, z: number, timeout = 20): Promise<string> =>
+  cmd(page, `walk_player_to ${x} ${y} ${z} ${timeout}`)
+/** Walk a short hop from where the avatar stands, trying each cardinal direction until one
+ *  arrives — the walk respects colliders and the spawn has steps/props nearby, so any fixed
+ *  target can be blocked. Returns the target reached. */
+export async function walkNearby(page: Page, dist = 3): Promise<{ x: number; y: number; z: number }> {
+  const from = await position(page)
+  const errors: string[] = []
+  for (const [dx, dz] of [
+    [dist, 0],
+    [-dist, 0],
+    [0, dist],
+    [0, -dist]
+  ]) {
+    const to = { x: from.x + dx, y: from.y, z: from.z + dz }
+    try {
+      await walkPlayerTo(page, to.x, to.y, to.z, 10)
+      return to
+    } catch (e) {
+      errors.push(`(${to.x}, ${to.z}): ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  throw new Error(`walk_player_to blocked in every direction from (${from.x}, ${from.z}): ${errors.join('; ')}`)
+}
 export const teleport = (page: Page, x: number, y: number): Promise<string> => cmd(page, `teleport ${x} ${y}`)
 export const playerPosition = (page: Page): Promise<string> => cmd(page, 'player_position')
 

@@ -11,7 +11,7 @@ import {
   enterAsGuest,
   sidebar,
   expectBridge,
-  movePlayerTo,
+  walkNearby,
   position,
   getUserData,
   profileVersion,
@@ -42,13 +42,13 @@ test.describe('react HUD ↔ engine — in-panel clicks (console-verified)', () 
   })
 
   // --- movement lands EXACTLY where asked (strong console round-trip) ----------
-  test('console: move_player_to lands at the requested position', async () => {
-    await movePlayerTo(page, 12, 1, 7)
+  test('console: walk_player_to lands at the requested position', async () => {
+    const to = await walkNearby(page)
     await expect
       .poll(
         async () => {
           const p = await position(page)
-          return Math.abs(p.x - 12) < 1 && Math.abs(p.z - 7) < 1
+          return Math.abs(p.x - to.x) < 1 && Math.abs(p.z - to.z) < 1
         },
         { timeout: 15_000 }
       )
