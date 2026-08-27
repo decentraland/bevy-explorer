@@ -27,6 +27,10 @@ export default defineConfig({
     {
       command: 'npm run dev',
       url: 'http://localhost:5173',
+      // :8100 is OUR webServer below — stop vite's own bridge-scene auto-start (vite.config.ts) from
+      // racing it (EADDRINUSE) and, worse, outliving the run: the runner waits for each server's
+      // stdio to close, and vite's detached sdk-commands child keeps them open after vite is killed.
+      env: { BRIDGE_SCENE_PREVIEW: '0' },
       reuseExistingServer: true,
       timeout: 120_000
     },
