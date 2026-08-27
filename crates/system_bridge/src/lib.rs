@@ -113,7 +113,7 @@ pub enum SystemApi {
     GetBridgeStream(RpcStreamSender<String>),
     SendChat(String, String),
     Quit,
-    GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),
+    GetPermissionRequestStream(RpcStreamSender<PermissionRequestEvent>),
     SetSinglePermission(SetSinglePermission),
     SetPermanentPermission(SetPermanentPermission),
     GetPermissionUsedStream(RpcStreamSender<PermissionUsed>),

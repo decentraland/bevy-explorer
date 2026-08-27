@@ -11,7 +11,7 @@ use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
     FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, ProximityEvent, SceneLoadingUi, SetAvatarData,
+    PermanentPermissionItem, PermissionRequestEvent, ProximityEvent, SceneLoadingUi, SetAvatarData,
     VoiceMessage,
 };
 
@@ -336,7 +336,7 @@ pub async fn op_get_permission_request_stream(state: Rc<RefCell<OpState>>) -> u3
 pub async fn op_read_permission_request_stream(
     state: Rc<RefCell<OpState>>,
     rid: u32,
-) -> Result<Option<PermissionRequest>, deno_core::anyhow::Error> {
+) -> Result<Option<PermissionRequestEvent>, deno_core::anyhow::Error> {
     dcl::js::system_api::op_read_permission_request_stream(state, rid).await
 }
 

@@ -13,7 +13,7 @@ import type {
   HoverAction,
   HoverEvent,
   LiveSceneInfo,
-  PermissionRequest,
+  PermissionRequestEvent,
   ProximityEvent,
   SceneLoadingUi,
   SetAvatarData,
@@ -74,9 +74,10 @@ export type KernelFetchRequest = {
 }
 export type KernelFetchResponse = { ok: boolean; status: number; statusText?: string; body: string }
 
-// A scene's pending permission request (e.g. ChangeRealm). `ty` is the serde enum name
-// (e.g. 'ChangeRealm'); `scene` is the scene HASH — resolve its title via liveSceneInfo().
-export type PermissionRequestRaw = PermissionRequest
+// A scene's pending permission request (`type: 'request'`; `ty` is the serde enum name, e.g.
+// 'ChangeRealm'; `scene` is the scene HASH — resolve its title via liveSceneInfo()), or
+// `type: 'cancelled'` when the engine resolved an earlier request itself.
+export type PermissionRequestRaw = PermissionRequestEvent
 // Persist a permission at a level. `value` is the scene hash (Scene) or realm url (Realm),
 // unused for Global. `allow: null` clears the stored value.
 export type SetPermanentPermissionBody = {

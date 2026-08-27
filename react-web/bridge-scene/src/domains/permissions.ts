@@ -10,6 +10,11 @@ export function registerPermissions(ctx: Ctx): void {
     try {
       const stream = await BevyApi.getPermissionRequestStream()
       for await (const req of stream) {
+        if (req.type === 'cancelled') {
+          // resolved engine-side (an "Always …" answer to an earlier prompt covers it): drop the prompt
+          ctx.send({ kind: 'permissionWithdrawn', id: req.id })
+          continue
+        }
         // The engine's request only carries the scene HASH. Resolve the title (hash→title) and the
         // current realm from the existing SystemApi — same as the SDK7 scene, so no Rust change.
         // Both are best-effort: a failure must never drop the request (else no dialog ever shows).
