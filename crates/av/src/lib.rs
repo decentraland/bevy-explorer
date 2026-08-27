@@ -809,7 +809,7 @@ fn transmission_stopped(
         for container_entity in av_players {
             commands.trigger(SetState::<VideoPlayer> {
                 entity: *container_entity,
-                state: VideoState::VsNone,
+                state: VideoState::VsLoading,
                 _phantom: PhantomData,
             });
         }
