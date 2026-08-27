@@ -215,6 +215,7 @@ fn main() {
                 content_server_override,
                 assets_root: Default::default(),
                 num_slots: final_config.max_concurrent_remotes,
+                scene_packs_url: None,
             }),
     );
 

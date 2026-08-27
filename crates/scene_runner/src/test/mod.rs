@@ -94,6 +94,7 @@ impl PluginGroup for TestPlugins {
                 starting_realm: Default::default(),
                 num_slots: 8,
                 content_server_override: None,
+                scene_packs_url: None,
             })
             .add(AssetPlugin::default())
             .add(MeshPlugin)
