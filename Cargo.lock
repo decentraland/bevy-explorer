@@ -3678,7 +3678,7 @@ dependencies = [
 [[package]]
 name = "deno_console"
 version = "0.168.0"
-source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#4ecaf52e29460848d24b8300ec769e8b184dba47"
+source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#3ee34819c57653610521dc6501ddf8e2cf0c5aaa"
 dependencies = [
  "deno_core",
 ]
@@ -3723,7 +3723,7 @@ checksum = "a13951ea98c0a4c372f162d669193b4c9d991512de9f2381dd161027f34b26b1"
 [[package]]
 name = "deno_fetch"
 version = "0.192.0"
-source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#4ecaf52e29460848d24b8300ec769e8b184dba47"
+source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#3ee34819c57653610521dc6501ddf8e2cf0c5aaa"
 dependencies = [
  "base64 0.21.7",
  "bytes",
@@ -3740,7 +3740,7 @@ dependencies = [
  "hyper-util",
  "ipnet",
  "percent-encoding",
- "rustls-webpki 0.102.8",
+ "rustls-webpki 0.103.13",
  "serde",
  "serde_json",
  "tokio",
@@ -3768,7 +3768,7 @@ dependencies = [
 [[package]]
 name = "deno_net"
 version = "0.160.0"
-source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#4ecaf52e29460848d24b8300ec769e8b184dba47"
+source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#3ee34819c57653610521dc6501ddf8e2cf0c5aaa"
 dependencies = [
  "deno_core",
  "deno_permissions",
@@ -3799,7 +3799,7 @@ dependencies = [
 [[package]]
 name = "deno_permissions"
 version = "0.28.0"
-source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#4ecaf52e29460848d24b8300ec769e8b184dba47"
+source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#3ee34819c57653610521dc6501ddf8e2cf0c5aaa"
 dependencies = [
  "deno_core",
  "deno_terminal",
@@ -3825,14 +3825,14 @@ dependencies = [
 [[package]]
 name = "deno_tls"
 version = "0.155.0"
-source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#4ecaf52e29460848d24b8300ec769e8b184dba47"
+source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#3ee34819c57653610521dc6501ddf8e2cf0c5aaa"
 dependencies = [
  "deno_core",
  "deno_native_certs",
  "rustls 0.23.37",
  "rustls-pemfile 2.2.0",
  "rustls-tokio-stream",
- "rustls-webpki 0.102.8",
+ "rustls-webpki 0.103.13",
  "serde",
  "tokio",
  "webpki-roots 0.26.11",
@@ -3852,7 +3852,7 @@ dependencies = [
 [[package]]
 name = "deno_url"
 version = "0.168.0"
-source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#4ecaf52e29460848d24b8300ec769e8b184dba47"
+source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#3ee34819c57653610521dc6501ddf8e2cf0c5aaa"
 dependencies = [
  "deno_core",
  "urlpattern",
@@ -3861,7 +3861,7 @@ dependencies = [
 [[package]]
 name = "deno_web"
 version = "0.199.0"
-source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#4ecaf52e29460848d24b8300ec769e8b184dba47"
+source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#3ee34819c57653610521dc6501ddf8e2cf0c5aaa"
 dependencies = [
  "async-trait",
  "base64-simd 0.8.0",
@@ -3879,7 +3879,7 @@ dependencies = [
 [[package]]
 name = "deno_webidl"
 version = "0.168.0"
-source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#4ecaf52e29460848d24b8300ec769e8b184dba47"
+source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#3ee34819c57653610521dc6501ddf8e2cf0c5aaa"
 dependencies = [
  "deno_core",
 ]
@@ -3887,7 +3887,7 @@ dependencies = [
 [[package]]
 name = "deno_websocket"
 version = "0.173.0"
-source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#4ecaf52e29460848d24b8300ec769e8b184dba47"
+source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#3ee34819c57653610521dc6501ddf8e2cf0c5aaa"
 dependencies = [
  "bytes",
  "deno_core",
@@ -3909,7 +3909,7 @@ dependencies = [
 [[package]]
 name = "deno_webstorage"
 version = "0.163.0"
-source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#4ecaf52e29460848d24b8300ec769e8b184dba47"
+source = "git+https://github.com/robtfm/deno?branch=1_46_hotfix#3ee34819c57653610521dc6501ddf8e2cf0c5aaa"
 dependencies = [
  "deno_core",
  "deno_web",
@@ -9873,17 +9873,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b6275d1ee7a1cd780b64aca7726599a1dbc893b1e64144529e55c3c2f745765"
 dependencies = [
  "ring 0.17.14",
- "untrusted 0.9.0",
-]
-
-[[package]]
-name = "rustls-webpki"
-version = "0.102.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64ca1bc8749bd4cf37b5ce386cc146580777b4e8572c7b97baf22c83f444bee9"
-dependencies = [
- "ring 0.17.14",
- "rustls-pki-types",
  "untrusted 0.9.0",
 ]
 
