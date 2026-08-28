@@ -146,10 +146,10 @@ pub struct PointerTargetInfo {
     pub container: Entity,
     pub mesh_name: Option<String>,
     /// Distance from avatar to nearest point on the target's collider.
-    /// Compared against `Info::max_player_distance`.
+    /// Compared against `Info::max_distance` (and its deprecated alias `max_player_distance`).
     pub distance: FloatOrd,
     /// Distance from active camera origin to the hit point along the pointer ray.
-    /// Compared against `Info::max_distance`. Same value populated into `RaycastHit::length`.
+    /// Compared against `Info::max_camera_distance`. Same value populated into `RaycastHit::length`.
     pub camera_distance: FloatOrd,
     pub in_scene: bool,
     pub position: Option<Vec3>,
@@ -161,22 +161,28 @@ pub struct PointerTargetInfo {
 /// Returns true if the pointer-event entry's distance restrictions are satisfied.
 ///
 /// Per protocol:
-/// - neither field set    → camera_distance ≤ 10
-/// - only max_distance    → camera_distance ≤ max_distance
-/// - only max_player_dist → player_distance ≤ max_player_distance
-/// - both set             → either check passes (OR)
+/// - neither field set        → player_distance ≤ 10
+/// - only max_distance        → player_distance ≤ max_distance
+/// - only max_camera_distance → camera_distance ≤ max_camera_distance
+/// - both set                 → either check passes (OR)
+///
+/// `max_player_distance` is a deprecated alias for `max_distance`; when both are
+/// present the larger is used as the player threshold.
 pub fn passes_distance_check(
     event_info: Option<&dcl_component::proto_components::sdk::components::pb_pointer_events::Info>,
     camera_distance: f32,
     player_distance: f32,
 ) -> bool {
-    let max_camera = event_info.and_then(|i| i.max_distance);
-    let max_player = event_info.and_then(|i| i.max_player_distance);
-    match (max_camera, max_player) {
-        (None, None) => camera_distance <= 10.0,
-        (Some(c), None) => camera_distance <= c,
-        (None, Some(p)) => player_distance <= p,
-        (Some(c), Some(p)) => camera_distance <= c || player_distance <= p,
+    let max_player = event_info.and_then(|i| match (i.max_distance, i.max_player_distance) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    });
+    let max_camera = event_info.and_then(|i| i.max_camera_distance);
+    match (max_player, max_camera) {
+        (None, None) => player_distance <= 10.0,
+        (Some(p), None) => player_distance <= p,
+        (None, Some(c)) => camera_distance <= c,
+        (Some(p), Some(c)) => player_distance <= p || camera_distance <= c,
     }
 }
 
