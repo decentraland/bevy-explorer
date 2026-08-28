@@ -92,6 +92,10 @@ pub enum PulseDisconnect {
 }
 
 impl PulseDisconnect {
+    /// The code we close with when leaving on purpose — the server's `DisconnectReason.GRACEFUL`,
+    /// as the reference client sends.
+    pub const GRACEFUL_CODE: u32 = 1;
+
     /// Map an ENet disconnect `data` code to a reason. Mirrors the server's `DisconnectReason` enum
     /// 1:1; unrecognised codes (a newer server) fall through to [`PulseDisconnect::Unknown`].
     pub fn from_code(code: u32) -> Self {
