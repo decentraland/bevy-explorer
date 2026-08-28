@@ -599,10 +599,23 @@ fn should_be_playing_on_add<T: AVPlayer>(
 fn should_be_playing_on_remove<T: AVPlayer>(
     trigger: Trigger<OnRemove, ShouldBePlaying<T>>,
     mut commands: Commands,
+    av_players: Query<(Has<Stream>, &ContainerEntity), With<T>>,
 ) {
     let entity = trigger.target();
     debug!("Stream {} no longer playing.", entity);
     commands.entity(entity).try_remove::<ActiveReceiver>();
+
+    let Ok((has_stream, container_entity)) = av_players.get(entity) else {
+        error!("AVPlayer {entity} not a scene entity.");
+        return;
+    };
+    if has_stream {
+        commands.trigger(SetState::<VideoPlayer> {
+            entity: *container_entity,
+            state: VideoState::VsPaused,
+            _phantom: PhantomData,
+        });
+    }
 }
 
 #[expect(clippy::type_complexity)]
