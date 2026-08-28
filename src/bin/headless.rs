@@ -468,6 +468,11 @@ fn main() {
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
     app.add_systems(Startup, setup.in_set(SetupSets::Init));
     app.add_systems(PreUpdate, supervisor);
+    #[cfg(unix)]
+    {
+        shutdown_signal::install();
+        app.add_systems(Update, exit_on_shutdown_signal);
+    }
     app.add_systems(
         Update,
         (
@@ -657,6 +662,45 @@ fn setup(
     });
     // guard against the auto-deploy of the guest profile (login.rs pattern)
     current_profile.is_deployed = true;
+}
+
+/// SIGINT/SIGTERM/SIGHUP wind the engine down through `AppExit` instead of the default
+/// immediate termination, so the `World` drops and the comms drivers get to say goodbye
+/// (the Pulse driver sends its ENet DISCONNECT on drop; without it the server only notices
+/// us via its peer timeout). A repeated signal bails out hard.
+#[cfg(unix)]
+fn exit_on_shutdown_signal(mut sent: Local<bool>, mut exit: EventWriter<AppExit>) {
+    if !*sent && shutdown_signal::received() {
+        *sent = true;
+        info!("[headless] shutdown signal received, exiting");
+        exit.write_default();
+    }
+}
+
+#[cfg(unix)]
+mod shutdown_signal {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static RECEIVED: AtomicBool = AtomicBool::new(false);
+
+    pub fn received() -> bool {
+        RECEIVED.load(Ordering::Relaxed)
+    }
+
+    extern "C" fn flag(signal: libc::c_int) {
+        if RECEIVED.swap(true, Ordering::Relaxed) {
+            // a repeated signal means the graceful exit isn't getting there; bail out hard
+            unsafe { libc::_exit(128 + signal) };
+        }
+    }
+
+    pub fn install() {
+        unsafe {
+            for sig in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+                libc::signal(sig, flag as *const () as libc::sighandler_t);
+            }
+        }
+    }
 }
 
 /// Liveness supervisor. Logs when the scene first ticks; exits non-zero on a
