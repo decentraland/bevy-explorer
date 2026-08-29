@@ -25,7 +25,7 @@ function bridgeScenePreview(): Plugin {
         console.log('[bridge-scene] starting live preview on :8100')
         // --no-install: only run the locally-installed @dcl/sdk-commands bin. Without it, a stale
         // bridge-scene/node_modules makes npx fetch the UNRELATED registry package "sdk-commands".
-        const child = spawn('npx', ['--no-install', 'sdk-commands', 'start', '--no-browser', '--port', '8100'], {
+        const child = spawn('npx', ['--no-install', 'sdk-commands', 'start', '--no-client', '--port', '8100'], {
           cwd: fileURLToPath(new URL('./bridge-scene', import.meta.url)),
           stdio: ['ignore', 'inherit', 'inherit'],
           detached: true
