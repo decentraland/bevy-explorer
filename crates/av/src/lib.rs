@@ -478,12 +478,12 @@ fn av_player_on_insert<T: AVPlayer>(
         );
 
         let new_source = av_player.source();
-        commands.entity(entity).try_insert(new_source);
         commands.trigger(SetState::<T> {
             entity: *container_entity,
             state: VideoState::VsLoading,
             _phantom: PhantomData,
         });
+        commands.entity(entity).try_insert(new_source);
 
         let _ = maybe_config.take();
         let _ = maybe_position.take();
