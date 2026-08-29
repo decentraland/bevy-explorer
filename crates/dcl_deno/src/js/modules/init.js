@@ -161,7 +161,14 @@ import { Request } from "ext:deno_fetch/23_request.js"
 globalThis.Request = Request;
 
 import * as fetch from "ext:deno_fetch/26_fetch.js";
-globalThis.fetch = fetch.fetch;
+// On the authoritative server a 3xx is never auto-followed (see `build_scene_client` in
+// fetch/mod.rs): the scene gets the redirect response back and re-issues the request itself,
+// so every hop is one it chose and one the per-request checks see. Decided per call -- the
+// scene context is not in place while this module is evaluated.
+globalThis.fetch = (input, init) =>
+    isAuthoritativeServer()
+        ? fetch.fetch(input, { ...init, redirect: "manual" })
+        : fetch.fetch(input, init);
 
 import * as timers from "ext:deno_web/02_timers.js";
 globalThis.setTimeout = timers.setTimeout;

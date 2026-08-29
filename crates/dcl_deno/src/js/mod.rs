@@ -794,4 +794,129 @@ mod tests {
             )
             .expect("client mode must keep working");
     }
+
+    /// Drive one scene `fetch` against a local server that answers `/redirect` with a 302 to
+    /// `/target` on a second listener, and `/target` with a 200. Returns `"<status> <body>"`.
+    /// Loopback needs `preview`; the fetch permission request that `op_fetch_send` parks on is
+    /// granted from a plain thread, as the renderer would (`RpcResultSender::send` blocks).
+    fn fetch_redirect_outcome(is_server: bool) -> String {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::mpsc;
+
+        let listeners = [
+            TcpListener::bind("127.0.0.1:0").unwrap(),
+            TcpListener::bind("127.0.0.1:0").unwrap(),
+        ];
+        let ports = listeners.each_ref().map(|l| l.local_addr().unwrap().port());
+        for listener in listeners {
+            let target_port = ports[1];
+            std::thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let mut stream = stream.unwrap();
+                    let mut buf = [0u8; 4096];
+                    let n = stream.read(&mut buf).unwrap();
+                    let path = String::from_utf8_lossy(&buf[..n])
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("/")
+                        .to_owned();
+                    let response = if path == "/redirect" {
+                        format!("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{target_port}/target\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    } else {
+                        "HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\narrived"
+                            .to_owned()
+                    };
+                    stream.write_all(response.as_bytes()).unwrap();
+                }
+            });
+        }
+
+        let (mut runtime, _) = create_runtime(
+            false,
+            false,
+            "test-fetch-redirect",
+            true,
+            Default::default(),
+        );
+        {
+            let state = runtime.op_state();
+            let mut state = state.borrow_mut();
+            state.put(CrdtContext::new(
+                SceneId(bevy::prelude::Entity::from_raw(0)),
+                "hash".to_owned(),
+                "title".to_owned(),
+                false,
+                true,
+                is_server,
+            ));
+            state.put(dcl::SceneResourceCounters::default());
+            state.put(dcl::RpcCalls::default());
+            state.put(Vec::<dcl::SceneLogMessage>::default());
+            state.put(dcl::SceneElapsedTime(0.0));
+        }
+
+        let (grant_sx, grant_rx) = mpsc::channel::<common::rpc::RpcResultSender<bool>>();
+        std::thread::spawn(move || {
+            for sender in grant_rx {
+                sender.send(true);
+            }
+        });
+
+        let js = format!(
+            r#"globalThis.__outcome = fetch("http://127.0.0.1:{}/redirect")
+                .then(async (r) => `${{r.status}} ${{await r.text()}}`, (e) => `error ${{e}}`)
+                .then((s) => globalThis.__outcome = s);"#,
+            ports[0]
+        );
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            runtime.execute_script("<test>", js).unwrap();
+            let op_state = runtime.op_state();
+            let grant_permissions = async {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    let calls =
+                        std::mem::take(&mut **op_state.borrow_mut().borrow_mut::<dcl::RpcCalls>());
+                    for call in calls {
+                        if let common::rpc::RpcCall::RequestGenericPermission { response, .. } =
+                            call
+                        {
+                            grant_sx.send(response).unwrap();
+                        }
+                    }
+                }
+            };
+            tokio::select! {
+                r = tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    runtime.run_event_loop(deno_core::PollEventLoopOptions::default()),
+                ) => r.expect("fetch did not settle").unwrap(),
+                _ = grant_permissions => unreachable!(),
+            }
+        });
+        let outcome = runtime
+            .execute_script("<test>", ascii_str!("String(globalThis.__outcome)"))
+            .unwrap();
+        let scope = &mut runtime.handle_scope();
+        deno_core::v8::Local::new(scope, outcome).to_rust_string_lossy(scope)
+    }
+
+    /// The server never auto-follows a redirect: the scene gets the 3xx back. (Following
+    /// would also need the `URL` global, which this runtime does not install -- pinned here
+    /// so the outcome is the policy, not that accident.)
+    #[test]
+    fn server_hands_redirects_back_to_the_scene() {
+        let outcome = fetch_redirect_outcome(true);
+        assert!(outcome.starts_with("302 "), "unexpected outcome: {outcome}");
+    }
+
+    /// The client keeps following, like the browser does.
+    #[test]
+    fn client_follows_redirects() {
+        assert_eq!(fetch_redirect_outcome(false), "200 arrived");
+    }
 }
