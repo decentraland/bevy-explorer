@@ -83,7 +83,7 @@ jobs:
           # react HUD (cef): node for the page + bridge-scene bundles, ninja for cef-dll-sys' cmake build
           - uses: actions/setup-node@v7
             with:
-                node-version: 20
+                node-version: 24
           # moved up from below the CEF export: the TS-bindings build compiles the bevy dep
           # graph (gilrs needs libudev) before the HUD bundle can build.
           - name: Install alsa and udev
