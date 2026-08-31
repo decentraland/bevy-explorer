@@ -15,7 +15,7 @@ const MIN = 0.6
 const MAX = 1.3
 
 type ScaleWindow = Window & { __nativeUiHeight?: number }
-const IS_NATIVE = new URLSearchParams(location.search).get('native') === '1'
+const IS_NATIVE = __NATIVE_HUD__ && new URLSearchParams(location.search).get('native') === '1'
 
 export function useHudScale(): void {
   useEffect(() => {

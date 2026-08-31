@@ -131,7 +131,12 @@ function coiHeadersExceptAuth(): Plugin {
   }
 }
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
+  // ?native=1 (CEF HUD mode) is honoured only where it's legitimate: the bundle:native build
+  // (--mode native) that CEF loads from disk, and the dev server (react_hud_cef.rs supports
+  // REACT_HUD_URL at a vite dev server). Deployed web builds compile it FALSE so a crafted
+  // link can't switch them into native mode and skip the launch gates (see src/App.tsx MODE).
+  define: { __NATIVE_HUD__: JSON.stringify(command === 'serve' || mode === 'native') },
   // Production is served from a VERSIONED CDN subpath (cdn.decentraland.org/<pkg>/<version>/ —
   // see deploy/web/scripts/prebuild.js), so built asset URLs can't be origin-absolute. CI passes
   // PUBLIC_URL for an absolute CDN base; otherwise './' (relative → works from any path, e.g. a
