@@ -374,7 +374,7 @@ fn change_point_at_marker_visibility(
                         .get(e)
                         .map(|foreign_player| foreign_player.address)
                         .ok()
-                        .unwrap_or(Address::zero());
+                        .unwrap_or_default();
                     match social_client.get_state(address) {
                         FriendshipState::Friends => Visibility::Inherited,
                         _ => Visibility::Hidden,
@@ -429,7 +429,7 @@ fn change_point_at_marker_visibility_for_new_point_at_markers(
                     .get(point_at_marker.avatar)
                     .map(|foreign_player| foreign_player.address)
                     .ok()
-                    .unwrap_or(Address::zero());
+                    .unwrap_or_default();
                 match social_client.get_state(address) {
                     FriendshipState::Friends => Visibility::Inherited,
                     _ => Visibility::Hidden,

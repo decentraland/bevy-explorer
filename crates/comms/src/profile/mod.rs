@@ -2,6 +2,7 @@ pub mod name_color;
 
 use std::{io::Read, path::PathBuf, sync::Arc};
 
+use alloy_core::primitives::Address;
 use anyhow::anyhow;
 use bevy::{
     ecs::system::SystemParam,
@@ -10,7 +11,6 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use dcl::interface::CrdtType;
-use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer, IpfsIo};
 use multihash_codetable::MultihashDigest;
 use reqwest::StatusCode;
@@ -825,12 +825,7 @@ impl UserProfile {
         } else if let Some(custom_name_color) = self.content.name_color {
             custom_name_color.convert_srgb()
         } else {
-            name_color_from_address(
-                self.content
-                    .eth_address
-                    .as_h160()
-                    .unwrap_or(Address::zero()),
-            )
+            name_color_from_address(self.content.eth_address.as_h160().unwrap_or_default())
         }
     }
 }

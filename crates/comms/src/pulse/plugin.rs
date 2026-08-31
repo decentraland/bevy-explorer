@@ -20,6 +20,7 @@
 
 use std::sync::{Arc, Weak};
 
+use alloy_core::primitives::Address;
 use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 use common::{
@@ -29,7 +30,6 @@ use common::{
 use dcl_component::proto_components::kernel::comms::rfc4;
 use dcl_component::proto_components::pulse;
 use dcl_component::transform_and_parent::DclTranslation;
-use ethers_core::types::Address;
 use prost::Message as _;
 use tokio::sync::mpsc;
 use wallet::Wallet;
