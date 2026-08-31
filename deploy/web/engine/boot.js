@@ -17,7 +17,9 @@
 //     window.engine / engine_console_command — the console RPC (built by engine.js post-launch)
 //     __baseDomain() — the ?baseDomain= entry param (or the decentraland.org default); the wasm
 //       reads it before composing any backend URL (parity with native --base-domain)
-import { initEngine, start, gpu_cache_hash, initGpuCache } from './engine.js'
+//     __bevyHomeScene() — the persisted home scene { realm, parcel: "x,y" } (or the derived
+//       defaults), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
+import { initEngine, start, engine_home_scene, gpu_cache_hash, initGpuCache } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
 // Weight of each step in the overall bar (sums to 100). Step ids are read by the React login bar
@@ -322,6 +324,9 @@ initEngine()
     // Deferred launch: the host calls this once the user picks a destination — avoiding a wasted
     // default-realm load. One engine per page (see start()'s __bevyStarted guard).
     window.__bevyLaunch = (realm, position) => start({ realm, position, systemScene: config.systemScene, portables: config.portables, preview: config.preview, editor: config.editor, pulseServer: config.pulseServer })
+    // The persisted home scene ({ realm, parcel: "x,y" }), valid once engine_init has loaded the
+    // config — the host's places picker targets it from "Skip to Home" before launching.
+    window.__bevyHomeScene = () => { try { return JSON.parse(engine_home_scene()) } catch { return null } }
     window.__bevyReadyToLaunch = true
   })
   .catch((e) => {

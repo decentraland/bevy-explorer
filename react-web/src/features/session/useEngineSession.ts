@@ -1050,8 +1050,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // override (possibly an invalid world after a failed validation), and inheriting it would
       // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
-        if (dest == null) driver.launch?.(DEFAULT_REALM, '0,0')
-        else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
+        if (dest == null) {
+          // Skip goes HOME — the engine's persisted home scene (the derived default realm at
+          // 0,0 unless the user pinned one), not a hardcoded Genesis Plaza.
+          const home = driver.homeScene?.()
+          driver.launch?.(home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0')
+        } else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
         else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"

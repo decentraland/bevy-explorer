@@ -1,11 +1,11 @@
 // Engine logic - ES module
 // Handles WASM/WebGPU initialization and game execution
 
-import init, { engine_init, engine_run, engine_console_command, gpu_cache_hash } from "./pkg/webgpu_build.js";
+import init, { engine_init, engine_run, engine_console_command, engine_home_scene, gpu_cache_hash } from "./pkg/webgpu_build.js";
 import { initGpuCache } from "./gpu_cache.js";
 
 // Re-export for main.js
-export { gpu_cache_hash, initGpuCache };
+export { engine_home_scene, gpu_cache_hash, initGpuCache };
 
 /**
  * Records an uncaught worker error as context for the crash watchdog. A worker

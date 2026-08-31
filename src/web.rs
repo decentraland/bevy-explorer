@@ -130,6 +130,22 @@ pub async fn engine_init() -> Result<JsValue, JsValue> {
     Ok("Config loaded".into())
 }
 
+/// The persisted home scene — realm + "x,y" parcel — as a JSON string, falling back to the
+/// derived defaults. Valid after [`engine_init`] (it reads the loaded config); exposed so the
+/// HUD's places picker can target home from "Skip" BEFORE the engine is launched.
+#[wasm_bindgen]
+pub fn engine_home_scene() -> String {
+    let (realm, parcel) = INIT_DATA
+        .get()
+        .map(|config| (config.home_realm.clone(), config.home_location))
+        .unwrap_or_else(|| {
+            let config = AppConfig::default();
+            (config.home_realm, config.home_location)
+        });
+    serde_json::json!({ "realm": realm, "parcel": format!("{},{}", parcel.x, parcel.y) })
+        .to_string()
+}
+
 #[expect(clippy::too_many_arguments)]
 #[wasm_bindgen]
 pub fn engine_run(
