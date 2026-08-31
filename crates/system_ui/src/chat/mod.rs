@@ -63,7 +63,7 @@ impl Plugin for ChatPanelPlugin {
             );
             app.add_systems(Update, keyboard_popup);
         }
-        app.add_console_command::<Rechat, _>(debug_chat);
+        app.add_preview_console_command::<Rechat, _>(debug_chat);
         app.add_event::<PrivateChatEntered>();
         app.add_plugins((FriendsPlugin, ChatHistoryPlugin));
     }

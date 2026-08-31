@@ -31,8 +31,6 @@ pub struct AudioSourcePlugin;
 
 impl Plugin for AudioSourcePlugin {
     fn build(&self, app: &mut App) {
-        // we use kira for audio source asset management, regardless of native / wasm
-        app.add_plugins(bevy_kira_audio::AudioPlugin);
         // Custom `.audio` loader for scene-content clips fetched by content hash
         // (no on-wire extension). Format is detected from the byte stream.
         app.register_asset_loader(crate::audio_loader::AudioAssetLoader);
@@ -43,6 +41,12 @@ impl Plugin for AudioSourcePlugin {
         );
         app.add_systems(Update, map_scene_audio_sources.in_set(SceneSets::PostLoop));
         app.add_systems(Startup, setup_audio.in_set(SetupSets::Main));
+    }
+
+    fn finish(&self, app: &mut App) {
+        if !app.is_plugin_added::<bevy_kira_audio::AudioPlugin>() {
+            error!("bevy_kira_audio is missing, there will be no sounds.");
+        }
     }
 }
 

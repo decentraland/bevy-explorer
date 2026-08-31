@@ -50,6 +50,16 @@ describe('permissions domain', () => {
     expect(h.session().permissions.pending).toHaveLength(0)
   })
 
+  it('a withdrawn request is dropped from the queue without a decision', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    h.driver.emit(REQ)
+    h.driver.emit({ ...REQ, id: 8 })
+    h.driver.emit({ kind: 'permissionWithdrawn', id: 8 })
+    expect(h.session().permissions.pending.map((r) => r.id)).toEqual([7])
+    expect(h.driver.last('permissionResolve')).toBeUndefined()
+  })
+
   it('a permanent-level deny carries the chosen scope back', async () => {
     const h = renderSession()
     await enterAsGuest(h)

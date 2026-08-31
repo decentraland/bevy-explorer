@@ -72,7 +72,7 @@ impl Plugin for SysInfoPanelPlugin {
         app.add_console_command::<SysinfoCommand, _>(set_sysinfo);
 
         app.add_systems(First, (entity_count, display_tracked_components));
-        app.add_console_command::<TrackComponentCommand, _>(set_track_components);
+        app.add_preview_console_command::<TrackComponentCommand, _>(set_track_components);
     }
 }
 

@@ -726,7 +726,12 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'consoleCommand') {
-      reply({ kind: 'chat', chat: { sender: '', message: 'Console commands: reload, help, show_ui, noclip, speed, jump', channel: 'Nearby' } })
+      const args = msg.args ?? []
+      const output =
+        msg.command === 'help' && args.length === 0
+          ? 'Available commands:\n  /help     - List available commands\n  /teleport - set location\n  /crdt_snapshot - (hidden by the HUD)'
+          : `(mock) ran /${msg.command} ${args.join(' ')}`.trim()
+      reply({ kind: 'consoleReply', command: msg.command, args, ok: true, output })
       return
     }
 

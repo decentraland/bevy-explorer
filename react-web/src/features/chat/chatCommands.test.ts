@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseChatCommand, HELP_TEXT } from './chatCommands'
+import { formatConsoleReply, HUD_HIDDEN_COMMANDS, parseChatCommand, splitArgs, HELP_TEXT } from './chatCommands'
 
 describe('parseChatCommand', () => {
   it('passes a normal message through as send (trimmed)', () => {
@@ -52,9 +52,58 @@ describe('parseChatCommand', () => {
     expect(parseChatCommand('/goto 1 2 3').kind).toBe('system')
   })
 
-  it('an unknown /command → a system hint, not a broadcast', () => {
-    const r = parseChatCommand('/dance')
-    expect(r.kind).toBe('system')
-    expect((r as { message: string }).message).toContain('/help')
+  it('any other /command passes through to the engine console with split args', () => {
+    expect(parseChatCommand('/dance')).toEqual({ kind: 'console', command: 'dance', args: [] })
+    expect(parseChatCommand('/Emote 3')).toEqual({ kind: 'console', command: 'emote', args: ['3'] })
+    expect(parseChatCommand('/changerealm boedo.dcl.eth "https://x.y/content"')).toEqual({
+      kind: 'console',
+      command: 'changerealm',
+      args: ['boedo.dcl.eth', 'https://x.y/content']
+    })
+    // A bare slash is not a command.
+    expect(parseChatCommand('/').kind).toBe('system')
+  })
+
+  it('HUD-hidden engine commands → the unknown-command hint, never the console', () => {
+    for (const name of ['crdt_snapshot', 'screenshot', 'set_component', 'lock_preview', 'logout', 'exit']) {
+      expect(HUD_HIDDEN_COMMANDS.has(name)).toBe(true)
+      const r = parseChatCommand(`/${name} 1 2`)
+      expect(r.kind).toBe('system')
+      expect((r as { message: string }).message).toContain('/help')
+    }
+  })
+
+  it('/reload <hash> and /help <command> go to the engine; the bare forms stay local', () => {
+    expect(parseChatCommand('/reload bafyabc')).toEqual({ kind: 'console', command: 'reload', args: ['bafyabc'] })
+    expect(parseChatCommand('/help teleport')).toEqual({ kind: 'console', command: 'help', args: ['/teleport'] })
+    expect(parseChatCommand('/help /teleport')).toEqual({ kind: 'console', command: 'help', args: ['/teleport'] })
+    expect(parseChatCommand('/help').kind).toBe('system')
+  })
+
+  it('splitArgs honours quotes', () => {
+    expect(splitArgs(`a "b c" 'd e' f`)).toEqual(['a', 'b c', 'd e', 'f'])
+    expect(splitArgs('')).toEqual([])
+  })
+})
+
+describe('formatConsoleReply', () => {
+  it('drops HUD-hidden commands from the bare help listing', () => {
+    const out = ['Available commands:', '  /teleport      - set location', '  /crdt_snapshot - Return the full live CRDT state', '  /emote         - emote'].join('\n')
+    const shown = formatConsoleReply('help', [], out)
+    expect(shown).toContain('/teleport')
+    expect(shown).toContain('/emote')
+    expect(shown).not.toContain('/crdt_snapshot')
+    // Per-command help is passed through untouched.
+    expect(formatConsoleReply('help', ['/teleport'], 'set location\n\nUsage: /teleport <X> <Y>')).toContain('Usage:')
+  })
+
+  it("trims the engine's unknown-command rejection to one sentence", () => {
+    const rejection = 'Command not recognized: `/dance`. Recognized commands: ["/clear", "/emote", "/exit"]'
+    expect(formatConsoleReply('dance', [], rejection)).toBe('Command not recognized: `/dance`. Type /commands for the list.')
+  })
+
+  it('reports empty output explicitly', () => {
+    expect(formatConsoleReply('fps', ['60'], '  ')).toBe('(no output for /fps)')
+    expect(formatConsoleReply('fps', ['60'], 'fps set to 60\n')).toBe('fps set to 60')
   })
 })

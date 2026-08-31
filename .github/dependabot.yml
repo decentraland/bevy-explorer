@@ -12,6 +12,11 @@ updates:
     # but is breaking); cargo's caret semantics encode compatibility correctly, so the
     # manifest ranges are the policy. Crossing a range boundary is deliberate manual work.
     versioning-strategy: lockfile-only
+    ignore:
+      # 0.2.5 pulls in `symlink`, which has no wasm32 impl — breaks the web build.
+      # Fixed upstream in tokio-rs/tracing#3568 (unreleased); drop once 0.2.6 ships.
+      - dependency-name: tracing-appender
+        versions: ['0.2.5']
     groups:
       cargo-deps:
         patterns: ['*']

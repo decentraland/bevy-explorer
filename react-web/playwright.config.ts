@@ -27,13 +27,20 @@ export default defineConfig({
     {
       command: 'npm run dev',
       url: 'http://localhost:5173',
+      // :8100 is OUR webServer below — stop vite's own bridge-scene auto-start (vite.config.ts) from
+      // racing it (EADDRINUSE) and, worse, outliving the run: the runner waits for each server's
+      // stdio to close, and vite's detached sdk-commands child keeps them open after vite is killed.
+      env: { BRIDGE_SCENE_PREVIEW: '0' },
       reuseExistingServer: true,
       timeout: 120_000
     },
     {
-      command: 'npx sdk-commands start --no-browser --port 8100',
+      // --no-client: sdk-commands >= 7.27 auto-launches the desktop Explorer unless told not to
+      command: 'npx sdk-commands start --no-client --port 8100',
       cwd: 'bridge-scene',
-      url: 'http://localhost:8100',
+      // 127.0.0.1, not localhost: sdk-commands binds IPv4 only and Node >= 22 resolves localhost to ::1
+      // first. /about, not /: sdk-commands >= 7.27 no longer serves a page at / (404 = never ready).
+      url: 'http://127.0.0.1:8100/about',
       reuseExistingServer: true,
       timeout: 120_000
     }

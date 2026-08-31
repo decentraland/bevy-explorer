@@ -3,7 +3,7 @@
 Per-domain tests that drive the **live** app — the React HUD, the bevy engine (in a
 same-origin iframe), and the super-user bridge scene — and assert each API call
 round-trips over the bridge. The player is driven with **bevy console commands**
-(`move_player_to`, `teleport`, `player_position`); panels are opened with real DOM
+(`walk_player_to`, `teleport`, `player_position`); panels are opened with real DOM
 clicks; the bridge is observed via a `BroadcastChannel` spy.
 
 This complements the deterministic **tier 1** suite (`src/test/*.test.tsx`, run with
@@ -27,8 +27,9 @@ npm run test:e2e
 ```
 
 `playwright.config.ts` starts both servers automatically (Vite dev on :5173 + the
-bridge scene on :8100) and reuses them if already running. To point at an
-already-running app, set `E2E_URL=http://localhost:5173`.
+bridge scene on :8100, with `BRIDGE_SCENE_PREVIEW=0` so Vite doesn't also start its
+own) and reuses them if already running. To point at an already-running app, set
+`E2E_URL=http://localhost:5173`.
 
 List the tests without launching the engine:
 
@@ -43,7 +44,7 @@ One test per domain, in `engine.spec.ts` (boots the world once, serial):
 | Domain | Driven by | Asserts (bridge) |
 |---|---|---|
 | session | enter as guest | `getProfile`, `getNotifications` sent on entry |
-| world (move) | `move_player_to` | `player_position` changes |
+| world (move) | `walk_player_to` | `player_position` changes |
 | chat | type + Enter | `sendChat` |
 | settings | click Settings | `getSettings` → `settings` |
 | emotes | click Emotes | `getEmotes` → `emotes` |

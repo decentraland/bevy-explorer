@@ -17,7 +17,7 @@ use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
     FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, ProximityEvent, SceneLoadingUi, SetAvatarData,
+    PermanentPermissionItem, PermissionRequestEvent, ProximityEvent, SceneLoadingUi, SetAvatarData,
     SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 
@@ -525,11 +525,11 @@ pub async fn op_get_permission_request_stream(state: Rc<RefCell<impl State>>) ->
 pub async fn op_read_permission_request_stream(
     state: Rc<RefCell<impl State>>,
     _rid: u32,
-) -> Result<Option<PermissionRequest>, anyhow::Error> {
+) -> Result<Option<PermissionRequestEvent>, anyhow::Error> {
     debug!("op_read_permission_request_stream");
     let Some(mut receiver) = state
         .borrow_mut()
-        .try_take::<RpcStreamReceiver<PermissionRequest>>()
+        .try_take::<RpcStreamReceiver<PermissionRequestEvent>>()
     else {
         return Ok(None);
     };

@@ -73,12 +73,22 @@ export interface ReloadSceneRequest {
   kind: 'reloadScene'
 }
 
-/** Run an engine console command (the `/commands` chat command → `help`); the scene relays the
- *  console's text output back as a system chat message. */
+/** Run an engine console command (chat `/commands` → `help`, or any passed-through `/command`);
+ *  the scene answers with a `consoleReply`. */
 export interface ConsoleCommandRequest {
   kind: 'consoleCommand'
   command: string
   args?: string[]
+}
+
+/** The console's reply to a `consoleCommand` (scene → page): its text output, or the failure
+ *  text (`ok: false`, e.g. the engine's unknown-command rejection or a clap usage error). */
+export interface ConsoleReplyMessage {
+  kind: 'consoleReply'
+  command: string
+  args: string[]
+  ok: boolean
+  output: string
 }
 
 /** Sidebar nav actions the React sidebar triggers in the scene (open a menu/popup,
@@ -487,6 +497,13 @@ export interface PermissionRequestMessage {
   realm: string
   /** Extra context line (e.g. 'Jump to DCL Kickoff Challenge?'). */
   additional?: string
+}
+
+/** A queued permission prompt the engine has already resolved (a permanent rule set for an earlier
+ *  prompt now covers it) — the HUD drops it without asking. */
+export interface PermissionWithdrawnMessage {
+  kind: 'permissionWithdrawn'
+  id: number
 }
 
 /** Which scope an Allow/Deny applies to. `once` = just this request; the rest persist a rule. */
@@ -970,6 +987,7 @@ export type SceneToPage =
   | LoginCodeMessage
   | SceneLoadingMessage
   | ChatRelayMessage
+  | ConsoleReplyMessage
   | ChatVisibilityMessage
   | FocusChatMessage
   | MembersMessage
@@ -995,6 +1013,7 @@ export type SceneToPage =
   | GalleryMessage
   | GalleryPhotoMessage
   | PermissionRequestMessage
+  | PermissionWithdrawnMessage
 
 // ---- envelope --------------------------------------------------------------
 

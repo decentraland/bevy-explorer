@@ -1330,7 +1330,10 @@ fn play_current_emote(
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/emote")]
 struct EmoteConsoleCommand {
+    /// Emote urn, or a profile emote slot number
     urn: String,
+    #[arg(long, default_value_t = false)]
+    r#loop: bool,
 }
 
 fn emote_console_command(
@@ -1354,15 +1357,17 @@ fn emote_console_command(
             }
 
             info!("anim {} -> {}", command.urn, urn);
-            let timestamp = maybe_prev.map(|p| p.timestamp).unwrap_or_default();
+            let timestamp = maybe_prev.map(|p| p.timestamp + 1).unwrap_or_default();
 
             commands.entity(player).try_insert(EmoteCommand {
                 urn: urn.clone(),
                 timestamp,
-                r#loop: false,
+                r#loop: command.r#loop,
             });
-        };
-        input.ok();
+            input.reply_ok(format!("playing emote {urn}"));
+        } else {
+            input.reply_failed("player not found");
+        }
     }
 }
 

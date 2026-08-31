@@ -22,9 +22,9 @@ pub struct DclImposterPlugin {
 impl Plugin for DclImposterPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((DclImposterBakeScenePlugin, DclImposterRenderPlugin))
-            .add_console_command::<ImpostDistanceCommand, _>(set_impost_distance)
-            .add_console_command::<ImpostMultisampleCommand, _>(set_impost_multi)
-            .add_console_command::<DebugImpostersCommand, _>(toggle_debug_imposters);
+            .add_preview_console_command::<ImpostDistanceCommand, _>(set_impost_distance)
+            .add_preview_console_command::<ImpostMultisampleCommand, _>(set_impost_multi)
+            .add_preview_console_command::<DebugImpostersCommand, _>(toggle_debug_imposters);
         app.insert_resource(self.clone());
     }
 }

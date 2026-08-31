@@ -13,14 +13,14 @@
     "lint:fix": "eslint --fix \"./src/**/*.{ts,tsx}\"",
     "format": "prettier --config .prettierrc -c \"./src/**/*.{ts,tsx}\"",
     "format:fix": "prettier -w --config .prettierrc \"./src/**/*.{ts,tsx}\"",
-    "upgrade-sdk": "npm install @dcl/sdk@protocol-squad @dcl/js-runtime@protocol-squad @dcl/react-ecs@protocol-squad @dcl/sdk-commands@protocol-squad @dcl/ecs@protocol-squad --save-exact"
+    "upgrade-sdk": "npm install @dcl/sdk@experimental-bevy @dcl/js-runtime@experimental-bevy @dcl/react-ecs@experimental-bevy @dcl/sdk-commands@experimental-bevy @dcl/ecs@experimental-bevy --save-exact"
   },
   "devDependencies": {
-    "@dcl/ecs": "7.22.6-25007982108.commit-83012ab",
-    "@dcl/js-runtime": "7.22.6-25007982108.commit-83012ab",
-    "@dcl/react-ecs": "7.22.6-25007982108.commit-83012ab",
-    "@dcl/sdk": "7.22.6-25007982108.commit-83012ab",
-    "@dcl/sdk-commands": "7.22.6-25007982108.commit-83012ab",
+    "@dcl/ecs": "7.27.1-33247605236.commit-732120a",
+    "@dcl/js-runtime": "7.27.1-33247605236.commit-732120a",
+    "@dcl/react-ecs": "7.27.1-33247605236.commit-732120a",
+    "@dcl/sdk": "7.27.1-33247605236.commit-732120a",
+    "@dcl/sdk-commands": "7.27.1-33247605236.commit-732120a",
     "@typescript-eslint/eslint-plugin": "^6.10.0",
     "@typescript-eslint/parser": "^6.10.0",
     "eslint": "^8.53.0",
@@ -32,7 +32,12 @@
     "prettier": "3.0.3"
   },
   "engines": {
-    "node": ">=16.0.0",
+    "node": ">=22.0.0",
     "npm": ">=6.0.0"
+  },
+  "overrides": {
+    "protobufjs": "^7.5.6",
+    "minimatch@9.0.3": "9.0.7",
+    "cookie": "^0.7.2"
   }
 }

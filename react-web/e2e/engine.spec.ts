@@ -4,7 +4,7 @@
 // Requires a real GPU (WebGPU) + the bridge scene on :8100 — see e2e/README.md.
 
 import { test, expect, type Page } from '@playwright/test'
-import { enterAsGuest, sidebar, cmd, movePlayerTo, teleport, playerPosition, expectBridge, bridgeKinds } from './helpers'
+import { enterAsGuest, sidebar, cmd, walkNearby, teleport, playerPosition, expectBridge, bridgeKinds } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -27,9 +27,9 @@ test.describe('react HUD ↔ real engine', () => {
   })
 
   // --- world: bevy player movement (deterministic console command) -----------
-  test('world: move_player_to relocates the avatar', async () => {
+  test('world: walk_player_to relocates the avatar', async () => {
     const before = await playerPosition(page)
-    await movePlayerTo(page, 8, 1, 24)
+    await walkNearby(page)
     await expect.poll(async () => playerPosition(page)).not.toBe(before)
     expect(await playerPosition(page)).toMatch(/-?\d/)
   })
@@ -89,8 +89,11 @@ test.describe('react HUD ↔ real engine', () => {
   // --- profile: passport relayed --------------------------------------------
   test('profile: the passport is relayed to the page', async () => {
     await expectBridge(page, 'page', 'profile')
+    // The sidebar's Profile icon opens the local player's passport popup (App's viewMyProfile,
+    // reading the relayed profile) — it never toggles the small profile panel, so the button has
+    // no pressed state.
     await sidebar(page, 'Profile')
-    await expect(page.getByRole('button', { name: 'Profile', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('button', { name: 'OVERVIEW', exact: true })).toBeVisible()
   })
 
   // --- notifications: open → fetch -------------------------------------------
