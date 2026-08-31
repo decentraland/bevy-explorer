@@ -606,7 +606,7 @@ fn should_be_playing_on_remove<T: AVPlayer>(
     commands.entity(entity).try_remove::<ActiveReceiver>();
 
     let Ok((has_stream, container_entity)) = av_players.get(entity) else {
-        error!("AVPlayer {entity} not a scene entity.");
+        debug!("AVPlayer {entity} not a scene entity.");
         return;
     };
     if has_stream {
