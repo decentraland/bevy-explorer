@@ -1,5 +1,6 @@
-// Interstitial for a link that picks its own super-user scene (`?systemScene=`) — see
-// lib/systemScene.ts for why that parameter is worth stopping on.
+// Interstitial for a link that carries an infrastructure-pointing parameter: its own super-user
+// scene (`?systemScene=` — see lib/systemScene.ts for why that is worth stopping on) and/or its
+// own backend deployment (`?baseDomain=` — see lib/baseDomain.ts).
 //
 // Not dismissible: ModalShell is scrimless (its host owns the overlay, Escape and focus — see
 // design/Modal.tsx), so this gate draws its own inert full-screen layer and `closeButton={false}`
@@ -24,9 +25,11 @@ const TITLE = 'This Launch Link Is Not Trusted'
 
 export function UntrustedLaunchGate({
   systemScene,
+  baseDomain,
   onProceed
 }: {
-  systemScene: string
+  systemScene?: string
+  baseDomain?: string
   onProceed: () => void
 }): React.JSX.Element {
   const [advanced, setAdvanced] = useState(false)
@@ -71,18 +74,33 @@ export function UntrustedLaunchGate({
       >
         <p className={styles.lead}>Someone may be trying to change how your Explorer behaves.</p>
         <p className={styles.lead}>
-          This link carries a parameter the Explorer does not accept from links, because it replaces the
-          interface with code that runs as you:
+          This link carries {systemScene != null && baseDomain != null ? 'parameters' : 'a parameter'} the
+          Explorer does not accept from links:
         </p>
 
         <dl className={styles.params}>
-          <dt>
-            systemScene = <span className={styles.paramValue}>{systemScene}</span>
-          </dt>
-          <dd className={styles.paramDesc}>
-            Replaces the Explorer&apos;s interface with a scene loaded from this address. It can move
-            your avatar, change your profile, and answer permission prompts on your behalf.
-          </dd>
+          {systemScene != null && (
+            <>
+              <dt>
+                systemScene = <span className={styles.paramValue}>{systemScene}</span>
+              </dt>
+              <dd className={styles.paramDesc}>
+                Replaces the Explorer&apos;s interface with a scene loaded from this address. It can move
+                your avatar, change your profile, and answer permission prompts on your behalf.
+              </dd>
+            </>
+          )}
+          {baseDomain != null && (
+            <>
+              <dt>
+                baseDomain = <span className={styles.paramValue}>{baseDomain}</span>
+              </dt>
+              <dd className={styles.paramDesc}>
+                Points every backend service — sign-in, content, comms — at servers under this domain.
+                Whoever runs them would see your session and control what you play.
+              </dd>
+            </>
+          )}
         </dl>
 
         <p className={styles.lead}>Unless you built this link yourself, the safe choice is to exit.</p>

@@ -9,3 +9,11 @@ export const BASE_DOMAIN = new URLSearchParams(window.location.search).get('base
 export function serviceUrl(sub: string): string {
   return `https://${sub}.${BASE_DOMAIN}`
 }
+
+// Decentraland's own deployments. Any other domain arriving by LINK points the whole session's
+// backends — sign-in, content, comms — at someone else's servers, so App.tsx stops on it with the
+// UntrustedLaunchGate before anything boots. The native shell injects the param from the user's
+// own --base-domain flag (App runs in native mode there), which needs no gate.
+export function isTrustedBaseDomain(domain: string): boolean {
+  return domain === 'decentraland.org' || domain === 'decentraland.zone'
+}

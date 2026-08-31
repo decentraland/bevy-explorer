@@ -41,6 +41,7 @@ import { hasUsableGpu } from './lib/gpu'
 import { MobileGate, GateChecking } from './features/gate/MobileGate'
 import { UntrustedLaunchGate } from './features/gate/UntrustedLaunchGate'
 import { isTrustedSystemScene } from './lib/systemScene'
+import { BASE_DOMAIN, isTrustedBaseDomain } from './lib/baseDomain'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
 import { CrashModal } from './features/error/CrashModal'
 import { openRealmError } from './features/error/RealmErrorModal'
@@ -86,6 +87,9 @@ const GATE_REASON = gateReason()
 const SYSTEM_SCENE_OVERRIDE = bootMode().systemScene
 const UNTRUSTED_SYSTEM_SCENE =
   SYSTEM_SCENE_OVERRIDE != null && !isTrustedSystemScene(SYSTEM_SCENE_OVERRIDE) ? SYSTEM_SCENE_OVERRIDE : null
+// `?baseDomain=` likewise: it points every backend at another deployment. Native is exempt —
+// there the shell injects it from the user's own --base-domain flag, not from a link.
+const UNTRUSTED_BASE_DOMAIN = MODE !== 'native' && !isTrustedBaseDomain(BASE_DOMAIN) ? BASE_DOMAIN : null
 
 export function App(): React.JSX.Element {
   useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
@@ -98,8 +102,14 @@ export function App(): React.JSX.Element {
   // Ahead of every other gate: returning here is what keeps EngineHost unmounted, and EngineHost is
   // what injects boot.js and starts the scene.
   const [trustUntrusted, setTrustUntrusted] = useState(false)
-  if (UNTRUSTED_SYSTEM_SCENE != null && !trustUntrusted) {
-    return <UntrustedLaunchGate systemScene={UNTRUSTED_SYSTEM_SCENE} onProceed={() => setTrustUntrusted(true)} />
+  if ((UNTRUSTED_SYSTEM_SCENE != null || UNTRUSTED_BASE_DOMAIN != null) && !trustUntrusted) {
+    return (
+      <UntrustedLaunchGate
+        systemScene={UNTRUSTED_SYSTEM_SCENE ?? undefined}
+        baseDomain={UNTRUSTED_BASE_DOMAIN ?? undefined}
+        onProceed={() => setTrustUntrusted(true)}
+      />
+    )
   }
   if (GATE_REASON) return <MobileGate reason={GATE_REASON} />
   if (gpu === 'checking') return <GateChecking />
