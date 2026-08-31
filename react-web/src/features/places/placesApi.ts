@@ -2,7 +2,9 @@
 // Plain fetch; the pure helpers below derive card fields from a DiscoverPlace and
 // are kept side-effect free so they're unit-testable.
 
-const API_BASE = 'https://places.decentraland.org/api'
+import { serviceUrl } from '../../lib/baseDomain'
+
+const API_BASE = `${serviceUrl('places')}/api`
 
 export interface DiscoverPlace {
   id: string
@@ -103,7 +105,7 @@ export function fetchWorlds(args: FetchPlacesArgs = {}): Promise<PlacesResponse>
 // only covers Genesis City, and /worlds user counts lag behind live presence. We fetch the
 // live counts and resolve card metadata for those names in one batch.
 
-const WORLDS_LIVE_URL = 'https://worlds-content-server.decentraland.org/live-data'
+const WORLDS_LIVE_URL = `${serviceUrl('worlds-content-server')}/live-data`
 
 type LiveWorldEntry = { worldName: string; users: number }
 

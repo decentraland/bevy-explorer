@@ -2,6 +2,7 @@
 // Owns the driver and exposes the login flow + scene-loading state + phase.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { serviceUrl } from '../../lib/baseDomain'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/fatalError'
@@ -1131,7 +1132,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       validatingRealm.current = true
       const base =
         dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
-          ? `https://worlds-content-server.decentraland.org/world/${dest.realm}`
+          ? `${serviceUrl('worlds-content-server')}/world/${dest.realm}`
           : dest.realm
       // Launching against an unreachable realm strands the engine in a cryptic login failure, so
       // block up front: 404 → not found, no/failed answer (incl. timeout) → unreachable.
