@@ -203,9 +203,9 @@ impl DiscoverSettings {
 
     fn request(&mut self) {
         let mut url = if self.worlds {
-            common::base_domain::https_url_from_path("places", "/api/worlds/?limit=50")
+            common::base_domain::https("places", "/api/worlds/?limit=50")
         } else {
-            common::base_domain::https_url_from_path("places", "/api/places/?limit=50")
+            common::base_domain::https("places", "/api/places/?limit=50")
         };
 
         url = format!("{url}&offset={}", self.data.len());
@@ -432,7 +432,7 @@ impl DiscoverPage {
         Self {
             title: format!("({}, {})", coords.x, coords.y),
             base_position: format!("{},{}", coords.x, coords.y),
-            image: common::base_domain::https_url_from_path(
+            image: common::base_domain::https(
                 "realm-provider",
                 "/content/contents/bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y",
             ),
@@ -625,12 +625,10 @@ pub fn spawn_discover_popup(
     item: &DiscoverPage,
 ) {
     let url = match &item.world_name {
-        Some(name) => format!(
-            "{}/world/{}",
-            common::base_domain::https_url_from_path("worlds-content-server", ""),
-            name.clone()
-        ),
-        None => common::base_domain::https_url_from_path("realm-provider-ea", "/main"),
+        Some(name) => {
+            common::base_domain::https("worlds-content-server", &format!("/world/{name}"))
+        }
+        None => common::base_domain::https("realm-provider-ea", "/main"),
     };
 
     let Ok(to) = IVec2Arg::from_str(&item.base_position) else {

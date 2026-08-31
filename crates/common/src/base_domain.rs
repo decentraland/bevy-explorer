@@ -39,7 +39,7 @@ pub fn is_custom() -> bool {
     )
 }
 
-pub fn https_url_from_path(sub: &str, path: &str) -> String {
+pub fn https(sub: &str, path: &str) -> String {
     format!("https://{}{path}", host(sub))
 }
 
@@ -48,28 +48,26 @@ pub fn wss(sub: &str, path: &str) -> String {
 }
 
 pub fn host(sub: &str) -> String {
-    if sub.is_empty() {
-        get().to_owned()
-    } else {
-        format!("{sub}.{}", get())
-    }
+    format!("{sub}.{}", get())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // NOTE: asserts literal URLs, so no test in this crate may set() a custom domain —
+    // tests share the process-wide OnceLock.
     #[test]
     fn default_composition_targets_decentraland() {
         assert_eq!(
-            https_url_from_path("auth-api", "/requests"),
-            format!("https://auth-api.{}/requests", get())
+            https("auth-api", "/requests"),
+            "https://auth-api.decentraland.org/requests"
         );
         assert_eq!(
             wss("rpc-social-service-ea", ""),
-            format!("wss://rpc-social-service-ea.{}", get())
+            "wss://rpc-social-service-ea.decentraland.org"
         );
-        assert_eq!(host(""), get());
+        assert_eq!(host("pulse-server"), "pulse-server.decentraland.org");
     }
 
     #[test]

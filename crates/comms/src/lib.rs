@@ -59,18 +59,18 @@ use self::{
 use self::livekit::{plugin::LivekitPlugin, StartLivekit};
 
 fn gatekeeper_url() -> String {
-    common::base_domain::https_url_from_path("comms-gatekeeper", "/get-scene-adapter")
+    common::base_domain::https("comms-gatekeeper", "/get-scene-adapter")
 }
 fn preview_gatekeeper_url() -> String {
-    common::base_domain::https_url_from_path("comms-gatekeeper-local", "/get-scene-adapter")
+    common::base_domain::https("comms-gatekeeper-local", "/get-scene-adapter")
 }
 // Authoritative-server endpoints: yield a token with the LiveKit identity
 // `authoritative-server`, which clients target for authoritative-scene traffic.
 fn server_gatekeeper_url() -> String {
-    common::base_domain::https_url_from_path("comms-gatekeeper", "/get-server-scene-adapter")
+    common::base_domain::https("comms-gatekeeper", "/get-server-scene-adapter")
 }
 fn preview_server_gatekeeper_url() -> String {
-    common::base_domain::https_url_from_path("comms-gatekeeper-local", "/get-server-scene-adapter")
+    common::base_domain::https("comms-gatekeeper-local", "/get-server-scene-adapter")
 }
 
 pub mod chat_marker_things {

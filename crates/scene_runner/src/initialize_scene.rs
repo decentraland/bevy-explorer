@@ -363,7 +363,7 @@ pub(crate) fn load_scene_javascript(
                 }
             }
         } else {
-            ipfas.load_url_uncached(&common::base_domain::https_url_from_path(
+            ipfas.load_url_uncached(&common::base_domain::https(
                 "renderer-artifacts",
                 "/sdk6-adaption-layer/main/index.min.js",
             ))

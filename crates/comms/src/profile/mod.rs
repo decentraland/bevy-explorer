@@ -939,7 +939,7 @@ fn registry_url(endpoint: Option<&str>) -> String {
         let base = common::base_domain::get();
         if common::base_domain::is_custom() && (host == base || host.ends_with(&format!(".{base}")))
         {
-            return common::base_domain::https_url_from_path("asset-bundle-registry", "/profiles");
+            return common::base_domain::https("asset-bundle-registry", "/profiles");
         }
     }
     REGISTRY_ORG.to_owned()

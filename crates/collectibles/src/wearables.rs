@@ -97,7 +97,7 @@ fn load_collections(
             let t: Task<Result<Collections, anyhow::Error>> =
                 IoTaskPool::get().spawn_compat(async move {
                     let response = client
-                        .get(common::base_domain::https_url_from_path(
+                        .get(common::base_domain::https(
                             "realm-provider",
                             "/lambdas/collections",
                         ))
