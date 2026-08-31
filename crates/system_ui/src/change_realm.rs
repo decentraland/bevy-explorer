@@ -76,7 +76,7 @@ fn change_realm_dialog(
     // let target_url = format!("{endpoint}/explore/realms");
 
     // hard coded since the other doesn't list main
-    let target_url = common::base_domain::https("realm-provider", "/realms");
+    let target_url = common::base_domain::https("realm-provider-ea", "/realms");
 
     let client = ipfas.ipfs().client();
     let task: Task<Result<Vec<ServerDesc>, anyhow::Error>> =

@@ -82,7 +82,7 @@ just native-release            # bundles the HUD if stale, then builds + runs ev
 `just native-debug` is the same in debug. Both pass extra arguments through:
 
 ```bash
-just native-release --server https://realm-provider.decentraland.org/main --location 52,-52
+just native-release --server https://realm-provider-ea.decentraland.org/main --location 52,-52
 ```
 
 `--base-domain` retargets every backend host (auth, comms, places, worlds, social, ...) at another deployment's domain:

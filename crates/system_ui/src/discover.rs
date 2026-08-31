@@ -433,7 +433,7 @@ impl DiscoverPage {
             title: format!("({}, {})", coords.x, coords.y),
             base_position: format!("{},{}", coords.x, coords.y),
             image: common::base_domain::https(
-                "realm-provider",
+                "peer",
                 "/content/contents/bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y",
             ),
             ..Default::default()
