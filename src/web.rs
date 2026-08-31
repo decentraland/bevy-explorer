@@ -124,6 +124,7 @@ pub fn engine_run(
     is_editor: bool,
     gpu_bytes_per_frame: usize,
     params: &str,
+    pulse_server: &str,
 ) {
     init_runtime();
 
@@ -147,6 +148,7 @@ pub fn engine_run(
         is_preview,
         is_editor,
         params,
+        pulse_server,
         with_thread_loader.then(|| WASM_ASSET_LOADER_HANDLE.get().unwrap().clone()),
     );
 
@@ -371,6 +373,7 @@ fn decentraland_app_config(
     is_preview: bool,
     is_editor: bool,
     params: &str,
+    pulse_server: &str,
     wasm_loader_handle: Option<WasmLoaderHandle>,
 ) -> DecentralandAppConfig {
     let app_config = decentraland_serialized_app_config();
@@ -383,6 +386,7 @@ fn decentraland_app_config(
         is_preview,
         is_editor,
         params,
+        pulse_server,
     );
 
     DecentralandAppConfig::new(app_config, arguments, wasm_loader_handle)
@@ -409,6 +413,7 @@ fn decentraland_app_arguments(
     is_preview: bool,
     is_editor: bool,
     params: &str,
+    pulse_server: &str,
 ) -> DecentralandArguments {
     DecentralandArguments {
         server: Some(server.to_owned()),
@@ -435,6 +440,7 @@ fn decentraland_app_arguments(
         // wasm has no engine-managed HUD: the react page hosting the engine is the HUD
         hud: false,
         scene_params: Some(params.to_owned()),
+        pulse_server: (!pulse_server.is_empty()).then(|| pulse_server.to_owned()),
         scene_threads: None,
         scene_load_distance: None,
         scene_unload_extra_distance: None,

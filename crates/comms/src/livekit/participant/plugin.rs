@@ -337,23 +337,6 @@ fn participant_payload(
 
     let room = *room_entity;
 
-    // Where avatar state already arrives over Pulse, drop the legacy LiveKit copies so the two
-    // inbound pipes don't both drive the foreign avatar (double-applied position / double-played
-    // emote). Gated on the *receiving context* rather than unconditionally: an authoritative server
-    // never joins Pulse and these packets — which clients send it with
-    // `NetworkMessageRecipient::AuthServer` — are its only source of player presence. SceneEmote is
-    // unaffected either way.
-    if transport_senders.is_pulse_fed(room)
-        && matches!(
-            message,
-            rfc4::packet::Message::Movement(_)
-                | rfc4::packet::Message::MovementCompressed(_)
-                | rfc4::packet::Message::PlayerEmote(_)
-        )
-    {
-        return;
-    }
-
     let Some(sender) = transport_senders.get(room) else {
         return;
     };

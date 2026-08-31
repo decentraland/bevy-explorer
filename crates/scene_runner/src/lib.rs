@@ -64,7 +64,9 @@ use dcl_component::ComponentNameRegistry;
 
 mod asset_preload;
 pub mod automatic_testing;
-pub mod bounds_calc;
+/// Region decomposition, in `common` so `comms` can reach it too; re-exported here because this is
+/// where it has always lived for callers.
+pub use common::bounds_calc;
 pub mod gltf_resolver;
 pub mod initialize_scene;
 pub mod permissions;
@@ -792,6 +794,7 @@ fn send_scene_updates(
     realm: Res<CurrentRealm>,
     data_channel: Res<SceneRoomConnection>,
     server_rooms: Res<comms::ServerSceneRooms>,
+    scene_realms: Res<comms::global_crdt::SceneRealms>,
     interactable_area: Res<InteractableArea>,
     preview_mode: Res<PreviewMode>,
     mut buf: Local<Vec<u8>>,
@@ -806,6 +809,7 @@ fn send_scene_updates(
     if realm.is_changed()
         || data_channel.is_changed()
         || server_rooms.is_changed()
+        || scene_realms.is_changed()
         || preview_mode.is_changed()
     {
         let base_url = realm
@@ -813,9 +817,15 @@ fn send_scene_updates(
             .strip_suffix("/about")
             .unwrap_or(&realm.about_url);
         let realm_name = realm.config.realm_name.clone().unwrap_or_default();
-        let base_url = base_url
-            .strip_suffix(&format!("/{realm_name}"))
-            .unwrap_or(base_url);
+        // an orchestrated engine has no realm name of its own, and stripping `/` off the end of
+        // the content url is not what this is for
+        let base_url = if realm_name.is_empty() {
+            base_url
+        } else {
+            base_url
+                .strip_suffix(&format!("/{realm_name}"))
+                .unwrap_or(base_url)
+        };
         let mut realm_info = PbRealmInfo {
             base_url: base_url.to_owned(),
             realm_name,
@@ -854,6 +864,11 @@ fn send_scene_updates(
             .map(|(hash, (addr, _))| {
                 realm_info.room = Some(redact_access_token(addr));
                 realm_info.is_connected_scene_room = Some(true);
+                // the realm this scene is in, which an orchestrated engine is told per scene —
+                // it is in none itself, so its own name is no answer for any of them
+                realm_info.realm_name = scene_realms
+                    .for_scene_hash(hash, realm.config.realm_name.as_deref())
+                    .unwrap_or_default();
                 let mut bytes = Vec::new();
                 DclWriter::new(&mut bytes).write(&realm_info);
                 (hash.clone(), bytes)

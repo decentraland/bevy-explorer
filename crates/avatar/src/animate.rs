@@ -175,7 +175,7 @@ fn broadcast_emote(
             let duration_ms = if *repeat { None } else { *duration_ms };
             broadcast(
                 transports.iter(),
-                BroadcastTarget::PRIMARY,
+                BroadcastTarget::PULSE,
                 false,
                 comms::Emote {
                     urn: urn.as_str().to_owned(),
@@ -197,7 +197,7 @@ fn broadcast_emote(
             debug!("sending emote stop: {}", urn.as_str());
             broadcast(
                 transports.iter(),
-                BroadcastTarget::PRIMARY,
+                BroadcastTarget::PULSE,
                 false,
                 comms::Emote {
                     urn: urn.as_str().to_owned(),

@@ -66,6 +66,45 @@ message TeleportRequest {
   string realm = 5;
 }
 
+// Inclusive rectangle in parcel coordinates. A single parcel is min == max.
+message ParcelRect {
+  sint32 min_x = 1;
+  sint32 min_z = 2;
+  sint32 max_x = 3;
+  sint32 max_z = 4;
+}
+
+// One realm's slice of a scene listener's area of interest. Parcels only mean anything
+// within a realm — every world numbers its own parcels from 0,0 — so a listener that
+// observes several realms, as an authoritative server cohosting scenes from several worlds
+// does, announces one of these per realm rather than one realm for the whole connection.
+message SceneListenerAoi {
+  // Non-empty realm identifier — same rules as TeleportRequest.realm.
+  string realm = 1;
+  // This realm's parcels as inclusive rects. The sum of rect areas across every announced
+  // realm is capped server-side (SceneListener:MaxParcels) — overlaps count per rect, so
+  // announce disjoint rects.
+  repeated ParcelRect parcel_rects = 2;
+}
+
+// Scene-listener connect: same signed-fetch auth chain as HandshakeRequest, plus a
+// parcel-set area of interest per realm. No initial state — a listener is never a subject.
+message SceneListenerHandshakeRequest {
+  // Signed-fetch headers JSON — identical shape to HandshakeRequest.auth_chain.
+  bytes auth_chain = 1;
+  // Announced AoI, one entry per realm; replaceable afterwards with SceneListenerUpdate.
+  repeated SceneListenerAoi aoi = 2;
+}
+
+// Scene-listener AoI reassignment: replaces the area of interest announced at connect, in
+// place, on an authenticated scene-listener connection. Only valid from a peer that
+// authenticated with SceneListenerHandshakeRequest.
+message SceneListenerUpdate {
+  // The new AoI, replacing (not extending) the current one — realms absent from it are no
+  // longer observed. Same rules and SceneListener:MaxParcels budget as the handshake's.
+  repeated SceneListenerAoi aoi = 1;
+}
+
 message ClientMessage {
   oneof message {
     HandshakeRequest handshake = 1;
@@ -75,5 +114,7 @@ message ClientMessage {
     EmoteStart emote_start = 5;
     EmoteStop emote_stop = 6;
     TeleportRequest teleport = 7;
+    SceneListenerHandshakeRequest scene_listener_handshake = 8;
+    SceneListenerUpdate scene_listener_update = 9;
   }
 }

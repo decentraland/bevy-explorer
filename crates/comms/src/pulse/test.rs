@@ -139,6 +139,7 @@ fn join_emits_alias_and_world_movement() {
                 subject_id,
                 address,
                 profile_version,
+                ..
             } => Some((*subject_id, *address, *profile_version)),
             _ => None,
         })

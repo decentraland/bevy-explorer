@@ -149,6 +149,9 @@ pub struct DecentralandArguments {
     /// favour of the engine-side ui, and on wasm (the react page hosts the engine itself).
     pub hud: bool,
     pub scene_params: Option<String>,
+    /// Pulse server as `host:port` — `--pulse-server` / `?pulseServer=`. See
+    /// `comms::pulse::plugin::PulseEndpointOverride`.
+    pub pulse_server: Option<String>,
     pub scene_threads: Option<usize>,
     pub scene_load_distance: Option<f32>,
     pub scene_unload_extra_distance: Option<f32>,
@@ -413,6 +416,9 @@ impl DecentralandApp {
                 .unwrap_or_default(),
             cfg!(target_arch = "wasm32"),
         ));
+        if let Some(endpoint) = decentraland_app_config.arguments.pulse_server {
+            app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(endpoint));
+        }
 
         // Create copies of structs that still need to be accessed
         // and add AppConfig as a resource

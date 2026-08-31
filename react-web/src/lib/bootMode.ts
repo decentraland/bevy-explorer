@@ -9,6 +9,9 @@
 //   ?systemScene=  debug: substitute the super-user ui scene (a url/dir, or "none" for the
 //                  engine's builtin ui). The scene owns login/UI in-engine (pre-react
 //                  behavior), so this implies a hidden HUD and no React login at all.
+//   ?pulseServer=  host:port of the Pulse server the engine joins, handed to the engine via
+//                  __bevyBootConfig like ?portables= (a zone deploy points it at the zone
+//                  server). Not a boot-mode decision — listed so every entry-URL param is here.
 export interface BootMode {
   /** explicit ?systemScene= override; null = the default bridge scene drives */
   systemScene: string | null
