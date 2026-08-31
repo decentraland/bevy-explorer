@@ -262,10 +262,15 @@ window.addEventListener('wheel', forwardWheelToEngine)
 // ---- URL sync (CALLED BY THE WASM — src/web.rs set_url_params) -----------------------------------
 // Keeps the browser URL in step with the player's realm/position so a reload/share lands back at
 // the same place. Defaults are omitted so the canonical entry URL stays clean.
-// Entry-URL base domain (web parity with the native --base-domain flag). Read once here;
-// the wasm latches it too (web.rs apply_base_domain via window.__baseDomain), and
-// set_url_params below preserves unknown params, so ?baseDomain= survives URL syncs.
-const BASE_DOMAIN = new URLSearchParams(window.location.search).get('baseDomain') || 'decentraland.org'
+// Entry-URL base domain (web parity with the native --base-domain flag): the ?baseDomain=
+// param, else derived from the hosting origin (the decentraland.zone staging deployment keys
+// to zone backends; prod to org), else org. Read once here; the wasm latches it too (web.rs
+// apply_base_domain via window.__baseDomain), and set_url_params below preserves unknown
+// params, so the param form survives URL syncs.
+// MIRROR: react-web/src/lib/baseDomain.ts derives the same value the same way for the HUD.
+const BASE_DOMAIN = new URLSearchParams(window.location.search).get('baseDomain')
+  ?? ['decentraland.org', 'decentraland.zone'].find((apex) => location.hostname === apex || location.hostname.endsWith(`.${apex}`))
+  ?? 'decentraland.org'
 window.__baseDomain = () => BASE_DOMAIN
 const DEFAULT_SERVER = `https://realm-provider-ea.${BASE_DOMAIN}/main`
 const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'

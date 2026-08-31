@@ -91,7 +91,7 @@ just native-release --server https://realm-provider.decentraland.org/main --loca
 just native-release --base-domain interconnected.online --location 0,0
 ```
 
-On web the same thing is the `?baseDomain=` query param, e.g. `?baseDomain=interconnected.online`.
+On web the same thing is the `?baseDomain=` query param, e.g. `?baseDomain=interconnected.online`. Without the param, the hosting origin decides: a page served under decentraland.zone keys to zone backends, anything else to org.
 
 Doing it by hand instead of via `just`:
 
