@@ -13,6 +13,7 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 
 pub mod browser_auth;
+pub mod delegation;
 pub mod signed_login;
 
 pub struct WalletPlugin;

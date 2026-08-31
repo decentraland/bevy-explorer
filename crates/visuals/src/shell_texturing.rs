@@ -23,11 +23,16 @@ const PARCEL_GRASS_MESH: Handle<Mesh> = weak_handle!("75b4bc5b-7523-4d7c-a42f-d2
 const PARCEL_GRASS_MATERIAL: Handle<ShellTexture> =
     weak_handle!("18c8dd1e-081d-452a-9c00-327775a239ff");
 
+const GROUND_MESH: Handle<Mesh> = weak_handle!("e2002cd1-4a0b-4944-ad26-97d64d72e5f9");
 const GROUND_MATERIAL: Handle<ShellTexture> = weak_handle!("a7b403bc-917b-424e-878a-9714243bd4ce");
 const GROUND_MATERIAL_FLAT_COLOR: Handle<StandardMaterial> =
     weak_handle!("3e91f222-a374-4f7f-ba1a-4a239c9734ae");
 const GROUND_LAYERS: u32 = 5;
 const GROUND_DISPLACEMENT: f32 = 0.01;
+// The ground quad is scaled to 16384 units, so an unsubdivided pair of triangles spans nearly the
+// whole depth range. Interpolating world_position across that is what the shell shader reads to
+// place blades and sample shadows, so keep the triangles down to 256 units a side.
+const GROUND_SUBDIVISIONS: u32 = 63;
 
 const LOW_LOD: usize = 4;
 const MID_LOD: usize = 2;
@@ -140,10 +145,7 @@ impl Plugin for ShellTexturingPlugin {
 
         app.add_systems(
             Startup,
-            (
-                setup_parcel_grass_mesh,
-                spawn_ground.in_set(SetupSets::Main),
-            ),
+            (setup_grass_meshes, spawn_ground.in_set(SetupSets::Main)),
         );
         app.add_systems(OnEnter(ParcelGrassState::Off), swap_ground);
         app.add_systems(OnEnter(ParcelGrassState::On), swap_ground);
@@ -179,10 +181,17 @@ enum ParcelGrassState {
     On,
 }
 
-fn setup_parcel_grass_mesh(mut meshes: ResMut<Assets<Mesh>>) {
+fn setup_grass_meshes(mut meshes: ResMut<Assets<Mesh>>) {
     meshes.insert(
         PARCEL_GRASS_MESH.id(),
         Plane3d::new(Vec3::Y, Vec2::splat(8.)).mesh().build(),
+    );
+    meshes.insert(
+        GROUND_MESH.id(),
+        Plane3d::new(Vec3::Y, Vec2::splat(8.))
+            .mesh()
+            .subdivisions(GROUND_SUBDIVISIONS)
+            .build(),
     );
 }
 
@@ -248,6 +257,7 @@ fn swap_ground(
                     shells: GROUND_LAYERS,
                     lod: HIGH_LOD,
                     displacement: GROUND_DISPLACEMENT,
+                    mesh: GROUND_MESH.clone(),
                     material: GROUND_MATERIAL.clone(),
                     extras: (GROUND_RENDERLAYER,),
                 }))
@@ -357,6 +367,7 @@ fn parcel_grass_lod_inserted(
             shells: layers,
             displacement,
             lod,
+            mesh: PARCEL_GRASS_MESH.clone(),
             material: material.clone(),
             extras: (),
         }));
@@ -499,6 +510,7 @@ struct ParcelGrassShellSpawnList<B: Bundle + Clone> {
     shells: u32,
     lod: usize,
     displacement: f32,
+    mesh: Handle<Mesh>,
     material: Handle<ShellTexture>,
     extras: B,
 }
@@ -508,7 +520,7 @@ impl<B: Bundle + Clone> SpawnableList<ChildOf> for ParcelGrassShellSpawnList<B> 
         for i in (0..self.shells).step_by(self.lod) {
             world.spawn((
                 ParcelGrassShell,
-                Mesh3d(PARCEL_GRASS_MESH.clone()),
+                Mesh3d(self.mesh.clone()),
                 MeshMaterial3d(self.material.clone()),
                 Transform::from_translation(Vec3::new(0., self.displacement * i as f32, 0.)),
                 MeshTag(i + ((self.lod as u32) << 16)),

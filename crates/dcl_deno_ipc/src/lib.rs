@@ -20,7 +20,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
     process::{Command, Stdio},
-    sync::RwLock,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        RwLock,
+    },
 };
 use system_bridge::SystemApi;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -29,6 +32,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 pub struct NewSceneInfo {
     pub initial_crdt_store: CrdtStore,
     pub scene_context: CrdtContext,
+    /// id of the crdt context (player-presence view) this scene subscribes to — routes
+    /// `GlobalUpdate` messages to exactly the scenes of that context in the sidecar
+    pub presence_context: u64,
     pub scene_js: String,
     pub crdt_component_interfaces: CrdtComponentInterfaces,
     pub storage_root: String,
@@ -42,7 +48,7 @@ pub enum EngineToScene {
     NewScene(u64, Box<NewSceneInfo>),
     SceneUpdate(u64, RendererResponse),
     KillScene(u64),
-    GlobalUpdate(GlobalCrdtStateUpdate),
+    GlobalUpdate(u64, GlobalCrdtStateUpdate),
     IpcMessage(u64, IpcMessage),
 }
 
@@ -61,7 +67,7 @@ thread_local! {
 pub struct NewSceneCommand {
     id: u64,
     info: NewSceneInfo,
-    renderer_channel: tokio::sync::mpsc::Receiver<RendererResponse>,
+    renderer_channel: tokio::sync::mpsc::UnboundedReceiver<RendererResponse>,
     global_channel: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     response_channel: SceneResponseSender,
     system_api_sender: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
@@ -71,6 +77,13 @@ pub struct NewSceneCommand {
 pub static NEW_SCENE_SENDER: Lazy<
     RwLock<Option<tokio::sync::mpsc::UnboundedSender<NewSceneCommand>>>,
 > = Lazy::new(Default::default);
+
+/// Opt-in for the orchestrated headless server ONLY: when set, a runtime whose IPC
+/// loops end (the JS sidecar was lost) hard-exits the process so the supervisor can
+/// restart the whole engine — otherwise a half-dead engine looks healthy forever and
+/// the parent's engine-down recovery never fires. Left false for the desktop client
+/// and for tests, which build a fresh runtime per app and must not kill the process.
+pub static EXIT_ON_SIDECAR_LOSS: AtomicBool = AtomicBool::new(false);
 
 pub fn init_runtime() -> anyhow::Result<()> {
     let (init_sx, init_rx) = tokio::sync::oneshot::channel::<anyhow::Result<()>>();
@@ -116,10 +129,21 @@ pub fn init_runtime() -> anyhow::Result<()> {
             target.set_extension("exe");
         }
 
-        let mut child = Command::new(&target)
+        let mut command = Command::new(&target);
+        command
             .arg(name_str)
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        // A console-subsystem child spawned by the GUI-subsystem app has no console to
+        // inherit, so windows pops a visible one; suppress it. The inherited handles
+        // still carry output to the parent's console when it has one (console builds).
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        let mut child = command
             .spawn()
             .unwrap_or_else(|_| panic!("failed to spawn deno binary at {target:?}"));
 
@@ -150,8 +174,18 @@ pub fn init_runtime() -> anyhow::Result<()> {
         let _ = init_sx.send(Ok(()));
 
         let _ = rt.block_on(async move { tokio::join!(f_out, f_in) });
+        let _ = child.wait();
 
-        child.wait().unwrap();
+        // Orchestrated headless server only (EXIT_ON_SIDECAR_LOSS): the IPC loops ended,
+        // so the JS sidecar is gone and the engine can run no scene code. Nothing here
+        // can respawn it, and the parent's engine-down recovery never fires for a still-
+        // running process — so exit hard and let the supervisor restart the whole engine.
+        // Desktop/tests leave the flag false and end quietly (tests build a fresh runtime
+        // per app, where this is a normal shutdown, not a crash).
+        if EXIT_ON_SIDECAR_LOSS.load(Ordering::SeqCst) {
+            error!("dcl_deno_ipc runtime terminated (JS sidecar lost); exiting process");
+            std::process::exit(1);
+        }
     });
 
     init_rx.blocking_recv()?
@@ -165,7 +199,18 @@ pub async fn renderer_ipc_out(
 ) {
     let (renderer_sx, mut renderer_rx) = tokio::sync::mpsc::unbounded_channel();
 
-    let (_dummy_global_sx, mut global_rx) = tokio::sync::broadcast::channel(1);
+    // one receiver per live presence context, drained into the pipe as tagged
+    // `GlobalUpdate`s so the sidecar can fan each stream to exactly the scenes of that
+    // context. On every new scene the context's receiver is swapped for the incoming one
+    // (created at the scene's snapshot time), replaying updates since the snapshot after
+    // the `NewScene` message — the new scene misses nothing, and old scenes idempotently
+    // re-apply a few duplicated crdt messages. The previous receiver's backlog is
+    // flushed before the swap so old scenes stay continuous. A closed receiver (context
+    // despawned) is dropped; a re-added scene room is a fresh context entity / fresh id.
+    let mut global_receivers: std::collections::HashMap<
+        u64,
+        tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
+    > = Default::default();
 
     loop {
         tokio::select! {
@@ -181,8 +226,21 @@ pub async fn renderer_ipc_out(
                     SYSTEM_API_SENDER.set(Some(system_api_sender));
                 }
 
-                // might cause a couple of duplicated global messages for old scenes
-                global_rx = global_channel;
+                let presence_context = info.presence_context;
+                if let Some(mut old_rx) = global_receivers.remove(&presence_context) {
+                    loop {
+                        match old_rx.try_recv() {
+                            Ok(data) => {
+                                write_msg(&mut stream, &EngineToScene::GlobalUpdate(presence_context, data)).await;
+                            }
+                            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(count)) => {
+                                error!("global crdt state lagged, dropping {count} messages");
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                }
+                global_receivers.insert(presence_context, global_channel);
 
                 // spawn connector
                 let renderer_sender = renderer_sx.clone();
@@ -202,19 +260,18 @@ pub async fn renderer_ipc_out(
                 };
                 write_msg(&mut stream, &engine_to_scene).await;
             }
-            global_rx = global_rx.recv() => {
-                let data = match global_rx {
-                    Ok(data) => data,
+            (presence_context, received) = next_global_update(&mut global_receivers) => {
+                match received {
+                    Ok(data) => {
+                        write_msg(&mut stream, &EngineToScene::GlobalUpdate(presence_context, data)).await;
+                    }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
                         error!("global crdt state lagged, dropping {count} messages");
-                        continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        error!("renderer_ipc_out exit on global crdt closed");
-                        return;
+                        global_receivers.remove(&presence_context);
                     }
-                };
-                write_msg(&mut stream, &EngineToScene::GlobalUpdate(data)).await;
+                }
             }
             ipc = ipc_router.recv() => {
                 let Some(ipc) = ipc else {
@@ -228,6 +285,31 @@ pub async fn renderer_ipc_out(
     }
 }
 
+// the next update from any live context's receiver; pends forever while none exist.
+// `broadcast::Receiver::recv` is cancel-safe, so re-building the futures each select
+// iteration loses nothing.
+async fn next_global_update(
+    receivers: &mut std::collections::HashMap<
+        u64,
+        tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
+    >,
+) -> (
+    u64,
+    Result<GlobalCrdtStateUpdate, tokio::sync::broadcast::error::RecvError>,
+) {
+    if receivers.is_empty() {
+        return std::future::pending().await;
+    }
+    let recvs = receivers
+        .iter_mut()
+        .map(|(context, rx)| {
+            let context = *context;
+            Box::pin(async move { (context, rx.recv().await) })
+        })
+        .collect::<Vec<_>>();
+    futures_util::future::select_all(recvs).await.0
+}
+
 pub async fn renderer_ipc_in(mut stream: RecvHalf) {
     while let Ok(len) = stream.read_u64_le().await {
         let mut buffer = vec![0u8; len as usize];
@@ -238,11 +320,24 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
             SceneToEngine::SceneResponse(scene_response) => RENDERER_SENDER.with(|sender| {
                 let mut sender = sender.borrow_mut();
                 let sender = sender.as_mut().unwrap();
-                sender.try_send(scene_response).unwrap();
+                // HEADLESS-ONLY: EXIT_ON_SIDECAR_LOSS marks the orchestrated headless server,
+                // where every scene shares one engine. There, a panic in this IPC task ends
+                // the loop and trips the process exit above — killing the whole engine and
+                // every co-tenant scene. So shed the response instead of panicking: a scene
+                // that outruns the bevy-side drain only stalls itself. Desktop and tests
+                // (flag unset) keep the original panic-on-failure behavior unchanged.
+                if EXIT_ON_SIDECAR_LOSS.load(Ordering::SeqCst) {
+                    if let Err(e) = sender.try_send(scene_response) {
+                        warn!("dropping scene response: renderer channel unavailable ({e})");
+                    }
+                } else {
+                    sender.try_send(scene_response).unwrap();
+                }
             }),
             SceneToEngine::IpcMessage(id, ipc_message) => {
                 let IpcMessage::Closed = ipc_message else {
-                    panic!()
+                    warn!("ignoring unexpected ipc data message for channel {id}");
+                    continue;
                 };
 
                 ENGINE_IPC_CONTEXT.with(|ctx| {
@@ -270,6 +365,7 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
 pub fn spawn_scene(
     initial_crdt_store: CrdtStore,
     scene_context: CrdtContext,
+    presence_context: u64,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
@@ -278,36 +374,43 @@ pub fn spawn_scene(
     inspect: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
-) -> tokio::sync::mpsc::Sender<RendererResponse> {
+) -> (
+    tokio::sync::mpsc::UnboundedSender<RendererResponse>,
+    Option<tokio::sync::oneshot::Sender<()>>,
+) {
     let is_super = super_user.is_some();
     let id = scene_context.scene_id;
 
-    let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
+    let (main_sx, thread_rx) = tokio::sync::mpsc::unbounded_channel::<RendererResponse>();
 
     let ipc_out = NEW_SCENE_SENDER.read().unwrap();
-    let ipc_out = ipc_out.as_ref().unwrap();
+    let Some(ipc_out) = ipc_out.as_ref() else {
+        error!("scene {id:?} not started: ipc runtime is not initialized");
+        return (main_sx, None);
+    };
 
-    ipc_out
-        .send(NewSceneCommand {
-            id: id.0.to_bits(),
-            info: NewSceneInfo {
-                initial_crdt_store,
-                scene_context,
-                scene_js: scene_js.0.to_string(),
-                crdt_component_interfaces,
-                storage_root,
-                inspect,
-                is_super,
-                scene_origin,
-            },
-            renderer_channel: thread_rx,
-            global_channel: global_update_receiver,
-            response_channel: renderer_sender,
-            system_api_sender: super_user,
-        })
-        .unwrap();
+    if let Err(e) = ipc_out.send(NewSceneCommand {
+        id: id.0.to_bits(),
+        info: NewSceneInfo {
+            initial_crdt_store,
+            scene_context,
+            presence_context,
+            scene_js: scene_js.0.to_string(),
+            crdt_component_interfaces,
+            storage_root,
+            inspect,
+            is_super,
+            scene_origin,
+        },
+        renderer_channel: thread_rx,
+        global_channel: global_update_receiver,
+        response_channel: renderer_sender,
+        system_api_sender: super_user,
+    }) {
+        error!("scene {id:?} not started: ipc channel closed ({e})");
+    }
 
-    main_sx
+    (main_sx, None)
 }
 
 pub async fn write_msg<T: Serialize>(stream: &mut SendHalf, value: &T) {

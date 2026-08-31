@@ -1,32 +1,25 @@
 pub mod agent_commands;
 pub mod settings;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use bevy::{
     app::{AppExit, Plugin, Update},
-    ecs::{event::EventReader, system::Local},
+    ecs::event::EventReader,
     log::debug,
     math::Vec4,
     prelude::{Event, EventWriter, Res, ResMut, Resource},
 };
-use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
+use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, ConsoleResponder};
 use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
-    structs::{
-        AppConfig, MicState, PermissionLevel, PermissionType, PermissionUsed, PermissionValue,
-        PointerTargetType,
-    },
-};
-use dcl_component::proto_components::{
-    common::{Vector2, Vector3},
-    sdk::components::{pb_pointer_events, PbAvatarBase, PbAvatarEquippedData},
+    structs::{AppConfig, MicState, PermissionUsed},
 };
 use serde::{Deserialize, Serialize};
 use settings::SettingBridgePlugin;
-
-use crate::settings::SettingInfo;
+pub use system_api_types::*;
 
 pub struct SystemBridgePlugin {
     pub bare: bool,
@@ -56,90 +49,10 @@ impl Plugin for SystemBridgePlugin {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SetAvatarData {
-    pub base: Option<PbAvatarBase>,
-    pub equip: Option<PbAvatarEquippedData>,
-    pub has_claimed_name: Option<bool>,
-    pub profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct LiveSceneInfo {
-    pub hash: String,
-    pub base_url: Option<String>,
-    pub title: String,
-    pub parcels: Vec<Vector2>,
-    pub is_portable: bool,
-    pub is_broken: bool,
-    pub is_blocked: bool,
-    pub is_super: bool,
-    pub sdk_version: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HomeScene {
-    pub realm: String,
-    pub parcel: Vector2,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
-    pub sender_address: String,
-    pub message: String,
-    pub channel: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct VoiceMessage {
-    pub sender_address: String,
-    pub channel: String,
-    pub active: bool,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct HoverAction {
-    #[serde(flatten)]
-    pub event: pb_pointer_events::Entry,
-    pub enabled: bool,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct HoverEvent {
-    pub entered: bool,
-    pub target_type: PointerTargetType,
-    pub actions: Vec<HoverAction>,
-}
-
-/// Streamed to the system scene whenever an entity carrying PROXIMITY pointer
-/// entries enters or leaves the avatar's interaction range, or when one of its
-/// per-entry distance gates flips (so the `enabled` flag on an action changes).
-/// `entity` is an opaque session-stable identifier so the scene can match
-/// enter/leave pairs. `entity_position` is the world-space AABB centre of the
-/// specific collider on the entity that produced the closest-point hit — for
-/// multi-collider entities (e.g. GltfContainers) this anchors UI on the part
-/// of the entity the player is actually nearest. The scene is responsible for
-/// projecting it to screen space per frame; the active camera's vertical FOV
-/// is available via `Runtime.getCameraFov`.
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ProximityEvent {
-    pub entered: bool,
-    pub entity: u64,
-    pub entity_position: Vector3,
-    pub actions: Vec<HoverAction>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct SceneLoadingUi {
-    pub visible: bool,
-    pub title: String,
-    pub pending_assets: Option<u32>,
-}
+/// Prefix on login error strings when the failure was fetching the user's profile —
+/// UIs match on this to offer retrying with a default profile (see the login variants'
+/// `default_on_error` bool).
+pub const PROFILE_FETCH_FAILED: &str = "profile fetch failed";
 
 #[derive(Event, Clone, Debug, Serialize, Deserialize)]
 pub enum SystemApi {
@@ -147,11 +60,21 @@ pub enum SystemApi {
     CheckForUpdate(RpcResultSender<Option<(String, String)>>),
     MOTD(RpcResultSender<String>),
     GetPreviousLogin(RpcResultSender<Option<String>>),
-    LoginPrevious(RpcResultSender<Result<(), String>>),
+    /// bool: continue with (and deploy) a default profile if the user's current profile
+    /// can't be fetched — overwrites the server-side profile, so UIs should only set it
+    /// after a failed attempt and with explicit user consent.
+    LoginPrevious(bool, RpcResultSender<Result<(), String>>),
+    /// bool: as for LoginPrevious.
     LoginNew(
+        bool,
         RpcResultSender<Result<Option<i32>, String>>,
         RpcResultSender<Result<(), String>>,
     ),
+    /// Log in with an AuthIdentity the web page already holds (base64-encoded AuthIdentity
+    /// JSON read from localStorage) — no auth-server round-trip. The identity is the same
+    /// regardless of how the user signed in (wallet, social, OTP, magic).
+    /// bool: as for LoginPrevious.
+    LoginWithIdentity(String, bool, RpcResultSender<Result<(), String>>),
     LoginGuest,
     LoginCancel,
     Logout,
@@ -161,6 +84,19 @@ pub enum SystemApi {
     GetNativeInput(RpcResultSender<InputIdentifier>),
     GetBindings(RpcResultSender<BindingsData>),
     SetBindings(BindingsData, RpcResultSender<()>),
+    /// HUD focus state. `ui`: a HUD surface (menu/popup) is active — all input is reserved
+    /// above scenes, while the system-action stream (which reads at the same level) keeps
+    /// flowing so the HUD still receives Cancel/hotkeys. `text`: a HUD text field holds
+    /// keyboard focus — the keyboard is reserved above the stream too, so keystrokes are
+    /// typing and resolve to no action at all. `scroll`: the cursor is over a scrollable
+    /// HUD element — the Scroll ACTIONS are reserved, so every input bound to them (wheel,
+    /// key, gamepad button) stands down for world consumers while the action stream still
+    /// resolves Scroll itself; the HUD scrolls the hovered panel from those edges.
+    SetUiFocus {
+        ui: bool,
+        text: bool,
+        scroll: bool,
+    },
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),
     SetHomeScene(HomeScene),
@@ -170,9 +106,14 @@ pub enum SystemApi {
     GetHoverStream(RpcStreamSender<HoverEvent>),
     GetProximityStream(RpcStreamSender<ProximityEvent>),
     GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
+    // Native-only transport for the super-user bridge scene's BroadcastChannel: the scene posts page
+    // -bound Envelopes via BridgeToPage, and subscribes to page->scene Envelopes via GetBridgeStream.
+    // (In web the browser provides BroadcastChannel directly; native has no cross-process equivalent.)
+    BridgeToPage(String),
+    GetBridgeStream(RpcStreamSender<String>),
     SendChat(String, String),
     Quit,
-    GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),
+    GetPermissionRequestStream(RpcStreamSender<PermissionRequestEvent>),
     SetSinglePermission(SetSinglePermission),
     SetPermanentPermission(SetPermanentPermission),
     GetPermissionUsedStream(RpcStreamSender<PermissionUsed>),
@@ -202,107 +143,9 @@ pub enum SystemApi {
     BlockUser(String, RpcResultSender<Result<(), String>>),
     UnblockUser(String, RpcResultSender<Result<(), String>>),
     GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
+    GetBlockingStatus(RpcResultSender<Result<BlockingStatusData, String>>),
+    GetBlockUpdateStream(RpcStreamSender<BlockUpdateData>),
     GetParams(RpcResultSender<HashMap<String, String>>),
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct AvatarModifierState {
-    pub user_id: String,
-    pub hide_avatar: bool,
-    pub hide_profile: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NameColor {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FriendData {
-    pub address: String,
-    pub name: String,
-    pub has_claimed_name: bool,
-    pub profile_picture_url: String,
-    pub name_color: Option<NameColor>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FriendRequestData {
-    pub address: String,
-    pub name: String,
-    pub has_claimed_name: bool,
-    pub profile_picture_url: String,
-    pub name_color: Option<NameColor>,
-    pub created_at: i64,
-    pub message: Option<String>,
-    pub id: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all_fields = "camelCase")]
-#[serde(tag = "type")]
-pub enum FriendshipEventUpdate {
-    #[serde(rename = "request")]
-    Request {
-        address: String,
-        name: String,
-        has_claimed_name: bool,
-        profile_picture_url: String,
-        name_color: Option<NameColor>,
-        created_at: i64,
-        message: Option<String>,
-        id: String,
-    },
-    #[serde(rename = "accept")]
-    Accept { address: String },
-    #[serde(rename = "reject")]
-    Reject { address: String },
-    #[serde(rename = "cancel")]
-    Cancel { address: String },
-    #[serde(rename = "delete")]
-    Delete { address: String },
-    #[serde(rename = "block")]
-    Block { address: String },
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FriendStatusData {
-    pub address: String,
-    pub name: String,
-    pub has_claimed_name: bool,
-    pub profile_picture_url: String,
-    pub name_color: Option<NameColor>,
-    /// "online", "offline", or "away"
-    pub status: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockedUserData {
-    pub address: String,
-    pub name: String,
-    pub has_claimed_name: bool,
-    pub profile_picture_url: String,
-    pub name_color: Option<NameColor>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FriendConnectivityEvent {
-    pub address: String,
-    pub name: String,
-    pub has_claimed_name: bool,
-    pub profile_picture_url: String,
-    pub name_color: Option<NameColor>,
-    /// "online", "offline", or "away"
-    pub status: String,
 }
 
 #[derive(Resource, Default, Clone, Debug)]
@@ -331,40 +174,12 @@ impl SceneParams {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct PermanentPermissionItem {
-    pub ty: PermissionType,
-    pub allow: PermissionValue,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct PermissionRequest {
-    pub ty: PermissionType,
-    pub additional: Option<String>,
-    pub scene: String,
-    pub id: usize,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SetSinglePermission {
-    pub id: usize,
-    pub allow: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SetPermanentPermission {
-    pub ty: PermissionType,
-    pub level: PermissionLevel,
-    pub allow: Option<PermissionValue>,
-}
-
 #[derive(Resource)]
 pub struct NativeUi {
     pub login: bool,
     pub emote_wheel: bool,
     pub chat: bool,
     pub permissions: bool,
-    pub profile: bool,
     pub nametags: bool,
     pub tooltips: bool,
     pub loading_scene: bool,
@@ -380,53 +195,28 @@ pub fn post_events(
     mut bridge: ResMut<SystemBridge>,
     mut writer: EventWriter<SystemApi>,
     mut console: EventWriter<ConsoleCommandEntered>,
-    mut console_response: Local<Option<RpcResultSender<Result<String, String>>>>,
-    mut replies: EventReader<PrintConsoleLine>,
-    mut pending: Local<VecDeque<(String, Vec<String>, RpcResultSender<Result<String, String>>)>>,
     console_config: Res<ConsoleConfiguration>,
 ) {
     while let Ok(ev) = bridge.receiver.try_recv() {
-        if let SystemApi::ConsoleCommand(cmd, args, sender) = ev {
-            debug!("system bridge (cc): {cmd} {args:?}");
-            pending.push_back((cmd, args, sender));
-        } else {
+        let SystemApi::ConsoleCommand(cmd, args, sender) = ev else {
             debug!("system bridge: {ev:?}");
             writer.write(ev);
-        }
-    }
+            continue;
+        };
 
-    if let Some(response) = console_response.take() {
-        let mut reply = replies.read().collect::<Vec<_>>();
-        match reply.pop() {
-            Some(PrintConsoleLine { line }) if line.as_str() == "[ok]" => {
-                response.send(Ok(reply
-                    .into_iter()
-                    .map(|l| l.line.clone())
-                    .collect::<Vec<_>>()
-                    .join("\n")));
-            }
-            Some(PrintConsoleLine { line }) if line.as_str() == "[failed]" => {
-                response.send(Err(reply
-                    .into_iter()
-                    .map(|l| l.line.clone())
-                    .collect::<Vec<_>>()
-                    .join("\n")));
-            }
-            Some(PrintConsoleLine { line }) => {
-                debug!("got {line}");
-                *console_response = Some(response);
-            }
-            _ => {
-                *console_response = Some(response);
-            }
-        }
-    } else if let Some((cmd, args, sender)) = pending.pop_front() {
+        debug!("system bridge (cc): {cmd} {args:?}");
+
+        // Dispatch as a `ConsoleCommandEntered` carrying its own responder, so the result
+        // flows back through the channel rather than being scraped from shared console
+        // output. `bevy_console` queues concurrent invocations and refires any it can't
+        // process this frame, so there is no need to serialize dispatch here.
         if console_config.commands.contains_key(cmd.as_str()) {
+            let responder: ConsoleResponder = Arc::new(move |result| sender.send(result));
             console.write(ConsoleCommandEntered {
                 command_name: cmd,
                 args,
+                responder: Some(responder),
             });
-            *console_response = Some(sender);
         } else {
             sender.send(Err(format!(
                 "Command not recognized: `{cmd}`. Recognized commands: {:?}",
@@ -434,8 +224,6 @@ pub fn post_events(
             )));
         }
     }
-
-    replies.clear();
 }
 
 fn handle_home_scene(mut ev: EventReader<SystemApi>, mut config: ResMut<AppConfig>) {

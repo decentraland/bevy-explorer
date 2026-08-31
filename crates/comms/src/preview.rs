@@ -75,6 +75,18 @@ pub async fn handle_preview_socket(
     server: String,
     sender: tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
 ) -> Result<(), anyhow::Error> {
+    let result = preview_socket(server, sender).await;
+    // back off on every exit path, not just a clean disconnect: a preview server with
+    // no ws endpoint fails the upgrade immediately and the caller respawns us as soon
+    // as the task completes, so an early error spins one attempt per frame
+    async_std::task::sleep(Duration::from_secs(5)).await;
+    result
+}
+
+async fn preview_socket(
+    server: String,
+    sender: tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+) -> Result<(), anyhow::Error> {
     let (protocol, rest) = server
         .split_once("//")
         .ok_or(anyhow!("invalid preview server address `{server}`"))?;
@@ -96,7 +108,11 @@ pub async fn handle_preview_socket(
         let msg = msg?;
         info!("preview server message: {msg}");
 
-        if let Ok(value) = serde_json::Value::from_str(msg.into_text()?.as_str()) {
+        // the dev server interleaves protobuf binary frames (WsSceneMessage) with the
+        // legacy JSON text frames we speak; erroring here killed the socket before the
+        // SCENE_UPDATE text frame arrived, so hot reload never fired
+        let Ok(text) = msg.into_text() else { continue };
+        if let Ok(value) = serde_json::Value::from_str(text.as_str()) {
             let Some(ty) = value
                 .get("type")
                 .and_then(|v| v.as_str().map(ToOwned::to_owned))
@@ -123,6 +139,5 @@ pub async fn handle_preview_socket(
     }
 
     warn!("preview socket disconnected, waiting 5 secs to attempt reconnect");
-    async_std::task::sleep(Duration::from_secs(5)).await;
     Ok(())
 }

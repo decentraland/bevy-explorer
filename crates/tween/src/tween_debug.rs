@@ -383,11 +383,7 @@ fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
                     Isometry3d::from_translation(global_transform.translation()),
                     2.5,
                 );
-                let axis = {
-                    let direction = data.direction.unwrap();
-                    let (axis, _) = direction.to_bevy_normalized().to_axis_angle();
-                    axis
-                };
+                let axis = crate::rotate_continuous_axis(data.direction.unwrap());
                 gizmos.arrow(
                     global_transform.translation(),
                     global_transform.translation() + axis * 2.5,

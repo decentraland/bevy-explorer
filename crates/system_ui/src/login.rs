@@ -21,9 +21,9 @@ use common::{
     util::{TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
-use ipfs::IpfsAssetServer;
+use ipfs::{IpfsAssetServer, IpfsIo};
 use scene_runner::Toaster;
-use system_bridge::{NativeUi, SystemApi};
+use system_bridge::{NativeUi, SystemApi, PROFILE_FETCH_FAILED};
 use tokio::sync::oneshot::error::TryRecvError;
 use ui_core::{
     button::DuiButton,
@@ -34,7 +34,7 @@ use wallet::{
     Wallet,
 };
 
-use crate::version_check::{check_update, check_update_sync};
+use crate::version_check::check_update;
 
 pub struct LoginPlugin;
 
@@ -70,6 +70,7 @@ fn login(
     dui: Res<DuiRegistry>,
     active_dialog: Res<ActiveDialog>,
     mut motd_shown: Local<bool>,
+    mut update_check: Local<Option<bevy::tasks::Task<Option<(String, String)>>>>,
     mut bridge: EventWriter<SystemApi>,
     native_active: Res<NativeUi>,
     config: Res<AppConfig>,
@@ -79,7 +80,12 @@ fn login(
     }
 
     if !*motd_shown {
-        let update = check_update_sync();
+        // don't block the main thread on the github release check
+        let task = update_check.get_or_insert_with(|| IoTaskPool::get().spawn(check_update()));
+        let Some(update) = task.complete() else {
+            return;
+        };
+        *update_check = None;
         let permit = active_dialog.try_acquire().unwrap();
 
         if let Some((desc, url)) = update {
@@ -250,7 +256,7 @@ fn login(
                     "embedded://sounds/ui/toggle_enable.wav".to_owned(),
                 ));
                 let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
-                bridge.write(SystemApi::LoginPrevious(sx));
+                bridge.write(SystemApi::LoginPrevious(false, sx));
                 *req_done = Some(rx);
             }
             LoginType::NewRemote => {
@@ -261,7 +267,7 @@ fn login(
                 ));
                 let (scode, rcode) = RpcResultSender::<Result<Option<i32>, String>>::channel();
                 let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
-                bridge.write(SystemApi::LoginNew(scode, sx));
+                bridge.write(SystemApi::LoginNew(false, scode, sx));
                 *req_code = Some(rcode);
                 *req_done = Some(rx);
 
@@ -310,11 +316,12 @@ fn login(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn update_profile_for_realm(
     realm: Res<CurrentRealm>,
     wallet: Res<Wallet>,
     mut current_profile: ResMut<CurrentUserProfile>,
-    mut task: Local<Option<Task<Result<UserProfile, anyhow::Error>>>>,
+    mut task: Local<Option<Task<Result<Option<UserProfile>, anyhow::Error>>>>,
     ipfas: IpfsAssetServer,
 ) {
     if realm.is_changed() && !wallet.is_guest() {
@@ -329,11 +336,11 @@ fn update_profile_for_realm(
 
     if let Some(mut t) = task.take() {
         match t.complete() {
-            Some(Ok(profile)) => {
+            Some(Ok(Some(profile))) => {
                 current_profile.profile = Some(profile);
                 current_profile.is_deployed = true;
             }
-            Some(Err(_)) => {
+            Some(Ok(None)) | Some(Err(_)) => {
                 // keep existing profile
             }
             None => *task = Some(t),
@@ -378,6 +385,97 @@ fn get_previous_login(config: &AppConfig) -> Option<PreviousLogin> {
     }
 }
 
+/// Decode a base64(JSON) AuthIdentity into the pieces the wallet needs: the root (signer)
+/// address, the ephemeral LocalWallet, and the delegate auth chain (the ECDSA_EPHEMERAL
+/// link(s), i.e. the chain WITHOUT the SIGNER entry — matching what
+/// `finish_remote_ephemeral_request` / `get_previous_login` use).
+///
+/// This is the standard Decentraland AuthIdentity, so it is identical regardless of how the
+/// user signed in (wallet/MetaMask, social, OTP, magic). The web page just reads it from
+/// localStorage and forwards it — there is nothing login-method-specific here.
+fn parse_auth_identity(payload: &str) -> Result<(Address, LocalWallet, Vec<ChainLink>), String> {
+    use base64::Engine as _;
+
+    #[derive(serde::Deserialize)]
+    struct Ephemeral {
+        #[serde(rename = "privateKey")]
+        private_key: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct AuthIdentity {
+        #[serde(rename = "ephemeralIdentity")]
+        ephemeral_identity: Ephemeral,
+        #[serde(rename = "authChain")]
+        auth_chain: Vec<ChainLink>,
+    }
+
+    let json = base64::engine::general_purpose::STANDARD
+        .decode(payload.trim())
+        .map_err(|e| format!("bad identity base64: {e}"))?;
+    let identity: AuthIdentity =
+        serde_json::from_slice(&json).map_err(|e| format!("bad identity json: {e}"))?;
+
+    // Root wallet address = the SIGNER link's payload.
+    let signer = identity
+        .auth_chain
+        .iter()
+        .find(|l| l.ty == "SIGNER")
+        .ok_or_else(|| "identity missing SIGNER link".to_string())?;
+    let root_address =
+        Address::from_str(signer.payload.trim()).map_err(|e| format!("bad root address: {e}"))?;
+
+    // Ephemeral signer from the 0x-prefixed private key.
+    let key_hex = identity
+        .ephemeral_identity
+        .private_key
+        .trim()
+        .trim_start_matches("0x");
+    let local_wallet =
+        LocalWallet::from_str(key_hex).map_err(|e| format!("bad ephemeral key: {e}"))?;
+
+    // Delegate chain = everything except the SIGNER (the ECDSA_EPHEMERAL link the engine stores).
+    let auth: Vec<ChainLink> = identity
+        .auth_chain
+        .into_iter()
+        .filter(|l| l.ty != "SIGNER")
+        .collect();
+    if auth.is_empty() {
+        return Err("identity missing ephemeral delegate link".to_string());
+    }
+
+    Ok((root_address, local_wallet, auth))
+}
+
+/// Fetch the profile, retrying on failure. Ok(None) means the user has no profile (or
+/// `default_on_error` was set); a persistent failure must otherwise fail the login rather
+/// than fall back to a default profile, or we would deploy the default over the user's
+/// existing server-side profile. Retries are patient because the realm may still be
+/// resolving when login runs (on web the page can fire `/login_identity` at boot), which
+/// reads as a fetch failure. Errors carry the PROFILE_FETCH_FAILED prefix so UIs can
+/// offer retrying with `default_on_error`.
+async fn get_profile_with_retry(
+    address: Address,
+    ipfs: std::sync::Arc<IpfsIo>,
+    default_on_error: bool,
+) -> Result<Option<UserProfile>, String> {
+    const ATTEMPTS: u32 = 5;
+    let mut last_error = String::default();
+    for attempt in 0..ATTEMPTS {
+        if attempt > 0 {
+            async_std::task::sleep(std::time::Duration::from_secs(2)).await;
+        }
+        match get_remote_profile(address, ipfs.clone(), None).await {
+            Ok(maybe_profile) => return Ok(maybe_profile),
+            Err(e) => last_error = e.to_string(),
+        }
+    }
+    if default_on_error {
+        warn!("continuing with default profile after fetch failure: {last_error}");
+        return Ok(None);
+    }
+    Err(format!("{PROFILE_FETCH_FAILED}: {last_error}"))
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_login_bridge(
     mut e: EventReader<SystemApi>,
@@ -418,7 +516,7 @@ fn process_login_bridge(
                 rpc_result_sender
                     .send(get_previous_login(&config).map(|pl| format!("{:#x}", pl.root_address)));
             }
-            SystemApi::LoginPrevious(rpc_result_sender) => {
+            SystemApi::LoginPrevious(default_on_error, rpc_result_sender) => {
                 let ipfs = ipfas.ipfs().clone();
                 let maybe_previous_login = get_previous_login(&config);
                 *login_task = Some(IoTaskPool::get().spawn_compat(async move {
@@ -433,7 +531,14 @@ fn process_login_bridge(
                         auth,
                     } = previous_login;
 
-                    let profile = get_remote_profile(root_address, ipfs, None).await.ok();
+                    let profile =
+                        match get_profile_with_retry(root_address, ipfs, default_on_error).await {
+                            Ok(maybe_profile) => maybe_profile,
+                            Err(e) => {
+                                rpc_result_sender.send(Err(e));
+                                return Err(());
+                            }
+                        };
 
                     let local_wallet =
                         PrivateKeySigner::from_bytes(&B256::from_slice(&ephemeral_key)).unwrap();
@@ -447,7 +552,7 @@ fn process_login_bridge(
                     ))
                 }));
             }
-            SystemApi::LoginNew(code_sender, result_sender) => {
+            SystemApi::LoginNew(default_on_error, code_sender, result_sender) => {
                 let ipfs = ipfas.ipfs().clone();
                 *login_task = Some(IoTaskPool::get().spawn_compat(async move {
                     let req = init_remote_ephemeral_request().await;
@@ -472,9 +577,42 @@ fn process_login_bridge(
                             }
                         };
 
-                    let profile = get_remote_profile(root_address, ipfs, None).await.ok();
+                    let profile =
+                        match get_profile_with_retry(root_address, ipfs, default_on_error).await {
+                            Ok(maybe_profile) => maybe_profile,
+                            Err(e) => {
+                                result_sender.send(Err(e));
+                                return Err(());
+                            }
+                        };
 
                     Ok((root_address, local_wallet, auth, profile, result_sender))
+                }));
+            }
+            SystemApi::LoginWithIdentity(payload, default_on_error, rpc_result_sender) => {
+                // The web page already holds a signed AuthIdentity (read from localStorage,
+                // produced by whatever sign-in method the user used) — finalize the wallet
+                // from it directly, no auth-server request/poll. Mirrors LoginPrevious.
+                let ipfs = ipfas.ipfs().clone();
+                *login_task = Some(IoTaskPool::get().spawn_compat(async move {
+                    let (root_address, local_wallet, auth) = match parse_auth_identity(&payload) {
+                        Ok(parts) => parts,
+                        Err(e) => {
+                            rpc_result_sender.send(Err(e));
+                            return Err(());
+                        }
+                    };
+
+                    let profile =
+                        match get_profile_with_retry(root_address, ipfs, default_on_error).await {
+                            Ok(maybe_profile) => maybe_profile,
+                            Err(e) => {
+                                rpc_result_sender.send(Err(e));
+                                return Err(());
+                            }
+                        };
+
+                    Ok((root_address, local_wallet, auth, profile, rpc_result_sender))
                 }));
             }
             SystemApi::LoginGuest => {

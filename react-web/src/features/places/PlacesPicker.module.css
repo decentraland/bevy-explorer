@@ -1,0 +1,61 @@
+/* Full-screen destination picker shown between login and world entry. Same reference-canvas DPI
+   scaling as the in-world menu shell, with the "What's On" radial-purple background. */
+.root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: calc(100% / var(--ui-scale));
+  height: calc(100% / var(--ui-scale));
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+  z-index: var(--z-loading);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: radial-gradient(52.86% 115.71% at 9.01% 25.79%, #7434b1 0%, #481c6c 37.11%, #2b1040 100%);
+  font-family: var(--font-family);
+  animation: pickerIn 0.22s var(--ease-out, ease);
+}
+@keyframes pickerIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+.inner {
+  width: 100%;
+  padding: 32px 48px 48px;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.kicker {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #fff;
+}
+.skip {
+  flex: none;
+  white-space: nowrap;
+}

@@ -16,10 +16,10 @@ use bevy::{
 };
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use serde::{Deserialize, Serialize};
-use strum_macros::EnumIter;
+pub use system_api_types::{PermissionLevel, PermissionType, PermissionValue, PointerTargetType};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::inputs::InputMapSerialized;
+use crate::inputs::{Action, InputIdentifier, InputMapSerialized, SystemAction};
 
 #[derive(Resource)]
 pub struct Version(pub String);
@@ -235,12 +235,25 @@ pub struct EmoteCommand {
 // the scene-relative path against the active scene's content map). For foreign
 // players, written by the comms crate when a Movement packet with anim fields
 // arrives. Read by `animate` in the avatar crate uniformly for both.
-#[derive(Component, Default, Clone, Debug)]
+#[derive(Component, Default, Clone, Debug, PartialEq)]
 pub struct SceneDrivenAnim {
     pub active: Option<SceneDrivenAnimationRequest>,
 }
 
-#[derive(Debug, Clone, Default)]
+/// Build the render-only avatar tilt (lean) quaternion from pitch/roll in degrees.
+/// Composed as `Y * X * Z`, so `Quat::from_rotation_y(yaw) * avatar_tilt_quat(p, r)`
+/// equals `Quat::from_euler(EulerRot::YXZ, yaw, p_rad, r_rad)` — letting consumers recover
+/// the authoritative yaw with `to_euler(EulerRot::YXZ).0` even when tilt is present.
+pub fn avatar_tilt_quat(pitch_deg: f32, roll_deg: f32) -> bevy::math::Quat {
+    bevy::math::Quat::from_euler(
+        bevy::math::EulerRot::YXZ,
+        0.0,
+        pitch_deg.to_radians(),
+        roll_deg.to_radians(),
+    )
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SceneDrivenAnimationRequest {
     // scene-relative path (e.g. "assets/walk.glb") — used for feedback to the controlling
     // scene. Empty for remote requests received over the network.
@@ -272,6 +285,51 @@ pub struct SceneDrivenAnimationRequest {
 #[derive(Resource, Default)]
 pub struct SceneDrivenAnimationFeedback {
     pub state: Option<SceneDrivenAnimationFeedbackState>,
+}
+
+/// Marker: present when the app has no render app. Render-only scene plugins are then
+/// skipped — nothing displays their output and none of them feed results back to the
+/// scene, so their components stay in the scene-side filtered store and never cross the
+/// IPC boundary. Insert it before `SceneRunnerPlugin`, which reads it at build time.
+///
+/// Absence is the normal case, so nothing needs to opt in and no default can be wrong.
+///
+/// Narrower than "headless": `impost.rs` disables winit and runs with no primary window,
+/// but keeps `DefaultPlugins` and a camera to bake imposters, so it must NOT insert this.
+/// Doing so would strip every imposter texture with no panic and no test failure.
+///
+/// Also distinct from [`server_mode`]: the headless binary never has a render app, but
+/// is only in server mode when run with --server-mode.
+#[derive(Resource)]
+pub struct NoRenderApp;
+
+static SERVER_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Latch this process as an authoritative scene server: scenes run in server role and
+/// `isServer()` returns true to scene JS. Set by the headless server binary before the
+/// app is built; irreversible by design.
+pub fn set_server_mode() {
+    SERVER_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// True once [`set_server_mode`] has been called.
+pub fn server_mode() -> bool {
+    SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+static MULTI_TENANT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Latch this process as a multi-tenant (orchestrated) scene server: every scene has its
+/// own room's crdt context, registered before the scene is queued. A standalone server
+/// (`--server-mode` without `--orchestrated`) is NOT multi-tenant — its single scene
+/// legitimately rides the shared context. Irreversible like [`set_server_mode`].
+pub fn set_multi_tenant() {
+    MULTI_TENANT.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// True once [`set_multi_tenant`] has been called.
+pub fn multi_tenant() -> bool {
+    MULTI_TENANT.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 #[derive(Debug, Clone)]
@@ -371,29 +429,6 @@ pub struct HeadSync {
     pub pitch_enabled: bool,
 }
 
-/// Classifier for pointer-target hits — distinguishes scene world geometry,
-/// scene UI overlays, and avatars. Lives here (not in system_bridge) because
-/// the engine's pointer pipeline produces it before any scene API surface is
-/// involved; system_bridge re-exports the same value into its HoverEvent.
-#[derive(
-    Hash,
-    Clone,
-    Copy,
-    serde_repr::Serialize_repr,
-    serde_repr::Deserialize_repr,
-    Debug,
-    PartialEq,
-    Eq,
-    Default,
-)]
-#[repr(u32)]
-pub enum PointerTargetType {
-    #[default]
-    World = 0,
-    Ui = 1,
-    Avatar = 2,
-}
-
 /// World-space point-at state. On the local player, populated when the PointAt
 /// action fires and `WorldPointerTarget` has a hit; cleared when the latch
 /// expires. On remote players, populated from the incoming rfc4::Movement
@@ -466,7 +501,23 @@ pub struct AppConfig {
     pub realm_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub inputs: InputMapSerialized,
+    pub point_at_marker_visibility: PointAtMarkerVisibility,
+    pub camera_smoothing: CameraSmoothing,
+    // field-level default (0) so configs saved before this field existed read as outdated,
+    // rather than taking the current generation from the container-level default
+    #[serde(default)]
+    pub settings_generation: u32,
+    #[serde(default)]
+    pub inputs_generation: u32,
 }
+
+/// bump to force a one-time reset of the preset-managed settings in existing configs
+/// (see [`AppConfig::reset_outdated_settings`])
+pub const SETTINGS_GENERATION: u32 = 1;
+
+/// bump to run one-time migrations of saved input binding tables
+/// (see [`AppConfig::migrate_inputs`])
+pub const INPUTS_GENERATION: u32 = 1;
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -478,8 +529,8 @@ impl Default for AppConfig {
             audio: Default::default(),
             cache_bytes: 1024 * 1024 * 1024 * 10, // 10gb
             scene_threads: 4,
-            scene_load_distance: 50.0,
-            scene_unload_extra_distance: 15.0,
+            scene_load_distance: 10.0,
+            scene_unload_extra_distance: 10.0,
             scene_imposter_distances: vec![100.0, 200.0, 400.0, 800.0, 1600.0, 99999.0],
             scene_imposter_multisample: false,
             scene_imposter_multisample_amount: 0.0,
@@ -487,7 +538,7 @@ impl Default for AppConfig {
             parcel_grass_setting: Default::default(),
             sysinfo_visible: false,
             scene_log_to_console: false,
-            max_avatars: 100,
+            max_avatars: 20,
             constrain_scene_ui: false,
             player_settings: Default::default(),
             max_videos: 1,
@@ -497,11 +548,119 @@ impl Default for AppConfig {
             realm_permissions: Default::default(),
             scene_permissions: Default::default(),
             inputs: Default::default(),
+            point_at_marker_visibility: Default::default(),
+            camera_smoothing: Default::default(),
+            settings_generation: SETTINGS_GENERATION,
+            inputs_generation: INPUTS_GENERATION,
         }
     }
 }
 
 impl AppConfig {
+    /// one-time forced reinitialization: configs saved with an older generation get the
+    /// current defaults for the preset-managed settings, keeping everything else
+    pub fn reset_outdated_settings(&mut self) {
+        if self.settings_generation >= SETTINGS_GENERATION {
+            return;
+        }
+        let default = Self::default();
+        self.graphics.msaa = default.graphics.msaa;
+        self.graphics.shadow_distance = default.graphics.shadow_distance;
+        self.graphics.shadow_settings = default.graphics.shadow_settings;
+        self.graphics.light_count = default.graphics.light_count;
+        self.graphics.shadow_caster_count = default.graphics.shadow_caster_count;
+        self.graphics.fog = default.graphics.fog;
+        self.graphics.bloom = default.graphics.bloom;
+        self.graphics.dof = default.graphics.dof;
+        self.graphics.ssao = default.graphics.ssao;
+        self.graphics.oob = default.graphics.oob;
+        self.scene_load_distance = default.scene_load_distance;
+        self.scene_unload_extra_distance = default.scene_unload_extra_distance;
+        self.scene_imposter_distances = default.scene_imposter_distances;
+        self.scene_imposter_multisample = default.scene_imposter_multisample;
+        self.scene_imposter_multisample_amount = default.scene_imposter_multisample_amount;
+        self.parcel_grass_setting = default.parcel_grass_setting;
+        self.max_avatars = default.max_avatars;
+        self.max_videos = default.max_videos;
+        self.settings_generation = SETTINGS_GENERATION;
+    }
+
+    /// migrate saved input tables: replace bindings still on changed old defaults
+    /// (RollLeft/RollRight KeyT/KeyG freed for ChatPanel/Gallery, quick emotes moved off
+    /// the Action 3-6 digits onto the numpad), and add defaults for any actions the saved
+    /// table doesn't mention
+    pub fn migrate_inputs(&mut self) {
+        if self.inputs_generation < INPUTS_GENERATION {
+            for (action, bindings) in self.inputs.0.iter_mut() {
+                let (old_default, new_default) = match action {
+                    Action::System(SystemAction::RollLeft) => (KeyCode::KeyT, None),
+                    Action::System(SystemAction::RollRight) => (KeyCode::KeyG, None),
+                    Action::System(SystemAction::QuickEmote0) => {
+                        (KeyCode::Digit0, Some(KeyCode::Numpad0))
+                    }
+                    Action::System(SystemAction::QuickEmote1) => {
+                        (KeyCode::Digit1, Some(KeyCode::Numpad1))
+                    }
+                    Action::System(SystemAction::QuickEmote2) => {
+                        (KeyCode::Digit2, Some(KeyCode::Numpad2))
+                    }
+                    Action::System(SystemAction::QuickEmote3) => {
+                        (KeyCode::Digit3, Some(KeyCode::Numpad3))
+                    }
+                    Action::System(SystemAction::QuickEmote4) => {
+                        (KeyCode::Digit4, Some(KeyCode::Numpad4))
+                    }
+                    Action::System(SystemAction::QuickEmote5) => {
+                        (KeyCode::Digit5, Some(KeyCode::Numpad5))
+                    }
+                    Action::System(SystemAction::QuickEmote6) => {
+                        (KeyCode::Digit6, Some(KeyCode::Numpad6))
+                    }
+                    Action::System(SystemAction::QuickEmote7) => {
+                        (KeyCode::Digit7, Some(KeyCode::Numpad7))
+                    }
+                    Action::System(SystemAction::QuickEmote8) => {
+                        (KeyCode::Digit8, Some(KeyCode::Numpad8))
+                    }
+                    Action::System(SystemAction::QuickEmote9) => {
+                        (KeyCode::Digit9, Some(KeyCode::Numpad9))
+                    }
+                    _ => continue,
+                };
+                if *bindings == [InputIdentifier::Key(old_default)] {
+                    *bindings = new_default.map(InputIdentifier::Key).into_iter().collect();
+                }
+            }
+            self.inputs_generation = INPUTS_GENERATION;
+        }
+        // ShowProfile is legacy (see the SystemAction variant): drop saved rows so the dead
+        // action neither lingers in tables nor resurfaces anywhere.
+        self.inputs
+            .0
+            .retain(|(action, _)| *action != Action::System(SystemAction::ShowProfile));
+        for (action, bindings) in InputMapSerialized::default().0 {
+            if !self
+                .inputs
+                .0
+                .iter()
+                .any(|(existing, _)| *existing == action)
+            {
+                self.inputs.0.push((action, bindings));
+            }
+        }
+        // fixed bindings can never be removed — re-add any a saved table has lost.
+        for (action, id) in crate::inputs::FIXED_BINDINGS {
+            match self.inputs.0.iter_mut().find(|(a, _)| *a == action) {
+                Some((_, bindings)) => {
+                    if !bindings.contains(&id) {
+                        bindings.push(id);
+                    }
+                }
+                None => self.inputs.0.push((action, vec![id])),
+            }
+        }
+    }
+
     pub fn get_permission(
         &self,
         ty: PermissionType,
@@ -532,7 +691,7 @@ impl AppConfig {
             | PermissionType::ForceCamera
             | PermissionType::PlayEmote
             | PermissionType::SetLocomotion
-            | PermissionType::HideAvatars
+            | PermissionType::HideAvatarsNametags
             | PermissionType::DisableVoice => PermissionValue::Allow,
             _ => PermissionValue::Ask,
         }
@@ -559,6 +718,10 @@ pub struct GraphicsSettings {
     pub ssao: SsaoSetting,
     pub oob: f32,
     pub ambient_brightness: i32,
+    /// cel-shade avatars (toon shading) instead of standard PBR
+    pub cel_shading: bool,
+    /// draw the dark edge outline around avatars
+    pub avatar_outline: bool,
     pub gpu_bytes_per_frame: usize,
 }
 
@@ -567,20 +730,22 @@ impl Default for GraphicsSettings {
         Self {
             vsync: false,
             log_fps: true,
-            msaa: AaSetting::FxaaHigh,
+            msaa: AaSetting::FxaaLow,
             fps_target: 60,
-            shadow_distance: 200.0,
-            shadow_settings: ShadowSetting::High,
-            light_count: 32,
-            shadow_caster_count: 8,
+            shadow_distance: 20.0,
+            shadow_settings: ShadowSetting::Low,
+            light_count: 4,
+            shadow_caster_count: 0,
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
-            bloom: BloomSetting::Low,
+            bloom: BloomSetting::High,
             dof: DofSetting::High,
             ssao: SsaoSetting::Off,
             oob: 2.0,
             ambient_brightness: 50,
+            cel_shading: true,
+            avatar_outline: true,
             gpu_bytes_per_frame: 0,
         }
     }
@@ -820,32 +985,6 @@ pub struct SceneMeta {
     pub authoritative_multiplayer: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum PermissionValue {
-    Allow,
-    Deny,
-    Ask,
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, EnumIter)]
-pub enum PermissionType {
-    MovePlayer,
-    ForceCamera,
-    PlayEmote,
-    SetLocomotion,
-    HideAvatars,
-    DisableVoice,
-    Teleport,
-    ChangeRealm,
-    SpawnPortable,
-    KillPortables,
-    Web3,
-    CopyToClipboard,
-    Fetch,
-    Websocket,
-    OpenUrl,
-}
-
 pub trait PermissionStrings {
     fn active(&self) -> &str;
     fn passive(&self) -> &str;
@@ -864,7 +1003,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::ForceCamera => "Force Camera",
             PermissionType::PlayEmote => "Play Emote",
             PermissionType::SetLocomotion => "Set Locomotion",
-            PermissionType::HideAvatars => "Hide Avatars",
+            PermissionType::HideAvatarsNametags => {
+                "Hide Avatars and/or Nametags, and/or disables Passports"
+            }
             PermissionType::DisableVoice => "Disable Voice",
             PermissionType::Teleport => "Teleport",
             PermissionType::ChangeRealm => "Change Realm",
@@ -919,7 +1060,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::ForceCamera => "temporarily change the camera view",
             PermissionType::PlayEmote => "make your avatar perform an emote",
             PermissionType::SetLocomotion => "temporarily modify your avatar's locomotion settings",
-            PermissionType::HideAvatars => "temporarily hide player avatars",
+            PermissionType::HideAvatarsNametags => {
+                "temporarily hide player avatars and/or nametags, and/or disables passports"
+            }
             PermissionType::DisableVoice => "temporarily disable voice chat",
             PermissionType::Teleport => "teleport you to a new location",
             PermissionType::ChangeRealm => "move you to a new realm",
@@ -939,7 +1082,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::ForceCamera => "enforcing the camera view",
             PermissionType::PlayEmote => "making your avatar perform an emote",
             PermissionType::SetLocomotion => "enforcing your locomotion settings",
-            PermissionType::HideAvatars => "hiding some avatars",
+            PermissionType::HideAvatarsNametags => {
+                "hiding some avatars and/or nametags, and/or disables passports"
+            }
             PermissionType::DisableVoice => "disabling voice communications",
             PermissionType::Teleport => "teleporting you to a new location",
             PermissionType::ChangeRealm => "teleporting you to a new realm",
@@ -952,13 +1097,6 @@ impl PermissionStrings for PermissionType {
             PermissionType::CopyToClipboard => "copying text into the clipboard",
         }
     }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum PermissionLevel {
-    Scene(String),
-    Realm(String),
-    Global,
 }
 
 #[derive(Clone, Serialize, Deserialize, Event)]
@@ -1093,6 +1231,12 @@ pub struct EngineMovementControl {
     pub suppress_clipping: HashSet<&'static str>,
     /// Non-empty means avatar physics movement systems are suppressed (e.g. "move_player_to" during interpolation)
     pub suppress_avatar_physics: HashSet<&'static str>,
+    /// Scene-driven `AvatarMovement` is ignored (physics suppressed) until a tick
+    /// initiated strictly after this time (engine dispatch clock, `last_sent` secs)
+    /// is received. Set by `movePlayerTo` when it imposes a facing, so the imposed
+    /// orientation survives until the controller scene reads the new transform and
+    /// echoes it back, rather than being clobbered by an in-flight stale tick.
+    pub accept_movement_after: f32,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -1129,6 +1273,20 @@ pub enum PreviewCommand {
     ReloadScene { hash: String },
 }
 
+/// The local player was instantly repositioned — a durationless `move_player_to`, a `teleport_player`,
+/// or a spawn snap — rather than walking there. Comms turns this into a Pulse `TeleportRequest` so peers
+/// snap to the new position instead of interpolating across the gap. `position` is Bevy world space.
+#[derive(Event)]
+pub struct PlayerTeleported {
+    pub position: Vec3,
+}
+
+/// Marks the local player as behind the loading screen — teleported or spawning, with a provisional
+/// position — until the destination scene resolves and they're placed in-world. Lives here (rather
+/// than `scene_runner`) so lower-level crates like `comms` can read it; `scene_runner` re-exports it.
+#[derive(Component)]
+pub struct OutOfWorld;
+
 pub struct StartupScene {
     pub source: String,
     pub super_user: bool,
@@ -1142,7 +1300,7 @@ pub struct StartupScenes {
     pub scenes: Vec<StartupScene>,
 }
 
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug, PartialEq)]
 pub struct SceneGlobalLight {
     pub source: Option<Entity>,
     pub dir_color: Color,
@@ -1237,7 +1395,6 @@ pub enum ZOrder {
     Toast,
     Permission,
     DefaultComboPopup,
-    EguiBlocker,
 }
 
 impl ZOrder {
@@ -1263,6 +1420,20 @@ pub struct PreviewMode {
     pub is_preview: bool,
     pub preview_parcel: Option<IVec2>,
 }
+
+/// Render out-of-bounds geometry (dithered) instead of culling it. Set at startup
+/// (preview, a loopback realm, or editor mode — never a public realm); read by
+/// scene_material's show-outside-bounds observer.
+#[derive(Debug, Resource, Default)]
+pub struct ShowOutOfBounds(pub bool);
+
+/// True when the explorer is embedded in a scene editor (the explicit `--editor` arg /
+/// `editor` web boot param — the editor host is expected to unfreeze scenes when the
+/// user hits play). Set once at startup; freezes a scene after main() has run once so
+/// the initial state is deterministic. Default false; NOT implied by preview or a
+/// loopback realm — plain previews must free-run.
+#[derive(Debug, Resource, Default)]
+pub struct EditorMode(pub bool);
 
 // resource into which systems can add debug info
 #[derive(Resource, Default, Debug)]
@@ -1292,17 +1463,16 @@ impl<T> Default for MonotonicTimestamp<T> {
 
 impl<T> MonotonicTimestamp<T> {
     pub fn next_timestamp(&self) -> u32 {
-        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
     }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ParcelGrassSetting {
     Off,
-    #[cfg_attr(target_arch = "wasm32", default)]
+    #[default]
     Low,
     Mid,
-    #[cfg_attr(not(target_arch = "wasm32"), default)]
     High,
 }
 
@@ -1373,6 +1543,7 @@ impl Default for ParcelGrassConfig {
 pub struct CurrentRealm {
     pub about_url: String,
     pub address: String,
+    pub connected: bool,
     pub config: ServerConfiguration,
     pub comms: Option<CommsConfig>,
     pub public_url: String,
@@ -1432,4 +1603,137 @@ pub struct Region {
     pub right: i32,
     pub top: i32,
     pub bottom: i32,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PointAtMarkerVisibility {
+    #[default]
+    All,
+    Friends,
+    None,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CameraSmoothing {
+    Raw,
+    #[default]
+    Smoothed,
+    Drunk,
+}
+
+impl CameraSmoothing {
+    /// exponential smoothing rate; `None` means no smoothing
+    pub fn rate(&self) -> Option<f32> {
+        match self {
+            CameraSmoothing::Raw => None,
+            CameraSmoothing::Smoothed => Some(15.0),
+            CameraSmoothing::Drunk => Some(5.0),
+        }
+    }
+}
+
+#[derive(Event)]
+pub struct PointAtMarkerVisibilityChanged;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrate_inputs_updates_old_tables() {
+        // a table saved before Places/Gallery/etc existed, with old roll defaults and
+        // one deliberate user customization
+        let mut config = AppConfig {
+            inputs: InputMapSerialized(
+                vec![
+                    (
+                        Action::System(SystemAction::RollLeft),
+                        vec![InputIdentifier::Key(KeyCode::KeyT)],
+                    ),
+                    (
+                        Action::System(SystemAction::RollRight),
+                        vec![InputIdentifier::Key(KeyCode::KeyR)],
+                    ),
+                    // a fixed binding the user managed to strip (older build)
+                    (Action::System(SystemAction::ScrollUp), vec![]),
+                    // legacy action from an old default table
+                    (
+                        Action::System(SystemAction::ShowProfile),
+                        vec![InputIdentifier::Gamepad(
+                            bevy::input::gamepad::GamepadButton::North,
+                        )],
+                    ),
+                    // quick emote still on its old digit default, and one rebound
+                    (
+                        Action::System(SystemAction::QuickEmote3),
+                        vec![InputIdentifier::Key(KeyCode::Digit3)],
+                    ),
+                    (
+                        Action::System(SystemAction::QuickEmote4),
+                        vec![InputIdentifier::Key(KeyCode::KeyX)],
+                    ),
+                ],
+                Default::default(),
+            ),
+            inputs_generation: 0,
+            ..Default::default()
+        };
+
+        config.migrate_inputs();
+
+        fn get(config: &AppConfig, action: SystemAction) -> Option<Vec<InputIdentifier>> {
+            config
+                .inputs
+                .0
+                .iter()
+                .find(|(a, _)| *a == Action::System(action))
+                .map(|(_, bindings)| bindings.clone())
+        }
+
+        // old default cleared, user customization preserved
+        assert_eq!(get(&config, SystemAction::RollLeft), Some(vec![]));
+        assert_eq!(
+            get(&config, SystemAction::RollRight),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyR)])
+        );
+        // missing actions merged in with their defaults
+        assert_eq!(
+            get(&config, SystemAction::Places),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyZ)])
+        );
+        assert_eq!(config.inputs_generation, INPUTS_GENERATION);
+        // fixed bindings restored: the wheel always scrolls
+        assert_eq!(
+            get(&config, SystemAction::ScrollUp),
+            Some(vec![InputIdentifier::Analog(
+                crate::inputs::AxisIdentifier::MouseWheel,
+                crate::inputs::InputDirection::Up
+            )])
+        );
+        // the legacy ShowProfile row is stripped, not merged back
+        assert_eq!(get(&config, SystemAction::ShowProfile), None);
+        // quick emotes: old digit default remapped to the numpad, a rebind preserved
+        assert_eq!(
+            get(&config, SystemAction::QuickEmote3),
+            Some(vec![InputIdentifier::Key(KeyCode::Numpad3)])
+        );
+        assert_eq!(
+            get(&config, SystemAction::QuickEmote4),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyX)])
+        );
+
+        // re-running after a deliberate rebind back to KeyT doesn't clear it again
+        let roll_left = config
+            .inputs
+            .0
+            .iter_mut()
+            .find(|(a, _)| *a == Action::System(SystemAction::RollLeft))
+            .unwrap();
+        roll_left.1 = vec![InputIdentifier::Key(KeyCode::KeyT)];
+        config.migrate_inputs();
+        assert_eq!(
+            get(&config, SystemAction::RollLeft),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyT)])
+        );
+    }
 }

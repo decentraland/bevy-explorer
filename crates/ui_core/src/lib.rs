@@ -27,7 +27,6 @@ use bevy::{
     text::CosmicFontSystem,
 };
 use bevy_dui::{DuiNodeList, DuiPlugin, DuiRegistry};
-use bevy_egui::EguiPlugin;
 use bound_node::BoundedNodePlugin;
 use button::{DuiButtonSetTemplate, DuiButtonTemplate, DuiTabGroupTemplate};
 use color_picker::ColorPickerPlugin;
@@ -76,15 +75,69 @@ pub fn user_font(name: FontName, weight: WeightName) -> Handle<Font> {
     FONTS.get().unwrap().get(&(name, weight)).unwrap().clone()
 }
 
+/// Register the SDK font handles. Called by UiCorePlugin's setup; also callable by
+/// headless binaries that skip the UI plugins but still process scene text.
+pub fn init_fonts(asset_server: &AssetServer) {
+    use FontName::*;
+    use WeightName::*;
+    let _ = FONTS.set(HashMap::from_iter([
+        (
+            (Mono, Regular),
+            asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
+        ),
+        (
+            (Mono, Bold),
+            asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
+        ),
+        (
+            (Mono, Italic),
+            asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
+        ),
+        (
+            (Mono, BoldItalic),
+            asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
+        ),
+        (
+            (Sans, Regular),
+            asset_server.load("embedded://fonts/NotoSans-Regular.ttf"),
+        ),
+        (
+            (Sans, Bold),
+            asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
+        ),
+        (
+            (Sans, Italic),
+            asset_server.load("embedded://fonts/NotoSans-Italic.ttf"),
+        ),
+        (
+            (Sans, BoldItalic),
+            asset_server.load("embedded://fonts/NotoSans-BoldItalic.ttf"),
+        ),
+        (
+            (Serif, Regular),
+            asset_server.load("embedded://fonts/NotoSerif-Regular.ttf"),
+        ),
+        (
+            (Serif, Bold),
+            asset_server.load("embedded://fonts/NotoSerif-Bold.ttf"),
+        ),
+        (
+            (Serif, Italic),
+            asset_server.load("embedded://fonts/NotoSerif-Italic.ttf"),
+        ),
+        (
+            (Serif, BoldItalic),
+            asset_server.load("embedded://fonts/NotoSerif-BoldItalic.ttf"),
+        ),
+    ]));
+}
+
 pub struct UiCorePlugin;
 
 impl Plugin for UiCorePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(DuiPlugin);
         app.add_plugins(BoundedNodePlugin);
-        app.add_plugins(EguiPlugin {
-            enable_multipass_for_primary_context: false,
-        });
         app.add_plugins(UiActionPlugin);
         app.add_plugins(FocusPlugin);
         app.add_plugins(InteractStylePlugin);
@@ -120,6 +173,14 @@ fn setup(
     font_system
         .db_mut()
         .load_font_data(include_bytes!("NotoColorEmoji.ttf").to_vec());
+    // Pre-register a broad-coverage fallback so glyphs missing from the primary
+    // font (e.g. geometric shapes like U+25BC ▼) resolve on first paint. Fonts
+    // loaded via the AssetServer only enter the cosmic-text db when a span first
+    // uses them, so without this they are absent from the fallback scan during a
+    // text element's initial layout and render as tofu until the value changes.
+    font_system.db_mut().load_font_data(
+        include_bytes!("../../assets/src/assets/fonts/NotoSansMono-Regular.ttf").to_vec(),
+    );
 
     // tracker.load_asset(asset_server.load_folder("ui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/app_settings.dui"));
@@ -158,62 +219,7 @@ fn setup(
     dui.register_template("button-set", DuiButtonSetTemplate);
     dui.register_template("tab-group", DuiTabGroupTemplate);
 
-    {
-        use FontName::*;
-        use WeightName::*;
-        FONTS
-            .set(HashMap::from_iter([
-                (
-                    (Mono, Regular),
-                    asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
-                ),
-                (
-                    (Mono, Bold),
-                    asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
-                ),
-                (
-                    (Mono, Italic),
-                    asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
-                ),
-                (
-                    (Mono, BoldItalic),
-                    asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
-                ),
-                (
-                    (Sans, Regular),
-                    asset_server.load("embedded://fonts/NotoSans-Regular.ttf"),
-                ),
-                (
-                    (Sans, Bold),
-                    asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
-                ),
-                (
-                    (Sans, Italic),
-                    asset_server.load("embedded://fonts/NotoSans-Italic.ttf"),
-                ),
-                (
-                    (Sans, BoldItalic),
-                    asset_server.load("embedded://fonts/NotoSans-BoldItalic.ttf"),
-                ),
-                (
-                    (Serif, Regular),
-                    asset_server.load("embedded://fonts/NotoSerif-Regular.ttf"),
-                ),
-                (
-                    (Serif, Bold),
-                    asset_server.load("embedded://fonts/NotoSerif-Bold.ttf"),
-                ),
-                (
-                    (Serif, Italic),
-                    asset_server.load("embedded://fonts/NotoSerif-Italic.ttf"),
-                ),
-                (
-                    (Serif, BoldItalic),
-                    asset_server.load("embedded://fonts/NotoSerif-BoldItalic.ttf"),
-                ),
-            ]))
-            .unwrap();
-    }
+    init_fonts(&asset_server);
 
     TITLE_TEXT_STYLE
         .set((
@@ -314,7 +320,3 @@ impl<S: States + FreelyMutableState> StateTracker<S> {
         system.into_configs()
     }
 }
-
-// blocker for egui elements to prevent interaction fallthrough
-#[derive(Component)]
-struct Blocker;

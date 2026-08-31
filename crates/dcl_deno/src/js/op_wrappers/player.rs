@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use deno_core::{op2, OpDecl, OpState};
+use deno_core::{anyhow, op2, OpDecl, OpState};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
@@ -9,12 +9,16 @@ pub fn ops() -> Vec<OpDecl> {
 
 #[op2(async)]
 #[serde]
-async fn op_get_connected_players(state: Rc<RefCell<OpState>>) -> Vec<String> {
+async fn op_get_connected_players(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<String>, anyhow::Error> {
     dcl::js::player::op_get_connected_players(state).await
 }
 
 #[op2(async)]
 #[serde]
-async fn op_get_players_in_scene(state: Rc<RefCell<OpState>>) -> Vec<String> {
+async fn op_get_players_in_scene(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<String>, anyhow::Error> {
     dcl::js::player::op_get_players_in_scene(state).await
 }

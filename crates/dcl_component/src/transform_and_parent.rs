@@ -2,7 +2,9 @@ use std::ops::{Add, Sub};
 
 use bevy::prelude::{Quat, Transform, Vec3};
 
-use super::{DclReader, DclReaderError, FromDclReader, PositionFree, SceneEntityId, ToDclWriter};
+use super::{
+    DclReader, DclReaderError, FromDclReader, GlobalCrdtData, Localizer, SceneEntityId, ToDclWriter,
+};
 
 // for dcl: +z -> forward
 // for bevy: +z -> backward
@@ -170,6 +172,9 @@ impl DclTransformAndParent {
         };
 
         let mut scale = self.scale;
+        if !scale.is_finite() {
+            scale = Vec3::ONE;
+        }
         if scale.x == 0.0 {
             scale.x = f32::EPSILON;
         };
@@ -180,8 +185,15 @@ impl DclTransformAndParent {
             scale.z = f32::EPSILON;
         };
 
+        let translation = self.translation.to_bevy_translation();
+        let translation = if translation.is_finite() {
+            translation
+        } else {
+            Vec3::ZERO
+        };
+
         Transform {
-            translation: self.translation.to_bevy_translation(),
+            translation,
             rotation,
             scale,
         }
@@ -221,5 +233,10 @@ impl ToDclWriter for DclTransformAndParent {
     }
 }
 
-// Transforms are localized via WORLD_ORIGIN parenting, not payload adjustment
-impl PositionFree for DclTransformAndParent {}
+// World-space transforms (parented to WORLD_ORIGIN) are localized per scene:
+// translation offset by scene origin, re-parented to ROOT.
+impl GlobalCrdtData for DclTransformAndParent {
+    fn localizer() -> Localizer {
+        Localizer::Transform
+    }
+}

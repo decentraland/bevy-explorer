@@ -2,12 +2,17 @@ use std::path::PathBuf;
 
 use bevy::{
     asset::{
-        io::AssetReaderError, AssetLoadError, LoadedUntypedAsset, RecursiveDependencyLoadState,
+        io::AssetReaderError, AssetLoadError, RecursiveDependencyLoadState,
+        RenderAssetTransferPriority,
     },
     ecs::relationship::Relationship,
+    gltf::{Gltf, GltfLoaderSettings},
     prelude::*,
 };
-use common::{debug_panic, structs::MonotonicTimestamp};
+use common::{
+    debug_panic,
+    structs::{MonotonicTimestamp, NoRenderApp},
+};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
@@ -18,8 +23,10 @@ use dcl_component::{
 use ipfs::ipfs_path::{IpfsPath, IpfsType};
 
 use crate::{
-    asset_preload::AssetLoad, renderer_context::RendererSceneContext,
-    update_world::AddCrdtInterfaceExt, ContainerEntity,
+    asset_preload::AssetLoad,
+    renderer_context::RendererSceneContext,
+    update_world::{gltf_container::scene_gltf_loader_settings, AddCrdtInterfaceExt},
+    ContainerEntity,
 };
 
 pub struct AssetPreloadPlugin;
@@ -51,7 +58,7 @@ struct Preloader(Vec<Entity>);
 #[derive(Component)]
 struct PreloadedAsset {
     file_path: String,
-    handle: Handle<LoadedUntypedAsset>,
+    handle: UntypedHandle,
 }
 
 #[derive(Component)]
@@ -64,6 +71,7 @@ fn asset_load_on_insert(
     mut renderer_scene_contexts: Query<&mut RendererSceneContext>,
     asset_server: Res<AssetServer>,
     timestamp: Res<MonotonicTimestamp<PbAssetLoadLoadingState>>,
+    no_render_app: Option<Res<NoRenderApp>>,
 ) {
     let entity = trigger.target();
 
@@ -88,8 +96,26 @@ fn asset_load_on_insert(
             renderer_scene_context.hash.to_owned(),
             file_path.to_owned(),
         ));
-        let handle: Handle<LoadedUntypedAsset> =
-            asset_server.load_untyped(PathBuf::from(&ipfs_path));
+        // gltfs must load with the same settings as gltf containers: assets are keyed by
+        // path and the first load's settings win, so preloading with default settings
+        // would strip `include_source` (and the render asset usages) from any
+        // GltfContainer sharing the file
+        let lower_file_path = file_path.to_lowercase();
+        let handle = if lower_file_path.ends_with(".glb") || lower_file_path.ends_with(".gltf") {
+            asset_server
+                .load_with_settings::<Gltf, GltfLoaderSettings>(
+                    PathBuf::from(&ipfs_path),
+                    scene_gltf_loader_settings(
+                        RenderAssetTransferPriority::Priority(0),
+                        no_render_app.is_some(),
+                    ),
+                )
+                .untyped()
+        } else {
+            asset_server
+                .load_untyped(PathBuf::from(&ipfs_path))
+                .untyped()
+        };
 
         commands.spawn((
             PreloadedAsset {

@@ -4,7 +4,6 @@ use bevy::{
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
-use bevy_egui::EguiContextSettings;
 use common::util::{ModifyComponentExt, ModifyDefaultComponentExt};
 
 use crate::{
@@ -126,7 +125,6 @@ pub fn update_fontsize(
     mut q: Query<(&mut TextFont, Ref<FontSize>)>,
     mut resized: EventReader<WindowResized>,
     window: Query<&Window, With<PrimaryWindow>>,
-    mut egui_settings: Query<&mut EguiContextSettings>,
 ) {
     let resized = resized.read().last().is_some();
     let Ok(window) = window.single() else {
@@ -138,11 +136,6 @@ pub fn update_fontsize(
     }
     for (mut text_font, size) in q.iter_mut().filter(|(_, sz)| resized || sz.is_changed()) {
         text_font.font_size = win_size * size.0;
-    }
-    if resized && win_size > 0.0 {
-        for mut ctx in egui_settings.iter_mut() {
-            ctx.scale_factor = win_size / 720.0;
-        }
     }
 }
 /*

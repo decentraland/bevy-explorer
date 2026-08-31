@@ -30,7 +30,7 @@ pub async fn op_portable_spawn(
             location,
             spawner: scene,
             response: sx,
-        });
+        })?;
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
 }
@@ -51,21 +51,23 @@ pub async fn op_portable_kill(
             scene,
             location: PortableLocation::Urn(pid.clone()),
             response: sx,
-        });
+        })?;
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
 
-pub async fn op_portable_list(state: Rc<RefCell<impl State>>) -> Vec<SpawnResponse> {
+pub async fn op_portable_list(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<SpawnResponse>, anyhow::Error> {
     debug!("op_portable_list");
     let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::ListPortables { response: sx });
+        .push(RpcCall::ListPortables { response: sx })?;
 
     let res = rx.await.unwrap_or_default();
     bevy::log::debug!("portable list res: {res:?}");
-    res
+    Ok(res)
 }

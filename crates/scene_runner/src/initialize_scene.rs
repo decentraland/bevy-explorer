@@ -18,19 +18,18 @@ use bevy::{
 use common::{
     sets::RealmLifecycle,
     structs::{
-        AppConfig, AppError, CurrentRealm, GlobalCrdtStateUpdate, IVec2Arg, PreviewMode,
-        SceneLoadDistance, SceneMeta, SceneTime,
+        server_mode, AppConfig, AppError, CurrentRealm, EditorMode, GlobalCrdtStateUpdate,
+        IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
     },
     util::{TaskExt, TryPushChildrenEx},
 };
-use comms::global_crdt::GlobalCrdtState;
+use comms::global_crdt::{CrdtContexts, GlobalCrdtState};
 use dcl::{
-    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore, CrdtType},
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
     proto_components::sdk::components::{PbMainCamera, PbRealmInfo, PbVisibilityComponent},
-    transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use ipfs::{
@@ -44,7 +43,7 @@ use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets
 use crate::{
     bounds_calc::scene_regions,
     parcel_to_vec3,
-    renderer_context::RendererSceneContext,
+    renderer_context::{RendererSceneContext, SceneState, FROZEN_BLOCK},
     update_world::{visibility::VisibilityComponent, ComponentTracker},
     vec3_to_parcel, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
     SceneThreadHandle,
@@ -85,6 +84,7 @@ pub struct SceneLifecyclePlugin;
 impl Plugin for SceneLifecyclePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CurrentImposterScene>();
+        app.init_resource::<CurrentSceneLoading>();
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
         app.init_resource::<PortableScenes>();
@@ -129,6 +129,9 @@ pub enum SceneLoading {
     Javascript {
         global_updates: Option<tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>>,
         scene_origin: Vec3,
+        // the context the receiver was subscribed to, so the ipc stream tag can never
+        // disagree with the stream it labels
+        crdt_context: Entity,
     },
     Failed,
 }
@@ -248,7 +251,8 @@ pub(crate) fn load_scene_javascript(
     ipfas: IpfsAssetServer,
     crdt_component_interfaces: Res<CrdtExtractors>,
     mut scene_updates: ResMut<SceneUpdates>,
-    global_scene: Res<GlobalCrdtState>,
+    crdt_contexts: Res<CrdtContexts>,
+    global_scenes: Query<&GlobalCrdtState>,
     portable_scenes: Res<PortableScenes>,
     realm: Res<CurrentRealm>,
     frame: Res<FrameCount>,
@@ -292,30 +296,37 @@ pub(crate) fn load_scene_javascript(
 
         let portable = portable_scenes.get(&definition.id);
 
-        let (base_x, base_y) = meta.scene.base.split_once(',').unwrap();
-        let base_x = base_x.parse::<i32>().unwrap();
-        let base_y = base_y.parse::<i32>().unwrap();
-        let base = IVec2::new(base_x, base_y);
+        let Some(base) = meta
+            .scene
+            .base
+            .split_once(',')
+            .and_then(|(x, y)| Some(IVec2::new(x.parse().ok()?, y.parse().ok()?)))
+        else {
+            fail("malformed base coordinate in scene.json");
+            continue;
+        };
 
         // populate pointers
         let mut extent_min = IVec2::MAX;
         let mut extent_max = IVec2::MIN;
-        let parcels: HashSet<_> = meta
+        let parcels: Option<HashSet<_>> = meta
             .scene
             .parcels
             .iter()
             .map(|pointer| {
-                let (x, y) = pointer.split_once(',').unwrap();
-                let x = x.parse::<i32>().unwrap();
-                let y = y.parse::<i32>().unwrap();
-                let parcel = IVec2::new(x, y);
+                let (x, y) = pointer.split_once(',')?;
+                let parcel = IVec2::new(x.parse().ok()?, y.parse().ok()?);
 
                 extent_min = extent_min.min(parcel);
                 extent_max = extent_max.max(parcel);
 
-                parcel
+                Some(parcel)
             })
             .collect();
+        let Some(parcels) = parcels else {
+            fail("malformed parcel coordinate in scene.json");
+            continue;
+        };
 
         let bounds = if portable.is_some() {
             Vec::default()
@@ -414,23 +425,17 @@ pub(crate) fn load_scene_javascript(
 
         scene_updates.scene_ids.insert(scene_id, root);
 
-        // start from the global shared crdt state, with position data localized for this scene
+        // start from this scene's crdt context (its own room's on a multi-tenant server,
+        // the shared context otherwise), with position data localized for this scene.
         // Scene origin in DCL proto-space (z-forward, matching proto Vector3 coordinates)
         let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
+        let crdt_context = crdt_contexts.for_scene_hash(&definition.id);
+        let Ok(global_scene) = global_scenes.get(crdt_context) else {
+            // context spawned this frame and not yet flushed — retry next frame
+            debug!("{root:?} waiting for crdt context");
+            continue;
+        };
         let (mut initial_crdt, global_updates) = global_scene.subscribe(scene_origin);
-
-        // set the world origin (for parents of world-space entities, using world-space coords as local coords)
-        let mut buf = Vec::new();
-        DclWriter::new(&mut buf).write(&DclTransformAndParent::from_bevy_transform_and_parent(
-            &Transform::from_translation(Vec3::new(-initial_position.x, 0.0, initial_position.y)),
-            SceneEntityId::ROOT,
-        ));
-        initial_crdt.force_update(
-            SceneComponentId::TRANSFORM,
-            CrdtType::LWW_ANY,
-            SceneEntityId::WORLD_ORIGIN,
-            Some(&mut DclReader::new(&buf)),
-        );
 
         // set initial realm info
         let base_url = realm
@@ -455,7 +460,7 @@ pub(crate) fn load_scene_javascript(
             room: None,
             is_connected_scene_room: None,
         };
-        buf.clear();
+        let mut buf = Vec::new();
         DclWriter::new(&mut buf).write(&realm_info);
         initial_crdt.force_update(
             SceneComponentId::REALM_INFO,
@@ -465,24 +470,35 @@ pub(crate) fn load_scene_javascript(
         );
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
-            // add main.crdt
+            // Read main.crdt once into its own store (custom components included). `initial_crdt`
+            // is seeded with global state (player AvatarMovementInfo, other avatars, etc.) from
+            // `global_scene.subscribe`, so we keep main.crdt separate to get a clean baseline.
             let mut context = CrdtContext::new(
                 scene_id,
                 renderer_context.hash.clone(),
                 renderer_context.title.clone(),
                 false,
                 false,
-            );
-            let mut stream = DclReader::new(&serialized_crdt);
-            initial_crdt.process_message_stream(
-                &mut context,
-                &crdt_component_interfaces,
-                &mut stream,
                 false,
             );
+            let mut main_crdt = CrdtStore::default();
+            main_crdt.process_message_stream(
+                &mut context,
+                &crdt_component_interfaces,
+                &mut DclReader::new(&serialized_crdt),
+                false,
+                None,
+                None,
+            );
 
-            // send initial updates into renderer
+            // The clean authored baseline = only main.crdt; the inspector diffs against this on
+            // save, so it must not contain any of the global state above.
+            renderer_context.initial_crdt = Some(main_crdt.clone());
+
+            // Layer main.crdt onto the global-seeded store (merge_newer marks the updates), then
+            // send the initial state into the renderer.
             let census = context.take_census();
+            initial_crdt.merge_newer(main_crdt);
             initial_crdt.clean_up(&census.died);
             let updates = initial_crdt.clone().take_updates();
 
@@ -550,6 +566,7 @@ pub(crate) fn load_scene_javascript(
             SceneLoading::Javascript {
                 global_updates: Some(global_updates),
                 scene_origin,
+                crdt_context,
             },
         ));
     }
@@ -620,6 +637,8 @@ pub(crate) fn initialize_scene(
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
     time: Res<Time>,
+    editor_mode: Res<EditorMode>,
+    portable_scenes: Res<PortableScenes>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
@@ -650,11 +669,12 @@ pub(crate) fn initialize_scene(
 
         let thread_sx = scene_updates.sender.clone();
 
-        let (global_updates, scene_origin) = match *state {
+        let (global_updates, scene_origin, crdt_context) = match *state {
             SceneLoading::Javascript {
                 ref mut global_updates,
                 scene_origin,
-            } => (global_updates.take().unwrap(), scene_origin),
+                crdt_context,
+            } => (global_updates.take().unwrap(), scene_origin, crdt_context),
             _ => panic!("bad state"),
         };
 
@@ -676,11 +696,13 @@ pub(crate) fn initialize_scene(
             context.title.clone(),
             testing_data.test_mode,
             preview_mode.is_preview,
+            server_mode(),
         );
 
-        let main_sx = spawn_scene(
+        let (main_sx, kill_guard) = spawn_scene(
             context.crdt_store.clone(),
             scene_context,
+            crdt_context.to_bits(),
             js_file.clone(),
             crdt_component_interfaces,
             thread_sx,
@@ -691,16 +713,38 @@ pub(crate) fn initialize_scene(
             scene_origin,
         );
 
-        // mark context as in flight so we wait for initial RPC requests
-        context.in_flight = true;
         context.inspected = inspected;
         // set last_sent so the scene doesn't get extreme starvation priority
         // when it first becomes eligible after initialization completes
         context.last_sent = time.elapsed_secs();
+        // spawn in flight so we wait for initial RPC requests
+        context.state = SceneState::Live {
+            handle: SceneThreadHandle {
+                sender: main_sx,
+                kill_guard,
+            },
+            in_flight: true,
+        };
 
-        commands
-            .entity(root)
-            .try_insert((SceneThreadHandle { sender: main_sx },));
+        // In the editor a project scene must not silently run a racy number of
+        // frames before the user hits play. Auto-freeze after main() has run once
+        // (its entities / one-shot setup appear) but before the scene free-runs, so
+        // the initial state is deterministic. refreeze fires when tick_number
+        // reaches the target after a scene update; the first two updates are the
+        // engine handshake (init + onStart/composite instancing, no scene frame),
+        // and the third is the first real scene update that runs main() + one system
+        // pass — so 3 lands on "main ran, one frame". Super scenes (the editor
+        // agent) and startup portables (the default controller — parent_scene is
+        // None) are exempt: they aren't the scene being edited and must keep
+        // ticking. Portables spawned BY a scene still freeze with it.
+        let startup_portable = context.is_portable
+            && portable_scenes
+                .get(&context.hash)
+                .is_some_and(|source| source.parent_scene.is_none());
+        if editor_mode.0 && super_user.is_none() && !startup_portable {
+            context.refreeze_at_tick = Some(3);
+        }
+
         commands.entity(root).remove::<SceneLoading>();
     }
 }
@@ -791,6 +835,11 @@ pub const PARCEL_SIZE: f32 = 16.0;
 pub struct ScenePointers {
     pointers: HashMap<IVec2, PointerResult>,
     realm_bounds: (IVec2, IVec2),
+    // Pre-clip applied to `set_realm`'s argument. Set by the impost binary's
+    // `--range` for fast iteration: parcels outside this box are treated as
+    // empty for reads/crc, while still letting the bake generate mips from
+    // the in-range parcels. None = no clipping (normal client behaviour).
+    bake_clip: Option<(IVec2, IVec2)>,
     crcs: Vec<Vec<Option<u32>>>,
 }
 
@@ -799,6 +848,7 @@ impl Default for ScenePointers {
         Self {
             pointers: Default::default(),
             realm_bounds: (IVec2::MAX, IVec2::MIN),
+            bake_clip: None,
             crcs: Default::default(),
         }
     }
@@ -827,13 +877,40 @@ impl ScenePointers {
     }
 
     pub fn set_realm(&mut self, min_bound: IVec2, max_bound: IVec2) {
+        let (min_bound, max_bound) = match self.bake_clip {
+            Some((clip_min, clip_max)) => (min_bound.max(clip_min), max_bound.min(clip_max)),
+            None => (min_bound, max_bound),
+        };
         self.realm_bounds = (min_bound, max_bound);
         // clear nothings
         self.pointers.retain(|_, r| r != &PointerResult::Nothing);
         // exists will be rechecked / replaced when active entities returns
         self.crcs.clear();
     }
+
+    /// Restrict the effective realm bounds to the intersection with this box.
+    /// Used by the impost binary's `--range` for fast iteration; safe to call
+    /// either before or after `set_realm` (a current realm is re-clipped).
+    pub fn set_bake_clip(&mut self, min: IVec2, max: IVec2) {
+        self.bake_clip = Some((min, max));
+        if self.realm_bounds.0.cmple(self.realm_bounds.1).all() {
+            // re-apply current realm so the intersection takes effect
+            let (rmin, rmax) = self.realm_bounds;
+            self.set_realm(rmin, rmax);
+        }
+    }
     pub fn insert(&mut self, parcel: IVec2, result: PointerResult) -> Option<(IVec2, IVec2)> {
+        // Respect bake_clip: parcels outside the clip aren't stored at all.
+        // Storing them (as Nothing) would inflate `pointers.len()` past
+        // `expected_count` (which is computed over the clipped realm_bounds)
+        // and break `is_full`. `get()` already returns Nothing for parcels
+        // outside realm_bounds, so nobody needs the entry.
+        if let Some((clip_min, clip_max)) = self.bake_clip {
+            if parcel.cmplt(clip_min).any() || parcel.cmpgt(clip_max).any() {
+                return None;
+            }
+        }
+
         let mut res = None;
         if !matches!(result, PointerResult::Nothing) {
             let new_min = self.realm_bounds.0.min(parcel);
@@ -909,15 +986,11 @@ impl ScenePointers {
             .into_iter()
             .enumerate()
         {
-            if let Some(sub_crc) = self.crc(
+            let sub_crc = self.crc(
                 (level_parcel << level as u32) + (offset << (level - 1) as u32),
                 level - 1,
-            ) {
-                calc ^= sub_crc.rotate_right(ix as u32);
-            } else {
-                // println!("failed {level}");
-                return None;
-            }
+            )?;
+            calc ^= sub_crc.rotate_right(ix as u32);
         }
         // println!("success {level}");
         self.crcs[level][index] = Some(calc);
@@ -992,6 +1065,7 @@ pub fn process_realm_change(
     mut commands: Commands,
     current_realm: Res<CurrentRealm>,
     mut live_scenes: ResMut<LiveScenes>,
+    mut pointers: ResMut<ScenePointers>,
     mut segment_config: Option<ResMut<SegmentConfig>>,
     scenes: Query<&RendererSceneContext>,
     player: Query<Entity, With<PrimaryUser>>,
@@ -1040,15 +1114,19 @@ pub fn process_realm_change(
             })
             .collect::<HashMap<_, _>>();
 
-        // pointers.0.retain(|_, pr| match pr {
-        //     PointerResult::Nothing{ .. } => false,
-        //     PointerResult::Exists{ hash, .. } => realm_scene_ids.contains_key(hash),
-        // });
         if !realm_scene_ids.is_empty() {
             // purge pointers and scenes that are not in the realm list (and not portable)
             live_scenes.scenes.retain(|hash, entity| {
                 realm_scene_ids.contains_key(hash)
                     || scenes.get(*entity).is_ok_and(|ctx| ctx.is_portable)
+            });
+            // Explicit-urn realms only request urns that aren't already cached and
+            // do no parcel sweep, so the active-entities reconciliation that clears
+            // stale pointers for active-entities realms never runs. Reconcile here
+            // against the realm's scene list
+            pointers.pointers.retain(|_, pr| match pr {
+                PointerResult::Nothing => false,
+                PointerResult::Exists { hash, .. } => realm_scene_ids.contains_key(hash),
             });
         }
 
@@ -1066,7 +1144,7 @@ fn load_active_entities(
     mut pointers: ResMut<ScenePointers>,
     mut pointer_request: Local<Option<(HashSet<IVec2>, HashMap<String, String>, ActiveEntityTask)>>,
     ipfas: IpfsAssetServer,
-    mut global_crdt: ResMut<GlobalCrdtState>,
+    mut global_crdt: Query<&mut GlobalCrdtState>,
     mut consecutive_fetch_fail_count: Local<usize>,
     mut commands: Commands,
     mut fetch_count: Local<usize>,
@@ -1118,7 +1196,9 @@ fn load_active_entities(
             }
         }
         pointers.set_realm(bounds_min, bounds_max);
-        global_crdt.set_bounds(bounds_min, bounds_max);
+        for mut context in global_crdt.iter_mut() {
+            context.set_bounds(bounds_min, bounds_max);
+        }
 
         if !current_realm.about_url.is_empty() && *teleport_target == RealmInitialLocation::Base {
             let has_scene_urns = !current_realm
@@ -1263,15 +1343,22 @@ fn load_active_entities(
                 })
                 .collect::<HashMap<_, _>>();
 
-            // make sure we still teleport even if we already have the hash
+            // make sure we still teleport even if we already have the hash (e.g.
+            // returning to a World whose pointers are still cached). `available_hashes`
+            // is keyed by hash but `teleport_on_resolve` is a urn, so match via
+            // `contains` as the resolve path below does, rather than a direct lookup.
             if let Some(teleport_on_resolve) = teleport_on_resolve.as_ref() {
-                if let Some(parcel) = available_hashes.get(teleport_on_resolve) {
+                if let Some(parcel) = available_hashes.iter().find_map(|(hash, parcel)| {
+                    teleport_on_resolve
+                        .contains(hash.as_str())
+                        .then_some(*parcel)
+                }) {
                     if let Some(mut commands) = player
                         .single()
                         .ok()
                         .and_then(|(p, _)| commands.get_entity(p).ok())
                     {
-                        commands.try_insert(teleport_components(*parcel));
+                        commands.try_insert(teleport_components(parcel));
                         debug!("already got the hash -> none");
                         *teleport_target = RealmInitialLocation::None;
                     }
@@ -1326,12 +1413,20 @@ fn load_active_entities(
         let retrieved_parcels = match task_result {
             Ok(res) => {
                 *consecutive_fetch_fail_count = 0;
-                *fetch_count = (*fetch_count * 2).min(3200);
+                *fetch_count = (*fetch_count * 2).min(1000);
                 res
             }
             Err(e) => {
-                warn!("failed to retrieve active scenes, will retry");
+                warn!(
+                    "failed to retrieve active scenes ({} parcels), will retry",
+                    requested_parcels.len()
+                );
                 warn!("error: {e:?}");
+                // re-append the failed batch to the fetch end of the stored list so it is
+                // retried with the reduced fetch_count
+                stored_parcels
+                    .1
+                    .extend(requested_parcels.into_iter().map(|parcel| (0.0, parcel)));
                 *fetch_count = (*fetch_count / 2).max(100);
                 if *fetch_count == 100 {
                     *consecutive_fetch_fail_count += 1;
@@ -1384,7 +1479,7 @@ fn load_active_entities(
                 .parcels
                 .iter()
                 .filter_map(|pointer| {
-                    let (x, y) = pointer.split_once(',').unwrap();
+                    let (x, y) = pointer.split_once(',')?;
                     let x = x.parse::<i32>().ok()?;
                     let y = y.parse::<i32>().ok()?;
                     Some(IVec2::new(x, y))
@@ -1416,7 +1511,9 @@ fn load_active_entities(
                         urn: urn.clone(),
                     },
                 ) {
-                    global_crdt.set_bounds(new_bounds.0, new_bounds.1);
+                    for mut context in global_crdt.iter_mut() {
+                        context.set_bounds(new_bounds.0, new_bounds.1);
+                    }
                 }
             }
         }
@@ -1433,6 +1530,14 @@ fn load_active_entities(
 #[derive(Resource, Default)]
 pub struct CurrentImposterScene(pub Option<(PointerResult, bool)>);
 
+// true while a high-priority scene is still loading (not yet spawned, or within
+// its first few ticks): either the scene the player is standing in, or a system
+// (super-user) scene such as the UI. Imposter loading defers while this is set
+// so it doesn't contend with those scenes' asset loads. The current-scene part
+// mirrors the lifecycle's own deferral of all other scenes.
+#[derive(Resource, Default)]
+pub struct CurrentSceneLoading(pub bool);
+
 #[expect(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_scene_lifecycle(
     mut commands: Commands,
@@ -1440,7 +1545,12 @@ pub fn process_scene_lifecycle(
     portables: Res<PortableScenes>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     scene_entities: Query<
-        (Entity, &SceneHash, Option<&RendererSceneContext>),
+        (
+            Entity,
+            &SceneHash,
+            Option<&RendererSceneContext>,
+            Has<SuperUserScene>,
+        ),
         Or<(With<SceneLoading>, With<RendererSceneContext>)>,
     >,
     range: Res<SceneLoadDistance>,
@@ -1449,6 +1559,7 @@ pub fn process_scene_lifecycle(
     pointers: Res<ScenePointers>,
     imposter_scene: Res<CurrentImposterScene>,
     preview_mode: Res<PreviewMode>,
+    mut current_scene_loading_res: ResMut<CurrentSceneLoading>,
 ) {
     let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::new();
 
@@ -1486,7 +1597,13 @@ pub fn process_scene_lifecycle(
             .map(|(h, u)| ((h, u), false)),
     );
 
-    // add any portables to requirements
+    // add any portables to requirements. Portables are exempt from the
+    // current-scene deferral below (see `retain`) so they load immediately
+    // instead of queueing behind the spawn-point parcel scene at startup.
+    let portable_ids: HashSet<(String, Option<String>)> = portables
+        .iter()
+        .map(|(hash, source)| (hash.clone(), Some(source.pid.clone())))
+        .collect();
     required_scene_ids.extend(
         portables
             .iter()
@@ -1533,7 +1650,8 @@ pub fn process_scene_lifecycle(
 
     // despawn any no-longer required entities
     let mut current_scene_loading = false;
-    for (entity, scene_hash, maybe_ctx) in &scene_entities {
+    let mut system_scene_loading = false;
+    for (entity, scene_hash, maybe_ctx, is_super) in &scene_entities {
         match keep_entities.get(&entity) {
             Some((hash, _)) => {
                 existing_ids.insert(<&String>::clone(hash));
@@ -1547,13 +1665,25 @@ pub fn process_scene_lifecycle(
             }
         }
 
+        // a frozen scene never advances its tick, so it's as loaded as it's going to get;
+        // without the exemption a scene frozen before tick 7 defers other scenes (and
+        // imposters) forever
+        let still_loading = maybe_ctx.is_none_or(|ctx| {
+            ctx.tick_number <= 6 && !ctx.broken() && !ctx.blocked.contains(FROZEN_BLOCK)
+        });
+
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {
-            if &scene_hash.0 == current_hash
-                && maybe_ctx.is_none_or(|ctx| ctx.tick_number <= 6 && !ctx.broken)
-            {
+            if &scene_hash.0 == current_hash && still_loading {
                 current_scene_loading = true;
             }
+        }
+
+        // system/super-user scenes (e.g. the UI scene) are highest priority and
+        // exempt from the deferral below; track their load so imposters wait on
+        // them too, otherwise nothing blocks while the system scene loads.
+        if is_super && still_loading {
+            system_scene_loading = true;
         }
     }
     drop(keep_entities);
@@ -1562,14 +1692,23 @@ pub fn process_scene_lifecycle(
         live_scenes.scenes.remove(removed_hash);
     }
 
+    let mut defer_to_current_scene = false;
     if let Some(current_scene) = current_scene {
         if required_scene_ids.contains_key(&current_scene)
             && (!existing_ids.contains(&current_scene.0) || current_scene_loading)
         {
+            defer_to_current_scene = true;
             // if the current scene is not even spawned, spawn only that scene
-            required_scene_ids.retain(|scene, super_user| *super_user || (scene == &current_scene));
+            // (plus super-user scenes and portables, which are exempt).
+            required_scene_ids.retain(|scene, super_user| {
+                *super_user || scene == &current_scene || portable_ids.contains(scene)
+            });
         }
     }
+    // publish for imposter loading: defer while the current scene is loading
+    // (same condition the lifecycle uses above) or while a system scene is
+    // still loading (it's exempt from the deferral but still highest priority)
+    current_scene_loading_res.0 = defer_to_current_scene || system_scene_loading;
 
     if live_scenes.block_new_scenes {
         return;
@@ -1651,7 +1790,11 @@ fn animate_ready_scene(
             continue;
         }
 
-        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
+        // A scene parked below the world (y = -1000) is raised once it's ready: past tick 5, broken,
+        // or paused by the inspector. Without the frozen case, a scene frozen before tick 5 has its
+        // (already-spawned) main.crdt content stuck underground and looks empty until unfrozen.
+        let frozen = ctx.blocked.contains(FROZEN_BLOCK);
+        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken() || frozen) {
             if transform.translation.y == -1000.0 {
                 for child in children.map(|c| c.iter()).unwrap_or_default() {
                     if loading_quads.get(child).is_ok() {
@@ -1835,7 +1978,7 @@ pub fn handle_live_scene_info(
                 .map(|v| dcl_component::proto_components::common::Vector2::from(v.as_vec2()))
                 .collect(),
             is_portable: ctx.is_portable,
-            is_broken: ctx.broken,
+            is_broken: ctx.broken(),
             is_blocked: !ctx.blocked.is_empty(),
             is_super: maybe_super.is_some(),
             sdk_version: ctx.sdk_version.to_string(),

@@ -12,11 +12,13 @@ use bevy_console::ConsoleConfiguration;
 use common::{
     rpc::RpcResultSender,
     structs::{
-        AppConfig, CurrentRealm, IVec2Arg, PreviewMode, PrimaryUser, StartupScene, StartupScenes,
+        AppConfig, CurrentRealm, EditorMode, IVec2Arg, PreviewMode, PrimaryUser, StartupScene,
+        StartupScenes,
     },
 };
 use dcl_wasm::init_runtime;
 use futures_lite::io::AsyncReadExt;
+use input_manager::InputPriorities;
 use once_cell::sync::OnceCell;
 use scene_runner::vec3_to_parcel;
 use system_bridge::{SystemApi, SystemBridge};
@@ -40,12 +42,12 @@ extern "C" {
 extern "C" {
     #[wasm_bindgen(js_name = set_url_params)]
     fn set_url_params(
-        x: i32,
-        y: i32,
+        position: Option<String>,
         realm: String,
         system_scene: Option<String>,
         portables: Option<String>,
         is_preview: bool,
+        is_editor: bool,
     );
 
     #[wasm_bindgen(js_name = "allowADummyPipeline")]
@@ -56,6 +58,20 @@ extern "C" {
 
     #[wasm_bindgen(js_name = "waitForPipelines")]
     fn wait_for_async_pipelines() -> js_sys::Promise;
+
+    /// Ping the JS-side watchdog once per frame. If these stop arriving (e.g. the
+    /// main thread is deadlocked waiting on a lock held by a crashed worker), the
+    /// watchdog surfaces the crash overlay. Defined in index.html before the engine runs.
+    #[wasm_bindgen(js_name = "__engineHeartbeat")]
+    fn engine_heartbeat();
+
+    /// Mirror "an engine text field holds keyboard focus" to the page (boot.js stores it
+    /// on window.__engineTextFocus). The react HUD's hotkey handlers see key events before
+    /// the engine does (capture-phase window listener vs the canvas), and an engine-rendered
+    /// text field is invisible to their DOM-focus checks — this flag is how they know to
+    /// leave keys alone while the user types into scene UI.
+    #[wasm_bindgen(js_name = "__setEngineTextFocus")]
+    fn set_engine_text_focus(focused: bool);
 }
 
 /// call from a separate worker to initialize a channel for asset load processing
@@ -84,10 +100,11 @@ pub async fn engine_init() -> Result<JsValue, JsValue> {
         return Ok("failed to read".into());
     }
 
-    let Ok(config) = serde_json::from_str(&buf) else {
+    let Ok(mut config) = serde_json::from_str::<AppConfig>(&buf) else {
         warn!("failed to deserialize app config, using default");
         return Ok("failed to deserialize".into());
     };
+    config.reset_outdated_settings();
 
     let _ = INIT_DATA.set(config);
 
@@ -104,6 +121,7 @@ pub fn engine_run(
     portables: &str,
     with_thread_loader: bool,
     is_preview: bool,
+    is_editor: bool,
     gpu_bytes_per_frame: usize,
     params: &str,
 ) {
@@ -127,6 +145,7 @@ pub fn engine_run(
         portables,
         gpu_bytes_per_frame,
         is_preview,
+        is_editor,
         params,
         with_thread_loader.then(|| WASM_ASSET_LOADER_HANDLE.get().unwrap().clone()),
     );
@@ -142,7 +161,9 @@ pub fn engine_run(
     app.insert_resource(text_bindings);
 
     app.add_systems(Update, update_winit_fps)
-        .add_systems(Update, update_url_params);
+        .add_systems(Update, update_url_params)
+        .add_systems(Update, update_text_focus)
+        .add_systems(Last, engine_heartbeat_system);
 
     app.add_systems(
         Update,
@@ -235,6 +256,19 @@ fn extract_js_api(config: Res<ConsoleConfiguration>) {
     build_engine_api(&json);
 }
 
+/// Pings the JS watchdog each frame so it can detect a stalled engine loop.
+fn engine_heartbeat_system() {
+    engine_heartbeat();
+}
+
+fn update_text_focus(priorities: Res<InputPriorities>, mut prev: Local<bool>) {
+    let focused = priorities.keyboard_claimed();
+    if focused != *prev {
+        *prev = focused;
+        set_engine_text_focus(focused);
+    }
+}
+
 pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>) {
     if config.is_changed() {
         let target = config.graphics.fps_target;
@@ -251,11 +285,12 @@ pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>
 
 #[derive(PartialEq, Default, Clone)]
 struct UrlParams {
-    parcel: IVec2,
+    parcel: Option<IVec2>,
     server: String,
     ui_scene: Option<String>,
     portables: Option<String>,
     preview: bool,
+    editor: bool,
 }
 
 fn update_url_params(
@@ -263,22 +298,39 @@ fn update_url_params(
     current_realm: Res<CurrentRealm>,
     startup_scenes: Option<Res<StartupScenes>>,
     preview: Res<PreviewMode>,
+    editor: Res<EditorMode>,
     mut prev: Local<UrlParams>,
 ) {
-    let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
+    // realms with fixed scene urns (worlds) spawn at their base scene and ignore an explicit
+    // position (see load_active_entities' base-position handling) - don't write one into the url
+    let position_honoured = current_realm
+        .config
+        .scenes_urn
+        .as_ref()
+        .is_none_or(Vec::is_empty);
+    let parcel = position_honoured
+        .then(|| vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default()));
     let Some(server) = current_realm.about_url.strip_suffix("/about") else {
         return;
     };
     let (ui_scene, portables) = if let Some(s) = startup_scenes {
-        let scenes = s
+        // the ui scene is the super-user scene inserted at index 0 — when one was given at all
+        // (?systemScene=none boots with only regular startup scenes/portables)
+        let ui_scene = s
+            .scenes
+            .first()
+            .filter(|scene| scene.super_user)
+            .map(|scene| scene.source.clone());
+        let portables = s
             .scenes
             .iter()
+            .skip(ui_scene.is_some() as usize)
             .map(|scene| scene.source.clone())
             .collect::<Vec<_>>();
 
         (
-            scenes.first().cloned(),
-            scenes.get(1..).map(|scenes| scenes.join(";")),
+            ui_scene,
+            (!portables.is_empty()).then(|| portables.join(";")),
         )
     } else {
         (None, None)
@@ -291,17 +343,20 @@ fn update_url_params(
         ui_scene,
         portables,
         preview,
+        editor: editor.0,
     };
 
     if params != *prev {
         *prev = params.clone();
         set_url_params(
-            params.parcel.x,
-            params.parcel.y,
+            params
+                .parcel
+                .map(|parcel| format!("{},{}", parcel.x, parcel.y)),
             params.server,
             params.ui_scene,
             params.portables,
             params.preview,
+            params.editor,
         );
     }
 }
@@ -314,6 +369,7 @@ fn decentraland_app_config(
     portables: &str,
     gpu_bytes_per_frame: usize,
     is_preview: bool,
+    is_editor: bool,
     params: &str,
     wasm_loader_handle: Option<WasmLoaderHandle>,
 ) -> DecentralandAppConfig {
@@ -325,6 +381,7 @@ fn decentraland_app_config(
         portables,
         gpu_bytes_per_frame,
         is_preview,
+        is_editor,
         params,
     );
 
@@ -342,6 +399,7 @@ fn decentraland_serialized_app_config() -> AppConfig {
     })
 }
 
+#[expect(clippy::too_many_arguments)]
 fn decentraland_app_arguments(
     server: &str,
     location: &str,
@@ -349,6 +407,7 @@ fn decentraland_app_arguments(
     portables: &str,
     gpu_bytes_per_frame: usize,
     is_preview: bool,
+    is_editor: bool,
     params: &str,
 ) -> DecentralandArguments {
     DecentralandArguments {
@@ -370,7 +429,11 @@ fn decentraland_app_arguments(
                 .collect::<Vec<_>>(),
         )
         .filter(|startup_scenes| !startup_scenes.is_empty()),
-        ui_scene: (!ui_scene.is_empty()).then(|| ui_scene.to_owned()),
+        ui_scene: (!ui_scene.is_empty())
+            .then(|| ui_scene.to_owned())
+            .filter(|scene| scene != "none"),
+        // wasm has no engine-managed HUD: the react page hosting the engine is the HUD
+        hud: false,
         scene_params: Some(params.to_owned()),
         scene_threads: None,
         scene_load_distance: None,
@@ -382,6 +445,7 @@ fn decentraland_app_arguments(
         fps_target: None,
         gpu_bytes_per_frame: Some(gpu_bytes_per_frame),
         is_preview,
+        editor: is_editor,
         sysinfo_visible: false,
         scene_log_to_console: false,
         startup_scenes_preview: false,
@@ -396,7 +460,6 @@ fn decentraland_app_arguments(
         emote_wheel: false,
         chat: false,
         permissions: false,
-        profile: false,
         nametags: false,
         tooltips: false,
         loading_scene: false,

@@ -18,7 +18,7 @@ use common::{
 };
 use wallet::Wallet;
 
-use crate::{AdapterManager, Transport, TransportType};
+use crate::{global_crdt::GlobalCrdtState, AdapterManager, Transport, TransportType};
 
 use super::NetworkMessage;
 
@@ -89,8 +89,18 @@ pub struct ArchipelagoTransport {
 #[derive(Component)]
 pub struct ArchipelagoConnection(Task<(Receiver<NetworkMessage>, anyhow::Error)>);
 
-pub fn start_archipelago(mut commands: Commands, mut archi_events: EventReader<StartArchipelago>) {
+pub fn start_archipelago(
+    mut commands: Commands,
+    mut archi_events: EventReader<StartArchipelago>,
+    contexts: Query<Entity, With<GlobalCrdtState>>,
+) {
     if let Some(ev) = archi_events.read().last() {
+        // archipelago is realm comms, primary-player driven: client-only (headless sets
+        // DisableRealmComms), so the single shared context is its feed. Checked after
+        // draining events so a failed lookup can't leave the reader cursor behind.
+        let Ok(context) = contexts.single() else {
+            return;
+        };
         info!("starting archipelago protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
 
@@ -99,7 +109,7 @@ pub fn start_archipelago(mut commands: Commands, mut archi_events: EventReader<S
                 transport_type: TransportType::Archipelago,
                 sender,
                 control: None,
-                foreign_aliases: Default::default(),
+                context,
             },
             ArchipelagoTransport {
                 address: ev.address.to_owned(),
@@ -110,11 +120,13 @@ pub fn start_archipelago(mut commands: Commands, mut archi_events: EventReader<S
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn manage_islands(
     mut commands: Commands,
     mut manager: AdapterManager,
     mut channel: ResMut<IslandChannel>,
     mut current_island: Local<HashMap<Entity, Entity>>,
+    contexts: Query<Entity, With<GlobalCrdtState>>,
     current_realm: Res<CurrentRealm>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut events: EventReader<RpcCall>,
@@ -127,10 +139,16 @@ fn manage_islands(
     }
 
     while let Ok(island) = channel.receiver.try_recv() {
+        // client-only (see start_archipelago): islands feed the single shared context.
+        // Checked before despawning the previous island so a failed lookup can't leave
+        // no island transport at all.
+        let Ok(context) = contexts.single() else {
+            continue;
+        };
         if let Some(entity) = current_island.remove(&island.owner) {
             commands.entity(entity).despawn();
         }
-        if let Some(entity) = manager.connect(&island.connect_str) {
+        if let Some(entity) = manager.connect(&island.connect_str, context) {
             current_island.insert(island.owner, entity);
         }
 
@@ -317,10 +335,13 @@ async fn archipelago_handler_inner(
     // wrap and transmit outbound heartbeat
     let f_write = async move {
         while let Some(next) = receiver.recv().await {
+            let Some(bytes) = next.message.to_rfc4() else {
+                continue;
+            };
             let Ok(rfc4::Packet {
                 message: Some(rfc4::packet::Message::Position(pos)),
                 ..
-            }) = DclReader::new(&next.data).read()
+            }) = DclReader::new(&bytes).read()
             else {
                 // skip non-position messages
                 continue;

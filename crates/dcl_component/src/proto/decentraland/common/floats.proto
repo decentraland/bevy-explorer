@@ -1,0 +1,8 @@
+syntax = "proto3";
+package decentraland.common;
+
+// A range of float values. Randomized or lerped between start and end.
+message FloatRange {
+  float start = 1;
+  float end = 2;
+}

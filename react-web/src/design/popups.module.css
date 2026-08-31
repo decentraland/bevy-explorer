@@ -1,0 +1,59 @@
+/* Full-screen layer behind a popup: owns the z-layer and catches clicks outside the popup content.
+   The base is transparent (an anchored popover like the profile card never dims). `.dim` adds the
+   shared modal scrim — dark, blurred, DPI-scaled on the reference canvas (like MainMenuShell), so
+   centered content authored at reference px lands correctly without its own transform. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  /* --z-popup, not --z-modal: a popup must open above any phase surface (login, the destination
+     picker, the scene-loading overlay) — e.g. the world-not-found dialog over the picker. */
+  z-index: var(--z-popup);
+}
+.dim {
+  /* Reference-canvas DPI scale: size at 100%/scale then scale back down, anchored top-left. Overrides
+     the base inset:0 (width/height + top/left win). */
+  inset: auto;
+  top: 0;
+  left: 0;
+  width: calc(100% / var(--ui-scale));
+  height: calc(100% / var(--ui-scale));
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Reference px, not vh/vw: this box is already the DPI-scaled reference canvas (see above), so
+     viewport units here would ignore the ancestor transform and drift out of proportion at
+     non-default --ui-scale. */
+  padding: 32px;
+  background: var(--modal-scrim);
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.2s ease;
+}
+/* Content pop layer for dim popups: the scrim fades (above), the content scales in. Fills the scrim's
+   centering box so a percentage-sized panel still resolves against the full canvas. The scale lives
+   here, not on the scrim, so the dark backdrop itself never scales. */
+.pop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  animation: popIn 0.2s var(--ease-spring);
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes popIn {
+  from {
+    transform: scale(0.96);
+  }
+  to {
+    transform: scale(1);
+  }
+}

@@ -51,26 +51,35 @@ impl AssetLoader for SvgLoader {
         )
         .map_err(|_| "image construction failed")?;
 
-        #[cfg(target_arch = "wasm32")]
+        // NFT/SVG images are always sRGB colour; there is no 16-bit sRGB format,
+        // so downconvert 16-bit -> 8-bit sRGB on all platforms (wasm also can't
+        // sample Rgba16Unorm). Leaving it linear would render too bright.
         if image.texture_descriptor.format
             == bevy::render::render_resource::TextureFormat::Rgba16Unorm
         {
+            // preserve sampler/view-descriptor and keep the sRGB format — Image::new
+            // otherwise resets the sampler and leaves sRGB data in a linear format.
+            let sampler = image.sampler.clone();
+            let texture_view_descriptor = image.texture_view_descriptor.clone();
             let data = image
                 .data
                 .unwrap()
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| {
-                    (u16::from_le_bytes([pair[0], pair[1]]) as f32 / u16::MAX as f32
-                        * u8::MAX as f32) as u8
+                    (u16::from_le_bytes(*pair) as f32 / u16::MAX as f32 * u8::MAX as f32) as u8
                 })
                 .collect::<Vec<_>>();
             image = Image::new(
                 image.texture_descriptor.size,
                 image.texture_descriptor.dimension,
                 data,
-                bevy::render::render_resource::TextureFormat::Rgba8Unorm,
+                bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
                 image.asset_usage,
             );
+            image.sampler = sampler;
+            image.texture_view_descriptor = texture_view_descriptor;
         }
 
         debug!("svg load ok");

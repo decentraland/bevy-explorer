@@ -104,17 +104,12 @@ pub async fn op_kernel_fetch_headers(
 }
 
 #[wasm_bindgen]
-pub async fn op_set_avatar(
-    state: &WorkerContext,
-    base: JsValue,
-    equip: JsValue,
-    has_claimed_name: Option<bool>,
-    profile_extras: JsValue,
-) -> Result<u32, WasmError> {
-    serde_parse!(base);
-    serde_parse!(equip);
-    serde_parse!(profile_extras);
-    dcl::js::system_api::op_set_avatar(state.rc(), base, equip, has_claimed_name, profile_extras)
+pub async fn op_set_avatar(state: &WorkerContext, avatar: JsValue) -> Result<u32, WasmError> {
+    // map_err rather than serde_parse!'s unwrap: with deny_unknown_fields a caller mistake
+    // must surface as a catchable JS error, not a worker panic.
+    let avatar = serde_wasm_bindgen::from_value(avatar)
+        .map_err(|e| WasmError::from(anyhow::anyhow!("setAvatar: {e}")))?;
+    dcl::js::system_api::op_set_avatar(state.rc(), avatar)
         .await
         .map_err(WasmError::from)
 }
@@ -135,6 +130,16 @@ pub async fn op_set_bindings(state: &WorkerContext, bindings: JsValue) -> Result
     dcl::js::system_api::op_set_bindings(state.rc(), bindings)
         .await
         .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub fn op_set_ui_focus(
+    state: &WorkerContext,
+    ui: bool,
+    text: bool,
+    scroll: bool,
+) -> Result<(), WasmError> {
+    dcl::js::system_api::op_set_ui_focus(state.rc(), ui, text, scroll).map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -513,6 +518,24 @@ pub async fn op_unblock_user(state: &WorkerContext, address: String) -> Result<(
 #[wasm_bindgen]
 pub async fn op_get_blocked_users(state: &WorkerContext) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::system_api::op_get_blocked_users(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_blocking_status(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_blocking_status(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_block_update_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_block_update_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_block_update_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_block_update_stream(state.rc(), rid).await)
 }
 
 #[wasm_bindgen]

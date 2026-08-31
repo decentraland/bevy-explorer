@@ -77,7 +77,7 @@ fn decentraland_serialized_app_config() -> AppConfig {
         .unwrap()
         .config_dir()
         .join("config.json");
-    let base_config: AppConfig = std::fs::read(&config_file)
+    let mut base_config: AppConfig = std::fs::read(&config_file)
         .ok()
         .and_then(|f| {
             info!("config file loaded from {config_file:?}");
@@ -89,6 +89,7 @@ fn decentraland_serialized_app_config() -> AppConfig {
             warn!("config file not found at {config_file:?}, generating default");
             Default::default()
         });
+    base_config.reset_outdated_settings();
 
     base_config
 }
@@ -98,6 +99,10 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
 
     let test_scenes = args.value_from_str("--test_scenes").ok();
     let startup_scenes_preview = args.contains("--ui-preview");
+    // An explicit --ui (a scene source, or "none" for the engine's builtin ui) opts out of the
+    // react HUD entirely — the given ui scene drives instead (see lib.rs).
+    let ui_scene = args.value_from_str::<_, String>("--ui").ok();
+    let hud = ui_scene.is_none();
 
     let dcl_args = DecentralandArguments {
         server: args.value_from_str("--server").ok(),
@@ -120,15 +125,30 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
                     .collect::<Vec<_>>()
             })
             .ok(),
-        ui_scene: args
-            .value_from_str("--ui")
-            .ok()
+        ui_scene: ui_scene
             .or_else(|| {
+                // react HUD builds default to the bundled bridge-scene static export (a file
+                // realm, loaded with no server; `npm run bundle:native` in react-web generates
+                // it). Checked against the cwd (packaged runs) and the compile-time checkout dir
+                // (dev `cargo run` from any directory). If absent there is NO ui scene — the
+                // react HUD's built-in fallback relay covers login/chat/loading.
+                #[cfg(feature = "react-hud-cef")]
+                {
+                    for root in native_hud_roots() {
+                        let local = root.join("assets/bridge-scene/BevyExplorerUI");
+                        if local.join("about").is_file() {
+                            return Some(local.to_string_lossy().into_owned());
+                        }
+                    }
+                    None
+                }
+                #[cfg(not(feature = "react-hud-cef"))]
                 Some(String::from(
                     "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene",
                 ))
             })
             .filter(|scene| scene != "none"),
+        hud,
         scene_params: args.value_from_str("--params").ok(),
         scene_threads: args.value_from_str("--threads").ok(),
         scene_load_distance: args.value_from_str("--distance").ok(),
@@ -162,6 +182,7 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
             .value_from_str::<_, usize>("--gpu_bytes_per_frame")
             .ok(),
         is_preview: args.contains("--preview"),
+        editor: args.contains("--editor"),
         sysinfo_visible: args.contains("--sysinfo"),
         scene_log_to_console: args.contains("--scene_log_to_console"),
         startup_scenes_preview,
@@ -176,7 +197,6 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
         emote_wheel: args.contains("--builtin-emotes"),
         chat: args.contains("--builtin-chat"),
         permissions: args.contains("--builtin-perms"),
-        profile: args.contains("--builtin-profile"),
         nametags: args.contains("--builtin-nametags"),
         tooltips: args.contains("--builtin-tooltips"),
         loading_scene: args.contains("--builtin-loading-scene-ui"),
@@ -263,3 +283,20 @@ impl Display for UserError {
 }
 
 impl Error for UserError {}
+
+// Roots to search for the bundled native HUD files: cwd, the executable's directory (packaged
+// layouts), and the dev checkout (`cargo run` from any directory).
+#[cfg(feature = "react-hud-cef")]
+fn native_hud_roots() -> Vec<std::path::PathBuf> {
+    let mut roots = vec![
+        std::path::PathBuf::from("."),
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+    ];
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+    {
+        roots.push(dir);
+    }
+    roots
+}

@@ -25,19 +25,12 @@ use common::{
     util::TryPushChildrenEx,
 };
 use comms::{
-    chat_marker_things,
-    global_crdt::{ChatEvent, ForeignPlayer},
-    profile::CurrentUserProfile,
-    NetworkMessage, Transport, TransportType,
+    broadcast, global_crdt::ForeignPlayer, profile::CurrentUserProfile, BroadcastTarget, Transport,
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::CrdtType;
 use dcl_component::{
-    proto_components::{
-        kernel::comms::rfc4::{self, Chat, PlayerEmote},
-        sdk::components::PbAvatarEmoteCommand,
-    },
-    SceneComponentId, SceneEntityId,
+    proto_components::sdk::components::PbAvatarEmoteCommand, SceneComponentId, SceneEntityId,
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{
@@ -50,6 +43,31 @@ use crate::{process_avatar, AvatarDefinition};
 #[derive(Component)]
 pub struct AvatarAnimPlayer(pub Entity);
 
+// engine-emote urns used every frame by the velocity selector; parsed once
+// (EmoteUrn::new re-validates and re-allocates several times per call)
+static URN_IDLE: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("idle_male").unwrap());
+static URN_JUMP: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("jump").unwrap());
+static URN_WALK: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("walk").unwrap());
+static URN_RUN: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("run").unwrap());
+static URN_DOUBLE_JUMP: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("double_jump").unwrap());
+static URN_GLIDE: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("glide").unwrap());
+
+// per-avatar animate state previously held in per-frame-rebuilt Local HashMaps
+#[derive(Component, Default)]
+pub struct AvatarAnimState {
+    damped_velocity: Vec3,
+    current_emote_min_velocity: f32,
+    /// A triggered emote is waiting to be reported to scenes. Set when the `EmoteCommand`
+    /// arrives, cleared once the emote resolves and the report goes out — see `animate`.
+    pending_emote_report: bool,
+}
+
 pub struct AvatarAnimationPlugin;
 
 impl Plugin for AvatarAnimationPlugin {
@@ -57,7 +75,7 @@ impl Plugin for AvatarAnimationPlugin {
         app.add_systems(
             Update,
             (
-                (handle_trigger_emotes, broadcast_emote, receive_emotes).before(animate),
+                (handle_trigger_emotes, broadcast_emote).before(animate),
                 (animate, play_current_emote).chain().after(process_avatar),
                 play_scene_driven_sounds.after(process_avatar),
             )
@@ -110,11 +128,17 @@ fn handle_trigger_emotes(
     for _ in perms.drain_fail(common::structs::PermissionType::PlayEmote) {}
 }
 
+// Broadcast the local player's triggered emotes. Sourced from `ActiveEmote` (set by `animate` and
+// stamped with the clip duration by `play_current_emote`) rather than the raw `EmoteCommand`, so a
+// one-shot can carry its resolved duration and a loop is known. A start goes out on first appearance
+// (or a switch to a different urn); a looping emote also sends an explicit stop when it ends —
+// one-shots end on the receiver's own timer (and the Pulse server's), so they need no stop.
 fn broadcast_emote(
-    q: Query<&EmoteCommand, With<PrimaryUser>>,
+    q: Query<&ActiveEmote, With<PrimaryUser>>,
     transports: Query<&Transport>,
-    mut last: Local<Option<EmoteCommand>>,
-    mut count: Local<usize>,
+    // (urn, looping) of the emote we last announced a start for.
+    mut last: Local<Option<(EmoteUrn, bool)>>,
+    mut count: Local<u32>,
     time: Res<Time>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
@@ -127,75 +151,70 @@ fn broadcast_emote(
         senders.push(sender.clone());
     }
 
-    if let Ok(emote) = q.single() {
-        if last.as_ref() != Some(emote) {
+    // The currently-broadcastable emote: a user-triggered emote that's still playing, whose clip has
+    // resolved (`duration_ms` is stamped by `play_current_emote` only once the clip loads, which is
+    // also where `repeat` gets `default_repeat` folded in). Gating on it means we never announce a
+    // start with a stale `repeat`/`duration` — an emote that never resolves is simply never sent.
+    // Velocity-selected locomotion and scene movement anims aren't user emotes; a finished one-shot
+    // has ended.
+    let current = q.single().ok().and_then(|active| {
+        (active.source == ActiveEmoteSource::TriggeredEmote
+            && !active.finished
+            && active.duration_ms.is_some())
+        .then(|| (active.urn.clone(), active.repeat, active.duration_ms))
+    });
+
+    let prev = last.take();
+    match (&prev, &current) {
+        // New emote, or a switch to a different urn: announce the start.
+        (p, Some((urn, repeat, duration_ms))) if p.as_ref().map(|(u, _)| u) != Some(urn) => {
             *count += 1;
-            debug!("sending emote: {emote:?} {}", *count);
-            let old_packet = rfc4::Packet {
-                message: Some(rfc4::packet::Message::Chat(Chat {
-                    message: format!("{}{} {}", chat_marker_things::EMOTE, emote.urn, *count),
-                    timestamp: time.elapsed_secs_f64(),
-                })),
-                protocol_version: 100,
-            };
-
-            let new_packet = rfc4::Packet {
-                message: Some(rfc4::packet::Message::PlayerEmote(PlayerEmote {
-                    incremental_id: *count as u32,
-                    urn: emote.urn.clone(),
+            debug!("sending emote start: {} {}", urn.as_str(), *count);
+            // A one-shot carries its duration (observers and the Pulse completion timer use it); a
+            // looping emote omits it and is ended by the explicit stop below.
+            let duration_ms = if *repeat { None } else { *duration_ms };
+            broadcast(
+                transports.iter(),
+                BroadcastTarget::PRIMARY,
+                false,
+                comms::Emote {
+                    urn: urn.as_str().to_owned(),
+                    incremental_id: *count,
                     timestamp: time.elapsed_secs(),
-                })),
-                protocol_version: 100,
-            };
-
-            for transport in transports.iter() {
-                if transport.transport_type != TransportType::Archipelago {
-                    if transport.transport_type != TransportType::SceneRoom {
-                        let _ = transport
-                            .sender
-                            .blocking_send(NetworkMessage::reliable(&old_packet));
-                    }
-
-                    let _ = transport
-                        .sender
-                        .blocking_send(NetworkMessage::reliable(&new_packet));
-                }
-            }
-
-            *last = Some(emote.clone());
-
+                    duration_ms,
+                    stopping: false,
+                },
+            );
             senders.retain(|sender| {
-                let _ = sender.send(format!("{{ \"expressionId\": \"{}\" }}", emote.urn));
+                let _ = sender.send(format!("{{ \"expressionId\": \"{}\" }}", urn.as_str()));
                 !sender.is_closed()
-            })
-        }
-        return;
-    }
-
-    *last = None;
-}
-
-fn receive_emotes(mut commands: Commands, mut chat_events: EventReader<ChatEvent>) {
-    for ev in chat_events
-        .read()
-        .filter(|e| e.message.starts_with(chat_marker_things::EMOTE))
-    {
-        let mut emote_and_timestamp = ev
-            .message
-            .strip_prefix(chat_marker_things::EMOTE)
-            .unwrap()
-            .split(' ');
-        if let (Some(emote_urn), Some(timestamp)) =
-            (emote_and_timestamp.next(), emote_and_timestamp.next())
-        {
-            debug!("adding remote emote: {}", emote_urn);
-            commands.entity(ev.sender).try_insert(EmoteCommand {
-                urn: emote_urn.to_owned(),
-                timestamp: timestamp.parse().unwrap_or_default(),
-                r#loop: false,
             });
         }
+        // A looping emote ended: send an explicit stop. One-shots end on the receiver's own timer
+        // (and the Pulse server's), so they need no stop and fall through to the `_` arm.
+        (Some((urn, repeat)), None) if *repeat => {
+            *count += 1;
+            debug!("sending emote stop: {}", urn.as_str());
+            broadcast(
+                transports.iter(),
+                BroadcastTarget::PRIMARY,
+                false,
+                comms::Emote {
+                    urn: urn.as_str().to_owned(),
+                    incremental_id: *count,
+                    timestamp: time.elapsed_secs(),
+                    duration_ms: None,
+                    stopping: true,
+                },
+            );
+        }
+        _ => {}
     }
+
+    // Track the current emote (urn, looping) so the next frame can detect a change; `None` when
+    // nothing is playing. Set in one place so the unchanged `_` case can't drop the state and
+    // re-fire the start.
+    *last = current.map(|(urn, repeat, _)| (urn, repeat));
 }
 
 /// Where the current ActiveEmote came from. Controls override precedence and whether
@@ -218,6 +237,10 @@ pub struct ActiveEmote {
     restart: bool,
     repeat: bool,
     finished: bool,
+    /// Resolved clip duration in milliseconds, stamped by `play_current_emote` once the clip is
+    /// playing. `broadcast_emote` attaches it to a one-shot emote's start so observers know when it
+    /// ends; `animate` uses its presence as the signal that `repeat` has settled.
+    duration_ms: Option<u32>,
     transition_seconds: f32,
     initial_audio_mark: Option<f32>,
     /// Whether a `triggerSceneEmote` should be allowed to take over. Mirrors the movement
@@ -240,11 +263,12 @@ pub struct ActiveEmote {
 impl Default for ActiveEmote {
     fn default() -> Self {
         Self {
-            urn: EmoteUrn::new("idle_male").unwrap(),
+            urn: URN_IDLE.clone(),
             speed: 1.0,
             restart: false,
             repeat: false,
             finished: false,
+            duration_ms: None,
             transition_seconds: 0.2,
             initial_audio_mark: None,
             overridable: true,
@@ -284,15 +308,13 @@ fn animate(
         &mut AvatarDynamicState,
         Option<&EmoteCommand>,
         &GlobalTransform,
-        Option<&mut ActiveEmote>,
+        Option<(&mut ActiveEmote, &mut AvatarAnimState)>,
         Option<&ForeignPlayer>,
         Option<&ContainerEntity>,
         Option<&PrimaryUser>,
         Option<&mut LastEmoteCommand>,
-        Option<&SceneDrivenAnim>,
+        Option<Ref<SceneDrivenAnim>>,
     )>,
-    mut velocities: Local<HashMap<Entity, Vec3>>,
-    mut current_emote_min_velocities: Local<HashMap<Entity, f32>>,
     time: Res<Time>,
     player: Query<(&PrimaryUser, Option<&PlayerModifiers>)>,
     containing_scene: ContainingScene,
@@ -305,9 +327,6 @@ fn animate(
         .unwrap_or((-20.0, 1.25));
     let gravity = gravity.min(-0.1);
     let jump_height = jump_height.max(0.1);
-
-    let prior_velocities = std::mem::take(&mut *velocities);
-    let prior_min_velocities = std::mem::take(&mut *current_emote_min_velocities);
 
     for (
         avatar_ent,
@@ -322,36 +341,119 @@ fn animate(
         maybe_scene_anim,
     ) in avatars.iter_mut()
     {
-        let Some(mut active_emote) = active_emote else {
-            commands.entity(avatar_ent).try_insert((
-                ActiveEmote::default(),
-                EmoteCommand::default(),
-                LastEmoteCommand::default(),
-            ));
+        let Some((mut active_emote, mut anim_state)) = active_emote else {
+            // `EmoteCommand` keeps whatever is already there: an emote can land in the same command
+            // flush as the avatar's spawn — Pulse replays an in-progress emote right behind the
+            // `PlayerJoined` — and overwriting it here would drop it before it ever played. The
+            // server records that replay as sent and dedups on `(emote_id, start_seq)`, so it never
+            // comes again and the avatar stays idle until the emoter retriggers.
+            commands
+                .entity(avatar_ent)
+                .try_insert((ActiveEmote::default(), AvatarAnimState::default()))
+                .try_insert_if_new((EmoteCommand::default(), LastEmoteCommand::default()));
             continue;
         };
 
         // calculate/store damped velocity
-        let prior_velocity = prior_velocities
-            .get(&avatar_ent)
-            .copied()
-            .unwrap_or(Vec3::ZERO);
+        let prior_velocity = anim_state.damped_velocity;
         let ratio = time.delta_secs().clamp(0.0, 0.1) / 0.1;
         let damped_velocity = dynamic_state.velocity * ratio + prior_velocity * (1.0 - ratio);
         let damped_velocity_len = damped_velocity.xz().length();
-        velocities.insert(avatar_ent, damped_velocity);
+        anim_state.damped_velocity = damped_velocity;
 
-        let scene_anim = maybe_scene_anim.and_then(|a| a.active.as_ref());
+        // `seek` (playback_time) is a one-shot, but it lives in the persistent `SceneDrivenAnim`
+        // component, so honor it only on a frame the component actually arrived/changed. Remotes
+        // only re-insert it on an SDA apply (so the seek fires once even while a static sender is
+        // silent — e.g. a stunned hard landing); the local player's scene rewrites it every frame.
+        let scene_anim_changed = maybe_scene_anim.as_ref().is_some_and(|a| a.is_changed());
+        let scene_anim = maybe_scene_anim.as_deref().and_then(|a| a.active.as_ref());
 
         // get requested emote
         let (mut requested_emote, given_urn, request_loop) =
             if let Some(EmoteCommand { urn, r#loop, .. }) = emote {
-                (EmoteUrn::new(urn.as_str()).ok(), Some(urn), *r#loop)
+                let parsed = EmoteUrn::new(urn.as_str()).ok();
+                // A scene emote's urn ends `-{loop}`. That trailing token is the only loop signal
+                // reaching a foreign avatar — rfc4 `PlayerEmote` has no loop field, so
+                // `EmoteCommand::loop` is always false there — and it's what keeps the emote
+                // looping until the wire stop instead of ending after one play.
+                let scene_loop = parsed
+                    .as_ref()
+                    .and_then(EmoteUrn::scene_emote)
+                    .is_some_and(|emote| emote.ends_with("-true"));
+                (parsed, Some(urn), *r#loop || scene_loop)
             } else {
                 (None, None, false)
             };
 
         let emote_changed = emote != last_emote.as_ref().map(|l| &l.0);
+
+        // Report a triggered emote to scenes once its loop state stops moving, rather than the
+        // frame the command lands. A wearable's loop flag lives in its `emoteDataADR74.loop`
+        // metadata, which `play_current_emote` only folds into `repeat` once the collectible
+        // loads, so reporting on arrival would publish `loop: false` for a looping emote.
+        // `broadcast_emote` gates the network announce on the same resolution.
+        if emote_changed {
+            anim_state.pending_emote_report = true;
+        }
+
+        // `active_emote` is still last frame's. Same urn with a stamped duration means the clip is
+        // playing and `repeat` is final; `finished` with no duration is a concrete resolution
+        // failure (urn missing, or no clip in the gltf) — report that too rather than going silent,
+        // carrying the loop state we do have. Still loading is neither, so we wait. Never on the
+        // arrival frame: `repeat` is rebuilt from the new `request_loop` below, so re-triggering the
+        // same urn would otherwise report the previous play's loop state.
+        //
+        // Sits ahead of the cancel checks deliberately — they clear `requested_emote` on
+        // `active_emote.finished`, which would drop a failed emote before it was ever reported.
+        let emote_settled = !emote_changed
+            && active_emote.source == ActiveEmoteSource::TriggeredEmote
+            && Some(&active_emote.urn) == requested_emote.as_ref()
+            && (active_emote.duration_ms.is_some() || active_emote.finished);
+
+        if anim_state.pending_emote_report && emote_settled {
+            anim_state.pending_emote_report = false;
+            let resolved_loop = active_emote.repeat;
+
+            let broadcast_urn = given_urn.unwrap();
+            debug!("broadcasting emote to scenes: {:?}", broadcast_urn);
+
+            let (scene, scene_id) = match (maybe_foreign, maybe_primary, maybe_container) {
+                (Some(f), ..) => (None, f.scene_id),
+                (None, Some(_), _) => (None, SceneEntityId::PLAYER),
+                (None, None, Some(container)) => {
+                    (Some(container.container), container.container_id)
+                }
+                _ => (Some(Entity::PLACEHOLDER), SceneEntityId::ROOT),
+            };
+
+            let report_scenes = match scene {
+                Some(scene) => vec![scene],
+                None => containing_scene
+                    .get_area(avatar_ent, PLAYER_COLLIDER_RADIUS)
+                    .into_iter()
+                    .collect(),
+            };
+
+            for scene_ent in report_scenes {
+                let Ok(mut scene) = scenes.get_mut(scene_ent) else {
+                    warn!("no scene to receive emote");
+                    continue;
+                };
+
+                let timestamp = scene.tick_number;
+                debug!("broadcast to scene {:?}", scene_ent);
+                scene.update_crdt(
+                    SceneComponentId::AVATAR_EMOTE_COMMAND,
+                    CrdtType::GO_ANY,
+                    scene_id,
+                    &PbAvatarEmoteCommand {
+                        emote_urn: broadcast_urn.to_string(),
+                        r#loop: resolved_loop,
+                        timestamp,
+                    },
+                );
+            }
+        }
 
         // check expired
         if !emote_changed && Some(&active_emote.urn) != requested_emote.as_ref() {
@@ -367,18 +469,20 @@ fn animate(
 
         // check / cancel requested emote
         if Some(&active_emote.urn) == requested_emote.as_ref() {
-            let playing_min_vel = prior_min_velocities
-                .get(&avatar_ent)
-                .copied()
-                .unwrap_or_default();
+            let playing_min_vel = anim_state.current_emote_min_velocity;
             // A non-idle scene-driven animation takes precedence over a triggered emote.
             let scene_cancels = scene_anim.is_some_and(|req| !req.idle);
-            // Scene-driven animations handle their own motion semantics; don't cancel on move.
-            let velocity_cancels =
-                scene_anim.is_none() && active_emote.source != ActiveEmoteSource::SceneMovementAnim;
+            // Scene-driven animations handle their own motion semantics; don't cancel on move. Only
+            // the local player's emotes cancel on motion — foreign emotes persist under movement
+            // until an explicit stop arrives over the wire (matching Unity), so we never infer their
+            // cancellation from interpolated velocity.
+            let velocity_cancels = maybe_foreign.is_none()
+                && scene_anim.is_none()
+                && active_emote.source != ActiveEmoteSource::SceneMovementAnim;
             if scene_cancels {
                 debug!("clear on scene anim {:?}", active_emote.urn);
                 requested_emote = None;
+                anim_state.current_emote_min_velocity = 0.0;
             } else if velocity_cancels && damped_velocity_len * 0.9 > playing_min_vel {
                 // stop emotes on move
                 debug!(
@@ -386,9 +490,9 @@ fn animate(
                     damped_velocity_len, playing_min_vel
                 );
                 requested_emote = None;
+                anim_state.current_emote_min_velocity = 0.0;
             } else {
-                current_emote_min_velocities
-                    .insert(avatar_ent, damped_velocity_len.min(playing_min_vel));
+                anim_state.current_emote_min_velocity = damped_velocity_len.min(playing_min_vel);
             }
 
             if active_emote.finished {
@@ -396,7 +500,7 @@ fn animate(
                 requested_emote = None;
             }
         } else {
-            current_emote_min_velocities.insert(avatar_ent, damped_velocity_len);
+            anim_state.current_emote_min_velocity = damped_velocity_len;
         }
 
         // Precompute the velocity-based selection up-front so we can use it both as the
@@ -410,7 +514,7 @@ fn animate(
                 // Set on foreign avatars from rfc4::Movement.jump_count >= 2 (see foreign_dynamics).
                 (
                     ActiveEmote {
-                        urn: EmoteUrn::new("double_jump").unwrap(),
+                        urn: URN_DOUBLE_JUMP.clone(),
                         speed: 1.0,
                         repeat: false,
                         restart: false,
@@ -424,7 +528,7 @@ fn animate(
                 // Frozen at the neutral (straight) pose since we have no tilt input available.
                 (
                     ActiveEmote {
-                        urn: EmoteUrn::new("glide").unwrap(),
+                        urn: URN_GLIDE.clone(),
                         speed: 0.0,
                         repeat: true,
                         restart: false,
@@ -444,7 +548,7 @@ fn animate(
                 };
                 (
                     ActiveEmote {
-                        urn: EmoteUrn::new("jump").unwrap(),
+                        urn: URN_JUMP.clone(),
                         speed: time_to_peak.recip() * 0.5,
                         repeat: true,
                         restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
@@ -454,10 +558,10 @@ fn animate(
                     },
                     move_kind,
                 )
-            } else if active_emote.urn == EmoteUrn::new("jump").unwrap() && !active_emote.finished {
+            } else if active_emote.urn == *URN_JUMP && !active_emote.finished {
                 (
                     ActiveEmote {
-                        urn: EmoteUrn::new("jump").unwrap(),
+                        urn: URN_JUMP.clone(),
                         speed: 1.5,
                         repeat: false,
                         restart: false,
@@ -474,7 +578,7 @@ fn animate(
                     if damped_velocity_len.abs() <= 2.6 {
                         (
                             ActiveEmote {
-                                urn: EmoteUrn::new("walk").unwrap(),
+                                urn: URN_WALK.clone(),
                                 speed: directional_velocity_len / 1.5,
                                 restart: false,
                                 repeat: true,
@@ -486,7 +590,7 @@ fn animate(
                     } else {
                         (
                             ActiveEmote {
-                                urn: EmoteUrn::new("run").unwrap(),
+                                urn: URN_RUN.clone(),
                                 speed: directional_velocity_len / 4.5,
                                 restart: false,
                                 repeat: true,
@@ -499,7 +603,7 @@ fn animate(
                 } else {
                     (
                         ActiveEmote {
-                            urn: EmoteUrn::new("idle_male").unwrap(),
+                            urn: URN_IDLE.clone(),
                             speed: 1.0,
                             restart: false,
                             repeat: true,
@@ -515,47 +619,6 @@ fn animate(
         *active_emote = if let Some(requested_emote) = requested_emote {
             if emote_changed {
                 dynamic_state.move_kind = MoveKind::Emote;
-
-                // send to scenes
-                let broadcast_urn = given_urn.unwrap();
-                debug!("broadcasting emote to scenes: {:?}", broadcast_urn);
-
-                let (scene, scene_id) = match (maybe_foreign, maybe_primary, maybe_container) {
-                    (Some(f), ..) => (None, f.scene_id),
-                    (None, Some(_), _) => (None, SceneEntityId::PLAYER),
-                    (None, None, Some(container)) => {
-                        (Some(container.container), container.container_id)
-                    }
-                    _ => (Some(Entity::PLACEHOLDER), SceneEntityId::ROOT),
-                };
-
-                let report_scenes = match scene {
-                    Some(scene) => vec![scene],
-                    None => containing_scene
-                        .get_area(avatar_ent, PLAYER_COLLIDER_RADIUS)
-                        .into_iter()
-                        .collect(),
-                };
-
-                for scene_ent in report_scenes {
-                    let Ok(mut scene) = scenes.get_mut(scene_ent) else {
-                        warn!("no scene to receive emote");
-                        continue;
-                    };
-
-                    let timestamp = scene.tick_number;
-                    debug!("broadcast to scene {:?}", scene_ent);
-                    scene.update_crdt(
-                        SceneComponentId::AVATAR_EMOTE_COMMAND,
-                        CrdtType::GO_ANY,
-                        scene_id,
-                        &PbAvatarEmoteCommand {
-                            emote_urn: broadcast_urn.to_string(),
-                            r#loop: request_loop,
-                            timestamp,
-                        },
-                    );
-                }
             }
             commands
                 .entity(avatar_ent)
@@ -586,10 +649,11 @@ fn animate(
                 restart: is_new_anim,
                 repeat: req.r#loop,
                 finished: false,
+                duration_ms: None,
                 transition_seconds: req.transition_seconds,
                 initial_audio_mark: None,
                 overridable: req.idle,
-                pending_seek: req.seek,
+                pending_seek: if scene_anim_changed { req.seek } else { None },
                 source: ActiveEmoteSource::SceneMovementAnim,
                 scene_anim_src: Some(req.src.clone()),
                 fallback: Some(Box::new(velocity_emote)),
@@ -607,6 +671,14 @@ struct SpawnedExtras {
     scene_initialized: bool,
     audio: Option<(Entity, f32)>,
     clip: Option<(AnimationNodeIndex, Handle<AnimationGraph>)>,
+    // Intended clip-start wall-time (`elapsed_secs - playtime`) captured when a seek was
+    // requested on the frame the prop scene was spawned. Spawning a prop defers the
+    // emote's play (we `continue` until the instance is ready), so a one-shot
+    // `playback_time` from the scene would otherwise be gone before it's applied. Storing
+    // the *start* time (rather than the raw seek) lets the deferred play resume at
+    // `elapsed_secs - start` — i.e. advanced by however long the prop took to load — so a
+    // slow load doesn't resume stale. Cleared when the avatar + prop finally play.
+    deferred_start: Option<f32>,
 }
 
 impl SpawnedExtras {
@@ -617,6 +689,7 @@ impl SpawnedExtras {
             scene_initialized: false,
             audio: None,
             clip: None,
+            deferred_start: None,
         }
     }
 }
@@ -644,11 +717,20 @@ fn play_current_emote(
     mut playing: Local<HashMap<Entity, EmoteUrn>>,
     ipfas: IpfsAssetServer,
     mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
-    mut spawned_extras: Local<HashMap<Entity, SpawnedExtras>>,
+    // spawned_extras: prop/audio for the current clip. retiring_extras: prop kept alive
+    // across a clip change until its replacement is visible (or the new clip has no
+    // prop), so a prop carried by both clips (e.g. an embedded glider) doesn't blink out
+    // while the new scene loads — (wrapper entity, scene instance) keyed by avatar.
+    // Grouped as a tuple to stay within Bevy's per-system param limit.
+    (mut spawned_extras, mut retiring_extras): (
+        Local<HashMap<Entity, SpawnedExtras>>,
+        Local<HashMap<Entity, (Entity, InstanceId)>>,
+    ),
     mut scene_spawner: ResMut<SceneSpawner>,
-    (sounds, anim_clips): (
+    (sounds, anim_clips, time): (
         Res<Assets<bevy_kira_audio::AudioSource>>,
         Res<Assets<AnimationClip>>,
+        Res<Time>,
     ),
     mut emitters: Query<&mut AudioEmitter>,
     prop_details: Query<(Option<&Name>, &Transform, &ChildOf)>,
@@ -657,7 +739,7 @@ fn play_current_emote(
         Local<Option<SceneDrivenAnimationFeedbackState>>,
     ),
 ) {
-    let prior_playing = std::mem::take(&mut *playing);
+    let mut prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
     for (entity, mut active_emote, target_entity, children, maybe_primary) in q.iter_mut() {
@@ -670,10 +752,18 @@ fn play_current_emote(
         // clean up old extras
         if let Some(extras) = prev_spawned_extras.remove(&entity) {
             if extras.urn != active_emote.urn {
+                // Defer despawning the old prop scene until its replacement is visible
+                // (or we learn the new clip has no prop) to avoid a one-frame gap while
+                // the new scene loads. Despawn any already-retiring prop first, so a
+                // rapid run of switches can't accumulate more than one.
                 if let Some((wrapper, scene)) = extras.scene {
-                    scene_spawner.despawn_instance(scene);
-                    if let Ok(mut commands) = commands.get_entity(wrapper) {
-                        commands.despawn();
+                    if let Some((old_wrapper, old_scene)) =
+                        retiring_extras.insert(entity, (wrapper, scene))
+                    {
+                        scene_spawner.despawn_instance(old_scene);
+                        if let Ok(mut commands) = commands.get_entity(old_wrapper) {
+                            commands.despawn();
+                        }
                     }
                 }
 
@@ -888,6 +978,16 @@ fn play_current_emote(
                     }
                     commands.entity(wrapper).try_insert(Visibility::Inherited);
                     extras.scene_initialized = true;
+                    // Replacement is up — and posed this same frame thanks to the
+                    // thread_animation_graphs ordering fix in the engine — so drop the
+                    // prop we kept alive across the switch. The overlap covers the new
+                    // prop's load time; the engine fix covers the would-be bind-pose frame.
+                    if let Some((old_wrapper, old_scene)) = retiring_extras.remove(&entity) {
+                        scene_spawner.despawn_instance(old_scene);
+                        if let Ok(mut commands) = commands.get_entity(old_wrapper) {
+                            commands.despawn();
+                        }
+                    }
                 }
 
                 if let Ok(Some(prop_clip)) = emote.prop_anim(&gltfs) {
@@ -920,11 +1020,30 @@ fn play_current_emote(
                     .spawn((Transform::default(), Visibility::Hidden, ChildOf(entity)))
                     .id();
                 let scene = scene_spawner.spawn_as_child(props, wrapper);
-                spawned_extras
+                let extras = spawned_extras
                     .entry(entity)
-                    .or_insert_with(|| SpawnedExtras::new(active_emote.urn.clone()))
-                    .scene = Some((wrapper, scene));
+                    .or_insert_with(|| SpawnedExtras::new(active_emote.urn.clone()));
+                extras.scene = Some((wrapper, scene));
+                // Carry any seek requested this frame across the deferred play (below), so
+                // a one-shot scene `playback_time` isn't lost while the prop loads. Stash
+                // the intended clip-start time so the deferred play resumes advanced by
+                // the load duration rather than at the (now-stale) requested value.
+                extras.deferred_start = active_emote
+                    .pending_seek
+                    .map(|seek| time.elapsed_secs() - seek);
                 continue;
+            }
+        }
+
+        // New clip definitively has no prop — drop any prop kept alive across the switch
+        // (e.g. glide ended). `Err(Loading)` is left pending so we keep showing the old
+        // prop until we know.
+        if matches!(emote.prop_scene(&gltfs), Ok(None)) {
+            if let Some((old_wrapper, old_scene)) = retiring_extras.remove(&entity) {
+                scene_spawner.despawn_instance(old_scene);
+                if let Ok(mut commands) = commands.get_entity(old_wrapper) {
+                    commands.despawn();
+                }
             }
         }
 
@@ -979,31 +1098,31 @@ fn play_current_emote(
             sound
         };
 
+        let urn_was_playing = prior_playing.get(&ent) == Some(&active_emote.urn);
         let play = |transitions: Option<Mut<AnimationTransitions>>,
                     player: &mut AnimationPlayer,
                     clip_ix: AnimationNodeIndex,
                     active_emote: &ActiveEmote,
                     pending_seek: Option<f32>|
          -> f32 {
-            let active_animation =
-                if Some(&active_emote.urn) != prior_playing.get(&ent) || active_emote.restart {
-                    let active_animation = match transitions {
-                        Some(mut t) => t.play(
-                            player,
-                            clip_ix,
-                            Duration::from_secs_f32(active_emote.transition_seconds),
-                        ),
-                        None => player.start(clip_ix),
-                    };
-                    debug!("starting clip {:?}", clip_ix);
-                    active_animation.seek_to(0.0);
-                    Some(active_animation)
-                } else {
-                    player
-                        .playing_animations_mut()
-                        .find(|(nix, _)| **nix == clip_ix)
-                        .map(|(_, anim)| anim)
+            let active_animation = if !urn_was_playing || active_emote.restart {
+                let active_animation = match transitions {
+                    Some(mut t) => t.play(
+                        player,
+                        clip_ix,
+                        Duration::from_secs_f32(active_emote.transition_seconds),
+                    ),
+                    None => player.start(clip_ix),
                 };
+                debug!("starting clip {:?}", clip_ix);
+                active_animation.seek_to(0.0);
+                Some(active_animation)
+            } else {
+                player
+                    .playing_animations_mut()
+                    .find(|(nix, _)| **nix == clip_ix)
+                    .map(|(_, anim)| anim)
+            };
 
             if let Some(active_animation) = active_animation {
                 if active_emote.repeat {
@@ -1053,22 +1172,33 @@ fn play_current_emote(
         };
 
         let mut clips = clips.unwrap();
-        let (clip_ix, _) = clips
-            .named
-            .entry(active_emote.urn.to_string())
-            .or_insert_with(|| {
+        // look up by &str first — the entry api would allocate a String per call
+        let clip_ix = match clips.named.get(active_emote.urn.as_str()) {
+            Some((ix, _)) => *ix,
+            None => {
                 debug!("adding clip");
-                let Some(graph) = graph.and_then(|graph| graphs.get_mut(graph)) else {
-                    return (AnimationNodeIndex::new(u32::MAX as usize), 0.0);
+                let ix = match graph.and_then(|graph| graphs.get_mut(graph)) {
+                    Some(graph) => graph.add_clip(clip, 1.0, graph.root),
+                    None => AnimationNodeIndex::new(u32::MAX as usize),
                 };
-                (graph.add_clip(clip, 1.0, graph.root), 0.0)
-            });
+                clips.named.insert(active_emote.urn.to_string(), (ix, 0.0));
+                ix
+            }
+        };
 
-        let pending_seek = active_emote.pending_seek.take();
+        // Prefer a seek requested this frame; otherwise apply one stashed when the prop
+        // was spawned (deferred a frame), advanced by the load duration via the stashed
+        // start time, so the avatar + prop pick up in phase regardless of load time.
+        let pending_seek = active_emote.pending_seek.take().or_else(|| {
+            spawned_extras
+                .get_mut(&entity)
+                .and_then(|extras| extras.deferred_start.take())
+                .map(|start| time.elapsed_secs() - start)
+        });
         let elapsed = play(
             transitions,
             &mut player,
-            *clip_ix,
+            clip_ix,
             &active_emote,
             pending_seek,
         );
@@ -1100,6 +1230,10 @@ fn play_current_emote(
                 }
             }
         }
+
+        // Stamped for every avatar: `animate` reads it back as "this emote resolved, so `repeat`
+        // now includes the collectible's `default_repeat`" before reporting the emote to scenes.
+        active_emote.duration_ms = Some((clip_duration * 1000.0) as u32);
 
         if maybe_primary.is_some() {
             match active_emote.source {
@@ -1181,7 +1315,14 @@ fn play_current_emote(
             }
         }
 
-        playing.insert(ent, active_emote.urn.clone());
+        // move the prior entry back when unchanged to avoid a per-frame clone
+        playing.insert(
+            ent,
+            match prior_playing.remove(&ent) {
+                Some(prev) if prev == active_emote.urn => prev,
+                _ => active_emote.urn.clone(),
+            },
+        );
     }
 }
 
@@ -1189,7 +1330,10 @@ fn play_current_emote(
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/emote")]
 struct EmoteConsoleCommand {
+    /// Emote urn, or a profile emote slot number
     urn: String,
+    #[arg(long, default_value_t = false)]
+    r#loop: bool,
 }
 
 fn emote_console_command(
@@ -1213,15 +1357,17 @@ fn emote_console_command(
             }
 
             info!("anim {} -> {}", command.urn, urn);
-            let timestamp = maybe_prev.map(|p| p.timestamp).unwrap_or_default();
+            let timestamp = maybe_prev.map(|p| p.timestamp + 1).unwrap_or_default();
 
             commands.entity(player).try_insert(EmoteCommand {
                 urn: urn.clone(),
                 timestamp,
-                r#loop: false,
+                r#loop: command.r#loop,
             });
-        };
-        input.ok();
+            input.reply_ok(format!("playing emote {urn}"));
+        } else {
+            input.reply_failed("player not found");
+        }
     }
 }
 

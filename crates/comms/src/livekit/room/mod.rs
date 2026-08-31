@@ -1,5 +1,7 @@
 pub(super) mod plugin;
 
+pub use plugin::ServerRoomTerminal;
+
 use bevy::{
     ecs::{component::HookContext, world::DeferredWorld},
     platform::sync::Arc,

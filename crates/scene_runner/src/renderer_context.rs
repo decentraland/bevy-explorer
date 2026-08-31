@@ -6,7 +6,7 @@ use common::{
 };
 use dcl::{
     interface::{CrdtStore, CrdtType},
-    SceneId, SceneLogMessage,
+    RendererResponse, SceneId, SceneLogMessage, SceneResourceCounters,
 };
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
 use scene_material::BoundRegion;
@@ -17,7 +17,7 @@ use crate::{
         mesh_collider::DisableCollisions,
         transform_and_parent::{ParentPositionSync, SceneProxyStage},
     },
-    ContainerEntity, SceneEntity, TargetParent,
+    ContainerEntity, SceneEntity, SceneThreadHandle, TargetParent,
 };
 
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
@@ -29,6 +29,23 @@ use crate::{
 // or if they are required for hierarchy parenting
 // TODO - consider Vec<Option<page>>
 type LiveEntityTable = Vec<(u16, Option<Entity>)>;
+
+// scene worker lifecycle. `Broken` consumes the thread handle, so marking a scene broken
+// structurally drops the renderer channel, which signals the scene host to terminate the
+// worker (after a grace period for an in-flight tick to complete). `in_flight` (a tick has
+// been sent and not yet answered) lives inside `Live` since only a live scene can have a
+// tick outstanding — `Init` and `Broken` scenes are never in flight by construction.
+#[derive(Debug, Default)]
+pub enum SceneState {
+    // scene thread not yet spawned
+    #[default]
+    Init,
+    Live {
+        handle: SceneThreadHandle,
+        in_flight: bool,
+    },
+    Broken,
+}
 
 // mapping from script entity -> bevy entity
 // note - be careful with size as this struct is moved into/out of js runtimes
@@ -51,6 +68,13 @@ pub struct RendererSceneContext {
     pub nascent: HashSet<SceneEntityId>,
     // entities waiting to be destroyed in bevy
     pub death_row: HashSet<SceneEntityId>,
+    // engine-initiated entity births/deaths to push to the scene in the next
+    // engine->scene census. Unlike `nascent`/`death_row` (drained for every scene
+    // by the lifecycle pass), these are drained only when this scene is actually
+    // sent (send_scene_updates), so the census isn't lost before delivery. Holds
+    // only engine-originated changes, so it never echoes the scene's own census.
+    pub outbound_born: HashSet<SceneEntityId>,
+    pub outbound_died: HashSet<SceneEntityId>,
     // entities that are live
     live_entities: LiveEntityTable,
 
@@ -61,14 +85,21 @@ pub struct RendererSceneContext {
 
     // time of last message sent to scene
     pub last_sent: f32,
+    // last player/camera transforms sent to the scene, used to delta-check
+    // without deserializing the stored crdt entry every frame
+    pub last_sent_player_transform: Option<Transform>,
+    pub last_sent_camera_transform: Option<Transform>,
     // time of last updates to bevy world from scene
     pub last_update_frame: u32,
-    // currently running?
-    pub in_flight: bool,
-    // currently broken (record and keep for debug purposes and to avoid spamming reloads)
-    pub broken: bool,
+    // scene worker state; broken scenes are recorded and kept for debug purposes and to
+    // avoid spamming reloads
+    pub state: SceneState,
 
     pub crdt_store: CrdtStore,
+
+    // the authored baseline: the scene's main.crdt as loaded, before any tick (custom components
+    // included). The inspector diffs the live state against this when saving. None if no main.crdt.
+    pub initial_crdt: Option<CrdtStore>,
 
     // readiness to update, if anything blocks the scene should not run
     pub blocked: HashSet<&'static str>,
@@ -97,6 +128,9 @@ pub struct RendererSceneContext {
 
     // does the scene use an authoritative multiplayer server
     pub authoritative_multiplayer: bool,
+
+    // latest cumulative resource-counter snapshot from the scene thread
+    pub resource_counters: Option<SceneResourceCounters>,
 }
 
 /// Block reason used by /freeze_scene and /tick_scene.
@@ -104,7 +138,46 @@ pub const FROZEN_BLOCK: &str = "frozen";
 
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
 
+// A scene tick that has been in-flight (sent to the scene, no response yet) for longer than this
+// is treated as "not responding": update_scene_priority marks the scene broken and frees its
+// thread slot, handle_out_of_world stops holding the player behind the loading screen, and the
+// loading UI surfaces a countdown to this timeout.
+pub const SCENE_NOT_RESPONDING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+// Don't surface the "not responding" message until a tick has been in-flight at least this long,
+// so a normal slow frame doesn't flicker the warning.
+pub const SCENE_NOT_RESPONDING_DISPLAY_AFTER: std::time::Duration =
+    std::time::Duration::from_secs(2);
+
 impl RendererSceneContext {
+    pub fn broken(&self) -> bool {
+        matches!(self.state, SceneState::Broken)
+    }
+
+    pub fn sender(&self) -> Option<&tokio::sync::mpsc::UnboundedSender<RendererResponse>> {
+        match &self.state {
+            SceneState::Live { handle, .. } => Some(&handle.sender),
+            _ => None,
+        }
+    }
+
+    pub fn in_flight(&self) -> bool {
+        matches!(
+            self.state,
+            SceneState::Live {
+                in_flight: true,
+                ..
+            }
+        )
+    }
+
+    // no-op unless the scene is live: `Init` and `Broken` scenes have no in-flight bit
+    pub fn set_in_flight(&mut self, value: bool) {
+        if let SceneState::Live { in_flight, .. } = &mut self.state {
+            *in_flight = value;
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         scene_id: SceneId,
@@ -137,15 +210,19 @@ impl RendererSceneContext {
             spawn_points,
             nascent: Default::default(),
             death_row: Default::default(),
-            live_entities: vec![(0, None); u16::MAX as usize],
+            outbound_born: Default::default(),
+            outbound_died: Default::default(),
+            live_entities: vec![(0, None); SceneEntityId::LIVE_TABLE_LEN],
             unparented_entities: HashSet::new(),
             hierarchy_changed: false,
             last_sent: 0.0,
+            last_sent_player_transform: None,
+            last_sent_camera_transform: None,
             last_update_frame: 0,
-            in_flight: false,
-            broken: false,
+            state: SceneState::Init,
             priority,
             crdt_store: Default::default(),
+            initial_crdt: None,
             blocked: Default::default(),
             total_runtime: 0.0,
             tick_number: 0,
@@ -157,6 +234,7 @@ impl RendererSceneContext {
             sdk_version,
             inspected,
             authoritative_multiplayer,
+            resource_counters: None,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =
@@ -165,12 +243,12 @@ impl RendererSceneContext {
     }
 
     fn entity_entry(&self, id: u16) -> &(u16, Option<Entity>) {
-        // SAFETY: live entities has u16::MAX members
+        // SAFETY: live_entities has LIVE_TABLE_LEN (u16::MAX + 1) entries, so any u16 index is in bounds
         unsafe { self.live_entities.get_unchecked(id as usize) }
     }
 
     fn entity_entry_mut(&mut self, id: u16) -> &mut (u16, Option<Entity>) {
-        // SAFETY: live entities has u16::MAX members
+        // SAFETY: live_entities has LIVE_TABLE_LEN (u16::MAX + 1) entries, so any u16 index is in bounds
         unsafe { self.live_entities.get_unchecked_mut(id as usize) }
     }
 

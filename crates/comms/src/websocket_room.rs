@@ -45,6 +45,8 @@ impl Plugin for WebsocketRoomPlugin {
 #[derive(Event)]
 pub struct StartWsRoom {
     pub address: String,
+    /// crdt context this room's transport feeds
+    pub context: Entity,
 }
 
 #[derive(Component)]
@@ -86,7 +88,7 @@ pub fn start_ws_room(
                 transport_type: TransportType::WebsocketRoom,
                 sender,
                 control: None,
-                foreign_aliases: Default::default(),
+                context: ev.context,
             },
             WebsocketRoomTransport {
                 address: ev.address.to_owned(),
@@ -100,11 +102,17 @@ pub fn start_ws_room(
 #[allow(clippy::type_complexity)]
 fn connect_websocket(
     mut commands: Commands,
-    mut new_websockets: Query<(Entity, &mut WebsocketRoomTransport), Without<WebSocketConnection>>,
+    mut new_websockets: Query<
+        (Entity, &mut WebsocketRoomTransport, &Transport),
+        Without<WebSocketConnection>,
+    >,
     wallet: Res<Wallet>,
-    player_state: Res<GlobalCrdtState>,
+    contexts: Query<&GlobalCrdtState>,
 ) {
-    for (transport_id, mut new_transport) in new_websockets.iter_mut() {
+    for (transport_id, mut new_transport, transport) in new_websockets.iter_mut() {
+        let Ok(player_state) = contexts.get(transport.context) else {
+            continue;
+        };
         let remote_address = new_transport.address.to_owned();
         let wallet = wallet.clone();
         let receiver = new_transport.receiver.take().unwrap();
@@ -123,15 +131,17 @@ fn connect_websocket(
 }
 
 fn reconnect_websocket(
+    mut commands: Commands,
     mut websockets: Query<(
         Entity,
         &mut WebsocketRoomTransport,
         &mut WebSocketConnection,
+        &Transport,
     )>,
     wallet: Res<Wallet>,
-    player_state: Res<GlobalCrdtState>,
+    contexts: Query<&GlobalCrdtState>,
 ) {
-    for (transport_id, mut transport, mut conn) in websockets.iter_mut() {
+    for (transport_id, mut transport, mut conn, base_transport) in websockets.iter_mut() {
         if transport.retries < 3 {
             if let Some((receiver, err)) = conn.0.complete() {
                 transport.retries += 1;
@@ -139,6 +149,9 @@ fn reconnect_websocket(
                     "websocket room error: {err}, retrying [{}]",
                     transport.address
                 );
+                let Ok(player_state) = contexts.get(base_transport.context) else {
+                    continue;
+                };
                 let remote_address = transport.address.to_owned();
                 let wallet = wallet.clone();
                 let sender = player_state.get_sender();
@@ -153,8 +166,10 @@ fn reconnect_websocket(
             }
         } else if transport.retries == 3 {
             if let Some((_, err)) = conn.0.complete() {
-                transport.retries += 1;
                 warn!("websocket room error: {err}, giving up");
+                // despawning the transport scrubs it from all foreign players' transport
+                // sets, so members don't linger on a connection that will never recover
+                commands.entity(transport_id).despawn();
             }
         }
     }
@@ -269,15 +284,36 @@ async fn websocket_room_handler_inner(
     }
     dcl_assert!(from_alias != u32::MAX);
 
+    // Register everyone the welcome listed. Membership is otherwise implied by a `PlayerUpdate`
+    // arriving, so a peer who joined before us and then says nothing would go unrecorded.
+    // collected first: the `BiMap` iterator isn't `Send`, so it can't be held across the await
+    let joined: Vec<_> = foreign_aliases.right_values().copied().collect();
+    for address in joined {
+        sender
+            .send(
+                PlayerUpdate {
+                    transport_id,
+                    message: PlayerMessage::Joined,
+                    address,
+                }
+                .into(),
+            )
+            .await
+            .map_err(|_| anyhow!("Send error"))?;
+    }
+
     let (mut write, mut read) = stream.split();
 
     // wrap and transmit outbound messages
     let f_write = async move {
         while let Some(next) = receiver.recv().await {
+            let Some(body) = next.message.to_rfc4() else {
+                continue;
+            };
             let packet = WsPacket {
                 message: Some(ws_packet::Message::PeerUpdateMessage(WsPeerUpdate {
                     from_alias,
-                    body: next.data,
+                    body,
                     unreliable: next.unreliable,
                 })),
             };
@@ -311,6 +347,18 @@ async fn websocket_room_handler_inner(
                     debug!("peer joined: {} -> {}", peer.alias, peer.address);
                     if let Some(h160) = peer.address.as_h160() {
                         foreign_aliases.insert(peer.alias, h160);
+                        // presence, without waiting for them to send anything
+                        sender
+                            .send(
+                                PlayerUpdate {
+                                    transport_id,
+                                    message: PlayerMessage::Joined,
+                                    address: h160,
+                                }
+                                .into(),
+                            )
+                            .await
+                            .map_err(|_| anyhow!("Send error"))?;
                     } else {
                         warn!("failed to parse hash: {}", peer.address);
                     }
@@ -321,7 +369,15 @@ async fn websocket_room_handler_inner(
                         peer.alias,
                         foreign_aliases.get_by_left(&peer.alias)
                     );
-                    foreign_aliases.remove_by_left(&peer.alias);
+                    if let Some((_, address)) = foreign_aliases.remove_by_left(&peer.alias) {
+                        sender
+                            .send(NetworkUpdate::PlayerLeft {
+                                transport_id,
+                                address,
+                            })
+                            .await
+                            .map_err(|_| anyhow!("Send error"))?;
+                    }
                 }
                 ws_packet::Message::PeerUpdateMessage(update) => {
                     let packet = match rfc4::Packet::decode(update.body.as_slice()) {

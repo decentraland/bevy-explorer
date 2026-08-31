@@ -13,8 +13,15 @@ impl Plugin for EmbedAssetsPlugin {
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+/// Salt for the GPU pipeline-cache key. `precomputed_shader_hash` only sees the
+/// shader *files*, so a change that alters generated shaders without touching
+/// them (e.g. the naga_oil override-emit-order fix) is invisible to it. Bump
+/// this to force every client to drop its stale cached pipelines on next load.
+#[cfg(target_arch = "wasm32")]
+const GPU_CACHE_SALT: u32 = 1;
+
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn gpu_cache_hash() -> String {
-    format!("{}", precomputed_shader_hash())
+    format!("{}-{}", precomputed_shader_hash(), GPU_CACHE_SALT)
 }

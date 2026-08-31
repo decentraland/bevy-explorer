@@ -8,14 +8,22 @@ default-run = "decentra-bevy"
 crate-type = ["cdylib", "rlib"]
 name = "webgpu_build"
 
+# Experimental headless scene-server binary. Gated behind the `headless` feature so
+# `cargo build --release` (packaging) skips it — build explicitly with
+# `cargo build --bin headless --no-default-features --features "headless,livekit"`.
+[[bin]]
+name = "headless"
+path = "src/bin/headless.rs"
+required-features = ["headless"]
+
 # to build wasm lib:
 # - copy ./assets to deploy/web/assets
 # - copy ./crates/dcl/src/js/modules to deploy/web/modules
 # - rustup default nightly # (tested with 2026-04-15)
-# - wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit" && npx serve deploy/web
+# - wasm-pack build --target web --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social" (then serve via react-web; see react-web/README.md)
 
 [features]
-default = ["livekit", "ffmpeg", "inspect", "social"]
+default = ["livekit", "ffmpeg", "inspect", "social", "react-hud-cef"]
 # default = ["wasm"]
 console = []
 dcl-assert = ["common/dcl-assert"]
@@ -23,14 +31,32 @@ gen-tests = []
 tracy = ["bevy/trace_tracy"]
 inspect = ["dcl_deno/inspect", "system_ui/inspect"]
 hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
-livekit = ["av/livekit", "comms/livekit", "system_ui/livekit"]
+livekit = ["comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["social/social"]
 remote = ["bevy/bevy_remote"]
 bevy_mesh_picking_backend = ["bevy/bevy_mesh_picking_backend"]
+# Gates the experimental headless scene-server binary out of default/release builds.
+# configurable_error_handler lets the headless bin install a warn-and-continue error
+# handler (bevy's default panics). Pulled in only by this feature, so prod builds
+# (which never enable `headless`) are unaffected.
+headless = ["bevy/configurable_error_handler"]
+# POC: render the react-web HUD via CEF offscreen rendering into an in-engine texture (desktop).
+# The CEF framework loads bundle-relative (Contents/Frameworks) with a dev fallback at
+# ~/.local/share/cef; the render-process helper builds as the sibling binary `decentra-bevy-cef`
+# (see [[bin]] below), resolved at runtime as `<host exe>-cef`.
+react-hud-cef = ["dep:cef_offscreen"]
 
 # Debug features
 tween_debug = ["tween/tween_debug"]
+
+# CEF render-process helper (react-hud-cef): built alongside decentra-bevy, launched by Chromium
+# for its renderer/gpu/utility subprocesses. required-features keeps it out of builds without
+# the feature (e.g. --no-default-features wasm builds).
+[[bin]]
+name = "decentra-bevy-cef"
+path = "src/bin/cef_render_process.rs"
+required-features = ["react-hud-cef"]
 
 [profile.release]
 codegen-units = 1
@@ -49,7 +75,7 @@ type_complexity = "allow"
 
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = ["crates/*", "local-harness/presence/harness-util"]
 
 [workspace.dependencies]
 analytics = { path = "crates/analytics" }
@@ -81,10 +107,15 @@ collectibles = { path = "crates/collectibles" }
 social = { path = "crates/social" }
 imposters = { path = "crates/imposters" }
 system_bridge = { path = "crates/system_bridge" }
+system_api_types = { path = "crates/system_api_types" }
 scene_inspector = { path = "crates/scene_inspector" }
 texture_camera = { path = "crates/texture_camera" }
 platform = { path = "crates/platform" }
 image_processing = { path = "crates/image_processing" }
+cef_offscreen = { path = "crates/cef_offscreen" }
+particle_system = { path = "crates/particle_system" }
+livestream_manager = { path = "crates/livestream_manager" }
+media = { path = "crates/media" }
 
 bevy = { version = "0.16.1", default-features = false, features = [
   "animation",
@@ -116,16 +147,31 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "std",
   "bevy_state",
   "pbr_light_textures",
+  "reduce_image_sizes",
 ] }
+disqualified = "1.0"
 wgpu = "24"
-bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16" }
-bevy_egui = { version = "0.34", default-features = false, features = [
-  "default_fonts",
-  "render",
+cef = "139"
+cef-dll-sys = { version = "139.0", features = ["sandbox"] }
+# default-features = false drops the egui console window (we only use the
+# command/print plumbing, piped to chat); this keeps egui out of the build entirely
+bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16", default-features = false }
+# robtfm fork of rusty_enet, retargeted from upstream lsalzman ENet 1.3.x to the
+# nxrighthere/SoftwareGuy ENet-CSharp "modified protocol" fork that Decentraland's
+# Pulse server runs (header flag bits only — see src/c/protocol.rs). Native only.
+rusty_enet = { git = "https://github.com/robtfm/rusty_enet", branch = "decentraland-pulse" }
+# enables naga_oil function overrides on non-`virtual` bevy_pbr functions (e.g.
+# our shadow-darkness override in bound_material.wgsl). feature-unifies into the
+# naga_oil that bevy builds its shader composer with. version must match bevy's.
+# default-features = false is REQUIRED: naga_oil's defaults include `glsl`, which
+# bevy deliberately omits on native; with it on, debug builds validate composed
+# modules through the GLSL backend and panic serializing bevy_pbr's globals.
+naga_oil = { version = "0.17", default-features = false, features = [
+  "override_any",
 ] }
-
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
+ts-rs = "12"
 
 alloy-core = { version = "1.6", default-features = false }
 alloy-network = { version = "2.0", default-features = false }
@@ -133,14 +179,19 @@ alloy-signer = { version = "2.0", default-features = false }
 alloy-signer-local = { version = "2.0", default-features = false }
 
 itertools = "0.14"
+libc = "0.2"
 tokio = { version = "1.44", features = ["sync", "macros", "rt"] }
 tokio-util = "*"
 anyhow = "1.0.70"
+thiserror = "1.0"
+url = "2"
 http = "1.4"
 urn = "0.7.0"
 futures-lite = "2.6"
 bimap = "0.6.3"
+bitflags = "2"
 prost = "0.11.8"
+prost-reflect = "0.11"
 clap = "4.6"
 once_cell = "1.16.0"
 rapier3d-f64 = "0.31"
@@ -150,8 +201,11 @@ reqwest = { version = "0.13", default-features = false, features = [
   "native-tls",
   "json",
   "blocking",
+  "stream",
 ] }
 kira = "0.9.6"
+zip = { version = "2", default-features = false }
+image = "0.25"
 opener = { version = "0.8", git = "https://github.com/robtfm/opener" }
 chrono = { version = "0.4.31", features = ["serde"] }
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "0.16" }
@@ -165,6 +219,7 @@ bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = 
 bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_input", features = [
   "clipboard",
 ], branch = "0.16" }
+bevy_hanabi = { git = "https://github.com/robtfm/bevy_hanabi", branch = "0.16-dcl", default-features = false }
 directories = "6"
 uuid = { version = "1.23", features = ["v4"] }
 build-time = "0.1.3"
@@ -179,18 +234,23 @@ async-trait = "0.1.68"
 fastrand = "2"
 rand = "0.8.5"
 futures-util = "0.3.28"
+futures-timer = "3"
 async-native-tls = { version = "0.5", features = ["runtime-async-std"] }
-boimp = { git = "https://github.com/robtfm/boimp", branch = "0.3" }
+boimp = { git = "https://github.com/robtfm/boimp", branch = "feat/composite-bake-via-storage-texture" }
 crc = "3"
 num-traits = "0.2"
 async-compat = "0.2"
 async-fs = "2.0"
 base64 = "0.22"
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
+# pinned: alpha releases make no api stability promises between versions
+draco-oxide-decoder = "=0.1.0-alpha.9"
+draco-oxide-core = "=0.1.0-alpha.9"
 strum = "0.27"
 strum_macros = "0.27"
 wasm-bindgen = "0.2.92"
 wasm-bindgen-futures = "0.4.50"
+wasm-bindgen-test = "0.3"
 js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 serde_bytes = "0.11"
@@ -208,6 +268,32 @@ web-sys = { version = "0.3", features = [
   "ResponseInit",
   "Headers",
   "Url",
+  # OPFS, for the scene-storage directory dcl_wasm holds open (crates/dcl_wasm/.../local_storage.rs).
+  # Enabled here rather than relied on via web-fs's own web-sys features: dcl_wasm no longer depends
+  # on web-fs, so that unification is not ours to count on.
+  "Blob",
+  "File",
+  "FileSystemDirectoryHandle",
+  "FileSystemFileHandle",
+  "FileSystemGetDirectoryOptions",
+  "FileSystemGetFileOptions",
+  "FileSystemWritableFileStream",
+  "StorageManager",
+  "WorkerGlobalScope",
+  "WorkerNavigator",
+  "WritableStream",
+  # WebTransport, the wasm Pulse driver's wire (crates/comms/src/pulse/wasm.rs).
+  "ReadableStream",
+  "ReadableStreamDefaultReader",
+  "WritableStreamDefaultWriter",
+  "WebTransport",
+  "WebTransportOptions",
+  "WebTransportHash",
+  "WebTransportBidirectionalStream",
+  "WebTransportReceiveStream",
+  "WebTransportSendStream",
+  "WebTransportDatagramDuplexStream",
+  "WebTransportCloseInfo",
 ] }
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
@@ -243,11 +329,23 @@ scene_inspector = { workspace = true }
 texture_camera = { workspace = true }
 platform = { workspace = true }
 image_processing = { workspace = true }
+particle_system = { workspace = true }
+livestream_manager = { workspace = true }
+media = { workspace = true }
 
 bevy = { workspace = true }
 wgpu = { workspace = true }
 bevy_console = { workspace = true }
+bevy_dui = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
+http = { workspace = true }
+# present only to enable the naga_oil `override_any` feature graph-wide (see
+# [workspace.dependencies]); not referenced from Rust.
+naga_oil = { workspace = true }
+bevy_kira_audio = { workspace = true }
 
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
@@ -255,6 +353,12 @@ build-time = { workspace = true }
 web-time = { workspace = true }
 
 pico-args = "0.5.0"
+zip = { workspace = true }
+anyhow = { workspace = true }
+crc = { workspace = true }
+urlencoding = { workspace = true }
+image = { workspace = true }
+rand = { workspace = true }
 chrono = { workspace = true }
 # tracing = { version = "0.1", features = ["release_max_level_info"] }
 tracing = { version = "0.1" }
@@ -271,6 +375,7 @@ bevy_simple_text_input = { workspace = true }
 dcl_deno = { workspace = true }
 dcl_deno_ipc = { workspace = true }
 mimalloc = { version = "*", default-features = false }
+cef_offscreen = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 av = { workspace = true, features = ["html"] }
@@ -292,7 +397,22 @@ web-fs = { workspace = true }
 prost-build = "0.11.8"
 
 [patch.crates-io]
-# mess required by egui referencing bevy crates directly
+# naga_oil with deterministic override-emit order (redirect.rs HashMap ->
+# IndexMap). without it, function overrides (e.g. the toon shadow override) emit
+# composed shaders in random per-page-load order on wasm, so the gpu pipeline
+# cache never converges and the main pass recompiles cold every load.
+# carried on a fork branch off the 0.17.1 tag. not an upstream backport —
+# naga_oil main is 0.22; revisit only if bevy's pinned naga_oil moves.
+naga_oil = { git = "https://github.com/robtfm/naga_oil", branch = "fix/deterministic-override-emit-order" }
+# rANS refill never refills on 32-bit targets (wasm32), corrupting every stream
+# whose encoder chose the branchless refill strategy. fix PR'd upstream as
+# reearth/draco-oxide#34; drop these patches when it lands in a release.
+# core and nd-vector carry no changes but must come from the same source as the
+# decoder or the workspace resolves two copies of core and types don't unify.
+draco-oxide-decoder = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
+draco-oxide-core = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
+draco-nd-vector = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
+# mess required by ecosystem crates referencing bevy subcrates directly
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_a11y = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_asset = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
@@ -339,6 +459,10 @@ deno_url = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_webidl = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_web = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_websocket = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
+# 0.8.1 + upstream bc39c1f (fragmented-message size cap, unreleased) + 1 MiB default cap.
+# deno_websocket's pinned API exposes no set_max_message_size hook, so the fork default is
+# how scene websocket inbound message size is bounded.
+fastwebsockets = { git = "https://github.com/robtfm/fastwebsockets", branch = "0_8_hotfix" }
 deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 
 # deno_console = { path = "../deno/ext/console" }
@@ -349,6 +473,13 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 # deno_web = { path = "../deno/ext/web" }
 # deno_websocket = { path = "../deno/ext/websocket" }
 # deno_webstorage = { path = "../deno/ext/webstorage" }
+
+# gltf 1.4.1 (latest release, 2024-05) predates gltf-rs/gltf#449 "allow empty accessors"
+# (robtfm, merged 2025-05): dense accessors with no bufferView (zero-filled per spec,
+# blender emits them for morph targets) get NO reader, so MorphTargetImage comes up
+# short and texture upload panics. Pin the #449 merge commit until a release ships it.
+gltf = { git = "https://github.com/gltf-rs/gltf", rev = "12fc1b7c" }
+gltf-json = { git = "https://github.com/gltf-rs/gltf", rev = "12fc1b7c" }
 
 winit = { git = "https://github.com/robtfm/winit", branch = "v0.30.x" }
 wgpu = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }

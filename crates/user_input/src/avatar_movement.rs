@@ -11,8 +11,8 @@ use common::{
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
     sets::{PostUpdateSets, SceneSets},
     structs::{
-        AppConfig, AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes, PrimaryUser,
-        SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
+        avatar_tilt_quat, AppConfig, AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes,
+        PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
     },
 };
 use comms::global_crdt::GlobalCrdtState;
@@ -90,6 +90,7 @@ impl Plugin for AvatarMovementPlugin {
         app.add_systems(
             PostUpdate,
             (
+                apply_rotation,
                 apply_ground_collider_movement,
                 resolve_collisions,
                 apply_impulses,
@@ -215,6 +216,10 @@ pub struct AvatarMovement {
     pub walk_success: Option<bool>,
     /// scene-driven movement animation request; if absent, engine falls back to velocity-based selection
     pub animation: Option<MovementAnimation>,
+    /// render-only lean (degrees) composed on top of `orientation`; does not affect physics
+    /// or the yaw broadcast to other clients. 0 = upright.
+    pub tilt_pitch: f32,
+    pub tilt_roll: f32,
 }
 
 impl Default for AvatarMovement {
@@ -225,6 +230,8 @@ impl Default for AvatarMovement {
             ground_direction: Vec3::NEG_Y,
             walk_success: None,
             animation: None,
+            tilt_pitch: 0.0,
+            tilt_roll: 0.0,
         }
     }
 }
@@ -247,6 +254,9 @@ impl FromConfig for AvatarLocomotionSettings {
             jump_height: Some(config.player_settings.jump_height),
             run_jump_height: Some(config.player_settings.run_jump_height),
             hard_landing_cooldown: Some(0.0),
+            double_jump_height: None,
+            gliding_speed: None,
+            gliding_falling_speed: None,
         })
     }
 }
@@ -264,6 +274,8 @@ impl From<PbAvatarMovement> for AvatarMovement {
                 .unwrap_or(Vec3::NEG_Y),
             walk_success: value.walk_success,
             animation: value.animation,
+            tilt_pitch: value.tilt_pitch.unwrap_or_default(),
+            tilt_roll: value.tilt_roll.unwrap_or_default(),
         }
     }
 }
@@ -278,6 +290,10 @@ pub struct ActivePlayerComponent<C: Component> {
     scene_last_update: u32,
     scene_start_tick: u32,
     scene_is_portable: bool,
+    /// Engine dispatch time (`RendererSceneContext::last_sent`) of the scene tick
+    /// that produced `component`. Used to reject AvatarMovement that was initiated
+    /// before a `movePlayerTo`-imposed facing (and so read a stale transform).
+    initiated_at: f32,
     pub component: C,
 }
 
@@ -295,6 +311,7 @@ impl<C: Component + FromConfig> FromConfig for ActivePlayerComponent<C> {
             scene_last_update: 0,
             scene_start_tick: 0,
             scene_is_portable: true,
+            initiated_at: 0.0,
             component: C::from_config(config),
         }
     }
@@ -392,6 +409,7 @@ impl<C: Component + Clone + FromConfig> ActivePlayerComponent<C> {
                 scene_last_update: ctx.last_update_frame,
                 scene_start_tick: ctx.start_tick,
                 scene_is_portable: ctx.is_portable,
+                initiated_at: ctx.last_sent,
                 component: update.clone(),
             };
 
@@ -453,6 +471,7 @@ impl<C: Component + Clone + FromConfig> ActivePlayerComponent<C> {
                 scene_last_update: ctx.last_update_frame,
                 scene_start_tick: ctx.start_tick,
                 scene_is_portable: ctx.is_portable,
+                initiated_at: ctx.last_sent,
                 component: update.clone(),
             };
 
@@ -494,6 +513,41 @@ pub fn apply_impulses(
     }
 }
 
+// Whether scene-driven movement should be suppressed this frame: either an explicit
+// suppression is held (e.g. movePlayerTo interpolation), OR the active AvatarMovement
+// was initiated before the most recent movePlayerTo-imposed facing — such a tick read a
+// pre-teleport transform, so applying its orientation would clobber the imposed facing.
+// Strict `>` (here as `<=` to suppress) treats a same-frame dispatch as stale, since
+// `last_sent` is captured before the restricted-action runs and shares the frame's timestamp.
+fn movement_suppressed(
+    movement_control: &EngineMovementControl,
+    movement: &ActivePlayerComponent<AvatarMovement>,
+) -> bool {
+    !movement_control.suppress_avatar_physics.is_empty()
+        || movement.initiated_at <= movement_control.accept_movement_after
+}
+
+// Movement pipeline step 1 (see the PBAvatarMovement proto comment): set the avatar
+// orientation from the scene-driven movement info. Kept separate from velocity
+// application (`apply_movement`) and ordered ahead of `apply_ground_collider_movement`
+// so a rotating ground platform's rotation delta composes onto this orientation rather
+// than being overwritten by it.
+pub fn apply_rotation(
+    mut player: Query<(&mut Transform, &ActivePlayerComponent<AvatarMovement>), With<PrimaryUser>>,
+    movement_control: Res<EngineMovementControl>,
+) {
+    let Ok((mut transform, movement)) = player.single_mut() else {
+        return;
+    };
+
+    if !movement_suppressed(&movement_control, movement) {
+        // Yaw is authoritative (broadcast to other clients, used by physics); tilt is a
+        // render-only lean composed on top. `to_euler(YXZ).0` still recovers the yaw.
+        transform.rotation = Quat::from_rotation_y(movement.component.orientation / 360.0 * TAU)
+            * avatar_tilt_quat(movement.component.tilt_pitch, movement.component.tilt_roll);
+    }
+}
+
 pub fn apply_movement(
     mut player: Query<
         (
@@ -515,10 +569,9 @@ pub fn apply_movement(
 
     info.0.step_time = time_res.delta_secs();
 
-    let suppress = !movement_control.suppress_avatar_physics.is_empty();
-    if !suppress {
-        transform.rotation = Quat::from_rotation_y(movement.component.orientation / 360.0 * TAU);
-    }
+    // Orientation was already set this frame by `apply_rotation` (pipeline step 1);
+    // here we only apply velocity. The same suppression gate still governs velocity.
+    let suppress = movement_suppressed(&movement_control, movement);
 
     if suppress || movement.component.velocity == Vec3::ZERO {
         dynamic_state.velocity = Vec3::ZERO;
@@ -820,7 +873,7 @@ fn broadcast_movement_info(
         With<PrimaryUser>,
     >,
     feedback: Res<SceneDrivenAnimationFeedback>,
-    mut global_crdt: ResMut<GlobalCrdtState>,
+    mut contexts: Query<&mut GlobalCrdtState>,
     time: Res<Time>,
 ) {
     let (maybe_locomotion, maybe_modifier) = active_components.single().unwrap_or_default();
@@ -839,12 +892,14 @@ fn broadcast_movement_info(
 
     debug!("broadcast {:?}", info.0);
 
-    global_crdt.update_crdt(
-        SceneComponentId::AVATAR_MOVEMENT_INFO,
-        CrdtType::LWW_ANY,
-        SceneEntityId::PLAYER,
-        &info.0,
-    );
+    for mut global_crdt in contexts.iter_mut() {
+        global_crdt.update_crdt(
+            SceneComponentId::AVATAR_MOVEMENT_INFO,
+            CrdtType::LWW_ANY,
+            SceneEntityId::PLAYER,
+            &info.0,
+        );
+    }
     info.0 = PbAvatarMovementInfo {
         step_time: time.delta_secs(),
         previous_step_time: info.0.step_time,

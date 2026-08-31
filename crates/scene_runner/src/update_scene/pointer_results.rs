@@ -102,13 +102,13 @@ pub struct PointerResultPlugin;
 
 impl Plugin for PointerResultPlugin {
     fn build(&self, app: &mut App) {
+        // AvatarColliders and PointerRay are owned by SceneRunnerPlugin: they are also read
+        // by trigger areas and the avatar crate, which must work without this plugin.
         app.init_resource::<PointerTarget>()
-            .init_resource::<PointerRay>()
             .init_resource::<PointerActionTarget>()
             .init_resource::<UiPointerTarget>()
             .init_resource::<WorldPointerTarget>()
             .init_resource::<DebugPointers>()
-            .init_resource::<AvatarColliders>()
             .init_resource::<ProximityCandidates>()
             .init_resource::<MonotonicTimestamp<PbPointerEventsResult>>();
 
@@ -137,7 +137,7 @@ impl Plugin for PointerResultPlugin {
                 .chain()
                 .in_set(SceneSets::Input),
         );
-        app.add_console_command::<DebugPointerCommand, _>(debug_pointer_command);
+        app.add_preview_console_command::<DebugPointerCommand, _>(debug_pointer_command);
     }
 }
 
@@ -440,6 +440,9 @@ fn update_pointer_target(
 pub struct ResolveCursor {
     pub camera: Entity,
     pub texture_size: Vec2,
+    /// physical-pixel offset of this canvas's slot within the shared atlas, added to the
+    /// hit uv so the cursor lands in atlas space
+    pub px_offset: Vec2,
 }
 
 fn update_manual_cursor(
@@ -497,6 +500,16 @@ fn update_manual_cursor(
             None => [face * 3, face * 3 + 1, face * 3 + 2],
         };
 
+        // a malformed gltf can index past its own position buffer, or carry fewer uvs than
+        // positions. clamp rather than drop the hit: this only feeds uv projection for ui
+        // rendered onto a mesh, so a wrong uv beats aborting, and the fix is for the creator
+        // to clean up the mesh.
+        let usable_verts = posns.len().min(uvs.len());
+        if usable_verts == 0 {
+            return None;
+        }
+        let indices = indices.map(|ix| ix.min(usable_verts - 1));
+
         let posns: [Vec3; 3] = [
             gt.transform_point(Vec3::from(posns[indices[0]])),
             gt.transform_point(Vec3::from(posns[indices[1]])),
@@ -544,6 +557,12 @@ fn update_manual_cursor(
                 None => 0..posns.len() / 3,
             };
 
+            // as above: clamp malformed indices rather than aborting
+            let usable_verts = posns.len().min(uvs.len());
+            if usable_verts == 0 {
+                return;
+            }
+
             let mut distances_and_barycoords = faces
                 .into_iter()
                 .filter_map(|face| {
@@ -560,6 +579,7 @@ fn update_manual_cursor(
                         ],
                         None => [face * 3, face * 3 + 1, face * 3 + 2],
                     };
+                    let indices = indices.map(|ix| ix.min(usable_verts - 1));
 
                     let posns: [Vec3; 3] = [
                         gt.transform_point(Vec3::from(posns[indices[0]])),
@@ -595,7 +615,7 @@ fn update_manual_cursor(
         return;
     };
 
-    cursor.0 = Some(uv * resolve.texture_size);
+    cursor.0 = Some(resolve.px_offset + uv * resolve.texture_size);
 }
 
 /// Walks all entities carrying `PointerEvents` with at least one PROXIMITY entry
@@ -1885,7 +1905,7 @@ fn handle_proximity_stream(
             cand.entity,
             ProximityEvent {
                 entered: true,
-                entity: cand.entity.to_bits(),
+                entity: cand.entity.index(),
                 entity_position: Vector3::world_vec_from_vec3(&cand.entity_position),
                 actions,
             },

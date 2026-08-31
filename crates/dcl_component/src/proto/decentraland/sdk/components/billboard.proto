@@ -7,14 +7,20 @@ import "decentraland/sdk/components/common/id.proto";
 // https://adr.decentraland.org/adr/ADR-198
 option (common.ecs_component_id) = 1090;
 
-// The Billboard component makes an Entity automatically reorient its rotation to face the camera. 
-// As the name indicates, it’s used to display in-game billboards and frequently combined with 
+// The Billboard component makes an Entity automatically reorient its rotation to face a target.
+// By default (when target_entity is unset), the billboard faces the main camera. When target_entity
+// is set, the billboard faces that entity instead. Setting target_entity to the camera reserved
+// entity (2) is equivalent to leaving the field unset. If the referenced target entity doesn’t exist
+// or is deleted, the billboard reorientation is disabled until the target exists again.
+//
+// As the name indicates, it’s used to display in-game billboards and frequently combined with
 // the TextShape component.
 //
-// Billboard only affects the Entity's rotation. Its scale and position are still determined by its
+// Billboard only affects the Entity’s rotation. Its scale and position are still determined by its
 // Transform.
 message PBBillboard {
   optional BillboardMode billboard_mode = 1; // the BillboardMode (default: BM_ALL)
+  optional uint32 target_entity = 2; // entity to face instead of the camera; if the referenced entity doesn’t exist, the billboard behavior is disabled until it does
 }
 
 // BillboardMode indicates one or more axis for automatic rotation, in OR-able bit flag form.

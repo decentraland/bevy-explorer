@@ -1,0 +1,64 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    background-color var(--dur-fast) ease,
+    color var(--dur-fast) ease;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* sizes */
+.sm {
+  width: 26px;
+  height: 26px;
+}
+.md {
+  width: 30px;
+  height: 30px;
+}
+/* pill grows to fit a label/value, keeping the size's height */
+.pill.sm,
+.pill.md {
+  width: auto;
+  padding: 0 10px;
+}
+
+/* shapes */
+.square {
+  border-radius: 8px;
+}
+.circle {
+  border-radius: var(--r-pill);
+}
+.pill {
+  border-radius: 10px;
+}
+
+/* variants */
+.ghost {
+  background: transparent;
+}
+.ghost:hover:not(:disabled),
+.ghost.active {
+  background: var(--white-10);
+}
+
+.solid {
+  background: #000;
+}
+.solid:hover:not(:disabled),
+.solid.active {
+  background: var(--white-10);
+}

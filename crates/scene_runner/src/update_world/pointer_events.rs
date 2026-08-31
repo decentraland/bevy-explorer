@@ -1,22 +1,16 @@
 use bevy::{
+    app::{HierarchyPropagatePlugin, Propagate},
+    ecs::entity::EntityHashSet,
     math::FloatOrd,
     platform::collections::{HashMap, HashSet},
     prelude::*,
+    render::mesh::MeshTag,
 };
 use common::{
     inputs::InputMap,
     structs::{PointerTargetType, ToolTips, TooltipSource},
 };
 use comms::global_crdt::ForeignPlayer;
-
-use crate::{
-    renderer_context::RendererSceneContext,
-    update_scene::pointer_results::{
-        event_category, resolve_action_winner, ActionCandidateMode, ActionCategory, IaToCommon,
-        PointerTarget, PointerTargetInfo, ProximityCandidates,
-    },
-    SceneEntity,
-};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{
@@ -26,19 +20,46 @@ use dcl_component::{
     },
     SceneComponentId,
 };
+use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG};
+
+use crate::{
+    renderer_context::RendererSceneContext,
+    update_scene::pointer_results::{
+        event_category, resolve_action_winner, ActionCandidateMode, ActionCategory, IaToCommon,
+        PointerTarget, PointerTargetInfo, ProximityCandidates,
+    },
+    SceneEntity,
+};
 
 use super::AddCrdtInterfaceExt;
 
 pub struct PointerEventsPlugin;
 
+/// Bevy entities the editor wants outlined as its active selection, driven by the `/highlight`
+/// console command. Unioned into the highlight pass below independent of pointer hover/proximity,
+/// so the selection outline persists without writing to the scene's `PointerEvents` (and so never
+/// enters the scene snapshot or the save).
+#[derive(Resource, Default)]
+pub struct EditorHighlight(pub EntityHashSet);
+
 impl Plugin for PointerEventsPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(HierarchyPropagatePlugin::<SelectionOutline>::default());
+
+        app.init_resource::<Highlit>();
+        app.init_resource::<EditorHighlight>();
+
         app.add_crdt_lww_component::<PbPointerEvents, PointerEvents>(
             SceneComponentId::POINTER_EVENTS,
             ComponentPosition::EntityOnly,
         );
 
-        app.add_systems(Update, (hover_text, propagate_avatar_events));
+        app.add_systems(
+            Update,
+            (hover_text, propagate_avatar_events, entity_highlighting),
+        );
+        app.add_observer(selection_outline_on_add);
+        app.add_observer(selection_outline_on_remove);
     }
 }
 
@@ -78,6 +99,9 @@ impl PointerEvents {
             .flat_map(|(_, events)| events.pointer_events.iter())
     }
 }
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, Component)]
+struct SelectionOutline;
 
 pub fn propagate_avatar_events(
     mut commands: Commands,
@@ -248,14 +272,98 @@ fn hover_text(
         process(cand.entity, ActionCandidateMode::Proximity, &synthetic);
     }
 
-    // make unique
-    texts = texts
-        .into_iter()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
+    // make unique (sorted, avoiding the Vec -> HashSet -> Vec round trip)
+    texts.sort_unstable();
+    texts.dedup();
 
-    tooltip
+    // avoid marking the resource changed when the value is identical
+    if tooltip
         .0
-        .insert(TooltipSource::Label("pointer_events"), texts);
+        .get(&TooltipSource::Label("pointer_events"))
+        .is_none_or(|prev| prev != &texts)
+    {
+        tooltip
+            .0
+            .insert(TooltipSource::Label("pointer_events"), texts);
+    }
+}
+
+#[derive(Default, Resource, Deref, DerefMut)]
+struct Highlit(EntityHashSet);
+
+fn entity_highlighting(
+    mut commands: Commands,
+    pointer_events: Query<&PointerEvents, Without<ForeignPlayer>>,
+    hover_target: Res<PointerTarget>,
+    proximity: Res<ProximityCandidates>,
+    mut highlit: ResMut<Highlit>,
+    editor: Res<EditorHighlight>,
+) {
+    let mut highlight_pass = EntityHashSet::new();
+
+    let mut test_and_insert = |entity: Entity| {
+        let Ok(pointer_events) = pointer_events.get(entity) else {
+            return;
+        };
+        if pointer_events.iter().any(|entry| {
+            entry.event_info.as_ref().is_some_and(|info| {
+                info.show_feedback != Some(false) && info.show_highlight != Some(false)
+            })
+        }) {
+            highlight_pass.insert(entity);
+        }
+    };
+
+    if let Some(ref hover_target) = hover_target.0 {
+        test_and_insert(hover_target.container);
+    }
+    for candidate in &proximity.0 {
+        test_and_insert(candidate.entity);
+    }
+    // editor selection — always outlined, no PointerEvents / hover required.
+    highlight_pass.extend(editor.0.iter().copied());
+
+    let new_highlights = highlight_pass.difference(&highlit);
+    for entity in new_highlights {
+        debug!("Highlighting {}", entity);
+        commands
+            .entity(*entity)
+            .try_insert(Propagate(SelectionOutline));
+    }
+
+    let expired_highlights = highlit.difference(&highlight_pass);
+    for entity in expired_highlights {
+        debug!("Highlight of {} expired.", entity);
+        commands
+            .entity(*entity)
+            .try_remove::<Propagate<SelectionOutline>>();
+    }
+
+    **highlit = highlight_pass;
+}
+
+fn selection_outline_on_add(
+    trigger: Trigger<OnAdd, SelectionOutline>,
+    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
+) {
+    let entity = trigger.target();
+    let Ok((mut mesh_3d, mut mesh_tag)) = meshes.get_mut(entity) else {
+        return;
+    };
+    debug!("Selection outline on {entity}.");
+    mesh_3d.set_changed();
+    mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
+}
+
+fn selection_outline_on_remove(
+    trigger: Trigger<OnRemove, SelectionOutline>,
+    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
+) {
+    let entity = trigger.target();
+    let Ok((mut mesh_3d, mut mesh_tag)) = meshes.get_mut(entity) else {
+        return;
+    };
+    debug!("Selection outline removed from {entity}.");
+    mesh_3d.set_changed();
+    mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
 }

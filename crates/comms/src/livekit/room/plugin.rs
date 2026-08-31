@@ -106,7 +106,8 @@ fn initiate_room_connection(
     let address = format!(
         "{}://{}{}",
         url.scheme_str().unwrap_or_default(),
-        url.host().unwrap_or_default(),
+        // authority, not host: host() drops an explicit port (breaks e.g. ws://localhost:7880)
+        url.authority().map(|a| a.as_str()).unwrap_or_default(),
         url.path()
     );
     let params: HashMap<_, _, bevy::platform::hash::FixedHasher> =
@@ -155,6 +156,7 @@ fn poll_connecting_rooms(
     }
 }
 
+#[allow(clippy::result_large_err)] // RoomError is livekit's, and connect failures are rare
 async fn connect_to_room(
     address: String,
     token: String,
@@ -171,6 +173,12 @@ async fn connect_to_room(
     )
     .await
 }
+
+/// Marker for a room that hit a terminal disconnect (kicked / identity conflict) while
+/// running as an authoritative server: no in-process reconnect is possible (the token is
+/// spent); the supervisor must tear the transport down and re-mint.
+#[derive(Component)]
+pub struct ServerRoomTerminal;
 
 fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mut LivekitRoom)>) {
     for (entity, mut livekit_room) in livekit_rooms {
@@ -199,7 +207,13 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                         reason,
                         DisconnectReason::DuplicateIdentity | DisconnectReason::ParticipantRemoved
                     ) {
-                        commands.set_state(ConnectionAvailability::Unavailable);
+                        if common::structs::server_mode() {
+                            // a server has no "connected in another tab" UX: mark the room
+                            // terminal so the headless supervisor reaps it and re-mints
+                            commands.entity(entity).try_insert(ServerRoomTerminal);
+                        } else {
+                            commands.set_state(ConnectionAvailability::Unavailable);
+                        }
                     }
                 }
                 RoomEvent::ConnectionStateChanged(state) => match state {
@@ -337,6 +351,9 @@ fn process_network_message(
         loop {
             match network_message.try_recv() {
                 Ok(outgoing) => {
+                    let Some(payload) = outgoing.message.to_rfc4() else {
+                        continue;
+                    };
                     let destination_identities = match outgoing.recipient {
                         NetworkMessageRecipient::All => Vec::default(),
                         NetworkMessageRecipient::Peer(address) => {
@@ -348,7 +365,7 @@ fn process_network_message(
                     };
 
                     let packet = DataPacket {
-                        payload: outgoing.data,
+                        payload,
                         topic: None,
                         reliable: !outgoing.unreliable,
                         destination_identities,

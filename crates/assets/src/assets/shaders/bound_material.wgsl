@@ -3,14 +3,54 @@
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::{SampleBias, alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing},
     pbr_bindings::{material, emissive_texture, emissive_sampler},
-    pbr_types::{STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT}
-    mesh_view_bindings::{globals, view},
+    pbr_types::{STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT},
+    mesh_functions,
+    mesh_view_bindings::{globals, view, lights},
     pbr_types,
+    shadows,
+    view_transformations,
 }
 #import bevy_core_pipeline::tonemapping::approximate_inverse_tone_mapping
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 #import "embedded://shaders/bound_material_effect.wgsl"::{apply_outline, discard_dither}
+#import "embedded://shaders/toon.wgsl"::toon_lighting
+
+// SHADOW_OPACITY: how dark the sun's cast shadows are on the world.
+// 1.0 = full black shadows (bevy default), 0.0 = no shadow at all.
+// overriding the shadow fetch lifts the shadow value toward "lit" inside the
+// single pbr lighting pass, so shadows become partial instead of fully
+// occluding the sun — no second lighting evaluation needed.
+const SHADOW_OPACITY: f32 = 0.5;
+
+// Beyond the furthest shadow cascade bevy returns "fully lit" (shadow = 1.0),
+// which pops hard at the shadow-distance edge. Instead, fade toward a partial-
+// shadow floor. CASCADE_FAR_SHADOW is how far that floor sits from lit toward
+// the in-cascade shadowed value: 0.5 = halfway between a fully-shadowed face
+// and fully lit (scales with SHADOW_OPACITY so it tracks the near-field
+// shadows). CASCADE_FAR_FADE is the fraction of the shadow distance to blend
+// over.
+const CASCADE_FAR_SHADOW: f32 = 0.5;
+const CASCADE_FAR_FADE: f32 = 0.3;
+
+override fn shadows::fetch_directional_shadow(light_id: u32, frag_position: vec4<f32>, surface_normal: vec3<f32>, view_z: f32) -> f32 {
+    let base = shadows::fetch_directional_shadow(light_id, frag_position, surface_normal, view_z);
+    let softened = mix(1.0, base, SHADOW_OPACITY);
+
+    // far bound of the last cascade = the shadow distance for this light
+    let light = &lights.directional_lights[light_id];
+    let far = (*light).cascades[max((*light).num_cascades, 1u) - 1u].far_bound;
+    if far <= 0.0 {
+        return softened;
+    }
+    // floor halfway between the in-cascade shadowed value (1 - SHADOW_OPACITY)
+    // and fully lit (1.0): 1 - CASCADE_FAR_SHADOW * SHADOW_OPACITY
+    let far_shadow = 1.0 - CASCADE_FAR_SHADOW * SHADOW_OPACITY;
+    // blend the (softened) shadow toward that floor over the last
+    // CASCADE_FAR_FADE of the distance, holding the floor past the edge
+    let fade = smoothstep(far * (1.0 - CASCADE_FAR_FADE), far, -view_z);
+    return mix(softened, far_shadow, fade);
+}
 
 struct Bounds {
     min: u32,
@@ -22,9 +62,7 @@ struct Bounds {
 struct SceneBounds {
     bounds: array<Bounds,8>,
     distance: f32,
-    flags: u32,
     num_bounds: u32,
-    _pad: u32,
 }
 
 fn unpack_bounds(packed: u32) -> vec2<f32> {
@@ -35,13 +73,6 @@ fn unpack_bounds(packed: u32) -> vec2<f32> {
     return vec2<f32>(f32((x_signed) * 16), f32((y_signed) * 16));
 }
 
-const SHOW_OUTSIDE: u32 = 1u;
-//const OUTLINE: u32 = 2u; // replaced by OUTLINE shader def
-const OUTLINE_RED: u32 = 4u;
-const OUTLINE_FORCE: u32 = 8u;
-const DISABLE_DITHER: u32 = 16u;
-const CONE_ONLY_DITHER: u32 = 32u;
-
 @group(2) @binding(100)
 var<uniform> bounds: SceneBounds;
 
@@ -49,12 +80,13 @@ var<uniform> bounds: SceneBounds;
 fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
-#ifdef OUTLINE
 #ifdef MULTISAMPLED
     @builtin(sample_index) sample_index: u32,
 #endif
-#endif
 ) -> FragmentOutput {
+
+    // Lookup the tag for the given mesh
+    let mesh_tag = mesh_functions::get_tag(in.instance_index);
 
 #ifdef INVERTED_SCALE
     let is_front_m = !is_front;
@@ -63,18 +95,16 @@ fn fragment(
 #endif
 
     var cap_brightness: f32 = 0.0;
-    if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
-        cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
+    if (mesh_tag & (#{NO_DITHERING_MESH_TAG} | #{OUTLINE_RED_MESH_TAG})) == 0 {
+        cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (mesh_tag & #{CONE_ONLY_DITHER_MESH_TAG}) == 0);
     }
 
     // generate a PbrInput struct from the StandardMaterial bindings
     var pbr_input = pbr_input_from_standard_material(in, is_front_m);
     var out: FragmentOutput;
 
-#ifdef OUTLINE
 #ifndef MULTISAMPLED
     let sample_index = 0u;
-#endif
 #endif
 
     // apply emmissive multiplier
@@ -155,7 +185,7 @@ fn fragment(
         }
     }
 
-    if should_discard && ((bounds.flags & SHOW_OUTSIDE) == 0) {
+    if should_discard && ((mesh_tag & #{SHOW_OUTSIDE_BOUNDS_MESH_TAG}) == 0) {
         discard;
     }
 
@@ -164,7 +194,13 @@ fn fragment(
 
     // apply lighting
     if (pbr_input.material.flags & bevy_pbr::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
-        out.color = apply_pbr_lighting(pbr_input);
+        if (mesh_tag & #{TOON_MESH_TAG}) != 0u {
+            // avatars: cel shading (own light model; uses the cast shadow only
+            // to pick the lit-vs-shadowed band pair)
+            out.color = toon_lighting(pbr_input);
+        } else {
+            out.color = apply_pbr_lighting(pbr_input);
+        }
     } else {
         // invert tonemapping for unlit materials
         out.color = approximate_inverse_tone_mapping(pbr_input.material.base_color, view.color_grading); 
@@ -179,17 +215,21 @@ fn fragment(
         }
     }
 
-#ifdef OUTLINE
-    let alpha_mode = material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_RESERVED_BITS;
-    if (alpha_mode == pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE) || ((bounds.flags & OUTLINE_FORCE) != 0u) {
+    if (mesh_tag & #{OUTLINE_MESH_TAGS}) != 0 {
+        let outline_color = vec3(
+            f32((mesh_tag & #{OUTLINE_RED_MESH_TAG}) != 0),
+            f32((mesh_tag & #{OUTLINE_GREEN_MESH_TAG}) != 0),
+            f32((mesh_tag & #{OUTLINE_BLUE_MESH_TAG}) != 0),
+        );
+        let black = (mesh_tag & (#{OUTLINE_MESH_TAGS} & ~#{OUTLINE_BLACK_MESH_TAG})) == 0;
         out.color = apply_outline(
             in.position,
             out.color, 
-            (bounds.flags & OUTLINE_RED) != 0u,
+            outline_color,
+            !black,
             sample_index,
         );
     }
-#endif
 
     // apply in-shader post processing (fog, alpha-premultiply, and also tonemapping, debanding if the camera is non-hdr)
     // note this does not include fullscreen postprocessing effects like bloom.
@@ -202,6 +242,16 @@ fn fragment(
         // avoid writing to the depth buffer for alpha-blend materials with low alpha
         discard;
     }
+
+#ifdef TRANSPARENT_FOCUS_OUTPUT
+    // accumulate alpha-weighted view depth + coverage for depth of field
+    out.focus = vec4(
+        -view_transformations::depth_ndc_to_view_z(in.position.z),
+        1.0,
+        0.0,
+        out.color.a,
+    );
+#endif
 
     return out;
 }

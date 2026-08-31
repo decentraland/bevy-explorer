@@ -1,0 +1,152 @@
+.es {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
+  padding: var(--es-pad, 70px 20px);
+}
+
+.card {
+  gap: 14px;
+  padding: var(--es-pad, 56px 20px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--fill-1);
+}
+
+.inline {
+  padding: var(--es-pad, 28px 16px);
+  gap: 8px;
+}
+
+.screen {
+  min-height: 100%;
+  height: var(--es-screen-h, 100vh);
+  padding: var(--es-pad, 40px 20px);
+  background: var(--es-screen-bg, transparent);
+  overflow: hidden;
+}
+.screen .icon {
+  width: 120px;
+  height: 120px;
+  opacity: 0.8;
+  margin-bottom: 24px;
+}
+.screen .icon svg {
+  width: 100%;
+  height: 100%;
+}
+.screen .title {
+  font-size: 24px;
+  opacity: 0.8;
+}
+.screen .sub {
+  max-width: 480px;
+  line-height: 24px;
+  opacity: 0.8;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-45);
+  margin-bottom: 4px;
+}
+.iconWash {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--fill-2);
+  margin-bottom: 8px;
+}
+
+.title {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.inline .title {
+  font-size: 15px;
+}
+.error .title {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.sub {
+  margin: 0;
+  max-width: 340px;
+  color: var(--ink-6);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.sub a {
+  color: var(--brand);
+  text-decoration: none;
+  font-weight: 600;
+}
+.sub a:hover {
+  text-decoration: underline;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: var(--es-actions-gap, 4px);
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: var(--brand);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cta:hover {
+  background: var(--brand-hover);
+}
+
+.ctaOutline {
+  height: auto;
+  padding: 9px 20px;
+  background: transparent;
+  border: 1px solid var(--brand);
+  border-radius: var(--r-pill);
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.ctaOutline:hover {
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+.ctaGhost {
+  height: auto;
+  padding: 9px 16px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  color: var(--text);
+}
+.ctaGhost:hover {
+  background: var(--fill-2);
+}

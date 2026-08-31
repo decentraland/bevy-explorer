@@ -165,6 +165,8 @@ pub enum RpcCall {
         response: RpcResultSender<Result<SerializedProfile, ()>>,
     },
     GetConnectedPlayers {
+        /// calling scene — scopes the answer to its own room in partitioned mode
+        scene: Entity,
         response: RpcResultSender<Vec<String>>,
     },
     GetPlayersInScene {
@@ -177,9 +179,11 @@ pub enum RpcCall {
         response: RpcResultSender<Result<(), String>>,
     },
     SubscribePlayerConnected {
+        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribePlayerDisconnected {
+        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribePlayerEnteredScene {
@@ -265,6 +269,9 @@ pub enum RpcCall {
         method: String,
         uri: String,
         meta: Option<String>,
+        /// scene hash of the requesting scene, when the request originates from scene JS —
+        /// selects a per-scene storage delegation in server mode
+        scene: Option<String>,
         response: RpcResultSender<Result<Vec<(String, String)>, String>>,
     },
     ReadFile {

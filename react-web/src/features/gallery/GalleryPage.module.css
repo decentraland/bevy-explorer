@@ -1,0 +1,257 @@
+/* Gallery page body (shared top bar lives in MainMenuShell). */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+/* Storage indicator (current / max photos). */
+.storage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.storageBar {
+  width: 140px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--white-10);
+  overflow: hidden;
+}
+.storageFill {
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  transition: width var(--dur-fast) ease;
+}
+.storageText {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-45);
+  white-space: nowrap;
+}
+
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 280px;
+}
+
+/* Month-grouped thumbnail grid. */
+.scroll {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 24px;
+}
+.group {
+  margin-bottom: 26px;
+}
+.month {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+.thumb {
+  position: relative;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-card);
+  background: var(--fill-2);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+}
+.thumb:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 0 2px var(--gold);
+}
+.thumbImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* --- PhotoDetail lightbox (covers the whole scaled menu canvas) -------------- */
+.viewer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  /* Heavy black scrim (like --scrim, more opaque) so the lightbox fully covers the grid. */
+  background: rgba(0, 0, 0, 0.92);
+  animation: viewerIn var(--dur-fast) ease;
+}
+@keyframes viewerIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.viewerClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 3;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--r-control);
+  background: var(--white-10);
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.viewerClose:hover {
+  background: var(--fill-4);
+}
+
+.stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  padding: 40px;
+}
+.stageImg {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--r-card);
+}
+.nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--white-10);
+  color: var(--text);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) ease;
+}
+.nav:hover:not(:disabled) {
+  background: var(--fill-4);
+}
+.nav:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.navPrev {
+  left: 14px;
+}
+.navNext {
+  right: 14px;
+}
+
+/* Info / actions sidebar. */
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 320px;
+  flex: none;
+  padding: 64px 26px 26px;
+  background: var(--menu-bg);
+  overflow-y: auto;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.actions > button,
+.actionLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Anchor styled to match the ghost action buttons (download is a real link). */
+.actionLink {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  background: var(--white-10);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.actionLink:hover {
+  background: var(--fill-4);
+}
+.deleteBtn {
+  color: var(--red);
+}
+
+.infoBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.infoLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-6);
+}
+.infoValue {
+  font-size: 14px;
+  color: var(--text);
+}
+.coords {
+  color: var(--ink-45);
+}
+.people {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.person:hover {
+  background: var(--white-10);
+}
+.personName {
+  font-size: 14px;
+  font-weight: 600;
+}

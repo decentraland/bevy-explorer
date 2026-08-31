@@ -1,13 +1,16 @@
 # bevy-explorer
 
-
-A forward-looking implementation of the Decentraland protocol.
-
-visit our [Releases](https://github.com/decentraland/bevy-explorer/releases/latest) page for the latest client downloads.
+A forward-looking implementation of the Decentraland protocol, written in [rust](https://www.rust-lang.org/) on the [Bevy](https://bevy.org) engine.
 
 ![screenshots](montage.png)
 
-This implementation uses [rust](https://www.rust-lang.org/) and the [Bevy](https://bevy.org) engine, and targets desktop clients.
+One engine, three products:
+
+| Target | What it is | Where it ships |
+| --- | --- | --- |
+| **Web client** | The engine compiled to WebAssembly (WebGPU), with a React DOM HUD, running in the browser | `@dcl-regenesislabs/bevy-explorer-web` → served at `decentraland.zone/bevy-web` |
+| **Desktop client** | Native binary for macOS / Linux / Windows, same React HUD rendered through an offscreen CEF webview | [Releases](https://github.com/decentraland/bevy-explorer/releases/latest) |
+| **Headless server** | Authoritative scene server, no rendering — drop-in replacement for `@dcl/hammurabi-server` | `@dcl-regenesislabs/bevy-headless-server` (npm) |
 
 This project's goals are to:
 - document current and future protocol standards
@@ -15,81 +18,156 @@ This project's goals are to:
 - increase the field of alternative Explorers
 - prioritize solid fundamentals, extensibility, and the use of modern open-source frameworks
 
-# Building from source
+## Repository layout
 
-1. Clone the repo using `git clone https://github.com/decentraland/bevy-explorer`
-2. Install [rust](https://www.rust-lang.org/tools/install)
-3. Download and install third party libraries
-    - on linux:
-      - *note: livekit networking (main-realm transport) in the linux build is temporarily disabled due to conflicting imports in webrtc and deno. we hope this will be resolved soon*
-      - Install alsa and udev: `sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev`
-      - Install ffmpeg deps: `sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev`
-      - Install Livekit deps: `sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev`
-    - on macos: 
-      - `brew install ffmpeg@6 pkg-config`
-      - `export PKG_CONFIG_PATH=/opt/homebrew/opt/ffmpeg@6/lib/pkgconfig`
-    - on windows: 
-      - install `clang`, (most easily done via https://github.com/llvm/llvm-project/releases/)
-      - download and unzip `https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build-shared.7z`
-      - set `LIBCLANG_PATH` = `path to LLVM\x64\bin` (this is packaged with visual studio, or can be downloaded separately)
-      - set `FFMPEG_DIR` = `root folder where ffmpeg has been unzipped`
-      - add `ffmpeg\bin` to your `PATH`
-4. Install [protoc](https://github.com/protocolbuffers/protobuf/releases) (Mac Homebrew users can do `brew install protobuf`)
-5. build scene engine: `cargo build --release --package dcl_deno_ipc`
-6. run renderer: `cargo run --release`
+| Path | What |
+| --- | --- |
+| `src/` | binaries: `decentra-bevy` (client), `decentra-bevy-cef` (CEF render-process helper), `headless` (scene server) |
+| `crates/` | the engine, split by domain (`scene_runner`, `comms`, `avatar`, `ipfs`, `dcl_deno`, `system_bridge`, …) |
+| `react-web/` | the React DOM HUD — one codebase for both web and desktop; see [`react-web/README.md`](react-web/README.md) |
+| `react-web/bridge-scene/` | headless SDK7 "super-user" scene that relays engine ↔ React over a `BroadcastChannel` |
+| `deploy/web/` | the published web tree: engine boot module + workers + wasm, bridge scene, service worker |
+| `deploy/headless/` | npm launcher + per-platform packaging for the headless server |
+| `deploy/macos`, `deploy/linux` | desktop packaging (installer, AppImage) |
+| `docs/`, `react-web/docs/` | design notes and backlog |
 
-We try to keep these instructions up to date, but the [github ci](.github/workflows/ci.yml) is the most accurate source of build information.
+## Prerequisites
 
-# Arguments
+Common to every target:
+
+- [rust](https://www.rust-lang.org/tools/install) (stable; the wasm build needs nightly — see below)
+- [protoc](https://github.com/protocolbuffers/protobuf/releases) — `brew install protobuf`
+- node 20+ (24 in CI) for the React HUD and bridge scene
+- optionally [just](https://github.com/casey/just) — `just --list` for the dev entry points used below
+
+Platform libraries (needed by the native and headless builds):
+
+- **linux**: `sudo apt-get install --no-install-recommends libasound2-dev libudev-dev ninja-build clang cmake pkg-config libssl-dev libx11-dev libgl1-mesa-dev libxext-dev` plus ffmpeg dev packages (`libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev`)
+- **macos**: `brew install ffmpeg@6 pkg-config ninja` and `export PKG_CONFIG_PATH=/opt/homebrew/opt/ffmpeg@6/lib/pkgconfig`
+- **windows**: install [clang/LLVM](https://github.com/llvm/llvm-project/releases/) and set `LIBCLANG_PATH`; unzip [ffmpeg 6.0 shared](https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build-shared.7z), set `FFMPEG_DIR` to its root and add `ffmpeg\bin` to `PATH` (ninja and cmake ship with visual studio)
+
+## Web client
+
+The engine is compiled to wasm and boots **in the React page's own document** (no iframe): the canvas sits behind the HUD, and the bridge scene relays between them.
+
+```bash
+rustup toolchain install nightly-2026-04-15 --target wasm32-unknown-unknown --component rust-src
+cargo install wasm-pack
+just wasm     # builds the wasm into deploy/web/engine/pkg, then serves react-web and opens a browser
+```
+
+`just wasm` is the whole loop: `wasm-pack build`, re-bundle the sandbox worker (it inlines the wasm glue, so it must be rebuilt with the wasm), `npm install` in `react-web` and `react-web/bridge-scene`, then `npm run dev`.
+
+Useful URLs once the dev server is up:
+
+- `http://localhost:5173/` — real engine + live bridge-scene preview on :8100
+- `http://localhost:5173/?mock=1` — full HUD on a fake bridge, **no engine build needed**
+- `http://localhost:5173/?bundled=1` — engine loads the exported static bridge scene, i.e. exactly what ships
+
+Requires a WebGPU-capable browser. Deployment topology (versioned CDN base, same-origin rules, COEP service worker) is documented in [`react-web/README.md`](react-web/README.md).
+
+## Desktop client
+
+The desktop build renders the same React HUD through an offscreen CEF webview (`react-hud-cef`, a default feature). Without the HUD bundle the app runs with **no UI at all**.
+
+```bash
+just setup-cef                 # once per machine: exports the CEF distribution to ~/.local/share/cef
+export CEF_PATH=$HOME/.local/share/cef
+# linux only, to run from the target dir:
+export LD_LIBRARY_PATH=$CEF_PATH:$LD_LIBRARY_PATH
+
+just native-release            # bundles the HUD if stale, then builds + runs everything
+```
+
+`just native-debug` is the same in debug. Both pass extra arguments through:
+
+```bash
+just native-release --server https://realm-provider.decentraland.org/main --location 52,-52
+```
+
+Doing it by hand instead of via `just`:
+
+```bash
+./scripts/gen-ts-bindings.sh                     # TS types for the system API (generated, gitignored)
+cd react-web && npm ci && (cd bridge-scene && npm ci) && npm run bundle:native && cd ..
+cargo build --release --package dcl_deno_ipc     # scene runtime sidecar
+cargo build --release                            # decentra-bevy + decentra-bevy-cef
+cargo run --release
+```
+
+To build without CEF at all (the engine's own bevy-ui HUD instead of React):
+
+```bash
+cargo run --release --no-default-features --features "livekit,ffmpeg,inspect,social"
+```
+
+## Headless server
+
+An authoritative scene server with no renderer — the SDK spawns it for scenes with `authoritativeMultiplayer` enabled.
+
+```bash
+npx @dcl-regenesislabs/bevy-headless-server --realm http://localhost:8000
+```
+
+From source (the binary is feature-gated out of default builds, and execs the sidecar from its own directory, so both land in `target/release`):
+
+```bash
+cargo build --release -p dcl_deno_ipc
+cargo build --release --bin headless --no-default-features --features headless,livekit
+./target/release/headless --realm <url> --location 0,0 --server-mode
+```
+
+`--orchestrated` runs it as a multi-scene worker driven over stdin/stdout instead. See [`deploy/headless/launcher/README.md`](deploy/headless/launcher/README.md) for the CLI contract and [`docs/headless-sdk-preview.md`](docs/headless-sdk-preview.md) for how it replaces hammurabi in the SDK preview.
+
+## Arguments
 
 `cargo run --release --bin decentra-bevy -- [options]`
 
-`--server https://sdk-test-scenes.decentraland.zone`
-- specify the content server, defaults to the sdk test server.
+**World**
+- `--server <url>` — content server / realm. Defaults to `https://realm-provider-ea.decentraland.org/main`.
+- `--content-server <url>` — override the content server only.
+- `--location 52,-52` — parcel to spawn at.
+- `--distance <n>` — scene load distance in meters (default 100). Also `/scene_distance`.
+- `--unload <n>` — extra distance before scenes are unloaded.
+- `--threads <n>` — max simultaneous scene-javascript threads (default 4). Also `/scene_threads`.
+- `--preview` — preview mode (local gatekeeper, no failed-asset backoff).
 
-`--location 52,-52`
-- specify the parcel at which to spawn.
+**Rendering**
+- `--vsync (true|false)` — defaults to off.
+- `--fps <n>` — target fps (default 60; overridden by the refresh rate when vsync is on). Also `/fps`.
+- `--gpu_bytes_per_frame <n>` — cap per-frame gpu uploads.
+- `--no_gltf`, `--no_avatar`, `--no_fog` — disable gltf loading / avatar rendering / distance fog.
+- `--bake (f|h|q|o)` and `--impost <d1,d2,…>` — imposter baking speed and distances.
 
-`--vsync (true|false)`
-- disable/enable vsync. defaults to off.
+**UI**
+- `--ui <scene|none>` — use a specific system scene, or `none` for no system scene. Any explicit `--ui` opts **out** of the React HUD; without it, HUD builds load the bundled bridge scene.
+- `--params "key1=value1&key2=value2"` — arbitrary parameters for the system scene, readable via `BevyApi.getParams()`. On web, URL query parameters are forwarded automatically (with decoding).
+- `--builtin-login`, `--builtin-chat`, `--builtin-emotes`, `--builtin-nametags`, `--builtin-perms`, `--builtin-tooltips`, `--builtin-loading-scene-ui` — force individual engine-drawn UI pieces back on.
 
-`--fps (number)`
-- set target fps. defaults to 60. if vsync is true this will be overridden by the vsync refresh rate. also accessible via console `/fps` command.
+**Debug**
+- `--inspect <scene_hash>` — pause that scene's js runtime until a debugger (e.g. `chrome://inspect`) attaches. Needs `--features inspect`.
+- `--scene_log_to_console`, `--sysinfo`, `--log_fps <n>`.
+- `--test_scenes "52,-52;52,-54"` — run the scene test harness over those parcels and exit.
 
-`--msaa [1,2,4,8]`
-- set the number of multisamples. higher values make for nicer graphics but takes more gpu power. defaults to 4.
+## Testing
 
-`--threads n`
-- set the max simultaneous thread count for scene javascript execution. higher will allow better performance for distant scenes, but requires more cpu power. defaults to 4.
-- also accessible via console command `/scene_threads`
+```bash
+cargo test --all                      # engine
+npm test --prefix react-web           # HUD, deterministic (vitest, no engine)
+npm run test:e2e --prefix react-web   # HUD against a real engine (playwright, needs a GPU)
+```
 
-`--distance n`
-- set the distance (in meters) at which scenes will be loaded. defaults to 100.0.
-- also accessible via console command `/scene_distance`
+`react-web/review.md` is the pre-merge checklist for anything under `react-web/`.
 
-`--no_gltf`
-- disable gltf loading.
+## CI and release channels
 
-`--no_avatar`
-- disable avatar rendering.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the most accurate source of build information — it covers fmt, clippy, the test matrix, a headless smoke test, and the web build/deploy.
 
-`--no_fog`
-- disable distance fog
+- **Web** — every push to `main` publishes `@dcl-regenesislabs/bevy-explorer-web` (npm + CDN) from `deploy/web`.
+- **Headless** — `publish-headless.yml` publishes a snapshot on `next` per main push; releasing to SDK previews means dispatching it with `dist_tag=latest`.
+- **Desktop** — `package.yml`, dispatched manually, cuts a GitHub prerelease (linux + windows; the macOS leg is disabled pending notarization secrets).
 
-`--inspect <scene_hash>`
-- when the scene with the input hash is first loaded, the js runtime will pause waiting for a debugger session (such as `chrome://inspect`) to connect, and allow you to debug the scene code. requires a build with --features "inspect"
-
-`--params "key1=value1&key2=value2"`
-  - pass arbitrary key-value parameters to the system scene, accessible via `BevyApi.getParams()`.
-  - format is URL query string style: `key=value` pairs separated by `&`.
-  - values are passed as-is (no URL decoding on desktop).
-  - on web, all URL query parameters are automatically forwarded as params, with URL decoding applied.
-  - example: `--params "disableFeatures=minimap,chat&debug=true"`
-  
-# Testing
-
-`cargo test --all` executes all the tests.
-
+Built by DCL Regenesis Labs — dclregenesislabs.xyz
 
 Powered by the Decentraland DAO
 ![Decentraland DAO logo](https://bafkreibci6gg3wbjvxzlqpuh353upzrssalqqoddb6c4rez33bcagqsc2a.ipfs.nftstorage.link/)

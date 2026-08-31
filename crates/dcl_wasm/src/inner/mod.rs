@@ -8,7 +8,9 @@ use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
 use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
-    js::{CommunicatedWithRenderer, SceneResponseSender, ShuttingDown, SuperUserScene},
+    js::{
+        CommunicatedWithRenderer, CrdtSendsThisTick, KillFlag, SceneResponseSender, SuperUserScene,
+    },
     RendererResponse, SceneElapsedTime,
 };
 use gotham_state::GothamState;
@@ -16,14 +18,14 @@ use ipfs::SceneJsFile;
 use once_cell::sync::OnceCell;
 use system_bridge::SystemApi;
 use tokio::sync::{
-    mpsc::{channel, Receiver, Sender},
+    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     Mutex,
 };
 
 pub struct SceneInitializationData {
     pub initial_crdt_store: CrdtStore,
     pub scene_context: CrdtContext,
-    pub thread_rx: Receiver<RendererResponse>,
+    pub thread_rx: UnboundedReceiver<RendererResponse>,
     pub scene_js: SceneJsFile,
     pub crdt_component_interfaces: CrdtComponentInterfaces,
     pub renderer_sender: SceneResponseSender,
@@ -31,6 +33,7 @@ pub struct SceneInitializationData {
     pub storage_root: String,
     pub super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     pub scene_origin: bevy::prelude::Vec3,
+    pub kill_flag: KillFlag,
 }
 
 // Static storage shared data
@@ -42,9 +45,11 @@ pub fn init_runtime() {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
     initial_crdt_store: CrdtStore,
     scene_context: CrdtContext,
+    _presence_context: u64,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
@@ -53,9 +58,15 @@ pub fn spawn_scene(
     _inspect: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
-) -> Sender<RendererResponse> {
+) -> (
+    UnboundedSender<RendererResponse>,
+    Option<tokio::sync::oneshot::Sender<()>>,
+) {
+    let scene_id = scene_context.scene_id;
     // create engine channel
-    let (thread_sx, thread_rx) = channel(1);
+    let (thread_sx, thread_rx) = unbounded_channel();
+    let kill_flag = KillFlag::default();
+    let (kill_guard, killed) = tokio::sync::oneshot::channel();
 
     IoTaskPool::get()
         .spawn(async move {
@@ -76,14 +87,23 @@ pub fn spawn_scene(
                     storage_root,
                     super_user,
                     scene_origin,
+                    kill_flag: kill_flag.clone(),
                 });
 
             // spin up a scene thread to consume it
-            spawn_and_init_sandbox().await
+            spawn_and_init_sandbox().await;
+
+            // the guard is never sent on; this resolves when the engine drops the
+            // scene handle. set the kill flag (shared wasm memory, so the worker sees
+            // it at its next tick boundary and tears itself down), and hand engine.js
+            // the job of escalating if that doesn't happen
+            let _ = killed.await;
+            kill_flag.kill();
+            terminate_sandbox(scene_id.0.to_bits());
         })
         .detach();
 
-    thread_sx
+    (thread_sx, Some(kill_guard))
 }
 
 use wasm_bindgen::prelude::*;
@@ -93,6 +113,8 @@ use wasm_bindgen::prelude::*;
 extern "C" {
     #[wasm_bindgen(js_name = spawn_and_init_sandbox)]
     async fn spawn_and_init_sandbox();
+    #[wasm_bindgen(js_name = terminate_sandbox)]
+    fn terminate_sandbox(scene_id: u64);
 }
 
 #[wasm_bindgen]
@@ -120,6 +142,7 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
         scene_initialization_data.global_update_receiver,
         scene_initialization_data.super_user,
         scene_initialization_data.scene_origin,
+        scene_initialization_data.kill_flag,
     );
 
     local_storage::init(&context).await;
@@ -142,6 +165,22 @@ impl WorkerContext {
 
     pub fn get_scene_title(&self) -> String {
         self.state.borrow().borrow::<CrdtContext>().title.clone()
+    }
+
+    pub fn get_scene_id(&self) -> u64 {
+        self.state
+            .borrow()
+            .borrow::<CrdtContext>()
+            .scene_id
+            .0
+            .to_bits()
+    }
+
+    /// live references to the scene state: 1 = only this context, +1 per in-flight or
+    /// parked op future (every op clones via rc()). teardown is safe to free the state
+    /// only once this drains to 1.
+    pub fn ref_count(&self) -> usize {
+        Rc::strong_count(&self.state)
     }
 
     pub(crate) fn rc(&self) -> Rc<RefCell<GothamState>> {
@@ -215,12 +254,15 @@ impl From<WasmError> for JsValue {
 
 #[wasm_bindgen]
 pub fn op_set_elapsed(state: &WorkerContext, elapsed: f32) {
-    state.state.borrow_mut().put(SceneElapsedTime(elapsed));
+    let mut state = state.state.borrow_mut();
+    state.put(SceneElapsedTime(elapsed));
+    // tick boundary: reset the bounded per-tick send allowance
+    state.try_take::<CrdtSendsThisTick>();
 }
 
 #[wasm_bindgen]
 pub fn op_continue_running(state: &WorkerContext) -> bool {
-    !state.state.borrow().has::<ShuttingDown>()
+    !state.state.borrow().borrow::<KillFlag>().killed()
 }
 
 #[wasm_bindgen]
@@ -237,7 +279,7 @@ pub fn drop_context(state: WorkerContext) {
     let span = state.state.borrow_mut().try_take::<EnteredSpan>();
     drop(span);
     let strong_count = Rc::strong_count(&state.state);
-    let weak_count = Rc::strong_count(&state.state);
+    let weak_count = Rc::weak_count(&state.state);
 
     let Ok(inner) = Rc::try_unwrap(state.state) else {
         panic!("strong: {strong_count}, weak: {weak_count}");

@@ -114,10 +114,11 @@ module.exports.kernelFetch = async function (body) {
 //   equip?: PBAvatarEquippedData,
 //   hasClaimedName?: bool,
 //   profileExtras?: {field: value}
+//   nameColor: Color3
 // }
 // => deployed version
 module.exports.setAvatar = async function(avatar) {
-    return await Deno.core.ops.op_set_avatar(avatar.base, avatar.equip, avatar.hasClaimedName, avatar.profileExtras)
+    return await Deno.core.ops.op_set_avatar(avatar)
 }
 
 module.exports.getProfileExtras = async function() {
@@ -144,6 +145,19 @@ module.exports.getInputBindings = async function() {
 // }
 module.exports.setInputBindings = async function(bindings) {
     await Deno.core.ops.op_set_bindings(bindings)
+}
+
+// declare HUD focus state
+// arg: {
+//   ui: bool,     // a HUD surface (menu/popup) is active: input is reserved above scenes,
+//                 // but the system-action stream keeps flowing
+//   text: bool,   // a HUD text field has keyboard focus: keys are typing, no actions resolve
+//   scroll: bool, // the cursor is over a scrollable HUD element: the Scroll actions are
+//                 // reserved, so every input bound to them stands down for world consumers
+//                 // while the action stream still resolves Scroll for the HUD to consume
+// }
+module.exports.setUiFocus = async function(focus) {
+    Deno.core.ops.op_set_ui_focus(focus?.ui ?? false, focus?.text ?? false, focus?.scroll ?? false)
 }
 
 
@@ -173,7 +187,16 @@ module.exports.showUi = async function(args) {
 
   const reply = await Deno.core.ops.op_console_command("show_ui", argsArray)
   const value = reply.split(":").pop()?.trim().toLowerCase();
-  return value === "true";  
+  return value === "true";
+}
+
+// run an arbitrary console command and await its reply via the per-invocation
+// response channel.
+// cmd: string (command name, without the leading slash)
+// args: string[] (positional arguments)
+// returns: the command's reply string on success; rejects with the failure message
+module.exports.consoleCommand = async function(cmd, args) {
+    return await Deno.core.ops.op_console_command(cmd, args ?? [])
 }
 
 // [{
@@ -510,12 +533,37 @@ module.exports.social = {
   // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
   getBlockedUsers: async function() {
       return await Deno.core.ops.op_get_blocked_users();
+  },
+
+  // returns { blockedUsers: string[], blockedByUsers: string[] } (addresses only)
+  getBlockingStatus: async function() {
+      return await Deno.core.ops.op_get_blocking_status();
+  },
+
+  // get block updates as a stream (someone blocked / unblocked the local user)
+  // type BlockUpdateData = {
+  //   address: string,
+  //   isBlocked: bool,
+  // }
+  getBlockUpdateStream: async function() {
+    const rid = await Deno.core.ops.op_get_block_update_stream();
+
+    async function* streamGenerator() {
+      while (true) {
+        const next = await Deno.core.ops.op_read_block_update_stream(rid);
+        if (next === null) break;
+        yield next;
+      }
+    }
+
+    return streamGenerator();
   }
 }
 
 // get scene loading UI state as a stream
 // type SceneLoadingUi = {
 //   visible: boolean,
+//   realmConnected: boolean,
 //   title: string,
 //   pendingAssets: number | null,
 // }

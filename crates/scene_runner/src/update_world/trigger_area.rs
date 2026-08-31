@@ -242,7 +242,10 @@ fn update_triggers(
 
         // get avatar colliders
         let mut new_avatars = Default::default();
-        if trigger_def.collision_mask & (ColliderLayer::ClPlayer as u32) != 0 {
+        if trigger_def.collision_mask
+            & (ColliderLayer::ClPlayer as u32 | ColliderLayer::ClMainPlayer as u32)
+            != 0
+        {
             new_avatars = colliders
                 .get_collider(&collider.0)
                 .map(|c| {

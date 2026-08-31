@@ -63,6 +63,7 @@ fn setup(
             let _ = sx.send(ev.clone());
         },
         |_address, _status| {},
+        |_address: &str, _is_blocked: bool| {},
         move |ev: DirectChatMessage| {
             let _ = sx_c.send(ev);
         },
