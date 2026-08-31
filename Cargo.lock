@@ -2783,7 +2783,7 @@ dependencies = [
  "ethers-core",
  "futures-lite",
  "futures-util",
- "gloo-timers 0.3.0",
+ "gloo-timers 0.4.0",
  "http 1.5.0",
  "image",
  "ipfs",
