@@ -42,7 +42,7 @@ async function enterWorld(page: Page): Promise<void> {
   await page.goto('/?mock=1')
   await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
   // Entry now goes through the destination picker; skip it (default spawn) to reach the world HUD.
-  await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click()
+  await page.getByRole('button', { name: /SKIP TO HOME/i }).click()
   await page.waitForSelector('nav[aria-label="Main navigation"]')
 }
 
@@ -125,7 +125,7 @@ test.describe('visual — mock HUD', () => {
   test('permission dialog', async ({ page }) => {
     await page.goto('/?mock=1&perm=1')
     await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
-    await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click()
+    await page.getByRole('button', { name: /SKIP TO HOME/i }).click()
     await page.getByRole('alertdialog').waitFor()
     await settle(page)
     await expect(page).toHaveScreenshot('permission-dialog.png')
@@ -184,7 +184,7 @@ test.describe('visual — mock HUD', () => {
   test('hover tooltips (radial)', async ({ page }) => {
     await page.goto('/?mock=1&simhover=7')
     await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
-    await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click()
+    await page.getByRole('button', { name: /SKIP TO HOME/i }).click()
     await page.waitForSelector('nav[aria-label="Main navigation"]')
     await page.getByText('Show Profile').waitFor() // the seeded hover arrives ~1.5s after entry
     const vp = page.viewportSize()
