@@ -81,6 +81,11 @@ struct Args {
     storage_delegation: Option<String>,
     /// deterministic guest wallet (test harness): address derivable offline from the seed
     wallet_seed: Option<u64>,
+    /// Pulse realm to announce verbatim; `--server-mode` only. Orchestrated servers host several
+    /// realms at once and take one per scene on `add-scene` instead.
+    pulse_realm: Option<String>,
+    /// Pulse server as `host:port`; the orchestrator passes its deployment's (zone or prod)
+    pulse_server: Option<String>,
 }
 
 fn parse_args() -> Args {
@@ -123,6 +128,14 @@ fn parse_args() -> Args {
         .ok()
         .or_else(|| std::env::var("PROCESS_STORAGE_DELEGATION").ok());
     let wallet_seed: Option<u64> = args.value_from_str("--wallet-seed").ok();
+    let pulse_realm: Option<String> = args.value_from_str("--pulse-realm").ok();
+    let pulse_server: Option<String> = args.value_from_str("--pulse-server").ok();
+    if pulse_realm.is_some() && orchestrated {
+        eprintln!(
+            "--pulse-realm is a --server-mode flag; orchestrated scenes carry their own realm"
+        );
+        std::process::exit(2);
+    }
     Args {
         realm,
         location,
@@ -134,6 +147,8 @@ fn parse_args() -> Args {
         tick_hz,
         storage_delegation,
         wallet_seed,
+        pulse_realm,
+        pulse_server,
     }
 }
 
@@ -171,6 +186,12 @@ enum ControlCommand {
         /// base64 world-storage delegation minted by the orchestrator for this scene
         #[serde(rename = "storageDelegation")]
         storage_delegation: Option<String>,
+        /// The realm this scene belongs to — the same name a client reads from that realm's
+        /// `about`. Like `adapter`, it states how the scene is being served, which only the
+        /// orchestrator knows. Pulse partitions peer visibility by realm and every world numbers
+        /// its parcels from 0,0, so this is what tells two cohosted worlds' `0,0` apart — and
+        /// getting it wrong is silent, not loud, which is why it is not optional.
+        realm: String,
     },
     RemoveScene {
         #[serde(rename = "sceneId")]
@@ -435,9 +456,23 @@ fn main() {
         .add_event::<SystemAudio>()
         .add_event::<PermissionUsed>();
 
+    // the orchestrator minted the realm key for this preview, so we announce it rather than
+    // waiting for a scene to load and deriving the same string from its entity id
+    if let Some(realm) = args.pulse_realm.clone() {
+        app.insert_resource(comms::pulse::plugin::PulseRealmOverride(realm));
+    }
+    if let Some(endpoint) = args.pulse_server.clone() {
+        app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(endpoint));
+    }
+
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
     app.add_systems(Startup, setup.in_set(SetupSets::Init));
     app.add_systems(PreUpdate, supervisor);
+    #[cfg(unix)]
+    {
+        shutdown_signal::install();
+        app.add_systems(Update, exit_on_shutdown_signal);
+    }
     app.add_systems(
         Update,
         (
@@ -629,6 +664,45 @@ fn setup(
     current_profile.is_deployed = true;
 }
 
+/// SIGINT/SIGTERM/SIGHUP wind the engine down through `AppExit` instead of the default
+/// immediate termination, so the `World` drops and the comms drivers get to say goodbye
+/// (the Pulse driver sends its ENet DISCONNECT on drop; without it the server only notices
+/// us via its peer timeout). A repeated signal bails out hard.
+#[cfg(unix)]
+fn exit_on_shutdown_signal(mut sent: Local<bool>, mut exit: EventWriter<AppExit>) {
+    if !*sent && shutdown_signal::received() {
+        *sent = true;
+        info!("[headless] shutdown signal received, exiting");
+        exit.write_default();
+    }
+}
+
+#[cfg(unix)]
+mod shutdown_signal {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static RECEIVED: AtomicBool = AtomicBool::new(false);
+
+    pub fn received() -> bool {
+        RECEIVED.load(Ordering::Relaxed)
+    }
+
+    extern "C" fn flag(signal: libc::c_int) {
+        if RECEIVED.swap(true, Ordering::Relaxed) {
+            // a repeated signal means the graceful exit isn't getting there; bail out hard
+            unsafe { libc::_exit(128 + signal) };
+        }
+    }
+
+    pub fn install() {
+        unsafe {
+            for sig in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+                libc::signal(sig, flag as *const () as libc::sighandler_t);
+            }
+        }
+    }
+}
+
 /// Liveness supervisor. Logs when the scene first ticks; exits non-zero on a
 /// broken scene or the optional wall-clock timeout, zero on graceful conditions.
 #[allow(clippy::too_many_arguments)]
@@ -811,6 +885,7 @@ fn drain_control_commands(
     mut commands: Commands,
     mut server_rooms: ResMut<ServerSceneRooms>,
     mut crdt_contexts: ResMut<comms::global_crdt::CrdtContexts>,
+    mut scene_realms: ResMut<comms::global_crdt::SceneRealms>,
     wallet: Res<Wallet>,
     ipfs: IpfsAssetServer,
     preview: Res<PreviewMode>,
@@ -955,10 +1030,12 @@ fn drain_control_commands(
                 urn,
                 adapter,
                 storage_delegation,
+                realm,
             } => {
                 if let Some(encoded) = &storage_delegation {
                     store_delegation(&scene_id, encoded, &mut delegations);
                 }
+                scene_realms.0.insert(scene_id.clone(), realm);
                 ctl_emit(&serde_json::json!({"type": "scene-added", "scene": scene_id}));
 
                 if let Some(adapter) = adapter {
@@ -1024,6 +1101,7 @@ fn drain_control_commands(
                 portables.remove(&scene_id);
                 orch.wanted.remove(&scene_id);
                 delegations.by_scene.remove(&scene_id);
+                scene_realms.0.remove(&scene_id);
                 mint_tasks.retain(|(sid, _, _)| sid != &scene_id);
                 if let Some((_, ent)) = server_rooms.0.remove(&scene_id) {
                     if let Ok(mut c) = commands.get_entity(ent) {

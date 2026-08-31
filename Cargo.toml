@@ -361,6 +361,7 @@ chrono = { workspace = true }
 tracing = { version = "0.1" }
 tracing-appender = "0.2.3"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
+libc = { workspace = true }
 
 # non-main dependencies
 futures-lite = { workspace = true }

@@ -150,6 +150,7 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
             .filter(|scene| scene != "none"),
         hud,
         scene_params: args.value_from_str("--params").ok(),
+        pulse_server: args.value_from_str("--pulse-server").ok(),
         scene_threads: args.value_from_str("--threads").ok(),
         scene_load_distance: args.value_from_str("--distance").ok(),
         scene_unload_extra_distance: args.value_from_str("--unload").ok(),

@@ -84,11 +84,18 @@ pub enum PulseDisconnect {
     InvalidHandshakeField,
     /// Sustained corrupt/oversized packets (buggy client, fuzzer, or amplification probe).
     PacketCorrupted,
+    /// `SceneListenerUpdate` carried an invalid AoI (no rects, inverted/out-of-range rect, or over
+    /// the server's parcel budget). The AoI in force when it arrived is untouched.
+    InvalidSceneListenerField,
     /// A code this client build doesn't recognise. Treated as terminal to be safe.
     Unknown(u32),
 }
 
 impl PulseDisconnect {
+    /// The code we close with when leaving on purpose — the server's `DisconnectReason.GRACEFUL`,
+    /// as the reference client sends.
+    pub const GRACEFUL_CODE: u32 = 1;
+
     /// Map an ENet disconnect `data` code to a reason. Mirrors the server's `DisconnectReason` enum
     /// 1:1; unrecognised codes (a newer server) fall through to [`PulseDisconnect::Unknown`].
     pub fn from_code(code: u32) -> Self {
@@ -110,6 +117,7 @@ impl PulseDisconnect {
             14 => Self::HandshakeReplayRejected,
             15 => Self::InvalidHandshakeField,
             16 => Self::PacketCorrupted,
+            19 => Self::InvalidSceneListenerField,
             other => Self::Unknown(other),
         }
     }

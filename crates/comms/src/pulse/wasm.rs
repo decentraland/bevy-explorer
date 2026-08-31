@@ -26,8 +26,8 @@ use tokio::sync::mpsc;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{
-    ReadableStreamDefaultReader, WebTransport, WebTransportBidirectionalStream, WebTransportHash,
-    WebTransportOptions, WritableStreamDefaultWriter,
+    ReadableStreamDefaultReader, WebTransport, WebTransportBidirectionalStream,
+    WebTransportCloseInfo, WebTransportHash, WebTransportOptions, WritableStreamDefaultWriter,
 };
 
 use super::framing::{
@@ -167,6 +167,8 @@ async fn pump_outbound(
     // Per-channel outbound sequence, mirroring the server's `DatagramSequencer` (wraps at u32).
     let mut seq_sequenced: u32 = 0;
     let mut seq_unsequenced: u32 = 0;
+    // Leaving on purpose (stop flag / link dropped) closes GRACEFUL; a broken stream does not.
+    let mut graceful = true;
 
     while !stop.load(Ordering::Relaxed) {
         // Race the next frame against a short timeout so a bare stop flip (no channel close) is still
@@ -189,6 +191,7 @@ async fn pump_outbound(
                 let framed = frame_stream(&frame.bytes);
                 if let Err(err) = write(&stream_writer, &framed).await {
                     warn!("pulse: webtransport reliable send failed: {err:?}");
+                    graceful = false;
                     break;
                 }
             }
@@ -210,7 +213,11 @@ async fn pump_outbound(
         }
     }
 
-    teardown(&stop, &transport);
+    if graceful {
+        teardown_graceful(&stop, &transport);
+    } else {
+        teardown(&stop, &transport);
+    }
 }
 
 /// Read the reliable bidi stream, reassemble length-framed messages, and forward each (while a
@@ -329,6 +336,15 @@ fn next_seq(seq: &mut u32) -> u32 {
 fn teardown(stop: &AtomicBool, transport: &WebTransport) {
     stop.store(true, Ordering::Relaxed);
     transport.close();
+}
+
+/// [`teardown`] for leaving on purpose: closes with the `GRACEFUL` application code so the server
+/// can tell a deliberate exit from a dropped link (what the reference client sends over ENet).
+fn teardown_graceful(stop: &AtomicBool, transport: &WebTransport) {
+    stop.store(true, Ordering::Relaxed);
+    let info = WebTransportCloseInfo::new();
+    info.set_close_code(PulseDisconnect::GRACEFUL_CODE);
+    transport.close_with_close_info(&info);
 }
 
 fn fail(status: &mpsc::Sender<PulseStatus>, message: String) {

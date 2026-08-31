@@ -338,18 +338,18 @@ pub fn setup_primary_profile(
                 );
             }
 
-            // Push the profile update over PRIMARY (not LiveKit, not Archipelago). The websocket dev
-            // server gets the full `ProfileResponse`; Pulse gets a `ProfileVersionAnnouncement` (the
-            // peer refetches from catalyst). LiveKit is deliberately excluded so `broadcast`'s
-            // auth-server fanout carries it to the `authoritative-server` participant alone: peers
-            // that see a profile announcement arrive over LiveKit answer it with LiveKit movement,
-            // which is exactly the traffic Pulse is meant to replace.
+            // Announce the new version over Pulse alone, as a `ProfileVersionAnnouncement` — peers
+            // refetch from catalyst, or ask us directly with an rfc4 `ProfileRequest`, which is still
+            // answered on the byte transports (that request/response pair is what resolves a guest,
+            // who has no catalyst presence). No byte transport carries the unsolicited announcement:
+            // a peer that sees one over LiveKit answers it with LiveKit movement, which is exactly
+            // the traffic Pulse replaces.
             // Reset the keepalive timer so the periodic re-announce below doesn't immediately fire
             // again.
             debug!("announcing profile new version {:?}", profile.version);
             broadcast(
                 transports.iter(),
-                BroadcastTarget::PRIMARY,
+                BroadcastTarget::PULSE,
                 false,
                 ProfileUpdate {
                     serialized_profile: serde_json::to_string(&profile.content).unwrap(),
@@ -385,13 +385,11 @@ pub fn setup_primary_profile(
             let now = time.elapsed_secs();
             if now > *last_announce + 5.0 {
                 debug!("announcing profile v {}", current_profile.version);
-                // Avatar state rides PRIMARY (websocket + Pulse), matching movement/emote — Pulse
-                // converts this to a `ProfileVersionAnnouncement`, the websocket dev server carries
-                // it as an rfc4 `AnnounceProfileVersion`. Not LiveKit (see above: it only reaches the
-                // auth server, via `broadcast`'s fanout), not Archipelago.
+                // The keepalive re-announce goes the same way as the version bump above: Pulse
+                // only, converted to a `ProfileVersionAnnouncement`.
                 broadcast(
                     transports.iter(),
-                    BroadcastTarget::PRIMARY,
+                    BroadcastTarget::PULSE,
                     false,
                     rfc4::AnnounceProfileVersion {
                         profile_version: current_profile.version,

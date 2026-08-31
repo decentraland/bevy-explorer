@@ -220,12 +220,16 @@ SRV_IN="$WORK/server.in"; mkfifo "$SRV_IN"
 SRV_PID=$!; PIDS+=($SRV_PID)
 exec 8>"$SRV_IN"   # hold the write end open
 sleep 3
-printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_A\",\"urn\":\"urn:decentraland:entity:${SCENE_A}?=&baseUrl=${BASEURL}\",\"adapter\":\"livekit:${LK_URL}?access_token=${TOK_SRV_A}\"}" >&8
-printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_B\",\"urn\":\"urn:decentraland:entity:${SCENE_B}?=&baseUrl=${BASEURL}\",\"adapter\":\"livekit:${LK_URL}?access_token=${TOK_SRV_B}\"}" >&8
+# Each scene carries the realm it belongs to — the same name the matching client reads from
+# its own `about`. The two scenes sit on the SAME parcel in DIFFERENT realms, which is what a
+# server cohosting two worlds looks like (every world numbers its parcels from 0,0) and what
+# the per-realm scene-listener AoI exists to express.
+printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_A\",\"urn\":\"urn:decentraland:entity:${SCENE_A}?=&baseUrl=${BASEURL}\",\"adapter\":\"livekit:${LK_URL}?access_token=${TOK_SRV_A}\",\"realm\":\"harness-clientA\"}" >&8
+printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_B\",\"urn\":\"urn:decentraland:entity:${SCENE_B}?=&baseUrl=${BASEURL}\",\"adapter\":\"livekit:${LK_URL}?access_token=${TOK_SRV_B}\",\"realm\":\"harness-clientB\"}" >&8
 # adapterless add-scene: the server runs without --preview, so this must be refused —
 # scene-failed emitted, and the scene must never load (it would bind the shared context
 # and see cross-room presence)
-printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_D\",\"urn\":\"urn:decentraland:entity:${SCENE_D}?=&baseUrl=${BASEURL}\"}" >&8
+printf '%s\n' "{\"type\":\"add-scene\",\"sceneId\":\"$SCENE_D\",\"urn\":\"urn:decentraland:entity:${SCENE_D}?=&baseUrl=${BASEURL}\",\"realm\":\"harness-clientA\"}" >&8
 
 # wait for both scenes to start ticking (ctl emits {"type":"scene-live",...})
 say "waiting for scenes to start..."
@@ -248,12 +252,20 @@ say "letting presence propagate (12s)..."
 sleep 12
 
 # stop client A: scene A must observe onLeaveScene for it (room departure = scene
-# departure on a room-scoped scene). A killed client drops TCP without a livekit
-# leave message, so detection waits out the server's reconnect grace (~15s) — killed
-# here so the remaining scenario time covers it. All client-A-presence assertions
-# have their data by now.
+# departure on a room-scoped scene). SIGTERM winds headless down through AppExit, so the
+# client leaves cleanly — livekit leave + Pulse ENet DISCONNECT go out — and the server's
+# departure signal should follow in Pulse's own cleanup time (DISCONNECTING hold + stale-view
+# sweep, ~5-10s), not its 30s peer timeout. Stopped here so the remaining scenario time covers
+# it. All client-A-presence assertions have their data by now.
 say "stopping client A (expect onLeaveScene in scene A)..."
+KILL_AT_A=$(date -u +%s)
 kill $CLIA_PID 2>/dev/null
+for _ in $(seq 1 100); do kill -0 $CLIA_PID 2>/dev/null || break; sleep 0.1; done
+if kill -0 $CLIA_PID 2>/dev/null; then
+  say "WARN: client A still running 10s after SIGTERM (graceful exit not reached)"
+else
+  wait $CLIA_PID; say "client A exited (code $?) $(( $(date -u +%s) - KILL_AT_A ))s after SIGTERM"
+fi
 
 # legitimate bus (positive control): client A's room, correct scene id
 say "sending legit bus message into room A..."
@@ -280,6 +292,19 @@ DCL_SCENE_ROOM_ADAPTER="livekit:${LK_URL}?access_token=${TOK_SCENE_C}" \
   --wallet-seed $SEED_OBS_C --location 2,0 --preview \
   >"$LOGS/obsC.log" 2>&1 & PIDS+=($!)
 sleep 12
+
+# ---- remove-scene: the scene's transports go, and its players with them ----
+# Client B is still connected, so its player entity on the server is held up by exactly two
+# transports: scene B's room, despawned by remove-scene itself, and the Pulse transport for
+# scene B's crdt context, which goes when the scene's parcels leave the loaded definitions.
+# Those are different triggers, and a leak in either leaves the player with a non-empty
+# transport set — alive in a scene that no longer exists.
+say "removing scene B (expect its player to go with it)..."
+printf '%s\n' "{\"type\":\"remove-scene\",\"sceneId\":\"$SCENE_B\"}" >&8
+for _ in $(seq 1 30); do
+  grep -a "removing .*player" "$LOGS/server.log" | grep -q "$ADDR_B" && break
+  sleep 1
+done
 
 # extra drain before shutdown: client A's leave detection (reconnect grace, see above)
 # must complete before the server exits
@@ -386,12 +411,37 @@ srv_has_line "$SCENE_B" "players-in-scene" "$ADDR_A"; check "getPlayersInScene o
 grep -a 'HARNESS|players-in-scene' "$LOGS/obsC.log" | grep -q "$ADDR_PEER_C"
 check "regression: getPlayersInScene on scene C lists peer" $?
 
+# 6c. getRealm — an orchestrated engine is in no realm itself, so each scene must be told
+# the one its add-scene stated, not the one the process was pointed at (harness-server).
+srv_has_line "$SCENE_A" 'HARNESS|realm|' "harness-clientA"; check "scene A getRealm reports its own realm" $?
+srv_has_line "$SCENE_A" 'HARNESS|realm|' "harness-server";  check "scene A getRealm never reports the process realm" $(neg $?)
+srv_has_line "$SCENE_B" 'HARNESS|realm|' "harness-clientB"; check "scene B getRealm reports its own realm" $?
+
 # 7. onEnterScene / onLeaveScene — room-scoped scenes resolve membership by context
 # (room departure = scene departure); the client observer resolves positionally.
 srv_has_line "$SCENE_A" "onEnterScene" "$ADDR_A"; check "scene A onEnterScene fired for client A"    $?
 srv_has_line "$SCENE_A" "onEnterScene" "$ADDR_B"; check "scene A onEnterScene never for client B"    $(neg $?)
 srv_has_line "$SCENE_B" "onEnterScene" "$ADDR_B"; check "scene B onEnterScene fired for client B"    $?
 srv_has_line "$SCENE_A" "onLeaveScene" "$ADDR_A"; check "scene A onLeaveScene fired for stopped client A" $?
+# Seconds from client A's SIGTERM to the first timestamped server.log line matching both
+# needles (the engine's tracing lines carry a UTC timestamp; @scene-log frames don't).
+since_stop_a() { # <needle-1> <needle-2> -> seconds, or non-zero if no such line
+  local ts
+  ts=$(grep -a "$1" "$LOGS/server.log" | grep -a "$2" | head -1 \
+       | sed 's/\x1b\[[0-9;]*m//g' | grep -o '^[0-9]\{4\}-[0-9-]*T[0-9:]*' ) || return 1
+  [ -n "$ts" ] || return 1
+  python3 -c 'import sys,datetime as d
+t=d.datetime.strptime(sys.argv[1],"%Y-%m-%dT%H:%M:%S").replace(tzinfo=d.timezone.utc).timestamp()
+print(int(t-int(sys.argv[2])))' "$ts" "$KILL_AT_A"
+}
+LAT_LEAVE=$(since_stop_a "onLeaveScene" "$ADDR_A" || true)
+LAT_REMOVE=$(since_stop_a "removing .*player" "$ADDR_A" || true)
+say "client A departure latency after SIGTERM: onLeaveScene=${LAT_LEAVE:-none}s, removing player=${LAT_REMOVE:-none}s"
+# Expected 10-15s: Pulse holds a disconnected peer 5s before wiping it from the grid, then the
+# observer's view of it must be stale for >100 ticks AND a sweep (every 100 ticks, ~5s) must
+# run — 5-10s more. The peer-timeout path adds 30s on top of that.
+[ -n "$LAT_LEAVE" ] && [ "$LAT_LEAVE" -le 20 ]
+check "scene A onLeaveScene for client A within 20s of its clean exit (not the 30s peer timeout)" $?
 grep -a 'HARNESS|event' "$LOGS/obsC.log" | grep onEnterScene | grep -q "$ADDR_PEER_C"
 check "regression: observer scene C onEnterScene for peer (positional)" $?
 
@@ -401,6 +451,24 @@ grep -a '"type":"scene-failed"' "$LOGS/server.log" | grep -q "$SCENE_D"
 check "adapterless scene D emits scene-failed" $?
 grep -aq "scene-live\".*\"$SCENE_D\"\|\"$SCENE_D\".*scene-live" "$LOGS/server.log"
 check "adapterless scene D never goes live" $(neg $?)
+
+# 9. remove-scene — the scene is torn down and the players it was carrying go with it,
+# rather than being stranded in a context nothing hosts any more. Client B is still
+# connected at this point, so its player entity is genuinely live until the teardown takes
+# it. The listener side must let go too: its announced AoI drops back to scene A's realm
+# alone, which is what stops the server observing parcels it no longer hosts.
+# Scene A is the control — it was never removed, so nothing may have swept it up.
+grep -a '"type":"scene-removed"' "$LOGS/server.log" | grep -q "$SCENE_B"
+check "remove-scene emits scene-removed for scene B" $?
+# Either despawn path is the scene's doing: the context-despawn observer ("removing player …
+# with despawned context") or the transport-set reaper ("removing disconnected player") once
+# the scene's room + Pulse transports are gone — which one wins is a same-frame race.
+grep -a "removing .*player" "$LOGS/server.log" | grep -q "$ADDR_B"
+check "removing scene B despawned its player" $?
+grep -a "scene-listener AoI update sent" "$LOGS/server.log" | tail -1 | grep -q "1 realms"
+check "removing scene B shrank the listener AoI to one realm" $?
+grep -a '"type":"scene-removed"' "$LOGS/server.log" | grep -q "$SCENE_A"
+check "scene A was not removed" $(neg $?)
 
 echo
 if [ $FAIL = 0 ]; then printf '\033[1;32m==== ALL PASS ====\033[0m\n'
