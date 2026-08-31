@@ -471,12 +471,31 @@ pub struct PreviousLogin {
     pub auth: Vec<ChainLink>,
 }
 
+fn default_home_realm() -> String {
+    crate::base_domain::https("realm-provider-ea", "/main")
+}
+#[allow(clippy::ptr_arg)]
+fn is_default_home_realm(realm: &String) -> bool {
+    *realm == default_home_realm()
+}
+fn is_default_home_location(location: &IVec2) -> bool {
+    *location == IVec2::ZERO
+}
+
 // app configuration
 #[derive(Serialize, Deserialize, Resource, Clone)]
 #[serde(default)]
 pub struct AppConfig {
-    pub server: String,
-    pub location: IVec2,
+    /// The pinned home scene. Written ONLY by SetHomeScene, and serialized only when it
+    /// differs from the derived default, so un-pinned installs keep tracking the
+    /// base-domain default. --server / --location are startup params (like the web's
+    /// ?realm= / ?position=) and are deliberately never merged in here — the config file
+    /// is rewritten wholesale on any settings change, which would silently persist a
+    /// one-off CLI target as home.
+    #[serde(alias = "server", skip_serializing_if = "is_default_home_realm")]
+    pub home_realm: String,
+    #[serde(alias = "location", skip_serializing_if = "is_default_home_location")]
+    pub home_location: IVec2,
     pub previous_login: Option<PreviousLogin>,
     pub graphics: GraphicsSettings,
     pub audio: AudioSettings,
@@ -522,8 +541,8 @@ pub const INPUTS_GENERATION: u32 = 1;
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: crate::base_domain::https("realm-provider-ea", "/main"),
-            location: IVec2::new(0, 0),
+            home_realm: default_home_realm(),
+            home_location: IVec2::ZERO,
             previous_login: None,
             graphics: Default::default(),
             audio: Default::default(),
@@ -559,6 +578,15 @@ impl Default for AppConfig {
 impl AppConfig {
     /// one-time forced reinitialization: configs saved with an older generation get the
     /// current defaults for the preset-managed settings, keeping everything else
+    /// Every pre-home-realm config file froze the then-stock default into `server` on any
+    /// settings write. Treat that literal as "never pinned" so those installs follow the
+    /// derived default (and any --base-domain) instead of staying nailed to it.
+    pub fn migrate_home(&mut self) {
+        if self.home_realm == "https://realm-provider-ea.decentraland.org/main" {
+            self.home_realm = default_home_realm();
+        }
+    }
+
     pub fn reset_outdated_settings(&mut self) {
         if self.settings_generation >= SETTINGS_GENERATION {
             return;

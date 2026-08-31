@@ -901,7 +901,7 @@ fn drain_control_commands(
     >,
 ) {
     let store_delegation = |scene_id: &str, encoded: &str, delegations: &mut StorageDelegations| {
-        match StorageDelegation::parse(encoded, &map_realm_name(&config.server)) {
+        match StorageDelegation::parse(encoded, &map_realm_name(&config.home_realm)) {
             Ok(delegation) => {
                 // reject a renewal that rebinds to another scene's credential
                 // (hammurabi's same-scene guard)
