@@ -72,6 +72,24 @@ extern "C" {
     /// leave keys alone while the user types into scene UI.
     #[wasm_bindgen(js_name = "__setEngineTextFocus")]
     fn set_engine_text_focus(focused: bool);
+
+    /// The ?baseDomain= entry param, captured by boot.js (web parity with --base-domain).
+    /// `catch` so a host page without boot.js just falls through to the default domain.
+    #[wasm_bindgen(js_name = "__baseDomain", catch)]
+    fn base_domain_param() -> Result<String, JsValue>;
+}
+
+/// Latch the base domain before any backend URL is composed. Called at the top of BOTH wasm
+/// entry points: engine_init's config deserialization already materializes
+/// `AppConfig::default()` fields, so engine_run alone would be too late.
+fn apply_base_domain() {
+    if let Ok(domain) = base_domain_param() {
+        if !domain.is_empty() {
+            if let Err(e) = common::base_domain::set(&domain) {
+                warn!("ignoring baseDomain param: {e}");
+            }
+        }
+    }
 }
 
 /// call from a separate worker to initialize a channel for asset load processing
@@ -86,6 +104,7 @@ pub fn init_asset_load_thread() {
 #[wasm_bindgen]
 pub async fn engine_init() -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
+    apply_base_domain();
 
     let mut file = match web_fs::File::open("config.json").await {
         Ok(f) => f,
@@ -126,6 +145,7 @@ pub fn engine_run(
     params: &str,
     pulse_server: &str,
 ) {
+    apply_base_domain();
     init_runtime();
 
     let default_filter = "symphonia=warn";

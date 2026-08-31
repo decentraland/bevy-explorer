@@ -15,6 +15,8 @@
 //     __onEngineCrash(message, source) — OPTIONAL host callback; the watchdog calls it instead of
 //       rendering any overlay (React owns the error UI)
 //     window.engine / engine_console_command — the console RPC (built by engine.js post-launch)
+//     __baseDomain() — the ?baseDomain= entry param (or the decentraland.org default); the wasm
+//       reads it before composing any backend URL (parity with native --base-domain)
 import { initEngine, start, gpu_cache_hash, initGpuCache } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
@@ -258,12 +260,17 @@ window.addEventListener('wheel', forwardWheelToEngine)
 // ---- URL sync (CALLED BY THE WASM — src/web.rs set_url_params) -----------------------------------
 // Keeps the browser URL in step with the player's realm/position so a reload/share lands back at
 // the same place. Defaults are omitted so the canonical entry URL stays clean.
-const DEFAULT_SERVER = 'https://realm-provider-ea.decentraland.org/main'
+// Entry-URL base domain (web parity with the native --base-domain flag). Read once here;
+// the wasm latches it too (web.rs apply_base_domain via window.__baseDomain), and
+// set_url_params below preserves unknown params, so ?baseDomain= survives URL syncs.
+const BASE_DOMAIN = new URLSearchParams(window.location.search).get('baseDomain') || 'decentraland.org'
+window.__baseDomain = () => BASE_DOMAIN
+const DEFAULT_SERVER = `https://realm-provider-ea.${BASE_DOMAIN}/main`
 const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'
 // The engine connects to the EXPANDED world url (ipfs map_realm_name turns `name.dcl.eth` into
 // worlds-content-server…/world/name.dcl.eth) and echoes that back here. Reverse it so the address
 // bar keeps the short name the user typed; a reload re-expands it the same way.
-const WORLDS_PREFIX = 'https://worlds-content-server.decentraland.org/world/'
+const WORLDS_PREFIX = `https://worlds-content-server.${BASE_DOMAIN}/world/`
 // captured from the ENTRY url (later syncs rewrite location.search)
 const explicitSystemScene = new URLSearchParams(window.location.search).has('systemScene')
 window.set_url_params = (position, server, system_scene, portables, preview, editor) => {

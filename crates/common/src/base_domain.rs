@@ -1,4 +1,5 @@
-//! The base domain every backend host is composed from; set once via --base-domain.
+//! The base domain every backend host is composed from; set once via --base-domain
+//! (native) or the ?baseDomain= entry param (web, via boot.js + src/web.rs).
 
 use std::sync::OnceLock;
 

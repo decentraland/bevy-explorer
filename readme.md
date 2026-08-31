@@ -91,6 +91,8 @@ just native-release --server https://realm-provider.decentraland.org/main --loca
 just native-release --base-domain interconnected.online --location 0,0
 ```
 
+On web the same thing is the `?baseDomain=` query param, e.g. `?baseDomain=interconnected.online`.
+
 Doing it by hand instead of via `just`:
 
 ```bash
