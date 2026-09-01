@@ -33,7 +33,6 @@ import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
 import { openExitConfirm } from './features/session/ExitConfirm'
 import { useEngineSession } from './features/session/useEngineSession'
 import { useExitGuard } from './lib/useExitGuard'
-import { useHudScale } from './lib/useHudScale'
 import { useWindowKeyDown } from './lib/useWindowKeyDown'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
@@ -88,7 +87,6 @@ const UNTRUSTED_SYSTEM_SCENE =
   SYSTEM_SCENE_OVERRIDE != null && !isTrustedSystemScene(SYSTEM_SCENE_OVERRIDE) ? SYSTEM_SCENE_OVERRIDE : null
 
 export function App(): React.JSX.Element {
-  useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
   const showFps = useFpsToggle()
   // Probe the GPU before booting the engine — but only on the real boot path (a sync gate already
   // decided, mock, native, or the design showcase all skip it). Native renders through the host's

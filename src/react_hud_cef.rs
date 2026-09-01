@@ -681,14 +681,15 @@ fn player_ready(
     state.player_ready_sent = true;
 }
 
-// Track window resizes: update the webview size (bevy_cef pushes WasResized to CEF) and push the
-// logical height so the HUD's --ui-scale stays correct (see useHudScale.ts).
+// Track window resizes: update the webview size (bevy_cef pushes WasResized to CEF). The HUD's
+// own geometry (--ui-scale, the engine cutout rects) is NOT pushed from here — it is keyed off
+// UiCanvasInformation, which the bridge scene reports on every platform; see
+// react-web/src/lib/uiCanvasStore.ts.
 fn resize_hud(
     mut resized: EventReader<WindowResized>,
     state: Option<Res<ReactHudCef>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut webviews: Query<&mut WebviewSize>,
-    mut commands: Commands,
 ) {
     if resized.is_empty() {
         return;
@@ -697,17 +698,9 @@ fn resize_hud(
     let (Some(state), Ok(window)) = (state, windows.single()) else {
         return;
     };
-    let size = Vec2::new(window.width(), window.height());
     if let Ok(mut ws) = webviews.get_mut(state.hud) {
-        ws.0 = size;
+        ws.0 = Vec2::new(window.width(), window.height());
     }
-    commands.trigger_targets(
-        HostEmitEvent {
-            id: "uiHeight".to_string(),
-            payload: format!("{:.0}", size.y),
-        },
-        state.hud,
-    );
 }
 
 // Push bevy's measured render fps to the page (~2x/sec) so the React perf overlay shows real
