@@ -1033,7 +1033,20 @@ async fn fetch_catalyst_profile(
         );
     }
 
-    let content = response.json::<LambdaProfiles>().await?;
+    let body = response.text().await?;
+    let content = match serde_json::from_str::<LambdaProfiles>(&body) {
+        Ok(content) => content,
+        Err(e) => {
+            // the sdk preview server reports a missing profile as a 200 with an
+            // `{"error": ...}` body rather than a 404; treat it as authoritatively absent
+            if serde_json::from_str::<serde_json::Value>(&body)
+                .is_ok_and(|value| value.get("error").is_some())
+            {
+                return Ok(None);
+            }
+            return Err(anyhow!("catalyst fetch from {url}: {e}"));
+        }
+    };
     let base_url = ipfs.contents_endpoint().unwrap_or_default();
     Ok(content
         .avatars
