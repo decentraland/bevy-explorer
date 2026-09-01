@@ -178,7 +178,7 @@ libc = "0.2"
 tokio = { version = "1.44", features = ["sync", "macros", "rt"] }
 tokio-util = "*"
 anyhow = "1.0.70"
-thiserror = "1.0"
+thiserror = "2.0"
 url = "2"
 http = "1.4"
 urn = "0.7.0"

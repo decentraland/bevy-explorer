@@ -64,4 +64,4 @@ web-sys = { workspace = true, features = ["HtmlVideoElement"] }
 js-sys = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde_bytes = { workspace = true }
-gloo-timers = { version = "0.3", features = ["futures"] }
+gloo-timers = { version = "0.4", features = ["futures"] }

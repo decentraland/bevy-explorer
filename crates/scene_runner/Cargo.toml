@@ -51,7 +51,7 @@ base64 = { workspace = true }
 async-std = { workspace = true }
 web-time = { workspace = true }
 
-petgraph = "0.6.3"
+petgraph = "0.7.1"
 spin_sleep = "1.1.1"
 image = { workspace = true }
 unicode-segmentation = "1"
