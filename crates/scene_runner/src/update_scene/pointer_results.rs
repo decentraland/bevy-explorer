@@ -146,10 +146,10 @@ pub struct PointerTargetInfo {
     pub container: Entity,
     pub mesh_name: Option<String>,
     /// Distance from avatar to nearest point on the target's collider.
-    /// Compared against `Info::max_player_distance`.
+    /// Compared against `Info::max_distance` (and its deprecated alias `max_player_distance`).
     pub distance: FloatOrd,
     /// Distance from active camera origin to the hit point along the pointer ray.
-    /// Compared against `Info::max_distance`. Same value populated into `RaycastHit::length`.
+    /// Compared against `Info::max_camera_distance`. Same value populated into `RaycastHit::length`.
     pub camera_distance: FloatOrd,
     pub in_scene: bool,
     pub position: Option<Vec3>,
@@ -161,28 +161,43 @@ pub struct PointerTargetInfo {
 /// Returns true if the pointer-event entry's distance restrictions are satisfied.
 ///
 /// Per protocol:
-/// - neither field set    → camera_distance ≤ 10
-/// - only max_distance    → camera_distance ≤ max_distance
-/// - only max_player_dist → player_distance ≤ max_player_distance
-/// - both set             → either check passes (OR)
+/// - neither field set        → player_distance ≤ 10
+/// - only max_distance        → player_distance ≤ max_distance
+/// - only max_camera_distance → camera_distance ≤ max_camera_distance
+/// - both set                 → either check passes (OR)
+///
+/// `max_player_distance` is a deprecated alias for `max_distance`; when both are
+/// present the larger is used as the player threshold.
 pub fn passes_distance_check(
     event_info: Option<&dcl_component::proto_components::sdk::components::pb_pointer_events::Info>,
     camera_distance: f32,
     player_distance: f32,
 ) -> bool {
-    let max_camera = event_info.and_then(|i| i.max_distance);
-    let max_player = event_info.and_then(|i| i.max_player_distance);
-    match (max_camera, max_player) {
-        (None, None) => camera_distance <= 10.0,
-        (Some(c), None) => camera_distance <= c,
-        (None, Some(p)) => player_distance <= p,
-        (Some(c), Some(p)) => camera_distance <= c || player_distance <= p,
+    let max_player = event_info.and_then(max_player_distance);
+    let max_camera = event_info.and_then(|i| i.max_camera_distance);
+    match (max_player, max_camera) {
+        (None, None) => player_distance <= 10.0,
+        (Some(p), None) => player_distance <= p,
+        (None, Some(c)) => camera_distance <= c,
+        (Some(p), Some(c)) => player_distance <= p || camera_distance <= c,
     }
 }
 
-/// Default `max_player_distance` applied to PROXIMITY entries that leave the field
-/// unset. Roughly mirrors unity-explorer's broad-phase cap, but applied here as a
-/// per-entry fallback rather than a hard global cap.
+/// The player-distance threshold of an entry: `max_distance`, or its deprecated
+/// alias `max_player_distance`; the larger when both are set; `None` when neither.
+pub fn max_player_distance(
+    info: &dcl_component::proto_components::sdk::components::pb_pointer_events::Info,
+) -> Option<f32> {
+    match (info.max_distance, info.max_player_distance) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// Default player distance applied to PROXIMITY entries that set neither
+/// `max_distance` nor `max_player_distance`. Roughly mirrors unity-explorer's
+/// broad-phase cap, but applied here as a per-entry fallback rather than a hard
+/// global cap.
 pub const PROXIMITY_DEFAULT_MAX_DISTANCE: f32 = 3.0;
 
 /// Full FOV angle of the horizontal proximity cone, in degrees. Matches
@@ -197,13 +212,13 @@ const PROXIMITY_FOV_HALF_ANGLE_COS_SQR: f32 = 0.25;
 
 /// Resolve the effective player-distance threshold for a PROXIMITY entry.
 ///
-/// `None` → fallback to `PROXIMITY_DEFAULT_MAX_DISTANCE`.
-/// `Some(0)` → never qualifies (an explicit disable, since real distances are > 0).
-/// `Some(x)` → use x.
+/// Neither field → fallback to `PROXIMITY_DEFAULT_MAX_DISTANCE`.
+/// `0` → never qualifies (an explicit disable, since real distances are > 0).
+/// `x` → use x.
 pub fn proximity_threshold(
     info: Option<&dcl_component::proto_components::sdk::components::pb_pointer_events::Info>,
 ) -> f32 {
-    info.and_then(|i| i.max_player_distance)
+    info.and_then(max_player_distance)
         .unwrap_or(PROXIMITY_DEFAULT_MAX_DISTANCE)
 }
 
@@ -1944,4 +1959,60 @@ fn handle_proximity_stream(
     }
 
     *prev_state = current;
+}
+
+#[cfg(test)]
+mod distance_tests {
+    use super::*;
+    use dcl_component::proto_components::sdk::components::pb_pointer_events::Info;
+
+    fn info(max_distance: Option<f32>, max_player: Option<f32>, max_camera: Option<f32>) -> Info {
+        Info {
+            max_distance,
+            max_player_distance: max_player,
+            max_camera_distance: max_camera,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cursor_distance_rules() {
+        // camera 100 along the ray, player 5 from the collider
+        let check = |i: Info| passes_distance_check(Some(&i), 100.0, 5.0);
+        // neither → player ≤ 10
+        assert!(check(info(None, None, None)));
+        assert!(!passes_distance_check(None, 100.0, 11.0));
+        // max_distance is player distance; max_player_distance is a same-meaning alias (larger wins)
+        assert!(check(info(Some(6.0), None, None)));
+        assert!(!check(info(Some(4.0), None, None)));
+        assert!(check(info(None, Some(6.0), None)));
+        assert!(!check(info(None, Some(4.0), None)));
+        assert!(check(info(Some(4.0), Some(6.0), None)));
+        assert!(check(info(Some(6.0), Some(4.0), None)));
+        assert!(!check(info(Some(3.0), Some(4.0), None)));
+        // only max_camera_distance → camera distance
+        assert!(check(info(None, None, Some(110.0))));
+        assert!(!check(info(None, None, Some(90.0))));
+        // both → either passes
+        assert!(check(info(Some(4.0), None, Some(110.0))));
+        assert!(check(info(Some(6.0), None, Some(90.0))));
+        assert!(!check(info(Some(4.0), None, Some(90.0))));
+    }
+
+    #[test]
+    fn proximity_distance_rules() {
+        let check = |i: Info| passes_proximity_distance_check(Some(&i), 2.5);
+        // neither → 3 m default
+        assert!(check(info(None, None, None)));
+        assert!(!passes_proximity_distance_check(None, 3.5));
+        // max_distance and its alias both drive the threshold (larger wins); 0 disables
+        assert!(check(info(Some(2.6), None, None)));
+        assert!(!check(info(Some(2.4), None, None)));
+        assert!(check(info(None, Some(2.6), None)));
+        assert!(check(info(Some(2.4), Some(2.6), None)));
+        assert!(check(info(Some(2.6), Some(2.4), None)));
+        assert!(!check(info(Some(0.0), None, None)));
+        // camera distance plays no part in proximity
+        assert!(!check(info(Some(2.4), None, Some(100.0))));
+    }
 }
