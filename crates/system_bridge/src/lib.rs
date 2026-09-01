@@ -230,12 +230,12 @@ fn handle_home_scene(mut ev: EventReader<SystemApi>, mut config: ResMut<AppConfi
     for ev in ev.read() {
         match ev {
             SystemApi::GetHomeScene(rpc_result_sender) => rpc_result_sender.send(HomeScene {
-                realm: config.home_realm.clone(),
-                parcel: config.home_location.as_vec2().into(),
+                realm: config.home_realm(),
+                parcel: config.home_location().as_vec2().into(),
             }),
             SystemApi::SetHomeScene(home_scene) => {
-                config.home_realm = home_scene.realm.clone();
-                config.home_location = bevy::math::Vec2::from(&home_scene.parcel).as_ivec2();
+                config.home_realm = Some(home_scene.realm.clone());
+                config.home_location = Some(bevy::math::Vec2::from(&home_scene.parcel).as_ivec2());
                 platform::write_config_file(&*config);
             }
             _ => (),

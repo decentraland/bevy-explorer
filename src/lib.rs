@@ -116,7 +116,6 @@ impl DecentralandAppConfig {
     ) -> Self {
         update_app_config_from_arguments(&mut app_config, &arguments);
         app_config.migrate_inputs();
-        app_config.migrate_home();
 
         Self {
             app_config,
@@ -131,11 +130,11 @@ impl DecentralandAppConfig {
     /// The realm the engine boots into: an explicit --server, else the home realm.
     /// --server is a startup param (like the web's ?realm=) and is deliberately NOT
     /// merged into the AppConfig — see the home_realm field docs.
-    pub fn boot_server(&self) -> &str {
+    pub fn boot_server(&self) -> String {
         self.arguments
             .server
-            .as_deref()
-            .unwrap_or(&self.app_config.home_realm)
+            .clone()
+            .unwrap_or_else(|| self.app_config.home_realm())
     }
 
     /// The parcel the player spawns at: an explicit --location, else the home parcel.
@@ -143,7 +142,7 @@ impl DecentralandAppConfig {
     pub fn boot_location(&self) -> IVec2 {
         self.arguments
             .location
-            .unwrap_or(self.app_config.home_location)
+            .unwrap_or_else(|| self.app_config.home_location())
     }
 }
 
@@ -247,8 +246,9 @@ impl DecentralandApp {
                 // its places picker (parity with ?realm= on web). On the stock default the
                 // param is omitted so the picker shows — and the HUD's own default-realm
                 // assumption then matches the realm the engine actually booted.
-                server: (decentraland_app_config.boot_server() != AppConfig::default().home_realm)
-                    .then(|| decentraland_app_config.boot_server().to_owned()),
+                server: (decentraland_app_config.boot_server()
+                    != AppConfig::default().home_realm())
+                .then(|| decentraland_app_config.boot_server()),
             });
         }
 
@@ -257,7 +257,7 @@ impl DecentralandApp {
 
         info!("Bevy-Explorer version {}", version);
 
-        let boot_server = map_realm_name(decentraland_app_config.boot_server());
+        let boot_server = map_realm_name(&decentraland_app_config.boot_server());
         // computed here too: scene_params is partially moved out of the arguments below
         let boot_location = BootLocation(decentraland_app_config.boot_location());
         // Show out-of-bounds geometry in preview, on a loopback realm (local dev) and in
@@ -691,7 +691,7 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
         .build()
         .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
             preview: decentraland_app_config.arguments.is_preview,
-            starting_realm: Some(map_realm_name(decentraland_app_config.boot_server())),
+            starting_realm: Some(map_realm_name(&decentraland_app_config.boot_server())),
             content_server_override: decentraland_app_config
                 .arguments
                 .content_server_override
@@ -726,7 +726,7 @@ fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> Plug
         .disable::<LogPlugin>()
         .add_before::<AssetPlugin>(IpfsIoPlugin {
             preview: decentraland_app_config.arguments.is_preview,
-            starting_realm: Some(map_realm_name(decentraland_app_config.boot_server())),
+            starting_realm: Some(map_realm_name(&decentraland_app_config.boot_server())),
             content_server_override: decentraland_app_config
                 .arguments
                 .content_server_override

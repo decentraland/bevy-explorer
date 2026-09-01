@@ -137,10 +137,10 @@ pub async fn engine_init() -> Result<JsValue, JsValue> {
 pub fn engine_home_scene() -> String {
     let (realm, parcel) = INIT_DATA
         .get()
-        .map(|config| (config.home_realm.clone(), config.home_location))
+        .map(|config| (config.home_realm(), config.home_location()))
         .unwrap_or_else(|| {
             let config = AppConfig::default();
-            (config.home_realm, config.home_location)
+            (config.home_realm(), config.home_location())
         });
     serde_json::json!({ "realm": realm, "parcel": format!("{},{}", parcel.x, parcel.y) })
         .to_string()
