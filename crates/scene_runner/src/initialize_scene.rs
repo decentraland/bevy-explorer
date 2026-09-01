@@ -363,10 +363,11 @@ pub(crate) fn load_scene_javascript(
                 }
             }
         } else {
-            ipfas.load_url_uncached(&common::base_domain::https(
-                "renderer-artifacts",
-                "/sdk6-adaption-layer/main/index.min.js",
-            ))
+            // deliberately not base_domain-derived: renderer-artifacts is only deployed
+            // on decentraland.org (no zone or custom-domain equivalents)
+            ipfas.load_url_uncached(
+                "https://renderer-artifacts.decentraland.org/sdk6-adaption-layer/main/index.min.js",
+            )
         };
 
         let crdt_component_interfaces = CrdtComponentInterfaces(HashMap::from_iter(
