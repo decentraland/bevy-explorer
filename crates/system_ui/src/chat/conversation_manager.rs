@@ -1,3 +1,4 @@
+use alloy_core::primitives::Address;
 use bevy::{diagnostic::FrameCount, ecs::system::SystemParam, prelude::*, tasks::IoTaskPool};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
@@ -5,7 +6,6 @@ use common::{
     util::TryPushChildrenEx,
 };
 use copypwasmta::{ClipboardContext, ClipboardProvider};
-use ethers_core::types::Address;
 use scene_runner::Toaster;
 use ui_core::ui_actions::{Click, EventCloneExt, On, UiCaller};
 use wallet::Wallet;
@@ -131,7 +131,7 @@ impl ConversationManager<'_, '_> {
                     DuiProps::new().with_prop("color", color),
                 )
                 .unwrap();
-            if address != Address::zero() {
+            if address != Address::ZERO {
                 self.commands
                     .entity(components.named("image"))
                     .try_insert(ShowProfileEvent(address).send_value_on::<Click>());
@@ -147,7 +147,7 @@ impl ConversationManager<'_, '_> {
                 .unwrap()
         };
         if let Some(address) = address.or_else(|| self.wallet.address()) {
-            if address != Address::zero() {
+            if address != Address::ZERO {
                 self.commands
                     .entity(components.named("image"))
                     .try_insert(PendingProfileUiImage(address));

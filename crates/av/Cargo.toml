@@ -30,7 +30,7 @@ urlencoding = { workspace = true }
 bevy_kira_audio = { workspace = true }
 kira = { workspace = true }
 wgpu = { workspace = true, features = ["webgpu"] }
-ethers-core = { workspace = true }
+alloy-core = { workspace = true }
 thiserror = { workspace = true }
 
 web-sys = { workspace = true, optional = true, features = [

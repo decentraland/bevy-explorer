@@ -20,9 +20,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use alloy_core::primitives::Address;
 use bevy::math::{IVec2, Vec3};
 use dcl_component::proto_components::{kernel::comms::rfc4, pulse};
-use ethers_core::types::Address;
 
 pub mod plugin;
 pub mod transport;

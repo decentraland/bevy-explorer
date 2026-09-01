@@ -1,5 +1,5 @@
+use alloy_core::primitives::Address;
 use dcl_component::proto_components::pulse;
-use ethers_core::types::Address;
 
 use super::*;
 

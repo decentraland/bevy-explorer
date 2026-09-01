@@ -16,6 +16,7 @@ pub mod websocket_room;
 
 use std::marker::PhantomData;
 
+use alloy_core::primitives::Address;
 use bevy::{
     ecs::system::SystemParam,
     prelude::*,
@@ -25,7 +26,6 @@ use common::{
     structs::{CurrentRealm, MicState},
     util::{TaskCompat, TaskExt},
 };
-use ethers_core::types::H160;
 use http::{StatusCode, Uri};
 use preview::PreviewPlugin;
 use serde::{Deserialize, Serialize};
@@ -162,7 +162,7 @@ impl BroadcastTarget {
 #[derive(Clone, Copy, Debug)]
 pub enum NetworkMessageRecipient {
     All,
-    Peer(H160),
+    Peer(Address),
     AuthServer,
 }
 
