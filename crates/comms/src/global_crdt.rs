@@ -969,32 +969,47 @@ pub fn process_transport_updates(
                         continue;
                     }
 
-                    let Message::Scene(scene) = update.message else {
-                        warn!(
-                            "skipping unexpected update from {}: {:?}",
-                            update.address, update.message
-                        );
-                        continue;
-                    };
+                    match update.message {
+                        Message::Scene(scene) => {
+                            // same cross-room guard as the Player arm: the message may only
+                            // address the scene owning this context's room
+                            if let Some(room_hash) = &state.room {
+                                if scene.scene_id != *room_hash {
+                                    debug!(
+                                        "dropping cross-room message from {}: declared scene {} != room {room_hash}",
+                                        update.address, scene.scene_id
+                                    );
+                                    continue;
+                                }
+                            }
 
-                    // same cross-room guard as the Player arm: the message may only
-                    // address the scene owning this context's room
-                    if let Some(room_hash) = &state.room {
-                        if scene.scene_id != *room_hash {
-                            debug!(
-                                "dropping cross-room message from {}: declared scene {} != room {room_hash}",
-                                update.address, scene.scene_id
+                            process_messagebus(
+                                scene,
+                                update.address,
+                                &mut string_senders,
+                                &mut binary_senders,
                             );
-                            continue;
+                        }
+                        // a server resolving a guest profile asks the guest directly — the
+                        // only source there is. The request handler reads the requested
+                        // address and the reply transport, never the sender entity, so the
+                        // transport entity stands in for the (playerless) server.
+                        Message::ProfileRequest(request) => {
+                            profile_events.write(ProfileEvent {
+                                sender: update.transport_id,
+                                event: ProfileEventType::Request {
+                                    request,
+                                    transport: update.transport_id,
+                                },
+                            });
+                        }
+                        message => {
+                            warn!(
+                                "skipping unexpected update from {}: {:?}",
+                                update.address, message
+                            );
                         }
                     }
-
-                    process_messagebus(
-                        scene,
-                        update.address,
-                        &mut string_senders,
-                        &mut binary_senders,
-                    );
                 }
                 NetworkUpdate::PlayerLeft {
                     transport_id,
