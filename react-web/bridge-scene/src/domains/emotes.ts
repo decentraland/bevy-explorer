@@ -9,7 +9,7 @@ import { triggerEmote } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
 import { resolveDefsByUrn } from './collections'
-import { resolveShopUrls } from './wearables'
+import { resolveShopUrls } from './marketplace'
 import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
 
