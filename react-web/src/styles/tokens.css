@@ -83,6 +83,7 @@
   /* ---- typography (Inter scale) ---- */
   --font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', monospace;
+  --fs-2xs: 0.6rem; /* micro labels — rarity tags and the like */
   --fs-xs: 0.72rem;
   --fs-sm: 0.82rem;
   --fs-md: 0.92rem;
@@ -123,4 +124,44 @@
   --font-title-l: var(--fs-title);
   --font-body: var(--fs-md);
   --font-button: var(--fs-md);
+}
+
+/* ---- item rarity (Unity NftRarityColors.asset) ----
+   Set `data-rarity` on a tile and read --rm (main) / --rl (light sheen) anywhere inside it,
+   pseudo-elements included. Unknown or missing values fall through to base. */
+[data-rarity] {
+  --rm: #a09ba8;
+  --rl: #cfcdd4;
+}
+[data-rarity='common'] {
+  --rm: #73d3d3;
+  --rl: #b5fff6;
+}
+[data-rarity='uncommon'] {
+  --rm: #ff8362;
+  --rl: #ffe0c8;
+}
+[data-rarity='rare'] {
+  --rm: #34ce76;
+  --rl: #9bf3c2;
+}
+[data-rarity='epic'] {
+  --rm: #438fff;
+  --rl: #a9d4ff;
+}
+[data-rarity='legendary'] {
+  --rm: #b058ff;
+  --rl: #e0c0ff;
+}
+[data-rarity='mythic'] {
+  --rm: #ff4bec;
+  --rl: #ffb0f3;
+}
+[data-rarity='unique'] {
+  --rm: #ffc747;
+  --rl: #ffe6a8;
+}
+[data-rarity='exotic'] {
+  --rm: #a5e242;
+  --rl: #d6f59a;
 }

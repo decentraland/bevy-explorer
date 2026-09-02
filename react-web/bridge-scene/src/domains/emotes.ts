@@ -1,12 +1,16 @@
 // Emotes: the player's OWNED emote collection + which are equipped to the 10 wheel slots, playing
 // one, and assigning one to a slot.
 //   from: @dcl/sdk getPlayer().emotes (equipped, by slot index), catalyst GET
-//         /explorer/:address/emotes (owned catalog), RestrictedActions.triggerEmote (play),
+//         /explorer/:address/emotes (owned catalog), /lambdas/collections/emotes (equipped-by-urn
+//         resolve, via ./collections), RestrictedActions.triggerEmote (play),
 //         BevyApi.setAvatar (assign).
 import { getPlayer } from '@dcl/sdk/players'
 import { triggerEmote } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
+import { resolveDefsByUrn, thumbnailUrl } from './collections'
+import { resolveShopUrls } from './marketplace'
+import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
 
@@ -25,14 +29,6 @@ function fullEmoteUrn(urn: string): string {
   return urn !== '' && !urn.includes(':') ? `${BASE_EMOTE_PREFIX}${urn}` : urn
 }
 
-// Equipped/owned emote urns can carry an NFT token id:
-//   urn:decentraland:matic:collections-v2:<contract>:<itemId>[:<tokenId>]
-// The catalog keys on the ITEM urn (no tokenId), so strip it for lookups/dedupe.
-function itemUrn(urn: string): string {
-  const parts = urn.split(':')
-  if (parts[3] === 'collections-v2' && parts.length > 6) return parts.slice(0, 6).join(':')
-  return urn
-}
 const isBase = (urn: string): boolean => BASE_EMOTES.includes(itemUrn(urn))
 
 // The 10 wheel slots to show for a profile: its equipped emotes positionally, or — when the wheel is
@@ -40,7 +36,7 @@ const isBase = (urn: string): boolean => BASE_EMOTES.includes(itemUrn(urn))
 // runtime doesn't seed the defaults into getPlayer().emotes (bevy-ui-scene hits the same empty array),
 // so the HUD fills them here, mirroring Unity's SelfProfile empty-wheel fill: it's all-or-nothing, so
 // once any slot is equipped the remaining empties stay empty.
-function equippedSlots(emotes: readonly unknown[] | undefined): string[] {
+export function equippedSlots(emotes: readonly unknown[] | undefined): string[] {
   const slots = Array.from({ length: SLOT_COUNT }, (_, i) => String((emotes ?? [])[i] ?? ''))
   return slots.every((u) => u === '') ? [...BASE_EMOTES] : slots
 }
@@ -70,18 +66,12 @@ async function fetchOwned(base: string, address: string): Promise<CatalogElement
 function thumbUrl(base: string, el: CatalogElement): string {
   const file = el.entity?.metadata?.thumbnail
   const hash = el.entity?.content?.find((c) => c.file === file)?.hash
-  return hash != null ? `${base}/content/contents/${hash}` : `${base}/lambdas/collections/contents/${el.urn}/thumbnail`
+  return hash != null ? `${base}/content/contents/${hash}` : thumbnailUrl(base, el.urn)
 }
 
-// Like wearables: the deployed profile must reference a collection emote by its full token URN
-// (…:<contract>:<itemId>:<tokenId>); the catalog's individualData carries the owned tokenId.
+// item-urn → deployable token urn (see tokenUrnOf), what the equip handler sends. Rebuilt with the
+// owned catalog (below), unlike the wearables map which accumulates.
 const tokenUrnByItem = new Map<string, string>()
-function tokenUrnFor(el: CatalogElement): string {
-  const d = el.individualData?.[0]
-  if (d?.id != null && d.id.startsWith(`${el.urn}:`)) return d.id
-  if (d?.tokenId != null && d.tokenId !== '') return `${el.urn}:${d.tokenId}`
-  return el.urn
-}
 
 // The owned-emotes catalog rarely changes within a session, so cache it (and the item→token map it
 // feeds) per address — re-opening the backpack then costs nothing. Equipped SLOTS are NOT cached;
@@ -93,7 +83,7 @@ async function getOwned(base: string, address: string): Promise<CatalogElement[]
   ownedCache = { address, elements }
   tokenUrnByItem.clear()
   for (const el of elements) {
-    const full = tokenUrnFor(el)
+    const full = tokenUrnOf(el)
     if (full !== el.urn) tokenUrnByItem.set(el.urn, full)
   }
   return elements
@@ -104,6 +94,36 @@ function equipUrn(urn: string): string {
   if (urn === '') return ''
   if (isBase(urn)) return urn
   return tokenUrnByItem.get(itemUrn(urn)) ?? urn
+}
+
+// Resolve a profile's equipped-emotes list (deployed avatar.emotes: {slot, urn}[], from the catalyst
+// profile lambda) into displayable Emote[] — DECOUPLED from getPlayer(), so it works for any address
+// (self or another user's passport), not just nearby/local players. Base emotes resolve locally
+// (no network); custom ones resolve via the catalyst collections lambda, like resolveEquippedSet.
+export async function resolveEquippedEmotes(entries: Array<{ slot: number; urn: string }>): Promise<Emote[]> {
+  const baseUrl = await catalystBase()
+  const valid = entries.filter((e) => e.urn !== '')
+  const customItemUrns = [...new Set(valid.filter((e) => !isBase(fullEmoteUrn(e.urn))).map((e) => itemUrn(fullEmoteUrn(e.urn))))]
+  const resolved = await resolveDefsByUrn('emotes', baseUrl, customItemUrns)
+  const shopUrls = await resolveShopUrls(
+    customItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress }))
+  )
+  return valid.map((e): Emote => {
+    const full = fullEmoteUrn(e.urn)
+    if (isBase(full)) {
+      return { slot: e.slot, urn: full, name: baseEmoteName(full), rarity: 'base', thumbnail: thumbnailUrl(baseUrl, full) }
+    }
+    const item = itemUrn(full)
+    const def = resolved.get(item)
+    return {
+      slot: e.slot,
+      urn: item,
+      name: def?.name ?? '',
+      rarity: def?.rarity ?? 'base',
+      thumbnail: thumbnailUrl(baseUrl, item),
+      shopUrl: shopUrls.get(item)
+    }
+  })
 }
 
 export function registerEmotes(ctx: Ctx): void {
@@ -146,7 +166,7 @@ export function registerEmotes(ctx: Ctx): void {
       urn,
       name: baseEmoteName(urn),
       rarity: 'base',
-      thumbnail: `${base}/lambdas/collections/contents/${urn}/thumbnail`,
+      thumbnail: thumbnailUrl(base, urn),
       slot: slotByItem.get(itemUrn(urn))
     }))
 

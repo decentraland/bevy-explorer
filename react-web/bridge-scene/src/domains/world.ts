@@ -75,13 +75,13 @@ export function registerWorld(ctx: Ctx): void {
     const px = Math.floor((pos?.x ?? 0) / 16)
     const py = Math.floor((pos?.z ?? 0) / 16)
     BevyApi.liveSceneInfo()
-      .then((scenes) => {
-        const current = scenes.find((s) => s.isSuper !== true && (s.parcels ?? []).some((p) => p.x === px && p.y === py))
+      .then(async (scenes) => {
+        const current = scenes.find((s) => !s.isSuper && (s.parcels ?? []).some((p) => p.x === px && p.y === py))
         if (current == null) {
           pushSystem(ctx, 'Could not find the current scene to reload.')
           return
         }
-        return op('reload', [current.hash]).then(() => pushSystem(ctx, `Reloading ${current.title || current.hash}…`))
+        await op('reload', [current.hash]).then(() => { pushSystem(ctx, `Reloading ${current.title || current.hash}…`); });
       })
       .catch((e: unknown) => {
         console.error('[world] reload failed', e)

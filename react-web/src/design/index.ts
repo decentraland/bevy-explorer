@@ -11,6 +11,7 @@ export { Select, type SelectOption } from './Select'
 export { Panel } from './Panel'
 export { Avatar } from './Avatar'
 export { WearableCard, type Rarity } from './WearableCard'
+export { EquippedItemCard, type EquippedItemCardProps } from './EquippedItemCard'
 export { DclLogo } from './DclLogo'
 export { Icon, type IconName } from './icons'
 

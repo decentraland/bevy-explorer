@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { WearableCard, type Rarity } from '../../design'
-import { catalystThumbUrl, rarityColor } from '../../lib/identity'
+import { catalystThumbUrl } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
 import { CategoryIcon } from './categoryIcons'
 import { EngineViewport } from '../engine/EngineViewport'
@@ -110,11 +110,11 @@ function DetailPanel({ item }: { item: Wearable | Emote | null }): React.JSX.Ele
   const category = 'category' in item ? item.category : 'emote'
   return (
     <aside className={styles.detail}>
-      <div className={styles.detailThumb} style={{ background: `radial-gradient(circle at 50% 35%, ${rarityColor(rarity)}, rgba(0,0,0,0.35))` }}>
+      <div className={styles.detailThumb} data-rarity={rarity}>
         <CatalystImg src={item.thumbnail} urn={item.urn} />
       </div>
       <div className={styles.detailName}>{item.name}</div>
-      <div className={styles.detailRarity} style={{ background: rarityColor(rarity) }}>
+      <div className={styles.detailRarity} data-rarity={rarity}>
         {humanize(rarity)}
       </div>
       <div className={styles.detailMetaRow}>
@@ -570,7 +570,7 @@ export function BackpackPage({
                       >
                         <span className={styles.emoteSlotNum}>{num}</span>
                         <span className={styles.emoteSlotName}>{e?.name ?? 'Empty'}</span>
-                        <span className={styles.emoteSlotThumb} style={{ background: rarityColor(e?.rarity) }}>
+                        <span className={styles.emoteSlotThumb} data-rarity={e?.rarity ?? 'base'}>
                           {e && <CatalystImg urn={e.urn} />}
                         </span>
                       </button>
