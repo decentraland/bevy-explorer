@@ -26,6 +26,11 @@ const defByItemUrn: Record<ItemKind, Map<string, ItemDef>> = { wearables: new Ma
 
 const CHUNK = 50 // bounds URL length
 
+/** The catalyst's rendered thumbnail for an item urn (base or collectible, wearable or emote). */
+export function thumbnailUrl(baseUrl: string, itemUrn: string): string {
+  return `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`
+}
+
 /** Resolve item definitions by item urn. Cached hits skip the network; only misses are fetched,
  *  batched. An empty input costs nothing. */
 export async function resolveDefsByUrn(kind: ItemKind, baseUrl: string, itemUrns: string[]): Promise<Map<string, ItemDef>> {

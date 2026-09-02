@@ -8,7 +8,7 @@ import { getPlayer } from '@dcl/sdk/players'
 import { triggerEmote } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
-import { resolveDefsByUrn } from './collections'
+import { resolveDefsByUrn, thumbnailUrl } from './collections'
 import { resolveShopUrls } from './marketplace'
 import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
@@ -66,7 +66,7 @@ async function fetchOwned(base: string, address: string): Promise<CatalogElement
 function thumbUrl(base: string, el: CatalogElement): string {
   const file = el.entity?.metadata?.thumbnail
   const hash = el.entity?.content?.find((c) => c.file === file)?.hash
-  return hash != null ? `${base}/content/contents/${hash}` : `${base}/lambdas/collections/contents/${el.urn}/thumbnail`
+  return hash != null ? `${base}/content/contents/${hash}` : thumbnailUrl(base, el.urn)
 }
 
 // item-urn → deployable token urn (see tokenUrnOf), what the equip handler sends. Rebuilt with the
@@ -111,7 +111,7 @@ export async function resolveEquippedEmotes(entries: Array<{ slot: number; urn: 
   return valid.map((e): Emote => {
     const full = fullEmoteUrn(e.urn)
     if (isBase(full)) {
-      return { slot: e.slot, urn: full, name: baseEmoteName(full), rarity: 'base', thumbnail: `${baseUrl}/lambdas/collections/contents/${full}/thumbnail` }
+      return { slot: e.slot, urn: full, name: baseEmoteName(full), rarity: 'base', thumbnail: thumbnailUrl(baseUrl, full) }
     }
     const item = itemUrn(full)
     const def = resolved.get(item)
@@ -120,7 +120,7 @@ export async function resolveEquippedEmotes(entries: Array<{ slot: number; urn: 
       urn: item,
       name: def?.name ?? '',
       rarity: def?.rarity ?? 'base',
-      thumbnail: `${baseUrl}/lambdas/collections/contents/${item}/thumbnail`,
+      thumbnail: thumbnailUrl(baseUrl, item),
       shopUrl: shopUrls.get(item)
     }
   })
@@ -166,7 +166,7 @@ export function registerEmotes(ctx: Ctx): void {
       urn,
       name: baseEmoteName(urn),
       rarity: 'base',
-      thumbnail: `${base}/lambdas/collections/contents/${urn}/thumbnail`,
+      thumbnail: thumbnailUrl(base, urn),
       slot: slotByItem.get(itemUrn(urn))
     }))
 

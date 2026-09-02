@@ -6,7 +6,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
-import { resolveDefsByUrn } from './collections'
+import { resolveDefsByUrn, thumbnailUrl } from './collections'
 import { resolveShopUrls } from './marketplace'
 import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
@@ -108,7 +108,7 @@ export async function resolveWearables(urns: string[], opts: ResolveOpts = {}): 
       // equipped set, so the next equip round-trip (equipSetWith) still deploys it. Dropping here
       // silently undressed the avatar whenever the lambdas request failed mid-session.
       category: def?.data?.category ?? 'unknown',
-      thumbnail: `${baseUrl}/lambdas/collections/contents/${item}/thumbnail`,
+      thumbnail: thumbnailUrl(baseUrl, item),
       equipped: true,
       shopUrl: shopUrls?.get(item)
     }
