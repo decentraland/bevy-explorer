@@ -11,7 +11,8 @@ use bevy::{
 };
 use bevy_console::ConsoleCommand;
 use collectibles::{
-    Collectible, CollectibleData, CollectibleError, CollectibleManager, Emote, EmoteUrn,
+    ext::AvatarEmotesExt, Collectible, CollectibleData, CollectibleError, CollectibleManager,
+    Emote, EmoteUrn,
 };
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
@@ -844,7 +845,7 @@ fn play_current_emote(
                     };
 
                     // fix up the gltf if possible/required
-                    if !gltf.named_animations.keys().any(|k| k.ends_with("_Avatar")) {
+                    if !gltf.named_animations.any_avatar_emote() {
                         let Some(anim) = gltf.animations.first() else {
                             warn!("scene emote has no animations");
                             if let Some(fb) = active_emote.fallback.take() {
