@@ -127,7 +127,7 @@ export async function resolveEquippedSet(urns: string[], opts: ResolveOpts = {})
     const item = itemUrn(u)
     if (item !== u) tokenUrnByItem.set(item, u)
   }
-  return resolveWearables(urns, opts)
+  return await resolveWearables(urns, opts)
 }
 
 export function registerWearables(ctx: Ctx): void {
