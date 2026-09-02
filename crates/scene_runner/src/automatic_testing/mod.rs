@@ -372,6 +372,7 @@ fn automatic_testing(
             w.send_event(RpcCall::TeleportPlayer {
                 scene: None,
                 to,
+                realm: None,
                 response: RpcResultSender::default(),
             });
         });

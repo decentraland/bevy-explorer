@@ -18,7 +18,7 @@ module.exports.walkPlayerTo = async function (body) {
 }
 
 module.exports.teleportTo = async function (body) {
-    await Deno.core.ops.op_teleport_to(Number(body.worldCoordinates.x), Number(body.worldCoordinates.y));
+    await Deno.core.ops.op_teleport_to(Number(body.worldCoordinates.x), Number(body.worldCoordinates.y), body.realm ?? null);
     return {} 
 }
 

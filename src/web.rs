@@ -323,7 +323,7 @@ pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>
 
 #[derive(PartialEq, Default, Clone)]
 struct UrlParams {
-    parcel: Option<IVec2>,
+    parcel: IVec2,
     server: String,
     ui_scene: Option<String>,
     portables: Option<String>,
@@ -339,15 +339,7 @@ fn update_url_params(
     editor: Res<EditorMode>,
     mut prev: Local<UrlParams>,
 ) {
-    // realms with fixed scene urns (worlds) spawn at their base scene and ignore an explicit
-    // position (see load_active_entities' base-position handling) - don't write one into the url
-    let position_honoured = current_realm
-        .config
-        .scenes_urn
-        .as_ref()
-        .is_none_or(Vec::is_empty);
-    let parcel = position_honoured
-        .then(|| vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default()));
+    let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
     let Some(server) = current_realm.about_url.strip_suffix("/about") else {
         return;
     };
@@ -387,9 +379,7 @@ fn update_url_params(
     if params != *prev {
         *prev = params.clone();
         set_url_params(
-            params
-                .parcel
-                .map(|parcel| format!("{},{}", parcel.x, parcel.y)),
+            Some(format!("{},{}", params.parcel.x, params.parcel.y)),
             params.server,
             params.ui_scene,
             params.portables,

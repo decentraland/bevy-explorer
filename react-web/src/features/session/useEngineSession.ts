@@ -109,6 +109,10 @@ export interface MapState {
   open: boolean
   toggle: () => void
   teleport: (x: number, y: number) => void
+  /** Teleport to a Genesis City place: from inside a World the parcel carries the Genesis realm,
+   *  so the engine changes realm first. In Genesis already it is a plain teleport — a realm-carrying
+   *  teleport is a full realm reconnect, like changeRealm, even to the realm the player is in. */
+  teleportToPlace: (x: number, y: number) => void
   /** Travel to a world/realm by name (e.g. `boedo.dcl.eth`). */
   changeRealm: (realm: string) => void
 }
@@ -959,6 +963,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const teleport = useCallback((x: number, y: number) => {
     driverRef.current?.send({ kind: 'teleport', x, y })
   }, [])
+  const teleportToPlace = useCallback(
+    (x: number, y: number) => {
+      if (isWorld) driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
+      else driverRef.current?.send({ kind: 'teleport', x, y })
+    },
+    [isWorld]
+  )
   const changeRealm = useCallback((realm: string) => {
     driverRef.current?.send({ kind: 'changeRealm', realm })
   }, [])
@@ -1696,7 +1707,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       saveOutfit, deleteOutfit, equipOutfit
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
-    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
+    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace },
     minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },
     gallery: {

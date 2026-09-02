@@ -12,6 +12,10 @@ message MovePlayerToRequest {
 
 message TeleportToRequest {
   decentraland.common.Vector2 world_coordinates = 1;
+  // The realm the parcel belongs to: a world name (`foo.dcl.eth`) or a realm url. When set, the
+  // client changes realm (as for ChangeRealm — a full reconnect, even to the realm the player is
+  // in) and lands on the parcel there. Omitted: the parcel is in the player's current realm.
+  optional string realm = 2;
 }
 
 message TriggerEmoteRequest {

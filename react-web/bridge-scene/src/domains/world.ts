@@ -50,7 +50,7 @@ export function registerWorld(ctx: Ctx): void {
   })
 
   ctx.on('teleport', (msg) => {
-    teleportTo({ worldCoordinates: { x: msg.x, y: msg.y } }).catch((e: unknown) => {
+    teleportTo({ worldCoordinates: { x: msg.x, y: msg.y }, realm: msg.realm }).catch((e: unknown) => {
       console.error('[world] teleport failed', e)
     })
   })

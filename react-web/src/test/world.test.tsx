@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { act } from '@testing-library/react'
 import { renderSession, enterAsGuest } from './harness'
+import { DEFAULT_REALM } from '../features/engine/EngineHost'
 
 // DOMAIN: world — map state (parcel), teleport, microphone toggle/state.
 describe('world domain', () => {
@@ -23,6 +24,19 @@ describe('world domain', () => {
     await enterAsGuest(h)
     act(() => h.session().map.teleport(5, -3))
     expect(h.driver.last('teleport')).toEqual({ kind: 'teleport', x: 5, y: -3 })
+  })
+
+  // A place picked from a listing is a Genesis City parcel. From inside a World the realm travels
+  // with it (a bare teleport would land on that world's own 5,-3); in Genesis it stays a plain
+  // teleport, since a realm-carrying teleport reconnects the realm like changeRealm does.
+  it('teleporting to a place carries the Genesis realm only from inside a World', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    act(() => h.session().map.teleportToPlace(5, -3))
+    expect(h.driver.last('teleport')).toEqual({ kind: 'teleport', x: 5, y: -3 })
+    act(() => h.driver.emit({ kind: 'realmInfo', realm: 'boedo.dcl.eth', isWorld: true }))
+    act(() => h.session().map.teleportToPlace(5, -3))
+    expect(h.driver.last('teleport')).toEqual({ kind: 'teleport', realm: DEFAULT_REALM, x: 5, y: -3 })
   })
 
   it('sceneInfo drives the minimap title, and re-pushes as the player crosses scenes', async () => {

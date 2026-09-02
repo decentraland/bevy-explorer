@@ -574,6 +574,8 @@ impl Plugin for IpfsIoPlugin {
 pub enum RealmInitialLocation {
     None,
     Base,
+    /// Land on this parcel of the new realm (a teleport that named its realm).
+    Parcel(IVec2),
 }
 
 /// Switch to a new realm

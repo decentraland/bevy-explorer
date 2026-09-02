@@ -99,6 +99,7 @@ pub async fn op_teleport_to(
     state: Rc<RefCell<impl State>>,
     position_x: i32,
     position_y: i32,
+    realm: Option<String>,
 ) -> Result<bool, anyhow::Error> {
     debug!("op_teleport_to");
     let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
@@ -109,6 +110,7 @@ pub async fn op_teleport_to(
         .push(RpcCall::TeleportPlayer {
             scene: Some(scene),
             to: IVec2::new(position_x, position_y),
+            realm,
             response: sx,
         })?;
 
