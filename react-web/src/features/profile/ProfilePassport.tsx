@@ -8,7 +8,7 @@
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
 import { useState } from 'react'
-import { Avatar, EquippedItemCard, Icon, Tooltip } from '../../design'
+import { Avatar, EquippedItemCard, Icon, Tooltip, type EquippedItemCardProps } from '../../design'
 import { CategoryIcon } from '../backpack/categoryIcons'
 import { catalystThumbUrl, nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileInfo, Wearable } from '../../engine/protocol'
@@ -65,26 +65,37 @@ function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
   )
 }
 
-// Read-only equipped-item row (wearable or emote), 6 per row like unity-explorer's passport. No
-// equip affordance (this is someone else's passport, or a view-only summary of your own) — instead
-// the SHOP button deep-links to the item's shop page. The link is resolved by the bridge (it needs
-// the item's on-chain contract + item id); items with no listing — base wearables and emotes —
-// simply show no button.
-function EquippedRow({ items }: { items: (Wearable | Emote)[] }): React.JSX.Element {
+// Read-only equipped-item tiles, 6 per row like unity-explorer's passport. No equip affordance
+// (this is someone else's passport, or a view-only summary of your own) — instead the SHOP button
+// deep-links to the item's shop page. The link is resolved by the bridge (it needs the item's
+// on-chain contract + item id); items with no listing — base wearables and emotes — simply show no
+// button.
+type EquippedTile = EquippedItemCardProps & { key: string }
+
+const wearableTile = (w: Wearable): EquippedTile => ({
+  key: w.urn,
+  thumbnail: w.thumbnail ?? catalystThumbUrl(w.urn),
+  name: w.name,
+  rarity: w.rarity,
+  shopUrl: w.shopUrl,
+  categoryIcon: <CategoryIcon category={w.category} size={15} />
+})
+
+const emoteTile = (e: Emote): EquippedTile => ({
+  // Keyed by slot too: the same emote can sit in more than one wheel slot (the equipped set is
+  // deduped, the wheel isn't), and a duplicate key drops the second tile.
+  key: `${e.urn}:${e.slot}`,
+  thumbnail: e.thumbnail ?? catalystThumbUrl(e.urn),
+  name: e.name,
+  rarity: e.rarity,
+  shopUrl: e.shopUrl,
+  categoryIcon: <Icon name="emotes" size={15} />
+})
+
+function EquippedRow({ tiles }: { tiles: EquippedTile[] }): React.JSX.Element {
   return (
     <div className={styles.equippedRow}>
-      {items.map((it) => (
-        <EquippedItemCard
-          // Emotes are keyed by slot too: the same emote can sit in more than one wheel slot (the
-          // equipped set is deduped, the wheel isn't), and a duplicate key drops the second tile.
-          key={'slot' in it ? `${it.urn}:${it.slot}` : it.urn}
-          thumbnail={it.thumbnail ?? catalystThumbUrl(it.urn)}
-          name={it.name}
-          rarity={it.rarity}
-          shopUrl={it.shopUrl}
-          categoryIcon={'category' in it ? <CategoryIcon category={it.category} size={15} /> : <Icon name="emotes" size={15} />}
-        />
-      ))}
+      {tiles.map(({ key, ...tile }) => <EquippedItemCard key={key} {...tile} />)}
     </div>
   )
 }
@@ -237,13 +248,13 @@ export function ProfilePassport({
                     {hasWearables && (
                       <>
                         <h2 className={styles.cardTitle}>Equipped Wearables</h2>
-                        <EquippedRow items={wearables} />
+                        <EquippedRow tiles={wearables.map(wearableTile)} />
                       </>
                     )}
                     {hasEmotes && (
                       <>
                         <h2 className={styles.cardTitle}>Equipped Emotes</h2>
-                        <EquippedRow items={profile.equippedEmotes ?? []} />
+                        <EquippedRow tiles={(profile.equippedEmotes ?? []).map(emoteTile)} />
                       </>
                     )}
                   </section>
