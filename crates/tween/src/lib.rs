@@ -145,8 +145,8 @@ impl Tween {
                 Self::apply_scale(start, end, ease_value, transform);
             }
             Some(Mode::MoveRotateScale(data)) => {
-                let move_start = data.position_start.unwrap_or_default().abs_vec_to_vec3();
-                let move_end = data.position_end.unwrap_or_default().abs_vec_to_vec3();
+                let move_start = data.position_start.unwrap_or_default().world_vec_to_vec3();
+                let move_end = data.position_end.unwrap_or_default().world_vec_to_vec3();
                 Self::apply_translation(move_start, move_end, ease_value, false, 0., transform);
 
                 let rotate_start = data.rotation_start.unwrap_or_default().to_bevy_normalized();
