@@ -94,7 +94,7 @@ pub fn set_ui_input(
                     is_submit: Some(submit),
                 },
             );
-            context.last_action_event = Some(time.elapsed_secs());
+            context.last_action_event = Some(time.elapsed_secs_f64());
         };
 
         commands.modify_component(move |style: &mut Node| {

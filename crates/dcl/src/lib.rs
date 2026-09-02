@@ -27,7 +27,7 @@ pub struct SceneCensus {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SceneElapsedTime(pub f32);
+pub struct SceneElapsedTime(pub f64);
 
 // data from renderer to scene
 #[derive(Debug, Serialize, Deserialize)]

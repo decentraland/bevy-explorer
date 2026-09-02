@@ -46,7 +46,7 @@ fn update_npc_velocity(
             continue;
         }
 
-        let velocity = (current_translation - prev_translation) / scene.last_update_dt;
+        let velocity = (current_translation - prev_translation) / scene.last_update_dt as f32;
 
         commands.entity(ent).try_insert(AvatarDynamicState {
             velocity: if velocity.is_finite() {

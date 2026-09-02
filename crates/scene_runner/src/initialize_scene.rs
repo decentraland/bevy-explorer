@@ -718,7 +718,7 @@ pub(crate) fn initialize_scene(
         context.inspected = inspected;
         // set last_sent so the scene doesn't get extreme starvation priority
         // when it first becomes eligible after initialization completes
-        context.last_sent = time.elapsed_secs();
+        context.last_sent = time.elapsed_secs_f64();
         // spawn in flight so we wait for initial RPC requests
         context.state = SceneState::Live {
             handle: SceneThreadHandle {

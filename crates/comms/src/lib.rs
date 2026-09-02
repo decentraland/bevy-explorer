@@ -264,7 +264,7 @@ impl Broadcast for rfc4::Movement {
 pub struct Emote {
     pub urn: String,
     pub incremental_id: u32,
-    pub timestamp: f32,
+    pub timestamp: f64,
     /// `Some` for a one-shot (the Pulse server auto-completes it after the duration); `None` for a
     /// looping emote (ended by a later `stopping` send). Ignored on a stop.
     pub duration_ms: Option<u32>,
@@ -278,7 +278,7 @@ impl Broadcast for Emote {
             rfc4::PlayerEmote {
                 incremental_id: self.incremental_id,
                 urn: self.urn.clone(),
-                timestamp: self.timestamp,
+                timestamp: self.timestamp as f32,
                 is_stopping: Some(self.stopping),
             },
         )))
