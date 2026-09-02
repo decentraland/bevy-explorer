@@ -1,7 +1,7 @@
 use bevy::{diagnostic::FrameCount, prelude::*};
 use common::{asset_cache::AssetCache, util::TryPushChildrenEx};
 use dcl_component::proto_components::{
-    common::{BorderRect, TextureUnion},
+    common::{texture_union, BorderRect, TextureUnion},
     sdk::components::{self, PbUiBackground},
     Color4DclToBevy,
 };
@@ -11,7 +11,7 @@ use ui_core::{
 
 use crate::{
     renderer_context::RendererSceneContext,
-    update_world::material::{TextureResolveError, TextureResolver},
+    update_world::material::{TextureResolveError, TextureResolver, VideoTextureOutput},
     SceneEntity,
 };
 
@@ -136,9 +136,18 @@ pub fn set_ui_background(
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
     mut cache: ResMut<AssetCache<StretchUvKey, StretchUvMaterial>>,
     frame: Res<FrameCount>,
-    sourced: Query<&UiMaterialSource>,
+    sourced: Query<(&UiMaterialSource, Option<&MaterialNode<StretchUvMaterial>>)>,
+    sources: Query<Option<Ref<VideoTextureOutput>>>,
     retried: Query<Has<RetryBackground>>,
+    mut pending_touch: Local<Vec<AssetId<StretchUvMaterial>>>,
 ) {
+    // touch materials whose source image was recreated last frame; deferred because ui
+    // materials have no prepare ordering against GpuImage, so a same-frame touch can
+    // re-bind the old texture
+    for material_id in pending_touch.drain(..) {
+        stretch_uvs.get_mut(material_id);
+    }
+
     for ent in removed.read() {
         let Ok(link) = links.get(ent) else {
             continue;
@@ -189,11 +198,18 @@ pub fn set_ui_background(
                 continue;
             };
 
-            let image = texture
-                .tex
-                .tex
-                .as_ref()
-                .map(|tex| resolver.resolve_texture(ctx, tex));
+            let image = texture.tex.tex.as_ref().map(|tex| {
+                // sampling ui from within ui allows an unbounded feedback loop (a canvas
+                // sampling itself); nest the nodes instead
+                if matches!(tex, texture_union::Tex::UiTexture(_)) {
+                    warn!(
+                        "[{}] uiTexture is not supported in scene ui backgrounds",
+                        scene_ent.id
+                    );
+                    return Err(TextureResolveError::NoTexture);
+                }
+                resolver.resolve_texture(ctx, tex)
+            });
 
             let image = match image {
                 Some(Ok(t)) => t,
@@ -346,15 +362,29 @@ pub fn set_ui_background(
         }
     }
 
-    // rebuild the owner when its texture-source entity disappears
-    for source in sourced.iter() {
-        let Ok(has_retry) = retried.get(source.owner) else {
-            continue;
-        };
-        if !has_retry && commands.get_entity(source.source).is_err() {
-            commands.entity(source.owner).try_insert(RetryBackground {
-                since_frame: frame.0,
-            });
+    // rebuild the owner when its texture-source entity disappears; when the source's output
+    // changes (video resize, texture-camera target resize) the gpu texture is recreated, so
+    // touch the consuming material to rebuild its bind group (as update_materials does for
+    // meshes)
+    for (source, maybe_material) in sourced.iter() {
+        match sources.get(source.source) {
+            Err(_) => {
+                let Ok(has_retry) = retried.get(source.owner) else {
+                    continue;
+                };
+                if !has_retry {
+                    commands.entity(source.owner).try_insert(RetryBackground {
+                        since_frame: frame.0,
+                    });
+                }
+            }
+            Ok(output) => {
+                if output.is_some_and(|o| o.is_changed()) {
+                    if let Some(material) = maybe_material {
+                        pending_touch.push(material.0.id());
+                    }
+                }
+            }
         }
     }
 }

@@ -5,11 +5,15 @@ import { App } from './App'
 import { registerCoiServiceWorker } from './lib/coiServiceWorker'
 import { installCefNativeBridge } from './lib/cefNativeBridge'
 import { installLocalNetworkFetch } from './lib/localNetworkFetch'
+import { installHudScale } from './lib/hudScale'
 import './styles/global.css'
 
 // Before anything fetches: annotate loopback/local-network requests so Chrome's Local Network
 // Access permission (142+) prompts instead of silently blocking — preview realms live on localhost.
 installLocalNetworkFetch()
+
+// Keep --ui-scale in sync with the viewport (DPI-correct, like Unity's CanvasScaler).
+installHudScale()
 
 // NATIVE (?native=1): bevy renders the 3D world *behind* this transparent webview, so the page must
 // be transparent (in web mode the engine canvas lives in this document at z-0, so the body
