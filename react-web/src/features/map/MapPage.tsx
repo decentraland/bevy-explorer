@@ -5,6 +5,7 @@
 // panel (places.decentraland.org/api/places) when a parcel/pin is clicked. Teleport via the bridge.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { serviceUrl } from '../../lib/baseDomain'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import { CAT_ICONS, CAT_PINS, WORLD_ICON } from './mapArt'
 import { GRID, ORIGIN_X, ORIGIN_Y, PARCELS_PER_TILE, SIZE, SPAN, tileUrl } from './atlas'
@@ -13,8 +14,8 @@ import { openWorldVisit } from '../../components/WorldVisitModal'
 import { isCancelKey } from '../../lib/bindingLabels'
 import styles from './MapPage.module.css'
 
-const PLACES_API = 'https://places.decentraland.org/api/places'
-const WORLDS_API = 'https://places.decentraland.org/api/worlds'
+const PLACES_API = `${serviceUrl('places')}/api/places`
+const WORLDS_API = `${serviceUrl('places')}/api/worlds`
 
 // Category chips. `api` is the lowercase value the places API expects under `categories`
 // (null = no filter / "All"); icons + pins are the unity-explorer textures under /assets/map.

@@ -90,6 +90,15 @@ struct Args {
 
 fn parse_args() -> Args {
     let mut args = pico_args::Arguments::from_env();
+    // latch first: everything below that composes a backend host reads it
+    if let Err(e) = args
+        .opt_value_from_str::<_, String>("--base-domain")
+        .map_err(|e| e.to_string())
+        .and_then(|domain| domain.map_or(Ok(()), |d| common::base_domain::set(&d)))
+    {
+        eprintln!("{e}");
+        std::process::exit(2);
+    }
     let realm: String = args
         .value_from_str("--realm")
         .unwrap_or_else(|_| "http://localhost:8000".to_owned());
@@ -285,8 +294,8 @@ fn main() {
     );
 
     let config = AppConfig {
-        server: args.realm.clone(),
-        location: args.location,
+        home_realm: Some(args.realm.clone()),
+        home_location: Some(args.location),
         graphics: GraphicsSettings {
             vsync: false,
             log_fps: false,
@@ -615,9 +624,9 @@ fn setup(
     // and PrimaryEntities::player() panics without the marker. Placed at the scene
     // location so position-based loading picks up the parcel scene.
     let player_pos = Vec3::new(
-        8.0 + PARCEL_SIZE * config.location.x as f32,
+        8.0 + PARCEL_SIZE * config.home_location().x as f32,
         0.0,
-        -8.0 + -PARCEL_SIZE * config.location.y as f32,
+        -8.0 + -PARCEL_SIZE * config.home_location().y as f32,
     );
     // NOT OutOfWorld: the player must count as "inside" the scene parcel so
     // update_scene_room fires the authoritative scene-room connection.
@@ -901,7 +910,7 @@ fn drain_control_commands(
     >,
 ) {
     let store_delegation = |scene_id: &str, encoded: &str, delegations: &mut StorageDelegations| {
-        match StorageDelegation::parse(encoded, &map_realm_name(&config.server)) {
+        match StorageDelegation::parse(encoded, &map_realm_name(&config.home_realm())) {
             Ok(delegation) => {
                 // reject a renewal that rebinds to another scene's credential
                 // (hammurabi's same-scene guard)
@@ -1064,9 +1073,11 @@ fn drain_control_commands(
                     let client = ipfs.ipfs().client();
                     let sid = scene_id.clone();
                     let task = IoTaskPool::get().spawn_compat(async move {
-                        let url =
-                            "https://comms-gatekeeper-local.decentraland.org/get-server-scene-adapter";
-                        let uri = http::Uri::try_from(url)?;
+                        let url = common::base_domain::https(
+                            "comms-gatekeeper-local",
+                            "/get-server-scene-adapter",
+                        );
+                        let uri = http::Uri::try_from(url.as_str())?;
                         let meta = serde_json::json!({
                             "intent": "dcl:explorer:comms-handshake",
                             "signer": "dcl:explorer",

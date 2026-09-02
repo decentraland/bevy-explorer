@@ -8,6 +8,7 @@
 // next press to close the gallery.
 
 import { useEffect, useRef, useState } from 'react'
+import { serviceUrl } from '../../lib/baseDomain'
 import { Avatar, Button } from '../../design'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { registerCancelLayer } from '../../lib/cancelLayers'
@@ -16,7 +17,7 @@ import type { GalleryPhoto, GalleryPhotoMeta } from '../../engine/protocol'
 import type { ChatUser } from '../chat/ProfileCardPresentation'
 import styles from './GalleryPage.module.css'
 
-const REELS_BASE = 'https://reels.decentraland.org'
+const REELS_BASE = serviceUrl('reels')
 
 function formatDate(dateTime: string): string {
   const ms = photoTime(dateTime)

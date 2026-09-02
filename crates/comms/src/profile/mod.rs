@@ -525,7 +525,7 @@ fn drive_profile_fetches(mut manager: ProfileManager) {
 
     // collect due entries into registry batches, one set per registry host
     let now = web_time::Instant::now();
-    let mut wants: HashMap<&'static str, Vec<Address>> = HashMap::default();
+    let mut wants: HashMap<String, Vec<Address>> = HashMap::default();
     for (address, entry) in entries.iter_mut() {
         if entry.wants_fetch(now) {
             entry.fetching = Some(ProfileSource::Registry);
@@ -543,7 +543,7 @@ fn drive_profile_fetches(mut manager: ProfileManager) {
     for (url, addresses) in wants {
         for chunk in addresses.chunks(PROFILE_REQUEST_BATCH) {
             registry_batches.push(IoTaskPool::get().spawn_compat(fetch_registry_profiles(
-                url,
+                url.clone(),
                 chunk.to_vec(),
                 ipfs.ipfs().clone(),
             )));
@@ -927,16 +927,23 @@ const REGISTRY_ZONE: &str = "https://asset-bundle-registry.decentraland.zone/pro
 
 /// The .zone and .org registries hold separate profile namespaces, so the registry must
 /// match the profile owner's environment, judged by their announced lambdas endpoint:
-/// a host under the zone tld uses the zone registry.
-fn registry_url(endpoint: Option<&str>) -> &'static str {
-    let is_zone = endpoint
+/// a host under the custom base domain uses that domain's registry, else a host under
+/// the zone tld uses the zone registry.
+fn registry_url(endpoint: Option<&str>) -> String {
+    let host = endpoint
         .and_then(|e| reqwest::Url::parse(e).ok())
-        .is_some_and(|url| url.host_str().and_then(|host| host.rsplit('.').next()) == Some("zone"));
-    if is_zone {
-        REGISTRY_ZONE
-    } else {
-        REGISTRY_ORG
+        .and_then(|url| url.host_str().map(str::to_owned));
+    if let Some(host) = host {
+        let base = common::base_domain::get();
+        if common::base_domain::is_custom() && (host == base || host.ends_with(&format!(".{base}")))
+        {
+            return common::base_domain::https("asset-bundle-registry", "/profiles");
+        }
+        if host.rsplit('.').next() == Some("zone") {
+            return REGISTRY_ZONE.to_owned();
+        }
     }
+    REGISTRY_ORG.to_owned()
 }
 
 /// One registry POST for a chunk of ids, reported per item: Ok(Some) found, Ok(None)
@@ -944,7 +951,7 @@ fn registry_url(endpoint: Option<&str>) -> &'static str {
 /// the addresses that were asked for — the response identifies each profile by its
 /// deployed metadata, which is written by whoever deployed it.
 async fn fetch_registry_profiles(
-    registry_url: &'static str,
+    registry_url: String,
     addresses: Vec<Address>,
     ipfs: std::sync::Arc<IpfsIo>,
 ) -> Vec<(Address, Result<Option<UserProfile>, anyhow::Error>)> {
@@ -958,7 +965,7 @@ async fn fetch_registry_profiles(
     let outcome: Result<Vec<LambdaProfiles>, anyhow::Error> = async {
         let response = ipfs
             .client()
-            .post(registry_url)
+            .post(&registry_url)
             .timeout(std::time::Duration::from_secs(10))
             .body(serde_json::json!({ "ids": ids }).to_string())
             .header("content-type", "application/json")

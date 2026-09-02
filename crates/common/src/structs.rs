@@ -471,12 +471,22 @@ pub struct PreviousLogin {
     pub auth: Vec<ChainLink>,
 }
 
+pub fn default_home_realm() -> String {
+    crate::base_domain::https("realm-provider-ea", "/main")
+}
 // app configuration
 #[derive(Serialize, Deserialize, Resource, Clone)]
 #[serde(default)]
 pub struct AppConfig {
-    pub server: String,
-    pub location: IVec2,
+    /// The pinned home scene. Written ONLY by SetHomeScene; None = never pinned, so the
+    /// home keeps tracking the base-domain-derived default. A pinned home persists (and
+    /// survives switching base domains) even when it happens to equal some domain's
+    /// default. --server / --location are startup params (like the web's ?realm= /
+    /// ?position=) and are deliberately never merged in here — the config file is
+    /// rewritten wholesale on any settings change, which would silently persist a
+    /// one-off CLI target as home.
+    pub home_realm: Option<String>,
+    pub home_location: Option<IVec2>,
     pub previous_login: Option<PreviousLogin>,
     pub graphics: GraphicsSettings,
     pub audio: AudioSettings,
@@ -522,8 +532,8 @@ pub const INPUTS_GENERATION: u32 = 1;
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: "https://realm-provider-ea.decentraland.org/main".to_owned(),
-            location: IVec2::new(0, 0),
+            home_realm: None,
+            home_location: None,
             previous_login: None,
             graphics: Default::default(),
             audio: Default::default(),
@@ -557,6 +567,16 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    /// The effective home realm: the pinned value, else the base-domain-derived default.
+    pub fn home_realm(&self) -> String {
+        self.home_realm.clone().unwrap_or_else(default_home_realm)
+    }
+
+    /// The effective home parcel: the pinned value, else 0,0.
+    pub fn home_location(&self) -> IVec2 {
+        self.home_location.unwrap_or(IVec2::ZERO)
+    }
+
     /// one-time forced reinitialization: configs saved with an older generation get the
     /// current defaults for the preset-managed settings, keeping everything else
     pub fn reset_outdated_settings(&mut self) {

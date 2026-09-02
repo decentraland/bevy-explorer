@@ -363,6 +363,8 @@ pub(crate) fn load_scene_javascript(
                 }
             }
         } else {
+            // deliberately not base_domain-derived: renderer-artifacts is only deployed
+            // on decentraland.org (no zone or custom-domain equivalents)
             ipfas.load_url_uncached(
                 "https://renderer-artifacts.decentraland.org/sdk6-adaption-layer/main/index.min.js",
             )

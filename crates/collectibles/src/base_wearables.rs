@@ -307,8 +307,12 @@ pub fn default_bodyshape_instance() -> WearableInstance {
     .unwrap()
 }
 
-pub const CONTENT_URL: &str = "https://peer.decentraland.org/content/contents/";
-pub const BASE_URL: &str = "https://peer.decentraland.org/content";
+pub fn content_url() -> String {
+    common::base_domain::https("peer", "/content/contents/")
+}
+pub fn base_url() -> String {
+    common::base_domain::https("peer", "/content")
+}
 
 pub fn default_wearables(body_shape: &WearableUrn) -> impl Iterator<Item = WearableInstance> {
     match body_shape.as_str() {

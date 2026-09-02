@@ -684,7 +684,7 @@ pub fn change_realm(
 
 pub fn map_realm_name(request: &str) -> String {
     if request.ends_with(".dcl.eth") && !request.starts_with("https://") {
-        format!("https://worlds-content-server.decentraland.org/world/{request}")
+        common::base_domain::https("worlds-content-server", &format!("/world/{request}"))
     } else {
         request.to_owned()
     }

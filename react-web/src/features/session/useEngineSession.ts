@@ -2,6 +2,7 @@
 // Owns the driver and exposes the login flow + scene-loading state + phase.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { serviceUrl } from '../../lib/baseDomain'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/fatalError'
@@ -1050,8 +1051,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // override (possibly an invalid world after a failed validation), and inheriting it would
       // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
-        if (dest == null) driver.launch?.(DEFAULT_REALM, '0,0')
-        else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
+        if (dest == null) {
+          // Skip goes HOME — the engine's persisted home scene (the derived default realm at
+          // 0,0 unless the user pinned one), not a hardcoded Genesis Plaza.
+          const home = driver.homeScene?.()
+          driver.launch?.(home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0')
+        } else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
         else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
@@ -1127,7 +1132,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       validatingRealm.current = true
       const base =
         dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
-          ? `https://worlds-content-server.decentraland.org/world/${dest.realm}`
+          ? `${serviceUrl('worlds-content-server')}/world/${dest.realm}`
           : dest.realm
       // Launching against an unreachable realm strands the engine in a cryptic login failure, so
       // block up front: 404 → not found, no/failed answer (incl. timeout) → unreachable.
