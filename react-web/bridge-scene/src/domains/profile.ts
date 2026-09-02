@@ -8,7 +8,7 @@ import { getPlayer } from '@dcl/sdk/players'
 import { getPlayerData } from '~system/Players'
 import { catalystBase, getJson } from '../http'
 import type { UserData } from '~system/Players'
-import { resolveEquippedSet } from './wearables'
+import { resolveEquippedSet, resolveWearables } from './wearables'
 import { equippedSlots, resolveEquippedEmotes } from './emotes'
 import type { Badge, Profile } from '../../../src/engine/protocol'
 import type { Ctx } from '../bridge'
@@ -181,10 +181,9 @@ export function registerProfile(ctx: Ctx): void {
       ? equippedSlots(me.emotes).map((urn, slot) => ({ slot, urn }))
       : (av?.avatar?.emotes ?? [])
     const [equippedWearables, equippedEmotes] = await Promise.all([
-      // indexTokens only for our OWN urns: another user's tokenIds must never reach the map the
-      // equip handler deploys from. shopUrls because the passport is the only surface that renders
-      // a SHOP action (see resolveEquippedSet).
-      resolveEquippedSet(wearableUrns, { indexTokens: isSelf, shopUrls: true }).catch(() => undefined),
+      // Only our OWN urns go through resolveEquippedSet (it indexes tokens for the equip handler);
+      // shopUrls because the passport is the only surface that renders a SHOP action.
+      (isSelf ? resolveEquippedSet : resolveWearables)(wearableUrns, { shopUrls: true }).catch(() => undefined),
       resolveEquippedEmotes(emoteEntries).catch(() => undefined)
     ])
     ctx.send({

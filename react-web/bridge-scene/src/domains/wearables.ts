@@ -99,33 +99,19 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
   return { items, total: data?.totalAmount ?? items.length }
 }
 
-// Resolve a set of (possibly token-form) urns into the equipped category-slot list, indexing
-// item→token so a later equip can deploy them. Resolution is by urn (catalyst lambdas) and DECOUPLED
-// from the paged grid, so every item resolves regardless of which catalog page is loaded — shared by
-// `getWearables` (the live avatar) and `equipOutfit` (a saved outfit's wearables). Mirrors
-// bevy-ui-scene's fetchWearablesData(...)(...wearables) on outfit equip.
-//
-// `indexTokens` MUST be false for any set that is not the local player's own (another user's
-// passport): tokenUrnByItem is keyed by ITEM urn and is what the equip handler deploys, so their
-// tokenId would overwrite ours for a commonly-owned item and the next equip would claim a token we
-// don't own — the catalyst rejects that deploy and the change silently doesn't persist.
-//
-// `shopUrls` is opt-in because only the passport's EquippedItemCard renders a SHOP action — the
-// Backpack's WearableCard ignores it — and resolving a legacy (collections-v1) item costs a
-// marketplace-api round trip the Backpack and outfit equip would pay for nothing.
-export async function resolveEquippedSet(
-  urns: string[],
-  opts: { indexTokens?: boolean; shopUrls?: boolean } = {}
-): Promise<Wearable[]> {
+type ResolveOpts = {
+  /** Opt-in: only the passport's EquippedItemCard renders a SHOP action — the Backpack's
+   *  WearableCard ignores it — and resolving a legacy (collections-v1) item costs a marketplace-api
+   *  round trip the Backpack and outfit equip would pay for nothing. */
+  shopUrls?: boolean
+}
+
+// Resolve a set of (possibly token-form) urns into displayable wearables. Resolution is by urn
+// (catalyst lambdas) and DECOUPLED from the paged grid, so every item resolves regardless of which
+// catalog page is loaded. Pure — no side effects — so it serves ANY address's urns (another user's
+// passport). Mirrors bevy-ui-scene's fetchWearablesData(...)(...wearables) on outfit equip.
+export async function resolveWearables(urns: string[], opts: ResolveOpts = {}): Promise<Wearable[]> {
   const baseUrl = await catalystBase()
-  // Equipped urns are the deployable token form → index item→token now (equip needs it even
-  // before any grid page is fetched).
-  if (opts.indexTokens !== false) {
-    for (const u of urns) {
-      const item = itemUrnOf(u)
-      if (item !== u) tokenUrnByItem.set(item, u)
-    }
-  }
   const equippedItemUrns = [...new Set(urns.map(itemUrnOf))]
   const resolved = await resolveDefsByUrn('wearables', baseUrl, equippedItemUrns)
   const shopUrls =
@@ -148,6 +134,21 @@ export async function resolveEquippedSet(
       shopUrl: shopUrls?.get(itemUrn)
     }
   })
+}
+
+// The LOCAL PLAYER's equipped set: resolveWearables plus item→token indexing so a later equip can
+// deploy them (equip needs it even before any grid page is fetched). Shared by `getWearables` (the
+// live avatar), `equipOutfit` (a saved outfit's wearables) and the passport's own-profile path.
+// Own urns ONLY: tokenUrnByItem is keyed by ITEM urn and is what the equip handler deploys, so
+// another user's tokenId would overwrite ours for a commonly-owned item and the next equip would
+// claim a token we don't own — the catalyst rejects that deploy and the change silently doesn't
+// persist. Anyone else's urns go through resolveWearables.
+export async function resolveEquippedSet(urns: string[], opts: ResolveOpts = {}): Promise<Wearable[]> {
+  for (const u of urns) {
+    const item = itemUrnOf(u)
+    if (item !== u) tokenUrnByItem.set(item, u)
+  }
+  return resolveWearables(urns, opts)
 }
 
 export function registerWearables(ctx: Ctx): void {
