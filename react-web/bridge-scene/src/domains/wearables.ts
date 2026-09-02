@@ -35,7 +35,7 @@ function accumulateTokens(elements: CatalogElement[]): void {
   }
 }
 
-export interface CatalogPageParams {
+export type CatalogPageParams = {
   /** 0-based page. */
   page: number
   pageSize: number

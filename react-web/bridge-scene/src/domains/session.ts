@@ -18,7 +18,7 @@ export function registerSession(ctx: Ctx): void {
         case 'loginNew': {
           const login = BevyApi.loginNew()
           void login.code
-            .then((code) => ctx.send({ kind: 'loginCode', code: code ?? null }))
+            .then((code) => { ctx.send({ kind: 'loginCode', code: code ?? null }); })
             .catch(() => undefined) // errors surface through `success` below
           await login.success
           value = { success: true, error: '' }
@@ -55,8 +55,8 @@ export function registerSession(ctx: Ctx): void {
         ctx.send({
           kind: 'sceneLoading',
           state: {
-            visible: s.visible === true,
-            realmConnected: s.realmConnected !== false,
+            visible: s.visible,
+            realmConnected: s.realmConnected,
             title: s.title ?? '',
             pendingAssets: s.pendingAssets ?? null
           }
