@@ -1,11 +1,12 @@
 // Wearables / backpack: equipped wearables (category slots) + equipping, plus the paged owned
 // catalog fetcher used by the generic `catalog` domain.
 //   from: catalyst GET /explorer/:address/wearables (owned catalog, paged),
-//         GET /lambdas/collections/wearables?wearableId=… (equipped-by-urn resolve),
+//         GET /lambdas/collections/wearables (equipped-by-urn resolve, via ./collections),
 //         @dcl/sdk getPlayer().wearables (equipped), BevyApi.setAvatar (equip).
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
+import { resolveDefsByUrn } from './collections'
 import type { Ctx } from '../bridge'
 import type { Wearable } from '../../../src/engine/protocol'
 
@@ -53,8 +54,6 @@ function itemUrnOf(urn: string): string {
   }
   return urn
 }
-
-type WearableDef = { id: string; name?: string; rarity?: string; thumbnail?: string; collectionAddress?: string; data?: { category?: string } }
 
 // --- marketplace shop deep links ------------------------------------------------
 // The shop link is /shop/item/<contract>/<numeric item id>. A collections-v2 (matic) urn already
@@ -116,43 +115,6 @@ export async function resolveShopUrls(items: Array<{ urn: string; collectionAddr
       const url = `${SHOP_ITEM_BASE}/${encodeURIComponent(it.contractAddress)}/${encodeURIComponent(it.itemId)}`
       shopUrlByItemUrn.set(it.urn, url)
       out.set(it.urn, url)
-    }
-  }
-  return out
-}
-
-// A wearable's DEFINITION (name/category/thumbnail/model/rarity) is stable enough within a session to
-// cache, though NOT truly immutable: a creator can re-publish edits (new content entity) under the
-// same urn. The cache is in-memory and session-lifetime, so at worst it serves stale metadata until a
-// reload — acceptable for the HUD. Cache defs by ITEM urn (tokenId already stripped by itemUrnOf;
-// every token of an item shares one entry) to serve repeat resolves — getWearables on reopen,
-// equipOutfit — from memory instead of re-hitting the catalyst. Mirrors bevy-ui-scene's
-// catalystMetadataMap. Misses aren't cached (a transient failure or a not-yet-resolvable urn is
-// retried next time).
-const defByItemUrn = new Map<string, WearableDef>()
-
-// Resolve wearable definitions by item urn (equipped set) to learn each one's category (slot
-// placement). Cached hits skip the network; only misses are fetched, batched to bound URL length.
-async function resolveByUrn(baseUrl: string, itemUrns: string[]): Promise<Map<string, WearableDef>> {
-  const out = new Map<string, WearableDef>()
-  const missing: string[] = []
-  for (const u of itemUrns) {
-    const cached = defByItemUrn.get(u)
-    if (cached != null) out.set(u, cached)
-    else missing.push(u)
-  }
-  const CHUNK = 50
-  for (let i = 0; i < missing.length; i += CHUNK) {
-    const qs = missing.slice(i, i + CHUNK).map((u) => `wearableId=${u}`).join('&')
-    const data = await getJson<{ wearables?: WearableDef[] }>(`${baseUrl}/lambdas/collections/wearables?${qs}`).catch((e: unknown) => {
-      // Loud on purpose: a swallowed chunk failure shrinks the resolved set, and downstream that
-      // once meant silently undressing the avatar on the next equip (see resolveEquippedSet).
-      console.error('[wearables] resolve-by-urn chunk failed', e)
-      return undefined
-    })
-    for (const w of data?.wearables ?? []) {
-      defByItemUrn.set(w.id, w)
-      out.set(w.id, w)
     }
   }
   return out
@@ -229,7 +191,7 @@ export async function resolveEquippedSet(
     }
   }
   const equippedItemUrns = [...new Set(urns.map(itemUrnOf))]
-  const resolved = equippedItemUrns.length > 0 ? await resolveByUrn(baseUrl, equippedItemUrns) : new Map<string, WearableDef>()
+  const resolved = await resolveDefsByUrn('wearables', baseUrl, equippedItemUrns)
   const shopUrls =
     opts.shopUrls === true
       ? await resolveShopUrls(equippedItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress })))

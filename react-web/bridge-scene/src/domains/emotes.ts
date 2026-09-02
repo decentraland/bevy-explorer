@@ -1,12 +1,14 @@
 // Emotes: the player's OWNED emote collection + which are equipped to the 10 wheel slots, playing
 // one, and assigning one to a slot.
 //   from: @dcl/sdk getPlayer().emotes (equipped, by slot index), catalyst GET
-//         /explorer/:address/emotes (owned catalog), RestrictedActions.triggerEmote (play),
+//         /explorer/:address/emotes (owned catalog), /lambdas/collections/emotes (equipped-by-urn
+//         resolve, via ./collections), RestrictedActions.triggerEmote (play),
 //         BevyApi.setAvatar (assign).
 import { getPlayer } from '@dcl/sdk/players'
 import { triggerEmote } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
+import { resolveDefsByUrn } from './collections'
 import { resolveShopUrls } from './wearables'
 import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
@@ -107,37 +109,6 @@ function equipUrn(urn: string): string {
   return tokenUrnByItem.get(itemUrn(urn)) ?? urn
 }
 
-type EmoteDef = { id: string; name?: string; rarity?: string; thumbnail?: string; collectionAddress?: string }
-
-// A custom emote's definition (name/rarity/thumbnail) is stable enough within a session to cache,
-// keyed by item urn. Mirrors wearables.ts's defByItemUrn.
-const defByItemUrn = new Map<string, EmoteDef>()
-
-// Resolve custom (non-base) emote definitions by item urn, batched to bound URL length. Cached hits
-// skip the network. Mirrors wearables.ts's resolveByUrn.
-async function resolveByUrn(baseUrl: string, itemUrns: string[]): Promise<Map<string, EmoteDef>> {
-  const out = new Map<string, EmoteDef>()
-  const missing: string[] = []
-  for (const u of itemUrns) {
-    const cached = defByItemUrn.get(u)
-    if (cached != null) out.set(u, cached)
-    else missing.push(u)
-  }
-  const CHUNK = 50
-  for (let i = 0; i < missing.length; i += CHUNK) {
-    const qs = missing.slice(i, i + CHUNK).map((u) => `emoteId=${u}`).join('&')
-    const data = await getJson<{ emotes?: EmoteDef[] }>(`${baseUrl}/lambdas/collections/emotes?${qs}`).catch((e: unknown) => {
-      console.error('[emotes] resolve-by-urn chunk failed', e)
-      return undefined
-    })
-    for (const e of data?.emotes ?? []) {
-      defByItemUrn.set(e.id, e)
-      out.set(e.id, e)
-    }
-  }
-  return out
-}
-
 // Resolve a profile's equipped-emotes list (deployed avatar.emotes: {slot, urn}[], from the catalyst
 // profile lambda) into displayable Emote[] — DECOUPLED from getPlayer(), so it works for any address
 // (self or another user's passport), not just nearby/local players. Base emotes resolve locally
@@ -146,7 +117,7 @@ export async function resolveEquippedEmotes(entries: Array<{ slot: number; urn: 
   const baseUrl = await catalystBase()
   const valid = entries.filter((e) => e.urn !== '')
   const customItemUrns = [...new Set(valid.filter((e) => !isBase(fullEmoteUrn(e.urn))).map((e) => itemUrn(fullEmoteUrn(e.urn))))]
-  const resolved = customItemUrns.length > 0 ? await resolveByUrn(baseUrl, customItemUrns) : new Map<string, EmoteDef>()
+  const resolved = await resolveDefsByUrn('emotes', baseUrl, customItemUrns)
   const shopUrls = await resolveShopUrls(
     customItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress }))
   )
