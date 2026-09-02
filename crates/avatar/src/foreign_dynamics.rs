@@ -44,7 +44,7 @@ impl Plugin for PlayerMovementPlugin {
 
 #[derive(Component)]
 struct PlayerTargetPosition {
-    time: f32,
+    time: f64,
     /// The source clock of the last applied update, seconds (see `PlayerPositionEvent`).
     timestamp: Option<f64>,
     velocity: Option<Vec3>,
@@ -78,7 +78,7 @@ struct PendingSceneAnim {
     /// it also fires once `update_freq` elapses from receipt. `None` once applied.
     pending: Option<Option<SceneDrivenAnimationRequest>>,
     /// Local time the pending anim was received, for the `update_freq` backstop.
-    received_at: f32,
+    received_at: f64,
     /// Whether the next movement packet should fire `pending` (vs. merely arm it; see `pending`).
     fire_on_next_movement: bool,
     /// Render-only lean from the latest scene-anim event, composed onto the interpolated yaw each
@@ -127,7 +127,7 @@ fn update_foreign_user_target_position(
                     });
                 if is_valid {
                     const LAG_DECAY_SECS: f32 = 1.5;
-                    let delta = ev.time - pos.time;
+                    let delta = (ev.time - pos.time) as f32;
                     let update_freq = LAG_DECAY_SECS
                         / ((LAG_DECAY_SECS - delta).max(0.0) / pos.update_freq
                             + (LAG_DECAY_SECS / delta).min(1.0));
@@ -203,7 +203,7 @@ fn update_foreign_scene_anim(
     mut players: Query<&mut PendingSceneAnim>,
     time: Res<Time>,
 ) {
-    let now = time.elapsed_secs();
+    let now = time.elapsed_secs_f64();
     for ev in anim_events.read() {
         let tilt = avatar_tilt_quat(ev.tilt.0, ev.tilt.1);
         // The next movement packet arms the clip and the one after fires it (see `PendingSceneAnim`),
@@ -257,28 +257,25 @@ fn update_foreign_user_actual_position(
 
         let turn_time;
         if let Some(velocity) = target.velocity {
-            let t0 = time.elapsed_secs();
-            let t1 = target.time + target.update_freq;
+            let t0 = time.elapsed_secs_f64();
+            let t1 = target.time + target.update_freq as f64;
 
-            if t1 < t0 + time.delta_secs() * 2.0 {
+            if t1 < t0 + time.delta_secs_f64() * 2.0 {
                 // Past the goalpost: dead-reckon forward from the last observation. `stale` is
                 // unbounded while no packet arrives, so the offset is saturated rather than linear
                 // (see `COAST_SECS`) — a single missed update used to walk the peer away at full
                 // speed indefinitely. `decay` is the derivative of that offset, so the velocity we
                 // report stays consistent with the motion we render and the walk/run blend winds
                 // down with it instead of animating a sprint on a stationary avatar.
-                let stale = t0 - t1;
+                let stale = (t0 - t1) as f32;
                 let decay = (-stale / COAST_SECS).exp();
                 actual.translation = target.translation + velocity * (COAST_SECS * (1.0 - decay));
                 dynamic_state.velocity = velocity * decay;
                 turn_time = 0.0;
             } else {
                 // use some extrapolation but slow it down so we don't overcompensate for missed packets
-                let dt = if (t1 - t0) < 1.0 {
-                    t1 - t0
-                } else {
-                    (t1 - t0).sqrt()
-                };
+                let dt = (t1 - t0) as f32;
+                let dt = if dt < 1.0 { dt } else { dt.sqrt() };
 
                 let p0 = actual.translation;
                 let p1 = target.translation;
@@ -297,7 +294,7 @@ fn update_foreign_user_actual_position(
             }
         } else {
             // arrive at target position by time + 0.5
-            let walk_time_left = target.time + 0.5 - time.elapsed_secs();
+            let walk_time_left = (target.time + 0.5 - time.elapsed_secs_f64()) as f32;
             if walk_time_left <= 0.0 {
                 actual.translation = target.translation;
                 dynamic_state.velocity = Vec3::ZERO;
@@ -307,7 +304,7 @@ fn update_foreign_user_actual_position(
                 dynamic_state.velocity = delta / time.delta_secs();
                 actual.translation += dynamic_state.velocity * time.delta_secs();
             }
-            turn_time = target.time + 0.2 - time.elapsed_secs();
+            turn_time = (target.time + 0.2 - time.elapsed_secs_f64()) as f32;
         }
 
         // Compose the render-only lean onto the (yaw-only) target before interpolating, so the
@@ -332,7 +329,7 @@ fn update_foreign_user_actual_position(
         match target.remote_move_kind {
             Some(MoveKind::Jump) => {
                 if dynamic_state.jump_time == -1.0 {
-                    dynamic_state.jump_time = time.elapsed_secs();
+                    dynamic_state.jump_time = time.elapsed_secs_f64();
                 }
             }
             Some(k) => dynamic_state.move_kind = k,
@@ -391,7 +388,7 @@ fn update_foreign_user_actual_position(
         // trigger, apply it anyway rather than strand it.
         if let Some(mut pending) = maybe_pending {
             if pending.pending.is_some()
-                && time.elapsed_secs() >= pending.received_at + target.update_freq
+                && time.elapsed_secs_f64() >= pending.received_at + target.update_freq as f64
             {
                 let anim = pending.pending.take().unwrap();
                 commands

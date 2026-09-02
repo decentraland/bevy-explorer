@@ -106,8 +106,8 @@ struct ProfileEntry {
     fetching: Option<ProfileSource>,
     /// when the next cascade may start; None = due now. Irrelevant once satisfied.
     next_fetch: Option<web_time::Instant>,
-    /// `time.elapsed_secs()` of the last `ProfileRequest` sent to the peer
-    last_p2p: Option<f32>,
+    /// `time.elapsed_secs_f64()` of the last `ProfileRequest` sent to the peer
+    last_p2p: Option<f64>,
 }
 
 impl ProfileEntry {
@@ -168,7 +168,7 @@ impl ProfileEntry {
     /// its own latest profile. Held back until the first cascade concludes so the
     /// authoritative sources get first go, except when we already hold (stale) data —
     /// then the request rides alongside the re-fetch.
-    fn wants_p2p(&self, now: f32) -> bool {
+    fn wants_p2p(&self, now: f64) -> bool {
         let behind = self
             .data
             .as_ref()
@@ -301,7 +301,7 @@ pub fn setup_primary_profile(
     ipfas: IpfsAssetServer,
     mut contexts: Query<&mut GlobalCrdtState>,
     mut cache: ProfileManager,
-    mut last_announce: Local<f32>,
+    mut last_announce: Local<f64>,
     time: Res<Time>,
 ) {
     // gather any event receivers
@@ -357,7 +357,7 @@ pub fn setup_primary_profile(
                     version: profile.version,
                 },
             );
-            *last_announce = time.elapsed_secs();
+            *last_announce = time.elapsed_secs_f64();
 
             // send to event receivers
             senders.retain(|sender| {
@@ -382,7 +382,7 @@ pub fn setup_primary_profile(
                 current_profile.is_deployed = true;
             }
         } else if let Some(current_profile) = current_profile.profile.as_ref() {
-            let now = time.elapsed_secs();
+            let now = time.elapsed_secs_f64();
             if now > *last_announce + 5.0 {
                 debug!("announcing profile v {}", current_profile.version);
                 // The keepalive re-announce goes the same way as the version bump above: Pulse
@@ -560,7 +560,7 @@ fn request_missing_profiles(
     transports: Query<&Transport>,
     time: Res<Time>,
 ) {
-    let now = time.elapsed_secs();
+    let now = time.elapsed_secs_f64();
 
     // resolved players: push cache movement, but diff before any push — only real
     // changes reach the entity/scenes
@@ -669,7 +669,7 @@ pub fn process_profile_events(
     mut commands: Commands,
     mut players: Query<(&mut ForeignPlayer, Option<&mut UserProfile>)>,
     mut events: EventReader<ProfileEvent>,
-    mut last_sent_request: Local<HashMap<Entity, f32>>,
+    mut last_sent_request: Local<HashMap<Entity, f64>>,
     time: Res<Time>,
     wallet: Res<Wallet>,
     transports: Query<&Transport>,
@@ -719,7 +719,7 @@ pub fn process_profile_events(
                         let _ = transport
                             .sender
                             .try_send(NetworkMessage::reliable(&response));
-                        last_sent_request.insert(*request_transport, time.elapsed_secs());
+                        last_sent_request.insert(*request_transport, time.elapsed_secs_f64());
                     }
                 }
             }
@@ -797,7 +797,7 @@ pub fn process_profile_events(
         }
     }
 
-    last_sent_request.retain(|_, req_time| *req_time > time.elapsed_secs() - 10.0);
+    last_sent_request.retain(|_, req_time| *req_time > time.elapsed_secs_f64() - 10.0);
 }
 
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Default)]

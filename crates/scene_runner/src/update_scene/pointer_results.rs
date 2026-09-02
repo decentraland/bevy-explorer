@@ -1329,7 +1329,7 @@ fn send_action_event(
             direction,
             timestamp,
         );
-        context.last_action_event = Some(time.elapsed_secs());
+        context.last_action_event = Some(time.elapsed_secs_f64());
         consumer = Some(scene);
     }
     consumer

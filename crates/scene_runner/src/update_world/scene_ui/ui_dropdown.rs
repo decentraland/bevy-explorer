@@ -129,7 +129,7 @@ pub fn set_ui_dropdown(
                             value: combo.selected as i32,
                         },
                     );
-                    context.last_action_event = Some(time.elapsed_secs());
+                    context.last_action_event = Some(time.elapsed_secs_f64());
                 },
             ),
         ));

@@ -84,7 +84,7 @@ pub struct RendererSceneContext {
     pub hierarchy_changed: bool,
 
     // time of last message sent to scene
-    pub last_sent: f32,
+    pub last_sent: f64,
     // last player/camera transforms sent to the scene, used to delta-check
     // without deserializing the stored crdt entry every frame
     pub last_sent_player_transform: Option<Transform>,
@@ -105,18 +105,18 @@ pub struct RendererSceneContext {
     pub blocked: HashSet<&'static str>,
 
     // total scene run time in seconds
-    pub total_runtime: f32,
+    pub total_runtime: f64,
     // scene tick number
     pub tick_number: u32,
     // last tick delta
-    pub last_update_dt: f32,
+    pub last_update_dt: f64,
 
     // message buffer
     pub logs: RingBuffer<SceneLogMessage>,
     log_to_stdout: bool,
 
     // last time a pointer event occurred
-    pub last_action_event: Option<f32>,
+    pub last_action_event: Option<f64>,
     // sdk version
     pub sdk_version: &'static str,
 

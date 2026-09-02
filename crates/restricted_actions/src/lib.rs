@@ -213,7 +213,7 @@ pub fn handle_player_move_requests(
     // Engine dispatch clock, matching RendererSceneContext::last_sent. Constant
     // within a frame, so a same-frame scene dispatch compares equal (and is treated
     // as stale by the strict `>` acceptance test in apply_movement).
-    let now = time.elapsed_secs();
+    let now = time.elapsed_secs_f64();
     let Ok((player_entity, _, _, _)) = player.single() else {
         return;
     };
@@ -350,7 +350,7 @@ fn apply_player_move(
     movement_control: &mut EngineMovementControl,
     movement_info: &mut AvatarMovementInfo,
     teleport_events: &mut EventWriter<PlayerTeleported>,
-    now: f32,
+    now: f64,
 ) {
     let (_, mut player_transform, mut dynamics, maybe_active) = player.single_mut().unwrap();
     if let Some(active) = maybe_active {
@@ -1789,11 +1789,11 @@ pub fn handle_eth_async(
             .ok()
             .and_then(|scene| scene.last_action_event)
             .unwrap_or_default();
-        if last_action_time < time.elapsed_secs() - 1.0 {
+        if last_action_time < time.elapsed_secs_f64() - 1.0 {
             response.send(Err(format!(
                 "no recent user activity (last action {}, time {}).",
                 last_action_time,
-                time.elapsed_secs()
+                time.elapsed_secs_f64()
             )));
             continue;
         }
@@ -1854,11 +1854,11 @@ pub fn handle_copy_to_clipboard(
             .ok()
             .and_then(|scene| scene.last_action_event)
             .unwrap_or_default();
-        if last_action_time < time.elapsed_secs() - 1.0 {
+        if last_action_time < time.elapsed_secs_f64() - 1.0 {
             response.send(Err(format!(
                 "no recent user activity (last action {}, time {}).",
                 last_action_time,
-                time.elapsed_secs()
+                time.elapsed_secs_f64()
             )));
             continue;
         }

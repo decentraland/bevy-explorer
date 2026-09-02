@@ -293,7 +293,7 @@ pub struct ActivePlayerComponent<C: Component> {
     /// Engine dispatch time (`RendererSceneContext::last_sent`) of the scene tick
     /// that produced `component`. Used to reject AvatarMovement that was initiated
     /// before a `movePlayerTo`-imposed facing (and so read a stale transform).
-    initiated_at: f32,
+    initiated_at: f64,
     pub component: C,
 }
 
@@ -660,7 +660,7 @@ pub fn apply_movement(
     dynamic_state.velocity = velocity;
     if movement.component.velocity.y > 10.0 {
         if !*jumping {
-            dynamic_state.jump_time = time_res.elapsed_secs();
+            dynamic_state.jump_time = time_res.elapsed_secs_f64();
             *jumping = true;
         }
     } else {

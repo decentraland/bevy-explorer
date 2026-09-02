@@ -716,7 +716,7 @@ fn supervisor(
     orchestrated: Option<Res<OrchestratedScenes>>,
     updates: Res<scene_runner::SceneUpdates>,
 ) {
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
 
     for e in errors.read() {
         error!("[headless] scene error: {e:?}");
@@ -851,7 +851,7 @@ fn request_delegation_renewals(
         .duration_since(web_time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64;
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
 
     // drop throttle state for scenes no longer holding a delegation (removed scenes),
     // so this map doesn't grow unbounded over the engine's lifetime
@@ -1200,7 +1200,7 @@ fn emit_scene_status(
         }
     }
 
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
     if elapsed - *last > 5.0 {
         *last = elapsed;
         for ctx in scenes.iter() {
@@ -1221,7 +1221,7 @@ fn emit_scene_stats(
     mut last: Local<f32>,
     mut prev: Local<std::collections::HashMap<String, (SceneResourceCounters, f32)>>,
 ) {
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
     if elapsed - *last <= 10.0 {
         return;
     }

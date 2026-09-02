@@ -180,7 +180,7 @@ fn broadcast_emote(
                 comms::Emote {
                     urn: urn.as_str().to_owned(),
                     incremental_id: *count,
-                    timestamp: time.elapsed_secs(),
+                    timestamp: time.elapsed_secs_f64(),
                     duration_ms,
                     stopping: false,
                 },
@@ -202,7 +202,7 @@ fn broadcast_emote(
                 comms::Emote {
                     urn: urn.as_str().to_owned(),
                     incremental_id: *count,
-                    timestamp: time.elapsed_secs(),
+                    timestamp: time.elapsed_secs_f64(),
                     duration_ms: None,
                     stopping: true,
                 },
@@ -507,8 +507,8 @@ fn animate(
         // fallback for scene-driven anims (in case the URN fails to resolve) and as the
         // final default when nothing else claims the avatar.
         let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
-        let just_jumped =
-            dynamic_state.jump_time > (time.elapsed_secs() - time_to_peak / 2.0).max(0.0);
+        let just_jumped = dynamic_state.jump_time
+            > (time.elapsed_secs_f64() - time_to_peak as f64 / 2.0).max(0.0);
         let (velocity_emote, velocity_move_kind) =
             if dynamic_state.move_kind == MoveKind::DoubleJump {
                 // Set on foreign avatars from rfc4::Movement.jump_count >= 2 (see foreign_dynamics).
@@ -551,7 +551,8 @@ fn animate(
                         urn: URN_JUMP.clone(),
                         speed: time_to_peak.recip() * 0.5,
                         repeat: true,
-                        restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
+                        restart: dynamic_state.jump_time
+                            > time.elapsed_secs_f64() - time.delta_secs_f64(),
                         transition_seconds: 0.1,
                         initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
                         ..Default::default()
@@ -678,7 +679,7 @@ struct SpawnedExtras {
     // the *start* time (rather than the raw seek) lets the deferred play resume at
     // `elapsed_secs - start` — i.e. advanced by however long the prop took to load — so a
     // slow load doesn't resume stale. Cleared when the avatar + prop finally play.
-    deferred_start: Option<f32>,
+    deferred_start: Option<f64>,
 }
 
 impl SpawnedExtras {
@@ -1030,7 +1031,7 @@ fn play_current_emote(
                 // the load duration rather than at the (now-stale) requested value.
                 extras.deferred_start = active_emote
                     .pending_seek
-                    .map(|seek| time.elapsed_secs() - seek);
+                    .map(|seek| time.elapsed_secs_f64() - seek as f64);
                 continue;
             }
         }
@@ -1193,7 +1194,7 @@ fn play_current_emote(
             spawned_extras
                 .get_mut(&entity)
                 .and_then(|extras| extras.deferred_start.take())
-                .map(|start| time.elapsed_secs() - start)
+                .map(|start| (time.elapsed_secs_f64() - start) as f32)
         });
         let elapsed = play(
             transitions,

@@ -1236,7 +1236,7 @@ pub struct EngineMovementControl {
     /// is received. Set by `movePlayerTo` when it imposes a facing, so the imposed
     /// orientation survives until the controller scene reads the new transform and
     /// echoes it back, rather than being clobbered by an in-flight stale tick.
-    pub accept_movement_after: f32,
+    pub accept_movement_after: f64,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -1264,7 +1264,7 @@ pub enum MoveKind {
 pub struct AvatarDynamicState {
     pub velocity: Vec3,
     pub ground_height: f32,
-    pub jump_time: f32,
+    pub jump_time: f64,
     pub move_kind: MoveKind,
 }
 
