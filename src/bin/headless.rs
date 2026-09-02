@@ -285,8 +285,8 @@ fn main() {
     );
 
     let config = AppConfig {
-        server: args.realm.clone(),
-        location: args.location,
+        home_realm: Some(args.realm.clone()),
+        home_location: Some(args.location),
         graphics: GraphicsSettings {
             vsync: false,
             log_fps: false,
@@ -615,9 +615,9 @@ fn setup(
     // and PrimaryEntities::player() panics without the marker. Placed at the scene
     // location so position-based loading picks up the parcel scene.
     let player_pos = Vec3::new(
-        8.0 + PARCEL_SIZE * config.location.x as f32,
+        8.0 + PARCEL_SIZE * config.home_location().x as f32,
         0.0,
-        -8.0 + -PARCEL_SIZE * config.location.y as f32,
+        -8.0 + -PARCEL_SIZE * config.home_location().y as f32,
     );
     // NOT OutOfWorld: the player must count as "inside" the scene parcel so
     // update_scene_room fires the authoritative scene-room connection.
