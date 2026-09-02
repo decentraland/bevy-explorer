@@ -11,7 +11,6 @@
 
 import { useState } from 'react'
 import { Button } from './Button'
-import { rarityColor } from '../lib/identity'
 import styles from './EquippedItemCard.module.css'
 
 export interface EquippedItemCardProps {
@@ -25,12 +24,8 @@ export interface EquippedItemCardProps {
 
 export function EquippedItemCard({ thumbnail, name, rarity, shopUrl, categoryIcon }: EquippedItemCardProps): React.JSX.Element {
   const [failed, setFailed] = useState(false)
-  const color = rarityColor(rarity)
   return (
-    <div
-      className={`${styles.card} ${shopUrl != null ? styles.hasShop : ''}`.trim()}
-      style={{ '--rm': color } as React.CSSProperties}
-    >
+    <div className={`${styles.card} ${shopUrl != null ? styles.hasShop : ''}`.trim()} data-rarity={rarity ?? 'base'}>
       <div className={styles.thumbWrap}>
         {thumbnail && !failed ? (
           <img className={styles.thumb} src={thumbnail} alt="" onError={() => setFailed(true)} />

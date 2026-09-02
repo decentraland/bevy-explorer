@@ -53,7 +53,8 @@ export function WearableCard({
   return (
     <button
       type="button"
-      className={`${styles.card} ${styles[rarity]} ${equipped ? styles.equipped : ''} ${selected ? styles.selected : ''} ${incompatible ? styles.incompatible : ''}`.trim()}
+      className={`${styles.card} ${equipped ? styles.equipped : ''} ${selected ? styles.selected : ''} ${incompatible ? styles.incompatible : ''}`.trim()}
+      data-rarity={rarity}
       title={name}
       aria-label={name}
       onClick={onClick}

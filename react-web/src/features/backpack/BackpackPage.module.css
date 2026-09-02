@@ -465,6 +465,7 @@
   height: 54px;
   border-radius: 12px;
   overflow: hidden;
+  background: var(--rm);
 }
 .emoteSlotThumb img {
   width: 100%;
@@ -498,6 +499,7 @@
   aspect-ratio: 1;
   border-radius: 14px;
   overflow: hidden;
+  background: radial-gradient(circle at 50% 35%, var(--rm), rgba(0, 0, 0, 0.35));
 }
 .detailThumb img {
   width: 86%;
@@ -513,6 +515,7 @@
 }
 .detailRarity {
   padding: 4px 14px;
+  background: var(--rm);
   border-radius: var(--r-pill);
   color: var(--accent-ink);
   font-size: 12px;

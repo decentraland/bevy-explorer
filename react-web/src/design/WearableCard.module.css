@@ -17,9 +17,9 @@
   /* Light sheen at top, rarity main through the body, a touch deeper at the bottom. */
   background: radial-gradient(
     128% 110% at 50% -12%,
-    var(--rl, #cfcdd4) 0%,
-    var(--rm, #a09ba8) 60%,
-    color-mix(in srgb, var(--rm, #a09ba8) 86%, #000) 100%
+    var(--rl) 0%,
+    var(--rm) 60%,
+    color-mix(in srgb, var(--rm) 86%, #000) 100%
   );
   transition:
     transform 0.13s var(--ease-spring, ease),
@@ -152,43 +152,4 @@
 }
 .unequip {
   background: rgba(18, 13, 28, 0.92);
-}
-
-/* Rarity palette — main (--rm) + light sheen (--rl). Matches the rarity tokens /
-   emote-wheel slots so colours stay consistent app-wide. */
-.base {
-  --rm: #a09ba8;
-  --rl: #cfcdd4;
-}
-.common {
-  --rm: #73d3d3;
-  --rl: #b5fff6;
-}
-.uncommon {
-  --rm: #ff8362;
-  --rl: #ffe0c8;
-}
-.rare {
-  --rm: #34ce76;
-  --rl: #9bf3c2;
-}
-.epic {
-  --rm: #438fff;
-  --rl: #a9d4ff;
-}
-.legendary {
-  --rm: #b05dff;
-  --rl: #e0c0ff;
-}
-.mythic {
-  --rm: #ff4bed;
-  --rl: #ffb0f3;
-}
-.unique {
-  --rm: #ffc647;
-  --rl: #ffe6a8;
-}
-.exotic {
-  --rm: #a5e242;
-  --rl: #d6f59a;
 }

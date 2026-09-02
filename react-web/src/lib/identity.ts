@@ -12,23 +12,6 @@ const RARITY = [
   '#a0abff', '#c640cd'
 ]
 
-// Wearable/emote rarity colors — Unity NftRarityColors.asset (source of truth).
-export const RARITY_COLOR: Record<string, string> = {
-  base: '#a09ba8',
-  common: '#73d3d3',
-  uncommon: '#ff8362',
-  rare: '#34ce76',
-  epic: '#438fff',
-  legendary: '#b058ff',
-  mythic: '#ff4bec',
-  unique: '#ffc747',
-  exotic: '#a5e242'
-}
-
-export function rarityColor(rarity?: string): string {
-  return RARITY_COLOR[(rarity ?? 'base').toLowerCase()] ?? RARITY_COLOR.base
-}
-
 // Catalyst thumbnail for an emote URN — derived client-side so the wheel shows previews
 // even if the scene relay didn't send a thumbnail. Strips a trailing `:tokenId` (on-chain NFTs).
 const CATALYST_CONTENTS = `${serviceUrl('peer')}/lambdas/collections/contents`
