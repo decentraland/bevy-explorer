@@ -9,12 +9,19 @@ checklist**. Keep it current: when you add a domain or a rule, add it here.
 ## 0. TL;DR — run this before you push
 
 ```bash
-# from react-web/
-npm run typecheck          # tsc, both the app and (separately) the bridge scene
-npm test                   # tier 1 — 140+ vitest domain/component tests (fast, deterministic)
+# from react-web/ — Node 24 (`.nvmrc`); on Node 20 vitest reports "no tests" and the SDK build fails
+npm run typecheck          # tsc, the app
+npm test                   # tier 1 — 380+ vitest domain/component tests (fast, deterministic)
 npm run test:visual        # tier 1.5 — visual regression of every DOM domain (headless, no engine)
-(cd bridge-scene && npx eslint "src/**/*.{ts,tsx}")
+(cd bridge-scene && npm run build && npm run lint)   # the SDK's type check + eslint (must be 0 errors)
 ```
+
+The bridge scene is type-checked by `sdk-commands build`, not bare `tsc` — its tsconfig trips
+TypeScript's deprecation errors under the installed compiler.
+
+`test:visual` reuses whatever is already serving `:5173` (and `npm run dev` reuses `:8100`), so in a
+worktree make sure those aren't another checkout's servers, or run your own on other ports
+(`E2E_URL=http://localhost:5174`).
 
 If `test:visual` reports diffs, open the Playwright HTML report (`npx playwright show-report`) and
 look at the **expected vs actual vs diff** images. Either it's a real regression (fix it) or an
@@ -56,10 +63,12 @@ each domain. Config: `playwright.visual.config.ts` (headless, 1600×900, `maxDif
 - **Animations disabled** at capture time; **fixed viewport + `deviceScaleFactor: 1`**.
 
 **Domains covered** (one baseline each, in `e2e/visual.spec.ts-snapshots/`):
-`showcase` · `login-fresh` · `login-welcome` · `world-hud` · `panel-friends` · `panel-settings` ·
-`panel-profile` · `panel-notifications` · `panel-emote-wheel` · `panel-communities` · `panel-map` ·
-`backpack-wearables` · `backpack-emotes` · `mobile-gate` · `browser-gate` · `gpu-gate` ·
-`engine-error-popup`.
+`showcase` · `login-fresh` · `login-welcome` · `mobile-gate` · `browser-gate` · `gpu-gate` ·
+`engine-error` · `realm-error` · `world-hud` · `profile-card` · `passport` · `hover-tooltips` ·
+`permission-dialog` · `community-modal` · `community-create-modal` · `exit-confirm` ·
+`panel-friends` · `panel-settings` · `panel-settings-keybindings` · `panel-profile` ·
+`panel-notifications` · `panel-emote-wheel` · `panel-communities` · `panel-map` ·
+`minimap-settings` · `backpack-wearables` · `backpack-emotes`.
 
 **Updating baselines** (only when the change is intentional):
 ```bash
@@ -72,11 +81,11 @@ Never blind-update. A baseline refresh in a PR must be reviewed image-by-image.
 - **Baselines are platform-specific** (`*-chromium-darwin.png`). Font hinting differs across OSes, so
   generate/verify on the same platform CI uses (or add a Linux baseline set when CI is wired).
 - **Mock data is the ceiling.** A panel can only be as rich as `src/engine/mockBridge.ts` makes it.
-  - **`backpack-emotes` renders empty in the baseline** — even though the Backpack *does* request
-    `getEmotes` on open and the mock returns 10 base emotes. *(Surfaced by this harness — to chase
-    down: is it a render/timing nuance in the capture, or does `emotes.list` not reach the grid?)*
   - Enrich mock `getEmotes` with an OWNED collection (some with `slot`, varied `rarity`/`count`) so
     the new owned-grid + assign-to-slot are exercised, not just the 10 base emotes.
+- **Captures are viewport-sized, hover-free.** A scrolling panel is pinned only above the fold: the
+  `passport` baseline shows About Me + the Equipped Wearables grid; Equipped Emotes, Badges, the
+  About → Equipped → Badges order and the SHOP-link rule are tier-1 (`profile.passport.test.tsx`).
 
 ---
 
@@ -151,7 +160,8 @@ Run through this on every diff (it encodes `AGENTS.md`):
       throttled, not doing work every frame for free.
 - [ ] **Tests** — tier 1 still green; **a new/changed domain has a tier-1.5 baseline**; world-space
       changes ran the §4 checklist.
-- [ ] **Both projects typecheck** (`npm run typecheck` + `cd bridge-scene && npx tsc --noEmit`).
+- [ ] **Both projects typecheck** (`npm run typecheck` + `cd bridge-scene && npm run build`), and the
+      bridge scene lints clean (`npm run lint` there).
 - [ ] **No secrets / `.env`** staged; commit follows `CLAUDE.md` (imperative, no AI attribution).
 
 - [ ] **Input routing** — follows the §7 contracts (no hand-rolled Escape/hotkey handlers).
