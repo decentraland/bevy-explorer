@@ -628,7 +628,7 @@ pub fn spawn_discover_popup(
         Some(name) => {
             common::base_domain::https("worlds-content-server", &format!("/world/{name}"))
         }
-        None => common::base_domain::https("realm-provider-ea", "/main"),
+        None => common::structs::default_home_realm(),
     };
 
     let Ok(to) = IVec2Arg::from_str(&item.base_position) else {

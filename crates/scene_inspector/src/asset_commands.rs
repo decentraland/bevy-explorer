@@ -12,6 +12,7 @@ use platform::AsyncRwLock;
 
 use crate::active_scene::SceneResolver;
 
+// deliberately not base_domain-derived: builder-items is only deployed on decentraland.org
 const CATALOG_URL: &str = "https://builder-items.decentraland.org/asset-packs/latest/catalog.json";
 const CONTENTS_BASE: &str = "https://builder-items.decentraland.org/contents/";
 

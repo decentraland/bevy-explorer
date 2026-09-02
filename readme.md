@@ -85,7 +85,7 @@ just native-release            # bundles the HUD if stale, then builds + runs ev
 just native-release --server https://realm-provider-ea.decentraland.org/main --location 52,-52
 ```
 
-`--base-domain` retargets every backend host (auth, comms, places, worlds, social, ...) at another deployment's domain:
+`--base-domain` retargets the backend hosts (auth, comms, places, worlds, social, ...) at another deployment's domain. `renderer-artifacts` (sdk6 adaption layer) and `builder-items` (inspector asset catalog) stay on decentraland.org — they have no other deployment:
 
 ```bash
 just native-release --base-domain interconnected.online --location 0,0

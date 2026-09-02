@@ -90,6 +90,15 @@ struct Args {
 
 fn parse_args() -> Args {
     let mut args = pico_args::Arguments::from_env();
+    // latch first: everything below that composes a backend host reads it
+    if let Err(e) = args
+        .opt_value_from_str::<_, String>("--base-domain")
+        .map_err(|e| e.to_string())
+        .and_then(|domain| domain.map_or(Ok(()), |d| common::base_domain::set(&d)))
+    {
+        eprintln!("{e}");
+        std::process::exit(2);
+    }
     let realm: String = args
         .value_from_str("--realm")
         .unwrap_or_else(|_| "http://localhost:8000".to_owned());

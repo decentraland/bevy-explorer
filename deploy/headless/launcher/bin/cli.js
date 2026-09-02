@@ -48,7 +48,7 @@ function translate(argv) {
   let position = null
   let production = false
   let orchestrated = false
-  const passthrough = { '--tick-hz': true, '--timeout': true, '--scene-threads': true, '--pulse-realm': true, '--pulse-server': true }
+  const passthrough = { '--tick-hz': true, '--timeout': true, '--scene-threads': true, '--pulse-realm': true, '--pulse-server': true, '--base-domain': true }
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]

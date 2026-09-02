@@ -15,16 +15,7 @@ use serde::Deserialize;
 
 use crate::Wallet;
 
-pub fn storage_hosts() -> Vec<String> {
-    let mut hosts = vec![
-        "storage.decentraland.org".to_owned(),
-        "storage.decentraland.zone".to_owned(),
-    ];
-    if common::base_domain::is_custom() {
-        hosts.push(common::base_domain::host("storage"));
-    }
-    hosts
-}
+pub const STORAGE_HOSTS: [&str; 2] = ["storage.decentraland.org", "storage.decentraland.zone"];
 
 #[derive(Deserialize)]
 struct DelegationEnvelope {
@@ -163,9 +154,11 @@ impl StorageDelegations {
 /// exact-match world-storage hosts, https only (the claim must never go out in cleartext).
 pub fn is_storage_request(uri: &http::Uri) -> bool {
     uri.scheme_str() == Some("https")
-        && uri
-            .host()
-            .is_some_and(|h| storage_hosts().contains(&h.to_lowercase()))
+        && uri.host().is_some_and(|h| {
+            let h = h.to_lowercase();
+            STORAGE_HOSTS.contains(&h.as_str())
+                || (common::base_domain::is_custom() && h == common::base_domain::host("storage"))
+        })
 }
 
 #[cfg(test)]

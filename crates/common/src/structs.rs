@@ -471,7 +471,7 @@ pub struct PreviousLogin {
     pub auth: Vec<ChainLink>,
 }
 
-fn default_home_realm() -> String {
+pub fn default_home_realm() -> String {
     crate::base_domain::https("realm-provider-ea", "/main")
 }
 // app configuration
@@ -567,8 +567,6 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    /// one-time forced reinitialization: configs saved with an older generation get the
-    /// current defaults for the preset-managed settings, keeping everything else
     /// The effective home realm: the pinned value, else the base-domain-derived default.
     pub fn home_realm(&self) -> String {
         self.home_realm.clone().unwrap_or_else(default_home_realm)
@@ -579,6 +577,8 @@ impl AppConfig {
         self.home_location.unwrap_or(IVec2::ZERO)
     }
 
+    /// one-time forced reinitialization: configs saved with an older generation get the
+    /// current defaults for the preset-managed settings, keeping everything else
     pub fn reset_outdated_settings(&mut self) {
         if self.settings_generation >= SETTINGS_GENERATION {
             return;

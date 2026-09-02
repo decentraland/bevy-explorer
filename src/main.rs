@@ -97,7 +97,13 @@ fn decentraland_serialized_app_config() -> AppConfig {
 fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
     let mut args = pico_args::Arguments::from_env();
 
-    if let Ok(domain) = args.value_from_str::<_, String>("--base-domain") {
+    if let Some(domain) = args
+        .opt_value_from_str::<_, String>("--base-domain")
+        .map_err(|e| {
+            error!("{e}");
+            UserError(true)
+        })?
+    {
         common::base_domain::set(&domain).map_err(|e| {
             error!("{e}");
             UserError(true)

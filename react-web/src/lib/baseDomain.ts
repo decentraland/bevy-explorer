@@ -5,9 +5,10 @@
 //      keys to zone backends, prod to org
 //   3. else decentraland.org (localhost dev, the native CEF page, everything else)
 // Captured once from the entry URL; the engine's URL syncs preserve unknown params so the
-// param form survives realm/position rewrites.
-// MIRROR: deploy/web/engine/boot.js derives the same value the same way for the engine side,
-// and crates/common/src/base_domain.rs is the engine-internal equivalent.
+// param form survives realm/position rewrites. This module is the single source: it publishes
+// the value as window.__baseDomain() for the engine loader (deploy/web/engine/boot.js) and the
+// wasm (src/web.rs apply_base_domain → crates/common/src/base_domain.rs), both of which run
+// only after the HUD has mounted EngineHost.
 
 /** The apex deployment domain a hosting origin implies, or null for unrecognised hosts. */
 export function hostBaseDomain(hostname: string): string | null {
@@ -17,10 +18,27 @@ export function hostBaseDomain(hostname: string): string | null {
   return null
 }
 
+/**
+ * The ?baseDomain= value the engine will accept (crates/common/src/base_domain.rs `set`):
+ * lowercased, bare ascii labels, at least one dot. Anything else is null so the HUD and the
+ * engine fall back to the same derived default instead of splitting across two domains.
+ */
+export function normaliseBaseDomain(raw: string | null): string | null {
+  const d = raw?.trim().toLowerCase() ?? ''
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d) ? d : null
+}
+
 export const BASE_DOMAIN =
-  new URLSearchParams(window.location.search).get('baseDomain') ??
+  normaliseBaseDomain(new URLSearchParams(window.location.search).get('baseDomain')) ??
   hostBaseDomain(window.location.hostname) ??
   'decentraland.org'
+
+declare global {
+  interface Window {
+    __baseDomain?: () => string
+  }
+}
+window.__baseDomain = () => BASE_DOMAIN
 
 /** https origin for a service subdomain, e.g. serviceUrl('places') → "https://places.decentraland.org". */
 export function serviceUrl(sub: string): string {

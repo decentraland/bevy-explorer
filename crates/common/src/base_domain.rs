@@ -9,16 +9,14 @@ static BASE_DOMAIN: OnceLock<String> = OnceLock::new();
 
 pub fn set(domain: &str) -> Result<(), String> {
     let d = domain.trim().to_ascii_lowercase();
-    if d.contains("://")
-        || ['/', ':'].iter().any(|c| d.contains(*c))
-        || d.chars().any(char::is_whitespace)
-    {
+    // ascii labels only: the value is spliced into http::Uri authorities, which reject
+    // anything else (unwrapped at the composition sites, so a bad value must stop here)
+    let label_ok =
+        |l: &str| !l.is_empty() && l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
+    if !d.contains('.') || !d.split('.').all(label_ok) {
         return Err(format!(
-            "--base-domain must be a bare domain (no scheme, path or port): `{d}`"
+            "--base-domain must be a bare ascii domain (no scheme, path or port): `{d}`"
         ));
-    }
-    if !d.contains('.') || d.starts_with('.') || d.ends_with('.') {
-        return Err(format!("--base-domain is not a valid domain: `{d}`"));
     }
     if BASE_DOMAIN.set(d.clone()).is_err() && get() != d {
         return Err(format!(
@@ -34,10 +32,7 @@ pub fn get() -> &'static str {
 }
 
 pub fn is_custom() -> bool {
-    !matches!(
-        get(),
-        "decentraland.org" | "decentraland.zone" | "decentraland.today"
-    )
+    !matches!(get(), DEFAULT | "decentraland.zone")
 }
 
 pub fn https(sub: &str, path: &str) -> String {
@@ -83,6 +78,8 @@ mod tests {
             "localhost",
             ".interconnected.online",
             "interconnected.online.",
+            "interconnected..online",
+            "münchen.de",
         ] {
             assert!(set(bad).is_err(), "`{bad}` should be refused");
         }
