@@ -10,6 +10,7 @@ import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
 import { resolveDefsByUrn } from './collections'
 import { resolveShopUrls } from './marketplace'
+import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
 
@@ -28,14 +29,6 @@ function fullEmoteUrn(urn: string): string {
   return urn !== '' && !urn.includes(':') ? `${BASE_EMOTE_PREFIX}${urn}` : urn
 }
 
-// Equipped/owned emote urns can carry an NFT token id:
-//   urn:decentraland:matic:collections-v2:<contract>:<itemId>[:<tokenId>]
-// The catalog keys on the ITEM urn (no tokenId), so strip it for lookups/dedupe.
-function itemUrn(urn: string): string {
-  const parts = urn.split(':')
-  if (parts[3] === 'collections-v2' && parts.length > 6) return parts.slice(0, 6).join(':')
-  return urn
-}
 const isBase = (urn: string): boolean => BASE_EMOTES.includes(itemUrn(urn))
 
 // The 10 wheel slots to show for a profile: its equipped emotes positionally, or — when the wheel is
@@ -76,15 +69,9 @@ function thumbUrl(base: string, el: CatalogElement): string {
   return hash != null ? `${base}/content/contents/${hash}` : `${base}/lambdas/collections/contents/${el.urn}/thumbnail`
 }
 
-// Like wearables: the deployed profile must reference a collection emote by its full token URN
-// (…:<contract>:<itemId>:<tokenId>); the catalog's individualData carries the owned tokenId.
+// item-urn → deployable token urn (see tokenUrnOf), what the equip handler sends. Rebuilt with the
+// owned catalog (below), unlike the wearables map which accumulates.
 const tokenUrnByItem = new Map<string, string>()
-function tokenUrnFor(el: CatalogElement): string {
-  const d = el.individualData?.[0]
-  if (d?.id != null && d.id.startsWith(`${el.urn}:`)) return d.id
-  if (d?.tokenId != null && d.tokenId !== '') return `${el.urn}:${d.tokenId}`
-  return el.urn
-}
 
 // The owned-emotes catalog rarely changes within a session, so cache it (and the item→token map it
 // feeds) per address — re-opening the backpack then costs nothing. Equipped SLOTS are NOT cached;
@@ -96,7 +83,7 @@ async function getOwned(base: string, address: string): Promise<CatalogElement[]
   ownedCache = { address, elements }
   tokenUrnByItem.clear()
   for (const el of elements) {
-    const full = tokenUrnFor(el)
+    const full = tokenUrnOf(el)
     if (full !== el.urn) tokenUrnByItem.set(el.urn, full)
   }
   return elements

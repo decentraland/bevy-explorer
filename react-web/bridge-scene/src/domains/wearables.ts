@@ -8,6 +8,7 @@ import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
 import { resolveDefsByUrn } from './collections'
 import { resolveShopUrls } from './marketplace'
+import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Wearable } from '../../../src/engine/protocol'
 
@@ -22,38 +23,16 @@ type CatalogElement = {
   entity?: { metadata?: { thumbnail?: string }; content?: Array<{ file: string; hash: string }> }
 }
 
-// Collection wearables must be referenced in the DEPLOYED profile by their full token URN
-// (…:{contract}:{itemId}:{tokenId}); the catalyst rejects the bare item URN with
-// "should be an item, not an asset. The URN must include the tokenId.". individualData carries the
-// owned tokenId per item, so we map item-urn → token-urn and send the token form on equip. Base
-// (off-chain) wearables have no tokenId and pass through unchanged. The map accumulates across
-// fetched pages + the equipped set, so any item the user has actually seen/equipped can be equipped.
+// item-urn → deployable token urn (see tokenUrnOf), what the equip handler sends. The map
+// accumulates across fetched pages + the equipped set, so any item the user has actually
+// seen/equipped can be equipped.
 const tokenUrnByItem = new Map<string, string>()
-
-function tokenUrnFor(el: CatalogElement): string {
-  const d = el.individualData?.[0]
-  if (d?.id != null && d.id.startsWith(`${el.urn}:`)) return d.id
-  if (d?.tokenId != null && d.tokenId !== '') return `${el.urn}:${d.tokenId}`
-  return el.urn
-}
 
 function accumulateTokens(elements: CatalogElement[]): void {
   for (const el of elements) {
-    const full = tokenUrnFor(el)
+    const full = tokenUrnOf(el)
     if (full !== el.urn) tokenUrnByItem.set(el.urn, full)
   }
-}
-
-// A deployed/owned urn may carry a tokenId (…:collections-v{1,2}:<contract>:<itemId>:<tokenId>);
-// the item form drops it. Both v1 (ethereum) and v2 (matic) items are 6 segments, so a trailing
-// token makes it >6 — strip it for either, else the equipped-set resolve (which needs the bare
-// item urn) misses the item and its category slot renders empty. Base urns pass through.
-function itemUrnOf(urn: string): string {
-  const parts = urn.split(':')
-  if ((parts[3] === 'collections-v2' || parts[3] === 'collections-v1') && parts.length > 6) {
-    return parts.slice(0, 6).join(':')
-  }
-  return urn
 }
 
 export interface CatalogPageParams {
@@ -112,16 +91,16 @@ type ResolveOpts = {
 // passport). Mirrors bevy-ui-scene's fetchWearablesData(...)(...wearables) on outfit equip.
 export async function resolveWearables(urns: string[], opts: ResolveOpts = {}): Promise<Wearable[]> {
   const baseUrl = await catalystBase()
-  const equippedItemUrns = [...new Set(urns.map(itemUrnOf))]
+  const equippedItemUrns = [...new Set(urns.map(itemUrn))]
   const resolved = await resolveDefsByUrn('wearables', baseUrl, equippedItemUrns)
   const shopUrls =
     opts.shopUrls === true
       ? await resolveShopUrls(equippedItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress })))
       : undefined
-  return equippedItemUrns.map((itemUrn): Wearable => {
-    const def = resolved.get(itemUrn)
+  return equippedItemUrns.map((item): Wearable => {
+    const def = resolved.get(item)
     return {
-      urn: itemUrn,
+      urn: item,
       name: def?.name ?? '',
       rarity: def?.rarity ?? 'base',
       // No def (resolve failure or an urn the lambda doesn't know): keep the item under 'unknown'
@@ -129,9 +108,9 @@ export async function resolveWearables(urns: string[], opts: ResolveOpts = {}): 
       // equipped set, so the next equip round-trip (equipSetWith) still deploys it. Dropping here
       // silently undressed the avatar whenever the lambdas request failed mid-session.
       category: def?.data?.category ?? 'unknown',
-      thumbnail: `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`,
+      thumbnail: `${baseUrl}/lambdas/collections/contents/${item}/thumbnail`,
       equipped: true,
-      shopUrl: shopUrls?.get(itemUrn)
+      shopUrl: shopUrls?.get(item)
     }
   })
 }
@@ -145,7 +124,7 @@ export async function resolveWearables(urns: string[], opts: ResolveOpts = {}): 
 // persist. Anyone else's urns go through resolveWearables.
 export async function resolveEquippedSet(urns: string[], opts: ResolveOpts = {}): Promise<Wearable[]> {
   for (const u of urns) {
-    const item = itemUrnOf(u)
+    const item = itemUrn(u)
     if (item !== u) tokenUrnByItem.set(item, u)
   }
   return resolveWearables(urns, opts)
