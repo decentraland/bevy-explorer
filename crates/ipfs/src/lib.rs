@@ -626,11 +626,20 @@ pub fn change_realm(
                     connected,
                 }) = &*realm_change.borrow_and_update()
                 {
+                    let mut config = about.configurations.clone().unwrap_or_default();
+                    // An orchestrated engine is on no realm of its own: it hosts scenes from
+                    // several at once, and its `--realm` is only where content is served from.
+                    // Leaving the name set would hand every one of those scenes a realm none of
+                    // them is in — the realm a scene belongs to arrives with it, on `add-scene`.
+                    if common::structs::multi_tenant() {
+                        config.realm_name = None;
+                    }
+
                     *current_realm = CurrentRealm {
                         about_url: about_url.clone(),
                         address: realm.clone(),
                         connected: *connected,
-                        config: about.configurations.clone().unwrap_or_default(),
+                        config,
                         comms: about.comms.clone(),
                         public_url: about
                             .content
@@ -675,7 +684,7 @@ pub fn change_realm(
 
 pub fn map_realm_name(request: &str) -> String {
     if request.ends_with(".dcl.eth") && !request.starts_with("https://") {
-        format!("https://worlds-content-server.decentraland.org/world/{request}")
+        common::base_domain::https("worlds-content-server", &format!("/world/{request}"))
     } else {
         request.to_owned()
     }
@@ -1271,16 +1280,7 @@ impl IpfsIo {
         let read = self.context.read().await;
         let collection = &read.entities.get(scene_hash)?.collection;
         for (key, h) in collection.0.iter() {
-            let Some(b64) = h.strip_prefix("b64-") else {
-                continue;
-            };
-            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
-                continue;
-            };
-            let Ok(decoded) = String::from_utf8(decoded) else {
-                continue;
-            };
-            let Some((project_root, machine_id)) = b64_split_at_key(&decoded, key) else {
+            let Some((project_root, machine_id)) = b64_parts(key, h) else {
                 continue;
             };
             let abs = format!("{project_root}/{rel}-{machine_id}");
@@ -1295,21 +1295,11 @@ impl IpfsIo {
     /// native/deployed scenes (entries aren't in the `b64-<path>-machineId` form). Lets the web save
     /// locate the project folder under a granted directory handle.
     pub async fn local_project_root(&self, scene_hash: &str) -> Option<String> {
-        use base64::{prelude::BASE64_STANDARD, Engine};
         let read = self.context.read().await;
         let collection = &read.entities.get(scene_hash)?.collection;
         for (key, h) in collection.0.iter() {
-            let Some(b64) = h.strip_prefix("b64-") else {
-                continue;
-            };
-            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
-                continue;
-            };
-            let Ok(decoded) = String::from_utf8(decoded) else {
-                continue;
-            };
-            if let Some((project_root, _)) = b64_split_at_key(&decoded, key) {
-                return Some(project_root.to_string());
+            if let Some((project_root, _)) = b64_parts(key, h) {
+                return Some(project_root);
             }
         }
         None
@@ -1981,15 +1971,34 @@ impl Drop for DeferredDropper {
     }
 }
 
-/// Splits a dev server's b64 hash payload — `"{projectRoot}{sep}{key}-{machineId}"` — at its
-/// `/{key}-` marker into (projectRoot, machineId), both in their original case and separators.
-/// The marker is matched case-insensitively (collection keys are lowercased while the encoded
-/// path keeps its casing) and separator-insensitively (a Windows dev server encodes backslash
-/// paths); both normalizations are byte-for-byte over the ASCII they rewrite, so an index found
-/// in the normalized copy still slices `decoded` itself.
+/// Decodes a dev server's `b64-<base64(`{projectRoot}{sep}{key}-{machineId}`)>` content hash for
+/// collection key `key` into its `(projectRoot, machineId)` parts. None for any hash not in that
+/// form — a native or deployed scene's entries are plain CIDs.
+fn b64_parts(key: &str, hash: &str) -> Option<(String, String)> {
+    use base64::{prelude::BASE64_STANDARD, Engine};
+    let b64 = hash.strip_prefix("b64-")?;
+    let decoded = String::from_utf8(BASE64_STANDARD.decode(b64).ok()?).ok()?;
+    let (project_root, machine_id) = b64_split_at_key(&decoded, key)?;
+    Some((project_root.to_owned(), machine_id.to_owned()))
+}
+
+/// Splits a dev server's b64 hash payload — plain `"{projectRoot}{sep}{key}-{machineId}"` or
+/// content-versioned `"{projectRoot}{sep}{key}\0{mtime}-{machineId}"` (sdk-commands embeds the
+/// file's mtime after a NUL byte so the id changes when the file does; paths can't contain NUL,
+/// so the forms are unambiguous) — at its `/{key}` marker into (projectRoot, machineId), both in
+/// their original case and separators. The marker is matched case-insensitively (collection keys
+/// are lowercased while the encoded path keeps its casing) and separator-insensitively (a Windows
+/// dev server encodes backslash paths); both normalizations are byte-for-byte over the ASCII they
+/// rewrite, so an index found in the normalized copy still slices `decoded` itself.
 fn b64_split_at_key<'a>(decoded: &'a str, key: &str) -> Option<(&'a str, &'a str)> {
+    let normalized = decoded.replace('\\', "/").to_lowercase();
+    if let Some(idx) = normalized.rfind(&format!("/{key}\u{0}")) {
+        // mtime is digits only, so the first '-' after the NUL starts the machineId
+        let (_mtime, machine_id) = decoded[idx + key.len() + 2..].split_once('-')?;
+        return Some((&decoded[..idx], machine_id));
+    }
     let marker = format!("/{key}-");
-    let idx = decoded.replace('\\', "/").to_lowercase().rfind(&marker)?;
+    let idx = normalized.rfind(&marker)?;
     Some((&decoded[..idx], &decoded[idx + marker.len()..]))
 }
 
@@ -2017,5 +2026,19 @@ mod tests {
             b64_split_at_key(r"C:\Users\bob\scene\models\Tree.glb-pc", "scene.json"),
             None
         );
+    }
+
+    #[test]
+    fn splits_content_versioned_path() {
+        let decoded = "/Users/bob/scene/models/Tree.glb\u{0}1786032377138-my-mac";
+        let split = b64_split_at_key(decoded, "models/tree.glb");
+        assert_eq!(split, Some(("/Users/bob/scene", "my-mac")));
+    }
+
+    #[test]
+    fn splits_content_versioned_windows_path() {
+        let decoded = "C:\\Users\\bob\\scene\\models\\Tree.glb\u{0}1786032377138-my-pc";
+        let split = b64_split_at_key(decoded, "models/tree.glb");
+        assert_eq!(split, Some((r"C:\Users\bob\scene", "my-pc")));
     }
 }

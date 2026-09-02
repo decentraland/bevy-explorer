@@ -181,7 +181,8 @@ async fn drive(channels: &mut PulseDriverChannels, address: SocketAddr, stop: &A
     }
 
     // Stop requested by the protocol layer (session dropped) — disconnect cleanly and flush.
-    host.peer_mut(peer).disconnect(0);
+    host.peer_mut(peer)
+        .disconnect(PulseDisconnect::GRACEFUL_CODE);
     host.flush();
     let _ = channels
         .status

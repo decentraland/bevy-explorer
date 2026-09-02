@@ -27,6 +27,7 @@ import { registerWorld } from './domains/world'
 import { registerPointer } from './domains/pointer'
 import { registerProximity } from './domains/proximity'
 import { registerSystemAction } from './domains/systemAction'
+import { registerBindings } from './domains/bindings'
 import { registerAvatarPointer } from './domains/avatarPointer'
 import { registerPermissions } from './domains/permissions'
 import { initNametags } from './domains/nametags'
@@ -52,6 +53,7 @@ export function main(): void {
     registerPointer(ctx)
     registerProximity(ctx)
     registerSystemAction(ctx)
+    registerBindings(ctx)
     registerAvatarPointer(ctx)
     registerPermissions(ctx)
     registerAvatarPreview(ctx)
@@ -59,7 +61,16 @@ export function main(): void {
   })
 
   // A scene gets one UI renderer, so both cutout views are composed under a single root.
-  ReactEcsRenderer.setUiRenderer(renderSceneUi)
+  //
+  // No virtual screen (the documented `<= 0` opt-out) and no screen inset. By default the SDK
+  // scales every raw `uiTransform` pixel by a contain-fit of a 1920x1080 design resolution
+  // inside the canvas — right for a scene laid out in design pixels, exactly wrong for this
+  // one. Everything here is positioned from a rect React measured on the real page, in canvas
+  // pixels; scaling those a second time made the engine's minimap and avatar preview drift off
+  // their React housings (the SDK's own scale is unclamped, the HUD's `--ui-scale` is clamped to
+  // 0.6..1.3, so they only ever agreed near 1920x1080). `screenInset: 'none'` likewise keeps
+  // 0,0 at the screen's top-left, which is the origin those rects are measured from.
+  ReactEcsRenderer.setUiRenderer(renderSceneUi, { virtualWidth: 0, virtualHeight: 0, screenInset: 'none' })
 
   // World-space UI the DOM can't track smoothly: the billboarded nametag above each avatar's head.
   initNametags()

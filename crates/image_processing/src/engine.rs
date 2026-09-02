@@ -45,7 +45,7 @@ impl Plugin for ImageProcessingPlugin {
 
         app.init_resource::<ImgReprocessStats>();
         app.init_resource::<DebugProcessingEnabled>();
-        app.add_console_command::<DebugProcessingCommand, _>(toggle_debug_processing);
+        app.add_preview_console_command::<DebugProcessingCommand, _>(toggle_debug_processing);
     }
 }
 

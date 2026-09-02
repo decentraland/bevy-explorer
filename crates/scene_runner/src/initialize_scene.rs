@@ -363,6 +363,8 @@ pub(crate) fn load_scene_javascript(
                 }
             }
         } else {
+            // deliberately not base_domain-derived: renderer-artifacts is only deployed
+            // on decentraland.org (no zone or custom-domain equivalents)
             ipfas.load_url_uncached(
                 "https://renderer-artifacts.decentraland.org/sdk6-adaption-layer/main/index.min.js",
             )
@@ -716,7 +718,7 @@ pub(crate) fn initialize_scene(
         context.inspected = inspected;
         // set last_sent so the scene doesn't get extreme starvation priority
         // when it first becomes eligible after initialization completes
-        context.last_sent = time.elapsed_secs();
+        context.last_sent = time.elapsed_secs_f64();
         // spawn in flight so we wait for initial RPC requests
         context.state = SceneState::Live {
             handle: SceneThreadHandle {

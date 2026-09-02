@@ -58,15 +58,20 @@ use self::{
 #[cfg(feature = "livekit")]
 use self::livekit::{plugin::LivekitPlugin, StartLivekit};
 
-const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
-const PREVIEW_GATEKEEPER_URL: &str =
-    "https://comms-gatekeeper-local.decentraland.org/get-scene-adapter";
+fn gatekeeper_url() -> String {
+    common::base_domain::https("comms-gatekeeper", "/get-scene-adapter")
+}
+fn preview_gatekeeper_url() -> String {
+    common::base_domain::https("comms-gatekeeper-local", "/get-scene-adapter")
+}
 // Authoritative-server endpoints: yield a token with the LiveKit identity
 // `authoritative-server`, which clients target for authoritative-scene traffic.
-const SERVER_GATEKEEPER_URL: &str =
-    "https://comms-gatekeeper.decentraland.org/get-server-scene-adapter";
-const PREVIEW_SERVER_GATEKEEPER_URL: &str =
-    "https://comms-gatekeeper-local.decentraland.org/get-server-scene-adapter";
+fn server_gatekeeper_url() -> String {
+    common::base_domain::https("comms-gatekeeper", "/get-server-scene-adapter")
+}
+fn preview_server_gatekeeper_url() -> String {
+    common::base_domain::https("comms-gatekeeper-local", "/get-server-scene-adapter")
+}
 
 pub mod chat_marker_things {
     pub const EMOTE: char = '␐';
@@ -137,11 +142,10 @@ bitflags::bitflags! {
         const LIVEKIT = 1 << 1;
         /// The Archipelago island-assignment transport.
         const ARCHIPELAGO = 1 << 2;
-        /// The realm's Pulse avatar-state transport (only carries convertible avatar state).
+        /// The realm's Pulse avatar-state transport (only carries convertible avatar state), and
+        /// the only carrier of avatar state — movement, emotes and profile-version announcements
+        /// all target this alone.
         const PULSE = 1 << 4;
-
-        /// Realm avatar state: the websocket dev server plus Pulse. Movement rides this.
-        const PRIMARY = Self::WEBSOCKET.bits() | Self::PULSE.bits();
     }
 }
 
@@ -260,7 +264,7 @@ impl Broadcast for rfc4::Movement {
 pub struct Emote {
     pub urn: String,
     pub incremental_id: u32,
-    pub timestamp: f32,
+    pub timestamp: f64,
     /// `Some` for a one-shot (the Pulse server auto-completes it after the duration); `None` for a
     /// looping emote (ended by a later `stopping` send). Ignored on a stop.
     pub duration_ms: Option<u32>,
@@ -274,7 +278,7 @@ impl Broadcast for Emote {
             rfc4::PlayerEmote {
                 incremental_id: self.incremental_id,
                 urn: self.urn.clone(),
-                timestamp: self.timestamp,
+                timestamp: self.timestamp as f32,
                 is_stopping: Some(self.stopping),
             },
         )))
@@ -408,40 +412,20 @@ pub fn broadcast_to<'a, D: ToDclWriter>(
 /// Queue a [`Broadcast`] message onto every transport matching `target`, boxed fresh per transport so
 /// each receive side pulls its own representation ([`Broadcast::to_rfc4`] for byte transports,
 /// [`Broadcast::to_pulse`] for Pulse). The counterpart to [`broadcast_to`] for messages that carry a
-/// native (non-rfc4-bytes) form — currently [`rfc4::Movement`] and [`Emote`], both sent on
-/// [`BroadcastTarget::PRIMARY`] (movement unreliable, emote reliable).
+/// native (non-rfc4-bytes) form — currently [`rfc4::Movement`], [`Emote`] and [`ProfileUpdate`], all
+/// sent on [`BroadcastTarget::PULSE`] (movement unreliable, the rest reliable).
 pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
     transports: impl Iterator<Item = &'a Transport>,
     target: BroadcastTarget,
     unreliable: bool,
     message: B,
 ) {
-    // Avatar state that rides Pulse still has to reach the LiveKit `authoritative-server` participant
-    // (scene room / a LiveKit realm island) — it isn't a Pulse peer. So a Pulse-targeted broadcast
-    // also fans a copy out to the auth server on every LiveKit transport (a no-op where no such
-    // participant exists), targeted at the auth server alone rather than `All`: human peers already
-    // get avatar state via Pulse, so re-broadcasting to them here would only double up. Skipped when
-    // the target already includes LIVEKIT (the auth server is covered by that `All` send). This is
-    // what makes `PRIMARY` (movement, emote, profile) reach the auth server; temporary until it
-    // speaks Pulse.
-    let auth_server_fanout =
-        target.contains(BroadcastTarget::PULSE) && !target.contains(BroadcastTarget::LIVEKIT);
-
-    for transport in transports {
-        if target.includes(&transport.transport_type) {
-            let _ = transport.sender.try_send(NetworkMessage {
-                message: Box::new(message.clone()),
-                unreliable,
-                recipient: NetworkMessageRecipient::All,
-            });
-        } else if auth_server_fanout && BroadcastTarget::LIVEKIT.includes(&transport.transport_type)
-        {
-            let _ = transport.sender.try_send(NetworkMessage {
-                message: Box::new(message.clone()),
-                unreliable,
-                recipient: NetworkMessageRecipient::AuthServer,
-            });
-        }
+    for transport in transports.filter(|t| target.includes(&t.transport_type)) {
+        let _ = transport.sender.try_send(NetworkMessage {
+            message: Box::new(message.clone()),
+            unreliable,
+            recipient: NetworkMessageRecipient::All,
+        });
     }
 }
 
@@ -604,10 +588,10 @@ fn connect_scene_room(
             let wallet = wallet.clone();
             let preview = ev.scene_id.starts_with("b64-");
             let url = match (common::structs::server_mode(), preview) {
-                (true, true) => PREVIEW_SERVER_GATEKEEPER_URL,
-                (true, false) => SERVER_GATEKEEPER_URL,
-                (false, true) => PREVIEW_GATEKEEPER_URL,
-                (false, false) => GATEKEEPER_URL,
+                (true, true) => preview_server_gatekeeper_url(),
+                (true, false) => server_gatekeeper_url(),
+                (false, true) => preview_gatekeeper_url(),
+                (false, false) => gatekeeper_url(),
             };
             let uri = Uri::try_from(url).unwrap();
             let client = ipfs.ipfs().client();
@@ -677,8 +661,8 @@ pub struct AdapterManager<'w, 's> {
     ws_room_events: EventWriter<'w, StartWsRoom>,
     #[cfg(feature = "livekit")]
     livekit_events: EventWriter<'w, StartLivekit>,
-    // Pulse rides alongside livekit realms; spawned from the livekit arm of `connect`.
-    #[cfg(feature = "livekit")]
+    // Pulse is the realm's avatar-state transport whatever the realm's byte protocol is; written
+    // from the livekit and ws-room arms of `connect` (not from `connect_scene`).
     pulse_events: EventWriter<'w, pulse::plugin::StartPulse>,
     archipelago_events: EventWriter<'w, StartArchipelago>,
     // can't use event writer due to conflict on Res<Events>
@@ -720,6 +704,13 @@ impl AdapterManager<'_, '_> {
                     address: address.to_owned(),
                     context,
                 });
+                // A ws-room *realm* (the `dcl start` preview server) is a Pulse realm too: avatar
+                // state rides Pulse there just as it does on a livekit realm, keyed by the preview
+                // scene's entity id so two previews don't share a partition. A ws-room *scene room*
+                // must not touch Pulse, hence the gate.
+                if is_realm_island {
+                    self.pulse_events.write(pulse::plugin::StartPulse);
+                }
             }
             "signed-login" => {
                 self.signed_login_events.send(StartSignedLogin {

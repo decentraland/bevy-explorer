@@ -4,7 +4,7 @@
 //
 // Contract with the host page (react-web/src/engine/engineRpc.ts):
 //   set BEFORE injecting:  window.PUBLIC_URL   — base for pkg/ fetches (versioned CDN in prod)
-//                          window.__bevyBootConfig = { systemScene, portables, preview, editor }
+//                          window.__bevyBootConfig = { systemScene, portables, preview, editor, pulseServer }
 //   provided by this module:
 //     __bevyLoadProgress / __bevyLoadStep  — weighted boot progress for the login bar
 //     __bevyReadyToLaunch / __bevyLaunch(realm?, position?) — deferred engine_run
@@ -15,7 +15,12 @@
 //     __onEngineCrash(message, source) — OPTIONAL host callback; the watchdog calls it instead of
 //       rendering any overlay (React owns the error UI)
 //     window.engine / engine_console_command — the console RPC (built by engine.js post-launch)
-import { initEngine, start, gpu_cache_hash, initGpuCache } from './engine.js'
+//     __baseDomain() — HOST-PROVIDED (react-web/src/lib/baseDomain.ts, defined before this module
+//       is injected): the deployment domain every backend host is composed from; the wasm reads
+//       it before composing any backend URL (parity with native --base-domain)
+//     __bevyHomeScene() — the persisted home scene { realm, parcel: "x,y" } (or the derived
+//       defaults), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
+import { initEngine, start, engine_home_scene, gpu_cache_hash, initGpuCache } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
 // Weight of each step in the overall bar (sums to 100). Step ids are read by the React login bar
@@ -216,22 +221,58 @@ const config = window.__bevyBootConfig ?? {}
 
 // ---- engine text focus (CALLED BY THE WASM — src/web.rs update_text_focus) -----------------------
 // True while an engine-rendered text field (e.g. a scene textinput) holds keyboard focus. Those
-// fields live on the canvas, so DOM focus checks can't see them — HUD hotkey handlers read this
-// flag instead (useMenuShortcuts) to leave keys alone while the user is typing.
+// fields live on the canvas, so DOM focus checks can't see them — the HUD's systemAction
+// dispatcher reads this flag instead to leave keys alone while the user is typing.
 window.__engineTextFocus = false
 window.__setEngineTextFocus = (focused) => {
   window.__engineTextFocus = !!focused
 }
 
+// ---- keyboard forwarding to the engine -----------------------------------------------------------
+// winit attaches its keyboard listeners to the CANVAS element, so the engine only hears keys while
+// the canvas holds DOM focus — click any HUD control and movement + every engine binding (which
+// also drives the HUD hotkeys via the system-action stream) would go dead. Re-dispatch window-level
+// key events to the canvas when focus sits elsewhere. Bubble phase, so a handler that
+// stopPropagation()s (chat input, widgets that own a key locally) still withholds keys from the
+// engine; text inputs are skipped so typing never moves the avatar. Tab is left alone off-canvas —
+// there it is focus navigation, not a game key. The re-dispatched clone bubbles back here with the
+// canvas as target, which the target check drops (no loop).
+const forwardKeyToEngine = (e) => {
+  const canvas = document.getElementById('mygame-canvas')
+  if (!canvas || e.target === canvas) return
+  const t = e.target
+  if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  if (e.code === 'Tab') return
+  canvas.dispatchEvent(new KeyboardEvent(e.type, e))
+}
+window.addEventListener('keydown', forwardKeyToEngine)
+window.addEventListener('keyup', forwardKeyToEngine)
+
+// Wheel likewise: winit's wheel listener also lives on the canvas, so wheel over any HUD element
+// would never reach the engine (no camera zoom while the cursor rests on the sidebar). Forward a
+// clone; the original still scrolls whatever it was over. Over a SCROLLABLE panel the page
+// declares `scroll` focus and the engine stands the Scroll-bound axes down instead — so the wheel
+// scrolls chat without zooming, and zooms everywhere else. Same no-loop target check as keys.
+const forwardWheelToEngine = (e) => {
+  const canvas = document.getElementById('mygame-canvas')
+  if (!canvas || e.target === canvas) return
+  canvas.dispatchEvent(new WheelEvent('wheel', e))
+}
+window.addEventListener('wheel', forwardWheelToEngine)
+
 // ---- URL sync (CALLED BY THE WASM — src/web.rs set_url_params) -----------------------------------
 // Keeps the browser URL in step with the player's realm/position so a reload/share lands back at
 // the same place. Defaults are omitted so the canonical entry URL stays clean.
-const DEFAULT_SERVER = 'https://realm-provider-ea.decentraland.org/main'
+// The base domain is the HUD's call (see the __baseDomain contract above): the ?baseDomain=
+// entry param, else the hosting origin's apex, else org. set_url_params below preserves unknown
+// params, so the param form survives URL syncs.
+const BASE_DOMAIN = window.__baseDomain()
+const DEFAULT_SERVER = `https://realm-provider-ea.${BASE_DOMAIN}/main`
 const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'
 // The engine connects to the EXPANDED world url (ipfs map_realm_name turns `name.dcl.eth` into
 // worlds-content-server…/world/name.dcl.eth) and echoes that back here. Reverse it so the address
 // bar keeps the short name the user typed; a reload re-expands it the same way.
-const WORLDS_PREFIX = 'https://worlds-content-server.decentraland.org/world/'
+const WORLDS_PREFIX = `https://worlds-content-server.${BASE_DOMAIN}/world/`
 // captured from the ENTRY url (later syncs rewrite location.search)
 const explicitSystemScene = new URLSearchParams(window.location.search).has('systemScene')
 window.set_url_params = (position, server, system_scene, portables, preview, editor) => {
@@ -282,7 +323,10 @@ initEngine()
     window.setLoadingStepCompleted('gpu')
     // Deferred launch: the host calls this once the user picks a destination — avoiding a wasted
     // default-realm load. One engine per page (see start()'s __bevyStarted guard).
-    window.__bevyLaunch = (realm, position) => start({ realm, position, systemScene: config.systemScene, portables: config.portables, preview: config.preview, editor: config.editor })
+    window.__bevyLaunch = (realm, position) => start({ realm, position, systemScene: config.systemScene, portables: config.portables, preview: config.preview, editor: config.editor, pulseServer: config.pulseServer })
+    // The persisted home scene ({ realm, parcel: "x,y" }), valid once engine_init has loaded the
+    // config — the host's places picker targets it from "Skip to Home" before launching.
+    window.__bevyHomeScene = () => { try { return JSON.parse(engine_home_scene()) } catch { return null } }
     window.__bevyReadyToLaunch = true
   })
   .catch((e) => {

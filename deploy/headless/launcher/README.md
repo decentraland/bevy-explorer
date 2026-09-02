@@ -19,6 +19,9 @@ enabled; you rarely need to run it by hand.
 | `--position <x,y>` | Parcel to load. Defaults to `0,0`. |
 | `--production` | Production mode; disables preview-only behaviour. |
 | `--tick-hz <n>` | Scene tick rate. Defaults to 30. |
+| `--pulse-realm <key>` | Pulse realm to announce verbatim — the key sdk-commands mints for a local preview. Standalone only; an orchestrated engine takes one per scene on `add-scene`. |
+| `--pulse-server <host:port>` | Pulse server to join. Defaults to the production server; a zone deployment passes the zone one. |
+| `--base-domain <domain>` | Deployment domain the backend hosts (comms gatekeeper, worlds, ...) are composed from. Defaults to `decentraland.org`; a zone deployment passes `decentraland.zone`. |
 | `--timeout <secs>` | Exit cleanly after N seconds. |
 
 `--scene-id`, `--private-key` and `--env` are accepted for hammurabi compatibility and ignored.

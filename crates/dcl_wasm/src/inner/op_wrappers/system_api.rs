@@ -133,6 +133,16 @@ pub async fn op_set_bindings(state: &WorkerContext, bindings: JsValue) -> Result
 }
 
 #[wasm_bindgen]
+pub fn op_set_ui_focus(
+    state: &WorkerContext,
+    ui: bool,
+    text: bool,
+    scroll: bool,
+) -> Result<(), WasmError> {
+    dcl::js::system_api::op_set_ui_focus(state.rc(), ui, text, scroll).map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
 pub async fn op_console_command(
     state: &WorkerContext,
     cmd: String,

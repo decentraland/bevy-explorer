@@ -1,8 +1,9 @@
 // Smoke test for the design primitives ported from eordano/dcl-react-ui: each must
 // mount and render without throwing. Behaviour lives with its consumers; this just
 // guards the port (compiles AND renders).
-import { render } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
+import { dispatchCancelLayer } from '../lib/cancelLayers'
 import {
   Modal,
   ModalTitle,
@@ -57,5 +58,17 @@ describe('ported design primitives', () => {
       </>
     )
     expect(container).toBeTruthy()
+  })
+
+  it('an open Dropdown is a cancel layer: one Cancel dispatch closes just the list', () => {
+    render(<Dropdown options={['a', 'b']} value="a" onChange={() => {}} />)
+    expect(dispatchCancelLayer()).toBe(false) // closed → not registered
+    act(() => screen.getByRole('button', { expanded: false }).click())
+    expect(screen.getByRole('listbox')).toBeTruthy()
+    act(() => {
+      expect(dispatchCancelLayer()).toBe(true)
+    })
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(dispatchCancelLayer()).toBe(false) // unregistered again
   })
 })

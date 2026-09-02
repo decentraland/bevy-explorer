@@ -33,15 +33,14 @@ import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
 import { openExitConfirm } from './features/session/ExitConfirm'
 import { useEngineSession } from './features/session/useEngineSession'
 import { useExitGuard } from './lib/useExitGuard'
-import { useHudScale } from './lib/useHudScale'
 import { useWindowKeyDown } from './lib/useWindowKeyDown'
-import { useMenuShortcuts } from './lib/useMenuShortcuts'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
 import { hasUsableGpu } from './lib/gpu'
 import { MobileGate, GateChecking } from './features/gate/MobileGate'
 import { UntrustedLaunchGate } from './features/gate/UntrustedLaunchGate'
 import { isTrustedSystemScene } from './lib/systemScene'
+import { BASE_DOMAIN, isTrustedBaseDomain } from './lib/baseDomain'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
 import { CrashModal } from './features/error/CrashModal'
 import { openRealmError } from './features/error/RealmErrorModal'
@@ -52,7 +51,7 @@ const params = new URLSearchParams(location.search)
 // NATIVE (?native=1): HUD in a CEF offscreen webview over the native bevy engine — a JS shim
 // bridges this app's BroadcastChannel to the engine's native relay (no iframe, no mock).
 const MODE: 'mock' | 'engine' | 'native' =
-  params.get('mock') === '1' ? 'mock' : params.get('native') === '1' ? 'native' : 'engine'
+  params.get('mock') === '1' ? 'mock' : __NATIVE_HUD__ && params.get('native') === '1' ? 'native' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
 // Embedded/debug mode (?hud=0 or ?systemScene= — see lib/bootMode.ts): render ONLY the
 // engine — no React HUD at all (no sidebar, chat, pointer, panels, or the sign-in /
@@ -87,9 +86,11 @@ const GATE_REASON = gateReason()
 const SYSTEM_SCENE_OVERRIDE = bootMode().systemScene
 const UNTRUSTED_SYSTEM_SCENE =
   SYSTEM_SCENE_OVERRIDE != null && !isTrustedSystemScene(SYSTEM_SCENE_OVERRIDE) ? SYSTEM_SCENE_OVERRIDE : null
+// `?baseDomain=` likewise: it points every backend at another deployment. Native is exempt —
+// there the shell injects it from the user's own --base-domain flag, not from a link.
+const UNTRUSTED_BASE_DOMAIN = MODE !== 'native' && !isTrustedBaseDomain(BASE_DOMAIN) ? BASE_DOMAIN : null
 
 export function App(): React.JSX.Element {
-  useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
   const showFps = useFpsToggle()
   // Probe the GPU before booting the engine — but only on the real boot path (a sync gate already
   // decided, mock, native, or the design showcase all skip it). Native renders through the host's
@@ -99,8 +100,14 @@ export function App(): React.JSX.Element {
   // Ahead of every other gate: returning here is what keeps EngineHost unmounted, and EngineHost is
   // what injects boot.js and starts the scene.
   const [trustUntrusted, setTrustUntrusted] = useState(false)
-  if (UNTRUSTED_SYSTEM_SCENE != null && !trustUntrusted) {
-    return <UntrustedLaunchGate systemScene={UNTRUSTED_SYSTEM_SCENE} onProceed={() => setTrustUntrusted(true)} />
+  if ((UNTRUSTED_SYSTEM_SCENE != null || UNTRUSTED_BASE_DOMAIN != null) && !trustUntrusted) {
+    return (
+      <UntrustedLaunchGate
+        systemScene={UNTRUSTED_SYSTEM_SCENE ?? undefined}
+        baseDomain={UNTRUSTED_BASE_DOMAIN ?? undefined}
+        onProceed={() => setTrustUntrusted(true)}
+      />
+    )
   }
   if (GATE_REASON) return <MobileGate reason={GATE_REASON} />
   if (gpu === 'checking') return <GateChecking />
@@ -174,7 +181,6 @@ function Hud(): React.JSX.Element {
   }, [])
 
   const session = useEngineSession(createDriver)
-  useMenuShortcuts(session) // [O]/[M]/[I]/[G]/[P]/[B]/[L]/[T] hints in the nav + sidebar
   // Warn before the back gesture / Back button unloads the engine (only once in-world). Shown through
   // the popup layer so hasOpenPopup() covers it (Enter must not focus the chat behind it); Escape /
   // scrim-click resolve to "stay", which clears `confirming` and the effect closes the (already-closed) popup.
@@ -290,7 +296,7 @@ function Hud(): React.JSX.Element {
             onVisitWorld={(name) => openWorldVisit({ worldName: name, onConfirm: () => session.map.changeRealm(name) })}
           />
           <FriendsPanel friends={session.friends} />
-          <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
+          <SettingsPanel settings={session.settings} bindings={session.bindings} profile={session.profile} onNavigate={goToMenuPage} />
           <ProfilePanel profile={session.profile} />
           <NotificationsPanel notifications={session.notifications} />
           <EmotesWheel

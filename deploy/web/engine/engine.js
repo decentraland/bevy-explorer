@@ -1,11 +1,11 @@
 // Engine logic - ES module
 // Handles WASM/WebGPU initialization and game execution
 
-import init, { engine_init, engine_run, engine_console_command, gpu_cache_hash } from "./pkg/webgpu_build.js";
+import init, { engine_init, engine_run, engine_console_command, engine_home_scene, gpu_cache_hash } from "./pkg/webgpu_build.js";
 import { initGpuCache } from "./gpu_cache.js";
 
 // Re-export for main.js
-export { gpu_cache_hash, initGpuCache };
+export { engine_home_scene, gpu_cache_hash, initGpuCache };
 
 /**
  * Records an uncaught worker error as context for the crash watchdog. A worker
@@ -492,7 +492,7 @@ export async function initEngine() {
  * Starts the game engine. Values come from the caller (boot.js's __bevyLaunch, fed by the React
  * host) — the old boot page's form inputs are gone.
  */
-export function start({ realm, position, systemScene, portables, preview, editor } = {}) {
+export function start({ realm, position, systemScene, portables, preview, editor, pulseServer } = {}) {
   // Launch at most once per page: a second engine_run re-runs init_runtime, whose OnceCell is
   // already set, and panics ("can't init wasm queue"). One engine per page — ignore re-entry.
   if (window.__bevyStarted) {
@@ -507,6 +507,8 @@ export function start({ realm, position, systemScene, portables, preview, editor
   const portablesValue = portables ?? 'basiccontroller.dcl.eth';
   const previewValue = preview === true;
   const editorValue = editor === true;
+  // Pulse server as host:port (the WebTransport port on web); empty = the engine's default.
+  const pulseServerValue = pulseServer ?? '';
 
   // Build params from URL, overriding with form field values
   const urlParams = new URLSearchParams(window.location.search);
@@ -526,6 +528,11 @@ export function start({ realm, position, systemScene, portables, preview, editor
     urlParams.set("editor", "true");
   } else {
     urlParams.delete("editor");
+  }
+  if (pulseServerValue) {
+    urlParams.set("pulseServer", pulseServerValue);
+  } else {
+    urlParams.delete("pulseServer");
   }
   const params = urlParams.toString();
   console.log(
@@ -588,7 +595,7 @@ export function start({ realm, position, systemScene, portables, preview, editor
     delete window._buildEngineApi;
   };
 
-  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, editorValue, 1e7, params);
+  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, editorValue, 1e7, params, pulseServerValue);
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {

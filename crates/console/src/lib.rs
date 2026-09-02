@@ -4,7 +4,7 @@ use bevy_console::{
     ConsoleSet, PrintConsoleLine,
 };
 use clap::Parser;
-use common::{rpc::RpcResultReceiver, sets::SceneSets};
+use common::{rpc::RpcResultReceiver, sets::SceneSets, structs::PreviewMode};
 use std::sync::Mutex;
 
 pub trait DoAddConsoleCommand {
@@ -12,6 +12,17 @@ pub trait DoAddConsoleCommand {
         &mut self,
         system: impl IntoScheduleConfigs<ScheduleSystem, U>,
     ) -> &mut Self;
+
+    /// Register a command only when running in preview mode. Outside preview the command is
+    /// not registered at all, so it is absent from `/help` and rejected as unrecognised.
+    fn add_preview_console_command<T: Command, U>(
+        &mut self,
+        system: impl IntoScheduleConfigs<ScheduleSystem, U>,
+    ) -> &mut Self;
+}
+
+fn is_preview(preview: Option<Res<PreviewMode>>) -> bool {
+    preview.is_some_and(|p| p.is_preview)
 }
 
 // hook console commands
@@ -23,11 +34,39 @@ impl DoAddConsoleCommand for App {
     ) -> &mut Self {
         bevy_console::AddConsoleCommand::add_console_command::<T, U>(self, system)
     }
+
+    fn add_preview_console_command<T: bevy_console::Command, U>(
+        &mut self,
+        system: impl IntoScheduleConfigs<ScheduleSystem, U>,
+    ) -> &mut Self {
+        let register = |mut config: ResMut<ConsoleConfiguration>| {
+            config
+                .commands
+                .insert(T::name(), T::command().no_binary_name(true));
+        };
+
+        self.add_systems(
+            Startup,
+            register.in_set(ConsoleSet::Startup).run_if(is_preview),
+        )
+        .add_systems(
+            Update,
+            system.in_set(ConsoleSet::Commands).run_if(is_preview),
+        )
+    }
 }
 
 #[cfg(test)]
 impl DoAddConsoleCommand for App {
     fn add_console_command<T: bevy_console::Command, U>(
+        &mut self,
+        _: impl IntoScheduleConfigs<ScheduleSystem, U>,
+    ) -> &mut Self {
+        // do nothing
+        self
+    }
+
+    fn add_preview_console_command<T: bevy_console::Command, U>(
         &mut self,
         _: impl IntoScheduleConfigs<ScheduleSystem, U>,
     ) -> &mut Self {

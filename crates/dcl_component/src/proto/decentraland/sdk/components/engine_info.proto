@@ -12,4 +12,5 @@ message PBEngineInfo {
   uint32 frame_number = 1; // frame counter of the engine
   float total_runtime = 2; // total runtime of this scene in seconds
   uint32 tick_number  = 3; // tick counter of the scene as per ADR-148
+  double total_runtime_f64 = 5; // total_runtime at f64 precision: the float field cannot resolve frame deltas past ~36h of scene uptime
 }

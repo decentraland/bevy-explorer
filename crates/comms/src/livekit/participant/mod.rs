@@ -43,11 +43,6 @@ impl From<RemoteParticipant> for LivekitParticipant {
 #[derive(Component)]
 pub struct Local;
 
-/// Marks a participant as being a streamer.
-/// Streamers have their identity ending with `-streamer`.
-#[derive(Component)]
-pub struct Streamer;
-
 #[derive(Component)]
 #[relationship(relationship_target=HostingParticipants)]
 pub struct HostedBy(Entity);
@@ -55,18 +50,6 @@ pub struct HostedBy(Entity);
 #[derive(Component)]
 #[relationship_target(relationship=HostedBy, linked_spawn)]
 pub struct HostingParticipants(Vec<Entity>);
-
-#[derive(Debug, Component)]
-#[relationship(relationship_target=StreamBroadcast)]
-pub struct StreamViewer(Entity);
-
-#[derive(Debug, Component)]
-#[relationship_target(relationship=StreamViewer)]
-pub struct StreamBroadcast(Vec<Entity>);
-
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Clone, Component, Deref)]
-pub struct StreamImage(Handle<Image>);
 
 #[derive(Event)]
 pub struct ParticipantConnected {
@@ -140,7 +123,3 @@ impl From<LivekitConnectionQuality> for ConnectionQuality {
         }
     }
 }
-
-/// Changes volume of audio tracks of this participant
-#[derive(Clone, Copy, Event)]
-pub struct ChangeVolume(pub f32);

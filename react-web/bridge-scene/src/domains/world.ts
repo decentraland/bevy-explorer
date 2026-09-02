@@ -89,18 +89,23 @@ export function registerWorld(ctx: Ctx): void {
       })
   })
 
-  // `/commands` — surface the engine console's own command list. Run its `help`; if `help` isn't a
-  // registered command the engine rejects with "Recognized commands: [...]" — exactly the list we
-  // want — so relay either the successful output or the rejection text.
+  // Engine console passthrough (`/commands` → `help`, and any chat `/command` the page forwards).
+  // The output — or the rejection text (unknown command, usage error) — goes back as a
+  // `consoleReply`; the page decides how to render it (it filters its own hidden commands).
   ctx.on('consoleCommand', (msg) => {
     const op = BevyApi.consoleCommand
     if (op == null) {
       pushSystem(ctx, 'Engine console is not available.')
       return
     }
-    op(msg.command, msg.args ?? [])
-      .then((out) => pushSystem(ctx, out.trim() || `(no output for ${msg.command})`))
-      .catch((e: unknown) => pushSystem(ctx, e instanceof Error ? e.message : String(e)))
+    const args = msg.args ?? []
+    op(msg.command, args)
+      .then((output) => {
+        ctx.send({ kind: 'consoleReply', command: msg.command, args, ok: true, output })
+      })
+      .catch((e: unknown) => {
+        ctx.send({ kind: 'consoleReply', command: msg.command, args, ok: false, output: e instanceof Error ? e.message : String(e) })
+      })
   })
 
   ctx.on('setMic', (msg) => {

@@ -35,7 +35,7 @@ use dcl_component::{
     DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
 
-use crate::{profile::ProfileMetaCache, Transport, TransportType};
+use crate::{profile::ProfileMetaCache, Transport};
 
 #[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
@@ -93,6 +93,7 @@ impl Plugin for GlobalCrdtPlugin {
         let mut contexts = CrdtContexts::default();
         contexts.0.insert(String::new(), shared);
         app.insert_resource(contexts);
+        app.init_resource::<SceneRealms>();
 
         app.add_observer(remove_context_players);
 
@@ -143,6 +144,15 @@ pub enum PlayerMessage {
         /// its proto `float` timestamp, which is too narrow for an absolute millisecond tick.
         timestamp: f64,
     },
+    /// Pulse-decoded emote start (`stopping: false`) or stop, delivered natively for the same reason
+    /// as [`PlayerMessage::Movement`]: an rfc4 `PlayerEmote` on a byte transport is a duplicate to be
+    /// dropped, so the Pulse copy must be distinguishable from it by variant.
+    Emote {
+        urn: String,
+        /// The server tick the emote started on; ordering only.
+        incremental_id: u32,
+        stopping: bool,
+    },
     AudioStreamAvailable {
         transport: Entity,
     },
@@ -166,6 +176,16 @@ impl std::fmt::Debug for PlayerMessage {
                 .field("movement", movement)
                 .field("teleport", teleport)
                 .field("timestamp", timestamp)
+                .finish(),
+            Self::Emote {
+                urn,
+                incremental_id,
+                stopping,
+            } => f
+                .debug_struct("Emote")
+                .field("urn", urn)
+                .field("incremental_id", incremental_id)
+                .field("stopping", stopping)
                 .finish(),
             Self::AudioStreamAvailable { transport } => f
                 .debug_tuple("AudioStreamAvailable")
@@ -270,24 +290,6 @@ impl TransportSenders<'_, '_> {
         let transport = self.transports.get(transport).ok()?;
         Some(self.contexts.get(transport.context).ok()?.get_sender())
     }
-
-    /// Whether the crdt context `transport` feeds also has a live Pulse transport, i.e. avatar
-    /// state for those players arrives over Pulse. Callers use this to decide whether a legacy
-    /// rfc4 avatar-state packet on a byte transport is a duplicate (drop it) or the only copy
-    /// (keep it). False on an authoritative server, which never joins Pulse, and on a client
-    /// while it is off a Pulse realm.
-    ///
-    /// True from the moment the routing transport is spawned, which is slightly ahead of the
-    /// handshake completing. That window drops nothing in practice: a peer that speaks Pulse has
-    /// already stopped broadcasting rfc4 movement, and one that hasn't is not on Pulse at all.
-    pub fn is_pulse_fed(&self, transport: Entity) -> bool {
-        let Ok(transport) = self.transports.get(transport) else {
-            return false;
-        };
-        self.transports
-            .iter()
-            .any(|t| t.transport_type == TransportType::Pulse && t.context == transport.context)
-    }
 }
 
 /// Index of live crdt contexts: scene-room hash (`""` = the shared context; scene hashes
@@ -296,6 +298,28 @@ impl TransportSenders<'_, '_> {
 /// alongside their scene rooms.
 #[derive(Resource, Default)]
 pub struct CrdtContexts(pub HashMap<String, Entity>);
+
+/// The realm each hosted scene belongs to, by scene hash. Only an orchestrated server populates it,
+/// from the `realm` its orchestrator states per `add-scene`, and only it needs to: that is the one
+/// deployment where scenes come from several realms at once (one server cohosting
+/// `cozyfarm.dcl.eth` and `towerofmadness.dcl.eth`), so `CurrentRealm` cannot answer the question.
+/// Everywhere else — a client, a standalone preview server — it stays empty and the realm the
+/// process is on is the answer for every scene.
+#[derive(Resource, Default)]
+pub struct SceneRealms(pub HashMap<String, String>);
+
+impl SceneRealms {
+    /// The realm to announce for a scene: the one its orchestrator stated, or `default` — the realm
+    /// this process is on, which is the answer for every deployment that isn't orchestrated. `None`
+    /// when neither applies: an orchestrated engine is on no realm of its own, so a scene it was
+    /// handed without one has no realm to fall back to.
+    pub fn for_scene_hash(&self, hash: &str, default: Option<&str>) -> Option<String> {
+        self.0
+            .get(hash)
+            .cloned()
+            .or_else(|| default.map(str::to_owned))
+    }
+}
 
 impl CrdtContexts {
     pub fn shared(&self) -> Entity {
@@ -309,12 +333,18 @@ impl CrdtContexts {
     /// is gone, so a miss is an ordering bug — and falling back to the shared context
     /// would silently cross-contaminate room presence, so panic instead.
     pub fn for_scene_hash(&self, hash: &str) -> Entity {
-        self.0.get(hash).copied().unwrap_or_else(|| {
-            if common::structs::multi_tenant() {
-                panic!("no crdt context for scene {hash} on a multi-tenant server");
-            }
-            self.shared()
-        })
+        self.try_for_scene_hash(hash)
+            .unwrap_or_else(|| panic!("no crdt context for scene {hash} on a multi-tenant server"))
+    }
+
+    /// [`Self::for_scene_hash`] without the panic, for callers that sweep every loaded scene rather
+    /// than acting on one being queued: on a multi-tenant server a scene whose context isn't
+    /// registered yet is simply not ready to be routed to, not a bug.
+    pub fn try_for_scene_hash(&self, hash: &str) -> Option<Entity> {
+        self.0
+            .get(hash)
+            .copied()
+            .or_else(|| (!common::structs::multi_tenant()).then(|| self.shared()))
     }
 }
 
@@ -482,8 +512,8 @@ pub struct ForeignMetaData {
 #[derive(Event)]
 pub struct PlayerPositionEvent {
     pub player: Entity,
-    /// Local receive time (`time.elapsed_secs()`) — drives the interpolation catch-up window.
-    pub time: f32,
+    /// Local receive time (`time.elapsed_secs_f64()`) — drives the interpolation catch-up window.
+    pub time: f64,
     /// The source clock for this update, in seconds: the Pulse server tick, or the sender's own
     /// clock on the LiveKit path. Only ever compared against a previous value from the same
     /// source, to reject reordered/duplicate packets.
@@ -522,7 +552,7 @@ pub struct PlayerPositionEvent {
 #[derive(Event)]
 pub struct PlayerSceneAnimEvent {
     pub player: Entity,
-    pub time: f32,
+    pub time: f64,
     /// Resolved animation; `None` clears any active one.
     pub anim: Option<SceneDrivenAnimationRequest>,
     /// Render-only avatar lean (pitch, roll) in degrees, composed onto the interpolated yaw in
@@ -581,7 +611,7 @@ fn apply_foreign_movement(
     m: &rfc4::Movement,
     entity: Entity,
     scene_id: SceneEntityId,
-    now: f32,
+    now: f64,
     timestamp: f64,
     teleport: bool,
     commands: &mut Commands,
@@ -797,25 +827,17 @@ pub fn process_transport_updates(
                             let _ = audio_channel
                                 .try_send(ForeignAudioData::TransportUnavailable(transport));
                         }
-                        // Legacy rfc4 index-ordered Position and bit-packed MovementCompressed are no
-                        // longer supported. Uncompressed Movement IS still ingested (next arm) for peers
-                        // on a non-Pulse / local-websocket realm; on a Pulse realm the same state arrives
-                        // as `PlayerMessage::Movement` below.
+                        // rfc4 avatar state is not ingested from any byte transport: movement and
+                        // emotes arrive over Pulse alone, as `PlayerMessage::Movement` /
+                        // `PlayerMessage::Emote` below. Applying a byte-transport copy as well would
+                        // double-drive the avatar, and the two clocks can't be reconciled — an rfc4
+                        // timestamp is the sender's, a Pulse one is the server tick.
                         PlayerMessage::PlayerData(
-                            Message::Position(_) | Message::MovementCompressed(_),
+                            Message::Position(_)
+                            | Message::MovementCompressed(_)
+                            | Message::Movement(_)
+                            | Message::PlayerEmote(_),
                         ) => {}
-                        PlayerMessage::PlayerData(Message::Movement(m)) => apply_foreign_movement(
-                            &m,
-                            entity,
-                            scene_id,
-                            time.elapsed_secs(),
-                            // the sender's own clock, seconds since their client started
-                            m.timestamp as f64,
-                            false,
-                            &mut commands,
-                            &mut state,
-                            &mut position_events,
-                        ),
                         PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
                             profile_events.write(ProfileEvent {
                                 sender: entity,
@@ -880,13 +902,32 @@ pub fn process_transport_updates(
                             &movement,
                             entity,
                             scene_id,
-                            time.elapsed_secs(),
+                            time.elapsed_secs_f64(),
                             timestamp,
                             teleport,
                             &mut commands,
                             &mut state,
                             &mut position_events,
                         ),
+                        PlayerMessage::Emote {
+                            urn,
+                            incremental_id,
+                            stopping,
+                        } => {
+                            debug!("emote: {urn} (stopping: {stopping})");
+                            if stopping {
+                                // Explicit stop (a looping emote cancelled, or a one-shot's server
+                                // completion). Foreign emotes no longer self-cancel on motion (see
+                                // `animate`), so the wire stop is what ends a looping one.
+                                commands.entity(entity).remove::<EmoteCommand>();
+                            } else {
+                                commands.entity(entity).try_insert(EmoteCommand {
+                                    timestamp: incremental_id as i64,
+                                    urn,
+                                    r#loop: false,
+                                });
+                            }
+                        }
                         PlayerMessage::PlayerData(Message::SceneDrivenAnimation(sda)) => {
                             // Standalone scene-driven animation (decoupled from movement). Order by the
                             // sender's monotonic sequence — LiveKit is unreliable, so drop reordered /
@@ -908,24 +949,9 @@ pub fn process_transport_updates(
                                 );
                                 anim_events.write(PlayerSceneAnimEvent {
                                     player: entity,
-                                    time: time.elapsed_secs(),
+                                    time: time.elapsed_secs_f64(),
                                     anim,
                                     tilt,
-                                });
-                            }
-                        }
-                        PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
-                            debug!("emote: {emote:?}");
-                            if emote.is_stopping == Some(true) {
-                                // Explicit stop (a looping emote cancelled, or a one-shot's server
-                                // completion). Foreign emotes no longer self-cancel on motion (see
-                                // `animate`), so the wire stop is what ends a looping one.
-                                commands.entity(entity).remove::<EmoteCommand>();
-                            } else {
-                                commands.entity(entity).try_insert(EmoteCommand {
-                                    timestamp: emote.incremental_id as i64,
-                                    urn: emote.urn,
-                                    r#loop: false,
                                 });
                             }
                         }
@@ -943,32 +969,47 @@ pub fn process_transport_updates(
                         continue;
                     }
 
-                    let Message::Scene(scene) = update.message else {
-                        warn!(
-                            "skipping unexpected update from {}: {:?}",
-                            update.address, update.message
-                        );
-                        continue;
-                    };
+                    match update.message {
+                        Message::Scene(scene) => {
+                            // same cross-room guard as the Player arm: the message may only
+                            // address the scene owning this context's room
+                            if let Some(room_hash) = &state.room {
+                                if scene.scene_id != *room_hash {
+                                    debug!(
+                                        "dropping cross-room message from {}: declared scene {} != room {room_hash}",
+                                        update.address, scene.scene_id
+                                    );
+                                    continue;
+                                }
+                            }
 
-                    // same cross-room guard as the Player arm: the message may only
-                    // address the scene owning this context's room
-                    if let Some(room_hash) = &state.room {
-                        if scene.scene_id != *room_hash {
-                            debug!(
-                                "dropping cross-room message from {}: declared scene {} != room {room_hash}",
-                                update.address, scene.scene_id
+                            process_messagebus(
+                                scene,
+                                update.address,
+                                &mut string_senders,
+                                &mut binary_senders,
                             );
-                            continue;
+                        }
+                        // a server resolving a guest profile asks the guest directly — the
+                        // only source there is. The request handler reads the requested
+                        // address and the reply transport, never the sender entity, so the
+                        // transport entity stands in for the (playerless) server.
+                        Message::ProfileRequest(request) => {
+                            profile_events.write(ProfileEvent {
+                                sender: update.transport_id,
+                                event: ProfileEventType::Request {
+                                    request,
+                                    transport: update.transport_id,
+                                },
+                            });
+                        }
+                        message => {
+                            warn!(
+                                "skipping unexpected update from {}: {:?}",
+                                update.address, message
+                            );
                         }
                     }
-
-                    process_messagebus(
-                        scene,
-                        update.address,
-                        &mut string_senders,
-                        &mut binary_senders,
-                    );
                 }
                 NetworkUpdate::PlayerLeft {
                     transport_id,
@@ -1166,6 +1207,10 @@ fn remove_context_players(
     let context = trigger.target();
     for (entity, player) in players.iter() {
         if player.context == context {
+            info!(
+                "removing player {:#x} with despawned context {context}",
+                player.address
+            );
             commands.entity(entity).try_despawn();
         }
     }

@@ -106,11 +106,11 @@ fn main() {
         .unwrap_or(IVec2::ZERO);
 
     let final_config = AppConfig {
-        server: args
-            .value_from_str("--server")
+        home_realm: args
+            .value_from_str::<_, String>("--server")
             .ok()
-            .unwrap_or(base_config.server),
-        location,
+            .or(base_config.home_realm),
+        home_location: Some(location),
         graphics: GraphicsSettings {
             vsync: false,
             log_fps: false,
@@ -211,7 +211,7 @@ fn main() {
             })
             .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
                 preview: false,
-                starting_realm: Some(map_realm_name(&final_config.server)),
+                starting_realm: Some(map_realm_name(&final_config.home_realm())),
                 content_server_override,
                 assets_root: Default::default(),
                 num_slots: final_config.max_concurrent_remotes,
@@ -336,7 +336,7 @@ fn check_done(
     }
 
     // wait for pointers
-    if pointers.get(config.location).is_none() {
+    if pointers.get(config.home_location()).is_none() {
         *counter = 0;
         return;
     }
@@ -387,9 +387,9 @@ fn setup(
     let player_id = commands
         .spawn((
             Transform::from_translation(Vec3::new(
-                8.0 + 16.0 * config.location.x as f32,
+                8.0 + 16.0 * config.home_location().x as f32,
                 8.0,
-                -8.0 + -16.0 * config.location.y as f32,
+                -8.0 + -16.0 * config.home_location().y as f32,
             )),
             Visibility::default(),
             config.player_settings.clone(),
@@ -410,9 +410,9 @@ fn setup(
             Camera3d::default(),
             PrimaryCamera::default(),
             Transform::from_translation(Vec3::new(
-                8.0 + 16.0 * config.location.x as f32,
+                8.0 + 16.0 * config.home_location().x as f32,
                 8.0,
-                -8.0 + -16.0 * config.location.y as f32,
+                -8.0 + -16.0 * config.home_location().y as f32,
             )),
         ))
         .id();

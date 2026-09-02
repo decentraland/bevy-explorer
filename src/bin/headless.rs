@@ -81,10 +81,24 @@ struct Args {
     storage_delegation: Option<String>,
     /// deterministic guest wallet (test harness): address derivable offline from the seed
     wallet_seed: Option<u64>,
+    /// Pulse realm to announce verbatim; `--server-mode` only. Orchestrated servers host several
+    /// realms at once and take one per scene on `add-scene` instead.
+    pulse_realm: Option<String>,
+    /// Pulse server as `host:port`; the orchestrator passes its deployment's (zone or prod)
+    pulse_server: Option<String>,
 }
 
 fn parse_args() -> Args {
     let mut args = pico_args::Arguments::from_env();
+    // latch first: everything below that composes a backend host reads it
+    if let Err(e) = args
+        .opt_value_from_str::<_, String>("--base-domain")
+        .map_err(|e| e.to_string())
+        .and_then(|domain| domain.map_or(Ok(()), |d| common::base_domain::set(&d)))
+    {
+        eprintln!("{e}");
+        std::process::exit(2);
+    }
     let realm: String = args
         .value_from_str("--realm")
         .unwrap_or_else(|_| "http://localhost:8000".to_owned());
@@ -123,6 +137,14 @@ fn parse_args() -> Args {
         .ok()
         .or_else(|| std::env::var("PROCESS_STORAGE_DELEGATION").ok());
     let wallet_seed: Option<u64> = args.value_from_str("--wallet-seed").ok();
+    let pulse_realm: Option<String> = args.value_from_str("--pulse-realm").ok();
+    let pulse_server: Option<String> = args.value_from_str("--pulse-server").ok();
+    if pulse_realm.is_some() && orchestrated {
+        eprintln!(
+            "--pulse-realm is a --server-mode flag; orchestrated scenes carry their own realm"
+        );
+        std::process::exit(2);
+    }
     Args {
         realm,
         location,
@@ -134,6 +156,8 @@ fn parse_args() -> Args {
         tick_hz,
         storage_delegation,
         wallet_seed,
+        pulse_realm,
+        pulse_server,
     }
 }
 
@@ -171,6 +195,12 @@ enum ControlCommand {
         /// base64 world-storage delegation minted by the orchestrator for this scene
         #[serde(rename = "storageDelegation")]
         storage_delegation: Option<String>,
+        /// The realm this scene belongs to — the same name a client reads from that realm's
+        /// `about`. Like `adapter`, it states how the scene is being served, which only the
+        /// orchestrator knows. Pulse partitions peer visibility by realm and every world numbers
+        /// its parcels from 0,0, so this is what tells two cohosted worlds' `0,0` apart — and
+        /// getting it wrong is silent, not loud, which is why it is not optional.
+        realm: String,
     },
     RemoveScene {
         #[serde(rename = "sceneId")]
@@ -264,8 +294,8 @@ fn main() {
     );
 
     let config = AppConfig {
-        server: args.realm.clone(),
-        location: args.location,
+        home_realm: Some(args.realm.clone()),
+        home_location: Some(args.location),
         graphics: GraphicsSettings {
             vsync: false,
             log_fps: false,
@@ -435,9 +465,23 @@ fn main() {
         .add_event::<SystemAudio>()
         .add_event::<PermissionUsed>();
 
+    // the orchestrator minted the realm key for this preview, so we announce it rather than
+    // waiting for a scene to load and deriving the same string from its entity id
+    if let Some(realm) = args.pulse_realm.clone() {
+        app.insert_resource(comms::pulse::plugin::PulseRealmOverride(realm));
+    }
+    if let Some(endpoint) = args.pulse_server.clone() {
+        app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(endpoint));
+    }
+
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
     app.add_systems(Startup, setup.in_set(SetupSets::Init));
     app.add_systems(PreUpdate, supervisor);
+    #[cfg(unix)]
+    {
+        shutdown_signal::install();
+        app.add_systems(Update, exit_on_shutdown_signal);
+    }
     app.add_systems(
         Update,
         (
@@ -580,9 +624,9 @@ fn setup(
     // and PrimaryEntities::player() panics without the marker. Placed at the scene
     // location so position-based loading picks up the parcel scene.
     let player_pos = Vec3::new(
-        8.0 + PARCEL_SIZE * config.location.x as f32,
+        8.0 + PARCEL_SIZE * config.home_location().x as f32,
         0.0,
-        -8.0 + -PARCEL_SIZE * config.location.y as f32,
+        -8.0 + -PARCEL_SIZE * config.home_location().y as f32,
     );
     // NOT OutOfWorld: the player must count as "inside" the scene parcel so
     // update_scene_room fires the authoritative scene-room connection.
@@ -629,6 +673,45 @@ fn setup(
     current_profile.is_deployed = true;
 }
 
+/// SIGINT/SIGTERM/SIGHUP wind the engine down through `AppExit` instead of the default
+/// immediate termination, so the `World` drops and the comms drivers get to say goodbye
+/// (the Pulse driver sends its ENet DISCONNECT on drop; without it the server only notices
+/// us via its peer timeout). A repeated signal bails out hard.
+#[cfg(unix)]
+fn exit_on_shutdown_signal(mut sent: Local<bool>, mut exit: EventWriter<AppExit>) {
+    if !*sent && shutdown_signal::received() {
+        *sent = true;
+        info!("[headless] shutdown signal received, exiting");
+        exit.write_default();
+    }
+}
+
+#[cfg(unix)]
+mod shutdown_signal {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static RECEIVED: AtomicBool = AtomicBool::new(false);
+
+    pub fn received() -> bool {
+        RECEIVED.load(Ordering::Relaxed)
+    }
+
+    extern "C" fn flag(signal: libc::c_int) {
+        if RECEIVED.swap(true, Ordering::Relaxed) {
+            // a repeated signal means the graceful exit isn't getting there; bail out hard
+            unsafe { libc::_exit(128 + signal) };
+        }
+    }
+
+    pub fn install() {
+        unsafe {
+            for sig in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+                libc::signal(sig, flag as *const () as libc::sighandler_t);
+            }
+        }
+    }
+}
+
 /// Liveness supervisor. Logs when the scene first ticks; exits non-zero on a
 /// broken scene or the optional wall-clock timeout, zero on graceful conditions.
 #[allow(clippy::too_many_arguments)]
@@ -638,11 +721,11 @@ fn supervisor(
     mut errors: EventReader<AppError>,
     mut exit: EventWriter<AppExit>,
     mut announced: Local<bool>,
-    mut last_report: Local<f32>,
+    mut last_report: Local<f64>,
     orchestrated: Option<Res<OrchestratedScenes>>,
     updates: Res<scene_runner::SceneUpdates>,
 ) {
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
 
     for e in errors.read() {
         error!("[headless] scene error: {e:?}");
@@ -683,7 +766,7 @@ fn supervisor(
     // wall-clock timeout: graceful success exit for smoke tests
     // (checked in main via arg-injected resource below)
     if let Some(limit) = TIMEOUT.get().copied().flatten() {
-        if elapsed > limit {
+        if elapsed > limit as f64 {
             println!("[headless] timeout {limit}s reached, exiting");
             exit.write_default();
         }
@@ -768,16 +851,16 @@ fn reap_terminal_scene_rooms(
 fn request_delegation_renewals(
     delegations: Res<StorageDelegations>,
     time: Res<Time>,
-    mut last_request: Local<std::collections::HashMap<String, f32>>,
+    mut last_request: Local<std::collections::HashMap<String, f64>>,
 ) {
     const REFRESH_BUFFER_MS: i64 = 5 * 60 * 1000;
-    const REQUEST_THROTTLE_SECS: f32 = 30.0;
+    const REQUEST_THROTTLE_SECS: f64 = 30.0;
 
     let now_ms = web_time::SystemTime::now()
         .duration_since(web_time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64;
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
 
     // drop throttle state for scenes no longer holding a delegation (removed scenes),
     // so this map doesn't grow unbounded over the engine's lifetime
@@ -811,6 +894,7 @@ fn drain_control_commands(
     mut commands: Commands,
     mut server_rooms: ResMut<ServerSceneRooms>,
     mut crdt_contexts: ResMut<comms::global_crdt::CrdtContexts>,
+    mut scene_realms: ResMut<comms::global_crdt::SceneRealms>,
     wallet: Res<Wallet>,
     ipfs: IpfsAssetServer,
     preview: Res<PreviewMode>,
@@ -826,7 +910,7 @@ fn drain_control_commands(
     >,
 ) {
     let store_delegation = |scene_id: &str, encoded: &str, delegations: &mut StorageDelegations| {
-        match StorageDelegation::parse(encoded, &map_realm_name(&config.server)) {
+        match StorageDelegation::parse(encoded, &map_realm_name(&config.home_realm())) {
             Ok(delegation) => {
                 // reject a renewal that rebinds to another scene's credential
                 // (hammurabi's same-scene guard)
@@ -955,10 +1039,12 @@ fn drain_control_commands(
                 urn,
                 adapter,
                 storage_delegation,
+                realm,
             } => {
                 if let Some(encoded) = &storage_delegation {
                     store_delegation(&scene_id, encoded, &mut delegations);
                 }
+                scene_realms.0.insert(scene_id.clone(), realm);
                 ctl_emit(&serde_json::json!({"type": "scene-added", "scene": scene_id}));
 
                 if let Some(adapter) = adapter {
@@ -987,9 +1073,11 @@ fn drain_control_commands(
                     let client = ipfs.ipfs().client();
                     let sid = scene_id.clone();
                     let task = IoTaskPool::get().spawn_compat(async move {
-                        let url =
-                            "https://comms-gatekeeper-local.decentraland.org/get-server-scene-adapter";
-                        let uri = http::Uri::try_from(url)?;
+                        let url = common::base_domain::https(
+                            "comms-gatekeeper-local",
+                            "/get-server-scene-adapter",
+                        );
+                        let uri = http::Uri::try_from(url.as_str())?;
                         let meta = serde_json::json!({
                             "intent": "dcl:explorer:comms-handshake",
                             "signer": "dcl:explorer",
@@ -1024,6 +1112,7 @@ fn drain_control_commands(
                 portables.remove(&scene_id);
                 orch.wanted.remove(&scene_id);
                 delegations.by_scene.remove(&scene_id);
+                scene_realms.0.remove(&scene_id);
                 mint_tasks.retain(|(sid, _, _)| sid != &scene_id);
                 if let Some((_, ent)) = server_rooms.0.remove(&scene_id) {
                     if let Ok(mut c) = commands.get_entity(ent) {
@@ -1097,7 +1186,7 @@ fn emit_scene_log(hash: &str, log: &SceneLogMessage) {
 fn emit_scene_status(
     time: Res<Time>,
     scenes: Query<&RendererSceneContext>,
-    mut last: Local<f32>,
+    mut last: Local<f64>,
     mut live: Local<std::collections::HashSet<String>>,
     mut broken: Local<std::collections::HashSet<String>>,
 ) {
@@ -1122,7 +1211,7 @@ fn emit_scene_status(
         }
     }
 
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
     if elapsed - *last > 5.0 {
         *last = elapsed;
         for ctx in scenes.iter() {
@@ -1140,10 +1229,10 @@ fn emit_scene_status(
 fn emit_scene_stats(
     time: Res<Time>,
     scenes: Query<&RendererSceneContext>,
-    mut last: Local<f32>,
-    mut prev: Local<std::collections::HashMap<String, (SceneResourceCounters, f32)>>,
+    mut last: Local<f64>,
+    mut prev: Local<std::collections::HashMap<String, (SceneResourceCounters, f64)>>,
 ) {
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
     if elapsed - *last <= 10.0 {
         return;
     }

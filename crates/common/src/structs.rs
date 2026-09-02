@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 pub use system_api_types::{PermissionLevel, PermissionType, PermissionValue, PointerTargetType};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::inputs::InputMapSerialized;
+use crate::inputs::{Action, InputIdentifier, InputMapSerialized, SystemAction};
 
 #[derive(Resource)]
 pub struct Version(pub String);
@@ -471,12 +471,22 @@ pub struct PreviousLogin {
     pub auth: Vec<ChainLink>,
 }
 
+pub fn default_home_realm() -> String {
+    crate::base_domain::https("realm-provider-ea", "/main")
+}
 // app configuration
 #[derive(Serialize, Deserialize, Resource, Clone)]
 #[serde(default)]
 pub struct AppConfig {
-    pub server: String,
-    pub location: IVec2,
+    /// The pinned home scene. Written ONLY by SetHomeScene; None = never pinned, so the
+    /// home keeps tracking the base-domain-derived default. A pinned home persists (and
+    /// survives switching base domains) even when it happens to equal some domain's
+    /// default. --server / --location are startup params (like the web's ?realm= /
+    /// ?position=) and are deliberately never merged in here — the config file is
+    /// rewritten wholesale on any settings change, which would silently persist a
+    /// one-off CLI target as home.
+    pub home_realm: Option<String>,
+    pub home_location: Option<IVec2>,
     pub previous_login: Option<PreviousLogin>,
     pub graphics: GraphicsSettings,
     pub audio: AudioSettings,
@@ -507,17 +517,23 @@ pub struct AppConfig {
     // rather than taking the current generation from the container-level default
     #[serde(default)]
     pub settings_generation: u32,
+    #[serde(default)]
+    pub inputs_generation: u32,
 }
 
 /// bump to force a one-time reset of the preset-managed settings in existing configs
 /// (see [`AppConfig::reset_outdated_settings`])
 pub const SETTINGS_GENERATION: u32 = 1;
 
+/// bump to run one-time migrations of saved input binding tables
+/// (see [`AppConfig::migrate_inputs`])
+pub const INPUTS_GENERATION: u32 = 1;
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: "https://realm-provider-ea.decentraland.org/main".to_owned(),
-            location: IVec2::new(0, 0),
+            home_realm: None,
+            home_location: None,
             previous_login: None,
             graphics: Default::default(),
             audio: Default::default(),
@@ -545,11 +561,22 @@ impl Default for AppConfig {
             point_at_marker_visibility: Default::default(),
             camera_smoothing: Default::default(),
             settings_generation: SETTINGS_GENERATION,
+            inputs_generation: INPUTS_GENERATION,
         }
     }
 }
 
 impl AppConfig {
+    /// The effective home realm: the pinned value, else the base-domain-derived default.
+    pub fn home_realm(&self) -> String {
+        self.home_realm.clone().unwrap_or_else(default_home_realm)
+    }
+
+    /// The effective home parcel: the pinned value, else 0,0.
+    pub fn home_location(&self) -> IVec2 {
+        self.home_location.unwrap_or(IVec2::ZERO)
+    }
+
     /// one-time forced reinitialization: configs saved with an older generation get the
     /// current defaults for the preset-managed settings, keeping everything else
     pub fn reset_outdated_settings(&mut self) {
@@ -576,6 +603,82 @@ impl AppConfig {
         self.max_avatars = default.max_avatars;
         self.max_videos = default.max_videos;
         self.settings_generation = SETTINGS_GENERATION;
+    }
+
+    /// migrate saved input tables: replace bindings still on changed old defaults
+    /// (RollLeft/RollRight KeyT/KeyG freed for ChatPanel/Gallery, quick emotes moved off
+    /// the Action 3-6 digits onto the numpad), and add defaults for any actions the saved
+    /// table doesn't mention
+    pub fn migrate_inputs(&mut self) {
+        if self.inputs_generation < INPUTS_GENERATION {
+            for (action, bindings) in self.inputs.0.iter_mut() {
+                let (old_default, new_default) = match action {
+                    Action::System(SystemAction::RollLeft) => (KeyCode::KeyT, None),
+                    Action::System(SystemAction::RollRight) => (KeyCode::KeyG, None),
+                    Action::System(SystemAction::QuickEmote0) => {
+                        (KeyCode::Digit0, Some(KeyCode::Numpad0))
+                    }
+                    Action::System(SystemAction::QuickEmote1) => {
+                        (KeyCode::Digit1, Some(KeyCode::Numpad1))
+                    }
+                    Action::System(SystemAction::QuickEmote2) => {
+                        (KeyCode::Digit2, Some(KeyCode::Numpad2))
+                    }
+                    Action::System(SystemAction::QuickEmote3) => {
+                        (KeyCode::Digit3, Some(KeyCode::Numpad3))
+                    }
+                    Action::System(SystemAction::QuickEmote4) => {
+                        (KeyCode::Digit4, Some(KeyCode::Numpad4))
+                    }
+                    Action::System(SystemAction::QuickEmote5) => {
+                        (KeyCode::Digit5, Some(KeyCode::Numpad5))
+                    }
+                    Action::System(SystemAction::QuickEmote6) => {
+                        (KeyCode::Digit6, Some(KeyCode::Numpad6))
+                    }
+                    Action::System(SystemAction::QuickEmote7) => {
+                        (KeyCode::Digit7, Some(KeyCode::Numpad7))
+                    }
+                    Action::System(SystemAction::QuickEmote8) => {
+                        (KeyCode::Digit8, Some(KeyCode::Numpad8))
+                    }
+                    Action::System(SystemAction::QuickEmote9) => {
+                        (KeyCode::Digit9, Some(KeyCode::Numpad9))
+                    }
+                    _ => continue,
+                };
+                if *bindings == [InputIdentifier::Key(old_default)] {
+                    *bindings = new_default.map(InputIdentifier::Key).into_iter().collect();
+                }
+            }
+            self.inputs_generation = INPUTS_GENERATION;
+        }
+        // ShowProfile is legacy (see the SystemAction variant): drop saved rows so the dead
+        // action neither lingers in tables nor resurfaces anywhere.
+        self.inputs
+            .0
+            .retain(|(action, _)| *action != Action::System(SystemAction::ShowProfile));
+        for (action, bindings) in InputMapSerialized::default().0 {
+            if !self
+                .inputs
+                .0
+                .iter()
+                .any(|(existing, _)| *existing == action)
+            {
+                self.inputs.0.push((action, bindings));
+            }
+        }
+        // fixed bindings can never be removed — re-add any a saved table has lost.
+        for (action, id) in crate::inputs::FIXED_BINDINGS {
+            match self.inputs.0.iter_mut().find(|(a, _)| *a == action) {
+                Some((_, bindings)) => {
+                    if !bindings.contains(&id) {
+                        bindings.push(id);
+                    }
+                }
+                None => self.inputs.0.push((action, vec![id])),
+            }
+        }
     }
 
     pub fn get_permission(
@@ -1153,7 +1256,7 @@ pub struct EngineMovementControl {
     /// is received. Set by `movePlayerTo` when it imposes a facing, so the imposed
     /// orientation survives until the controller scene reads the new transform and
     /// echoes it back, rather than being clobbered by an in-flight stale tick.
-    pub accept_movement_after: f32,
+    pub accept_movement_after: f64,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -1181,7 +1284,7 @@ pub enum MoveKind {
 pub struct AvatarDynamicState {
     pub velocity: Vec3,
     pub ground_height: f32,
-    pub jump_time: f32,
+    pub jump_time: f64,
     pub move_kind: MoveKind,
 }
 
@@ -1551,3 +1654,106 @@ impl CameraSmoothing {
 
 #[derive(Event)]
 pub struct PointAtMarkerVisibilityChanged;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrate_inputs_updates_old_tables() {
+        // a table saved before Places/Gallery/etc existed, with old roll defaults and
+        // one deliberate user customization
+        let mut config = AppConfig {
+            inputs: InputMapSerialized(
+                vec![
+                    (
+                        Action::System(SystemAction::RollLeft),
+                        vec![InputIdentifier::Key(KeyCode::KeyT)],
+                    ),
+                    (
+                        Action::System(SystemAction::RollRight),
+                        vec![InputIdentifier::Key(KeyCode::KeyR)],
+                    ),
+                    // a fixed binding the user managed to strip (older build)
+                    (Action::System(SystemAction::ScrollUp), vec![]),
+                    // legacy action from an old default table
+                    (
+                        Action::System(SystemAction::ShowProfile),
+                        vec![InputIdentifier::Gamepad(
+                            bevy::input::gamepad::GamepadButton::North,
+                        )],
+                    ),
+                    // quick emote still on its old digit default, and one rebound
+                    (
+                        Action::System(SystemAction::QuickEmote3),
+                        vec![InputIdentifier::Key(KeyCode::Digit3)],
+                    ),
+                    (
+                        Action::System(SystemAction::QuickEmote4),
+                        vec![InputIdentifier::Key(KeyCode::KeyX)],
+                    ),
+                ],
+                Default::default(),
+            ),
+            inputs_generation: 0,
+            ..Default::default()
+        };
+
+        config.migrate_inputs();
+
+        fn get(config: &AppConfig, action: SystemAction) -> Option<Vec<InputIdentifier>> {
+            config
+                .inputs
+                .0
+                .iter()
+                .find(|(a, _)| *a == Action::System(action))
+                .map(|(_, bindings)| bindings.clone())
+        }
+
+        // old default cleared, user customization preserved
+        assert_eq!(get(&config, SystemAction::RollLeft), Some(vec![]));
+        assert_eq!(
+            get(&config, SystemAction::RollRight),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyR)])
+        );
+        // missing actions merged in with their defaults
+        assert_eq!(
+            get(&config, SystemAction::Places),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyZ)])
+        );
+        assert_eq!(config.inputs_generation, INPUTS_GENERATION);
+        // fixed bindings restored: the wheel always scrolls
+        assert_eq!(
+            get(&config, SystemAction::ScrollUp),
+            Some(vec![InputIdentifier::Analog(
+                crate::inputs::AxisIdentifier::MouseWheel,
+                crate::inputs::InputDirection::Up
+            )])
+        );
+        // the legacy ShowProfile row is stripped, not merged back
+        assert_eq!(get(&config, SystemAction::ShowProfile), None);
+        // quick emotes: old digit default remapped to the numpad, a rebind preserved
+        assert_eq!(
+            get(&config, SystemAction::QuickEmote3),
+            Some(vec![InputIdentifier::Key(KeyCode::Numpad3)])
+        );
+        assert_eq!(
+            get(&config, SystemAction::QuickEmote4),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyX)])
+        );
+
+        // re-running after a deliberate rebind back to KeyT doesn't clear it again
+        let roll_left = config
+            .inputs
+            .0
+            .iter_mut()
+            .find(|(a, _)| *a == Action::System(SystemAction::RollLeft))
+            .unwrap();
+        roll_left.1 = vec![InputIdentifier::Key(KeyCode::KeyT)];
+        config.migrate_inputs();
+        assert_eq!(
+            get(&config, SystemAction::RollLeft),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyT)])
+        );
+    }
+}

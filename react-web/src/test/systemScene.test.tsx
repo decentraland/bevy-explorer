@@ -1,13 +1,16 @@
-// DOMAIN: the `?systemScene=` launch gate (lib/systemScene.ts + features/gate/UntrustedLaunchGate).
+// DOMAIN: the untrusted-launch gate (lib/systemScene.ts, lib/baseDomain.ts +
+// features/gate/UntrustedLaunchGate).
 //
-// The parameter picks the super-user scene, which permissions.rs waves through every permission
+// `?systemScene=` picks the super-user scene, which permissions.rs waves through every permission
 // check and hands the whole SystemApi — so an unrecognised one is a session takeover delivered as a
-// link. These cover the allowlist itself and the near-misses an attacker would actually reach for.
+// link. `?baseDomain=` points every backend at another deployment — a phishing lever in a link.
+// These cover the allowlists themselves and the near-misses an attacker would actually reach for.
 
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { isTrustedSystemScene, SYSTEM_SCENE } from '../lib/systemScene'
+import { isTrustedBaseDomain } from '../lib/baseDomain'
 import { UntrustedLaunchGate } from '../features/gate/UntrustedLaunchGate'
 
 describe('isTrustedSystemScene', () => {
@@ -58,6 +61,20 @@ describe('isTrustedSystemScene', () => {
   })
 })
 
+describe('isTrustedBaseDomain', () => {
+  it("accepts decentraland's own deployments", () => {
+    expect(isTrustedBaseDomain('decentraland.org')).toBe(true)
+    expect(isTrustedBaseDomain('decentraland.zone')).toBe(true)
+  })
+
+  it('rejects other domains, including lookalikes built on the trusted names', () => {
+    expect(isTrustedBaseDomain('interconnected.online')).toBe(false)
+    expect(isTrustedBaseDomain('decentraland.org.evil.example')).toBe(false)
+    expect(isTrustedBaseDomain('evil-decentraland.org')).toBe(false)
+    expect(isTrustedBaseDomain('decentraland.today')).toBe(false)
+  })
+})
+
 describe('UntrustedLaunchGate', () => {
   it('names the offending value and leads with the safe action', () => {
     render(<UntrustedLaunchGate systemScene="https://example.com/evil" onProceed={vi.fn()} />)
@@ -65,6 +82,21 @@ describe('UntrustedLaunchGate', () => {
     expect(screen.getByText('https://example.com/evil')).toBeInTheDocument()
     // Proceeding is not reachable in one click — it sits behind Advanced.
     expect(screen.queryByRole('button', { name: /continue anyway/i })).not.toBeInTheDocument()
+  })
+
+  it('names an untrusted base domain the same way', () => {
+    render(<UntrustedLaunchGate baseDomain="interconnected.online" onProceed={vi.fn()} />)
+    expect(screen.getByText(/not trusted/i)).toBeInTheDocument()
+    expect(screen.getByText('interconnected.online')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /continue anyway/i })).not.toBeInTheDocument()
+  })
+
+  it('names both parameters when a link carries both', () => {
+    render(
+      <UntrustedLaunchGate systemScene="https://example.com/evil" baseDomain="interconnected.online" onProceed={vi.fn()} />
+    )
+    expect(screen.getByText('https://example.com/evil')).toBeInTheDocument()
+    expect(screen.getByText('interconnected.online')).toBeInTheDocument()
   })
 
   it('only proceeds after Advanced, and only on the explicit confirm', async () => {

@@ -72,7 +72,7 @@ impl Plugin for SysInfoPanelPlugin {
         app.add_console_command::<SysinfoCommand, _>(set_sysinfo);
 
         app.add_systems(First, (entity_count, display_tracked_components));
-        app.add_console_command::<TrackComponentCommand, _>(set_track_components);
+        app.add_preview_console_command::<TrackComponentCommand, _>(set_track_components);
     }
 }
 
@@ -235,7 +235,7 @@ fn update_scene_load_state(
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     debug_info: Res<DebugInfo>,
 ) {
-    let tick = (time.elapsed_secs() * 10.0) as u32;
+    let tick = (time.elapsed_secs_f64() * 10.0) as u32;
     if tick == *last_update {
         return;
     }
@@ -709,7 +709,10 @@ fn update_map_visibilty(
         };
         *init = true;
         // todo this is really bad
-        if realm.about_url.ends_with("decentraland.org/main/about") {
+        if realm
+            .about_url
+            .ends_with(&format!("{}/main/about", common::base_domain::get()))
+        {
             style.display = Display::Flex;
         } else {
             style.display = Display::None;

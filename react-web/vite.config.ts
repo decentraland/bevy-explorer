@@ -10,19 +10,22 @@ import react from '@vitejs/plugin-react'
 // default systemScene in dev, with scene hot-reload) alongside vite, so `npm run dev` is the ONE
 // command. If :8100 is already serving (your own terminal, or Playwright's webServer), leave it
 // alone. The child is killed with the dev server (detached group so sdk-commands' own children
-// don't survive as orphans).
+// don't survive as orphans). BRIDGE_SCENE_PREVIEW=0 disables the auto-start entirely — Playwright
+// sets it because it runs :8100 as its own webServer, and a child spawned from here would outlive
+// its SIGKILL of the vite process group (own group, inherited stdio) and hang the test run's exit.
 function bridgeScenePreview(): Plugin {
   return {
     name: 'bridge-scene-preview',
     apply: 'serve',
     configureServer(server) {
+      if (process.env.BRIDGE_SCENE_PREVIEW === '0') return
       const probe = createConnection({ port: 8100, host: '127.0.0.1' })
       probe.once('connect', () => probe.destroy()) // already running — reuse it
       probe.once('error', () => {
         console.log('[bridge-scene] starting live preview on :8100')
         // --no-install: only run the locally-installed @dcl/sdk-commands bin. Without it, a stale
         // bridge-scene/node_modules makes npx fetch the UNRELATED registry package "sdk-commands".
-        const child = spawn('npx', ['--no-install', 'sdk-commands', 'start', '--no-browser', '--port', '8100'], {
+        const child = spawn('npx', ['--no-install', 'sdk-commands', 'start', '--no-client', '--port', '8100'], {
           cwd: fileURLToPath(new URL('./bridge-scene', import.meta.url)),
           stdio: ['ignore', 'inherit', 'inherit'],
           detached: true
@@ -128,7 +131,12 @@ function coiHeadersExceptAuth(): Plugin {
   }
 }
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
+  // ?native=1 (CEF HUD mode) is honoured only where it's legitimate: the bundle:native build
+  // (--mode native) that CEF loads from disk, and the dev server (react_hud_cef.rs supports
+  // REACT_HUD_URL at a vite dev server). Deployed web builds compile it FALSE so a crafted
+  // link can't switch them into native mode and skip the launch gates (see src/App.tsx MODE).
+  define: { __NATIVE_HUD__: JSON.stringify(command === 'serve' || mode === 'native') },
   // Production is served from a VERSIONED CDN subpath (cdn.decentraland.org/<pkg>/<version>/ —
   // see deploy/web/scripts/prebuild.js), so built asset URLs can't be origin-absolute. CI passes
   // PUBLIC_URL for an absolute CDN base; otherwise './' (relative → works from any path, e.g. a

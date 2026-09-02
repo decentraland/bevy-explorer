@@ -82,8 +82,16 @@ just native-release            # bundles the HUD if stale, then builds + runs ev
 `just native-debug` is the same in debug. Both pass extra arguments through:
 
 ```bash
-just native-release --server https://realm-provider.decentraland.org/main --location 52,-52
+just native-release --server https://realm-provider-ea.decentraland.org/main --location 52,-52
 ```
+
+`--base-domain` retargets the backend hosts (auth, comms, places, worlds, social, ...) at another deployment's domain. `renderer-artifacts` (sdk6 adaption layer) and `builder-items` (inspector asset catalog) stay on decentraland.org — they have no other deployment:
+
+```bash
+just native-release --base-domain interconnected.online --location 0,0
+```
+
+On web the same thing is the `?baseDomain=` query param, e.g. `?baseDomain=interconnected.online`. Without the param, the hosting origin decides: a page served under decentraland.zone keys to zone backends, anything else to org.
 
 Doing it by hand instead of via `just`:
 
@@ -142,7 +150,7 @@ cargo build --release --bin headless --no-default-features --features headless,l
 **UI**
 - `--ui <scene|none>` — use a specific system scene, or `none` for no system scene. Any explicit `--ui` opts **out** of the React HUD; without it, HUD builds load the bundled bridge scene.
 - `--params "key1=value1&key2=value2"` — arbitrary parameters for the system scene, readable via `BevyApi.getParams()`. On web, URL query parameters are forwarded automatically (with decoding).
-- `--builtin-login`, `--builtin-chat`, `--builtin-emotes`, `--builtin-profile`, `--builtin-nametags`, `--builtin-perms`, `--builtin-tooltips`, `--builtin-loading-scene-ui` — force individual engine-drawn UI pieces back on.
+- `--builtin-login`, `--builtin-chat`, `--builtin-emotes`, `--builtin-nametags`, `--builtin-perms`, `--builtin-tooltips`, `--builtin-loading-scene-ui` — force individual engine-drawn UI pieces back on.
 
 **Debug**
 - `--inspect <scene_hash>` — pause that scene's js runtime until a debugger (e.g. `chrome://inspect`) attaches. Needs `--features inspect`.

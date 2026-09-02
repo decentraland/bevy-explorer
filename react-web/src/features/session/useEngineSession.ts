@@ -1,19 +1,24 @@
 // Top-level session orchestration: login → entering (scene loading) → world.
 // Owns the driver and exposes the login flow + scene-loading state + phase.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { serviceUrl } from '../../lib/baseDomain'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/fatalError'
 import { DEFAULT_REALM } from '../engine/EngineHost'
-import { hasOpenPopup } from '../../design'
+import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
 import { bootMode } from '../../lib/bootMode'
+import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
+import { dispatchCancelLayer } from '../../lib/cancelLayers'
+import { isInputLocked, subscribeInputLock } from '../../lib/inputLock'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
-import { parseChatCommand } from '../chat/chatCommands'
+import { formatConsoleReply, parseChatCommand } from '../chat/chatCommands'
 import type {
   AppNotification,
+  BindingEntry,
   ChatMessage,
   Community,
   CommunityDetailMessage,
@@ -38,6 +43,11 @@ import type {
   Setting,
   Wearable
 } from '../../engine/protocol'
+
+// Set by the wasm via boot.js __setEngineTextFocus (web) / the CEF relay (native): true while
+// an engine-rendered text field (e.g. a scene textinput) holds keyboard focus. Those fields
+// live on the canvas, so document.activeElement can't see them.
+type EngineFocusWindow = Window & { __engineTextFocus?: boolean }
 
 /** A server-side catalog page request (backpack grid). Filters/sort are applied by the catalyst. */
 export interface CatalogQuery {
@@ -178,6 +188,18 @@ export interface SettingsState {
   set: (name: string, value: number) => void
 }
 
+export interface BindingsState {
+  /** The engine's binding table (empty until the first `bindings` message lands). */
+  list: BindingEntry[]
+  /** Whole-table replace: pass the full edited table (see SetBindingsRequest). */
+  set: (bindings: BindingEntry[]) => void
+  /** Reset the whole table to engine defaults. */
+  reset: () => void
+  /** Press-a-key capture. `input` resolves with the InputIdentifier string; `cancel` abandons
+   *  the capture (the engine still resolves it on the next input, but the result is dropped). */
+  capture: () => { input: Promise<string>; cancel: () => void }
+}
+
 export interface ProfileState {
   data: Profile | null
   open: boolean
@@ -227,8 +249,8 @@ export interface ChatState {
   /** Bumped on every engine "focus chat" request (Enter, even while idle-open) — Chat watches
    *  this to (re)focus the input beyond the open-transition case. */
   focusTick: number
-  /** Open + (re)focus chat. Called by useMenuShortcuts' page-level Enter handler for when DOM
-   *  focus is on some other HUD element (a button would otherwise just activate on Enter). */
+  /** Open + (re)focus chat. Driven by the bridge's focusChat relay of the engine's Chat
+   *  action (Enter), which fires regardless of where DOM focus sits. */
   requestFocus: () => void
 }
 
@@ -319,6 +341,7 @@ export interface EngineSession {
   chat: ChatState
   friends: FriendsState
   settings: SettingsState
+  bindings: BindingsState
   profile: ProfileState
   /** Fetched OTHER-user passports (View Profile), keyed by lowercased address. */
   userProfiles: Record<string, Profile | null>
@@ -432,9 +455,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // requestFocusChat from a callback that would otherwise close over a stale value. Popups aren't in
   // here — they live in their own module store, so requestFocusChat asks it directly.
   const chatCoveredRef = useRef(false)
-  // Open + (re)focus chat — the engine's "Chat" system action (Enter while the engine holds focus)
-  // and the page-level Enter shortcut (Enter while some other HUD element has focus, see
-  // useMenuShortcuts) both funnel into this single action.
+  // Open + (re)focus chat — the engine's "Chat" system action (Enter, relayed by the bridge as
+  // focusChat) funnels here, wherever keyboard focus sat when it fired.
   const requestFocusChat = useCallback(() => {
     // Enter is only a chat key when nothing is covering the chat. While the main menu, a popup or a
     // modal is up it owns the screen, so Enter neither dismisses it nor focuses the chat behind it.
@@ -466,6 +488,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [friendsOpen, setFriendsOpen] = useState(false)
   const [settings, setSettings] = useState<Setting[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // The binding table lives in the bindingLabels external store (leaf components — menu bar,
+  // hover keycaps — read it without the session); this hook is its single writer and re-reads
+  // it here to expose session.bindings.list.
+  const { bindings } = useBindingsSnapshot()
+  // Engine hotkey edges arrive on the run-once driver subscription; dispatch through a ref
+  // assigned every render so the handler sees current toggles/state without stale closures
+  // (same idiom as chatOpenRef).
+  const systemActionRef = useRef<(action: string, pressed: boolean) => void>(() => {})
+  // The active press-a-key capture. Only the newest matters: the engine has no capture
+  // cancel (a stale request resolves on the NEXT input), so anything but the active id is
+  // dropped when an inputCaptured message lands.
+  const captureRef = useRef<{ id: string; resolve: (input: string) => void } | null>(null)
+  const captureSeq = useRef(0)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
   // Fetched OTHER-user passports (View Profile), keyed by lowercased address.
@@ -517,6 +552,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             playerReadyRef.current = true
             setPlayerReady(true)
             bootPollStop.current = true // world reached → stop watching for a boot panic
+            // The bridge pushes bindings at registration, but that can race the page's channel
+            // subscription — re-request now that both ends are up (shortcut hints need them).
+            driver.send({ kind: 'getBindings' })
             if (pendingParcel.current != null) {
               driver.send({ kind: 'teleport', ...pendingParcel.current })
               pendingParcel.current = null
@@ -583,6 +621,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'settings':
           setSettings(msg.settings)
           break
+        case 'bindings':
+          setBindingsSnapshot(msg.bindings)
+          break
+        case 'inputCaptured':
+          if (captureRef.current?.id === msg.id) {
+            const { resolve } = captureRef.current
+            captureRef.current = null
+            resolve(msg.input)
+          }
+          break
+        case 'systemAction':
+          systemActionRef.current(msg.action, msg.pressed)
+          break
         case 'profile':
           setProfile(msg.profile)
           break
@@ -636,6 +687,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           // it from a RAF loop, so it must not drive React renders.
           poseRef.current = { x: msg.x, z: msg.z, yaw: msg.yaw, camYaw: msg.camYaw }
           break
+        case 'consoleReply':
+          // Command feedback: a local "DCL System" line, never broadcast (same shape as pushSystemMessage).
+          setMessages((prev) =>
+            [
+              ...prev,
+              { sender: '', message: formatConsoleReply(msg.command, msg.args, msg.output), channel: 'Nearby', id: chatId.current++, ts: Date.now() }
+            ].slice(-MAX_CHAT_LINES)
+          )
+          break
         case 'realmInfo':
           setIsWorld(msg.isWorld)
           break
@@ -652,6 +712,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'permissionRequest':
           setPermissionQueue((q) => (q.some((r) => r.id === msg.id) ? q : [...q, msg]))
+          break
+        case 'permissionWithdrawn':
+          setPermissionQueue((q) => q.filter((r) => r.id !== msg.id))
           break
       }
     })
@@ -775,6 +838,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'commands':
           driverRef.current?.send({ kind: 'consoleCommand', command: 'help' })
           break
+        case 'console':
+          driverRef.current?.send({ kind: 'consoleCommand', command: cmd.command, args: cmd.args })
+          break
         case 'system':
           pushSystemMessage(cmd.message)
           break
@@ -856,18 +922,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   chatCoveredRef.current =
     menuPageOpen || emotesOpen || permissionQueue.length > 0 || fatalError != null
 
-  // Escape closes any open React panel/menu and returns to the world view. We only
-  // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
+  // In-world, cancel is an ENGINE action: the cancel key flows to the engine like any other
+  // input, resolves to 'Cancel', and comes back on the action stream — the dispatcher below
+  // performs the one layered close (topmost popup, else open panels) for keyboard and
+  // gamepad alike. No DOM cancel handling here; see the pre-world fallback further down.
   const anyPanelOpen =
     menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen
-  useWindowKeyDown(
-    (e) => {
-      if (e.key !== 'Escape') return
-      e.preventDefault()
-      panelSetters.forEach((set) => set(false))
-    },
-    { capture: false, enabled: anyPanelOpen }
-  )
   const toggleFriends = useCallback(() => exclusive(setFriendsOpen), [exclusive])
   const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => ensure('getSettings')), [exclusive, ensure])
   const toggleProfile = useCallback(() => exclusive(setProfileOpen, () => ensure('getProfile')), [exclusive, ensure])
@@ -991,8 +1051,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // override (possibly an invalid world after a failed validation), and inheriting it would
       // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
-        if (dest == null) driver.launch?.(DEFAULT_REALM, '0,0')
-        else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
+        if (dest == null) {
+          // Skip goes HOME — the engine's persisted home scene (the derived default realm at
+          // 0,0 unless the user pinned one), not a hardcoded Genesis Plaza.
+          const home = driver.homeScene?.()
+          driver.launch?.(home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0')
+        } else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
         else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
@@ -1068,7 +1132,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       validatingRealm.current = true
       const base =
         dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
-          ? `https://worlds-content-server.decentraland.org/world/${dest.realm}`
+          ? `${serviceUrl('worlds-content-server')}/world/${dest.realm}`
           : dest.realm
       // Launching against an unreachable realm strands the engine in a cryptic login failure, so
       // block up front: 404 → not found, no/failed answer (incl. timeout) → unreachable.
@@ -1190,6 +1254,25 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const settingSet = useCallback((name: string, value: number) => {
     driverRef.current?.send({ kind: 'setSetting', name, value })
+  }, [])
+  const bindingsSet = useCallback((entries: BindingEntry[]) => {
+    driverRef.current?.send({ kind: 'setBindings', bindings: entries })
+  }, [])
+  const bindingsReset = useCallback(() => {
+    driverRef.current?.send({ kind: 'resetBindings' })
+  }, [])
+  const captureBinding = useCallback(() => {
+    const id = `capture-${++captureSeq.current}`
+    const input = new Promise<string>((resolve) => {
+      captureRef.current = { id, resolve }
+    })
+    driverRef.current?.send({ kind: 'captureInput', id })
+    return {
+      input,
+      cancel: () => {
+        if (captureRef.current?.id === id) captureRef.current = null
+      }
+    }
   }, [])
 
   const nav = useCallback((action: NavAction) => {
@@ -1378,6 +1461,182 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         ? 'entering'
         : 'world'
 
+  // HUD focus, declared to the engine (fire-and-forget; latest wins). `ui` reserves all
+  // input above scenes — the avatar stops walking when a menu/popup opens — while the
+  // system-action stream keeps flowing so Cancel/hotkeys still arrive here. `text` reserves
+  // the keyboard above the stream too: keys are typing, no actions resolve at all. Chat
+  // alone is deliberately NOT ui — you can walk with the chat panel open.
+  const popupOpen = useSyncExternalStore(subscribePopups, hasOpenPopup)
+  const locked = useSyncExternalStore(subscribeInputLock, isInputLocked)
+  const [textFocused, setTextFocused] = useState(false)
+  useEffect(() => {
+    const update = (): void => setTextFocused(isEditableTarget(document.activeElement))
+    const onFocusOut = (): void => void setTimeout(update, 0) // activeElement settles next tick
+    // The cancel key blurs a focused text field (fields are otherwise sticky: while one
+    // holds focus no actions resolve, so cancel could never escape it). Bubble phase, so a
+    // widget that owns the key — chat's layered Escape — can stopPropagation first.
+    const onKey = (e: KeyboardEvent): void => {
+      if (isCancelKey(e) && isEditableTarget(e.target)) (e.target as HTMLElement).blur()
+    }
+    document.addEventListener('focusin', update, true)
+    document.addEventListener('focusout', onFocusOut, true)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('focusin', update, true)
+      document.removeEventListener('focusout', onFocusOut, true)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [])
+  // `scroll` focus: the cursor sits over a scrollable HUD element, so the SCROLL gesture
+  // belongs to that panel — the engine reserves the Scroll actions (every input bound to
+  // them stands down for world consumers: camera zoom on a shared wheel, movement on a
+  // shared key) while their edges keep streaming for the driver below. Tracked on
+  // pointerover (element-boundary crossings), walking up for scrollable overflow.
+  const [scrollHover, setScrollHover] = useState(false)
+  const scrollElRef = useRef<Element | null>(null)
+  const lastWheelAtRef = useRef(0)
+  useEffect(() => {
+    const scrollable = (el: Element): boolean => {
+      const s = getComputedStyle(el)
+      return (
+        (/(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight) ||
+        (/(auto|scroll)/.test(s.overflowX) && el.scrollWidth > el.clientWidth)
+      )
+    }
+    const findScrollable = (t: EventTarget | null): Element | null => {
+      let el = t instanceof Element ? t : null
+      while (el != null && el !== document.body) {
+        if (scrollable(el)) return el
+        el = el.parentElement
+      }
+      return null
+    }
+    const onOver = (e: PointerEvent): void => {
+      scrollElRef.current = findScrollable(e.target)
+      setScrollHover(scrollElRef.current != null)
+    }
+    // Every wheel event is stamped so the scroll driver can tell a wheel-sourced Scroll
+    // edge (the DOM already scrolled natively — the wheel directions are FIXED Scroll
+    // bindings, engine-enforced) from a key/gamepad one.
+    const onWheel = (): void => {
+      lastWheelAtRef.current = performance.now()
+    }
+    window.addEventListener('pointerover', onOver)
+    window.addEventListener('wheel', onWheel, true)
+    return () => {
+      window.removeEventListener('pointerover', onOver)
+      window.removeEventListener('wheel', onWheel, true)
+    }
+  }, [])
+  // The scroll driver: Scroll press/release edges from the action stream scroll the hovered
+  // panel at a steady rate while held — this is what makes panels scrollable from ANY
+  // Scroll binding (gamepad shoulder buttons, keys), not just the wheel.
+  const scrollDirsRef = useRef(new Set<string>())
+  const scrollAnimRef = useRef<number | null>(null)
+  const scrollTickAtRef = useRef(0)
+  const HUD_SCROLL_SPEED = 800 // px/s
+  const ensureScrollLoop = (): void => {
+    if (scrollAnimRef.current != null || scrollDirsRef.current.size === 0) return
+    scrollTickAtRef.current = performance.now()
+    const tick = (): void => {
+      const dirs = scrollDirsRef.current
+      if (dirs.size === 0) {
+        scrollAnimRef.current = null
+        return
+      }
+      const now = performance.now()
+      const d = (HUD_SCROLL_SPEED * (now - scrollTickAtRef.current)) / 1000
+      scrollTickAtRef.current = now
+      scrollElRef.current?.scrollBy({
+        left: (dirs.has('Right') ? d : 0) - (dirs.has('Left') ? d : 0),
+        top: (dirs.has('Down') ? d : 0) - (dirs.has('Up') ? d : 0)
+      })
+      scrollAnimRef.current = requestAnimationFrame(tick)
+    }
+    scrollAnimRef.current = requestAnimationFrame(tick)
+  }
+  useEffect(
+    () => () => {
+      if (scrollAnimRef.current != null) cancelAnimationFrame(scrollAnimRef.current)
+    },
+    []
+  )
+  const uiFocus = anyPanelOpen || popupOpen || locked
+  useEffect(() => {
+    if (phase !== 'world') return
+    driverRef.current?.send({ kind: 'uiFocus', ui: uiFocus, text: textFocused, scroll: scrollHover })
+  }, [phase, uiFocus, textFocused, scrollHover])
+
+  // Pre-world the bridge stream doesn't exist, so popups opened during login/entering
+  // (realm errors, world-visit prompts) need a DOM cancel fallback; in-world the engine's
+  // 'Cancel' action owns closing (see the dispatcher below).
+  useWindowKeyDown(
+    (e) => {
+      if (!isCancelKey(e) || isInputLocked() || !hasOpenPopup()) return
+      e.preventDefault()
+      e.stopPropagation()
+      closeTopPopup()
+    },
+    { capture: true, enabled: phase !== 'world' }
+  )
+
+  // Engine-authoritative hotkeys (the [M]/[Z]/… hints in the nav + sidebar): SystemAction
+  // edges relayed from the engine's input stream via the bridge, so user rebinds apply and
+  // keys fire regardless of where keyboard focus sits. The engine already resolves nothing
+  // while `text` focus is declared; the DOM-focus guards stay as defence for the declaration
+  // race (a keystroke landing before the uiFocus relay does).
+  systemActionRef.current = (action, pressed) => {
+    // Scroll edges (both edges — held scrolls continuously) drive the hovered panel via
+    // the driver above. Wheel-sourced edges are skipped: the DOM scrolled natively on the
+    // wheel event itself, and acting on its echo would double-scroll.
+    const scrollDir = /^Scroll(Up|Down|Left|Right)$/.exec(action)
+    if (scrollDir != null) {
+      if (pressed && performance.now() - lastWheelAtRef.current < 250) return
+      if (pressed) scrollDirsRef.current.add(scrollDir[1])
+      else scrollDirsRef.current.delete(scrollDir[1])
+      ensureScrollLoop()
+      return
+    }
+    if (!pressed || phase !== 'world' || isInputLocked()) return
+    if (isEditableTarget(document.activeElement)) return
+    if ((window as EngineFocusWindow).__engineTextFocus) return
+    // 'Cancel' is the one action handled even with a popup open: the engine resolved the
+    // cancel key or gamepad button, and this is the single layered close — topmost popup
+    // first, else the topmost registered leaf layer (lightbox, open dropdown — see
+    // cancelLayers), else any open panels. One layer per press.
+    if (action === 'Cancel') {
+      if (hasOpenPopup()) closeTopPopup()
+      else if (!dispatchCancelLayer()) panelSetters.forEach((set) => set(false))
+      return
+    }
+    if (hasOpenPopup()) return
+    // Quick emotes: while the wheel is open, QuickEmoteN plays that slot's emote (which also
+    // closes the wheel). With the wheel closed a number does nothing — this covers both
+    // "hold B, tap a number" and "tap B, then a number", since either way B opened the wheel.
+    const quickEmote = /^QuickEmote(\d)$/.exec(action)
+    if (quickEmote != null) {
+      if (!emotesOpen) return
+      const emote = emotes.find((em) => em.slot === Number(quickEmote[1]))
+      if (emote) playEmote(emote.urn)
+      return
+    }
+    switch (action) {
+      case 'Map': toggleMap(); break
+      case 'Places': togglePlaces(); break
+      case 'Communities': toggleCommunities(); break
+      case 'Backpack': toggleBackpack(); break
+      case 'Gallery': toggleGallery(); break
+      case 'Settings': toggleSettings(); break
+      case 'Friends': toggleFriends(); break
+      case 'ChatPanel': toggleChat(); break
+      case 'Emote': toggleEmotes(); break
+      // 'Microphone' is NOT handled here: MicUiPlugin isn't NativeUi-gated, so the engine
+      // itself still toggles the mic on that action (the mic relay updates the HUD icon).
+      // 'Chat' (Enter) is NOT handled here: the bridge's chat domain turns it into the
+      // dedicated 'focusChat' message (releasing the engine pointer lock scene-side too).
+    }
+  }
+
   return {
     phase,
     pickDestination,
@@ -1418,6 +1677,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       act: friendAct
     },
     settings: { list: settings, open: settingsOpen, toggle: toggleSettings, set: settingSet },
+    bindings: { list: bindings, set: bindingsSet, reset: bindingsReset, capture: captureBinding },
     profile: { data: profile, open: profileOpen, toggle: toggleProfile },
     userProfiles,
     requestUserProfile,

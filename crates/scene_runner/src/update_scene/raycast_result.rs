@@ -40,7 +40,7 @@ impl Plugin for RaycastResultPlugin {
         app.add_systems(Update, run_raycasts.in_set(SceneSets::Input));
         app.init_resource::<DebugRaycast>();
         app.init_resource::<SuperUserRaycastScene>();
-        app.add_console_command::<DebugRaycastCommand, _>(debug_raycast);
+        app.add_preview_console_command::<DebugRaycastCommand, _>(debug_raycast);
     }
 }
 
@@ -83,14 +83,14 @@ fn run_raycasts(
     debug: Res<DebugRaycast>,
     mut gizmos: Gizmos,
     time: Res<Time>,
-    mut gizmo_cache: Local<Vec<(f32, Vec3, Vec3)>>,
+    mut gizmo_cache: Local<Vec<(f64, Vec3, Vec3)>>,
     containing_scene: ContainingScene,
     su_target_res: Res<SuperUserRaycastScene>,
 ) {
     // redraw non-continuous gizmos for 1 sec
     gizmo_cache.retain(|(until, origin, end)| {
         gizmos.line(*origin, *end, basic::BLUE);
-        time.elapsed_secs() > *until
+        time.elapsed_secs_f64() > *until
     });
 
     for (e, scene_ent, mut raycast, transform) in raycast_requests.iter_mut() {
@@ -310,7 +310,7 @@ fn run_raycasts(
             let end = origin + direction * raycast.max_distance;
             gizmos.line(origin, end, basic::BLUE);
             if !continuous {
-                gizmo_cache.push((time.elapsed_secs() + 1.0, origin, end));
+                gizmo_cache.push((time.elapsed_secs_f64() + 1.0, origin, end));
             }
         }
 

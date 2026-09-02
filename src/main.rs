@@ -63,8 +63,8 @@ fn main() {
 }
 
 fn decentraland_app_config() -> Result<DecentralandAppConfig, UserError> {
-    let app_config = decentraland_serialized_app_config();
     let arguments = decentraland_app_arguments()?;
+    let app_config = decentraland_serialized_app_config();
     let crash_file = decentraland_crash_file();
 
     Ok(DecentralandAppConfig::new(
@@ -96,6 +96,19 @@ fn decentraland_serialized_app_config() -> AppConfig {
 
 fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
     let mut args = pico_args::Arguments::from_env();
+
+    if let Some(domain) = args
+        .opt_value_from_str::<_, String>("--base-domain")
+        .map_err(|e| {
+            error!("{e}");
+            UserError(true)
+        })?
+    {
+        common::base_domain::set(&domain).map_err(|e| {
+            error!("{e}");
+            UserError(true)
+        })?;
+    }
 
     let test_scenes = args.value_from_str("--test_scenes").ok();
     let startup_scenes_preview = args.contains("--ui-preview");
@@ -150,6 +163,7 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
             .filter(|scene| scene != "none"),
         hud,
         scene_params: args.value_from_str("--params").ok(),
+        pulse_server: args.value_from_str("--pulse-server").ok(),
         scene_threads: args.value_from_str("--threads").ok(),
         scene_load_distance: args.value_from_str("--distance").ok(),
         scene_unload_extra_distance: args.value_from_str("--unload").ok(),
@@ -197,7 +211,6 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
         emote_wheel: args.contains("--builtin-emotes"),
         chat: args.contains("--builtin-chat"),
         permissions: args.contains("--builtin-perms"),
-        profile: args.contains("--builtin-profile"),
         nametags: args.contains("--builtin-nametags"),
         tooltips: args.contains("--builtin-tooltips"),
         loading_scene: args.contains("--builtin-loading-scene-ui"),

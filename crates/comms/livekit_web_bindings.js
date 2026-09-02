@@ -206,19 +206,16 @@ function set_room_event_handler(room, handler) {
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
 
-                if (remote_participant.identity.endsWith("-streamer")) {
+                if (remote_participant.identity.endsWith("-streamer") || remote_participant.identity.startsWith("stream:") || remote_participant.identity.startsWith("presentation-bot:")) {
                     if (remote_track.audioElement) {
                         error(`Rebuilding audio element of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
                         const audioElement = remote_track.audioElement;
                         delete remote_track.audioElement;
                         remote_track.detach(audioElement);
                     }
-                    const streamPlayerContainer = window.document.querySelector("#stream-player-container");
-                    if (streamPlayerContainer) {
-                        const audioElement = remote_track.attach();
-                        streamPlayerContainer.append(audioElement);
-                        remote_track.audioElement = audioElement;
-                    }
+
+                    const audioElement = remote_track.attach();
+                    remote_track.audioElement = audioElement;
                 } else {
                     track_rig_new(remote_track);
                 }
@@ -229,12 +226,9 @@ function set_room_event_handler(room, handler) {
                     delete remote_track.videoElement;
                     remote_track.detach(videoElement);
                 }
-                const streamPlayerContainer = window.document.querySelector("#stream-player-container");
-                if (streamPlayerContainer) {
-                    const videoElement = remote_track.attach();
-                    streamPlayerContainer.append(videoElement);
-                    remote_track.videoElement = videoElement;
-                }
+
+                const videoElement = remote_track.attach();
+                remote_track.videoElement = videoElement;
             }
 
             handler({

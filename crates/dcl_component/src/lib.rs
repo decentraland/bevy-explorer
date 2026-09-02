@@ -132,7 +132,8 @@ impl SceneEntityId {
     pub const CAMERA: SceneEntityId = Self::reserved(2);
     pub const WORLD_ORIGIN: SceneEntityId = Self::reserved(5);
 
-    pub const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=405;
+    /// ADR-245 reserves entity numbers 32..256 for player data components.
+    pub const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 32..=255;
 
     /// size for a table indexed by `id`: both 0 and 65535 are valid indexes
     pub const LIVE_TABLE_LEN: usize = u16::MAX as usize + 1;

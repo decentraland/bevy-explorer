@@ -6,6 +6,7 @@
 
 const engine = require("~system/EngineApi");
 const players = require("~system/Players");
+const runtime = require("~system/Runtime");
 
 // getConnectedPlayers is an async RPC. It must NOT be awaited inline: scene-issued
 // RpcCalls only reach the engine on the next crdtSendToRenderer, so awaiting the reply
@@ -145,6 +146,27 @@ function pollPlayersInScene(tick) {
     });
 }
 
+// getRealm reads the scene's own REALM_INFO component, so it answers with the realm the
+// scene is in — which on an orchestrated server is per-scene, not per-process.
+let realmReported = false;
+
+function pollRealm(tick) {
+  if (realmReported) return;
+  realmReported = true;
+  runtime
+    .getRealm({})
+    .then((res) => {
+      log("realm", {
+        tick: tick,
+        realmName: (res.realmInfo && res.realmInfo.realmName) || "",
+      });
+    })
+    .catch((e) => {
+      realmReported = false;
+      log("realm-error", { tick: tick, msg: String(e) });
+    });
+}
+
 module.exports.onStart = async function () {
   log("scene-start", {});
   // SDK6-style event subscriptions; polled each frame via sendBatch. No CRDT recv here:
@@ -193,6 +215,7 @@ module.exports.onUpdate = async function (_dt) {
         pollConnectedPlayers(ticks);
         pollPlayersInScene(ticks);
       }
+      pollRealm(ticks);
     }
   } catch (e) {
     log("error", { tick: ticks, msg: String(e), stack: e && e.stack });

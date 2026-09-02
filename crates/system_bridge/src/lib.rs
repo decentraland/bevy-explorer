@@ -84,6 +84,19 @@ pub enum SystemApi {
     GetNativeInput(RpcResultSender<InputIdentifier>),
     GetBindings(RpcResultSender<BindingsData>),
     SetBindings(BindingsData, RpcResultSender<()>),
+    /// HUD focus state. `ui`: a HUD surface (menu/popup) is active — all input is reserved
+    /// above scenes, while the system-action stream (which reads at the same level) keeps
+    /// flowing so the HUD still receives Cancel/hotkeys. `text`: a HUD text field holds
+    /// keyboard focus — the keyboard is reserved above the stream too, so keystrokes are
+    /// typing and resolve to no action at all. `scroll`: the cursor is over a scrollable
+    /// HUD element — the Scroll ACTIONS are reserved, so every input bound to them (wheel,
+    /// key, gamepad button) stands down for world consumers while the action stream still
+    /// resolves Scroll itself; the HUD scrolls the hovered panel from those edges.
+    SetUiFocus {
+        ui: bool,
+        text: bool,
+        scroll: bool,
+    },
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),
     SetHomeScene(HomeScene),
@@ -100,7 +113,7 @@ pub enum SystemApi {
     GetBridgeStream(RpcStreamSender<String>),
     SendChat(String, String),
     Quit,
-    GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),
+    GetPermissionRequestStream(RpcStreamSender<PermissionRequestEvent>),
     SetSinglePermission(SetSinglePermission),
     SetPermanentPermission(SetPermanentPermission),
     GetPermissionUsedStream(RpcStreamSender<PermissionUsed>),
@@ -167,7 +180,6 @@ pub struct NativeUi {
     pub emote_wheel: bool,
     pub chat: bool,
     pub permissions: bool,
-    pub profile: bool,
     pub nametags: bool,
     pub tooltips: bool,
     pub loading_scene: bool,
@@ -218,12 +230,12 @@ fn handle_home_scene(mut ev: EventReader<SystemApi>, mut config: ResMut<AppConfi
     for ev in ev.read() {
         match ev {
             SystemApi::GetHomeScene(rpc_result_sender) => rpc_result_sender.send(HomeScene {
-                realm: config.server.clone(),
-                parcel: config.location.as_vec2().into(),
+                realm: config.home_realm(),
+                parcel: config.home_location().as_vec2().into(),
             }),
             SystemApi::SetHomeScene(home_scene) => {
-                config.server = home_scene.realm.clone();
-                config.location = bevy::math::Vec2::from(&home_scene.parcel).as_ivec2();
+                config.home_realm = Some(home_scene.realm.clone());
+                config.home_location = Some(bevy::math::Vec2::from(&home_scene.parcel).as_ivec2());
                 platform::write_config_file(&*config);
             }
             _ => (),

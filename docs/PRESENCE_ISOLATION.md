@@ -32,7 +32,7 @@ bound, so an (unexpected) roomless scene sees nobody.
 `ForeignPlayer` entities belong to a context (`ForeignPlayer.context`). The same wallet
 connected to two rooms is simply **two entities**, one per context, each with its own
 `scene_id` allocated from its context's `PlayerIdAllocator` (over
-`SceneEntityId::FOREIGN_PLAYER_RANGE`, so each room hosts the full ~400-player range;
+`SceneEntityId::FOREIGN_PLAYER_RANGE`, so each room hosts the full 224-player range;
 freed ids are re-issued with a bumped generation so scenes see a recycled id as a fresh
 entity). Per-room connect/disconnect therefore falls out of ordinary entity lifecycle:
 joining a second room creates a player entity in that context (identity write + profile

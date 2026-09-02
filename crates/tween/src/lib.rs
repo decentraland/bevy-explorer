@@ -579,7 +579,7 @@ pub struct SystemTween {
 #[derive(Component)]
 pub struct SystemTweenData {
     start_pos: Transform,
-    start_time: f32,
+    start_time: f64,
 }
 
 pub fn update_system_tween(
@@ -602,12 +602,12 @@ pub fn update_system_tween(
                     debug!("system tween starting {} @ {:?}", tween.time, tween.target);
                     commands.entity(ent).try_insert(SystemTweenData {
                         start_pos: *transform,
-                        start_time: time.elapsed_secs(),
+                        start_time: time.elapsed_secs_f64(),
                     });
                 }
             }
             (false, Some(data)) => {
-                let elapsed = time.elapsed_secs() - data.start_time;
+                let elapsed = (time.elapsed_secs_f64() - data.start_time) as f32;
                 if elapsed >= tween.time {
                     debug!("system tween complete @ {:?}", tween.target);
                     *transform = tween.target;

@@ -67,7 +67,7 @@ impl Plugin for SocialPlugin {
         {
             app.init_resource::<DebugSocialEnabled>();
             app.init_resource::<RestartSocialRequested>();
-            app.add_console_command::<DebugSocialCommand, _>(toggle_debug_social);
+            app.add_preview_console_command::<DebugSocialCommand, _>(toggle_debug_social);
             app.add_console_command::<RestartSocialCommand, _>(restart_social);
             app.add_systems(
                 PostUpdate,

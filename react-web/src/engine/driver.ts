@@ -56,7 +56,11 @@ export interface LoginDriver {
    *  flag so a second genuine crash still shows). Optional — the mock has no engine. */
   rearmCrashWatchdog?(): void
   /** Boot the engine at a chosen realm/position (deferred-start: nothing loads until the user picks
-   *  a destination). A parcel passes `position` "x,y"; a world passes `realm`; skip passes "0,0".
-   *  Optional — the mock has no engine to launch. */
+   *  a destination). A parcel passes `position` "x,y"; a world passes `realm`; skip passes the
+   *  home scene. Optional — the mock has no engine to launch. */
   launch?(realm?: string, position?: string): void
+  /** The engine's persisted home scene — the Skip target. Available pre-launch; null until the
+   *  engine module is up. Optional — the mock has no engine (and native skips keep the engine's
+   *  own start realm, which already IS home). */
+  homeScene?(): { realm: string; parcel: string } | null
 }

@@ -1,5 +1,5 @@
 use common::util::ReportErr;
-use ffmpeg_next::{format::context::Input, Packet};
+use ffmpeg_next::{Packet, format::context::Input};
 
 pub const BUFFER_TIME: f64 = 10.0;
 

@@ -4,7 +4,7 @@
 // Requires a real GPU (WebGPU) + the bridge scene on :8100 — see e2e/README.md.
 
 import { test, expect, type Page } from '@playwright/test'
-import { enterAsGuest, sidebar, cmd, movePlayerTo, teleport, playerPosition, expectBridge, bridgeKinds } from './helpers'
+import { enterAsGuest, sidebar, cmd, walkNearby, teleport, playerPosition, expectBridge, bridgeKinds } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -27,9 +27,9 @@ test.describe('react HUD ↔ real engine', () => {
   })
 
   // --- world: bevy player movement (deterministic console command) -----------
-  test('world: move_player_to relocates the avatar', async () => {
+  test('world: walk_player_to relocates the avatar', async () => {
     const before = await playerPosition(page)
-    await movePlayerTo(page, 8, 1, 24)
+    await walkNearby(page)
     await expect.poll(async () => playerPosition(page)).not.toBe(before)
     expect(await playerPosition(page)).toMatch(/-?\d/)
   })
@@ -89,8 +89,11 @@ test.describe('react HUD ↔ real engine', () => {
   // --- profile: passport relayed --------------------------------------------
   test('profile: the passport is relayed to the page', async () => {
     await expectBridge(page, 'page', 'profile')
+    // The sidebar's Profile icon opens the local player's passport popup (App's viewMyProfile,
+    // reading the relayed profile) — it never toggles the small profile panel, so the button has
+    // no pressed state.
     await sidebar(page, 'Profile')
-    await expect(page.getByRole('button', { name: 'Profile', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('button', { name: 'OVERVIEW', exact: true })).toBeVisible()
   })
 
   // --- notifications: open → fetch -------------------------------------------
@@ -118,6 +121,29 @@ test.describe('react HUD ↔ real engine', () => {
     const before = await playerPosition(page)
     await teleport(page, 1, 1)
     await expect.poll(async () => playerPosition(page)).not.toBe(before)
+  })
+
+  // --- input: the full HUD hotkey pipeline ----------------------------------
+  // The one thing no deterministic tier can see: winit's web key listeners live ON the
+  // canvas, so a key pressed while DOM focus sits on a HUD element only reaches the engine
+  // via boot.js's forwarder, then comes back as a systemAction on the stream. If a winit
+  // upgrade moves its listeners (or the forwarder breaks), THIS test catches it.
+  test('input: a key pressed with DOM focus on the HUD round-trips via the engine action stream', async () => {
+    await sidebar(page, 'Map') // open via click — DOM focus is now the sidebar button, not the canvas
+    const search = page.getByPlaceholder('Search places & worlds')
+    await expect(search).toBeVisible()
+    await page.keyboard.press('KeyM') // forwarder → canvas → winit → engine resolve → stream → toggle
+    await expect(search).toBeHidden()
+  })
+
+  // --- bindings: the engine's table renders in the Key Bindings tab ----------
+  test('bindings: the Key Bindings tab renders the engine binding table', async () => {
+    await sidebar(page, 'Settings')
+    await page.getByRole('button', { name: 'Key Bindings', exact: true }).click()
+    await expectBridge(page, 'scene', 'getBindings')
+    // A default row straight from the engine's InputMap (Move Forward = KeyW → chip "W").
+    const row = page.locator('div', { hasText: /^Move Forward/ }).last()
+    await expect(row.getByRole('button', { name: 'W', exact: true })).toBeVisible()
   })
 
   // pointer (hover) + nametags are world-space/data-dependent and not deterministically

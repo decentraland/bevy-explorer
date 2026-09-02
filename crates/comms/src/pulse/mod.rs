@@ -18,8 +18,9 @@
 //! arriving over LiveKit and converges on the same wallet `Address`.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use bevy::math::Vec3;
+use bevy::math::{IVec2, Vec3};
 use dcl_component::proto_components::{kernel::comms::rfc4, pulse};
 use ethers_core::types::Address;
 
@@ -89,16 +90,25 @@ impl PulseParcelGrid {
     /// `parcel_index` plus the in-parcel local offset, matching the server's `ParcelEncoder.Encode`
     /// + relative-position split. Used to build our own `TeleportRequest`.
     pub fn encode_to_parcel(&self, world: Vec3) -> (i32, Vec3) {
-        let size = self.parcel_size as f32;
-        let parcel_x = (world.x / size).floor() as i32;
-        let parcel_z = (world.z / size).floor() as i32;
-        let parcel_index = (parcel_x - self.min_x) + (parcel_z - self.min_z) * self.width;
+        let parcel = self.parcel_coords(world);
+        let parcel_index = (parcel.x - self.min_x) + (parcel.y - self.min_z) * self.width;
         let local = Vec3::new(
-            world.x - (parcel_x * self.parcel_size) as f32,
+            world.x - (parcel.x * self.parcel_size) as f32,
             world.y,
-            world.z - (parcel_z * self.parcel_size) as f32,
+            world.z - (parcel.y * self.parcel_size) as f32,
         );
         (parcel_index, local)
+    }
+
+    /// The parcel a world position (DCL convention) stands in, as `(x, z)` coordinates rather than
+    /// the server's packed index. A scene listener routes by this: Pulse says where a peer is, the
+    /// listener's parcel→context map says whose scene that is.
+    pub fn parcel_coords(&self, world: Vec3) -> IVec2 {
+        let size = self.parcel_size as f32;
+        IVec2::new(
+            (world.x / size).floor() as i32,
+            (world.z / size).floor() as i32,
+        )
     }
 }
 
@@ -126,6 +136,10 @@ pub enum PulseEvent {
     Movement {
         address: Address,
         movement: Box<rfc4::Movement>,
+        /// The realm the subject is in. A scene listener routes on (realm, parcel) — parcels
+        /// repeat across worlds — and the server only states the realm on join and teleport, so
+        /// the decoder carries its per-subject value forward onto every update.
+        realm: Arc<str>,
         teleport: bool,
         /// The server tick this state belongs to, in seconds. Carried here rather than on the
         /// `rfc4::Movement` because that field is a proto `float`, and the tick is absolute
@@ -139,6 +153,10 @@ pub enum PulseEvent {
         subject_id: u32,
         address: Address,
         profile_version: i32,
+        /// Where they are, so a scene listener can route the join (and the profile version riding
+        /// with it) to the right context without waiting for the `Movement` that follows.
+        parcel: IVec2,
+        realm: Arc<str>,
     },
     /// Subject left the interest set (or disconnected). Drop the alias / foreign player.
     Left { address: Address },
@@ -169,6 +187,11 @@ pub struct PulseCtx<'a> {
 /// keep the last reconstructed full state and overlay deltas onto it.
 struct Subject {
     wallet: Address,
+    /// The realm the server last placed them in — from `PlayerJoined`, updated by a
+    /// `TeleportPerformed` (the only thing that can move a peer between realms). Deltas carry
+    /// none and don't need to: a realm change is always a teleport. A listener observing several
+    /// realms needs this to tell two identically-numbered parcels apart.
+    realm: Arc<str>,
     last_seq: u32,
     baseline: SubjectState,
 }
@@ -292,6 +315,11 @@ impl SubjectState {
 pub struct PulseDecoder {
     grid: PulseParcelGrid,
     subjects: HashMap<u32, Subject>,
+    /// Server ticks are `u32` milliseconds since the Pulse server started, so they roll over after
+    /// ~49.7 days of server uptime. The newest raw tick seen, and the number of milliseconds to
+    /// add to it (a multiple of 2^32) to keep the emitted timestamps monotonic across rollovers.
+    newest_tick: Option<u32>,
+    tick_epoch_ms: u64,
 }
 
 impl PulseDecoder {
@@ -299,6 +327,8 @@ impl PulseDecoder {
         Self {
             grid,
             subjects: HashMap::new(),
+            newest_tick: None,
+            tick_epoch_ms: 0,
         }
     }
 
@@ -317,16 +347,30 @@ impl PulseDecoder {
             }],
             Message::PlayerJoined(j) => self.on_joined(j),
             Message::PlayerLeft(l) => self.on_left(l.subject_id),
-            Message::PlayerStateFull(f) => {
-                self.on_full(f.subject_id, f.sequence, f.server_tick, f.state, false)
-            }
+            Message::PlayerStateFull(f) => self.on_full(
+                f.subject_id,
+                f.sequence,
+                f.server_tick,
+                f.state,
+                false,
+                None,
+            ),
             // Teleport / emote start / stop all piggyback full state; treat them as a full refresh
             // so the subject's position never goes stale, then (for emotes) emit the emote event so
             // the avatar pipeline plays/stops it. Order: movement first so the position is current
             // before the emote starts. Teleport is flagged so foreign dynamics snaps rather than
             // interpolates across the jump.
             Message::Teleported(t) => {
-                self.on_full(t.subject_id, t.sequence, t.server_tick, t.state, true)
+                // The one message that can move a peer between realms, and the only one after the
+                // join that states which realm it is in.
+                self.on_full(
+                    t.subject_id,
+                    t.sequence,
+                    t.server_tick,
+                    t.state,
+                    true,
+                    Some(t.realm),
+                )
             }
             Message::EmoteStarted(e) => {
                 let mut events = self.on_full(
@@ -335,6 +379,7 @@ impl PulseDecoder {
                     e.server_tick,
                     e.player_state,
                     false,
+                    None,
                 );
                 if let Some(subject) = self.subjects.get(&e.subject_id) {
                     events.push(PulseEvent::EmoteStart {
@@ -352,6 +397,7 @@ impl PulseDecoder {
                     e.server_tick,
                     e.player_state,
                     false,
+                    None,
                 );
                 if let Some(subject) = self.subjects.get(&e.subject_id) {
                     events.push(PulseEvent::EmoteStop {
@@ -382,10 +428,12 @@ impl PulseDecoder {
 
         let baseline = SubjectState::from_player_state(&state);
         let movement = self.to_movement(&baseline);
+        let realm: Arc<str> = Arc::from(joined.realm.as_str());
         self.subjects.insert(
             full.subject_id,
             Subject {
                 wallet: address,
+                realm: realm.clone(),
                 last_seq: full.sequence,
                 baseline,
             },
@@ -396,12 +444,19 @@ impl PulseDecoder {
                 subject_id: full.subject_id,
                 address,
                 profile_version: joined.profile_version,
+                parcel: self.grid.parcel_coords(Vec3::new(
+                    movement.position_x,
+                    movement.position_y,
+                    movement.position_z,
+                )),
+                realm: realm.clone(),
             },
             PulseEvent::Movement {
                 address,
                 movement: Box::new(movement),
+                realm,
                 teleport: false,
-                timestamp: Self::tick_secs(full.server_tick),
+                timestamp: self.tick_secs(full.server_tick),
             },
         ]
     }
@@ -424,6 +479,7 @@ impl PulseDecoder {
         server_tick: u32,
         state: Option<pulse::PlayerState>,
         teleport: bool,
+        realm: Option<String>,
     ) -> Vec<PulseEvent> {
         let Some(state) = state else {
             return Vec::new();
@@ -434,13 +490,19 @@ impl PulseDecoder {
 
         subject.baseline = SubjectState::from_player_state(&state);
         subject.last_seq = sequence;
+        // Only a teleport carries one, and only then can it differ.
+        if let Some(realm) = realm.filter(|realm| &*subject.realm != realm.as_str()) {
+            subject.realm = Arc::from(realm.as_str());
+        }
         let address = subject.wallet;
+        let realm = subject.realm.clone();
         let movement = self.to_movement_for(subject_id);
         vec![PulseEvent::Movement {
             address,
             movement: Box::new(movement),
+            realm,
             teleport,
-            timestamp: Self::tick_secs(server_tick),
+            timestamp: self.tick_secs(server_tick),
         }]
     }
 
@@ -460,6 +522,14 @@ impl PulseDecoder {
 
         // The delta is diffed from `baseline_seq`; we can only apply it if our state is exactly
         // that sequence. Otherwise we missed an intermediate delta — resync from what we have.
+        //
+        // Known gap: a delta whose baseline is AHEAD of us is dropped here even though the missing
+        // link may be a reliable full state still in flight (unreliable deltas can overtake it):
+        // full 0, delta 0→1, delta 2→3, full 2 leaves us at 2 with 3 discarded, and the resync
+        // reply (from 1) then mismatches too, so the subject stalls for two round-trips. If that
+        // shows up in practice, hold the single ahead-of-us delta per subject and chain it after
+        // the next successful apply (delta or full) instead of dropping it — still send the resync,
+        // since the gap may be genuine loss.
         if delta.baseline_seq != subject.last_seq {
             return vec![PulseEvent::Resync(pulse::ResyncRequest {
                 subject_id: delta.subject_id,
@@ -470,6 +540,7 @@ impl PulseDecoder {
         subject.baseline.apply_delta(&delta);
         subject.last_seq = delta.new_seq;
         let address = subject.wallet;
+        let realm = subject.realm.clone();
         let mut movement = self.to_movement_for(delta.subject_id);
         // A delta carries position quantized to the parcel grid, so the true position is only known
         // to within ±half a step. Hand that box to the interpolator (via the rfc4 carrier) so it
@@ -483,8 +554,9 @@ impl PulseDecoder {
         vec![PulseEvent::Movement {
             address,
             movement: Box::new(movement),
+            realm,
             teleport: false,
-            timestamp: Self::tick_secs(delta.server_tick),
+            timestamp: self.tick_secs(delta.server_tick),
         }]
     }
 
@@ -503,10 +575,28 @@ impl PulseDecoder {
         self.to_movement(&self.subjects[&subject_id].baseline)
     }
 
-    /// A server tick (absolute milliseconds) as seconds. `f64` throughout — see
-    /// [`PulseEvent::Movement`]'s `timestamp`.
-    fn tick_secs(server_tick: u32) -> f64 {
-        server_tick as f64 / 1000.0
+    /// A server tick (absolute milliseconds) as seconds, unwrapped across the `u32` rollover. `f64`
+    /// throughout — see [`PulseEvent::Movement`]'s `timestamp`.
+    fn tick_secs(&mut self, server_tick: u32) -> f64 {
+        let Some(newest) = self.newest_tick else {
+            self.newest_tick = Some(server_tick);
+            return server_tick as f64 / 1000.0;
+        };
+        // Wrapping difference against the newest tick seen: anything less than half the range
+        // ahead is forward progress (including across the rollover); the rest are reordered or
+        // stale packets from before it.
+        let delta = server_tick.wrapping_sub(newest) as i32;
+        let newest = if delta >= 0 {
+            if server_tick < newest {
+                self.tick_epoch_ms += 1 << 32;
+            }
+            self.newest_tick = Some(server_tick);
+            server_tick
+        } else {
+            newest
+        };
+        let newest_ms = (self.tick_epoch_ms + newest as u64) as i64;
+        (newest_ms + delta.min(0) as i64) as f64 / 1000.0
     }
 
     /// Reconstruct an `rfc4::Movement` from a subject's float baseline. Position is parcel-decoded

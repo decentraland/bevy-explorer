@@ -7,15 +7,17 @@
 import { useEffect } from 'react'
 import type { EngineRpc } from '../../engine/engineRpc'
 import { bridgeChannelName } from '../../engine/protocol'
+import { serviceUrl } from '../../lib/baseDomain'
 import { bootMode } from '../../lib/bootMode'
 import { PAGE_DIR } from '../../lib/publicUrl'
 // Moved to lib/systemScene.ts, which also decides whether a link is allowed to override it.
 import { SYSTEM_SCENE } from '../../lib/systemScene'
 
-// The main (Genesis City) realm. Exported: parcel launches pass it EXPLICITLY so a ?realm
+// The main (Genesis City) realm, on the ?baseDomain= entry param when present (parity with the
+// engine's own derived default). Exported: parcel launches pass it EXPLICITLY so a ?realm
 // override — possibly an invalid world — never leaks into a Places pick (always a Genesis
 // coordinate).
-export const DEFAULT_REALM = 'https://realm-provider-ea.decentraland.org/main'
+export const DEFAULT_REALM = `${serviceUrl('realm-provider-ea')}/main`
 
 // Engine media libs the wasm expects as globals (LivekitClient, Hls) — loaded from CDNs like the
 // old boot page did.
@@ -43,7 +45,10 @@ function injectEngine(): void {
   window.__bevyBootConfig = {
     systemScene: bootMode().systemScene ?? SYSTEM_SCENE,
     portables: params.get('portables') ?? undefined,
-    preview: params.has('preview')
+    preview: params.has('preview'),
+    // host:port of the Pulse server the engine joins (WebTransport port); a zone deploy points
+    // it at the zone server. Absent = the engine's built-in production default.
+    pulseServer: params.get('pulseServer') ?? undefined
   }
 
   for (const src of CDN_LIBS) {
@@ -61,7 +66,7 @@ function injectEngine(): void {
 declare global {
   interface Window {
     PUBLIC_URL?: string
-    __bevyBootConfig?: { systemScene?: string; portables?: string; preview?: boolean }
+    __bevyBootConfig?: { systemScene?: string; portables?: string; preview?: boolean; pulseServer?: string }
   }
 }
 

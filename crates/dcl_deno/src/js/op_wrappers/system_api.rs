@@ -11,7 +11,7 @@ use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
     FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, ProximityEvent, SceneLoadingUi, SetAvatarData,
+    PermanentPermissionItem, PermissionRequestEvent, ProximityEvent, SceneLoadingUi, SetAvatarData,
     VoiceMessage,
 };
 
@@ -36,6 +36,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_native_input(),
             op_get_bindings(),
             op_set_bindings(),
+            op_set_ui_focus(),
             op_console_command(),
             op_live_scene_info(),
             op_get_home_scene(),
@@ -213,6 +214,16 @@ pub async fn op_set_bindings(
     dcl::js::system_api::op_set_bindings(state, bindings).await
 }
 
+#[op2(fast)]
+pub fn op_set_ui_focus(
+    state: Rc<RefCell<OpState>>,
+    ui: bool,
+    text: bool,
+    scroll: bool,
+) -> Result<(), AnyError> {
+    dcl::js::system_api::op_set_ui_focus(state, ui, text, scroll)
+}
+
 #[op2(async)]
 #[string]
 pub async fn op_console_command(
@@ -325,7 +336,7 @@ pub async fn op_get_permission_request_stream(state: Rc<RefCell<OpState>>) -> u3
 pub async fn op_read_permission_request_stream(
     state: Rc<RefCell<OpState>>,
     rid: u32,
-) -> Result<Option<PermissionRequest>, deno_core::anyhow::Error> {
+) -> Result<Option<PermissionRequestEvent>, deno_core::anyhow::Error> {
     dcl::js::system_api::op_read_permission_request_stream(state, rid).await
 }
 

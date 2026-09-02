@@ -5,6 +5,7 @@
 
 import {
   bridgeChannelName,
+  type BindingEntry,
   type Envelope,
   type Outfit,
   type OutfitsMetadata,
@@ -140,6 +141,59 @@ const mockSettings: Setting[] = [
   { name: 'voice_chat', category: 'audio', description: 'Enable voice chat.', minValue: 0, maxValue: 1, namedVariants: [v('Off'), v('On')], value: 1, default: 1, stepSize: 1 }
 ]
 
+// The engine's default binding table (mirrors InputMap::default() in crates/common/src/inputs.rs)
+// — drives the mock keydown→systemAction relay and the Key Bindings tab under ?mock=1.
+const defaultBindings = (): BindingEntry[] => [
+  [{ Scene: 'IaPointer' }, ['Mouse Left', 'Gamepad LeftTrigger2']],
+  [{ Scene: 'IaPrimary' }, ['KeyE', 'Gamepad South']],
+  [{ Scene: 'IaSecondary' }, ['KeyF', 'Gamepad East']],
+  [{ Scene: 'IaForward' }, ['KeyW', 'GamepadLeft Up']],
+  [{ Scene: 'IaBackward' }, ['KeyS', 'GamepadLeft Down']],
+  [{ Scene: 'IaRight' }, ['KeyD', 'GamepadLeft Right']],
+  [{ Scene: 'IaLeft' }, ['KeyA', 'GamepadLeft Left']],
+  [{ Scene: 'IaJump' }, ['Space', 'Gamepad North']],
+  [{ Scene: 'IaWalk' }, ['ControlLeft']],
+  [{ Scene: 'IaModifier' }, ['ShiftLeft']],
+  [{ Scene: 'IaAction3' }, ['Digit1', 'Gamepad DPadUp']],
+  [{ Scene: 'IaAction4' }, ['Digit2', 'Gamepad DPadRight']],
+  [{ Scene: 'IaAction5' }, ['Digit3', 'Gamepad DPadDown']],
+  [{ Scene: 'IaAction6' }, ['Digit4', 'Gamepad DPadLeft']],
+  [{ System: 'CameraLock' }, ['Mouse Right', 'Gamepad RightTrigger2']],
+  [{ System: 'Emote' }, ['KeyB', 'Gamepad West']],
+  [{ System: 'Cancel' }, ['Escape', 'Gamepad Select']],
+  [{ System: 'HideUi' }, ['KeyU']],
+  [{ System: 'ShowDebugUi' }, ['PageUp']],
+  [{ System: 'HideNames' }, ['KeyN']],
+  [{ System: 'RollLeft' }, []],
+  [{ System: 'RollRight' }, []],
+  [{ System: 'PointAt' }, ['Mouse Middle', 'KeyQ']],
+  [{ System: 'Microphone' }, ['KeyV']],
+  [{ System: 'Map' }, ['KeyM', 'Tab']],
+  [{ System: 'Chat' }, ['Enter', 'NumpadEnter']],
+  [{ System: 'CameraUp' }, ['ArrowUp']],
+  [{ System: 'CameraDown' }, ['ArrowDown']],
+  [{ System: 'CameraLeft' }, ['ArrowLeft']],
+  [{ System: 'CameraRight' }, ['ArrowRight']],
+  [{ System: 'CameraZoomIn' }, ['MouseWheel Up', 'Gamepad LeftTrigger']],
+  [{ System: 'CameraZoomOut' }, ['MouseWheel Down', 'Gamepad RightTrigger']],
+  [{ System: 'ScrollUp' }, ['MouseWheel Up', 'GamepadLeft Up']],
+  [{ System: 'ScrollDown' }, ['MouseWheel Down', 'GamepadLeft Down']],
+  [{ System: 'ScrollLeft' }, ['MouseWheel Left', 'GamepadLeft Left']],
+  [{ System: 'ScrollRight' }, ['MouseWheel Right', 'GamepadLeft Right']],
+  [{ System: 'PointerUp' }, ['GamepadRight Up']],
+  [{ System: 'PointerDown' }, ['GamepadRight Down']],
+  [{ System: 'PointerLeft' }, ['GamepadRight Left']],
+  [{ System: 'PointerRight' }, ['GamepadRight Right']],
+  ...Array.from({ length: 10 }, (_, slot): BindingEntry => [{ System: `QuickEmote${slot}` }, [`Numpad${slot}`]]),
+  [{ System: 'Places' }, ['KeyZ']],
+  [{ System: 'Communities' }, ['KeyO']],
+  [{ System: 'Backpack' }, ['KeyI']],
+  [{ System: 'Gallery' }, ['KeyG']],
+  [{ System: 'Settings' }, ['KeyP']],
+  [{ System: 'Friends' }, ['KeyL']],
+  [{ System: 'ChatPanel' }, ['KeyT']]
+]
+
 interface MockOptions {
   /** Simulate a returning user (reuse-login flow) vs a fresh user. */
   hasPreviousLogin: boolean
@@ -227,12 +281,51 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
   // Drives the mock pose stream (see spawnPlayer) so the minimap is developable without an engine.
   let poseTimer: ReturnType<typeof setInterval> | null = null
 
-  // No engine in mock mode, so stand in for the engine's 'Cancel' system action: relay a DOM Escape
-  // as the same message the real bridge sends from getSystemActionStream (closes the topmost popup).
-  const onEscape = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') reply({ kind: 'systemAction', action: 'Cancel' })
+  // No engine in mock mode, so stand in for the engine's input stream: relay DOM key edges as
+  // the systemAction messages the real bridge sends from getSystemActionStream, looked up from
+  // the (rebindable) mock binding table by PHYSICAL code — e.code, matching engine KeyCodes.
+  // The page applies its own guards (focused input, popups, phase), same as with the engine.
+  let mockBindings = defaultBindings()
+  // The pending press-a-key capture (null = none). Captured before the systemAction relay,
+  // mirroring the engine's BindInput priority which suppresses the action stream.
+  let captureId: string | null = null
+  // Declared HUD text focus (the 'uiFocus' message): while a HUD text field is focused the
+  // real engine resolves no actions from keys (InputPriority::UiText), so the mock relay
+  // goes silent too. `ui` needs no emulation — the stream keeps flowing at that level.
+  let textFocus = false
+  const systemActionFor = (code: string): string | null => {
+    const hit = mockBindings.find(([action, inputs]) => 'System' in action && inputs.includes(code))
+    return hit != null && 'System' in hit[0] ? hit[0].System : null
   }
-  window.addEventListener('keydown', onEscape)
+  const onKeyEdge = (e: KeyboardEvent, pressed: boolean): void => {
+    if (e.repeat) return
+    if (captureId != null) {
+      if (!pressed) return
+      reply({ kind: 'inputCaptured', id: captureId, input: e.code })
+      captureId = null
+      return
+    }
+    if (textFocus) return
+    const action = systemActionFor(e.code)
+    if (action == null) return
+    reply({ kind: 'systemAction', action, pressed })
+    // Mirror the bridge's chat domain: the Chat action becomes a dedicated focusChat message.
+    if (action === 'Chat' && pressed) reply({ kind: 'focusChat' })
+  }
+  const onKeyDown = (e: KeyboardEvent): void => onKeyEdge(e, true)
+  const onKeyUp = (e: KeyboardEvent): void => onKeyEdge(e, false)
+  // Pointerdown + capture-phase: registered before the capture modal's suppression handler
+  // (which cancels pointerdown, so derived mouse events never fire) and therefore runs first
+  // (mirrors the engine capturing raw mouse input).
+  const MOUSE_WIRE = ['Mouse Left', 'Mouse Middle', 'Mouse Right', 'Mouse Back', 'Mouse Forward']
+  const onPointerDown = (e: PointerEvent): void => {
+    if (captureId == null) return
+    reply({ kind: 'inputCaptured', id: captureId, input: MOUSE_WIRE[e.button] ?? 'Mouse Left' })
+    captureId = null
+  }
+  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keyup', onKeyUp)
+  window.addEventListener('pointerdown', onPointerDown, true)
 
   // Simulate the engine spawning the player + loading the spawn scene after a
   // successful login: player-ready, then a scene-asset countdown, then "done".
@@ -383,6 +476,28 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       const s = mockSettings.find((x) => x.name === msg.name)
       if (s) s.value = msg.value
       reply({ kind: 'settings', settings: mockSettings })
+      return
+    }
+    if (msg.kind === 'getBindings') {
+      reply({ kind: 'bindings', bindings: mockBindings })
+      return
+    }
+    if (msg.kind === 'setBindings') {
+      mockBindings = msg.bindings
+      reply({ kind: 'bindings', bindings: mockBindings })
+      return
+    }
+    if (msg.kind === 'resetBindings') {
+      mockBindings = defaultBindings()
+      reply({ kind: 'bindings', bindings: mockBindings })
+      return
+    }
+    if (msg.kind === 'captureInput') {
+      captureId = msg.id // resolved by the next keydown (see onKeyEdge)
+      return
+    }
+    if (msg.kind === 'uiFocus') {
+      textFocus = msg.text // see the relay above; `ui` has no observable mock effect
       return
     }
     if (msg.kind === 'getEmotes') {
@@ -611,7 +726,12 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'consoleCommand') {
-      reply({ kind: 'chat', chat: { sender: '', message: 'Console commands: reload, help, show_ui, noclip, speed, jump', channel: 'Nearby' } })
+      const args = msg.args ?? []
+      const output =
+        msg.command === 'help' && args.length === 0
+          ? 'Available commands:\n  /help     - List available commands\n  /teleport - set location\n  /crdt_snapshot - (hidden by the HUD)'
+          : `(mock) ran /${msg.command} ${args.join(' ')}`.trim()
+      reply({ kind: 'consoleReply', command: msg.command, args, ok: true, output })
       return
     }
 
@@ -675,7 +795,9 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
   }
 
   return () => {
-    window.removeEventListener('keydown', onEscape)
+    window.removeEventListener('keydown', onKeyDown)
+    window.removeEventListener('keyup', onKeyUp)
+    window.removeEventListener('pointerdown', onPointerDown, true)
     if (poseTimer != null) clearInterval(poseTimer)
     ch.close()
   }
