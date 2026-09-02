@@ -209,7 +209,6 @@ pub fn handle_player_move_requests(
     mut movement_control: ResMut<EngineMovementControl>,
     mut movement_info: ResMut<AvatarMovementInfo>,
     mut teleport_events: EventWriter<PlayerTeleported>,
-    mut rpc_calls: EventWriter<RpcCall>,
     time: Res<Time>,
 ) {
     // Engine dispatch clock, matching RendererSceneContext::last_sent. Constant
@@ -270,7 +269,6 @@ pub fn handle_player_move_requests(
                     &mut movement_control,
                     &mut movement_info,
                     &mut teleport_events,
-                    &mut rpc_calls,
                     now,
                 );
             }
@@ -327,7 +325,6 @@ pub fn handle_player_move_requests(
             &mut movement_control,
             &mut movement_info,
             &mut teleport_events,
-            &mut rpc_calls,
             now,
         );
     }
@@ -356,7 +353,6 @@ fn apply_player_move(
     movement_control: &mut EngineMovementControl,
     movement_info: &mut AvatarMovementInfo,
     teleport_events: &mut EventWriter<PlayerTeleported>,
-    rpc_calls: &mut EventWriter<RpcCall>,
     now: f64,
 ) {
     let (_, mut player_transform, mut dynamics, maybe_active) = player.single_mut().unwrap();
@@ -421,7 +417,7 @@ fn apply_player_move(
 
             if let Some(camera_rotation) = camera_rotation {
                 if let Some(scene) = scene {
-                    rpc_calls.write(RpcCall::MoveCamera {
+                    commands.send_event(RpcCall::MoveCamera {
                         scene,
                         facing: camera_rotation,
                     });
