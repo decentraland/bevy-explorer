@@ -712,7 +712,7 @@ fn supervisor(
     mut errors: EventReader<AppError>,
     mut exit: EventWriter<AppExit>,
     mut announced: Local<bool>,
-    mut last_report: Local<f32>,
+    mut last_report: Local<f64>,
     orchestrated: Option<Res<OrchestratedScenes>>,
     updates: Res<scene_runner::SceneUpdates>,
 ) {
@@ -757,7 +757,7 @@ fn supervisor(
     // wall-clock timeout: graceful success exit for smoke tests
     // (checked in main via arg-injected resource below)
     if let Some(limit) = TIMEOUT.get().copied().flatten() {
-        if elapsed > limit {
+        if elapsed > limit as f64 {
             println!("[headless] timeout {limit}s reached, exiting");
             exit.write_default();
         }
@@ -842,10 +842,10 @@ fn reap_terminal_scene_rooms(
 fn request_delegation_renewals(
     delegations: Res<StorageDelegations>,
     time: Res<Time>,
-    mut last_request: Local<std::collections::HashMap<String, f32>>,
+    mut last_request: Local<std::collections::HashMap<String, f64>>,
 ) {
     const REFRESH_BUFFER_MS: i64 = 5 * 60 * 1000;
-    const REQUEST_THROTTLE_SECS: f32 = 30.0;
+    const REQUEST_THROTTLE_SECS: f64 = 30.0;
 
     let now_ms = web_time::SystemTime::now()
         .duration_since(web_time::UNIX_EPOCH)
@@ -1175,7 +1175,7 @@ fn emit_scene_log(hash: &str, log: &SceneLogMessage) {
 fn emit_scene_status(
     time: Res<Time>,
     scenes: Query<&RendererSceneContext>,
-    mut last: Local<f32>,
+    mut last: Local<f64>,
     mut live: Local<std::collections::HashSet<String>>,
     mut broken: Local<std::collections::HashSet<String>>,
 ) {
@@ -1218,8 +1218,8 @@ fn emit_scene_status(
 fn emit_scene_stats(
     time: Res<Time>,
     scenes: Query<&RendererSceneContext>,
-    mut last: Local<f32>,
-    mut prev: Local<std::collections::HashMap<String, (SceneResourceCounters, f32)>>,
+    mut last: Local<f64>,
+    mut prev: Local<std::collections::HashMap<String, (SceneResourceCounters, f64)>>,
 ) {
     let elapsed = time.elapsed_secs_f64();
     if elapsed - *last <= 10.0 {
