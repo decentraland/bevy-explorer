@@ -142,6 +142,7 @@ pub enum PendingPlayerMove {
         target: Vec3,
         looking_at: Option<Vec3>,
         duration: Option<f32>,
+        camera_rotation: Option<Quat>,
         response: Option<RpcResultSender<bool>>,
     },
     Walk {
@@ -208,6 +209,7 @@ pub fn handle_player_move_requests(
     mut movement_control: ResMut<EngineMovementControl>,
     mut movement_info: ResMut<AvatarMovementInfo>,
     mut teleport_events: EventWriter<PlayerTeleported>,
+    mut rpc_calls: EventWriter<RpcCall>,
     time: Res<Time>,
 ) {
     // Engine dispatch clock, matching RendererSceneContext::last_sent. Constant
@@ -225,12 +227,14 @@ pub fn handle_player_move_requests(
                 to,
                 looking_at,
                 duration,
+                camera_rotation,
                 response,
             } => PendingPlayerMove::Move {
                 scene: *scene,
                 target: *to,
                 looking_at: *looking_at,
                 duration: *duration,
+                camera_rotation: *camera_rotation,
                 response: response.clone(),
             },
             RpcCall::WalkPlayer {
@@ -266,6 +270,7 @@ pub fn handle_player_move_requests(
                     &mut movement_control,
                     &mut movement_info,
                     &mut teleport_events,
+                    &mut rpc_calls,
                     now,
                 );
             }
@@ -322,6 +327,7 @@ pub fn handle_player_move_requests(
             &mut movement_control,
             &mut movement_info,
             &mut teleport_events,
+            &mut rpc_calls,
             now,
         );
     }
@@ -350,6 +356,7 @@ fn apply_player_move(
     movement_control: &mut EngineMovementControl,
     movement_info: &mut AvatarMovementInfo,
     teleport_events: &mut EventWriter<PlayerTeleported>,
+    rpc_calls: &mut EventWriter<RpcCall>,
     now: f64,
 ) {
     let (_, mut player_transform, mut dynamics, maybe_active) = player.single_mut().unwrap();
@@ -369,7 +376,8 @@ fn apply_player_move(
             looking_at,
             duration,
             response,
-            ..
+            camera_rotation,
+            scene,
         } => {
             if let Some(d) = duration {
                 let d = d.max(f32::EPSILON);
@@ -409,6 +417,17 @@ fn apply_player_move(
                 // this, the next apply_movement re-applies the scene's stale orientation
                 // and the avatar snaps back (e.g. a keeper placed facing the kicker).
                 movement_control.accept_movement_after = now;
+            }
+
+            if let Some(camera_rotation) = camera_rotation {
+                if let Some(scene) = scene {
+                    rpc_calls.write(RpcCall::MoveCamera {
+                        scene,
+                        facing: camera_rotation,
+                    });
+                } else {
+                    warn!("MoveTo action without scene had camera_rotation");
+                }
             }
         }
 

@@ -128,6 +128,7 @@ pub enum RpcCall {
         to: Vec3,
         looking_at: Option<Vec3>,
         duration: Option<f32>,
+        camera_rotation: Option<Quat>,
         response: Option<RpcResultSender<bool>>,
     },
     WalkPlayer {
