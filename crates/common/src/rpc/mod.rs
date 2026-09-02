@@ -139,7 +139,8 @@ pub enum RpcCall {
     },
     TeleportPlayer {
         scene: Option<Entity>,
-        to: IVec2,
+        /// The parcel to land on; `None` (with a realm) is the realm's default spawn.
+        to: Option<IVec2>,
         /// The realm `to` belongs to: a realm change (a full reconnect, as for `ChangeRealm`) happens first.
         realm: Option<String>,
         response: RpcResultSender<Result<(), String>>,

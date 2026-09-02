@@ -17,7 +17,11 @@ use scene_runner::{
 };
 use wallet::Wallet;
 
-type TeleportAction = (IVec2, Option<String>, RpcResultSender<Result<(), String>>);
+type TeleportAction = (
+    Option<IVec2>,
+    Option<String>,
+    RpcResultSender<Result<(), String>>,
+);
 
 pub fn teleport_player(
     mut commands: Commands,
@@ -37,16 +41,21 @@ pub fn teleport_player(
         } => Some((*scene, *to, realm.clone(), response.clone())),
         _ => None,
     }) {
+        let parcel = to.map(|to| format!("({},{})", to.x, to.y));
+        let (ty, detail) = match (&realm, parcel) {
+            (Some(realm), Some(parcel)) => {
+                (PermissionType::ChangeRealm, format!("{realm} {parcel}"))
+            }
+            (Some(realm), None) => (PermissionType::ChangeRealm, realm.clone()),
+            (None, Some(parcel)) => (PermissionType::Teleport, parcel),
+            (None, None) => {
+                response.send(Err("teleport needs a parcel or a realm".to_owned()));
+                continue;
+            }
+        };
         let Some(scene) = scene else {
             actions.push((to, realm, response));
             continue;
-        };
-        let (ty, detail) = match &realm {
-            Some(realm) => (
-                PermissionType::ChangeRealm,
-                format!("{realm} ({},{})", to.x, to.y),
-            ),
-            None => (PermissionType::Teleport, format!("({},{})", to.x, to.y)),
         };
         perms.check(ty, scene, (to, realm, response), Some(detail), false);
     }
@@ -57,10 +66,14 @@ pub fn teleport_player(
     for (to, realm, response) in actions {
         if let Some(realm) = realm {
             // A realm change (a full reconnect, even to the realm we are in — same as changeRealm),
-            // landing on the parcel once it is live. It can't be applied now: it would resolve
-            // against the parcel grid of the realm being left.
-            debug!("teleport -> parcel {to} in {realm}");
-            *realm_target = RealmInitialLocation::Parcel(to);
+            // landing on the parcel once it is live, or on the realm's default spawn without one.
+            // The parcel can't be applied now: it would resolve against the parcel grid of the
+            // realm being left.
+            debug!("teleport -> {to:?} in {realm}");
+            *realm_target = match to {
+                Some(to) => RealmInitialLocation::Parcel(to),
+                None => RealmInitialLocation::Base,
+            };
             commands.send_event(ChangeRealmEvent {
                 new_realm: realm,
                 content_server_override: None,
@@ -68,6 +81,12 @@ pub fn teleport_player(
             response.send(Ok(()));
             continue;
         }
+
+        // Neither: already answered above (a system request without a scene is never built that way).
+        let Some(to) = to else {
+            response.send(Err("teleport needs a parcel or a realm".to_owned()));
+            continue;
+        };
 
         let Ok((ent, mut transform, mut dynamic_state)) = player.single_mut() else {
             warn!("player doesn't exist?!");

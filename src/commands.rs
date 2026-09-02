@@ -30,7 +30,7 @@ pub fn change_location(
         if let Some(realm) = command.realm {
             commands.send_event(RpcCall::TeleportPlayer {
                 scene: None,
-                to: IVec2::new(command.x, command.y),
+                to: Some(IVec2::new(command.x, command.y)),
                 realm: Some(realm.clone()),
                 response: RpcResultSender::default(),
             });

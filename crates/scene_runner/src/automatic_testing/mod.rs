@@ -371,7 +371,7 @@ fn automatic_testing(
         commands.queue(move |w: &mut World| {
             w.send_event(RpcCall::TeleportPlayer {
                 scene: None,
-                to,
+                to: Some(to),
                 realm: None,
                 response: RpcResultSender::default(),
             });
