@@ -99,7 +99,7 @@ fn handle_emote_key(
     time: Res<Time>,
     existing: Query<&EmoteDialog>,
     buttons: Query<&EmoteButton>,
-    mut press_time: Local<f32>,
+    mut press_time: Local<f64>,
     mut lost_focus_events: EventReader<WindowFocused>,
     frame: Res<FrameCount>,
 ) {
@@ -117,10 +117,10 @@ fn handle_emote_key(
         };
 
         w.write(EmoteUiEvent::Show { coords });
-        *press_time = time.elapsed_secs();
+        *press_time = time.elapsed_secs_f64();
     }
 
-    if input_manager.just_up(SystemAction::Emote) && time.elapsed_secs() > *press_time + 0.25 {
+    if input_manager.just_up(SystemAction::Emote) && time.elapsed_secs_f64() > *press_time + 0.25 {
         w.write(EmoteUiEvent::Hide);
     }
 

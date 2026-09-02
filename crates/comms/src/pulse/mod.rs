@@ -315,6 +315,11 @@ impl SubjectState {
 pub struct PulseDecoder {
     grid: PulseParcelGrid,
     subjects: HashMap<u32, Subject>,
+    /// Server ticks are `u32` milliseconds since the Pulse server started, so they roll over after
+    /// ~49.7 days of server uptime. The newest raw tick seen, and the number of milliseconds to
+    /// add to it (a multiple of 2^32) to keep the emitted timestamps monotonic across rollovers.
+    newest_tick: Option<u32>,
+    tick_epoch_ms: u64,
 }
 
 impl PulseDecoder {
@@ -322,6 +327,8 @@ impl PulseDecoder {
         Self {
             grid,
             subjects: HashMap::new(),
+            newest_tick: None,
+            tick_epoch_ms: 0,
         }
     }
 
@@ -449,7 +456,7 @@ impl PulseDecoder {
                 movement: Box::new(movement),
                 realm,
                 teleport: false,
-                timestamp: Self::tick_secs(full.server_tick),
+                timestamp: self.tick_secs(full.server_tick),
             },
         ]
     }
@@ -495,7 +502,7 @@ impl PulseDecoder {
             movement: Box::new(movement),
             realm,
             teleport,
-            timestamp: Self::tick_secs(server_tick),
+            timestamp: self.tick_secs(server_tick),
         }]
     }
 
@@ -515,6 +522,14 @@ impl PulseDecoder {
 
         // The delta is diffed from `baseline_seq`; we can only apply it if our state is exactly
         // that sequence. Otherwise we missed an intermediate delta — resync from what we have.
+        //
+        // Known gap: a delta whose baseline is AHEAD of us is dropped here even though the missing
+        // link may be a reliable full state still in flight (unreliable deltas can overtake it):
+        // full 0, delta 0→1, delta 2→3, full 2 leaves us at 2 with 3 discarded, and the resync
+        // reply (from 1) then mismatches too, so the subject stalls for two round-trips. If that
+        // shows up in practice, hold the single ahead-of-us delta per subject and chain it after
+        // the next successful apply (delta or full) instead of dropping it — still send the resync,
+        // since the gap may be genuine loss.
         if delta.baseline_seq != subject.last_seq {
             return vec![PulseEvent::Resync(pulse::ResyncRequest {
                 subject_id: delta.subject_id,
@@ -541,7 +556,7 @@ impl PulseDecoder {
             movement: Box::new(movement),
             realm,
             teleport: false,
-            timestamp: Self::tick_secs(delta.server_tick),
+            timestamp: self.tick_secs(delta.server_tick),
         }]
     }
 
@@ -560,10 +575,28 @@ impl PulseDecoder {
         self.to_movement(&self.subjects[&subject_id].baseline)
     }
 
-    /// A server tick (absolute milliseconds) as seconds. `f64` throughout — see
-    /// [`PulseEvent::Movement`]'s `timestamp`.
-    fn tick_secs(server_tick: u32) -> f64 {
-        server_tick as f64 / 1000.0
+    /// A server tick (absolute milliseconds) as seconds, unwrapped across the `u32` rollover. `f64`
+    /// throughout — see [`PulseEvent::Movement`]'s `timestamp`.
+    fn tick_secs(&mut self, server_tick: u32) -> f64 {
+        let Some(newest) = self.newest_tick else {
+            self.newest_tick = Some(server_tick);
+            return server_tick as f64 / 1000.0;
+        };
+        // Wrapping difference against the newest tick seen: anything less than half the range
+        // ahead is forward progress (including across the rollover); the rest are reordered or
+        // stale packets from before it.
+        let delta = server_tick.wrapping_sub(newest) as i32;
+        let newest = if delta >= 0 {
+            if server_tick < newest {
+                self.tick_epoch_ms += 1 << 32;
+            }
+            self.newest_tick = Some(server_tick);
+            server_tick
+        } else {
+            newest
+        };
+        let newest_ms = (self.tick_epoch_ms + newest as u64) as i64;
+        (newest_ms + delta.min(0) as i64) as f64 / 1000.0
     }
 
     /// Reconstruct an `rfc4::Movement` from a subject's float baseline. Position is parcel-decoded

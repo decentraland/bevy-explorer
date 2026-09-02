@@ -58,15 +58,20 @@ use self::{
 #[cfg(feature = "livekit")]
 use self::livekit::{plugin::LivekitPlugin, StartLivekit};
 
-const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
-const PREVIEW_GATEKEEPER_URL: &str =
-    "https://comms-gatekeeper-local.decentraland.org/get-scene-adapter";
+fn gatekeeper_url() -> String {
+    common::base_domain::https("comms-gatekeeper", "/get-scene-adapter")
+}
+fn preview_gatekeeper_url() -> String {
+    common::base_domain::https("comms-gatekeeper-local", "/get-scene-adapter")
+}
 // Authoritative-server endpoints: yield a token with the LiveKit identity
 // `authoritative-server`, which clients target for authoritative-scene traffic.
-const SERVER_GATEKEEPER_URL: &str =
-    "https://comms-gatekeeper.decentraland.org/get-server-scene-adapter";
-const PREVIEW_SERVER_GATEKEEPER_URL: &str =
-    "https://comms-gatekeeper-local.decentraland.org/get-server-scene-adapter";
+fn server_gatekeeper_url() -> String {
+    common::base_domain::https("comms-gatekeeper", "/get-server-scene-adapter")
+}
+fn preview_server_gatekeeper_url() -> String {
+    common::base_domain::https("comms-gatekeeper-local", "/get-server-scene-adapter")
+}
 
 pub mod chat_marker_things {
     pub const EMOTE: char = '␐';
@@ -259,7 +264,7 @@ impl Broadcast for rfc4::Movement {
 pub struct Emote {
     pub urn: String,
     pub incremental_id: u32,
-    pub timestamp: f32,
+    pub timestamp: f64,
     /// `Some` for a one-shot (the Pulse server auto-completes it after the duration); `None` for a
     /// looping emote (ended by a later `stopping` send). Ignored on a stop.
     pub duration_ms: Option<u32>,
@@ -273,7 +278,7 @@ impl Broadcast for Emote {
             rfc4::PlayerEmote {
                 incremental_id: self.incremental_id,
                 urn: self.urn.clone(),
-                timestamp: self.timestamp,
+                timestamp: self.timestamp as f32,
                 is_stopping: Some(self.stopping),
             },
         )))
@@ -583,10 +588,10 @@ fn connect_scene_room(
             let wallet = wallet.clone();
             let preview = ev.scene_id.starts_with("b64-");
             let url = match (common::structs::server_mode(), preview) {
-                (true, true) => PREVIEW_SERVER_GATEKEEPER_URL,
-                (true, false) => SERVER_GATEKEEPER_URL,
-                (false, true) => PREVIEW_GATEKEEPER_URL,
-                (false, false) => GATEKEEPER_URL,
+                (true, true) => preview_server_gatekeeper_url(),
+                (true, false) => server_gatekeeper_url(),
+                (false, true) => preview_gatekeeper_url(),
+                (false, false) => gatekeeper_url(),
             };
             let uri = Uri::try_from(url).unwrap();
             let client = ipfs.ipfs().client();

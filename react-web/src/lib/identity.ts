@@ -1,6 +1,8 @@
 // Shared player-identity helpers (name color, #tag split, short address). Used by
 // the chat, members, and friends UIs so the rarity-colored naming is consistent.
 
+import { serviceUrl } from './baseDomain'
+
 const ADDRESS_RE = /^0x[0-9a-fA-F]{6,}$/
 
 // DCL rarity name colors — stable per seed (address) so each player keeps a color.
@@ -29,7 +31,7 @@ export function rarityColor(rarity?: string): string {
 
 // Catalyst thumbnail for an emote URN — derived client-side so the wheel shows previews
 // even if the scene relay didn't send a thumbnail. Strips a trailing `:tokenId` (on-chain NFTs).
-const CATALYST_CONTENTS = 'https://peer.decentraland.org/lambdas/collections/contents'
+const CATALYST_CONTENTS = `${serviceUrl('peer')}/lambdas/collections/contents`
 
 // Direct catalyst thumbnail URL — used straight as an <img>/<image> src. The catalyst sends
 // no Cross-Origin-Resource-Policy header, but the page runs COEP `credentialless`, under which

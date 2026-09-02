@@ -318,3 +318,55 @@ fn left_drops_subject_and_emits_address() {
         [PulseEvent::Resync(_)]
     ));
 }
+
+/// Server ticks are `u32` milliseconds since the Pulse server started and roll over after ~49.7
+/// days. The converted timestamps must keep increasing across the rollover, or the receiver's
+/// strictly-newer gate would drop every update after it.
+#[test]
+fn ticks_stay_monotonic_across_u32_rollover() {
+    const TICKS: [u32; 4] = [u32::MAX - 50, u32::MAX - 10, 30, 70];
+
+    let mut decoder = PulseDecoder::new(PulseParcelGrid::default());
+    decoder.handle(server_msg(pulse::server_message::Message::PlayerJoined(
+        pulse::PlayerJoined {
+            user_id: WALLET.to_string(),
+            profile_version: 7,
+            state: Some(pulse::PlayerStateFull {
+                subject_id: SUBJECT,
+                sequence: 5,
+                server_tick: u32::MAX - 100,
+                state: Some(player_state((1.0, 2.0, 3.0), 0)),
+            }),
+            realm: String::new(),
+        },
+    )));
+
+    let stamps: Vec<f64> = TICKS
+        .iter()
+        .enumerate()
+        .flat_map(|(i, tick)| {
+            let delta = pulse::PlayerStateDeltaTier0 {
+                subject_id: SUBJECT,
+                baseline_seq: 5 + i as u32,
+                new_seq: 6 + i as u32,
+                server_tick: *tick,
+                position_x: Some(128 + i as u32),
+                ..Default::default()
+            };
+            movement_timestamps(decoder.handle(server_msg(
+                pulse::server_message::Message::PlayerStateDelta(delta),
+            )))
+        })
+        .collect();
+
+    assert_eq!(stamps.len(), TICKS.len());
+    for (a, b) in stamps.iter().zip(stamps.iter().skip(1)) {
+        assert!(
+            b > a,
+            "ticks must stay increasing across the rollover, got {a} then {b}"
+        );
+    }
+    assert!((stamps[1] - stamps[0] - 0.040).abs() < 1e-6);
+    assert!((stamps[2] - stamps[1] - 0.041).abs() < 1e-6);
+    assert!((stamps[3] - stamps[2] - 0.040).abs() < 1e-6);
+}

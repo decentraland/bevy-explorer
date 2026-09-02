@@ -466,7 +466,9 @@ fn dbgerr<E: std::fmt::Debug>(e: E) -> anyhow::Error {
     anyhow!(format!("{e:?}"))
 }
 
-const SOCIAL_URL: &str = "wss://rpc-social-service-ea.decentraland.org";
+fn social_url() -> String {
+    common::base_domain::wss("rpc-social-service-ea", "")
+}
 
 const PAGE_SIZE: i32 = 100;
 
@@ -518,14 +520,17 @@ async fn run_one_connection(
     response_sx: &UnboundedSender<FriendData>,
 ) -> Result<(), anyhow::Error> {
     // Connect WebSocket
-    info!("[social] Connecting to social service at {SOCIAL_URL}");
-    let (ws, ws_closed) = PlatformRpcWebSocket::connect(SOCIAL_URL)
+    info!("[social] Connecting to social service at {}", social_url());
+    let (ws, ws_closed) = PlatformRpcWebSocket::connect(&social_url())
         .await
         .map_err(dbgerr)?;
-    info!("[social] Successfully connected to social service at {SOCIAL_URL}");
+    info!(
+        "[social] Successfully connected to social service at {}",
+        social_url()
+    );
 
     // V2 auth: send signed headers as first WS message
-    let uri: http::Uri = SOCIAL_URL.parse().map_err(dbgerr)?;
+    let uri: http::Uri = social_url().parse().map_err(dbgerr)?;
     let signed_headers = wallet::sign_request("get", &uri, wallet, "{}".to_owned())
         .await
         .map_err(dbgerr)?;

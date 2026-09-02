@@ -18,7 +18,7 @@ installHudScale()
 // NATIVE (?native=1): bevy renders the 3D world *behind* this transparent webview, so the page must
 // be transparent (in web mode the engine canvas lives in this document at z-0, so the body
 // background is fine).
-if (new URLSearchParams(location.search).get('native') === '1') {
+if (__NATIVE_HUD__ && new URLSearchParams(location.search).get('native') === '1') {
   document.documentElement.style.background = 'transparent'
   document.body.style.background = 'transparent'
   // No webview context menu (Back/Reload) on right-click — that gesture is the engine's camera.

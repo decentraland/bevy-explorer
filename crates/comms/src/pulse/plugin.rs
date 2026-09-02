@@ -484,9 +484,13 @@ impl Plugin for PulsePlugin {
 /// WebTransport on 7743. Override with the `PULSE_SERVER=host:port` env var — e.g.
 /// `pulse-server.decentraland.zone` for dev, or a local instance.
 #[cfg(not(target_arch = "wasm32"))]
-const DEFAULT_PULSE_SERVER: &str = "pulse-server.decentraland.org:7777";
+fn default_pulse_server() -> String {
+    format!("{}:7777", common::base_domain::host("pulse-server"))
+}
 #[cfg(target_arch = "wasm32")]
-const DEFAULT_PULSE_SERVER: &str = "pulse-server.decentraland.org:7743";
+fn default_pulse_server() -> String {
+    format!("{}:7743", common::base_domain::host("pulse-server"))
+}
 
 /// SHA-256 to pin the server's TLS cert via WebTransport's `serverCertificateHashes`. Production is
 /// CA-signed → `None` (default trust); native (ENet) never needs one.
@@ -496,7 +500,7 @@ fn dev_cert_hash() -> Option<Vec<u8>> {
 }
 #[cfg(target_arch = "wasm32")]
 fn dev_cert_hash() -> Option<Vec<u8>> {
-    // To test against a local self-signed dev server, point DEFAULT_PULSE_SERVER at it and return the
+    // To test against a local self-signed dev server, point default_pulse_server at it and return the
     // SHA-256 of its cert (e.g. claude-work/pulse-dev-cert/cert.pem — regenerate + refresh if expired,
     // `openssl x509 -outform DER | openssl dgst -sha256`):
     // Some(vec![
@@ -510,14 +514,14 @@ fn dev_cert_hash() -> Option<Vec<u8>> {
 /// Insert the [`PulseConfig`] that activates the transport, on clients and servers alike — a server
 /// joins as a scene listener rather than a subject (see [`ListenerRole`]). Targets, in order of
 /// precedence, [`PulseEndpointOverride`] (a startup param), the `PULSE_SERVER` env var, then
-/// [`DEFAULT_PULSE_SERVER`]. The grid is the Decentraland Genesis City `ParcelEncoder` from the
+/// [`default_pulse_server`]. The grid is the Decentraland Genesis City `ParcelEncoder` from the
 /// server's appsettings ([`PulseParcelGrid::default`]).
 fn configure_pulse(mut commands: Commands, endpoint: Option<Res<PulseEndpointOverride>>) {
     let (endpoint, source) = match endpoint {
         Some(endpoint) => (endpoint.0.clone(), "startup param"),
         None => match std::env::var("PULSE_SERVER") {
             Ok(endpoint) => (endpoint, "PULSE_SERVER"),
-            Err(_) => (DEFAULT_PULSE_SERVER.to_owned(), "default"),
+            Err(_) => (default_pulse_server(), "default"),
         },
     };
     let Some((host, port)) = endpoint.rsplit_once(':') else {
@@ -1639,7 +1643,7 @@ async fn build_auth_chain(wallet: &Wallet, server_id: &str) -> Result<Vec<u8>, S
 #[cfg(test)]
 mod tests {
     use super::{
-        configure_pulse, lsd_realm_key, PulseConfig, PulseEndpointOverride, DEFAULT_PULSE_SERVER,
+        configure_pulse, default_pulse_server, lsd_realm_key, PulseConfig, PulseEndpointOverride,
     };
     use bevy::prelude::*;
 
@@ -1668,7 +1672,7 @@ mod tests {
             "startup:1"
         );
         assert_eq!(configured_endpoint(None, Some("env:2")), "env:2");
-        assert_eq!(configured_endpoint(None, None), DEFAULT_PULSE_SERVER);
+        assert_eq!(configured_endpoint(None, None), default_pulse_server());
         std::env::remove_var("PULSE_SERVER");
     }
 

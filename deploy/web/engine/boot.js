@@ -15,7 +15,12 @@
 //     __onEngineCrash(message, source) — OPTIONAL host callback; the watchdog calls it instead of
 //       rendering any overlay (React owns the error UI)
 //     window.engine / engine_console_command — the console RPC (built by engine.js post-launch)
-import { initEngine, start, gpu_cache_hash, initGpuCache } from './engine.js'
+//     __baseDomain() — HOST-PROVIDED (react-web/src/lib/baseDomain.ts, defined before this module
+//       is injected): the deployment domain every backend host is composed from; the wasm reads
+//       it before composing any backend URL (parity with native --base-domain)
+//     __bevyHomeScene() — the persisted home scene { realm, parcel: "x,y" } (or the derived
+//       defaults), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
+import { initEngine, start, engine_home_scene, gpu_cache_hash, initGpuCache } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
 // Weight of each step in the overall bar (sums to 100). Step ids are read by the React login bar
@@ -258,12 +263,16 @@ window.addEventListener('wheel', forwardWheelToEngine)
 // ---- URL sync (CALLED BY THE WASM — src/web.rs set_url_params) -----------------------------------
 // Keeps the browser URL in step with the player's realm/position so a reload/share lands back at
 // the same place. Defaults are omitted so the canonical entry URL stays clean.
-const DEFAULT_SERVER = 'https://realm-provider-ea.decentraland.org/main'
+// The base domain is the HUD's call (see the __baseDomain contract above): the ?baseDomain=
+// entry param, else the hosting origin's apex, else org. set_url_params below preserves unknown
+// params, so the param form survives URL syncs.
+const BASE_DOMAIN = window.__baseDomain()
+const DEFAULT_SERVER = `https://realm-provider-ea.${BASE_DOMAIN}/main`
 const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'
 // The engine connects to the EXPANDED world url (ipfs map_realm_name turns `name.dcl.eth` into
 // worlds-content-server…/world/name.dcl.eth) and echoes that back here. Reverse it so the address
 // bar keeps the short name the user typed; a reload re-expands it the same way.
-const WORLDS_PREFIX = 'https://worlds-content-server.decentraland.org/world/'
+const WORLDS_PREFIX = `https://worlds-content-server.${BASE_DOMAIN}/world/`
 // captured from the ENTRY url (later syncs rewrite location.search)
 const explicitSystemScene = new URLSearchParams(window.location.search).has('systemScene')
 window.set_url_params = (position, server, system_scene, portables, preview, editor) => {
@@ -315,6 +324,9 @@ initEngine()
     // Deferred launch: the host calls this once the user picks a destination — avoiding a wasted
     // default-realm load. One engine per page (see start()'s __bevyStarted guard).
     window.__bevyLaunch = (realm, position) => start({ realm, position, systemScene: config.systemScene, portables: config.portables, preview: config.preview, editor: config.editor, pulseServer: config.pulseServer })
+    // The persisted home scene ({ realm, parcel: "x,y" }), valid once engine_init has loaded the
+    // config — the host's places picker targets it from "Skip to Home" before launching.
+    window.__bevyHomeScene = () => { try { return JSON.parse(engine_home_scene()) } catch { return null } }
     window.__bevyReadyToLaunch = true
   })
   .catch((e) => {

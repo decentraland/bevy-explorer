@@ -512,8 +512,8 @@ pub struct ForeignMetaData {
 #[derive(Event)]
 pub struct PlayerPositionEvent {
     pub player: Entity,
-    /// Local receive time (`time.elapsed_secs()`) — drives the interpolation catch-up window.
-    pub time: f32,
+    /// Local receive time (`time.elapsed_secs_f64()`) — drives the interpolation catch-up window.
+    pub time: f64,
     /// The source clock for this update, in seconds: the Pulse server tick, or the sender's own
     /// clock on the LiveKit path. Only ever compared against a previous value from the same
     /// source, to reject reordered/duplicate packets.
@@ -552,7 +552,7 @@ pub struct PlayerPositionEvent {
 #[derive(Event)]
 pub struct PlayerSceneAnimEvent {
     pub player: Entity,
-    pub time: f32,
+    pub time: f64,
     /// Resolved animation; `None` clears any active one.
     pub anim: Option<SceneDrivenAnimationRequest>,
     /// Render-only avatar lean (pitch, roll) in degrees, composed onto the interpolated yaw in
@@ -611,7 +611,7 @@ fn apply_foreign_movement(
     m: &rfc4::Movement,
     entity: Entity,
     scene_id: SceneEntityId,
-    now: f32,
+    now: f64,
     timestamp: f64,
     teleport: bool,
     commands: &mut Commands,
@@ -902,7 +902,7 @@ pub fn process_transport_updates(
                             &movement,
                             entity,
                             scene_id,
-                            time.elapsed_secs(),
+                            time.elapsed_secs_f64(),
                             timestamp,
                             teleport,
                             &mut commands,
@@ -949,7 +949,7 @@ pub fn process_transport_updates(
                                 );
                                 anim_events.write(PlayerSceneAnimEvent {
                                     player: entity,
-                                    time: time.elapsed_secs(),
+                                    time: time.elapsed_secs_f64(),
                                     anim,
                                     tilt,
                                 });
@@ -969,32 +969,47 @@ pub fn process_transport_updates(
                         continue;
                     }
 
-                    let Message::Scene(scene) = update.message else {
-                        warn!(
-                            "skipping unexpected update from {}: {:?}",
-                            update.address, update.message
-                        );
-                        continue;
-                    };
+                    match update.message {
+                        Message::Scene(scene) => {
+                            // same cross-room guard as the Player arm: the message may only
+                            // address the scene owning this context's room
+                            if let Some(room_hash) = &state.room {
+                                if scene.scene_id != *room_hash {
+                                    debug!(
+                                        "dropping cross-room message from {}: declared scene {} != room {room_hash}",
+                                        update.address, scene.scene_id
+                                    );
+                                    continue;
+                                }
+                            }
 
-                    // same cross-room guard as the Player arm: the message may only
-                    // address the scene owning this context's room
-                    if let Some(room_hash) = &state.room {
-                        if scene.scene_id != *room_hash {
-                            debug!(
-                                "dropping cross-room message from {}: declared scene {} != room {room_hash}",
-                                update.address, scene.scene_id
+                            process_messagebus(
+                                scene,
+                                update.address,
+                                &mut string_senders,
+                                &mut binary_senders,
                             );
-                            continue;
+                        }
+                        // a server resolving a guest profile asks the guest directly — the
+                        // only source there is. The request handler reads the requested
+                        // address and the reply transport, never the sender entity, so the
+                        // transport entity stands in for the (playerless) server.
+                        Message::ProfileRequest(request) => {
+                            profile_events.write(ProfileEvent {
+                                sender: update.transport_id,
+                                event: ProfileEventType::Request {
+                                    request,
+                                    transport: update.transport_id,
+                                },
+                            });
+                        }
+                        message => {
+                            warn!(
+                                "skipping unexpected update from {}: {:?}",
+                                update.address, message
+                            );
                         }
                     }
-
-                    process_messagebus(
-                        scene,
-                        update.address,
-                        &mut string_senders,
-                        &mut binary_senders,
-                    );
                 }
                 NetworkUpdate::PlayerLeft {
                     transport_id,

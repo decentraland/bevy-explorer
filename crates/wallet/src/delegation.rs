@@ -154,9 +154,11 @@ impl StorageDelegations {
 /// exact-match world-storage hosts, https only (the claim must never go out in cleartext).
 pub fn is_storage_request(uri: &http::Uri) -> bool {
     uri.scheme_str() == Some("https")
-        && uri
-            .host()
-            .is_some_and(|h| STORAGE_HOSTS.contains(&h.to_lowercase().as_str()))
+        && uri.host().is_some_and(|h| {
+            let h = h.to_lowercase();
+            STORAGE_HOSTS.contains(&h.as_str())
+                || (common::base_domain::is_custom() && h == common::base_domain::host("storage"))
+        })
 }
 
 #[cfg(test)]

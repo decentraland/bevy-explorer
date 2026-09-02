@@ -6,6 +6,7 @@
 // Anything not on the list below gets the interstitial in features/gate/UntrustedLaunchGate.
 
 import { PAGE_DIR } from './publicUrl'
+import { serviceUrl } from './baseDomain'
 
 // Our super-user bridge scene. It relays the scene-loading stream + player-ready over
 // BroadcastChannel and renders no UI.
@@ -26,7 +27,7 @@ export const SYSTEM_SCENE =
 // the engine's ipfs layer expands `name.dcl.eth` into the latter, and boot.js reverses it for the
 // address bar, so both spellings reach users.
 const TRUSTED_WORLDS = ['tortilla.dcl.eth', 'sceneviewer.dcl.eth']
-const WORLDS_PREFIX = 'https://worlds-content-server.decentraland.org/world/'
+const WORLDS_PREFIX = `${serviceUrl('worlds-content-server')}/world/`
 
 // A scene served from the developer's own machine. `sdk-commands start` is the whole point of the
 // parameter, and a link can't make someone else's machine serve it.

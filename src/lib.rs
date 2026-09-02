@@ -127,17 +127,30 @@ impl DecentralandAppConfig {
         }
     }
 
-    /// The realm the engine boots into: an explicit --server, else the configured server.
-    /// --server is deliberately NOT merged into the AppConfig: the config file is rewritten
-    /// wholesale on any settings change, which would silently persist a one-off CLI realm
-    /// as the configured (home) server.
-    pub fn boot_server(&self) -> &str {
+    /// The realm the engine boots into: an explicit --server, else the home realm.
+    /// --server is a startup param (like the web's ?realm=) and is deliberately NOT
+    /// merged into the AppConfig — see the home_realm field docs.
+    pub fn boot_server(&self) -> String {
         self.arguments
             .server
-            .as_deref()
-            .unwrap_or(&self.app_config.server)
+            .clone()
+            .unwrap_or_else(|| self.app_config.home_realm())
+    }
+
+    /// The parcel the player spawns at: an explicit --location, else the home parcel.
+    /// Same contract as [`Self::boot_server`].
+    pub fn boot_location(&self) -> IVec2 {
+        self.arguments
+            .location
+            .unwrap_or_else(|| self.app_config.home_location())
     }
 }
+
+/// The spawn parcel resolved by [`DecentralandAppConfig::boot_location`] — a distinct
+/// resource so the AppConfig resource (rewritten wholesale to disk on settings changes)
+/// never carries a one-off --location as home.
+#[derive(Resource)]
+pub struct BootLocation(pub IVec2);
 
 pub struct DecentralandArguments {
     pub server: Option<String>,
@@ -233,8 +246,9 @@ impl DecentralandApp {
                 // its places picker (parity with ?realm= on web). On the stock default the
                 // param is omitted so the picker shows — and the HUD's own default-realm
                 // assumption then matches the realm the engine actually booted.
-                server: (decentraland_app_config.boot_server() != AppConfig::default().server)
-                    .then(|| decentraland_app_config.boot_server().to_owned()),
+                server: (decentraland_app_config.boot_server()
+                    != AppConfig::default().home_realm())
+                .then(|| decentraland_app_config.boot_server()),
             });
         }
 
@@ -243,7 +257,9 @@ impl DecentralandApp {
 
         info!("Bevy-Explorer version {}", version);
 
-        let boot_server = map_realm_name(decentraland_app_config.boot_server());
+        let boot_server = map_realm_name(&decentraland_app_config.boot_server());
+        // computed here too: scene_params is partially moved out of the arguments below
+        let boot_location = BootLocation(decentraland_app_config.boot_location());
         // Show out-of-bounds geometry in preview, on a loopback realm (local dev) and in
         // the editor, never on a public realm. Computed before boot_server moves.
         let editor_mode = decentraland_app_config.arguments.editor;
@@ -424,6 +440,7 @@ impl DecentralandApp {
         // and add AppConfig as a resource
         let graphics_config = decentraland_app_config.app_config.graphics.clone();
         app.insert_resource(decentraland_app_config.app_config.audio.clone());
+        app.insert_resource(boot_location);
         app.insert_resource(decentraland_app_config.app_config);
 
         // Plugins
@@ -515,6 +532,7 @@ fn setup(
     mut player_resource: ResMut<PrimaryPlayerRes>,
     mut cam_resource: ResMut<PrimaryCameraRes>,
     config: Res<AppConfig>,
+    boot_location: Res<BootLocation>,
     #[cfg(target_arch = "wasm32")] render_device: ResMut<RenderDevice>,
 ) {
     #[cfg(target_arch = "wasm32")]
@@ -529,9 +547,9 @@ fn setup(
     let player_id = commands
         .spawn((
             Transform::from_translation(Vec3::new(
-                8.0 + 16.0 * config.location.x as f32,
+                8.0 + 16.0 * boot_location.0.x as f32,
                 8.0,
-                -8.0 + -16.0 * config.location.y as f32,
+                -8.0 + -16.0 * boot_location.0.y as f32,
             )),
             Visibility::default(),
             config.player_settings.clone(),
@@ -570,8 +588,6 @@ fn update_app_config_from_arguments(
     base_app_config: &mut AppConfig,
     arguments: &DecentralandArguments,
 ) {
-    base_app_config.location.replace_if_some(arguments.location);
-
     base_app_config
         .graphics
         .vsync
@@ -675,7 +691,7 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
         .build()
         .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
             preview: decentraland_app_config.arguments.is_preview,
-            starting_realm: Some(map_realm_name(decentraland_app_config.boot_server())),
+            starting_realm: Some(map_realm_name(&decentraland_app_config.boot_server())),
             content_server_override: decentraland_app_config
                 .arguments
                 .content_server_override
@@ -710,7 +726,7 @@ fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> Plug
         .disable::<LogPlugin>()
         .add_before::<AssetPlugin>(IpfsIoPlugin {
             preview: decentraland_app_config.arguments.is_preview,
-            starting_realm: Some(map_realm_name(decentraland_app_config.boot_server())),
+            starting_realm: Some(map_realm_name(&decentraland_app_config.boot_server())),
             content_server_override: decentraland_app_config
                 .arguments
                 .content_server_override

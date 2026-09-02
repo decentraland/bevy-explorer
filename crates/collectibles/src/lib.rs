@@ -310,7 +310,7 @@ pub fn request_collectibles<T: CollectibleType>(
                         entity.id.clone(),
                         collection,
                         Some(IpfsModifier {
-                            base_url: Some(base_wearables::CONTENT_URL.to_owned()),
+                            base_url: Some(base_wearables::content_url()),
                         }),
                         entity.metadata.as_ref().map(ToString::to_string),
                     );

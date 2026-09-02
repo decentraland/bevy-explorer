@@ -63,8 +63,8 @@ fn main() {
 }
 
 fn decentraland_app_config() -> Result<DecentralandAppConfig, UserError> {
-    let app_config = decentraland_serialized_app_config();
     let arguments = decentraland_app_arguments()?;
+    let app_config = decentraland_serialized_app_config();
     let crash_file = decentraland_crash_file();
 
     Ok(DecentralandAppConfig::new(
@@ -96,6 +96,19 @@ fn decentraland_serialized_app_config() -> AppConfig {
 
 fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
     let mut args = pico_args::Arguments::from_env();
+
+    if let Some(domain) = args
+        .opt_value_from_str::<_, String>("--base-domain")
+        .map_err(|e| {
+            error!("{e}");
+            UserError(true)
+        })?
+    {
+        common::base_domain::set(&domain).map_err(|e| {
+            error!("{e}");
+            UserError(true)
+        })?;
+    }
 
     let test_scenes = args.value_from_str("--test_scenes").ok();
     let startup_scenes_preview = args.contains("--ui-preview");

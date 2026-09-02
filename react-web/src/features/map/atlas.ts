@@ -11,6 +11,8 @@
 // world z increase in the same direction, while screen y grows downward — hence the flip in
 // `atlasPx`. "Atlas px" is the untransformed tile-grid space, before any pan/zoom/rotation.
 
+import { serviceUrl } from '../../lib/baseDomain'
+
 export const PARCEL_METERS = 16
 
 // ---- satellite atlas -------------------------------------------------------
@@ -89,7 +91,7 @@ export function parcelTileFor(worldX: number, worldZ: number): ParcelTile {
   const centerParcelY = chunkY * PARCEL_TILE_CHUNK + PARCEL_TILE_CHUNK / 2
   const px = PARCEL_TILE_PARCELS * PARCEL_TILE_PX_PER_PARCEL
   return {
-    url: `https://api.decentraland.org/v1/map.png?center=${centerParcelX},${centerParcelY}&width=${px}&height=${px}&size=${PARCEL_TILE_PX_PER_PARCEL}`,
+    url: `${serviceUrl('api')}/v1/map.png?center=${centerParcelX},${centerParcelY}&width=${px}&height=${px}&size=${PARCEL_TILE_PX_PER_PARCEL}`,
     centerX: centerParcelX * PARCEL_METERS,
     centerZ: centerParcelY * PARCEL_METERS,
     meters: PARCEL_TILE_PARCELS * PARCEL_METERS

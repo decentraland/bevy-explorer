@@ -186,7 +186,7 @@ impl Toaster<'_, '_> {
         let message = message.into();
         if let Some(existing) = self.toasts.0.get_mut(&key) {
             if existing.message == message {
-                existing.last_update = self.time.elapsed_secs();
+                existing.last_update = self.time.elapsed_secs_f64();
                 return;
             }
         }
@@ -195,8 +195,8 @@ impl Toaster<'_, '_> {
             key,
             Toast {
                 message,
-                time: self.time.elapsed_secs(),
-                last_update: self.time.elapsed_secs(),
+                time: self.time.elapsed_secs_f64(),
+                last_update: self.time.elapsed_secs_f64(),
                 on_click,
             },
         );
@@ -222,8 +222,8 @@ impl Toaster<'_, '_> {
 
 pub struct Toast {
     pub message: String,
-    pub time: f32,
-    pub last_update: f32,
+    pub time: f64,
+    pub last_update: f64,
     pub on_click: Option<On<Click>>,
 }
 
@@ -449,12 +449,12 @@ fn update_scene_priority(
 
     // mark scenes that have been in-flight past the timeout as broken and free their
     // slot, so a wedged scene worker can't hold a scene thread forever
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
     for (ent, _, mut context, _) in scenes.iter_mut() {
         if context.in_flight()
             && !context.inspected
             && elapsed - context.last_sent
-                > renderer_context::SCENE_NOT_RESPONDING_TIMEOUT.as_secs_f32()
+                > renderer_context::SCENE_NOT_RESPONDING_TIMEOUT.as_secs_f64()
         {
             warn!(
                 "scene {} ({} @ {}) has not responded for {:.0}s, marking broken",
@@ -515,7 +515,7 @@ fn update_scene_priority(
             } else {
                 distance
             };
-            let not_yet_run = context.last_sent < time.elapsed_secs();
+            let not_yet_run = context.last_sent < time.elapsed_secs_f64();
 
             if !context.in_flight() && !not_yet_run {
                 skipped_already_sent += 1;
@@ -523,8 +523,9 @@ fn update_scene_priority(
 
             (!context.in_flight() && not_yet_run).then(|| {
                 updates.eligible_jobs += 1;
-                let priority =
-                    FloatOrd(context.priority / (time.elapsed_secs() - context.last_sent));
+                let priority = FloatOrd(
+                    context.priority / (time.elapsed_secs_f64() - context.last_sent) as f32,
+                );
                 (ent, priority)
             })
         })
@@ -1021,8 +1022,9 @@ fn send_scene_updates(
     buf.clear();
     DclWriter::new(buf).write(&PbEngineInfo {
         frame_number: frame.0,
-        total_runtime: context.total_runtime,
+        total_runtime: context.total_runtime as f32,
         tick_number: context.tick_number,
+        total_runtime_f64: context.total_runtime,
     });
     context.crdt_store.force_update(
         SceneComponentId::ENGINE_INFO,
@@ -1052,7 +1054,7 @@ fn send_scene_updates(
         context.state = SceneState::Broken;
     } else {
         context.set_in_flight(true);
-        context.last_sent = time.elapsed_secs();
+        context.last_sent = time.elapsed_secs_f64();
         dcl_assert!(!updates.jobs_in_flight.contains(&ent));
         updates.jobs_in_flight.insert(ent);
     }
@@ -1112,7 +1114,7 @@ fn receive_scene_updates(
                     if let Some(root) = updates.scene_ids.get(&scene_id) {
                         if let Ok(mut context) = scenes.get_mut(*root) {
                             context.state = SceneState::Broken;
-                            let timestamp = context.total_runtime as f64 + 1.0;
+                            let timestamp = context.total_runtime + 1.0;
                             error!("[{scene_id:?} @ {}] error: {message}", context.tick_number);
                             context.log(SceneLogMessage {
                                 timestamp,
@@ -1351,12 +1353,12 @@ fn push_camera_fov_to_crdt(
     camera: Query<&Projection, With<PrimaryCamera>>,
     mut contexts: Query<&mut GlobalCrdtState>,
     time: Res<Time>,
-    mut last_pushed: Local<Option<(f32, f32)>>,
+    mut last_pushed: Local<Option<(f32, f64)>>,
 ) {
     let Ok(Projection::Perspective(p)) = camera.single() else {
         return;
     };
-    let now = time.elapsed_secs();
+    let now = time.elapsed_secs_f64();
     let should_push = match *last_pushed {
         None => true,
         Some((last_fov, last_time)) => last_fov != p.fov || now - last_time >= 2.0,

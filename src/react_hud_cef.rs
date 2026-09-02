@@ -173,6 +173,13 @@ fn spawn_hud(
         url.push_str("realm=");
         url.push_str(&urlencoding::encode(server));
     }
+    // A non-default --base-domain reaches the HUD the same way it reaches the web page: as the
+    // ?baseDomain= param the page composes all its backend fetch hosts from.
+    if common::base_domain::get() != common::base_domain::DEFAULT {
+        url.push_str(if url.contains('?') { "&" } else { "?" });
+        url.push_str("baseDomain=");
+        url.push_str(&urlencoding::encode(common::base_domain::get()));
+    }
 
     let (w, h) = windows
         .single()

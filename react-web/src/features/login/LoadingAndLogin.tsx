@@ -4,6 +4,7 @@
 // identity straight to the engine. No verification-code / secure-step screen anymore.
 
 import { useEffect, useState } from 'react'
+import { serviceUrl } from '../../lib/baseDomain'
 import { Button } from '../../design'
 import { prefetchPlaces } from '../places/placesApi'
 import type { LoginFlow, LoginStatus } from '../session/useEngineSession'
@@ -71,7 +72,7 @@ function useProfile(address?: string): { name?: string; body?: string } {
       return
     }
     let cancelled = false
-    fetch(`https://peer.decentraland.org/lambdas/profiles/${address}`)
+    fetch(`${serviceUrl('peer')}/lambdas/profiles/${address}`)
       .then((r) => r.json() as Promise<ProfileResponse>)
       .then((j) => {
         const a = j.avatars?.[0]
