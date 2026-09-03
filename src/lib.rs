@@ -171,6 +171,7 @@ pub struct DecentralandArguments {
     pub scene_imposter_bake: Option<SceneImposterBake>,
     pub scene_imposter_distances: Option<Vec<f32>>,
     pub scene_imposter_multisample: Option<bool>,
+    /// Base url of the imposter store — `--imposter-source`. See `imposters::imposter_spec::set_source`.
     pub imposter_source: Option<String>,
     pub vsync: Option<bool>,
     pub fps_target: Option<usize>,
@@ -436,6 +437,9 @@ impl DecentralandApp {
         if let Some(endpoint) = decentraland_app_config.arguments.pulse_server {
             app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(endpoint));
         }
+        if let Some(source) = &decentraland_app_config.arguments.imposter_source {
+            imposters::imposter_spec::set_source(source);
+        }
 
         // Create copies of structs that still need to be accessed
         // and add AppConfig as a resource
@@ -637,9 +641,6 @@ fn update_app_config_from_arguments(
     base_app_config
         .scene_imposter_multisample
         .replace_if_some(arguments.scene_imposter_multisample);
-    if let Some(source) = &arguments.imposter_source {
-        base_app_config.imposter_source = Some(source.clone());
-    }
     base_app_config.sysinfo_visible |= arguments.sysinfo_visible;
     base_app_config.scene_log_to_console |= arguments.scene_log_to_console;
 }
