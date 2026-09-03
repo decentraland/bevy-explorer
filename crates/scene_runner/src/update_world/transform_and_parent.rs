@@ -328,7 +328,7 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
         &ParentPositionSync<T>,
         &ChildOf,
         Option<&VisibilityComponent>,
-        Option<(&SceneEntity, &Transform)>,
+        Option<&SceneEntity>,
     )>,
     globals: Query<&GlobalTransform>,
     gt_helper: TransformHelperPub,
@@ -356,10 +356,9 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
         // translation delta is deliberately NOT rotated into the target's
         // frame - that's what unity writes, and scenes in the wild correct
         // for exactly that. scale and the declared parent are passed through
-        // unchanged.
-        if let (Some(target), Some((scene_entity, current_transform))) =
-            (sync.translation_target, maybe_scene_entity)
-        {
+        // unchanged, taken from the scene's own last write rather than the
+        // (sanitised) bevy transform so the scene reads back exactly what it set.
+        if let (Some(target), Some(scene_entity)) = (sync.translation_target, maybe_scene_entity) {
             if let (Ok(target_gt), Ok(mut context)) = (
                 gt_helper.compute_global_transform(target, None),
                 contexts.get_mut(scene_entity.root),
@@ -368,7 +367,7 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
                 let (_, target_rotation, target_translation) =
                     target_gt.to_scale_rotation_translation();
 
-                let parent_id = context
+                let (parent_id, scale) = context
                     .crdt_store
                     .get(
                         SceneComponentId::TRANSFORM,
@@ -378,14 +377,14 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
                     .and_then(|data| {
                         DclTransformAndParent::from_reader(&mut DclReader::new(data)).ok()
                     })
-                    .map(|t| t.parent)
-                    .unwrap_or(SceneEntityId::ROOT);
+                    .map(|t| (t.parent, t.scale))
+                    .unwrap_or((SceneEntityId::ROOT, Vec3::ONE));
 
                 let dcl_transform = DclTransformAndParent::from_bevy_transform_and_parent(
                     &Transform {
                         translation: anchor_translation - target_translation,
                         rotation: target_rotation.inverse() * anchor_rotation,
-                        scale: current_transform.scale,
+                        scale,
                     },
                     parent_id,
                 );
