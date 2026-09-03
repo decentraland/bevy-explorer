@@ -7,7 +7,7 @@ use asset_source::{Nft, NftLoader};
 use bevy::{
     asset::LoadState,
     gltf::Gltf,
-    platform::collections::{HashMap, HashSet},
+    platform::collections::{hash_map::Entry, HashMap, HashSet},
     prelude::*,
     scene::InstanceId,
 };
@@ -139,9 +139,16 @@ fn load_frame(
 ) {
     for (ent, frame) in q.iter() {
         // get frame
-        let h_gltf = gltf_handles
-            .entry(frame.0)
-            .or_insert_with(|| asset_server.load(*NFTSHAPE_LOOKUP.get(&frame.0).unwrap()));
+        let h_gltf = match gltf_handles.entry(frame.0) {
+            Entry::Vacant(vacancy) => {
+                if let Some(path) = NFTSHAPE_LOOKUP.get(&frame.0).unwrap() {
+                    vacancy.insert(asset_server.load(*path)).clone()
+                } else {
+                    continue;
+                }
+            }
+            Entry::Occupied(occupancy) => occupancy.get().clone(),
+        };
         let Some(gltf) = gltfs.get(h_gltf.id()) else {
             debug!("waiting for frame");
             continue;
@@ -282,37 +289,58 @@ fn resize_nft(
     }
 }
 
-static NFTSHAPE_LOOKUP: Lazy<HashMap<NftFrameType, &'static str>> = Lazy::new(|| {
+static NFTSHAPE_LOOKUP: Lazy<HashMap<NftFrameType, Option<&'static str>>> = Lazy::new(|| {
     use NftFrameType::*;
     HashMap::from_iter([
-        (NftClassic, "embedded://nft_shapes/Classic.glb"),
+        (NftClassic, Some("embedded://nft_shapes/Classic.glb")),
         (
             NftBaroqueOrnament,
-            "embedded://nft_shapes/Baroque_Ornament.glb",
+            Some("embedded://nft_shapes/Baroque_Ornament.glb"),
         ),
         (
             NftDiamondOrnament,
-            "embedded://nft_shapes/Diamond_Ornament.glb",
+            Some("embedded://nft_shapes/Diamond_Ornament.glb"),
         ),
-        (NftMinimalWide, "embedded://nft_shapes/Minimal_Wide.glb"),
-        (NftMinimalGrey, "embedded://nft_shapes/Minimal_Grey.glb"),
-        (NftBlocky, "embedded://nft_shapes/Blocky.glb"),
-        (NftGoldEdges, "embedded://nft_shapes/Gold_Edges.glb"),
-        (NftGoldCarved, "embedded://nft_shapes/Gold_Carved.glb"),
-        (NftGoldWide, "embedded://nft_shapes/Gold_Wide.glb"),
-        (NftGoldRounded, "embedded://nft_shapes/Gold_Rounded.glb"),
-        (NftMetalMedium, "embedded://nft_shapes/Metal_Medium.glb"),
-        (NftMetalWide, "embedded://nft_shapes/Metal_Wide.glb"),
-        (NftMetalSlim, "embedded://nft_shapes/Metal_Slim.glb"),
-        (NftMetalRounded, "embedded://nft_shapes/Metal_Rounded.glb"),
-        (NftPins, "embedded://nft_shapes/Pins.glb"),
-        (NftMinimalBlack, "embedded://nft_shapes/Minimal_Black.glb"),
-        (NftMinimalWhite, "embedded://nft_shapes/Minimal_White.glb"),
-        (NftTape, "embedded://nft_shapes/Tape.glb"),
-        (NftWoodSlim, "embedded://nft_shapes/Wood_Slim.glb"),
-        (NftWoodWide, "embedded://nft_shapes/Wood_Wide.glb"),
-        (NftWoodTwigs, "embedded://nft_shapes/Wood_Twigs.glb"),
-        (NftCanvas, "embedded://nft_shapes/Canvas.glb"),
-        (NftNone, "embedded://nft_shapes/Classic.glb"),
+        (
+            NftMinimalWide,
+            Some("embedded://nft_shapes/Minimal_Wide.glb"),
+        ),
+        (
+            NftMinimalGrey,
+            Some("embedded://nft_shapes/Minimal_Grey.glb"),
+        ),
+        (NftBlocky, Some("embedded://nft_shapes/Blocky.glb")),
+        (NftGoldEdges, Some("embedded://nft_shapes/Gold_Edges.glb")),
+        (NftGoldCarved, Some("embedded://nft_shapes/Gold_Carved.glb")),
+        (NftGoldWide, Some("embedded://nft_shapes/Gold_Wide.glb")),
+        (
+            NftGoldRounded,
+            Some("embedded://nft_shapes/Gold_Rounded.glb"),
+        ),
+        (
+            NftMetalMedium,
+            Some("embedded://nft_shapes/Metal_Medium.glb"),
+        ),
+        (NftMetalWide, Some("embedded://nft_shapes/Metal_Wide.glb")),
+        (NftMetalSlim, Some("embedded://nft_shapes/Metal_Slim.glb")),
+        (
+            NftMetalRounded,
+            Some("embedded://nft_shapes/Metal_Rounded.glb"),
+        ),
+        (NftPins, Some("embedded://nft_shapes/Pins.glb")),
+        (
+            NftMinimalBlack,
+            Some("embedded://nft_shapes/Minimal_Black.glb"),
+        ),
+        (
+            NftMinimalWhite,
+            Some("embedded://nft_shapes/Minimal_White.glb"),
+        ),
+        (NftTape, Some("embedded://nft_shapes/Tape.glb")),
+        (NftWoodSlim, Some("embedded://nft_shapes/Wood_Slim.glb")),
+        (NftWoodWide, Some("embedded://nft_shapes/Wood_Wide.glb")),
+        (NftWoodTwigs, Some("embedded://nft_shapes/Wood_Twigs.glb")),
+        (NftCanvas, Some("embedded://nft_shapes/Canvas.glb")),
+        (NftNone, None),
     ])
 });
