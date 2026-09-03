@@ -18,6 +18,9 @@ message Packet {
     PlayerEmote player_emote = 9;
     SceneEmote scene_emote = 10;
     MovementCompressed movement_compressed = 12;
+    LookAtPosition look_at_position = 13;
+    Reaction reaction = 14;
+    ChatReaction chat_reaction = 15;
     // bevy-private: scene-driven animation, decoupled from movement (which now rides Pulse).
     // Other clients (Unity, web) don't understand it and drop the unknown oneof field.
     SceneDrivenAnimation scene_driven_animation = 10001;
