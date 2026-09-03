@@ -226,3 +226,25 @@ message Voice {
     VC_OPUS = 0;
   }
 }
+
+// Message sent to force an avatar to look at a position
+message LookAtPosition {
+  float timestamp = 1;
+  // world position
+  float position_x = 2;
+  float position_y = 3;
+  float position_z = 4;
+  string target_avatar_wallet_address = 5;
+}
+
+message Reaction {
+  int32 emoji_index = 1;
+  float timestamp = 2;
+  int32 count = 3;
+}
+
+message ChatReaction {
+  int32 emoji_index = 1;
+  string message_id = 2;
+  string address = 3;
+}
