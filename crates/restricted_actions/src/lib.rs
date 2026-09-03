@@ -71,7 +71,7 @@ impl Plugin for RestrictedActionsPlugin {
                 (
                     handle_player_move_requests,
                     update_player_move.after(handle_player_move_requests),
-                    move_camera,
+                    move_camera.after(handle_player_move_requests),
                     change_realm,
                     external_url,
                     spawn_portable,
