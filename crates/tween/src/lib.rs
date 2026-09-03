@@ -14,8 +14,8 @@ use dcl_component::{
             TextureMovementType, TweenStateStatus,
         },
     },
-    transform_and_parent::DclTransformAndParent,
-    SceneComponentId,
+    transform_and_parent::{sanitize_scale, DclTransformAndParent},
+    SceneComponentId, SceneEntityId,
 };
 use scene_runner::{
     renderer_context::RendererSceneContext,
@@ -272,15 +272,6 @@ impl Tween {
 
     fn apply_scale(start: Vec3, end: Vec3, ease_value: f32, transform: &mut Transform) {
         transform.scale = start + ((end - start) * ease_value);
-        if transform.scale.x == 0.0 {
-            transform.scale.x = f32::EPSILON;
-        };
-        if transform.scale.y == 0.0 {
-            transform.scale.y = f32::EPSILON;
-        };
-        if transform.scale.z == 0.0 {
-            transform.scale.z = f32::EPSILON;
-        };
     }
 }
 
@@ -431,17 +422,23 @@ fn update_tween(
                 },
             );
 
-            let Ok(parent) = parents.get(parent.parent()) else {
-                warn!("no parent for tweened ent");
-                return;
-            };
+            let parent_id = parents
+                .get(parent.parent())
+                .map(|p| p.id)
+                .unwrap_or_else(|_| {
+                    warn!("no parent for tweened ent {scene_ent:?}");
+                    SceneEntityId::ROOT
+                });
 
+            // the scene gets the raw interpolated value; only the bevy transform is sanitised
             scene.update_crdt(
                 SceneComponentId::TRANSFORM,
                 CrdtType::LWW_ENT,
                 scene_ent.container_id,
-                &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
+                &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent_id),
             );
+
+            transform.scale = sanitize_scale(transform.scale);
             if tween.is_texture_move() {
                 tween_updated_texture_writer.write(TweenUpdatedTexture(ent));
             }
