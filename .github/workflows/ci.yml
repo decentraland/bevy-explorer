@@ -3,6 +3,16 @@ on:
     branches:
       - main
   pull_request:
+  # Manual run of the full workflow on any ref. Setting `publish-tag` also publishes
+  # the web package (as 0.1.0-<runId>.commit-<sha>, under that npm dist-tag) and
+  # uploads it to the CDN, ready for a manual rollout. NOTE: any CDN upload triggers
+  # the automatic zone rollout (set-rollout.yml) — undo by rolling that version to 0%.
+  workflow_dispatch:
+    inputs:
+      publish-tag:
+        description: 'npm dist-tag to publish the web package under (empty = build only). Not next/latest.'
+        required: false
+        default: ''
 
 # PRs share a per-ref group so a superseded push cancels the in-flight run. Main
 # pushes get a unique group each (run_id): sharing one made every main run queue
@@ -461,7 +471,7 @@ jobs:
           npm run bundle
         working-directory: react-web/bridge-scene
       - name: Publish
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish-tag != '')
         uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
         with:
           cwd: './deploy/web'
@@ -470,3 +480,7 @@ jobs:
           access: public
           gitlab-token: ${{ secrets.GITLAB_CDN_DEPLOYER_TOKEN }}
           gitlab-pipeline-url: ${{ secrets.GITLAB_CDN_DEPLOYER_URL }}
+          # oddish only publishes from main (-> next) or from a branch it is told about;
+          # both inputs are empty on push/release, leaving that behaviour unchanged.
+          custom-tag: ${{ inputs.publish-tag }}
+          branch-to-custom-tag: ${{ inputs.publish-tag != '' && github.ref_name || '' }}
