@@ -1,7 +1,10 @@
 pub mod asset_source;
 mod extended_image_loader;
 
-use std::{f32::consts::FRAC_PI_2, path::PathBuf};
+use std::{
+    f32::consts::{FRAC_PI_2, PI},
+    path::PathBuf,
+};
 
 use asset_source::{Nft, NftLoader};
 use bevy::{
@@ -157,7 +160,7 @@ fn load_frame(
 
         // \o/
         let transform = if frame.0 == NftFrameType::NftClassic {
-            Transform::IDENTITY
+            Transform::from_rotation(Quat::from_rotation_x(PI))
         } else {
             Transform::from_rotation(Quat::from_rotation_x(-FRAC_PI_2))
         };
