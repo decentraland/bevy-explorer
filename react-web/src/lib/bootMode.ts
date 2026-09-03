@@ -12,6 +12,8 @@
 //   ?pulseServer=  host:port of the Pulse server the engine joins, handed to the engine via
 //                  __bevyBootConfig like ?portables= (a zone deploy points it at the zone
 //                  server). Not a boot-mode decision — listed so every entry-URL param is here.
+//   ?imposterSource= base url of the imposter store the engine fetches tiles from (native
+//                  --imposter-source), handed over the same way. Not a boot-mode decision.
 export interface BootMode {
   /** explicit ?systemScene= override; null = the default bridge scene drives */
   systemScene: string | null

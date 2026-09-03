@@ -492,7 +492,7 @@ export async function initEngine() {
  * Starts the game engine. Values come from the caller (boot.js's __bevyLaunch, fed by the React
  * host) — the old boot page's form inputs are gone.
  */
-export function start({ realm, position, systemScene, portables, preview, editor, pulseServer } = {}) {
+export function start({ realm, position, systemScene, portables, preview, editor, pulseServer, imposterSource } = {}) {
   // Launch at most once per page: a second engine_run re-runs init_runtime, whose OnceCell is
   // already set, and panics ("can't init wasm queue"). One engine per page — ignore re-entry.
   if (window.__bevyStarted) {
@@ -509,6 +509,8 @@ export function start({ realm, position, systemScene, portables, preview, editor
   const editorValue = editor === true;
   // Pulse server as host:port (the WebTransport port on web); empty = the engine's default.
   const pulseServerValue = pulseServer ?? '';
+  // Base url of the imposter store; empty = the engine's default.
+  const imposterSourceValue = imposterSource ?? '';
 
   // Build params from URL, overriding with form field values
   const urlParams = new URLSearchParams(window.location.search);
@@ -533,6 +535,11 @@ export function start({ realm, position, systemScene, portables, preview, editor
     urlParams.set("pulseServer", pulseServerValue);
   } else {
     urlParams.delete("pulseServer");
+  }
+  if (imposterSourceValue) {
+    urlParams.set("imposterSource", imposterSourceValue);
+  } else {
+    urlParams.delete("imposterSource");
   }
   const params = urlParams.toString();
   console.log(
@@ -595,7 +602,7 @@ export function start({ realm, position, systemScene, portables, preview, editor
     delete window._buildEngineApi;
   };
 
-  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, editorValue, 1e7, params, pulseServerValue);
+  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, editorValue, 1e7, params, pulseServerValue, imposterSourceValue);
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {

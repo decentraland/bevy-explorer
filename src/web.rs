@@ -160,6 +160,7 @@ pub fn engine_run(
     gpu_bytes_per_frame: usize,
     params: &str,
     pulse_server: &str,
+    imposter_source: &str,
 ) {
     apply_base_domain();
     init_runtime();
@@ -185,6 +186,7 @@ pub fn engine_run(
         is_editor,
         params,
         pulse_server,
+        imposter_source,
         with_thread_loader.then(|| WASM_ASSET_LOADER_HANDLE.get().unwrap().clone()),
     );
 
@@ -410,6 +412,7 @@ fn decentraland_app_config(
     is_editor: bool,
     params: &str,
     pulse_server: &str,
+    imposter_source: &str,
     wasm_loader_handle: Option<WasmLoaderHandle>,
 ) -> DecentralandAppConfig {
     let app_config = decentraland_serialized_app_config();
@@ -423,6 +426,7 @@ fn decentraland_app_config(
         is_editor,
         params,
         pulse_server,
+        imposter_source,
     );
 
     DecentralandAppConfig::new(app_config, arguments, wasm_loader_handle)
@@ -450,6 +454,7 @@ fn decentraland_app_arguments(
     is_editor: bool,
     params: &str,
     pulse_server: &str,
+    imposter_source: &str,
 ) -> DecentralandArguments {
     DecentralandArguments {
         server: Some(server.to_owned()),
@@ -483,6 +488,7 @@ fn decentraland_app_arguments(
         scene_imposter_bake: None,
         scene_imposter_distances: None,
         scene_imposter_multisample: None,
+        imposter_source: (!imposter_source.is_empty()).then(|| imposter_source.to_owned()),
         vsync: None,
         fps_target: None,
         gpu_bytes_per_frame: Some(gpu_bytes_per_frame),
