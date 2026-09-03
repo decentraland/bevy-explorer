@@ -146,7 +146,7 @@ cargo build --release --bin headless --no-default-features --features headless,l
 - `--gpu_bytes_per_frame <n>` — cap per-frame gpu uploads.
 - `--no_gltf`, `--no_avatar`, `--no_fog` — disable gltf loading / avatar rendering / distance fog.
 - `--bake (f|h|q|o)` and `--impost <d1,d2,…>` — imposter baking speed and distances.
-- `--imposter-source <url>` — base url of the imposter store to fetch from (default `https://bevy-imposters.dclregenesislabs.xyz`). The realm-keyed path under it is the same as the default store's.
+- `--imposter-source <url>` — base url of the imposter store to fetch from (default `https://bevy-imposters.dclregenesislabs.xyz`). The realm-keyed path under it is the same as the default store's. On web: `?imposterSource=`.
 
 **UI**
 - `--ui <scene|none>` — use a specific system scene, or `none` for no system scene. Any explicit `--ui` opts **out** of the React HUD; without it, HUD builds load the bundled bridge scene.

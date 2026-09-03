@@ -48,7 +48,9 @@ function injectEngine(): void {
     preview: params.has('preview'),
     // host:port of the Pulse server the engine joins (WebTransport port); a zone deploy points
     // it at the zone server. Absent = the engine's built-in production default.
-    pulseServer: params.get('pulseServer') ?? undefined
+    pulseServer: params.get('pulseServer') ?? undefined,
+    // base url of the imposter store (native --imposter-source). Absent = the engine's default.
+    imposterSource: params.get('imposterSource') ?? undefined
   }
 
   for (const src of CDN_LIBS) {
@@ -66,7 +68,13 @@ function injectEngine(): void {
 declare global {
   interface Window {
     PUBLIC_URL?: string
-    __bevyBootConfig?: { systemScene?: string; portables?: string; preview?: boolean; pulseServer?: string }
+    __bevyBootConfig?: {
+      systemScene?: string
+      portables?: string
+      preview?: boolean
+      pulseServer?: string
+      imposterSource?: string
+    }
   }
 }
 
