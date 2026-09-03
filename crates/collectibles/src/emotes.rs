@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use once_cell::sync::Lazy;
 
 use crate::{
+    ext::AvatarEmotesExt,
     urn::{CollectibleInstance, CollectibleUrn},
     Collectible, CollectibleData, CollectibleError, CollectibleManager, CollectibleType,
     CollectiblesTypePlugin,
@@ -381,8 +382,7 @@ impl Emote {
         let gltf = gltfs.get(self.gltf.id()).ok_or(CollectibleError::Loading)?;
         if let Some(anim) = gltf
             .named_animations
-            .iter()
-            .find(|(name, _)| name.ends_with("_Avatar"))
+            .find_avatar_emote()
             .map(|(_, handle)| handle)
             .cloned()
         {
