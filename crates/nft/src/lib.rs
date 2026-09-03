@@ -144,6 +144,7 @@ fn load_frame(
                 if let Some(path) = NFTSHAPE_LOOKUP.get(&frame.0).unwrap() {
                     vacancy.insert(asset_server.load(*path)).clone()
                 } else {
+                    commands.entity(ent).remove::<FrameLoading>();
                     continue;
                 }
             }
