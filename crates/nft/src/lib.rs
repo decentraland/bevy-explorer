@@ -225,6 +225,13 @@ fn process_frame(
                     if maybe_name.iter().any(|name| name.contains("frame")) {
                         mat_clone.base_color = frame.color;
                     }
+                    if maybe_name
+                        .iter()
+                        .any(|name| name.contains("frame") || name.contains("ground"))
+                    {
+                        mat_clone.double_sided = true;
+                        mat_clone.cull_mode = None;
+                    }
                     commands
                         .entity(spawned_ent)
                         .remove::<MeshMaterial3d<StandardMaterial>>()
