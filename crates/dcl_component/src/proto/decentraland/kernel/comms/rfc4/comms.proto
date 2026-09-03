@@ -20,7 +20,7 @@ message Packet {
     MovementCompressed movement_compressed = 12;
     // bevy-private: scene-driven animation, decoupled from movement (which now rides Pulse).
     // Other clients (Unity, web) don't understand it and drop the unknown oneof field.
-    SceneDrivenAnimation scene_driven_animation = 13;
+    SceneDrivenAnimation scene_driven_animation = 10001;
   }
   uint32 protocol_version = 11;
 }
