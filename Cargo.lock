@@ -3656,6 +3656,7 @@ dependencies = [
  "serde",
  "serde_json",
  "social",
+ "system_api_types",
  "system_bridge",
  "system_ui",
  "texture_camera",

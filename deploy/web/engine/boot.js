@@ -4,7 +4,10 @@
 //
 // Contract with the host page (react-web/src/engine/engineRpc.ts):
 //   set BEFORE injecting:  window.PUBLIC_URL   — base for pkg/ fetches (versioned CDN in prod)
-//                          window.__bevyBootConfig = { systemScene, portables, preview, editor, pulseServer, imposterSource }
+//                          window.__bevyBootConfig — the engine_run options (src/web_options.rs,
+//                            keyed by the web param table: systemScene, portables, preview,
+//                            pulseServer, imposterSource …) minus realm/position, forwarded
+//                            verbatim by __bevyLaunch
 //   provided by this module:
 //     __bevyLoadProgress / __bevyLoadStep  — weighted boot progress for the login bar
 //     __bevyReadyToLaunch / __bevyLaunch(realm?, position?) — deferred engine_run
@@ -20,7 +23,7 @@
 //       it before composing any backend URL (parity with native --base-domain)
 //     __bevyHomeScene() — the persisted home scene { realm, parcel: "x,y" } (or the derived
 //       defaults), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
-import { initEngine, start, engine_home_scene, gpu_cache_hash, initGpuCache } from './engine.js'
+import { initEngine, start, applyOptionsToUrlParams, engine_home_scene, gpu_cache_hash, initGpuCache } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
 // Weight of each step in the overall bar (sums to 100). Step ids are read by the React login bar
@@ -261,40 +264,42 @@ const forwardWheelToEngine = (e) => {
 window.addEventListener('wheel', forwardWheelToEngine)
 
 // ---- URL sync (CALLED BY THE WASM — src/web.rs set_url_params) -----------------------------------
-// Keeps the browser URL in step with the player's realm/position so a reload/share lands back at
-// the same place. Defaults are omitted so the canonical entry URL stays clean.
+// Keeps the browser URL in step with the engine so a reload/share lands back in the same state.
+// The wasm sends its CURRENT launch options — the engine_run options object with the live realm,
+// position, ui scene, portables and mode swapped in — so every param given at launch is echoed
+// back, not just the ones this file knows about. Defaults are omitted so the canonical entry URL
+// stays clean; unknown (HUD-only) params are preserved.
 // The base domain is the HUD's call (see the __baseDomain contract above): the ?baseDomain=
-// entry param, else the hosting origin's apex, else org. set_url_params below preserves unknown
-// params, so the param form survives URL syncs.
+// entry param, else the hosting origin's apex, else org. It never comes through here.
 const BASE_DOMAIN = window.__baseDomain()
 const DEFAULT_SERVER = `https://realm-provider-ea.${BASE_DOMAIN}/main`
-const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'
 // The engine connects to the EXPANDED world url (ipfs map_realm_name turns `name.dcl.eth` into
 // worlds-content-server…/world/name.dcl.eth) and echoes that back here. Reverse it so the address
 // bar keeps the short name the user typed; a reload re-expands it the same way.
 const WORLDS_PREFIX = `https://worlds-content-server.${BASE_DOMAIN}/world/`
 // captured from the ENTRY url (later syncs rewrite location.search)
 const explicitSystemScene = new URLSearchParams(window.location.search).has('systemScene')
-window.set_url_params = (position, server, system_scene, portables, preview, editor) => {
+// The values that mean "default" and are dropped from the url — the two defaults only this page
+// knows (the engine already omits its own, e.g. the default portables). systemScene: null from the
+// engine = NO ui scene (systemScene=none); an explicit ?systemScene= boot override stays across
+// reloads, only the host's default scene is omitted.
+const urlValue = (name, value) => {
+  switch (name) {
+    case 'realm':
+      if (typeof value === 'string' && value.startsWith(WORLDS_PREFIX)) value = value.slice(WORLDS_PREFIX.length)
+      return value === DEFAULT_SERVER ? null : value
+    case 'systemScene':
+      value = value ?? 'none'
+      return explicitSystemScene || value !== (config.systemScene ?? 'none') ? value : null
+    default:
+      return value
+  }
+}
+window.set_url_params = (optionsJson) => {
   try {
-    if (server.startsWith(WORLDS_PREFIX)) server = server.slice(WORLDS_PREFIX.length)
     const urlParams = new URLSearchParams(window.location.search)
-    // absent when the realm won't honour a position (worlds spawn at their base scene)
-    if (position != null) urlParams.set('position', position)
-    else urlParams.delete('position')
-    if (server !== DEFAULT_SERVER) urlParams.set('realm', server)
-    else urlParams.delete('realm')
-    // An explicit ?systemScene= boot override stays in the URL across reloads (null from the
-    // engine = NO ui scene running, i.e. systemScene=none); only the default scene is omitted
-    // to keep the canonical entry URL clean.
-    if (explicitSystemScene || system_scene !== (config.systemScene ?? '')) urlParams.set('systemScene', system_scene ?? 'none')
-    else urlParams.delete('systemScene')
-    if (portables !== DEFAULT_PORTABLES) urlParams.set('portables', portables)
-    else urlParams.delete('portables')
-    if (preview) urlParams.set('preview', true)
-    else urlParams.delete('preview')
-    if (editor) urlParams.set('editor', true)
-    else urlParams.delete('editor')
+    const options = Object.fromEntries(Object.entries(JSON.parse(optionsJson)).map(([name, raw]) => [name, urlValue(name, raw)]))
+    applyOptionsToUrlParams(urlParams, options)
     history.replaceState(null, '', window.location.pathname + '?' + urlParams.toString())
   } catch (e) {
     console.log(`set url params failed: ${e}`)
@@ -323,7 +328,7 @@ initEngine()
     window.setLoadingStepCompleted('gpu')
     // Deferred launch: the host calls this once the user picks a destination — avoiding a wasted
     // default-realm load. One engine per page (see start()'s __bevyStarted guard).
-    window.__bevyLaunch = (realm, position) => start({ realm, position, systemScene: config.systemScene, portables: config.portables, preview: config.preview, editor: config.editor, pulseServer: config.pulseServer, imposterSource: config.imposterSource })
+    window.__bevyLaunch = (realm, position) => start({ ...config, realm, position })
     // The persisted home scene ({ realm, parcel: "x,y" }), valid once engine_init has loaded the
     // config — the host's places picker targets it from "Skip to Home" before launching.
     window.__bevyHomeScene = () => { try { return JSON.parse(engine_home_scene()) } catch { return null } }

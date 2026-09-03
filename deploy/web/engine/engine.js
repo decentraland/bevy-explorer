@@ -489,10 +489,26 @@ export async function initEngine() {
 }
 
 /**
- * Starts the game engine. Values come from the caller (boot.js's __bevyLaunch, fed by the React
- * host) — the old boot page's form inputs are gone.
+ * Writes launch options (an engine_run options object, or the engine's echo of it) into url params:
+ * absent (null), an unset flag (false) or empty = removed, so the url only carries what is set.
+ * Shared with boot.js's url sync.
+ * @param {URLSearchParams} urlParams
+ * @param {Record<string, string | boolean | null | undefined>} options
  */
-export function start({ realm, position, systemScene, portables, preview, editor, pulseServer, imposterSource } = {}) {
+export function applyOptionsToUrlParams(urlParams, options) {
+  for (const [name, value] of Object.entries(options)) {
+    if (value == null || value === false || value === '') urlParams.delete(name);
+    else urlParams.set(name, value === true ? 'true' : String(value));
+  }
+}
+
+/**
+ * Starts the game engine. `options` is the engine_run options object — one named key per
+ * launch parameter (EngineRunOptions in src/web.rs: realm, position, systemScene, portables,
+ * preview, editor, pulseServer, imposterSource). It comes from boot.js's __bevyLaunch, fed by
+ * the React host. Absent keys take the engine's defaults; an unknown key makes engine_run throw.
+ */
+export function start(options = {}) {
   // Launch at most once per page: a second engine_run re-runs init_runtime, whose OnceCell is
   // already set, and panics ("can't init wasm queue"). One engine per page — ignore re-entry.
   if (window.__bevyStarted) {
@@ -501,50 +517,13 @@ export function start({ realm, position, systemScene, portables, preview, editor
   }
   window.__bevyStarted = true;
 
-  const realmValue = realm ?? '';
-  const positionValue = position ?? '';
-  const systemSceneValue = systemScene ?? '';
-  const portablesValue = portables ?? 'basiccontroller.dcl.eth';
-  const previewValue = preview === true;
-  const editorValue = editor === true;
-  // Pulse server as host:port (the WebTransport port on web); empty = the engine's default.
-  const pulseServerValue = pulseServer ?? '';
-  // Base url of the imposter store; empty = the engine's default.
-  const imposterSourceValue = imposterSource ?? '';
-
-  // Build params from URL, overriding with form field values
+  // Mirror the launch options into the page's query string — the scenes see it as their params
+  // (SceneParams), so a launch-time choice (the picked realm/position) shows up there too.
   const urlParams = new URLSearchParams(window.location.search);
-  urlParams.set("realm", realmValue);
-  if (positionValue) {
-    urlParams.set("position", positionValue);
-  }
-  urlParams.set("systemScene", systemSceneValue);
-  urlParams.set("portables", portablesValue);
   urlParams.delete("initialRealm");
-  if (previewValue) {
-    urlParams.set("preview", "true");
-  } else {
-    urlParams.delete("preview");
-  }
-  if (editorValue) {
-    urlParams.set("editor", "true");
-  } else {
-    urlParams.delete("editor");
-  }
-  if (pulseServerValue) {
-    urlParams.set("pulseServer", pulseServerValue);
-  } else {
-    urlParams.delete("pulseServer");
-  }
-  if (imposterSourceValue) {
-    urlParams.set("imposterSource", imposterSourceValue);
-  } else {
-    urlParams.delete("imposterSource");
-  }
-  const params = urlParams.toString();
-  console.log(
-    `[Main JS] "Launch" button clicked. Initial Realm: "${realmValue}", Position (coords): "${positionValue}", System Scene: "${systemSceneValue}", Portables: "${portablesValue}"`
-  );
+  applyOptionsToUrlParams(urlParams, options);
+  const sceneParams = urlParams.toString();
+  console.log(`[Main JS] launching with ${JSON.stringify(options)}`);
   hideHeader();
 
   const platform = (() => {
@@ -602,7 +581,9 @@ export function start({ realm, position, systemScene, portables, preview, editor
     delete window._buildEngineApi;
   };
 
-  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, editorValue, 1e7, params, pulseServerValue, imposterSourceValue);
+  // Everything the host handed us goes through as-is (the engine rejects unknown keys); only
+  // the page-derived values are added here.
+  engine_run({ ...options, platform, sceneParams });
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {

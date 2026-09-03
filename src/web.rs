@@ -25,12 +25,18 @@ use system_bridge::{SystemApi, SystemBridge};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::js_sys;
 
-use crate::{DecentralandApp, DecentralandAppConfig, DecentralandArguments};
+use crate::{
+    web_options::{self, non_empty, EngineRunOptions},
+    DecentralandApp, DecentralandAppConfig, DecentralandArguments,
+};
 
 static WASM_ASSET_LOADER_HANDLE: OnceCell<WasmLoaderHandle> = OnceCell::new();
 static INIT_DATA: OnceCell<AppConfig> = OnceCell::new();
 static CONSOLE_BRIDGE_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<SystemApi>> =
     OnceCell::new();
+/// The options the page launched with; the url sync echoes them back with the live values
+/// (realm, position, …) swapped in.
+static LAUNCH_OPTIONS: OnceCell<EngineRunOptions> = OnceCell::new();
 
 #[wasm_bindgen]
 extern "C" {
@@ -40,15 +46,10 @@ extern "C" {
 
 #[wasm_bindgen(js_namespace = window)]
 extern "C" {
+    /// The engine's current launch options as JSON — the `engine_run` options object minus the
+    /// page-derived keys — for boot.js to mirror into the page url.
     #[wasm_bindgen(js_name = set_url_params)]
-    fn set_url_params(
-        position: Option<String>,
-        realm: String,
-        system_scene: Option<String>,
-        portables: Option<String>,
-        is_preview: bool,
-        is_editor: bool,
-    );
+    fn set_url_params(options_json: &str);
 
     #[wasm_bindgen(js_name = "allowADummyPipeline")]
     fn allow_a_dummy_pipeline();
@@ -146,22 +147,46 @@ pub fn engine_home_scene() -> String {
         .to_string()
 }
 
-#[expect(clippy::too_many_arguments)]
+/// Bytes of gpu uploads per frame on web — was a constant the page passed in; the engine owns it.
+const WEB_GPU_BYTES_PER_FRAME: usize = 10_000_000;
+
+// Type the `engine_run` parameter in the generated .d.ts — keep in step with
+// `web_options::EngineRunOptions` (tested against the web param table).
+#[wasm_bindgen(typescript_custom_section)]
+const ENGINE_RUN_OPTIONS_TS: &str = r#"
+export interface EngineRunOptions {
+    platform?: string;
+    realm?: string;
+    position?: string;
+    systemScene?: string;
+    portables?: string;
+    preview?: boolean;
+    editor?: boolean;
+    sceneParams?: string;
+    pulseServer?: string;
+    imposterSource?: string;
+}
+"#;
+
 #[wasm_bindgen]
-pub fn engine_run(
-    platform: &str,
-    server: &str,
-    location: &str,
-    system_scene: &str,
-    portables: &str,
-    with_thread_loader: bool,
-    is_preview: bool,
-    is_editor: bool,
-    gpu_bytes_per_frame: usize,
-    params: &str,
-    pulse_server: &str,
-    imposter_source: &str,
-) {
+extern "C" {
+    #[wasm_bindgen(typescript_type = "EngineRunOptions")]
+    pub type EngineRunOptionsJs;
+}
+
+/// Round-trip the page's object through JSON rather than `serde_wasm_bindgen::from_value`: that
+/// only visits the struct's own fields, so `deny_unknown_fields` would never see a misspelt key.
+fn parse_options(options: &JsValue) -> Result<EngineRunOptions, JsValue> {
+    let json = String::from(js_sys::JSON::stringify(options)?);
+    web_options::parse(&json)
+        .map_err(|e| JsValue::from_str(&format!("engine_run: invalid options: {e}")))
+}
+
+/// Launch the engine. Throws (rejects the launch) on an invalid options object.
+#[wasm_bindgen]
+pub fn engine_run(options: EngineRunOptionsJs) -> Result<(), JsValue> {
+    let options = parse_options(&options)?;
+    let _ = LAUNCH_OPTIONS.set(options.clone());
     apply_base_domain();
     init_runtime();
 
@@ -176,24 +201,16 @@ pub fn engine_run(
         custom_layer: |_| None,
     });
 
-    let decentraland_app_config = decentraland_app_config(
-        server,
-        location,
-        system_scene,
-        portables,
-        gpu_bytes_per_frame,
-        is_preview,
-        is_editor,
-        params,
-        pulse_server,
-        imposter_source,
-        with_thread_loader.then(|| WASM_ASSET_LOADER_HANDLE.get().unwrap().clone()),
+    let decentraland_app_config = DecentralandAppConfig::new(
+        decentraland_serialized_app_config(),
+        decentraland_app_arguments(&options),
+        Some(WASM_ASSET_LOADER_HANDLE.get().unwrap().clone()),
     );
 
     let mut app = decentraland_app.build(decentraland_app_config);
 
     // on wasm we need to explicitly specify key binds for the platform
-    let text_bindings = if platform.contains("mac") {
+    let text_bindings = if options.platform.contains("mac") {
         bevy_simple_text_input::TextInputNavigationBindings::macos_default()
     } else {
         bevy_simple_text_input::TextInputNavigationBindings::non_macos_default()
@@ -218,6 +235,7 @@ pub fn engine_run(
     let _ = CONSOLE_BRIDGE_SENDER.set(bridge_sender);
 
     app.run();
+    Ok(())
 }
 
 /// Send a console command to the engine from JavaScript.
@@ -323,23 +341,16 @@ pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>
     }
 }
 
-#[derive(PartialEq, Default, Clone)]
-struct UrlParams {
-    parcel: Option<IVec2>,
-    server: String,
-    ui_scene: Option<String>,
-    portables: Option<String>,
-    preview: bool,
-    editor: bool,
-}
-
+/// Keeps the page url in step with the engine: the launch options with the live realm,
+/// position, ui scene, portables and mode swapped in, sent whole so every param given at
+/// launch (pulse server, imposter source, …) is retained alongside them.
 fn update_url_params(
     player: Query<&GlobalTransform, With<PrimaryUser>>,
     current_realm: Res<CurrentRealm>,
     startup_scenes: Option<Res<StartupScenes>>,
     preview: Res<PreviewMode>,
     editor: Res<EditorMode>,
-    mut prev: Local<UrlParams>,
+    mut prev: Local<Option<EngineRunOptions>>,
 ) {
     // realms with fixed scene urns (worlds) spawn at their base scene and ignore an explicit
     // position (see load_active_entities' base-position handling) - don't write one into the url
@@ -348,12 +359,14 @@ fn update_url_params(
         .scenes_urn
         .as_ref()
         .is_none_or(Vec::is_empty);
-    let parcel = position_honoured
-        .then(|| vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default()));
+    let position = position_honoured.then(|| {
+        let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
+        format!("{},{}", parcel.x, parcel.y)
+    });
     let Some(server) = current_realm.about_url.strip_suffix("/about") else {
         return;
     };
-    let (ui_scene, portables) = if let Some(s) = startup_scenes {
+    let (system_scene, portables) = if let Some(s) = startup_scenes {
         // the ui scene is the super-user scene inserted at index 0 — when one was given at all
         // (?systemScene=none boots with only regular startup scenes/portables)
         let ui_scene = s
@@ -375,61 +388,31 @@ fn update_url_params(
     } else {
         (None, None)
     };
-    let preview = preview.is_preview;
 
-    let params = UrlParams {
-        parcel,
-        server: server.to_owned(),
-        ui_scene,
-        portables,
-        preview,
+    let options = EngineRunOptions {
+        realm: Some(server.to_owned()),
+        position,
+        system_scene,
+        // the default set is omitted so the canonical url stays clean (the page doesn't know it)
+        portables: portables.filter(|p| p != system_api_types::web_params::DEFAULT_PORTABLES),
+        preview: preview.is_preview,
         editor: editor.0,
+        ..LAUNCH_OPTIONS.get().cloned().unwrap_or_default()
     };
 
-    if params != *prev {
-        *prev = params.clone();
-        set_url_params(
-            params
-                .parcel
-                .map(|parcel| format!("{},{}", parcel.x, parcel.y)),
-            params.server,
-            params.ui_scene,
-            params.portables,
-            params.preview,
-            params.editor,
-        );
+    if prev.as_ref() != Some(&options) {
+        let mut json = serde_json::to_value(&options).unwrap_or_default();
+        if let Some(map) = json.as_object_mut() {
+            // the page-derived keys are the loader's to compute, never url state
+            for param in system_api_types::web_params::web_params() {
+                if param.delivery == system_api_types::web_params::Delivery::Page {
+                    map.remove(param.name);
+                }
+            }
+        }
+        set_url_params(&json.to_string());
+        *prev = Some(options);
     }
-}
-
-#[expect(clippy::too_many_arguments)]
-fn decentraland_app_config(
-    server: &str,
-    location: &str,
-    ui_scene: &str,
-    portables: &str,
-    gpu_bytes_per_frame: usize,
-    is_preview: bool,
-    is_editor: bool,
-    params: &str,
-    pulse_server: &str,
-    imposter_source: &str,
-    wasm_loader_handle: Option<WasmLoaderHandle>,
-) -> DecentralandAppConfig {
-    let app_config = decentraland_serialized_app_config();
-    let arguments = decentraland_app_arguments(
-        server,
-        location,
-        ui_scene,
-        portables,
-        gpu_bytes_per_frame,
-        is_preview,
-        is_editor,
-        params,
-        pulse_server,
-        imposter_source,
-    );
-
-    DecentralandAppConfig::new(app_config, arguments, wasm_loader_handle)
 }
 
 fn decentraland_serialized_app_config() -> AppConfig {
@@ -443,26 +426,16 @@ fn decentraland_serialized_app_config() -> AppConfig {
     })
 }
 
-#[expect(clippy::too_many_arguments)]
-fn decentraland_app_arguments(
-    server: &str,
-    location: &str,
-    ui_scene: &str,
-    portables: &str,
-    gpu_bytes_per_frame: usize,
-    is_preview: bool,
-    is_editor: bool,
-    params: &str,
-    pulse_server: &str,
-    imposter_source: &str,
-) -> DecentralandArguments {
+fn decentraland_app_arguments(options: &EngineRunOptions) -> DecentralandArguments {
     DecentralandArguments {
-        server: Some(server.to_owned()),
+        server: non_empty(&options.realm),
         content_server_override: None,
-        location: IVec2Arg::from_str(location)
-            .map(|location_arg| location_arg.0)
-            .ok(),
-        startup_scenes: Some(
+        location: options
+            .position
+            .as_deref()
+            .and_then(|location| IVec2Arg::from_str(location).ok())
+            .map(|location_arg| location_arg.0),
+        startup_scenes: non_empty(&options.portables).map(|portables| {
             portables
                 .split(";")
                 .map(|portable| StartupScene {
@@ -472,28 +445,25 @@ fn decentraland_app_arguments(
                     hot_reload: None,
                     hash: None,
                 })
-                .collect::<Vec<_>>(),
-        )
-        .filter(|startup_scenes| !startup_scenes.is_empty()),
-        ui_scene: (!ui_scene.is_empty())
-            .then(|| ui_scene.to_owned())
-            .filter(|scene| scene != "none"),
+                .collect::<Vec<_>>()
+        }),
+        ui_scene: non_empty(&options.system_scene).filter(|scene| scene != "none"),
         // wasm has no engine-managed HUD: the react page hosting the engine is the HUD
         hud: false,
-        scene_params: Some(params.to_owned()),
-        pulse_server: (!pulse_server.is_empty()).then(|| pulse_server.to_owned()),
+        scene_params: options.scene_params.clone(),
+        pulse_server: non_empty(&options.pulse_server),
         scene_threads: None,
         scene_load_distance: None,
         scene_unload_extra_distance: None,
         scene_imposter_bake: None,
         scene_imposter_distances: None,
         scene_imposter_multisample: None,
-        imposter_source: (!imposter_source.is_empty()).then(|| imposter_source.to_owned()),
+        imposter_source: non_empty(&options.imposter_source),
         vsync: None,
         fps_target: None,
-        gpu_bytes_per_frame: Some(gpu_bytes_per_frame),
-        is_preview,
-        editor: is_editor,
+        gpu_bytes_per_frame: Some(WEB_GPU_BYTES_PER_FRAME),
+        is_preview: options.preview,
+        editor: options.editor,
         sysinfo_visible: false,
         scene_log_to_console: false,
         startup_scenes_preview: false,

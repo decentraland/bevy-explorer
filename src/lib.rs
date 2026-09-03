@@ -2,6 +2,7 @@ mod commands;
 mod ext;
 #[cfg(target_arch = "wasm32")]
 mod web;
+pub mod web_options;
 // POC: react-web HUD via CEF offscreen rendering into an in-engine texture (`react-hud-cef`).
 #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
 mod react_hud_cef;
@@ -363,7 +364,7 @@ impl DecentralandApp {
             .startup_scenes
             .unwrap_or_else(|| {
                 vec![StartupScene {
-                    source: String::from("basiccontroller.dcl.eth"),
+                    source: String::from(system_api_types::web_params::DEFAULT_PORTABLES),
                     super_user: false,
                     preview: decentraland_app_config.arguments.startup_scenes_preview,
                     hot_reload: None,
