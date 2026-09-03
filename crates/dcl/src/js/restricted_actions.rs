@@ -51,13 +51,9 @@ pub async fn op_move_player_to(
                 to,
                 looking_at,
                 duration,
+                camera_rotation,
                 response,
             })?;
-        if let Some(facing) = camera_rotation {
-            op_state
-                .borrow_mut::<RpcCalls>()
-                .push(RpcCall::MoveCamera { scene, facing })?;
-        }
     }
 
     Ok(if let Some(rx) = rx {

@@ -71,7 +71,7 @@ impl Plugin for RestrictedActionsPlugin {
                 (
                     handle_player_move_requests,
                     update_player_move.after(handle_player_move_requests),
-                    move_camera,
+                    move_camera.after(handle_player_move_requests),
                     change_realm,
                     external_url,
                     spawn_portable,
@@ -142,6 +142,7 @@ pub enum PendingPlayerMove {
         target: Vec3,
         looking_at: Option<Vec3>,
         duration: Option<f32>,
+        camera_rotation: Option<Quat>,
         response: Option<RpcResultSender<bool>>,
     },
     Walk {
@@ -225,12 +226,14 @@ pub fn handle_player_move_requests(
                 to,
                 looking_at,
                 duration,
+                camera_rotation,
                 response,
             } => PendingPlayerMove::Move {
                 scene: *scene,
                 target: *to,
                 looking_at: *looking_at,
                 duration: *duration,
+                camera_rotation: *camera_rotation,
                 response: response.clone(),
             },
             RpcCall::WalkPlayer {
@@ -369,7 +372,8 @@ fn apply_player_move(
             looking_at,
             duration,
             response,
-            ..
+            camera_rotation,
+            scene,
         } => {
             if let Some(d) = duration {
                 let d = d.max(f32::EPSILON);
@@ -409,6 +413,17 @@ fn apply_player_move(
                 // this, the next apply_movement re-applies the scene's stale orientation
                 // and the avatar snaps back (e.g. a keeper placed facing the kicker).
                 movement_control.accept_movement_after = now;
+            }
+
+            if let Some(camera_rotation) = camera_rotation {
+                if let Some(scene) = scene {
+                    commands.send_event(RpcCall::MoveCamera {
+                        scene,
+                        facing: camera_rotation,
+                    });
+                } else {
+                    warn!("MoveTo action without scene had camera_rotation");
+                }
             }
         }
 
