@@ -10,7 +10,7 @@ import { bridgeChannelName } from '../../engine/protocol'
 import { serviceUrl } from '../../lib/baseDomain'
 import { bootMode } from '../../lib/bootMode'
 import { PAGE_DIR } from '../../lib/publicUrl'
-// Moved to lib/systemScene.ts, which also decides whether a link is allowed to override it.
+// Moved to lib/systemScene.ts; whether a link may override it is lib/launchGate.ts's call.
 import { SYSTEM_SCENE } from '../../lib/systemScene'
 import { launchOptionsFromUrl, type LaunchOptions } from '../../lib/webParams'
 
