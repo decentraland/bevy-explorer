@@ -1,7 +1,6 @@
 pub mod agent_commands;
 pub mod settings;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use bevy::{
@@ -30,16 +29,7 @@ impl Plugin for SystemBridgePlugin {
         app.add_event::<SystemApi>();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
-        app.init_resource::<SceneParams>();
-        app.add_systems(
-            Update,
-            (
-                post_events,
-                handle_home_scene,
-                handle_exit,
-                handle_get_params,
-            ),
-        );
+        app.add_systems(Update, (post_events, handle_home_scene, handle_exit));
 
         if self.bare {
             return;
@@ -145,35 +135,8 @@ pub enum SystemApi {
     GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
     GetBlockingStatus(RpcResultSender<Result<BlockingStatusData, String>>),
     GetBlockUpdateStream(RpcStreamSender<BlockUpdateData>),
-    GetParams(RpcResultSender<HashMap<String, String>>),
     // Connection
     LivekitStatusStream(RpcStreamSender<LivekitUpdate>),
-}
-
-#[derive(Resource, Default, Clone, Debug)]
-pub struct SceneParams(pub HashMap<String, String>);
-
-impl SceneParams {
-    pub fn from_query_string(query: &str, decode: bool) -> Self {
-        let map = query
-            .split('&')
-            .filter(|s| !s.is_empty())
-            .filter_map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                let key = parts.next()?.to_owned();
-                let value = parts.next().unwrap_or("").to_owned();
-                if decode {
-                    Some((
-                        urlencoding::decode(&key).unwrap_or_default().into_owned(),
-                        urlencoding::decode(&value).unwrap_or_default().into_owned(),
-                    ))
-                } else {
-                    Some((key, value))
-                }
-            })
-            .collect();
-        Self(map)
-    }
 }
 
 #[derive(Resource)]
@@ -253,13 +216,5 @@ fn handle_exit(mut ev: EventReader<SystemApi>, mut exit: EventWriter<AppExit>) {
         .is_some()
     {
         exit.write_default();
-    }
-}
-
-fn handle_get_params(mut ev: EventReader<SystemApi>, params: Res<SceneParams>) {
-    for ev in ev.read() {
-        if let SystemApi::GetParams(sender) = ev {
-            sender.send(params.0.clone());
-        }
     }
 }

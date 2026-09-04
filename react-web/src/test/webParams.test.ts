@@ -8,7 +8,9 @@ import { untrustedLaunchParams } from '../lib/launchGate'
 
 describe('launchOptionsFromUrl', () => {
   it('reads every launch param, flags by presence, strings verbatim, absent = undefined', () => {
-    const q = new URLSearchParams('?pulseServer=localhost:7777&preview&portables=a;b&editor')
+    const q = new URLSearchParams(
+      '?pulseServer=localhost:7777&preview&portables=a;b&editor&logFps=true&gpuBytesPerFrame=500000&contentServer=https://peer.decentraland.org/content'
+    )
     const opts = launchOptionsFromUrl(q)
     // editor is the creator-hub front-end's to set (delivery `host`), never a link's
     expect('editor' in opts).toBe(false)
@@ -16,6 +18,11 @@ describe('launchOptionsFromUrl', () => {
     expect(opts.preview).toBe(true)
     expect(opts.portables).toBe('a;b')
     expect(opts.imposterSource).toBeUndefined()
+    // typed kinds arrive as the engine's type; an unparseable number stays a string for the engine to reject
+    expect(opts.logFps).toBe(true)
+    expect(opts.gpuBytesPerFrame).toBe(500000)
+    expect(opts.contentServer).toBe('https://peer.decentraland.org/content')
+    expect(launchOptionsFromUrl(new URLSearchParams('?gpuBytesPerFrame=lots')).gpuBytesPerFrame).toBe('lots')
     // only launch-delivered params: the picker's realm/position and the host-side baseDomain stay out
     for (const name of Object.keys(opts)) expect(webParam(name).delivery).toBe('launch')
     expect(Object.keys(opts).sort()).toEqual(
@@ -29,6 +36,22 @@ describe('launchOptionsFromUrl', () => {
 describe('untrustedLaunchParams', () => {
   it('is empty on a plain entry url', () => {
     expect(untrustedLaunchParams({ native: false })).toEqual([])
+  })
+
+  it('gates a content server outside decentraland.org/.zone', () => {
+    window.history.replaceState(null, '', '/?contentServer=https://peer.decentraland.zone/content')
+    try {
+      expect(untrustedLaunchParams({ native: false })).toEqual([])
+    } finally {
+      window.history.replaceState(null, '', '/?contentServer=http://localhost:8000/content')
+    }
+    try {
+      const [p] = untrustedLaunchParams({ native: false })
+      expect(p.name).toBe('contentServer')
+      expect(p.warning).toMatch(/Fetches every scene/)
+    } finally {
+      window.history.replaceState(null, '', '/')
+    }
   })
 
   it('reports an unrecognised system scene with the gate copy', () => {

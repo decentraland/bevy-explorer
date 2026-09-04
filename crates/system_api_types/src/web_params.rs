@@ -1,25 +1,32 @@
-//! The entry-url parameters the web build accepts — defined ONCE, here. Exported to the react
-//! page alongside the ts-rs types (scripts/gen-ts-bindings.sh writes `webParamTable.ts` into
+//! The entry-url parameters the web build accepts, as the react page sees them. Derived from
+//! [`LaunchOptions`] (the one declaration of every launch parameter, native and web): each of
+//! its clap args becomes a row — camelCase name, kind from whether the flag takes a value, doc
+//! from the `--help` text — joined with the web-only fact this module owns, how the value gets
+//! from the entry url to the engine ([`Delivery`]). Exported to the react page alongside the
+//! ts-rs types (scripts/gen-ts-bindings.sh writes `webParamTable.ts` into
 //! react-web/src/engine/generated), so the host page reads the same table the engine is built
-//! from: which params exist, what each does and how it reaches the engine. Whether a LINK may
-//! set one is the front-end's policy, not the engine's (react-web lib/launchGate.ts — a
-//! different host, e.g. the editor, trusts different things). `src/web_options.rs` (the
-//! `engine_run` options object, which the engine also echoes back into the page url) is
-//! checked against this table in a unit test.
-//!
-//! Native has no table: each `--flag` is parsed by hand in src/main.rs. The `doc` strings name
-//! the native counterpart so this doubles as the cross-platform index.
+//! from. Whether a LINK may set a param is the front-end's policy, not the engine's (react-web
+//! lib/launchGate.ts — a different host, e.g. the editor, trusts different things).
 
+use std::any::TypeId;
+
+use clap::Args;
 use serde::Serialize;
+
+use crate::launch_options::LaunchOptions;
 
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum ParamKind {
-    /// `?name=value`
+    /// `?name=value`, passed as a string
     String,
     /// presence is the value: `?name` / `?name=true`
     Flag,
+    /// `?name=true|false`, passed as a boolean
+    Bool,
+    /// `?name=<integer>`, passed as a number
+    Number,
 }
 
 /// How the value gets from the entry url to the engine.
@@ -36,9 +43,6 @@ pub enum Delivery {
     /// Set by an embedding host page from its own knowledge (the creator-hub editor sets
     /// `editor`) — an `engine_run` option the react page must NOT read from the entry url.
     Host,
-    /// Computed by the engine loader (engine.js) at launch — an `engine_run` option that is
-    /// never read from the url.
-    Page,
     /// The host page consumes it itself (composing its own backend urls) and publishes it as
     /// `window.__baseDomain()` before the wasm loads; the engine reads that at `engine_init`,
     /// ahead of `engine_run`.
@@ -50,91 +54,83 @@ pub enum Delivery {
 #[ts(export)]
 pub struct WebParam {
     /// The query-string key; for everything but `BaseDomain` also the `engine_run` options key.
-    pub name: &'static str,
+    pub name: String,
     pub kind: ParamKind,
     pub delivery: Delivery,
-    pub doc: &'static str,
+    pub doc: String,
 }
 
 /// The portable scene set that runs when `--portables` / `?portables=` is absent.
 pub const DEFAULT_PORTABLES: &str = "basiccontroller.dcl.eth";
 
-pub fn web_params() -> Vec<WebParam> {
+/// The web-only half of a parameter's declaration, keyed by the [`LaunchOptions`] field.
+fn delivery(field: &str) -> Delivery {
     use Delivery::*;
-    use ParamKind::*;
-    vec![
-        WebParam {
-            name: "platform",
-            kind: String,
-            delivery: Page,
-            doc: "\"macos\" | \"windows\" | \"linux\" from the user agent — picks the text-input navigation key binds.",
-        },
-        WebParam {
-            name: "realm",
-            kind: String,
-            delivery: Destination,
-            doc: "Realm to boot into (`--server`); absent = the persisted home realm.",
-        },
-        WebParam {
-            name: "position",
-            kind: String,
-            delivery: Destination,
-            doc: "Spawn parcel as `x,y` (`--location`); absent = the home parcel, or the realm's own spawn point when a realm is given.",
-        },
-        WebParam {
-            name: "systemScene",
-            kind: String,
-            delivery: Launch,
-            doc: "Super-user ui scene source (`--ui`), or `none` for no ui scene. The host substitutes its bundled bridge scene when absent. The engine trusts it completely: permissions.rs waves through every permission check for it and it gets the whole system api.",
-        },
-        WebParam {
-            name: "portables",
-            kind: String,
-            delivery: Launch,
-            doc: "`;`-separated portable/startup scene sources (`--portables`); absent = `basiccontroller.dcl.eth` (DEFAULT_PORTABLES), which the url sync also omits.",
-        },
-        WebParam {
-            name: "preview",
-            kind: Flag,
-            delivery: Launch,
-            doc: "Scene preview mode (`--preview`).",
-        },
-        WebParam {
-            name: "editor",
-            kind: Flag,
-            delivery: Host,
-            doc: "Embedded in a scene editor (`--editor`): scenes freeze after main() until the editor unfreezes them. The editor's own front-end sets it; not a link parameter.",
-        },
-        WebParam {
-            name: "pulseServer",
-            kind: String,
-            delivery: Launch,
-            doc: "Pulse server as `host:port` (`--pulse-server`); absent = the deployment's default.",
-        },
-        WebParam {
-            name: "imposterSource",
-            kind: String,
-            delivery: Launch,
-            doc: "Base url of the imposter store (`--imposter-source`); absent = the default store.",
-        },
-        WebParam {
-            name: "sceneParams",
-            kind: String,
-            delivery: Page,
-            doc: "The page's query string with the launch values folded in, exposed to scenes (`--params`).",
-        },
-        WebParam {
-            name: "baseDomain",
-            kind: String,
-            delivery: BaseDomain,
-            doc: "The deployment domain every backend host is composed from (`--base-domain`) — sign-in, content, comms, everything; absent = derived from the hosting origin, else decentraland.org.",
-        },
-    ]
+    match field {
+        "realm" | "position" => Destination,
+        "system_scene"
+        | "portables"
+        | "preview"
+        | "pulse_server"
+        | "imposter_source"
+        | "content_server"
+        | "log_fps"
+        | "gpu_bytes_per_frame" => Launch,
+        "editor" => Host,
+        "base_domain" => BaseDomain,
+        other => {
+            panic!("LaunchOptions::{other} has no web delivery — add it to web_params::delivery")
+        }
+    }
+}
+
+fn camel_case(snake: &str) -> String {
+    let mut out = String::with_capacity(snake.len());
+    let mut upper = false;
+    for c in snake.chars() {
+        if c == '_' {
+            upper = true;
+        } else if upper {
+            out.extend(c.to_uppercase());
+            upper = false;
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+pub fn web_params() -> Vec<WebParam> {
+    LaunchOptions::augment_args(clap::Command::new("launch"))
+        .get_arguments()
+        .map(|arg| {
+            let field = arg.get_id().as_str();
+            WebParam {
+                name: camel_case(field),
+                kind: if !arg.get_action().takes_values() {
+                    ParamKind::Flag
+                } else if arg.get_value_parser().type_id() == TypeId::of::<bool>() {
+                    ParamKind::Bool
+                } else if arg.get_value_parser().type_id() == TypeId::of::<usize>() {
+                    ParamKind::Number
+                } else {
+                    ParamKind::String
+                },
+                delivery: delivery(field),
+                doc: arg
+                    .get_long_help()
+                    .or(arg.get_help())
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     /// Writes the table's VALUES next to the ts-rs types (`TS_RS_EXPORT_DIR`, set by
     /// scripts/gen-ts-bindings.sh — a no-op under a plain `cargo test`).
@@ -145,18 +141,40 @@ mod tests {
         };
         let json = serde_json::to_string_pretty(&web_params()).unwrap();
         let ts = format!(
-            "// GENERATED by scripts/gen-ts-bindings.sh from crates/system_api_types/src/web_params.rs — do not edit.\n\
+            "// GENERATED by scripts/gen-ts-bindings.sh from crates/system_api_types/src/launch_options.rs — do not edit.\n\
              import type {{ WebParam }} from './WebParam'\n\n\
              export const WEB_PARAMS: WebParam[] = {json}\n"
         );
         std::fs::write(std::path::Path::new(&dir).join("webParamTable.ts"), ts).unwrap();
     }
 
+    /// Every field has a delivery (the panic in `delivery`), every row has a doc, and the
+    /// `engine_run` keys — the struct as serialised — are exactly the table minus the
+    /// host-consumed base domain.
     #[test]
-    fn names_are_unique() {
-        let mut names: Vec<_> = web_params().into_iter().map(|p| p.name).collect();
-        names.sort_unstable();
-        names.dedup();
-        assert_eq!(names.len(), web_params().len());
+    fn table_matches_the_struct() {
+        let params = web_params();
+        for p in &params {
+            assert!(!p.doc.is_empty(), "{} has no doc comment", p.name);
+        }
+        let names: BTreeSet<_> = params.iter().map(|p| p.name.clone()).collect();
+        assert_eq!(names.len(), params.len(), "duplicate names");
+        let engine_run: BTreeSet<_> = params
+            .iter()
+            .filter(|p| p.delivery != Delivery::BaseDomain)
+            .map(|p| p.name.clone())
+            .collect();
+        let json = serde_json::to_value(LaunchOptions::default()).unwrap();
+        let fields: BTreeSet<_> = json.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(fields, engine_run);
+        assert!(names.contains("baseDomain"));
+        assert_eq!(
+            params.iter().find(|p| p.name == "preview").unwrap().kind,
+            ParamKind::Flag
+        );
+        let kind = |name: &str| params.iter().find(|p| p.name == name).unwrap().kind;
+        assert_eq!(kind("systemScene"), ParamKind::String);
+        assert_eq!(kind("logFps"), ParamKind::Bool);
+        assert_eq!(kind("gpuBytesPerFrame"), ParamKind::Number);
     }
 }

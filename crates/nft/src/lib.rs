@@ -1,20 +1,26 @@
 pub mod asset_source;
 mod extended_image_loader;
 
-use std::{f32::consts::FRAC_PI_2, path::PathBuf};
+use std::{
+    f32::consts::{FRAC_PI_2, PI},
+    path::PathBuf,
+};
 
 use asset_source::{Nft, NftLoader};
 use bevy::{
     asset::LoadState,
-    gltf::Gltf,
-    platform::collections::{HashMap, HashSet},
+    gltf::{Gltf, GltfMaterialName},
+    platform::collections::{hash_map::Entry, HashMap, HashSet},
     prelude::*,
     scene::InstanceId,
 };
 use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
-    proto_components::sdk::components::{NftFrameType, PbNftShape},
+    proto_components::{
+        sdk::components::{NftFrameType, PbNftShape},
+        Color3DclToBevy,
+    },
     SceneComponentId,
 };
 use extended_image_loader::ExtendedImageLoader;
@@ -24,6 +30,8 @@ use scene_material::{SceneBound, SceneMaterial};
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, SceneEntity,
 };
+
+const NFT_SHAPE_DEFAULT_COLOR: Color = Color::srgb(0.6404918, 0.611472, 0.8584906);
 
 pub struct NftShapePlugin;
 
@@ -102,7 +110,14 @@ fn update_nft_shapes(
                 c.spawn((
                     Transform::default(),
                     Visibility::default(),
-                    FrameLoading(nft_shape.0.style()),
+                    FrameLoading {
+                        frame_type: nft_shape.0.style(),
+                        color: nft_shape
+                            .0
+                            .color
+                            .map(|color| color.convert_srgb())
+                            .unwrap_or(NFT_SHAPE_DEFAULT_COLOR),
+                    },
                     scene_ent.clone(),
                 ));
 
@@ -124,10 +139,16 @@ fn update_nft_shapes(
 }
 
 #[derive(Component)]
-pub struct FrameLoading(NftFrameType);
+pub struct FrameLoading {
+    frame_type: NftFrameType,
+    color: Color,
+}
 
 #[derive(Component)]
-pub struct FrameProcess(InstanceId);
+pub struct FrameProcess {
+    instance: InstanceId,
+    color: Color,
+}
 
 fn load_frame(
     mut commands: Commands,
@@ -139,17 +160,25 @@ fn load_frame(
 ) {
     for (ent, frame) in q.iter() {
         // get frame
-        let h_gltf = gltf_handles
-            .entry(frame.0)
-            .or_insert_with(|| asset_server.load(*NFTSHAPE_LOOKUP.get(&frame.0).unwrap()));
+        let h_gltf = match gltf_handles.entry(frame.frame_type) {
+            Entry::Vacant(vacancy) => {
+                if let Some(path) = NFTSHAPE_LOOKUP.get(&frame.frame_type).unwrap() {
+                    vacancy.insert(asset_server.load(*path)).clone()
+                } else {
+                    commands.entity(ent).remove::<FrameLoading>();
+                    continue;
+                }
+            }
+            Entry::Occupied(occupancy) => occupancy.get().clone(),
+        };
         let Some(gltf) = gltfs.get(h_gltf.id()) else {
             debug!("waiting for frame");
             continue;
         };
 
         // \o/
-        let transform = if frame.0 == NftFrameType::NftClassic {
-            Transform::IDENTITY
+        let transform = if frame.frame_type == NftFrameType::NftClassic {
+            Transform::from_rotation(Quat::from_rotation_x(PI))
         } else {
             Transform::from_rotation(Quat::from_rotation_x(-FRAC_PI_2))
         };
@@ -160,7 +189,10 @@ fn load_frame(
         commands
             .entity(ent)
             .remove::<FrameLoading>()
-            .try_insert(FrameProcess(instance))
+            .try_insert(FrameProcess {
+                instance,
+                color: frame.color,
+            })
             .try_push_children(&[child]);
     }
 }
@@ -170,29 +202,45 @@ fn process_frame(
     mut commands: Commands,
     q: Query<(Entity, &FrameProcess, &SceneEntity)>,
     scene_spawner: Res<SceneSpawner>,
-    mat_nodes: Query<&MeshMaterial3d<StandardMaterial>>,
+    mat_nodes: Query<(&MeshMaterial3d<StandardMaterial>, Option<&GltfMaterialName>)>,
     mats: ResMut<Assets<StandardMaterial>>,
     mut new_mats: ResMut<Assets<SceneMaterial>>,
     scenes: Query<&RendererSceneContext>,
     config: Res<AppConfig>,
 ) {
     for (ent, frame, scene_ent) in q.iter() {
-        if scene_spawner.instance_is_ready(frame.0) {
+        if scene_spawner.instance_is_ready(frame.instance) {
             commands.entity(ent).remove::<FrameProcess>();
             let Ok(bounds) = scenes.get(scene_ent.root).map(|ctx| ctx.bounds.clone()) else {
                 continue;
             };
-            for spawned_ent in scene_spawner.iter_instance_entities(frame.0) {
-                if let Some(mat) = mat_nodes
+            for spawned_ent in scene_spawner.iter_instance_entities(frame.instance) {
+                if let Some((mat, maybe_name)) = mat_nodes
                     .get(spawned_ent)
                     .ok()
-                    .and_then(|h_mat| mats.get(h_mat))
+                    .and_then(|(h_mat, name)| mats.get(h_mat).map(|mat| (mat, name)))
                 {
+                    let maybe_name = maybe_name.map(|name| name.0.to_lowercase());
+                    let mut mat_clone = mat.clone();
+                    if maybe_name
+                        .iter()
+                        .any(|name| name.contains("pictureframe") || name.contains("mat_ck"))
+                    {
+                        mat_clone.base_color = frame.color;
+                    }
+                    if maybe_name.iter().any(|name| {
+                        name.contains("pictureframe")
+                            || name.contains("mat_ck")
+                            || name.contains("ground")
+                    }) {
+                        mat_clone.double_sided = true;
+                        mat_clone.cull_mode = None;
+                    }
                     commands
                         .entity(spawned_ent)
                         .remove::<MeshMaterial3d<StandardMaterial>>()
                         .try_insert(MeshMaterial3d(new_mats.add(SceneMaterial {
-                            base: mat.clone(),
+                            base: mat_clone,
                             extension: SceneBound::new(bounds.clone(), config.graphics.oob),
                         })));
                 }
@@ -248,6 +296,7 @@ fn load_nft(
                 MeshMaterial3d(materials.add(SceneMaterial {
                     base: StandardMaterial {
                         base_color_texture: Some(h_image.clone()),
+                        alpha_mode: AlphaMode::Blend,
                         ..Default::default()
                     },
                     extension: SceneBound::new(bounds, config.graphics.oob),
@@ -282,37 +331,58 @@ fn resize_nft(
     }
 }
 
-static NFTSHAPE_LOOKUP: Lazy<HashMap<NftFrameType, &'static str>> = Lazy::new(|| {
+static NFTSHAPE_LOOKUP: Lazy<HashMap<NftFrameType, Option<&'static str>>> = Lazy::new(|| {
     use NftFrameType::*;
     HashMap::from_iter([
-        (NftClassic, "embedded://nft_shapes/Classic.glb"),
+        (NftClassic, Some("embedded://nft_shapes/Classic.glb")),
         (
             NftBaroqueOrnament,
-            "embedded://nft_shapes/Baroque_Ornament.glb",
+            Some("embedded://nft_shapes/Baroque_Ornament.glb"),
         ),
         (
             NftDiamondOrnament,
-            "embedded://nft_shapes/Diamond_Ornament.glb",
+            Some("embedded://nft_shapes/Diamond_Ornament.glb"),
         ),
-        (NftMinimalWide, "embedded://nft_shapes/Minimal_Wide.glb"),
-        (NftMinimalGrey, "embedded://nft_shapes/Minimal_Grey.glb"),
-        (NftBlocky, "embedded://nft_shapes/Blocky.glb"),
-        (NftGoldEdges, "embedded://nft_shapes/Gold_Edges.glb"),
-        (NftGoldCarved, "embedded://nft_shapes/Gold_Carved.glb"),
-        (NftGoldWide, "embedded://nft_shapes/Gold_Wide.glb"),
-        (NftGoldRounded, "embedded://nft_shapes/Gold_Rounded.glb"),
-        (NftMetalMedium, "embedded://nft_shapes/Metal_Medium.glb"),
-        (NftMetalWide, "embedded://nft_shapes/Metal_Wide.glb"),
-        (NftMetalSlim, "embedded://nft_shapes/Metal_Slim.glb"),
-        (NftMetalRounded, "embedded://nft_shapes/Metal_Rounded.glb"),
-        (NftPins, "embedded://nft_shapes/Pins.glb"),
-        (NftMinimalBlack, "embedded://nft_shapes/Minimal_Black.glb"),
-        (NftMinimalWhite, "embedded://nft_shapes/Minimal_White.glb"),
-        (NftTape, "embedded://nft_shapes/Tape.glb"),
-        (NftWoodSlim, "embedded://nft_shapes/Wood_Slim.glb"),
-        (NftWoodWide, "embedded://nft_shapes/Wood_Wide.glb"),
-        (NftWoodTwigs, "embedded://nft_shapes/Wood_Twigs.glb"),
-        (NftCanvas, "embedded://nft_shapes/Canvas.glb"),
-        (NftNone, "embedded://nft_shapes/Classic.glb"),
+        (
+            NftMinimalWide,
+            Some("embedded://nft_shapes/Minimal_Wide.glb"),
+        ),
+        (
+            NftMinimalGrey,
+            Some("embedded://nft_shapes/Minimal_Grey.glb"),
+        ),
+        (NftBlocky, Some("embedded://nft_shapes/Blocky.glb")),
+        (NftGoldEdges, Some("embedded://nft_shapes/Gold_Edges.glb")),
+        (NftGoldCarved, Some("embedded://nft_shapes/Gold_Carved.glb")),
+        (NftGoldWide, Some("embedded://nft_shapes/Gold_Wide.glb")),
+        (
+            NftGoldRounded,
+            Some("embedded://nft_shapes/Gold_Rounded.glb"),
+        ),
+        (
+            NftMetalMedium,
+            Some("embedded://nft_shapes/Metal_Medium.glb"),
+        ),
+        (NftMetalWide, Some("embedded://nft_shapes/Metal_Wide.glb")),
+        (NftMetalSlim, Some("embedded://nft_shapes/Metal_Slim.glb")),
+        (
+            NftMetalRounded,
+            Some("embedded://nft_shapes/Metal_Rounded.glb"),
+        ),
+        (NftPins, Some("embedded://nft_shapes/Pins.glb")),
+        (
+            NftMinimalBlack,
+            Some("embedded://nft_shapes/Minimal_Black.glb"),
+        ),
+        (
+            NftMinimalWhite,
+            Some("embedded://nft_shapes/Minimal_White.glb"),
+        ),
+        (NftTape, Some("embedded://nft_shapes/Tape.glb")),
+        (NftWoodSlim, Some("embedded://nft_shapes/Wood_Slim.glb")),
+        (NftWoodWide, Some("embedded://nft_shapes/Wood_Wide.glb")),
+        (NftWoodTwigs, Some("embedded://nft_shapes/Wood_Twigs.glb")),
+        (NftCanvas, Some("embedded://nft_shapes/Canvas.glb")),
+        (NftNone, None),
     ])
 });

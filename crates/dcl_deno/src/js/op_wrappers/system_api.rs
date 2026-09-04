@@ -5,7 +5,6 @@ use common::{
 use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
 use dcl_component::proto_components::common::Vector2;
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
-use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
@@ -94,7 +93,6 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_blocking_status(),
             op_get_block_update_stream(),
             op_read_block_update_stream(),
-            op_get_params(),
             // Connectivity
             op_get_livekit_status_stream(),
             op_read_livekit_status_stream(),
@@ -644,14 +642,6 @@ pub async fn op_read_block_update_stream(
     #[smi] rid: u32,
 ) -> Result<Option<BlockUpdateData>, anyhow::Error> {
     dcl::js::system_api::op_read_block_update_stream(state, rid).await
-}
-
-#[op2(async)]
-#[serde]
-pub async fn op_get_params(
-    state: Rc<RefCell<OpState>>,
-) -> Result<HashMap<String, String>, anyhow::Error> {
-    dcl::js::system_api::op_get_params(state).await
 }
 
 #[op2(async)]

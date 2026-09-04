@@ -539,18 +539,6 @@ pub async fn op_read_block_update_stream(
 }
 
 #[wasm_bindgen]
-pub async fn op_get_params(state: &WorkerContext) -> Result<JsValue, WasmError> {
-    let map = dcl::js::system_api::op_get_params(state.rc())
-        .await
-        .map_err(WasmError::from)?;
-    let obj = js_sys::Object::new();
-    for (k, v) in map {
-        js_sys::Reflect::set(&obj, &k.into(), &v.into()).unwrap();
-    }
-    Ok(obj.into())
-}
-
-#[wasm_bindgen]
 pub async fn op_get_livekit_status_stream(state: &WorkerContext) -> u32 {
     dcl::js::system_api::op_get_livekit_status_stream(state.rc()).await
 }

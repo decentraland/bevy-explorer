@@ -3,7 +3,7 @@
 // it is decided here, because trust is a property of the host: the editor app trusts its editor
 // scene, this app trusts its bundled bridge scene and Decentraland's own deployments.
 
-import { BASE_DOMAIN, isTrustedBaseDomain } from './baseDomain'
+import { BASE_DOMAIN, hostBaseDomain, isTrustedBaseDomain } from './baseDomain'
 import { bootMode } from './bootMode'
 import { isTrustedSystemScene } from './systemScene'
 import { webParam } from './webParams'
@@ -41,6 +41,22 @@ const GATES: Record<string, Gate> = {
       'Points every backend service — sign-in, content, comms — at servers under this domain. Whoever runs them would see your session and control what you play.',
     read: (native) => (native ? null : BASE_DOMAIN),
     isTrusted: isTrustedBaseDomain
+  },
+  // Repoints every scene and asset fetch at one server while everything else looks normal.
+  contentServer: {
+    warning:
+      'Fetches every scene and asset from this server instead of the realm’s own. Whoever runs it decides what you see and what runs.',
+    read: () => new URLSearchParams(location.search).get('contentServer'),
+    isTrusted: isTrustedContentServer
+  }
+}
+
+/** A content server under one of Decentraland's own deployments. */
+function isTrustedContentServer(url: string): boolean {
+  try {
+    return hostBaseDomain(new URL(url).hostname) != null
+  } catch {
+    return false
   }
 }
 for (const name of Object.keys(GATES)) webParam(name)

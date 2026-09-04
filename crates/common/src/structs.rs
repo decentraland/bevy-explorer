@@ -481,7 +481,7 @@ pub struct AppConfig {
     /// The pinned home scene. Written ONLY by SetHomeScene; None = never pinned, so the
     /// home keeps tracking the base-domain-derived default. A pinned home persists (and
     /// survives switching base domains) even when it happens to equal some domain's
-    /// default. --server / --location are startup params (like the web's ?realm= /
+    /// default. --realm / --position are startup params (like the web's ?realm= /
     /// ?position=) and are deliberately never merged in here — the config file is
     /// rewritten wholesale on any settings change, which would silently persist a
     /// one-off CLI target as home.
