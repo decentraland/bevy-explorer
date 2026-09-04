@@ -524,6 +524,7 @@ impl DecentralandApp {
         );
         launch::apply_client(
             &mut app,
+            &decentraland_app_config.arguments.launch,
             &decentraland_app_config.arguments.client,
             &decentraland_app_config.app_config,
         );

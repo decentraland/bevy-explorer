@@ -57,17 +57,22 @@ pub fn apply(app: &mut App, launch: &LaunchOptions, config: &AppConfig, boot_ser
         ));
     }
 
-    let log_fps = log_fps.unwrap_or(config.graphics.log_fps);
-    // frame timing feeds the fps log and the preview-mode sysinfo panel; the HUD adds it too
-    if (log_fps || *preview) && !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>() {
-        app.add_plugins(FrameTimeDiagnosticsPlugin::default());
-    }
-    if log_fps {
+    if log_fps.unwrap_or(config.graphics.log_fps) {
+        // the HUD adds the frame timing too
+        if !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>() {
+            app.add_plugins(FrameTimeDiagnosticsPlugin::default());
+        }
         app.add_plugins(LogDiagnosticsPlugin::default());
     }
 }
 
-pub fn apply_client(app: &mut App, client: &ClientOptions, config: &AppConfig) {
+/// `launch` for the shared options' client-only effects.
+pub fn apply_client(
+    app: &mut App,
+    launch: &LaunchOptions,
+    client: &ClientOptions,
+    config: &AppConfig,
+) {
     let ClientOptions {
         // the scene set is the binary's: the ui scene and the startup scenes
         system_scene: _,
@@ -78,6 +83,11 @@ pub fn apply_client(app: &mut App, client: &ClientOptions, config: &AppConfig) {
     } = client;
 
     app.insert_resource(EditorMode(*editor));
+
+    // the preview stats and sysinfo panels (system_ui) read the frame rate
+    if launch.preview && !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>() {
+        app.add_plugins(FrameTimeDiagnosticsPlugin::default());
+    }
 
     if let Some(source) = imposter_source {
         imposters::imposter_spec::set_source(source);
