@@ -66,7 +66,10 @@ use scene_runner::{
     OutOfWorld, SceneRunnerPlugin,
 };
 use social::SocialPlugin;
-use system_api_types::{launch_options::LaunchOptions, web_params::DEFAULT_PORTABLES};
+use system_api_types::{
+    launch_options::{ClientOptions, LaunchOptions},
+    web_params::DEFAULT_PORTABLES,
+};
 use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
 #[cfg(not(target_arch = "wasm32"))]
 use system_ui::crash_report::CrashReportPlugin;
@@ -157,14 +160,16 @@ impl DecentralandAppConfig {
 pub struct BootLocation(pub IVec2);
 
 /// The native command line. The launch parameters shared with the web build are
-/// [`LaunchOptions`] (declared once, in system_api_types — its doc comments are the `--help`
-/// text and the web param table); everything here is native-only. Values that are derived
+/// [`LaunchOptions`] + [`ClientOptions`] (declared once, in system_api_types — their doc
+/// comments are the `--help` text and the web param table); everything here is native-only. Values that are derived
 /// rather than given (test mode, the ui scene, the spawn parcel) are methods.
 #[derive(clap::Parser, Default)]
 #[command(name = "decentra-bevy", about = "Decentraland Bevy Explorer")]
 pub struct DecentralandArguments {
     #[command(flatten)]
     pub launch: LaunchOptions,
+    #[command(flatten)]
+    pub client: ClientOptions,
     /// Echo scene logs to the console
     #[arg(long = "scene_log_to_console", display_order = 6)]
     pub scene_log_to_console: bool,
@@ -272,7 +277,7 @@ impl DecentralandArguments {
 
     /// The super-user ui scene: `--system-scene` / `?systemScene=`, less the `none` opt-out.
     pub fn ui_scene(&self) -> Option<&str> {
-        self.launch
+        self.client
             .system_scene
             .as_deref()
             .filter(|scene| *scene != "none")
@@ -289,7 +294,7 @@ impl DecentralandArguments {
 
     /// `--portables` / `?portables=`, else the default set.
     pub fn startup_scenes(&self) -> Vec<StartupScene> {
-        self.launch
+        self.client
             .portables
             .as_deref()
             .unwrap_or(DEFAULT_PORTABLES)
@@ -368,7 +373,7 @@ impl DecentralandApp {
         let boot_location = BootLocation(decentraland_app_config.boot_location());
         // Show out-of-bounds geometry in preview, on a loopback realm (local dev) and in
         // the editor, never on a public realm.
-        let show_out_of_bounds = decentraland_app_config.arguments.launch.editor
+        let show_out_of_bounds = decentraland_app_config.arguments.client.editor
             || decentraland_app_config.arguments.launch.preview
             || is_loopback_realm(&boot_server);
 
@@ -514,6 +519,7 @@ impl DecentralandApp {
         launch::apply(
             &mut app,
             &decentraland_app_config.arguments.launch,
+            &decentraland_app_config.arguments.client,
             &decentraland_app_config.app_config,
             &boot_server,
         );
@@ -668,7 +674,7 @@ fn update_app_config_from_arguments(
         .graphics
         .fps_target
         .replace_if_some(arguments.fps_target);
-    launch::configure(base_app_config, &arguments.launch);
+    launch::configure(base_app_config, &arguments.launch, &arguments.client);
 
     base_app_config
         .scene_threads

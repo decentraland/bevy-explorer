@@ -23,7 +23,7 @@ use bevy::{
     time::TimePlugin,
 };
 use bevy_dui::DuiPlugin;
-use clap::{CommandFactory, FromArgMatches};
+use clap::Parser;
 use common::{
     inputs::InputMap,
     profile::SerializedProfile,
@@ -72,8 +72,7 @@ static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
 // The shared launch params (realm, position, preview, base domain, pulse server, content
 // server, and whatever gets added later — accepted here automatically) plus the server-role
-// flags. The shared fields headless has no consumer for are hidden from `--help` and refused
-// in `parse_args`.
+// flags. The rendering clients' options (`ClientOptions`) are not flags here at all.
 #[derive(clap::Parser)]
 #[command(
     name = "headless",
@@ -82,7 +81,7 @@ static SESSION_LOG: OnceLock<String> = OnceLock::new();
     mut_arg("position", |a| {
         a.visible_alias("location")
             .help("Parcel to load as `x,y`; absent = 0,0")
-    })
+    }),
 )]
 struct Args {
     #[command(flatten)]
@@ -149,36 +148,16 @@ fn usage_error(message: impl std::fmt::Display) -> ! {
     std::process::exit(2);
 }
 
-/// Shared launch options (`LaunchOptions` fields) whose effect (src/launch.rs) has no consumer
-/// in the headless plugin set: hidden from --help and refused rather than silently inert.
-const INERT: [&str; 5] = [
-    "editor",
-    "system_scene",
-    "portables",
-    "imposter_source",
-    "gpu_bytes_per_frame",
-];
-
 fn parse_args() -> Args {
-    let mut command = Args::command();
-    for id in INERT {
-        command = command.mut_arg(id, |a| a.hide(true));
-    }
-    let matches = match command.try_get_matches() {
-        Ok(matches) => matches,
+    let mut args = match Args::try_parse() {
+        Ok(args) => args,
         Err(e) => {
             let _ = e.print();
             std::process::exit(if e.use_stderr() { 2 } else { 0 });
         }
     };
-    for id in INERT {
-        if matches.value_source(id) == Some(clap::parser::ValueSource::CommandLine) {
-            usage_error(format!("--{} has no effect headless", id.replace('_', "-")));
-        }
-    }
-    let mut args = Args::from_arg_matches(&matches).unwrap_or_else(|e| usage_error(e));
     // latch first: everything below that composes a backend host reads it
-    if let Err(e) = webgpu_build::launch::latch(&args.launch) {
+    if let Err(e) = webgpu_build::launch::shared::latch(&args.launch) {
         usage_error(e);
     }
     args.realm = args
@@ -387,7 +366,7 @@ fn main() {
         .into(),
         ..Default::default()
     };
-    webgpu_build::launch::configure(&mut config, &args.launch);
+    webgpu_build::launch::shared::configure(&mut config, &args.launch);
 
     let mut app = App::new();
 
@@ -460,7 +439,7 @@ fn main() {
 
     // the shared launch options' resources and plugins (--log-fps logs the tick rate, against
     // --tick-hz)
-    webgpu_build::launch::apply(
+    webgpu_build::launch::shared::apply(
         &mut app,
         &args.launch,
         &config,

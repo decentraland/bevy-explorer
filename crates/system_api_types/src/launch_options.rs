@@ -1,18 +1,23 @@
-//! The launch parameters both platforms accept — defined ONCE, here. Natively each field is a
-//! `--flag` (clap; the doc comment is its `--help` text), on web the same field is a key of the
-//! `engine_run` options object (serde, camelCase) and an entry-url query param. The web param
-//! table (`web_params`) is derived from this struct's clap metadata plus a per-field delivery
-//! annotation, and the host page is generated from that table — so a parameter is declared
-//! here and nowhere else.
+//! The launch parameters, defined ONCE, here. Natively each field is a `--flag` (clap; the doc
+//! comment is its `--help` text), on web the same field is a key of the `engine_run` options
+//! object (serde, camelCase) and an entry-url query param. The web param table (`web_params`)
+//! is derived from these structs' clap metadata plus a per-field delivery annotation, and the
+//! host page is generated from that table — so a parameter is declared here and nowhere else.
 //!
-//! Field names are the web names, and the native flags are the same names in kebab-case.
-//! Everything is optional: absent = the engine's default. Native-only flags live on `DecentralandArguments` (src/lib.rs), which
-//! flattens this struct in.
+//! Two structs, by which binaries take them:
+//! - [`LaunchOptions`]: every binary — native, web and headless flatten it in
+//! - [`ClientOptions`]: the rendering clients only (native and web); headless never sees them,
+//!   so they are unknown flags there
+//!
+//! What each one DOES is `src/launch.rs` in the root crate, split the same way. Field names are
+//! the web names, and the native flags are the same names in kebab-case. Everything is
+//! optional: absent = the engine's default. Native-only flags live on `DecentralandArguments`
+//! (src/lib.rs).
 
 use serde::{Deserialize, Serialize};
 
 #[derive(clap::Args, Deserialize, Serialize, Default, Clone, PartialEq, Debug)]
-#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
+#[serde(rename_all = "camelCase", default)]
 pub struct LaunchOptions {
     /// Realm to boot into; absent = the persisted home realm or default realm
     #[arg(long, value_name = "url", display_order = 1)]
@@ -33,10 +38,6 @@ pub struct LaunchOptions {
     #[arg(long, value_name = "domain", display_order = 4)]
     pub base_domain: Option<String>,
 
-    /// Embedded in a scene editor (creator hub). Set by editor front-ends.
-    #[arg(long, display_order = 5)]
-    pub editor: bool,
-
     /// Override the content server only
     #[arg(long, value_name = "url", display_order = 7)]
     pub content_server: Option<String>,
@@ -44,6 +45,19 @@ pub struct LaunchOptions {
     /// Pulse server as `host:port`; absent = the deployment's default
     #[arg(long, value_name = "host:port", display_order = 8)]
     pub pulse_server: Option<String>,
+
+    /// Log the frame rate to the console
+    #[arg(long, value_name = "true|false", display_order = 13)]
+    pub log_fps: Option<bool>,
+}
+
+/// The options only a rendering client (native, web) has a use for.
+#[derive(clap::Args, Deserialize, Serialize, Default, Clone, PartialEq, Debug)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ClientOptions {
+    /// Embedded in a scene editor (creator hub). Set by editor front-ends.
+    #[arg(long, display_order = 5)]
+    pub editor: bool,
 
     /// Base url of the imposter store; absent = the default store. The realm-keyed path under
     /// it is the same as the default store's
@@ -61,34 +75,57 @@ pub struct LaunchOptions {
     #[arg(long, value_name = "a;b", display_order = 12)]
     pub portables: Option<String>,
 
-    /// Log the frame rate to the console
-    #[arg(long, value_name = "true|false", display_order = 13)]
-    pub log_fps: Option<bool>,
-
     /// Cap per-frame gpu uploads
     #[arg(long, value_name = "bytes", display_order = 17)]
     pub gpu_bytes_per_frame: Option<usize>,
 }
 
-impl LaunchOptions {
+/// The web page's `engine_run` options: both structs as ONE flat object, which is also what the
+/// engine echoes back for the url sync.
+#[derive(Deserialize, Serialize, Default, Clone, PartialEq, Debug)]
+pub struct EngineRunOptions {
+    #[serde(flatten)]
+    pub launch: LaunchOptions,
+    #[serde(flatten)]
+    pub client: ClientOptions,
+}
+
+impl EngineRunOptions {
     /// From the web page's options object serialised as JSON. `JSON.stringify` drops
     /// `undefined`-valued keys, which is what makes them "absent"; an unknown key fails the
-    /// launch so a misspelt one can never silently fall through to a default.
+    /// launch so a misspelt one can never silently fall through to a default. (Checked by hand
+    /// against the web param table: serde's `flatten` and `deny_unknown_fields` are exclusive.)
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(json)
+        use serde::de::Error;
+        let value: serde_json::Value = serde_json::from_str(json)?;
+        let Some(object) = value.as_object() else {
+            return Err(Error::custom("expected an object"));
+        };
+        let known: Vec<String> = crate::web_params::web_params()
+            .into_iter()
+            .filter(|p| p.delivery != crate::web_params::Delivery::BaseDomain)
+            .map(|p| p.name)
+            .collect();
+        if let Some(key) = object.keys().find(|key| !known.contains(key)) {
+            return Err(Error::custom(format!(
+                "unknown field `{key}`, expected one of {}",
+                known.join(", ")
+            )));
+        }
+        serde_json::from_value(value)
     }
 
     /// An empty string is "absent" too — the web page may pass `''` for an unset field.
     pub fn without_empty_strings(mut self) -> Self {
         for value in [
-            &mut self.realm,
-            &mut self.position,
-            &mut self.system_scene,
-            &mut self.content_server,
-            &mut self.portables,
-            &mut self.pulse_server,
-            &mut self.imposter_source,
-            &mut self.base_domain,
+            &mut self.launch.realm,
+            &mut self.launch.position,
+            &mut self.launch.content_server,
+            &mut self.launch.pulse_server,
+            &mut self.launch.base_domain,
+            &mut self.client.system_scene,
+            &mut self.client.portables,
+            &mut self.client.imposter_source,
         ] {
             if value.as_deref() == Some("") {
                 *value = None;
@@ -107,6 +144,8 @@ mod tests {
     struct Cli {
         #[command(flatten)]
         launch: LaunchOptions,
+        #[command(flatten)]
+        client: ClientOptions,
     }
 
     #[test]
@@ -129,12 +168,12 @@ mod tests {
         ]);
         assert_eq!(cli.launch.realm.as_deref(), Some("https://r"));
         assert_eq!(cli.launch.position.as_deref(), Some("1,-2"));
-        assert_eq!(cli.launch.system_scene.as_deref(), Some("none"));
+        assert_eq!(cli.client.system_scene.as_deref(), Some("none"));
         assert_eq!(cli.launch.base_domain.as_deref(), Some("decentraland.zone"));
         assert!(cli.launch.preview);
-        assert!(!cli.launch.editor);
+        assert!(!cli.client.editor);
         assert_eq!(cli.launch.log_fps, Some(false));
-        assert_eq!(cli.launch.gpu_bytes_per_frame, Some(500_000));
+        assert_eq!(cli.client.gpu_bytes_per_frame, Some(500_000));
         // the pre-table spellings are gone, not aliased
         assert!(Cli::try_parse_from(["x", "--server", "r"]).is_err());
         assert!(Cli::try_parse_from(["x", "--ui", "none"]).is_err());
@@ -142,19 +181,31 @@ mod tests {
 
     #[test]
     fn unknown_json_keys_are_rejected() {
-        assert!(LaunchOptions::from_json(r#"{"pulseServr": "localhost:7777"}"#).is_err());
+        let err = EngineRunOptions::from_json(r#"{"pulseServr": "localhost:7777"}"#).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field `pulseServr`"),
+            "{err}"
+        );
         // the base domain never travels as an engine_run key
-        assert!(LaunchOptions::from_json(r#"{"baseDomain": "decentraland.zone"}"#).is_err());
-        let options = LaunchOptions::from_json(
+        assert!(EngineRunOptions::from_json(r#"{"baseDomain": "decentraland.zone"}"#).is_err());
+        let options = EngineRunOptions::from_json(
             r#"{"pulseServer": "localhost:7777", "preview": true, "logFps": true, "gpuBytesPerFrame": 500000}"#,
         )
         .unwrap();
-        assert_eq!(options.pulse_server.as_deref(), Some("localhost:7777"));
-        assert!(options.preview);
-        assert!(!options.editor);
-        assert_eq!(options.log_fps, Some(true));
-        assert_eq!(options.gpu_bytes_per_frame, Some(500_000));
+        assert_eq!(
+            options.launch.pulse_server.as_deref(),
+            Some("localhost:7777")
+        );
+        assert!(options.launch.preview);
+        assert!(!options.client.editor);
+        assert_eq!(options.launch.log_fps, Some(true));
+        assert_eq!(options.client.gpu_bytes_per_frame, Some(500_000));
         // typed keys take their type, not a string
-        assert!(LaunchOptions::from_json(r#"{"gpuBytesPerFrame": "500000"}"#).is_err());
+        assert!(EngineRunOptions::from_json(r#"{"gpuBytesPerFrame": "500000"}"#).is_err());
+        // and the echo is one flat object again
+        let json = serde_json::to_value(&options).unwrap();
+        assert_eq!(json["pulseServer"], "localhost:7777");
+        assert_eq!(json["gpuBytesPerFrame"], 500_000);
+        assert!(json.get("baseDomain").is_none());
     }
 }

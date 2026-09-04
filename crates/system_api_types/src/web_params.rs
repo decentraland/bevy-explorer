@@ -1,6 +1,6 @@
 //! The entry-url parameters the web build accepts, as the react page sees them. Derived from
-//! [`LaunchOptions`] (the one declaration of every launch parameter, native and web): each of
-//! its clap args becomes a row — camelCase name, kind from whether the flag takes a value, doc
+//! [`LaunchOptions`] + [`ClientOptions`] (the one declaration of every launch parameter, native
+//! and web): each of their clap args becomes a row — camelCase name, kind from whether the flag takes a value, doc
 //! from the `--help` text — joined with the web-only fact this module owns, how the value gets
 //! from the entry url to the engine ([`Delivery`]). Exported to the react page alongside the
 //! ts-rs types (scripts/gen-ts-bindings.sh writes `webParamTable.ts` into
@@ -13,7 +13,7 @@ use std::any::TypeId;
 use clap::Args;
 use serde::Serialize;
 
-use crate::launch_options::LaunchOptions;
+use crate::launch_options::{ClientOptions, LaunchOptions};
 
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -79,7 +79,7 @@ fn delivery(field: &str) -> Delivery {
         "editor" => Host,
         "base_domain" => BaseDomain,
         other => {
-            panic!("LaunchOptions::{other} has no web delivery — add it to web_params::delivery")
+            panic!("launch option `{other}` has no web delivery — add it to web_params::delivery")
         }
     }
 }
@@ -101,8 +101,11 @@ fn camel_case(snake: &str) -> String {
 }
 
 pub fn web_params() -> Vec<WebParam> {
-    LaunchOptions::augment_args(clap::Command::new("launch"))
+    let launch = LaunchOptions::augment_args(clap::Command::new("launch"));
+    let client = ClientOptions::augment_args(clap::Command::new("client"));
+    launch
         .get_arguments()
+        .chain(client.get_arguments())
         .map(|arg| {
             let field = arg.get_id().as_str();
             WebParam {
@@ -130,6 +133,7 @@ pub fn web_params() -> Vec<WebParam> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::launch_options::EngineRunOptions;
     use std::collections::BTreeSet;
 
     /// Writes the table's VALUES next to the ts-rs types (`TS_RS_EXPORT_DIR`, set by
@@ -149,8 +153,8 @@ mod tests {
     }
 
     /// Every field has a delivery (the panic in `delivery`), every row has a doc, and the
-    /// `engine_run` keys — the struct as serialised — are exactly the table minus the
-    /// host-consumed base domain.
+    /// `engine_run` keys — the structs as serialised, one flat object — are exactly the table
+    /// minus the host-consumed base domain.
     #[test]
     fn table_matches_the_struct() {
         let params = web_params();
@@ -164,7 +168,7 @@ mod tests {
             .filter(|p| p.delivery != Delivery::BaseDomain)
             .map(|p| p.name.clone())
             .collect();
-        let json = serde_json::to_value(LaunchOptions::default()).unwrap();
+        let json = serde_json::to_value(EngineRunOptions::default()).unwrap();
         let fields: BTreeSet<_> = json.as_object().unwrap().keys().cloned().collect();
         assert_eq!(fields, engine_run);
         assert!(names.contains("baseDomain"));
