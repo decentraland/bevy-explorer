@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use bevy::{
     asset::WasmLoaderHandle,
     log::{Level, LogPlugin},
@@ -11,10 +9,7 @@ use bevy::{
 use bevy_console::ConsoleConfiguration;
 use common::{
     rpc::RpcResultSender,
-    structs::{
-        AppConfig, CurrentRealm, EditorMode, IVec2Arg, PreviewMode, PrimaryUser, StartupScene,
-        StartupScenes,
-    },
+    structs::{AppConfig, CurrentRealm, EditorMode, PreviewMode, PrimaryUser, StartupScenes},
 };
 use dcl_wasm::init_runtime;
 use futures_lite::io::AsyncReadExt;
@@ -25,10 +20,9 @@ use system_bridge::{SystemApi, SystemBridge};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::js_sys;
 
-use crate::{
-    web_options::{self, non_empty, EngineRunOptions},
-    DecentralandApp, DecentralandAppConfig, DecentralandArguments,
-};
+use system_api_types::launch_options::LaunchOptions;
+
+use crate::{DecentralandApp, DecentralandAppConfig, DecentralandArguments};
 
 static WASM_ASSET_LOADER_HANDLE: OnceCell<WasmLoaderHandle> = OnceCell::new();
 static INIT_DATA: OnceCell<AppConfig> = OnceCell::new();
@@ -36,7 +30,7 @@ static CONSOLE_BRIDGE_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<System
     OnceCell::new();
 /// The options the page launched with; the url sync echoes them back with the live values
 /// (realm, position, …) swapped in.
-static LAUNCH_OPTIONS: OnceCell<EngineRunOptions> = OnceCell::new();
+static LAUNCH_OPTIONS: OnceCell<LaunchOptions> = OnceCell::new();
 
 #[wasm_bindgen]
 extern "C" {
@@ -151,11 +145,10 @@ pub fn engine_home_scene() -> String {
 const WEB_GPU_BYTES_PER_FRAME: usize = 10_000_000;
 
 // Type the `engine_run` parameter in the generated .d.ts — keep in step with
-// `web_options::EngineRunOptions` (tested against the web param table).
+// `system_api_types::launch_options::LaunchOptions` (the web param table's source).
 #[wasm_bindgen(typescript_custom_section)]
 const ENGINE_RUN_OPTIONS_TS: &str = r#"
 export interface EngineRunOptions {
-    platform?: string;
     realm?: string;
     position?: string;
     systemScene?: string;
@@ -176,9 +169,10 @@ extern "C" {
 
 /// Round-trip the page's object through JSON rather than `serde_wasm_bindgen::from_value`: that
 /// only visits the struct's own fields, so `deny_unknown_fields` would never see a misspelt key.
-fn parse_options(options: &JsValue) -> Result<EngineRunOptions, JsValue> {
+fn parse_options(options: &JsValue) -> Result<LaunchOptions, JsValue> {
     let json = String::from(js_sys::JSON::stringify(options)?);
-    web_options::parse(&json)
+    LaunchOptions::from_json(&json)
+        .map(LaunchOptions::without_empty_strings)
         .map_err(|e| JsValue::from_str(&format!("engine_run: invalid options: {e}")))
 }
 
@@ -210,7 +204,10 @@ pub fn engine_run(options: EngineRunOptionsJs) -> Result<(), JsValue> {
     let mut app = decentraland_app.build(decentraland_app_config);
 
     // on wasm we need to explicitly specify key binds for the platform
-    let text_bindings = if options.platform.contains("mac") {
+    let user_agent = web_sys::window()
+        .and_then(|w| w.navigator().user_agent().ok())
+        .unwrap_or_default();
+    let text_bindings = if user_agent.contains("Mac") {
         bevy_simple_text_input::TextInputNavigationBindings::macos_default()
     } else {
         bevy_simple_text_input::TextInputNavigationBindings::non_macos_default()
@@ -350,7 +347,7 @@ fn update_url_params(
     startup_scenes: Option<Res<StartupScenes>>,
     preview: Res<PreviewMode>,
     editor: Res<EditorMode>,
-    mut prev: Local<Option<EngineRunOptions>>,
+    mut prev: Local<Option<LaunchOptions>>,
 ) {
     // realms with fixed scene urns (worlds) spawn at their base scene and ignore an explicit
     // position (see load_active_entities' base-position handling) - don't write one into the url
@@ -389,7 +386,7 @@ fn update_url_params(
         (None, None)
     };
 
-    let options = EngineRunOptions {
+    let options = LaunchOptions {
         realm: Some(server.to_owned()),
         position,
         system_scene,
@@ -406,7 +403,7 @@ fn update_url_params(
             // the page-derived keys are the loader's to compute, never url state
             for param in system_api_types::web_params::web_params() {
                 if param.delivery == system_api_types::web_params::Delivery::Page {
-                    map.remove(param.name);
+                    map.remove(&param.name);
                 }
             }
         }
@@ -426,61 +423,14 @@ fn decentraland_serialized_app_config() -> AppConfig {
     })
 }
 
-fn decentraland_app_arguments(options: &EngineRunOptions) -> DecentralandArguments {
+fn decentraland_app_arguments(options: &LaunchOptions) -> DecentralandArguments {
     DecentralandArguments {
-        server: non_empty(&options.realm),
-        content_server_override: None,
-        location: options
-            .position
-            .as_deref()
-            .and_then(|location| IVec2Arg::from_str(location).ok())
-            .map(|location_arg| location_arg.0),
-        startup_scenes: non_empty(&options.portables).map(|portables| {
-            portables
-                .split(";")
-                .map(|portable| StartupScene {
-                    source: portable.to_owned(),
-                    super_user: false,
-                    preview: false,
-                    hot_reload: None,
-                    hash: None,
-                })
-                .collect::<Vec<_>>()
-        }),
-        ui_scene: non_empty(&options.system_scene).filter(|scene| scene != "none"),
+        launch: options.clone(),
+        gpu_bytes_per_frame: Some(WEB_GPU_BYTES_PER_FRAME),
+        log_fps: Some(false),
         // wasm has no engine-managed HUD: the react page hosting the engine is the HUD
         hud: false,
-        scene_params: options.scene_params.clone(),
-        pulse_server: non_empty(&options.pulse_server),
-        scene_threads: None,
-        scene_load_distance: None,
-        scene_unload_extra_distance: None,
-        scene_imposter_bake: None,
-        scene_imposter_distances: None,
-        scene_imposter_multisample: None,
-        imposter_source: non_empty(&options.imposter_source),
-        vsync: None,
-        fps_target: None,
-        gpu_bytes_per_frame: Some(WEB_GPU_BYTES_PER_FRAME),
-        is_preview: options.preview,
-        editor: options.editor,
-        sysinfo_visible: false,
-        scene_log_to_console: false,
-        startup_scenes_preview: false,
-        no_avatar: false,
-        no_gltf: false,
-        no_fog: false,
-        log_fps: Some(false),
-        inspect: None,
-        test_mode: false,
-        test_scenes: None,
-        login: false,
-        emote_wheel: false,
-        chat: false,
-        permissions: false,
-        nametags: false,
-        tooltips: false,
-        loading_scene: false,
+        ..Default::default()
     }
 }
 

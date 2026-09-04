@@ -1,9 +1,12 @@
 #![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
 
-use std::{error::Error, fmt::Display, fs::File, io::Write, path::PathBuf, sync::OnceLock};
+use std::{
+    error::Error, fmt::Display, fs::File, io::Write, path::PathBuf, str::FromStr, sync::OnceLock,
+};
 
 use bevy::{log::LogPlugin, prelude::*};
-use common::structs::{AppConfig, IVec2Arg, SceneImposterBake, StartupScene};
+use clap::Parser;
+use common::structs::{AppConfig, IVec2Arg};
 use dcl_deno_ipc::init_runtime;
 use mimalloc::MiMalloc;
 use webgpu_build::{DecentralandApp, DecentralandAppConfig, DecentralandArguments};
@@ -43,11 +46,11 @@ fn main() {
     #[cfg(not(feature = "console"))]
     log_panics::init();
 
-    // initialize v8 runtime from main thread
-    init_runtime().unwrap();
-
+    // args first, so --help and a bad flag answer without spawning the scene runtime
     match decentraland_app_config() {
         Ok(decentraland_app_config) => {
+            // initialize v8 runtime from main thread
+            init_runtime().unwrap();
             decentraland_app.build(decentraland_app_config).run();
         }
         Err(UserError(false)) => panic!("Fatal error while building application configurations."),
@@ -95,142 +98,61 @@ fn decentraland_serialized_app_config() -> AppConfig {
 }
 
 fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
-    let mut args = pico_args::Arguments::from_env();
+    let mut args = match DecentralandArguments::try_parse() {
+        Ok(args) => args,
+        // --help, or a bad flag: clap's own message (an error also lands in the session log via
+        // tracing), and no crash report
+        Err(e) => {
+            if e.use_stderr() {
+                error!("{e}");
+            } else {
+                let _ = e.print();
+            }
+            return Err(UserError(true));
+        }
+    };
 
-    if let Some(domain) = args
-        .opt_value_from_str::<_, String>("--base-domain")
-        .map_err(|e| {
-            error!("{e}");
-            UserError(true)
-        })?
-    {
-        common::base_domain::set(&domain).map_err(|e| {
+    if let Some(domain) = &args.launch.base_domain {
+        common::base_domain::set(domain).map_err(|e| {
             error!("{e}");
             UserError(true)
         })?;
     }
-
-    let test_scenes = args.value_from_str("--test_scenes").ok();
-    let startup_scenes_preview = args.contains("--ui-preview");
-    // An explicit --ui (a scene source, or "none" for the engine's builtin ui) opts out of the
-    // react HUD entirely — the given ui scene drives instead (see lib.rs).
-    let ui_scene = args.value_from_str::<_, String>("--ui").ok();
-    let hud = ui_scene.is_none();
-
-    let dcl_args = DecentralandArguments {
-        server: args.value_from_str("--server").ok(),
-        content_server_override: args.value_from_str("--content-server").ok(),
-        location: args
-            .value_from_str::<_, IVec2Arg>("--location")
-            .ok()
-            .map(|location_arg| location_arg.0),
-        startup_scenes: args
-            .value_from_str::<_, String>("--portables")
-            .map(|p| {
-                p.split(";")
-                    .map(|scene| StartupScene {
-                        source: scene.to_owned(),
-                        super_user: false,
-                        preview: startup_scenes_preview,
-                        hot_reload: None,
-                        hash: None,
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .ok(),
-        ui_scene: ui_scene
-            .or_else(|| {
-                // react HUD builds default to the bundled bridge-scene static export (a file
-                // realm, loaded with no server; `npm run bundle:native` in react-web generates
-                // it). Checked against the cwd (packaged runs) and the compile-time checkout dir
-                // (dev `cargo run` from any directory). If absent there is NO ui scene — the
-                // react HUD's built-in fallback relay covers login/chat/loading.
-                #[cfg(feature = "react-hud-cef")]
-                {
-                    for root in native_hud_roots() {
-                        let local = root.join("assets/bridge-scene/BevyExplorerUI");
-                        if local.join("about").is_file() {
-                            return Some(local.to_string_lossy().into_owned());
-                        }
-                    }
-                    None
-                }
-                #[cfg(not(feature = "react-hud-cef"))]
-                Some(String::from(
-                    "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene",
-                ))
-            })
-            .filter(|scene| scene != "none"),
-        hud,
-        scene_params: args.value_from_str("--params").ok(),
-        pulse_server: args.value_from_str("--pulse-server").ok(),
-        scene_threads: args.value_from_str("--threads").ok(),
-        scene_load_distance: args.value_from_str("--distance").ok(),
-        scene_unload_extra_distance: args.value_from_str("--unload").ok(),
-        scene_imposter_bake: args.value_from_str("--bake").ok().map(|bake: String| {
-            match bake.to_lowercase().chars().next() {
-                None | Some('f') => SceneImposterBake::FullSpeed,
-                Some('h') => SceneImposterBake::HalfSpeed,
-                Some('q') => SceneImposterBake::QuarterSpeed,
-                Some('o') => SceneImposterBake::Off,
-                _ => panic!(
-                    "'{}' is not a valid bake argument. Valid values are 'f', 'h', 'q', or 'o'.",
-                    bake
-                ),
-            }
-        }),
-        scene_imposter_distances: args
-            .value_from_str("--impost")
-            .ok()
-            .map(|distances: String| {
-                distances
-                    .split(",")
-                    .map(str::parse::<f32>)
-                    .collect::<Result<Vec<f32>, _>>()
-                    .unwrap()
-            }),
-        scene_imposter_multisample: args.value_from_str("--impost_multi").ok(),
-        imposter_source: args.value_from_str("--imposter-source").ok(),
-        vsync: args.value_from_str("--vsync").ok(),
-        fps_target: args.value_from_str::<_, usize>("--fps").ok(),
-        gpu_bytes_per_frame: args
-            .value_from_str::<_, usize>("--gpu_bytes_per_frame")
-            .ok(),
-        is_preview: args.contains("--preview"),
-        editor: args.contains("--editor"),
-        sysinfo_visible: args.contains("--sysinfo"),
-        scene_log_to_console: args.contains("--scene_log_to_console"),
-        startup_scenes_preview,
-        no_avatar: args.contains("--no_avatar"),
-        no_gltf: args.contains("--no_gltf"),
-        no_fog: args.contains("--no_fog"),
-        log_fps: args.value_from_str("--log_fps").ok(),
-        inspect: args.value_from_str("--inspect").ok(),
-        test_mode: args.contains("--testing") || test_scenes.is_some(),
-        test_scenes,
-        login: args.contains("--builtin-login"),
-        emote_wheel: args.contains("--builtin-emotes"),
-        chat: args.contains("--builtin-chat"),
-        permissions: args.contains("--builtin-perms"),
-        nametags: args.contains("--builtin-nametags"),
-        tooltips: args.contains("--builtin-tooltips"),
-        loading_scene: args.contains("--builtin-loading-scene-ui"),
-    };
-
-    let remaining = args.finish();
-    if !remaining.is_empty() {
-        error!(
-            "failed to parse args: {}",
-            remaining
-                .iter()
-                .map(|arg| arg.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ")
-        );
-        return Err(UserError(true));
+    if let Some(position) = &args.launch.position {
+        IVec2Arg::from_str(position).map_err(|e| {
+            error!("--location {position}: {e}");
+            UserError(true)
+        })?;
     }
 
-    Ok(dcl_args)
+    // An explicit --ui (a scene source, or "none" for the engine's builtin ui) opts out of the
+    // react HUD entirely — the given ui scene drives instead (see lib.rs).
+    args.hud = args.launch.system_scene.is_none();
+    if args.launch.system_scene.is_none() {
+        args.launch.system_scene = default_ui_scene();
+    }
+    Ok(args)
+}
+
+/// react HUD builds default to the bundled bridge-scene static export (a file realm, loaded with
+/// no server; `npm run bundle:native` in react-web generates it). Checked against the cwd
+/// (packaged runs) and the compile-time checkout dir (dev `cargo run` from any directory). If
+/// absent there is NO ui scene — the react HUD's built-in fallback relay covers login/chat/loading.
+fn default_ui_scene() -> Option<String> {
+    #[cfg(feature = "react-hud-cef")]
+    {
+        for root in native_hud_roots() {
+            let local = root.join("assets/bridge-scene/BevyExplorerUI");
+            if local.join("about").is_file() {
+                return Some(local.to_string_lossy().into_owned());
+            }
+        }
+        None
+    }
+    #[cfg(not(feature = "react-hud-cef"))]
+    Some(String::from(
+        "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene",
+    ))
 }
 
 #[inline(always)]

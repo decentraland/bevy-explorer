@@ -3673,6 +3673,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-fs",
+ "web-sys",
  "web-time",
  "wgpu",
  "world_ui",
@@ -11083,6 +11084,7 @@ dependencies = [
 name = "system_api_types"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "dcl_component",
  "serde",
  "serde_json",

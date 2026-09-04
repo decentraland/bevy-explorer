@@ -504,9 +504,10 @@ export function applyOptionsToUrlParams(urlParams, options) {
 
 /**
  * Starts the game engine. `options` is the engine_run options object — one named key per
- * launch parameter (EngineRunOptions in src/web.rs: realm, position, systemScene, portables,
- * preview, editor, pulseServer, imposterSource). It comes from boot.js's __bevyLaunch, fed by
- * the React host. Absent keys take the engine's defaults; an unknown key makes engine_run throw.
+ * launch parameter (LaunchOptions in crates/system_api_types/src/launch_options.rs: realm,
+ * position, systemScene, portables, preview, editor, pulseServer, imposterSource). It comes from
+ * boot.js's __bevyLaunch, fed by the React host. Absent keys take the engine's defaults; an
+ * unknown key makes engine_run throw.
  */
 export function start(options = {}) {
   // Launch at most once per page: a second engine_run re-runs init_runtime, whose OnceCell is
@@ -525,13 +526,6 @@ export function start(options = {}) {
   const sceneParams = urlParams.toString();
   console.log(`[Main JS] launching with ${JSON.stringify(options)}`);
   hideHeader();
-
-  const platform = (() => {
-    if (navigator.userAgent.includes("Mac")) return "macos";
-    if (navigator.userAgent.includes("Win")) return "windows";
-    if (navigator.userAgent.includes("Linux")) return "linux";
-    return "unknown";
-  })();
 
   // Callback invoked by Rust once console command metadata is available.
   window._buildEngineApi = (json) => {
@@ -582,8 +576,8 @@ export function start(options = {}) {
   };
 
   // Everything the host handed us goes through as-is (the engine rejects unknown keys); only
-  // the page-derived values are added here.
-  engine_run({ ...options, platform, sceneParams });
+  // the page-derived value is added here.
+  engine_run({ ...options, sceneParams });
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {

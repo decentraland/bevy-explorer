@@ -129,36 +129,9 @@ cargo build --release --bin headless --no-default-features --features headless,l
 
 ## Arguments
 
-`cargo run --release --bin decentra-bevy -- [options]`
+`cargo run --release --bin decentra-bevy -- --help` lists every flag with its description.
 
-On web the equivalents are query params on the entry url, defined once in `crates/system_api_types/src/web_params.rs` (the react page is generated from that table; which of them a link may set without a warning is the page's own policy, `react-web/src/lib/launchGate.ts`).
-
-**World**
-- `--server <url>` — content server / realm. Defaults to `https://realm-provider-ea.decentraland.org/main`.
-- `--content-server <url>` — override the content server only.
-- `--location 52,-52` — parcel to spawn at.
-- `--distance <n>` — scene load distance in meters (default 100). Also `/scene_distance`.
-- `--unload <n>` — extra distance before scenes are unloaded.
-- `--threads <n>` — max simultaneous scene-javascript threads (default 4). Also `/scene_threads`.
-- `--preview` — preview mode (local gatekeeper, no failed-asset backoff).
-
-**Rendering**
-- `--vsync (true|false)` — defaults to off.
-- `--fps <n>` — target fps (default 60; overridden by the refresh rate when vsync is on). Also `/fps`.
-- `--gpu_bytes_per_frame <n>` — cap per-frame gpu uploads.
-- `--no_gltf`, `--no_avatar`, `--no_fog` — disable gltf loading / avatar rendering / distance fog.
-- `--bake (f|h|q|o)` and `--impost <d1,d2,…>` — imposter baking speed and distances.
-- `--imposter-source <url>` — base url of the imposter store to fetch from (default `https://bevy-imposters.dclregenesislabs.xyz`). The realm-keyed path under it is the same as the default store's. On web: `?imposterSource=`.
-
-**UI**
-- `--ui <scene|none>` — use a specific system scene, or `none` for no system scene. Any explicit `--ui` opts **out** of the React HUD; without it, HUD builds load the bundled bridge scene.
-- `--params "key1=value1&key2=value2"` — arbitrary parameters for the system scene, readable via `BevyApi.getParams()`. On web, URL query parameters are forwarded automatically (with decoding).
-- `--builtin-login`, `--builtin-chat`, `--builtin-emotes`, `--builtin-nametags`, `--builtin-perms`, `--builtin-tooltips`, `--builtin-loading-scene-ui` — force individual engine-drawn UI pieces back on.
-
-**Debug**
-- `--inspect <scene_hash>` — pause that scene's js runtime until a debugger (e.g. `chrome://inspect`) attaches. Needs `--features inspect`.
-- `--scene_log_to_console`, `--sysinfo`, `--log_fps <n>`.
-- `--test_scenes "52,-52;52,-54"` — run the scene test harness over those parcels and exit.
+The launch parameters shared with the web build — realm, spawn parcel, ui scene, portables, preview, editor, pulse server, imposter source, scene params, base domain — are declared once, in `crates/system_api_types/src/launch_options.rs`: each field is the native `--flag`, the `engine_run` options key and the entry-url query param, and the react page's parameter table is generated from it. Which of those a link may set without a warning is the page's own policy (`react-web/src/lib/launchGate.ts`). Native-only flags (rendering, imposters, debug, the `--builtin-*` ui pieces) live on `DecentralandArguments` in `src/lib.rs`.
 
 ## Testing
 
