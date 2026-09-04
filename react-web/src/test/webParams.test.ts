@@ -2,9 +2,10 @@
 // is filled from it — and this front-end's launch gate over those params (lib/launchGate.ts).
 
 import { describe, expect, it } from 'vitest'
-import { WEB_PARAMS } from '../engine/generated'
+import { SERVICES, WEB_PARAMS } from '../engine/generated'
 import { launchOptionsFromUrl, webParam } from '../lib/webParams'
 import { untrustedLaunchParams } from '../lib/launchGate'
+import { normaliseServiceUrl } from '../lib/baseDomain'
 
 describe('launchOptionsFromUrl', () => {
   it('reads every launch param, flags by presence, strings verbatim, absent = undefined', () => {
@@ -30,6 +31,32 @@ describe('launchOptionsFromUrl', () => {
         .map((p) => p.name)
         .sort()
     )
+  })
+})
+
+describe('normaliseServiceUrl', () => {
+  const catalyst = SERVICES.find((s) => s.name === 'catalyst')!
+  const socialRpc = SERVICES.find((s) => s.name === 'socialRpc')!
+
+  it('yields a base url the engine accepts: scheme + host + path, no trailing slash', () => {
+    expect(normaliseServiceUrl(catalyst, ' https://peer.example/ ')).toBe('https://peer.example')
+    expect(normaliseServiceUrl(catalyst, 'http://127.0.0.1:8799/content/')).toBe('http://127.0.0.1:8799/content')
+    expect(normaliseServiceUrl(socialRpc, 'ws://localhost:9000')).toBe('ws://localhost:9000')
+  })
+
+  it("drops a bare trailing ? or # — empty to URL.search/hash, a query/fragment to the engine's parser", () => {
+    expect(normaliseServiceUrl(catalyst, 'http://127.0.0.1:8799/?')).toBe('http://127.0.0.1:8799')
+    expect(normaliseServiceUrl(catalyst, 'http://127.0.0.1:8799/#')).toBe('http://127.0.0.1:8799')
+    expect(normaliseServiceUrl(catalyst, 'http://127.0.0.1:8799?#')).toBe('http://127.0.0.1:8799')
+  })
+
+  it('is null for anything else, so both sides fall back to the composed default', () => {
+    expect(normaliseServiceUrl(catalyst, null)).toBeNull()
+    expect(normaliseServiceUrl(catalyst, 'localhost:3000')).toBeNull()
+    expect(normaliseServiceUrl(catalyst, 'wss://peer.example')).toBeNull()
+    expect(normaliseServiceUrl(socialRpc, 'https://social.example')).toBeNull()
+    expect(normaliseServiceUrl(catalyst, 'https://places.example/?x=1')).toBeNull()
+    expect(normaliseServiceUrl(catalyst, 'https://places.example/#top')).toBeNull()
   })
 })
 
@@ -62,6 +89,15 @@ describe('untrustedLaunchParams', () => {
       expect(p.name).toBe('catalyst')
       expect(p.warning).toMatch(/"catalyst" backend service/)
       expect(untrustedLaunchParams({ native: true })).toEqual([])
+    } finally {
+      window.history.replaceState(null, '', '/')
+    }
+  })
+
+  it('does not gate a service override the HUD discards (nothing to approve)', () => {
+    window.history.replaceState(null, '', '/?catalyst=localhost:3000&places=https://x.example/?q=1')
+    try {
+      expect(untrustedLaunchParams({ native: false })).toEqual([])
     } finally {
       window.history.replaceState(null, '', '/')
     }

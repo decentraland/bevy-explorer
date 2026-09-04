@@ -67,7 +67,9 @@ function service(name: string): ServiceDef {
  * The ?<service>= value the engine will accept (crates/common/src/base_domain.rs
  * `set_services`): a full http(s) — ws(s) for the websocket services — base url with no query or
  * fragment, trailing slash dropped. Anything else is null so the HUD and the engine fall back to
- * the same composed default rather than splitting.
+ * the same composed default rather than splitting. Recomposed from scheme, host and path rather
+ * than serialised: a bare trailing `?` or `#` is empty to `search`/`hash` but a query/fragment to
+ * the engine's parser, which would refuse it and fail the launch.
  */
 export function normaliseServiceUrl(s: ServiceDef, raw: string | null): string | null {
   if (raw == null) return null
@@ -75,7 +77,7 @@ export function normaliseServiceUrl(s: ServiceDef, raw: string | null): string |
     const u = new URL(raw.trim())
     const ok = s.scheme === 'wss' ? /^wss?:$/ : /^https?:$/
     if (!ok.test(u.protocol) || u.search !== '' || u.hash !== '') return null
-    return u.href.replace(/\/+$/, '')
+    return `${u.protocol}//${u.host}${u.pathname}`.replace(/\/+$/, '')
   } catch {
     return null
   }

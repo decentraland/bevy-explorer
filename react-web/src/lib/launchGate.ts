@@ -4,7 +4,7 @@
 // scene, this app trusts its bundled bridge scene and Decentraland's own deployments.
 
 import { SERVICES } from '../engine/generated'
-import { BASE_DOMAIN, hostBaseDomain, isTrustedBaseDomain } from './baseDomain'
+import { BASE_DOMAIN, hostBaseDomain, isTrustedBaseDomain, normaliseServiceUrl } from './baseDomain'
 import { bootMode } from './bootMode'
 import { isTrustedSystemScene } from './systemScene'
 import { webParam } from './webParams'
@@ -63,10 +63,11 @@ function isTrustedContentServer(url: string): boolean {
 // Every per-service url override: worse than ?baseDomain= in that it can poison ONE service —
 // sign-in, profiles — while everything else looks normal. Same rule as the content server, and
 // native is exempt the same way as the base domain (the shell injects the user's own flags).
+// Read normalised, like the base domain: a value the HUD discards is never put to the user.
 for (const s of SERVICES) {
   GATES[s.name] = {
     warning: `Points the Explorer's "${s.name}" backend service at this server, with everything else looking normal. Whoever runs it would see the requests and choose the answers.`,
-    read: (native) => (native ? null : new URLSearchParams(location.search).get(s.name)),
+    read: (native) => (native ? null : normaliseServiceUrl(s, new URLSearchParams(location.search).get(s.name))),
     isTrusted: isTrustedContentServer
   }
 }
