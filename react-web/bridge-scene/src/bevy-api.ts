@@ -12,6 +12,7 @@ import type {
   FriendStatusData,
   HoverAction,
   HoverEvent,
+  LivekitUpdate,
   LiveSceneInfo,
   PermissionRequestEvent,
   ProximityEvent,
@@ -135,6 +136,7 @@ export type BevyApiInterface = {
   loginGuest: () => void
   loginCancel: () => void
   logout: () => void
+  getLivekitStatusStream: () => Promise<AsyncIterable<LivekitUpdate>>
   social: SocialApi
 }
 
