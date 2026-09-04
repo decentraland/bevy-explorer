@@ -168,9 +168,12 @@ pub enum PulseEvent {
         address: Address,
         urn: String,
         tick: u32,
+        /// `AvatarMask` value the server relayed with the start, if the emote is partial-body.
+        mask: Option<i32>,
     },
-    /// Subject's emote stopped (one-shot completed or looping cancelled).
-    EmoteStop { address: Address },
+    /// Subject's emote stopped. `completed`: the server's one-shot timer expired (a natural
+    /// finish) rather than the player cancelling a looping emote.
+    EmoteStop { address: Address, completed: bool },
     /// A sequence gap was detected — transmit this reliably so the server replays full state.
     Resync(pulse::ResyncRequest),
 }
@@ -386,6 +389,7 @@ impl PulseDecoder {
                         address: subject.wallet,
                         urn: e.emote_id,
                         tick: e.server_tick,
+                        mask: e.mask,
                     });
                 }
                 events
@@ -402,6 +406,7 @@ impl PulseDecoder {
                 if let Some(subject) = self.subjects.get(&e.subject_id) {
                     events.push(PulseEvent::EmoteStop {
                         address: subject.wallet,
+                        completed: e.reason == pulse::EmoteStopReason::Completed as i32,
                     });
                 }
                 events

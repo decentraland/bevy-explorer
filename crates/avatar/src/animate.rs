@@ -31,7 +31,8 @@ use comms::{
 use console::DoAddConsoleCommand;
 use dcl::interface::CrdtType;
 use dcl_component::{
-    proto_components::sdk::components::PbAvatarEmoteCommand, SceneComponentId, SceneEntityId,
+    proto_components::sdk::components::{EmoteState, PbAvatarEmoteCommand},
+    SceneComponentId, SceneEntityId,
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{
@@ -451,6 +452,8 @@ fn animate(
                         emote_urn: broadcast_urn.to_string(),
                         r#loop: resolved_loop,
                         timestamp,
+                        mask: None,
+                        state: Some(EmoteState::EsStarted as i32),
                     },
                 );
             }
