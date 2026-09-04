@@ -93,6 +93,12 @@ just native-release --base-domain interconnected.online --position 0,0
 
 On web the same thing is the `?baseDomain=` query param, e.g. `?baseDomain=interconnected.online`. Without the param, the hosting origin decides: a page served under decentraland.zone keys to zone backends, anything else to org.
 
+One service at a time: each has its own flag taking a full base url that replaces that service's composition while the rest keep following the domain (`--help`, "Service endpoints"). The same names are web query params, e.g. `--catalyst http://localhost:3000` / `?catalyst=http://localhost:3000`:
+
+```bash
+just native-release --places http://localhost:5000 --realm-provider http://localhost:8000
+```
+
 Doing it by hand instead of via `just`:
 
 ```bash

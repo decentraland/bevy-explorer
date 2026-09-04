@@ -1117,8 +1117,8 @@ fn drain_control_commands(
                     let client = ipfs.ipfs().client();
                     let sid = scene_id.clone();
                     let task = IoTaskPool::get().spawn_compat(async move {
-                        let url = common::base_domain::https(
-                            "comms-gatekeeper-local",
+                        let url = common::base_domain::url(
+                            common::base_domain::Service::PreviewGatekeeper,
                             "/get-server-scene-adapter",
                         );
                         let uri = http::Uri::try_from(url.as_str())?;

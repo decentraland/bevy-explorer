@@ -13,7 +13,10 @@ use std::any::TypeId;
 use clap::Args;
 use serde::Serialize;
 
-use crate::launch_options::{ClientOptions, LaunchOptions};
+use crate::{
+    launch_options::{ClientOptions, LaunchOptions},
+    services::Service,
+};
 
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -43,17 +46,18 @@ pub enum Delivery {
     /// Set by an embedding host page from its own knowledge (the creator-hub editor sets
     /// `editor`) — an `engine_run` option the react page must NOT read from the entry url.
     Host,
-    /// The host page consumes it itself (composing its own backend urls) and publishes it as
-    /// `window.__baseDomain()` before the wasm loads; the engine reads that at `engine_init`,
-    /// ahead of `engine_run`.
-    BaseDomain,
+    /// Read from the entry url by the host page, which resolves it for its own use before the
+    /// engine exists (the base domain: normalised, else derived from the hosting origin; a
+    /// service url: validated) and passes the resolved value as an `engine_run` option like
+    /// `Launch`. The engine never reads these from the page by any other route.
+    Resolved,
 }
 
 #[derive(Serialize, Clone, PartialEq, Eq, Debug, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct WebParam {
-    /// The query-string key; for everything but `BaseDomain` also the `engine_run` options key.
+    /// The query-string key, and the `engine_run` options key.
     pub name: String,
     pub kind: ParamKind,
     pub delivery: Delivery,
@@ -66,6 +70,9 @@ pub const DEFAULT_PORTABLES: &str = "basiccontroller.dcl.eth";
 /// The web-only half of a parameter's declaration, keyed by the [`LaunchOptions`] field.
 fn delivery(field: &str) -> Delivery {
     use Delivery::*;
+    if Service::all().any(|s| s.field() == field) {
+        return Resolved;
+    }
     match field {
         "realm" | "position" => Destination,
         "system_scene"
@@ -77,14 +84,14 @@ fn delivery(field: &str) -> Delivery {
         | "log_fps"
         | "gpu_bytes_per_frame" => Launch,
         "editor" => Host,
-        "base_domain" => BaseDomain,
+        "base_domain" => Resolved,
         other => {
             panic!("launch option `{other}` has no web delivery — add it to web_params::delivery")
         }
     }
 }
 
-fn camel_case(snake: &str) -> String {
+pub(crate) fn camel_case(snake: &str) -> String {
     let mut out = String::with_capacity(snake.len());
     let mut upper = false;
     for c in snake.chars() {
@@ -153,8 +160,7 @@ mod tests {
     }
 
     /// Every field has a delivery (the panic in `delivery`), every row has a doc, and the
-    /// `engine_run` keys — the structs as serialised, one flat object — are exactly the table
-    /// minus the host-consumed base domain.
+    /// `engine_run` keys — the structs as serialised, one flat object — are exactly the table.
     #[test]
     fn table_matches_the_struct() {
         let params = web_params();
@@ -163,15 +169,14 @@ mod tests {
         }
         let names: BTreeSet<_> = params.iter().map(|p| p.name.clone()).collect();
         assert_eq!(names.len(), params.len(), "duplicate names");
-        let engine_run: BTreeSet<_> = params
-            .iter()
-            .filter(|p| p.delivery != Delivery::BaseDomain)
-            .map(|p| p.name.clone())
-            .collect();
         let json = serde_json::to_value(EngineRunOptions::default()).unwrap();
         let fields: BTreeSet<_> = json.as_object().unwrap().keys().cloned().collect();
-        assert_eq!(fields, engine_run);
-        assert!(names.contains("baseDomain"));
+        assert_eq!(fields, names);
+        let delivery = |name: &str| params.iter().find(|p| p.name == name).unwrap().delivery;
+        assert_eq!(delivery("baseDomain"), Delivery::Resolved);
+        let catalyst = params.iter().find(|p| p.name == "catalyst").unwrap();
+        assert_eq!(catalyst.delivery, Delivery::Resolved);
+        assert_eq!(catalyst.kind, ParamKind::String);
         assert_eq!(
             params.iter().find(|p| p.name == "preview").unwrap().kind,
             ParamKind::Flag

@@ -467,7 +467,7 @@ fn dbgerr<E: std::fmt::Debug>(e: E) -> anyhow::Error {
 }
 
 fn social_url() -> String {
-    common::base_domain::wss("rpc-social-service-ea", "")
+    common::base_domain::service(common::base_domain::Service::SocialRpc)
 }
 
 const PAGE_SIZE: i32 = 100;

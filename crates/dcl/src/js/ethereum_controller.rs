@@ -10,7 +10,10 @@ use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 use super::State;
 
 fn provider_url() -> String {
-    common::base_domain::wss("rpc", "/mainnet?project=kernel-local")
+    common::base_domain::url(
+        common::base_domain::Service::EthereumRpc,
+        "/mainnet?project=kernel-local",
+    )
 }
 
 pub async fn op_send_async(

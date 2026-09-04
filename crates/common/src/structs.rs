@@ -472,7 +472,7 @@ pub struct PreviousLogin {
 }
 
 pub fn default_home_realm() -> String {
-    crate::base_domain::https("realm-provider-ea", "/main")
+    crate::base_domain::url(crate::base_domain::Service::RealmProvider, "/main")
 }
 // app configuration
 #[derive(Serialize, Deserialize, Resource, Clone)]

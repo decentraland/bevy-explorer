@@ -192,8 +192,8 @@ fn set_map_content(
                     let parcel = cursor_parcel.floor().as_ivec2() + IVec2::Y;
                     debug!("click parcel {}", parcel);
 
-                    let url = common::base_domain::https(
-                        "places",
+                    let url = common::base_domain::url(
+                        common::base_domain::Service::Places,
                         &format!("/api/places?positions={},{}", parcel.x, parcel.y),
                     );
 

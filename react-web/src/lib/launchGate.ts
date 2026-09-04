@@ -3,6 +3,7 @@
 // it is decided here, because trust is a property of the host: the editor app trusts its editor
 // scene, this app trusts its bundled bridge scene and Decentraland's own deployments.
 
+import { SERVICES } from '../engine/generated'
 import { BASE_DOMAIN, hostBaseDomain, isTrustedBaseDomain } from './baseDomain'
 import { bootMode } from './bootMode'
 import { isTrustedSystemScene } from './systemScene'
@@ -57,6 +58,16 @@ function isTrustedContentServer(url: string): boolean {
     return hostBaseDomain(new URL(url).hostname) != null
   } catch {
     return false
+  }
+}
+// Every per-service url override: worse than ?baseDomain= in that it can poison ONE service —
+// sign-in, profiles — while everything else looks normal. Same rule as the content server, and
+// native is exempt the same way as the base domain (the shell injects the user's own flags).
+for (const s of SERVICES) {
+  GATES[s.name] = {
+    warning: `Points the Explorer's "${s.name}" backend service at this server, with everything else looking normal. Whoever runs it would see the requests and choose the answers.`,
+    read: (native) => (native ? null : new URLSearchParams(location.search).get(s.name)),
+    isTrusted: isTrustedContentServer
   }
 }
 for (const name of Object.keys(GATES)) webParam(name)

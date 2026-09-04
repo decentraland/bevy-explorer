@@ -4,10 +4,10 @@
 //
 // Contract with the host page (react-web/src/engine/engineRpc.ts):
 //   set BEFORE injecting:  window.PUBLIC_URL   — base for pkg/ fetches (versioned CDN in prod)
-//                          window.__bevyBootConfig — the engine_run options (src/web_options.rs,
-//                            keyed by the web param table: systemScene, portables, preview,
-//                            pulseServer, imposterSource …) minus realm/position, forwarded
-//                            verbatim by __bevyLaunch
+//                          window.__bevyBootConfig — the engine_run options (keyed by the web
+//                            param table: systemScene, portables, preview, pulseServer, the
+//                            host-resolved baseDomain and service overrides …) minus
+//                            realm/position, forwarded verbatim by __bevyLaunch
 //   provided by this module:
 //     __bevyLoadProgress / __bevyLoadStep  — weighted boot progress for the login bar
 //     __bevyReadyToLaunch / __bevyLaunch(realm?, position?) — deferred engine_run
@@ -18,11 +18,13 @@
 //     __onEngineCrash(message, source) — OPTIONAL host callback; the watchdog calls it instead of
 //       rendering any overlay (React owns the error UI)
 //     window.engine / engine_console_command — the console RPC (built by engine.js post-launch)
-//     __baseDomain() — HOST-PROVIDED (react-web/src/lib/baseDomain.ts, defined before this module
-//       is injected): the deployment domain every backend host is composed from; the wasm reads
-//       it before composing any backend URL (parity with native --base-domain)
-//     __bevyHomeScene() — the persisted home scene { realm, parcel: "x,y" } (or the derived
-//       defaults), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
+//     __defaultRealm() / __serviceUrl(name) / __defaultBaseDomain() — HOST-PROVIDED
+//       (react-web/src/lib/baseDomain.ts, defined before this module is injected), for the url
+//       sync only: the host's default realm, a service's resolved base url (its ?<name>= override,
+//       else composed from the base domain), and the domain a url without ?baseDomain= means
+//       here. The engine itself takes the domain and the overrides as engine_run options.
+//     __bevyHomeScene() — the persisted home scene { realm, parcel: "x,y" } (realm null = none
+//       pinned), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
 import { initEngine, start, applyOptionsToUrlParams, engine_home_scene, gpu_cache_hash, initGpuCache } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
@@ -269,25 +271,26 @@ window.addEventListener('wheel', forwardWheelToEngine)
 // position, ui scene, portables and mode swapped in — so every param given at launch is echoed
 // back, not just the ones this file knows about. Defaults are omitted so the canonical entry URL
 // stays clean; unknown (HUD-only) params are preserved.
-// The base domain is the HUD's call (see the __baseDomain contract above): the ?baseDomain=
-// entry param, else the hosting origin's apex, else org. It never comes through here.
-const BASE_DOMAIN = window.__baseDomain()
-const DEFAULT_SERVER = `https://realm-provider-ea.${BASE_DOMAIN}/main`
+// The default realm and service urls are the HUD's call (see the contract above): a ?<service>=
+// entry param, else composed from the base domain.
 // The engine connects to the EXPANDED world url (ipfs map_realm_name turns `name.dcl.eth` into
 // worlds-content-server…/world/name.dcl.eth) and echoes that back here. Reverse it so the address
 // bar keeps the short name the user typed; a reload re-expands it the same way.
-const WORLDS_PREFIX = `https://worlds-content-server.${BASE_DOMAIN}/world/`
+const WORLDS_PREFIX = `${window.__serviceUrl('worldsServer')}/world/`
 // captured from the ENTRY url (later syncs rewrite location.search)
 const explicitSystemScene = new URLSearchParams(window.location.search).has('systemScene')
-// The values that mean "default" and are dropped from the url — the two defaults only this page
+// The values that mean "default" and are dropped from the url — the defaults only this page
 // knows (the engine already omits its own, e.g. the default portables). systemScene: null from the
 // engine = NO ui scene (systemScene=none); an explicit ?systemScene= boot override stays across
-// reloads, only the host's default scene is omitted.
+// reloads, only the host's default scene is omitted. baseDomain: the host always passes the
+// resolved domain, so it is a url param only when it differs from what this origin derives.
 const urlValue = (name, value) => {
   switch (name) {
     case 'realm':
       if (typeof value === 'string' && value.startsWith(WORLDS_PREFIX)) value = value.slice(WORLDS_PREFIX.length)
-      return value === DEFAULT_SERVER ? null : value
+      return value === window.__defaultRealm() ? null : value
+    case 'baseDomain':
+      return value === window.__defaultBaseDomain() ? null : value
     case 'systemScene':
       value = value ?? 'none'
       return explicitSystemScene || value !== (config.systemScene ?? 'none') ? value : null
@@ -329,8 +332,9 @@ initEngine()
     // Deferred launch: the host calls this once the user picks a destination — avoiding a wasted
     // default-realm load. One engine per page (see start()'s __bevyStarted guard).
     window.__bevyLaunch = (realm, position) => start({ ...config, realm, position })
-    // The persisted home scene ({ realm, parcel: "x,y" }), valid once engine_init has loaded the
-    // config — the host's places picker targets it from "Skip to Home" before launching.
+    // The persisted home scene ({ realm (null = none pinned), parcel: "x,y" }), valid once
+    // engine_init has loaded the config — the host's places picker targets it from "Skip to
+    // Home" before launching.
     window.__bevyHomeScene = () => { try { return JSON.parse(engine_home_scene()) } catch { return null } }
     window.__bevyReadyToLaunch = true
   })

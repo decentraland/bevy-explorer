@@ -54,6 +54,19 @@ describe('untrustedLaunchParams', () => {
     }
   })
 
+  it('gates a per-service url override outside decentraland.org/.zone, native exempt', () => {
+    window.history.replaceState(null, '', '/?places=https://places.decentraland.zone&catalyst=http://localhost:3000')
+    try {
+      const [p, ...rest] = untrustedLaunchParams({ native: false })
+      expect(rest).toEqual([])
+      expect(p.name).toBe('catalyst')
+      expect(p.warning).toMatch(/"catalyst" backend service/)
+      expect(untrustedLaunchParams({ native: true })).toEqual([])
+    } finally {
+      window.history.replaceState(null, '', '/')
+    }
+  })
+
   it('reports an unrecognised system scene with the gate copy', () => {
     window.history.replaceState(null, '', '/?systemScene=https://example.com/evil')
     try {

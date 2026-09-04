@@ -150,15 +150,26 @@ impl StorageDelegations {
     }
 }
 
-/// True when a signed fetch to `uri` must be signed with a storage delegation:
-/// exact-match world-storage hosts, https only (the claim must never go out in cleartext).
+/// True when a signed fetch to `uri` must be signed with a storage delegation: exact-match
+/// world-storage hosts, https only (the claim must never go out in cleartext) — or the resolved
+/// storage service, whose origin an explicit override chooses (a local http instance included).
 pub fn is_storage_request(uri: &http::Uri) -> bool {
-    uri.scheme_str() == Some("https")
-        && uri.host().is_some_and(|h| {
-            let h = h.to_lowercase();
-            STORAGE_HOSTS.contains(&h.as_str())
-                || (common::base_domain::is_custom() && h == common::base_domain::host("storage"))
-        })
+    let known = uri.scheme_str() == Some("https")
+        && uri
+            .host()
+            .is_some_and(|h| STORAGE_HOSTS.contains(&h.to_lowercase().as_str()));
+    known || {
+        let origin = |u: &http::Uri| {
+            (
+                u.scheme_str().map(str::to_lowercase),
+                u.host().map(str::to_lowercase),
+                u.port_u16(),
+            )
+        };
+        common::base_domain::service(common::base_domain::Service::Storage)
+            .parse::<http::Uri>()
+            .is_ok_and(|storage| origin(&storage) == origin(uri))
+    }
 }
 
 #[cfg(test)]
