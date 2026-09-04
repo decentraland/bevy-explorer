@@ -20,7 +20,7 @@ use system_bridge::{SystemApi, SystemBridge};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::js_sys;
 
-use system_api_types::launch_options::LaunchOptions;
+use system_api_types::launch_options::{ClientOptions, EngineRunOptions, LaunchOptions};
 
 use crate::{DecentralandApp, DecentralandAppConfig, DecentralandArguments};
 
@@ -30,7 +30,7 @@ static CONSOLE_BRIDGE_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<System
     OnceCell::new();
 /// The options the page launched with; the url sync echoes them back with the live values
 /// (realm, position, …) swapped in.
-static LAUNCH_OPTIONS: OnceCell<LaunchOptions> = OnceCell::new();
+static LAUNCH_OPTIONS: OnceCell<EngineRunOptions> = OnceCell::new();
 
 #[wasm_bindgen]
 extern "C" {
@@ -141,11 +141,8 @@ pub fn engine_home_scene() -> String {
         .to_string()
 }
 
-/// Bytes of gpu uploads per frame on web — was a constant the page passed in; the engine owns it.
-const WEB_GPU_BYTES_PER_FRAME: usize = 10_000_000;
-
 // Type the `engine_run` parameter in the generated .d.ts — keep in step with
-// `system_api_types::launch_options::LaunchOptions` (the web param table's source).
+// `system_api_types::launch_options::EngineRunOptions` (the web param table's source).
 #[wasm_bindgen(typescript_custom_section)]
 const ENGINE_RUN_OPTIONS_TS: &str = r#"
 export interface EngineRunOptions {
@@ -171,10 +168,10 @@ extern "C" {
 
 /// Round-trip the page's object through JSON rather than `serde_wasm_bindgen::from_value`: that
 /// only visits the struct's own fields, so `deny_unknown_fields` would never see a misspelt key.
-fn parse_options(options: &JsValue) -> Result<LaunchOptions, JsValue> {
+fn parse_options(options: &JsValue) -> Result<EngineRunOptions, JsValue> {
     let json = String::from(js_sys::JSON::stringify(options)?);
-    LaunchOptions::from_json(&json)
-        .map(LaunchOptions::without_empty_strings)
+    EngineRunOptions::from_json(&json)
+        .map(EngineRunOptions::without_empty_strings)
         .map_err(|e| JsValue::from_str(&format!("engine_run: invalid options: {e}")))
 }
 
@@ -184,6 +181,11 @@ pub fn engine_run(options: EngineRunOptionsJs) -> Result<(), JsValue> {
     let options = parse_options(&options)?;
     let _ = LAUNCH_OPTIONS.set(options.clone());
     apply_base_domain();
+    // the shared launch options' globals (src/launch.rs; the base domain itself came from the
+    // page above, so this can't fail on it)
+    if let Err(e) = crate::launch::latch(&options.launch) {
+        warn!("{e}");
+    }
     init_runtime();
 
     let default_filter = "symphonia=warn";
@@ -349,7 +351,7 @@ fn update_url_params(
     startup_scenes: Option<Res<StartupScenes>>,
     preview: Res<PreviewMode>,
     editor: Res<EditorMode>,
-    mut prev: Local<Option<LaunchOptions>>,
+    mut prev: Local<Option<EngineRunOptions>>,
 ) {
     // realms with fixed scene urns (worlds) spawn at their base scene and ignore an explicit
     // position (see load_active_entities' base-position handling) - don't write one into the url
@@ -388,15 +390,21 @@ fn update_url_params(
         (None, None)
     };
 
-    let options = LaunchOptions {
-        realm: Some(server.to_owned()),
-        position,
-        system_scene,
-        // the default set is omitted so the canonical url stays clean (the page doesn't know it)
-        portables: portables.filter(|p| p != system_api_types::web_params::DEFAULT_PORTABLES),
-        preview: preview.is_preview,
-        editor: editor.0,
-        ..LAUNCH_OPTIONS.get().cloned().unwrap_or_default()
+    let launched = LAUNCH_OPTIONS.get().cloned().unwrap_or_default();
+    let options = EngineRunOptions {
+        launch: LaunchOptions {
+            realm: Some(server.to_owned()),
+            position,
+            preview: preview.is_preview,
+            ..launched.launch
+        },
+        client: ClientOptions {
+            system_scene,
+            // the default set is omitted so the canonical url stays clean (the page doesn't know it)
+            portables: portables.filter(|p| p != system_api_types::web_params::DEFAULT_PORTABLES),
+            editor: editor.0,
+            ..launched.client
+        },
     };
 
     if prev.as_ref() != Some(&options) {
@@ -407,24 +415,14 @@ fn update_url_params(
 }
 
 fn decentraland_serialized_app_config() -> AppConfig {
-    INIT_DATA.get().cloned().unwrap_or_else(|| AppConfig {
-        graphics: common::structs::GraphicsSettings {
-            shadow_distance: 20.0,
-            shadow_settings: common::structs::ShadowSetting::Low,
-            ..Default::default()
-        },
-        ..Default::default()
-    })
+    INIT_DATA.get().cloned().unwrap_or_default()
 }
 
-fn decentraland_app_arguments(options: &LaunchOptions) -> DecentralandArguments {
-    let mut launch = options.clone();
-    launch
-        .gpu_bytes_per_frame
-        .get_or_insert(WEB_GPU_BYTES_PER_FRAME);
-    launch.log_fps.get_or_insert(false);
+fn decentraland_app_arguments(options: &EngineRunOptions) -> DecentralandArguments {
+    let EngineRunOptions { launch, client } = options.clone();
     DecentralandArguments {
         launch,
+        client,
         // wasm has no engine-managed HUD: the react page hosting the engine is the HUD
         hud: false,
         ..Default::default()

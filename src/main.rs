@@ -112,12 +112,10 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
         }
     };
 
-    if let Some(domain) = &args.launch.base_domain {
-        common::base_domain::set(domain).map_err(|e| {
-            error!("{e}");
-            UserError(true)
-        })?;
-    }
+    webgpu_build::launch::latch(&args.launch).map_err(|e| {
+        error!("{e}");
+        UserError(true)
+    })?;
     if let Some(position) = &args.launch.position {
         IVec2Arg::from_str(position).map_err(|e| {
             error!("--position {position}: {e}");
@@ -127,9 +125,9 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
 
     // An explicit --system-scene (a scene source, or "none" for the engine's builtin ui) opts out of the
     // react HUD entirely — the given ui scene drives instead (see lib.rs).
-    args.hud = args.launch.system_scene.is_none();
-    if args.launch.system_scene.is_none() {
-        args.launch.system_scene = default_ui_scene();
+    args.hud = args.client.system_scene.is_none();
+    if args.client.system_scene.is_none() {
+        args.client.system_scene = default_ui_scene();
     }
     Ok(args)
 }
