@@ -11,9 +11,7 @@ use std::{str::FromStr, sync::OnceLock, time::Duration};
 use bevy::tasks::IoTaskPool;
 use bevy::{
     app::ScheduleRunnerPlugin,
-    diagnostic::{
-        DiagnosticsPlugin, FrameCountPlugin, FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin,
-    },
+    diagnostic::{DiagnosticsPlugin, FrameCountPlugin},
     gizmos::GizmoPlugin,
     gltf::GltfPlugin,
     input::InputPlugin,
@@ -25,7 +23,7 @@ use bevy::{
     time::TimePlugin,
 };
 use bevy_dui::DuiPlugin;
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 use common::{
     inputs::InputMap,
     profile::SerializedProfile,
@@ -84,12 +82,7 @@ static SESSION_LOG: OnceLock<String> = OnceLock::new();
     mut_arg("position", |a| {
         a.visible_alias("location")
             .help("Parcel to load as `x,y`; absent = 0,0")
-    }),
-    mut_arg("editor", |a| a.hide(true)),
-    mut_arg("system_scene", |a| a.hide(true)),
-    mut_arg("portables", |a| a.hide(true)),
-    mut_arg("imposter_source", |a| a.hide(true)),
-    mut_arg("gpu_bytes_per_frame", |a| a.hide(true))
+    })
 )]
 struct Args {
     #[command(flatten)]
@@ -156,34 +149,37 @@ fn usage_error(message: impl std::fmt::Display) -> ! {
     std::process::exit(2);
 }
 
+/// Shared launch options (`LaunchOptions` fields) whose effect (src/launch.rs) has no consumer
+/// in the headless plugin set: hidden from --help and refused rather than silently inert.
+const INERT: [&str; 5] = [
+    "editor",
+    "system_scene",
+    "portables",
+    "imposter_source",
+    "gpu_bytes_per_frame",
+];
+
 fn parse_args() -> Args {
-    let mut args = match Args::try_parse() {
-        Ok(args) => args,
+    let mut command = Args::command();
+    for id in INERT {
+        command = command.mut_arg(id, |a| a.hide(true));
+    }
+    let matches = match command.try_get_matches() {
+        Ok(matches) => matches,
         Err(e) => {
             let _ = e.print();
             std::process::exit(if e.use_stderr() { 2 } else { 0 });
         }
     };
-    // shared params headless has no consumer for: refuse rather than silently do nothing
-    for (passed, flag) in [
-        (args.launch.editor, "--editor"),
-        (args.launch.system_scene.is_some(), "--system-scene"),
-        (args.launch.portables.is_some(), "--portables"),
-        (args.launch.imposter_source.is_some(), "--imposter-source"),
-        (
-            args.launch.gpu_bytes_per_frame.is_some(),
-            "--gpu-bytes-per-frame",
-        ),
-    ] {
-        if passed {
-            usage_error(format!("{flag} has no effect headless"));
+    for id in INERT {
+        if matches.value_source(id) == Some(clap::parser::ValueSource::CommandLine) {
+            usage_error(format!("--{} has no effect headless", id.replace('_', "-")));
         }
     }
+    let mut args = Args::from_arg_matches(&matches).unwrap_or_else(|e| usage_error(e));
     // latch first: everything below that composes a backend host reads it
-    if let Some(domain) = &args.launch.base_domain {
-        if let Err(e) = common::base_domain::set(domain) {
-            usage_error(e);
-        }
+    if let Err(e) = webgpu_build::launch::latch(&args.launch) {
+        usage_error(e);
     }
     args.realm = args
         .launch
@@ -359,12 +355,11 @@ fn main() {
         args.realm, args.location, args.launch.preview, args.server_mode, args.tick_hz
     );
 
-    let config = AppConfig {
+    let mut config = AppConfig {
         home_realm: Some(args.realm.clone()),
         home_location: Some(args.location),
         graphics: GraphicsSettings {
             vsync: false,
-            log_fps: args.launch.log_fps.unwrap_or(false),
             fps_target: args.tick_hz as usize,
             ..Default::default()
         },
@@ -392,6 +387,7 @@ fn main() {
         .into(),
         ..Default::default()
     };
+    webgpu_build::launch::configure(&mut config, &args.launch);
 
     let mut app = App::new();
 
@@ -462,13 +458,14 @@ fn main() {
     // embedded assets: the scene-loading material (grid.png / loading.wgsl)
     app.add_plugins(assets::EmbedAssetsPlugin);
 
-    // --log-fps: the tick rate, against --tick-hz
-    if config.graphics.log_fps {
-        app.add_plugins((
-            FrameTimeDiagnosticsPlugin::default(),
-            LogDiagnosticsPlugin::default(),
-        ));
-    }
+    // the shared launch options' resources and plugins (--log-fps logs the tick rate, against
+    // --tick-hz)
+    webgpu_build::launch::apply(
+        &mut app,
+        &args.launch,
+        &config,
+        &map_realm_name(&args.realm),
+    );
 
     // world-storage delegations (per scene; CLI/env value is the single-scene fallback)
     let mut delegations = StorageDelegations::default();
@@ -526,11 +523,6 @@ fn main() {
             unload: 0.0,
             load_imposter: 0.0,
         })
-        .insert_resource(PreviewMode {
-            server: args.launch.preview.then(|| map_realm_name(&args.realm)),
-            is_preview: args.launch.preview,
-            preview_parcel: None,
-        })
         // servers must never join realm-wide comms (archipelago / world room) — they would
         // show up as a ghost participant. A non-server headless follows its realm about's
         // fixed_adapter like any client (offline about ⇒ no comms), so it can act as a
@@ -545,9 +537,6 @@ fn main() {
     // waiting for a scene to load and deriving the same string from its entity id
     if let Some(realm) = args.pulse_realm.clone() {
         app.insert_resource(comms::pulse::plugin::PulseRealmOverride(realm));
-    }
-    if let Some(endpoint) = args.launch.pulse_server.clone() {
-        app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(endpoint));
     }
 
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));

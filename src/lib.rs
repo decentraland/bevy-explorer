@@ -23,7 +23,6 @@ use bevy::{
 };
 use bevy::{
     app::{PluginGroupBuilder, Propagate},
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     log::LogPlugin,
     prelude::*,
     render::view::RenderLayers,
@@ -40,9 +39,9 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AvatarDynamicState, EditorMode, HeadSync, IVec2Arg, PointAtSync, PreviewMode,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance,
-        ShowOutOfBounds, StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
+        AppConfig, AvatarDynamicState, HeadSync, IVec2Arg, PointAtSync, PrimaryCamera,
+        PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance, ShowOutOfBounds,
+        StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
     util::UtilsPlugin,
 };
@@ -97,6 +96,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DISTRIBUTION: &str = "desktop";
 #[cfg(target_arch = "wasm32")]
 pub const DISTRIBUTION: &str = "web";
+
+pub mod launch;
 
 pub struct DecentralandApp(App);
 
@@ -366,9 +367,8 @@ impl DecentralandApp {
         let boot_server = map_realm_name(&decentraland_app_config.boot_server());
         let boot_location = BootLocation(decentraland_app_config.boot_location());
         // Show out-of-bounds geometry in preview, on a loopback realm (local dev) and in
-        // the editor, never on a public realm. Computed before boot_server moves.
-        let editor_mode = decentraland_app_config.arguments.launch.editor;
-        let show_out_of_bounds = editor_mode
+        // the editor, never on a public realm.
+        let show_out_of_bounds = decentraland_app_config.arguments.launch.editor
             || decentraland_app_config.arguments.launch.preview
             || is_loopback_realm(&boot_server);
 
@@ -402,16 +402,6 @@ impl DecentralandApp {
                     .into_iter()
                     .collect(),
             })
-            .insert_resource(PreviewMode {
-                server: decentraland_app_config
-                    .arguments
-                    .launch
-                    .preview
-                    .then_some(boot_server),
-                is_preview: decentraland_app_config.arguments.launch.preview,
-                preview_parcel: None,
-            })
-            .insert_resource(EditorMode(editor_mode))
             .insert_resource(ShowOutOfBounds(show_out_of_bounds))
             .insert_resource(SceneLoadDistance {
                 load: if decentraland_app_config.arguments.launch.preview {
@@ -520,21 +510,15 @@ impl DecentralandApp {
             });
         }
 
-        if let Some(endpoint) = decentraland_app_config
-            .arguments
-            .launch
-            .pulse_server
-            .clone()
-        {
-            app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(endpoint));
-        }
-        if let Some(source) = &decentraland_app_config.arguments.launch.imposter_source {
-            imposters::imposter_spec::set_source(source);
-        }
+        // the shared launch options' resources and plugins (src/launch.rs)
+        launch::apply(
+            &mut app,
+            &decentraland_app_config.arguments.launch,
+            &decentraland_app_config.app_config,
+            &boot_server,
+        );
 
-        // Create copies of structs that still need to be accessed
-        // and add AppConfig as a resource
-        let graphics_config = decentraland_app_config.app_config.graphics.clone();
+        // add AppConfig as a resource
         app.insert_resource(decentraland_app_config.app_config.audio.clone());
         app.insert_resource(boot_location);
         app.insert_resource(decentraland_app_config.app_config);
@@ -594,14 +578,6 @@ impl DecentralandApp {
 
         // Analytics plugins
         app.add_plugins(MetricsPlugin);
-        if (graphics_config.log_fps || decentraland_app_config.arguments.launch.preview)
-            && !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>()
-        {
-            app.add_plugins(FrameTimeDiagnosticsPlugin::default());
-        }
-        if graphics_config.log_fps {
-            app.add_plugins(LogDiagnosticsPlugin::default());
-        }
 
         if decentraland_app_config.arguments.test_scenes.is_some() {
             app.add_plugins(AutomaticTestingPlugin);
@@ -690,16 +666,9 @@ fn update_app_config_from_arguments(
         .replace_if_some(arguments.vsync);
     base_app_config
         .graphics
-        .log_fps
-        .replace_if_some(arguments.launch.log_fps);
-    base_app_config
-        .graphics
         .fps_target
         .replace_if_some(arguments.fps_target);
-    base_app_config
-        .graphics
-        .gpu_bytes_per_frame
-        .replace_if_some(arguments.launch.gpu_bytes_per_frame);
+    launch::configure(base_app_config, &arguments.launch);
 
     base_app_config
         .scene_threads

@@ -184,6 +184,11 @@ pub fn engine_run(options: EngineRunOptionsJs) -> Result<(), JsValue> {
     let options = parse_options(&options)?;
     let _ = LAUNCH_OPTIONS.set(options.clone());
     apply_base_domain();
+    // the shared launch options' globals (src/launch.rs; the base domain itself came from the
+    // page above, so this can't fail on it)
+    if let Err(e) = crate::launch::latch(&options) {
+        warn!("{e}");
+    }
     init_runtime();
 
     let default_filter = "symphonia=warn";
