@@ -317,7 +317,7 @@ function Hud(): React.JSX.Element {
             places={session.places}
             profile={session.profile}
             onNavigate={goToMenuPage}
-            onTeleport={(x, y) => session.map.teleport(x, y)}
+            onTeleport={(x, y) => session.map.teleportToPlace(x, y)}
             onVisitWorld={(realm) => session.map.changeRealm(realm)}
           />
           <GalleryPage

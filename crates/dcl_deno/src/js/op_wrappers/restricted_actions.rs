@@ -50,10 +50,11 @@ async fn op_walk_player_to(
 #[op2(async)]
 async fn op_teleport_to(
     state: Rc<RefCell<OpState>>,
-    position_x: i32,
-    position_y: i32,
+    position_x: Option<i32>,
+    position_y: Option<i32>,
+    #[string] realm: Option<String>,
 ) -> Result<bool, anyhow::Error> {
-    dcl::js::restricted_actions::op_teleport_to(state, position_x, position_y).await
+    dcl::js::restricted_actions::op_teleport_to(state, position_x, position_y, realm).await
 }
 
 #[op2(async)]

@@ -40,10 +40,11 @@ pub async fn op_walk_player_to(
 #[wasm_bindgen]
 pub async fn op_teleport_to(
     state: &WorkerContext,
-    position_x: i32,
-    position_y: i32,
+    position_x: Option<i32>,
+    position_y: Option<i32>,
+    realm: Option<String>,
 ) -> Result<bool, WasmError> {
-    dcl::js::restricted_actions::op_teleport_to(state.rc(), position_x, position_y)
+    dcl::js::restricted_actions::op_teleport_to(state.rc(), position_x, position_y, realm)
         .await
         .map_err(WasmError::from)
 }

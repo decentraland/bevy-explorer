@@ -6,7 +6,7 @@
 import { Transform, engine } from '@dcl/sdk/ecs'
 import { Quaternion } from '@dcl/sdk/math'
 import { getPlayer } from '@dcl/sdk/players'
-import { teleportTo, changeRealm } from '~system/RestrictedActions'
+import { teleportTo } from '~system/RestrictedActions'
 import { getRealm } from '~system/Runtime'
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
@@ -50,15 +50,16 @@ export function registerWorld(ctx: Ctx): void {
   })
 
   ctx.on('teleport', (msg) => {
-    teleportTo({ worldCoordinates: { x: msg.x, y: msg.y } }).catch((e: unknown) => {
+    teleportTo({ worldCoordinates: { x: msg.x, y: msg.y }, realm: msg.realm }).catch((e: unknown) => {
       console.error('[world] teleport failed', e)
     })
   })
 
-  // Travel to a world/realm (e.g. boedo.dcl.eth). The engine auto-grants ChangeRealm for our
+  // Travel to a world/realm (e.g. boedo.dcl.eth), landing on its default spawn: a teleport with a
+  // realm and no parcel (changeRealm is deprecated). The engine auto-grants ChangeRealm for our
   // super-user scene, so the React HUD owns the confirmation prompt.
   ctx.on('changeRealm', (msg) => {
-    changeRealm({ realm: msg.realm }).catch((e: unknown) => {
+    teleportTo({ realm: msg.realm }).catch((e: unknown) => {
       console.error('[world] changeRealm failed', e)
     })
   })

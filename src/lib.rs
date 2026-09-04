@@ -50,7 +50,7 @@ use console::{ConsolePlugin, DoAddConsoleCommand};
 use image_processing::ImageProcessingPlugin;
 use imposters::DclImposterPlugin;
 use input_manager::InputManagerPlugin;
-use ipfs::{map_realm_name, IpfsIoPlugin};
+use ipfs::{map_realm_name, IpfsIoPlugin, RealmInitialLocation};
 use livestream_manager::plugin::LivestreamManagerPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use particle_system::plugin::ParticleSystemPlugin;
@@ -150,7 +150,12 @@ impl DecentralandAppConfig {
 /// resource so the AppConfig resource (rewritten wholesale to disk on settings changes)
 /// never carries a one-off --location as home.
 #[derive(Resource)]
-pub struct BootLocation(pub IVec2);
+pub struct BootLocation {
+    pub parcel: IVec2,
+    /// Given on the command line / url rather than taken from the home pin. The realm is then
+    /// asked to land on this parcel instead of its own default spawn (a World's base scene).
+    pub explicit: bool,
+}
 
 pub struct DecentralandArguments {
     pub server: Option<String>,
@@ -261,7 +266,10 @@ impl DecentralandApp {
 
         let boot_server = map_realm_name(&decentraland_app_config.boot_server());
         // computed here too: scene_params is partially moved out of the arguments below
-        let boot_location = BootLocation(decentraland_app_config.boot_location());
+        let boot_location = BootLocation {
+            parcel: decentraland_app_config.boot_location(),
+            explicit: decentraland_app_config.arguments.location.is_some(),
+        };
         // Show out-of-bounds geometry in preview, on a loopback realm (local dev) and in
         // the editor, never on a public realm. Computed before boot_server moves.
         let editor_mode = decentraland_app_config.arguments.editor;
@@ -552,9 +560,9 @@ fn setup(
     let player_id = commands
         .spawn((
             Transform::from_translation(Vec3::new(
-                8.0 + 16.0 * boot_location.0.x as f32,
+                8.0 + 16.0 * boot_location.parcel.x as f32,
                 8.0,
-                -8.0 + -16.0 * boot_location.0.y as f32,
+                -8.0 + -16.0 * boot_location.parcel.y as f32,
             )),
             Visibility::default(),
             config.player_settings.clone(),
@@ -566,6 +574,9 @@ fn setup(
             Propagate(RenderLayers::default()),
         ))
         .id();
+    if boot_location.explicit {
+        commands.insert_resource(RealmInitialLocation::Parcel(boot_location.parcel));
+    }
 
     // add a camera
     let camera_id = commands

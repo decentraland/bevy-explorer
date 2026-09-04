@@ -334,7 +334,7 @@ export function MapPage({
   }
   const jumpTo = (pl: Place): void => {
     const [x, y] = pl.base_position.split(',').map(Number)
-    map.teleport(x, y)
+    map.teleportToPlace(x, y)
     map.toggle()
   }
 

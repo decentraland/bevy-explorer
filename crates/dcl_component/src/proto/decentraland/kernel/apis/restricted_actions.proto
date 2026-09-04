@@ -11,7 +11,12 @@ message MovePlayerToRequest {
 }
 
 message TeleportToRequest {
-  decentraland.common.Vector2 world_coordinates = 1;
+  // The parcel to land on. Omitted: the realm's default spawn (only meaningful with `realm`).
+  optional decentraland.common.Vector2 world_coordinates = 1;
+  // The realm the parcel belongs to: a world name (`foo.dcl.eth`) or a realm url. When set, the
+  // client changes realm (a full reconnect, even to the realm the player is in) and lands on the
+  // parcel there. Omitted: the parcel is in the player's current realm.
+  optional string realm = 2;
 }
 
 message TriggerEmoteRequest {
@@ -66,6 +71,7 @@ service RestrictedActionsService {
   // TriggerEmote will trigger an emote in this current user
   rpc TriggerEmote(TriggerEmoteRequest) returns (TriggerEmoteResponse) {}
 
+  // @deprecated, use TeleportTo with `realm` (and no `world_coordinates` for the realm's default spawn)
   // ChangeRealm prompts the user to change to a specific realm
   rpc ChangeRealm(ChangeRealmRequest) returns (SuccessResponse) {}
 
