@@ -363,6 +363,10 @@ fn main() {
         // without these, engine-side position logic — scene membership, avatar colliders,
         // trigger areas — sees every remote player at the origin
         .add_plugins(avatar::foreign_dynamics::PlayerMovementPlugin)
+        // remote players' emotes -> `AvatarEmoteCommand` in their scene's crdt. The client
+        // reports these from `avatar::animate` (render-bound, omitted here); without this a
+        // server scene never sees what players do
+        .add_plugins(comms::global_crdt::ForeignEmoteRelayPlugin)
         .add_plugins(DuiPlugin)
         .add_plugins(SystemBridgePlugin { bare: true });
 

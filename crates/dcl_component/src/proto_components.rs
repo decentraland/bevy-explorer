@@ -157,6 +157,7 @@ impl DclProtoComponent for sdk::components::PbParticleSystem {}
 impl PositionFree for sdk::components::PbPlayerIdentityData {}
 impl PositionFree for sdk::components::PbAvatarBase {}
 impl PositionFree for sdk::components::PbAvatarEquippedData {}
+impl PositionFree for sdk::components::PbAvatarEmoteCommand {}
 
 // GlobalCrdtData impl for PbAvatarMovementInfo (walk_target is a world-space position that needs localization)
 impl GlobalCrdtData for sdk::components::PbAvatarMovementInfo {

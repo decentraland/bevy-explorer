@@ -951,22 +951,31 @@ fn drain_inbound(
                 // Emote start/stop are delivered natively (`PlayerMessage::Emote`) rather than as an
                 // rfc4 `PlayerEmote`: byte-transport emotes are dropped as duplicates, so the Pulse
                 // copy has to be distinguishable from them by variant, exactly as movement is.
-                PulseEvent::EmoteStart { address, urn, tick } => session.forward(
+                PulseEvent::EmoteStart {
+                    address,
+                    urn,
+                    tick,
+                    mask,
+                } => session.forward(
                     sinks,
                     address,
                     PlayerMessage::Emote {
                         urn,
                         incremental_id: tick,
                         stopping: false,
+                        completed: false,
+                        mask,
                     },
                 ),
-                PulseEvent::EmoteStop { address } => session.forward(
+                PulseEvent::EmoteStop { address, completed } => session.forward(
                     sinks,
                     address,
                     PlayerMessage::Emote {
                         urn: String::new(),
                         incremental_id: 0,
                         stopping: true,
+                        completed,
+                        mask: None,
                     },
                 ),
                 // A peer entered our interest set. Report the arrival, then their initial profile

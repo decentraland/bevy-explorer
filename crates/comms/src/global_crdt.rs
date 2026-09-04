@@ -1,4 +1,4 @@
-use std::{f32::consts::TAU, sync::Arc};
+use std::{collections::VecDeque, f32::consts::TAU, sync::Arc};
 
 use bevy::{
     app::Propagate,
@@ -13,7 +13,7 @@ use common::{
         AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
         SceneDrivenAnimationRequest,
     },
-    util::ModifyComponentExt,
+    util::{ModifyComponentExt, TaskExt},
 };
 use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
@@ -29,11 +29,13 @@ use dcl::{
 use dcl_component::{
     proto_components::{
         kernel::comms::rfc4::{self, packet::Message},
-        sdk::components::PbPlayerIdentityData,
+        sdk::components::{EmoteState, PbAvatarEmoteCommand, PbPlayerIdentityData},
     },
     transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation},
     DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
+
+use ipfs::{ActiveEntitiesRequest, ActiveEntityTask, IpfsAssetServer};
 
 use crate::{profile::ProfileMetaCache, Transport};
 
@@ -119,6 +121,7 @@ impl Plugin for GlobalCrdtPlugin {
         app.add_event::<PlayerSceneAnimEvent>();
         app.add_event::<ProfileEvent>();
         app.add_event::<ChatEvent>();
+        app.add_event::<ForeignEmoteEvent>();
     }
 }
 
@@ -152,6 +155,11 @@ pub enum PlayerMessage {
         /// The server tick the emote started on; ordering only.
         incremental_id: u32,
         stopping: bool,
+        /// On a stop: the server's one-shot timer expired (a natural finish) rather than the
+        /// player cancelling a looping emote. Always false on a start.
+        completed: bool,
+        /// On a start: the `AvatarMask` value the server relayed, if the emote is partial-body.
+        mask: Option<i32>,
     },
     AudioStreamAvailable {
         transport: Entity,
@@ -181,11 +189,15 @@ impl std::fmt::Debug for PlayerMessage {
                 urn,
                 incremental_id,
                 stopping,
+                completed,
+                mask,
             } => f
                 .debug_struct("Emote")
                 .field("urn", urn)
                 .field("incremental_id", incremental_id)
                 .field("stopping", stopping)
+                .field("completed", completed)
+                .field("mask", mask)
                 .finish(),
             Self::AudioStreamAvailable { transport } => f
                 .debug_tuple("AudioStreamAvailable")
@@ -913,6 +925,8 @@ pub fn process_transport_updates(
                             urn,
                             incremental_id,
                             stopping,
+                            completed,
+                            mask,
                         } => {
                             debug!("emote: {urn} (stopping: {stopping})");
                             if stopping {
@@ -920,11 +934,19 @@ pub fn process_transport_updates(
                                 // completion). Foreign emotes no longer self-cancel on motion (see
                                 // `animate`), so the wire stop is what ends a looping one.
                                 commands.entity(entity).remove::<EmoteCommand>();
+                                commands.send_event(ForeignEmoteEvent {
+                                    player: entity,
+                                    kind: ForeignEmoteEventKind::Stopped { completed },
+                                });
                             } else {
                                 commands.entity(entity).try_insert(EmoteCommand {
                                     timestamp: incremental_id as i64,
-                                    urn,
+                                    urn: urn.clone(),
                                     r#loop: false,
+                                });
+                                commands.send_event(ForeignEmoteEvent {
+                                    player: entity,
+                                    kind: ForeignEmoteEventKind::Started { urn, mask },
                                 });
                             }
                         }
@@ -1317,5 +1339,821 @@ fn receive_new_voice_message_senders(
         if let SystemApi::GetVoiceStream(stream) = event {
             voice_message_streams.push(stream.clone());
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Foreign emote relay (render-free)
+// ---------------------------------------------------------------------------
+
+/// A remote player's emote lifecycle as decoded from the wire. Emitted by
+/// [`process_transport_updates`] next to the `EmoteCommand` it maintains on the player entity, so
+/// a consumer sees every transition in order — including a start and stop landing in one frame,
+/// which the component alone would collapse — and gets what the component cannot carry: why an
+/// emote stopped, and its body mask.
+#[derive(Event, Debug, Clone, PartialEq)]
+pub struct ForeignEmoteEvent {
+    pub player: Entity,
+    pub kind: ForeignEmoteEventKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForeignEmoteEventKind {
+    Started {
+        urn: String,
+        /// `AvatarMask` value from the server, if the emote is partial-body.
+        mask: Option<i32>,
+    },
+    Stopped {
+        /// The server's one-shot timer expired (a natural finish) rather than the player cancelling.
+        completed: bool,
+    },
+}
+
+/// Reports remote players' emotes to scenes as `AvatarEmoteCommand` entries — a grow-only set on
+/// the player's entity — without any avatar rendering. Headless / authoritative-server only.
+///
+/// On the client this is `avatar::animate`'s job, and it reports only starts, once the clip has
+/// loaded. A server loads no avatar assets, so nothing there ever wrote the component and a server
+/// scene could never react to what players do. This relays the wire events instead, and reports the
+/// whole lifecycle the component can express:
+///
+/// - a start is `ES_STARTED` with the emote's real `loop`: a scene emote carries it in the urn's
+///   trailing `-{loop}` token, the reference client's embedded animations come from a fixed table,
+///   and everything else — base and wearable emotes — is looked up in the emote's deployed
+///   metadata (`emoteDataADR74.loop`) on the catalyst, cached by pointer. A start whose metadata
+///   is still in flight waits, and so does everything queued behind it for that player, so a scene
+///   always sees a player's events in wire order. A lookup that fails answers `false` for a while
+///   and is then retried; an identifier no catalyst could resolve reports `false` at once.
+/// - a stop is `ES_FINISHED` when the server's one-shot timer expired and `ES_INTERRUPTED` when
+///   the player cancelled a looping emote, echoing the started emote's urn and loop so a scene can
+///   match it without bookkeeping. A stop with no start on record is dropped.
+/// - `timestamp` is a host-side monotonic counter. The SDK's grow-only set sorts a row by it and
+///   trims from the front, so a non-monotonic key — the peer's clock, or the Pulse start tick of a
+///   replayed emote — could see an entry dropped outright.
+/// - `mask` passes through from the wire.
+///
+/// The urn is a peer-controlled string headed for every subscribed scene's crdt, so it is bounded
+/// before it gets there; each player's queue, the pointer cache and the lookups in flight are
+/// bounded too.
+///
+/// Deliberately not part of [`GlobalCrdtPlugin`]: the client must not report twice.
+pub struct ForeignEmoteRelayPlugin;
+
+impl Plugin for ForeignEmoteRelayPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<ForeignEmoteRelay>();
+        // flush before resolve so a pointer first needed this frame is requested this frame
+        app.add_systems(
+            Update,
+            (
+                queue_foreign_emote_reports,
+                flush_foreign_emote_reports,
+                resolve_foreign_emote_metadata,
+            )
+                .chain()
+                .after(process_transport_updates),
+        );
+    }
+}
+
+/// Longest emote identifier accepted from a peer.
+const MAX_EMOTE_URN_BYTES: usize = 256;
+/// Lifecycle reports one player may have waiting on a metadata lookup. Beyond this the oldest are
+/// dropped: the newest are the ones a scene still cares about.
+const MAX_PENDING_PER_PLAYER: usize = 16;
+/// Resolved `loop` flags kept, by pointer. Emote collections are large, but a room's players use a
+/// small working set.
+const MAX_CACHED_POINTERS: usize = 1024;
+/// How long a failed lookup answers `false` before the pointer is looked up again.
+const LOOKUP_RETRY_SECS: f64 = 60.0;
+/// Metadata batches in flight at once; further unknown pointers wait for a slot.
+const MAX_LOOKUP_BATCHES: usize = 4;
+
+const SCENE_EMOTE_PREFIX: &str = "urn:decentraland:off-chain:scene-emote:";
+const BASE_EMOTE_PREFIX: &str = "urn:decentraland:off-chain:base-emotes:";
+
+/// The reference client's embedded animation set (`EmbeddedEmotes.asset`), triggered by bare id
+/// and never deployed to a catalyst, so a lookup could not resolve them. Only the sitting
+/// animations loop.
+const EMBEDDED_LOOPING_EMOTES: [&str; 4] = [
+    "sittingchair1",
+    "sittingchair2",
+    "sittingground1",
+    "sittingground2",
+];
+const EMBEDDED_ONESHOT_EMOTES: [&str; 17] = [
+    "crafting",
+    "handsintheair",
+    "victory",
+    "waving",
+    "buttondown",
+    "buttonfront",
+    "gethit",
+    "knockout",
+    "lever",
+    "openchest",
+    "opendoor",
+    "punch",
+    "push",
+    "swingweapononehand",
+    "swingweapontwohands",
+    "throw",
+    "fistpump_short",
+];
+
+/// Where emote entities are deployed. Wearables and emotes live on the catalyst network, not on a
+/// world or preview realm's content server, so the lookup goes there regardless of realm.
+fn emote_catalyst_url() -> String {
+    common::base_domain::https("peer", "/content")
+}
+
+/// How an emote's `loop` is known, decided from the identifier alone.
+#[derive(Debug, Clone, PartialEq)]
+enum LoopSource {
+    /// Known without a lookup.
+    Known(bool),
+    /// Needs the deployed metadata registered under this catalyst pointer.
+    Pointer(String),
+}
+
+/// Reject what no real emote identifier looks like: empty, oversized, or carrying whitespace /
+/// control characters (urns, legacy names and embedded ids are all single tokens). Not a charset
+/// allowlist: a false reject would silently drop a legitimate emote.
+fn foreign_emote_urn_is_acceptable(urn: &str) -> bool {
+    !urn.is_empty()
+        && urn.len() <= MAX_EMOTE_URN_BYTES
+        && !urn.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+/// Classify an emote identifier: a scene emote carries its loop flag, an embedded id is tabled, a
+/// bare legacy name is a base emote, and a collectible urn is shortened to the pointer its deployed
+/// entity is registered under (token id dropped, lowercased apart from `b64-` segments, as
+/// `CollectibleUrn` does). `None`: nothing a catalyst could resolve.
+fn classify_emote(urn: &str) -> Option<LoopSource> {
+    if let Some(scene_emote) = urn.strip_prefix(SCENE_EMOTE_PREFIX) {
+        let loops = scene_emote
+            .rsplit_once('-')
+            .is_some_and(|(_, flag)| flag.eq_ignore_ascii_case("true"));
+        return Some(LoopSource::Known(loops));
+    }
+    let lowered = urn.to_ascii_lowercase();
+    if EMBEDDED_LOOPING_EMOTES.contains(&lowered.as_str()) {
+        return Some(LoopSource::Known(true));
+    }
+    if EMBEDDED_ONESHOT_EMOTES.contains(&lowered.as_str()) {
+        return Some(LoopSource::Known(false));
+    }
+    if !urn.contains(':') {
+        // legacy bare base-emote name ("wave"), still emitted by older clients and scene calls
+        return Some(LoopSource::Pointer(format!("{BASE_EMOTE_PREFIX}{lowered}")));
+    }
+    let parts: Vec<&str> = urn.split(':').collect();
+    let pointer_parts = match parts.get(3).copied() {
+        Some("base-avatars" | "base-emotes") => 5,
+        Some("collections-v1" | "collections-v2") => 6,
+        Some("collections-thirdparty") => 7,
+        _ => return None,
+    };
+    if parts.len() < pointer_parts {
+        return None;
+    }
+    let pointer = parts[..pointer_parts]
+        .iter()
+        .map(|segment| {
+            if segment.starts_with("b64-") {
+                (*segment).to_owned()
+            } else {
+                segment.to_ascii_lowercase()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(":");
+    Some(LoopSource::Pointer(pointer))
+}
+
+/// The `loop` flag in a deployed emote entity's metadata.
+fn loop_from_emote_metadata(metadata: &serde_json::Value) -> Option<bool> {
+    metadata
+        .get("emoteDataADR74")
+        .or_else(|| metadata.get("data"))
+        .and_then(|data| data.get("loop"))
+        .and_then(serde_json::Value::as_bool)
+}
+
+/// A lifecycle report waiting to be written, in wire order per player.
+#[derive(Debug)]
+enum PendingReport {
+    Start {
+        urn: String,
+        mask: Option<i32>,
+        source: LoopSource,
+    },
+    Stop {
+        completed: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CachedLoop {
+    loops: bool,
+    /// `Some(when)`: a failed lookup's stand-in answer, superseded once `when` has passed.
+    retry_after: Option<f64>,
+}
+
+struct LookupBatch {
+    pointers: Vec<String>,
+    task: ActiveEntityTask,
+}
+
+/// State of the [`ForeignEmoteRelayPlugin`]: per-player report queues, the pointer → `loop` cache
+/// and the metadata lookups in flight.
+#[derive(Resource, Default)]
+pub struct ForeignEmoteRelay {
+    pending: HashMap<Entity, VecDeque<PendingReport>>,
+    /// urn and loop of the last start reported per player, so a stop can echo them
+    started: HashMap<Entity, (String, bool)>,
+    cache: HashMap<String, CachedLoop>,
+    /// insertion order of `cache`, for eviction
+    cache_order: VecDeque<String>,
+    /// pointers with a lookup in flight, or waiting for a batch slot
+    requested: HashSet<String>,
+    /// pointers waiting for a batch slot
+    wanted: Vec<String>,
+    batches: Vec<LookupBatch>,
+    sequence: u32,
+}
+
+impl ForeignEmoteRelay {
+    fn remember(&mut self, pointer: String, loops: bool, retry_after: Option<f64>) {
+        if self
+            .cache
+            .insert(pointer.clone(), CachedLoop { loops, retry_after })
+            .is_none()
+        {
+            self.cache_order.push_back(pointer);
+            while self.cache_order.len() > MAX_CACHED_POINTERS {
+                if let Some(oldest) = self.cache_order.pop_front() {
+                    self.cache.remove(&oldest);
+                }
+            }
+        }
+    }
+}
+
+/// The cached `loop` for a pointer, unless it is a failed lookup's stand-in whose retry is due.
+fn cached_loop(cache: &HashMap<String, CachedLoop>, pointer: &str, now: f64) -> Option<bool> {
+    cache
+        .get(pointer)
+        .filter(|cached| cached.retry_after.is_none_or(|when| now < when))
+        .map(|cached| cached.loops)
+}
+
+/// Queue each wire event behind the player's earlier ones.
+fn queue_foreign_emote_reports(
+    mut events: EventReader<ForeignEmoteEvent>,
+    players: Query<&ForeignPlayer>,
+    mut relay: ResMut<ForeignEmoteRelay>,
+) {
+    for event in events.read() {
+        // gone before we got here: nothing to report it against
+        let Ok(player) = players.get(event.player) else {
+            continue;
+        };
+        let report = match &event.kind {
+            ForeignEmoteEventKind::Started { urn, mask } => {
+                if !foreign_emote_urn_is_acceptable(urn) {
+                    debug!(
+                        "dropping emote with unacceptable urn from {:#x}",
+                        player.address
+                    );
+                    continue;
+                }
+                // an identifier no catalyst could resolve still names a playback: report it as a
+                // one-shot rather than losing the event
+                let source = classify_emote(urn).unwrap_or(LoopSource::Known(false));
+                PendingReport::Start {
+                    urn: urn.clone(),
+                    mask: *mask,
+                    source,
+                }
+            }
+            ForeignEmoteEventKind::Stopped { completed } => PendingReport::Stop {
+                completed: *completed,
+            },
+        };
+        let queue = relay.pending.entry(event.player).or_default();
+        queue.push_back(report);
+        while queue.len() > MAX_PENDING_PER_PLAYER {
+            queue.pop_front();
+        }
+    }
+}
+
+/// What to do with the head of a player's queue.
+enum HeadAction {
+    Write {
+        urn: String,
+        loops: bool,
+        mask: Option<i32>,
+        state: EmoteState,
+    },
+    Skip,
+    Wait,
+}
+
+/// Drain each player's queue for as long as its head can be written.
+fn flush_foreign_emote_reports(
+    players: Query<&ForeignPlayer>,
+    mut contexts: Query<&mut GlobalCrdtState>,
+    mut relay: ResMut<ForeignEmoteRelay>,
+    time: Res<Time>,
+) {
+    let now = time.elapsed_secs_f64();
+    let ForeignEmoteRelay {
+        pending,
+        started,
+        cache,
+        requested,
+        wanted,
+        sequence,
+        ..
+    } = &mut *relay;
+
+    pending.retain(|player, queue| {
+        let Ok(foreign) = players.get(*player) else {
+            started.remove(player);
+            return false;
+        };
+        let Ok(mut state) = contexts.get_mut(foreign.context) else {
+            return false;
+        };
+
+        while let Some(head) = queue.front() {
+            let action = match head {
+                PendingReport::Start { urn, mask, source } => {
+                    let loops = match source {
+                        LoopSource::Known(loops) => Some(*loops),
+                        LoopSource::Pointer(pointer) => {
+                            let cached = cached_loop(cache, pointer, now);
+                            if cached.is_none() && requested.insert(pointer.clone()) {
+                                wanted.push(pointer.clone());
+                            }
+                            cached
+                        }
+                    };
+                    match loops {
+                        Some(loops) => HeadAction::Write {
+                            urn: urn.clone(),
+                            loops,
+                            mask: *mask,
+                            state: EmoteState::EsStarted,
+                        },
+                        None => HeadAction::Wait,
+                    }
+                }
+                PendingReport::Stop { completed } => match started.remove(player) {
+                    Some((urn, loops)) => HeadAction::Write {
+                        urn,
+                        loops,
+                        mask: None,
+                        state: if *completed {
+                            EmoteState::EsFinished
+                        } else {
+                            EmoteState::EsInterrupted
+                        },
+                    },
+                    // a stop with no start on record
+                    None => HeadAction::Skip,
+                },
+            };
+
+            match action {
+                HeadAction::Wait => break,
+                HeadAction::Skip => {
+                    queue.pop_front();
+                }
+                HeadAction::Write {
+                    urn,
+                    loops,
+                    mask,
+                    state: emote_state,
+                } => {
+                    if emote_state == EmoteState::EsStarted {
+                        started.insert(*player, (urn.clone(), loops));
+                    }
+                    *sequence = sequence.wrapping_add(1);
+                    state.update_crdt(
+                        SceneComponentId::AVATAR_EMOTE_COMMAND,
+                        CrdtType::GO_ANY,
+                        foreign.scene_id,
+                        &PbAvatarEmoteCommand {
+                            emote_urn: urn,
+                            r#loop: loops,
+                            timestamp: *sequence,
+                            mask,
+                            state: Some(emote_state as i32),
+                        },
+                    );
+                    queue.pop_front();
+                }
+            }
+        }
+        !queue.is_empty()
+    });
+}
+
+/// Bank the answers of landed metadata lookups and start one for the pointers now wanted.
+fn resolve_foreign_emote_metadata(
+    mut relay: ResMut<ForeignEmoteRelay>,
+    ipfas: IpfsAssetServer,
+    time: Res<Time>,
+) {
+    let now = time.elapsed_secs_f64();
+
+    let mut landed = Vec::new();
+    relay
+        .batches
+        .retain_mut(|batch| match batch.task.complete() {
+            Some(result) => {
+                landed.push((std::mem::take(&mut batch.pointers), result));
+                false
+            }
+            None => true,
+        });
+    for (pointers, result) in landed {
+        match result {
+            Ok(entities) => {
+                let mut answered: HashSet<String> = HashSet::default();
+                for entity in entities {
+                    let loops = entity
+                        .metadata
+                        .as_ref()
+                        .and_then(loop_from_emote_metadata)
+                        .unwrap_or(false);
+                    for pointer in entity.pointers {
+                        let pointer = pointer.to_ascii_lowercase();
+                        answered.insert(pointer.clone());
+                        relay.remember(pointer, loops, None);
+                    }
+                }
+                // a definitive "no such emote" is cached too, else an unknown urn would be looked
+                // up again on every trigger
+                for pointer in &pointers {
+                    if !answered.contains(pointer) {
+                        relay.remember(pointer.clone(), false, None);
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("emote metadata lookup failed: {e}");
+                for pointer in &pointers {
+                    relay.remember(pointer.clone(), false, Some(now + LOOKUP_RETRY_SECS));
+                }
+            }
+        }
+        for pointer in &pointers {
+            relay.requested.remove(pointer);
+        }
+    }
+
+    if !relay.wanted.is_empty() && relay.batches.len() < MAX_LOOKUP_BATCHES {
+        let pointers = std::mem::take(&mut relay.wanted);
+        let task = ipfas.ipfs().active_entities(
+            ActiveEntitiesRequest::Pointers(pointers.clone()),
+            Some(&emote_catalyst_url()),
+        );
+        relay.batches.push(LookupBatch { pointers, task });
+    }
+}
+
+#[cfg(test)]
+mod foreign_emote_relay_tests {
+    use super::*;
+    use dcl::interface::CrdtMessageType;
+    use prost::Message as _;
+
+    const SCENE_LOOPING: &str = "urn:decentraland:off-chain:scene-emote:bafyhash-true";
+    const WEARABLE: &str = "urn:decentraland:matic:collections-v2:0xAbC:0:12345";
+    const WEARABLE_POINTER: &str = "urn:decentraland:matic:collections-v2:0xabc:0";
+
+    fn app() -> App {
+        let mut app = App::new();
+        app.init_resource::<Time>();
+        app.init_resource::<ForeignEmoteRelay>();
+        app.add_event::<ForeignEmoteEvent>();
+        // the lookup system needs a realm; these tests bank answers into the cache directly
+        app.add_systems(
+            Update,
+            (queue_foreign_emote_reports, flush_foreign_emote_reports).chain(),
+        );
+        app
+    }
+
+    fn spawn_context(app: &mut App) -> (Entity, broadcast::Receiver<GlobalCrdtStateUpdate>) {
+        let state = GlobalCrdtState::new(None);
+        let (_, receiver) = state.subscribe(Vec3::ZERO);
+        (app.world_mut().spawn(state).id(), receiver)
+    }
+
+    fn spawn_player(app: &mut App, context: Entity, scene_id: SceneEntityId) -> Entity {
+        let (audio_sender, _audio_receiver) = mpsc::channel::<ForeignAudioData>(1);
+        app.world_mut()
+            .spawn(ForeignPlayer {
+                address: Address::from_low_u64_be(0x1234),
+                context,
+                transports: HashSet::default(),
+                scene_id,
+                profile_version: 0,
+                audio_sender,
+            })
+            .id()
+    }
+
+    fn started(app: &mut App, player: Entity, urn: &str) {
+        app.world_mut().send_event(ForeignEmoteEvent {
+            player,
+            kind: ForeignEmoteEventKind::Started {
+                urn: urn.to_owned(),
+                mask: None,
+            },
+        });
+    }
+
+    fn stopped(app: &mut App, player: Entity, completed: bool) {
+        app.world_mut().send_event(ForeignEmoteEvent {
+            player,
+            kind: ForeignEmoteEventKind::Stopped { completed },
+        });
+    }
+
+    fn resolve(app: &mut App, pointer: &str, loops: bool) {
+        app.world_mut()
+            .resource_mut::<ForeignEmoteRelay>()
+            .remember(pointer.to_owned(), loops, None);
+    }
+
+    /// Every `AvatarEmoteCommand` appended for `scene_id` in the context's store, oldest first.
+    fn reported(app: &App, context: Entity, scene_id: SceneEntityId) -> Vec<PbAvatarEmoteCommand> {
+        app.world()
+            .get::<GlobalCrdtState>(context)
+            .unwrap()
+            .store
+            .go
+            .get(&SceneComponentId::AVATAR_EMOTE_COMMAND)
+            .and_then(|state| state.0.get(&scene_id))
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|entry| PbAvatarEmoteCommand::decode(entry.data.as_slice()).unwrap())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn state_of(command: &PbAvatarEmoteCommand) -> EmoteState {
+        match command.state.expect("state is always written") {
+            s if s == EmoteState::EsStarted as i32 => EmoteState::EsStarted,
+            s if s == EmoteState::EsFinished as i32 => EmoteState::EsFinished,
+            s if s == EmoteState::EsInterrupted as i32 => EmoteState::EsInterrupted,
+            other => panic!("unknown emote state {other}"),
+        }
+    }
+
+    /// The entities named by the APPEND_VALUE messages broadcast to subscribed scenes so far.
+    fn broadcast_appends(
+        receiver: &mut broadcast::Receiver<GlobalCrdtStateUpdate>,
+    ) -> Vec<SceneEntityId> {
+        let mut entities = Vec::new();
+        while let Ok(update) = receiver.try_recv() {
+            let GlobalCrdtStateUpdate::Crdt(bytes, localizer) = update else {
+                continue;
+            };
+            assert!(matches!(localizer, Localizer::None));
+            let mut reader = DclReader::new(&bytes);
+            let _length = reader.read_u32().unwrap();
+            assert_eq!(
+                reader.read_u32().unwrap(),
+                CrdtMessageType::AppendValue as u32
+            );
+            let entity: SceneEntityId = reader.read().unwrap();
+            let component: SceneComponentId = reader.read().unwrap();
+            assert_eq!(component, SceneComponentId::AVATAR_EMOTE_COMMAND);
+            entities.push(entity);
+        }
+        entities
+    }
+
+    #[test]
+    fn reports_start_then_finish_with_monotonic_timestamps() {
+        let mut app = app();
+        let (context, mut receiver) = spawn_context(&mut app);
+        let scene_id = SceneEntityId::new(32, 0);
+        let player = spawn_player(&mut app, context, scene_id);
+
+        started(&mut app, player, SCENE_LOOPING);
+        app.update();
+        // nothing new: no re-report
+        app.update();
+        stopped(&mut app, player, true);
+        app.update();
+
+        let commands = reported(&app, context, scene_id);
+        assert_eq!(commands.len(), 2);
+        assert_eq!(state_of(&commands[0]), EmoteState::EsStarted);
+        assert_eq!(state_of(&commands[1]), EmoteState::EsFinished);
+        for command in &commands {
+            assert_eq!(command.emote_urn, SCENE_LOOPING);
+            assert!(command.r#loop);
+        }
+        assert!(commands[0].timestamp < commands[1].timestamp);
+        assert_eq!(broadcast_appends(&mut receiver), vec![scene_id, scene_id]);
+    }
+
+    #[test]
+    fn waits_for_metadata_and_keeps_wire_order() {
+        let mut app = app();
+        let (context, _receiver) = spawn_context(&mut app);
+        let scene_id = SceneEntityId::new(33, 0);
+        let player = spawn_player(&mut app, context, scene_id);
+
+        started(&mut app, player, WEARABLE);
+        app.update();
+        assert!(reported(&app, context, scene_id).is_empty());
+        {
+            let relay = app.world().resource::<ForeignEmoteRelay>();
+            assert!(relay.requested.contains(WEARABLE_POINTER));
+            assert_eq!(relay.wanted, vec![WEARABLE_POINTER.to_owned()]);
+        }
+
+        // the cancel lands before the metadata does; it must not overtake the start
+        stopped(&mut app, player, false);
+        app.update();
+        assert!(reported(&app, context, scene_id).is_empty());
+
+        resolve(&mut app, WEARABLE_POINTER, true);
+        app.update();
+
+        let commands = reported(&app, context, scene_id);
+        assert_eq!(commands.len(), 2);
+        assert_eq!(state_of(&commands[0]), EmoteState::EsStarted);
+        assert_eq!(state_of(&commands[1]), EmoteState::EsInterrupted);
+        for command in &commands {
+            // the full instance urn is reported, not the pointer it resolved through
+            assert_eq!(command.emote_urn, WEARABLE);
+            assert!(command.r#loop);
+        }
+        // the pointer is asked for once
+        assert_eq!(
+            app.world().resource::<ForeignEmoteRelay>().wanted,
+            vec![WEARABLE_POINTER.to_owned()]
+        );
+    }
+
+    #[test]
+    fn unresolvable_identifier_is_reported_as_a_one_shot() {
+        let mut app = app();
+        let (context, _receiver) = spawn_context(&mut app);
+        let scene_id = SceneEntityId::new(34, 0);
+        let player = spawn_player(&mut app, context, scene_id);
+
+        started(
+            &mut app,
+            player,
+            "urn:decentraland:off-chain:no-such-collection:x",
+        );
+        app.update();
+
+        let commands = reported(&app, context, scene_id);
+        assert_eq!(commands.len(), 1);
+        assert!(!commands[0].r#loop);
+        assert_eq!(state_of(&commands[0]), EmoteState::EsStarted);
+    }
+
+    #[test]
+    fn drops_unacceptable_urns_and_orphan_stops() {
+        let mut app = app();
+        let (context, mut receiver) = spawn_context(&mut app);
+        let scene_id = SceneEntityId::new(35, 0);
+        let player = spawn_player(&mut app, context, scene_id);
+
+        for urn in [
+            String::new(),
+            "x".repeat(MAX_EMOTE_URN_BYTES + 1),
+            "urn:decentraland:off-chain:base-emotes:wave dance".to_owned(),
+            "urn:decentraland:off-chain:base-emotes:wave\u{1b}[31m".to_owned(),
+        ] {
+            started(&mut app, player, &urn);
+            app.update();
+        }
+        // no start on record
+        stopped(&mut app, player, true);
+        app.update();
+
+        assert!(reported(&app, context, scene_id).is_empty());
+        assert!(broadcast_appends(&mut receiver).is_empty());
+    }
+
+    #[test]
+    fn writes_only_to_the_players_own_context() {
+        let mut app = app();
+        let (shared, mut shared_receiver) = spawn_context(&mut app);
+        let (room, mut room_receiver) = spawn_context(&mut app);
+        let scene_id = SceneEntityId::new(36, 0);
+        let player = spawn_player(&mut app, room, scene_id);
+
+        started(&mut app, player, SCENE_LOOPING);
+        app.update();
+
+        assert!(reported(&app, shared, scene_id).is_empty());
+        assert_eq!(reported(&app, room, scene_id).len(), 1);
+        assert!(broadcast_appends(&mut shared_receiver).is_empty());
+        assert_eq!(broadcast_appends(&mut room_receiver), vec![scene_id]);
+    }
+
+    #[test]
+    fn classifies_emote_identifiers() {
+        assert_eq!(
+            classify_emote("urn:decentraland:off-chain:scene-emote:bafyhash-true"),
+            Some(LoopSource::Known(true))
+        );
+        assert_eq!(
+            classify_emote("urn:decentraland:off-chain:scene-emote:bafyhash-false"),
+            Some(LoopSource::Known(false))
+        );
+        assert_eq!(
+            classify_emote("sittingChair1"),
+            Some(LoopSource::Known(true))
+        );
+        assert_eq!(classify_emote("Waving"), Some(LoopSource::Known(false)));
+        assert_eq!(
+            classify_emote("Wave"),
+            Some(LoopSource::Pointer(
+                "urn:decentraland:off-chain:base-emotes:wave".to_owned()
+            ))
+        );
+        assert_eq!(
+            classify_emote("urn:decentraland:off-chain:base-emotes:Dance"),
+            Some(LoopSource::Pointer(
+                "urn:decentraland:off-chain:base-emotes:dance".to_owned()
+            ))
+        );
+        assert_eq!(
+            classify_emote(WEARABLE),
+            Some(LoopSource::Pointer(WEARABLE_POINTER.to_owned()))
+        );
+        assert_eq!(
+            classify_emote("urn:decentraland:matic:collections-thirdparty:tp:coll:item:1:2:3"),
+            Some(LoopSource::Pointer(
+                "urn:decentraland:matic:collections-thirdparty:tp:coll:item".to_owned()
+            ))
+        );
+        assert_eq!(
+            classify_emote("urn:decentraland:matic:collections-v2:0xabc"),
+            None
+        );
+        assert_eq!(
+            classify_emote("urn:decentraland:off-chain:no-such-collection:x"),
+            None
+        );
+    }
+
+    #[test]
+    fn reads_loop_from_deployed_metadata() {
+        let adr74 = serde_json::json!({ "emoteDataADR74": { "loop": true } });
+        let legacy = serde_json::json!({ "data": { "loop": false } });
+        let neither = serde_json::json!({ "name": "wave" });
+        assert_eq!(loop_from_emote_metadata(&adr74), Some(true));
+        assert_eq!(loop_from_emote_metadata(&legacy), Some(false));
+        assert_eq!(loop_from_emote_metadata(&neither), None);
+    }
+
+    #[test]
+    fn failed_lookup_answers_false_until_its_retry_is_due() {
+        let mut relay = ForeignEmoteRelay::default();
+        relay.remember(WEARABLE_POINTER.to_owned(), false, Some(10.0));
+        assert_eq!(
+            cached_loop(&relay.cache, WEARABLE_POINTER, 0.0),
+            Some(false)
+        );
+        assert_eq!(cached_loop(&relay.cache, WEARABLE_POINTER, 10.0), None);
+        relay.remember(WEARABLE_POINTER.to_owned(), true, None);
+        assert_eq!(
+            cached_loop(&relay.cache, WEARABLE_POINTER, 10.0),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn evicts_the_oldest_cached_pointers() {
+        let mut relay = ForeignEmoteRelay::default();
+        for i in 0..=MAX_CACHED_POINTERS {
+            relay.remember(format!("pointer-{i}"), true, None);
+        }
+        assert_eq!(relay.cache.len(), MAX_CACHED_POINTERS);
+        assert!(!relay.cache.contains_key("pointer-0"));
+        assert!(relay
+            .cache
+            .contains_key(&format!("pointer-{MAX_CACHED_POINTERS}")));
     }
 }
