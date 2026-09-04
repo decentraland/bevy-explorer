@@ -37,6 +37,10 @@ pub struct LaunchOptions {
     #[arg(long, display_order = 5)]
     pub editor: bool,
 
+    /// Override the content server only
+    #[arg(long, value_name = "url", display_order = 7)]
+    pub content_server: Option<String>,
+
     /// Pulse server as `host:port`; absent = the deployment's default
     #[arg(long, value_name = "host:port", display_order = 8)]
     pub pulse_server: Option<String>,
@@ -56,6 +60,14 @@ pub struct LaunchOptions {
     /// (DEFAULT_PORTABLES)
     #[arg(long, value_name = "a;b", display_order = 12)]
     pub portables: Option<String>,
+
+    /// Log the frame rate to the console
+    #[arg(long, value_name = "true|false", display_order = 13)]
+    pub log_fps: Option<bool>,
+
+    /// Cap per-frame gpu uploads
+    #[arg(long, value_name = "bytes", display_order = 17)]
+    pub gpu_bytes_per_frame: Option<usize>,
 }
 
 impl LaunchOptions {
@@ -72,6 +84,7 @@ impl LaunchOptions {
             &mut self.realm,
             &mut self.position,
             &mut self.system_scene,
+            &mut self.content_server,
             &mut self.portables,
             &mut self.pulse_server,
             &mut self.imposter_source,
@@ -109,6 +122,10 @@ mod tests {
             "--base-domain",
             "decentraland.zone",
             "--preview",
+            "--log-fps",
+            "false",
+            "--gpu-bytes-per-frame",
+            "500000",
         ]);
         assert_eq!(cli.launch.realm.as_deref(), Some("https://r"));
         assert_eq!(cli.launch.position.as_deref(), Some("1,-2"));
@@ -116,6 +133,8 @@ mod tests {
         assert_eq!(cli.launch.base_domain.as_deref(), Some("decentraland.zone"));
         assert!(cli.launch.preview);
         assert!(!cli.launch.editor);
+        assert_eq!(cli.launch.log_fps, Some(false));
+        assert_eq!(cli.launch.gpu_bytes_per_frame, Some(500_000));
         // the pre-table spellings are gone, not aliased
         assert!(Cli::try_parse_from(["x", "--server", "r"]).is_err());
         assert!(Cli::try_parse_from(["x", "--ui", "none"]).is_err());
@@ -126,11 +145,16 @@ mod tests {
         assert!(LaunchOptions::from_json(r#"{"pulseServr": "localhost:7777"}"#).is_err());
         // the base domain never travels as an engine_run key
         assert!(LaunchOptions::from_json(r#"{"baseDomain": "decentraland.zone"}"#).is_err());
-        let options =
-            LaunchOptions::from_json(r#"{"pulseServer": "localhost:7777", "preview": true}"#)
-                .unwrap();
+        let options = LaunchOptions::from_json(
+            r#"{"pulseServer": "localhost:7777", "preview": true, "logFps": true, "gpuBytesPerFrame": 500000}"#,
+        )
+        .unwrap();
         assert_eq!(options.pulse_server.as_deref(), Some("localhost:7777"));
         assert!(options.preview);
         assert!(!options.editor);
+        assert_eq!(options.log_fps, Some(true));
+        assert_eq!(options.gpu_bytes_per_frame, Some(500_000));
+        // typed keys take their type, not a string
+        assert!(LaunchOptions::from_json(r#"{"gpuBytesPerFrame": "500000"}"#).is_err());
     }
 }

@@ -167,16 +167,10 @@ pub struct DecentralandArguments {
     /// Echo scene logs to the console
     #[arg(long = "scene_log_to_console", display_order = 6)]
     pub scene_log_to_console: bool,
-    /// Override the content server only
-    #[arg(long = "content-server", value_name = "url", display_order = 7)]
-    pub content_server_override: Option<String>,
     /// Pause that scene's js runtime until a debugger (e.g. chrome://inspect) attaches. Needs
     /// `--features inspect`
     #[arg(long, value_name = "scene_hash", display_order = 10)]
     pub inspect: Option<String>,
-    /// Log the frame rate to the console
-    #[arg(long = "log_fps", value_name = "true|false", display_order = 13)]
-    pub log_fps: Option<bool>,
     /// Target fps (default 60; overridden by the refresh rate when vsync is on). Also `/fps`.
     /// Current run only - use settings for persistence.
     #[arg(long = "fps", value_name = "n", display_order = 14)]
@@ -187,9 +181,6 @@ pub struct DecentralandArguments {
     /// Max simultaneous scene-javascript threads (default 4). Also `/scene_threads`
     #[arg(long = "threads", value_name = "n", display_order = 16)]
     pub scene_threads: Option<usize>,
-    /// Cap per-frame gpu uploads
-    #[arg(long = "gpu_bytes_per_frame", value_name = "bytes", display_order = 17)]
-    pub gpu_bytes_per_frame: Option<usize>,
     /// Automated scene test mode: headless, no HUD (implied by --test_scenes)
     #[arg(long = "testing", display_order = 18)]
     pub testing: bool,
@@ -700,7 +691,7 @@ fn update_app_config_from_arguments(
     base_app_config
         .graphics
         .log_fps
-        .replace_if_some(arguments.log_fps);
+        .replace_if_some(arguments.launch.log_fps);
     base_app_config
         .graphics
         .fps_target
@@ -708,7 +699,7 @@ fn update_app_config_from_arguments(
     base_app_config
         .graphics
         .gpu_bytes_per_frame
-        .replace_if_some(arguments.gpu_bytes_per_frame);
+        .replace_if_some(arguments.launch.gpu_bytes_per_frame);
 
     base_app_config
         .scene_threads
@@ -799,7 +790,8 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
             starting_realm: Some(map_realm_name(&decentraland_app_config.boot_server())),
             content_server_override: decentraland_app_config
                 .arguments
-                .content_server_override
+                .launch
+                .content_server
                 .clone(),
             assets_root: Default::default(),
             num_slots: decentraland_app_config.app_config.max_concurrent_remotes,
@@ -834,7 +826,8 @@ fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> Plug
             starting_realm: Some(map_realm_name(&decentraland_app_config.boot_server())),
             content_server_override: decentraland_app_config
                 .arguments
-                .content_server_override
+                .launch
+                .content_server
                 .clone(),
             assets_root: Default::default(),
             num_slots: decentraland_app_config.app_config.max_concurrent_remotes,

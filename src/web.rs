@@ -155,8 +155,11 @@ export interface EngineRunOptions {
     portables?: string;
     preview?: boolean;
     editor?: boolean;
+    contentServer?: string;
     pulseServer?: string;
     imposterSource?: string;
+    logFps?: boolean;
+    gpuBytesPerFrame?: number;
 }
 "#;
 
@@ -415,10 +418,13 @@ fn decentraland_serialized_app_config() -> AppConfig {
 }
 
 fn decentraland_app_arguments(options: &LaunchOptions) -> DecentralandArguments {
+    let mut launch = options.clone();
+    launch
+        .gpu_bytes_per_frame
+        .get_or_insert(WEB_GPU_BYTES_PER_FRAME);
+    launch.log_fps.get_or_insert(false);
     DecentralandArguments {
-        launch: options.clone(),
-        gpu_bytes_per_frame: Some(WEB_GPU_BYTES_PER_FRAME),
-        log_fps: Some(false),
+        launch,
         // wasm has no engine-managed HUD: the react page hosting the engine is the HUD
         hud: false,
         ..Default::default()

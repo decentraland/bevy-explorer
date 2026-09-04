@@ -131,7 +131,7 @@ cargo build --release --bin headless --no-default-features --features headless,l
 
 `cargo run --release --bin decentra-bevy -- --help` lists every flag with its description.
 
-The launch parameters shared with the web build — realm, spawn parcel, ui scene, portables, preview, editor, pulse server, imposter source, base domain — are declared once, in `crates/system_api_types/src/launch_options.rs`: each field is the native `--flag`, the `engine_run` options key and the entry-url query param, and the react page's parameter table is generated from it. Which of those a link may set without a warning is the page's own policy (`react-web/src/lib/launchGate.ts`). Native-only flags (rendering, imposters, debug, the `--builtin-*` ui pieces) live on `DecentralandArguments` in `src/lib.rs`.
+The launch parameters shared with the web build — realm, spawn parcel, ui scene, portables, preview, editor, content server, pulse server, imposter source, base domain, fps logging, gpu bytes per frame — are declared once, in `crates/system_api_types/src/launch_options.rs`: each field is the native `--flag`, the `engine_run` options key and the entry-url query param, and the react page's parameter table is generated from it. Which of those a link may set without a warning is the page's own policy (`react-web/src/lib/launchGate.ts`). Native-only flags (rendering, imposters, debug, the `--builtin-*` ui pieces) live on `DecentralandArguments` in `src/lib.rs`.
 
 ## Testing
 

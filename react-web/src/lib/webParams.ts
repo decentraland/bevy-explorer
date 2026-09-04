@@ -13,14 +13,34 @@ export function webParam(name: string): WebParam {
 }
 
 /** The `launch`-delivered params — what the host hands boot.js as window.__bevyBootConfig. */
-export type LaunchOptions = Record<string, string | boolean | undefined>
+export type LaunchOptions = Record<string, string | boolean | number | undefined>
+
+/** A url value in the type the engine expects for the param's kind. A number that doesn't parse
+ *  is passed through as the string, so the engine's own error names it. */
+function typedValue(p: WebParam, raw: string): string | boolean | number {
+  switch (p.kind) {
+    case 'bool':
+      return raw === 'true' || raw === '1'
+    case 'number': {
+      const n = Number(raw)
+      return raw.trim() !== '' && Number.isFinite(n) ? n : raw
+    }
+    default:
+      return raw
+  }
+}
 
 /** Every `launch` param as it appears in the entry url; absent = undefined (the engine's default). */
 export function launchOptionsFromUrl(q: URLSearchParams): LaunchOptions {
   const out: LaunchOptions = {}
   for (const p of WEB_PARAMS) {
     if (p.delivery !== 'launch') continue
-    out[p.name] = p.kind === 'flag' ? q.has(p.name) : (q.get(p.name) ?? undefined)
+    if (p.kind === 'flag') {
+      out[p.name] = q.has(p.name)
+      continue
+    }
+    const raw = q.get(p.name)
+    out[p.name] = raw == null ? undefined : typedValue(p, raw)
   }
   return out
 }

@@ -8,6 +8,8 @@
 //! from. Whether a LINK may set a param is the front-end's policy, not the engine's (react-web
 //! lib/launchGate.ts — a different host, e.g. the editor, trusts different things).
 
+use std::any::TypeId;
+
 use clap::Args;
 use serde::Serialize;
 
@@ -17,10 +19,14 @@ use crate::launch_options::LaunchOptions;
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum ParamKind {
-    /// `?name=value`
+    /// `?name=value`, passed as a string
     String,
     /// presence is the value: `?name` / `?name=true`
     Flag,
+    /// `?name=true|false`, passed as a boolean
+    Bool,
+    /// `?name=<integer>`, passed as a number
+    Number,
 }
 
 /// How the value gets from the entry url to the engine.
@@ -62,7 +68,14 @@ fn delivery(field: &str) -> Delivery {
     use Delivery::*;
     match field {
         "realm" | "position" => Destination,
-        "system_scene" | "portables" | "preview" | "pulse_server" | "imposter_source" => Launch,
+        "system_scene"
+        | "portables"
+        | "preview"
+        | "pulse_server"
+        | "imposter_source"
+        | "content_server"
+        | "log_fps"
+        | "gpu_bytes_per_frame" => Launch,
         "editor" => Host,
         "base_domain" => BaseDomain,
         other => {
@@ -94,10 +107,14 @@ pub fn web_params() -> Vec<WebParam> {
             let field = arg.get_id().as_str();
             WebParam {
                 name: camel_case(field),
-                kind: if arg.get_action().takes_values() {
-                    ParamKind::String
-                } else {
+                kind: if !arg.get_action().takes_values() {
                     ParamKind::Flag
+                } else if arg.get_value_parser().type_id() == TypeId::of::<bool>() {
+                    ParamKind::Bool
+                } else if arg.get_value_parser().type_id() == TypeId::of::<usize>() {
+                    ParamKind::Number
+                } else {
+                    ParamKind::String
                 },
                 delivery: delivery(field),
                 doc: arg
@@ -155,13 +172,9 @@ mod tests {
             params.iter().find(|p| p.name == "preview").unwrap().kind,
             ParamKind::Flag
         );
-        assert_eq!(
-            params
-                .iter()
-                .find(|p| p.name == "systemScene")
-                .unwrap()
-                .kind,
-            ParamKind::String
-        );
+        let kind = |name: &str| params.iter().find(|p| p.name == name).unwrap().kind;
+        assert_eq!(kind("systemScene"), ParamKind::String);
+        assert_eq!(kind("logFps"), ParamKind::Bool);
+        assert_eq!(kind("gpuBytesPerFrame"), ParamKind::Number);
     }
 }
