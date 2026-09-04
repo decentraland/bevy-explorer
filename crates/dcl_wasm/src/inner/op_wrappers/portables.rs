@@ -18,10 +18,11 @@ pub async fn op_portable_kill(state: &WorkerContext, pid: String) -> Result<bool
 }
 
 #[wasm_bindgen]
-pub async fn op_portable_list(state: &WorkerContext) -> Vec<JsValue> {
-    dcl::js::portables::op_portable_list(state.rc())
+pub async fn op_portable_list(state: &WorkerContext) -> Result<Vec<JsValue>, WasmError> {
+    Ok(dcl::js::portables::op_portable_list(state.rc())
         .await
+        .map_err(WasmError::from)?
         .into_iter()
         .map(|ev| serde_wasm_bindgen::to_value(&ev).unwrap())
-        .collect()
+        .collect())
 }

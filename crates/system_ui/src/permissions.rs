@@ -305,7 +305,7 @@ fn set_permission_settings_content(
             spawn_row(PermissionType::ForceCamera, &mut commands),
             spawn_row(PermissionType::PlayEmote, &mut commands),
             spawn_row(PermissionType::SetLocomotion, &mut commands),
-            spawn_row(PermissionType::HideAvatars, &mut commands),
+            spawn_row(PermissionType::HideAvatarsNametags, &mut commands),
             spawn_row(PermissionType::DisableVoice, &mut commands),
             spawn_header("Navigation", &mut commands),
             spawn_row(PermissionType::Teleport, &mut commands),

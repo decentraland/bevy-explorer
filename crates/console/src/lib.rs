@@ -1,10 +1,10 @@
 use bevy::{ecs::system::ScheduleSystem, prelude::*, scene::scene_spawner_system};
 use bevy_console::{
-    Command, ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, ConsoleSet,
-    PrintConsoleLine,
+    Command, ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, ConsoleResponder,
+    ConsoleSet, PrintConsoleLine,
 };
 use clap::Parser;
-use common::{rpc::RpcResultReceiver, sets::SceneSets};
+use common::{rpc::RpcResultReceiver, sets::SceneSets, structs::PreviewMode};
 use std::sync::Mutex;
 
 pub trait DoAddConsoleCommand {
@@ -12,6 +12,17 @@ pub trait DoAddConsoleCommand {
         &mut self,
         system: impl IntoScheduleConfigs<ScheduleSystem, U>,
     ) -> &mut Self;
+
+    /// Register a command only when running in preview mode. Outside preview the command is
+    /// not registered at all, so it is absent from `/help` and rejected as unrecognised.
+    fn add_preview_console_command<T: Command, U>(
+        &mut self,
+        system: impl IntoScheduleConfigs<ScheduleSystem, U>,
+    ) -> &mut Self;
+}
+
+fn is_preview(preview: Option<Res<PreviewMode>>) -> bool {
+    preview.is_some_and(|p| p.is_preview)
 }
 
 // hook console commands
@@ -22,6 +33,26 @@ impl DoAddConsoleCommand for App {
         system: impl IntoScheduleConfigs<ScheduleSystem, U>,
     ) -> &mut Self {
         bevy_console::AddConsoleCommand::add_console_command::<T, U>(self, system)
+    }
+
+    fn add_preview_console_command<T: bevy_console::Command, U>(
+        &mut self,
+        system: impl IntoScheduleConfigs<ScheduleSystem, U>,
+    ) -> &mut Self {
+        let register = |mut config: ResMut<ConsoleConfiguration>| {
+            config
+                .commands
+                .insert(T::name(), T::command().no_binary_name(true));
+        };
+
+        self.add_systems(
+            Startup,
+            register.in_set(ConsoleSet::Startup).run_if(is_preview),
+        )
+        .add_systems(
+            Update,
+            system.in_set(ConsoleSet::Commands).run_if(is_preview),
+        )
     }
 }
 
@@ -34,10 +65,19 @@ impl DoAddConsoleCommand for App {
         // do nothing
         self
     }
+
+    fn add_preview_console_command<T: bevy_console::Command, U>(
+        &mut self,
+        _: impl IntoScheduleConfigs<ScheduleSystem, U>,
+    ) -> &mut Self {
+        // do nothing
+        self
+    }
 }
 
 pub struct ConsolePlugin {
-    pub add_egui: bool,
+    // add the bevy_console command plumbing; false (tests) registers the bare events only
+    pub add_bevy_console: bool,
 }
 
 impl Plugin for ConsolePlugin {
@@ -53,7 +93,7 @@ impl Plugin for ConsolePlugin {
             ..Default::default()
         });
 
-        if self.add_egui {
+        if self.add_bevy_console {
             app.add_plugins(bevy_console::ConsolePlugin);
         } else {
             app.add_event::<ConsoleCommandEntered>();
@@ -180,55 +220,81 @@ pub fn send_pending(
         sender.write(ConsoleCommandEntered {
             command_name,
             args: Default::default(),
+            responder: None,
         });
     }
 }
 
 type ConsoleResponseFn = Box<dyn Fn() -> Option<Result<String, String>> + Send + Sync>;
 
+struct PendingResponse {
+    poll: ConsoleResponseFn,
+    /// If set, the result is delivered to this responder; otherwise it is written to
+    /// the console as reply lines followed by `[ok]` / `[failed]`.
+    responder: Option<ConsoleResponder>,
+}
+
 /// Stores pending async console command responses. Register a receiver with
-/// [`push_receiver`](PendingConsoleResponses::push_receiver) and a mapping function;
-/// the polling system will print `[ok]` or `[failed]` once the receiver resolves.
+/// [`push_receiver`](PendingConsoleResponses::push_receiver) and a mapping function.
+/// When the receiver resolves, the result is delivered to the command's
+/// [`ConsoleResponder`] if one was supplied (programmatic invocation), or printed to
+/// the console as reply lines followed by `[ok]` / `[failed]` (console invocation).
 #[derive(Resource, Default)]
-pub struct PendingConsoleResponses(Vec<ConsoleResponseFn>);
+pub struct PendingConsoleResponses(Vec<PendingResponse>);
 
 impl PendingConsoleResponses {
     /// Register an [`RpcResultReceiver`] to be polled each frame. When it resolves,
-    /// `map` converts the value to `Ok(message)` or `Err(message)`, and the
-    /// appropriate console line is printed followed by `[ok]` or `[failed]`.
-    pub fn push_receiver<T, F>(&mut self, receiver: RpcResultReceiver<T>, map: F)
-    where
+    /// `map` converts the value to `Ok(message)` or `Err(message)`, which is then
+    /// delivered to `responder` (or printed to the console if `responder` is `None`).
+    ///
+    /// `responder` is typically obtained from [`ConsoleCommand::take_responder`].
+    pub fn push_receiver<T, F>(
+        &mut self,
+        receiver: RpcResultReceiver<T>,
+        map: F,
+        responder: Option<ConsoleResponder>,
+    ) where
         T: Send + 'static,
         F: Fn(T) -> Result<String, String> + Send + Sync + 'static,
     {
         let receiver = Mutex::new(receiver);
-        self.0.push(Box::new(move || {
-            let mut guard = receiver.lock().unwrap();
-            match guard.poll_once() {
-                Ok(Some(val)) => Some(map(val)),
-                Ok(None) => None,
-                Err(()) => Some(Err("cancelled".to_string())),
-            }
-        }));
+        self.0.push(PendingResponse {
+            poll: Box::new(move || {
+                let mut guard = receiver.lock().unwrap();
+                match guard.poll_once() {
+                    Ok(Some(val)) => Some(map(val)),
+                    Ok(None) => None,
+                    Err(()) => Some(Err("cancelled".to_string())),
+                }
+            }),
+            responder,
+        });
     }
 
     /// Register a raw tokio oneshot receiver to be polled each frame.
-    pub fn push_oneshot<T, F>(&mut self, receiver: tokio::sync::oneshot::Receiver<T>, map: F)
-    where
+    pub fn push_oneshot<T, F>(
+        &mut self,
+        receiver: tokio::sync::oneshot::Receiver<T>,
+        map: F,
+        responder: Option<ConsoleResponder>,
+    ) where
         T: Send + 'static,
         F: Fn(T) -> Result<String, String> + Send + Sync + 'static,
     {
         let receiver = Mutex::new(receiver);
-        self.0.push(Box::new(move || {
-            let mut guard = receiver.lock().unwrap();
-            match guard.try_recv() {
-                Ok(val) => Some(map(val)),
-                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => None,
-                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                    Some(Err("cancelled".to_string()))
+        self.0.push(PendingResponse {
+            poll: Box::new(move || {
+                let mut guard = receiver.lock().unwrap();
+                match guard.try_recv() {
+                    Ok(val) => Some(map(val)),
+                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => None,
+                    Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                        Some(Err("cancelled".to_string()))
+                    }
                 }
-            }
-        }));
+            }),
+            responder,
+        });
     }
 }
 
@@ -236,20 +302,22 @@ fn poll_console_responses(
     mut pending: ResMut<PendingConsoleResponses>,
     mut console: EventWriter<PrintConsoleLine>,
 ) {
-    pending.0.retain(|f| match f() {
+    pending.0.retain(|entry| match (entry.poll)() {
         None => true,
-        Some(Ok(msg)) => {
-            if !msg.is_empty() {
-                console.write(PrintConsoleLine::new(msg));
+        Some(result) => {
+            match &entry.responder {
+                Some(responder) => responder(result),
+                None => {
+                    let (msg, sentinel) = match result {
+                        Ok(msg) => (msg, "[ok]"),
+                        Err(msg) => (msg, "[failed]"),
+                    };
+                    if !msg.is_empty() {
+                        console.write(PrintConsoleLine::new(msg));
+                    }
+                    console.write(PrintConsoleLine::new(sentinel.into()));
+                }
             }
-            console.write(PrintConsoleLine::new("[ok]".into()));
-            false
-        }
-        Some(Err(msg)) => {
-            if !msg.is_empty() {
-                console.write(PrintConsoleLine::new(msg));
-            }
-            console.write(PrintConsoleLine::new("[failed]".into()));
             false
         }
     });

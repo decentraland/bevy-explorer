@@ -19,6 +19,10 @@ use std::{env, sync::Arc};
 use system_bridge::SystemApi;
 use tokio::io::AsyncReadExt;
 
+// how long a killed scene gets to exit cleanly (finish its in-flight tick after its
+// renderer channel closes) before its isolate is forcibly terminated
+const KILL_GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(5);
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("info")))
@@ -113,7 +117,8 @@ async fn scene_ipc_in(
 ) {
     let mut renderer_senders = HashMap::new();
 
-    let (global_sx, _global_rx) = tokio::sync::broadcast::channel(1000);
+    // one broadcast channel per presence context; scenes subscribe to their own
+    let mut global_senders: HashMap<u64, tokio::sync::broadcast::Sender<_>> = HashMap::new();
 
     while let Ok(len) = stream.read_u64_le().await {
         let mut buffer = vec![0u8; len as usize];
@@ -122,6 +127,9 @@ async fn scene_ipc_in(
 
         match msg {
             EngineToScene::NewScene(id, new_scene_info) => {
+                let global_sx = global_senders
+                    .entry(new_scene_info.presence_context)
+                    .or_insert_with(|| tokio::sync::broadcast::channel(1000).0);
                 let response_sx = dcl_deno::spawn_scene(
                     new_scene_info.initial_crdt_store,
                     new_scene_info.scene_context,
@@ -139,6 +147,15 @@ async fn scene_ipc_in(
             }
             EngineToScene::KillScene(id) => {
                 renderer_senders.remove(&id);
+                // dropping the sender lets a healthy scene finish its current tick and
+                // exit cleanly; force-terminate only if the thread is still around after
+                // a grace period (wedged in js, or stuck awaiting something external)
+                tokio::spawn(async move {
+                    tokio::time::sleep(KILL_GRACE_PERIOD).await;
+                    dcl_deno::terminate_scene(dcl::SceneId(bevy::ecs::entity::Entity::from_bits(
+                        id,
+                    )));
+                });
             }
             EngineToScene::SceneUpdate(id, renderer_response) => {
                 let Some(sender) = renderer_senders.get(&id) else {
@@ -146,10 +163,16 @@ async fn scene_ipc_in(
                     continue;
                 };
 
-                let _ = sender.send(renderer_response).await;
+                let _ = sender.send(renderer_response);
             }
-            EngineToScene::GlobalUpdate(data) => {
-                let _ = global_sx.send(data);
+            EngineToScene::GlobalUpdate(presence_context, data) => {
+                // send fails only with no live subscribers: every scene of the context
+                // is gone, so drop the channel (the engine side stops sending too)
+                if let Some(sender) = global_senders.get(&presence_context) {
+                    if sender.send(data).is_err() {
+                        global_senders.remove(&presence_context);
+                    }
+                }
             }
             EngineToScene::IpcMessage(id, ipc_message) => {
                 SCENE_IPC_CONTEXT.with(|ctx| {

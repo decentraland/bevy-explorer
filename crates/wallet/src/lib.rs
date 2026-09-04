@@ -13,6 +13,7 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 
 pub mod browser_auth;
+pub mod delegation;
 pub mod signed_login;
 
 pub struct WalletPlugin;
@@ -249,7 +250,11 @@ pub async fn sign_request(
         .unwrap()
         .as_millis();
 
-    let payload = format!("{}:{}:{}:{}", method, uri.path(), unix_time, meta).to_lowercase();
+    let payload = format!(
+        "{}:{}:{unix_time}:{meta}",
+        method.to_lowercase(),
+        uri.path().to_lowercase()
+    );
     let auth_chain = wallet.sign_message(payload).await?;
 
     let mut headers: Vec<_> = auth_chain.headers().collect();

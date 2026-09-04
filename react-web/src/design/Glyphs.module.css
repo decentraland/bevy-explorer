@@ -1,0 +1,10 @@
+/* StarWalletIcon paints as an outline. The source SVG carries no fill/stroke of
+   its own (it inherited them from page CSS); we bundle them here so the glyph
+   renders standalone and recolors via the surrounding `color`. */
+.starWallet {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

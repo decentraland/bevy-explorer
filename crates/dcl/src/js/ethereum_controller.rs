@@ -5,11 +5,13 @@ use ethers_providers::{Provider, Ws};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use tokio::sync::Mutex;
 
-use crate::interface::crdt_context::CrdtContext;
+use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 use super::State;
 
-const PROVIDER_URL: &str = "wss://rpc.decentraland.org/mainnet?project=kernel-local";
+fn provider_url() -> String {
+    common::base_domain::wss("rpc", "/mainnet?project=kernel-local")
+}
 
 pub async fn op_send_async(
     state: Rc<RefCell<impl State>>,
@@ -27,12 +29,12 @@ pub async fn op_send_async(
 
             state
                 .borrow_mut()
-                .borrow_mut::<Vec<RpcCall>>()
+                .borrow_mut::<RpcCalls>()
                 .push(RpcCall::SendAsync {
                     body: RPCSendableMessage { method, params },
                     scene,
                     response: sx,
-                });
+                })?;
 
             rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
         }
@@ -89,7 +91,7 @@ impl EthereumProvider {
 
         let provider = match &*this_provider {
             Some(p) => p,
-            None => this_provider.insert(Provider::<Ws>::connect(PROVIDER_URL).await?),
+            None => this_provider.insert(Provider::<Ws>::connect(provider_url()).await?),
         };
 
         let result = provider.request(method, params).await;

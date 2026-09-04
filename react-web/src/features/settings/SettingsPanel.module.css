@@ -1,0 +1,101 @@
+/* Settings page body (the shared top bar lives in MainMenuShell). */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--text);
+}
+.tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--fill-3);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) ease;
+}
+.tab:hover:not(.tabActive) {
+  background: var(--fill-4);
+}
+.tabActive,
+.tabActive:hover {
+  background: var(--accent); /* DCL orange for the selected category */
+}
+.reset {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  margin-left: auto;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--fill-3);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.reset:hover {
+  background: var(--fill-4);
+}
+
+.card {
+  flex: 1;
+  border-radius: 20px;
+  background: rgba(20, 8, 34, 0.45);
+  padding: 28px clamp(20px, 4vw, 56px);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  column-gap: clamp(24px, 6vw, 120px);
+  row-gap: 26px;
+  max-width: 980px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fieldHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.label {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-7);
+}
+
+.empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--ink-45);
+}

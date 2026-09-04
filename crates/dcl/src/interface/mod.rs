@@ -134,6 +134,9 @@ impl CrdtStore {
     }
 
     pub fn clean_up(&mut self, dead: &HashSet<SceneEntityId>) {
+        if dead.is_empty() {
+            return;
+        }
         for state in self.lww.values_mut() {
             for id in dead {
                 state.last_write.remove(id);
@@ -147,26 +150,55 @@ impl CrdtStore {
         }
     }
 
+    /// Total bytes of component payload currently retained: LWW last-write values plus any
+    /// grow-only entries. `Vec::len` is O(1), so this is O(retained entries). Used to bound
+    /// a scene's cumulative CRDT footprint.
+    pub fn retained_data_bytes(&self) -> usize {
+        let lww: usize = self
+            .lww
+            .values()
+            .flat_map(|state| state.last_write.values())
+            .map(|entry| entry.data.len())
+            .sum();
+        let go: usize = self
+            .go
+            .values()
+            .flat_map(|state| state.0.values())
+            .flat_map(|queue| queue.iter())
+            .map(|entry| entry.data.len())
+            .sum();
+        lww + go
+    }
+
     pub fn take_updates(&mut self) -> CrdtStore {
-        let lww =
-            self.lww.iter_mut().map(|(component_id, state)| {
-                (
-                    *component_id,
-                    CrdtLWWState {
-                        last_write: HashMap::from_iter(state.updates.iter().map(|update| {
-                            (*update, state.last_write.get(update).unwrap().clone())
-                        })),
-                        updates: std::mem::take(&mut state.updates),
-                    },
-                )
-            });
-        let lww = HashMap::from_iter(lww);
+        let mut lww = HashMap::new();
+        for (component_id, state) in self.lww.iter_mut() {
+            if state.updates.is_empty() {
+                continue;
+            }
+            // last_write must retain authoritative state for future LWW conflict
+            // checks, so dirty entries are cloned rather than moved out.
+            let updates = std::mem::take(&mut state.updates);
+            let last_write = HashMap::from_iter(
+                updates
+                    .iter()
+                    .map(|update| (*update, state.last_write.get(update).unwrap().clone())),
+            );
+            lww.insert(
+                *component_id,
+                CrdtLWWState {
+                    last_write,
+                    updates,
+                },
+            );
+        }
 
         let go = std::mem::take(&mut self.go);
         CrdtStore { lww, go }
     }
 
     // handles a single message from the buffer
+    #[allow(clippy::too_many_arguments)]
     pub fn process_message(
         &mut self,
         writers: &CrdtComponentInterfaces,
@@ -174,6 +206,12 @@ impl CrdtStore {
         crdt_type: CrdtMessageType,
         stream: &mut DclReader,
         filter_components: bool,
+        // when filtering, unrecognized components are routed here (instead of dropped) so the
+        // inspector can surface custom components; `None` keeps the legacy drop behaviour.
+        mut filtered: Option<&mut CrdtStore>,
+        // parallel context tracking every entity (recognized *and* filtered) for collision-free
+        // entity allocation (see `CrdtContext::new_in_range`); `None` when not maintained.
+        mut alloc: Option<&mut CrdtContext>,
     ) -> Result<(), DclReaderError> {
         match crdt_type {
             CrdtMessageType::PutComponent | CrdtMessageType::AppendValue => {
@@ -191,11 +229,31 @@ impl CrdtStore {
                 debug!("PUT e:{entity:?}, c: {component:?}, timestamp: {timestamp:?}, content len: {content_len}");
                 common::util::dcl_assert!(content_len == stream.len());
 
+                // track the entity in the allocation context regardless of whether the component is
+                // recognized or filtered (the main entity_map only sees recognized ones).
+                if let Some(alloc) = alloc.as_deref_mut() {
+                    alloc.init(entity);
+                }
+
                 // check for a writer
                 let writer = match writers.0.get(&component) {
                     Some(writer) => writer,
                     None => {
                         if filter_components {
+                            // unrecognized component: route to the sidecar (if any) instead of
+                            // dropping, keyed by numeric id, using the default writer for the
+                            // message kind (LWW for Put, GO for Append).
+                            if let Some(filtered) = filtered.as_deref_mut() {
+                                if !entity_map.is_dead(entity) {
+                                    filtered.try_update(
+                                        component,
+                                        *default_writer,
+                                        entity,
+                                        timestamp,
+                                        Some(stream),
+                                    );
+                                }
+                            }
                             return Ok(());
                         }
 
@@ -236,6 +294,19 @@ impl CrdtStore {
                     Some(writer) => writer,
                     None => {
                         if filter_components {
+                            // sidecar delete: custom components are stored LWW, so delete is LWW
+                            // (None payload), mirroring the Put routing above.
+                            if let Some(filtered) = filtered.as_deref_mut() {
+                                if !entity_map.is_dead(entity) {
+                                    filtered.try_update(
+                                        component,
+                                        CrdtType::LWW_ANY,
+                                        entity,
+                                        timestamp,
+                                        None,
+                                    );
+                                }
+                            }
                             return Ok(());
                         }
 
@@ -275,7 +346,20 @@ impl CrdtStore {
                 for go in self.go.values_mut() {
                     go.0.remove(&entity);
                 }
+                // reap the sidecar too, so deleted entities don't strand custom components
+                if let Some(filtered) = filtered {
+                    for lww in filtered.lww.values_mut() {
+                        lww.last_write.remove(&entity);
+                        lww.updates.remove(&entity);
+                    }
+                    for go in filtered.go.values_mut() {
+                        go.0.remove(&entity);
+                    }
+                }
                 entity_map.kill(entity);
+                if let Some(alloc) = alloc {
+                    alloc.kill(entity);
+                }
             }
         }
 
@@ -288,6 +372,10 @@ impl CrdtStore {
         writers: &CrdtComponentInterfaces,
         stream: &mut DclReader,
         filter_components: bool,
+        // optional sidecar for filtered-out (custom) components; see `process_message`.
+        mut filtered: Option<&mut CrdtStore>,
+        // optional allocation context tracking all entities; see `process_message`.
+        mut alloc: Option<&mut CrdtContext>,
     ) {
         // collect commands
         while stream.len() > CRDT_HEADER_SIZE {
@@ -306,6 +394,8 @@ impl CrdtStore {
                         crdt_type,
                         &mut message_stream,
                         filter_components,
+                        filtered.as_deref_mut(),
+                        alloc.as_deref_mut(),
                     ) {
                         error!("CRDT Buffer error: {:?}", e);
                     };
@@ -315,9 +405,11 @@ impl CrdtStore {
         }
     }
 
-    // update with entries from another store
-    // can be used with `CrdtStore::take_updates` to maintain a copy by patching
-    pub fn update_from(&mut self, other: CrdtStore) {
+    // update with entries from another store, then apply the census's deletions.
+    // Used with `CrdtStore::take_updates` + the engine->scene census to keep a
+    // mirror (e.g. the RendererStore) in sync — without the clean_up, a deleted
+    // entity would linger in the mirror and be resurrected by `merge_newer`.
+    pub fn update_from(&mut self, other: CrdtStore, census: &crate::SceneCensus) {
         other.lww.into_iter().for_each(|(id, update_lww)| {
             let self_lww = self.lww.entry(id).or_default();
             self_lww.last_write.extend(update_lww.last_write);
@@ -326,6 +418,7 @@ impl CrdtStore {
             let self_go = self.go.entry(id).or_default();
             self_go.0.extend(update_go.0);
         });
+        self.clean_up(&census.died);
     }
 
     // track the timestamps from another store without copying data.
@@ -365,5 +458,92 @@ impl CrdtStore {
             let self_go = self.go.entry(id).or_default();
             self_go.0.extend(update_go.0);
         });
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    // a peer sending 65535 as an id should not crash us
+    #[test]
+    fn max_entity_id_is_within_the_live_table() {
+        let max = SceneEntityId {
+            id: u16::MAX,
+            generation: 0,
+        };
+        let mut context = CrdtContext::new(
+            crate::SceneId::DUMMY,
+            Default::default(),
+            Default::default(),
+            false,
+            false,
+            false,
+        );
+
+        assert!(context.init(max));
+        context.kill(max);
+        assert!(context.is_dead(max));
+    }
+
+    fn entity(id: u16) -> SceneEntityId {
+        SceneEntityId { id, generation: 0 }
+    }
+
+    // retained_data_bytes must sum LWW last-write payloads and grow-only entries, and must
+    // reflect overwrites/deletes so a store that churns without growing doesn't inflate.
+    #[test]
+    fn retained_data_bytes_counts_lww_and_go() {
+        let mut store = CrdtStore::default();
+        let comp = SceneComponentId(1);
+        let ts = SceneCrdtTimestamp(1);
+
+        // two LWW entries of 10 and 25 bytes
+        store.try_update(
+            comp,
+            CrdtType::LWW_ANY,
+            entity(0),
+            ts,
+            Some(&mut DclReader::new(&[0u8; 10])),
+        );
+        store.try_update(
+            comp,
+            CrdtType::LWW_ANY,
+            entity(1),
+            ts,
+            Some(&mut DclReader::new(&[0u8; 25])),
+        );
+        assert_eq!(store.retained_data_bytes(), 35);
+
+        // a grow-only append of 40 bytes adds to the total
+        let go_comp = SceneComponentId(2);
+        store.try_update(
+            go_comp,
+            CrdtType::GO_ANY,
+            entity(0),
+            ts,
+            Some(&mut DclReader::new(&[0u8; 40])),
+        );
+        assert_eq!(store.retained_data_bytes(), 75);
+
+        // overwriting an LWW entry replaces, not adds: 10 -> 4 shrinks the total
+        store.try_update(
+            comp,
+            CrdtType::LWW_ANY,
+            entity(0),
+            SceneCrdtTimestamp(2),
+            Some(&mut DclReader::new(&[0u8; 4])),
+        );
+        assert_eq!(store.retained_data_bytes(), 69);
+
+        // a delete (None) frees the entry's payload
+        store.try_update(
+            comp,
+            CrdtType::LWW_ANY,
+            entity(1),
+            SceneCrdtTimestamp(2),
+            None,
+        );
+        assert_eq!(store.retained_data_bytes(), 44);
     }
 }

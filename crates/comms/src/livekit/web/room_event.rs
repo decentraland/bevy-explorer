@@ -57,6 +57,9 @@ pub enum RoomEvent {
         publication: RemoteTrackPublication,
         participant: RemoteParticipant,
     },
+    ActiveSpeakersChanged {
+        speakers: Vec<Participant>,
+    },
 }
 
 impl wasm_bindgen::describe::WasmDescribe for RoomEvent {
@@ -304,6 +307,14 @@ impl FromWasmAbi for RoomEvent {
                     publication,
                     participant,
                 }
+            }
+            Some("activeSpeakersChanged") => {
+                let Some(speakers) = Vec::<Participant>::get_from_js_value(&js_value, "speakers")
+                else {
+                    error!("RoomEvent::ActiveSpeakersChanged did not have speakers field.");
+                    panic!();
+                };
+                RoomEvent::ActiveSpeakersChanged { speakers }
             }
             Some(tag) => {
                 todo!("{tag:?} {js_value:?}");

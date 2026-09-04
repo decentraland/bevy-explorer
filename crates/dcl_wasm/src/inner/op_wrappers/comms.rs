@@ -2,8 +2,10 @@ use crate::{WasmError, WorkerContext};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub async fn op_comms_send_string(state: &WorkerContext, message: String) {
-    dcl::js::comms::op_comms_send_string(state.rc(), message).await
+pub async fn op_comms_send_string(state: &WorkerContext, message: String) -> Result<(), WasmError> {
+    dcl::js::comms::op_comms_send_string(state.rc(), message)
+        .await
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -11,9 +13,11 @@ pub async fn op_comms_send_binary_single(
     state: &WorkerContext,
     message: js_sys::ArrayBuffer,
     recipient: Option<String>,
-) {
+) -> Result<(), WasmError> {
     let view = js_sys::Uint8Array::new(&message);
-    dcl::js::comms::op_comms_send_binary_single(state.rc(), &view.to_vec(), recipient).await
+    dcl::js::comms::op_comms_send_binary_single(state.rc(), &view.to_vec(), recipient)
+        .await
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

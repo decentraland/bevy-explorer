@@ -1,0 +1,43 @@
+{
+  "name": "bevy-ui-scene",
+  "version": "1.0.0",
+  "description": "UI Scene shows a functional UI for the Bevy Explorer",
+  "scripts": {
+    "start": "sdk-commands start",
+    "deploy": "sdk-commands deploy",
+    "build": "sdk-commands build",
+    "export-native": "sdk-commands build && sdk-commands export-static --destination ../../assets/bridge-scene --realmName BevyExplorerUI --baseUrl /bridge-scene/ --commsAdapter ws-room:ws-room-service.decentraland.org/rooms/bevy-explorer-ui",
+    "export-static": "sdk-commands export-static --destination static/ --realmName BevyExplorerUI --baseUrl ${SCENE_BASE_URL:-/bridge-scene/static/} --commsAdapter ws-room:ws-room-service.decentraland.org/rooms/bevy-explorer-ui",
+    "bundle": "npm run build && npm run export-static && rm -rf ../../deploy/web/bridge-scene && mkdir -p ../../deploy/web/bridge-scene && cp -R static ../../deploy/web/bridge-scene/static",
+    "lint": "eslint \"./src/**/*.{ts,tsx}\"",
+    "lint:fix": "eslint --fix \"./src/**/*.{ts,tsx}\"",
+    "format": "prettier --config .prettierrc -c \"./src/**/*.{ts,tsx}\"",
+    "format:fix": "prettier -w --config .prettierrc \"./src/**/*.{ts,tsx}\"",
+    "upgrade-sdk": "npm install @dcl/sdk@experimental-bevy @dcl/js-runtime@experimental-bevy @dcl/react-ecs@experimental-bevy @dcl/sdk-commands@experimental-bevy @dcl/ecs@experimental-bevy --save-exact"
+  },
+  "devDependencies": {
+    "@dcl/ecs": "7.27.1-33247605236.commit-732120a",
+    "@dcl/js-runtime": "7.27.1-33247605236.commit-732120a",
+    "@dcl/react-ecs": "7.27.1-33247605236.commit-732120a",
+    "@dcl/sdk": "7.27.1-33247605236.commit-732120a",
+    "@dcl/sdk-commands": "7.27.1-33247605236.commit-732120a",
+    "@typescript-eslint/eslint-plugin": "^6.10.0",
+    "@typescript-eslint/parser": "^6.10.0",
+    "eslint": "^8.53.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-config-standard-with-typescript": "^39.1.1",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-n": "^16.6.2",
+    "eslint-plugin-react": "^7.33.2",
+    "prettier": "3.0.3"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=6.0.0"
+  },
+  "overrides": {
+    "protobufjs": "^7.5.6",
+    "minimatch@9.0.3": "9.0.7",
+    "cookie": "^0.7.2"
+  }
+}

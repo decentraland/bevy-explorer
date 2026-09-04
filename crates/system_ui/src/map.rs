@@ -192,9 +192,9 @@ fn set_map_content(
                     let parcel = cursor_parcel.floor().as_ivec2() + IVec2::Y;
                     debug!("click parcel {}", parcel);
 
-                    let url = format!(
-                        "https://places.decentraland.org/api/places?positions={},{}",
-                        parcel.x, parcel.y
+                    let url = common::base_domain::https(
+                        "places",
+                        &format!("/api/places?positions={},{}", parcel.x, parcel.y),
                     );
 
                     let client = ipfas.ipfs().client();
@@ -202,7 +202,11 @@ fn set_map_content(
                         parcel,
                         IoTaskPool::get().spawn_compat(async move {
                             debug!("url: {url}");
-                            let response = client.get(url).send().await?;
+                            let response = client
+                                .get(url)
+                                .timeout(std::time::Duration::from_secs(10))
+                                .send()
+                                .await?;
                             response
                                 .json::<DiscoverPages>()
                                 .await
@@ -284,7 +288,10 @@ fn update_map_data(
             .and_then(|c| c.first())
             .and_then(|c| text.get_mut(*c).ok())
         {
-            text.0 = format!("({},{})", parcel.x, parcel.y + 1);
+            let value = format!("({},{})", parcel.x, parcel.y + 1);
+            if text.0 != value {
+                text.0 = value;
+            }
         }
     }
 }

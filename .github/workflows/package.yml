@@ -13,16 +13,16 @@ jobs:
         if: github.repository == 'decentraland/bevy-explorer' || github.event_name == 'workflow_dispatch'
         steps:
           - name: Clone repo
-            uses: actions/checkout@v3
+            uses: actions/checkout@v7
 
           - name: Get current time with underscores
-            uses: 1466587594/get-current-time@v2.1.1
+            uses: 1466587594/get-current-time@6826799222c9d913068c04cb99e67f34dbf3caae # v2.1.3, pinned for supply-chain safety
             id: current_time_underscores
             with:
                 format: YYYY-MM-DD-HH-mm-ss
 
           - name: Get current time with dashes
-            uses: 1466587594/get-current-time@v2.1.1
+            uses: 1466587594/get-current-time@6826799222c9d913068c04cb99e67f34dbf3caae # v2.1.3, pinned for supply-chain safety
             id: current_time_dashes
             with:
                 format: YYYY-MM-DD-HH-mm-ss
@@ -46,8 +46,11 @@ jobs:
                   - build_name: linux-x86_64
                     os: ubuntu-latest
 
-                  - build_name: macos-m1m2
-                    os: macos-15
+                  # TEMPORARILY DISABLED: notarization dies on the Apple team-ID 403
+                  # ("Create keychain profile"; needs the org's Apple secrets fixed) and the
+                  # failed job just marks every run red. Re-enable once the secrets work.
+                  # - build_name: macos-m1m2
+                  #   os: macos-15
 
                   - build_name: windows-x86_64
                     os: windows-latest
@@ -60,7 +63,7 @@ jobs:
         runs-on: ${{ matrix.os }}
         steps:
           - name: Clone repo
-            uses: actions/checkout@v3
+            uses: actions/checkout@v7
 
           - uses: actions-rs/toolchain@v1
             with:
@@ -73,13 +76,50 @@ jobs:
 
           - name: Install protoc
             if: matrix.os != 'self-hosted-windows'
-            uses: arduino/setup-protoc@master
+            uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
             with:
                 repo-token: ${{ secrets.GITHUB_TOKEN }}
     
+          # react HUD (cef): node for the page + bridge-scene bundles, ninja for cef-dll-sys' cmake build
+          - uses: actions/setup-node@v7
+            with:
+                node-version: 24
+          # moved up from below the CEF export: the TS-bindings build compiles the bevy dep
+          # graph (gilrs needs libudev) before the HUD bundle can build.
           - name: Install alsa and udev
             if: runner.os == 'linux'
             run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+          # react-web/src/engine/generated (TS types the HUD + bridge scene import) is generated
+          # from the Rust system-api structs and gitignored — regenerate before bundling.
+          - name: Generate TS bindings
+            run: ./scripts/gen-ts-bindings.sh
+            shell: bash
+          - name: Bundle react HUD (page + bridge scene -> assets/)
+            run: |
+                cd react-web && npm ci
+                cd bridge-scene && npm ci && cd ..
+                npm run bundle:native
+            shell: bash
+          - name: Install ninja (macos)
+            if: runner.os == 'macos'
+            run: brew install ninja
+          - name: Install ninja (linux)
+            if: runner.os == 'linux'
+            run: sudo apt-get install -y --no-install-recommends ninja-build
+          # CEF redistributables to ship next to the binaries (version must match the locked `cef` crate)
+          - name: Export CEF distribution
+            run: |
+                cargo install export-cef-dir --version "139.8.0+139.0.40"
+                export-cef-dir --force "$HOME/.local/share/cef"
+                # GITHUB_ENV reaches native processes verbatim: on windows the git-bash $HOME
+                # (/c/Users/...) would resolve as C:\c\Users\... — write a windows path there.
+                if [ "$RUNNER_OS" = "Windows" ]; then
+                  echo "CEF_PATH=$(cygpath -w "$HOME/.local/share/cef")" >> "$GITHUB_ENV"
+                else
+                  echo "CEF_PATH=$HOME/.local/share/cef" >> "$GITHUB_ENV"
+                fi
+            shell: bash
+
           - name: install livekit deps
             if: runner.os == 'linux'
             run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev fuse libfuse2t64
@@ -94,12 +134,21 @@ jobs:
           - name: install ffmpeg deps (windows)
             if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
             run: |
-              $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
-              Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"
-              Invoke-WebRequest "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build-shared.7z" -OutFile ffmpeg-6.0-full_build-shared.7z
+              # Prefer the standalone LLVM install (stable across runner image rolls); fall back to the VS-bundled Clang toolset, whose version moves with the image and has produced opaque bindgen structs on rollover.
+              $vsLlvm = "$(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)\VC\Tools\LLVM\x64\bin"
+              $libclang = @("C:\Program Files\LLVM\bin", $vsLlvm) | Where-Object { Test-Path "$_\libclang.dll" } | Select-Object -First 1
+              if (-not $libclang) { throw "libclang.dll not found (checked standalone LLVM and VS Clang toolset)" }
+              Write-Host "Using LIBCLANG_PATH=$libclang"
+              Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=$libclang`n"
+              $ffUrl = "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build-shared.7z"
+              for ($i = 1; $i -le 3; $i++) {
+                try { Invoke-WebRequest $ffUrl -OutFile ffmpeg-6.0-full_build-shared.7z; break }
+                catch { if ($i -eq 3) { throw }; Write-Host "ffmpeg download failed (attempt $i), retrying..."; Start-Sleep -Seconds 5 }
+              }
               7z x ffmpeg-6.0-full_build-shared.7z
               mkdir ffmpeg
               mv ffmpeg-*/* ffmpeg/
+              if (-not (Test-Path "ffmpeg\include")) { throw "ffmpeg headers missing after extract (ffmpeg\include not found)" }
               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
               Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
           - name: install ffmpeg deps (windows)
@@ -108,15 +157,16 @@ jobs:
               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=c:\ffmpeg-6.0`n"
     
               
+          # CEF_PATH comes from the Export CEF distribution step via GITHUB_ENV
           - name: Cargo build (windows)
             if: runner.os == 'windows'
-            run: cargo build --release --package dcl_deno_ipc -j8 && cargo build --release -j8
+            run: cargo build --release --locked --package dcl_deno_ipc -j8 && cargo build --release --locked -j8
           - name: Cargo build (macos)
             if: runner.os == 'macos'
-            run: cargo build --release --package dcl_deno_ipc && cargo build --release
+            run: cargo build --release --locked --package dcl_deno_ipc && cargo build --release --locked
           - name: Cargo build (linux)
             if: runner.os == 'linux'
-            run: cargo build --release --package dcl_deno_ipc && cargo build --release
+            run: cargo build --release --locked --package dcl_deno_ipc && cargo build --release --locked
 
           - name: Package common
             run: |
@@ -152,6 +202,18 @@ jobs:
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy.exe package/decentra-bevy.exe
                 cp ${{ env.CARGO_BUILD_DIR }}/dcl_deno_ipc.exe package/dcl_deno_ipc.exe
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy-cef.exe package/decentra-bevy-cef.exe
+                cp -r assets package/assets
+                # CEF runtime next to the exe (standard layout). export-cef-dir FLATTENS the
+                # distribution: dlls, snapshots, paks and locales all live at the root of the
+                # export dir — there is no Release/ or Resources/ subdir.
+                $cef = "$env:USERPROFILE\.local\share\cef"
+                cp "$cef\*.dll" package/
+                cp "$cef\*.bin" package/
+                cp "$cef\*.pak" package/
+                cp "$cef\*.dat" package/
+                cp "$cef\*.json" package/
+                cp -r "$cef\locales" package/locales
                 cp ${{ env.FFMPEG_DIR }}/bin/*.dll package
                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
@@ -161,6 +223,17 @@ jobs:
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
                 cp ${{ env.CARGO_BUILD_DIR }}/dcl_deno_ipc package/dcl_deno_ipc
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy-cef package/decentra-bevy-cef
+                cp -r assets package/assets
+                # CEF runtime next to the exe (standard layout). export-cef-dir FLATTENS the
+                # distribution: .so, snapshots, paks and locales all live at the root of the
+                # export dir — there is no Release/ or Resources/ subdir.
+                # NOTE (best-effort): unless cef-dll-sys sets an $ORIGIN rpath, linux users may
+                # need LD_LIBRARY_PATH=. to launch; AppImage packaging of CEF is not attempted.
+                cef="$HOME/.local/share/cef"
+                cp "$cef"/*.so* "$cef"/*.bin "$cef"/*.pak "$cef"/*.dat "$cef"/*.json package/
+                cp -r "$cef/locales" package/locales
+                if [ -f "$cef/chrome-sandbox" ]; then cp "$cef/chrome-sandbox" package/; fi
                 # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
                 cd package
                 tar -czvf ../${{ env.PACKAGE_FILE }} *            
@@ -170,18 +243,38 @@ jobs:
             continue-on-error: true
             run: |
               cd deploy/linux
-              mkdir BevyExplorer.AppDir/usr
-              mkdir BevyExplorer.AppDir/usr/bin
+              mkdir -p BevyExplorer.AppDir/usr/bin BevyExplorer.AppDir/usr/lib
               cp ../../target/release/decentra-bevy BevyExplorer.AppDir/usr/bin
               cp ../../target/release/dcl_deno_ipc BevyExplorer.AppDir/usr/bin
+              # CEF: decentra-bevy links libcef.so, so linuxdeploy must be able to resolve
+              # it (LD_LIBRARY_PATH below) — it then bundles it into usr/lib and patches
+              # rpaths. The runtime resources (paks, icudtl, snapshots, locales) are not
+              # library dependencies, so copy them next to where libcef.so will land, and
+              # the subprocess helper is found as a sibling of the main binary (usr/bin).
+              # export-cef-dir FLATTENS the distribution: everything is at the export root.
+              cef="$HOME/.local/share/cef"
+              cp ../../target/release/decentra-bevy-cef BevyExplorer.AppDir/usr/bin
+              # HUD page + bridge-scene resolve assets/ against the exe dir (native_hud_roots)
+              cp -r ../../assets BevyExplorer.AppDir/usr/bin/assets
+              cp "$cef"/*.bin "$cef"/*.pak "$cef"/*.dat "$cef"/*.json BevyExplorer.AppDir/usr/lib/
+              cp -r "$cef/locales" BevyExplorer.AppDir/usr/lib/locales
               wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
               wget https://github.com/AppImage/appimagetool/releases/latest/download/appimagetool-x86_64.AppImage
               chmod +x ./linuxdeploy-x86_64.AppImage ./appimagetool-x86_64.AppImage
               export PATH="$(pwd):$PATH"
               export APPIMAGETOOL="$(pwd)/appimagetool.AppImage"
+              export LD_LIBRARY_PATH="$cef:$LD_LIBRARY_PATH"
+              # libxkbcommon must NOT be bundled: it ships as a matched pair with the host's
+              # libxkbcommon-x11 (private struct layouts shared between the two), and only the
+              # base lib is a transitive dep here (ffmpeg -> SDL2), so bundling it pairs our
+              # build machine's copy with the host's -x11 half — the keymap winit builds
+              # through that mix is corrupt (hangs on every keypress, SEGV in
+              # xkb_keymap_unref at exit). winit dlopens both from the host instead.
               ./linuxdeploy-x86_64.AppImage --appdir BevyExplorer.AppDir --output appimage --create-desktop-file \
                 --executable=../../target/release/decentra-bevy \
                 --executable=../../target/release/dcl_deno_ipc \
+                --executable=../../target/release/decentra-bevy-cef \
+                --exclude-library="libxkbcommon*" \
                 --icon-file=decentra-bevy.png
               mv ./decentra-bevy-x86_64.AppImage ${{ env.APPIMAGE_FILE }}
               gh release upload "${{ needs.create-release.outputs.tag_name }}" ${{ env.APPIMAGE_FILE }}

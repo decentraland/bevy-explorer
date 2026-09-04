@@ -4,6 +4,7 @@ use std::ops::RangeInclusive;
 use bevy::prelude::Vec3;
 
 pub mod component_name_registry;
+pub mod component_schema;
 pub mod crdt_type;
 pub mod proto_components;
 pub mod reader;
@@ -31,6 +32,10 @@ pub enum Localizer {
     Unimplemented,
     /// Localize `PbAvatarMovementInfo`: offset `walk_target` (field 8) by scene origin.
     AvatarMovementInfo,
+    /// Localize `DclTransformAndParent`: world-space transforms (parented to `WORLD_ORIGIN`)
+    /// get their translation offset by scene origin and are re-parented to `ROOT`, so scenes
+    /// read scene-relative positions for foreign players.
+    Transform,
 }
 
 impl Localizer {
@@ -59,6 +64,30 @@ impl Localizer {
 
                 let mut buf = Vec::with_capacity(payload.len());
                 info.encode(&mut buf).expect("re-encode failed");
+                buf
+            }
+            Localizer::Transform => {
+                use transform_and_parent::DclTransformAndParent;
+
+                let mut reader = DclReader::new(payload);
+                let Ok(mut transform) = reader.read::<DclTransformAndParent>() else {
+                    return payload.to_vec();
+                };
+
+                // Only WORLD_ORIGIN-parented transforms carry world-space positions;
+                // anything else is already in scene space.
+                if transform.parent != SceneEntityId::WORLD_ORIGIN {
+                    return payload.to_vec();
+                }
+
+                let origin = &scene_origin.0;
+                transform.translation.0[0] -= origin.x;
+                transform.translation.0[1] -= origin.y;
+                transform.translation.0[2] -= origin.z;
+                transform.parent = SceneEntityId::ROOT;
+
+                let mut buf = Vec::with_capacity(payload.len());
+                DclWriter::new(&mut buf).write(&transform);
                 buf
             }
         }
@@ -103,7 +132,11 @@ impl SceneEntityId {
     pub const CAMERA: SceneEntityId = Self::reserved(2);
     pub const WORLD_ORIGIN: SceneEntityId = Self::reserved(5);
 
-    pub const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=405;
+    /// ADR-245 reserves entity numbers 32..256 for player data components.
+    pub const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 32..=255;
+
+    /// size for a table indexed by `id`: both 0 and 65535 are valid indexes
+    pub const LIVE_TABLE_LEN: usize = u16::MAX as usize + 1;
 
     pub fn as_proto_u32(&self) -> Option<u32> {
         Some(self.id as u32 | ((self.generation as u32) << 16))
@@ -217,6 +250,8 @@ impl SceneComponentId {
 
     pub const PHYSICS_COMBINED_IMPULSE: SceneComponentId = SceneComponentId(1215);
     pub const PHYSICS_COMBINED_FORCE: SceneComponentId = SceneComponentId(1216);
+
+    pub const PARTICLE_SYSTEM: SceneComponentId = SceneComponentId(1217);
 }
 
 #[derive(
@@ -273,5 +308,63 @@ impl FromDclReader for SceneCrdtTimestamp {
 impl ToDclWriter for SceneCrdtTimestamp {
     fn to_writer(&self, buf: &mut DclWriter) {
         buf.write_u32(self.0)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation};
+
+    fn encode(transform: &DclTransformAndParent) -> Vec<u8> {
+        let mut buf = Vec::new();
+        DclWriter::new(&mut buf).write(transform);
+        buf
+    }
+
+    #[test]
+    fn transform_localizer_offsets_world_origin_transforms() {
+        let payload = encode(&DclTransformAndParent {
+            translation: DclTranslation([1456.4, 0.13, -135.1]),
+            rotation: DclQuat([0.0, 0.0, 0.0, 1.0]),
+            scale: Vec3::ONE,
+            parent: SceneEntityId::WORLD_ORIGIN,
+        });
+        let origin = SceneOrigin(Vec3::new(1440.0, 0.0, -144.0));
+
+        let localized = Localizer::Transform.localize_payload(&payload, &origin);
+        let result: DclTransformAndParent = DclReader::new(&localized).read().unwrap();
+
+        assert_eq!(result.parent, SceneEntityId::ROOT);
+        assert!((result.translation.0[0] - 16.4).abs() < 1e-3);
+        assert!((result.translation.0[1] - 0.13).abs() < 1e-6);
+        assert!((result.translation.0[2] - 8.9).abs() < 1e-3);
+    }
+
+    #[test]
+    fn transform_localizer_leaves_scene_space_transforms_untouched() {
+        let payload = encode(&DclTransformAndParent {
+            translation: DclTranslation([1.0, 2.0, 3.0]),
+            rotation: DclQuat([0.0, 0.0, 0.0, 1.0]),
+            scale: Vec3::ONE,
+            parent: SceneEntityId::ROOT,
+        });
+        let origin = SceneOrigin(Vec3::new(160.0, 0.0, 320.0));
+
+        assert_eq!(
+            Localizer::Transform.localize_payload(&payload, &origin),
+            payload
+        );
+    }
+
+    #[test]
+    fn transform_localizer_passes_through_malformed_payloads() {
+        let origin = SceneOrigin(Vec3::new(160.0, 0.0, 320.0));
+        let truncated = vec![0u8; 10];
+
+        assert_eq!(
+            Localizer::Transform.localize_payload(&truncated, &origin),
+            truncated
+        );
     }
 }

@@ -5,15 +5,12 @@
     pbr_types::STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT,
     pbr_fragment::pbr_input_from_standard_material,
     pbr_prepass_functions::prepass_alpha_discard,
+    mesh_functions,
 }
 #import bevy_render::globals::Globals;
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 #import "embedded://shaders/bound_material_effect.wgsl"::discard_dither
-
-const OUTLINE_RED: u32 = 4u;
-const DISABLE_DITHER: u32 = 16u;
-const CONE_ONLY_DITHER: u32 = 32u;
 
 @group(0) @binding(1) var<uniform> globals: Globals;
 
@@ -27,9 +24,7 @@ struct Bounds {
 struct SceneBounds {
     bounds: array<Bounds,8>,
     distance: f32,
-    flags: u32,
     num_bounds: u32,
-    _pad: u32,
 }
 
 fn unpack_bounds(packed: u32) -> vec2<f32> {
@@ -56,6 +51,8 @@ fn fragment(
 #else
 {
 #endif
+    // Lookup the tag for the given mesh
+    let mesh_tag = mesh_functions::get_tag(in.instance_index);
 
 #ifdef INVERTED_SCALE
     let is_front_m = !is_front;
@@ -63,8 +60,8 @@ fn fragment(
     let is_front_m = is_front;
 #endif
 
-    if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
-        discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
+    if (mesh_tag & (#{NO_DITHERING_MESH_TAG} | #{OUTLINE_RED_MESH_TAG})) == 0 {
+        discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (mesh_tag & #{CONE_ONLY_DITHER_MESH_TAG}) == 0);
     }
 
 #ifdef NORMAL_PREPASS

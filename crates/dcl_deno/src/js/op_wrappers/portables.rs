@@ -27,6 +27,6 @@ async fn op_portable_kill(
 
 #[op2(async)]
 #[serde]
-async fn op_portable_list(state: Rc<RefCell<OpState>>) -> Vec<SpawnResponse> {
+async fn op_portable_list(state: Rc<RefCell<OpState>>) -> Result<Vec<SpawnResponse>, AnyError> {
     dcl::js::portables::op_portable_list(state).await
 }

@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package decentraland.pulse;
+
+import "decentraland/pulse/pulse_shared.proto";
+import "decentraland/common/options.proto";
+
+message HandshakeRequest {
+	bytes auth_chain = 1;
+  int32 profile_version = 2;
+  optional PlayerInitialState initial_state = 3;
+}
+
+// Describes the initial state of the player if (re-)connected in the middle of the session
+message PlayerInitialState {
+  PlayerState state = 1;
+  optional string emote_id = 2;
+  optional uint32 emote_duration_ms = 3;
+  // Indicates how many milliseconds ago the emote was started
+  optional uint32 emote_start_offset_ms = 4;
+  // Non-empty realm identifier. Rejected if empty.
+  string realm = 5;
+  optional int32 emote_mask = 6;
+}
+
+// Similarly to the LiveKit pipeline, a peer announces the version of its profile but
+// it only does it when it's changed as it's sent reliably and stored on the server for other peers
+message ProfileVersionAnnouncement {
+  int32 version = 1;
+}
+
+// Since the server doesn't simulate the scenes state, it trusts the values from the client
+message PlayerStateInput {
+  PlayerState state = 1;
+}
+
+// Client sends resync request if it has a gap in the known sequences and, thus, can't apply a delta.
+// It's sent reliably to prevent further desynchronization
+message ResyncRequest {
+  uint32 subject_id = 1;
+  // highest seq the client actually has for this subject
+  uint32 known_seq = 2;
+}
+
+// Client → Server. Client requests to start an emote.
+message EmoteStart {
+  string emote_id = 1;
+  optional uint32 duration_ms = 2;
+  PlayerState player_state = 3;
+  optional int32 mask = 4;
+}
+
+// Client → Server. Client requests to stop a looping emote.
+// One-shot emotes are terminated by the server timer.
+message EmoteStop {
+}
+
+// Client → Server. Also announces the peer's realm; peers in different realms never see each
+// other. Must be the first gameplay message after handshake. Same-realm re-teleports are valid.
+message TeleportRequest {
+  int32 parcel_index = 1;
+  uint32 position_x = 2 [(decentraland.common.quantized) = { min: 0, max: 16, bits: 8 }];
+  uint32 position_y = 3 [(decentraland.common.quantized) = { min: 0, max: 200, bits: 13 }];
+  uint32 position_z = 4 [(decentraland.common.quantized) = { min: 0, max: 16, bits: 8 }];
+  // Non-empty realm identifier. Rejected if empty.
+  string realm = 5;
+}
+
+// Inclusive rectangle in parcel coordinates. A single parcel is min == max.
+message ParcelRect {
+  sint32 min_x = 1;
+  sint32 min_z = 2;
+  sint32 max_x = 3;
+  sint32 max_z = 4;
+}
+
+// One realm's slice of a scene listener's area of interest. Parcels only mean anything
+// within a realm — every world numbers its own parcels from 0,0 — so a listener that
+// observes several realms, as an authoritative server cohosting scenes from several worlds
+// does, announces one of these per realm rather than one realm for the whole connection.
+message SceneListenerAoi {
+  // Non-empty realm identifier — same rules as TeleportRequest.realm.
+  string realm = 1;
+  // This realm's parcels as inclusive rects. The sum of rect areas across every announced
+  // realm is capped server-side (SceneListener:MaxParcels) — overlaps count per rect, so
+  // announce disjoint rects.
+  repeated ParcelRect parcel_rects = 2;
+}
+
+// Scene-listener connect: same signed-fetch auth chain as HandshakeRequest, plus a
+// parcel-set area of interest per realm. No initial state — a listener is never a subject.
+message SceneListenerHandshakeRequest {
+  // Signed-fetch headers JSON — identical shape to HandshakeRequest.auth_chain.
+  bytes auth_chain = 1;
+  // Announced AoI, one entry per realm; replaceable afterwards with SceneListenerUpdate.
+  repeated SceneListenerAoi aoi = 2;
+}
+
+// Scene-listener AoI reassignment: replaces the area of interest announced at connect, in
+// place, on an authenticated scene-listener connection. Only valid from a peer that
+// authenticated with SceneListenerHandshakeRequest.
+message SceneListenerUpdate {
+  // The new AoI, replacing (not extending) the current one — realms absent from it are no
+  // longer observed. Same rules and SceneListener:MaxParcels budget as the handshake's.
+  repeated SceneListenerAoi aoi = 1;
+}
+
+message ClientMessage {
+  oneof message {
+    HandshakeRequest handshake = 1;
+    PlayerStateInput input = 2;
+    ResyncRequest resync = 3;
+    ProfileVersionAnnouncement profile_announcement = 4;
+    EmoteStart emote_start = 5;
+    EmoteStop emote_stop = 6;
+    TeleportRequest teleport = 7;
+    SceneListenerHandshakeRequest scene_listener_handshake = 8;
+    SceneListenerUpdate scene_listener_update = 9;
+  }
+}

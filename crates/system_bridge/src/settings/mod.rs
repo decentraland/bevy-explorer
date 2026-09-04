@@ -10,6 +10,7 @@ use crate::{
 };
 use ambient_brightness_setting::AmbientSetting;
 use anyhow::anyhow;
+use avatar_outline_setting::AvatarOutlineSetting;
 use bevy::{
     app::{Plugin, Update},
     ecs::{
@@ -20,13 +21,14 @@ use bevy::{
     prelude::*,
 };
 use cache_size::CacheSizeSetting;
+use cel_shading_setting::CelShadingSetting;
 #[cfg(not(target_arch = "wasm32"))]
 use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ParcelGrassSetting,
-        PreviewMode, ShadowSetting, WindowSetting,
+        AaSetting, AppConfig, BloomSetting, CameraSmoothing, DofSetting, FogSetting,
+        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -37,7 +39,6 @@ use max_downloads::MaxDownloadsSetting;
 use oob_setting::OobSetting;
 use player_settings::{JumpSetting, RunSpeedSetting, WalkSpeedSetting};
 use scene_threads::SceneThreadsSetting;
-use serde::{Deserialize, Serialize};
 use shadow_settings::{LightCountSetting, ShadowCasterCountSetting, ShadowDistanceSetting};
 #[cfg(target_arch = "wasm32")]
 use tokio::sync::watch;
@@ -51,8 +52,11 @@ use {js_sys::Function, wasm_bindgen::prelude::*, web_sys::Event};
 
 pub mod aa_settings;
 pub mod ambient_brightness_setting;
+pub mod avatar_outline_setting;
 pub mod bloom_settings;
 pub mod cache_size;
+pub mod camera_smoothing;
+pub mod cel_shading_setting;
 pub mod constrain_ui;
 pub mod dof_setting;
 pub mod fog_settings;
@@ -64,6 +68,7 @@ pub mod max_downloads;
 pub mod oob_setting;
 pub mod parcel_grass_settings;
 pub mod player_settings;
+pub mod point_at_marker_visibility;
 pub mod scene_threads;
 pub mod sensitivity;
 pub mod shadow_settings;
@@ -71,6 +76,7 @@ pub mod ssao_setting;
 pub mod video_threads;
 pub mod volume_settings;
 pub mod window_settings;
+
 pub struct SettingBridgePlugin;
 
 #[derive(Event)]
@@ -125,7 +131,7 @@ impl Plugin for SettingBridgePlugin {
             settings: Vec::default(),
         };
         app.add_event::<NewCameraEvent>();
-        app.add_systems(Update, (send_settings, receive_settings));
+        app.add_systems(Update, handle_settings);
 
         let mut schedule = Schedule::new(ApplyAppSettingsLabel);
         let config = app.world().resource::<AppConfig>().clone();
@@ -148,6 +154,8 @@ impl Plugin for SettingBridgePlugin {
         #[cfg(not(target_arch = "wasm32"))]
         add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<CelShadingSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<AvatarOutlineSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<AmbientSetting>(app, &mut settings, &mut schedule, &config);
         if is_fullscreen_available() {
@@ -180,10 +188,12 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<ScrollSensitivitySetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<MovementSensitivitySetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<CameraSensitivitySetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<CameraSmoothing>(app, &mut settings, &mut schedule, &config);
 
         add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<CacheSizeSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<PointAtMarkerVisibility>(app, &mut settings, &mut schedule, &config);
 
         app.insert_resource(settings);
         app.insert_resource(ApplyAppSettingsSchedule(schedule));
@@ -267,25 +277,7 @@ pub trait IntAppSetting: AppSetting + Sized + std::fmt::Debug {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct NamedVariant {
-    name: String,
-    description: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SettingInfo {
-    pub name: String,
-    pub category: String,
-    pub description: String,
-    pub min_value: f32,
-    pub max_value: f32,
-    pub named_variants: Vec<NamedVariant>,
-    pub step_size: f32,
-    pub value: f32,
-    pub default: f32,
-}
+pub use system_api_types::{NamedVariant, SettingInfo};
 
 pub struct Setting {
     pub info: SettingInfo,
@@ -400,24 +392,25 @@ impl Settings {
     }
 }
 
-fn send_settings(mut ev: EventReader<SystemApi>, settings: Res<Settings>) {
-    for ev in ev.read() {
-        if let SystemApi::GetSettings(sender) = ev {
-            sender.send(settings.settings.iter().map(|s| s.info.clone()).collect());
-        }
-    }
-}
-
-fn receive_settings(
+// Gets and sets must be handled in arrival order: the scene->engine channel is FIFO, so a
+// GetSettings queued after SetSettings is only guaranteed to reflect them if a single system
+// processes both event kinds in sequence.
+fn handle_settings(
     mut ev: EventReader<SystemApi>,
     mut config: ResMut<AppConfig>,
     mut settings: ResMut<Settings>,
 ) {
     for ev in ev.read() {
-        if let SystemApi::SetSetting(name, val) = ev {
-            if let Err(e) = settings.set_value(&mut config, name, *val) {
-                error!("Error setting {name}: {e}");
+        match ev {
+            SystemApi::GetSettings(sender) => {
+                sender.send(settings.settings.iter().map(|s| s.info.clone()).collect());
             }
+            SystemApi::SetSetting(name, val) => {
+                if let Err(e) = settings.set_value(&mut config, name, *val) {
+                    error!("Error setting {name}: {e}");
+                }
+            }
+            _ => (),
         }
     }
 }

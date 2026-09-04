@@ -12,6 +12,7 @@ scene_material = { workspace = true }
 scene_runner = { workspace = true }
 tween = { workspace = true }
 console = { workspace = true }
+platform = { workspace = true }
 
 bevy = { workspace = true }
 boimp = { workspace = true }
@@ -25,7 +26,9 @@ clap = { workspace = true }
 crc = { workspace = true }
 reqwest = { workspace = true }
 
-zip = { version = "2", default-features = false }
+zip = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-fs = { workspace = true }

@@ -8,7 +8,11 @@ use bevy::{
     gltf::Gltf,
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::{mesh::skinning::SkinnedMesh, primitives::Aabb, view::RenderLayers},
+    render::{
+        mesh::{skinning::SkinnedMesh, MeshTag},
+        primitives::Aabb,
+        view::RenderLayers,
+    },
     scene::InstanceId,
     tasks::{IoTaskPool, Task},
 };
@@ -22,7 +26,11 @@ use collectibles::{
 use colliders::AvatarColliderPlugin;
 use console::DoAddConsoleCommand;
 use npc_dynamics::NpcMovementPlugin;
-use scene_material::{BoundRegion, SceneBound, SceneMaterial};
+use scene_material::{
+    BoundRegion, SceneBound, SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+    SCENE_MATERIAL_NO_DITHERING_MESH_TAG, SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG,
+    SCENE_MATERIAL_TOON_MESH_TAG,
+};
 
 pub mod animate;
 pub mod attach;
@@ -33,13 +41,14 @@ pub mod foot_ik;
 pub mod foreign_dynamics;
 pub mod head_ik;
 pub mod mask_material;
-pub mod name_color;
+pub mod material_cache;
 pub mod npc_dynamics;
 pub mod point_at_ik;
 pub mod point_at_marker;
 mod two_bone_ik;
 
 use common::{
+    asset_cache::{clean_asset_cache, AssetCache},
     sets::SetupSets,
     structs::{AppConfig, AttachPoints, EmoteCommand, PrimaryUser},
     util::{DespawnWith, SceneSpawnerPlus, TaskExt, TryPushChildrenEx},
@@ -74,8 +83,13 @@ use system_bridge::NativeUi;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{
-    animate::AvatarAnimPlayer, dynamic_nametag::DynamicNametagPlugin, foot_ik::FootIkPlugin,
-    head_ik::HeadIkPlugin, point_at_ik::PointAtIkPlugin, point_at_marker::PointAtMarkerPlugin,
+    animate::AvatarAnimPlayer,
+    dynamic_nametag::DynamicNametagPlugin,
+    foot_ik::FootIkPlugin,
+    head_ik::HeadIkPlugin,
+    material_cache::{bounds_bits, AvatarMaskKey, AvatarMatKey, BoundsBits},
+    point_at_ik::PointAtIkPlugin,
+    point_at_marker::PointAtMarkerPlugin,
 };
 
 use self::{
@@ -100,6 +114,15 @@ impl Plugin for AvatarPlugin {
         app.add_plugins(HeadIkPlugin);
         app.add_plugins(PointAtIkPlugin);
         app.add_plugins(PointAtMarkerPlugin);
+        app.init_resource::<AssetCache<AvatarMatKey, SceneMaterial>>();
+        app.init_resource::<AssetCache<AvatarMaskKey, MaskMaterial>>();
+        app.add_systems(
+            PostUpdate,
+            (
+                clean_asset_cache::<AvatarMatKey, SceneMaterial>,
+                clean_asset_cache::<AvatarMaskKey, MaskMaterial>,
+            ),
+        );
         app.add_systems(
             Update,
             (
@@ -110,6 +133,7 @@ impl Plugin for AvatarPlugin {
                 spawn_scenes,
                 process_avatar.after(update_render_avatar),
                 set_avatar_visibility,
+                retag_avatars_on_style_change,
             ),
         );
 
@@ -124,7 +148,7 @@ impl Plugin for AvatarPlugin {
             ComponentPosition::Any,
         );
 
-        app.add_console_command::<DebugDumpAvatar, _>(debug_dump_avatar);
+        app.add_preview_console_command::<DebugDumpAvatar, _>(debug_dump_avatar);
 
         app.add_observer(add_attach_points_to_avatar_shape);
         app.add_observer(remove_attach_points_from_avatar_shape);
@@ -155,14 +179,23 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>, mut view: ResMut
         .id();
 }
 
-// send received avatar info into scenes
-fn update_avatar_info(
+/// Send player avatar info into scene crdts — a foreign player's into their own context,
+/// the local player's (`PLAYER`) into the client's single context (a multi-context
+/// server has no real local player: skip). Also registered directly by the headless
+/// server, where the rest of AvatarPlugin (render-bound) is omitted.
+pub fn update_avatar_info(
     updated_players: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
-    mut global_state: ResMut<GlobalCrdtState>,
+    mut contexts: Query<&mut GlobalCrdtState>,
 ) {
     for (player, profile) in &updated_players {
+        let Some(mut state) = (match player {
+            Some(player) => contexts.get_mut(player.context).ok(),
+            None => contexts.single_mut().ok(),
+        }) else {
+            continue;
+        };
         let avatar = &profile.content.avatar;
-        global_state.update_crdt(
+        state.update_crdt(
             SceneComponentId::AVATAR_BASE,
             CrdtType::LWW_ANY,
             player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
@@ -178,7 +211,7 @@ fn update_avatar_info(
                     .unwrap_or(base_wearables::default_bodyshape_urn().to_string()),
             },
         );
-        global_state.update_crdt(
+        state.update_crdt(
             SceneComponentId::AVATAR_EQUIPPED_DATA,
             CrdtType::LWW_ANY,
             player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
@@ -489,6 +522,26 @@ pub struct AvatarDefinition {
 
 #[derive(Component)]
 pub struct RetryRenderAvatar;
+
+// when an avatar style setting (cel shading, outline) is toggled, re-render every
+// avatar so their meshes are respawned with the right mesh tags. the tags are set
+// once at mesh creation in process_avatar, so an in-place flip isn't enough.
+fn retag_avatars_on_style_change(
+    config: Res<AppConfig>,
+    mut prev: Local<Option<(bool, bool)>>,
+    avatars: Query<Entity, With<AvatarSelection>>,
+    mut commands: Commands,
+) {
+    let cur = (config.graphics.cel_shading, config.graphics.avatar_outline);
+    if *prev != Some(cur) {
+        if prev.is_some() {
+            for entity in &avatars {
+                commands.entity(entity).try_insert(RetryRenderAvatar);
+            }
+        }
+        *prev = Some(cur);
+    }
+}
 
 // load wearables and create renderable avatar entity once all loaded
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -981,7 +1034,13 @@ fn process_avatar(
     mut meshes: ResMut<Assets<Mesh>>,
     gltfs: Res<Assets<Gltf>>,
     attach_points: Query<&AttachPoints>,
-    (ui_view, dui, config): (Res<AvatarWorldUi>, Res<DuiRegistry>, Res<AppConfig>),
+    (ui_view, dui, config, mut mat_cache, mut mask_cache): (
+        Res<AvatarWorldUi>,
+        Res<DuiRegistry>,
+        Res<AppConfig>,
+        ResMut<AssetCache<AvatarMatKey, SceneMaterial>>,
+        ResMut<AssetCache<AvatarMaskKey, MaskMaterial>>,
+    ),
     mut emote_loader: CollectibleManager<Emote>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     (name_and_parent, previous_avatar, scene_ent, previous_animator, mut contexts): (
@@ -1021,6 +1080,20 @@ fn process_avatar(
             Vec3::new(1.24, 2.42, 0.7) + root_gt.translation(),
         );
 
+        // style avatar meshes per the current settings; toggling either
+        // re-renders avatars (see retag_avatars_on_style_change)
+        let toon_tag = if config.graphics.cel_shading {
+            SCENE_MATERIAL_TOON_MESH_TAG
+        } else {
+            0
+        };
+        let outline_tag = if config.graphics.avatar_outline {
+            SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
+        } else {
+            0
+        };
+
+        let bounds_key = bounds_bits(&def.bounds);
         let mut instance_scene_materials = HashMap::new();
         let mut armature_node = None;
         let mut target_armature_entities = HashMap::new();
@@ -1123,48 +1196,34 @@ fn process_avatar(
                     .remove::<MeshMaterial3d<StandardMaterial>>();
 
                 if let Some(mat) = standard_materials.get(h_mat) {
-                    let base_color = if loaded_avatar.skin_materials.contains(&h_mat.0) {
-                        def.skin_color
-                    } else if loaded_avatar.hair_materials.contains(&h_mat.0) {
-                        def.hair_color
-                    } else {
-                        mat.base_color
-                    };
-
-                    let emissive_color_specified = mat.emissive.red != 0.0
-                        || mat.emissive.green != 0.0
-                        || mat.emissive.blue != 0.0;
-                    let new_emissive = if emissive_color_specified {
-                        LinearRgba {
-                            red: mat.emissive.red * AVATAR_EMISSIVE_MULTIPLIER,
-                            green: mat.emissive.green * AVATAR_EMISSIVE_MULTIPLIER,
-                            blue: mat.emissive.blue * AVATAR_EMISSIVE_MULTIPLIER,
-                            alpha: mat.emissive.alpha,
-                        }
-                    } else {
-                        mat.emissive
-                    };
-
-                    let new_mat = SceneMaterial {
-                        base: StandardMaterial {
-                            base_color,
-                            emissive: new_emissive,
-                            depth_bias: -5000.0, // make base model appear under any wearables at the same position, like skinpaint
-                            ..mat.clone()
-                        },
-                        extension: SceneBound::new_outlined(
-                            def.bounds.clone(),
-                            config.graphics.oob,
-                            false,
-                            def.disable_dither,
-                        ),
-                    };
                     let instance_mat = instance_scene_materials
                         .entry(h_mat.clone_weak())
-                        .or_insert_with(|| scene_materials.add(new_mat));
-                    commands
-                        .entity(scene_ent)
-                        .try_insert(MeshMaterial3d(instance_mat.clone()));
+                        .or_insert_with(|| {
+                            derived_scene_material(
+                                mat,
+                                h_mat,
+                                def,
+                                loaded_avatar,
+                                -5000.0, // make base model appear under any wearables at the same position, like skinpaint
+                                &bounds_key,
+                                config.graphics.oob,
+                                &mut mat_cache,
+                                &mut scene_materials,
+                            )
+                        });
+                    commands.entity(scene_ent).try_insert((
+                        MeshMaterial3d(instance_mat.clone()),
+                        MeshTag(
+                            outline_tag
+                                | (if def.disable_dither {
+                                    SCENE_MATERIAL_NO_DITHERING_MESH_TAG
+                                } else {
+                                    0
+                                })
+                                | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG
+                                | toon_tag,
+                        ),
+                    ));
                 }
             }
 
@@ -1194,41 +1253,70 @@ fn process_avatar(
                         debug!("setting {suffix} color {:?}", color);
                         if let Some(mask) = wearable.mask.as_ref() {
                             debug!("using mask for {suffix}");
-                            let mask_material = mask_materials.add(MaskMaterial::new(
+                            let texture = wearable.texture.clone().unwrap();
+                            let key = AvatarMaskKey::new(
+                                texture.id(),
+                                mask.id(),
                                 color,
-                                wearable.texture.clone().unwrap(),
-                                mask.clone(),
-                                def.bounds.clone(),
+                                bounds_key.clone(),
                                 config.graphics.oob,
-                            ));
+                            );
+                            let mask_material =
+                                mask_cache.get_or_add(key, &mut mask_materials, || {
+                                    MaskMaterial::new(
+                                        color,
+                                        texture,
+                                        mask.clone(),
+                                        def.bounds.clone(),
+                                        config.graphics.oob,
+                                    )
+                                });
                             commands
                                 .entity(scene_ent)
                                 .try_insert(MeshMaterial3d(mask_material))
                                 .remove::<MeshMaterial3d<SceneMaterial>>();
                         } else {
                             debug!("no mask for {suffix}");
-                            let new_mat = SceneMaterial {
-                                base: StandardMaterial {
-                                    base_color: if no_mask_means_ignore_color {
-                                        Color::WHITE
-                                    } else {
-                                        color
-                                    },
-                                    base_color_texture: wearable.texture.clone(),
-                                    alpha_mode: AlphaMode::Blend,
-                                    ..Default::default()
-                                },
-                                extension: SceneBound::new_outlined(
-                                    def.bounds.clone(),
-                                    config.graphics.oob,
-                                    true,
-                                    def.disable_dither,
-                                ),
+                            let base_color = if no_mask_means_ignore_color {
+                                Color::WHITE
+                            } else {
+                                color
                             };
-                            let material = scene_materials.add(new_mat);
-                            commands
-                                .entity(scene_ent)
-                                .try_insert(MeshMaterial3d(material));
+                            let key = AvatarMatKey::new(
+                                None,
+                                wearable.texture.as_ref().map(|t| t.id()),
+                                base_color,
+                                LinearRgba::BLACK,
+                                0.0,
+                                bounds_key.clone(),
+                                config.graphics.oob,
+                            );
+                            let material =
+                                mat_cache.get_or_add(key, &mut scene_materials, || SceneMaterial {
+                                    base: StandardMaterial {
+                                        base_color,
+                                        base_color_texture: wearable.texture.clone(),
+                                        alpha_mode: AlphaMode::Blend,
+                                        ..Default::default()
+                                    },
+                                    extension: SceneBound::new(
+                                        def.bounds.clone(),
+                                        config.graphics.oob,
+                                    ),
+                                });
+                            commands.entity(scene_ent).try_insert((
+                                MeshMaterial3d(material),
+                                MeshTag(
+                                    outline_tag
+                                        | (if def.disable_dither {
+                                            SCENE_MATERIAL_NO_DITHERING_MESH_TAG
+                                        } else {
+                                            0
+                                        })
+                                        | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG
+                                        | toon_tag,
+                                ),
+                            ));
                         };
                         *vis = Visibility::Inherited;
                     }
@@ -1406,47 +1494,34 @@ fn process_avatar(
                         .remove::<MeshMaterial3d<StandardMaterial>>();
 
                     if let Some(mat) = standard_materials.get(h_mat) {
-                        let base_color = if loaded_avatar.skin_materials.contains(&h_mat.0) {
-                            def.skin_color
-                        } else if loaded_avatar.hair_materials.contains(&h_mat.0) {
-                            def.hair_color
-                        } else {
-                            mat.base_color
-                        };
-
-                        let emissive_color_specified = mat.emissive.red != 0.0
-                            || mat.emissive.green != 0.0
-                            || mat.emissive.blue != 0.0;
-                        let new_emissive = if emissive_color_specified {
-                            LinearRgba {
-                                red: mat.emissive.red * AVATAR_EMISSIVE_MULTIPLIER,
-                                green: mat.emissive.green * AVATAR_EMISSIVE_MULTIPLIER,
-                                blue: mat.emissive.blue * AVATAR_EMISSIVE_MULTIPLIER,
-                                alpha: mat.emissive.alpha,
-                            }
-                        } else {
-                            mat.emissive
-                        };
-
-                        let new_mat = SceneMaterial {
-                            base: StandardMaterial {
-                                base_color,
-                                emissive: new_emissive,
-                                ..mat.clone()
-                            },
-                            extension: SceneBound::new_outlined(
-                                def.bounds.clone(),
-                                config.graphics.oob,
-                                false,
-                                def.disable_dither,
-                            ),
-                        };
                         let instance_mat = instance_scene_materials
                             .entry(h_mat.clone_weak())
-                            .or_insert_with(|| scene_materials.add(new_mat));
-                        commands
-                            .entity(scene_ent)
-                            .try_insert(MeshMaterial3d(instance_mat.clone()));
+                            .or_insert_with(|| {
+                                derived_scene_material(
+                                    mat,
+                                    h_mat,
+                                    def,
+                                    loaded_avatar,
+                                    mat.depth_bias,
+                                    &bounds_key,
+                                    config.graphics.oob,
+                                    &mut mat_cache,
+                                    &mut scene_materials,
+                                )
+                            });
+                        commands.entity(scene_ent).try_insert((
+                            MeshMaterial3d(instance_mat.clone()),
+                            MeshTag(
+                                outline_tag
+                                    | (if def.disable_dither {
+                                        SCENE_MATERIAL_NO_DITHERING_MESH_TAG
+                                    } else {
+                                        0
+                                    })
+                                    | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG
+                                    | toon_tag,
+                            ),
+                        ));
                     }
                 }
             }
@@ -1578,6 +1653,61 @@ fn process_avatar(
     }
 }
 
+// derive the scene material for an avatar's gltf material, sharing the asset
+// with every other avatar that derives an identical material so they can batch
+#[allow(clippy::too_many_arguments)]
+fn derived_scene_material(
+    mat: &StandardMaterial,
+    h_mat: &MeshMaterial3d<StandardMaterial>,
+    def: &AvatarDefinition,
+    loaded_avatar: &AvatarLoaded,
+    depth_bias: f32,
+    bounds_key: &BoundsBits,
+    oob: f32,
+    mat_cache: &mut AssetCache<AvatarMatKey, SceneMaterial>,
+    scene_materials: &mut Assets<SceneMaterial>,
+) -> Handle<SceneMaterial> {
+    let base_color = if loaded_avatar.skin_materials.contains(&h_mat.0) {
+        def.skin_color
+    } else if loaded_avatar.hair_materials.contains(&h_mat.0) {
+        def.hair_color
+    } else {
+        mat.base_color
+    };
+
+    let emissive_color_specified =
+        mat.emissive.red != 0.0 || mat.emissive.green != 0.0 || mat.emissive.blue != 0.0;
+    let emissive = if emissive_color_specified {
+        LinearRgba {
+            red: mat.emissive.red * AVATAR_EMISSIVE_MULTIPLIER,
+            green: mat.emissive.green * AVATAR_EMISSIVE_MULTIPLIER,
+            blue: mat.emissive.blue * AVATAR_EMISSIVE_MULTIPLIER,
+            alpha: mat.emissive.alpha,
+        }
+    } else {
+        mat.emissive
+    };
+
+    let key = AvatarMatKey::new(
+        Some(h_mat.0.id()),
+        mat.base_color_texture.as_ref().map(|t| t.id()),
+        base_color,
+        emissive,
+        depth_bias,
+        bounds_key.clone(),
+        oob,
+    );
+    mat_cache.get_or_add(key, scene_materials, || SceneMaterial {
+        base: StandardMaterial {
+            base_color,
+            emissive,
+            depth_bias,
+            ..mat.clone()
+        },
+        extension: SceneBound::new(def.bounds.clone(), oob),
+    })
+}
+
 fn reparent_attach_point(
     commands: &mut Commands,
     target_armature_entities: &HashMap<String, Entity>,
@@ -1652,19 +1782,27 @@ fn set_avatar_visibility(
         })
         .map(|(t, ..)| (t.translation() - player_pos).length_squared())
         .collect::<Vec<_>>();
-    distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less));
-    let cutoff = distances
-        .get(config.max_avatars)
-        .copied()
-        .unwrap_or(f32::MAX);
+    // only the (max_avatars)-th distance matters; partition instead of sorting
+    let cutoff = if distances.len() > config.max_avatars {
+        *distances
+            .select_nth_unstable_by(config.max_avatars, |a, b| {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less)
+            })
+            .1
+    } else {
+        f32::MAX
+    };
 
     for (t, mut vis, maybe_layer) in q.iter_mut() {
         let is_root_layer = maybe_layer.is_none_or(|layer| layer.intersects(&default_layer));
-        *vis = if is_root_layer && (t.translation() - player_pos).length_squared() >= cutoff {
+        let new_vis = if is_root_layer && (t.translation() - player_pos).length_squared() >= cutoff
+        {
             Visibility::Hidden
         } else {
             Visibility::Inherited
         };
+        // avoid dirtying Visibility (and the propagation pass) when unchanged
+        vis.set_if_neq(new_vis);
     }
 }
 
@@ -1837,6 +1975,6 @@ fn remove_attach_points_from_avatar_shape(
         for attach_point in attach_points.entities() {
             commands.entity(attach_point).try_despawn();
         }
-        commands.entity(entity).remove::<AttachPoints>();
+        commands.entity(entity).try_remove::<AttachPoints>();
     }
 }

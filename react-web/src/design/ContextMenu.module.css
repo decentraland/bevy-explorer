@@ -1,0 +1,112 @@
+.ctx {
+  min-width: 220px;
+  max-width: 280px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--fill-4);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-modal);
+  color: var(--text);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 10px 12px;
+}
+.hinfo {
+  min-width: 0;
+}
+.hname {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+.htag {
+  color: var(--ink-45);
+  font-weight: 600;
+}
+.wallet {
+  margin-top: 3px;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--ink-6);
+  font-size: 12px;
+}
+
+.title {
+  padding: 9px 10px 8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 8px;
+}
+.captionLabel {
+  min-width: 0;
+  color: var(--ink-7);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--fill-1);
+}
+
+.item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 10px;
+  border-radius: 9px;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.item:hover {
+  background: var(--fill-3);
+}
+.itemToggle {
+  cursor: pointer;
+}
+.itemDanger {
+  color: #ff5470;
+}
+.itemDanger:hover {
+  background: rgba(255, 36, 36, 0.14);
+  color: #ff6b84;
+}
+.icon {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: center;
+  opacity: 0.85;
+}
+.label {
+  flex: 1;
+  min-width: 0;
+}
+.chev {
+  flex: 0 0 auto;
+  color: var(--ink-45);
+  font-size: 16px;
+}

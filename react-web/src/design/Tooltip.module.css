@@ -1,0 +1,73 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.tip {
+  position: absolute;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--panel); /* DCL/Shadow */
+  color: var(--text); /* DCL/Snow */
+  font-family: var(--font-family);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 17px;
+  box-shadow: var(--shadow-panel);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) ease,
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.shortcut {
+  opacity: 0.6;
+}
+
+/* sides */
+.right {
+  left: 100%;
+  top: 50%;
+  transform: translate(10px, -50%) scale(0.96);
+  transform-origin: left center;
+}
+.left {
+  right: 100%;
+  top: 50%;
+  transform: translate(-10px, -50%) scale(0.96);
+  transform-origin: right center;
+}
+.top {
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, -10px) scale(0.96);
+  transform-origin: center bottom;
+}
+.bottom {
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, 10px) scale(0.96);
+  transform-origin: center top;
+}
+
+.wrap:hover .tip {
+  opacity: 1;
+}
+.wrap:hover .right {
+  transform: translate(14px, -50%) scale(1);
+}
+.wrap:hover .left {
+  transform: translate(-14px, -50%) scale(1);
+}
+.wrap:hover .top {
+  transform: translate(-50%, -14px) scale(1);
+}
+.wrap:hover .bottom {
+  transform: translate(-50%, 14px) scale(1);
+}

@@ -9,8 +9,8 @@ use bevy::{
 use common::{
     inputs::{Action, SystemAction, CAMERA_SET, CAMERA_ZOOM, POINTER_SET},
     structs::{
-        AvatarDynamicState, CameraOverride, CursorLocks, HeadSync, MoveKind, PrimaryCamera,
-        PrimaryUser,
+        AppConfig, AvatarDynamicState, CameraOverride, CursorLocks, HeadSync, MoveKind,
+        PrimaryCamera, PrimaryUser,
     },
     util::ModifyComponentExt,
 };
@@ -38,6 +38,8 @@ pub fn update_camera(
     mut cinematic_data: Local<Option<CinematicInitialData>>,
     input_manager: InputManager,
     gt_helper: TransformHelper,
+    config: Res<AppConfig>,
+    mut smoothed_delta: Local<Vec2>,
 ) {
     let dt = time.delta_secs();
 
@@ -117,6 +119,14 @@ pub fn update_camera(
     let mut mouse_delta = input_manager.get_analog(CAMERA_SET, InputPriority::Scene) * 10.0;
     if locks.0.contains("camera") {
         mouse_delta += input_manager.get_analog(POINTER_SET, InputPriority::Scroll);
+    }
+    match config.camera_smoothing.rate() {
+        Some(rate) => {
+            let factor = 1.0 - (-dt * rate).exp();
+            mouse_delta = factor * mouse_delta + (1.0 - factor) * *smoothed_delta;
+            *smoothed_delta = mouse_delta;
+        }
+        None => *smoothed_delta = mouse_delta,
     }
 
     if allow_cam_move {
@@ -239,10 +249,7 @@ pub fn update_camera_position(
             .and_then(|e| gt_helper.compute_global_transform(e).ok())
         {
             Transform::IDENTITY
-                .looking_at(
-                    look_at_transform.translation() - camera_transform.translation,
-                    Vec3::Y,
-                )
+                .looking_at(look_at_transform.translation() - translation, Vec3::Y)
                 .rotation
         } else {
             let yaw = cine
@@ -250,11 +257,11 @@ pub fn update_camera_position(
                 .map(|r| options.yaw.clamp(-r, r))
                 .unwrap_or(options.yaw);
             let pitch = cine
-                .yaw_range
+                .pitch_range
                 .map(|r| options.pitch.clamp(-r, r))
                 .unwrap_or(options.pitch);
             let roll = cine
-                .yaw_range
+                .roll_range
                 .map(|r| options.roll.clamp(-r, r))
                 .unwrap_or(options.roll);
             rotation * Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll)

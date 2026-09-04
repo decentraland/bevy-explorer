@@ -44,13 +44,18 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
     );
 
     if (quad_data.vertex_billboard == 1u) {
+        // billboard faces the camera, but still honour the entity's x/y scale
+        // (column lengths of the model matrix) so culling, which applies the
+        // full model transform to the aabb, agrees with what we draw.
+        let scale_x = length(model[0].xyz);
+        let scale_y = length(model[1].xyz);
         out.world_position = mesh_functions::mesh_position_local_to_world(
             mat4x4<f32>(
-                vec4<f32>(view.world_from_view[0].xyz, 0.0),
-                vec4<f32>(view.world_from_view[1].xyz, 0.0),
+                vec4<f32>(view.world_from_view[0].xyz * scale_x, 0.0),
+                vec4<f32>(view.world_from_view[1].xyz * scale_y, 0.0),
                 vec4<f32>(view.world_from_view[2].xyz, 0.0),
                 vec4<f32>(model[3].xyz, 1.0)
-            ), 
+            ),
             vec4<f32>(modified_vertex_position, 1.0)
         );
     } else {

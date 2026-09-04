@@ -3,55 +3,88 @@ on:
     branches:
       - main
   pull_request:
+  # Manual run of the full workflow on any ref. Setting `publish-tag` also publishes
+  # the web package (as 0.1.0-<runId>.commit-<sha>, under that npm dist-tag) and
+  # uploads it to the CDN, ready for a manual rollout. NOTE: any CDN upload triggers
+  # the automatic zone rollout (set-rollout.yml) — undo by rolling that version to 0%.
+  workflow_dispatch:
+    inputs:
+      publish-tag:
+        description: 'npm dist-tag to publish the web package under (empty = build only). Not next/latest.'
+        required: false
+        default: ''
 
+# PRs share a per-ref group so a superseded push cancels the in-flight run. Main
+# pushes get a unique group each (run_id): sharing one made every main run queue
+# behind the previous run's whole test matrix, delaying deploy starts by up to an
+# hour. Only the deploy job serializes, via its job-level group.
 concurrency:
-  group: ${{github.workflow}}-${{github.ref}}
-  cancel-in-progress: ${{github.event_name == 'pull_request'}}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 name: Continuous integration
 
 jobs:
-  check:
-    name: Check
+  # No separate `cargo check` job: clippy compiles everything check does, plus lints.
+
+  # Did this change touch the rust dependency graph? The expensive jobs below scale
+  # their coverage on this. On pull_request the filter reads the PR file list from
+  # the API; on push it diffs against the pre-push commit (hence the checkout).
+  changes:
+    name: Changes
     runs-on: ubuntu-latest
+    outputs:
+      rust-deps: ${{ steps.filter.outputs.rust-deps }}
     steps:
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: Swatinem/rust-cache@v2
-      - name: Install protoc
-        uses: arduino/setup-protoc@master
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
-      - name: install ffmpeg deps
-        run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
-      - name: install livekit deps
-        run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
-      - uses: actions/checkout@v2
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
+          filters: |
+            rust-deps:
+              - 'Cargo.lock'
+              - 'Cargo.toml'
+              - '**/Cargo.toml'
+              - '.cargo/config.toml'
 
   hardcore-test:
     name: Test Scenes
+    needs: changes
+    # Runs only when the rust dep files change, and never for dependabot: its bumps
+    # are validated by the merge push to main, where the actor is the human merger.
+    if: ${{ needs.changes.outputs.rust-deps == 'true' && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-22.04
+    # Main runs no longer share a workflow group, so coalescing moves here: a
+    # newer push cancels this job's superseded in-flight run.
+    concurrency:
+      group: ${{ github.workflow }}-scenes-${{ github.ref }}
+      cancel-in-progress: true
     steps:
+      # Checkout must precede rust-cache: the cache key hashes Cargo.lock, and
+      # without it the key is constant — saved once from main, then frozen stale.
+      - uses: actions/checkout@v7
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
-        uses: arduino/setup-protoc@master
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa, udev and xkb
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libxkbcommon-x11-0
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libxkbcommon-x11-0 ninja-build
+      # react-hud-cef (default feature) links libcef; export the distribution for build + runtime
+      # (the HUD itself is skipped in test mode, but the dynamic linker still needs the library)
+      - name: Export CEF distribution
+        run: |
+          cargo install export-cef-dir --version "139.8.0+139.0.40"
+          export-cef-dir --force "$HOME/.local/share/cef"
+          echo "CEF_PATH=$HOME/.local/share/cef" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$HOME/.local/share/cef:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
       - name: install xvfb, llvmpipe and lavapipe
         run: |
           sudo apt-get update -y -qq
@@ -62,21 +95,32 @@ jobs:
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
       - name: install livekit deps
         run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
-      - uses: actions/checkout@v2
       - name: Test Scenes
         continue-on-error: true
         run: |
-          xvfb-run -s "-screen 0 320x240x24" cargo run --release -- --server https://decentraland.github.io/scene-explorer-tests/scene-explorer-tests --test_scenes "52,-52;52,-54;52,-56;52,-58;52,-60;52,-62;52,-64;52,-66;52,-68;54,-52;54,-54;54,-56;54,-58;54,-60" --no_fog --distance 1 --scene_log_to_console
+          xvfb-run -s "-screen 0 320x240x24" cargo run --release --locked -- --server https://decentraland.github.io/scene-explorer-tests/scene-explorer-tests --test_scenes "52,-52;52,-54;52,-56;52,-58;52,-60;52,-62;52,-64;52,-66;52,-68;54,-52;54,-54;54,-56;54,-58;54,-60" --no_fog --distance 1 --scene_log_to_console
 
   test:
     name: Test Suite
+    needs: changes
+    # Ubuntu always runs as the cheap unit-test leg. The 10x-macOS/2x-Windows legs
+    # only run when the rust dep files change — their main value is catching
+    # platform-specific dependency breakage. Dependabot cargo bumps get the ubuntu
+    # leg here plus the full matrix post-merge (main push: human actor + lock diff);
+    # its npm/actions bumps skip the job entirely (they can't affect the rust build).
+    if: ${{ needs.changes.outputs.rust-deps == 'true' || github.actor != 'dependabot[bot]' }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-15]
+        os: ${{ (needs.changes.outputs.rust-deps == 'true' && github.actor != 'dependabot[bot]') && fromJSON('["windows-latest", "ubuntu-latest", "macos-15"]') || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
+    # Same coalescing as Test Scenes, per matrix leg — without this, every push
+    # in a burst of main merges would bill the full 10x-macOS/2x-Windows matrix.
+    concurrency:
+      group: ${{ github.workflow }}-test-${{ matrix.os }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -85,11 +129,11 @@ jobs:
 #      - uses: Swatinem/rust-cache@v2
       - name: Install protoc
         if: matrix.os != 'self-hosted-windows'
-        uses: arduino/setup-protoc@master
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev ninja-build
         if: runner.os == 'linux'
       - name: install ffmpeg deps (linux)
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
@@ -105,55 +149,155 @@ jobs:
       - name: install ffmpeg deps (windows)
         if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
         run: |
-          $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
-          Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"
-          Invoke-WebRequest "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build-shared.7z" -OutFile ffmpeg-6.0-full_build-shared.7z
+          # Prefer the standalone LLVM install (stable across runner image rolls); fall back to the VS-bundled Clang toolset, whose version moves with the image and has produced opaque bindgen structs on rollover.
+          $vsLlvm = "$(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)\VC\Tools\LLVM\x64\bin"
+          $libclang = @("C:\Program Files\LLVM\bin", $vsLlvm) | Where-Object { Test-Path "$_\libclang.dll" } | Select-Object -First 1
+          if (-not $libclang) { throw "libclang.dll not found (checked standalone LLVM and VS Clang toolset)" }
+          Write-Host "Using LIBCLANG_PATH=$libclang"
+          Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=$libclang`n"
+          $ffUrl = "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build-shared.7z"
+          for ($i = 1; $i -le 3; $i++) {
+            try { Invoke-WebRequest $ffUrl -OutFile ffmpeg-6.0-full_build-shared.7z; break }
+            catch { if ($i -eq 3) { throw }; Write-Host "ffmpeg download failed (attempt $i), retrying..."; Start-Sleep -Seconds 5 }
+          }
           7z x ffmpeg-6.0-full_build-shared.7z
           mkdir ffmpeg
           mv ffmpeg-*/* ffmpeg/
+          if (-not (Test-Path "ffmpeg\include")) { throw "ffmpeg headers missing after extract (ffmpeg\include not found)" }
           Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
-          Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
+          Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"
+      - name: Install ninja (macos)
+        if: runner.os == 'macos'
+        run: brew install ninja
+      # windows runner images ship ninja + cmake already.
+      # react-hud-cef (default feature): test executables link libcef on linux/windows — export
+      # the distribution and put it on the loader path.
+      - name: Export CEF distribution
+        shell: bash
+        run: |
+          cargo install export-cef-dir --version "139.8.0+139.0.40"
+          export-cef-dir --force "$HOME/.local/share/cef"
+          # GITHUB_ENV/GITHUB_PATH reach native processes verbatim: on windows the git-bash
+          # $HOME (/c/Users/...) would resolve as C:\c\Users\... — write windows paths there.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "CEF_PATH=$(cygpath -w "$HOME/.local/share/cef")" >> "$GITHUB_ENV"
+            cygpath -w "$HOME/.local/share/cef" >> "$GITHUB_PATH"
+          else
+            echo "CEF_PATH=$HOME/.local/share/cef" >> "$GITHUB_ENV"
+          fi
+          if [ "$RUNNER_OS" = "Linux" ]; then echo "LD_LIBRARY_PATH=$HOME/.local/share/cef:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"; fi
       - name: Build Release
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --package dcl_deno_ipc --release
+          args: --package dcl_deno_ipc --release --locked
       - uses: actions-rs/cargo@v1
         if: runner.os == 'windows'
         with:
           command: test
-          args: --all --release -j8 -- --test-threads=1
+          args: --all --release --locked -j8 -- --test-threads=1 
       - uses: actions-rs/cargo@v1
         if: runner.os == 'linux'
         with:
           command: test
-          args: --all --release -- --test-threads=1
+          args: --all --release --locked -- --test-threads=1 
       - uses: actions-rs/cargo@v1
         if: runner.os == 'macos'
         with:
           command: test
-          args: --all --release -- --test-threads=1
-      
+          args: --all --release --locked -- --test-threads=1
+
+  # The headless server is otherwise built only by publish-headless.yml, which runs on
+  # main pushes and publishes the result to npm — so a PR that breaks it goes green and
+  # the breakage is discovered by consumers. `cargo build` alone is not enough: the
+  # failures this binary actually has are runtime system-param validation panics (a
+  # plugin gated out while a system still requests its resource), which compile clean.
+  # So this builds the shipped configuration and runs it against a real realm until it
+  # ticks. ubuntu-22.04 and the feature set mirror publish-headless.yml's linux-x64 leg.
+  headless-smoke:
+    name: Headless Smoke
+    runs-on: ubuntu-22.04
+    concurrency:
+      group: ${{ github.workflow }}-headless-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: headless-linux-x64
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # NOT apt protobuf-compiler: ubuntu-22.04 ships protoc 3.12, which rejects the
+      # proto3 optional fields in billboard.proto. The rest of this workflow uses the
+      # action for the same reason.
+      - name: Install protoc
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # No CEF or ffmpeg: --no-default-features drops them.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake pkg-config \
+            libasound2-dev libudev-dev libgl-dev libx11-dev libxext-dev
+      # headless spawns the sidecar from its own directory, so both land in target/release.
+      - name: Build sidecar
+        run: cargo build --release --locked -p dcl_deno_ipc
+      - name: Build engine
+        run: >
+          cargo build --release --locked
+          --bin headless --no-default-features --features headless,livekit
+      # scene-explorer-tests is a static GitHub Pages site already relied on by Test
+      # Scenes above, so this adds no new infrastructure dependency. 52,-52 co-tenants
+      # 8 scenes, which exercises the multi-scene scheduling path rather than just boot.
+      - name: Smoke test
+        run: |
+          set -o pipefail
+          ./target/release/headless \
+            --realm https://decentraland.github.io/scene-explorer-tests/scene-explorer-tests \
+            --location 52,-52 --server-mode --preview --timeout 90 2>&1 | tee smoke.log
+      - name: Assert scenes ticked
+        run: |
+          if ! grep -q "first tick reached" smoke.log; then
+            echo "::error::headless never reached first tick"
+            exit 1
+          fi
+          if grep -q "panicked at" smoke.log; then
+            echo "::error::headless panicked"
+            grep -m5 -A5 "panicked at" smoke.log
+            exit 1
+          fi
+          # a scene that ticks once then wedges must fail too, so require progress
+          ticks=$(grep -o "max_tick=[0-9]*" smoke.log | cut -d= -f2)
+          first=$(echo "$ticks" | head -1)
+          last=$(echo "$ticks" | tail -1)
+          if [ -z "$last" ] || [ "$last" -le "$first" ]; then
+            echo "::error::scene ticks stalled (first=$first last=$last)"
+            exit 1
+          fi
+          echo "ok: ticks advanced $first -> $last"
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: headless-smoke-log
+          path: smoke.log
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
       - run: rustup component add rustfmt
-      - uses: Swatinem/rust-cache@v2
-      - name: Install protoc
-        uses: arduino/setup-protoc@master
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
-      - name: install ffmpeg deps (linux)
-        run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
@@ -163,7 +307,7 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -171,24 +315,26 @@ jobs:
           override: true
       - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
-        uses: arduino/setup-protoc@master
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev ninja-build
       - name: install ffmpeg deps (linux)
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -- -D warnings
+          args: --locked -- -D warnings
 
   toml:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install taplo
@@ -207,21 +353,27 @@ jobs:
 
   build-deploy-web:
     name: Build and Deploy Web
-    # needs: [check, test, fmt, clippy]
+    # Not gated off dependabot: this is the only job that builds the npm trees
+    # (react-web, bridge-scene, deploy/web), so npm bumps need it to merge safely.
+    # needs: [test, fmt, clippy]
     runs-on: ubuntu-latest
+    # Serialize deploys per ref so two main pushes can't publish concurrently.
+    concurrency:
+      group: ${{ github.workflow }}-deploy-web-${{ github.ref }}
 
     permissions:
       id-token: write
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
       - name: Set package.json version
-        uses: decentraland/oddish-action@master
+        uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
         with:
           cwd: './deploy/web'
           deterministic-snapshot: true
@@ -232,28 +384,95 @@ jobs:
           target: wasm32-unknown-unknown
           components: rust-src
           override: true
+      # Save only from main so PR runs restore main's cache instead of writing
+      # per-PR copies that thrash the repo's 10GB cache quota.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm-web
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
-        uses: arduino/setup-protoc@master
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install wasm-pack
-        run: cargo install wasm-pack
+        run: |
+          curl -fsSL https://github.com/rustwasm/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz \
+            | tar -xz --strip-components=1 -C "$HOME/.cargo/bin" wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack
+      # alsa/udev ARE still needed despite targeting wasm32: the build compiles a HOST-side
+      # graph too (build scripts + their deps, x86_64), and that graph links libudev via
+      # pkg-config — dropping them fails `libudev-sys` before wasm-pack even reaches the
+      # wasm target.
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
       - name: install deps (linux)
-        run: sudo apt install -y --no-install-recommends clang curl
+        run: sudo apt install -y --no-install-recommends clang
+      # wasm-opt costs ~9 min and only matters for the published binary — PRs
+      # never publish (see the Publish step's if), so they skip it.
       - name: Build WASM package
+        env:
+          WASM_OPT_FLAG: ${{ github.event_name == 'pull_request' && '--no-opt' || '' }}
         run: |
-          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit,social"
-          rm -f ./deploy/web/pkg/.gitignore
-          WASM_SIZE=$(wc -c < ./deploy/web/pkg/webgpu_build_bg.wasm)
-          echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/pkg/manifest.json
+          wasm-pack build --target web $WASM_OPT_FLAG --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social"
+          rm -f ./deploy/web/engine/pkg/.gitignore
+          WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm)
+          echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
+          # Inline the glue into the sandbox worker: scene code shares that worker's realm and
+          # can re-import any module in it by URL, which for pkg/webgpu_build.js hands back our
+          # INITIALISED instance and with it the shared engine heap. Inlining turns the glue's
+          # exports into module-scope bindings of the bundle. Re-runs on every wasm build,
+          # since it embeds a copy of the generated glue.
+          npx --yes esbuild@0.28.1 ./deploy/web/engine/sandbox_worker.js \
+            --bundle --format=esm --log-level=error \
+            --metafile="${RUNNER_TEMP:-/tmp}/sandbox_worker.meta.json" \
+            --outfile=./deploy/web/engine/pkg/sandbox_worker.bundle.js
+          # A scene can still import the bundle's OWN url, and a namespace object hands out
+          # exactly the module's exports — so the entire guarantee reduces to "this entry
+          # exports nothing". Enforce that instead of trusting a comment to hold: an `export`
+          # added to sandbox_worker.js (worst case a re-export of the glue) would silently
+          # undo the fix. esbuild's metafile is authoritative, so nothing has to be executed.
+          node -e '
+            const meta = require(process.argv[1]);
+            const [out] = Object.values(meta.outputs).filter((o) => o.entryPoint);
+            if (!out) { console.error("no entry output found in esbuild metafile"); process.exit(1); }
+            if (out.exports.length) {
+              console.error("sandbox_worker bundle must export nothing, or scene code can import it and reach the live wasm instance. Found: " + out.exports.join(", "));
+              process.exit(1);
+            }
+            console.log("sandbox worker bundle exports nothing - ok");
+          ' "${RUNNER_TEMP:-/tmp}/sandbox_worker.meta.json"
       - name: Install
         run: npm i
         working-directory: deploy/web
+      # react-web/src/engine/generated (TS types the HUD + bridge scene import) is generated
+      # from the Rust system-api structs and gitignored — regenerate before building.
+      - name: Generate TS bindings
+        run: ./scripts/gen-ts-bindings.sh
+      # The React HUD is the production page: build it into deploy/web root (vite outDir).
+      # PUBLIC_URL = the versioned CDN base prebuild.js just wrote into package.json homepage —
+      # index.html asset refs must be ABSOLUTE because the entry URL (decentraland.zone/bevy-web)
+      # has no trailing slash, so relative refs would resolve against the origin root.
+      - name: Build react-web HUD
+        run: |
+          export PUBLIC_URL=$(node -p "require('./deploy/web/package.json').homepage || ''")
+          echo "PUBLIC_URL=$PUBLIC_URL"
+          npm ci --prefix react-web
+          npm run build --prefix react-web
+      - name: react-web unit tests
+        run: npm run test --prefix react-web
+      # The headless bridge scene the engine loads as its --ui systemScene. The realm (about) is
+      # served same-origin with the engine iframe, but the scene CONTENT baseUrl is baked at
+      # export — point it at the versioned CDN path so it's version-pinned + immutable and never
+      # depends on where the site tree is mounted (the entry lives under /bevy-web, not /).
+      - name: Bundle bridge scene
+        run: |
+          export SCENE_BASE_URL="$(node -p "require('../../deploy/web/package.json').homepage || ''")/bridge-scene/static/"
+          echo "SCENE_BASE_URL=$SCENE_BASE_URL"
+          npm ci
+          npm run bundle
+        working-directory: react-web/bridge-scene
       - name: Publish
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release'
-        uses: decentraland/oddish-action@master
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish-tag != '')
+        uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
         with:
           cwd: './deploy/web'
           deterministic-snapshot: true
@@ -261,5 +480,7 @@ jobs:
           access: public
           gitlab-token: ${{ secrets.GITLAB_CDN_DEPLOYER_TOKEN }}
           gitlab-pipeline-url: ${{ secrets.GITLAB_CDN_DEPLOYER_URL }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # oddish only publishes from main (-> next) or from a branch it is told about;
+          # both inputs are empty on push/release, leaving that behaviour unchanged.
+          custom-tag: ${{ inputs.publish-tag }}
+          branch-to-custom-tag: ${{ inputs.publish-tag != '' && github.ref_name || '' }}

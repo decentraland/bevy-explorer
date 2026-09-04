@@ -42,6 +42,13 @@ pub mod common {
     include!(concat!(env!("OUT_DIR"), "/decentraland.common.rs"));
 }
 
+#[allow(clippy::all)]
+pub mod pulse {
+    include!(concat!(env!("OUT_DIR"), "/decentraland.pulse.rs"));
+    // Dequantization accessors generated from the (decentraland.common.quantized) proto options.
+    include!(concat!(env!("OUT_DIR"), "/pulse_quant.rs"));
+}
+
 pub mod social {
     include!(concat!(
         env!("OUT_DIR"),
@@ -143,6 +150,7 @@ impl DclProtoComponent for sdk::components::PbAssetLoad {}
 impl DclProtoComponent for sdk::components::PbAssetLoadLoadingState {}
 impl DclProtoComponent for sdk::components::PbPhysicsCombinedForce {}
 impl DclProtoComponent for sdk::components::PbPhysicsCombinedImpulse {}
+impl DclProtoComponent for sdk::components::PbParticleSystem {}
 
 // PositionFree markers for types used with GlobalCrdtState::update_crdt
 // (these contain no embedded position data requiring localization)
@@ -266,6 +274,7 @@ impl From<bevy::math::Quat> for common::Quaternion {
 // COLOR conversions
 impl Copy for common::Color3 {}
 impl Copy for common::Color4 {}
+impl Copy for common::ColorRange {}
 
 pub trait Color4DclToBevy {
     fn convert_linear_rgba(self) -> bevy::prelude::Color;
@@ -374,6 +383,8 @@ impl From<common::BorderRect> for bevy::prelude::UiRect {
         }
     }
 }
+
+impl Copy for common::FloatRange {}
 
 // util for rounding, scenes expect near 0 to be == 0, etc
 pub trait RoughRoundExt {

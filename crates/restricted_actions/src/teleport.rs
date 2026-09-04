@@ -1,7 +1,7 @@
 use bevy::{math::Vec3Swizzles, prelude::*};
 use common::{
     rpc::{RpcCall, RpcResultSender},
-    structs::{AvatarDynamicState, PermissionType, PrimaryUser},
+    structs::{AvatarDynamicState, CurrentRealm, PermissionType, PrimaryUser},
 };
 use comms::global_crdt::ForeignPlayer;
 use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
@@ -11,8 +11,8 @@ use scene_runner::{
         LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
     },
     permissions::Permission,
-    renderer_context::RendererSceneContext,
-    update_world::mesh_collider::SceneColliderData,
+    renderer_context::{RendererSceneContext, FROZEN_BLOCK},
+    update_world::{gltf_container::GLTF_LOADING, mesh_collider::SceneColliderData},
     OutOfWorld,
 };
 use wallet::Wallet;
@@ -75,7 +75,7 @@ pub fn teleport_player(
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn handle_out_of_world(
     mut commands: Commands,
     mut scenes: Query<
@@ -91,6 +91,7 @@ pub fn handle_out_of_world(
     live_scenes: Res<LiveScenes>,
     foreign_players: Query<&GlobalTransform, With<ForeignPlayer>>,
     wallet: Res<Wallet>,
+    current_realm: Res<CurrentRealm>,
 ) {
     let Ok((player, mut t)) = player.single_mut() else {
         return;
@@ -108,7 +109,24 @@ pub fn handle_out_of_world(
         .as_ivec2();
 
     let hash = match pointers.get(parcel) {
-        Some(PointerResult::Exists { hash, .. }) => hash,
+        // Only trust a pointer tagged with the realm we are actually in. A pointer from the realm
+        // we just left survives a realm change (`process_realm_change` reconciles pointers against
+        // the new realm's scene list, which an ActiveEntities realm like Genesis doesn't have, so
+        // nothing is purged there) and `load_active_entities` treats such a pointer as "must
+        // re-request" rather than as an answer — see its `realm != current_realm.pointer_realm()`
+        // filter. Trusting it here let a teleport into a fresh realm resolve to the PREVIOUS
+        // realm's scene, which is already ticking and "ready", so the player was dropped straight
+        // into it: no loading screen, no asset count, and the real scene streamed in afterwards.
+        // Treat it like an unresolved parcel and wait for the sweep to answer for this realm.
+        Some(PointerResult::Exists { realm, hash, .. })
+            if realm == current_realm.pointer_realm() =>
+        {
+            hash
+        }
+        Some(PointerResult::Exists { .. }) => {
+            debug!("scene {parcel} is from another realm, waiting for this realm to resolve it");
+            return;
+        }
         Some(PointerResult::Nothing) => {
             debug!("scene {parcel} doesn't exist, returning to world");
             debug!("everything: {:?}", pointers);
@@ -130,9 +148,27 @@ pub fn handle_out_of_world(
     let (maybe_context, maybe_loadstate, maybe_collider_data) = scenes.get_mut(*scene).unwrap();
 
     if let Some(context) = maybe_context {
-        if !context.broken && (context.tick_number <= 5 || !context.blocked.is_empty()) {
+        // A frozen scene (inspector /freeze_scene, or the editor-mode auto-freeze at tick 3) is as
+        // loaded as it's going to get — it never advances its tick or clears `blocked` to become
+        // "ready" on its own, so don't keep the player out-of-world behind the loading screen. Do
+        // still wait for gltfs though: they keep processing renderer-side while the scene is frozen,
+        // and releasing early would drop the player in before the ground colliders exist.
+        let frozen =
+            context.blocked.contains(FROZEN_BLOCK) && !context.blocked.contains(GLTF_LOADING);
+        // A broken scene (hung past the not-responding timeout, errored, or unreachable) will
+        // never become ready; stop holding the player behind the loading screen and let them
+        // into the world. An inspected scene never gates the player at all: it's a debugging
+        // session, and it may sit at a breakpoint (or paused before its first tick) forever.
+        if !context.broken()
+            && !frozen
+            && !context.inspected
+            && (context.tick_number <= 5 || !context.blocked.is_empty())
+        {
             debug!("scene not ready");
         } else {
+            if context.broken() {
+                debug!("scene broken, returning to world");
+            }
             debug!(
                 "ready, returning to world (set spawn here) tick: {}",
                 context.tick_number

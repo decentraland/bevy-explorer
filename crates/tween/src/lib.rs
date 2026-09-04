@@ -14,14 +14,24 @@ use dcl_component::{
             TextureMovementType, TweenStateStatus,
         },
     },
-    transform_and_parent::DclTransformAndParent,
-    SceneComponentId,
+    transform_and_parent::{sanitize_scale, DclTransformAndParent},
+    SceneComponentId, SceneEntityId,
 };
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{material::PbMaterialComponent, AddCrdtInterfaceExt},
     ContainerEntity, SceneEntity,
 };
+
+/// Rotation axis for RotateContinuous: the direction quaternion's normalized
+/// imaginary part. The identity quaternion encodes no axis; fall back to Y to
+/// match unity-explorer.
+fn rotate_continuous_axis(direction: dcl_component::proto_components::common::Quaternion) -> Vec3 {
+    let quat = direction.to_bevy_normalized();
+    Vec3::new(quat.x, quat.y, quat.z)
+        .try_normalize()
+        .unwrap_or(Vec3::Y)
+}
 
 #[derive(Debug, Component, Deref, DerefMut)]
 pub struct Tween(PbTween);
@@ -91,55 +101,61 @@ impl Tween {
 
     fn apply(
         &self,
-        time: f32,
+        tween_apply_update: TweenApplyUpdate,
         transform: &mut Transform,
         maybe_mat: Option<&mut PbMaterialComponent>,
     ) {
         let f = self.easing_function();
 
-        let ease_value = if self.is_continuous() && self.duration <= 0. {
-            time
+        let ease_value = if self.is_continuous() {
+            // continuous tween uses the full speed
+            1.0
         } else {
-            f(time)
+            let factor = f(tween_apply_update.progress);
+            trace!(
+                "Time {} with easing function {:?} is {}",
+                tween_apply_update.progress,
+                self.deref().easing_function(),
+                factor
+            );
+            factor
         };
 
         match &self.mode {
             Some(Mode::Move(data)) => {
                 let start = data.start.unwrap_or_default().world_vec_to_vec3();
                 let end = data.end.unwrap_or_default().world_vec_to_vec3();
-
-                if data.face_direction == Some(true) && time == 0.0 {
-                    let direction = end - start;
-                    if direction == Vec3::ZERO {
-                        // can't look nowhere
-                    } else if direction * Vec3::new(1.0, 0.0, 1.0) != Vec3::ZERO {
-                        // randomly assume +z is up for a vertical movement
-                        transform.look_at(end - start, Vec3::Z);
-                    } else {
-                        transform.look_at(end - start, Vec3::Y);
-                    }
-                }
-
-                transform.translation = start + (end - start) * ease_value;
+                Self::apply_translation(
+                    start,
+                    end,
+                    ease_value,
+                    data.face_direction == Some(true),
+                    tween_apply_update.progress,
+                    transform,
+                );
             }
             Some(Mode::Rotate(data)) => {
                 let start: Quat = data.start.unwrap_or_default().to_bevy_normalized();
                 let end = data.end.unwrap_or_default().to_bevy_normalized();
-                transform.rotation = start.slerp(end, ease_value);
+                Self::apply_rotation(start, end, ease_value, transform);
             }
             Some(Mode::Scale(data)) => {
                 let start = data.start.unwrap_or_default().abs_vec_to_vec3();
                 let end = data.end.unwrap_or_default().abs_vec_to_vec3();
-                transform.scale = start + ((end - start) * ease_value);
-                if transform.scale.x == 0.0 {
-                    transform.scale.x = f32::EPSILON;
-                };
-                if transform.scale.y == 0.0 {
-                    transform.scale.y = f32::EPSILON;
-                };
-                if transform.scale.z == 0.0 {
-                    transform.scale.z = f32::EPSILON;
-                };
+                Self::apply_scale(start, end, ease_value, transform);
+            }
+            Some(Mode::MoveRotateScale(data)) => {
+                let move_start = data.position_start.unwrap_or_default().world_vec_to_vec3();
+                let move_end = data.position_end.unwrap_or_default().world_vec_to_vec3();
+                Self::apply_translation(move_start, move_end, ease_value, false, 0., transform);
+
+                let rotate_start = data.rotation_start.unwrap_or_default().to_bevy_normalized();
+                let rotate_end = data.rotation_end.unwrap_or_default().to_bevy_normalized();
+                Self::apply_rotation(rotate_start, rotate_end, ease_value, transform);
+
+                let scale_start = data.scale_start.unwrap_or_default().abs_vec_to_vec3();
+                let scale_end = data.scale_end.unwrap_or_default().abs_vec_to_vec3();
+                Self::apply_scale(scale_start, scale_end, ease_value, transform);
             }
             Some(Mode::TextureMove(data)) => {
                 let start: Vec2 = (&data.start.unwrap_or_default()).into();
@@ -168,39 +184,55 @@ impl Tween {
                 }
             }
             Some(Mode::RotateContinuous(data)) => {
-                let axis = {
-                    let dcl_quat = data.direction.unwrap();
-                    let (axis, _) = dcl_quat.to_bevy_normalized().to_axis_angle();
-                    axis
+                let Some(axis) = data.direction.map(rotate_continuous_axis) else {
+                    return;
                 };
-                transform.rotation *=
-                    Quat::from_axis_angle(axis, ease_value * -data.speed.to_radians());
+                // pre-multiply: the axis is in parent space (matches unity), so a
+                // tilted entity spins in place rather than swinging its own axes
+                transform.rotation = Quat::from_axis_angle(
+                    axis,
+                    ease_value * tween_apply_update.delta * -data.speed.to_radians(),
+                ) * transform.rotation;
             }
             Some(Mode::MoveContinuous(data)) => {
-                transform.translation +=
-                    data.direction.unwrap().world_vec_to_vec3() * data.speed * ease_value;
+                if let Some(direction) = data.direction {
+                    transform.translation += direction.world_vec_to_vec3()
+                        * data.speed
+                        * ease_value
+                        * tween_apply_update.delta;
+                }
             }
             Some(Mode::TextureMoveContinuous(data)) => {
                 let Some(material) = maybe_mat else {
                     return;
                 };
 
-                let dcl_vec2 = data.direction.unwrap();
-                let direction = Vec2::new(dcl_vec2.x, dcl_vec2.y);
+                let Some(direction) = data
+                    .direction
+                    .map(|dcl_vec2| Vec2::new(dcl_vec2.x, dcl_vec2.y))
+                else {
+                    return;
+                };
 
                 match data.movement_type() {
                     TextureMovementType::TmtOffset => {
                         update_pb_material(
                             &mut material.0,
                             None,
-                            Some(direction * data.speed * ease_value * Vec2::new(1.0, -1.0)),
+                            Some(
+                                direction
+                                    * data.speed
+                                    * ease_value
+                                    * tween_apply_update.delta
+                                    * Vec2::new(1.0, -1.0),
+                            ),
                             true,
                         );
                     }
                     TextureMovementType::TmtTiling => {
                         update_pb_material(
                             &mut material.0,
-                            Some(direction * data.speed * ease_value),
+                            Some(direction * data.speed * ease_value * tween_apply_update.delta),
                             None,
                             true,
                         );
@@ -210,6 +242,44 @@ impl Tween {
             _ => {}
         }
     }
+
+    fn apply_translation(
+        start: Vec3,
+        end: Vec3,
+        ease_value: f32,
+        face_direction: bool,
+        progress: f32,
+        transform: &mut Transform,
+    ) {
+        if face_direction && progress == 0.0 {
+            let direction = end - start;
+            if direction == Vec3::ZERO {
+                // can't look nowhere
+            } else if direction * Vec3::new(1.0, 0.0, 1.0) != Vec3::ZERO {
+                // randomly assume +z is up for a vertical movement
+                transform.look_at(end - start, Vec3::Z);
+            } else {
+                transform.look_at(end - start, Vec3::Y);
+            }
+        }
+
+        transform.translation = start + (end - start) * ease_value;
+    }
+
+    fn apply_rotation(start: Quat, end: Quat, ease_value: f32, transform: &mut Transform) {
+        transform.rotation = start.slerp(end, ease_value);
+    }
+
+    fn apply_scale(start: Vec3, end: Vec3, ease_value: f32, transform: &mut Transform) {
+        transform.scale = start + ((end - start) * ease_value);
+    }
+}
+
+struct TweenApplyUpdate {
+    // Between 0 and 1 for bounded tweens
+    progress: f32,
+    // Time delta from last frame
+    delta: f32,
 }
 
 #[derive(Debug, PartialEq, Component, Deref, DerefMut)]
@@ -268,12 +338,14 @@ fn update_tween(
             continue;
         };
 
+        let delta_secs = time.delta_secs();
         let playing = tween.playing.unwrap_or(true);
+        let unbounded_continuous = tween.is_continuous() && tween.duration <= 0.;
         let delta = if playing {
-            if tween.is_continuous() && tween.duration <= 0. {
-                time.delta_secs()
+            if unbounded_continuous {
+                delta_secs
             } else {
-                time.delta_secs() * 1000.0 / tween.duration
+                delta_secs * 1000.0 / tween.duration
             }
         } else {
             0.0
@@ -283,7 +355,7 @@ fn update_tween(
             if tween.is_continuous() {
                 "continuous"
             } else {
-                "simple"
+                "bounded"
             },
             delta
         );
@@ -295,7 +367,7 @@ fn update_tween(
                 .as_ref()
                 .map(|state| state.current_time + delta)
                 .unwrap_or(0.0);
-            if tween.is_continuous() {
+            if unbounded_continuous {
                 updated_time
             } else {
                 updated_time.min(1.0)
@@ -306,12 +378,12 @@ fn update_tween(
             if tween.is_continuous() {
                 "Continuous"
             } else {
-                "Simple"
+                "Bounded"
             },
             updated_time
         );
 
-        let updated_status = if playing && updated_time == 1.0 && !tween.is_continuous() {
+        let updated_status = if playing && updated_time == 1.0 && !unbounded_continuous {
             TweenStateStatus::TsCompleted
         } else if playing {
             TweenStateStatus::TsActive
@@ -338,10 +410,9 @@ fn update_tween(
             }
 
             tween.apply(
-                if tween.is_continuous() {
-                    delta
-                } else {
-                    updated_time
+                TweenApplyUpdate {
+                    progress: updated_time,
+                    delta: delta_secs,
                 },
                 &mut transform,
                 if tween.is_texture_move() {
@@ -351,17 +422,23 @@ fn update_tween(
                 },
             );
 
-            let Ok(parent) = parents.get(parent.parent()) else {
-                warn!("no parent for tweened ent");
-                return;
-            };
+            let parent_id = parents
+                .get(parent.parent())
+                .map(|p| p.id)
+                .unwrap_or_else(|_| {
+                    warn!("no parent for tweened ent {scene_ent:?}");
+                    SceneEntityId::ROOT
+                });
 
+            // the scene gets the raw interpolated value; only the bevy transform is sanitised
             scene.update_crdt(
                 SceneComponentId::TRANSFORM,
                 CrdtType::LWW_ENT,
                 scene_ent.container_id,
-                &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
+                &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent_id),
             );
+
+            transform.scale = sanitize_scale(transform.scale);
             if tween.is_texture_move() {
                 tween_updated_texture_writer.write(TweenUpdatedTexture(ent));
             }
@@ -499,7 +576,7 @@ pub struct SystemTween {
 #[derive(Component)]
 pub struct SystemTweenData {
     start_pos: Transform,
-    start_time: f32,
+    start_time: f64,
 }
 
 pub fn update_system_tween(
@@ -522,12 +599,12 @@ pub fn update_system_tween(
                     debug!("system tween starting {} @ {:?}", tween.time, tween.target);
                     commands.entity(ent).try_insert(SystemTweenData {
                         start_pos: *transform,
-                        start_time: time.elapsed_secs(),
+                        start_time: time.elapsed_secs_f64(),
                     });
                 }
             }
             (false, Some(data)) => {
-                let elapsed = time.elapsed_secs() - data.start_time;
+                let elapsed = (time.elapsed_secs_f64() - data.start_time) as f32;
                 if elapsed >= tween.time {
                     debug!("system tween complete @ {:?}", tween.target);
                     *transform = tween.target;

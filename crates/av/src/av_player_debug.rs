@@ -7,14 +7,10 @@ use bevy::{
     text::{FontSmoothing, LineHeight},
 };
 use common::util::{TryChildBuilder, TryPushChildrenEx};
-#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
-use comms::livekit::participant::StreamImage;
-#[cfg(feature = "livekit")]
-use comms::livekit::participant::StreamViewer;
 
 #[cfg(feature = "ffmpeg")]
-use crate::{audio_sink::AudioSink, video_stream::VideoSink};
-use crate::{AVPlayer, InScene, ShouldBePlaying};
+use crate::AVSinks;
+use crate::{AVPlayer, InScene, ShouldBePlaying, VideoPlayer};
 
 const DEFAULT_FONT: TextFont = TextFont {
     font: Handle::Weak(AssetId::Uuid {
@@ -31,30 +27,18 @@ impl Plugin for AvPlayerDebugPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_av_player_debug_ui);
         app.add_systems(Update, check_button_press);
-        app.add_observer(av_player_on_add);
-        app.add_observer(av_player_on_remove);
-        app.add_observer(av_player_on_insert);
+        app.add_observer(av_player_on_add::<VideoPlayer>);
+        app.add_observer(av_player_on_remove::<VideoPlayer>);
+        app.add_observer(av_player_on_insert::<VideoPlayer>);
         #[cfg(feature = "ffmpeg")]
         {
-            app.add_observer(on_add_column::<AudioSink, AudioSinkColumn>);
-            app.add_observer(on_remove_column::<AudioSink, AudioSinkColumn>);
-            app.add_observer(on_add_column::<VideoSink, VideoSinkColumn>);
-            app.add_observer(on_remove_column::<VideoSink, VideoSinkColumn>);
-        }
-        #[cfg(feature = "livekit")]
-        {
-            app.add_observer(on_add_column::<StreamViewer, StreamViewerColumn>);
-            app.add_observer(on_remove_column::<StreamViewer, StreamViewerColumn>);
-        }
-        #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
-        {
-            app.add_observer(on_add_column::<StreamImage, StreamImageColumn>);
-            app.add_observer(on_remove_column::<StreamImage, StreamImageColumn>);
+            app.add_observer(on_add_column::<AVSinks<VideoPlayer>, VideoPlayerSinksColumn>);
+            app.add_observer(on_remove_column::<AVSinks<VideoPlayer>, VideoPlayerSinksColumn>);
         }
         app.add_observer(on_add_column::<InScene, InSceneColumn>);
         app.add_observer(on_remove_column::<InScene, InSceneColumn>);
-        app.add_observer(on_add_column::<ShouldBePlaying, ShouldPlayColumn>);
-        app.add_observer(on_remove_column::<ShouldBePlaying, ShouldPlayColumn>);
+        app.add_observer(on_add_column::<ShouldBePlaying<VideoPlayer>, ShouldPlayColumn>);
+        app.add_observer(on_remove_column::<ShouldBePlaying<VideoPlayer>, ShouldPlayColumn>);
     }
 }
 
@@ -70,85 +54,28 @@ const AV_PLAYER_COLUMN_COLUMN: i16 = 1;
 
 #[cfg(feature = "ffmpeg")]
 #[derive(Component)]
-struct AudioSinkColumn;
+struct VideoPlayerSinksColumn;
 #[cfg(feature = "ffmpeg")]
-const AUDIO_SINK_COLUMN_COLUMN: i16 = 2;
-
-#[cfg(feature = "ffmpeg")]
-#[derive(Component)]
-struct VideoSinkColumn;
-#[cfg(feature = "ffmpeg")]
-const VIDEO_SINK_COLUMN_COLUMN: i16 = 3;
-
-#[cfg(feature = "livekit")]
-#[derive(Component)]
-struct StreamViewerColumn;
-#[cfg(feature = "livekit")]
-const STREAM_VIEWER_COLUMN_COLUMN: i16 = 4;
-
-#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
-#[derive(Component)]
-struct StreamImageColumn;
-#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
-const STREAM_IMAGE_COLUMN_COLUMN: i16 = 5;
+const VIDEO_PLAYER_SINKS_COLUMN_COLUMN: i16 = 2;
 
 #[derive(Component)]
 struct InSceneColumn;
-const IN_SCENE_COLUMN_COLUMN: i16 = 6;
+const IN_SCENE_COLUMN_COLUMN: i16 = 5;
 
 #[derive(Component)]
 struct ShouldPlayColumn;
-const SHOULD_PLAY_COLUMN_COLUMN: i16 = 7;
+const SHOULD_PLAY_COLUMN_COLUMN: i16 = 6;
 
-#[cfg(all(not(feature = "ffmpeg"), not(feature = "livekit")))]
+#[cfg(not(feature = "ffmpeg"))]
 type AnyColumn = Or<(
     With<AvPlayerColumn>,
     With<InSceneColumn>,
     With<ShouldPlayColumn>,
 )>;
-#[cfg(all(feature = "ffmpeg", not(feature = "livekit")))]
+#[cfg(feature = "ffmpeg")]
 type AnyColumn = Or<(
     With<AvPlayerColumn>,
-    With<AudioSinkColumn>,
-    With<VideoSinkColumn>,
-    With<InSceneColumn>,
-    With<ShouldPlayColumn>,
-)>;
-#[cfg(all(
-    not(feature = "ffmpeg"),
-    feature = "livekit",
-    not(target_arch = "wasm32")
-))]
-type AnyColumn = Or<(
-    With<AvPlayerColumn>,
-    With<StreamViewerColumn>,
-    With<StreamImageColumn>,
-    With<InSceneColumn>,
-    With<ShouldPlayColumn>,
-)>;
-#[cfg(all(not(feature = "ffmpeg"), feature = "livekit", target_arch = "wasm32"))]
-type AnyColumn = Or<(
-    With<AvPlayerColumn>,
-    With<StreamViewerColumn>,
-    With<InSceneColumn>,
-    With<ShouldPlayColumn>,
-)>;
-#[cfg(all(feature = "ffmpeg", feature = "livekit", not(target_arch = "wasm32")))]
-type AnyColumn = Or<(
-    With<AvPlayerColumn>,
-    With<AudioSinkColumn>,
-    With<VideoSinkColumn>,
-    With<StreamViewerColumn>,
-    With<StreamImageColumn>,
-    With<InSceneColumn>,
-    With<ShouldPlayColumn>,
-)>;
-#[cfg(all(feature = "ffmpeg", feature = "livekit", target_arch = "wasm32"))]
-type AnyColumn = Or<(
-    With<AvPlayerColumn>,
-    With<AudioSinkColumn>,
-    With<VideoSinkColumn>,
-    With<StreamViewerColumn>,
+    With<VideoPlayerSinksColumn>,
     With<InSceneColumn>,
     With<ShouldPlayColumn>,
 )>;
@@ -180,13 +107,7 @@ fn setup_av_player_debug_ui(mut commands: Commands) {
                 (
                     "Source",
                     #[cfg(feature = "ffmpeg")]
-                    "AudioSink",
-                    #[cfg(feature = "ffmpeg")]
-                    "VideoSink",
-                    #[cfg(feature = "livekit")]
-                    "StreamerViewer",
-                    #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
-                    "StreamerImage",
+                    "VideoPlayerSink",
                     "InScene",
                     "ShouldBePlaying",
                 ),
@@ -214,12 +135,12 @@ fn check_button_press(
     }
 }
 
-fn av_player_on_add(
-    trigger: Trigger<OnAdd, AVPlayer>,
+fn av_player_on_add<T: AVPlayer>(
+    trigger: Trigger<OnAdd, T>,
     mut commands: Commands,
     av_player_debug_ui: Single<(Entity, &Children), With<AvPlayerDebugUi>>,
     av_player_columns: Query<&Node, With<AvPlayerColumn>>,
-    av_players: Query<&AVPlayer>,
+    av_players: Query<&T>,
 ) {
     let entity = trigger.target();
     let (av_player_debug_ui_entity, children) = av_player_debug_ui.into_inner();
@@ -240,14 +161,8 @@ fn av_player_on_add(
                 next_row,
                 entity,
                 (
-                    &av_player.source.src,
+                    av_player.url(),
                     #[cfg(feature = "ffmpeg")]
-                    "No",
-                    #[cfg(feature = "ffmpeg")]
-                    "No",
-                    #[cfg(feature = "livekit")]
-                    "No",
-                    #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
                     "No",
                     "No",
                     "No",
@@ -256,8 +171,8 @@ fn av_player_on_add(
         });
 }
 
-fn av_player_on_remove(
-    trigger: Trigger<OnRemove, AVPlayer>,
+fn av_player_on_remove<T: AVPlayer>(
+    trigger: Trigger<OnRemove, T>,
     mut commands: Commands,
     av_player_debug_ui: Single<&Children, With<AvPlayerDebugUi>>,
     nodes: Query<&mut Node, AnyColumn>,
@@ -298,10 +213,10 @@ fn av_player_on_remove(
     }
 }
 
-fn av_player_on_insert(
-    trigger: Trigger<OnInsert, AVPlayer>,
+fn av_player_on_insert<T: AVPlayer>(
+    trigger: Trigger<OnInsert, T>,
     mut commands: Commands,
-    av_players: Query<&AVPlayer>,
+    av_players: Query<&T>,
     av_player_references: Query<(Entity, &AvPlayerRef), With<AvPlayerColumn>>,
 ) {
     let entity = trigger.target();
@@ -322,10 +237,11 @@ fn av_player_on_insert(
     };
 
     commands.entity(node).despawn_related::<Children>();
-    let av_player_name = if av_player.source.src.len() >= 32 {
-        &av_player.source.src[..32]
+    let source = av_player.url();
+    let av_player_name = if source.len() >= 32 {
+        &source[..32]
     } else {
-        &av_player.source.src
+        source
     };
     commands.spawn((
         Text::new(av_player_name),
@@ -402,56 +318,16 @@ fn on_remove_column<T: Component, C: Component>(
     ));
 }
 
-#[cfg(all(not(feature = "ffmpeg"), not(feature = "livekit")))]
+#[cfg(not(feature = "ffmpeg"))]
 type RowTexts<'a> = (&'a str, &'a str, &'a str);
-#[cfg(all(feature = "ffmpeg", not(feature = "livekit")))]
-type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
-#[cfg(all(
-    not(feature = "ffmpeg"),
-    feature = "livekit",
-    not(target_arch = "wasm32")
-))]
-type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
-#[cfg(all(not(feature = "ffmpeg"), feature = "livekit", target_arch = "wasm32"))]
+#[cfg(feature = "ffmpeg")]
 type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str);
-#[cfg(all(feature = "ffmpeg", feature = "livekit", not(target_arch = "wasm32")))]
-type RowTexts<'a> = (
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-);
-#[cfg(all(feature = "ffmpeg", feature = "livekit", target_arch = "wasm32"))]
-type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, &'a str);
 
 fn build_row(parent: &mut TryChildBuilder, row: i16, av_player: Entity, row_texts: RowTexts) {
-    #[cfg(all(not(feature = "ffmpeg"), not(feature = "livekit")))]
+    #[cfg(not(feature = "ffmpeg"))]
     let (av_player_name, in_scene, should_play) = row_texts;
-    #[cfg(all(feature = "ffmpeg", not(feature = "livekit")))]
-    let (av_player_name, audio_sink, video_sink, in_scene, should_play) = row_texts;
-    #[cfg(all(
-        not(feature = "ffmpeg"),
-        feature = "livekit",
-        not(target_arch = "wasm32")
-    ))]
-    let (av_player_name, stream_viewer, stream_image, in_scene, should_play) = row_texts;
-    #[cfg(all(not(feature = "ffmpeg"), feature = "livekit", target_arch = "wasm32"))]
-    let (av_player_name, stream_viewer, in_scene, should_play) = row_texts;
-    #[cfg(all(feature = "ffmpeg", feature = "livekit", not(target_arch = "wasm32")))]
-    let (
-        av_player_name,
-        audio_sink,
-        video_sink,
-        stream_viewer,
-        stream_image,
-        in_scene,
-        should_play,
-    ) = row_texts;
-    #[cfg(all(feature = "ffmpeg", feature = "livekit", target_arch = "wasm32"))]
-    let (av_player_name, audio_sink, video_sink, stream_viewer, in_scene, should_play) = row_texts;
+    #[cfg(feature = "ffmpeg")]
+    let (av_player_name, video_player_sinks, in_scene, should_play) = row_texts;
 
     let av_player_name = if av_player_name.len() >= 32 {
         &av_player_name[..32]
@@ -469,34 +345,10 @@ fn build_row(parent: &mut TryChildBuilder, row: i16, av_player: Entity, row_text
     #[cfg(feature = "ffmpeg")]
     parent.spawn(build_cel(
         av_player,
-        AudioSinkColumn,
+        VideoPlayerSinksColumn,
         row,
-        AUDIO_SINK_COLUMN_COLUMN,
-        audio_sink,
-    ));
-    #[cfg(feature = "ffmpeg")]
-    parent.spawn(build_cel(
-        av_player,
-        VideoSinkColumn,
-        row,
-        VIDEO_SINK_COLUMN_COLUMN,
-        video_sink,
-    ));
-    #[cfg(feature = "livekit")]
-    parent.spawn(build_cel(
-        av_player,
-        StreamViewerColumn,
-        row,
-        STREAM_VIEWER_COLUMN_COLUMN,
-        stream_viewer,
-    ));
-    #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
-    parent.spawn(build_cel(
-        av_player,
-        StreamImageColumn,
-        row,
-        STREAM_IMAGE_COLUMN_COLUMN,
-        stream_image,
+        VIDEO_PLAYER_SINKS_COLUMN_COLUMN,
+        video_player_sinks,
     ));
     parent.spawn(build_cel(
         av_player,

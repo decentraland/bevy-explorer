@@ -206,19 +206,16 @@ function set_room_event_handler(room, handler) {
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
 
-                if (remote_participant.identity.endsWith("-streamer")) {
+                if (remote_participant.identity.endsWith("-streamer") || remote_participant.identity.startsWith("stream:") || remote_participant.identity.startsWith("presentation-bot:")) {
                     if (remote_track.audioElement) {
                         error(`Rebuilding audio element of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
                         const audioElement = remote_track.audioElement;
                         delete remote_track.audioElement;
                         remote_track.detach(audioElement);
                     }
-                    const streamPlayerContainer = window.document.querySelector("#stream-player-container");
-                    if (streamPlayerContainer) {
-                        const audioElement = remote_track.attach();
-                        streamPlayerContainer.append(audioElement);
-                        remote_track.audioElement = audioElement;
-                    }
+
+                    const audioElement = remote_track.attach();
+                    remote_track.audioElement = audioElement;
                 } else {
                     track_rig_new(remote_track);
                 }
@@ -229,12 +226,9 @@ function set_room_event_handler(room, handler) {
                     delete remote_track.videoElement;
                     remote_track.detach(videoElement);
                 }
-                const streamPlayerContainer = window.document.querySelector("#stream-player-container");
-                if (streamPlayerContainer) {
-                    const videoElement = remote_track.attach();
-                    streamPlayerContainer.append(videoElement);
-                    remote_track.videoElement = videoElement;
-                }
+
+                const videoElement = remote_track.attach();
+                remote_track.videoElement = videoElement;
             }
 
             handler({
@@ -270,6 +264,15 @@ function set_room_event_handler(room, handler) {
             })
         }
     );
+    room.on(
+        LivekitClient.RoomEvent.ActiveSpeakersChanged,
+        (speakers) => {
+            handler({
+                type: 'activeSpeakersChanged',
+                speakers,
+            })
+        }
+    );
 }
 
 /**
@@ -277,19 +280,24 @@ function set_room_event_handler(room, handler) {
  * @param {livekit.Participant} participant
  * @returns bool
  */
-export async function particinpant_is_local(participant) {
-    return particinpant.isLocal;
+export async function participant_is_local(participant) {
+    return participant.isLocal;
 }
 
 /**
- * 
+ *
  * @param {livekit.LocalParticipant} local_participant
- * @param {Uint8Array} payload 
- * @param {livekit.DataPublishOptions} payload 
- * @returns string
+ * @param {Uint8Array} payload
+ * @param {boolean} reliable
+ * @param {string | undefined} topic
+ * @param {string[]} destination_identities
  */
-export async function local_participant_publish_data(local_participant, payload, data_publish_options) {
-    local_participant.publishData(payload, data_publish_options).await;
+export async function local_participant_publish_data(local_participant, payload, reliable, topic, destination_identities) {
+    await local_participant.publishData(payload, {
+        reliable,
+        topic: topic ?? undefined,
+        destinationIdentities: destination_identities,
+    });
 }
 
 /**
@@ -512,7 +520,7 @@ function track_rig_drop(remote_track) {
  * @param {float} volume 
  */
 export function remote_track_pan_and_volume(remote_track, pan, volume) {
-    log(`Setting pan and volume for track ${remote_track.sid}.`);
+    // log(`Setting pan and volume for track ${remote_track.sid}.`);
     const track_rig = remote_track.trackRig;
     // Pan value should be between -1 (left) and 1 (right)
     track_rig.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));

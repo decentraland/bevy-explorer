@@ -79,11 +79,8 @@ fn test_livekit() {
 #[test]
 fn test_async_tls() {
     futures_lite::future::block_on(async move {
-        let remote_address = "wss://sdk-test-scenes.decentraland.zone/mini-comms/room-1";
-        let mut request = remote_address.into_client_request()?;
-        request
-            .headers_mut()
-            .append("Sec-WebSocket-Protocol", HeaderValue::from_static("rfc5"));
+        let remote_address = "wss://echo.websocket.org/";
+        let request = remote_address.into_client_request()?;
         platform::websocket(request).await
     })
     .unwrap();

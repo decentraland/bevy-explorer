@@ -31,6 +31,9 @@ pub enum SystemAction {
     PointerDown,
     PointerLeft,
     PointerRight,
+    /// legacy (was the pre-react middle-click profile opener): no consumer, no default
+    /// binding, and migrate_inputs strips saved rows. The variant stays only so old
+    /// config.json input tables still deserialize.
     ShowProfile,
     QuickEmote1,
     QuickEmote2,
@@ -43,6 +46,13 @@ pub enum SystemAction {
     QuickEmote9,
     QuickEmote0,
     PointAt,
+    Places,
+    Communities,
+    Backpack,
+    Gallery,
+    Settings,
+    Friends,
+    ChatPanel,
 }
 
 impl From<SystemAction> for Action {
@@ -137,6 +147,29 @@ pub const SCROLL_SET: InputDirectionalSet = InputDirectionalSet {
         Some(Action::System(SystemAction::ScrollDown)),
     ],
 };
+/// Bindings that can never be removed: HUD and scene scrollables rely on native wheel
+/// scrolling, which can't follow rebinds — so the wheel directions always mean scroll,
+/// whatever else the user binds alongside or tries to remove. Enforced on config
+/// migration and on every SetBindings.
+pub const FIXED_BINDINGS: [(Action, InputIdentifier); 4] = [
+    (
+        Action::System(SystemAction::ScrollUp),
+        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Up),
+    ),
+    (
+        Action::System(SystemAction::ScrollDown),
+        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Down),
+    ),
+    (
+        Action::System(SystemAction::ScrollLeft),
+        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Left),
+    ),
+    (
+        Action::System(SystemAction::ScrollRight),
+        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Right),
+    ),
+];
+
 pub const POINTER_SET: InputDirectionalSet = InputDirectionalSet {
     label: InputDirectionSetLabel::Pointer,
     actions: [
@@ -409,14 +442,9 @@ impl Default for InputMap {
                     Action::System(SystemAction::HideNames),
                     vec![InputIdentifier::Key(KeyCode::KeyN)],
                 ),
-                (
-                    Action::System(SystemAction::RollLeft),
-                    vec![InputIdentifier::Key(KeyCode::KeyT)],
-                ),
-                (
-                    Action::System(SystemAction::RollRight),
-                    vec![InputIdentifier::Key(KeyCode::KeyG)],
-                ),
+                // unbound by default: KeyT/KeyG are used for ChatPanel/Gallery
+                (Action::System(SystemAction::RollLeft), vec![]),
+                (Action::System(SystemAction::RollRight), vec![]),
                 (
                     Action::System(SystemAction::PointAt),
                     vec![
@@ -501,13 +529,6 @@ impl Default for InputMap {
                     ],
                 ),
                 (
-                    Action::System(SystemAction::ShowProfile),
-                    vec![
-                        // InputIdentifier::Mouse(MouseButton::Middle),
-                        InputIdentifier::Gamepad(GamepadButton::North),
-                    ],
-                ),
-                (
                     Action::System(SystemAction::PointerUp),
                     vec![InputIdentifier::Analog(
                         AxisIdentifier::GamepadRight,
@@ -537,43 +558,71 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::QuickEmote0),
-                    vec![InputIdentifier::Key(KeyCode::Digit0)],
+                    vec![InputIdentifier::Key(KeyCode::Numpad0)],
                 ),
                 (
                     Action::System(SystemAction::QuickEmote1),
-                    vec![InputIdentifier::Key(KeyCode::Digit1)],
+                    vec![InputIdentifier::Key(KeyCode::Numpad1)],
                 ),
                 (
                     Action::System(SystemAction::QuickEmote2),
-                    vec![InputIdentifier::Key(KeyCode::Digit2)],
+                    vec![InputIdentifier::Key(KeyCode::Numpad2)],
                 ),
                 (
                     Action::System(SystemAction::QuickEmote3),
-                    vec![InputIdentifier::Key(KeyCode::Digit3)],
+                    vec![InputIdentifier::Key(KeyCode::Numpad3)],
                 ),
                 (
                     Action::System(SystemAction::QuickEmote4),
-                    vec![InputIdentifier::Key(KeyCode::Digit4)],
+                    vec![InputIdentifier::Key(KeyCode::Numpad4)],
                 ),
                 (
                     Action::System(SystemAction::QuickEmote5),
-                    vec![InputIdentifier::Key(KeyCode::Digit5)],
+                    vec![InputIdentifier::Key(KeyCode::Numpad5)],
                 ),
                 (
                     Action::System(SystemAction::QuickEmote6),
-                    vec![InputIdentifier::Key(KeyCode::Digit6)],
+                    vec![InputIdentifier::Key(KeyCode::Numpad6)],
                 ),
                 (
                     Action::System(SystemAction::QuickEmote7),
-                    vec![InputIdentifier::Key(KeyCode::Digit7)],
+                    vec![InputIdentifier::Key(KeyCode::Numpad7)],
                 ),
                 (
                     Action::System(SystemAction::QuickEmote8),
-                    vec![InputIdentifier::Key(KeyCode::Digit8)],
+                    vec![InputIdentifier::Key(KeyCode::Numpad8)],
                 ),
                 (
                     Action::System(SystemAction::QuickEmote9),
-                    vec![InputIdentifier::Key(KeyCode::Digit9)],
+                    vec![InputIdentifier::Key(KeyCode::Numpad9)],
+                ),
+                (
+                    Action::System(SystemAction::Places),
+                    vec![InputIdentifier::Key(KeyCode::KeyZ)],
+                ),
+                (
+                    Action::System(SystemAction::Communities),
+                    vec![InputIdentifier::Key(KeyCode::KeyO)],
+                ),
+                (
+                    Action::System(SystemAction::Backpack),
+                    vec![InputIdentifier::Key(KeyCode::KeyI)],
+                ),
+                (
+                    Action::System(SystemAction::Gallery),
+                    vec![InputIdentifier::Key(KeyCode::KeyG)],
+                ),
+                (
+                    Action::System(SystemAction::Settings),
+                    vec![InputIdentifier::Key(KeyCode::KeyP)],
+                ),
+                (
+                    Action::System(SystemAction::Friends),
+                    vec![InputIdentifier::Key(KeyCode::KeyL)],
+                ),
+                (
+                    Action::System(SystemAction::ChatPanel),
+                    vec![InputIdentifier::Key(KeyCode::KeyT)],
                 ),
             ]),
         }

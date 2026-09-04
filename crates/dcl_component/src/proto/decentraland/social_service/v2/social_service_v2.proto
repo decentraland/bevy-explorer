@@ -183,6 +183,16 @@ message GetBlockedUsersResponse {
   PaginatedResponse pagination_data = 2;
 }
 
+message GetBlockingStatusResponse {
+  repeated string blocked_users = 1;
+  repeated string blocked_by_users = 2;
+}
+
+message BlockUpdate {
+  string address = 1;
+  bool is_blocked = 2;
+}
+
 message GetFriendshipStatusPayload {
   User user = 1;
 }
@@ -247,4 +257,10 @@ service SocialService {
 
   // Get the list of blocked users
   rpc GetBlockedUsers(GetBlockedUsersPayload) returns (GetBlockedUsersResponse) {}
+
+  // Get the blocking status (blocked and blocked-by lists, addresses only)
+  rpc GetBlockingStatus(google.protobuf.Empty) returns (GetBlockingStatusResponse) {}
+
+  // Subscribe to updates when the authenticated user is blocked / unblocked
+  rpc SubscribeToBlockUpdates(google.protobuf.Empty) returns (stream BlockUpdate) {}
 }

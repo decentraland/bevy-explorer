@@ -316,6 +316,9 @@ pub struct ResolvedTexture {
     pub image: Handle<Image>,
     pub source_entity: Option<Entity>,
     pub camera_target: Option<ResolveCursor>,
+    /// override for the material uv_transform (used to sample a sub-rect of a shared
+    /// ui-canvas atlas); `None` leaves the definition's uv_transform unchanged
+    pub uv_transform: Option<Affine2>,
 }
 
 impl TextureResolver<'_, '_> {
@@ -372,6 +375,7 @@ impl TextureResolver<'_, '_> {
                         .unwrap(),
                     source_entity: None,
                     camera_target: None,
+                    uv_transform: None,
                 })
             }
             texture_union::Tex::AvatarTexture(at) => {
@@ -389,6 +393,7 @@ impl TextureResolver<'_, '_> {
                     image,
                     source_entity: None,
                     camera_target: None,
+                    uv_transform: None,
                 })
             }
             texture_union::Tex::VideoTexture(vt) => {
@@ -405,6 +410,7 @@ impl TextureResolver<'_, '_> {
                         image: vt.0.clone(),
                         source_entity: Some(video_entity),
                         camera_target: None,
+                        uv_transform: None,
                     })
                 } else {
                     debug!("video source entity not ready, retrying ...");
@@ -422,10 +428,18 @@ impl TextureResolver<'_, '_> {
                 match self.uis.get(ui_entity) {
                     Ok(ui_t) => Ok(ResolvedTexture {
                         image: ui_t.image.clone(),
-                        source_entity: Some(ui_t.camera),
+                        // track the canvas entity (which carries UiTextureOutput) so atlas
+                        // slot changes re-resolve the material; the camera carries none
+                        source_entity: Some(ui_entity),
                         camera_target: Some(ResolveCursor {
                             camera: ui_t.camera,
-                            texture_size: ui_t.texture_size.as_vec2(),
+                            texture_size: ui_t.px_size,
+                            px_offset: ui_t.px_offset,
+                        }),
+                        // sample only this canvas's slot within the shared atlas
+                        uv_transform: Some(Affine2 {
+                            matrix2: Mat2::from_diagonal(ui_t.uv_scale),
+                            translation: ui_t.uv_offset,
                         }),
                     }),
                     Err(_) => {
@@ -472,10 +486,9 @@ pub fn update_materials(
     >,
     mut materials: ResMut<Assets<SceneMaterial>>,
     sourced: Query<(Entity, &MeshMaterial3d<SceneMaterial>, &MaterialSource)>,
-    sources: Query<(
-        Option<Ref<VideoTextureOutput>>,
-        Option<Ref<UiTextureOutput>>,
-    )>,
+    // ui-canvas atlas slot changes are applied to the material in place by
+    // `update_canvas_material_uvs`, so only video sources need to trigger a re-resolve here
+    sources: Query<Option<Ref<VideoTextureOutput>>>,
     mut resolver: TextureResolver,
     mut scenes: Query<(&mut RendererSceneContext, &mut CachedMaterials)>,
     config: Res<AppConfig>,
@@ -593,6 +606,11 @@ pub fn update_materials(
                     }
                 }
 
+                // ui-canvas atlas sub-rect transform (from the base-colour texture);
+                // applies to the whole material's uv, fine since nametags sample the same
+                // canvas for base + emissive
+                let ui_uv_transform = base_color_texture.as_ref().and_then(|t| t.uv_transform);
+
                 let bounds = scene.bounds.clone();
 
                 let material = materials.add(SceneMaterial {
@@ -606,6 +624,7 @@ pub fn update_materials(
                         normal_map_texture: normal_map_texture
                             .map(|t| t.image)
                             .or(base.and_then(|b| b.material.normal_map_texture.clone())),
+                        uv_transform: ui_uv_transform.unwrap_or(defn.material.uv_transform),
                         ..defn.material.clone()
                     },
                     extension: SceneBound::new(bounds, config.graphics.oob),
@@ -655,10 +674,7 @@ pub fn update_materials(
     for (ent, _touch, source) in sourced.iter() {
         let changed = sources
             .get(source.0)
-            .map(|(maybe_video, maybe_ui)| {
-                maybe_video.is_some_and(|v| v.is_changed())
-                    || maybe_ui.is_some_and(|ui| ui.is_changed())
-            })
+            .map(|maybe_video| maybe_video.is_some_and(|v| v.is_changed()))
             .unwrap_or(true);
 
         if changed {

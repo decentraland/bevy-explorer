@@ -20,7 +20,7 @@ use common::{
     inputs::{
         Action, AxisIdentifier, BindingsData, CommonInputAction, InputDirection,
         InputDirectionalSet, InputIdentifier, InputMap, InputMapSerialized, SystemAction,
-        SystemActionEvent, POINTER_SET,
+        SystemActionEvent, FIXED_BINDINGS, POINTER_SET, SCROLL_SET,
     },
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{AppConfig, CursorLocks, PlayerModifiers},
@@ -33,9 +33,17 @@ pub enum InputPriority {
     #[default]
     None,
     Scene,
+    /// held (InputType::All) while an external HUD surface (react menu/popup) is active:
+    /// scenes and world consumers stop receiving input, but the system-action stream —
+    /// which reads at this level — keeps flowing so the HUD can react (Cancel, hotkeys).
+    Ui,
     Focus,
     AvatarCollider,
     TextEntry,
+    /// held (InputType::Keyboard) while an external HUD text field has keyboard focus.
+    /// A distinct level from TextEntry so HUD focus changes can't release the engine's
+    /// own text-entry reservation (both may be held at once; reservations are per-level).
+    UiText,
     Scroll,
     CancelFocus,
     BindInput,
@@ -81,6 +89,47 @@ impl InputPriorities {
             .copied()
             .unwrap_or(InputPriority::None)
     }
+
+    /// true while any consumer holds the keyboard at TextEntry level or above (e.g. a
+    /// focused text field). in this state gameplay key bindings are blocked and consumers
+    /// read raw ButtonInput, so keys must be treated as "being typed", not as shortcuts.
+    pub fn keyboard_claimed(&self) -> bool {
+        self.get(InputType::All).max(self.get(InputType::Keyboard)) >= InputPriority::TextEntry
+    }
+}
+
+// Holding any of these triggers OS-shortcut suppression for non-modifier
+// gameplay keys, but only when the held modifier is itself unbound — if the
+// user bound e.g. ControlLeft to walk, Ctrl+W still fires walk+forward and
+// the user owns that consequence.
+const SUPPRESSING_MODIFIERS: [KeyCode; 6] = [
+    KeyCode::SuperLeft,
+    KeyCode::SuperRight,
+    KeyCode::ControlLeft,
+    KeyCode::ControlRight,
+    KeyCode::AltLeft,
+    KeyCode::AltRight,
+];
+
+fn key_bound(map: &InputMap, k: KeyCode) -> bool {
+    map.inputs.values().any(|ids| {
+        ids.iter()
+            .any(|id| matches!(id, InputIdentifier::Key(bk) if *bk == k))
+    })
+}
+
+fn any_unbound_modifier_held(key_input: &ButtonInput<KeyCode>, map: &InputMap) -> bool {
+    SUPPRESSING_MODIFIERS
+        .iter()
+        .any(|m| key_input.pressed(*m) && !key_bound(map, *m))
+}
+
+// Shift doesn't trigger OS-shortcut suppression (it isn't in
+// SUPPRESSING_MODIFIERS) but it is still a modifier for stuck-key
+// force-release purposes: a genuinely-held bound Shift (e.g. shift-to-run)
+// must not be released alongside stuck non-modifiers.
+fn modifier_key(k: &KeyCode) -> bool {
+    SUPPRESSING_MODIFIERS.contains(k) || matches!(k, KeyCode::ShiftLeft | KeyCode::ShiftRight)
 }
 
 pub struct InputManagerPlugin;
@@ -98,11 +147,12 @@ impl Plugin for InputManagerPlugin {
         app.add_systems(
             PreUpdate,
             (
-                clear_stuck_modifier_keys.after(bevy::input::InputSystem),
+                handle_modifier_keys.after(bevy::input::InputSystem),
                 update_deltas,
                 handle_native_input,
                 handle_get_bindings,
                 handle_set_bindings,
+                handle_set_ui_focus,
                 handle_pointer_motion,
                 handle_system_input_stream,
             ),
@@ -238,6 +288,23 @@ impl InputManager<'_, '_> {
             InputIdentifier::Analog(axis, input_direction) => {
                 self.axis_data.just_down(*axis, *input_direction)
                     && self.check_priority(item, priority)
+            }
+        })
+    }
+
+    // true if any binding for the action was just pressed, ignoring priority reservations.
+    // `just_down` can only return true (for any priority) if this returns true.
+    pub fn just_down_any_priority<T: Into<Action>>(&self, action: T) -> bool {
+        self.inputs(action.into()).any(|item| match item {
+            InputIdentifier::Key(k) => self.key_input.just_pressed(*k),
+            InputIdentifier::Mouse(mb) => self.mouse_input.just_pressed(*mb),
+            InputIdentifier::Gamepad(b) => self
+                .gamepads
+                .iter()
+                .flat_map(|gp| gp.get_just_pressed())
+                .any(|p| p == b),
+            InputIdentifier::Analog(axis, input_direction) => {
+                self.axis_data.just_down(*axis, *input_direction)
             }
         })
     }
@@ -404,49 +471,93 @@ impl InputManager<'_, '_> {
 }
 
 struct CurrentNativeInputRequest {
-    sender: RpcResultSender<InputIdentifier>,
+    // all pending requests resolve with the same captured input: there is no cancel, so a
+    // request whose UI was dismissed must not block a later one (callers discard stale
+    // results by request id)
+    senders: Vec<RpcResultSender<InputIdentifier>>,
     axes: HashMap<AxisIdentifier, Vec2>,
 }
 
-// macOS suppresses keyUp events for non-modifier keys while Cmd is held, leaving
-// those keys stuck as `pressed` in winit's input state (e.g. Cmd+V leaves V
-// stuck). This system tracks non-modifier keys pressed while any modifier is
-// held, then synthesizes releases for them once all modifiers are released.
-fn clear_stuck_modifier_keys(
-    mut key_input: ResMut<ButtonInput<KeyCode>>,
-    mut tracked: Local<HashSet<KeyCode>>,
-    mut had_modifier: Local<bool>,
-) {
-    const MODIFIERS: [KeyCode; 6] = [
-        KeyCode::SuperLeft,
-        KeyCode::SuperRight,
-        KeyCode::ControlLeft,
-        KeyCode::ControlRight,
-        KeyCode::AltLeft,
-        KeyCode::AltRight,
-    ];
-
-    let modifier_held = MODIFIERS.iter().any(|k| key_input.pressed(*k));
-
-    if modifier_held {
-        let newly_pressed: Vec<KeyCode> = key_input
-            .get_just_pressed()
-            .copied()
-            .filter(|k| !MODIFIERS.contains(k))
-            .collect();
-        for key in newly_pressed {
-            tracked.insert(key);
-        }
-        *had_modifier = true;
-    } else if *had_modifier {
-        *had_modifier = false;
-        let stuck: Vec<KeyCode> = tracked.drain().collect();
-        for key in stuck {
-            if key_input.pressed(key) {
-                key_input.release(key);
-            }
+impl CurrentNativeInputRequest {
+    fn resolve(self, identifier: InputIdentifier) {
+        for sender in self.senders {
+            sender.send(identifier);
         }
     }
+}
+
+// While an unbound OS modifier (Cmd/Ctrl/Alt) is held, suppress non-modifier
+// gameplay keys at the source so they never appear as down/just_down/just_up
+// to anything reading ButtonInput. On the transition into the shortcut
+// window, release any already-held non-modifier keys so their in-flight
+// actions get a clean just_up; while the window is open, reset newly-pressed
+// keys so they never emit a down event (so no balancing up is needed).
+//
+// Suppression is skipped while a higher-priority consumer owns the keyboard
+// (e.g. a focused text field, which reserves at TextEntry). In that state
+// gameplay keys are already blocked by priority, so there is nothing to
+// suppress — and that consumer reads raw ButtonInput modifier state (Shift
+// for selection/redo etc.) which suppression would otherwise clobber.
+//
+// Key-state correctness across focus loss is handled upstream (winit web
+// window-focus fix + bevy's KeyboardFocusLost release_all). The one state
+// workaround kept here is the force-release below: macOS (natively and in
+// Chrome) suppresses keyUp for non-modifier keys while Cmd is held, and no
+// focus transition covers that.
+fn handle_modifier_keys(
+    mut key_input: ResMut<ButtonInput<KeyCode>>,
+    map: Res<InputMap>,
+    priorities: Res<InputPriorities>,
+    mut was_active: Local<bool>,
+    mut was_super_held: Local<bool>,
+) {
+    // Any non-modifier still marked pressed when the last Super key goes up
+    // may never receive its keyup — force-release them all. Scoped to Super:
+    // keyups are delivered normally while Ctrl/Alt/Shift are held, and
+    // force-releasing on those would strand genuinely-held keys (e.g. W while
+    // tapping a bound walk/run modifier). A key genuinely still held at
+    // Cmd-up can't be told apart from a stuck one; re-pressing it is the
+    // acceptable cost, and outside text entry it was already released at
+    // Cmd-down by the suppression below.
+    let super_held =
+        key_input.pressed(KeyCode::SuperLeft) || key_input.pressed(KeyCode::SuperRight);
+    if *was_super_held && !super_held {
+        let held: Vec<KeyCode> = key_input
+            .get_pressed()
+            .copied()
+            .filter(|k| !modifier_key(k))
+            .collect();
+        for key in held {
+            key_input.release(key);
+        }
+    }
+    *was_super_held = super_held;
+
+    let active = !priorities.keyboard_claimed() && any_unbound_modifier_held(&key_input, &map);
+
+    if active && !*was_active {
+        let held: Vec<KeyCode> = key_input
+            .get_pressed()
+            .copied()
+            .filter(|k| !SUPPRESSING_MODIFIERS.contains(k))
+            .collect();
+        for key in held {
+            key_input.release(key);
+        }
+    }
+
+    if active {
+        let to_reset: Vec<KeyCode> = key_input
+            .get_just_pressed()
+            .copied()
+            .filter(|k| !SUPPRESSING_MODIFIERS.contains(k))
+            .collect();
+        for key in to_reset {
+            key_input.reset(key);
+        }
+    }
+
+    *was_active = active;
 }
 
 fn update_deltas(
@@ -556,7 +667,6 @@ fn handle_native_input(
     mouse_input: Res<ButtonInput<MouseButton>>,
     key_input: Res<ButtonInput<KeyCode>>,
     mut wheel_events: EventReader<MouseWheel>,
-    mut mouse_events: EventReader<MouseMotion>,
     gamepads: Query<&Gamepad>,
     mut priorities: ResMut<InputPriorities>,
 ) {
@@ -574,26 +684,33 @@ fn handle_native_input(
     }
 
     if let Some(mut current) = active.take() {
-        if let Some(key) = key_input.get_just_pressed().next() {
-            current.sender.send(InputIdentifier::Key(*key));
+        // a request arriving while a capture is pending joins it (no cancel exists, so a
+        // dismissed request must not block a later one; unread events would just expire)
+        current.senders.extend(events.read().filter_map(|e| {
+            if let SystemApi::GetNativeInput(sender) = e {
+                Some(sender.clone())
+            } else {
+                None
+            }
+        }));
+        // Super (Cmd on Mac) is not accepted as a gameplay binding — see
+        // handle_modifier_keys for the OS-shortcut suppression logic, which
+        // assumes Super is never bound.
+        if let Some(key) = key_input
+            .get_just_pressed()
+            .find(|&&k| !matches!(k, KeyCode::SuperLeft | KeyCode::SuperRight))
+        {
+            current.resolve(InputIdentifier::Key(*key));
             return;
         } else if let Some(mouse) = mouse_input.get_just_pressed().next() {
-            current.sender.send(InputIdentifier::Mouse(*mouse));
+            current.resolve(InputIdentifier::Mouse(*mouse));
             return;
         } else {
-            for ev in mouse_events.read() {
-                let axis = current.axes.entry(AxisIdentifier::MouseMove).or_default();
-                *axis += ev.delta;
-                if axis.abs().max_element() > 10.0 {
-                    current.sender.send(InputIdentifier::Analog(
-                        AxisIdentifier::MouseMove,
-                        vec2dir(*axis),
-                    ));
-                    return;
-                }
-            }
+            // mouse MOTION is deliberately not capturable: it can't help but move while the
+            // user reaches for their intended input, and button-style actions bound to a
+            // MouseMove direction have no press edge so they never fire anyway
             if let Some(ev) = wheel_events.read().next() {
-                current.sender.send(InputIdentifier::Analog(
+                current.resolve(InputIdentifier::Analog(
                     AxisIdentifier::MouseWheel,
                     vec2dir(Vec2::new(ev.x, ev.y)),
                 ));
@@ -601,9 +718,7 @@ fn handle_native_input(
             }
             for gamepad in gamepads.iter() {
                 if let Some(gamepad_button) = gamepad.get_just_pressed().next() {
-                    current
-                        .sender
-                        .send(InputIdentifier::Gamepad(*gamepad_button));
+                    current.resolve(InputIdentifier::Gamepad(*gamepad_button));
                     return;
                 }
 
@@ -628,9 +743,8 @@ fn handle_native_input(
                     let axis_val = current.axes.entry(axis).or_default();
                     *axis_val += value;
                     if axis_val.abs().max_element() > 10.0 {
-                        current
-                            .sender
-                            .send(InputIdentifier::Analog(axis, vec2dir(*axis_val)));
+                        let dir = vec2dir(*axis_val);
+                        current.resolve(InputIdentifier::Analog(axis, dir));
                         return;
                     }
                 }
@@ -641,11 +755,10 @@ fn handle_native_input(
         return;
     }
 
-    mouse_events.clear();
     wheel_events.clear();
     priorities.release(InputType::All, InputPriority::BindInput);
 
-    if let Some(sender) = events
+    let senders = events
         .read()
         .filter_map(|e| {
             if let SystemApi::GetNativeInput(sender) = e {
@@ -654,10 +767,10 @@ fn handle_native_input(
                 None
             }
         })
-        .last()
-    {
+        .collect::<Vec<_>>();
+    if !senders.is_empty() {
         *active = Some(CurrentNativeInputRequest {
-            sender,
+            senders,
             axes: Default::default(),
         });
         priorities.reserve(InputType::All, InputPriority::BindInput);
@@ -691,14 +804,62 @@ fn handle_set_bindings(
         }
     }) {
         map.inputs = binding_data.bindings.clone();
+        // fixed bindings can never be removed — re-assert over any client-supplied table
+        // (the echoed GetBindings then shows them restored).
+        for (action, id) in FIXED_BINDINGS {
+            let bindings = map.inputs.entry(action).or_default();
+            if !bindings.contains(&id) {
+                bindings.push(id);
+            }
+        }
         config.inputs = InputMapSerialized(
-            binding_data.bindings.clone().into_iter().collect(),
+            map.inputs.clone().into_iter().collect(),
             config.inputs.1.clone(),
         );
 
         platform::write_config_file(&*config);
 
         sender.send(());
+    }
+}
+
+fn handle_set_ui_focus(
+    mut events: EventReader<SystemApi>,
+    mut priorities: ResMut<InputPriorities>,
+) {
+    for (ui, text, scroll) in events.read().filter_map(|e| {
+        if let SystemApi::SetUiFocus { ui, text, scroll } = e {
+            Some((*ui, *text, *scroll))
+        } else {
+            None
+        }
+    }) {
+        // reserve/release are set-based, so re-asserting an unchanged state is a no-op.
+        if ui {
+            priorities.reserve(InputType::All, InputPriority::Ui);
+        } else {
+            priorities.release(InputType::All, InputPriority::Ui);
+        }
+        // keyboard only: mouse/gamepad still reach scenes while a HUD text field is
+        // focused (click the world while chat has the caret), matching engine text entry.
+        if text {
+            priorities.reserve(InputType::Keyboard, InputPriority::UiText);
+        } else {
+            priorities.release(InputType::Keyboard, InputPriority::UiText);
+        }
+        // over a scrollable HUD element the SCROLL gesture belongs to the panel: reserving
+        // the Scroll ACTIONS blocks every input bound to them — wheel axis, key, gamepad
+        // button alike — for world consumers (camera zoom on a shared wheel, movement on a
+        // shared key), while the action stream, reading at the same Ui level, still
+        // resolves the Scroll actions themselves and the HUD scrolls the hovered panel
+        // from those edges. The same mechanism scene scrollables use, one level down.
+        for action in SCROLL_SET.actions.iter().flatten() {
+            if scroll {
+                priorities.reserve(InputType::Action(*action), InputPriority::Ui);
+            } else {
+                priorities.release(InputType::Action(*action), InputPriority::Ui);
+            }
+        }
     }
 }
 
@@ -737,8 +898,14 @@ fn handle_system_input_stream(
 
     let new_pressed = SystemAction::iter()
         .filter(|a| {
-            input_manager.is_down(*a, InputPriority::Scene)
-                || input_manager.just_down(*a, InputPriority::Scene)
+            // an action ENTERS the set only on a fresh press edge, and STAYS while held.
+            // `is_down` alone must not admit it: a key already held when a higher-priority
+            // reservation releases (binding capture, text entry) would otherwise emit a
+            // phantom press the moment the reservation lifts.
+            // reads at Ui so the stream survives the HUD's own Ui reservation (which mutes
+            // scenes) but is muted by text entry and binding capture.
+            input_manager.just_down(*a, InputPriority::Ui)
+                || (pressed.contains(a) && input_manager.is_down(*a, InputPriority::Ui))
         })
         .filter(|a| !block_emote || a != &SystemAction::Emote)
         .collect::<HashSet<_>>();
@@ -777,6 +944,7 @@ fn reset_controls_command(
     if let Some(Ok(_)) = input.take() {
         map.inputs = InputMap::default().inputs;
         config.inputs.0 = map.inputs.clone().into_iter().collect();
+        config.inputs_generation = common::structs::INPUTS_GENERATION;
         platform::write_config_file(&*config);
         input.reply_ok("Controls reset to default");
     }

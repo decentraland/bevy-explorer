@@ -1,0 +1,219 @@
+name: Publish headless server
+
+# Builds the headless engine + scene-runtime sidecar for every supported platform and
+# publishes them as npm packages (@dcl-regenesislabs/bevy-headless-server plus one binary
+# package per platform). npm is the only artifact channel: the SDK npx-runs the launcher,
+# and the multiplayer-server image installs the linux-x64 package instead of building
+# the engine from source.
+#
+# Versioning and publishing mirror the web client (ci.yml build-deploy-web): every main
+# push that touches engine code publishes a deterministic oddish snapshot
+# (X.Y.Z-<run-id>.commit-<sha>, same on every job of a commit) on the `next` dist-tag, via
+# npm OIDC trusted publishing — no NPM_TOKEN.
+#
+# RELEASING TO CONSUMERS: the SDK preview (js-sdk-toolchain `sdk-commands start`) tracks
+# `latest`, which only moves when someone manually dispatches this workflow — a
+# dispatch IS a release; pushes already cover `next`, so there is nothing else a
+# dispatch could mean. That publishes a fresh build of the chosen ref as a NEW version
+# (the version embeds the run id, so there is no collision with the `next` snapshot of
+# the same commit) tagged latest — promotion stays tokenless because it is a plain
+# OIDC-covered `npm publish`, not an `npm dist-tag` (which trusted publishing does not
+# cover). Each package name must have
+# this repo + workflow configured as a trusted publisher on npmjs.com; the very first
+# publish of a new name has to be bootstrapped manually (npm requires the package to exist
+# before a trusted publisher can be attached).
+#
+# The five current names were bootstrapped and now publish via OIDC only (no token in this
+# workflow). ADDING A NEW PACKAGE NAME later needs a one-time bootstrap first, since trusted
+# publishing can't attach to a name that doesn't exist: publish its first version manually
+# (`npm publish` while logged in), or temporarily add an `NPM_TOKEN` secret + read it as
+# NODE_AUTH_TOKEN on the publish steps for a single run, then attach the trusted publisher on
+# npmjs.com and remove the token again.
+#
+# Only the launcher's dist-tag matters to installers: it pins the platform packages by
+# exact version, so their tags are cosmetic.
+
+on:
+  # dispatch = release: builds the chosen ref and publishes it to `latest`
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    # the build is 4 platforms of rust compilation — skip main pushes that can't
+    # change the engine
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'deploy/headless/**'
+      - '.github/workflows/publish-headless.yml'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+          - platform: darwin-x64
+            runner: macos-15
+            target: x86_64-apple-darwin
+          - platform: linux-x64
+            # not -latest: pins the glibc floor so the binaries run on older distros
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - platform: win32-x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake pkg-config \
+            libasound2-dev libudev-dev libgl-dev libx11-dev libxext-dev
+
+      # every platform, not just non-Linux: ubuntu-22.04's apt protobuf-compiler is
+      # protoc 3.12, which rejects the proto3 optional fields in billboard.proto
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Stamp snapshot version
+        uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
+        with:
+          cwd: './deploy/headless/launcher'
+          deterministic-snapshot: true
+          only-update-versions: true
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: headless-${{ matrix.platform }}
+
+      - name: Build sidecar
+        run: cargo build --release --locked --target ${{ matrix.target }} -p dcl_deno_ipc
+
+      - name: Build engine
+        run: >
+          cargo build --release --locked --target ${{ matrix.target }}
+          --bin headless --no-default-features --features headless,livekit
+
+      - name: Strip binaries
+        if: runner.os != 'Windows'
+        run: strip target/${{ matrix.target }}/release/headless target/${{ matrix.target }}/release/dcl_deno_ipc
+
+      - name: Smoke test
+        if: matrix.platform != 'darwin-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.target }}/release/headless"
+          [ "${{ runner.os }}" = "Windows" ] && bin="$bin.exe"
+          # Boots the engine and the sidecar against a realm that does not exist; proves the
+          # binary links, starts, spawns its sidecar and shuts down cleanly.
+          "$bin" --realm http://127.0.0.1:1 --preview --server-mode --timeout 20 2>&1 | tee smoke.log
+          grep -q "\[headless\]" smoke.log
+
+      - name: Assemble platform package
+        shell: bash
+        run: |
+          set -euo pipefail
+          suffix=""
+          [ "${{ runner.os }}" = "Windows" ] && suffix=".exe"
+          node deploy/headless/build-platform-package.js \
+            --platform ${{ matrix.platform }} \
+            --version "$(node -p "require('./deploy/headless/launcher/package.json').version")" \
+            --engine "target/${{ matrix.target }}/release/headless$suffix" \
+            --sidecar "target/${{ matrix.target }}/release/dcl_deno_ipc$suffix" \
+            --out deploy/headless/dist
+
+      - name: Pack tarball
+        shell: bash
+        run: |
+          cd deploy/headless/dist/bevy-headless-server-${{ matrix.platform }}
+          npm pack --pack-destination "$GITHUB_WORKSPACE/deploy/headless/dist"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bevy-headless-${{ matrix.platform }}
+          path: deploy/headless/dist/*.tgz
+          retention-days: 14
+
+  publish:
+    # all-or-nothing: never advertise a version that is missing a platform
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # npm OIDC trusted publishing — no token secret
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Stamp snapshot version
+        # deterministic-snapshot derives the version from the commit, so this matches
+        # what the build legs baked into the platform packages
+        uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
+        with:
+          cwd: './deploy/headless/launcher'
+          deterministic-snapshot: true
+          only-update-versions: true
+
+      - name: Pin platform packages to this version
+        run: |
+          node -e '
+            const fs = require("fs")
+            const p = "deploy/headless/launcher/package.json"
+            const pkg = JSON.parse(fs.readFileSync(p, "utf8"))
+            for (const dep of Object.keys(pkg.optionalDependencies)) {
+              pkg.optionalDependencies[dep] = pkg.version
+            }
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n")
+          '
+          git diff deploy/headless/launcher/package.json
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: deploy/headless/artifacts
+          merge-multiple: true
+
+      - name: Publish platform packages
+        # platform packages first: the launcher pins them by exact version
+        run: |
+          set -euo pipefail
+          for tgz in deploy/headless/artifacts/*.tgz; do
+            npm publish "$tgz" --access public --tag "${{ github.event_name == 'workflow_dispatch' && 'latest' || 'next' }}"
+          done
+
+      - name: Publish launcher
+        uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
+        with:
+          cwd: './deploy/headless/launcher'
+          deterministic-snapshot: true
+          registry-url: https://registry.npmjs.org
+          access: public
+          # push -> next snapshot; manual dispatch = release to latest (see header).
+          # custom-tag cannot do this: oddish ignores it on main (only
+          # main-branch-latest-tag selects the tag there) and refuses the value
+          # 'latest' outright, so the old custom-tag release path silently
+          # published to next. Release dispatches must run from main — oddish
+          # skips the launcher publish on other branches.
+          main-branch-latest-tag: ${{ github.event_name == 'workflow_dispatch' }}

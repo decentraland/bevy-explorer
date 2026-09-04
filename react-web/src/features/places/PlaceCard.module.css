@@ -1,0 +1,224 @@
+/* PlaceCard — pixel-matched to decentraland-ui2 LiveNowCard (sites /whats-on). Exact values: 16px
+   radius, translucent body, 32px avatar with a faint white ring, white-glow hover, and a 46px
+   uppercase JUMP IN that slides up while the creator row lifts to make room. */
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  cursor: pointer;
+  background: transparent;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 2px 12px 12px rgba(255, 255, 255, 0.3);
+}
+
+.media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 500 / 329;
+  overflow: hidden;
+  background: linear-gradient(135deg, hsl(var(--hue) 30% 22%), #2a2435);
+  border-radius: 16px 16px 0 0;
+}
+.mediaImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+
+.badges {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+}
+.badgeGroup {
+  display: flex;
+  gap: 8px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  background: rgba(22, 21, 24, 0.92);
+}
+.live {
+  gap: 7px;
+  background: #fb3b3b; /* error.main */
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.liveDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+.userDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34ce77; /* success.main */
+}
+@keyframes livePulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.35);
+  }
+}
+
+.featured {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(90deg, #ff7439 0%, #e85d56 100%);
+  pointer-events: auto;
+}
+
+.body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 123px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 0 0 16px 16px;
+  overflow: hidden;
+}
+.info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.title {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.creatorRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  min-width: 0;
+  transition: opacity 0.18s ease;
+}
+/* On hover the JUMP IN button takes the creator row's place (no height change). */
+.card:hover .creatorRow {
+  opacity: 0;
+}
+.avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1.4px solid rgba(255, 255, 255, 0.3);
+  background: linear-gradient(135deg, hsl(var(--hue) 60% 50%), hsl(calc(var(--hue) + 40) 60% 38%));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.by {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.name {
+  color: var(--brand); /* primary.main #ff2d55 */
+  font-weight: 700;
+}
+
+.loc {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.1);
+}
+.locWorld {
+  color: var(--lavender);
+  background: color-mix(in srgb, var(--purple) 30%, transparent);
+}
+
+/* JUMP IN — full-width primary button occupying the creator row's slot, revealed on hover. */
+.jumpInWrap {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+}
+.card:hover .jumpInWrap {
+  opacity: 1;
+  pointer-events: auto;
+}
+.jumpIn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 46px;
+  border-radius: 16px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}

@@ -11,6 +11,7 @@ use bevy::{
     prelude::*,
 };
 
+use common::structs::NoRenderApp;
 use dcl::{
     crdt::{growonly::CrdtGOState, lww::CrdtLWWState},
     interface::{ComponentPosition, CrdtStore},
@@ -40,6 +41,7 @@ pub mod avatar_modifier_area;
 pub mod billboard;
 pub mod camera_mode_area;
 pub mod gltf_container;
+pub mod light_gradients;
 pub mod lights;
 pub mod material;
 pub mod mesh_collider;
@@ -156,9 +158,23 @@ pub struct TrackComponents(pub bool);
 
 impl Plugin for SceneOutputPlugin {
     fn build(&self, app: &mut App) {
+        // Render-only plugins are skipped headless. None of them feed results back to the
+        // scene, so their components simply stay in the scene-side filtered store and never
+        // cross IPC (see CrdtStore::process_message). Kept headless: AnimatorPlugin (animation
+        // drives transforms, so moving-platform colliders depend on it) and
+        // AvatarModifierAreaPlugin (inert today, but its modifiers are server-relevant).
+        let headless = app.world().get_resource::<NoRenderApp>().is_some();
+
         app.add_plugins(TransformAndParentPlugin);
-        app.add_plugins(MeshDefinitionPlugin);
-        app.add_plugins(MaterialDefinitionPlugin);
+        if !headless {
+            // builds Mesh3d and default materials for scene-authored PbMeshRenderer.
+            // MeshCollider resolves its own meshes, and the only other Mesh3d reader is
+            // pointer raycasting, which is skipped headless too.
+            app.add_plugins(MeshDefinitionPlugin);
+            // builds StandardMaterials and loads their textures for scene-authored
+            // PbMaterial; nothing samples them without a renderer
+            app.add_plugins(MaterialDefinitionPlugin);
+        }
         app.add_plugins(MeshColliderPlugin);
         app.add_plugins(TriggerAreaPlugin);
 
@@ -170,15 +186,25 @@ impl Plugin for SceneOutputPlugin {
             app.add_plugins(GltfDefinitionPlugin);
         }
         app.add_plugins(AnimatorPlugin);
-        app.add_plugins(BillboardPlugin);
+        if !headless {
+            app.add_plugins(BillboardPlugin);
+        }
         app.add_plugins(RaycastPlugin);
-        app.add_plugins(PointerEventsPlugin);
-        app.add_plugins(SceneUiPlugin);
-        app.add_plugins(TextShapePlugin);
+        if !headless {
+            // PointerEvents: tooltips / selection outlines / avatar-event propagation, all
+            // driven by pointer picking that needs input. Its only other consumers are
+            // scene UI (skipped here too) and the editor's EditorHighlight, which lives in
+            // the client app's SceneInspectorPlugin.
+            app.add_plugins(PointerEventsPlugin);
+            app.add_plugins(SceneUiPlugin);
+            app.add_plugins(TextShapePlugin);
+        }
         app.add_plugins(CameraModeAreaPlugin);
-        app.add_plugins(VisibilityComponentPlugin {
-            setup_crdt_lww: true,
-        });
+        if !headless {
+            app.add_plugins(VisibilityComponentPlugin {
+                setup_crdt_lww: true,
+            });
+        }
         app.add_plugins(AvatarModifierAreaPlugin);
 
         app.init_resource::<TrackComponents>();
@@ -268,7 +294,7 @@ impl AddCrdtInterfaceExt for App {
     {
         self.add_crdt_lww_interface::<D>(id, position);
         // register in ComponentNameRegistry for inspection
-        let (inspect, write) = make_proto_closures::<D>();
+        let (inspect, write, default) = make_proto_closures::<D>();
         self.world_mut()
             .resource_mut::<ComponentNameRegistry>()
             .register(
@@ -277,6 +303,7 @@ impl AddCrdtInterfaceExt for App {
                 CrdtType::LWW(position),
                 inspect,
                 Some(write),
+                Some(default),
             );
         // add a system to process the update
         self.world_mut()
@@ -315,7 +342,7 @@ impl AddCrdtInterfaceExt for App {
         assert!(existing.is_none(), "duplicate registration for {id:?}");
 
         // register in ComponentNameRegistry for inspection
-        let (inspect, write) = make_proto_closures::<D>();
+        let (inspect, write, default) = make_proto_closures::<D>();
         self.world_mut()
             .resource_mut::<ComponentNameRegistry>()
             .register(
@@ -324,6 +351,7 @@ impl AddCrdtInterfaceExt for App {
                 CrdtType::GO(position),
                 inspect,
                 Some(write),
+                Some(default),
             );
 
         self.world_mut()
@@ -349,6 +377,11 @@ pub(crate) fn process_crdt_lww_updates<
     <C as TryFrom<D>>::Error: std::fmt::Display,
 {
     for (_root, scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
+        // avoid triggering change detection when there is nothing to do
+        if updates.last_write.is_empty() && deleted_entities.0.is_empty() {
+            continue;
+        }
+
         // remove crdt state for dead entities
         for deleted in &deleted_entities.0 {
             updates.last_write.remove(deleted);
@@ -415,6 +448,11 @@ fn process_crdt_go_updates<
     mut existing: Query<&mut C>,
 ) {
     for (_root, scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
+        // avoid triggering change detection when there is nothing to do
+        if updates.0.is_empty() && deleted_entities.0.is_empty() {
+            continue;
+        }
+
         // remove crdt state for dead entities
         for deleted in &deleted_entities.0 {
             updates.0.remove(deleted);

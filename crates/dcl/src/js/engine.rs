@@ -1,22 +1,56 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 // Engine module
-use bevy::log::{debug, info, warn};
+use bevy::log::{debug, error, info, warn};
 #[cfg(feature = "span_scene_loop")]
 use bevy::log::{info_span, tracing::span::EnteredSpan};
 use common::structs::{CameraFov, GlobalCrdtStateUpdate, TimeOfDay};
-use dcl_component::{DclReader, Localizer, SceneOrigin};
+use dcl_component::{DclReader, Localizer, SceneCrdtTimestamp, SceneOrigin};
 use tokio::sync::{broadcast::error::TryRecvError, Mutex};
 
 use crate::{
-    crdt::{append_component, put_component},
-    interface::crdt_context::CrdtContext,
-    js::{CommunicatedWithRenderer, RendererStore, SceneResponseSender, ShuttingDown},
-    CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
-    SceneLogMessage, SceneResponse,
+    crdt::{append_component, delete_entity, put_component},
+    interface::{crdt_context::CrdtContext, CrdtType},
+    js::{
+        AllocatorContext, CommunicatedWithRenderer, CrdtSendsThisTick, CrdtStoreNextCheck,
+        FilteredCrdtStore, KillFlag, RendererStore, SceneResponseSender, SceneStatsFlush,
+    },
+    AllocError, CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
+    SceneLogMessage, SceneResourceCounters, SceneResponse,
 };
 
 use super::State;
+
+// Upper bound on a single CRDT batch a scene submits per tick. A well-behaved scene's
+// per-tick delta is orders of magnitude smaller; this only rejects pathological batches
+// that would build an IPC frame large enough to threaten the sidecar<->engine socket —
+// which every co-tenant scene shares. Bounding here, at the JS ingress, keeps the cost
+// attributable to the offending scene and lets us terminate only that scene, rather than
+// tearing down the shared connection after the frame has already been built. Tunable;
+// sized generously to leave headroom over legitimate bulk updates.
+pub(crate) const MAX_CRDT_BATCH_BYTES: usize = 64 * 1024 * 1024;
+
+// Upper bound on a scene's cumulative retained CRDT store. The store mirrors the scene's
+// live heap state, so a stock-SDK scene cannot grow it past the isolate's 512 MiB heap cap;
+// only a scene that pushes CRDT data without holding it in its own heap can. Set to the heap
+// cap so legitimate scenes are never clipped and only that cheating pattern is caught.
+pub(crate) const MAX_CRDT_STORE_BYTES: usize = 512 * 1024 * 1024;
+
+// Upper bound on CRDT batches a scene sends within one tick. Each send is paired with an
+// awaited receive in the EngineApi glue, so multiple sends per tick are renderer-paced and
+// don't stack the response channel — but a scene that loops renderer comms without surfacing
+// to the top-level scene loop escapes diagnostics, dt accounting and shutdown tracking, so
+// the number is kept small. Four is the most any known-legitimate runtime uses: the sdk6
+// adaption layer pumps exactly four engine updates inside onStart to bootstrap the scene.
+pub(crate) const MAX_CRDT_SENDS_PER_TICK: u32 = 4;
+
+/// Returns whether this scene runs in authoritative-server role. Read synchronously
+/// from the scene's CrdtContext (seeded from the engine's server-mode flag). MUST stay
+/// synchronous — an async op would return a Promise to JS, and `!!Promise` is always
+/// true, making every client believe it is the server.
+pub fn op_is_server(state: Rc<RefCell<impl State>>) -> bool {
+    state.borrow().borrow::<CrdtContext>().is_server
+}
 
 /// Localize the payload within a CRDT wire-format message.
 /// CRDT PutComponent format: length(4) + type(4) + entity(4) + component(4) + timestamp(4) + content_len(4) + payload
@@ -59,23 +93,96 @@ fn localize_crdt_message(
 
 pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
+
+    // Once flagged for shutdown the scene is inert: ingest nothing further and emit no
+    // frames, so a scene that ignores the unwind can't keep growing the store or pushing
+    // frames at a scene the renderer has already marked broken.
+    if op_state.borrow::<KillFlag>().killed() {
+        return;
+    }
+
+    // Bounded batches per tick: a scene that keeps sending without surfacing to the scene
+    // loop is breaching the runtime contract — un-awaited send spam would stack frames onto
+    // the bounded response channel, whose overflow panics inside an op and takes down the
+    // shared sidecar, and even awaited in-loop comms escape diagnostics and shutdown
+    // tracking. The counter is cleared by the scene loop at each tick boundary.
+    let sends = op_state
+        .try_take::<CrdtSendsThisTick>()
+        .unwrap_or_default()
+        .0
+        + 1;
+    op_state.put(CrdtSendsThisTick(sends));
+    if sends > MAX_CRDT_SENDS_PER_TICK {
+        let scene_id = op_state.borrow::<CrdtContext>().scene_id;
+        error!("[{scene_id:?}] more than {MAX_CRDT_SENDS_PER_TICK} CRDT batches in one tick; terminating the scene");
+        let _ = op_state
+            .borrow_mut::<SceneResponseSender>()
+            .try_send(SceneResponse::Error(
+                scene_id,
+                format!("scene sent more than {MAX_CRDT_SENDS_PER_TICK} CRDT batches in a tick"),
+            ));
+        op_state.borrow::<KillFlag>().kill();
+        return;
+    }
+
+    // Reject an oversized batch before it is copied into the store, serialised, and framed
+    // onto the shared connection. Report it as a scene error and flag the scene for shutdown
+    // so only this isolate is torn down; the frame is never built and co-tenant scenes are
+    // untouched.
+    if messages.len() > MAX_CRDT_BATCH_BYTES {
+        let scene_id = op_state.borrow::<CrdtContext>().scene_id;
+        error!(
+            "[{scene_id:?}] CRDT batch of {} bytes exceeds the {MAX_CRDT_BATCH_BYTES}-byte ingress cap; terminating the scene",
+            messages.len()
+        );
+        let _ = op_state
+            .borrow_mut::<SceneResponseSender>()
+            .try_send(SceneResponse::Error(
+                scene_id,
+                format!("scene exceeded the {MAX_CRDT_BATCH_BYTES}-byte CRDT batch limit"),
+            ));
+        op_state.borrow::<KillFlag>().kill();
+        return;
+    }
+
     let elapsed_time = op_state.borrow::<SceneElapsedTime>().0;
     let logs = op_state.take::<Vec<SceneLogMessage>>();
     op_state.put(Vec::<SceneLogMessage>::default());
     let mut entity_map = op_state.take::<CrdtContext>();
     let mut crdt_store = op_state.take::<CrdtStore>();
+    let mut filtered_store = op_state.take::<FilteredCrdtStore>();
+    let mut allocator = op_state.take::<AllocatorContext>();
     let writers = op_state.take::<CrdtComponentInterfaces>();
     let mut stream = DclReader::new(messages);
     debug!("op_crdt_send_to_renderer BATCH len: {}", stream.len());
 
-    // collect commands
-    crdt_store.process_message_stream(&mut entity_map, &writers, &mut stream, true);
+    // collect commands; unrecognized components are captured in the sidecar for the inspector, and
+    // every entity (recognized + filtered) is tracked in the allocator context for entity allocation
+    crdt_store.process_message_stream(
+        &mut entity_map,
+        &writers,
+        &mut stream,
+        true,
+        Some(&mut filtered_store.0),
+        Some(&mut allocator.0),
+    );
+    // flush the allocator's nascent births into its live table so new_in_range sees them (we don't
+    // use the census itself — the renderer is driven by entity_map's census above).
+    let _ = allocator.0.take_census();
 
     let census = entity_map.take_census();
     crdt_store.clean_up(&census.died);
+    // also reap the sidecar: scene-sent DeleteEntity messages clean it inline, but
+    // engine-initiated deletes only reach the stores via this census, and there's no value
+    // in retaining custom components for dead entities.
+    filtered_store.0.clean_up(&census.died);
     let updates = crdt_store.take_updates();
 
     let rpc_calls = std::mem::take(op_state.borrow_mut::<RpcCalls>());
+
+    if let Some(budget) = op_state.try_borrow_mut::<super::comms::CommsSendBudget>() {
+        budget.sent = 0;
+    }
 
     let sender = op_state.borrow_mut::<SceneResponseSender>();
     sender
@@ -89,9 +196,61 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
         ))
         .expect("failed to send to renderer");
 
+    let scene_id = entity_map.scene_id;
+    {
+        let counters = op_state.borrow_mut::<SceneResourceCounters>();
+        counters.ipc_responses += 1;
+        counters.crdt_bytes += messages.len() as u64;
+        counters.tick_count += 1;
+    }
+    if elapsed_time - op_state.borrow::<SceneStatsFlush>().0 >= 5.0 {
+        op_state.put(SceneStatsFlush(elapsed_time));
+        let snapshot = op_state.borrow::<SceneResourceCounters>().clone();
+        // advisory telemetry: drop the snapshot if the channel is full
+        let _ = op_state
+            .borrow_mut::<SceneResponseSender>()
+            .try_send(SceneResponse::Stats(scene_id, snapshot));
+    }
+
     op_state.put(writers);
     op_state.put(entity_map);
     op_state.put(crdt_store);
+    op_state.put(filtered_store);
+    op_state.put(allocator);
+
+    // Cumulative footprint guard. Measuring the retained store is O(entries), so amortise it:
+    // retained bytes grow at most 1:1 with ingest, so once a measurement finds `retained` bytes
+    // the store cannot reach the cap until `cap - retained` more are ingested. Only walk when the
+    // ingest total reaches that projected point (floored a batch ahead so a scene sitting just
+    // under the cap doesn't walk every tick). A scene well below the cap rarely walks at all.
+    if !op_state.has::<CrdtStoreNextCheck>() {
+        op_state.put(CrdtStoreNextCheck(MAX_CRDT_STORE_BYTES as u64));
+    }
+    let ingested = op_state.borrow::<SceneResourceCounters>().crdt_bytes;
+    if ingested >= op_state.borrow::<CrdtStoreNextCheck>().0 {
+        let retained = op_state.borrow::<CrdtStore>().retained_data_bytes()
+            + op_state
+                .borrow::<FilteredCrdtStore>()
+                .0
+                .retained_data_bytes();
+        if retained > MAX_CRDT_STORE_BYTES {
+            error!(
+                "[{scene_id:?}] retained CRDT store of {retained} bytes exceeds the {MAX_CRDT_STORE_BYTES}-byte cap; terminating the scene"
+            );
+            let _ = op_state
+                .borrow_mut::<SceneResponseSender>()
+                .try_send(SceneResponse::Error(
+                    scene_id,
+                    format!("scene exceeded the {MAX_CRDT_STORE_BYTES}-byte CRDT store limit"),
+                ));
+            op_state.borrow::<KillFlag>().kill();
+        } else {
+            let headroom = (MAX_CRDT_STORE_BYTES - retained) as u64;
+            op_state.put(CrdtStoreNextCheck(
+                ingested + headroom.max(MAX_CRDT_BATCH_BYTES as u64),
+            ));
+        }
+    }
 }
 
 pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Vec<Vec<u8>> {
@@ -103,33 +262,134 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
 
     debug!("op_crdt_recv_from_renderer");
 
-    // Receive messages in a loop, handling any snapshot requests immediately (no RefMut held
-    // across the await point).  Exits with the first non-snapshot response.
+    // A scene flagged for shutdown must not park on the renderer channel — the renderer marks
+    // it broken and never responds, which would leave the isolate resident until scene unload.
+    // Return an empty batch instead, so the tick unwinds to the scene loop, whose kill-flag
+    // check tears the runtime down.
+    if op_state.borrow().borrow::<KillFlag>().killed() {
+        return Vec::new();
+    }
+
+    // Receive messages in a loop, handling snapshot/allocation requests immediately (no RefMut held
+    // across the await point) and looping for the next.  Exits with the first Ok/shutdown response —
+    // these are what actually tick the scene. `injected` accumulates entity-instantiation
+    // put_components from AllocateEntity requests so they ride along with that next tick.
+    let mut injected: Vec<Vec<u8>> = Vec::new();
     let response = loop {
         let receiver = op_state
             .borrow_mut()
-            .borrow_mut::<Arc<Mutex<tokio::sync::mpsc::Receiver<RendererResponse>>>>()
+            .borrow_mut::<Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<RendererResponse>>>>()
             .clone();
         let response = receiver.lock().await.recv().await;
 
-        if let Some(RendererResponse::GetCrdtSnapshot) = &response {
-            let crdt_store = op_state.borrow_mut().take::<CrdtStore>();
-            let mut snapshot = crdt_store.clone();
-            op_state.borrow_mut().put(crdt_store);
-            // Merge renderer→scene components so the snapshot includes engine-managed
-            // values (EngineInfo, RaycastResult, etc.) alongside scene-set components.
-            let renderer_store = op_state.borrow_mut().take::<RendererStore>();
-            snapshot.merge_newer(renderer_store.0.clone());
-            op_state.borrow_mut().put(renderer_store);
-            let scene_id = op_state.borrow_mut().borrow::<CrdtContext>().scene_id;
-            op_state
-                .borrow_mut()
-                .borrow_mut::<SceneResponseSender>()
-                .try_send(SceneResponse::CrdtSnapshot(scene_id, snapshot))
-                .expect("failed to send crdt snapshot");
-            continue;
+        match response {
+            Some(RendererResponse::GetCrdtSnapshot) => {
+                let crdt_store = op_state.borrow_mut().take::<CrdtStore>();
+                let mut snapshot = crdt_store.clone();
+                op_state.borrow_mut().put(crdt_store);
+                // Merge renderer→scene components so the snapshot includes engine-managed
+                // values (EngineInfo, RaycastResult, etc.) alongside scene-set components.
+                let renderer_store = op_state.borrow_mut().take::<RendererStore>();
+                snapshot.merge_newer(renderer_store.0.clone());
+                op_state.borrow_mut().put(renderer_store);
+                // Merge the sidecar so the snapshot also carries custom (filtered-out) components
+                // as raw bytes; these never reach the renderer, only the inspector.
+                let filtered_store = op_state.borrow_mut().take::<FilteredCrdtStore>();
+                snapshot.merge_newer(filtered_store.0.clone());
+                op_state.borrow_mut().put(filtered_store);
+                let scene_id = op_state.borrow_mut().borrow::<CrdtContext>().scene_id;
+                op_state
+                    .borrow_mut()
+                    .borrow_mut::<SceneResponseSender>()
+                    .try_send(SceneResponse::CrdtSnapshot(scene_id, snapshot))
+                    .expect("failed to send crdt snapshot");
+                continue;
+            }
+            Some(RendererResponse::AllocateEntity {
+                component_id,
+                data,
+                count,
+                explicit_ids,
+            }) => {
+                // Allocate ids from the authoritative allocator (collision-free, correctly
+                // generationed) and reply immediately. Buffer the instantiating put_components so
+                // they're delivered with the next Ok tick rather than ticking the scene here — the
+                // scene's @dcl/ecs then adopts the entities on receive, before its update() runs.
+                //
+                // With `explicit_ids`, instantiate those exact ids instead of allocating fresh —
+                // used to recreate entities at their original ids on a freshly-reloaded scene. A
+                // requested id that's already alive (a collision) yields an `Err` in its slot, so
+                // the caller can surface it. Without it, `count` fresh ids.
+                //
+                // IMPORTANT: `component_id` MUST be a non-engine-recognized (custom) component.
+                // Engine-recognized components flow renderer→scene one-way (the scene never echoes
+                // them back), so an instantiation written with one would never reach the renderer's
+                // store and the value would be lost — only a custom component round-trips.
+                //
+                // NOTE: `count > 1` instantiates every entity with the same component; only single
+                // allocation is used today (batched per-entity instantiation is a later fix).
+                let mut allocator = op_state.borrow_mut().take::<AllocatorContext>();
+                let mut filtered_store = op_state.borrow_mut().take::<FilteredCrdtStore>();
+                let scene_id = allocator.0.scene_id;
+                // One result per requested slot, in order: a caller-specified id (validated below)
+                // or a freshly-allocated one, else the reason it couldn't be allocated. authored
+                // entities live above the reserved-static range (512); avoid the u16::MAX wrap
+                // sentinel used by new_in_range's `last_new`.
+                let results: Vec<Result<dcl_component::SceneEntityId, AllocError>> =
+                    match &explicit_ids {
+                        Some(protos) => protos
+                            .iter()
+                            .map(|p| {
+                                let entity = dcl_component::SceneEntityId::from_proto_u32(*p);
+                                if allocator.0.alloc_explicit(entity) {
+                                    Ok(entity)
+                                } else {
+                                    warn!("AllocateEntity: id {entity:?} already live (collision)");
+                                    Err(AllocError::Collision(entity))
+                                }
+                            })
+                            .collect(),
+                        None => (0..count)
+                            .map(|_| {
+                                allocator
+                                    .0
+                                    .new_in_range(&(512..=u16::MAX - 1))
+                                    .ok_or_else(|| {
+                                        warn!("AllocateEntity: no free entity id");
+                                        AllocError::NoFreeId
+                                    })
+                            })
+                            .collect(),
+                    };
+                for id in results.iter().filter_map(|r| r.as_ref().ok()).copied() {
+                    // Also record the instantiation in the sidecar so /crdt_snapshot reflects it —
+                    // the scene never echoes the injected (renderer→scene) component back, so without
+                    // this the editor's view of the component would vanish on the next reload.
+                    filtered_store.0.try_update(
+                        component_id,
+                        CrdtType::LWW_ANY,
+                        id,
+                        SceneCrdtTimestamp(1),
+                        Some(&mut DclReader::new(&data)),
+                    );
+                    injected.push(put_component(
+                        &id,
+                        &component_id,
+                        &SceneCrdtTimestamp(1),
+                        Some(&data),
+                    ));
+                }
+                op_state.borrow_mut().put(allocator);
+                op_state.borrow_mut().put(filtered_store);
+                debug!("AllocateEntity: {results:?}");
+                let _ = op_state
+                    .borrow_mut()
+                    .borrow_mut::<SceneResponseSender>()
+                    .try_send(SceneResponse::EntityAllocated(scene_id, results));
+                continue;
+            }
+            other => break other,
         }
-        break response;
     };
 
     let mut op_state = op_state.borrow_mut();
@@ -144,8 +404,10 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     let writers = op_state.take::<CrdtComponentInterfaces>();
 
     let mut results = match response {
-        Some(RendererResponse::Ok(updates)) => {
-            let mut results = Vec::new();
+        Some(RendererResponse::Ok(updates, census)) => {
+            // Lead with any buffered entity instantiations so the scene adopts the new entities
+            // before applying this tick's component updates.
+            let mut results = std::mem::take(&mut injected);
             // TODO: consider writing directly into a v8 buffer
             for (component_id, lww) in updates.lww.iter() {
                 for (entity_id, data) in lww.last_write.iter() {
@@ -165,18 +427,33 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                 }
             }
 
-            // store the updates
-            renderer_state.0.update_from(updates);
+            // store the updates + apply the census's deletions to the mirror
+            renderer_state.0.update_from(updates, &census);
+
+            // Engine-initiated deletes: mark them dead in the entity map and the allocator (the
+            // scene won't re-send these as DeleteEntity stream messages, so process_message's
+            // alloc.kill never sees them), and forward a DeleteEntity to the SDK so the scene
+            // deletes them too. (update_from already dropped them from the RendererStore.)
+            let mut allocator = op_state.take::<AllocatorContext>();
+            for entity_id in census.died.iter() {
+                entity_map.kill(*entity_id);
+                allocator.0.kill(*entity_id);
+                results.push(delete_entity(entity_id));
+            }
+            op_state.put(allocator);
+            // census.born is reserved for engine-created entities (none yet).
 
             results
         }
+        // AllocateEntity is handled in the receive loop above (it doesn't tick the scene).
+        Some(RendererResponse::AllocateEntity { .. }) => unreachable!(),
         None => {
             // channel has been closed, shutdown gracefully
             info!(
                 "{}: shutting down",
                 std::thread::current().name().unwrap_or("(webworker)")
             );
-            op_state.put(ShuttingDown);
+            op_state.borrow::<KillFlag>().kill();
             Default::default()
         }
         // GetCrdtSnapshot is handled before this match in the loop above.
@@ -206,6 +483,8 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                         &writers,
                         &mut stream,
                         false,
+                        None,
+                        None,
                     );
                     results.push(data);
                 }

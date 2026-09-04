@@ -11,7 +11,10 @@ pub fn ops() -> Vec<OpDecl> {
 }
 
 #[op2(async)]
-async fn op_comms_send_string(state: Rc<RefCell<OpState>>, #[string] message: String) {
+async fn op_comms_send_string(
+    state: Rc<RefCell<OpState>>,
+    #[string] message: String,
+) -> Result<(), anyhow::Error> {
     dcl::js::comms::op_comms_send_string(state, message).await
 }
 
@@ -20,7 +23,7 @@ async fn op_comms_send_binary_single(
     state: Rc<RefCell<OpState>>,
     #[buffer(detach)] message: JsBuffer,
     #[string] recipient: Option<String>,
-) {
+) -> Result<(), anyhow::Error> {
     dcl::js::comms::op_comms_send_binary_single(state, message, recipient).await
 }
 

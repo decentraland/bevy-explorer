@@ -10,20 +10,35 @@ use common::structs::GlobalCrdtStateUpdate;
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::UnboundedSender;
 
 use ipfs::SceneJsFile;
 
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
-    js::SceneResponseSender,
+    js::{KillFlag, SceneResponseSender},
     RendererResponse, SceneId,
 };
 
 use crate::js::scene_thread;
 
-pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, IsolateHandle>>> =
+pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, (IsolateHandle, KillFlag)>>> =
     Lazy::new(Default::default);
+
+/// interrupt the scene's isolate even if it is stuck in a JS loop, so the scene
+/// thread unwinds and exits. no-op if the scene thread has already exited, or
+/// for a worker blocked inside a rust op (the termination takes effect when
+/// control returns to JS). the kill flag must be set as well as terminating:
+/// v8's termination request is consumed once the stack unwinds, and the scene
+/// loop doesn't exit on uncaught errors, so without the flag a deterministic
+/// wedge would just re-enter its loop on the next tick.
+pub fn terminate_scene(scene_id: SceneId) {
+    if let Some((handle, kill_flag)) = VM_HANDLES.lock().unwrap().get(&scene_id) {
+        bevy::log::warn!("[{scene_id:?}] scene thread still running after kill; force-terminating");
+        kill_flag.kill();
+        handle.terminate_execution();
+    }
+}
 
 /// must be called from main thread on linux before any isolates are created
 pub fn init_runtime() {
@@ -42,9 +57,9 @@ pub fn spawn_scene(
     inspect: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
-) -> Sender<RendererResponse> {
+) -> UnboundedSender<RendererResponse> {
     let id = scene_context.scene_id;
-    let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
+    let (main_sx, thread_rx) = tokio::sync::mpsc::unbounded_channel::<RendererResponse>();
 
     std::thread::Builder::new()
         .name(format!("scene thread {:?}", id.0))
@@ -69,6 +84,8 @@ pub fn spawn_scene(
             if let Err(e) = thread_result {
                 error!("[{id:?}] caught scene thread panic: {e:?}");
             }
+
+            VM_HANDLES.lock().unwrap().remove(&id);
         })
         .unwrap();
 

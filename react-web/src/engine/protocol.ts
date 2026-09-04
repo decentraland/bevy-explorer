@@ -1,0 +1,1032 @@
+// Wire protocol between the React page and the super-user "bridge" scene.
+//
+// Transport is a same-origin BroadcastChannel (exposed to the --ui super-user
+// scene only — see bevy-explorer deploy/web/sandbox_worker.js). Every message is
+// wrapped in an addressed Envelope so each side ignores its own posts.
+//
+// Domain types mirror scene/src/bevy-api/interface.ts so the bridge scene can
+// forward SystemApi results verbatim.
+
+import type { SceneLoadingUi } from './generated'
+
+export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
+
+/**
+ * The channel name to actually open: BRIDGE_CHANNEL plus a per-boot session suffix.
+ * BroadcastChannel is same-origin across ALL tabs, so the bare name lets one tab's HUD drive
+ * every tab's bridge scene (issue #1089). The id lives on `window.__bridgeSession` — lazily
+ * created by whichever page-side caller touches it first (this helper, or the e2e spy's init
+ * script). engine.js only FORWARDS it to the scene sandbox, which appends the same suffix
+ * (deploy/web/engine/sandbox_worker.js) — it never generates one, so embedders that share the
+ * bus across documents (creator-hub's inspector) keep bare names. EngineHost calls this before
+ * booting the engine, which is what opts this page in.
+ */
+export function bridgeChannelName(): string {
+  // Structural globalThis, not window/crypto: this module is also compiled into the bridge
+  // scene's program (type-only imports), whose tsconfig has no DOM lib. (The scene never calls
+  // this at runtime — its suffix is applied by the sandbox's injected BroadcastChannel wrapper.)
+  const g = globalThis as { __bridgeSession?: string; crypto?: { randomUUID?(): string } }
+  // The id needs uniqueness, not unpredictability — Math.random covers insecure contexts
+  // (plain-http LAN testing), where crypto.randomUUID is absent.
+  g.__bridgeSession ??= g.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10)
+  return `${BRIDGE_CHANNEL}#${g.__bridgeSession}`
+}
+
+/** Mirrors SystemApi.getPreviousLogin(): userId is absent for a fresh user. */
+export interface PreviousLogin {
+  userId: string | null
+}
+
+/** Mirrors SystemApi.loginPrevious() result. */
+export interface LoginPreviousResult {
+  success: boolean
+  error: string
+}
+
+/** Simple promise-returning SystemApi calls the login slice needs. */
+export type RpcMethod =
+  | 'getPreviousLogin'
+  | 'loginPrevious'
+  | 'loginNew'
+  | 'loginGuest'
+  | 'loginIdentity'
+  | 'loginCancel'
+  | 'logout'
+
+// ---- page -> scene ---------------------------------------------------------
+
+export interface RpcRequest {
+  kind: 'rpc:req'
+  id: string
+  method: RpcMethod
+}
+
+/** Send a chat message (page → engine via the scene's BevyApi.sendChat). */
+export interface SendChatRequest {
+  kind: 'sendChat'
+  message: string
+  channel: string
+}
+
+/** Reload the current scene(s) — the `/reload` chat command (scene calls SystemApi.reload). */
+export interface ReloadSceneRequest {
+  kind: 'reloadScene'
+}
+
+/** Run an engine console command (chat `/commands` → `help`, or any passed-through `/command`);
+ *  the scene answers with a `consoleReply`. */
+export interface ConsoleCommandRequest {
+  kind: 'consoleCommand'
+  command: string
+  args?: string[]
+}
+
+/** The console's reply to a `consoleCommand` (scene → page): its text output, or the failure
+ *  text (`ok: false`, e.g. the engine's unknown-command rejection or a clap usage error). */
+export interface ConsoleReplyMessage {
+  kind: 'consoleReply'
+  command: string
+  args: string[]
+  ok: boolean
+  output: string
+}
+
+/** Sidebar nav actions the React sidebar triggers in the scene (open a menu/popup,
+ *  toggle emote wheel / mic) until those panels are themselves migrated to React. */
+export type NavAction =
+  | 'map'
+  | 'settings'
+  | 'backpack'
+  | 'communities'
+  | 'friends'
+  | 'profile'
+  | 'notifications'
+  | 'emotes'
+  | 'mic'
+
+export interface NavActionRequest {
+  kind: 'navAction'
+  action: NavAction
+}
+
+export type PageToScene =
+  | RpcRequest
+  | SendChatRequest
+  | ReloadSceneRequest
+  | ConsoleCommandRequest
+  | NavActionRequest
+  | FriendActionRequest
+  | GetSettingsRequest
+  | SetSettingRequest
+  | GetBindingsRequest
+  | SetBindingsRequest
+  | ResetBindingsRequest
+  | CaptureInputRequest
+  | UiFocusMessage
+  | GetProfileRequest
+  | GetUserProfileRequest
+  | GetNotificationsRequest
+  | MarkNotificationsReadRequest
+  | GetEmotesRequest
+  | TriggerEmoteRequest
+  | EquipEmoteRequest
+  | SetMicRequest
+  | GetWearablesRequest
+  | CatalogQueryRequest
+  | EquipRequest
+  | PreviewAvatarRequest
+  | GetOutfitsRequest
+  | SaveOutfitRequest
+  | DeleteOutfitRequest
+  | EquipOutfitRequest
+  | GetCommunitiesRequest
+  | CreateCommunityRequest
+  | JoinCommunityRequest
+  | LeaveCommunityRequest
+  | GetCommunityDetailRequest
+  | GetMapRequest
+  | TeleportRequest
+  | ChangeRealmRequest
+  | MinimapConfigRequest
+  | PermissionResolveRequest
+  | EngineViewportRequest
+  | GetGalleryRequest
+  | GetGalleryPhotoRequest
+  | DeleteGalleryPhotoRequest
+
+// ---- scene -> page ---------------------------------------------------------
+
+export interface RpcResponse {
+  kind: 'rpc:res'
+  id: string
+  ok: boolean
+  value?: unknown
+  error?: string
+}
+
+/** Fired once the local player has spawned in-world (getPlayer() non-null). */
+export interface PlayerReadyEvent {
+  kind: 'event'
+  name: 'playerReady'
+}
+
+/** Mid-flight `loginNew` verification code (SystemApi.loginNew's `code` promise): the engine
+ *  has opened the auth site in the user's external browser; the page shows this code so the
+ *  user can match it there. `null` = the auth server issued no code (nothing to match). */
+export interface LoginCodeMessage {
+  kind: 'loginCode'
+  code: string | null
+}
+
+/** Mirrors SystemApi SceneLoadingWindow — the scene-asset loading state. */
+export type SceneLoadingState = SceneLoadingUi
+
+/** Streamed scene-asset loading updates (drives the React loading screen). */
+export interface SceneLoadingMessage {
+  kind: 'sceneLoading'
+  state: SceneLoadingState
+}
+
+/** Mirrors SystemApi ChatMessageDefinition (sender_address → sender). */
+export interface ChatMessage {
+  sender: string
+  message: string
+  channel: string
+}
+
+/** Streamed incoming chat messages (scene → page). */
+export interface ChatRelayMessage {
+  kind: 'chat'
+  chat: ChatMessage
+}
+
+/** Chat panel visibility, driven by the scene's sidebar chat icon (hud.chatOpen). */
+export interface ChatVisibilityMessage {
+  kind: 'chatVisibility'
+  open: boolean
+}
+
+/** Enter was pressed (engine "Chat" system action) → open + focus the chat input, even while
+ *  the engine holds keyboard focus (pointer-locked camera-look). */
+export interface FocusChatMessage {
+  kind: 'focusChat'
+}
+
+/** A nearby player (from the scene's PlayerIdentityData set). */
+export interface NearbyMember {
+  address: string
+  name: string
+  /** Avatar face snapshot URL (when the profile has loaded). */
+  picture?: string
+}
+
+/** Nearby members + count, polled by the scene (chat header "Nearby · N"). */
+export interface MembersMessage {
+  kind: 'members'
+  members: NearbyMember[]
+}
+
+/** A full menu page (map/settings/backpack/communities) is open in the scene — the
+ *  React HUD (sidebar + chat) hides while it is, since the menu has its own nav. */
+export interface MenuVisibilityMessage {
+  kind: 'menuVisibility'
+  open: boolean
+}
+
+export type FriendStatus = 'online' | 'offline' | 'away'
+
+/** Mirrors the scene's FriendStatusData (profilePictureUrl → picture). */
+export interface Friend {
+  address: string
+  name: string
+  picture?: string
+  status: FriendStatus
+}
+
+/** Mirrors the scene's FriendRequestData. */
+export interface FriendRequest {
+  address: string
+  name: string
+  picture?: string
+  message?: string
+  id: string
+  createdAt?: number
+}
+
+/** Friends snapshot relayed from the scene's social state (hud.friends + requests).
+ *  `available` is false for guests / before the relationship snapshot is seeded. */
+export interface FriendsMessage {
+  kind: 'friends'
+  available: boolean
+  friends: Friend[]
+  received: FriendRequest[]
+  sent: FriendRequest[]
+  /** Blocked addresses (names/avatars not resolved here). */
+  blocked: string[]
+}
+
+/** Friends social action (page → scene → BevyApi.social.*). Guest-disabled. */
+export type FriendAction = 'request' | 'accept' | 'reject' | 'cancel' | 'delete' | 'block' | 'unblock'
+
+export interface FriendActionRequest {
+  kind: 'friendAction'
+  op: FriendAction
+  address: string
+}
+
+/** Mirrors the engine's ExplorerSetting (BevyApi.getSettings). A setting is a
+ *  Select when it has namedVariants, otherwise a numeric Slider; a 2-variant or
+ *  0..1 setting renders as a Toggle. */
+import type { SettingInfo as Setting, NamedVariant as SettingVariant } from './generated'
+export type { Setting, SettingVariant }
+
+export interface SettingsMessage {
+  kind: 'settings'
+  settings: Setting[]
+}
+
+/** A passport achievement badge. */
+export interface Badge {
+  id: string
+  name: string
+  /** e.g. 'bronze' | 'silver' | 'gold' — for the tier ring. */
+  tier?: string
+  image?: string
+}
+
+/** The about-me field grid on the passport (all optional). */
+export interface ProfileInfo {
+  gender?: string
+  birthdate?: string
+  pronouns?: string
+  relationship?: string
+  language?: string
+  profession?: string
+  employment?: string
+  hobby?: string
+  realName?: string
+}
+
+/** The local player's profile (passport). */
+export interface Profile {
+  address: string
+  name: string
+  picture?: string
+  hasClaimedName: boolean
+  isGuest: boolean
+  description?: string
+  links?: { title: string; url: string }[]
+  // --- rich passport fields (optional; populated by the passport fetch) -----
+  /** Full-body avatar snapshot (catalyst `avatar.snapshots.body`) — the passport hero image. */
+  bodyImage?: string
+  badges?: Badge[]
+  info?: ProfileInfo
+  /** Mutual-friends count shown under the name. */
+  mutuals?: number
+  /** Camera-reel photo URLs (Photos tab). */
+  photos?: string[]
+  /** Currently-equipped wearables (category slots), resolved from the deployed avatar. */
+  equippedWearables?: Wearable[]
+  /** Currently-equipped emotes (wheel slots), resolved from the deployed avatar. */
+  equippedEmotes?: Emote[]
+}
+
+export interface ProfileMessage {
+  kind: 'profile'
+  profile: Profile | null
+}
+
+export interface GetProfileRequest {
+  kind: 'getProfile'
+}
+
+/** Fetch another user's full passport by address (View Profile). */
+export interface GetUserProfileRequest {
+  kind: 'getUserProfile'
+  address: string
+}
+
+/** A fetched user's passport (kept separate from the local `profile` message so it
+ *  never clobbers the local player's profile state). */
+export interface UserProfileMessage {
+  kind: 'userProfile'
+  address: string
+  profile: Profile | null
+}
+
+/** Mirrors the engine's BaseNotification (metadata varies by type). */
+export interface AppNotification {
+  id: string
+  type: string
+  timestamp: string
+  read: boolean
+  metadata: Record<string, unknown>
+}
+
+export interface NotificationsMessage {
+  kind: 'notifications'
+  notifications: AppNotification[]
+}
+
+export interface GetNotificationsRequest {
+  kind: 'getNotifications'
+}
+
+/** Persist "mark as read" for the given notification ids (signed PUT in the relay). */
+export interface MarkNotificationsReadRequest {
+  kind: 'markNotificationsRead'
+  ids: string[]
+}
+
+/** One owned emote. `slot` is its wheel slot (0–9) when currently equipped, undefined otherwise —
+ *  so the backpack shows the whole collection while the wheel still finds the 10 equipped by slot. */
+export interface Emote {
+  slot?: number
+  urn: string
+  name: string
+  thumbnail?: string
+  rarity?: string
+  /** Owned quantity (×N badge). */
+  count?: number
+  /** Marketplace deep link (…/shop/item/<contract>/<itemId>) — set only for on-chain collectibles;
+   *  base emotes have no listing. Resolved scene-side (see resolveShopUrls). */
+  shopUrl?: string
+}
+
+export interface EmotesMessage {
+  kind: 'emotes'
+  emotes: Emote[]
+}
+
+/** Assign an owned emote to a wheel slot (0–9), or clear the slot with urn:''. */
+export interface EquipEmoteRequest {
+  kind: 'equipEmote'
+  slot: number
+  urn: string
+}
+
+export interface MicMessage {
+  kind: 'mic'
+  enabled: boolean
+  available: boolean
+}
+
+export interface SetMicRequest {
+  kind: 'setMic'
+  enabled: boolean
+}
+
+/** The local player's current parcel (for the map marker / centering). */
+export interface MapMessage {
+  kind: 'mapState'
+  x: number
+  y: number
+}
+
+export interface GetMapRequest {
+  kind: 'getMap'
+}
+
+/** The local player's live pose, streamed for the minimap. Position is in world metres
+ *  (not parcels) so the map can scroll smoothly between parcels; both yaws are degrees.
+ *  `yaw` is the avatar's heading (drives the arrow), `camYaw` the camera's (drives
+ *  "rotate with camera"). Throttled and change-guarded by the scene. */
+export interface PlayerPoseMessage {
+  kind: 'playerPose'
+  x: number
+  z: number
+  yaw: number
+  camYaw: number
+}
+
+/** Which realm we're in. `isWorld` distinguishes a World (worlds-content-server, or a
+ *  `.eth` name) from Genesis City: Worlds have no satellite/parcel tiles, so the minimap
+ *  forces the engine-rendered Camera style there. Pushed on change. */
+export interface RealmInfoMessage {
+  kind: 'realmInfo'
+  realm: string
+  isWorld: boolean
+}
+
+/** Title of the scene the player is standing in, for the minimap header. Resolved by parcel
+ *  from the live scene list and pushed when the parcel changes — NOT the same as the
+ *  `sceneLoading` title, which describes the entry overlay and goes stale the moment you
+ *  walk into the next scene. Empty when the parcel has no deployed scene. */
+export interface SceneInfoMessage {
+  kind: 'sceneInfo'
+  title: string
+}
+
+/** Minimap style/zoom/rotation (page → scene). The scene only runs the Camera-style
+ *  TextureCamera while `style` is 'imposters'; the DOM styles render in React and the
+ *  camera is disposed. `visibleMeters` maps to the camera's orthographic vertical range. */
+export interface MinimapConfigRequest {
+  kind: 'minimapConfig'
+  style: MinimapStyle
+  rotation: MinimapRotation
+  visibleMeters: number
+}
+
+/** 'parcel' and 'satellite' are rendered in the DOM from map tiles; 'imposters' (labelled
+ *  "Camera" in the UI) is a live top-down render of the world by the engine. */
+export type MinimapStyle = 'parcel' | 'satellite' | 'imposters'
+
+/** 'camera' rotates the map with the camera; 'north' keeps north up. */
+export type MinimapRotation = 'camera' | 'north'
+
+/** Teleport to a parcel (page → scene → teleportTo). */
+export interface TeleportRequest {
+  kind: 'teleport'
+  x: number
+  y: number
+}
+
+/** Change to a world/realm (page → scene → changeRealm). `realm` is a world name
+ *  (e.g. `boedo.dcl.eth`) or realm URL. */
+export interface ChangeRealmRequest {
+  kind: 'changeRealm'
+  realm: string
+}
+
+/** A scene's pending permission prompt relayed from the engine (e.g. it wants to move you
+ *  to a new realm). Shown as the React permission dialog; resolved with permissionResolve. */
+export interface PermissionRequestMessage {
+  kind: 'permissionRequest'
+  /** Engine-assigned request id (echoed back to resolve a "Once" decision). */
+  id: number
+  /** PermissionType serde name, e.g. 'ChangeRealm' — React maps it to the human prompt. */
+  ty: string
+  /** Scene title (e.g. 'Genesis Plaza') for the dialog text. */
+  sceneName: string
+  /** Scene hash — the value for a Scene-level "Always" grant. */
+  scene: string
+  /** Realm url the request was made under — the value for a Realm-level "Always" grant. */
+  realm: string
+  /** Extra context line (e.g. 'Jump to DCL Kickoff Challenge?'). */
+  additional?: string
+}
+
+/** A queued permission prompt the engine has already resolved (a permanent rule set for an earlier
+ *  prompt now covers it) — the HUD drops it without asking. */
+export interface PermissionWithdrawnMessage {
+  kind: 'permissionWithdrawn'
+  id: number
+}
+
+/** Which scope an Allow/Deny applies to. `once` = just this request; the rest persist a rule. */
+export type PermissionLevelChoice = 'once' | 'scene' | 'realm' | 'global'
+
+/** The user's decision on a permission prompt (page → scene → SystemApi). */
+export interface PermissionResolveRequest {
+  kind: 'permissionResolve'
+  id: number
+  ty: string
+  allow: boolean
+  level: PermissionLevelChoice
+  /** Scene hash + realm carried back so the scene can target a permanent grant. */
+  scene: string
+  realm: string
+}
+
+/**
+ * Tells the scene to render an engine-backed view (the rich map, or the avatar
+ * preview) into a screen rectangle that a React page has carved out as transparent.
+ * `rect` is in CSS pixels relative to the viewport; null hides the view (on close).
+ */
+export interface EngineViewportRequest {
+  kind: 'engineViewport'
+  region: 'map' | 'avatarPreview'
+  rect: { x: number; y: number; width: number; height: number } | null
+  /** `devicePixelRatio` at the time the rect was measured. The rect is in CSS pixels, so this is
+   *  what turns it into the physical pixels the scene should actually render — without it a
+   *  render target has to assume the worst display and oversample everywhere else. */
+  dpr?: number
+}
+
+/** A community (from the scene's fetchCommunities). */
+export interface Community {
+  id: string
+  name: string
+  description: string
+  thumbnail?: string
+  membersCount: number
+  /** 'owner' | 'moderator' | 'member' | 'none' — membership of the local user. */
+  role: string
+  ownerName: string
+  /** 'public' | 'private' — gates the join flow (public = join, private = request). */
+  privacy?: string
+}
+
+export interface CommunitiesMessage {
+  kind: 'communities'
+  communities: Community[]
+}
+
+export interface GetCommunitiesRequest {
+  kind: 'getCommunities'
+}
+
+/** Create a community (page → scene → signed multipart POST to the social-api). */
+export interface CreateCommunityRequest {
+  kind: 'createCommunity'
+  name: string
+  description: string
+  privacy: 'public' | 'private'
+  /** Discoverable in the directory → visibility 'all', otherwise 'unlisted'. */
+  discoverable: boolean
+}
+
+export interface JoinCommunityRequest {
+  kind: 'joinCommunity'
+  id: string
+}
+
+export interface LeaveCommunityRequest {
+  kind: 'leaveCommunity'
+  id: string
+}
+
+/** A member of a community (Members tab). */
+export interface CommunityMember {
+  address: string
+  name: string
+  /** 'owner' | 'moderator' | 'member' */
+  role: string
+  picture?: string
+  hasClaimedName?: boolean
+  /** the local user already follows them (hides "Add Friend"). */
+  isFriend?: boolean
+}
+
+/** A place shared by a community (Places tab). */
+export interface CommunityPlace {
+  id: string
+  title: string
+  thumbnail?: string
+  /** e.g. "-66,56" */
+  positions?: string
+  /** 0..1 like rate. */
+  likeRate?: number
+}
+
+/** An announcement post (Announcements tab). */
+export interface CommunityPost {
+  id: string
+  author: string
+  authorAddress: string
+  authorPicture?: string
+  text: string
+  timestamp: number
+  likes: number
+}
+
+/** An upcoming event (right-hand sidebar). */
+export interface CommunityEvent {
+  id: string
+  name: string
+  thumbnail?: string
+  startsAt: number
+}
+
+/** A camera-reel photo shared in the community (Photos tab). */
+export interface CommunityPhoto {
+  id: string
+  url: string
+  thumbnail?: string
+}
+
+/** Request the per-community detail when the modal opens. */
+export interface GetCommunityDetailRequest {
+  kind: 'getCommunityDetail'
+  id: string
+}
+export interface CommunityDetailMessage {
+  kind: 'communityDetail'
+  id: string
+  members: CommunityMember[]
+  posts: CommunityPost[]
+  places: CommunityPlace[]
+  events: CommunityEvent[]
+  photos: CommunityPhoto[]
+}
+
+// ---- gallery (camera reel) -------------------------------------------------
+
+/** One camera-reel photo (compact list item). `dateTime` is the service's raw string
+ *  (a unix timestamp in seconds or ms, or ISO) — parsed for month-grouping on the page. */
+export interface GalleryPhoto {
+  id: string
+  url: string
+  thumbnailUrl?: string
+  dateTime: string
+  /** Whether the photo is publicly shareable (only the owner can flip it). */
+  isPublic?: boolean
+}
+
+/** A person captured in a photo (the detail-view "people in this photo" list). */
+export interface GalleryPerson {
+  address: string
+  name: string
+  isGuest?: boolean
+}
+
+/** Full metadata for one photo (fetched lazily when its detail view opens). */
+export interface GalleryPhotoMeta {
+  /** Who took the photo. */
+  userName?: string
+  userAddress?: string
+  /** Scene name + parcel where it was taken (for "Jump In"). */
+  sceneName?: string
+  x?: number
+  y?: number
+  realm?: string
+  people?: GalleryPerson[]
+}
+
+export interface GetGalleryRequest {
+  kind: 'getGallery'
+}
+
+/** The local player's camera-reel photos + storage usage (current/max). */
+export interface GalleryMessage {
+  kind: 'gallery'
+  photos: GalleryPhoto[]
+  current: number
+  max: number
+}
+
+/** Fetch one photo's full metadata (place + people) for its detail view. */
+export interface GetGalleryPhotoRequest {
+  kind: 'getGalleryPhoto'
+  id: string
+}
+
+export interface GalleryPhotoMessage {
+  kind: 'galleryPhoto'
+  id: string
+  meta: GalleryPhotoMeta | null
+}
+
+/** Delete one of the local player's photos (signed DELETE; re-emits the gallery). */
+export interface DeleteGalleryPhotoRequest {
+  kind: 'deleteGalleryPhoto'
+  id: string
+}
+
+/** An owned wearable (backpack catalog item). */
+export interface Wearable {
+  urn: string
+  name: string
+  rarity: string
+  category: string
+  thumbnail?: string
+  count?: number
+  equipped: boolean
+  /** Marketplace deep link (…/shop/item/<contract>/<itemId>) — set only for on-chain collectibles;
+   *  base/off-chain items have no listing. Resolved scene-side (see resolveShopUrls). */
+  shopUrl?: string
+}
+
+/** Currently-equipped wearables, resolved by urn independently of the (paginated) grid so every
+ *  equipped item drives its per-category slot even when it isn't on the current catalog page. */
+export interface WearablesMessage {
+  kind: 'wearables'
+  equipped: Wearable[]
+}
+
+/** Load the equipped-wearables set (category slots). The owned catalog itself is paged via
+ *  catalogQuery — this only carries the decoupled equipped items. */
+export interface GetWearablesRequest {
+  kind: 'getWearables'
+}
+
+/** Which owned-items catalog a paged query targets. Emotes reuse the same query/response. */
+export type CatalogKind = 'wearables' | 'emotes'
+
+/** A generic server-side-paginated request for an owned-items catalog page (backpack grid). The
+ *  scene fetches exactly this page from the catalyst so multi-thousand inventories never load at
+ *  once. Filters/sort are applied server-side; `requestId` lets the page drop stale responses. */
+export interface CatalogQueryRequest {
+  kind: 'catalogQuery'
+  catalog: CatalogKind
+  /** 0-based page index. */
+  page: number
+  pageSize: number
+  /** Wearables body-part category filter ('all' → omit). */
+  category?: string
+  /** Free-text name filter (server-side). */
+  search?: string
+  orderBy?: 'rarity' | 'name'
+  direction?: 'asc' | 'desc'
+  /** Exclude base (off-chain) items → collectibles only. */
+  collectiblesOnly?: boolean
+  /** Monotonic per-catalog id echoed in the response; the page ignores out-of-order replies. */
+  requestId: number
+}
+
+/** One catalog page (response to CatalogQueryRequest). `total` drives the pager. */
+export interface CatalogPageMessage {
+  kind: 'catalogPage'
+  catalog: CatalogKind
+  items: Wearable[]
+  total: number
+  requestId: number
+}
+
+/** Equip a new full wearable set (page → scene → BevyApi.setAvatar). */
+export interface EquipRequest {
+  kind: 'equip'
+  urns: string[]
+}
+
+/** Preview a wearable set on the Backpack avatar WITHOUT persisting it to the profile
+ *  (selecting an item, not equipping). `urns: null` clears the preview (revert to profile). */
+export interface PreviewAvatarRequest {
+  kind: 'previewAvatar'
+  urns: string[] | null
+}
+
+/** RGB color, components 0..1 (matches PBAvatarBase / the deployed avatar entity). */
+export interface RGBColor {
+  r: number
+  g: number
+  b: number
+}
+
+/** A saved avatar look (backpack Outfits tab). The shape mirrors the catalyst `outfits` entity's
+ *  per-slot outfit so a saved look can later be deployed unchanged (Phase 2); Phase 1 persists
+ *  these locally (localStorage in the bridge scene). */
+export interface Outfit {
+  bodyShape: string
+  eyes: { color: RGBColor }
+  hair: { color: RGBColor }
+  skin: { color: RGBColor }
+  wearables: string[]
+  forceRender: string[]
+}
+
+/** One saved outfit at a fixed slot index (0-based). */
+export interface OutfitSlot {
+  slot: number
+  outfit: Outfit
+}
+
+/** The player's saved outfits + owned DCL names that unlock extra slots (beyond the 5 free). */
+export interface OutfitsMetadata {
+  outfits: OutfitSlot[]
+  namesForExtraSlots: string[]
+}
+
+export interface OutfitsMessage {
+  kind: 'outfits'
+  metadata: OutfitsMetadata
+}
+
+export interface GetOutfitsRequest {
+  kind: 'getOutfits'
+}
+
+/** Save the player's CURRENT look into a slot (scene captures getPlayer(); re-emits outfits). */
+export interface SaveOutfitRequest {
+  kind: 'saveOutfit'
+  slot: number
+}
+
+/** Remove a saved outfit slot (re-emits outfits). */
+export interface DeleteOutfitRequest {
+  kind: 'deleteOutfit'
+  slot: number
+}
+
+/** Equip a saved outfit: apply its body shape, colors and wearables to the profile. */
+export interface EquipOutfitRequest {
+  kind: 'equipOutfit'
+  slot: number
+}
+
+export interface GetEmotesRequest {
+  kind: 'getEmotes'
+}
+
+export interface TriggerEmoteRequest {
+  kind: 'triggerEmote'
+  urn: string
+}
+
+export interface GetSettingsRequest {
+  kind: 'getSettings'
+}
+
+export interface SetSettingRequest {
+  kind: 'setSetting'
+  name: string
+  value: number
+}
+
+// ---- input bindings --------------------------------------------------------
+// Wire types pinned to crates/common/src/inputs.rs (hand-written: the Rust types are
+// bevy-dependent so ts-rs generation can't cover them).
+
+/** Externally-tagged serde `Action`: `{System:'Map'}` | `{Scene:'IaJump'}`. */
+export type ActionWire = { System: string } | { Scene: string }
+/** `InputIdentifier` string form: 'KeyZ' | 'Mouse Left' | 'Gamepad South' | 'MouseWheel Down' … */
+export type InputIdentifierWire = string
+/** One row of the engine's binding table. */
+export type BindingEntry = [ActionWire, InputIdentifierWire[]]
+
+export interface GetBindingsRequest {
+  kind: 'getBindings'
+}
+
+/** Whole-table replace: must round-trip every entry from the last BindingsMessage
+ *  (gamepad/mouse/analog rows included), with just the intended edits applied. */
+export interface SetBindingsRequest {
+  kind: 'setBindings'
+  bindings: BindingEntry[]
+}
+
+/** Reset the whole table to engine defaults (runs /reset_controls engine-side). */
+export interface ResetBindingsRequest {
+  kind: 'resetBindings'
+}
+
+/** Ask the engine for the next physical input pressed (press-a-key capture). The engine has
+ *  no cancel: a dismissed capture resolves on the next input, so responses carry the request
+ *  id and stale ids are dropped on both sides. */
+export interface CaptureInputRequest {
+  kind: 'captureInput'
+  id: string
+}
+
+/** HUD focus state (fire-and-forget, latest wins). `ui`: a HUD surface (menu/popup) is
+ *  active — the engine reserves all input above scenes, but keeps resolving system actions
+ *  so the HUD still receives Cancel/hotkeys on the action stream. `text`: a HUD text field
+ *  holds keyboard focus — keys are typing; the engine resolves no actions from them.
+ *  `scroll`: the cursor is over a scrollable HUD element — the engine reserves the Scroll
+ *  ACTIONS, so every input bound to them (wheel, key, gamepad button) stands down for
+ *  world consumers (camera zoom on a shared wheel) while the action stream still resolves
+ *  Scroll for the HUD to drive the hovered panel. */
+export interface UiFocusMessage {
+  kind: 'uiFocus'
+  ui: boolean
+  text: boolean
+  scroll: boolean
+}
+
+/** One interaction hint (a single key binding) for a world entity: the button to press + its label.
+ *  Shared by the reticle hover and the proximity tooltips. React maps `button` (an `InputAction` enum)
+ *  to a glyph (E / 🖱 / 1…). */
+export interface HoverAction {
+  button: number
+  text: string
+  /** false → out of range (shown greyed with a "get closer" hint instead of the key glyph). */
+  enabled: boolean
+  /** Only meaningful when `enabled` is false — which distance rule gates the action: 'camera' (no
+   *  `maxPlayerDistance`, incl. the implicit default) → camera glyph + "Get camera closer";
+   *  'player' (`maxPlayerDistance` set) → walking glyph + "Get player closer". Defaults to 'camera'. */
+  tooFarReason?: 'camera' | 'player'
+}
+/** Interaction hints for the entity under the reticle. Empty array = nothing hovered. The tooltip's
+ *  screen position is derived in React from the DOM cursor (free) or the centre (pointer-locked), so
+ *  no coordinates travel on the wire. */
+export interface HoverMessage {
+  kind: 'hover'
+  actions: HoverAction[]
+}
+
+/** Whether the engine has grabbed the mouse for camera-look (OS cursor hidden) → draw the
+ *  center crosshair. Derived from PrimaryPointerInfo.screenCoordinates being absent. */
+export interface CursorLockMessage {
+  kind: 'cursorLock'
+  locked: boolean
+}
+
+/** A HUD-relevant engine system action edge. `action` is the engine's SystemAction variant name
+ *  (e.g. 'Places', 'Map', 'Cancel'); both press and release edges are relayed. Relayed
+ *  authoritatively from the engine's input stream so it works even while the engine holds
+ *  keyboard focus, and respects user rebinds. */
+export interface SystemActionMessage {
+  kind: 'systemAction'
+  action: string
+  pressed: boolean
+}
+
+/** The engine's full binding table (sent on request and after every set/reset). */
+export interface BindingsMessage {
+  kind: 'bindings'
+  bindings: BindingEntry[]
+}
+
+/** Result of a CaptureInputRequest: the input that was pressed, tagged with the request id. */
+export interface InputCapturedMessage {
+  kind: 'inputCaptured'
+  id: string
+  input: InputIdentifierWire
+}
+
+/** A proximity tooltip for an in-range world entity, anchored at its projected screen position
+ *  (the bridge does the world→screen projection each frame). */
+export interface ProximityTip {
+  id: number
+  /** Screen pixel coords of the entity (tooltip is centered on this). */
+  x: number
+  y: number
+  actions: HoverAction[]
+}
+/** All in-range entity tooltips this frame (empty = none). */
+export interface ProximityMessage {
+  kind: 'proximity'
+  tips: ProximityTip[]
+}
+
+/** A nearby avatar was clicked in the world → open their profile card. Only the address travels;
+ *  React resolves the display name (nearby roster) and anchors the card at the live DOM cursor. */
+export interface AvatarClickMessage {
+  kind: 'avatarClick'
+  address: string
+}
+
+export type SceneToPage =
+  | RpcResponse
+  | HoverMessage
+  | CursorLockMessage
+  | SystemActionMessage
+  | ProximityMessage
+  | AvatarClickMessage
+  | PlayerReadyEvent
+  | LoginCodeMessage
+  | SceneLoadingMessage
+  | ChatRelayMessage
+  | ConsoleReplyMessage
+  | ChatVisibilityMessage
+  | FocusChatMessage
+  | MembersMessage
+  | MenuVisibilityMessage
+  | FriendsMessage
+  | SettingsMessage
+  | BindingsMessage
+  | InputCapturedMessage
+  | ProfileMessage
+  | UserProfileMessage
+  | NotificationsMessage
+  | EmotesMessage
+  | MicMessage
+  | WearablesMessage
+  | CatalogPageMessage
+  | OutfitsMessage
+  | CommunitiesMessage
+  | CommunityDetailMessage
+  | MapMessage
+  | PlayerPoseMessage
+  | RealmInfoMessage
+  | SceneInfoMessage
+  | GalleryMessage
+  | GalleryPhotoMessage
+  | PermissionRequestMessage
+  | PermissionWithdrawnMessage
+
+// ---- envelope --------------------------------------------------------------
+
+export type Envelope =
+  | { to: 'scene'; msg: PageToScene }
+  | { to: 'page'; msg: SceneToPage }

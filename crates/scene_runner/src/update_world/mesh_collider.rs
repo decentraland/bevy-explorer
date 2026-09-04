@@ -151,8 +151,12 @@ pub fn add_collider_systems<T: ColliderType>(app: &mut App) {
     // clean up colliders from SceneColliderData whenever HasCollider is removed (including entity despawn)
     app.add_observer(on_collider_removed::<T>);
 
-    // show debugs whenever
-    app.add_systems(Update, render_debug_colliders::<T>);
+    // show debugs whenever (skip entirely unless debug is enabled or was just disabled)
+    app.add_systems(
+        Update,
+        render_debug_colliders::<T>
+            .run_if(|debug: Res<DebugColliders>| debug.0 != 0 || debug.is_changed()),
+    );
 }
 
 impl Plugin for MeshColliderPlugin {
@@ -176,7 +180,7 @@ impl Plugin for MeshColliderPlugin {
         add_collider_systems::<CtCollider>(app);
 
         app.init_resource::<DebugColliders>();
-        app.add_console_command::<DebugColliderCommand, _>(debug_colliders);
+        app.add_preview_console_command::<DebugColliderCommand, _>(debug_colliders);
     }
 }
 
@@ -226,7 +230,10 @@ pub struct SceneColliderData {
     disabled: HashSet<ColliderHandle>,
 }
 
-const SCALE_EPSILON: f32 = 0.001;
+// max world-space size change (metres) before we rebuild the scaled shape
+const COLLIDER_RESCALE_SIZE: f32 = 0.01;
+// disable colliders whose largest scaled extent falls below this (metres)
+const COLLIDER_DISABLE_SIZE: f32 = 0.01;
 const RAYCAST_EPSILON: f64 = 0.0001;
 
 pub trait ScaleShapeExt {
@@ -327,16 +334,21 @@ impl SceneColliderData {
                     };
 
                     let mut new_scale = *init_scale;
-                    if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
-                        if req_scale.abs().min_element() < 0.001 {
-                            // disable 0-sized colliders
-                            collider.set_enabled(false);
-                        } else {
-                            collider.set_enabled(true);
+                    if req_scale != *init_scale {
+                        // gate both rescale-tolerance and disable on the final world-space
+                        // size, not the raw scale factor — so large meshes with small
+                        // scales (and vice versa) are handled correctly.
+                        let extents = base_collider.shape().compute_local_aabb().extents();
+                        let extents =
+                            Vec3::new(extents.x as f32, extents.y as f32, extents.z as f32);
+                        let size_change = (extents * (req_scale - *init_scale).abs()).max_element();
+                        if size_change > COLLIDER_RESCALE_SIZE {
+                            let scaled_max = (extents * req_scale.abs()).max_element();
+                            collider.set_enabled(scaled_max >= COLLIDER_DISABLE_SIZE);
+                            new_scale = req_scale;
+                            // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
+                            collider.set_shape(base_collider.shape().scale_ext(req_scale));
                         }
-                        new_scale = req_scale;
-                        // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
-                        collider.set_shape(base_collider.shape().scale_ext(req_scale));
                     }
 
                     let state_mut = self.collider_state.get_mut(id).unwrap();
@@ -1003,18 +1015,25 @@ fn update_colliders<T: ColliderType>(
                     ..Default::default()
                 }
                 .into();
-                let VertexAttributeValues::Float32x3(positions) =
-                    mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+                let Some(VertexAttributeValues::Float32x3(positions)) =
+                    mesh.attribute(Mesh::ATTRIBUTE_POSITION)
                 else {
-                    panic!()
+                    warn!("cylinder collider mesh has no positions; skipping");
+                    continue;
                 };
-                ColliderBuilder::convex_hull(
+                // scene-set radii can be degenerate (e.g. both zero → collinear points);
+                // parry returns None rather than a hull. Skip instead of panicking the
+                // whole engine (which would take down every co-tenant scene).
+                let Some(builder) = ColliderBuilder::convex_hull(
                     &positions
                         .iter()
                         .map(|p| Point::from([p[0] as f64, p[1] as f64, p[2] as f64]))
                         .collect::<Vec<_>>(),
-                )
-                .unwrap()
+                ) else {
+                    warn!("degenerate cylinder collider (convex hull failed); skipping");
+                    continue;
+                };
+                builder
             }
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.005),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
@@ -1027,8 +1046,13 @@ fn update_colliders<T: ColliderType>(
                 else {
                     continue;
                 };
-                let mesh = meshes.get(&h_mesh).unwrap();
-                let shape = mesh_to_parry_shape(mesh);
+                let Some(mesh) = meshes.get(&h_mesh) else {
+                    continue;
+                };
+                let Some(shape) = mesh_to_parry_shape(mesh) else {
+                    warn!("gltf collider mesh has no usable positions; skipping");
+                    continue;
+                };
                 ColliderBuilder::new(shape)
             }
         }

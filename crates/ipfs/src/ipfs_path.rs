@@ -133,11 +133,18 @@ impl IpfsType {
                 .hash(file_path)
                 .map(|hash| format!("{base_url}{hash}"))
                 .or_else(|| {
-                    // try as a url directly
+                    // On an authoritative server a content-map miss must NOT fall through to
+                    // fetching the file_path as a raw URL: that turns any asset load of a
+                    // missing entry into a scene-controlled outbound request (SSRF). Clients
+                    // keep the URL fallthrough.
                     // TODO: check scene.json for allowed domains (include these in context like baseUrls)
-                    url::Url::try_from(file_path.as_str())
-                        .is_ok()
-                        .then_some(file_path.to_owned())
+                    if common::structs::server_mode() {
+                        None
+                    } else {
+                        url::Url::try_from(file_path.as_str())
+                            .is_ok()
+                            .then_some(file_path.to_owned())
+                    }
                 })
                 .ok_or_else(|| {
                     anyhow::anyhow!("file not found in content map: {file_path:?} in {scene_hash}")
