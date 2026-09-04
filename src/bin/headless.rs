@@ -6,12 +6,14 @@
 //! uses. `--server-mode` makes `isServer()` return true to scene JS, so a scene's
 //! authoritative-server branch runs. Intended to replace hammurabi-headless.
 
-use std::{sync::OnceLock, time::Duration};
+use std::{str::FromStr, sync::OnceLock, time::Duration};
 
 use bevy::tasks::IoTaskPool;
 use bevy::{
     app::ScheduleRunnerPlugin,
-    diagnostic::{DiagnosticsPlugin, FrameCountPlugin},
+    diagnostic::{
+        DiagnosticsPlugin, FrameCountPlugin, FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin,
+    },
     gizmos::GizmoPlugin,
     gltf::GltfPlugin,
     input::InputPlugin,
@@ -23,6 +25,7 @@ use bevy::{
     time::TimePlugin,
 };
 use bevy_dui::DuiPlugin;
+use clap::Parser;
 use common::{
     inputs::InputMap,
     profile::SerializedProfile,
@@ -30,9 +33,10 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CursorLocks, EngineMovementControl,
-        GraphicsSettings, HeadSync, NoRenderApp, PermissionType, PermissionUsed, PermissionValue,
-        PointAtSync, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
-        SceneGlobalLight, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
+        GraphicsSettings, HeadSync, IVec2Arg, NoRenderApp, PermissionType, PermissionUsed,
+        PermissionValue, PointAtSync, PreviewMode, PrimaryCamera, PrimaryCameraRes,
+        PrimaryPlayerRes, PrimaryUser, SceneGlobalLight, SceneLoadDistance, SystemAudio, TimeOfDay,
+        ToolTips,
     },
     util::{TaskCompat, TaskExt, UtilsPlugin},
 };
@@ -55,6 +59,7 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
     SceneRunnerPlugin,
 };
+use system_api_types::launch_options::LaunchOptions;
 use system_bridge::SystemBridgePlugin;
 use tween::TweenPlugin;
 use user_input::avatar_movement::{
@@ -67,98 +72,158 @@ use wallet::{
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
+// The shared launch params (realm, position, preview, base domain, pulse server, content
+// server, and whatever gets added later — accepted here automatically) plus the server-role
+// flags. The shared fields headless has no consumer for are hidden from `--help` and refused
+// in `parse_args`.
+#[derive(clap::Parser)]
+#[command(
+    name = "headless",
+    about = "Headless scene runner: an authoritative scene server, or a render-free test client",
+    mut_arg("realm", |a| a.help("Realm to boot into; absent = http://localhost:8000")),
+    mut_arg("position", |a| {
+        a.visible_alias("location")
+            .help("Parcel to load as `x,y`; absent = 0,0")
+    }),
+    mut_arg("editor", |a| a.hide(true)),
+    mut_arg("system_scene", |a| a.hide(true)),
+    mut_arg("portables", |a| a.hide(true)),
+    mut_arg("imposter_source", |a| a.hide(true)),
+    mut_arg("gpu_bytes_per_frame", |a| a.hide(true))
+)]
 struct Args {
-    realm: String,
-    location: IVec2,
-    preview: bool,
+    #[command(flatten)]
+    launch: LaunchOptions,
+
+    /// Serve the scene: `isServer()` is true to scene code and realm-wide comms are never
+    /// joined. Standalone (without --orchestrated) is a local-dev flow and requires --preview
+    #[arg(long, display_order = 50)]
     server_mode: bool,
+
+    /// Multi-scene worker driven over stdin by an orchestrator; implies --server-mode
+    #[arg(long, display_order = 51)]
     orchestrated: bool,
+
+    /// Exit cleanly after this many seconds
+    #[arg(long, value_name = "secs", display_order = 52)]
     timeout: Option<f32>,
-    scene_threads: usize,
+
+    /// Scene javascript threads; absent = 16 orchestrated, 4 otherwise
+    #[arg(
+        long,
+        value_name = "n",
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..),
+        display_order = 53
+    )]
+    scene_threads: Option<usize>,
+
+    /// Scene tick rate
+    #[arg(
+        long,
+        value_name = "hz",
+        default_value_t = 30,
+        value_parser = clap::value_parser!(u32).range(1..),
+        display_order = 54
+    )]
     tick_hz: u32,
-    /// base64 world-storage delegation (hammurabi envelope); single-scene runs only —
-    /// orchestrated scenes receive theirs via the control channel
+
+    /// base64 world-storage delegation (hammurabi envelope), or the PROCESS_STORAGE_DELEGATION
+    /// env var; single-scene runs only — orchestrated scenes receive theirs via the control
+    /// channel
+    #[arg(long, value_name = "base64", display_order = 55)]
     storage_delegation: Option<String>,
-    /// deterministic guest wallet (test harness): address derivable offline from the seed
+
+    /// Deterministic guest wallet (test harness): the address is derivable offline from the seed
+    #[arg(long, value_name = "seed", display_order = 56)]
     wallet_seed: Option<u64>,
-    /// Pulse realm to announce verbatim; `--server-mode` only. Orchestrated servers host several
-    /// realms at once and take one per scene on `add-scene` instead.
+
+    /// Pulse realm to announce verbatim; `--server-mode` only, and optional there: absent, the
+    /// engine derives the same key from a locally hosted scene's entity id once it loads, this
+    /// just announces it sooner. Orchestrated servers host several realms at once and take one
+    /// per scene on `add-scene` instead
+    #[arg(long, value_name = "key", display_order = 57)]
     pulse_realm: Option<String>,
-    /// Pulse server as `host:port`; the orchestrator passes its deployment's (zone or prod)
-    pulse_server: Option<String>,
+
+    // resolved after parsing: realm defaults to a local preview server, position to 0,0
+    #[arg(skip)]
+    realm: String,
+    #[arg(skip)]
+    location: IVec2,
+}
+
+fn usage_error(message: impl std::fmt::Display) -> ! {
+    eprintln!("{message}");
+    std::process::exit(2);
 }
 
 fn parse_args() -> Args {
-    let mut args = pico_args::Arguments::from_env();
-    // latch first: everything below that composes a backend host reads it
-    if let Err(e) = args
-        .opt_value_from_str::<_, String>("--base-domain")
-        .map_err(|e| e.to_string())
-        .and_then(|domain| domain.map_or(Ok(()), |d| common::base_domain::set(&d)))
-    {
-        eprintln!("{e}");
-        std::process::exit(2);
+    let mut args = match Args::try_parse() {
+        Ok(args) => args,
+        Err(e) => {
+            let _ = e.print();
+            std::process::exit(if e.use_stderr() { 2 } else { 0 });
+        }
+    };
+    // shared params headless has no consumer for: refuse rather than silently do nothing
+    for (passed, flag) in [
+        (args.launch.editor, "--editor"),
+        (args.launch.system_scene.is_some(), "--system-scene"),
+        (args.launch.portables.is_some(), "--portables"),
+        (args.launch.imposter_source.is_some(), "--imposter-source"),
+        (
+            args.launch.gpu_bytes_per_frame.is_some(),
+            "--gpu-bytes-per-frame",
+        ),
+    ] {
+        if passed {
+            usage_error(format!("{flag} has no effect headless"));
+        }
     }
-    let realm: String = args
-        .value_from_str("--realm")
-        .unwrap_or_else(|_| "http://localhost:8000".to_owned());
-    let location = args
-        .value_from_str::<_, common::structs::IVec2Arg>("--location")
-        .ok()
-        .map(|va| va.0)
-        .unwrap_or(IVec2::ZERO);
-    let preview = args.contains("--preview");
-    let orchestrated = args.contains("--orchestrated");
+    // latch first: everything below that composes a backend host reads it
+    if let Some(domain) = &args.launch.base_domain {
+        if let Err(e) = common::base_domain::set(domain) {
+            usage_error(e);
+        }
+    }
+    args.realm = args
+        .launch
+        .realm
+        .clone()
+        .unwrap_or_else(|| "http://localhost:8000".to_owned());
+    args.location = match &args.launch.position {
+        Some(position) => {
+            IVec2Arg::from_str(position)
+                .unwrap_or_else(|e| usage_error(format!("--location {position}: {e}")))
+                .0
+        }
+        None => IVec2::ZERO,
+    };
     // orchestrated mode is always a server
-    let server_mode = args.contains("--server-mode") || orchestrated;
+    args.server_mode |= args.orchestrated;
     // standalone server mode is a local-dev flow (single scene on the shared context,
     // self-minted scene room); production servers are always orchestrated
-    if server_mode && !orchestrated && !preview {
-        eprintln!(
-            "--server-mode without --orchestrated is a local-dev mode and requires --preview"
+    if args.server_mode && !args.orchestrated && !args.launch.preview {
+        usage_error(
+            "--server-mode without --orchestrated is a local-dev mode and requires --preview",
         );
-        std::process::exit(2);
     }
     // latch the process-global server-role flags before the app is built
-    if server_mode {
+    if args.server_mode {
         common::structs::set_server_mode();
     }
-    if orchestrated {
+    if args.orchestrated {
         common::structs::set_multi_tenant();
     }
-    let timeout: Option<f32> = args.value_from_str("--timeout").ok();
-    let scene_threads: usize = args
-        .value_from_str("--scene-threads")
-        .unwrap_or(if orchestrated { 16 } else { 4 });
-    let tick_hz: u32 = args.value_from_str("--tick-hz").unwrap_or(30);
     // mirror hammurabi's worker env contract (PROCESS_STORAGE_DELEGATION)
-    let storage_delegation: Option<String> = args
-        .value_from_str("--storage-delegation")
-        .ok()
-        .or_else(|| std::env::var("PROCESS_STORAGE_DELEGATION").ok());
-    let wallet_seed: Option<u64> = args.value_from_str("--wallet-seed").ok();
-    let pulse_realm: Option<String> = args.value_from_str("--pulse-realm").ok();
-    let pulse_server: Option<String> = args.value_from_str("--pulse-server").ok();
-    if pulse_realm.is_some() && orchestrated {
-        eprintln!(
-            "--pulse-realm is a --server-mode flag; orchestrated scenes carry their own realm"
+    if args.storage_delegation.is_none() {
+        args.storage_delegation = std::env::var("PROCESS_STORAGE_DELEGATION").ok();
+    }
+    if args.pulse_realm.is_some() && args.orchestrated {
+        usage_error(
+            "--pulse-realm is a --server-mode flag; orchestrated scenes carry their own realm",
         );
-        std::process::exit(2);
     }
-    Args {
-        realm,
-        location,
-        preview,
-        server_mode,
-        orchestrated,
-        timeout,
-        scene_threads,
-        tick_hz,
-        storage_delegation,
-        wallet_seed,
-        pulse_realm,
-        pulse_server,
-    }
+    args
 }
 
 /// harness support: a seeded wallet gives a deterministic address, so livekit tokens
@@ -279,18 +344,19 @@ fn main() {
         .set(session_log.to_string_lossy().into_owned())
         .unwrap();
 
+    // args first, so --help and a bad flag answer without spawning the scene runtime
+    let args = parse_args();
+    TIMEOUT.set(args.timeout).ok();
+
     // v8 runtime must init on the main thread before the App is built (matches the tests).
     // Headless is always a server: a lost JS sidecar must restart the whole engine (the
     // desktop client and the scene_runner tests leave this false).
     dcl_deno_ipc::EXIT_ON_SIDECAR_LOSS.store(true, std::sync::atomic::Ordering::SeqCst);
     init_runtime().unwrap();
 
-    let args = parse_args();
-    TIMEOUT.set(args.timeout).ok();
-
     println!(
         "[headless] realm={} location={} preview={} server_mode={} tick_hz={}",
-        args.realm, args.location, args.preview, args.server_mode, args.tick_hz
+        args.realm, args.location, args.launch.preview, args.server_mode, args.tick_hz
     );
 
     let config = AppConfig {
@@ -298,11 +364,13 @@ fn main() {
         home_location: Some(args.location),
         graphics: GraphicsSettings {
             vsync: false,
-            log_fps: false,
+            log_fps: args.launch.log_fps.unwrap_or(false),
             fps_target: args.tick_hz as usize,
             ..Default::default()
         },
-        scene_threads: args.scene_threads,
+        scene_threads: args
+            .scene_threads
+            .unwrap_or(if args.orchestrated { 16 } else { 4 }),
         // load everything around the fake player generously; unload never.
         scene_load_distance: 100.0,
         scene_unload_extra_distance: 0.0,
@@ -341,10 +409,10 @@ fn main() {
         .add_plugins(TransformPlugin)
         .add_plugins(DiagnosticsPlugin)
         .add_plugins(IpfsIoPlugin {
-            preview: args.preview,
+            preview: args.launch.preview,
             assets_root: None,
             starting_realm: Some(map_realm_name(&args.realm)),
-            content_server_override: None,
+            content_server_override: args.launch.content_server.clone(),
             num_slots: config.max_concurrent_remotes,
         })
         .add_plugins(AssetPlugin::default())
@@ -393,6 +461,14 @@ fn main() {
 
     // embedded assets: the scene-loading material (grid.png / loading.wgsl)
     app.add_plugins(assets::EmbedAssetsPlugin);
+
+    // --log-fps: the tick rate, against --tick-hz
+    if config.graphics.log_fps {
+        app.add_plugins((
+            FrameTimeDiagnosticsPlugin::default(),
+            LogDiagnosticsPlugin::default(),
+        ));
+    }
 
     // world-storage delegations (per scene; CLI/env value is the single-scene fallback)
     let mut delegations = StorageDelegations::default();
@@ -451,8 +527,8 @@ fn main() {
             load_imposter: 0.0,
         })
         .insert_resource(PreviewMode {
-            server: args.preview.then(|| map_realm_name(&args.realm)),
-            is_preview: args.preview,
+            server: args.launch.preview.then(|| map_realm_name(&args.realm)),
+            is_preview: args.launch.preview,
             preview_parcel: None,
         })
         // servers must never join realm-wide comms (archipelago / world room) — they would
@@ -470,7 +546,7 @@ fn main() {
     if let Some(realm) = args.pulse_realm.clone() {
         app.insert_resource(comms::pulse::plugin::PulseRealmOverride(realm));
     }
-    if let Some(endpoint) = args.pulse_server.clone() {
+    if let Some(endpoint) = args.launch.pulse_server.clone() {
         app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(endpoint));
     }
 
