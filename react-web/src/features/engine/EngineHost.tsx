@@ -10,8 +10,9 @@ import { bridgeChannelName } from '../../engine/protocol'
 import { serviceUrl } from '../../lib/baseDomain'
 import { bootMode } from '../../lib/bootMode'
 import { PAGE_DIR } from '../../lib/publicUrl'
-// Moved to lib/systemScene.ts, which also decides whether a link is allowed to override it.
+// Moved to lib/systemScene.ts; whether a link may override it is lib/launchGate.ts's call.
 import { SYSTEM_SCENE } from '../../lib/systemScene'
+import { launchOptionsFromUrl, type LaunchOptions } from '../../lib/webParams'
 
 // The main (Genesis City) realm, on the ?baseDomain= entry param when present (parity with the
 // engine's own derived default). Exported: parcel launches pass it EXPLICITLY so a ?realm
@@ -42,15 +43,11 @@ function injectEngine(): void {
   const params = new URLSearchParams(location.search)
   // pkg/ fetch base: the versioned CDN in prod builds (BASE_URL), the served engine dir otherwise.
   window.PUBLIC_URL = new URL('engine', new URL(import.meta.env.BASE_URL, PAGE_DIR)).href
+  // Every launch param the engine's web param table lists, read from the entry url; only the
+  // ui scene has a HUD-side default (our bundled bridge scene, unless a link overrode it).
   window.__bevyBootConfig = {
-    systemScene: bootMode().systemScene ?? SYSTEM_SCENE,
-    portables: params.get('portables') ?? undefined,
-    preview: params.has('preview'),
-    // host:port of the Pulse server the engine joins (WebTransport port); a zone deploy points
-    // it at the zone server. Absent = the engine's built-in production default.
-    pulseServer: params.get('pulseServer') ?? undefined,
-    // base url of the imposter store (native --imposter-source). Absent = the engine's default.
-    imposterSource: params.get('imposterSource') ?? undefined
+    ...launchOptionsFromUrl(params),
+    systemScene: bootMode().systemScene ?? SYSTEM_SCENE
   }
 
   for (const src of CDN_LIBS) {
@@ -68,13 +65,9 @@ function injectEngine(): void {
 declare global {
   interface Window {
     PUBLIC_URL?: string
-    __bevyBootConfig?: {
-      systemScene?: string
-      portables?: string
-      preview?: boolean
-      pulseServer?: string
-      imposterSource?: string
-    }
+    // Forwarded verbatim to the engine's launch options (src/web_options.rs, keyed by the web
+    // param table) — an unknown key fails the launch.
+    __bevyBootConfig?: LaunchOptions
   }
 }
 

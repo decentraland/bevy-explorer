@@ -39,8 +39,7 @@ import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
 import { hasUsableGpu } from './lib/gpu'
 import { MobileGate, GateChecking } from './features/gate/MobileGate'
 import { UntrustedLaunchGate } from './features/gate/UntrustedLaunchGate'
-import { isTrustedSystemScene } from './lib/systemScene'
-import { BASE_DOMAIN, isTrustedBaseDomain } from './lib/baseDomain'
+import { untrustedLaunchParams } from './lib/launchGate'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
 import { CrashModal } from './features/error/CrashModal'
 import { openRealmError } from './features/error/RealmErrorModal'
@@ -79,16 +78,11 @@ function gateReason(): 'mobile' | 'browser' | 'gpu' | null {
 }
 const GATE_REASON = gateReason()
 
-// `?systemScene=` picks the super-user scene, which permissions.rs waves through every permission
-// check and hands the whole SystemApi. A link carrying an unrecognised one is a session takeover
-// with no sandbox escape involved, so it gets an interstitial before anything boots — captured at
-// module scope, from the ENTRY url, so a later history.replaceState can't retire the warning.
-const SYSTEM_SCENE_OVERRIDE = bootMode().systemScene
-const UNTRUSTED_SYSTEM_SCENE =
-  SYSTEM_SCENE_OVERRIDE != null && !isTrustedSystemScene(SYSTEM_SCENE_OVERRIDE) ? SYSTEM_SCENE_OVERRIDE : null
-// `?baseDomain=` likewise: it points every backend at another deployment. Native is exempt —
-// there the shell injects it from the user's own --base-domain flag, not from a link.
-const UNTRUSTED_BASE_DOMAIN = MODE !== 'native' && !isTrustedBaseDomain(BASE_DOMAIN) ? BASE_DOMAIN : null
+// Gated entry-url params (lib/launchGate.ts: `?systemScene=` is a session takeover delivered as
+// a link, `?baseDomain=` points every backend at another deployment) carrying a value this
+// front-end doesn't recognise get an interstitial before anything boots — captured at module
+// scope, from the ENTRY url, so a later history.replaceState can't retire the warning.
+const UNTRUSTED_PARAMS = untrustedLaunchParams({ native: MODE === 'native' })
 
 export function App(): React.JSX.Element {
   const showFps = useFpsToggle()
@@ -100,14 +94,8 @@ export function App(): React.JSX.Element {
   // Ahead of every other gate: returning here is what keeps EngineHost unmounted, and EngineHost is
   // what injects boot.js and starts the scene.
   const [trustUntrusted, setTrustUntrusted] = useState(false)
-  if ((UNTRUSTED_SYSTEM_SCENE != null || UNTRUSTED_BASE_DOMAIN != null) && !trustUntrusted) {
-    return (
-      <UntrustedLaunchGate
-        systemScene={UNTRUSTED_SYSTEM_SCENE ?? undefined}
-        baseDomain={UNTRUSTED_BASE_DOMAIN ?? undefined}
-        onProceed={() => setTrustUntrusted(true)}
-      />
-    )
+  if (UNTRUSTED_PARAMS.length > 0 && !trustUntrusted) {
+    return <UntrustedLaunchGate params={UNTRUSTED_PARAMS} onProceed={() => setTrustUntrusted(true)} />
   }
   if (GATE_REASON) return <MobileGate reason={GATE_REASON} />
   if (gpu === 'checking') return <GateChecking />

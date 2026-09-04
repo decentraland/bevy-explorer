@@ -131,6 +131,8 @@ cargo build --release --bin headless --no-default-features --features headless,l
 
 `cargo run --release --bin decentra-bevy -- [options]`
 
+On web the equivalents are query params on the entry url, defined once in `crates/system_api_types/src/web_params.rs` (the react page is generated from that table; which of them a link may set without a warning is the page's own policy, `react-web/src/lib/launchGate.ts`).
+
 **World**
 - `--server <url>` — content server / realm. Defaults to `https://realm-provider-ea.decentraland.org/main`.
 - `--content-server <url>` — override the content server only.

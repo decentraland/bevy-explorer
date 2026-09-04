@@ -301,6 +301,7 @@ getrandom = { version = "0.3" }
 assets = { workspace = true }
 analytics = { workspace = true }
 common = { workspace = true }
+system_api_types = { workspace = true }
 avatar = { workspace = true }
 comms = { workspace = true }
 input_manager = { workspace = true }

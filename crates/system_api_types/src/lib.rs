@@ -4,6 +4,8 @@
 //! `ts-rs` (scripts/gen-ts-bindings.sh) to generate the TypeScript the react-web
 //! page and bridge scene consume. `system_bridge` re-exports everything here.
 
+pub mod web_params;
+
 use dcl_component::proto_components::{
     common::{Color3, Vector2, Vector3},
     sdk::components::{pb_pointer_events, PbAvatarBase, PbAvatarEquippedData},

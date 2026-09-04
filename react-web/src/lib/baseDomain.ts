@@ -10,9 +10,13 @@
 // wasm (src/web.rs apply_base_domain → crates/common/src/base_domain.rs), both of which run
 // only after the HUD has mounted EngineHost.
 
+// Decentraland's own deployments — the hosting origins we derive from, and the only domains a
+// LINK may point the session at without the UntrustedLaunchGate (lib/launchGate.ts).
+const TRUSTED_BASE_DOMAINS = ['decentraland.org', 'decentraland.zone']
+
 /** The apex deployment domain a hosting origin implies, or null for unrecognised hosts. */
 export function hostBaseDomain(hostname: string): string | null {
-  for (const apex of ['decentraland.org', 'decentraland.zone']) {
+  for (const apex of TRUSTED_BASE_DOMAINS) {
     if (hostname === apex || hostname.endsWith(`.${apex}`)) return apex
   }
   return null
@@ -45,10 +49,10 @@ export function serviceUrl(sub: string): string {
   return `https://${sub}.${BASE_DOMAIN}`
 }
 
-// Decentraland's own deployments. Any other domain arriving by LINK points the whole session's
-// backends — sign-in, content, comms — at someone else's servers, so App.tsx stops on it with the
-// UntrustedLaunchGate before anything boots. The native shell injects the param from the user's
-// own --base-domain flag (App runs in native mode there), which needs no gate.
+// Any other domain arriving by LINK points the whole session's backends — sign-in, content,
+// comms — at someone else's servers, so App.tsx stops on it with the UntrustedLaunchGate before
+// anything boots (lib/launchGate.ts, which also exempts native: there the shell injects the
+// user's own --base-domain flag).
 export function isTrustedBaseDomain(domain: string): boolean {
-  return domain === 'decentraland.org' || domain === 'decentraland.zone'
+  return TRUSTED_BASE_DOMAINS.includes(domain)
 }
