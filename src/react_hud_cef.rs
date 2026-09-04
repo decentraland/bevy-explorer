@@ -65,7 +65,7 @@ impl Plugin for ReactHudCefPlugin {
         app.insert_resource(ReactHudOptions {
             server: self.server.clone(),
         });
-        // Needed to read engine fps for the perf overlay; may already be added by --log_fps/preview.
+        // Needed to read engine fps for the perf overlay; may already be added by --log-fps/preview.
         if !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>() {
             app.add_plugins(FrameTimeDiagnosticsPlugin::default());
         }

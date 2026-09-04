@@ -153,7 +153,7 @@ export default defineConfig(({ command, mode }) => ({
     // scenes, no avatars. (serveStatic handles a single file fine: rel resolves to the root.)
     serveStatic('/service_worker.js', '../deploy/web/service_worker.js'),
     // Our headless super-user bridge scene (exported deployable). Pointed at by
-    // the engine's systemScene so it loads as the trusted --ui scene.
+    // the engine's systemScene so it loads as the trusted --system-scene scene.
     serveStatic('/bridge-scene/static/', './bridge-scene/static')
   ],
   build: {

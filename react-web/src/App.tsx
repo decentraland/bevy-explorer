@@ -43,6 +43,8 @@ import { untrustedLaunchParams } from './lib/launchGate'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
 import { CrashModal } from './features/error/CrashModal'
 import { openRealmError } from './features/error/RealmErrorModal'
+import { openEntryParamsDialog } from './features/gate/EntryParamsDialog'
+import { unrecognisedEntryParams } from './lib/entryParams'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
@@ -83,6 +85,8 @@ const GATE_REASON = gateReason()
 // front-end doesn't recognise get an interstitial before anything boots — captured at module
 // scope, from the ENTRY url, so a later history.replaceState can't retire the warning.
 const UNTRUSTED_PARAMS = untrustedLaunchParams({ native: MODE === 'native' })
+// Entry-url params nothing reads (lib/entryParams.ts) — told to the user once the HUD is up.
+const UNRECOGNISED_PARAMS = unrecognisedEntryParams(params)
 
 export function App(): React.JSX.Element {
   const showFps = useFpsToggle()
@@ -177,6 +181,13 @@ function Hud(): React.JSX.Element {
     if (!exitGuard.confirming) return
     return openExitConfirm(exitGuard.stay, exitGuard.leave)
   }, [exitGuard.confirming, exitGuard.stay, exitGuard.leave])
+
+  // A link with params the Explorer doesn't know gets an ordinary dialog listing what was ignored
+  // and what it accepts — informational, nothing is frozen behind it.
+  useEffect(() => {
+    if (UNRECOGNISED_PARAMS.length === 0) return
+    return openEntryParamsDialog(UNRECOGNISED_PARAMS)
+  }, [])
 
   // A world that doesn't exist isn't a crash — it's an ordinary dialog on the popup layer, so it gets
   // Escape/scrim-click for free and freezes nothing behind it (unlike CrashModal, see inputLock). Any

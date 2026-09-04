@@ -682,12 +682,12 @@ pub async fn lookup_ens(
     ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
     #[cfg(not(target_arch = "wasm32"))]
-    // parent_scene gates on WHO is asking: only user-initiated lookups (--ui / console commands,
+    // parent_scene gates on WHO is asking: only user-initiated lookups (--system-scene / console commands,
     // which pass None) may resolve a local directory — a scene's spawnPortableExperience must
     // not probe or load local paths.
     if parent_scene.is_none() && std::path::Path::new(&ens).join("about").is_file() {
         // file realm: a local directory containing an `about` (sdk-commands export-static
-        // layout, e.g. `--ui react-web/bridge-scene/static/BevyExplorerUI`). No ens.
+        // layout, e.g. `--system-scene react-web/bridge-scene/static/BevyExplorerUI`). No ens.
         return lookup_local_realm(parent_scene, &ens, super_user, &ipfs);
     }
     if ens.to_ascii_lowercase().starts_with("http") {

@@ -1,5 +1,5 @@
 // Typed accessor for the engine's `~system/BevyExplorerApi` (the SystemApi), available only
-// inside the super-user (--ui) scene sandbox. This is the ENGINE-side surface (raw shapes);
+// inside the super-user (--system-scene) scene sandbox. This is the ENGINE-side surface (raw shapes);
 // the wire shapes React sees live in the shared protocol. Only the methods the domains use
 // are declared — extend as needed.
 import type { ActionWire, Setting } from '../../src/engine/protocol'

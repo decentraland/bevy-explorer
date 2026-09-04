@@ -2,13 +2,13 @@ mod commands;
 mod ext;
 #[cfg(target_arch = "wasm32")]
 mod web;
-pub mod web_options;
 // POC: react-web HUD via CEF offscreen rendering into an in-engine texture (`react-hud-cef`).
 #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
 mod react_hud_cef;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use assets::EmbedAssetsPlugin;
@@ -40,7 +40,7 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AvatarDynamicState, EditorMode, HeadSync, PointAtSync, PreviewMode,
+        AppConfig, AvatarDynamicState, EditorMode, HeadSync, IVec2Arg, PointAtSync, PreviewMode,
         PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance,
         ShowOutOfBounds, StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
@@ -67,7 +67,8 @@ use scene_runner::{
     OutOfWorld, SceneRunnerPlugin,
 };
 use social::SocialPlugin;
-use system_bridge::{settings::NewCameraEvent, NativeUi, SceneParams, SystemBridgePlugin};
+use system_api_types::{launch_options::LaunchOptions, web_params::DEFAULT_PORTABLES};
+use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
 #[cfg(not(target_arch = "wasm32"))]
 use system_ui::crash_report::CrashReportPlugin;
 use system_ui::SystemUiPlugin;
@@ -128,77 +129,179 @@ impl DecentralandAppConfig {
         }
     }
 
-    /// The realm the engine boots into: an explicit --server, else the home realm.
-    /// --server is a startup param (like the web's ?realm=) and is deliberately NOT
+    /// The realm the engine boots into: an explicit --realm, else the home realm.
+    /// --realm is a startup param (like the web's ?realm=) and is deliberately NOT
     /// merged into the AppConfig — see the home_realm field docs.
     pub fn boot_server(&self) -> String {
         self.arguments
-            .server
+            .launch
+            .realm
             .clone()
             .unwrap_or_else(|| self.app_config.home_realm())
     }
 
-    /// The parcel the player spawns at: an explicit --location, else the home parcel.
+    /// The parcel the player spawns at: an explicit --position, else the home parcel.
     /// Same contract as [`Self::boot_server`].
     pub fn boot_location(&self) -> IVec2 {
         self.arguments
-            .location
+            .location()
             .unwrap_or_else(|| self.app_config.home_location())
     }
 }
 
 /// The spawn parcel resolved by [`DecentralandAppConfig::boot_location`] — a distinct
 /// resource so the AppConfig resource (rewritten wholesale to disk on settings changes)
-/// never carries a one-off --location as home.
+/// never carries a one-off --position as home.
 #[derive(Resource)]
 pub struct BootLocation(pub IVec2);
 
+/// The native command line. The launch parameters shared with the web build are
+/// [`LaunchOptions`] (declared once, in system_api_types — its doc comments are the `--help`
+/// text and the web param table); everything here is native-only. Values that are derived
+/// rather than given (test mode, the ui scene, the spawn parcel) are methods.
+#[derive(clap::Parser, Default)]
+#[command(name = "decentra-bevy", about = "Decentraland Bevy Explorer")]
 pub struct DecentralandArguments {
-    pub server: Option<String>,
-    pub content_server_override: Option<String>,
-    pub location: Option<IVec2>,
-    pub startup_scenes: Option<Vec<StartupScene>>,
-    pub ui_scene: Option<String>,
-    /// run the react HUD (native: the CEF overlay). False when an explicit --ui opted out in
-    /// favour of the engine-side ui, and on wasm (the react page hosts the engine itself).
-    pub hud: bool,
-    pub scene_params: Option<String>,
-    /// Pulse server as `host:port` — `--pulse-server` / `?pulseServer=`. See
-    /// `comms::pulse::plugin::PulseEndpointOverride`.
-    pub pulse_server: Option<String>,
-    pub scene_threads: Option<usize>,
-    pub scene_load_distance: Option<f32>,
-    pub scene_unload_extra_distance: Option<f32>,
-    pub scene_imposter_bake: Option<SceneImposterBake>,
-    pub scene_imposter_distances: Option<Vec<f32>>,
-    pub scene_imposter_multisample: Option<bool>,
-    /// Base url of the imposter store — `--imposter-source`. See `imposters::imposter_spec::set_source`.
-    pub imposter_source: Option<String>,
-    pub vsync: Option<bool>,
-    pub fps_target: Option<usize>,
-    pub gpu_bytes_per_frame: Option<usize>,
-    pub is_preview: bool,
-    /// running embedded in a scene editor (creator hub): freeze scenes after main() has
-    /// run once; the editor unfreezes on play. Distinct from preview — plain previews
-    /// must free-run.
-    pub editor: bool,
-    pub sysinfo_visible: bool,
+    #[command(flatten)]
+    pub launch: LaunchOptions,
+    /// Echo scene logs to the console
+    #[arg(long = "scene_log_to_console", display_order = 6)]
     pub scene_log_to_console: bool,
-    pub startup_scenes_preview: bool,
-    pub no_avatar: bool,
-    pub no_gltf: bool,
-    pub no_fog: bool,
-    pub log_fps: Option<bool>,
+    /// Pause that scene's js runtime until a debugger (e.g. chrome://inspect) attaches. Needs
+    /// `--features inspect`
+    #[arg(long, value_name = "scene_hash", display_order = 10)]
     pub inspect: Option<String>,
-    pub test_mode: bool,
+    /// Target fps (default 60; overridden by the refresh rate when vsync is on). Also `/fps`.
+    /// Current run only - use settings for persistence.
+    #[arg(long = "fps", value_name = "n", display_order = 14)]
+    pub fps_target: Option<usize>,
+    /// Run the portable/startup scenes in preview mode
+    #[arg(long = "ui-preview", display_order = 15)]
+    pub startup_scenes_preview: bool,
+    /// Max simultaneous scene-javascript threads (default 4). Also `/scene_threads`
+    #[arg(long = "threads", value_name = "n", display_order = 16)]
+    pub scene_threads: Option<usize>,
+    /// Automated scene test mode: headless, no HUD (implied by --test_scenes)
+    #[arg(long = "testing", display_order = 18)]
+    pub testing: bool,
+    /// Run the scene test harness over those parcels and exit; a parcel may carry
+    /// `/allowed/failures`
+    #[arg(long = "test_scenes", value_name = "x,y;x,y", display_order = 19)]
     pub test_scenes: Option<TestScenes>,
+    /// Vsync (default off). Current run only - use settings for persistence.
+    #[arg(long, value_name = "true|false", display_order = 20)]
+    pub vsync: Option<bool>,
+    /// Scene load distance in meters (default 100). Also `/scene_distance`. Current run only -
+    /// use settings for persistence.
+    #[arg(long = "distance", value_name = "m", display_order = 21)]
+    pub scene_load_distance: Option<f32>,
+    /// Extra distance before scenes are unloaded. Current run only - use settings for
+    /// persistence.
+    #[arg(long = "unload", value_name = "m", display_order = 22)]
+    pub scene_unload_extra_distance: Option<f32>,
+    /// Imposter distances. Current run only - use settings for persistence.
+    #[arg(
+        long = "impost",
+        value_name = "d1,d2,…",
+        value_delimiter = ',',
+        display_order = 23
+    )]
+    pub scene_imposter_distances: Option<Vec<f32>>,
+    /// Imposter multisampling
+    #[arg(long = "impost_multi", value_name = "true|false", display_order = 24)]
+    pub scene_imposter_multisample: Option<bool>,
+    /// Imposter local baking speed: f(ull), h(alf), q(uarter) or o(ff)
+    #[arg(long = "bake", value_name = "f|h|q|o", value_parser = parse_bake, display_order = 25)]
+    pub scene_imposter_bake: Option<SceneImposterBake>,
+    /// Show the system info overlay
+    #[arg(long = "sysinfo", display_order = 26)]
+    pub sysinfo_visible: bool,
+    /// Disable avatar rendering
+    #[arg(long = "no_avatar", display_order = 27)]
+    pub no_avatar: bool,
+    /// Disable gltf loading
+    #[arg(long = "no_gltf", display_order = 28)]
+    pub no_gltf: bool,
+    /// Disable distance fog
+    #[arg(long = "no_fog", display_order = 29)]
+    pub no_fog: bool,
+    /// Force the engine-drawn login back on
+    #[arg(long = "builtin-login", display_order = 30)]
     pub login: bool,
+    /// Force the engine-drawn emote wheel back on
+    #[arg(long = "builtin-emotes", display_order = 31)]
     pub emote_wheel: bool,
+    /// Force the engine-drawn chat back on
+    #[arg(long = "builtin-chat", display_order = 32)]
     pub chat: bool,
+    /// Force the engine-drawn permission prompts back on
+    #[arg(long = "builtin-perms", display_order = 33)]
     pub permissions: bool,
+    /// Force the engine-drawn nametags back on
+    #[arg(long = "builtin-nametags", display_order = 34)]
     pub nametags: bool,
+    /// Force the engine-drawn tooltips back on
+    #[arg(long = "builtin-tooltips", display_order = 35)]
     pub tooltips: bool,
+    /// Force the engine-drawn loading scene ui back on
+    #[arg(long = "builtin-loading-scene-ui", display_order = 36)]
     pub loading_scene: bool,
+    /// run the react HUD (native: the CEF overlay). False when an explicit --system-scene opted
+    /// out in favour of the engine-side ui, and on wasm (the react page hosts the engine itself).
+    #[arg(skip)]
+    pub hud: bool,
+}
+
+fn parse_bake(bake: &str) -> Result<SceneImposterBake, String> {
+    match bake.to_lowercase().chars().next() {
+        None | Some('f') => Ok(SceneImposterBake::FullSpeed),
+        Some('h') => Ok(SceneImposterBake::HalfSpeed),
+        Some('q') => Ok(SceneImposterBake::QuarterSpeed),
+        Some('o') => Ok(SceneImposterBake::Off),
+        _ => Err(format!(
+            "'{bake}' is not a valid bake argument. Valid values are 'f', 'h', 'q', or 'o'."
+        )),
+    }
+}
+
+impl DecentralandArguments {
+    pub fn test_mode(&self) -> bool {
+        self.testing || self.test_scenes.is_some()
+    }
+
+    /// The super-user ui scene: `--system-scene` / `?systemScene=`, less the `none` opt-out.
+    pub fn ui_scene(&self) -> Option<&str> {
+        self.launch
+            .system_scene
+            .as_deref()
+            .filter(|scene| *scene != "none")
+    }
+
+    /// `--position` / `?position=` as a parcel; main.rs rejects an unparseable one up front.
+    pub fn location(&self) -> Option<IVec2> {
+        self.launch
+            .position
+            .as_deref()
+            .and_then(|position| IVec2Arg::from_str(position).ok())
+            .map(|parcel| parcel.0)
+    }
+
+    /// `--portables` / `?portables=`, else the default set.
+    pub fn startup_scenes(&self) -> Vec<StartupScene> {
+        self.launch
+            .portables
+            .as_deref()
+            .unwrap_or(DEFAULT_PORTABLES)
+            .split(';')
+            .map(|source| StartupScene {
+                source: source.to_owned(),
+                super_user: false,
+                preview: self.startup_scenes_preview,
+                hot_reload: None,
+                hash: None,
+            })
+            .collect()
+    }
 }
 
 /// Whether a realm URL points at the local machine (localhost / loopback IP).
@@ -240,11 +343,11 @@ impl DecentralandApp {
 
         // POC: react-web HUD composited in-engine from CEF offscreen rendering. Skipped in test
         // mode (automated scene tests run headless and must not boot CEF or gate input) and when
-        // an explicit --ui opted out of the HUD in favour of the engine-side ui.
+        // an explicit --system-scene opted out of the HUD in favour of the engine-side ui.
         #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
-        if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode {
+        if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode() {
             app.add_plugins(react_hud_cef::ReactHudCefPlugin {
-                // a non-default boot server (explicit --server or a configured home realm)
+                // a non-default boot server (explicit --realm or a configured home realm)
                 // IS the destination: injected into the page URL as ?realm= so the HUD skips
                 // its places picker (parity with ?realm= on web). On the stock default the
                 // param is omitted so the picker shows — and the HUD's own default-realm
@@ -261,20 +364,19 @@ impl DecentralandApp {
         info!("Bevy-Explorer version {}", version);
 
         let boot_server = map_realm_name(&decentraland_app_config.boot_server());
-        // computed here too: scene_params is partially moved out of the arguments below
         let boot_location = BootLocation(decentraland_app_config.boot_location());
         // Show out-of-bounds geometry in preview, on a loopback realm (local dev) and in
         // the editor, never on a public realm. Computed before boot_server moves.
-        let editor_mode = decentraland_app_config.arguments.editor;
+        let editor_mode = decentraland_app_config.arguments.launch.editor;
         let show_out_of_bounds = editor_mode
-            || decentraland_app_config.arguments.is_preview
+            || decentraland_app_config.arguments.launch.preview
             || is_loopback_realm(&boot_server);
 
         // Resources
         app.insert_resource(Version(version))
             .insert_resource(TestingData {
-                inspect_hash: decentraland_app_config.arguments.inspect,
-                test_mode: decentraland_app_config.arguments.test_mode,
+                inspect_hash: decentraland_app_config.arguments.inspect.clone(),
+                test_mode: decentraland_app_config.arguments.test_mode(),
                 test_scenes: decentraland_app_config.arguments.test_scenes.clone(),
             })
             .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
@@ -303,20 +405,21 @@ impl DecentralandApp {
             .insert_resource(PreviewMode {
                 server: decentraland_app_config
                     .arguments
-                    .is_preview
+                    .launch
+                    .preview
                     .then_some(boot_server),
-                is_preview: decentraland_app_config.arguments.is_preview,
+                is_preview: decentraland_app_config.arguments.launch.preview,
                 preview_parcel: None,
             })
             .insert_resource(EditorMode(editor_mode))
             .insert_resource(ShowOutOfBounds(show_out_of_bounds))
             .insert_resource(SceneLoadDistance {
-                load: if decentraland_app_config.arguments.is_preview {
+                load: if decentraland_app_config.arguments.launch.preview {
                     1.0
                 } else {
                     decentraland_app_config.app_config.scene_load_distance
                 },
-                unload: if decentraland_app_config.arguments.is_preview {
+                unload: if decentraland_app_config.arguments.launch.preview {
                     0.0
                 } else {
                     decentraland_app_config
@@ -339,7 +442,7 @@ impl DecentralandApp {
                         last + (2.0 * mip_size * mip_size).sqrt()
                     })
                     .unwrap_or(0.0)
-                    * if decentraland_app_config.arguments.is_preview {
+                    * if decentraland_app_config.arguments.launch.preview {
                         0.0
                     } else {
                         1.0
@@ -359,20 +462,9 @@ impl DecentralandApp {
         #[cfg(not(target_arch = "wasm32"))]
         app.insert_resource(ClearColor(Color::srgb(0.6, 0.1, 0.8)));
 
-        let mut startup_scenes = decentraland_app_config
-            .arguments
-            .startup_scenes
-            .unwrap_or_else(|| {
-                vec![StartupScene {
-                    source: String::from(system_api_types::web_params::DEFAULT_PORTABLES),
-                    super_user: false,
-                    preview: decentraland_app_config.arguments.startup_scenes_preview,
-                    hot_reload: None,
-                    hash: None,
-                }]
-            });
+        let mut startup_scenes = decentraland_app_config.arguments.startup_scenes();
 
-        if let Some(source) = decentraland_app_config.arguments.ui_scene {
+        if let Some(source) = decentraland_app_config.arguments.ui_scene() {
             app.insert_resource(NativeUi {
                 login: decentraland_app_config.arguments.login,
                 emote_wheel: decentraland_app_config.arguments.emote_wheel,
@@ -385,7 +477,7 @@ impl DecentralandApp {
             startup_scenes.insert(
                 0,
                 StartupScene {
-                    source,
+                    source: source.to_owned(),
                     super_user: true,
                     preview: decentraland_app_config.arguments.startup_scenes_preview,
                     hot_reload: None,
@@ -406,9 +498,9 @@ impl DecentralandApp {
 
         // POC: the react-web overlay is the HUD — turn off the engine's native UI so it doesn't
         // render its own login/chat/etc. behind the webview. (Overrides the inserts above.)
-        // Test mode and an explicit --ui keep the native UI: the HUD plugin is skipped there.
+        // Test mode and an explicit --system-scene keep the native UI: the HUD plugin is skipped there.
         #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
-        if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode {
+        if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode() {
             app.insert_resource(NativeUi {
                 login: false,
                 emote_wheel: false,
@@ -428,17 +520,15 @@ impl DecentralandApp {
             });
         }
 
-        app.insert_resource(SceneParams::from_query_string(
-            &decentraland_app_config
-                .arguments
-                .scene_params
-                .unwrap_or_default(),
-            cfg!(target_arch = "wasm32"),
-        ));
-        if let Some(endpoint) = decentraland_app_config.arguments.pulse_server {
+        if let Some(endpoint) = decentraland_app_config
+            .arguments
+            .launch
+            .pulse_server
+            .clone()
+        {
             app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(endpoint));
         }
-        if let Some(source) = &decentraland_app_config.arguments.imposter_source {
+        if let Some(source) = &decentraland_app_config.arguments.launch.imposter_source {
             imposters::imposter_spec::set_source(source);
         }
 
@@ -481,7 +571,7 @@ impl DecentralandApp {
             .add_plugins(LivestreamManagerPlugin)
             .add_plugins(media::plugin::MediaPlugin);
 
-        if !decentraland_app_config.arguments.is_preview {
+        if !decentraland_app_config.arguments.launch.preview {
             app.add_plugins(DclImposterPlugin {
                 zip_output: None,
                 download: true,
@@ -504,7 +594,7 @@ impl DecentralandApp {
 
         // Analytics plugins
         app.add_plugins(MetricsPlugin);
-        if (graphics_config.log_fps || decentraland_app_config.arguments.is_preview)
+        if (graphics_config.log_fps || decentraland_app_config.arguments.launch.preview)
             && !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>()
         {
             app.add_plugins(FrameTimeDiagnosticsPlugin::default());
@@ -601,7 +691,7 @@ fn update_app_config_from_arguments(
     base_app_config
         .graphics
         .log_fps
-        .replace_if_some(arguments.log_fps);
+        .replace_if_some(arguments.launch.log_fps);
     base_app_config
         .graphics
         .fps_target
@@ -609,7 +699,7 @@ fn update_app_config_from_arguments(
     base_app_config
         .graphics
         .gpu_bytes_per_frame
-        .replace_if_some(arguments.gpu_bytes_per_frame);
+        .replace_if_some(arguments.launch.gpu_bytes_per_frame);
 
     base_app_config
         .scene_threads
@@ -696,11 +786,12 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
         })
         .build()
         .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
-            preview: decentraland_app_config.arguments.is_preview,
+            preview: decentraland_app_config.arguments.launch.preview,
             starting_realm: Some(map_realm_name(&decentraland_app_config.boot_server())),
             content_server_override: decentraland_app_config
                 .arguments
-                .content_server_override
+                .launch
+                .content_server
                 .clone(),
             assets_root: Default::default(),
             num_slots: decentraland_app_config.app_config.max_concurrent_remotes,
@@ -731,11 +822,12 @@ fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> Plug
         })
         .disable::<LogPlugin>()
         .add_before::<AssetPlugin>(IpfsIoPlugin {
-            preview: decentraland_app_config.arguments.is_preview,
+            preview: decentraland_app_config.arguments.launch.preview,
             starting_realm: Some(map_realm_name(&decentraland_app_config.boot_server())),
             content_server_override: decentraland_app_config
                 .arguments
-                .content_server_override
+                .launch
+                .content_server
                 .clone(),
             assets_root: Default::default(),
             num_slots: decentraland_app_config.app_config.max_concurrent_remotes,
