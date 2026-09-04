@@ -29,13 +29,15 @@ use dcl::{
 use dcl_component::{
     proto_components::{
         kernel::comms::rfc4::{self, packet::Message},
-        sdk::components::{EmoteState, PbAvatarEmoteCommand, PbPlayerIdentityData},
+        sdk::components::{
+            common::AvatarMask, EmoteState, PbAvatarEmoteCommand, PbPlayerIdentityData,
+        },
     },
     transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation},
     DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
 
-use ipfs::{ActiveEntitiesRequest, ActiveEntityTask, IpfsAssetServer};
+use ipfs::{ActiveEntitiesRequest, ActiveEntityTask, EntityDefinition, IpfsAssetServer};
 
 use crate::{profile::ProfileMetaCache, Transport};
 
@@ -1394,8 +1396,10 @@ pub enum ForeignEmoteEventKind {
 /// - `mask` passes through from the wire.
 ///
 /// The urn is a peer-controlled string headed for every subscribed scene's crdt, so it is bounded
-/// before it gets there; each player's queue, the pointer cache and the lookups in flight are
-/// bounded too.
+/// before it gets there; each player's queue, the pointer cache, the lookup wait queue and the
+/// requests in flight are bounded too. A full player queue force-resolves its blocked head as a
+/// one-shot rather than parting a start from its stop; a full wait queue reports a start as a
+/// one-shot at once, uncached.
 ///
 /// Deliberately not part of [`GlobalCrdtPlugin`]: the client must not report twice.
 pub struct ForeignEmoteRelayPlugin;
@@ -1419,16 +1423,24 @@ impl Plugin for ForeignEmoteRelayPlugin {
 
 /// Longest emote identifier accepted from a peer.
 const MAX_EMOTE_URN_BYTES: usize = 256;
-/// Lifecycle reports one player may have waiting on a metadata lookup. Beyond this the oldest are
-/// dropped: the newest are the ones a scene still cares about.
+/// Lifecycle reports one player may have waiting on a metadata lookup. Only a start awaiting its
+/// `loop` can hold a queue, so at this size that head is reported as a one-shot instead and the
+/// queue drains; nothing is dropped, so a start is never parted from its stop. Past twice this —
+/// a single-frame burst from one peer, which Pulse rate-limits — the oldest go.
 const MAX_PENDING_PER_PLAYER: usize = 16;
 /// Resolved `loop` flags kept, by pointer. Emote collections are large, but a room's players use a
 /// small working set.
 const MAX_CACHED_POINTERS: usize = 1024;
 /// How long a failed lookup answers `false` before the pointer is looked up again.
 const LOOKUP_RETRY_SECS: f64 = 60.0;
-/// Metadata batches in flight at once; further unknown pointers wait for a slot.
+/// Metadata requests in flight at once; further unknown pointers wait for a slot.
 const MAX_LOOKUP_BATCHES: usize = 4;
+/// Pointers per metadata request.
+const MAX_LOOKUP_POINTERS_PER_REQUEST: usize = 32;
+/// Pointers waiting for a request slot. Pointers derive from peer-controlled urns, so a burst of
+/// unique ones must not grow memory or request size without bound: past this a start is reported
+/// as a one-shot at once, uncached, rather than queued.
+const MAX_WANTED_POINTERS: usize = 256;
 
 const SCENE_EMOTE_PREFIX: &str = "urn:decentraland:off-chain:scene-emote:";
 const BASE_EMOTE_PREFIX: &str = "urn:decentraland:off-chain:base-emotes:";
@@ -1486,6 +1498,30 @@ fn foreign_emote_urn_is_acceptable(urn: &str) -> bool {
         && !urn.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
+/// The key a collectible pointer is requested and cached under: each `:` segment lowercased except
+/// `b64-` ones, whose base64 payload is case-sensitive (as `CollectibleUrn` does). Applied to the
+/// pointer derived from a peer's urn AND to the pointers a catalyst answers with, so the two meet.
+fn canonical_pointer(pointer: &str) -> String {
+    pointer
+        .split(':')
+        .map(|segment| {
+            if segment.starts_with("b64-") {
+                segment.to_owned()
+            } else {
+                segment.to_ascii_lowercase()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
+/// A relayed mask is written to a scene only if it names a value of the generated `AvatarMask`;
+/// anything else would reach scene code as an unrecognised enum. (The generated enum offers no
+/// `TryFrom<i32>`, so the variants are listed.)
+fn valid_avatar_mask(mask: i32) -> bool {
+    [AvatarMask::AmUpperBody as i32].contains(&mask)
+}
+
 /// Classify an emote identifier: a scene emote carries its loop flag, an embedded id is tabled, a
 /// bare legacy name is a base emote, and a collectible urn is shortened to the pointer its deployed
 /// entity is registered under (token id dropped, lowercased apart from `b64-` segments, as
@@ -1518,18 +1554,9 @@ fn classify_emote(urn: &str) -> Option<LoopSource> {
     if parts.len() < pointer_parts {
         return None;
     }
-    let pointer = parts[..pointer_parts]
-        .iter()
-        .map(|segment| {
-            if segment.starts_with("b64-") {
-                (*segment).to_owned()
-            } else {
-                segment.to_ascii_lowercase()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(":");
-    Some(LoopSource::Pointer(pointer))
+    Some(LoopSource::Pointer(canonical_pointer(
+        &parts[..pointer_parts].join(":"),
+    )))
 }
 
 /// The `loop` flag in a deployed emote entity's metadata.
@@ -1578,8 +1605,8 @@ pub struct ForeignEmoteRelay {
     cache_order: VecDeque<String>,
     /// pointers with a lookup in flight, or waiting for a batch slot
     requested: HashSet<String>,
-    /// pointers waiting for a batch slot
-    wanted: Vec<String>,
+    /// pointers waiting for a request slot, oldest first
+    wanted: VecDeque<String>,
     batches: Vec<LookupBatch>,
     sequence: u32,
 }
@@ -1634,7 +1661,7 @@ fn queue_foreign_emote_reports(
                 let source = classify_emote(urn).unwrap_or(LoopSource::Known(false));
                 PendingReport::Start {
                     urn: urn.clone(),
-                    mask: *mask,
+                    mask: mask.filter(|mask| valid_avatar_mask(*mask)),
                     source,
                 }
             }
@@ -1643,8 +1670,22 @@ fn queue_foreign_emote_reports(
             },
         };
         let queue = relay.pending.entry(event.player).or_default();
+        if queue.len() >= MAX_PENDING_PER_PLAYER {
+            // full. Only a start awaiting its loop can hold a queue: report it as a one-shot so
+            // the queue drains, rather than drop anything and part a start from its stop
+            if let Some(PendingReport::Start { source, .. }) = queue.front_mut() {
+                if matches!(source, LoopSource::Pointer(_)) {
+                    debug!(
+                        "emote queue full for {:#x}; reporting its blocked start as a one-shot",
+                        player.address
+                    );
+                    *source = LoopSource::Known(false);
+                }
+            }
+        }
         queue.push_back(report);
-        while queue.len() > MAX_PENDING_PER_PLAYER {
+        // last resort against a single-frame burst from one peer
+        while queue.len() > 2 * MAX_PENDING_PER_PLAYER {
             queue.pop_front();
         }
     }
@@ -1694,13 +1735,20 @@ fn flush_foreign_emote_reports(
                 PendingReport::Start { urn, mask, source } => {
                     let loops = match source {
                         LoopSource::Known(loops) => Some(*loops),
-                        LoopSource::Pointer(pointer) => {
-                            let cached = cached_loop(cache, pointer, now);
-                            if cached.is_none() && requested.insert(pointer.clone()) {
-                                wanted.push(pointer.clone());
+                        LoopSource::Pointer(pointer) => match cached_loop(cache, pointer, now) {
+                            Some(loops) => Some(loops),
+                            // asked already; the answer is on its way
+                            None if requested.contains(pointer) => None,
+                            None if wanted.len() >= MAX_WANTED_POINTERS => {
+                                debug!("emote lookup queue full; reporting {pointer} as a one-shot");
+                                Some(false)
                             }
-                            cached
-                        }
+                            None => {
+                                requested.insert(pointer.clone());
+                                wanted.push_back(pointer.clone());
+                                None
+                            }
+                        },
                     };
                     match loops {
                         Some(loops) => HeadAction::Write {
@@ -1763,7 +1811,57 @@ fn flush_foreign_emote_reports(
     });
 }
 
-/// Bank the answers of landed metadata lookups and start one for the pointers now wanted.
+/// The next request's pointers: up to `MAX_LOOKUP_POINTERS_PER_REQUEST`, oldest first.
+fn take_lookup_chunk(wanted: &mut VecDeque<String>) -> Vec<String> {
+    let count = wanted.len().min(MAX_LOOKUP_POINTERS_PER_REQUEST);
+    wanted.drain(..count).collect()
+}
+
+/// Bank a landed lookup's answers for the `pointers` it asked about. Returned pointers go through
+/// the same canonicalisation as requested ones so an answer always finds its question; a pointer the
+/// catalyst did not answer is a definitive "no such emote" and is cached as a one-shot too, else an
+/// unknown urn would be looked up again on every trigger. A failed request answers `false` for
+/// `LOOKUP_RETRY_SECS` and is then retried.
+fn bank_lookup(
+    relay: &mut ForeignEmoteRelay,
+    pointers: Vec<String>,
+    result: Result<Vec<EntityDefinition>, anyhow::Error>,
+    now: f64,
+) {
+    match result {
+        Ok(entities) => {
+            let mut answered: HashSet<String> = HashSet::default();
+            for entity in entities {
+                let loops = entity
+                    .metadata
+                    .as_ref()
+                    .and_then(loop_from_emote_metadata)
+                    .unwrap_or(false);
+                for pointer in entity.pointers {
+                    let pointer = canonical_pointer(&pointer);
+                    answered.insert(pointer.clone());
+                    relay.remember(pointer, loops, None);
+                }
+            }
+            for pointer in &pointers {
+                if !answered.contains(pointer) {
+                    relay.remember(pointer.clone(), false, None);
+                }
+            }
+        }
+        Err(e) => {
+            warn!("emote metadata lookup failed: {e}");
+            for pointer in &pointers {
+                relay.remember(pointer.clone(), false, Some(now + LOOKUP_RETRY_SECS));
+            }
+        }
+    }
+    for pointer in &pointers {
+        relay.requested.remove(pointer);
+    }
+}
+
+/// Bank the answers of landed metadata lookups and start requests for the pointers now wanted.
 fn resolve_foreign_emote_metadata(
     mut relay: ResMut<ForeignEmoteRelay>,
     ipfas: IpfsAssetServer,
@@ -1782,43 +1880,11 @@ fn resolve_foreign_emote_metadata(
             None => true,
         });
     for (pointers, result) in landed {
-        match result {
-            Ok(entities) => {
-                let mut answered: HashSet<String> = HashSet::default();
-                for entity in entities {
-                    let loops = entity
-                        .metadata
-                        .as_ref()
-                        .and_then(loop_from_emote_metadata)
-                        .unwrap_or(false);
-                    for pointer in entity.pointers {
-                        let pointer = pointer.to_ascii_lowercase();
-                        answered.insert(pointer.clone());
-                        relay.remember(pointer, loops, None);
-                    }
-                }
-                // a definitive "no such emote" is cached too, else an unknown urn would be looked
-                // up again on every trigger
-                for pointer in &pointers {
-                    if !answered.contains(pointer) {
-                        relay.remember(pointer.clone(), false, None);
-                    }
-                }
-            }
-            Err(e) => {
-                warn!("emote metadata lookup failed: {e}");
-                for pointer in &pointers {
-                    relay.remember(pointer.clone(), false, Some(now + LOOKUP_RETRY_SECS));
-                }
-            }
-        }
-        for pointer in &pointers {
-            relay.requested.remove(pointer);
-        }
+        bank_lookup(&mut relay, pointers, result, now);
     }
 
-    if !relay.wanted.is_empty() && relay.batches.len() < MAX_LOOKUP_BATCHES {
-        let pointers = std::mem::take(&mut relay.wanted);
+    while !relay.wanted.is_empty() && relay.batches.len() < MAX_LOOKUP_BATCHES {
+        let pointers = take_lookup_chunk(&mut relay.wanted);
         let task = ipfas.ipfs().active_entities(
             ActiveEntitiesRequest::Pointers(pointers.clone()),
             Some(&emote_catalyst_url()),
@@ -1911,6 +1977,25 @@ mod foreign_emote_relay_tests {
             .unwrap_or_default()
     }
 
+    fn started_with_mask(app: &mut App, player: Entity, urn: &str, mask: i32) {
+        app.world_mut().send_event(ForeignEmoteEvent {
+            player,
+            kind: ForeignEmoteEventKind::Started {
+                urn: urn.to_owned(),
+                mask: Some(mask),
+            },
+        });
+    }
+
+    fn looping_entity(pointer: &str) -> EntityDefinition {
+        EntityDefinition {
+            id: "bafyentity".to_owned(),
+            pointers: vec![pointer.to_owned()],
+            content: Default::default(),
+            metadata: Some(serde_json::json!({ "emoteDataADR74": { "loop": true } })),
+        }
+    }
+
     fn state_of(command: &PbAvatarEmoteCommand) -> EmoteState {
         match command.state.expect("state is always written") {
             s if s == EmoteState::EsStarted as i32 => EmoteState::EsStarted,
@@ -1983,7 +2068,7 @@ mod foreign_emote_relay_tests {
         {
             let relay = app.world().resource::<ForeignEmoteRelay>();
             assert!(relay.requested.contains(WEARABLE_POINTER));
-            assert_eq!(relay.wanted, vec![WEARABLE_POINTER.to_owned()]);
+            assert_eq!(relay.wanted, VecDeque::from([WEARABLE_POINTER.to_owned()]));
         }
 
         // the cancel lands before the metadata does; it must not overtake the start
@@ -2006,7 +2091,7 @@ mod foreign_emote_relay_tests {
         // the pointer is asked for once
         assert_eq!(
             app.world().resource::<ForeignEmoteRelay>().wanted,
-            vec![WEARABLE_POINTER.to_owned()]
+            VecDeque::from([WEARABLE_POINTER.to_owned()])
         );
     }
 
@@ -2155,5 +2240,194 @@ mod foreign_emote_relay_tests {
         assert!(relay
             .cache
             .contains_key(&format!("pointer-{MAX_CACHED_POINTERS}")));
+    }
+
+    #[test]
+    fn canonicalises_b64_segments_on_both_paths() {
+        // a preview-server item id: base64 is case-sensitive, so `b64-` segments keep their case
+        // while the rest of the urn is lowercased — on the request AND the answer
+        const URN: &str = "urn:decentraland:matic:collections-v2:b64-QWJjRGVm:0:7";
+        const POINTER: &str = "urn:decentraland:matic:collections-v2:b64-QWJjRGVm:0";
+        assert_eq!(
+            classify_emote(URN),
+            Some(LoopSource::Pointer(POINTER.to_owned()))
+        );
+
+        let mut app = app();
+        let (context, _receiver) = spawn_context(&mut app);
+        let scene_id = SceneEntityId::new(40, 0);
+        let player = spawn_player(&mut app, context, scene_id);
+        started(&mut app, player, URN);
+        app.update();
+        assert!(reported(&app, context, scene_id).is_empty());
+
+        // the catalyst echoes the pointer in its own casing
+        let answered = "URN:DECENTRALAND:MATIC:COLLECTIONS-V2:b64-QWJjRGVm:0";
+        {
+            let mut relay = app.world_mut().resource_mut::<ForeignEmoteRelay>();
+            bank_lookup(
+                &mut relay,
+                vec![POINTER.to_owned()],
+                Ok(vec![looping_entity(answered)]),
+                0.0,
+            );
+            assert_eq!(relay.cache.len(), 1, "one key for request and answer");
+            assert!(relay.cache.contains_key(POINTER));
+            assert!(!relay.requested.contains(POINTER));
+        }
+        app.update();
+
+        let commands = reported(&app, context, scene_id);
+        assert_eq!(commands.len(), 1);
+        assert!(commands[0].r#loop, "the looping answer reached the report");
+        assert_eq!(commands[0].emote_urn, URN);
+    }
+
+    #[test]
+    fn unanswered_and_failed_lookups_are_banked_distinctly() {
+        let mut relay = ForeignEmoteRelay::default();
+        relay.requested.insert("a".to_owned());
+        relay.requested.insert("b".to_owned());
+        // `a` answered, `b` not: `b` is a definitive miss, cached for good
+        bank_lookup(
+            &mut relay,
+            vec!["a".to_owned(), "b".to_owned()],
+            Ok(vec![looping_entity("a")]),
+            0.0,
+        );
+        assert_eq!(cached_loop(&relay.cache, "a", 1e9), Some(true));
+        assert_eq!(cached_loop(&relay.cache, "b", 1e9), Some(false));
+        assert!(relay.requested.is_empty());
+
+        // a failed request is a stand-in answer that expires
+        relay.requested.insert("c".to_owned());
+        bank_lookup(
+            &mut relay,
+            vec!["c".to_owned()],
+            Err(anyhow::anyhow!("offline")),
+            5.0,
+        );
+        assert_eq!(cached_loop(&relay.cache, "c", 5.0), Some(false));
+        assert_eq!(
+            cached_loop(&relay.cache, "c", 5.0 + LOOKUP_RETRY_SECS),
+            None
+        );
+        assert!(relay.requested.is_empty());
+    }
+
+    #[test]
+    fn caps_the_lookup_queue_and_chunks_requests() {
+        let mut app = app();
+        let (context, _receiver) = spawn_context(&mut app);
+        // more players than the wait queue holds, each triggering a distinct unresolved emote
+        let players: Vec<(Entity, SceneEntityId)> = (0..MAX_WANTED_POINTERS + 44)
+            .map(|i| {
+                let scene_id = SceneEntityId::new(1000 + i as u16, 0);
+                (spawn_player(&mut app, context, scene_id), scene_id)
+            })
+            .collect();
+        for (i, (player, _)) in players.iter().enumerate() {
+            started(
+                &mut app,
+                *player,
+                &format!("urn:decentraland:matic:collections-v2:0xabc:{i}:1"),
+            );
+        }
+        app.update();
+
+        {
+            let relay = app.world().resource::<ForeignEmoteRelay>();
+            assert_eq!(relay.wanted.len(), MAX_WANTED_POINTERS);
+            assert_eq!(relay.requested.len(), MAX_WANTED_POINTERS);
+        }
+        // the overflow was reported at once as one-shots, not queued or dropped
+        let overflow: Vec<PbAvatarEmoteCommand> = players
+            .iter()
+            .flat_map(|(_, scene_id)| reported(&app, context, *scene_id))
+            .collect();
+        assert_eq!(overflow.len(), 44);
+        assert!(overflow.iter().all(|command| !command.r#loop));
+        {
+            let relay = app.world().resource::<ForeignEmoteRelay>();
+            assert_eq!(relay.cache.len(), 0, "overflow answers are not cached");
+        }
+
+        // requests go out in fixed-size chunks, oldest first
+        let mut wanted =
+            std::mem::take(&mut app.world_mut().resource_mut::<ForeignEmoteRelay>().wanted);
+        // players flush in map order, so which pointer is oldest is not the spawn order; what
+        // matters is that a chunk takes from the front
+        let oldest = wanted.front().cloned().unwrap();
+        let first = take_lookup_chunk(&mut wanted);
+        assert_eq!(first.len(), MAX_LOOKUP_POINTERS_PER_REQUEST);
+        assert_eq!(first[0], oldest);
+        assert_eq!(
+            wanted.len(),
+            MAX_WANTED_POINTERS - MAX_LOOKUP_POINTERS_PER_REQUEST
+        );
+        let mut chunks = 1;
+        while !wanted.is_empty() {
+            assert!(take_lookup_chunk(&mut wanted).len() <= MAX_LOOKUP_POINTERS_PER_REQUEST);
+            chunks += 1;
+        }
+        assert_eq!(
+            chunks,
+            MAX_WANTED_POINTERS / MAX_LOOKUP_POINTERS_PER_REQUEST
+        );
+    }
+
+    #[test]
+    fn full_queue_force_resolves_its_blocked_head() {
+        let mut app = app();
+        let (context, _receiver) = spawn_context(&mut app);
+        let scene_id = SceneEntityId::new(41, 0);
+        let player = spawn_player(&mut app, context, scene_id);
+
+        // a start awaiting metadata, then a backlog behind it
+        started(&mut app, player, WEARABLE);
+        for _ in 0..MAX_PENDING_PER_PLAYER {
+            stopped(&mut app, player, false);
+        }
+        app.update();
+
+        let commands = reported(&app, context, scene_id);
+        assert_eq!(
+            commands.len(),
+            2,
+            "the start went out (as a one-shot) and its stop followed"
+        );
+        assert_eq!(state_of(&commands[0]), EmoteState::EsStarted);
+        assert!(!commands[0].r#loop);
+        assert_eq!(state_of(&commands[1]), EmoteState::EsInterrupted);
+        assert_eq!(commands[1].emote_urn, WEARABLE);
+        let relay = app.world().resource::<ForeignEmoteRelay>();
+        assert!(relay.pending.is_empty(), "the backlog drained");
+        assert!(
+            !relay.cache.contains_key(WEARABLE_POINTER),
+            "a forced answer is not cached"
+        );
+    }
+
+    #[test]
+    fn writes_only_masks_the_enum_defines() {
+        let mut app = app();
+        let (context, _receiver) = spawn_context(&mut app);
+        let scene_id = SceneEntityId::new(42, 0);
+        let player = spawn_player(&mut app, context, scene_id);
+
+        started_with_mask(
+            &mut app,
+            player,
+            SCENE_LOOPING,
+            AvatarMask::AmUpperBody as i32,
+        );
+        app.update();
+        started_with_mask(&mut app, player, SCENE_LOOPING, 7);
+        app.update();
+
+        let commands = reported(&app, context, scene_id);
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0].mask, Some(AvatarMask::AmUpperBody as i32));
+        assert_eq!(commands[1].mask, None);
     }
 }
