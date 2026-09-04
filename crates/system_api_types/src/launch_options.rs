@@ -227,6 +227,8 @@ mod tests {
         assert_eq!(options.client.gpu_bytes_per_frame, Some(500_000));
         // typed keys take their type, not a string
         assert!(EngineRunOptions::from_json(r#"{"gpuBytesPerFrame": "500000"}"#).is_err());
+        // a native-only service is an unknown key on web
+        assert!(EngineRunOptions::from_json(r#"{"authPage": "http://localhost:1"}"#).is_err());
         // and the echo is one flat object again
         let json = serde_json::to_value(&options).unwrap();
         assert_eq!(json["pulseServer"], "localhost:7777");

@@ -110,9 +110,12 @@ pub(crate) fn camel_case(snake: &str) -> String {
 pub fn web_params() -> Vec<WebParam> {
     let launch = LaunchOptions::augment_args(clap::Command::new("launch"));
     let client = ClientOptions::augment_args(clap::Command::new("client"));
+    let native_only =
+        |field: &str| Service::all().any(|s| s.field() == field && !s.has_web_param());
     launch
         .get_arguments()
         .chain(client.get_arguments())
+        .filter(|arg| !native_only(arg.get_id().as_str()))
         .map(|arg| {
             let field = arg.get_id().as_str();
             WebParam {
@@ -160,7 +163,8 @@ mod tests {
     }
 
     /// Every field has a delivery (the panic in `delivery`), every row has a doc, and the
-    /// `engine_run` keys — the structs as serialised, one flat object — are exactly the table.
+    /// `engine_run` keys — the structs as serialised, one flat object — are exactly the table
+    /// (less the native-only services, which are no web param).
     #[test]
     fn table_matches_the_struct() {
         let params = web_params();
@@ -170,13 +174,25 @@ mod tests {
         let names: BTreeSet<_> = params.iter().map(|p| p.name.clone()).collect();
         assert_eq!(names.len(), params.len(), "duplicate names");
         let json = serde_json::to_value(EngineRunOptions::default()).unwrap();
-        let fields: BTreeSet<_> = json.as_object().unwrap().keys().cloned().collect();
+        let native_only: BTreeSet<_> = Service::all()
+            .filter(|s| !s.has_web_param())
+            .map(Service::param)
+            .collect();
+        let fields: BTreeSet<_> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .filter(|k| !native_only.contains(*k))
+            .cloned()
+            .collect();
         assert_eq!(fields, names);
         let delivery = |name: &str| params.iter().find(|p| p.name == name).unwrap().delivery;
         assert_eq!(delivery("baseDomain"), Delivery::Resolved);
         let catalyst = params.iter().find(|p| p.name == "catalyst").unwrap();
         assert_eq!(catalyst.delivery, Delivery::Resolved);
         assert_eq!(catalyst.kind, ParamKind::String);
+        // the native-only sign-in services are no web param at all
+        assert!(!names.contains("authApi") && !names.contains("authPage"));
         assert_eq!(
             params.iter().find(|p| p.name == "preview").unwrap().kind,
             ParamKind::Flag

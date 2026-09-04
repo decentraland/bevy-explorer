@@ -94,6 +94,13 @@ impl Service {
         Service::iter()
     }
 
+    /// Whether the web build can point the service elsewhere. The web page signs in at its own
+    /// origin's `/auth` and hands the engine the identity, so the browser sign-in services are
+    /// not the wasm's to redirect: they have no web param and no row in the HUD's table.
+    pub const fn has_web_param(self) -> bool {
+        !matches!(self, Service::AuthApi | Service::AuthPage)
+    }
+
     pub fn flag(self) -> String {
         format!("--{}", self.field().replace('_', "-"))
     }
@@ -146,11 +153,11 @@ pub struct ServiceOverrides {
     #[arg(long, value_name = "url", display_order = 66, help_heading = HELP_HEADING)]
     pub preview_gatekeeper: Option<String>,
 
-    /// Auth api; absent = `https://auth-api.<base>`
+    /// Auth api the sign-in flow polls (native only); absent = `https://auth-api.<base>`
     #[arg(long, value_name = "url", display_order = 67, help_heading = HELP_HEADING)]
     pub auth_api: Option<String>,
 
-    /// Sign-in page the browser opens; absent = `https://<base>/auth`
+    /// Sign-in page the browser opens (native only); absent = `https://<base>/auth`
     #[arg(long, value_name = "url", display_order = 68, help_heading = HELP_HEADING)]
     pub auth_page: Option<String>,
 
@@ -216,6 +223,7 @@ impl ServiceOverrides {
 
 /// A row of the service table exported to the react HUD: which web param overrides the service
 /// and how its default composes, so the HUD resolves the urls it needs exactly as the engine does.
+/// Only the services with a web param ([`Service::has_web_param`]).
 #[derive(Serialize, Clone, PartialEq, Eq, Debug, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -230,6 +238,7 @@ pub struct ServiceDef {
 
 pub fn service_table() -> Vec<ServiceDef> {
     Service::all()
+        .filter(|service| service.has_web_param())
         .map(|service| {
             let (scheme, sub, path) = service.composition();
             ServiceDef {
@@ -284,5 +293,13 @@ mod tests {
         );
         assert_eq!(Service::WorldsServer.flag(), "--worlds-server");
         assert_eq!(Service::WorldsServer.param(), "worldsServer");
+    }
+
+    /// The sign-in services are native flags only: no row in the HUD's table.
+    #[test]
+    fn auth_services_have_no_web_side() {
+        let table: BTreeSet<_> = service_table().into_iter().map(|d| d.name).collect();
+        assert!(!table.contains("authApi") && !table.contains("authPage"));
+        assert!(table.contains("catalyst"));
     }
 }
