@@ -159,7 +159,8 @@ pub struct ServiceOverrides {
     #[arg(long, value_name = "url", display_order = 69, help_heading = HELP_HEADING)]
     pub asset_bundle_registry: Option<String>,
 
-    /// World storage; absent = `https://storage.<base>`
+    /// World storage; absent = `https://storage.<base>`. https only: an http instance is never
+    /// signed for (the delegation claim must not go out in cleartext)
     #[arg(long, value_name = "url", display_order = 70, help_heading = HELP_HEADING)]
     pub storage: Option<String>,
 
