@@ -48,10 +48,6 @@ pub struct LaunchOptions {
     #[arg(long, value_name = "url", display_order = 7)]
     pub content_server: Option<String>,
 
-    /// Pulse server as `host:port`; absent = the deployment's default
-    #[arg(long, value_name = "host:port", display_order = 8)]
-    pub pulse_server: Option<String>,
-
     /// Log the frame rate to the console
     #[arg(long, value_name = "true|false", display_order = 13)]
     pub log_fps: Option<bool>,
@@ -132,7 +128,6 @@ impl EngineRunOptions {
             &mut self.launch.realm,
             &mut self.launch.position,
             &mut self.launch.content_server,
-            &mut self.launch.pulse_server,
             &mut self.launch.base_domain,
             &mut self.client.system_scene,
             &mut self.client.portables,
@@ -218,7 +213,7 @@ mod tests {
             Some("http://localhost:3000")
         );
         assert_eq!(
-            options.launch.pulse_server.as_deref(),
+            options.launch.services.pulse_server.as_deref(),
             Some("localhost:7777")
         );
         assert!(options.launch.preview);

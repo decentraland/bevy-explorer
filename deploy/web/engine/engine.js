@@ -505,7 +505,7 @@ export function applyOptionsToUrlParams(urlParams, options) {
 /**
  * Starts the game engine. `options` is the engine_run options object — one named key per
  * launch parameter (LaunchOptions in crates/system_api_types/src/launch_options.rs: realm,
- * position, systemScene, portables, preview, editor, pulseServer, imposterSource). It comes from
+ * position, systemScene, portables, preview, editor, imposterSource, the service overrides). It comes from
  * boot.js's __bevyLaunch, fed by the React host. Absent keys take the engine's defaults; an
  * unknown key makes engine_run throw.
  */

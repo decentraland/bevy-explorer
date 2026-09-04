@@ -65,17 +65,25 @@ function service(name: string): ServiceDef {
 
 /**
  * The ?<service>= value the engine will accept (crates/common/src/base_domain.rs
- * `set_services`): a full http(s) — ws(s) for the websocket services — base url with no query or
- * fragment, trailing slash dropped. Anything else is null so the HUD and the engine fall back to
- * the same composed default rather than splitting. Recomposed from scheme, host and path rather
- * than serialised: a bare trailing `?` or `#` is empty to `search`/`hash` but a query/fragment to
- * the engine's parser, which would refuse it and fail the launch.
+ * `set_services`), in the service's shape: a full http(s) — ws(s) for the websocket services —
+ * base url with no query or fragment, trailing slash dropped; or, for an authority service
+ * (pulse), `host` or `host:port` and nothing else. Anything else is null so the HUD and the
+ * engine fall back to the same composed default rather than splitting. Recomposed from the
+ * parsed parts rather than serialised: a bare trailing `?` or `#` is empty to `search`/`hash`
+ * but a query/fragment to the engine's parser, which would refuse it and fail the launch.
  */
 export function normaliseServiceUrl(s: ServiceDef, raw: string | null): string | null {
   if (raw == null) return null
   try {
+    if (s.value === 'authority') {
+      const a = raw.trim()
+      if (a === '' || /[/?#@]/.test(a)) return null
+      // behind a non-special scheme, so a default-looking port is kept as given
+      const u = new URL(`dummy://${a}`)
+      return u.hostname === '' ? null : u.host.toLowerCase()
+    }
     const u = new URL(raw.trim())
-    const ok = s.scheme === 'wss' ? /^wss?:$/ : /^https?:$/
+    const ok = s.value === 'websocket' ? /^wss?:$/ : /^https?:$/
     if (!ok.test(u.protocol) || u.search !== '' || u.hash !== '') return null
     return `${u.protocol}//${u.host}${u.pathname}`.replace(/\/+$/, '')
   } catch {
@@ -94,13 +102,14 @@ export const SERVICE_OVERRIDES: Readonly<Record<string, string>> = {}
 }
 
 /**
- * A service's base url by its table name: the entry url's override, else composed from the base
- * domain, e.g. serviceUrl('places') → "https://places.decentraland.org".
+ * A service's base url (an authority service: its host) by its table name: the entry url's
+ * override, else composed from the base domain, e.g. serviceUrl('places') →
+ * "https://places.decentraland.org".
  */
 export function serviceUrl(name: string): string {
   const s = service(name)
   const host = s.sub === '' ? BASE_DOMAIN : `${s.sub}.${BASE_DOMAIN}`
-  return SERVICE_OVERRIDES[name] ?? `${s.scheme}://${host}${s.path}`
+  return SERVICE_OVERRIDES[name] ?? (s.value === 'authority' ? host : `${s.scheme}://${host}${s.path}`)
 }
 window.__serviceUrl = serviceUrl
 

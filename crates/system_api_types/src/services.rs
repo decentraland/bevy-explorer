@@ -5,7 +5,8 @@
 //! following the domain. Resolution — override, else composition — is
 //! `common::base_domain::service`; on web the HUD resolves the same way from the same table
 //! (react-web lib/baseDomain.ts, from the generated `serviceTable.ts`) because it composes its
-//! own urls before the engine exists.
+//! own urls before the engine exists. One service is not a url: pulse is an authority,
+//! `host[:port]`, whose port the transport defaults per platform ([`ServiceValue`]).
 
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
@@ -42,10 +43,26 @@ pub enum Service {
     Reels,
     /// Map tile api — HUD only
     MapApi,
+    /// Pulse comms server — an authority, `host[:port]`; the port defaults per platform
+    PulseServer,
+}
+
+/// What a service's value looks like — its composition and any override alike.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ServiceValue {
+    /// A full `http(s)://` base url
+    Http,
+    /// A full `ws(s)://` base url
+    Websocket,
+    /// `host` or `host:port` — no scheme or path; the consumer supplies the default port
+    Authority,
 }
 
 impl Service {
-    /// The deployment-convention default as `(scheme, sub, path)`; an empty sub is the apex.
+    /// The deployment-convention default as `(scheme, sub, path)`; an empty sub is the apex, an
+    /// empty scheme an authority service (the host alone).
     pub const fn composition(self) -> (&'static str, &'static str, &'static str) {
         match self {
             Service::RealmProvider => ("https", "realm-provider-ea", ""),
@@ -63,6 +80,7 @@ impl Service {
             Service::Opensea => ("https", "opensea", ""),
             Service::Reels => ("https", "reels", ""),
             Service::MapApi => ("https", "api", ""),
+            Service::PulseServer => ("", "pulse-server", ""),
         }
     }
 
@@ -85,6 +103,7 @@ impl Service {
             Service::Opensea => "opensea",
             Service::Reels => "reels",
             Service::MapApi => "map_api",
+            Service::PulseServer => "pulse_server",
         }
     }
 
@@ -109,10 +128,12 @@ impl Service {
         crate::web_params::camel_case(self.field())
     }
 
-    /// Whether the service is one of the secure-websocket ones (the override must be `ws(s)://`
-    /// rather than `http(s)://`).
-    pub fn is_websocket(self) -> bool {
-        self.composition().0 == "wss"
+    pub fn value(self) -> ServiceValue {
+        match self.composition().0 {
+            "" => ServiceValue::Authority,
+            "wss" => ServiceValue::Websocket,
+            _ => ServiceValue::Http,
+        }
     }
 }
 
@@ -123,7 +144,7 @@ impl Service {
 // heading after a flatten, so a struct-level one would capture every flag a binary declares after
 // this struct
 const HELP_HEADING: &str =
-    "Service endpoints (full base urls; absent = composed from the base domain)";
+    "Service endpoints";
 
 #[derive(clap::Args, Deserialize, Serialize, Default, Clone, PartialEq, Debug)]
 #[serde(rename_all = "camelCase", default)]
@@ -190,6 +211,11 @@ pub struct ServiceOverrides {
     /// Map tile api, used by the HUD; absent = `https://api.<base>`
     #[arg(long, value_name = "url", display_order = 75, help_heading = HELP_HEADING)]
     pub map_api: Option<String>,
+
+    /// Pulse comms server, `host` or `host:port` (no port = the platform's: 7777 ENet on native,
+    /// 7743 WebTransport on web); absent = `pulse-server.<base>`
+    #[arg(long, value_name = "host[:port]", display_order = 76, help_heading = HELP_HEADING)]
+    pub pulse_server: Option<String>,
 }
 
 impl ServiceOverrides {
@@ -210,6 +236,7 @@ impl ServiceOverrides {
             Service::Opensea => &self.opensea,
             Service::Reels => &self.reels,
             Service::MapApi => &self.map_api,
+            Service::PulseServer => &self.pulse_server,
         }
         .as_deref()
         .filter(|url| !url.is_empty())
@@ -230,6 +257,8 @@ impl ServiceOverrides {
 pub struct ServiceDef {
     /// The web param (and `ServiceOverrides` field in camelCase)
     pub name: String,
+    pub value: ServiceValue,
+    /// Empty for an authority service
     pub scheme: String,
     /// Empty = the apex domain
     pub sub: String,
@@ -243,6 +272,7 @@ pub fn service_table() -> Vec<ServiceDef> {
             let (scheme, sub, path) = service.composition();
             ServiceDef {
                 name: service.param(),
+                value: service.value(),
                 scheme: scheme.to_owned(),
                 sub: sub.to_owned(),
                 path: path.to_owned(),
@@ -293,6 +323,9 @@ mod tests {
         );
         assert_eq!(Service::WorldsServer.flag(), "--worlds-server");
         assert_eq!(Service::WorldsServer.param(), "worldsServer");
+        assert_eq!(Service::Catalyst.value(), ServiceValue::Http);
+        assert_eq!(Service::SocialRpc.value(), ServiceValue::Websocket);
+        assert_eq!(Service::PulseServer.value(), ServiceValue::Authority);
     }
 
     /// The sign-in services are native flags only: no row in the HUD's table.

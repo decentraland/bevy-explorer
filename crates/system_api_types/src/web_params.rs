@@ -78,7 +78,6 @@ fn delivery(field: &str) -> Delivery {
         "system_scene"
         | "portables"
         | "preview"
-        | "pulse_server"
         | "imposter_source"
         | "content_server"
         | "log_fps"

@@ -42,7 +42,6 @@ pub fn apply(app: &mut App, launch: &LaunchOptions, config: &AppConfig, boot_ser
         base_domain: _,
         services: _,
         preview,
-        pulse_server,
         log_fps,
     } = launch;
 
@@ -51,12 +50,6 @@ pub fn apply(app: &mut App, launch: &LaunchOptions, config: &AppConfig, boot_ser
         is_preview: *preview,
         preview_parcel: None,
     });
-
-    if let Some(endpoint) = pulse_server {
-        app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(
-            endpoint.clone(),
-        ));
-    }
 
     if log_fps.unwrap_or(config.graphics.log_fps) {
         // the HUD adds the frame timing too

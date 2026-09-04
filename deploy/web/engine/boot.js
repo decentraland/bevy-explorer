@@ -5,7 +5,7 @@
 // Contract with the host page (react-web/src/engine/engineRpc.ts):
 //   set BEFORE injecting:  window.PUBLIC_URL   — base for pkg/ fetches (versioned CDN in prod)
 //                          window.__bevyBootConfig — the engine_run options (keyed by the web
-//                            param table: systemScene, portables, preview, pulseServer, the
+//                            param table: systemScene, portables, preview, the
 //                            host-resolved baseDomain and service overrides …) minus
 //                            realm/position, forwarded verbatim by __bevyLaunch
 //   provided by this module:
