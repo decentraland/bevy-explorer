@@ -19,7 +19,12 @@ pub struct LaunchOptions {
     pub realm: Option<String>,
 
     /// Spawn parcel as `x,y`; absent = the home parcel, or the realm's spawn point
-    #[arg(long, value_name = "x,y", display_order = 2)]
+    #[arg(
+        long,
+        value_name = "x,y",
+        allow_hyphen_values = true,
+        display_order = 2
+    )]
     pub position: Option<String>,
 
     /// Scene preview mode: hot-reloading, no failed-asset backoff, plain-http fetches allowed,
@@ -138,6 +143,13 @@ mod tests {
         // the pre-table spellings are gone, not aliased
         assert!(Cli::try_parse_from(["x", "--server", "r"]).is_err());
         assert!(Cli::try_parse_from(["x", "--ui", "none"]).is_err());
+    }
+
+    #[test]
+    fn position_takes_a_negative_x() {
+        // most of Genesis City is negative, and the value arrives as its own argv entry
+        let cli = Cli::try_parse_from(["x", "--position", "-125,-96"]).unwrap();
+        assert_eq!(cli.launch.position.as_deref(), Some("-125,-96"));
     }
 
     #[test]
