@@ -16,11 +16,9 @@ pub mod track;
 pub mod web;
 
 use bevy::prelude::*;
-use common::{
-    rpc::RpcStreamSender,
-    structs::{ConnectionAvailability, LivekitUpdate},
-};
+use common::rpc::RpcStreamSender;
 use kira::manager::AudioManager;
+use system_bridge::LivekitUpdate;
 use tokio::sync::mpsc;
 
 pub use crate::livekit::runtime::LivekitRuntime;
@@ -72,3 +70,17 @@ macro_rules! make_hooks {
         }
     };
 }
+
+#[derive(Component, Deref)]
+struct ConnectionQuality(system_api_types::livekit::ConnectionQuality);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States, Deref)]
+struct ConnectionAvailability(system_api_types::livekit::ConnectionAvailability);
+
+#[derive(Event, Deref)]
+struct LivekitDisconnect(system_api_types::livekit::LivekitDisconnect);
+
+#[derive(Event, Deref)]
+struct LivekitParticipantConnectionQuality(
+    system_api_types::livekit::LivekitParticipantConnectionQuality,
+);

@@ -1,16 +1,10 @@
 use bevy::prelude::*;
-use common::{
-    debug_panic,
-    structs::{
-        AudioSettings, LivekitDisconnect, LivekitParticipantConnectionQuality, LivekitUpdate,
-    },
-    util::ReportErr,
-};
+use common::{debug_panic, structs::AudioSettings, util::ReportErr};
 use kira::{
     manager::{AudioManager, AudioManagerSettings, DefaultBackend},
     tween::Tween,
 };
-use system_bridge::SystemApi;
+use system_bridge::{LivekitUpdate, SystemApi};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 #[cfg(feature = "room_debug")]
@@ -21,7 +15,8 @@ use crate::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
         track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitAudioManager,
-        LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitSystemApiSenders,
+        LivekitChannelControl, LivekitDisconnect, LivekitNetworkMessage,
+        LivekitParticipantConnectionQuality, LivekitRuntime, LivekitSystemApiSenders,
         LivekitTransport, StartLivekit,
     },
     Transport, TransportType,
@@ -175,7 +170,7 @@ fn disconnect_reason(
     for event in disconnect_reason.read() {
         for sender in livekit_system_api_senders.iter_mut() {
             sender
-                .send(LivekitUpdate::DisconnectReason(event.clone()))
+                .send(LivekitUpdate::DisconnectReason(event.0.clone()))
                 .report();
         }
     }
@@ -188,7 +183,7 @@ fn connection_availability_changed(
     let new_state = connection_availability.get();
     for sender in livekit_system_api_senders.iter_mut() {
         sender
-            .send(LivekitUpdate::Availability(*new_state))
+            .send(LivekitUpdate::Availability(new_state.0))
             .report();
     }
 }
@@ -200,7 +195,7 @@ fn connection_quality_changed(
     for event in connection_quality.read() {
         for sender in livekit_system_api_senders.iter_mut() {
             sender
-                .send(LivekitUpdate::ConnectionQuality(event.clone()))
+                .send(LivekitUpdate::ConnectionQuality(event.0.clone()))
                 .report();
         }
     }

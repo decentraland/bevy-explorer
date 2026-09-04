@@ -1,11 +1,13 @@
 use common::{
     inputs::SystemActionEvent,
-    structs::{ConnectionAvailability, MicState, PermissionType, PermissionUsed, PermissionValue},
+    structs::{MicState, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
 use dcl_component::proto_components::common::Vector2;
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
+#[cfg(feature = "livekit")]
+use system_bridge::livekit::ConnectionAvailability;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
@@ -94,7 +96,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_block_update_stream(),
             op_read_block_update_stream(),
             // Connectivity
+            #[cfg(feature = "livekit")]
             op_get_livekit_status_stream(),
+            #[cfg(feature = "livekit")]
             op_read_livekit_status_stream(),
         ]
     } else {
@@ -644,11 +648,13 @@ pub async fn op_read_block_update_stream(
     dcl::js::system_api::op_read_block_update_stream(state, rid).await
 }
 
+#[cfg(feature = "livekit")]
 #[op2(async)]
 pub async fn op_get_livekit_status_stream(state: Rc<RefCell<OpState>>) -> u32 {
     dcl::js::system_api::op_get_livekit_status_stream(state).await
 }
 
+#[cfg(feature = "livekit")]
 #[op2(async)]
 #[serde]
 pub async fn op_read_livekit_status_stream(

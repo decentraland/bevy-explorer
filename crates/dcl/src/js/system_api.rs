@@ -4,14 +4,16 @@ use common::{
     inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
     rpc::{RpcCall, RpcResultReceiver, RpcResultSender, RpcStreamReceiver, RpcStreamSender},
     structs::{
-        ConnectionAvailability, MicState, PermissionLevel, PermissionStrings, PermissionType,
-        PermissionUsed, PermissionValue,
+        MicState, PermissionLevel, PermissionStrings, PermissionType, PermissionUsed,
+        PermissionValue,
     },
 };
 use dcl_component::proto_components::common::Vector2;
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
+#[cfg(feature = "livekit")]
+use system_bridge::livekit::ConnectionAvailability;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
@@ -1164,6 +1166,7 @@ pub async fn op_read_block_update_stream(
     res
 }
 
+#[cfg(feature = "livekit")]
 pub async fn op_get_livekit_status_stream(state: Rc<RefCell<impl State>>) -> u32 {
     let (sx, rx) = RpcStreamSender::channel();
     state.borrow_mut().put(rx);
@@ -1177,6 +1180,7 @@ pub async fn op_get_livekit_status_stream(state: Rc<RefCell<impl State>>) -> u32
     u32::MAX
 }
 
+#[cfg(feature = "livekit")]
 pub async fn op_read_livekit_status_stream(
     state: Rc<RefCell<impl State>>,
     _rid: u32,

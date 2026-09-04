@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-livekit = ["dep:livekit", "media/html"]
+livekit = ["dep:livekit", "media/html", "system_api_types/livekit"]
 room_debug = []
 transport_debug = ["bevy/bevy_picking"]
 
@@ -17,6 +17,7 @@ wallet = { workspace = true }
 platform = { workspace = true }
 system_bridge = { workspace = true }
 livestream_manager = { workspace = true }
+system_api_types = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }

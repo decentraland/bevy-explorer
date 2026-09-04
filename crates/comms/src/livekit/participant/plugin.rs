@@ -7,7 +7,6 @@ use bevy::{
 };
 use common::{
     debug_panic,
-    structs::{ConnectionQuality, LivekitParticipantConnectionQuality},
     util::{AsH160, ReportErr},
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -32,7 +31,7 @@ use crate::{
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
         track::{Camera as CameraTrack, Publishing, Video},
-        LivekitRuntime,
+        ConnectionQuality, LivekitParticipantConnectionQuality, LivekitRuntime,
     },
     SceneRoom,
 };
@@ -287,20 +286,24 @@ fn participant_connection_quality_changed(
     };
 
     let internal_connection_quality = match connection_quality {
-        LivekitConnectionQuality::Excellent => ConnectionQuality::Excellent,
-        LivekitConnectionQuality::Good => ConnectionQuality::Good,
-        LivekitConnectionQuality::Poor => ConnectionQuality::Poor,
-        LivekitConnectionQuality::Lost => ConnectionQuality::Lost,
+        LivekitConnectionQuality::Excellent => {
+            system_api_types::livekit::ConnectionQuality::Excellent
+        }
+        LivekitConnectionQuality::Good => system_api_types::livekit::ConnectionQuality::Good,
+        LivekitConnectionQuality::Poor => system_api_types::livekit::ConnectionQuality::Poor,
+        LivekitConnectionQuality::Lost => system_api_types::livekit::ConnectionQuality::Lost,
     };
 
     commands
         .entity(entity)
-        .try_insert(internal_connection_quality);
-    commands.send_event(LivekitParticipantConnectionQuality {
-        participant: participant.sid().to_string(),
-        room: livekit_room.name(),
-        connection_quality: internal_connection_quality,
-    });
+        .try_insert(ConnectionQuality(internal_connection_quality));
+    commands.send_event(LivekitParticipantConnectionQuality(
+        system_api_types::livekit::LivekitParticipantConnectionQuality {
+            participant: participant.sid().to_string(),
+            room: livekit_room.name(),
+            connection_quality: internal_connection_quality,
+        },
+    ));
 }
 
 fn participant_payload(

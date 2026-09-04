@@ -4,12 +4,12 @@ use bevy::{
     prelude::*,
     text::{FontSmoothing, LineHeight},
 };
-use common::structs::ConnectionQuality;
 
 use crate::{
     livekit::{
         participant::{HostedBy, LivekitParticipant},
         room::LivekitRoom,
+        ConnectionQuality,
     },
     SceneRoom,
 };
@@ -166,11 +166,11 @@ fn connection_quality_changed(
         unreachable!("Room must have a overlay referencing it.");
     };
 
-    let color = match connection_quality {
-        ConnectionQuality::Excellent => palettes::tailwind::GREEN_500,
-        ConnectionQuality::Good => palettes::tailwind::YELLOW_500,
-        ConnectionQuality::Poor => palettes::tailwind::ORANGE_500,
-        ConnectionQuality::Lost => palettes::tailwind::RED_500,
+    let color = match **connection_quality {
+        system_api_types::livekit::ConnectionQuality::Excellent => palettes::tailwind::GREEN_500,
+        system_api_types::livekit::ConnectionQuality::Good => palettes::tailwind::YELLOW_500,
+        system_api_types::livekit::ConnectionQuality::Poor => palettes::tailwind::ORANGE_500,
+        system_api_types::livekit::ConnectionQuality::Lost => palettes::tailwind::RED_500,
     };
     match children.len() {
         1 => {

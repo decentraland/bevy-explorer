@@ -538,11 +538,13 @@ pub async fn op_read_block_update_stream(
     serde_result!(dcl::js::system_api::op_read_block_update_stream(state.rc(), rid).await)
 }
 
+#[cfg(feature = "livekit")]
 #[wasm_bindgen]
 pub async fn op_get_livekit_status_stream(state: &WorkerContext) -> u32 {
     dcl::js::system_api::op_get_livekit_status_stream(state.rc()).await
 }
 
+#[cfg(feature = "livekit")]
 #[wasm_bindgen]
 pub async fn op_read_livekit_status_stream(
     state: &WorkerContext,

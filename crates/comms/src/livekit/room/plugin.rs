@@ -2,11 +2,7 @@ use bevy::{
     platform::{collections::HashMap, sync::Arc},
     prelude::*,
 };
-use common::{
-    debug_panic,
-    structs::{AudioDecoderError, LivekitDisconnect},
-    util::AsH160,
-};
+use common::{debug_panic, structs::AudioDecoderError, util::AsH160};
 use ethers_core::types::H160;
 use http::Uri;
 use tokio::{
@@ -33,8 +29,8 @@ use crate::{
         room::{
             Connected, Connecting, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting,
         },
-        track, ConnectionAvailability, LivekitChannelControl, LivekitNetworkMessage,
-        LivekitRuntime, LivekitTransport,
+        track, ConnectionAvailability, LivekitChannelControl, LivekitDisconnect,
+        LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
     },
     NetworkMessageRecipient,
 };
@@ -59,7 +55,9 @@ impl Plugin for LivekitRoomPlugin {
         app.add_systems(
             Update,
             (
-                try_reconnect.run_if(not(in_state(ConnectionAvailability::Unavailable))),
+                try_reconnect.run_if(not(in_state(ConnectionAvailability(
+                    system_api_types::livekit::ConnectionAvailability::Unavailable,
+                )))),
                 poll_connecting_rooms,
                 (
                     process_room_events,
@@ -92,7 +90,9 @@ fn initiate_room_connection(
     livekit_runtime: Res<LivekitRuntime>,
     connection_availability: Res<State<ConnectionAvailability>>,
 ) {
-    if *connection_availability.get() == ConnectionAvailability::Unavailable {
+    if *connection_availability.get()
+        == ConnectionAvailability(system_api_types::livekit::ConnectionAvailability::Unavailable)
+    {
         debug!("Can't connect because new connections are disabled.");
         return;
     }
@@ -221,22 +221,26 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                                 livekit_room.name(),
                                 reason
                             );
-                            commands.set_state(ConnectionAvailability::Unavailable);
+                            commands.set_state(ConnectionAvailability(
+                                system_api_types::livekit::ConnectionAvailability::Unavailable,
+                            ));
                         }
                         commands.entity(entity).try_despawn();
                         let internal_reason = match reason {
                             DisconnectReason::DuplicateIdentity => {
-                                common::structs::DisconnectReason::DuplicateIdentity
+                                system_api_types::livekit::DisconnectReason::DuplicateIdentity
                             }
                             DisconnectReason::ParticipantRemoved => {
-                                common::structs::DisconnectReason::ParticipantRemoved
+                                system_api_types::livekit::DisconnectReason::ParticipantRemoved
                             }
                             _ => unreachable!(),
                         };
-                        commands.send_event(LivekitDisconnect {
-                            room: livekit_room.name(),
-                            disconnect_reason: internal_reason,
-                        });
+                        commands.send_event(LivekitDisconnect(
+                            system_api_types::livekit::LivekitDisconnect {
+                                room: livekit_room.name(),
+                                disconnect_reason: internal_reason,
+                            },
+                        ));
                     }
                 }
                 RoomEvent::ConnectionStateChanged(state) => match state {
