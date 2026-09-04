@@ -52,7 +52,7 @@ impl Plugin for LivekitPlugin {
         app.add_systems(
             PostUpdate,
             (
-                new_system_ai_senders,
+                new_system_api_senders,
                 disconnect_reason.run_if(on_event::<LivekitDisconnect>),
                 connection_availability_changed.run_if(state_changed::<ConnectionAvailability>),
                 connection_quality_changed.run_if(on_event::<LivekitParticipantConnectionQuality>),
@@ -157,7 +157,7 @@ fn respond_to_audio_settings_change(
         .set_volume(audio_settings.scene() as f64, Tween::default());
 }
 
-fn new_system_ai_senders(
+fn new_system_api_senders(
     mut event_reader: EventReader<SystemApi>,
     mut livekit_system_api_senders: ResMut<LivekitSystemApiSenders>,
 ) {
