@@ -39,9 +39,8 @@ pub struct LaunchOptions {
     #[arg(long, display_order = 3)]
     pub preview: bool,
 
-    /// The deployment domain every backend host is composed from — sign-in, content, comms,
-    /// everything; absent = decentraland.org. On web the page always passes the domain it
-    /// resolved for itself: the `?baseDomain=` param, else derived from the hosting origin.
+    /// The base domain for all services (comms, profiles, etc); absent = the hosting origin (on
+    /// web), or decentraland.org
     #[arg(long, value_name = "domain", display_order = 4)]
     pub base_domain: Option<String>,
 

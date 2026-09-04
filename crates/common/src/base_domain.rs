@@ -1,5 +1,5 @@
-//! The base domain every backend host is composed from; set once via --base-domain
-//! (native) or the ?baseDomain= entry param (web, via boot.js + src/web.rs). On top of it the
+//! The base domain every backend host is composed from; set once from the shared launch options
+//! (`--base-domain` / `?baseDomain=`, by src/launch.rs `latch` on every binary). On top of it the
 //! per-[`Service`] resolver: an explicit override (`--<service> <url>` / `?<service>=`, latched
 //! once with [`set_services`]) wins, else the service composes from the domain by convention.
 //! Service urls should go through [`service`] / [`url`]; the raw [`https`] / [`wss`] / [`host`]
@@ -87,12 +87,13 @@ pub fn set_services<'a>(
         }
         map.insert(service, parsed.as_str().trim_end_matches('/').to_owned());
     }
-    // nothing given latches nothing: a binary with no overrides (or the wasm's `launch::latch`,
-    // whose overrides came through the page instead) must not clobber an earlier latch
+    // nothing given latches nothing: `latch` runs unconditionally, and no overrides means the
+    // lock stays empty (every `service_override` None) rather than holding an empty map
     if map.is_empty() {
         return Ok(());
     }
-    // re-latching the same set is fine (the wasm applies it at both entry points, like `set`)
+    // re-latching the same set is fine, like `set` (the lock is process-wide: a crate's tests
+    // share it)
     if SERVICES.set(map.clone()).is_err() && SERVICES.get() != Some(&map) {
         return Err("service overrides already latched with different values".to_owned());
     }
