@@ -1171,7 +1171,7 @@ pub async fn op_get_livekit_status_stream(state: Rc<RefCell<impl State>>) -> u32
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetFriendshipEventStream(sx))
+        .send(SystemApi::LivekitStatusStream(sx))
         .unwrap();
 
     u32::MAX
