@@ -296,6 +296,7 @@ fn load_nft(
                 MeshMaterial3d(materials.add(SceneMaterial {
                     base: StandardMaterial {
                         base_color_texture: Some(h_image.clone()),
+                        alpha_mode: AlphaMode::Blend,
                         ..Default::default()
                     },
                     extension: SceneBound::new(bounds, config.graphics.oob),
