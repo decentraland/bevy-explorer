@@ -155,7 +155,6 @@ export interface EngineRunOptions {
     portables?: string;
     preview?: boolean;
     editor?: boolean;
-    sceneParams?: string;
     pulseServer?: string;
     imposterSource?: string;
 }
@@ -398,15 +397,7 @@ fn update_url_params(
     };
 
     if prev.as_ref() != Some(&options) {
-        let mut json = serde_json::to_value(&options).unwrap_or_default();
-        if let Some(map) = json.as_object_mut() {
-            // the page-derived keys are the loader's to compute, never url state
-            for param in system_api_types::web_params::web_params() {
-                if param.delivery == system_api_types::web_params::Delivery::Page {
-                    map.remove(&param.name);
-                }
-            }
-        }
+        let json = serde_json::to_value(&options).unwrap_or_default();
         set_url_params(&json.to_string());
         *prev = Some(options);
     }

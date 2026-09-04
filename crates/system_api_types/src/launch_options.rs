@@ -54,12 +54,6 @@ pub struct LaunchOptions {
     #[arg(long, value_name = "url")]
     pub imposter_source: Option<String>,
 
-    /// Arbitrary `key=value&…` parameters for the system scene, readable via
-    /// `BevyApi.getParams()`. On web: the page's query string with the launch values folded in,
-    /// computed by the engine loader.
-    #[arg(long = "params", value_name = "k=v&…")]
-    pub scene_params: Option<String>,
-
     /// The deployment domain every backend host is composed from — sign-in, content, comms,
     /// everything; absent = decentraland.org (on web: derived from the hosting origin). On web
     /// the host page consumes it itself and publishes it ahead of `engine_run`, so it is not an
@@ -86,7 +80,6 @@ impl LaunchOptions {
             &mut self.portables,
             &mut self.pulse_server,
             &mut self.imposter_source,
-            &mut self.scene_params,
             &mut self.base_domain,
         ] {
             if value.as_deref() == Some("") {
@@ -118,8 +111,6 @@ mod tests {
             "1,-2",
             "--ui",
             "none",
-            "--params",
-            "a=b",
             "--base-domain",
             "decentraland.zone",
             "--preview",
@@ -127,7 +118,6 @@ mod tests {
         assert_eq!(cli.launch.realm.as_deref(), Some("https://r"));
         assert_eq!(cli.launch.position.as_deref(), Some("1,-2"));
         assert_eq!(cli.launch.system_scene.as_deref(), Some("none"));
-        assert_eq!(cli.launch.scene_params.as_deref(), Some("a=b"));
         assert_eq!(cli.launch.base_domain.as_deref(), Some("decentraland.zone"));
         assert!(cli.launch.preview);
         assert!(!cli.launch.editor);

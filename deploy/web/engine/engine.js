@@ -518,12 +518,6 @@ export function start(options = {}) {
   }
   window.__bevyStarted = true;
 
-  // Mirror the launch options into the page's query string — the scenes see it as their params
-  // (SceneParams), so a launch-time choice (the picked realm/position) shows up there too.
-  const urlParams = new URLSearchParams(window.location.search);
-  urlParams.delete("initialRealm");
-  applyOptionsToUrlParams(urlParams, options);
-  const sceneParams = urlParams.toString();
   console.log(`[Main JS] launching with ${JSON.stringify(options)}`);
   hideHeader();
 
@@ -575,9 +569,8 @@ export function start(options = {}) {
     delete window._buildEngineApi;
   };
 
-  // Everything the host handed us goes through as-is (the engine rejects unknown keys); only
-  // the page-derived value is added here.
-  engine_run({ ...options, sceneParams });
+  // Everything the host handed us goes through as-is (the engine rejects unknown keys).
+  engine_run(options);
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {

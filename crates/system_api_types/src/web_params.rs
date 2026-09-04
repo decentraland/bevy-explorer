@@ -37,9 +37,6 @@ pub enum Delivery {
     /// Set by an embedding host page from its own knowledge (the creator-hub editor sets
     /// `editor`) — an `engine_run` option the react page must NOT read from the entry url.
     Host,
-    /// Computed by the engine loader (engine.js) at launch — an `engine_run` option that is
-    /// never read from the url.
-    Page,
     /// The host page consumes it itself (composing its own backend urls) and publishes it as
     /// `window.__baseDomain()` before the wasm loads; the engine reads that at `engine_init`,
     /// ahead of `engine_run`.
@@ -67,7 +64,6 @@ fn delivery(field: &str) -> Delivery {
         "realm" | "position" => Destination,
         "system_scene" | "portables" | "preview" | "pulse_server" | "imposter_source" => Launch,
         "editor" => Host,
-        "scene_params" => Page,
         "base_domain" => BaseDomain,
         other => {
             panic!("LaunchOptions::{other} has no web delivery — add it to web_params::delivery")

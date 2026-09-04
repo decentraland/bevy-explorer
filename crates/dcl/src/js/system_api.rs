@@ -10,7 +10,6 @@ use common::{
 };
 use dcl_component::proto_components::common::Vector2;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
@@ -1163,17 +1162,4 @@ pub async fn op_read_block_update_stream(
     state.borrow_mut().put(receiver);
 
     res
-}
-
-pub async fn op_get_params(
-    state: Rc<RefCell<impl State>>,
-) -> Result<HashMap<String, String>, anyhow::Error> {
-    let (sx, rx) = RpcResultSender::channel();
-
-    state
-        .borrow_mut()
-        .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetParams(sx))?;
-
-    Ok(rx.await?)
 }

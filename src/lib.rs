@@ -68,7 +68,7 @@ use scene_runner::{
 };
 use social::SocialPlugin;
 use system_api_types::{launch_options::LaunchOptions, web_params::DEFAULT_PORTABLES};
-use system_bridge::{settings::NewCameraEvent, NativeUi, SceneParams, SystemBridgePlugin};
+use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
 #[cfg(not(target_arch = "wasm32"))]
 use system_ui::crash_report::CrashReportPlugin;
 use system_ui::SystemUiPlugin;
@@ -365,7 +365,6 @@ impl DecentralandApp {
         info!("Bevy-Explorer version {}", version);
 
         let boot_server = map_realm_name(&decentraland_app_config.boot_server());
-        // computed here too: scene_params is partially moved out of the arguments below
         let boot_location = BootLocation(decentraland_app_config.boot_location());
         // Show out-of-bounds geometry in preview, on a loopback realm (local dev) and in
         // the editor, never on a public realm. Computed before boot_server moves.
@@ -522,15 +521,6 @@ impl DecentralandApp {
             });
         }
 
-        app.insert_resource(SceneParams::from_query_string(
-            decentraland_app_config
-                .arguments
-                .launch
-                .scene_params
-                .as_deref()
-                .unwrap_or_default(),
-            cfg!(target_arch = "wasm32"),
-        ));
         if let Some(endpoint) = decentraland_app_config
             .arguments
             .launch
