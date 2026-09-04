@@ -141,9 +141,6 @@ pub fn engine_home_scene() -> String {
         .to_string()
 }
 
-/// Bytes of gpu uploads per frame on web — was a constant the page passed in; the engine owns it.
-const WEB_GPU_BYTES_PER_FRAME: usize = 10_000_000;
-
 // Type the `engine_run` parameter in the generated .d.ts — keep in step with
 // `system_api_types::launch_options::EngineRunOptions` (the web param table's source).
 #[wasm_bindgen(typescript_custom_section)]
@@ -186,7 +183,7 @@ pub fn engine_run(options: EngineRunOptionsJs) -> Result<(), JsValue> {
     apply_base_domain();
     // the shared launch options' globals (src/launch.rs; the base domain itself came from the
     // page above, so this can't fail on it)
-    if let Err(e) = crate::launch::latch(&options.launch, &options.client) {
+    if let Err(e) = crate::launch::latch(&options.launch) {
         warn!("{e}");
     }
     init_runtime();
@@ -418,25 +415,11 @@ fn update_url_params(
 }
 
 fn decentraland_serialized_app_config() -> AppConfig {
-    INIT_DATA.get().cloned().unwrap_or_else(|| AppConfig {
-        graphics: common::structs::GraphicsSettings {
-            shadow_distance: 20.0,
-            shadow_settings: common::structs::ShadowSetting::Low,
-            ..Default::default()
-        },
-        ..Default::default()
-    })
+    INIT_DATA.get().cloned().unwrap_or_default()
 }
 
 fn decentraland_app_arguments(options: &EngineRunOptions) -> DecentralandArguments {
-    let EngineRunOptions {
-        mut launch,
-        mut client,
-    } = options.clone();
-    client
-        .gpu_bytes_per_frame
-        .get_or_insert(WEB_GPU_BYTES_PER_FRAME);
-    launch.log_fps.get_or_insert(false);
+    let EngineRunOptions { launch, client } = options.clone();
     DecentralandArguments {
         launch,
         client,

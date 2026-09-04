@@ -112,7 +112,7 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
         }
     };
 
-    webgpu_build::launch::latch(&args.launch, &args.client).map_err(|e| {
+    webgpu_build::launch::latch(&args.launch).map_err(|e| {
         error!("{e}");
         UserError(true)
     })?;

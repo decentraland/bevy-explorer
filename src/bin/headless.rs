@@ -157,7 +157,7 @@ fn parse_args() -> Args {
         }
     };
     // latch first: everything below that composes a backend host reads it
-    if let Err(e) = webgpu_build::launch::shared::latch(&args.launch) {
+    if let Err(e) = webgpu_build::launch::latch(&args.launch) {
         usage_error(e);
     }
     args.realm = args
@@ -334,11 +334,12 @@ fn main() {
         args.realm, args.location, args.launch.preview, args.server_mode, args.tick_hz
     );
 
-    let mut config = AppConfig {
+    let config = AppConfig {
         home_realm: Some(args.realm.clone()),
         home_location: Some(args.location),
         graphics: GraphicsSettings {
             vsync: false,
+            log_fps: false,
             fps_target: args.tick_hz as usize,
             ..Default::default()
         },
@@ -366,7 +367,6 @@ fn main() {
         .into(),
         ..Default::default()
     };
-    webgpu_build::launch::shared::configure(&mut config, &args.launch);
 
     let mut app = App::new();
 
@@ -439,7 +439,7 @@ fn main() {
 
     // the shared launch options' resources and plugins (--log-fps logs the tick rate, against
     // --tick-hz)
-    webgpu_build::launch::shared::apply(
+    webgpu_build::launch::apply(
         &mut app,
         &args.launch,
         &config,

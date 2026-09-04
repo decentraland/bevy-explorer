@@ -519,9 +519,13 @@ impl DecentralandApp {
         launch::apply(
             &mut app,
             &decentraland_app_config.arguments.launch,
-            &decentraland_app_config.arguments.client,
             &decentraland_app_config.app_config,
             &boot_server,
+        );
+        launch::apply_client(
+            &mut app,
+            &decentraland_app_config.arguments.client,
+            &decentraland_app_config.app_config,
         );
 
         // add AppConfig as a resource
@@ -674,7 +678,6 @@ fn update_app_config_from_arguments(
         .graphics
         .fps_target
         .replace_if_some(arguments.fps_target);
-    launch::configure(base_app_config, &arguments.launch, &arguments.client);
 
     base_app_config
         .scene_threads

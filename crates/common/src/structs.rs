@@ -749,7 +749,7 @@ impl Default for GraphicsSettings {
     fn default() -> Self {
         Self {
             vsync: false,
-            log_fps: true,
+            log_fps: !cfg!(target_arch = "wasm32"),
             msaa: AaSetting::FxaaLow,
             fps_target: 60,
             shadow_distance: 20.0,
@@ -766,7 +766,11 @@ impl Default for GraphicsSettings {
             ambient_brightness: 50,
             cel_shading: true,
             avatar_outline: true,
-            gpu_bytes_per_frame: 0,
+            gpu_bytes_per_frame: if cfg!(target_arch = "wasm32") {
+                10_000_000
+            } else {
+                0
+            },
         }
     }
 }

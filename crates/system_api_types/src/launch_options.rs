@@ -9,8 +9,8 @@
 //! - [`ClientOptions`]: the rendering clients only (native and web); headless never sees them,
 //!   so they are unknown flags there
 //!
-//! What each one DOES is `src/launch.rs` in the root crate, split the same way. Field names are
-//! the web names, and the native flags are the same names in kebab-case. Everything is
+//! What each one DOES is `src/launch.rs` in the root crate (`apply` / `apply_client`). Field
+//! names are the web names, and the native flags are the same names in kebab-case. Everything is
 //! optional: absent = the engine's default. Native-only flags live on `DecentralandArguments`
 //! (src/lib.rs).
 
