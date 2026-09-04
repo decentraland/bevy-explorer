@@ -220,15 +220,19 @@ fn process_frame(
                     .ok()
                     .and_then(|(h_mat, name)| mats.get(h_mat).map(|mat| (mat, name)))
                 {
-                    let maybe_name = maybe_name.map(|name| dbg!(&name.0).to_lowercase());
+                    let maybe_name = maybe_name.map(|name| name.0.to_lowercase());
                     let mut mat_clone = mat.clone();
-                    if maybe_name.iter().any(|name| name.contains("frame")) {
-                        mat_clone.base_color = frame.color;
-                    }
                     if maybe_name
                         .iter()
-                        .any(|name| name.contains("frame") || name.contains("ground"))
+                        .any(|name| name.contains("pictureframe") || name.contains("mat_ck"))
                     {
+                        mat_clone.base_color = frame.color;
+                    }
+                    if maybe_name.iter().any(|name| {
+                        name.contains("pictureframe")
+                            || name.contains("mat_ck")
+                            || name.contains("ground")
+                    }) {
                         mat_clone.double_sided = true;
                         mat_clone.cull_mode = None;
                     }
