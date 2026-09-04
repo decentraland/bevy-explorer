@@ -82,13 +82,13 @@ just native-release            # bundles the HUD if stale, then builds + runs ev
 `just native-debug` is the same in debug. Both pass extra arguments through:
 
 ```bash
-just native-release --server https://realm-provider-ea.decentraland.org/main --location 52,-52
+just native-release --realm https://realm-provider-ea.decentraland.org/main --position 52,-52
 ```
 
 `--base-domain` retargets the backend hosts (auth, comms, places, worlds, social, ...) at another deployment's domain. `renderer-artifacts` (sdk6 adaption layer) and `builder-items` (inspector asset catalog) stay on decentraland.org — they have no other deployment:
 
 ```bash
-just native-release --base-domain interconnected.online --location 0,0
+just native-release --base-domain interconnected.online --position 0,0
 ```
 
 On web the same thing is the `?baseDomain=` query param, e.g. `?baseDomain=interconnected.online`. Without the param, the hosting origin decides: a page served under decentraland.zone keys to zone backends, anything else to org.
@@ -131,7 +131,7 @@ cargo build --release --bin headless --no-default-features --features headless,l
 
 `cargo run --release --bin decentra-bevy -- --help` lists every flag with its description.
 
-The launch parameters shared with the web build — realm, spawn parcel, ui scene, portables, preview, editor, pulse server, imposter source, scene params, base domain — are declared once, in `crates/system_api_types/src/launch_options.rs`: each field is the native `--flag`, the `engine_run` options key and the entry-url query param, and the react page's parameter table is generated from it. Which of those a link may set without a warning is the page's own policy (`react-web/src/lib/launchGate.ts`). Native-only flags (rendering, imposters, debug, the `--builtin-*` ui pieces) live on `DecentralandArguments` in `src/lib.rs`.
+The launch parameters shared with the web build — realm, spawn parcel, ui scene, portables, preview, editor, pulse server, imposter source, base domain — are declared once, in `crates/system_api_types/src/launch_options.rs`: each field is the native `--flag`, the `engine_run` options key and the entry-url query param, and the react page's parameter table is generated from it. Which of those a link may set without a warning is the page's own policy (`react-web/src/lib/launchGate.ts`). Native-only flags (rendering, imposters, debug, the `--builtin-*` ui pieces) live on `DecentralandArguments` in `src/lib.rs`.
 
 ## Testing
 

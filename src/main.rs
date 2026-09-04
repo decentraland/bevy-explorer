@@ -120,12 +120,12 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
     }
     if let Some(position) = &args.launch.position {
         IVec2Arg::from_str(position).map_err(|e| {
-            error!("--location {position}: {e}");
+            error!("--position {position}: {e}");
             UserError(true)
         })?;
     }
 
-    // An explicit --ui (a scene source, or "none" for the engine's builtin ui) opts out of the
+    // An explicit --system-scene (a scene source, or "none" for the engine's builtin ui) opts out of the
     // react HUD entirely — the given ui scene drives instead (see lib.rs).
     args.hud = args.launch.system_scene.is_none();
     if args.launch.system_scene.is_none() {

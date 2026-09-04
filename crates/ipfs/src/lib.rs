@@ -1587,7 +1587,7 @@ impl AssetReader for IpfsIo {
             }
             let remote = ipfs_io_read_state.send_failure(remote)?;
 
-            // file realm: a `file://` baseUrl (local static scene export, e.g. `--ui <dir>`)
+            // file realm: a `file://` baseUrl (local static scene export, e.g. `--system-scene <dir>`)
             // reads straight from disk — no cache write, no request slot, no retries.
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(local) = remote.strip_prefix("file://") {

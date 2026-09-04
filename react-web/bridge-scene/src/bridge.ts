@@ -17,7 +17,7 @@ import type { Envelope, PageToScene, SceneToPage } from '../../src/engine/protoc
 // (sandbox_worker.js), matching the page's bridgeChannelName() — so two tabs never share a bridge.
 const CHANNEL = 'bevy-ui-bridge'
 
-// BroadcastChannel is a runtime global injected only into the super-user (--ui) scene
+// BroadcastChannel is a runtime global injected only into the super-user (--system-scene) scene
 // sandbox; it is not in the SDK type defs.
 declare const BroadcastChannel: new (name: string) => {
   postMessage: (msg: unknown) => void

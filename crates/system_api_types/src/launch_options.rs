@@ -5,9 +5,8 @@
 //! annotation, and the host page is generated from that table — so a parameter is declared
 //! here and nowhere else.
 //!
-//! Field names are the web names; where the native flag is spelt differently the `long`
-//! attribute says so (existing flags keep their spelling). Everything is optional: absent = the
-//! engine's default. Native-only flags live on `DecentralandArguments` (src/lib.rs), which
+//! Field names are the web names, and the native flags are the same names in kebab-case.
+//! Everything is optional: absent = the engine's default. Native-only flags live on `DecentralandArguments` (src/lib.rs), which
 //! flattens this struct in.
 
 use serde::{Deserialize, Serialize};
@@ -15,52 +14,48 @@ use serde::{Deserialize, Serialize};
 #[derive(clap::Args, Deserialize, Serialize, Default, Clone, PartialEq, Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, default)]
 pub struct LaunchOptions {
-    /// Realm to boot into; absent = the persisted home realm.
-    #[arg(long = "server", value_name = "url")]
+    /// Realm to boot into; absent = the persisted home realm or default realm
+    #[arg(long, value_name = "url", display_order = 1)]
     pub realm: Option<String>,
 
-    /// Spawn parcel as `x,y`; absent = the home parcel, or the realm's own spawn point when a
-    /// realm is given.
-    #[arg(long = "location", value_name = "x,y")]
+    /// Spawn parcel as `x,y`; absent = the home parcel, or the realm's spawn point
+    #[arg(long, value_name = "x,y", display_order = 2)]
     pub position: Option<String>,
 
-    /// Super-user ui scene source, or `none` for no ui scene. The engine trusts it completely:
-    /// permissions.rs waves through every permission check for it and it gets the whole system
-    /// api. Absent = the bundled bridge scene (the react HUD drives); any explicit value opts out
-    /// of the HUD.
-    #[arg(long = "ui", value_name = "scene|none")]
-    pub system_scene: Option<String>,
-
-    /// `;`-separated portable/startup scene sources; absent = `basiccontroller.dcl.eth`
-    /// (DEFAULT_PORTABLES), which the web url sync also omits.
-    #[arg(long, value_name = "a;b")]
-    pub portables: Option<String>,
-
-    /// Scene preview mode: local gatekeeper, no failed-asset backoff.
-    #[arg(long)]
+    /// Scene preview mode: hot-reloading, no failed-asset backoff, plain-http fetches allowed,
+    /// realm fixed.
+    #[arg(long, display_order = 3)]
     pub preview: bool,
 
-    /// Embedded in a scene editor (creator hub): scenes freeze after main() until the editor
-    /// unfreezes them. On web the editor's own front-end sets it; not a link parameter.
-    #[arg(long)]
+    /// The deployment domain every backend host is composed from — sign-in, content, comms,
+    /// everything; absent = decentraland.org. on web: derived from the hosting origin.
+    #[serde(skip)]
+    #[arg(long, value_name = "domain", display_order = 4)]
+    pub base_domain: Option<String>,
+
+    /// Embedded in a scene editor (creator hub). Set by editor front-ends.
+    #[arg(long, display_order = 5)]
     pub editor: bool,
 
-    /// Pulse server as `host:port`; absent = the deployment's default.
-    #[arg(long, value_name = "host:port")]
+    /// Pulse server as `host:port`; absent = the deployment's default
+    #[arg(long, value_name = "host:port", display_order = 8)]
     pub pulse_server: Option<String>,
 
     /// Base url of the imposter store; absent = the default store. The realm-keyed path under
-    /// it is the same as the default store's.
-    #[arg(long, value_name = "url")]
+    /// it is the same as the default store's
+    #[arg(long, value_name = "url", display_order = 9)]
     pub imposter_source: Option<String>,
 
-    /// The deployment domain every backend host is composed from — sign-in, content, comms,
-    /// everything; absent = decentraland.org (on web: derived from the hosting origin). On web
-    /// the host page consumes it itself and publishes it ahead of `engine_run`, so it is not an
-    /// `engine_run` key.
-    #[serde(skip)]
-    #[arg(long, value_name = "domain")]
-    pub base_domain: Option<String>,
+    /// Super-user ui scene source, or `none` for no ui scene. The engine trusts it completely.
+    /// Absent = the default bridge scene for the react HUD; any explicit value opts out of the
+    /// HUD
+    #[arg(long, value_name = "scene|none", display_order = 11)]
+    pub system_scene: Option<String>,
+
+    /// `;`-separated portable/startup scene sources; absent = `basiccontroller.dcl.eth`
+    /// (DEFAULT_PORTABLES)
+    #[arg(long, value_name = "a;b", display_order = 12)]
+    pub portables: Option<String>,
 }
 
 impl LaunchOptions {
@@ -102,14 +97,14 @@ mod tests {
     }
 
     #[test]
-    fn native_flags_keep_their_spelling() {
+    fn native_flags_are_the_web_names() {
         let cli = Cli::parse_from([
             "x",
-            "--server",
+            "--realm",
             "https://r",
-            "--location",
+            "--position",
             "1,-2",
-            "--ui",
+            "--system-scene",
             "none",
             "--base-domain",
             "decentraland.zone",
@@ -121,7 +116,9 @@ mod tests {
         assert_eq!(cli.launch.base_domain.as_deref(), Some("decentraland.zone"));
         assert!(cli.launch.preview);
         assert!(!cli.launch.editor);
-        assert!(Cli::try_parse_from(["x", "--realm", "r"]).is_err());
+        // the pre-table spellings are gone, not aliased
+        assert!(Cli::try_parse_from(["x", "--server", "r"]).is_err());
+        assert!(Cli::try_parse_from(["x", "--ui", "none"]).is_err());
     }
 
     #[test]

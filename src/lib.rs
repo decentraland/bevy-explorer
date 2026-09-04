@@ -129,8 +129,8 @@ impl DecentralandAppConfig {
         }
     }
 
-    /// The realm the engine boots into: an explicit --server, else the home realm.
-    /// --server is a startup param (like the web's ?realm=) and is deliberately NOT
+    /// The realm the engine boots into: an explicit --realm, else the home realm.
+    /// --realm is a startup param (like the web's ?realm=) and is deliberately NOT
     /// merged into the AppConfig — see the home_realm field docs.
     pub fn boot_server(&self) -> String {
         self.arguments
@@ -140,7 +140,7 @@ impl DecentralandAppConfig {
             .unwrap_or_else(|| self.app_config.home_realm())
     }
 
-    /// The parcel the player spawns at: an explicit --location, else the home parcel.
+    /// The parcel the player spawns at: an explicit --position, else the home parcel.
     /// Same contract as [`Self::boot_server`].
     pub fn boot_location(&self) -> IVec2 {
         self.arguments
@@ -151,7 +151,7 @@ impl DecentralandAppConfig {
 
 /// The spawn parcel resolved by [`DecentralandAppConfig::boot_location`] — a distinct
 /// resource so the AppConfig resource (rewritten wholesale to disk on settings changes)
-/// never carries a one-off --location as home.
+/// never carries a one-off --position as home.
 #[derive(Resource)]
 pub struct BootLocation(pub IVec2);
 
@@ -164,91 +164,99 @@ pub struct BootLocation(pub IVec2);
 pub struct DecentralandArguments {
     #[command(flatten)]
     pub launch: LaunchOptions,
-    /// Override the content server only.
-    #[arg(long = "content-server", value_name = "url")]
-    pub content_server_override: Option<String>,
-    /// Max simultaneous scene-javascript threads (default 4). Also `/scene_threads`.
-    #[arg(long = "threads", value_name = "n")]
-    pub scene_threads: Option<usize>,
-    /// Scene load distance in meters (default 100). Also `/scene_distance`.
-    #[arg(long = "distance", value_name = "m")]
-    pub scene_load_distance: Option<f32>,
-    /// Extra distance before scenes are unloaded.
-    #[arg(long = "unload", value_name = "m")]
-    pub scene_unload_extra_distance: Option<f32>,
-    /// Imposter baking speed: f(ull), h(alf), q(uarter) or o(ff).
-    #[arg(long = "bake", value_name = "f|h|q|o", value_parser = parse_bake)]
-    pub scene_imposter_bake: Option<SceneImposterBake>,
-    /// Imposter distances.
-    #[arg(long = "impost", value_name = "d1,d2,…", value_delimiter = ',')]
-    pub scene_imposter_distances: Option<Vec<f32>>,
-    /// Imposter multisampling.
-    #[arg(long = "impost_multi", value_name = "true|false")]
-    pub scene_imposter_multisample: Option<bool>,
-    /// Vsync (default off).
-    #[arg(long, value_name = "true|false")]
-    pub vsync: Option<bool>,
-    /// Target fps (default 60; overridden by the refresh rate when vsync is on). Also `/fps`.
-    #[arg(long = "fps", value_name = "n")]
-    pub fps_target: Option<usize>,
-    /// Cap per-frame gpu uploads.
-    #[arg(long = "gpu_bytes_per_frame", value_name = "bytes")]
-    pub gpu_bytes_per_frame: Option<usize>,
-    /// Show the system info overlay.
-    #[arg(long = "sysinfo")]
-    pub sysinfo_visible: bool,
-    /// Echo scene logs to the console.
-    #[arg(long = "scene_log_to_console")]
+    /// Echo scene logs to the console
+    #[arg(long = "scene_log_to_console", display_order = 6)]
     pub scene_log_to_console: bool,
-    /// Run the portable/startup scenes in preview mode.
-    #[arg(long = "ui-preview")]
-    pub startup_scenes_preview: bool,
-    /// Disable avatar rendering.
-    #[arg(long = "no_avatar")]
-    pub no_avatar: bool,
-    /// Disable gltf loading.
-    #[arg(long = "no_gltf")]
-    pub no_gltf: bool,
-    /// Disable distance fog.
-    #[arg(long = "no_fog")]
-    pub no_fog: bool,
-    /// Log the frame rate.
-    #[arg(long = "log_fps", value_name = "true|false")]
-    pub log_fps: Option<bool>,
+    /// Override the content server only
+    #[arg(long = "content-server", value_name = "url", display_order = 7)]
+    pub content_server_override: Option<String>,
     /// Pause that scene's js runtime until a debugger (e.g. chrome://inspect) attaches. Needs
-    /// `--features inspect`.
-    #[arg(long, value_name = "scene_hash")]
+    /// `--features inspect`
+    #[arg(long, value_name = "scene_hash", display_order = 10)]
     pub inspect: Option<String>,
-    /// Automated scene test mode: headless, no HUD (implied by --test_scenes).
-    #[arg(long = "testing")]
+    /// Log the frame rate to the console
+    #[arg(long = "log_fps", value_name = "true|false", display_order = 13)]
+    pub log_fps: Option<bool>,
+    /// Target fps (default 60; overridden by the refresh rate when vsync is on). Also `/fps`.
+    /// Current run only - use settings for persistence.
+    #[arg(long = "fps", value_name = "n", display_order = 14)]
+    pub fps_target: Option<usize>,
+    /// Run the portable/startup scenes in preview mode
+    #[arg(long = "ui-preview", display_order = 15)]
+    pub startup_scenes_preview: bool,
+    /// Max simultaneous scene-javascript threads (default 4). Also `/scene_threads`
+    #[arg(long = "threads", value_name = "n", display_order = 16)]
+    pub scene_threads: Option<usize>,
+    /// Cap per-frame gpu uploads
+    #[arg(long = "gpu_bytes_per_frame", value_name = "bytes", display_order = 17)]
+    pub gpu_bytes_per_frame: Option<usize>,
+    /// Automated scene test mode: headless, no HUD (implied by --test_scenes)
+    #[arg(long = "testing", display_order = 18)]
     pub testing: bool,
     /// Run the scene test harness over those parcels and exit; a parcel may carry
-    /// `/allowed/failures`.
-    #[arg(long = "test_scenes", value_name = "x,y;x,y")]
+    /// `/allowed/failures`
+    #[arg(long = "test_scenes", value_name = "x,y;x,y", display_order = 19)]
     pub test_scenes: Option<TestScenes>,
-    /// Force the engine-drawn login back on.
-    #[arg(long = "builtin-login")]
+    /// Vsync (default off). Current run only - use settings for persistence.
+    #[arg(long, value_name = "true|false", display_order = 20)]
+    pub vsync: Option<bool>,
+    /// Scene load distance in meters (default 100). Also `/scene_distance`. Current run only -
+    /// use settings for persistence.
+    #[arg(long = "distance", value_name = "m", display_order = 21)]
+    pub scene_load_distance: Option<f32>,
+    /// Extra distance before scenes are unloaded. Current run only - use settings for
+    /// persistence.
+    #[arg(long = "unload", value_name = "m", display_order = 22)]
+    pub scene_unload_extra_distance: Option<f32>,
+    /// Imposter distances. Current run only - use settings for persistence.
+    #[arg(
+        long = "impost",
+        value_name = "d1,d2,…",
+        value_delimiter = ',',
+        display_order = 23
+    )]
+    pub scene_imposter_distances: Option<Vec<f32>>,
+    /// Imposter multisampling
+    #[arg(long = "impost_multi", value_name = "true|false", display_order = 24)]
+    pub scene_imposter_multisample: Option<bool>,
+    /// Imposter local baking speed: f(ull), h(alf), q(uarter) or o(ff)
+    #[arg(long = "bake", value_name = "f|h|q|o", value_parser = parse_bake, display_order = 25)]
+    pub scene_imposter_bake: Option<SceneImposterBake>,
+    /// Show the system info overlay
+    #[arg(long = "sysinfo", display_order = 26)]
+    pub sysinfo_visible: bool,
+    /// Disable avatar rendering
+    #[arg(long = "no_avatar", display_order = 27)]
+    pub no_avatar: bool,
+    /// Disable gltf loading
+    #[arg(long = "no_gltf", display_order = 28)]
+    pub no_gltf: bool,
+    /// Disable distance fog
+    #[arg(long = "no_fog", display_order = 29)]
+    pub no_fog: bool,
+    /// Force the engine-drawn login back on
+    #[arg(long = "builtin-login", display_order = 30)]
     pub login: bool,
-    /// Force the engine-drawn emote wheel back on.
-    #[arg(long = "builtin-emotes")]
+    /// Force the engine-drawn emote wheel back on
+    #[arg(long = "builtin-emotes", display_order = 31)]
     pub emote_wheel: bool,
-    /// Force the engine-drawn chat back on.
-    #[arg(long = "builtin-chat")]
+    /// Force the engine-drawn chat back on
+    #[arg(long = "builtin-chat", display_order = 32)]
     pub chat: bool,
-    /// Force the engine-drawn permission prompts back on.
-    #[arg(long = "builtin-perms")]
+    /// Force the engine-drawn permission prompts back on
+    #[arg(long = "builtin-perms", display_order = 33)]
     pub permissions: bool,
-    /// Force the engine-drawn nametags back on.
-    #[arg(long = "builtin-nametags")]
+    /// Force the engine-drawn nametags back on
+    #[arg(long = "builtin-nametags", display_order = 34)]
     pub nametags: bool,
-    /// Force the engine-drawn tooltips back on.
-    #[arg(long = "builtin-tooltips")]
+    /// Force the engine-drawn tooltips back on
+    #[arg(long = "builtin-tooltips", display_order = 35)]
     pub tooltips: bool,
-    /// Force the engine-drawn loading scene ui back on.
-    #[arg(long = "builtin-loading-scene-ui")]
+    /// Force the engine-drawn loading scene ui back on
+    #[arg(long = "builtin-loading-scene-ui", display_order = 36)]
     pub loading_scene: bool,
-    /// run the react HUD (native: the CEF overlay). False when an explicit --ui opted out in
-    /// favour of the engine-side ui, and on wasm (the react page hosts the engine itself).
+    /// run the react HUD (native: the CEF overlay). False when an explicit --system-scene opted
+    /// out in favour of the engine-side ui, and on wasm (the react page hosts the engine itself).
     #[arg(skip)]
     pub hud: bool,
 }
@@ -270,7 +278,7 @@ impl DecentralandArguments {
         self.testing || self.test_scenes.is_some()
     }
 
-    /// The super-user ui scene: `--ui` / `?systemScene=`, less the `none` opt-out.
+    /// The super-user ui scene: `--system-scene` / `?systemScene=`, less the `none` opt-out.
     pub fn ui_scene(&self) -> Option<&str> {
         self.launch
             .system_scene
@@ -278,7 +286,7 @@ impl DecentralandArguments {
             .filter(|scene| *scene != "none")
     }
 
-    /// `--location` / `?position=` as a parcel; main.rs rejects an unparseable one up front.
+    /// `--position` / `?position=` as a parcel; main.rs rejects an unparseable one up front.
     pub fn location(&self) -> Option<IVec2> {
         self.launch
             .position
@@ -344,11 +352,11 @@ impl DecentralandApp {
 
         // POC: react-web HUD composited in-engine from CEF offscreen rendering. Skipped in test
         // mode (automated scene tests run headless and must not boot CEF or gate input) and when
-        // an explicit --ui opted out of the HUD in favour of the engine-side ui.
+        // an explicit --system-scene opted out of the HUD in favour of the engine-side ui.
         #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
         if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode() {
             app.add_plugins(react_hud_cef::ReactHudCefPlugin {
-                // a non-default boot server (explicit --server or a configured home realm)
+                // a non-default boot server (explicit --realm or a configured home realm)
                 // IS the destination: injected into the page URL as ?realm= so the HUD skips
                 // its places picker (parity with ?realm= on web). On the stock default the
                 // param is omitted so the picker shows — and the HUD's own default-realm
@@ -499,7 +507,7 @@ impl DecentralandApp {
 
         // POC: the react-web overlay is the HUD — turn off the engine's native UI so it doesn't
         // render its own login/chat/etc. behind the webview. (Overrides the inserts above.)
-        // Test mode and an explicit --ui keep the native UI: the HUD plugin is skipped there.
+        // Test mode and an explicit --system-scene keep the native UI: the HUD plugin is skipped there.
         #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
         if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode() {
             app.insert_resource(NativeUi {

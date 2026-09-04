@@ -41,7 +41,7 @@ _bundle-native-if-stale:
     fi
 
 # build + run the native app (debug) with the CEF react HUD. extra args pass through, e.g.
-#   just native-debug --server https://realm-provider.decentraland.org/main
+#   just native-debug --realm https://realm-provider.decentraland.org/main
 native-debug *ARGS: _bundle-native-if-stale
     cargo build --package dcl_deno_ipc
     cargo build --bin decentra-bevy-cef
