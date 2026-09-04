@@ -7,7 +7,7 @@ use dcl_component::proto_components::common::Vector2;
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 #[cfg(feature = "livekit")]
-use system_bridge::livekit::ConnectionAvailability;
+use system_bridge::LivekitUpdate;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
@@ -660,6 +660,6 @@ pub async fn op_get_livekit_status_stream(state: Rc<RefCell<OpState>>) -> u32 {
 pub async fn op_read_livekit_status_stream(
     state: Rc<RefCell<OpState>>,
     #[smi] rid: u32,
-) -> Result<Option<ConnectionAvailability>, anyhow::Error> {
+) -> Result<Option<LivekitUpdate>, anyhow::Error> {
     dcl::js::system_api::op_read_livekit_status_stream(state, rid).await
 }

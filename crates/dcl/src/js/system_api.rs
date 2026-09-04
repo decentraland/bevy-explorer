@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 #[cfg(feature = "livekit")]
-use system_bridge::livekit::ConnectionAvailability;
+use system_bridge::LivekitUpdate;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
@@ -1184,10 +1184,10 @@ pub async fn op_get_livekit_status_stream(state: Rc<RefCell<impl State>>) -> u32
 pub async fn op_read_livekit_status_stream(
     state: Rc<RefCell<impl State>>,
     _rid: u32,
-) -> Result<Option<ConnectionAvailability>, anyhow::Error> {
+) -> Result<Option<LivekitUpdate>, anyhow::Error> {
     let Some(mut receiver) = state
         .borrow_mut()
-        .try_take::<RpcStreamReceiver<ConnectionAvailability>>()
+        .try_take::<RpcStreamReceiver<LivekitUpdate>>()
     else {
         return Ok(None);
     };
