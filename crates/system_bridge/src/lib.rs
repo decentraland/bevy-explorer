@@ -18,6 +18,8 @@ use common::{
 };
 use serde::{Deserialize, Serialize};
 use settings::SettingBridgePlugin;
+#[cfg(feature = "livekit")]
+pub use system_api_types::livekit::LivekitUpdate;
 pub use system_api_types::*;
 
 pub struct SystemBridgePlugin {
@@ -135,6 +137,9 @@ pub enum SystemApi {
     GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
     GetBlockingStatus(RpcResultSender<Result<BlockingStatusData, String>>),
     GetBlockUpdateStream(RpcStreamSender<BlockUpdateData>),
+    // Connection
+    #[cfg(feature = "livekit")]
+    LivekitStatusStream(RpcStreamSender<LivekitUpdate>),
 }
 
 #[derive(Resource)]

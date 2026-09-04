@@ -12,6 +12,8 @@ use dcl_component::proto_components::common::Vector2;
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
+#[cfg(feature = "livekit")]
+use system_bridge::LivekitUpdate;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
@@ -1150,6 +1152,42 @@ pub async fn op_read_block_update_stream(
     let Some(mut receiver) = state
         .borrow_mut()
         .try_take::<RpcStreamReceiver<BlockUpdateData>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+#[cfg(feature = "livekit")]
+pub async fn op_get_livekit_status_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::LivekitStatusStream(sx))
+        .unwrap();
+
+    u32::MAX
+}
+
+#[cfg(feature = "livekit")]
+pub async fn op_read_livekit_status_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<LivekitUpdate>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<LivekitUpdate>>()
     else {
         return Ok(None);
     };

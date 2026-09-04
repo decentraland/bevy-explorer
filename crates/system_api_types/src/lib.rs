@@ -5,6 +5,8 @@
 //! page and bridge scene consume. `system_bridge` re-exports everything here.
 
 pub mod launch_options;
+#[cfg(feature = "livekit")]
+pub mod livekit;
 pub mod web_params;
 
 use dcl_component::proto_components::{

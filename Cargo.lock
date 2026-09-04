@@ -2806,6 +2806,7 @@ dependencies = [
  "serde-wasm-bindgen",
  "serde_bytes",
  "serde_json",
+ "system_api_types",
  "system_bridge",
  "tokio",
  "wallet",

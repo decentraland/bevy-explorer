@@ -1656,7 +1656,7 @@ pub fn process_scene_lifecycle(
     for (entity, scene_hash, maybe_ctx, is_super) in &scene_entities {
         match keep_entities.get(&entity) {
             Some((hash, _)) => {
-                existing_ids.insert(<&String>::clone(hash));
+                existing_ids.insert(*hash);
             }
             None => {
                 if let Ok(mut commands) = commands.get_entity(entity) {
