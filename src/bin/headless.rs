@@ -143,9 +143,15 @@ struct Args {
     location: IVec2,
 }
 
+/// The launcher's "permanently unavailable here" status (EX_CONFIG). A refused argument is not
+/// worth retrying, and callers fall back to another server implementation on it — the npm
+/// launcher already answers its own argument checks with this
+/// (deploy/headless/launcher/bin/cli.js) and forwards whatever the engine returns.
+const EXIT_UNAVAILABLE: i32 = 78;
+
 fn usage_error(message: impl std::fmt::Display) -> ! {
     eprintln!("{message}");
-    std::process::exit(2);
+    std::process::exit(EXIT_UNAVAILABLE);
 }
 
 fn parse_args() -> Args {
@@ -153,7 +159,7 @@ fn parse_args() -> Args {
         Ok(args) => args,
         Err(e) => {
             let _ = e.print();
-            std::process::exit(if e.use_stderr() { 2 } else { 0 });
+            std::process::exit(if e.use_stderr() { EXIT_UNAVAILABLE } else { 0 });
         }
     };
     // latch first: everything below that composes a backend host reads it
