@@ -141,9 +141,15 @@ struct Args {
     location: IVec2,
 }
 
+/// The launcher's "permanently unavailable here" status (EX_CONFIG). A refused argument is not
+/// worth retrying, and callers fall back to another server implementation on it — the npm
+/// launcher already answers its own argument checks with this
+/// (deploy/headless/launcher/bin/cli.js) and forwards whatever the engine returns.
+const EXIT_UNAVAILABLE: i32 = 78;
+
 fn usage_error(message: impl std::fmt::Display) -> ! {
     eprintln!("{message}");
-    std::process::exit(2);
+    std::process::exit(EXIT_UNAVAILABLE);
 }
 
 fn parse_args() -> Args {
@@ -151,7 +157,7 @@ fn parse_args() -> Args {
         Ok(args) => args,
         Err(e) => {
             let _ = e.print();
-            std::process::exit(if e.use_stderr() { 2 } else { 0 });
+            std::process::exit(if e.use_stderr() { EXIT_UNAVAILABLE } else { 0 });
         }
     };
     // latch first: everything below that composes a backend host reads it
@@ -298,7 +304,7 @@ fn spawn_stdin_reader() -> std::sync::mpsc::Receiver<ControlCommand> {
     rx
 }
 
-fn main() {
+fn main() -> AppExit {
     let session_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
         web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
@@ -571,7 +577,9 @@ fn main() {
         .set(bevy::ecs::error::warn)
         .ok();
 
-    app.run();
+    // returned, not dropped: the supervisor's AppExit is the process status the launcher
+    // forwards (deploy/headless/launcher/bin/cli.js)
+    app.run()
 }
 
 /// Stands in for the render-only `ImageLoader`: without it the asset server errors
