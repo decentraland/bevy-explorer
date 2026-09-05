@@ -137,84 +137,80 @@ impl Service {
     }
 }
 
-/// One full base url per service, each replacing that service's base-domain composition. A
-/// value is taken verbatim with paths appended, so it carries its own scheme and port and no
-/// trailing slash (`http://localhost:3000`).
-// per-arg rather than the struct's `next_help_heading`: clap_derive doesn't restore the parent's
-// heading after a flatten, so a struct-level one would capture every flag a binary declares after
-// this struct
-const HELP_HEADING: &str =
-    "Service endpoints";
+use crate::launch_options::help_heading::SERVICES as HELP_HEADING;
 
+/// One full base url per service (pulse: `host[:port]`), each replacing that service's
+/// base-domain composition. A value is taken verbatim with paths appended, so it carries its own
+/// scheme and port and no trailing slash (`http://localhost:3000`).
 #[derive(clap::Args, Deserialize, Serialize, Default, Clone, PartialEq, Debug)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ServiceOverrides {
     /// Realm provider (the realm list, and `/main` is the default realm); absent =
     /// `https://realm-provider-ea.<base>`
-    #[arg(long, value_name = "url", display_order = 61, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub realm_provider: Option<String>,
 
     /// Catalyst peer (`/content`, `/lambdas`); absent = `https://peer.<base>`
-    #[arg(long, value_name = "url", display_order = 62, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub catalyst: Option<String>,
 
     /// Worlds content server; absent = `https://worlds-content-server.<base>`
-    #[arg(long, value_name = "url", display_order = 63, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub worlds_server: Option<String>,
 
     /// Places api; absent = `https://places.<base>`
-    #[arg(long, value_name = "url", display_order = 64, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub places: Option<String>,
 
     /// Comms gatekeeper; absent = `https://comms-gatekeeper.<base>`
-    #[arg(long, value_name = "url", display_order = 65, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub comms_gatekeeper: Option<String>,
 
     /// Local-preview comms gatekeeper; absent = `https://comms-gatekeeper-local.<base>`
-    #[arg(long, value_name = "url", display_order = 66, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub preview_gatekeeper: Option<String>,
 
     /// Auth api the sign-in flow polls (native only); absent = `https://auth-api.<base>`
-    #[arg(long, value_name = "url", display_order = 67, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub auth_api: Option<String>,
 
     /// Sign-in page the browser opens (native only); absent = `https://<base>/auth`
-    #[arg(long, value_name = "url", display_order = 68, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub auth_page: Option<String>,
 
     /// Asset-bundle registry; absent = `https://asset-bundle-registry.<base>` (custom domains
     /// only: org and zone profiles use the registry of the profile's own environment)
-    #[arg(long, value_name = "url", display_order = 69, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub asset_bundle_registry: Option<String>,
 
     /// World storage; absent = `https://storage.<base>`. https only: an http instance is never
     /// signed for (the delegation claim must not go out in cleartext)
-    #[arg(long, value_name = "url", display_order = 70, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub storage: Option<String>,
 
     /// Ethereum json-rpc websocket; absent = `wss://rpc.<base>`
-    #[arg(long, value_name = "url", display_order = 71, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub ethereum_rpc: Option<String>,
 
     /// Social service websocket; absent = `wss://rpc-social-service-ea.<base>`
-    #[arg(long, value_name = "url", display_order = 72, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub social_rpc: Option<String>,
 
     /// OpenSea api; absent = `https://opensea.<base>`
-    #[arg(long, value_name = "url", display_order = 73, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub opensea: Option<String>,
 
     /// Reels (camera reel) api, used by the HUD; absent = `https://reels.<base>`
-    #[arg(long, value_name = "url", display_order = 74, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub reels: Option<String>,
 
     /// Map tile api, used by the HUD; absent = `https://api.<base>`
-    #[arg(long, value_name = "url", display_order = 75, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub map_api: Option<String>,
 
     /// Pulse comms server, `host` or `host:port` (no port = the platform's: 7777 ENet on native,
     /// 7743 WebTransport on web); absent = `pulse-server.<base>`
-    #[arg(long, value_name = "host[:port]", display_order = 76, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "host[:port]", help_heading = HELP_HEADING)]
     pub pulse_server: Option<String>,
 }
 

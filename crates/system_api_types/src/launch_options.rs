@@ -18,39 +18,49 @@ use serde::{Deserialize, Serialize};
 
 use crate::services::ServiceOverrides;
 
+/// The `--help` sections, shared so every binary spells them alike. Given per flag rather than
+/// per struct: clap_derive doesn't restore the parent's heading after a flatten, so a struct-level
+/// one would capture every flag a binary declares after the flattened struct. Unheaded flags are
+/// the destination: realm, position, preview, base domain. Groups print in the order their first
+/// flag is declared, flags within a group in declaration order — so field order IS the help order.
+pub mod help_heading {
+    pub const SYSTEM_SCENES: &str = "System scenes";
+    pub const SETTINGS: &str = "Settings overrides (this run only; use settings for persistence)";
+    pub const DEBUG: &str = "Debug";
+    pub const HOST: &str = "Set by the embedding host";
+    pub const SERVICES: &str = "Service endpoints";
+    pub const HEADLESS: &str = "Headless runner";
+}
+use help_heading::*;
+
 #[derive(clap::Args, Deserialize, Serialize, Default, Clone, PartialEq, Debug)]
 #[serde(rename_all = "camelCase", default)]
 pub struct LaunchOptions {
     /// Realm to boot into; absent = the persisted home realm or default realm
-    #[arg(long, value_name = "url", display_order = 1)]
+    #[arg(long, value_name = "url")]
     pub realm: Option<String>,
 
     /// Spawn parcel as `x,y`; absent = the home parcel, or the realm's spawn point
-    #[arg(
-        long,
-        value_name = "x,y",
-        allow_hyphen_values = true,
-        display_order = 2
-    )]
+    #[arg(long, value_name = "x,y", allow_hyphen_values = true)]
     pub position: Option<String>,
 
     /// Scene preview mode: hot-reloading, no failed-asset backoff, plain-http fetches allowed,
     /// realm fixed.
-    #[arg(long, display_order = 3)]
+    #[arg(long)]
     pub preview: bool,
 
     /// The base domain for all services (comms, profiles, etc); absent = the hosting origin (on
     /// web), or decentraland.org
-    #[arg(long, value_name = "domain", display_order = 4)]
+    #[arg(long, value_name = "domain")]
     pub base_domain: Option<String>,
 
-    /// Override the content server only
-    #[arg(long, value_name = "url", display_order = 7)]
-    pub content_server: Option<String>,
-
     /// Log the frame rate to the console
-    #[arg(long, value_name = "true|false", display_order = 13)]
+    #[arg(long, value_name = "true|false", help_heading = SETTINGS)]
     pub log_fps: Option<bool>,
+
+    /// Override the content server only (normally a function of the realm)
+    #[arg(long, value_name = "url", help_heading = DEBUG)]
+    pub content_server: Option<String>,
 
     /// Per-service url overrides (`services.rs`): flags natively, keys of the `engine_run`
     /// object on web (the page resolves the same overrides for its own fetches first).
@@ -63,29 +73,29 @@ pub struct LaunchOptions {
 #[derive(clap::Args, Deserialize, Serialize, Default, Clone, PartialEq, Debug)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ClientOptions {
-    /// Embedded in a scene editor (creator hub). Set by editor front-ends.
-    #[arg(long, display_order = 5)]
-    pub editor: bool,
-
-    /// Base url of the imposter store; absent = the default store. The realm-keyed path under
-    /// it is the same as the default store's
-    #[arg(long, value_name = "url", display_order = 9)]
-    pub imposter_source: Option<String>,
-
     /// Super-user ui scene source, or `none` for no ui scene. The engine trusts it completely.
     /// Absent = the default bridge scene for the react HUD; any explicit value opts out of the
     /// HUD
-    #[arg(long, value_name = "scene|none", display_order = 11)]
+    #[arg(long, value_name = "scene|none", help_heading = SYSTEM_SCENES)]
     pub system_scene: Option<String>,
 
     /// `;`-separated portable/startup scene sources; absent = `basiccontroller.dcl.eth`
     /// (DEFAULT_PORTABLES)
-    #[arg(long, value_name = "a;b", display_order = 12)]
+    #[arg(long, value_name = "a;b", help_heading = SYSTEM_SCENES)]
     pub portables: Option<String>,
 
     /// Cap per-frame gpu uploads
-    #[arg(long, value_name = "bytes", display_order = 17)]
+    #[arg(long, value_name = "bytes", help_heading = SETTINGS)]
     pub gpu_bytes_per_frame: Option<usize>,
+
+    /// Base url of the imposter store; absent = the default store. The realm-keyed path under
+    /// it is the same as the default store's
+    #[arg(long, value_name = "url", help_heading = SERVICES)]
+    pub imposter_source: Option<String>,
+
+    /// Embedded in a scene editor (creator hub). Set by editor front-ends.
+    #[arg(long, help_heading = HOST)]
+    pub editor: bool,
 }
 
 /// The web page's `engine_run` options: both structs as ONE flat object, which is also what the

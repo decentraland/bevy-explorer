@@ -67,7 +67,10 @@ use scene_runner::{
 };
 use social::SocialPlugin;
 use system_api_types::{
-    launch_options::{ClientOptions, LaunchOptions},
+    launch_options::{
+        help_heading::{DEBUG, SETTINGS, SYSTEM_SCENES},
+        ClientOptions, LaunchOptions,
+    },
     web_params::DEFAULT_PORTABLES,
 };
 use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
@@ -171,86 +174,82 @@ pub struct DecentralandArguments {
     #[command(flatten)]
     pub client: ClientOptions,
     /// Echo scene logs to the console
-    #[arg(long = "scene_log_to_console", display_order = 6)]
+    #[arg(long = "scene_log_to_console", help_heading = DEBUG)]
     pub scene_log_to_console: bool,
     /// Pause that scene's js runtime until a debugger (e.g. chrome://inspect) attaches. Needs
     /// `--features inspect`
-    #[arg(long, value_name = "scene_hash", display_order = 10)]
+    #[arg(long, value_name = "scene_hash", help_heading = DEBUG)]
     pub inspect: Option<String>,
-    /// Target fps (default 60; overridden by the refresh rate when vsync is on). Also `/fps`.
-    /// Current run only - use settings for persistence.
-    #[arg(long = "fps", value_name = "n", display_order = 14)]
+    /// Target fps (default 60; overridden by the refresh rate when vsync is on). Also `/fps`
+    #[arg(long = "fps", value_name = "n", help_heading = SETTINGS)]
     pub fps_target: Option<usize>,
     /// Run the portable/startup scenes in preview mode
-    #[arg(long = "ui-preview", display_order = 15)]
+    #[arg(long = "ui-preview", help_heading = SYSTEM_SCENES)]
     pub startup_scenes_preview: bool,
     /// Max simultaneous scene-javascript threads (default 4). Also `/scene_threads`
-    #[arg(long = "threads", value_name = "n", display_order = 16)]
+    #[arg(long = "threads", value_name = "n", help_heading = SETTINGS)]
     pub scene_threads: Option<usize>,
     /// Automated scene test mode: headless, no HUD (implied by --test_scenes)
-    #[arg(long = "testing", display_order = 18)]
+    #[arg(long = "testing", help_heading = DEBUG)]
     pub testing: bool,
     /// Run the scene test harness over those parcels and exit; a parcel may carry
     /// `/allowed/failures`
-    #[arg(long = "test_scenes", value_name = "x,y;x,y", display_order = 19)]
+    #[arg(long = "test_scenes", value_name = "x,y;x,y", help_heading = DEBUG)]
     pub test_scenes: Option<TestScenes>,
-    /// Vsync (default off). Current run only - use settings for persistence.
-    #[arg(long, value_name = "true|false", display_order = 20)]
+    /// Vsync (default off)
+    #[arg(long, value_name = "true|false", help_heading = SETTINGS)]
     pub vsync: Option<bool>,
-    /// Scene load distance in meters (default 100). Also `/scene_distance`. Current run only -
-    /// use settings for persistence.
-    #[arg(long = "distance", value_name = "m", display_order = 21)]
+    /// Scene load distance in meters (default 100). Also `/scene_distance`
+    #[arg(long = "distance", value_name = "m", help_heading = SETTINGS)]
     pub scene_load_distance: Option<f32>,
-    /// Extra distance before scenes are unloaded. Current run only - use settings for
-    /// persistence.
-    #[arg(long = "unload", value_name = "m", display_order = 22)]
+    /// Extra distance before scenes are unloaded
+    #[arg(long = "unload", value_name = "m", help_heading = SETTINGS)]
     pub scene_unload_extra_distance: Option<f32>,
-    /// Imposter distances. Current run only - use settings for persistence.
+    /// Imposter distances
     #[arg(
         long = "impost",
         value_name = "d1,d2,…",
-        value_delimiter = ',',
-        display_order = 23
+        value_delimiter = ',', help_heading = SETTINGS
     )]
     pub scene_imposter_distances: Option<Vec<f32>>,
     /// Imposter multisampling
-    #[arg(long = "impost_multi", value_name = "true|false", display_order = 24)]
+    #[arg(long = "impost_multi", value_name = "true|false", help_heading = SETTINGS)]
     pub scene_imposter_multisample: Option<bool>,
     /// Imposter local baking speed: f(ull), h(alf), q(uarter) or o(ff)
-    #[arg(long = "bake", value_name = "f|h|q|o", value_parser = parse_bake, display_order = 25)]
+    #[arg(long = "bake", value_name = "f|h|q|o", value_parser = parse_bake, help_heading = SETTINGS)]
     pub scene_imposter_bake: Option<SceneImposterBake>,
     /// Show the system info overlay
-    #[arg(long = "sysinfo", display_order = 26)]
+    #[arg(long = "sysinfo", help_heading = DEBUG)]
     pub sysinfo_visible: bool,
     /// Disable avatar rendering
-    #[arg(long = "no_avatar", display_order = 27)]
+    #[arg(long = "no_avatar", help_heading = DEBUG)]
     pub no_avatar: bool,
     /// Disable gltf loading
-    #[arg(long = "no_gltf", display_order = 28)]
+    #[arg(long = "no_gltf", help_heading = DEBUG)]
     pub no_gltf: bool,
     /// Disable distance fog
-    #[arg(long = "no_fog", display_order = 29)]
+    #[arg(long = "no_fog", help_heading = DEBUG)]
     pub no_fog: bool,
     /// Force the engine-drawn login back on
-    #[arg(long = "builtin-login", display_order = 30)]
+    #[arg(long = "builtin-login", help_heading = DEBUG)]
     pub login: bool,
     /// Force the engine-drawn emote wheel back on
-    #[arg(long = "builtin-emotes", display_order = 31)]
+    #[arg(long = "builtin-emotes", help_heading = DEBUG)]
     pub emote_wheel: bool,
     /// Force the engine-drawn chat back on
-    #[arg(long = "builtin-chat", display_order = 32)]
+    #[arg(long = "builtin-chat", help_heading = DEBUG)]
     pub chat: bool,
     /// Force the engine-drawn permission prompts back on
-    #[arg(long = "builtin-perms", display_order = 33)]
+    #[arg(long = "builtin-perms", help_heading = DEBUG)]
     pub permissions: bool,
     /// Force the engine-drawn nametags back on
-    #[arg(long = "builtin-nametags", display_order = 34)]
+    #[arg(long = "builtin-nametags", help_heading = DEBUG)]
     pub nametags: bool,
     /// Force the engine-drawn tooltips back on
-    #[arg(long = "builtin-tooltips", display_order = 35)]
+    #[arg(long = "builtin-tooltips", help_heading = DEBUG)]
     pub tooltips: bool,
     /// Force the engine-drawn loading scene ui back on
-    #[arg(long = "builtin-loading-scene-ui", display_order = 36)]
+    #[arg(long = "builtin-loading-scene-ui", help_heading = DEBUG)]
     pub loading_scene: bool,
     /// run the react HUD (native: the CEF overlay). False when an explicit --system-scene opted
     /// out in favour of the engine-side ui, and on wasm (the react page hosts the engine itself).
