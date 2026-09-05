@@ -9,7 +9,7 @@
 //   ?systemScene=  debug: substitute the super-user ui scene (a url/dir, or "none" for the
 //                  engine's builtin ui). The scene owns login/UI in-engine (pre-react
 //                  behavior), so this implies a hidden HUD and no React login at all.
-// The engine-bound params (?portables=, ?pulseServer=, ?imposterSource=, …) are not boot-mode
+// The engine-bound params (?portables=, ?imposterSource=, ?pulseServer=, …) are not boot-mode
 // decisions: they come from the engine's web param table (lib/webParams.ts) and are handed over
 // as-is by EngineHost.
 export interface BootMode {

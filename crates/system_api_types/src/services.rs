@@ -5,7 +5,8 @@
 //! following the domain. Resolution — override, else composition — is
 //! `common::base_domain::service`; on web the HUD resolves the same way from the same table
 //! (react-web lib/baseDomain.ts, from the generated `serviceTable.ts`) because it composes its
-//! own urls before the engine exists.
+//! own urls before the engine exists. One service is not a url: pulse is an authority,
+//! `host[:port]`, whose port the transport defaults per platform ([`ServiceValue`]).
 
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
@@ -42,10 +43,26 @@ pub enum Service {
     Reels,
     /// Map tile api — HUD only
     MapApi,
+    /// Pulse comms server — an authority, `host[:port]`; the port defaults per platform
+    PulseServer,
+}
+
+/// What a service's value looks like — its composition and any override alike.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ServiceValue {
+    /// A full `http(s)://` base url
+    Http,
+    /// A full `ws(s)://` base url
+    Websocket,
+    /// `host` or `host:port` — no scheme or path; the consumer supplies the default port
+    Authority,
 }
 
 impl Service {
-    /// The deployment-convention default as `(scheme, sub, path)`; an empty sub is the apex.
+    /// The deployment-convention default as `(scheme, sub, path)`; an empty sub is the apex, an
+    /// empty scheme an authority service (the host alone).
     pub const fn composition(self) -> (&'static str, &'static str, &'static str) {
         match self {
             Service::RealmProvider => ("https", "realm-provider-ea", ""),
@@ -63,6 +80,7 @@ impl Service {
             Service::Opensea => ("https", "opensea", ""),
             Service::Reels => ("https", "reels", ""),
             Service::MapApi => ("https", "api", ""),
+            Service::PulseServer => ("", "pulse-server", ""),
         }
     }
 
@@ -85,6 +103,7 @@ impl Service {
             Service::Opensea => "opensea",
             Service::Reels => "reels",
             Service::MapApi => "map_api",
+            Service::PulseServer => "pulse_server",
         }
     }
 
@@ -109,87 +128,90 @@ impl Service {
         crate::web_params::camel_case(self.field())
     }
 
-    /// Whether the service is one of the secure-websocket ones (the override must be `ws(s)://`
-    /// rather than `http(s)://`).
-    pub fn is_websocket(self) -> bool {
-        self.composition().0 == "wss"
+    pub fn value(self) -> ServiceValue {
+        match self.composition().0 {
+            "" => ServiceValue::Authority,
+            "wss" => ServiceValue::Websocket,
+            _ => ServiceValue::Http,
+        }
     }
 }
 
-/// One full base url per service, each replacing that service's base-domain composition. A
-/// value is taken verbatim with paths appended, so it carries its own scheme and port and no
-/// trailing slash (`http://localhost:3000`).
-// per-arg rather than the struct's `next_help_heading`: clap_derive doesn't restore the parent's
-// heading after a flatten, so a struct-level one would capture every flag a binary declares after
-// this struct
-const HELP_HEADING: &str =
-    "Service endpoints (full base urls; absent = composed from the base domain)";
+use crate::launch_options::help_heading::SERVICES as HELP_HEADING;
 
+/// One full base url per service (pulse: `host[:port]`), each replacing that service's
+/// base-domain composition. A value is taken verbatim with paths appended, so it carries its own
+/// scheme and port and no trailing slash (`http://localhost:3000`).
 #[derive(clap::Args, Deserialize, Serialize, Default, Clone, PartialEq, Debug)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ServiceOverrides {
     /// Realm provider (the realm list, and `/main` is the default realm); absent =
     /// `https://realm-provider-ea.<base>`
-    #[arg(long, value_name = "url", display_order = 61, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub realm_provider: Option<String>,
 
     /// Catalyst peer (`/content`, `/lambdas`); absent = `https://peer.<base>`
-    #[arg(long, value_name = "url", display_order = 62, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub catalyst: Option<String>,
 
     /// Worlds content server; absent = `https://worlds-content-server.<base>`
-    #[arg(long, value_name = "url", display_order = 63, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub worlds_server: Option<String>,
 
     /// Places api; absent = `https://places.<base>`
-    #[arg(long, value_name = "url", display_order = 64, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub places: Option<String>,
 
     /// Comms gatekeeper; absent = `https://comms-gatekeeper.<base>`
-    #[arg(long, value_name = "url", display_order = 65, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub comms_gatekeeper: Option<String>,
 
     /// Local-preview comms gatekeeper; absent = `https://comms-gatekeeper-local.<base>`
-    #[arg(long, value_name = "url", display_order = 66, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub preview_gatekeeper: Option<String>,
 
     /// Auth api the sign-in flow polls (native only); absent = `https://auth-api.<base>`
-    #[arg(long, value_name = "url", display_order = 67, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub auth_api: Option<String>,
 
     /// Sign-in page the browser opens (native only); absent = `https://<base>/auth`
-    #[arg(long, value_name = "url", display_order = 68, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub auth_page: Option<String>,
 
     /// Asset-bundle registry; absent = `https://asset-bundle-registry.<base>` (custom domains
     /// only: org and zone profiles use the registry of the profile's own environment)
-    #[arg(long, value_name = "url", display_order = 69, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub asset_bundle_registry: Option<String>,
 
     /// World storage; absent = `https://storage.<base>`. https only: an http instance is never
     /// signed for (the delegation claim must not go out in cleartext)
-    #[arg(long, value_name = "url", display_order = 70, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub storage: Option<String>,
 
     /// Ethereum json-rpc websocket; absent = `wss://rpc.<base>`
-    #[arg(long, value_name = "url", display_order = 71, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub ethereum_rpc: Option<String>,
 
     /// Social service websocket; absent = `wss://rpc-social-service-ea.<base>`
-    #[arg(long, value_name = "url", display_order = 72, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub social_rpc: Option<String>,
 
     /// OpenSea api; absent = `https://opensea.<base>`
-    #[arg(long, value_name = "url", display_order = 73, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub opensea: Option<String>,
 
     /// Reels (camera reel) api, used by the HUD; absent = `https://reels.<base>`
-    #[arg(long, value_name = "url", display_order = 74, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub reels: Option<String>,
 
     /// Map tile api, used by the HUD; absent = `https://api.<base>`
-    #[arg(long, value_name = "url", display_order = 75, help_heading = HELP_HEADING)]
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub map_api: Option<String>,
+
+    /// Pulse comms server, `host` or `host:port` (no port = the platform's: 7777 ENet on native,
+    /// 7743 WebTransport on web); absent = `pulse-server.<base>`
+    #[arg(long, value_name = "host[:port]", help_heading = HELP_HEADING)]
+    pub pulse_server: Option<String>,
 }
 
 impl ServiceOverrides {
@@ -210,6 +232,7 @@ impl ServiceOverrides {
             Service::Opensea => &self.opensea,
             Service::Reels => &self.reels,
             Service::MapApi => &self.map_api,
+            Service::PulseServer => &self.pulse_server,
         }
         .as_deref()
         .filter(|url| !url.is_empty())
@@ -230,6 +253,8 @@ impl ServiceOverrides {
 pub struct ServiceDef {
     /// The web param (and `ServiceOverrides` field in camelCase)
     pub name: String,
+    pub value: ServiceValue,
+    /// Empty for an authority service
     pub scheme: String,
     /// Empty = the apex domain
     pub sub: String,
@@ -243,6 +268,7 @@ pub fn service_table() -> Vec<ServiceDef> {
             let (scheme, sub, path) = service.composition();
             ServiceDef {
                 name: service.param(),
+                value: service.value(),
                 scheme: scheme.to_owned(),
                 sub: sub.to_owned(),
                 path: path.to_owned(),
@@ -293,6 +319,9 @@ mod tests {
         );
         assert_eq!(Service::WorldsServer.flag(), "--worlds-server");
         assert_eq!(Service::WorldsServer.param(), "worldsServer");
+        assert_eq!(Service::Catalyst.value(), ServiceValue::Http);
+        assert_eq!(Service::SocialRpc.value(), ServiceValue::Websocket);
+        assert_eq!(Service::PulseServer.value(), ServiceValue::Authority);
     }
 
     /// The sign-in services are native flags only: no row in the HUD's table.

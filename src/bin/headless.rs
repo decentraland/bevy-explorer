@@ -57,7 +57,7 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
     SceneRunnerPlugin,
 };
-use system_api_types::launch_options::LaunchOptions;
+use system_api_types::launch_options::{help_heading::HEADLESS, LaunchOptions};
 use system_bridge::SystemBridgePlugin;
 use tween::TweenPlugin;
 use user_input::avatar_movement::{
@@ -89,23 +89,22 @@ struct Args {
 
     /// Serve the scene: `isServer()` is true to scene code and realm-wide comms are never
     /// joined. Standalone (without --orchestrated) is a local-dev flow and requires --preview
-    #[arg(long, display_order = 50)]
+    #[arg(long, help_heading = HEADLESS)]
     server_mode: bool,
 
     /// Multi-scene worker driven over stdin by an orchestrator; implies --server-mode
-    #[arg(long, display_order = 51)]
+    #[arg(long, help_heading = HEADLESS)]
     orchestrated: bool,
 
     /// Exit cleanly after this many seconds
-    #[arg(long, value_name = "secs", display_order = 52)]
+    #[arg(long, value_name = "secs", help_heading = HEADLESS)]
     timeout: Option<f32>,
 
     /// Scene javascript threads; absent = 16 orchestrated, 4 otherwise
     #[arg(
         long,
         value_name = "n",
-        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..),
-        display_order = 53
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..), help_heading = HEADLESS
     )]
     scene_threads: Option<usize>,
 
@@ -114,26 +113,25 @@ struct Args {
         long,
         value_name = "hz",
         default_value_t = 30,
-        value_parser = clap::value_parser!(u32).range(1..),
-        display_order = 54
+        value_parser = clap::value_parser!(u32).range(1..), help_heading = HEADLESS
     )]
     tick_hz: u32,
 
     /// base64 world-storage delegation (hammurabi envelope), or the PROCESS_STORAGE_DELEGATION
     /// env var; single-scene runs only — orchestrated scenes receive theirs via the control
     /// channel
-    #[arg(long, value_name = "base64", display_order = 55)]
+    #[arg(long, value_name = "base64", help_heading = HEADLESS)]
     storage_delegation: Option<String>,
 
     /// Deterministic guest wallet (test harness): the address is derivable offline from the seed
-    #[arg(long, value_name = "seed", display_order = 56)]
+    #[arg(long, value_name = "seed", help_heading = HEADLESS)]
     wallet_seed: Option<u64>,
 
     /// Pulse realm to announce verbatim; `--server-mode` only, and optional there: absent, the
     /// engine derives the same key from a locally hosted scene's entity id once it loads, this
     /// just announces it sooner. Orchestrated servers host several realms at once and take one
     /// per scene on `add-scene` instead
-    #[arg(long, value_name = "key", display_order = 57)]
+    #[arg(long, value_name = "key", help_heading = HEADLESS)]
     pulse_realm: Option<String>,
 
     // resolved after parsing: realm defaults to a local preview server, position to 0,0

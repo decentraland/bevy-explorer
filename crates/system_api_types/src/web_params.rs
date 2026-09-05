@@ -78,7 +78,6 @@ fn delivery(field: &str) -> Delivery {
         "system_scene"
         | "portables"
         | "preview"
-        | "pulse_server"
         | "imposter_source"
         | "content_server"
         | "log_fps"
@@ -107,14 +106,25 @@ pub(crate) fn camel_case(snake: &str) -> String {
     out
 }
 
+/// The table, in the native `--help`'s order: the unheaded destination flags, the service
+/// endpoints, then the rest — each run in declaration order.
 pub fn web_params() -> Vec<WebParam> {
+    use crate::launch_options::help_heading::SERVICES;
     let launch = LaunchOptions::augment_args(clap::Command::new("launch"));
     let client = ClientOptions::augment_args(clap::Command::new("client"));
     let native_only =
         |field: &str| Service::all().any(|s| s.field() == field && !s.has_web_param());
-    launch
+    let section = |arg: &clap::Arg| match arg.get_help_heading() {
+        None => 0,
+        Some(SERVICES) => 1,
+        Some(_) => 2,
+    };
+    let mut args: Vec<_> = launch
         .get_arguments()
         .chain(client.get_arguments())
+        .collect();
+    args.sort_by_key(|arg| section(arg));
+    args.into_iter()
         .filter(|arg| !native_only(arg.get_id().as_str()))
         .map(|arg| {
             let field = arg.get_id().as_str();
