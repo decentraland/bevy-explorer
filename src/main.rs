@@ -47,22 +47,26 @@ fn main() {
     log_panics::init();
 
     // args first, so --help and a bad flag answer without spawning the scene runtime
-    match decentraland_app_config() {
+    let exit_code = match decentraland_app_config() {
         Ok(decentraland_app_config) => {
             // initialize v8 runtime from main thread
             init_runtime().unwrap();
             decentraland_app.build(decentraland_app_config).run();
+            0
         }
-        Err(UserError(false)) => panic!("Fatal error while building application configurations."),
-        Err(UserError(true)) => {
-            // Non need to generate a crash report if the failure
-            // is due to an user error
-        }
+        // No need to generate a crash report if the failure is due to an user error
+        Err(UserError(code)) => code,
     };
 
     // Graceful exits don't need to have the log sent to the analytics server
     // so we remove the touch file
     let _ = std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap()));
+
+    // after the touch file is gone: an early exit would leave it behind and the next run would
+    // report the usage error as a crash
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
 }
 
 fn decentraland_app_config() -> Result<DecentralandAppConfig, UserError> {
@@ -108,18 +112,18 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
             } else {
                 let _ = e.print();
             }
-            return Err(UserError(true));
+            return Err(UserError(e.exit_code()));
         }
     };
 
     webgpu_build::launch::latch(&args.launch).map_err(|e| {
         error!("{e}");
-        UserError(true)
+        UserError(USAGE_ERROR)
     })?;
     if let Some(position) = &args.launch.position {
         IVec2Arg::from_str(position).map_err(|e| {
             error!("--position {position}: {e}");
-            UserError(true)
+            UserError(USAGE_ERROR)
         })?;
     }
 
@@ -205,14 +209,20 @@ fn decentraland_crash_file() -> Option<PathBuf> {
         })
 }
 
+/// A launch that stopped before the app ran, carrying the process exit status: 0 when the user
+/// asked for something and got it (`--help`), [`USAGE_ERROR`] when a flag or a value was refused.
 #[derive(Debug)]
-struct UserError(bool);
+struct UserError(i32);
+
+/// clap's exit status for a usage error, so a value this binary refuses reads to a script exactly
+/// like a flag clap refuses.
+const USAGE_ERROR: i32 = 2;
 
 impl Display for UserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self(true) => write!(f, "Method failed due to user error."),
-            Self(false) => write!(f, "Method failed due to application error."),
+        match self.0 {
+            0 => write!(f, "Nothing to run."),
+            code => write!(f, "Method failed due to user error (exit code {code})."),
         }
     }
 }
