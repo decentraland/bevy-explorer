@@ -300,7 +300,7 @@ fn spawn_stdin_reader() -> std::sync::mpsc::Receiver<ControlCommand> {
     rx
 }
 
-fn main() {
+fn main() -> AppExit {
     let session_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
         web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
@@ -573,7 +573,9 @@ fn main() {
         .set(bevy::ecs::error::warn)
         .ok();
 
-    app.run();
+    // returned, not dropped: the supervisor's AppExit is the process status the launcher
+    // forwards (deploy/headless/launcher/bin/cli.js)
+    app.run()
 }
 
 /// Stands in for the render-only `ImageLoader`: without it the asset server errors
