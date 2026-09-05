@@ -12,7 +12,8 @@ export function webParam(name: string): WebParam {
   return p
 }
 
-/** The `launch`-delivered params — what the host hands boot.js as window.__bevyBootConfig. */
+/** What the host hands boot.js as window.__bevyBootConfig: the `launch`-delivered params as read
+ *  here, plus the `resolved` ones the HUD adds from lib/baseDomain.ts. */
 export type LaunchOptions = Record<string, string | boolean | number | undefined>
 
 /** A url value in the type the engine expects for the param's kind. A number that doesn't parse

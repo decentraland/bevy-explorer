@@ -16,6 +16,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::services::ServiceOverrides;
+
 #[derive(clap::Args, Deserialize, Serialize, Default, Clone, PartialEq, Debug)]
 #[serde(rename_all = "camelCase", default)]
 pub struct LaunchOptions {
@@ -37,9 +39,8 @@ pub struct LaunchOptions {
     #[arg(long, display_order = 3)]
     pub preview: bool,
 
-    /// The deployment domain every backend host is composed from — sign-in, content, comms,
-    /// everything; absent = decentraland.org. on web: derived from the hosting origin.
-    #[serde(skip)]
+    /// The base domain for all services (comms, profiles, etc); absent = the hosting origin (on
+    /// web), or decentraland.org
     #[arg(long, value_name = "domain", display_order = 4)]
     pub base_domain: Option<String>,
 
@@ -54,6 +55,12 @@ pub struct LaunchOptions {
     /// Log the frame rate to the console
     #[arg(long, value_name = "true|false", display_order = 13)]
     pub log_fps: Option<bool>,
+
+    /// Per-service url overrides (`services.rs`): flags natively, keys of the `engine_run`
+    /// object on web (the page resolves the same overrides for its own fetches first).
+    #[serde(flatten)]
+    #[command(flatten)]
+    pub services: ServiceOverrides,
 }
 
 /// The options only a rendering client (native, web) has a use for.
@@ -108,7 +115,6 @@ impl EngineRunOptions {
         };
         let known: Vec<String> = crate::web_params::web_params()
             .into_iter()
-            .filter(|p| p.delivery != crate::web_params::Delivery::BaseDomain)
             .map(|p| p.name)
             .collect();
         if let Some(key) = object.keys().find(|key| !known.contains(key)) {
@@ -198,12 +204,19 @@ mod tests {
             err.to_string().contains("unknown field `pulseServr`"),
             "{err}"
         );
-        // the base domain never travels as an engine_run key
-        assert!(EngineRunOptions::from_json(r#"{"baseDomain": "decentraland.zone"}"#).is_err());
+        // the page-resolved base domain and service overrides are keys like any other
         let options = EngineRunOptions::from_json(
-            r#"{"pulseServer": "localhost:7777", "preview": true, "logFps": true, "gpuBytesPerFrame": 500000}"#,
+            r#"{"pulseServer": "localhost:7777", "preview": true, "logFps": true, "gpuBytesPerFrame": 500000, "baseDomain": "decentraland.zone", "catalyst": "http://localhost:3000"}"#,
         )
         .unwrap();
+        assert_eq!(
+            options.launch.base_domain.as_deref(),
+            Some("decentraland.zone")
+        );
+        assert_eq!(
+            options.launch.services.catalyst.as_deref(),
+            Some("http://localhost:3000")
+        );
         assert_eq!(
             options.launch.pulse_server.as_deref(),
             Some("localhost:7777")
@@ -214,10 +227,17 @@ mod tests {
         assert_eq!(options.client.gpu_bytes_per_frame, Some(500_000));
         // typed keys take their type, not a string
         assert!(EngineRunOptions::from_json(r#"{"gpuBytesPerFrame": "500000"}"#).is_err());
+        // a native-only service is an unknown key on web
+        assert!(EngineRunOptions::from_json(r#"{"authPage": "http://localhost:1"}"#).is_err());
         // and the echo is one flat object again
         let json = serde_json::to_value(&options).unwrap();
         assert_eq!(json["pulseServer"], "localhost:7777");
         assert_eq!(json["gpuBytesPerFrame"], 500_000);
-        assert!(json.get("baseDomain").is_none());
+        assert_eq!(json["baseDomain"], "decentraland.zone");
+        assert_eq!(json["catalyst"], "http://localhost:3000");
+        assert!(
+            json.get("places").is_some(),
+            "every service key is echoed (as null when unset)"
+        );
     }
 }

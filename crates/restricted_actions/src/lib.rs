@@ -695,7 +695,10 @@ pub async fn lookup_ens(
     } else {
         lookup_portable(
             parent_scene,
-            common::base_domain::https("worlds-content-server", &format!("/world/{ens}")),
+            common::base_domain::url(
+                common::base_domain::Service::WorldsServer,
+                &format!("/world/{ens}"),
+            ),
             super_user,
             ipfs,
         )

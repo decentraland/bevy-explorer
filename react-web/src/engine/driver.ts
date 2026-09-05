@@ -62,5 +62,5 @@ export interface LoginDriver {
   /** The engine's persisted home scene — the Skip target. Available pre-launch; null until the
    *  engine module is up. Optional — the mock has no engine (and native skips keep the engine's
    *  own start realm, which already IS home). */
-  homeScene?(): { realm: string; parcel: string } | null
+  homeScene?(): { realm: string | null; parcel: string } | null
 }

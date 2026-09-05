@@ -308,10 +308,10 @@ pub fn default_bodyshape_instance() -> WearableInstance {
 }
 
 pub fn content_url() -> String {
-    common::base_domain::https("peer", "/content/contents/")
+    common::base_domain::url(common::base_domain::Service::Catalyst, "/content/contents/")
 }
 pub fn base_url() -> String {
-    common::base_domain::https("peer", "/content")
+    common::base_domain::url(common::base_domain::Service::Catalyst, "/content")
 }
 
 pub fn default_wearables(body_shape: &WearableUrn) -> impl Iterator<Item = WearableInstance> {

@@ -26,7 +26,7 @@ pub fn latch(launch: &LaunchOptions) -> Result<(), String> {
     if let Some(domain) = &launch.base_domain {
         common::base_domain::set(domain)?;
     }
-    Ok(())
+    common::base_domain::set_services(launch.services.iter())
 }
 
 /// `boot_server` is the realm the binary decided to boot into (mapped through
@@ -40,6 +40,7 @@ pub fn apply(app: &mut App, launch: &LaunchOptions, config: &AppConfig, boot_ser
         content_server: _,
         // latch
         base_domain: _,
+        services: _,
         preview,
         pulse_server,
         log_fps,

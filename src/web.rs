@@ -67,24 +67,6 @@ extern "C" {
     /// leave keys alone while the user types into scene UI.
     #[wasm_bindgen(js_name = "__setEngineTextFocus")]
     fn set_engine_text_focus(focused: bool);
-
-    /// The ?baseDomain= entry param, captured by boot.js (web parity with --base-domain).
-    /// `catch` so a host page without boot.js just falls through to the default domain.
-    #[wasm_bindgen(js_name = "__baseDomain", catch)]
-    fn base_domain_param() -> Result<String, JsValue>;
-}
-
-/// Latch the base domain before any backend URL is composed. Called at the top of BOTH wasm
-/// entry points: engine_init's config deserialization already materializes
-/// `AppConfig::default()` fields, so engine_run alone would be too late.
-fn apply_base_domain() {
-    if let Ok(domain) = base_domain_param() {
-        if !domain.is_empty() {
-            if let Err(e) = common::base_domain::set(&domain) {
-                warn!("ignoring baseDomain param: {e}");
-            }
-        }
-    }
 }
 
 /// call from a separate worker to initialize a channel for asset load processing
@@ -99,7 +81,6 @@ pub fn init_asset_load_thread() {
 #[wasm_bindgen]
 pub async fn engine_init() -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
-    apply_base_domain();
 
     let mut file = match web_fs::File::open("config.json").await {
         Ok(f) => f,
@@ -125,45 +106,19 @@ pub async fn engine_init() -> Result<JsValue, JsValue> {
     Ok("Config loaded".into())
 }
 
-/// The persisted home scene — realm + "x,y" parcel — as a JSON string, falling back to the
-/// derived defaults. Valid after [`engine_init`] (it reads the loaded config); exposed so the
-/// HUD's places picker can target home from "Skip" BEFORE the engine is launched.
+/// The persisted home scene — the pinned realm (null = none pinned: the HUD substitutes its own
+/// default realm, since this runs before `engine_run` latches the base domain the engine would
+/// compose one from) + "x,y" parcel — as a JSON string. Valid after [`engine_init`] (it reads the
+/// loaded config); exposed so the HUD's places picker can target home from "Skip" BEFORE the
+/// engine is launched.
 #[wasm_bindgen]
 pub fn engine_home_scene() -> String {
     let (realm, parcel) = INIT_DATA
         .get()
-        .map(|config| (config.home_realm(), config.home_location()))
-        .unwrap_or_else(|| {
-            let config = AppConfig::default();
-            (config.home_realm(), config.home_location())
-        });
+        .map(|config| (config.home_realm.clone(), config.home_location()))
+        .unwrap_or_else(|| (None, AppConfig::default().home_location()));
     serde_json::json!({ "realm": realm, "parcel": format!("{},{}", parcel.x, parcel.y) })
         .to_string()
-}
-
-// Type the `engine_run` parameter in the generated .d.ts — keep in step with
-// `system_api_types::launch_options::EngineRunOptions` (the web param table's source).
-#[wasm_bindgen(typescript_custom_section)]
-const ENGINE_RUN_OPTIONS_TS: &str = r#"
-export interface EngineRunOptions {
-    realm?: string;
-    position?: string;
-    systemScene?: string;
-    portables?: string;
-    preview?: boolean;
-    editor?: boolean;
-    contentServer?: string;
-    pulseServer?: string;
-    imposterSource?: string;
-    logFps?: boolean;
-    gpuBytesPerFrame?: number;
-}
-"#;
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(typescript_type = "EngineRunOptions")]
-    pub type EngineRunOptionsJs;
 }
 
 /// Round-trip the page's object through JSON rather than `serde_wasm_bindgen::from_value`: that
@@ -175,17 +130,16 @@ fn parse_options(options: &JsValue) -> Result<EngineRunOptions, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("engine_run: invalid options: {e}")))
 }
 
-/// Launch the engine. Throws (rejects the launch) on an invalid options object.
+/// Launch the engine. `options` is the `engine_run` object keyed by the web param table (one
+/// key per launch option; absent = the engine's default). Throws (rejects the launch) on an
+/// invalid one.
 #[wasm_bindgen]
-pub fn engine_run(options: EngineRunOptionsJs) -> Result<(), JsValue> {
+pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
     let options = parse_options(&options)?;
     let _ = LAUNCH_OPTIONS.set(options.clone());
-    apply_base_domain();
-    // the shared launch options' globals (src/launch.rs; the base domain itself came from the
-    // page above, so this can't fail on it)
-    if let Err(e) = crate::launch::latch(&options.launch) {
-        warn!("{e}");
-    }
+    // the shared launch options' globals (src/launch.rs) — before anything composes a backend url
+    crate::launch::latch(&options.launch)
+        .map_err(|e| JsValue::from_str(&format!("engine_run: {e}")))?;
     init_runtime();
 
     let default_filter = "symphonia=warn";
