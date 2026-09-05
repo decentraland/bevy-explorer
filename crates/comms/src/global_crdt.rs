@@ -958,6 +958,15 @@ pub fn process_transport_updates(
                         PlayerMessage::PlayerData(Message::SceneEmote(scene_emote)) => {
                             debug!("scene emote: {scene_emote:?}");
                         }
+                        PlayerMessage::PlayerData(Message::LookAtPosition(look_at_position)) => {
+                            debug!("look at position: {look_at_position:?}");
+                        }
+                        PlayerMessage::PlayerData(Message::Reaction(reaction)) => {
+                            debug!("reaction: {reaction:?}");
+                        }
+                        PlayerMessage::PlayerData(Message::ChatReaction(chat_reaction)) => {
+                            debug!("chat reaction: {chat_reaction:?}");
+                        }
                     }
                 }
                 NetworkUpdate::NonPlayer(update) => {
