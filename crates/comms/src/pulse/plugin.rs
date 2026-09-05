@@ -949,15 +949,17 @@ fn drain_inbound(
                         urn,
                         incremental_id: tick,
                         stopping: false,
+                        completed: false,
                     },
                 ),
-                PulseEvent::EmoteStop { address } => session.forward(
+                PulseEvent::EmoteStop { address, completed } => session.forward(
                     sinks,
                     address,
                     PlayerMessage::Emote {
                         urn: String::new(),
                         incremental_id: 0,
                         stopping: true,
+                        completed,
                     },
                 ),
                 // A peer entered our interest set. Report the arrival, then their initial profile

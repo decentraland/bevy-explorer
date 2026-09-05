@@ -37,6 +37,7 @@ pub mod attach;
 pub mod avatar_texture;
 pub mod colliders;
 mod dynamic_nametag;
+pub mod emote_report;
 pub mod foot_ik;
 pub mod foreign_dynamics;
 pub mod head_ik;
@@ -94,16 +95,30 @@ use crate::{
 
 use self::{
     animate::AvatarAnimationPlugin,
+    emote_report::EmoteReportPlugin,
     foreign_dynamics::PlayerMovementPlugin,
     mask_material::{MaskMaterial, MaskMaterialPlugin},
 };
+
+/// The render-free part of the avatar stack: what a headless server needs from foreign players
+/// (their bevy transforms, their profile in scene crdt, their emotes reported to scenes) without
+/// spawning an avatar. `AvatarPlugin` builds on it; the headless binary adds it alone.
+pub struct AvatarCorePlugin;
+
+impl Plugin for AvatarCorePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(PlayerMovementPlugin);
+        app.add_plugins(EmoteReportPlugin);
+        app.add_systems(Update, update_avatar_info);
+    }
+}
 
 pub struct AvatarPlugin;
 
 impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(AvatarCorePlugin);
         app.add_plugins(MaskMaterialPlugin);
-        app.add_plugins(PlayerMovementPlugin);
         app.add_plugins(NpcMovementPlugin);
         app.add_plugins(AvatarAnimationPlugin);
         app.add_plugins(AttachPlugin);
@@ -126,7 +141,6 @@ impl Plugin for AvatarPlugin {
         app.add_systems(
             Update,
             (
-                update_avatar_info,
                 update_base_avatar_shape,
                 select_avatar,
                 update_render_avatar,

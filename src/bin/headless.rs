@@ -8,6 +8,7 @@
 
 use std::{str::FromStr, sync::OnceLock, time::Duration};
 
+use avatar::AvatarCorePlugin;
 use bevy::tasks::IoTaskPool;
 use bevy::{
     app::ScheduleRunnerPlugin,
@@ -24,6 +25,7 @@ use bevy::{
 };
 use bevy_dui::DuiPlugin;
 use clap::Parser;
+use collectibles::EmoteMetadataPlugin;
 use common::{
     inputs::InputMap,
     profile::SerializedProfile,
@@ -406,10 +408,14 @@ fn main() -> AppExit {
         })
         .add_plugins(WalletPlugin)
         .add_plugins(CommsPlugin)
-        // foreign avatar bevy transforms (render-free, unlike the rest of AvatarPlugin):
-        // without these, engine-side position logic — scene membership, avatar colliders,
-        // trigger areas — sees every remote player at the origin
-        .add_plugins(avatar::foreign_dynamics::PlayerMovementPlugin)
+        // emote metadata (the loop flag scenes are told) resolves through the collectible
+        // manager; no clip or sound is ever loaded here
+        .add_plugins(EmoteMetadataPlugin)
+        // the render-free part of the avatar stack: foreign avatar bevy transforms (without
+        // these, engine-side position logic — scene membership, avatar colliders, trigger
+        // areas — sees every remote player at the origin), profile info and emote reports
+        // in scene crdt
+        .add_plugins(AvatarCorePlugin)
         .add_plugins(DuiPlugin)
         .add_plugins(SystemBridgePlugin { bare: true });
 
@@ -530,16 +536,7 @@ fn main() -> AppExit {
         shutdown_signal::install();
         app.add_systems(Update, exit_on_shutdown_signal);
     }
-    app.add_systems(
-        Update,
-        (
-            drain_permissions,
-            // AvatarPlugin (render-bound) is omitted headless; without this, SDK
-            // getPlayer()/onEnterScene never see names or wearables
-            avatar::update_avatar_info,
-            reap_terminal_scene_rooms,
-        ),
-    );
+    app.add_systems(Update, (drain_permissions, reap_terminal_scene_rooms));
 
     if args.orchestrated {
         app.insert_resource(ControlChannel(std::sync::Mutex::new(spawn_stdin_reader())))
