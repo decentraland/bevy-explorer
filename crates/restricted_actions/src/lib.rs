@@ -1835,7 +1835,7 @@ pub fn handle_eth_async(
         tasks.push((
             response.clone(),
             IoTaskPool::get()
-                .spawn_compat(remote_send_async(body.clone(), wallet.auth_chain().ok())),
+                .spawn_compat(remote_send_async(body.clone(), Wallet::clone(&wallet))),
         ));
     }
 
