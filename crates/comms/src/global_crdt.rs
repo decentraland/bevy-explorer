@@ -940,6 +940,11 @@ pub fn process_transport_updates(
                                     },
                                     source: EmoteLifecycleSource::Wire,
                                 });
+                            } else if !acceptable_emote_urn(&urn) {
+                                debug!(
+                                    "dropping emote with unacceptable urn from {:#x}",
+                                    update.address
+                                );
                             } else {
                                 commands.entity(entity).try_insert(EmoteCommand {
                                     timestamp: incremental_id as i64,
@@ -1342,5 +1347,34 @@ fn receive_new_voice_message_senders(
         if let SystemApi::GetVoiceStream(stream) = event {
             voice_message_streams.push(stream.clone());
         }
+    }
+}
+
+/// Room for any collectible or scene-emote urn, not for a peer to fill scene crdt with.
+const MAX_EMOTE_URN_BYTES: usize = 256;
+
+/// Whether a peer's emote urn may reach scenes: it lands verbatim in `AvatarEmoteCommand`, and
+/// nothing upstream bounds it (Pulse validates an emote's duration and position, not its id).
+pub fn acceptable_emote_urn(urn: &str) -> bool {
+    !urn.is_empty()
+        && urn.len() <= MAX_EMOTE_URN_BYTES
+        && !urn.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn peer_emote_urns_are_bounded() {
+        assert!(acceptable_emote_urn(
+            "urn:decentraland:off-chain:base-emotes:wave"
+        ));
+        assert!(acceptable_emote_urn(&"x".repeat(MAX_EMOTE_URN_BYTES)));
+        assert!(!acceptable_emote_urn(""));
+        assert!(!acceptable_emote_urn(&"x".repeat(MAX_EMOTE_URN_BYTES + 1)));
+        assert!(!acceptable_emote_urn("urn:with space"));
+        assert!(!acceptable_emote_urn("urn:with\nnewline"));
+        assert!(!acceptable_emote_urn("urn:with\u{0}nul"));
     }
 }
