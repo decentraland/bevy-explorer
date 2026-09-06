@@ -19,8 +19,8 @@ use common::{
     sets::SceneSets,
     structs::{
         AudioEmitter, AudioType, AvatarDynamicState, EmoteCommand, EmoteLifecycle,
-        EmoteLifecycleEvent, MoveKind, PlayerModifiers, PrimaryUser, SceneDrivenAnim,
-        SceneDrivenAnimationFeedback, SceneDrivenAnimationFeedbackState,
+        EmoteLifecycleEvent, EmoteLifecycleSource, MoveKind, PlayerModifiers, PrimaryUser,
+        SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationFeedbackState,
     },
     util::TryPushChildrenEx,
 };
@@ -88,24 +88,35 @@ fn handle_trigger_emotes(
     let Ok((player, maybe_prev)) = player.single() else {
         return;
     };
+    let timestamp = maybe_prev
+        .map(|prev| prev.timestamp + 1)
+        .unwrap_or_default();
 
-    for (scene, urn, r#loop) in emote_cmds.read().filter_map(|ev| {
-        if let RpcCall::TriggerEmote { scene, urn, r#loop } = ev {
-            Some((scene, urn, *r#loop))
-        } else {
-            None
-        }
-    }) {
+    for ev in emote_cmds.read() {
+        // a stop is an empty command; `animate` reports the interruption
+        let (scene, command) = match ev {
+            RpcCall::TriggerEmote { scene, urn, r#loop } => (
+                scene,
+                EmoteCommand {
+                    urn: urn.clone(),
+                    r#loop: *r#loop,
+                    timestamp,
+                },
+            ),
+            RpcCall::StopEmote { scene } => (
+                scene,
+                EmoteCommand {
+                    urn: String::new(),
+                    r#loop: false,
+                    timestamp,
+                },
+            ),
+            _ => continue,
+        };
         perms.check(
             common::structs::PermissionType::PlayEmote,
             *scene,
-            EmoteCommand {
-                urn: urn.clone(),
-                r#loop,
-                timestamp: maybe_prev
-                    .map(|prev| prev.timestamp + 1)
-                    .unwrap_or_default(),
-            },
+            command,
             None,
             false,
         );
@@ -384,6 +395,14 @@ fn animate(
             requested_emote = None;
         }
 
+        let mut ended = |event: EmoteLifecycle| {
+            lifecycle.write(EmoteLifecycleEvent {
+                avatar: avatar_ent,
+                event,
+                source: EmoteLifecycleSource::Playback,
+            });
+        };
+
         // check / cancel requested emote
         if Some(&active_emote.urn) == requested_emote.as_ref() {
             let playing_min_vel = anim_state.current_emote_min_velocity;
@@ -396,17 +415,6 @@ fn animate(
             let velocity_cancels = maybe_foreign.is_none()
                 && scene_anim.is_none()
                 && active_emote.source != ActiveEmoteSource::SceneMovementAnim;
-            // Scenes hear how a local or scene avatar's emote ended from playback here; a foreign
-            // avatar's end comes off the wire (`comms`), so the client and the headless server
-            // report it alike.
-            let mut ended = |event: EmoteLifecycle| {
-                if maybe_foreign.is_none() {
-                    lifecycle.write(EmoteLifecycleEvent {
-                        avatar: avatar_ent,
-                        event,
-                    });
-                }
-            };
             if scene_cancels {
                 debug!("clear on scene anim {:?}", active_emote.urn);
                 requested_emote = None;
@@ -432,6 +440,16 @@ fn animate(
             }
         } else {
             anim_state.current_emote_min_velocity = damped_velocity_len;
+            // the command was cleared under a playing emote: an explicit stop (`stopEmote`, or a
+            // scene avatar's trigger cleared)
+            if emote_changed
+                && requested_emote.is_none()
+                && active_emote.source == ActiveEmoteSource::TriggeredEmote
+                && !active_emote.finished
+            {
+                debug!("clear on stop {:?}", active_emote.urn);
+                ended(EmoteLifecycle::Interrupted);
+            }
         }
 
         // Precompute the velocity-based selection up-front so we can use it both as the

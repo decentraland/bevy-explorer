@@ -23,7 +23,9 @@ use bevy::{
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
-    structs::{EmoteCommand, EmoteLifecycle, EmoteLifecycleEvent, PrimaryUser},
+    structs::{
+        EmoteCommand, EmoteLifecycle, EmoteLifecycleEvent, EmoteLifecycleSource, PrimaryUser,
+    },
 };
 use comms::global_crdt::{process_transport_updates, CrdtContexts, ForeignPlayer};
 use dcl::interface::CrdtType;
@@ -78,6 +80,7 @@ fn queue_emote_reports(
     // Anything writing `EmoteCommand` on a local or scene avatar is a start. Foreign avatars are
     // driven by the wire alone (see `process_transport_updates`).
     triggered: Query<(Entity, &EmoteCommand), (Changed<EmoteCommand>, Without<ForeignPlayer>)>,
+    foreign: Query<(), With<ForeignPlayer>>,
     mut events: EventReader<EmoteLifecycleEvent>,
 ) {
     // this frame's entries per avatar, and the command that produced a start
@@ -102,7 +105,22 @@ fn queue_emote_reports(
         *last_command = Some(command.clone());
     }
 
-    for EmoteLifecycleEvent { avatar, event } in events.read() {
+    // the wire's word for a foreign avatar, playback's for the rest; the other is what this
+    // binary happens to observe, and the two would disagree on timing
+    for EmoteLifecycleEvent {
+        avatar,
+        event,
+        source,
+    } in events.read()
+    {
+        let authoritative = if foreign.contains(*avatar) {
+            EmoteLifecycleSource::Wire
+        } else {
+            EmoteLifecycleSource::Playback
+        };
+        if *source != authoritative {
+            continue;
+        }
         incoming
             .entry(*avatar)
             .or_default()

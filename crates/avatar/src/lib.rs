@@ -815,8 +815,12 @@ fn update_render_avatar(
                         .0
                         .expression_trigger_id
                         .as_ref()
+                        // a cleared trigger stops the emote: an empty command
+                        .or(Some(&String::new()))
                         .and_then(|e| {
-                            let urn = if e.starts_with("urn:") {
+                            let urn = if e.is_empty() {
+                                String::new()
+                            } else if e.starts_with("urn:") {
                                 e.clone()
                             } else {
                                 // File path emote (e.g. "models/emotes/foo.glb") — resolve

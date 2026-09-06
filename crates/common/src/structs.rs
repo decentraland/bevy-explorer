@@ -231,13 +231,20 @@ pub struct EmoteCommand {
 }
 
 /// A transition in an avatar's triggered-emote playback, reported to scenes as an
-/// `AvatarEmoteCommand` entry by `avatar::emote_report`. Raised by `comms` from the wire for
-/// foreign players (in wire order, so client and server report the same sequence), and by the
-/// avatar animator from playback for the local player and scene avatars.
+/// `AvatarEmoteCommand` entry by `avatar::emote_report`. Raised by `comms` from the wire (in wire
+/// order, so client and server report the same sequence) and by the avatar animator from
+/// playback; the reporter keeps the wire's word for foreign players and playback's for the rest.
 #[derive(Event, Clone, Debug)]
 pub struct EmoteLifecycleEvent {
     pub avatar: Entity,
     pub event: EmoteLifecycle,
+    pub source: EmoteLifecycleSource,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EmoteLifecycleSource {
+    Playback,
+    Wire,
 }
 
 #[derive(Clone, Debug)]

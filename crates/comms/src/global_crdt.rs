@@ -10,7 +10,7 @@ use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
-        AudioDecoderError, EmoteCommand, EmoteLifecycle, EmoteLifecycleEvent,
+        AudioDecoderError, EmoteCommand, EmoteLifecycle, EmoteLifecycleEvent, EmoteLifecycleSource,
         GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync, SceneDrivenAnimationRequest,
     },
     util::ModifyComponentExt,
@@ -938,6 +938,7 @@ pub fn process_transport_updates(
                                     } else {
                                         EmoteLifecycle::Interrupted
                                     },
+                                    source: EmoteLifecycleSource::Wire,
                                 });
                             } else {
                                 commands.entity(entity).try_insert(EmoteCommand {
@@ -948,6 +949,7 @@ pub fn process_transport_updates(
                                 emote_events.write(EmoteLifecycleEvent {
                                     avatar: entity,
                                     event: EmoteLifecycle::Started { urn, r#loop: false },
+                                    source: EmoteLifecycleSource::Wire,
                                 });
                             }
                         }
