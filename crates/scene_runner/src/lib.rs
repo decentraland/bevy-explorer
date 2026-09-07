@@ -246,6 +246,25 @@ pub struct SceneLoopSchedule {
 #[derive(Default, Resource)]
 pub struct InteractableArea(pub Option<Vec4>);
 
+/// A full-screen HUD surface covers the world (`SystemApi::SetUiFocus.covered`).
+#[derive(Default, Resource)]
+pub struct HudFullscreen(pub bool);
+
+/// Frame-global inputs to `PBEngineInfo`. The world is hidden from the user while the engine's
+/// loading backdrop (player `OutOfWorld`) or a full-screen HUD surface covers it.
+#[derive(SystemParam)]
+struct EngineInfoSource<'w, 's> {
+    frame: Res<'w, FrameCount>,
+    hud_fullscreen: Res<'w, HudFullscreen>,
+    oow: Query<'w, 's, (), (With<PrimaryUser>, With<OutOfWorld>)>,
+}
+
+impl EngineInfoSource<'_, '_> {
+    fn scene_hidden(&self) -> bool {
+        self.hud_fullscreen.0 || !self.oow.is_empty()
+    }
+}
+
 impl InteractableArea {
     pub fn get_or_default(&self, width: f32, height: f32) -> Vec4 {
         self.0.unwrap_or_else(|| {
@@ -266,6 +285,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<Toasts>();
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
+        app.init_resource::<HudFullscreen>();
         // shared by pointer results, trigger areas and the avatar crate — owned here so
         // trigger areas keep working when the pointer-result systems are skipped
         app.init_resource::<update_scene::pointer_results::AvatarColliders>();
@@ -787,7 +807,7 @@ fn send_scene_updates(
     )>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
-    frame: Res<FrameCount>,
+    engine_info: EngineInfoSource,
     player: Query<&Transform, With<PrimaryUser>>,
     camera: Query<&Transform, With<PrimaryCamera>>,
     config: Res<AppConfig>,
@@ -1021,9 +1041,10 @@ fn send_scene_updates(
     // add engine info, only for the scene actually being sent
     buf.clear();
     DclWriter::new(buf).write(&PbEngineInfo {
-        frame_number: frame.0,
+        frame_number: engine_info.frame.0,
         total_runtime: context.total_runtime as f32,
         tick_number: context.tick_number,
+        scene_hidden: engine_info.scene_hidden(),
         total_runtime_f64: context.total_runtime,
     });
     context.crdt_store.force_update(
@@ -1332,10 +1353,13 @@ fn log_app_errors(mut toaster: Toaster, mut errors: EventReader<AppError>, frame
 fn set_ui_constraints(
     mut events: EventReader<SystemApi>,
     mut interactable_area: ResMut<InteractableArea>,
+    mut hud_fullscreen: ResMut<HudFullscreen>,
 ) {
     for ev in events.read() {
-        if let SystemApi::SetInteractableArea(area) = ev {
-            interactable_area.0 = Some(*area);
+        match ev {
+            SystemApi::SetInteractableArea(area) => interactable_area.0 = Some(*area),
+            SystemApi::SetUiFocus { covered, .. } => hud_fullscreen.0 = *covered,
+            _ => (),
         }
     }
 }

@@ -32,7 +32,7 @@ export function registerBindings(ctx: Ctx): void {
   // HUD focus relay: fire-and-forget, latest state wins (the engine reserves/releases
   // idempotently, so replays are harmless).
   ctx.on('uiFocus', (msg) => {
-    void BevyApi.setUiFocus({ ui: msg.ui, text: msg.text, scroll: msg.scroll })
+    void BevyApi.setUiFocus({ ui: msg.ui, text: msg.text, scroll: msg.scroll, covered: msg.covered })
   })
 
   let activeCaptureId: string | null = null

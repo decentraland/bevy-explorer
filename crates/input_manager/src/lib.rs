@@ -828,7 +828,10 @@ fn handle_set_ui_focus(
     mut priorities: ResMut<InputPriorities>,
 ) {
     for (ui, text, scroll) in events.read().filter_map(|e| {
-        if let SystemApi::SetUiFocus { ui, text, scroll } = e {
+        if let SystemApi::SetUiFocus {
+            ui, text, scroll, ..
+        } = e
+        {
             Some((*ui, *text, *scroll))
         } else {
             None
