@@ -19,7 +19,13 @@ pub fn handler() -> Handler {
         return Handler::None;
     };
     if default != DESKTOP_FILE {
-        return Handler::Other;
+        // a registration whose desktop file is gone (an uninstalled app, a stale mimeapps.list)
+        // is nobody's
+        return if desktop_file_exists(&default) {
+            Handler::Other
+        } else {
+            Handler::None
+        };
     }
     applications_dir()
         .and_then(|dir| std::fs::read_to_string(dir.join(DESKTOP_FILE)).ok())
@@ -91,9 +97,60 @@ fn applications_dir() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.data_local_dir().join("applications"))
 }
 
+/// Whether a desktop file with this id exists in any `applications` dir: the user's, those on
+/// `$XDG_DATA_DIRS` (or `/usr/local/share:/usr/share`), and the flatpak and snap exports, which
+/// are normally on it. An id is the path under `applications` with `/` written as `-`.
+fn desktop_file_exists(id: &str) -> bool {
+    let user = directories::BaseDirs::new().map(|dirs| dirs.data_local_dir().to_owned());
+    let system = match std::env::var_os("XDG_DATA_DIRS").filter(|dirs| !dirs.is_empty()) {
+        Some(dirs) => std::env::split_paths(&dirs).collect(),
+        None => vec![
+            PathBuf::from("/usr/local/share"),
+            PathBuf::from("/usr/share"),
+        ],
+    };
+    let sandboxed = [
+        user.as_ref().map(|user| user.join("flatpak/exports/share")),
+        Some(PathBuf::from("/var/lib/flatpak/exports/share")),
+        Some(PathBuf::from("/var/lib/snapd/desktop")),
+    ];
+    user.iter()
+        .chain(&system)
+        .chain(sandboxed.iter().flatten())
+        .any(|dir| contains_desktop_id(&dir.join("applications"), "", id, 4))
+}
+
+fn contains_desktop_id(dir: &Path, prefix: &str, id: &str, depth: usize) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if entry.path().is_dir() {
+            depth > 0
+                && contains_desktop_id(&entry.path(), &format!("{prefix}{name}-"), id, depth - 1)
+        } else {
+            format!("{prefix}{name}") == id
+        }
+    })
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn desktop_ids_cover_subdirectories() {
+        let dir = std::env::temp_dir().join(format!("dcl-desktop-ids-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("kde4")).unwrap();
+        std::fs::write(dir.join("top.desktop"), "").unwrap();
+        std::fs::write(dir.join("kde4/nested.desktop"), "").unwrap();
+        assert!(contains_desktop_id(&dir, "", "top.desktop", 4));
+        assert!(contains_desktop_id(&dir, "", "kde4-nested.desktop", 4));
+        assert!(!contains_desktop_id(&dir, "", "gone.desktop", 4));
+        assert!(!contains_desktop_id(&dir, "", "kde4-nested.desktop", 0));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn library_path_entries_become_absolute() {
