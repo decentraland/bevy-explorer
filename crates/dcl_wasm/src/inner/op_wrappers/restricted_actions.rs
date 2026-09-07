@@ -100,6 +100,13 @@ pub async fn op_ui_focus(
 }
 
 #[wasm_bindgen]
+pub async fn op_open_explorer_ui(op_state: &WorkerContext, ui: i32) -> Result<i32, WasmError> {
+    dcl::js::restricted_actions::op_open_explorer_ui(op_state.rc(), ui)
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
 pub async fn op_copy_to_clipboard(op_state: &WorkerContext, text: String) -> Result<(), WasmError> {
     dcl::js::restricted_actions::op_copy_to_clipboard(op_state.rc(), text)
         .await

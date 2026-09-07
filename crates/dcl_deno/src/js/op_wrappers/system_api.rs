@@ -1,5 +1,5 @@
 use common::{
-    inputs::SystemActionEvent,
+    inputs::{HudPanel, SystemActionEvent},
     structs::{MicState, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
@@ -212,15 +212,16 @@ pub async fn op_set_bindings(
     dcl::js::system_api::op_set_bindings(state, bindings).await
 }
 
-#[op2(fast)]
+#[op2]
 pub fn op_set_ui_focus(
     state: Rc<RefCell<OpState>>,
     ui: bool,
     text: bool,
     scroll: bool,
     covered: bool,
+    #[serde] menu: Option<HudPanel>,
 ) -> Result<(), AnyError> {
-    dcl::js::system_api::op_set_ui_focus(state, ui, text, scroll, covered)
+    dcl::js::system_api::op_set_ui_focus(state, ui, text, scroll, covered, menu)
 }
 
 #[op2(async)]

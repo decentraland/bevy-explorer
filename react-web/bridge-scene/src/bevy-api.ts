@@ -104,8 +104,10 @@ export type BevyApiInterface = {
    *  scrollable HUD element (the Scroll ACTIONS are reserved, so every input bound to
    *  them drives the panel rather than world consumers like camera zoom); `covered` = a
    *  full-screen HUD surface (menu page, loading overlay) hides the world (scenes see
-   *  EngineInfo.scene_hidden). */
-  setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean; covered: boolean }) => Promise<void>
+   *  EngineInfo.scene_hidden); `menu` = the open full-screen menu page, named by the SystemAction
+   *  that toggles it ('Map', 'Backpack', ...), else null (backs the scene-facing openExplorerUi
+   *  action: its WAS_ALREADY_OPEN verdict and the page's opened/closed events). */
+  setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean; covered: boolean; menu: string | null }) => Promise<void>
   sendChat: (message: string, channel: string) => void
   getChatStream: () => Promise<AsyncIterable<ChatStreamMessage>>
   getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>

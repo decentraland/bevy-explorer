@@ -2,6 +2,7 @@ syntax = "proto3";
 package decentraland.kernel.apis;
 
 import "decentraland/common/vectors.proto";
+import "decentraland/sdk/components/common/explorer_ui.proto";
 
 message MovePlayerToRequest {
   decentraland.common.Vector3 new_relative_position = 1;
@@ -54,6 +55,25 @@ message MovePlayerToResponse {
 
 message TeleportToResponse { }
 
+// Verdict of an OpenExplorerUi request (enum rather than a bool so new outcomes stay expressible).
+enum OpenExplorerUiResult {
+  UNSPECIFIED = 0;
+  OPENED = 1;
+  WAS_ALREADY_OPEN = 2;             // a fullscreen panel is already open
+  REJECTED_NOT_CURRENT_SCENE = 3;   // the standard restricted-actions current-scene gate rejected the call
+  REJECTED_FEATURE_DISABLED = 4;    // the requested section is hidden by feature flags or client doesn't have that feature
+  REJECTED_NO_USER_GESTURE = 5;     // rejected: the call did not originate from a user gesture
+}
+
+message OpenExplorerUiRequest {
+  decentraland.sdk.components.common.ExplorerUi ui = 1;
+}
+
+message OpenExplorerUiResponse {
+  // Carries only the verdict of the open action.
+  OpenExplorerUiResult open_result = 1;
+}
+
 service RestrictedActionsService {
   // MovePlayerTo will move the player to a position relative to the current scene.
   // If 'duration' field is used in the request, the success response depends on the
@@ -81,4 +101,7 @@ service RestrictedActionsService {
 
   // TriggerSceneEmote will trigger an scene emote file in this current user
   rpc TriggerSceneEmote(TriggerSceneEmoteRequest) returns (SuccessResponse) {}
+
+  // OpenExplorerUi opens a specific fullscreen explorer panel and returns the open verdict.
+  rpc OpenExplorerUi(OpenExplorerUiRequest) returns (OpenExplorerUiResponse) {}
 }

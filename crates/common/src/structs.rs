@@ -716,7 +716,8 @@ impl AppConfig {
             | PermissionType::PlayEmote
             | PermissionType::SetLocomotion
             | PermissionType::HideAvatarsNametags
-            | PermissionType::DisableVoice => PermissionValue::Allow,
+            | PermissionType::DisableVoice
+            | PermissionType::OpenExplorerUi => PermissionValue::Allow,
             _ => PermissionValue::Ask,
         }
     }
@@ -1044,6 +1045,7 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "Open Websocket",
             PermissionType::OpenUrl => "Open Url",
             PermissionType::CopyToClipboard => "Copy to Clipboard",
+            PermissionType::OpenExplorerUi => "Open Explorer Menu",
         }
     }
 
@@ -1101,6 +1103,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "open a web socket to communicate with a remote server",
             PermissionType::OpenUrl => "open a url in your browser",
             PermissionType::CopyToClipboard => "copy text into the clipboard",
+            PermissionType::OpenExplorerUi => {
+                "open an explorer menu panel (map, backpack, settings, ...)"
+            }
         }
     }
 
@@ -1123,6 +1128,7 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "opening a websocket",
             PermissionType::OpenUrl => "opening a url in your browser",
             PermissionType::CopyToClipboard => "copying text into the clipboard",
+            PermissionType::OpenExplorerUi => "opening an explorer menu panel",
         }
     }
 }

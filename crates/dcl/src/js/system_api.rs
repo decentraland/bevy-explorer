@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use bevy::{log::debug, math::Vec4};
 use common::{
-    inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
+    inputs::{Action, BindingsData, HudPanel, InputIdentifier, SystemActionEvent},
     rpc::{RpcCall, RpcResultReceiver, RpcResultSender, RpcStreamReceiver, RpcStreamSender},
     structs::{
         MicState, PermissionLevel, PermissionStrings, PermissionType, PermissionUsed,
@@ -305,6 +305,7 @@ pub fn op_set_ui_focus(
     text: bool,
     scroll: bool,
     covered: bool,
+    menu: Option<HudPanel>,
 ) -> Result<(), anyhow::Error> {
     state
         .borrow_mut()
@@ -314,6 +315,7 @@ pub fn op_set_ui_focus(
             text,
             scroll,
             covered,
+            menu,
         })?;
     Ok(())
 }

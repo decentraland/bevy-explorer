@@ -14,6 +14,7 @@ pub fn ops() -> Vec<OpDecl> {
         op_emote(),
         op_scene_emote(),
         op_open_nft_dialog(),
+        op_open_explorer_ui(),
         op_ui_focus(),
         op_copy_to_clipboard(),
     ]
@@ -93,6 +94,11 @@ async fn op_open_nft_dialog(
     #[string] urn: String,
 ) -> Result<(), AnyError> {
     dcl::js::restricted_actions::op_open_nft_dialog(op_state, urn).await
+}
+
+#[op2(async)]
+async fn op_open_explorer_ui(op_state: Rc<RefCell<OpState>>, ui: i32) -> Result<i32, AnyError> {
+    dcl::js::restricted_actions::op_open_explorer_ui(op_state, ui).await
 }
 
 #[op2(async)]

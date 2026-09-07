@@ -335,6 +335,7 @@ pub enum PermissionType {
     Fetch,
     Websocket,
     OpenUrl,
+    OpenExplorerUi,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]

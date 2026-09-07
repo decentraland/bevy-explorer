@@ -1565,10 +1565,20 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // `covered` also spans the loading overlay: it outlives the engine's own out-of-world state
   // (player spawn, render-settle, reveal debounce), so the engine can't see that tail itself.
   const covered = menuPageOpen || phase === 'entering'
+  // The open menu page, by the SystemAction that toggles it (the pages are exclusive, so at most
+  // one is open). The engine answers a scene's openExplorerUi from this, and writes the page's
+  // opened/closed events to the scene whose request opened it.
+  const menu = settingsOpen ? 'Settings'
+    : backpackOpen ? 'Backpack'
+    : communitiesOpen ? 'Communities'
+    : mapOpen ? 'Map'
+    : placesOpen ? 'Places'
+    : galleryOpen ? 'Gallery'
+    : null
   useEffect(() => {
     if (phase !== 'world' && phase !== 'entering') return
-    driverRef.current?.send({ kind: 'uiFocus', ui: uiFocus, text: textFocused, scroll: scrollHover, covered })
-  }, [phase, uiFocus, textFocused, scrollHover, covered])
+    driverRef.current?.send({ kind: 'uiFocus', ui: uiFocus, text: textFocused, scroll: scrollHover, covered, menu })
+  }, [phase, uiFocus, textFocused, scrollHover, covered, menu])
 
   // Pre-world the bridge stream doesn't exist, so popups opened during login/entering
   // (realm errors, world-visit prompts) need a DOM cancel fallback; in-world the engine's

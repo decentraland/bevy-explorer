@@ -1,4 +1,5 @@
 pub mod agent_commands;
+pub mod explorer_ui;
 pub mod teleport;
 
 use std::{
@@ -40,6 +41,7 @@ use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
+use explorer_ui::{open_explorer_ui, track_explorer_ui, ExplorerUiState};
 use http::Uri;
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
@@ -102,11 +104,14 @@ impl Plugin for RestrictedActionsPlugin {
                     handle_sign_request,
                     handle_entity_definition,
                     handle_read_file,
+                    open_explorer_ui,
+                    track_explorer_ui.after(open_explorer_ui),
                 ),
             )
                 .in_set(SceneSets::RestrictedActions),
         );
         app.init_resource::<PendingPortableCommands>();
+        app.init_resource::<ExplorerUiState>();
         app.add_console_command::<SpawnPortableCommand, _>(spawn_portable_command);
         app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
         app.add_plugins(agent_commands::AgentCommandsPlugin);
