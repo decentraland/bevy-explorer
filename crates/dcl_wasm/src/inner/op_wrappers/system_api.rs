@@ -139,8 +139,10 @@ pub fn op_set_ui_focus(
     text: bool,
     scroll: bool,
     covered: bool,
+    menu: JsValue,
 ) -> Result<(), WasmError> {
-    dcl::js::system_api::op_set_ui_focus(state.rc(), ui, text, scroll, covered)
+    serde_parse!(menu);
+    dcl::js::system_api::op_set_ui_focus(state.rc(), ui, text, scroll, covered, menu)
         .map_err(WasmError::from)
 }
 

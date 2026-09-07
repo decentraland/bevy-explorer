@@ -907,13 +907,16 @@ export interface CaptureInputRequest {
  *  world consumers (camera zoom on a shared wheel) while the action stream still resolves
  *  Scroll for the HUD to drive the hovered panel. `covered`: a full-screen HUD surface (a
  *  menu page, the loading overlay) hides the world — the engine tells scenes they are hidden
- *  (EngineInfo.scene_hidden). */
+ *  (EngineInfo.scene_hidden). `menu`: the open full-screen menu page, named by the engine
+ *  SystemAction that toggles it ('Map', 'Backpack', ...), else null — the engine answers a
+ *  scene's openExplorerUi from it and writes the page's opened/closed events. */
 export interface UiFocusMessage {
   kind: 'uiFocus'
   ui: boolean
   text: boolean
   scroll: boolean
   covered: boolean
+  menu: string | null
 }
 
 /** One interaction hint (a single key binding) for a world entity: the button to press + its label.

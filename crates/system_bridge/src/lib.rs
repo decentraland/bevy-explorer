@@ -12,7 +12,7 @@ use bevy::{
 };
 use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, ConsoleResponder};
 use common::{
-    inputs::{BindingsData, InputIdentifier, SystemActionEvent},
+    inputs::{BindingsData, HudPanel, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{AppConfig, MicState, PermissionUsed},
 };
@@ -83,12 +83,15 @@ pub enum SystemApi {
     /// key, gamepad button) stands down for world consumers while the action stream still
     /// resolves Scroll itself; the HUD scrolls the hovered panel from those edges.
     /// `covered`: a full-screen HUD surface (a menu page, the HUD's loading overlay) hides
-    /// the world — scenes are told they are hidden (`PBEngineInfo.scene_hidden`).
+    /// the world — scenes are told they are hidden (`PBEngineInfo.scene_hidden`). `menu`: the
+    /// open full-screen menu page — backs the OpenExplorerUi restricted action's verdict and
+    /// the scene-facing ExplorerUiEventsResult lifecycle events.
     SetUiFocus {
         ui: bool,
         text: bool,
         scroll: bool,
         covered: bool,
+        menu: Option<HudPanel>,
     },
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),

@@ -26,7 +26,8 @@ const PASSIVE: Record<string, string> = {
   CopyToClipboard: 'copy text into the clipboard',
   Fetch: 'fetch data from a remote server',
   Websocket: 'open a web socket to communicate with a remote server',
-  OpenUrl: 'open a url in your browser'
+  OpenUrl: 'open a url in your browser',
+  OpenExplorerUi: 'open an explorer menu panel (map, backpack, settings, ...)'
 }
 
 const LEVELS: { value: PermissionLevelChoice; label: string }[] = [

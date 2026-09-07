@@ -71,6 +71,7 @@ fn gen_sdk_components() -> Result<()> {
         "physics_combined_force",
         "physics_combined_impulse",
         "particle_system",
+        "explorer_ui_events_result",
     ];
 
     let mut sources = components

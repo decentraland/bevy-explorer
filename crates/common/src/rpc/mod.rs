@@ -110,6 +110,19 @@ pub struct RPCSendableMessage {
 
 pub type RpcEventSender = RpcStreamSender<String>;
 
+/// `decentraland.kernel.apis.OpenExplorerUiResult` (restricted_actions.proto; the kernel api
+/// protos are not compiled, so the wire values are mirrored here).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(i32)]
+pub enum OpenExplorerUiResult {
+    Unspecified = 0,
+    Opened = 1,
+    WasAlreadyOpen = 2,
+    RejectedNotCurrentScene = 3,
+    RejectedFeatureDisabled = 4,
+    RejectedNoUserGesture = 5,
+}
+
 #[derive(Event, Debug, Clone, Serialize, Deserialize)]
 pub enum RpcCall {
     ChangeRealm {
@@ -178,6 +191,12 @@ pub enum RpcCall {
         scene: Entity,
         urn: String,
         response: RpcResultSender<Result<(), String>>,
+    },
+    OpenExplorerUi {
+        scene: Entity,
+        /// raw `decentraland.sdk.components.common.ExplorerUi` value
+        ui: i32,
+        response: RpcResultSender<OpenExplorerUiResult>,
     },
     SubscribePlayerConnected {
         scene: Entity,

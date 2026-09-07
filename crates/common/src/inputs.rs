@@ -61,6 +61,32 @@ impl From<SystemAction> for Action {
     }
 }
 
+/// The HUD's full-screen menu pages. Named after the SystemAction that toggles each, so the
+/// HUD's uiFocus report (`menu`) is that action's name; `action()` is the edge to synthesize to
+/// open the page from the engine side (OpenExplorerUi).
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub enum HudPanel {
+    Settings,
+    Map,
+    Backpack,
+    Gallery,
+    Communities,
+    Places,
+}
+
+impl HudPanel {
+    pub fn action(self) -> SystemAction {
+        match self {
+            Self::Settings => SystemAction::Settings,
+            Self::Map => SystemAction::Map,
+            Self::Backpack => SystemAction::Backpack,
+            Self::Gallery => SystemAction::Gallery,
+            Self::Communities => SystemAction::Communities,
+            Self::Places => SystemAction::Places,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(i32)]
 pub enum CommonInputAction {

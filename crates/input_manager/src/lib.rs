@@ -137,6 +137,7 @@ pub struct InputManagerPlugin;
 impl Plugin for InputManagerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InputPriorities>();
+        app.init_resource::<SystemActionStreams>();
         app.insert_resource(CumulativeAxisData {
             multipliers: HashMap::from_iter([
                 (AxisIdentifier::GamepadRight, 10.0),
@@ -866,14 +867,36 @@ fn handle_set_ui_focus(
     }
 }
 
+/// The open `getSystemActionStream` consumers (the HUD bridge scene). Public so restricted
+/// actions can synthesize an action edge (`OpenExplorerUi`): the HUD then handles it exactly
+/// as it would the bound key, so panel/focus logic stays in one place.
+#[derive(Resource, Default)]
+pub struct SystemActionStreams(Vec<RpcStreamSender<SystemActionEvent>>);
+
+impl SystemActionStreams {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Send a press + release edge pair for `action` to every consumer.
+    pub fn send_edge(&self, action: SystemAction) {
+        for pressed in [true, false] {
+            for s in &self.0 {
+                let _ = s.send(SystemActionEvent { action, pressed });
+            }
+        }
+    }
+}
+
 fn handle_system_input_stream(
     mut events: EventReader<SystemApi>,
-    mut senders: Local<Vec<RpcStreamSender<SystemActionEvent>>>,
+    mut senders: ResMut<SystemActionStreams>,
     input_manager: InputManager,
     mut pressed: Local<HashSet<SystemAction>>,
     modifiers: Query<&PlayerModifiers>,
 ) {
     let block_emote = modifiers.single().map(|m| m.block_emote).unwrap_or(false);
+    let senders: &mut Vec<_> = &mut senders.0;
 
     let new_senders = events
         .read()
@@ -914,7 +937,7 @@ fn handle_system_input_stream(
         .collect::<HashSet<_>>();
 
     for &action in new_pressed.difference(&*pressed) {
-        for s in &senders {
+        for s in senders.iter() {
             let _ = s.send(SystemActionEvent {
                 action,
                 pressed: true,
@@ -923,7 +946,7 @@ fn handle_system_input_stream(
     }
 
     for &action in pressed.difference(&new_pressed) {
-        for s in &senders {
+        for s in senders.iter() {
             let _ = s.send(SystemActionEvent {
                 action,
                 pressed: false,

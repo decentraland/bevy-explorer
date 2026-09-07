@@ -157,9 +157,11 @@ module.exports.setInputBindings = async function(bindings) {
 //                 // while the action stream still resolves Scroll for the HUD to consume
 //   covered: bool, // a full-screen HUD surface (menu page, loading overlay) hides the world:
 //                  // scenes are told they are hidden (EngineInfo.scene_hidden)
+//   menu: string | null, // the open full-screen menu page, by the SystemAction that toggles it
+//                        // ("Map", "Backpack", ...): backs the scene-facing openExplorerUi action
 // }
 module.exports.setUiFocus = async function(focus) {
-    Deno.core.ops.op_set_ui_focus(focus?.ui ?? false, focus?.text ?? false, focus?.scroll ?? false, focus?.covered ?? false)
+    Deno.core.ops.op_set_ui_focus(focus?.ui ?? false, focus?.text ?? false, focus?.scroll ?? false, focus?.covered ?? false, focus?.menu ?? null)
 }
 
 

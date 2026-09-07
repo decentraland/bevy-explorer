@@ -160,18 +160,18 @@ describe('system-action menu shortcuts', () => {
     h.driver.clearSent()
     h.driver.emit(action('Places'))
     await waitFor(() =>
-      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: true, text: false, scroll: false, covered: true })
+      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: true, text: false, scroll: false, covered: true, menu: 'Places' })
     )
     h.driver.emit(action('Places'))
     await waitFor(() =>
-      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: false, text: false, scroll: false, covered: false })
+      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: false, text: false, scroll: false, covered: false, menu: null })
     )
 
     const input = document.createElement('input')
     document.body.appendChild(input)
     act(() => input.focus())
     await waitFor(() =>
-      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: false, text: true, scroll: false, covered: false })
+      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: false, text: true, scroll: false, covered: false, menu: null })
     )
   })
 
