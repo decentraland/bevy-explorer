@@ -20,7 +20,7 @@ use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{
     base_wearables,
-    wearables::{UsedWearables, Wearable, WearableCategory, WearableUrn},
+    wearables::{UsedWearables, Wearable, WearableCategory, WearableModel, WearableUrn},
     CollectibleError, CollectibleManager, Emote, EmoteUrn,
 };
 use colliders::AvatarColliderPlugin;
@@ -891,7 +891,8 @@ fn spawn_scenes(
                     .iter()
                     .flat_map(|wearable| wearable.model.as_ref()),
             )
-            .any(|h_model| {
+            .any(|model| {
+                let h_model = &model.gltf;
                 matches!(
                     asset_server.get_load_state(h_model),
                     Some(bevy::asset::LoadState::Loading)
@@ -902,12 +903,17 @@ fn spawn_scenes(
             continue;
         }
 
-        let Some(gltf) = def.body.model.as_ref().and_then(|h_gltf| gltfs.get(h_gltf)) else {
+        let Some(gltf) = def
+            .body
+            .model
+            .as_ref()
+            .and_then(|model| gltfs.get(&model.gltf))
+        else {
             match def
                 .body
                 .model
                 .as_ref()
-                .and_then(|h_gtlf| asset_server.get_load_state(h_gtlf))
+                .and_then(|model| asset_server.get_load_state(&model.gltf))
             {
                 Some(bevy::asset::LoadState::Loading) | Some(bevy::asset::LoadState::NotLoaded) => {
                     // nothing to do
@@ -950,7 +956,8 @@ fn spawn_scenes(
             .wearables
             .iter()
             .flat_map(|wearable| &wearable.model)
-            .flat_map(|h_gltf| {
+            .flat_map(|model| {
+                let h_gltf = &model.gltf;
                 match asset_server.get_load_state(h_gltf) {
                     Some(bevy::asset::LoadState::Loaded) => (),
                     otherwise => {
@@ -1087,11 +1094,16 @@ fn process_avatar(
         } else {
             0
         };
-        let outline_tag = if config.graphics.avatar_outline {
-            SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
-        } else {
-            0
+        // wearables can opt out of the outline via `outlineCompatible: false`
+        let outline_tag = |model: &WearableModel| {
+            if config.graphics.avatar_outline && model.outline_compatible {
+                SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
+            } else {
+                0
+            }
         };
+        // body model is guaranteed by spawn_scenes
+        let body_outline_tag = def.body.model.as_ref().map(outline_tag).unwrap_or(0);
 
         let bounds_key = bounds_bits(&def.bounds);
         let mut instance_scene_materials = HashMap::new();
@@ -1214,7 +1226,7 @@ fn process_avatar(
                     commands.entity(scene_ent).try_insert((
                         MeshMaterial3d(instance_mat.clone()),
                         MeshTag(
-                            outline_tag
+                            body_outline_tag
                                 | (if def.disable_dither {
                                     SCENE_MATERIAL_NO_DITHERING_MESH_TAG
                                 } else {
@@ -1307,7 +1319,7 @@ fn process_avatar(
                             commands.entity(scene_ent).try_insert((
                                 MeshMaterial3d(material),
                                 MeshTag(
-                                    outline_tag
+                                    body_outline_tag
                                         | (if def.disable_dither {
                                             SCENE_MATERIAL_NO_DITHERING_MESH_TAG
                                         } else {
@@ -1423,7 +1435,9 @@ fn process_avatar(
         }
 
         // color the components of wearables
-        for instance in &loaded_avatar.wearable_instances {
+        // wearable_instances is built from the wearables with models, in order
+        let wearable_models = def.wearables.iter().filter_map(|w| w.model.as_ref());
+        for (instance, model) in loaded_avatar.wearable_instances.iter().zip(wearable_models) {
             let Some(instance) = instance else {
                 warn!("failed to load instance for wearable");
                 continue;
@@ -1512,7 +1526,7 @@ fn process_avatar(
                         commands.entity(scene_ent).try_insert((
                             MeshMaterial3d(instance_mat.clone()),
                             MeshTag(
-                                outline_tag
+                                outline_tag(model)
                                     | (if def.disable_dither {
                                         SCENE_MATERIAL_NO_DITHERING_MESH_TAG
                                     } else {
