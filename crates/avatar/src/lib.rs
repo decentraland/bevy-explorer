@@ -961,8 +961,10 @@ fn spawn_scenes(
                 match asset_server.get_load_state(h_gltf) {
                     Some(bevy::asset::LoadState::Loaded) => (),
                     otherwise => {
+                        // keep the slot so `wearable_instances` stays aligned with the
+                        // wearables that have models
                         warn!("wearable gltf didn't work out: {otherwise:?}");
-                        return None;
+                        return Some(None);
                     }
                 }
 
