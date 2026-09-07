@@ -17,6 +17,8 @@ use futures_util::{
 use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
 
+pub mod deeplink;
+
 pub struct WebSocket {
     inner: WebSocketStream<ConnectStream>,
 }

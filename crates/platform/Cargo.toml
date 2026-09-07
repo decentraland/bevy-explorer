@@ -13,7 +13,7 @@ bevy = { workspace = true }
 anyhow = { workspace = true }
 tungstenite = { workspace = true }
 futures-util = { workspace = true }
-futures-timer = { workspace = true }
+async-std = { workspace = true }
 reqwest = { workspace = true }
 directories = { workspace = true }
 futures-lite = { workspace = true }
@@ -24,10 +24,9 @@ serde_json = { workspace = true }
 async-tungstenite = { workspace = true }
 async-compat = { workspace = true }
 tokio = { workspace = true }
+url = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-# wasm-bindgen feature swaps futures-timer's backend to setTimeout (gloo-timers)
-futures-timer = { workspace = true, features = ["wasm-bindgen"] }
 web-sys = { workspace = true }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
