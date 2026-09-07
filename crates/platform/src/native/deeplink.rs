@@ -101,7 +101,8 @@ pub fn signin_link_arg() -> Option<String> {
     })
 }
 
-/// Write `url` to the bridge file the way the launcher does.
+/// Write `url` to the bridge file the way the launcher does, in one step so a poller never
+/// reads a partial file.
 pub fn write_launcher_bridge(url: &str) -> Result<(), anyhow::Error> {
     let path = launcher_bridge_path().ok_or_else(|| anyhow::anyhow!("no home directory"))?;
     if let Some(dir) = path.parent() {
@@ -110,7 +111,9 @@ pub fn write_launcher_bridge(url: &str) -> Result<(), anyhow::Error> {
     let json = serde_json::to_string(&BridgeFile {
         deeplink: url.to_owned(),
     })?;
-    std::fs::write(path, json)?;
+    let staging = path.with_extension("json.tmp");
+    std::fs::write(&staging, json)?;
+    std::fs::rename(staging, path)?;
     Ok(())
 }
 

@@ -30,10 +30,15 @@ pub fn handler() -> Handler {
     if !exe.exists() {
         return Handler::None;
     }
+    // the filesystem is case-insensitive
     let ours = current_exe()
         .ok()
-        .and_then(|ours| ours.file_name().map(|name| name.to_owned()))
-        .is_some_and(|name| exe.file_name() == Some(name.as_os_str()));
+        .is_some_and(|ours| match (ours.file_name(), exe.file_name()) {
+            (Some(ours), Some(exe)) => ours
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&exe.to_string_lossy()),
+            _ => false,
+        });
     if ours {
         Handler::Ours(command)
     } else {
