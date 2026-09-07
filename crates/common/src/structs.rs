@@ -343,6 +343,10 @@ pub struct SceneDrivenAnimationFeedbackState {
     pub loop_count: u32,
 }
 
+/// vertical fov of the player camera, in radians (60 degrees). also the
+/// `PBVirtualCamera.fov` default, per the proto definition.
+pub const PLAYER_CAMERA_FOV: f32 = std::f32::consts::PI / 3.0;
+
 // main camera entity
 #[derive(Component)]
 pub struct PrimaryCamera {
@@ -365,10 +369,10 @@ pub struct CinematicSettings {
     pub yaw_range: Option<f32>,
     pub pitch_range: Option<f32>,
     pub roll_range: Option<f32>,
-    pub zoom_min: Option<f32>,
-    pub zoom_max: Option<f32>,
     pub look_at_entity: Option<Entity>,
     pub transition: Option<CameraTransition>,
+    /// vertical fov, in radians
+    pub fov: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
