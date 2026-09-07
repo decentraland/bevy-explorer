@@ -112,6 +112,8 @@ impl Plugin for RestrictedActionsPlugin {
         );
         app.init_resource::<PendingPortableCommands>();
         app.init_resource::<ExplorerUiState>();
+        // headless has no InputManagerPlugin; open_explorer_ui still needs the (empty) streams
+        app.init_resource::<input_manager::SystemActionStreams>();
         app.add_console_command::<SpawnPortableCommand, _>(spawn_portable_command);
         app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
         app.add_plugins(agent_commands::AgentCommandsPlugin);
