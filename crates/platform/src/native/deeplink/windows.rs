@@ -1,41 +1,41 @@
 use std::path::{Path, PathBuf};
 
+use winreg::{
+    enums::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER},
+    RegKey,
+};
+
 use super::{Handler, SCHEME};
 
 pub fn handler() -> Handler {
     // HKCR merges the machine and user registrations
-    let Some(command) = std::process::Command::new("reg")
-        .args([
-            "query",
-            &format!("HKCR\\{SCHEME}\\shell\\open\\command"),
-            "/ve",
-        ])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+    let Ok(key) =
+        RegKey::predef(HKEY_CLASSES_ROOT).open_subkey(format!("{SCHEME}\\shell\\open\\command"))
     else {
         return Handler::None;
     };
-    // `    (Default)    REG_SZ    "C:\...\some.exe" "%1"` (the value name is localised)
-    let Some(command) = command
-        .lines()
-        .find_map(|line| line.split_once("REG_SZ"))
-        .map(|(_, command)| command.trim())
+    let Ok(command) = key.get_value::<String, _>("") else {
+        return Handler::Other;
+    };
+    // `"C:\...\some.exe" "%1"`; an unquoted command is someone else's and left alone
+    let Some(exe) = command
+        .trim()
+        .strip_prefix('"')
+        .and_then(|rest| rest.split('"').next())
+        .map(Path::new)
     else {
         return Handler::Other;
     };
-    let exe = command.split('"').nth(1).map(Path::new);
     // a registration whose exe is gone (an uninstalled launcher) is nobody's
-    if exe.is_some_and(|exe| !exe.exists()) {
+    if !exe.exists() {
         return Handler::None;
     }
     let ours = current_exe()
         .ok()
-        .and_then(|exe| exe.file_name().map(|name| name.to_owned()))
-        .is_some_and(|name| exe.and_then(Path::file_name) == Some(name.as_os_str()));
+        .and_then(|ours| ours.file_name().map(|name| name.to_owned()))
+        .is_some_and(|name| exe.file_name() == Some(name.as_os_str()));
     if ours {
-        Handler::Ours(command.to_owned())
+        Handler::Ours(command)
     } else {
         Handler::Other
     }
@@ -47,27 +47,16 @@ pub fn registration() -> Result<String, anyhow::Error> {
 }
 
 pub fn register_handler() -> Result<(), anyhow::Error> {
-    fn reg_add(args: &[&str]) -> Result<(), anyhow::Error> {
-        let output = std::process::Command::new("reg")
-            .arg("add")
-            .args(args)
-            .arg("/f")
-            .output()?;
-        if !output.status.success() {
-            anyhow::bail!(
-                "failed to register the {SCHEME}:// handler: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-        Ok(())
-    }
-
     let command = registration()?;
-    let key = format!("HKCU\\Software\\Classes\\{SCHEME}");
-    let command_key = format!("{key}\\shell\\open\\command");
-    reg_add(&[&key, "/ve", "/d", "URL:Decentraland"])?;
-    reg_add(&[&key, "/v", "URL Protocol", "/d", ""])?;
-    reg_add(&[&command_key, "/ve", "/d", &command])?;
+    let write = || -> std::io::Result<()> {
+        let (key, _) = RegKey::predef(HKEY_CURRENT_USER)
+            .create_subkey(format!("Software\\Classes\\{SCHEME}"))?;
+        key.set_value("", &"URL:Decentraland")?;
+        key.set_value("URL Protocol", &"")?;
+        let (command_key, _) = key.create_subkey("shell\\open\\command")?;
+        command_key.set_value("", &command)
+    };
+    write().map_err(|e| anyhow::anyhow!("failed to register the {SCHEME}:// handler: {e}"))?;
     bevy::log::info!("registered {command} as the {SCHEME}:// handler");
     Ok(())
 }

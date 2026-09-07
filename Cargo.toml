@@ -218,6 +218,7 @@ bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_inp
 ], branch = "0.16" }
 bevy_hanabi = { git = "https://github.com/robtfm/bevy_hanabi", branch = "0.16-dcl", default-features = false }
 directories = "6"
+winreg = "0.50"
 uuid = { version = "1.23", features = ["v4"] }
 build-time = "0.1.3"
 async-tungstenite = { version = "0.25", features = ["async-native-tls"] }

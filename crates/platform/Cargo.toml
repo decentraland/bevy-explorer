@@ -26,6 +26,9 @@ async-compat = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+winreg = { workspace = true }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { workspace = true }
 wasm-bindgen = { workspace = true }
