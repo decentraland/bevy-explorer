@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{Handler, SCHEME};
 
@@ -17,23 +17,33 @@ pub fn handler() -> Handler {
     else {
         return Handler::None;
     };
-    // `    (Default)    REG_SZ    "C:\...\some.exe" "%1"`: ours if the exe is named like us
-    let Some(path) = command.split('"').nth(1).map(PathBuf::from) else {
+    // `    (Default)    REG_SZ    "C:\...\some.exe" "%1"` (the value name is localised)
+    let Some(command) = command
+        .lines()
+        .find_map(|line| line.split_once("REG_SZ"))
+        .map(|(_, command)| command.trim())
+    else {
         return Handler::Other;
     };
-    let ours = exe_path()
+    let exe = command.split('"').nth(1).map(Path::new);
+    // a registration whose exe is gone (an uninstalled launcher) is nobody's
+    if exe.is_some_and(|exe| !exe.exists()) {
+        return Handler::None;
+    }
+    let ours = current_exe()
         .ok()
         .and_then(|exe| exe.file_name().map(|name| name.to_owned()))
-        .is_some_and(|name| path.file_name() == Some(name.as_os_str()));
+        .is_some_and(|name| exe.and_then(Path::file_name) == Some(name.as_os_str()));
     if ours {
-        Handler::Ours(path)
+        Handler::Ours(command.to_owned())
     } else {
         Handler::Other
     }
 }
 
-pub fn exe_path() -> Result<PathBuf, anyhow::Error> {
-    Ok(std::env::current_exe()?)
+/// The `shell\open\command` for this binary.
+pub fn registration() -> Result<String, anyhow::Error> {
+    Ok(format!("\"{}\" \"%1\"", current_exe()?.display()))
 }
 
 pub fn register_handler() -> Result<(), anyhow::Error> {
@@ -52,13 +62,16 @@ pub fn register_handler() -> Result<(), anyhow::Error> {
         Ok(())
     }
 
-    let exe = exe_path()?;
+    let command = registration()?;
     let key = format!("HKCU\\Software\\Classes\\{SCHEME}");
     let command_key = format!("{key}\\shell\\open\\command");
-    let command = format!("\"{}\" \"%1\"", exe.display());
     reg_add(&[&key, "/ve", "/d", "URL:Decentraland"])?;
     reg_add(&[&key, "/v", "URL Protocol", "/d", ""])?;
     reg_add(&[&command_key, "/ve", "/d", &command])?;
-    bevy::log::info!("registered {} as the {SCHEME}:// handler", exe.display());
+    bevy::log::info!("registered {command} as the {SCHEME}:// handler");
     Ok(())
+}
+
+fn current_exe() -> Result<PathBuf, anyhow::Error> {
+    Ok(std::env::current_exe()?)
 }

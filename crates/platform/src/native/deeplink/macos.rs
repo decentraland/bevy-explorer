@@ -31,8 +31,8 @@ pub fn handler() -> Handler {
     }
 }
 
-pub fn exe_path() -> Result<PathBuf, anyhow::Error> {
-    Ok(std::env::current_exe()?)
+pub fn registration() -> Result<String, anyhow::Error> {
+    anyhow::bail!("no scheme registration on this platform")
 }
 
 pub fn register_handler() -> Result<(), anyhow::Error> {
