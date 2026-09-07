@@ -42,9 +42,9 @@ struct BridgeFile {
 /// Who handles `decentraland://` links on this machine.
 enum Handler {
     None,
-    /// Our own registration, and the binary it points at (never on macos)
+    /// Our own registration, as written (never on macos)
     #[allow(dead_code)]
-    Ours(PathBuf),
+    Ours(String),
     /// Someone else's (normally the launcher): never touched
     Other,
 }
@@ -58,13 +58,14 @@ pub struct PlaceLink {
 }
 
 /// Make sure a `decentraland://` link opened from the browser can reach us: either something
-/// (normally the launcher) already handles the scheme, or we register this binary. A stale
-/// registration of ours (a dev build that moved or was cleaned) is redone. On macos
-/// registration needs an app bundle, so the launcher is required there.
+/// (normally the launcher) already handles the scheme, or we register this binary. A
+/// registration of ours that differs from what we would write now (a dev build that moved or
+/// was cleaned, a stale environment) is redone. On macos registration needs an app bundle, so
+/// the launcher is required there.
 pub fn ensure_scheme_handler() -> Result<(), anyhow::Error> {
     match os::handler() {
         Handler::Other => Ok(()),
-        Handler::Ours(path) if path == os::exe_path()? => Ok(()),
+        Handler::Ours(current) if current == os::registration()? => Ok(()),
         Handler::Ours(_) | Handler::None => os::register_handler(),
     }
 }
