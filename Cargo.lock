@@ -8638,11 +8638,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-compat",
+ "async-std",
  "async-tungstenite",
  "bevy",
  "directories",
  "futures-lite",
- "futures-timer",
  "futures-util",
  "js-sys",
  "reqwest 0.12.15",
@@ -8651,6 +8651,7 @@ dependencies = [
  "spin 0.9.9",
  "tokio",
  "tungstenite 0.21.0",
+ "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-fs",
@@ -12448,6 +12449,7 @@ dependencies = [
  "reqwest 0.12.15",
  "serde",
  "serde_json",
+ "uuid 1.26.0",
  "web-time",
 ]
 

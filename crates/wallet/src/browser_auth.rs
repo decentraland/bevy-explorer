@@ -1,12 +1,11 @@
 use anyhow::anyhow;
 use bevy::prelude::*;
 use common::{rpc::RPCSendableMessage, structs::ChainLink, util::AsH160};
-use ethers_core::types::{Signature, H160};
-use ethers_signers::{LocalWallet, Signer};
+use ethers_core::types::H160;
+use ethers_signers::LocalWallet;
 use http::StatusCode;
 use std::{str::FromStr, time::Duration};
 
-use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 
 use crate::SimpleAuthChain;
@@ -176,65 +175,133 @@ pub async fn remote_send_async(
         .map(|(_, payload)| payload)
 }
 
-fn get_ephemeral_message(ephemeral_address: &str, expiration: web_time::SystemTime) -> String {
-    let datetime: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
-        expiration
-            .duration_since(web_time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64,
-    )
-    .unwrap();
-    let formatted_time = datetime.format("%Y-%m-%dT%H:%M:%S%.3fZ");
-    format!(
-        "Decentraland Login\nEphemeral address: {ephemeral_address}\nExpiration: {formatted_time}",
-    )
-}
-
+/// The auth-server sign-in relay (`dcl_personal_sign` via `/requests`) was retired in 2026-07.
+/// Sign-in now runs entirely in the browser: the auth site builds the AuthIdentity itself,
+/// stores it with `POST /identities`, and hands the id back through a `decentraland://` deep
+/// link, which reaches us via the launcher's bridge file (see `platform::deeplink`). We then
+/// collect the identity with `GET /identities/{id}`; it is single-use, expires after an hour,
+/// and must be fetched from the same IP that created it.
 pub struct RemoteEphemeralRequest {
-    pub code: Option<i32>,
+    /// Client-minted UUID v4 (the site rejects anything else); it is embedded in the auth URL
+    /// and echoed back on the deep link as `authRequestId`, so we only consume our own link.
     request_id: String,
-    message: String,
-    ephemeral_wallet: LocalWallet,
 }
 
 pub async fn init_remote_ephemeral_request() -> Result<RemoteEphemeralRequest, anyhow::Error> {
-    let ephemeral_wallet = LocalWallet::new(&mut thread_rng());
-    let ephemeral_address = format!("{:#x}", ephemeral_wallet.address());
-    let expiration = web_time::SystemTime::now() + std::time::Duration::from_secs(30 * 24 * 3600);
-    let message = get_ephemeral_message(ephemeral_address.as_str(), expiration);
-
-    let request = CreateRequest {
-        method: "dcl_personal_sign".to_owned(),
-        params: vec![message.clone().into()],
-        auth_chain: None,
-    };
-    init_request(request)
-        .await
-        .map(|init| RemoteEphemeralRequest {
-            code: init.code,
-            request_id: init.request_id,
-            message,
-            ephemeral_wallet,
-        })
+    platform::deeplink::ensure_scheme_handler()?;
+    Ok(RemoteEphemeralRequest {
+        request_id: uuid::Uuid::new_v4().to_string(),
+    })
 }
 
 pub async fn finish_remote_ephemeral_request(
     request: RemoteEphemeralRequest,
 ) -> Result<(H160, LocalWallet, Vec<ChainLink>, u64), anyhow::Error> {
-    let RemoteEphemeralRequest {
-        request_id,
-        message,
-        ephemeral_wallet,
-        ..
-    } = request;
+    let RemoteEphemeralRequest { request_id } = request;
 
-    let (signer, result) = finish_request(request_id).await?;
-    let signature = Signature::from_str(result.as_str().ok_or(anyhow!("result is not a string"))?)?;
+    // `bridgeOnly`: an installed launcher must relay the link to us rather than start unity
+    let url = format!(
+        "{}/{request_id}?targetConfigId=alternative&flow=deeplink&bridgeOnly",
+        auth_front_url()
+    );
+    info!("opening {url} for sign-in");
+    opener::open_browser(url)?;
 
-    let delegate = ChainLink {
-        ty: "ECDSA_EPHEMERAL".to_owned(),
-        payload: message,
-        signature: format!("0x{signature}"),
-    };
-    Ok((signer, ephemeral_wallet, vec![delegate], 1))
+    let identity_id = platform::deeplink::await_signin(&request_id, AUTH_SERVER_TIMEOUT).await?;
+    info!("sign-in link received for request {request_id}, fetching identity");
+    let identity = fetch_identity(&identity_id).await?;
+    let (signer, ephemeral_wallet, delegates) = auth_identity_parts(identity)?;
+    Ok((signer, ephemeral_wallet, delegates, 1))
+}
+
+#[derive(Deserialize)]
+struct IdentityResponse {
+    identity: AuthIdentity,
+}
+
+/// The standard Decentraland AuthIdentity, as served by `GET /identities/{id}` and as the web
+/// page stores it in localStorage.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthIdentity {
+    ephemeral_identity: EphemeralIdentity,
+    auth_chain: Vec<ChainLink>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EphemeralIdentity {
+    private_key: String,
+}
+
+async fn fetch_identity(identity_id: &str) -> Result<AuthIdentity, anyhow::Error> {
+    let url = common::base_domain::url(
+        common::base_domain::Service::AuthApi,
+        &format!("/identities/{identity_id}"),
+    );
+    let response = reqwest::Client::builder()
+        .use_native_tls()
+        .build()
+        .unwrap()
+        .get(url)
+        .timeout(AUTH_SERVER_TIMEOUT)
+        .send()
+        .await?;
+
+    match response.status() {
+        status if status.is_success() => Ok(response.json::<IdentityResponse>().await?.identity),
+        StatusCode::NOT_FOUND => anyhow::bail!("sign-in was not found or was already used"),
+        StatusCode::GONE => anyhow::bail!("sign-in expired before it was collected"),
+        StatusCode::FORBIDDEN => anyhow::bail!(
+            "sign-in was created from a different IP address (a VPN or private relay may be interfering)"
+        ),
+        status => {
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("error fetching sign-in identity {status}: {body}")
+        }
+    }
+}
+
+/// Split an AuthIdentity into the pieces the wallet needs: the root (signer) address, the
+/// ephemeral LocalWallet, and the delegate chain (everything except the SIGNER link).
+pub fn auth_identity_parts(
+    identity: AuthIdentity,
+) -> Result<(H160, LocalWallet, Vec<ChainLink>), anyhow::Error> {
+    let signer = identity
+        .auth_chain
+        .iter()
+        .find(|link| link.ty == "SIGNER")
+        .ok_or_else(|| anyhow!("identity missing SIGNER link"))?;
+    let root_address = signer
+        .payload
+        .as_h160()
+        .ok_or_else(|| anyhow!("bad root address: {:?}", signer.payload))?;
+
+    let key_hex = identity
+        .ephemeral_identity
+        .private_key
+        .trim()
+        .trim_start_matches("0x");
+    let ephemeral_wallet =
+        LocalWallet::from_str(key_hex).map_err(|e| anyhow!("bad ephemeral key: {e}"))?;
+
+    let delegates: Vec<ChainLink> = identity
+        .auth_chain
+        .into_iter()
+        .filter(|link| link.ty != "SIGNER")
+        .collect();
+    if delegates.is_empty() {
+        anyhow::bail!("identity missing ephemeral delegate link");
+    }
+
+    Ok((root_address, ephemeral_wallet, delegates))
+}
+
+/// Decode the base64(JSON) form the web page forwards from localStorage.
+pub fn parse_auth_identity(payload: &str) -> Result<AuthIdentity, anyhow::Error> {
+    use base64::Engine as _;
+    let json = base64::engine::general_purpose::STANDARD
+        .decode(payload.trim())
+        .map_err(|e| anyhow!("bad identity base64: {e}"))?;
+    serde_json::from_slice(&json).map_err(|e| anyhow!("bad identity json: {e}"))
 }
