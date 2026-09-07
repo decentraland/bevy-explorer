@@ -9377,6 +9377,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-fs",
  "web-sys",
+ "winreg",
  "ws_stream_wasm",
 ]
 
