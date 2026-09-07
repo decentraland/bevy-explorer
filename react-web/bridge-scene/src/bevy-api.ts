@@ -102,8 +102,10 @@ export type BevyApiInterface = {
    *  system-action stream keeps flowing); `text` = a HUD text field holds keyboard focus
    *  (keys are typing — no actions resolve at all); `scroll` = the cursor is over a
    *  scrollable HUD element (the Scroll ACTIONS are reserved, so every input bound to
-   *  them drives the panel rather than world consumers like camera zoom). */
-  setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean }) => Promise<void>
+   *  them drives the panel rather than world consumers like camera zoom); `covered` = a
+   *  full-screen HUD surface (menu page, loading overlay) hides the world (scenes see
+   *  EngineInfo.scene_hidden). */
+  setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean; covered: boolean }) => Promise<void>
   sendChat: (message: string, channel: string) => void
   getChatStream: () => Promise<AsyncIterable<ChatStreamMessage>>
   getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>

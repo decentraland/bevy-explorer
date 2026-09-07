@@ -1562,10 +1562,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     []
   )
   const uiFocus = anyPanelOpen || popupOpen || locked
+  // `covered` also spans the loading overlay: it outlives the engine's own out-of-world state
+  // (player spawn, render-settle, reveal debounce), so the engine can't see that tail itself.
+  const covered = menuPageOpen || phase === 'entering'
   useEffect(() => {
-    if (phase !== 'world') return
-    driverRef.current?.send({ kind: 'uiFocus', ui: uiFocus, text: textFocused, scroll: scrollHover })
-  }, [phase, uiFocus, textFocused, scrollHover])
+    if (phase !== 'world' && phase !== 'entering') return
+    driverRef.current?.send({ kind: 'uiFocus', ui: uiFocus, text: textFocused, scroll: scrollHover, covered })
+  }, [phase, uiFocus, textFocused, scrollHover, covered])
 
   // Pre-world the bridge stream doesn't exist, so popups opened during login/entering
   // (realm errors, world-visit prompts) need a DOM cancel fallback; in-world the engine's

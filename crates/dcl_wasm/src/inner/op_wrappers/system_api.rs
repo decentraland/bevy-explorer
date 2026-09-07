@@ -138,8 +138,10 @@ pub fn op_set_ui_focus(
     ui: bool,
     text: bool,
     scroll: bool,
+    covered: bool,
 ) -> Result<(), WasmError> {
-    dcl::js::system_api::op_set_ui_focus(state.rc(), ui, text, scroll).map_err(WasmError::from)
+    dcl::js::system_api::op_set_ui_focus(state.rc(), ui, text, scroll, covered)
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

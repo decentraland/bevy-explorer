@@ -218,8 +218,9 @@ pub fn op_set_ui_focus(
     ui: bool,
     text: bool,
     scroll: bool,
+    covered: bool,
 ) -> Result<(), AnyError> {
-    dcl::js::system_api::op_set_ui_focus(state, ui, text, scroll)
+    dcl::js::system_api::op_set_ui_focus(state, ui, text, scroll, covered)
 }
 
 #[op2(async)]

@@ -82,10 +82,13 @@ pub enum SystemApi {
     /// HUD element — the Scroll ACTIONS are reserved, so every input bound to them (wheel,
     /// key, gamepad button) stands down for world consumers while the action stream still
     /// resolves Scroll itself; the HUD scrolls the hovered panel from those edges.
+    /// `covered`: a full-screen HUD surface (a menu page, the HUD's loading overlay) hides
+    /// the world — scenes are told they are hidden (`PBEngineInfo.scene_hidden`).
     SetUiFocus {
         ui: bool,
         text: bool,
         scroll: bool,
+        covered: bool,
     },
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),

@@ -304,11 +304,17 @@ pub fn op_set_ui_focus(
     ui: bool,
     text: bool,
     scroll: bool,
+    covered: bool,
 ) -> Result<(), anyhow::Error> {
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::SetUiFocus { ui, text, scroll })?;
+        .send(SystemApi::SetUiFocus {
+            ui,
+            text,
+            scroll,
+            covered,
+        })?;
     Ok(())
 }
 

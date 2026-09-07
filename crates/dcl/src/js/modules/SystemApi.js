@@ -155,9 +155,11 @@ module.exports.setInputBindings = async function(bindings) {
 //   scroll: bool, // the cursor is over a scrollable HUD element: the Scroll actions are
 //                 // reserved, so every input bound to them stands down for world consumers
 //                 // while the action stream still resolves Scroll for the HUD to consume
+//   covered: bool, // a full-screen HUD surface (menu page, loading overlay) hides the world:
+//                  // scenes are told they are hidden (EngineInfo.scene_hidden)
 // }
 module.exports.setUiFocus = async function(focus) {
-    Deno.core.ops.op_set_ui_focus(focus?.ui ?? false, focus?.text ?? false, focus?.scroll ?? false)
+    Deno.core.ops.op_set_ui_focus(focus?.ui ?? false, focus?.text ?? false, focus?.scroll ?? false, focus?.covered ?? false)
 }
 
 
