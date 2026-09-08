@@ -114,7 +114,11 @@ pub async fn op_teleport_to(
             response: sx,
         })?;
 
-    Ok(matches!(rx.await, Ok(Ok(_))))
+    match rx.await {
+        Ok(Ok(())) => Ok(true),
+        Ok(Err(e)) => Err(anyhow::anyhow!(e)),
+        Err(_) => Err(anyhow::anyhow!("teleport request dropped")),
+    }
 }
 
 pub async fn op_change_realm(

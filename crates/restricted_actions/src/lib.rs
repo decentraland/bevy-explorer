@@ -609,7 +609,10 @@ fn change_realm(
             PermissionType::ChangeRealm,
             *scene,
             (to.clone(), response.clone()),
-            message.clone(),
+            Some(match message {
+                Some(message) => format!("{to}: {message}"),
+                None => to.clone(),
+            }),
             false,
         );
     }

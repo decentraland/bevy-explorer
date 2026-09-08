@@ -28,25 +28,28 @@ module.exports.triggerEmote = async function (body) {
     return {} 
 }
 
-module.exports.triggerSceneEmote = async function (body) { 
+module.exports.triggerSceneEmote = async function (body) {
     Deno.core.ops.op_scene_emote(body.src, body.loop)
-    return {} 
+    return { success: true }
 }
 
-module.exports.changeRealm = async function (body) { 
-    return await Deno.core.ops.op_change_realm(body.realm, body.message);
+module.exports.changeRealm = async function (body) {
+    const success = await Deno.core.ops.op_change_realm(body.realm, body.message);
+    return { success }
 }
 
-module.exports.openExternalUrl = async function (body) { 
-    return await Deno.core.ops.op_external_url(body.url);
+module.exports.openExternalUrl = async function (body) {
+    const success = await Deno.core.ops.op_external_url(body.url);
+    return { success }
 }
 
-module.exports.openNftDialog = async function (body) { 
-    return await Deno.core.ops.op_open_nft_dialog(body.urn) 
+module.exports.openNftDialog = async function (body) {
+    await Deno.core.ops.op_open_nft_dialog(body.urn)
+    return { success: true }
 }
 module.exports.setCommunicationsAdapter = async function (body) { 
     console.error("RestrictedActions::setCommunicationsAdapter not implemented");
-    return {} 
+    return { success: false }
 }
 module.exports.setUiFocus = async function(body) {
     return await Deno.core.ops.op_ui_focus(true, body.elementId);
@@ -58,5 +61,6 @@ module.exports.getUiFocus = async function() {
     return await Deno.core.ops.op_ui_focus(false);
 }
 module.exports.copyToClipboard = async function(body) {
-    return await Deno.core.ops.op_copy_to_clipboard(body.text);
+    await Deno.core.ops.op_copy_to_clipboard(body.text);
+    return {}
 }
