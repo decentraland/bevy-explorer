@@ -16,11 +16,11 @@
     "upgrade-sdk": "npm install @dcl/sdk@experimental-bevy @dcl/js-runtime@experimental-bevy @dcl/react-ecs@experimental-bevy @dcl/sdk-commands@experimental-bevy @dcl/ecs@experimental-bevy --save-exact"
   },
   "devDependencies": {
-    "@dcl/ecs": "7.27.1-33247605236.commit-732120a",
-    "@dcl/js-runtime": "7.27.1-33247605236.commit-732120a",
-    "@dcl/react-ecs": "7.27.1-33247605236.commit-732120a",
-    "@dcl/sdk": "7.27.1-33247605236.commit-732120a",
-    "@dcl/sdk-commands": "7.27.1-33247605236.commit-732120a",
+    "@dcl/ecs": "7.27.1-33674365269.commit-d8b9341",
+    "@dcl/js-runtime": "7.27.1-33674365269.commit-d8b9341",
+    "@dcl/react-ecs": "7.27.1-33674365269.commit-d8b9341",
+    "@dcl/sdk": "7.27.1-33674365269.commit-d8b9341",
+    "@dcl/sdk-commands": "7.27.1-33674365269.commit-d8b9341",
     "@typescript-eslint/eslint-plugin": "^6.10.0",
     "@typescript-eslint/parser": "^6.10.0",
     "eslint": "^8.53.0",

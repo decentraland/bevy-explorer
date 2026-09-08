@@ -479,6 +479,10 @@ export interface TeleportRequest {
   kind: 'teleport'
   x: number
   y: number
+  /** Realm the parcel belongs to (a world name or realm url). The engine changes realm first —
+   *  a full reconnect, as for changeRealm, even to the realm the player is in. Omitted: a parcel of
+   *  the realm the player is in. */
+  realm?: string
 }
 
 /** Change to a world/realm (page → scene → changeRealm). `realm` is a world name

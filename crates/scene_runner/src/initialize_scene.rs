@@ -1202,6 +1202,20 @@ fn load_active_entities(
             context.set_bounds(bounds_min, bounds_max);
         }
 
+        // A teleport that named this realm: land on its parcel now that the realm is live. The
+        // out-of-world sweep holds the player until the parcel resolves against the new realm.
+        if let RealmInitialLocation::Parcel(parcel) = *teleport_target {
+            if !current_realm.about_url.is_empty() {
+                if let Ok((player_entity, _)) = player.single() {
+                    if let Ok(mut commands) = commands.get_entity(player_entity) {
+                        commands.try_insert(teleport_components(parcel));
+                        debug!("change to realm with target parcel -> none ({parcel})");
+                        *teleport_target = RealmInitialLocation::None;
+                    }
+                }
+            }
+        }
+
         if !current_realm.about_url.is_empty() && *teleport_target == RealmInitialLocation::Base {
             let has_scene_urns = !current_realm
                 .config
@@ -1244,7 +1258,7 @@ fn load_active_entities(
     };
 
     let teleport_on_resolve = match *teleport_target {
-        RealmInitialLocation::None => {
+        RealmInitialLocation::None | RealmInitialLocation::Parcel(_) => {
             *pending_teleport = false;
             None
         }

@@ -5,7 +5,7 @@ use common::{
 };
 use comms::global_crdt::ForeignPlayer;
 use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
-use ipfs::RealmInitialLocation;
+use ipfs::{ChangeRealmEvent, RealmInitialLocation};
 use scene_runner::{
     initialize_scene::{
         LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
@@ -17,18 +17,81 @@ use scene_runner::{
 };
 use wallet::Wallet;
 
+type TeleportAction = (
+    Option<IVec2>,
+    Option<String>,
+    RpcResultSender<Result<(), String>>,
+);
+
 pub fn teleport_player(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
-    mut perms: Permission<(IVec2, RpcResultSender<Result<(), String>>)>,
+    mut perms: Permission<TeleportAction>,
     mut realm_target: ResMut<RealmInitialLocation>,
 ) {
-    let mut do_teleport = |to: IVec2, response: RpcResultSender<Result<(), String>>| {
+    let mut actions: Vec<TeleportAction> = Vec::new();
+
+    for (scene, to, realm, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::TeleportPlayer {
+            scene,
+            to,
+            realm,
+            response,
+        } => Some((*scene, *to, realm.clone(), response.clone())),
+        _ => None,
+    }) {
+        let parcel = to.map(|to| format!("({},{})", to.x, to.y));
+        let (ty, detail) = match (&realm, parcel) {
+            (Some(realm), Some(parcel)) => {
+                (PermissionType::ChangeRealm, format!("{realm} {parcel}"))
+            }
+            (Some(realm), None) => (PermissionType::ChangeRealm, realm.clone()),
+            (None, Some(parcel)) => (PermissionType::Teleport, parcel),
+            (None, None) => {
+                response.send(Err("teleport needs a parcel or a realm".to_owned()));
+                continue;
+            }
+        };
+        let Some(scene) = scene else {
+            actions.push((to, realm, response));
+            continue;
+        };
+        perms.check(ty, scene, (to, realm, response), Some(detail), false);
+    }
+
+    actions.extend(perms.drain_success(PermissionType::Teleport));
+    actions.extend(perms.drain_success(PermissionType::ChangeRealm));
+
+    for (to, realm, response) in actions {
+        if let Some(realm) = realm {
+            // A realm change (a full reconnect, even to the realm we are in — same as changeRealm),
+            // landing on the parcel once it is live, or on the realm's default spawn without one.
+            // The parcel can't be applied now: it would resolve against the parcel grid of the
+            // realm being left.
+            debug!("teleport -> {to:?} in {realm}");
+            *realm_target = match to {
+                Some(to) => RealmInitialLocation::Parcel(to),
+                None => RealmInitialLocation::Base,
+            };
+            commands.send_event(ChangeRealmEvent {
+                new_realm: realm,
+                content_server_override: None,
+            });
+            response.send(Ok(()));
+            continue;
+        }
+
+        // Neither: already answered above (a system request without a scene is never built that way).
+        let Some(to) = to else {
+            response.send(Err("teleport needs a parcel or a realm".to_owned()));
+            continue;
+        };
+
         let Ok((ent, mut transform, mut dynamic_state)) = player.single_mut() else {
             warn!("player doesn't exist?!");
             response.send(Err("Something went wrong".into()));
-            return;
+            continue;
         };
 
         transform.translation.x = to.x as f32 * 16.0 + 8.0;
@@ -43,34 +106,12 @@ pub fn teleport_player(
 
         response.send(Ok(()));
         info!("teleported to {to}");
-    };
-
-    for (scene, to, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::TeleportPlayer {
-            scene,
-            to,
-            response,
-        } => Some((*scene, *to, response.clone())),
-        _ => None,
-    }) {
-        if let Some(scene) = scene {
-            perms.check(
-                PermissionType::Teleport,
-                scene,
-                (to, response.clone()),
-                Some(format!("({},{})", to.x, to.y)),
-                false,
-            );
-        } else {
-            do_teleport(to, response);
-        }
     }
 
-    for (to, response) in perms.drain_success(PermissionType::Teleport) {
-        do_teleport(to, response);
+    for (_, _, response) in perms.drain_fail(PermissionType::Teleport) {
+        response.send(Err("User declined".to_owned()))
     }
-
-    for (_, response) in perms.drain_fail(PermissionType::Teleport) {
+    for (_, _, response) in perms.drain_fail(PermissionType::ChangeRealm) {
         response.send(Err("User declined".to_owned()))
     }
 }

@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
-use common::structs::{AppConfig, PreviewMode, PrimaryUser, SceneLoadDistance};
+use common::{
+    rpc::{RpcCall, RpcResultSender},
+    structs::{AppConfig, PreviewMode, PrimaryUser, SceneLoadDistance},
+};
 use scene_runner::{
     initialize_scene::{parcels_in_range, ScenePointers},
     OutOfWorld,
@@ -14,6 +17,8 @@ pub struct ChangeLocationCommand {
     x: i32,
     #[arg(allow_hyphen_values(true))]
     y: i32,
+    /// realm the parcel is in (a world name or realm url): change realm, then land on the parcel
+    realm: Option<String>,
 }
 
 pub fn change_location(
@@ -22,6 +27,19 @@ pub fn change_location(
     mut player: Query<(Entity, &mut Transform), With<PrimaryUser>>,
 ) {
     if let Some(Ok(command)) = input.take() {
+        if let Some(realm) = command.realm {
+            commands.send_event(RpcCall::TeleportPlayer {
+                scene: None,
+                to: Some(IVec2::new(command.x, command.y)),
+                realm: Some(realm.clone()),
+                response: RpcResultSender::default(),
+            });
+            input.reply_ok(format!(
+                "new location: {:?} in {realm}",
+                (command.x, command.y)
+            ));
+            return;
+        }
         if let Ok((ent, mut transform)) = player.single_mut() {
             transform.translation.x = command.x as f32 * 16.0 + 8.0;
             transform.translation.z = -command.y as f32 * 16.0 - 8.0;

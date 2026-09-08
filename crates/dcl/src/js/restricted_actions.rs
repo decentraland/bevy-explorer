@@ -93,8 +93,9 @@ pub async fn op_walk_player_to(
 
 pub async fn op_teleport_to(
     state: Rc<RefCell<impl State>>,
-    position_x: i32,
-    position_y: i32,
+    position_x: Option<i32>,
+    position_y: Option<i32>,
+    realm: Option<String>,
 ) -> Result<bool, anyhow::Error> {
     debug!("op_teleport_to");
     let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
@@ -104,11 +105,16 @@ pub async fn op_teleport_to(
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::TeleportPlayer {
             scene: Some(scene),
-            to: IVec2::new(position_x, position_y),
+            to: position_x.zip(position_y).map(|(x, y)| IVec2::new(x, y)),
+            realm,
             response: sx,
         })?;
 
-    Ok(matches!(rx.await, Ok(Ok(_))))
+    match rx.await {
+        Ok(Ok(())) => Ok(true),
+        Ok(Err(e)) => Err(anyhow::anyhow!(e)),
+        Err(_) => Err(anyhow::anyhow!("teleport request dropped")),
+    }
 }
 
 pub async fn op_change_realm(

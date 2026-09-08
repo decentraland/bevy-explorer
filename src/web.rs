@@ -307,17 +307,8 @@ fn update_url_params(
     editor: Res<EditorMode>,
     mut prev: Local<Option<EngineRunOptions>>,
 ) {
-    // realms with fixed scene urns (worlds) spawn at their base scene and ignore an explicit
-    // position (see load_active_entities' base-position handling) - don't write one into the url
-    let position_honoured = current_realm
-        .config
-        .scenes_urn
-        .as_ref()
-        .is_none_or(Vec::is_empty);
-    let position = position_honoured.then(|| {
-        let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
-        format!("{},{}", parcel.x, parcel.y)
-    });
+    let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
+    let position = Some(format!("{},{}", parcel.x, parcel.y));
     let Some(server) = current_realm.about_url.strip_suffix("/about") else {
         return;
     };

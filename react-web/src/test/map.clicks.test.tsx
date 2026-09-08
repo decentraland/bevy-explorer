@@ -6,7 +6,7 @@ import type { MapState } from '../features/session/useEngineSession'
 import { fakeSession } from './harness'
 
 function renderMap(): MapState {
-  const map: MapState = { ...fakeSession().map, open: true, teleport: vi.fn(), toggle: vi.fn() }
+  const map: MapState = { ...fakeSession().map, open: true, teleportToPlace: vi.fn(), toggle: vi.fn() }
   render(<MapPage map={map} profile={{ data: null, open: false, toggle: vi.fn() }} onNavigate={vi.fn()} />)
   return map
 }
@@ -48,7 +48,7 @@ describe('map page', () => {
     fireEvent.mouseUp(view, { clientX: 5, clientY: 5 })
 
     await userEvent.click(await screen.findByRole('button', { name: 'JUMP IN' }))
-    expect(vi.mocked(map.teleport)).toHaveBeenCalledWith(10, -5)
+    expect(vi.mocked(map.teleportToPlace)).toHaveBeenCalledWith(10, -5)
     expect(vi.mocked(map.toggle)).toHaveBeenCalledTimes(1)
   })
 })
