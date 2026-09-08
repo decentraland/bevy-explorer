@@ -42,7 +42,7 @@ pub fn registration() -> Result<String, anyhow::Error> {
         None => {
             let env = match std::env::var_os("LD_LIBRARY_PATH") {
                 Some(value) => {
-                    let value = absolute_library_path(&value, &std::env::current_dir()?)?;
+                    let value = absolute_library_path(&value, std::env::current_dir)?;
                     format!("env \"LD_LIBRARY_PATH={}\" ", value.to_string_lossy())
                 }
                 None => String::new(),
@@ -56,8 +56,17 @@ pub fn registration() -> Result<String, anyhow::Error> {
     ))
 }
 
-/// `value` with each entry resolved against `cwd` (an empty entry means the cwd to ld.so).
-fn absolute_library_path(value: &OsStr, cwd: &Path) -> Result<OsString, anyhow::Error> {
+/// `value` with each entry resolved against the working directory (an empty entry means the cwd
+/// to ld.so). `cwd` is only called when an entry actually needs it, so an already-absolute path
+/// still registers from a directory that has since been deleted.
+fn absolute_library_path(
+    value: &OsStr,
+    cwd: impl FnOnce() -> std::io::Result<PathBuf>,
+) -> Result<OsString, anyhow::Error> {
+    if std::env::split_paths(value).all(|entry| entry.is_absolute()) {
+        return Ok(value.to_owned());
+    }
+    let cwd = cwd()?;
     Ok(std::env::join_paths(
         std::env::split_paths(value).map(|entry| cwd.join(entry)),
     )?)
@@ -154,10 +163,20 @@ mod test {
 
     #[test]
     fn library_path_entries_become_absolute() {
-        let cwd = Path::new("/home/u/dcl");
         assert_eq!(
-            absolute_library_path(OsStr::new(".:/opt/cef:lib:"), cwd).unwrap(),
+            absolute_library_path(OsStr::new(".:/opt/cef:lib:"), || Ok(PathBuf::from(
+                "/home/u/dcl"
+            )))
+            .unwrap(),
             OsString::from("/home/u/dcl/.:/opt/cef:/home/u/dcl/lib:/home/u/dcl/")
+        );
+        // nothing to resolve: the working directory is never looked up
+        assert_eq!(
+            absolute_library_path(OsStr::new("/opt/cef:/usr/lib"), || Err(
+                std::io::Error::other("no working directory")
+            ))
+            .unwrap(),
+            OsString::from("/opt/cef:/usr/lib")
         );
     }
 }
