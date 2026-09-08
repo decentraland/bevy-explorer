@@ -185,6 +185,7 @@ fn flush_emote_reports(
                 containing_scene
                     .get_area(avatar, PLAYER_COLLIDER_RADIUS)
                     .into_iter()
+                    .filter(|scene| scenes.get(*scene).is_ok())
                     .collect(),
                 SceneEntityId::PLAYER,
             ),
