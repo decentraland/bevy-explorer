@@ -23,6 +23,7 @@ use bevy::{
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
+    sets::SceneSets,
     structs::{
         EmoteCommand, EmoteLifecycle, EmoteLifecycleEvent, EmoteLifecycleSource, PrimaryUser,
     },
@@ -51,6 +52,7 @@ impl Plugin for EmoteReportPlugin {
             Update,
             (queue_emote_reports, flush_emote_reports)
                 .chain()
+                .in_set(SceneSets::RestrictedActions)
                 .after(process_transport_updates),
         );
     }
