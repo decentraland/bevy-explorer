@@ -815,8 +815,9 @@ fn update_render_avatar(
                         .0
                         .expression_trigger_id
                         .as_ref()
-                        // a cleared trigger stops the emote: an empty command
-                        .or(Some(&String::new()))
+                        // a cleared trigger on a scene-sourced shape stops the emote: an empty
+                        // command. profile-derived shapes never carry a trigger.
+                        .or(selection.scene.is_some().then_some(&String::new()))
                         .and_then(|e| {
                             let urn = if e.is_empty() {
                                 String::new()
