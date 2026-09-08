@@ -33,6 +33,11 @@ module.exports.triggerSceneEmote = async function (body) {
     return { success: true }
 }
 
+module.exports.stopEmote = async function (body) {
+    Deno.core.ops.op_stop_emote()
+    return { success: true }
+}
+
 module.exports.changeRealm = async function (body) {
     const success = await Deno.core.ops.op_change_realm(body.realm, body.message);
     return { success }
@@ -46,6 +51,10 @@ module.exports.openExternalUrl = async function (body) {
 module.exports.openNftDialog = async function (body) {
     await Deno.core.ops.op_open_nft_dialog(body.urn)
     return { success: true }
+}
+module.exports.openExplorerUi = async function (body) {
+    const openResult = await Deno.core.ops.op_open_explorer_ui(Number(body.ui ?? 0))
+    return { openResult }
 }
 module.exports.setCommunicationsAdapter = async function (body) { 
     console.error("RestrictedActions::setCommunicationsAdapter not implemented");

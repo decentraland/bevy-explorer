@@ -686,7 +686,10 @@ pub fn change_realm(
 
 pub fn map_realm_name(request: &str) -> String {
     if request.ends_with(".dcl.eth") && !request.starts_with("https://") {
-        common::base_domain::https("worlds-content-server", &format!("/world/{request}"))
+        common::base_domain::url(
+            common::base_domain::Service::WorldsServer,
+            &format!("/world/{request}"),
+        )
     } else {
         request.to_owned()
     }
@@ -1589,7 +1592,7 @@ impl AssetReader for IpfsIo {
             }
             let remote = ipfs_io_read_state.send_failure(remote)?;
 
-            // file realm: a `file://` baseUrl (local static scene export, e.g. `--ui <dir>`)
+            // file realm: a `file://` baseUrl (local static scene export, e.g. `--system-scene <dir>`)
             // reads straight from disk — no cache write, no request slot, no retries.
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(local) = remote.strip_prefix("file://") {

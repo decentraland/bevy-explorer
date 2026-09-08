@@ -1,4 +1,5 @@
 pub mod agent_commands;
+pub mod explorer_ui;
 pub mod teleport;
 
 use std::{
@@ -40,6 +41,7 @@ use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
+use explorer_ui::{open_explorer_ui, track_explorer_ui, ExplorerUiState};
 use http::Uri;
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
@@ -71,7 +73,7 @@ impl Plugin for RestrictedActionsPlugin {
                 (
                     handle_player_move_requests,
                     update_player_move.after(handle_player_move_requests),
-                    move_camera,
+                    move_camera.after(handle_player_move_requests),
                     change_realm,
                     external_url,
                     spawn_portable,
@@ -102,11 +104,16 @@ impl Plugin for RestrictedActionsPlugin {
                     handle_sign_request,
                     handle_entity_definition,
                     handle_read_file,
+                    open_explorer_ui,
+                    track_explorer_ui.after(open_explorer_ui),
                 ),
             )
                 .in_set(SceneSets::RestrictedActions),
         );
         app.init_resource::<PendingPortableCommands>();
+        app.init_resource::<ExplorerUiState>();
+        // headless has no InputManagerPlugin; open_explorer_ui still needs the (empty) streams
+        app.init_resource::<input_manager::SystemActionStreams>();
         app.add_console_command::<SpawnPortableCommand, _>(spawn_portable_command);
         app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
         app.add_plugins(agent_commands::AgentCommandsPlugin);
@@ -142,6 +149,7 @@ pub enum PendingPlayerMove {
         target: Vec3,
         looking_at: Option<Vec3>,
         duration: Option<f32>,
+        camera_rotation: Option<Quat>,
         response: Option<RpcResultSender<bool>>,
     },
     Walk {
@@ -225,12 +233,14 @@ pub fn handle_player_move_requests(
                 to,
                 looking_at,
                 duration,
+                camera_rotation,
                 response,
             } => PendingPlayerMove::Move {
                 scene: *scene,
                 target: *to,
                 looking_at: *looking_at,
                 duration: *duration,
+                camera_rotation: *camera_rotation,
                 response: response.clone(),
             },
             RpcCall::WalkPlayer {
@@ -369,7 +379,8 @@ fn apply_player_move(
             looking_at,
             duration,
             response,
-            ..
+            camera_rotation,
+            scene,
         } => {
             if let Some(d) = duration {
                 let d = d.max(f32::EPSILON);
@@ -409,6 +420,17 @@ fn apply_player_move(
                 // this, the next apply_movement re-applies the scene's stale orientation
                 // and the avatar snaps back (e.g. a keeper placed facing the kicker).
                 movement_control.accept_movement_after = now;
+            }
+
+            if let Some(camera_rotation) = camera_rotation {
+                if let Some(scene) = scene {
+                    commands.send_event(RpcCall::MoveCamera {
+                        scene,
+                        facing: camera_rotation,
+                    });
+                } else {
+                    warn!("MoveTo action without scene had camera_rotation");
+                }
             }
         }
 
@@ -670,12 +692,12 @@ pub async fn lookup_ens(
     ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
     #[cfg(not(target_arch = "wasm32"))]
-    // parent_scene gates on WHO is asking: only user-initiated lookups (--ui / console commands,
+    // parent_scene gates on WHO is asking: only user-initiated lookups (--system-scene / console commands,
     // which pass None) may resolve a local directory — a scene's spawnPortableExperience must
     // not probe or load local paths.
     if parent_scene.is_none() && std::path::Path::new(&ens).join("about").is_file() {
         // file realm: a local directory containing an `about` (sdk-commands export-static
-        // layout, e.g. `--ui react-web/bridge-scene/static/BevyExplorerUI`). No ens.
+        // layout, e.g. `--system-scene react-web/bridge-scene/static/BevyExplorerUI`). No ens.
         return lookup_local_realm(parent_scene, &ens, super_user, &ipfs);
     }
     if ens.to_ascii_lowercase().starts_with("http") {
@@ -683,7 +705,10 @@ pub async fn lookup_ens(
     } else {
         lookup_portable(
             parent_scene,
-            common::base_domain::https("worlds-content-server", &format!("/world/{ens}")),
+            common::base_domain::url(
+                common::base_domain::Service::WorldsServer,
+                &format!("/world/{ens}"),
+            ),
             super_user,
             ipfs,
         )

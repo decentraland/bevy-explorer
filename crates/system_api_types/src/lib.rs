@@ -4,6 +4,10 @@
 //! `ts-rs` (scripts/gen-ts-bindings.sh) to generate the TypeScript the react-web
 //! page and bridge scene consume. `system_bridge` re-exports everything here.
 
+pub mod launch_options;
+pub mod services;
+pub mod web_params;
+
 use dcl_component::proto_components::{
     common::{Color3, Vector2, Vector3},
     sdk::components::{pb_pointer_events, PbAvatarBase, PbAvatarEquippedData},
@@ -331,6 +335,7 @@ pub enum PermissionType {
     Fetch,
     Websocket,
     OpenUrl,
+    OpenExplorerUi,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]

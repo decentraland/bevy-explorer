@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { act } from '@testing-library/react'
 import { renderSession, enterAsGuest } from './harness'
-import { DEFAULT_REALM } from '../features/engine/EngineHost'
+import { DEFAULT_REALM } from '../lib/baseDomain'
 
 // DOMAIN: world — map state (parcel), teleport, microphone toggle/state.
 describe('world domain', () => {

@@ -72,7 +72,7 @@ function useProfile(address?: string): { name?: string; body?: string } {
       return
     }
     let cancelled = false
-    fetch(`${serviceUrl('peer')}/lambdas/profiles/${address}`)
+    fetch(`${serviceUrl('catalyst')}/lambdas/profiles/${address}`)
       .then((r) => r.json() as Promise<ProfileResponse>)
       .then((j) => {
         const a = j.avatars?.[0]

@@ -141,6 +141,7 @@ impl DclProtoComponent for sdk::components::PbMainCamera {}
 impl DclProtoComponent for sdk::components::PbInputModifier {}
 impl DclProtoComponent for sdk::components::PbTriggerArea {}
 impl DclProtoComponent for sdk::components::PbTriggerAreaResult {}
+impl DclProtoComponent for sdk::components::PbExplorerUiEventsResult {}
 impl DclProtoComponent for sdk::components::PbGltfNodeModifiers {}
 impl DclProtoComponent for sdk::components::PbSkyboxTime {}
 impl DclProtoComponent for sdk::components::PbAvatarMovement {}

@@ -74,6 +74,12 @@ pub fn op_emote(op_state: &WorkerContext, emote: String) -> Result<(), WasmError
 }
 
 #[wasm_bindgen]
+pub fn op_stop_emote(op_state: &WorkerContext) -> Result<(), WasmError> {
+    dcl::js::restricted_actions::op_stop_emote(&mut *op_state.state.borrow_mut())
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
 pub async fn op_scene_emote(
     op_state: &WorkerContext,
     emote: String,
@@ -98,6 +104,13 @@ pub async fn op_ui_focus(
     element_id: Option<String>,
 ) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::restricted_actions::op_ui_focus(op_state.rc(), apply, element_id).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_open_explorer_ui(op_state: &WorkerContext, ui: i32) -> Result<i32, WasmError> {
+    dcl::js::restricted_actions::op_open_explorer_ui(op_state.rc(), ui)
+        .await
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

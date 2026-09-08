@@ -20,7 +20,7 @@ use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{
     base_wearables,
-    wearables::{UsedWearables, Wearable, WearableCategory, WearableUrn},
+    wearables::{UsedWearables, Wearable, WearableCategory, WearableModel, WearableUrn},
     CollectibleError, CollectibleManager, Emote, EmoteUrn,
 };
 use colliders::AvatarColliderPlugin;
@@ -37,6 +37,7 @@ pub mod attach;
 pub mod avatar_texture;
 pub mod colliders;
 mod dynamic_nametag;
+pub mod emote_report;
 pub mod foot_ik;
 pub mod foreign_dynamics;
 pub mod head_ik;
@@ -94,16 +95,30 @@ use crate::{
 
 use self::{
     animate::AvatarAnimationPlugin,
+    emote_report::EmoteReportPlugin,
     foreign_dynamics::PlayerMovementPlugin,
     mask_material::{MaskMaterial, MaskMaterialPlugin},
 };
+
+/// The render-free part of the avatar stack: what a headless server needs from foreign players
+/// (their bevy transforms, their profile in scene crdt, their emotes reported to scenes) without
+/// spawning an avatar. `AvatarPlugin` builds on it; the headless binary adds it alone.
+pub struct AvatarCorePlugin;
+
+impl Plugin for AvatarCorePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(PlayerMovementPlugin);
+        app.add_plugins(EmoteReportPlugin);
+        app.add_systems(Update, update_avatar_info);
+    }
+}
 
 pub struct AvatarPlugin;
 
 impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(AvatarCorePlugin);
         app.add_plugins(MaskMaterialPlugin);
-        app.add_plugins(PlayerMovementPlugin);
         app.add_plugins(NpcMovementPlugin);
         app.add_plugins(AvatarAnimationPlugin);
         app.add_plugins(AttachPlugin);
@@ -126,7 +141,6 @@ impl Plugin for AvatarPlugin {
         app.add_systems(
             Update,
             (
-                update_avatar_info,
                 update_base_avatar_shape,
                 select_avatar,
                 update_render_avatar,
@@ -801,25 +815,44 @@ fn update_render_avatar(
                         .0
                         .expression_trigger_id
                         .as_ref()
+                        // a cleared trigger on a scene-sourced shape stops the emote: an empty
+                        // command. profile-derived shapes never carry a trigger.
+                        .or(selection.scene.is_some().then_some(&String::new()))
                         .and_then(|e| {
-                            let urn = if e.starts_with("urn:") {
+                            let urn = if e.is_empty() {
+                                String::new()
+                            } else if e.starts_with("urn:") {
                                 e.clone()
                             } else {
                                 // File path emote (e.g. "models/emotes/foo.glb") — resolve
                                 // through the scene's content map to build a scene-emote URN,
                                 // mirroring the logic in op_scene_emote.
-                                let se = maybe_scene_ent?;
-                                let ctx = scenes.get(se.root).ok()?;
-                                let scene_hash = &ctx.hash;
-                                let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-                                    scene_hash.clone(),
-                                    e.to_lowercase(),
-                                ));
-                                let ipfs_context = ipfas.ipfs().context.blocking_read();
-                                let emote_hash = ipfs_path.hash(&ipfs_context)?;
-                                format!(
-                                    "urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-false"
-                                )
+                                let scene_emote = maybe_scene_ent
+                                    .and_then(|se| scenes.get(se.root).ok())
+                                    .and_then(|ctx| {
+                                        let scene_hash = &ctx.hash;
+                                        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+                                            scene_hash.clone(),
+                                            e.to_lowercase(),
+                                        ));
+                                        let ipfs_context = ipfas.ipfs().context.blocking_read();
+                                        let emote_hash = ipfs_path.hash(&ipfs_context)?;
+                                        Some(format!(
+                                            "urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-false"
+                                        ))
+                                    });
+
+                                // otherwise a bare base-emote name ("robot"). content map
+                                // first because a file path is also a valid single-segment urn.
+                                match scene_emote
+                                    .or_else(|| EmoteUrn::new(e).ok().map(String::from))
+                                {
+                                    Some(urn) => urn,
+                                    None => {
+                                        warn!("ignoring avatar shape emote '{e}': not in the scene content map, and not a valid emote urn");
+                                        return None;
+                                    }
+                                }
                             };
                             Some(EmoteCommand {
                                 urn,
@@ -891,7 +924,8 @@ fn spawn_scenes(
                     .iter()
                     .flat_map(|wearable| wearable.model.as_ref()),
             )
-            .any(|h_model| {
+            .any(|model| {
+                let h_model = &model.gltf;
                 matches!(
                     asset_server.get_load_state(h_model),
                     Some(bevy::asset::LoadState::Loading)
@@ -902,12 +936,17 @@ fn spawn_scenes(
             continue;
         }
 
-        let Some(gltf) = def.body.model.as_ref().and_then(|h_gltf| gltfs.get(h_gltf)) else {
+        let Some(gltf) = def
+            .body
+            .model
+            .as_ref()
+            .and_then(|model| gltfs.get(&model.gltf))
+        else {
             match def
                 .body
                 .model
                 .as_ref()
-                .and_then(|h_gtlf| asset_server.get_load_state(h_gtlf))
+                .and_then(|model| asset_server.get_load_state(&model.gltf))
             {
                 Some(bevy::asset::LoadState::Loading) | Some(bevy::asset::LoadState::NotLoaded) => {
                     // nothing to do
@@ -950,12 +989,15 @@ fn spawn_scenes(
             .wearables
             .iter()
             .flat_map(|wearable| &wearable.model)
-            .flat_map(|h_gltf| {
+            .flat_map(|model| {
+                let h_gltf = &model.gltf;
                 match asset_server.get_load_state(h_gltf) {
                     Some(bevy::asset::LoadState::Loaded) => (),
                     otherwise => {
+                        // keep the slot so `wearable_instances` stays aligned with the
+                        // wearables that have models
                         warn!("wearable gltf didn't work out: {otherwise:?}");
-                        return None;
+                        return Some(None);
                     }
                 }
 
@@ -1087,11 +1129,16 @@ fn process_avatar(
         } else {
             0
         };
-        let outline_tag = if config.graphics.avatar_outline {
-            SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
-        } else {
-            0
+        // wearables can opt out of the outline via `outlineCompatible: false`
+        let outline_tag = |model: &WearableModel| {
+            if config.graphics.avatar_outline && model.outline_compatible {
+                SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
+            } else {
+                0
+            }
         };
+        // body model is guaranteed by spawn_scenes
+        let body_outline_tag = def.body.model.as_ref().map(outline_tag).unwrap_or(0);
 
         let bounds_key = bounds_bits(&def.bounds);
         let mut instance_scene_materials = HashMap::new();
@@ -1214,7 +1261,7 @@ fn process_avatar(
                     commands.entity(scene_ent).try_insert((
                         MeshMaterial3d(instance_mat.clone()),
                         MeshTag(
-                            outline_tag
+                            body_outline_tag
                                 | (if def.disable_dither {
                                     SCENE_MATERIAL_NO_DITHERING_MESH_TAG
                                 } else {
@@ -1307,7 +1354,7 @@ fn process_avatar(
                             commands.entity(scene_ent).try_insert((
                                 MeshMaterial3d(material),
                                 MeshTag(
-                                    outline_tag
+                                    body_outline_tag
                                         | (if def.disable_dither {
                                             SCENE_MATERIAL_NO_DITHERING_MESH_TAG
                                         } else {
@@ -1423,7 +1470,9 @@ fn process_avatar(
         }
 
         // color the components of wearables
-        for instance in &loaded_avatar.wearable_instances {
+        // wearable_instances is built from the wearables with models, in order
+        let wearable_models = def.wearables.iter().filter_map(|w| w.model.as_ref());
+        for (instance, model) in loaded_avatar.wearable_instances.iter().zip(wearable_models) {
             let Some(instance) = instance else {
                 warn!("failed to load instance for wearable");
                 continue;
@@ -1512,7 +1561,7 @@ fn process_avatar(
                         commands.entity(scene_ent).try_insert((
                             MeshMaterial3d(instance_mat.clone()),
                             MeshTag(
-                                outline_tag
+                                outline_tag(model)
                                     | (if def.disable_dither {
                                         SCENE_MATERIAL_NO_DITHERING_MESH_TAG
                                     } else {

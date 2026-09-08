@@ -150,15 +150,26 @@ impl StorageDelegations {
     }
 }
 
-/// True when a signed fetch to `uri` must be signed with a storage delegation:
-/// exact-match world-storage hosts, https only (the claim must never go out in cleartext).
+/// True when a signed fetch to `uri` must be signed with a storage delegation: exact-match
+/// world-storage hosts, or the resolved storage service (host and port; an explicit override
+/// chooses them). https only either way — the claim must never go out in cleartext, so an http
+/// storage override is simply never signed for.
 pub fn is_storage_request(uri: &http::Uri) -> bool {
-    uri.scheme_str() == Some("https")
-        && uri.host().is_some_and(|h| {
-            let h = h.to_lowercase();
-            STORAGE_HOSTS.contains(&h.as_str())
-                || (common::base_domain::is_custom() && h == common::base_domain::host("storage"))
-        })
+    fn https_origin(u: &http::Uri) -> Option<(String, u16)> {
+        if u.scheme_str() != Some("https") {
+            return None;
+        }
+        Some((u.host()?.to_lowercase(), u.port_u16().unwrap_or(443)))
+    }
+    let Some((host, port)) = https_origin(uri) else {
+        return false;
+    };
+    STORAGE_HOSTS.contains(&host.as_str())
+        || common::base_domain::service(common::base_domain::Service::Storage)
+            .parse::<http::Uri>()
+            .ok()
+            .and_then(|storage| https_origin(&storage))
+            == Some((host, port))
 }
 
 #[cfg(test)]
@@ -232,6 +243,30 @@ mod test {
             &"https://storage.decentraland.org.evil.com/values"
                 .parse()
                 .unwrap()
+        ));
+    }
+
+    // NOTE: latches the process-wide storage override — the only test in this crate that may.
+    #[test]
+    fn storage_override_matching() {
+        common::base_domain::set_services([(
+            common::base_domain::Service::Storage,
+            "https://storage.example:8443/",
+        )])
+        .unwrap();
+        assert!(is_storage_request(
+            &"https://storage.example:8443/values/x".parse().unwrap()
+        ));
+        // the known hosts stay signed for alongside an override
+        assert!(is_storage_request(
+            &"https://storage.decentraland.org/values/x".parse().unwrap()
+        ));
+        // port is part of the origin (default 443 when implicit), and https is not negotiable
+        assert!(!is_storage_request(
+            &"https://storage.example/values/x".parse().unwrap()
+        ));
+        assert!(!is_storage_request(
+            &"http://storage.example:8443/values/x".parse().unwrap()
         ));
     }
 }

@@ -1,4 +1,4 @@
-// --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
+// --realm https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --position 1,1
 
 #[cfg(not(target_arch = "wasm32"))]
 mod kira_bridge;

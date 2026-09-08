@@ -230,6 +230,33 @@ pub struct EmoteCommand {
     pub r#loop: bool,
 }
 
+/// A transition in an avatar's triggered-emote playback, reported to scenes as an
+/// `AvatarEmoteCommand` entry by `avatar::emote_report`. Raised by `comms` from the wire (in wire
+/// order, so client and server report the same sequence) and by the avatar animator from
+/// playback; the reporter keeps the wire's word for foreign players and playback's for the rest.
+#[derive(Event, Clone, Debug)]
+pub struct EmoteLifecycleEvent {
+    pub avatar: Entity,
+    pub event: EmoteLifecycle,
+    pub source: EmoteLifecycleSource,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EmoteLifecycleSource {
+    Playback,
+    Wire,
+}
+
+#[derive(Clone, Debug)]
+pub enum EmoteLifecycle {
+    /// `r#loop` is the flag known at trigger time; the emote's own metadata may still make it loop.
+    Started { urn: String, r#loop: bool },
+    /// A one-shot ran to its end.
+    Finished,
+    /// Playback was cut short: movement, a scene animation, a stop from the wire.
+    Interrupted,
+}
+
 // Current scene-driven movement animation request for a player avatar. For the
 // primary player, written by the bridge system in `user_input` (after resolving
 // the scene-relative path against the active scene's content map). For foreign
@@ -343,6 +370,10 @@ pub struct SceneDrivenAnimationFeedbackState {
     pub loop_count: u32,
 }
 
+/// vertical fov of the player camera, in radians (60 degrees). also the
+/// `PBVirtualCamera.fov` default, per the proto definition.
+pub const PLAYER_CAMERA_FOV: f32 = std::f32::consts::PI / 3.0;
+
 // main camera entity
 #[derive(Component)]
 pub struct PrimaryCamera {
@@ -365,10 +396,10 @@ pub struct CinematicSettings {
     pub yaw_range: Option<f32>,
     pub pitch_range: Option<f32>,
     pub roll_range: Option<f32>,
-    pub zoom_min: Option<f32>,
-    pub zoom_max: Option<f32>,
     pub look_at_entity: Option<Entity>,
     pub transition: Option<CameraTransition>,
+    /// vertical fov, in radians
+    pub fov: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -472,7 +503,7 @@ pub struct PreviousLogin {
 }
 
 pub fn default_home_realm() -> String {
-    crate::base_domain::https("realm-provider-ea", "/main")
+    crate::base_domain::url(crate::base_domain::Service::RealmProvider, "/main")
 }
 // app configuration
 #[derive(Serialize, Deserialize, Resource, Clone)]
@@ -481,7 +512,7 @@ pub struct AppConfig {
     /// The pinned home scene. Written ONLY by SetHomeScene; None = never pinned, so the
     /// home keeps tracking the base-domain-derived default. A pinned home persists (and
     /// survives switching base domains) even when it happens to equal some domain's
-    /// default. --server / --location are startup params (like the web's ?realm= /
+    /// default. --realm / --position are startup params (like the web's ?realm= /
     /// ?position=) and are deliberately never merged in here — the config file is
     /// rewritten wholesale on any settings change, which would silently persist a
     /// one-off CLI target as home.
@@ -712,7 +743,8 @@ impl AppConfig {
             | PermissionType::PlayEmote
             | PermissionType::SetLocomotion
             | PermissionType::HideAvatarsNametags
-            | PermissionType::DisableVoice => PermissionValue::Allow,
+            | PermissionType::DisableVoice
+            | PermissionType::OpenExplorerUi => PermissionValue::Allow,
             _ => PermissionValue::Ask,
         }
     }
@@ -749,7 +781,7 @@ impl Default for GraphicsSettings {
     fn default() -> Self {
         Self {
             vsync: false,
-            log_fps: true,
+            log_fps: !cfg!(target_arch = "wasm32"),
             msaa: AaSetting::FxaaLow,
             fps_target: 60,
             shadow_distance: 20.0,
@@ -766,7 +798,11 @@ impl Default for GraphicsSettings {
             ambient_brightness: 50,
             cel_shading: true,
             avatar_outline: true,
-            gpu_bytes_per_frame: 0,
+            gpu_bytes_per_frame: if cfg!(target_arch = "wasm32") {
+                10_000_000
+            } else {
+                0
+            },
         }
     }
 }
@@ -1036,6 +1072,7 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "Open Websocket",
             PermissionType::OpenUrl => "Open Url",
             PermissionType::CopyToClipboard => "Copy to Clipboard",
+            PermissionType::OpenExplorerUi => "Open Explorer Menu",
         }
     }
 
@@ -1093,6 +1130,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "open a web socket to communicate with a remote server",
             PermissionType::OpenUrl => "open a url in your browser",
             PermissionType::CopyToClipboard => "copy text into the clipboard",
+            PermissionType::OpenExplorerUi => {
+                "open an explorer menu panel (map, backpack, settings, ...)"
+            }
         }
     }
 
@@ -1115,6 +1155,7 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "opening a websocket",
             PermissionType::OpenUrl => "opening a url in your browser",
             PermissionType::CopyToClipboard => "copying text into the clipboard",
+            PermissionType::OpenExplorerUi => "opening an explorer menu panel",
         }
     }
 }

@@ -3,7 +3,9 @@
 // `?systemScene=` substitutes the scene that owns the UI, and that scene is trusted: permissions.rs
 // short-circuits every permission check for it and it gets the whole SystemApi. So a crafted link
 // on our own origin is a complete takeover of the session — no sandbox escape needed, just a click.
-// Anything not on the list below gets the interstitial in features/gate/UntrustedLaunchGate.
+// Anything not recognised below gets the interstitial (lib/launchGate.ts →
+// features/gate/UntrustedLaunchGate). What to trust is THIS front-end's call — the editor app,
+// for one, trusts its editor scene.
 
 import { PAGE_DIR } from './publicUrl'
 import { serviceUrl } from './baseDomain'
@@ -27,7 +29,7 @@ export const SYSTEM_SCENE =
 // the engine's ipfs layer expands `name.dcl.eth` into the latter, and boot.js reverses it for the
 // address bar, so both spellings reach users.
 const TRUSTED_WORLDS = ['tortilla.dcl.eth', 'sceneviewer.dcl.eth']
-const WORLDS_PREFIX = `${serviceUrl('worlds-content-server')}/world/`
+const WORLDS_PREFIX = `${serviceUrl('worldsServer')}/world/`
 
 // A scene served from the developer's own machine. `sdk-commands start` is the whole point of the
 // parameter, and a link can't make someone else's machine serve it.

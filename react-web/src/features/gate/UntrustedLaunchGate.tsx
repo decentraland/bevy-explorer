@@ -1,6 +1,7 @@
-// Interstitial for a link that carries an infrastructure-pointing parameter: its own super-user
-// scene (`?systemScene=` — see lib/systemScene.ts for why that is worth stopping on) and/or its
-// own backend deployment (`?baseDomain=` — see lib/baseDomain.ts).
+// Interstitial for a link that carries an infrastructure-pointing parameter (lib/launchGate.ts
+// decides which, and supplies the per-param copy): its own super-user scene (`?systemScene=` — see
+// lib/systemScene.ts for why that is worth stopping on) and/or its own backend deployment
+// (`?baseDomain=` — see lib/baseDomain.ts).
 //
 // Not dismissible: ModalShell is scrimless (its host owns the overlay, Escape and focus — see
 // design/Modal.tsx), so this gate draws its own inert full-screen layer and `closeButton={false}`
@@ -13,6 +14,7 @@
 
 import { useState } from 'react'
 import { Button, DclLogo, ModalShell } from '../../design'
+import type { UntrustedParam } from '../../lib/launchGate'
 import styles from './UntrustedLaunchGate.module.css'
 
 // A tab the user opened themselves can't be closed by script, so send them somewhere safe instead.
@@ -24,12 +26,10 @@ function exitApplication(): void {
 const TITLE = 'This Launch Link Is Not Trusted'
 
 export function UntrustedLaunchGate({
-  systemScene,
-  baseDomain,
+  params,
   onProceed
 }: {
-  systemScene?: string
-  baseDomain?: string
+  params: UntrustedParam[]
   onProceed: () => void
 }): React.JSX.Element {
   const [advanced, setAdvanced] = useState(false)
@@ -74,33 +74,19 @@ export function UntrustedLaunchGate({
       >
         <p className={styles.lead}>Someone may be trying to change how your Explorer behaves.</p>
         <p className={styles.lead}>
-          This link carries {systemScene != null && baseDomain != null ? 'parameters' : 'a parameter'} the
-          Explorer does not accept from links:
+          This link carries {params.length > 1 ? 'parameters' : 'a parameter'} the Explorer does not accept
+          from links:
         </p>
 
         <dl className={styles.params}>
-          {systemScene != null && (
-            <>
+          {params.map((p) => (
+            <div key={p.name}>
               <dt>
-                systemScene = <span className={styles.paramValue}>{systemScene}</span>
+                {p.name} = <span className={styles.paramValue}>{p.value}</span>
               </dt>
-              <dd className={styles.paramDesc}>
-                Replaces the Explorer&apos;s interface with a scene loaded from this address. It can move
-                your avatar, change your profile, and answer permission prompts on your behalf.
-              </dd>
-            </>
-          )}
-          {baseDomain != null && (
-            <>
-              <dt>
-                baseDomain = <span className={styles.paramValue}>{baseDomain}</span>
-              </dt>
-              <dd className={styles.paramDesc}>
-                Points every backend service — sign-in, content, comms — at servers under this domain.
-                Whoever runs them would see your session and control what you play.
-              </dd>
-            </>
-          )}
+              <dd className={styles.paramDesc}>{p.warning}</dd>
+            </div>
+          ))}
         </dl>
 
         <p className={styles.lead}>Unless you built this link yourself, the safe choice is to exit.</p>

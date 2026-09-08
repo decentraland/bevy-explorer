@@ -14,8 +14,8 @@ use dcl_component::{
             TextureMovementType, TweenStateStatus,
         },
     },
-    transform_and_parent::DclTransformAndParent,
-    SceneComponentId,
+    transform_and_parent::{sanitize_scale, DclTransformAndParent},
+    SceneComponentId, SceneEntityId,
 };
 use scene_runner::{
     renderer_context::RendererSceneContext,
@@ -145,8 +145,8 @@ impl Tween {
                 Self::apply_scale(start, end, ease_value, transform);
             }
             Some(Mode::MoveRotateScale(data)) => {
-                let move_start = data.position_start.unwrap_or_default().abs_vec_to_vec3();
-                let move_end = data.position_end.unwrap_or_default().abs_vec_to_vec3();
+                let move_start = data.position_start.unwrap_or_default().world_vec_to_vec3();
+                let move_end = data.position_end.unwrap_or_default().world_vec_to_vec3();
                 Self::apply_translation(move_start, move_end, ease_value, false, 0., transform);
 
                 let rotate_start = data.rotation_start.unwrap_or_default().to_bevy_normalized();
@@ -272,15 +272,6 @@ impl Tween {
 
     fn apply_scale(start: Vec3, end: Vec3, ease_value: f32, transform: &mut Transform) {
         transform.scale = start + ((end - start) * ease_value);
-        if transform.scale.x == 0.0 {
-            transform.scale.x = f32::EPSILON;
-        };
-        if transform.scale.y == 0.0 {
-            transform.scale.y = f32::EPSILON;
-        };
-        if transform.scale.z == 0.0 {
-            transform.scale.z = f32::EPSILON;
-        };
     }
 }
 
@@ -431,17 +422,23 @@ fn update_tween(
                 },
             );
 
-            let Ok(parent) = parents.get(parent.parent()) else {
-                warn!("no parent for tweened ent");
-                return;
-            };
+            let parent_id = parents
+                .get(parent.parent())
+                .map(|p| p.id)
+                .unwrap_or_else(|_| {
+                    warn!("no parent for tweened ent {scene_ent:?}");
+                    SceneEntityId::ROOT
+                });
 
+            // the scene gets the raw interpolated value; only the bevy transform is sanitised
             scene.update_crdt(
                 SceneComponentId::TRANSFORM,
                 CrdtType::LWW_ENT,
                 scene_ent.container_id,
-                &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
+                &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent_id),
             );
+
+            transform.scale = sanitize_scale(transform.scale);
             if tween.is_texture_move() {
                 tween_updated_texture_writer.write(TweenUpdatedTexture(ent));
             }
@@ -574,34 +571,56 @@ fn clean_scene_tween_state(
 pub struct SystemTween {
     pub target: Transform,
     pub time: f32,
+    /// target perspective fov, tweened alongside the transform
+    pub fov: Option<f32>,
 }
 
 #[derive(Component)]
 pub struct SystemTweenData {
     start_pos: Transform,
+    start_fov: Option<f32>,
     start_time: f64,
 }
 
+fn perspective_fov(projection: Option<&Mut<Projection>>) -> Option<f32> {
+    match projection.map(|p| &**p) {
+        Some(Projection::Perspective(p)) => Some(p.fov),
+        _ => None,
+    }
+}
+
+fn set_perspective_fov(projection: &mut Option<Mut<Projection>>, fov: Option<f32>) {
+    if let (Some(Projection::Perspective(p)), Some(fov)) = (projection.as_deref_mut(), fov) {
+        if p.fov != fov {
+            p.fov = fov;
+        }
+    }
+}
+
+#[allow(clippy::type_complexity)]
 pub fn update_system_tween(
     mut commands: Commands,
     mut q: Query<(
         Entity,
         &mut Transform,
+        Option<&mut Projection>,
         Ref<SystemTween>,
         Option<&SystemTweenData>,
     )>,
     time: Res<Time>,
 ) {
-    for (ent, mut transform, tween, data) in q.iter_mut() {
+    for (ent, mut transform, mut projection, tween, data) in q.iter_mut() {
         match (tween.is_changed(), data) {
             (true, _) | (_, None) => {
                 if tween.time <= 0.0 {
                     debug!("system tween instant complete @ {:?}", tween.target);
                     *transform = tween.target;
+                    set_perspective_fov(&mut projection, tween.fov);
                 } else {
                     debug!("system tween starting {} @ {:?}", tween.time, tween.target);
                     commands.entity(ent).try_insert(SystemTweenData {
                         start_pos: *transform,
+                        start_fov: perspective_fov(projection.as_ref()),
                         start_time: time.elapsed_secs_f64(),
                     });
                 }
@@ -611,6 +630,7 @@ pub fn update_system_tween(
                 if elapsed >= tween.time {
                     debug!("system tween complete @ {:?}", tween.target);
                     *transform = tween.target;
+                    set_perspective_fov(&mut projection, tween.fov);
                     commands
                         .entity(ent)
                         .remove::<SystemTween>()
@@ -623,6 +643,12 @@ pub fn update_system_tween(
                         (1.0 - ratio) * data.start_pos.scale + ratio * tween.target.scale;
                     transform.rotation =
                         data.start_pos.rotation.slerp(tween.target.rotation, ratio);
+                    if let (Some(start), Some(target)) = (data.start_fov, tween.fov) {
+                        set_perspective_fov(
+                            &mut projection,
+                            Some((1.0 - ratio) * start + ratio * target),
+                        );
+                    }
                     debug!(
                         "system tween partial {}/{} @ {:?}",
                         elapsed, tween.time, transform

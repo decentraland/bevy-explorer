@@ -42,10 +42,10 @@ struct ServerResponseError {
 }
 
 fn auth_front_url() -> String {
-    format!("https://{}/auth/requests", common::base_domain::get())
+    common::base_domain::url(common::base_domain::Service::AuthPage, "/requests")
 }
 fn auth_server_endpoint_url() -> String {
-    common::base_domain::https("auth-api", "/requests")
+    common::base_domain::url(common::base_domain::Service::AuthApi, "/requests")
 }
 const AUTH_SERVER_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 const AUTH_SERVER_TIMEOUT: Duration = Duration::from_secs(600);

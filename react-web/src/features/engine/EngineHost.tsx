@@ -7,17 +7,12 @@
 import { useEffect } from 'react'
 import type { EngineRpc } from '../../engine/engineRpc'
 import { bridgeChannelName } from '../../engine/protocol'
-import { serviceUrl } from '../../lib/baseDomain'
+import { BASE_DOMAIN, SERVICE_OVERRIDES } from '../../lib/baseDomain'
 import { bootMode } from '../../lib/bootMode'
 import { PAGE_DIR } from '../../lib/publicUrl'
-// Moved to lib/systemScene.ts, which also decides whether a link is allowed to override it.
+// Moved to lib/systemScene.ts; whether a link may override it is lib/launchGate.ts's call.
 import { SYSTEM_SCENE } from '../../lib/systemScene'
-
-// The main (Genesis City) realm, on the ?baseDomain= entry param when present (parity with the
-// engine's own derived default). Exported: parcel launches pass it EXPLICITLY so a ?realm
-// override — possibly an invalid world — never leaks into a Places pick (always a Genesis
-// coordinate).
-export const DEFAULT_REALM = `${serviceUrl('realm-provider-ea')}/main`
+import { launchOptionsFromUrl, type LaunchOptions } from '../../lib/webParams'
 
 // Engine media libs the wasm expects as globals (LivekitClient, Hls) — loaded from CDNs like the
 // old boot page did.
@@ -42,13 +37,14 @@ function injectEngine(): void {
   const params = new URLSearchParams(location.search)
   // pkg/ fetch base: the versioned CDN in prod builds (BASE_URL), the served engine dir otherwise.
   window.PUBLIC_URL = new URL('engine', new URL(import.meta.env.BASE_URL, PAGE_DIR)).href
+  // Every launch param the engine's web param table lists, read from the entry url; the
+  // `resolved` ones are what this HUD resolved for itself (lib/baseDomain.ts), and only the
+  // ui scene has a HUD-side default (our bundled bridge scene, unless a link overrode it).
   window.__bevyBootConfig = {
-    systemScene: bootMode().systemScene ?? SYSTEM_SCENE,
-    portables: params.get('portables') ?? undefined,
-    preview: params.has('preview'),
-    // host:port of the Pulse server the engine joins (WebTransport port); a zone deploy points
-    // it at the zone server. Absent = the engine's built-in production default.
-    pulseServer: params.get('pulseServer') ?? undefined
+    ...launchOptionsFromUrl(params),
+    ...SERVICE_OVERRIDES,
+    baseDomain: BASE_DOMAIN,
+    systemScene: bootMode().systemScene ?? SYSTEM_SCENE
   }
 
   for (const src of CDN_LIBS) {
@@ -66,7 +62,9 @@ function injectEngine(): void {
 declare global {
   interface Window {
     PUBLIC_URL?: string
-    __bevyBootConfig?: { systemScene?: string; portables?: string; preview?: boolean; pulseServer?: string }
+    // Forwarded verbatim to the engine's launch options (src/web_options.rs, keyed by the web
+    // param table) — an unknown key fails the launch.
+    __bevyBootConfig?: LaunchOptions
   }
 }
 

@@ -4,7 +4,7 @@ use bevy::{
     math::{IVec2, Vec3},
     transform::components::Transform,
 };
-use common::rpc::{RpcCall, RpcResultSender, RpcUiFocusAction};
+use common::rpc::{OpenExplorerUiResult, RpcCall, RpcResultSender, RpcUiFocusAction};
 use dcl_component::proto_components::common::Vector3 as DclVector3;
 use serde::Serialize;
 use std::{cell::RefCell, rc::Rc};
@@ -51,13 +51,9 @@ pub async fn op_move_player_to(
                 to,
                 looking_at,
                 duration,
+                camera_rotation,
                 response,
             })?;
-        if let Some(facing) = camera_rotation {
-            op_state
-                .borrow_mut::<RpcCalls>()
-                .push(RpcCall::MoveCamera { scene, facing })?;
-        }
     }
 
     Ok(if let Some(rx) = rx {
@@ -166,6 +162,14 @@ pub fn op_emote(op_state: &mut impl State, emote: String) -> Result<(), anyhow::
     send_emote(op_state, emote, false)
 }
 
+pub fn op_stop_emote(op_state: &mut impl State) -> Result<(), anyhow::Error> {
+    debug!("op_stop_emote");
+    let scene = op_state.borrow::<CrdtContext>().scene_id.0;
+    op_state
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::StopEmote { scene })
+}
+
 pub async fn op_scene_emote(
     op_state: Rc<RefCell<impl State>>,
     emote: String,
@@ -231,6 +235,30 @@ pub async fn op_open_nft_dialog(
     }
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
+}
+
+pub async fn op_open_explorer_ui(
+    op_state: Rc<RefCell<impl State>>,
+    ui: i32,
+) -> Result<i32, anyhow::Error> {
+    debug!("op_open_explorer_ui");
+    let (sx, rx) = RpcResultSender::<OpenExplorerUiResult>::channel();
+
+    {
+        let mut state = op_state.borrow_mut();
+        let context = state.borrow::<CrdtContext>();
+        let scene = context.scene_id.0;
+
+        state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::OpenExplorerUi {
+                scene,
+                ui,
+                response: sx,
+            })?;
+    }
+
+    Ok(rx.await.map_err(|e| anyhow!(e))? as i32)
 }
 
 #[derive(Serialize)]

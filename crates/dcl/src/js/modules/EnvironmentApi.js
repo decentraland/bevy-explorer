@@ -48,8 +48,6 @@ module.exports.getExplorerConfiguration = async function (body) {
     }
 }
 module.exports.getDecentralandTime = async function (body) {
-    const seconds = 60 * 60 * 12 // noon time in seconds
-    return {
-        seconds
-    }
+    const res = await Deno.core.ops.op_world_time();
+    return res;
 }

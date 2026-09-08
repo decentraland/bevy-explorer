@@ -1,0 +1,31 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+import "decentraland/sdk/components/common/explorer_ui.proto";
+
+option (common.ecs_component_id) = 1220;
+
+// PBExplorerUiEventsResult transports the lifecycle events of fullscreen explorer panels — a panel was
+// opened, a panel was closed. It is a grow only value set appended to the scene root entity, so every
+// event of a tick is delivered and none overwrites another.
+message PBExplorerUiEventsResult {
+  // Emitted when a fullscreen explorer panel is opened.
+  message UiOpened {}
+
+  // Emitted when a fullscreen explorer panel is closed.
+  message UiClosed {}
+
+  decentraland.sdk.components.common.ExplorerUi ui = 1; // The panel that the event refers to
+  uint32 timestamp = 2;                                 // The scene tick when the event occurred
+
+  // Extension point, deliberately narrow: a variant belongs here only if it is meaningful for every
+  // value of `ui`, because `ui` and `event` are independent axes and every combination of the two is
+  // representable. An event that belongs to one panel alone (an item was worn in the backpack, a photo
+  // was taken in the camera reel) is not added here — it gets its own result component, where the
+  // component identity carries the panel and no contradictory pair can be expressed at all.
+  oneof event {
+    UiOpened opened = 10;
+    UiClosed closed = 11;
+  }
+}

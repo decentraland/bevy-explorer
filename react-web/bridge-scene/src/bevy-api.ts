@@ -1,5 +1,5 @@
 // Typed accessor for the engine's `~system/BevyExplorerApi` (the SystemApi), available only
-// inside the super-user (--ui) scene sandbox. This is the ENGINE-side surface (raw shapes);
+// inside the super-user (--system-scene) scene sandbox. This is the ENGINE-side surface (raw shapes);
 // the wire shapes React sees live in the shared protocol. Only the methods the domains use
 // are declared — extend as needed.
 import type { ActionWire, Setting } from '../../src/engine/protocol'
@@ -102,8 +102,12 @@ export type BevyApiInterface = {
    *  system-action stream keeps flowing); `text` = a HUD text field holds keyboard focus
    *  (keys are typing — no actions resolve at all); `scroll` = the cursor is over a
    *  scrollable HUD element (the Scroll ACTIONS are reserved, so every input bound to
-   *  them drives the panel rather than world consumers like camera zoom). */
-  setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean }) => Promise<void>
+   *  them drives the panel rather than world consumers like camera zoom); `covered` = a
+   *  full-screen HUD surface (menu page, loading overlay) hides the world (scenes see
+   *  EngineInfo.scene_hidden); `menu` = the open full-screen menu page, named by the SystemAction
+   *  that toggles it ('Map', 'Backpack', ...), else null (backs the scene-facing openExplorerUi
+   *  action: its WAS_ALREADY_OPEN verdict and the page's opened/closed events). */
+  setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean; covered: boolean; menu: string | null }) => Promise<void>
   sendChat: (message: string, channel: string) => void
   getChatStream: () => Promise<AsyncIterable<ChatStreamMessage>>
   getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>

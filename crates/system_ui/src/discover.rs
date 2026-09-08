@@ -8,6 +8,7 @@ use bevy::{
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
+    base_domain::Service,
     rpc::RpcCall,
     structs::{IVec2Arg, SettingsTab, ZOrder},
     util::{ModifyComponentExt, TaskCompat, TaskExt},
@@ -203,9 +204,9 @@ impl DiscoverSettings {
 
     fn request(&mut self) {
         let mut url = if self.worlds {
-            common::base_domain::https("places", "/api/worlds/?limit=50")
+            common::base_domain::url(Service::Places, "/api/worlds/?limit=50")
         } else {
-            common::base_domain::https("places", "/api/places/?limit=50")
+            common::base_domain::url(Service::Places, "/api/places/?limit=50")
         };
 
         url = format!("{url}&offset={}", self.data.len());
@@ -432,8 +433,8 @@ impl DiscoverPage {
         Self {
             title: format!("({}, {})", coords.x, coords.y),
             base_position: format!("{},{}", coords.x, coords.y),
-            image: common::base_domain::https(
-                "peer",
+            image: common::base_domain::url(
+                Service::Catalyst,
                 "/content/contents/bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y",
             ),
             ..Default::default()
@@ -625,9 +626,7 @@ pub fn spawn_discover_popup(
     item: &DiscoverPage,
 ) {
     let url = match &item.world_name {
-        Some(name) => {
-            common::base_domain::https("worlds-content-server", &format!("/world/{name}"))
-        }
+        Some(name) => common::base_domain::url(Service::WorldsServer, &format!("/world/{name}")),
         None => common::structs::default_home_realm(),
     };
 

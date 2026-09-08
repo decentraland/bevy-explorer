@@ -162,6 +162,25 @@ impl From<DclTransformAndParentJson> for DclTransformAndParent {
     }
 }
 
+/// Make a scene-supplied scale safe for a bevy [`Transform`]. Only for the
+/// renderer-side value: anything written back to the scene must use the
+/// original scale, as scenes read exact values (e.g. `scale.z == 0`) back.
+pub fn sanitize_scale(mut scale: Vec3) -> Vec3 {
+    if !scale.is_finite() {
+        scale = Vec3::ONE;
+    }
+    if scale.x == 0.0 {
+        scale.x = f32::EPSILON;
+    };
+    if scale.y == 0.0 {
+        scale.y = f32::EPSILON;
+    };
+    if scale.z == 0.0 {
+        scale.z = f32::EPSILON;
+    };
+    scale
+}
+
 impl DclTransformAndParent {
     pub fn to_bevy_transform(&self) -> Transform {
         let rotation = self.rotation.to_bevy_quat().normalize();
@@ -171,19 +190,7 @@ impl DclTransformAndParent {
             bevy::prelude::Quat::IDENTITY
         };
 
-        let mut scale = self.scale;
-        if !scale.is_finite() {
-            scale = Vec3::ONE;
-        }
-        if scale.x == 0.0 {
-            scale.x = f32::EPSILON;
-        };
-        if scale.y == 0.0 {
-            scale.y = f32::EPSILON;
-        };
-        if scale.z == 0.0 {
-            scale.z = f32::EPSILON;
-        };
+        let scale = sanitize_scale(self.scale);
 
         let translation = self.translation.to_bevy_translation();
         let translation = if translation.is_finite() {

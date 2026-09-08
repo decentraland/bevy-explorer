@@ -65,7 +65,7 @@ impl Plugin for ReactHudCefPlugin {
         app.insert_resource(ReactHudOptions {
             server: self.server.clone(),
         });
-        // Needed to read engine fps for the perf overlay; may already be added by --log_fps/preview.
+        // Needed to read engine fps for the perf overlay; may already be added by --log-fps/preview.
         if !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>() {
             app.add_plugins(FrameTimeDiagnosticsPlugin::default());
         }
@@ -179,6 +179,17 @@ fn spawn_hud(
         url.push_str(if url.contains('?') { "&" } else { "?" });
         url.push_str("baseDomain=");
         url.push_str(&urlencoding::encode(common::base_domain::get()));
+    }
+    // and so does each explicit service override the HUD has a param for (it resolves its own
+    // service urls); a native-only service is not in its table, so it would land in the page's
+    // unrecognised-parameter dialog
+    for service in common::base_domain::Service::all().filter(|s| s.has_web_param()) {
+        if let Some(override_url) = common::base_domain::service_override(service) {
+            url.push_str(if url.contains('?') { "&" } else { "?" });
+            url.push_str(&service.param());
+            url.push('=');
+            url.push_str(&urlencoding::encode(override_url));
+        }
     }
 
     let (w, h) = windows

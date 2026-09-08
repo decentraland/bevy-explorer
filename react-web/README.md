@@ -31,7 +31,7 @@ React DOM page  ──BroadcastChannel('bevy-ui-bridge')──►  super-user br
    (this app)   ◄──────── events / rpc responses ───────   (slim SDK7 scene)
 ```
 
-- `SystemApi` and `BroadcastChannel` are exposed to the **super-user `--ui`
+- `SystemApi` and `BroadcastChannel` are exposed to the **super-user `--system-scene`
   scene only**, so React can't call the engine directly — a bridge scene relays.
 - The page-side client (`src/engine/bridge.ts`) is **transport-agnostic**: it only
   touches a `BroadcastChannel`, so it works whether the engine is in this document

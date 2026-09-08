@@ -6,7 +6,7 @@ import { serviceUrl } from '../../lib/baseDomain'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/fatalError'
-import { DEFAULT_REALM } from '../engine/EngineHost'
+import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
 import { bootMode } from '../../lib/bootMode'
 import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
@@ -1063,8 +1063,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
         if (dest == null) {
-          // Skip goes HOME — the engine's persisted home scene (the derived default realm at
-          // 0,0 unless the user pinned one), not a hardcoded Genesis Plaza.
+          // Skip goes HOME — the engine's persisted home scene (0,0 on the default realm unless
+          // the user pinned one; the engine gives no realm before launch, so the default is ours).
           const home = driver.homeScene?.()
           driver.launch?.(home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0')
         } else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
@@ -1143,7 +1143,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       validatingRealm.current = true
       const base =
         dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
-          ? `${serviceUrl('worlds-content-server')}/world/${dest.realm}`
+          ? `${serviceUrl('worldsServer')}/world/${dest.realm}`
           : dest.realm
       // Launching against an unreachable realm strands the engine in a cryptic login failure, so
       // block up front: 404 → not found, no/failed answer (incl. timeout) → unreachable.
@@ -1573,10 +1573,23 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     []
   )
   const uiFocus = anyPanelOpen || popupOpen || locked
+  // `covered` also spans the loading overlay: it outlives the engine's own out-of-world state
+  // (player spawn, render-settle, reveal debounce), so the engine can't see that tail itself.
+  const covered = menuPageOpen || phase === 'entering'
+  // The open menu page, by the SystemAction that toggles it (the pages are exclusive, so at most
+  // one is open). The engine answers a scene's openExplorerUi from this, and writes the page's
+  // opened/closed events to the scene whose request opened it.
+  const menu = settingsOpen ? 'Settings'
+    : backpackOpen ? 'Backpack'
+    : communitiesOpen ? 'Communities'
+    : mapOpen ? 'Map'
+    : placesOpen ? 'Places'
+    : galleryOpen ? 'Gallery'
+    : null
   useEffect(() => {
-    if (phase !== 'world') return
-    driverRef.current?.send({ kind: 'uiFocus', ui: uiFocus, text: textFocused, scroll: scrollHover })
-  }, [phase, uiFocus, textFocused, scrollHover])
+    if (phase !== 'world' && phase !== 'entering') return
+    driverRef.current?.send({ kind: 'uiFocus', ui: uiFocus, text: textFocused, scroll: scrollHover, covered, menu })
+  }, [phase, uiFocus, textFocused, scrollHover, covered, menu])
 
   // Pre-world the bridge stream doesn't exist, so popups opened during login/entering
   // (realm errors, world-visit prompts) need a DOM cancel fallback; in-world the engine's

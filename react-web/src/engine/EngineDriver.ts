@@ -130,7 +130,7 @@ export class EngineDriver implements LoginDriver {
     this.rpc.launch(realm, position)
   }
 
-  homeScene(): { realm: string; parcel: string } | null {
+  homeScene(): { realm: string | null; parcel: string } | null {
     return this.rpc.homeScene()
   }
 

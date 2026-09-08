@@ -58,6 +58,7 @@ pub struct WearableData {
     pub hides: Vec<WearableCategory>,
     pub replaces: Vec<WearableCategory>,
     pub removes_default_hiding: Option<Vec<String>>,
+    pub outline_compatible: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -97,7 +98,10 @@ fn load_collections(
             let t: Task<Result<Collections, anyhow::Error>> =
                 IoTaskPool::get().spawn_compat(async move {
                     let response = client
-                        .get(common::base_domain::https("peer", "/lambdas/collections"))
+                        .get(common::base_domain::url(
+                            common::base_domain::Service::Catalyst,
+                            "/lambdas/collections",
+                        ))
                         .timeout(std::time::Duration::from_secs(10))
                         .send()
                         .await
@@ -279,11 +283,17 @@ impl WearableCategory {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct WearableModel {
+    pub gltf: Handle<Gltf>,
+    pub outline_compatible: bool,
+}
+
 #[derive(Debug, TypePath, Clone)]
 pub struct Wearable {
     pub category: WearableCategory,
     pub hides: HashSet<WearableCategory>,
-    pub model: Option<Handle<Gltf>>,
+    pub model: Option<WearableModel>,
     pub texture: Option<Handle<Image>>,
     pub mask: Option<Handle<Image>>,
 }
@@ -469,7 +479,10 @@ impl AssetLoader for WearableLoader {
                     Wearable {
                         category,
                         hides,
-                        model: model.clone(),
+                        model: model.clone().map(|gltf| WearableModel {
+                            gltf,
+                            outline_compatible: meta.data.outline_compatible.unwrap_or(true),
+                        }),
                         texture: texture.clone(),
                         mask: mask.clone(),
                     },

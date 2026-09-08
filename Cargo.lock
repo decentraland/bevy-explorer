@@ -3656,6 +3656,7 @@ dependencies = [
  "serde",
  "serde_json",
  "social",
+ "system_api_types",
  "system_bridge",
  "system_ui",
  "texture_camera",
@@ -3672,6 +3673,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-fs",
+ "web-sys",
  "web-time",
  "wgpu",
  "world_ui",
@@ -9522,12 +9524,14 @@ dependencies = [
  "ethers-core",
  "futures-lite",
  "http 1.5.0",
+ "input_manager",
  "ipfs",
  "nft",
  "opener",
  "reqwest 0.12.15",
  "scene_runner",
  "serde_json",
+ "system_bridge",
  "tokio",
  "ui_core",
  "url",
@@ -11082,6 +11086,7 @@ dependencies = [
 name = "system_api_types"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "dcl_component",
  "serde",
  "serde_json",
@@ -11110,7 +11115,6 @@ dependencies = [
  "serde_repr",
  "system_api_types",
  "tokio",
- "urlencoding",
  "wasm-bindgen",
  "web-sys",
 ]

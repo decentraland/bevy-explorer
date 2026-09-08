@@ -10,8 +10,8 @@ use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
-        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
-        SceneDrivenAnimationRequest,
+        AudioDecoderError, EmoteCommand, EmoteLifecycle, EmoteLifecycleEvent, EmoteLifecycleSource,
+        GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync, SceneDrivenAnimationRequest,
     },
     util::ModifyComponentExt,
 };
@@ -102,6 +102,7 @@ impl Plugin for GlobalCrdtPlugin {
 
         app.init_resource::<VoiceMessageStreams>();
 
+        app.add_event::<EmoteLifecycleEvent>();
         app.add_systems(Update, process_transport_updates);
         app.add_systems(Update, despawn_players);
         app.add_observer(remove_transport_from_foreign_audio_source);
@@ -152,6 +153,9 @@ pub enum PlayerMessage {
         /// The server tick the emote started on; ordering only.
         incremental_id: u32,
         stopping: bool,
+        /// On a stop: the server's one-shot timer expired (a natural finish) rather than the
+        /// player cancelling.
+        completed: bool,
     },
     AudioStreamAvailable {
         transport: Entity,
@@ -181,11 +185,13 @@ impl std::fmt::Debug for PlayerMessage {
                 urn,
                 incremental_id,
                 stopping,
+                completed,
             } => f
                 .debug_struct("Emote")
                 .field("urn", urn)
                 .field("incremental_id", incremental_id)
                 .field("stopping", stopping)
+                .field("completed", completed)
                 .finish(),
             Self::AudioStreamAvailable { transport } => f
                 .debug_tuple("AudioStreamAvailable")
@@ -695,6 +701,7 @@ pub fn process_transport_updates(
     mut profile_events: EventWriter<ProfileEvent>,
     mut position_events: EventWriter<PlayerPositionEvent>,
     mut anim_events: EventWriter<PlayerSceneAnimEvent>,
+    mut emote_events: EventWriter<EmoteLifecycleEvent>,
     mut chat_events: EventWriter<ChatEvent>,
     mut string_senders: Local<HashMap<String, RpcEventSender>>,
     mut binary_senders: Local<HashMap<String, RpcStreamSender<(String, Vec<u8>)>>>,
@@ -913,18 +920,41 @@ pub fn process_transport_updates(
                             urn,
                             incremental_id,
                             stopping,
+                            completed,
                         } => {
                             debug!("emote: {urn} (stopping: {stopping})");
+                            // The wire is the only source of a foreign player's emote lifecycle
+                            // for scenes: raised here in wire order, on the client and the headless
+                            // server alike, so both report the same sequence.
                             if stopping {
                                 // Explicit stop (a looping emote cancelled, or a one-shot's server
                                 // completion). Foreign emotes no longer self-cancel on motion (see
                                 // `animate`), so the wire stop is what ends a looping one.
                                 commands.entity(entity).remove::<EmoteCommand>();
+                                emote_events.write(EmoteLifecycleEvent {
+                                    avatar: entity,
+                                    event: if completed {
+                                        EmoteLifecycle::Finished
+                                    } else {
+                                        EmoteLifecycle::Interrupted
+                                    },
+                                    source: EmoteLifecycleSource::Wire,
+                                });
+                            } else if !acceptable_emote_urn(&urn) {
+                                debug!(
+                                    "dropping emote with unacceptable urn from {:#x}",
+                                    update.address
+                                );
                             } else {
                                 commands.entity(entity).try_insert(EmoteCommand {
                                     timestamp: incremental_id as i64,
-                                    urn,
+                                    urn: urn.clone(),
                                     r#loop: false,
+                                });
+                                emote_events.write(EmoteLifecycleEvent {
+                                    avatar: entity,
+                                    event: EmoteLifecycle::Started { urn, r#loop: false },
+                                    source: EmoteLifecycleSource::Wire,
                                 });
                             }
                         }
@@ -1317,5 +1347,34 @@ fn receive_new_voice_message_senders(
         if let SystemApi::GetVoiceStream(stream) = event {
             voice_message_streams.push(stream.clone());
         }
+    }
+}
+
+/// Room for any collectible or scene-emote urn, not for a peer to fill scene crdt with.
+const MAX_EMOTE_URN_BYTES: usize = 256;
+
+/// Whether a peer's emote urn may reach scenes: it lands verbatim in `AvatarEmoteCommand`, and
+/// nothing upstream bounds it (Pulse validates an emote's duration and position, not its id).
+pub fn acceptable_emote_urn(urn: &str) -> bool {
+    !urn.is_empty()
+        && urn.len() <= MAX_EMOTE_URN_BYTES
+        && !urn.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn peer_emote_urns_are_bounded() {
+        assert!(acceptable_emote_urn(
+            "urn:decentraland:off-chain:base-emotes:wave"
+        ));
+        assert!(acceptable_emote_urn(&"x".repeat(MAX_EMOTE_URN_BYTES)));
+        assert!(!acceptable_emote_urn(""));
+        assert!(!acceptable_emote_urn(&"x".repeat(MAX_EMOTE_URN_BYTES + 1)));
+        assert!(!acceptable_emote_urn("urn:with space"));
+        assert!(!acceptable_emote_urn("urn:with\nnewline"));
+        assert!(!acceptable_emote_urn("urn:with\u{0}nul"));
     }
 }

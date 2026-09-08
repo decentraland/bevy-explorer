@@ -928,16 +928,20 @@ const REGISTRY_ZONE: &str = "https://asset-bundle-registry.decentraland.zone/pro
 /// The .zone and .org registries hold separate profile namespaces, so the registry must
 /// match the profile owner's environment, judged by their announced lambdas endpoint:
 /// a host under the custom base domain uses that domain's registry, else a host under
-/// the zone tld uses the zone registry.
+/// the zone tld uses the zone registry. An explicit registry override serves everyone.
 fn registry_url(endpoint: Option<&str>) -> String {
     let host = endpoint
         .and_then(|e| reqwest::Url::parse(e).ok())
         .and_then(|url| url.host_str().map(str::to_owned));
+    let registry = common::base_domain::Service::AssetBundleRegistry;
+    if common::base_domain::service_override(registry).is_some() {
+        return common::base_domain::url(registry, "/profiles");
+    }
     if let Some(host) = host {
         let base = common::base_domain::get();
         if common::base_domain::is_custom() && (host == base || host.ends_with(&format!(".{base}")))
         {
-            return common::base_domain::https("asset-bundle-registry", "/profiles");
+            return common::base_domain::url(registry, "/profiles");
         }
         if host.rsplit('.').next() == Some("zone") {
             return REGISTRY_ZONE.to_owned();

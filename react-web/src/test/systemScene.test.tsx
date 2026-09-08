@@ -75,9 +75,16 @@ describe('isTrustedBaseDomain', () => {
   })
 })
 
+const EVIL_SCENE = {
+  name: 'systemScene',
+  value: 'https://example.com/evil',
+  warning: 'Replaces the interface with a scene loaded from this address.'
+}
+const EVIL_DOMAIN = { name: 'baseDomain', value: 'interconnected.online', warning: 'Points every backend at this domain.' }
+
 describe('UntrustedLaunchGate', () => {
   it('names the offending value and leads with the safe action', () => {
-    render(<UntrustedLaunchGate systemScene="https://example.com/evil" onProceed={vi.fn()} />)
+    render(<UntrustedLaunchGate params={[EVIL_SCENE]} onProceed={vi.fn()} />)
     expect(screen.getByText(/not trusted/i)).toBeInTheDocument()
     expect(screen.getByText('https://example.com/evil')).toBeInTheDocument()
     // Proceeding is not reachable in one click — it sits behind Advanced.
@@ -85,16 +92,14 @@ describe('UntrustedLaunchGate', () => {
   })
 
   it('names an untrusted base domain the same way', () => {
-    render(<UntrustedLaunchGate baseDomain="interconnected.online" onProceed={vi.fn()} />)
+    render(<UntrustedLaunchGate params={[EVIL_DOMAIN]} onProceed={vi.fn()} />)
     expect(screen.getByText(/not trusted/i)).toBeInTheDocument()
     expect(screen.getByText('interconnected.online')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /continue anyway/i })).not.toBeInTheDocument()
   })
 
   it('names both parameters when a link carries both', () => {
-    render(
-      <UntrustedLaunchGate systemScene="https://example.com/evil" baseDomain="interconnected.online" onProceed={vi.fn()} />
-    )
+    render(<UntrustedLaunchGate params={[EVIL_SCENE, EVIL_DOMAIN]} onProceed={vi.fn()} />)
     expect(screen.getByText('https://example.com/evil')).toBeInTheDocument()
     expect(screen.getByText('interconnected.online')).toBeInTheDocument()
   })
@@ -102,7 +107,7 @@ describe('UntrustedLaunchGate', () => {
   it('only proceeds after Advanced, and only on the explicit confirm', async () => {
     const onProceed = vi.fn()
     const user = userEvent.setup()
-    render(<UntrustedLaunchGate systemScene="https://example.com/evil" onProceed={onProceed} />)
+    render(<UntrustedLaunchGate params={[EVIL_SCENE]} onProceed={onProceed} />)
 
     await user.click(screen.getByRole('button', { name: /advanced/i }))
     expect(onProceed).not.toHaveBeenCalled()

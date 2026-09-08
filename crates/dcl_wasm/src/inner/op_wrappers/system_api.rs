@@ -138,8 +138,12 @@ pub fn op_set_ui_focus(
     ui: bool,
     text: bool,
     scroll: bool,
+    covered: bool,
+    menu: JsValue,
 ) -> Result<(), WasmError> {
-    dcl::js::system_api::op_set_ui_focus(state.rc(), ui, text, scroll).map_err(WasmError::from)
+    serde_parse!(menu);
+    dcl::js::system_api::op_set_ui_focus(state.rc(), ui, text, scroll, covered, menu)
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -536,16 +540,4 @@ pub async fn op_read_block_update_stream(
     rid: u32,
 ) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::system_api::op_read_block_update_stream(state.rc(), rid).await)
-}
-
-#[wasm_bindgen]
-pub async fn op_get_params(state: &WorkerContext) -> Result<JsValue, WasmError> {
-    let map = dcl::js::system_api::op_get_params(state.rc())
-        .await
-        .map_err(WasmError::from)?;
-    let obj = js_sys::Object::new();
-    for (k, v) in map {
-        js_sys::Reflect::set(&obj, &k.into(), &v.into()).unwrap();
-    }
-    Ok(obj.into())
 }

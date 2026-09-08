@@ -8,10 +8,7 @@ use bevy::{
     core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
     pbr::{wireframe::WireframePlugin, CascadeShadowConfigBuilder, DirectionalLightShadowMap},
     prelude::*,
-    render::{
-        render_asset::RenderAssetBytesPerFrame,
-        view::{Layer, RenderLayers},
-    },
+    render::view::{Layer, RenderLayers},
 };
 
 use bevy::render::RenderApp;
@@ -70,14 +67,6 @@ impl Plugin for VisualsPlugin {
         })
         .insert_resource(AtmosphereModel::new(NishitaCloud::default()))
         .add_plugins(AtmospherePlugin);
-
-        let config = app.world().resource::<AppConfig>();
-
-        if config.graphics.gpu_bytes_per_frame > 0 {
-            app.insert_resource(RenderAssetBytesPerFrame::new_with_priorities(
-                config.graphics.gpu_bytes_per_frame,
-            ));
-        }
 
         // app.add_plugins(EnvmapDownsamplePlugin);
 

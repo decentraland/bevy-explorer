@@ -1,5 +1,6 @@
 pub mod base_wearables;
 pub mod emotes;
+pub mod ext;
 pub mod urn;
 pub mod wearables;
 

@@ -14,7 +14,7 @@ const RARITY = [
 
 // Catalyst thumbnail for an emote URN — derived client-side so the wheel shows previews
 // even if the scene relay didn't send a thumbnail. Strips a trailing `:tokenId` (on-chain NFTs).
-const CATALYST_CONTENTS = `${serviceUrl('peer')}/lambdas/collections/contents`
+const CATALYST_CONTENTS = `${serviceUrl('catalyst')}/lambdas/collections/contents`
 
 // Direct catalyst thumbnail URL — used straight as an <img>/<image> src. The catalyst sends
 // no Cross-Origin-Resource-Policy header, but the page runs COEP `credentialless`, under which
