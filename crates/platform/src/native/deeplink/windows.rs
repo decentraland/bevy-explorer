@@ -22,10 +22,11 @@ pub fn handler() -> Handler {
         .trim()
         .strip_prefix('"')
         .and_then(|rest| rest.split('"').next())
-        .map(Path::new)
+        .map(expand_env)
     else {
         return Handler::Other;
     };
+    let exe = Path::new(&exe);
     // a registration whose exe is gone (an uninstalled launcher) is nobody's
     if !exe.exists() {
         return Handler::None;
@@ -68,4 +69,50 @@ pub fn register_handler() -> Result<(), anyhow::Error> {
 
 fn current_exe() -> Result<PathBuf, anyhow::Error> {
     Ok(std::env::current_exe()?)
+}
+
+/// `%VAR%` references expanded the way the shell does before it launches the handler. A
+/// `REG_EXPAND_SZ` registration stores them as written and winreg hands them back that way, so
+/// without this a perfectly live `%LOCALAPPDATA%\...` exe looks like one that is gone.
+fn expand_env(value: &str) -> String {
+    let mut expanded = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some((before, after)) = rest.split_once('%') {
+        // an unterminated `%` is literal, and so is the whole tail after it
+        let Some((name, tail)) = after.split_once('%') else {
+            break;
+        };
+        expanded.push_str(before);
+        match std::env::var(name) {
+            Ok(value) => expanded.push_str(&value),
+            // `%%` and an unset variable are left as written, as the shell leaves them
+            Err(_) => {
+                expanded.push('%');
+                expanded.push_str(name);
+                expanded.push('%');
+            }
+        }
+        rest = tail;
+    }
+    expanded.push_str(rest);
+    expanded
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn env_references_expand() {
+        let system_root = std::env::var("SystemRoot").unwrap();
+        assert_eq!(
+            expand_env("%SystemRoot%\\a.exe"),
+            format!("{system_root}\\a.exe")
+        );
+        // left as written: an unset variable, an unterminated `%`, a literal `%%`
+        assert_eq!(expand_env("%DclNotSet%\\a.exe"), "%DclNotSet%\\a.exe");
+        assert_eq!(expand_env("C:\\a %b.exe"), "C:\\a %b.exe");
+        assert_eq!(expand_env("C:\\100%%\\a.exe"), "C:\\100%%\\a.exe");
+        assert_eq!(expand_env("C:\\plain\\a.exe"), "C:\\plain\\a.exe");
+    }
 }
