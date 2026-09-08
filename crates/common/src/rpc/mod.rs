@@ -275,6 +275,9 @@ pub enum RpcCall {
         urn: String,
         r#loop: bool,
     },
+    StopEmote {
+        scene: Entity,
+    },
     UiFocus {
         scene: Entity,
         action: RpcUiFocusAction,

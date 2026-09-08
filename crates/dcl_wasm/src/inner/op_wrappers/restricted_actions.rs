@@ -73,6 +73,12 @@ pub fn op_emote(op_state: &WorkerContext, emote: String) -> Result<(), WasmError
 }
 
 #[wasm_bindgen]
+pub fn op_stop_emote(op_state: &WorkerContext) -> Result<(), WasmError> {
+    dcl::js::restricted_actions::op_stop_emote(&mut *op_state.state.borrow_mut())
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
 pub async fn op_scene_emote(
     op_state: &WorkerContext,
     emote: String,

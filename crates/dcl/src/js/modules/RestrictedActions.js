@@ -27,9 +27,14 @@ module.exports.triggerEmote = async function (body) {
     return {} 
 }
 
-module.exports.triggerSceneEmote = async function (body) { 
+module.exports.triggerSceneEmote = async function (body) {
     Deno.core.ops.op_scene_emote(body.src, body.loop)
-    return {} 
+    return {}
+}
+
+module.exports.stopEmote = async function (body) {
+    Deno.core.ops.op_stop_emote()
+    return { success: true }
 }
 
 module.exports.changeRealm = async function (body) { 

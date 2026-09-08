@@ -230,6 +230,33 @@ pub struct EmoteCommand {
     pub r#loop: bool,
 }
 
+/// A transition in an avatar's triggered-emote playback, reported to scenes as an
+/// `AvatarEmoteCommand` entry by `avatar::emote_report`. Raised by `comms` from the wire (in wire
+/// order, so client and server report the same sequence) and by the avatar animator from
+/// playback; the reporter keeps the wire's word for foreign players and playback's for the rest.
+#[derive(Event, Clone, Debug)]
+pub struct EmoteLifecycleEvent {
+    pub avatar: Entity,
+    pub event: EmoteLifecycle,
+    pub source: EmoteLifecycleSource,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EmoteLifecycleSource {
+    Playback,
+    Wire,
+}
+
+#[derive(Clone, Debug)]
+pub enum EmoteLifecycle {
+    /// `r#loop` is the flag known at trigger time; the emote's own metadata may still make it loop.
+    Started { urn: String, r#loop: bool },
+    /// A one-shot ran to its end.
+    Finished,
+    /// Playback was cut short: movement, a scene animation, a stop from the wire.
+    Interrupted,
+}
+
 // Current scene-driven movement animation request for a player avatar. For the
 // primary player, written by the bridge system in `user_input` (after resolving
 // the scene-relative path against the active scene's content map). For foreign

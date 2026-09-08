@@ -156,6 +156,14 @@ pub fn op_emote(op_state: &mut impl State, emote: String) -> Result<(), anyhow::
     send_emote(op_state, emote, false)
 }
 
+pub fn op_stop_emote(op_state: &mut impl State) -> Result<(), anyhow::Error> {
+    debug!("op_stop_emote");
+    let scene = op_state.borrow::<CrdtContext>().scene_id.0;
+    op_state
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::StopEmote { scene })
+}
+
 pub async fn op_scene_emote(
     op_state: Rc<RefCell<impl State>>,
     emote: String,

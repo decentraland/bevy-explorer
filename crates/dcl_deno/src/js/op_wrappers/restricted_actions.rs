@@ -12,6 +12,7 @@ pub fn ops() -> Vec<OpDecl> {
         op_change_realm(),
         op_external_url(),
         op_emote(),
+        op_stop_emote(),
         op_scene_emote(),
         op_open_nft_dialog(),
         op_open_explorer_ui(),
@@ -77,6 +78,11 @@ async fn op_external_url(
 #[op2(fast)]
 fn op_emote(op_state: &mut OpState, #[string] emote: String) -> Result<(), anyhow::Error> {
     dcl::js::restricted_actions::op_emote(op_state, emote)
+}
+
+#[op2(fast)]
+fn op_stop_emote(op_state: &mut OpState) -> Result<(), anyhow::Error> {
+    dcl::js::restricted_actions::op_stop_emote(op_state)
 }
 
 #[op2(async)]
