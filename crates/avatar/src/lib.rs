@@ -827,18 +827,32 @@ fn update_render_avatar(
                                 // File path emote (e.g. "models/emotes/foo.glb") — resolve
                                 // through the scene's content map to build a scene-emote URN,
                                 // mirroring the logic in op_scene_emote.
-                                let se = maybe_scene_ent?;
-                                let ctx = scenes.get(se.root).ok()?;
-                                let scene_hash = &ctx.hash;
-                                let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-                                    scene_hash.clone(),
-                                    e.to_lowercase(),
-                                ));
-                                let ipfs_context = ipfas.ipfs().context.blocking_read();
-                                let emote_hash = ipfs_path.hash(&ipfs_context)?;
-                                format!(
-                                    "urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-false"
-                                )
+                                let scene_emote = maybe_scene_ent
+                                    .and_then(|se| scenes.get(se.root).ok())
+                                    .and_then(|ctx| {
+                                        let scene_hash = &ctx.hash;
+                                        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+                                            scene_hash.clone(),
+                                            e.to_lowercase(),
+                                        ));
+                                        let ipfs_context = ipfas.ipfs().context.blocking_read();
+                                        let emote_hash = ipfs_path.hash(&ipfs_context)?;
+                                        Some(format!(
+                                            "urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-false"
+                                        ))
+                                    });
+
+                                // otherwise a bare base-emote name ("robot"). content map
+                                // first because a file path is also a valid single-segment urn.
+                                match scene_emote
+                                    .or_else(|| EmoteUrn::new(e).ok().map(String::from))
+                                {
+                                    Some(urn) => urn,
+                                    None => {
+                                        warn!("ignoring avatar shape emote '{e}': not in the scene content map, and not a valid emote urn");
+                                        return None;
+                                    }
+                                }
                             };
                             Some(EmoteCommand {
                                 urn,

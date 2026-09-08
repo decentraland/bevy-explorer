@@ -1,5 +1,5 @@
 # dev entry points. `just --list` for a summary.
-# node recipes assume node 20 on PATH (nvm users: the interactive shell's PATH is inherited).
+# node recipes assume node 22+ on PATH (nvm users: the interactive shell's PATH is inherited).
 
 # build the wasm engine into deploy/web/engine/pkg, then serve the react-web page (which hosts
 # the engine + live bridge-scene preview) and open a browser at the vite dev server.
