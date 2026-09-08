@@ -25,6 +25,11 @@ use dcl_component::{
 
 use super::AddCrdtInterfaceExt;
 
+/// bounds for the scene-supplied `PBVirtualCamera.fov`, in degrees. 0 or negative gives a
+/// degenerate projection matrix, 180 or more inverts it, and a non-finite value poisons it.
+const MIN_FOV_DEGREES: f32 = 1.0;
+const MAX_FOV_DEGREES: f32 = 179.0;
+
 pub struct CameraModeAreaPlugin;
 
 #[derive(Component, Debug)]
@@ -280,7 +285,8 @@ pub fn update_camera_mode_area(
                         fov: maybe_virtual
                             .as_ref()
                             .and_then(|v| v.0.fov)
-                            .map(f32::to_radians)
+                            .filter(|fov| fov.is_finite())
+                            .map(|fov| fov.clamp(MIN_FOV_DEGREES, MAX_FOV_DEGREES).to_radians())
                             .unwrap_or(PLAYER_CAMERA_FOV),
                     }));
                 }
