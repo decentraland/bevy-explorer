@@ -242,7 +242,11 @@ function toProfileExtras(msg: SaveProfileRequest): Record<string, JsonValue> {
   const set = (key: string, value: string | number | undefined): void => {
     extras[key] = value == null || value === '' ? null : value
   }
-  if (msg.description !== undefined) set('description', msg.description.trim())
+  // `description` is REQUIRED by the profile schema (@dcl/schemas Avatar), so clearing it means
+  // sending an empty string: a null here removes the key, and the catalyst rejects the deploy with
+  // "failed to deploy to server." Every other field below is nullable/optional, so for those a
+  // null — which the engine applies by removing the key — is the right way to clear.
+  if (msg.description !== undefined) extras.description = msg.description.trim()
   if (msg.links !== undefined) {
     const links = msg.links.filter((l) => l.url !== '')
     extras.links = links.length > 0 ? links : null
