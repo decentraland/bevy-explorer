@@ -145,14 +145,30 @@ async function fetchPhotos(address: string): Promise<string[] | undefined> {
 }
 
 export function registerProfile(ctx: Ctx): void {
-  ctx.on('getProfile', async () => {
+  // The page marks its world-entry profile fetch done as soon as it ASKS, so an answer of `null`
+  // costs it the profile for the whole session. `getPlayer()` is the scene's view of the player
+  // CRDT, which lags world entry by a good few hundred frames, so a request that arrives in that
+  // window is held rather than answered — the page only ever hears a profile it can use.
+  let wanted = false
+  let inFlight = false
+  const answerProfile = async (): Promise<void> => {
     const player = getPlayer()
-    if (player == null) {
-      ctx.send({ kind: 'profile', profile: null })
-      return
+    if (player == null || inFlight) return
+    wanted = false
+    inFlight = true
+    try {
+      const data = await fetchProfile(player.userId).catch(() => undefined)
+      ctx.send({ kind: 'profile', profile: toProfile(data?.avatars?.[0], player.userId, player.isGuest, player.name) })
+    } finally {
+      inFlight = false
     }
-    const data = await fetchProfile(player.userId).catch(() => undefined)
-    ctx.send({ kind: 'profile', profile: toProfile(data?.avatars?.[0], player.userId, player.isGuest, player.name) })
+  }
+  ctx.on('getProfile', () => {
+    wanted = true
+    void answerProfile()
+  })
+  ctx.push(() => {
+    if (wanted) void answerProfile()
   })
 
   // View Profile: fetch another user's full passport by address (profile + badges + photos).
