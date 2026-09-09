@@ -4,7 +4,7 @@
 // bodies are strings, so the chosen picture previews locally but isn't sent yet.
 
 import { useEffect, useRef, useState } from 'react'
-import { openPopup, showConfirm } from '../../design'
+import { Select, openPopup, showConfirm } from '../../design'
 import styles from './CommunityCreateModal.module.css'
 
 const MEMBERSHIP = [
@@ -134,17 +134,17 @@ export function CommunityCreateModal({
         </div>
 
         <div className={styles.group}>
-          <label className={styles.label} htmlFor="cc-membership">MEMBERSHIP</label>
-          <div className={styles.selectWrap}>
-            <select id="cc-membership" className={styles.select} value={privacy} onChange={(e) => setPrivacy(e.target.value as 'public' | 'private')}>
-              {MEMBERSHIP.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}  {o.note}</option>
-              ))}
-            </select>
-            <svg className={styles.chevron} viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-              <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
+          <span className={styles.label}>MEMBERSHIP</span>
+          {/* Our own listbox, not a native <select>: the HUD renders offscreen and CEF paints a
+              native dropdown as a popup surface the engine does not composite, which covers the
+              whole HUD (see DateField). The note rides along in the option's label. */}
+          <Select
+            aria-label="Membership"
+            variant="light"
+            value={privacy}
+            options={MEMBERSHIP.map((o) => ({ value: o.value, label: `${o.label}: ${o.note}` }))}
+            onChange={(value) => setPrivacy(value as 'public' | 'private')}
+          />
         </div>
       </div>
 

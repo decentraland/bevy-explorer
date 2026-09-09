@@ -128,6 +128,23 @@ describe('community create modal guards what you typed', () => {
     expect((screen.getByLabelText(/community name/i) as HTMLInputElement).value).toBe('Builders')
   })
 
+  it('picks membership from our own listbox, with the explanation in the option', async () => {
+    render(<PopupHost />)
+    const onCreate = vi.fn()
+    act(() => {
+      openCommunityCreateModal(true, onCreate)
+    })
+    await userEvent.type(screen.getByLabelText(/community name/i), 'Builders')
+
+    // A native <select> would open a Chromium popup, which the offscreen HUD cannot composite.
+    expect(document.querySelector('select')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Membership' }))
+    await userEvent.click(screen.getByRole('option', { name: /^Private: Members must be approved/ }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'CREATE' }))
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ privacy: 'private' }))
+  })
+
   it('closes untouched, with nothing to lose', () => {
     render(<PopupHost />)
     act(() => {

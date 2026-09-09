@@ -74,6 +74,11 @@
   z-index: var(--z-overlay);
   scrollbar-width: thin;
 }
+/* Opened upwards, when the box that would clip the list has no room below it. */
+.listUp {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
 .option {
   display: block;
   width: 100%;
