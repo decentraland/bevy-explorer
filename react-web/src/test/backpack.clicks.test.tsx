@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { BackpackPage } from '../features/backpack/BackpackPage'
 import type { Outfit, OutfitSlot, Wearable } from '../engine/protocol'
 import type { BackpackState } from '../features/session/useEngineSession'
-import { fakeSession } from './harness'
+import { fakeProfileState, fakeSession } from './harness'
 
 const wearable = (over: Partial<Wearable> = {}): Wearable => ({
   urn: 'urn:hat',
@@ -28,7 +28,7 @@ function renderBackpack(over: Partial<BackpackState> = {}): BackpackState {
     <BackpackPage
       backpack={backpack}
       emotes={emotes}
-      profile={{ data: null, open: false, toggle: vi.fn() }}
+      profile={fakeProfileState()}
       onNavigate={vi.fn()}
       setEngineViewport={vi.fn()}
     />
@@ -127,7 +127,7 @@ describe('backpack page clicks', () => {
       <BackpackPage
         backpack={backpack}
         emotes={emotes}
-        profile={{ data: null, open: false, toggle: vi.fn() }}
+        profile={fakeProfileState()}
         onNavigate={vi.fn()}
         setEngineViewport={vi.fn()}
         initialTab="emotes"

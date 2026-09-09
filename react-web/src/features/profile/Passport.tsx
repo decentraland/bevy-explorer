@@ -13,6 +13,7 @@ import type { Profile } from '../../engine/protocol'
 export function Passport({ userId, onClose }: { userId: string; onClose: () => void }): React.JSX.Element {
   const session = useSession()
   const { requestUserProfile } = session
+  const { requestOwnedNames } = session.profile
   // Fetch the rich profile (badges/photos/about) on open; render identity-only until it lands.
   useEffect(() => {
     requestUserProfile(userId)
@@ -33,10 +34,26 @@ export function Passport({ userId, onClose }: { userId: string; onClose: () => v
           isGuest: false
         })
 
+  // Only your own passport can be edited, so the claimed-name list is only worth fetching there.
+  useEffect(() => {
+    if (isSelf) requestOwnedNames()
+  }, [isSelf, requestOwnedNames])
+
   return (
     <ProfilePassport
       profile={profile}
       isSelf={isSelf}
+      editing={
+        isSelf && session.profile.data != null
+          ? {
+              ownedNames: session.profile.ownedNames,
+              saving: session.profile.saving,
+              error: session.profile.saveError,
+              save: session.profile.save,
+              dismissError: session.profile.dismissSaveError
+            }
+          : undefined
+      }
       relationship={relationshipOf(session.friends, userId)}
       onAddFriend={(address) => session.friends.act('request', address)}
       onClose={onClose}

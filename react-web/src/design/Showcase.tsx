@@ -9,6 +9,8 @@ import { Tooltip } from './Tooltip'
 import { Toggle } from './Toggle'
 import { Slider } from './Slider'
 import { Select } from './Select'
+import { TextInput } from './TextInput'
+import { TextArea } from './TextArea'
 import { Panel } from './Panel'
 import { DclLogo } from './DclLogo'
 import { Avatar } from './Avatar'
@@ -132,6 +134,8 @@ export function Showcase(): React.JSX.Element {
   const [on, setOn] = useState(true)
   const [vol, setVol] = useState(60)
   const [res, setRes] = useState('1080')
+  const [name, setName] = useState('robtfm')
+  const [bio, setBio] = useState('')
   return (
     <div style={wrap}>
       {/* Showcase renders instead of Hud, so it hosts its own popup layer for the dialog demos below. */}
@@ -269,6 +273,16 @@ export function Showcase(): React.JSX.Element {
             <span style={{ fontSize: 14, width: 60 }}>Volume</span>
             <Slider value={vol} onChange={setVol} aria-label="Volume" />
             <span style={{ fontSize: 13, color: 'var(--ink-45)', width: 32 }}>{vol}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 14 }}>Display name</span>
+            <TextInput value={name} onChange={setName} placeholder="Your name" maxLength={15} />
+            <TextInput value={name} onChange={setName} variant="light" placeholder="light variant" maxLength={15} />
+            <TextInput value="not-a-url" onChange={() => {}} invalid aria-label="Invalid example" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 14 }}>About me</span>
+            <TextArea value={bio} onChange={setBio} placeholder="Tell people about yourself" maxLength={400} counter />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 14 }}>Resolution</span>

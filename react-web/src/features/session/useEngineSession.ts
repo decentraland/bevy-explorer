@@ -12,6 +12,7 @@ import { bootMode } from '../../lib/bootMode'
 import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { dispatchCancelLayer } from '../../lib/cancelLayers'
 import { isInputLocked, subscribeInputLock } from '../../lib/inputLock'
+import { applyProfileEdit } from '../profile/profileFields'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
@@ -39,6 +40,7 @@ import type {
   PermissionRequestMessage,
   ProximityTip,
   Profile,
+  ProfileEdit,
   SceneLoadingState,
   Setting,
   Wearable
@@ -208,6 +210,16 @@ export interface ProfileState {
   data: Profile | null
   open: boolean
   toggle: () => void
+  /** Claimed (NFT) names this account owns — the display-name picker's options. */
+  ownedNames: string[]
+  /** A save is in flight: the engine acks it only once the new profile version has deployed. */
+  saving: boolean
+  /** Why the last save failed, or null. */
+  saveError: string | null
+  /** Apply a partial edit to your own profile. Omitted fields are left alone. */
+  save: (edit: ProfileEdit) => void
+  requestOwnedNames: () => void
+  dismissSaveError: () => void
 }
 
 export interface FriendsState {
@@ -509,6 +521,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [profileOpen, setProfileOpen] = useState(false)
   // Fetched OTHER-user passports (View Profile), keyed by lowercased address.
   const [userProfiles, setUserProfiles] = useState<Record<string, Profile | null>>({})
+  // Own-profile edit: the claimed names the picker offers, and the state of the save in flight.
+  const [ownedNames, setOwnedNames] = useState<string[]>([])
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null)
+  // What the profile looked like before the in-flight save, to put back if the engine rejects it.
+  const profileRevertRef = useRef<{ address: string; profile: Profile | null; userProfile: Profile | null } | null>(null)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [emotes, setEmotes] = useState<Emote[]>([])
@@ -648,9 +666,33 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'profile':
           setProfile(msg.profile)
+          // The passport reads `userProfiles`, so an authoritative profile has to reach that copy
+          // too or a just-saved name would keep its stale claimed-name seal until reopened. Merged,
+          // not replaced: this message carries no badges/photos/equipped items.
+          if (msg.profile != null) {
+            const self = msg.profile.address.toLowerCase()
+            setUserProfiles((prev) => (prev[self] != null ? { ...prev, [self]: { ...prev[self], ...msg.profile } } : prev))
+          }
           break
         case 'userProfile':
           setUserProfiles((prev) => ({ ...prev, [msg.address.toLowerCase()]: msg.profile }))
+          break
+        case 'ownedNames':
+          setOwnedNames(msg.names)
+          break
+        case 'profileSaved':
+          setProfileSaving(false)
+          // A failed save must not leave the optimistic edit on screen claiming to be saved, so the
+          // pre-save profile goes back — see saveProfile.
+          if (!msg.ok) {
+            setProfileSaveError(msg.error ?? 'Could not save your profile.')
+            const revert = profileRevertRef.current
+            if (revert != null) {
+              setProfile(revert.profile)
+              setUserProfiles((prev) => ({ ...prev, [revert.address]: revert.userProfile }))
+            }
+          }
+          profileRevertRef.current = null
           break
         case 'notifications':
           setNotifications(msg.notifications)
@@ -1268,6 +1310,29 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const requestUserProfile = useCallback((address: string) => {
     driverRef.current?.send({ kind: 'getUserProfile', address })
   }, [])
+  const requestOwnedNames = useCallback(() => {
+    driverRef.current?.send({ kind: 'getOwnedNames' })
+  }, [])
+  // Save an edit to YOUR OWN profile. Applied locally straight away — the engine only acks once it
+  // has deployed the new version, and the catalyst reindexes later still, so waiting for the round
+  // trip would leave the passport showing the old profile for seconds after a save. `profileSaved`
+  // either confirms it or hands back the pre-save state (see the message handler).
+  const saveProfile = useCallback(
+    (edit: ProfileEdit) => {
+      const address = profile?.address.toLowerCase() ?? ''
+      profileRevertRef.current = { address, profile, userProfile: userProfiles[address] ?? null }
+      setProfileSaveError(null)
+      setProfileSaving(true)
+      driverRef.current?.send({ kind: 'saveProfile', ...edit })
+      setProfile((prev) => (prev != null ? applyProfileEdit(prev, edit) : prev))
+      setUserProfiles((prev) => {
+        const mine = prev[address]
+        return mine != null ? { ...prev, [address]: applyProfileEdit(mine, edit) } : prev
+      })
+    },
+    [profile, userProfiles]
+  )
+  const dismissProfileSaveError = useCallback(() => setProfileSaveError(null), [])
   const friendAct = useCallback((op: FriendAction, address: string) => {
     driverRef.current?.send({ kind: 'friendAction', op, address })
   }, [])
@@ -1718,7 +1783,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     settings: { list: settings, open: settingsOpen, toggle: toggleSettings, set: settingSet },
     bindings: { list: bindings, set: bindingsSet, reset: bindingsReset, capture: captureBinding },
-    profile: { data: profile, open: profileOpen, toggle: toggleProfile },
+    profile: {
+      data: profile,
+      open: profileOpen,
+      toggle: toggleProfile,
+      ownedNames,
+      saving: profileSaving,
+      saveError: profileSaveError,
+      save: saveProfile,
+      requestOwnedNames,
+      dismissSaveError: dismissProfileSaveError
+    },
     userProfiles,
     requestUserProfile,
     notifications: {

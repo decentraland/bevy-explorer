@@ -12,10 +12,12 @@ import {
   type OutfitsMetadata,
   type PageToScene,
   type Profile,
+  type ProfileEdit,
   type SceneToPage,
   type Setting,
   type Wearable
 } from './protocol'
+import { applyProfileEdit } from '../features/profile/profileFields'
 
 // A fully-populated passport for the mock, so the React passport shows every section.
 function richProfile(address: string, name: string, isGuest: boolean): Profile {
@@ -38,10 +40,12 @@ function richProfile(address: string, name: string, isGuest: boolean): Profile {
     equippedEmotes: mockEquippedEmotes(),
     info: {
       gender: 'Male',
-      birthdate: '26/11/1991',
+      birthdate: '1991-11-26',
       pronouns: 'He / Him',
       relationship: 'Single',
+      sexualOrientation: 'Heterosexual',
       language: 'Persian',
+      country: 'Argentina',
       profession: 'IT',
       employment: 'Chilling',
       hobby: 'games.movie.party',
@@ -216,6 +220,13 @@ const defaultBindings = (): BindingEntry[] => [
   [{ System: 'Friends' }, ['KeyL']],
   [{ System: 'ChatPanel' }, ['KeyT']]
 ]
+
+// Saved profile edits, in order. Applied over the mock's stock passport so an edit made in ?mock=1
+// sticks for the rest of the session — the real bridge gets the same effect by folding the save
+// into its catalyst cache.
+const ownEdits: ProfileEdit[] = []
+const ownProfile = (o: MockOptions): Profile =>
+  ownEdits.reduce(applyProfileEdit, richProfile(o.userId, o.hasPreviousLogin ? 'Mojito' : 'Guest#beef', !o.hasPreviousLogin))
 
 interface MockOptions {
   /** Simulate a returning user (reuse-login flow) vs a fresh user. */
@@ -732,13 +743,31 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'getProfile') {
-      reply({
-        kind: 'profile',
-        profile: richProfile(o.userId, o.hasPreviousLogin ? 'Mojito' : 'Guest#beef', !o.hasPreviousLogin)
-      })
+      reply({ kind: 'profile', profile: ownProfile(o) })
+      return
+    }
+    if (msg.kind === 'getOwnedNames') {
+      reply({ kind: 'ownedNames', names: o.hasPreviousLogin ? ['Mojito', 'MojitoDCL'] : [] })
+      return
+    }
+    if (msg.kind === 'saveProfile') {
+      const { kind: _kind, ...edit } = msg
+      // `robtfmfail` is the mock's failure switch: renaming to it exercises the error path (the
+      // engine rejects a deploy the same way) without needing a broken catalyst.
+      if (edit.name === 'robtfmfail') {
+        reply({ kind: 'profileSaved', ok: false, error: 'failed to deploy to server.' })
+        return
+      }
+      ownEdits.push(edit)
+      reply({ kind: 'profileSaved', ok: true })
+      reply({ kind: 'profile', profile: ownProfile(o) })
       return
     }
     if (msg.kind === 'getUserProfile') {
+      if (msg.address.toLowerCase() === o.userId.toLowerCase()) {
+        reply({ kind: 'userProfile', address: msg.address, profile: ownProfile(o) })
+        return
+      }
       // Resolve a real name from the nearby roster (real engine gets it from the catalyst).
       const member = MOCK_NEARBY.find((m) => m.address.toLowerCase() === msg.address.toLowerCase())
       const name = member?.name || `${msg.address.slice(0, 6)}…${msg.address.slice(-4)}`
