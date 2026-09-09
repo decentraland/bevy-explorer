@@ -3,7 +3,7 @@
 // save, so a field-by-field save would deploy eleven times for one visit.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, FieldLabel, Select, TextArea, TextInput, Trash, showConfirm } from '../../design'
+import { Button, FieldLabel, Select, TextArea, TextInput, Trash } from '../../design'
 import type { Profile, ProfileEdit, ProfileInfo } from '../../engine/protocol'
 import { FIELD_OPTIONS } from './profileFieldOptions'
 import {
@@ -65,7 +65,6 @@ export function ProfileEditForm({
   saving,
   error,
   onSave,
-  onCancel,
   onDismissError,
   onStatusChange,
   saveRef
@@ -74,7 +73,6 @@ export function ProfileEditForm({
   saving: boolean
   error: string | null
   onSave: (edit: ProfileEdit) => void
-  onCancel: () => void
   onDismissError: () => void
   /** Report editability upward: SAVE lives in the passport header (always in view — the form is
    *  taller than the panel), and the passport guards its close paths on `dirty`. */
@@ -110,20 +108,6 @@ export function ProfileEditForm({
   const setLink = (index: number, patch: Partial<LinkDraft>): void =>
     setDraft((d) => ({ ...d, links: d.links.map((l, i) => (i === index ? { ...l, ...patch } : l)) }))
 
-  const cancel = async (): Promise<void> => {
-    if (
-      dirty &&
-      !(await showConfirm({
-        title: 'Discard changes?',
-        body: 'Your edits to this profile will be lost.',
-        confirmLabel: 'Discard',
-        cancelLabel: 'Keep editing'
-      }))
-    ) {
-      return
-    }
-    onCancel()
-  }
 
   return (
     <section className={styles.form} aria-label="Edit profile">
@@ -227,11 +211,6 @@ export function ProfileEditForm({
         </Button>
       )}
 
-      <div className={styles.actions}>
-        <Button variant="ghost" onClick={() => void cancel()} disabled={saving}>
-          CANCEL
-        </Button>
-      </div>
     </section>
   )
 }

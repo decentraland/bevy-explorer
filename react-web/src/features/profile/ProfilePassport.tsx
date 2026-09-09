@@ -8,7 +8,7 @@
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Avatar, Button, EquippedItemCard, Icon, Pencil, Tooltip, type EquippedItemCardProps } from '../../design'
+import { Avatar, Button, EquippedItemCard, Icon, Pencil, Tooltip, showConfirm, type EquippedItemCardProps } from '../../design'
 import { CategoryIcon } from '../backpack/categoryIcons'
 import { catalystThumbUrl, nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileEdit, Wearable } from '../../engine/protocol'
@@ -138,6 +138,24 @@ export function ProfilePassport({
   )
   // Only edit mode has unsaved state; leaving it (save, cancel) clears the guard.
   const unsaved = editMode && editStatus.dirty
+
+  // Leaving edit mode without saving. Asks the same question the popup layer asks when you close
+  // the whole passport with work in progress — this is the same loss, by a shorter route.
+  const cancelEdit = async (): Promise<void> => {
+    if (
+      unsaved &&
+      !(await showConfirm({
+        title: 'Discard changes?',
+        body: 'Your edits to this profile will be lost.',
+        confirmLabel: 'Discard',
+        cancelLabel: 'Keep editing'
+      }))
+    ) {
+      return
+    }
+    editing?.dismissError()
+    setEditMode(false)
+  }
   const dirtyCb = useRef(onDirtyChange)
   dirtyCb.current = onDirtyChange
   useEffect(() => {
@@ -200,18 +218,6 @@ export function ProfilePassport({
             )}
           </div>
           <div className={styles.headActions}>
-            {canEdit && !editMode && (
-              <button
-                type="button"
-                className={styles.headBtn}
-                onClick={() => {
-                  setTab('overview')
-                  setEditMode(true)
-                }}
-              >
-                EDIT PROFILE
-              </button>
-            )}
             {!isSelf && relationship !== 'incoming' && relationship !== 'blocked' &&
               (relationship === 'friend' ? (
                 <button type="button" className={`${styles.headBtn} ${styles.headBtnInert}`} disabled>
@@ -238,7 +244,13 @@ export function ProfilePassport({
                 {editing.saving ? 'SAVING…' : 'SAVE'}
               </Button>
             )}
-            <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>×</button>
+            {canEdit && editMode ? (
+              <Button variant="secondary" onClick={() => void cancelEdit()} disabled={editing.saving}>
+                CANCEL
+              </Button>
+            ) : (
+              <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>×</button>
+            )}
           </div>
         </header>
 
@@ -284,20 +296,32 @@ export function ProfilePassport({
                 onSave={editing.save}
                 onStatusChange={onStatusChange}
                 saveRef={saveRef}
-                onCancel={() => {
-                  editing.dismissError()
-                  setEditMode(false)
-                }}
                 onDismissError={editing.dismissError}
               />
             )}
-            {tab === 'overview' && !hasOverview && !editMode && (
+            {tab === 'overview' && !hasOverview && !editMode && !canEdit && (
               <div className={styles.empty}>This profile has no details to show yet.</div>
             )}
-            {tab === 'overview' && hasOverview && (
+            {tab === 'overview' && (hasOverview || canEdit) && (
               <>
-                {hasAbout && !editMode && (
+                {/* Rendered for your own passport even when empty: the pencil in its corner is how
+                    profile editing is reached, so an untouched profile still has a way in. */}
+                {(hasAbout || canEdit) && !editMode && (
                 <section className={styles.card}>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className={styles.cardEdit}
+                      aria-label="Edit profile"
+                      onClick={() => {
+                        setTab('overview')
+                        setEditMode(true)
+                      }}
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  )}
+                  {!hasAbout && <p className={styles.about}>Nothing here yet — the pencil adds your details.</p>}
                   {profile.description && (
                     <>
                       <h2 className={styles.cardTitle}>About Me</h2>

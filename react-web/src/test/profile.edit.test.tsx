@@ -32,23 +32,33 @@ const renderPassport = (edit: PassportEditing, self = true, p: Profile = profile
 
 const openEditor = async (edit: PassportEditing, p: Profile = profile): Promise<void> => {
   renderPassport(edit, true, p)
-  await userEvent.click(screen.getByRole('button', { name: 'EDIT PROFILE' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
 }
 
 describe('passport edit mode', () => {
   it('is offered on your own passport only', () => {
     const { unmount } = render(<ProfilePassport profile={profile} isSelf editing={editing()} onClose={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'EDIT PROFILE' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit profile' })).toBeInTheDocument()
     unmount()
 
     // Someone else's passport: same profile, isSelf false.
     render(<ProfilePassport profile={profile} editing={editing()} onClose={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: 'EDIT PROFILE' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit profile' })).not.toBeInTheDocument()
+  })
+
+  it('is reachable on an empty profile — the panel is drawn for you even with nothing in it', () => {
+    const bare: Profile = { address: '0xme', name: 'Mojito', hasClaimedName: true, isGuest: false }
+    render(<ProfilePassport profile={bare} isSelf editing={editing()} onClose={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Edit profile' })).toBeInTheDocument()
+
+    // Someone else's empty profile says so instead.
+    render(<ProfilePassport profile={bare} onClose={vi.fn()} />)
+    expect(screen.getByText('This profile has no details to show yet.')).toBeInTheDocument()
   })
 
   it('is not offered when the session has no edit plumbing (still loading)', () => {
     render(<ProfilePassport profile={profile} isSelf onClose={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: 'EDIT PROFILE' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit profile' })).not.toBeInTheDocument()
   })
 
   it('opens seeded from the current profile', async () => {
@@ -112,7 +122,7 @@ describe('passport edit mode', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Edit name' }))
     expect(edit.editName).toHaveBeenCalled()
 
-    await userEvent.click(screen.getByRole('button', { name: 'EDIT PROFILE' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
     expect(screen.queryByLabelText('Custom display name')).toBeNull()
     expect(screen.queryByLabelText('Display name')).toBeNull()
   })
@@ -120,7 +130,7 @@ describe('passport edit mode', () => {
   it('stays open on a failed save, keeping the edits and showing why', async () => {
     const edit = editing()
     const { rerender } = render(<ProfilePassport profile={profile} isSelf editing={edit} onClose={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'EDIT PROFILE' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
     await userEvent.type(screen.getByLabelText('About me'), '!')
 
     rerender(<ProfilePassport profile={profile} isSelf editing={editing({ saving: true })} onClose={vi.fn()} />)
@@ -133,19 +143,28 @@ describe('passport edit mode', () => {
 
   it('closes once a save lands', async () => {
     const { rerender } = render(<ProfilePassport profile={profile} isSelf editing={editing()} onClose={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'EDIT PROFILE' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
     rerender(<ProfilePassport profile={profile} isSelf editing={editing({ saving: true })} onClose={vi.fn()} />)
     rerender(<ProfilePassport profile={profile} isSelf editing={editing()} onClose={vi.fn()} />)
     expect(screen.queryByLabelText('About me')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'EDIT PROFILE' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit profile' })).toBeInTheDocument()
   })
 
-  it('confirms before discarding unsaved edits', async () => {
+  it('turns the close × into CANCEL while editing, and asks before dropping the edit', async () => {
     resetPopups()
     await openEditor(editing())
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
     await userEvent.type(screen.getByLabelText('About me'), '!')
+
     await userEvent.click(screen.getByRole('button', { name: 'CANCEL' }))
-    expect(await screen.findByText('Discard changes?')).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'Keep editing' }))
+    expect((screen.getByLabelText('About me') as HTMLTextAreaElement).value).toMatch(/!$/)
+
+    await userEvent.click(screen.getByRole('button', { name: 'CANCEL' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Discard' }))
+    // Back to the passport, with the × restored.
+    expect(screen.queryByLabelText('About me')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
     resetPopups()
   })
 
@@ -201,7 +220,7 @@ describe('unsaved edits are announced upward', () => {
         <PopupHost />
       </>
     )
-    await userEvent.click(screen.getByRole('button', { name: 'EDIT PROFILE' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
   }
 
   it('announces unsaved edits, so the popup layer can refuse a stray backdrop click', async () => {
@@ -240,7 +259,7 @@ describe('opening the editor changes nothing by itself', () => {
         <PopupHost />
       </>
     )
-    await userEvent.click(screen.getByRole('button', { name: 'EDIT PROFILE' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
     expect(screen.getByRole('button', { name: 'SAVE' })).toBeDisabled()
 
     rerender(

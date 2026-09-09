@@ -70,7 +70,7 @@ describe('closing a passport with unsaved edits', () => {
     act(() => {
       openPassport('0xme')
     })
-    await userEvent.click(screen.getByRole('button', { name: 'EDIT PROFILE' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
     await userEvent.type(screen.getByLabelText('About me'), '!')
   }
 
@@ -83,11 +83,10 @@ describe('closing a passport with unsaved edits', () => {
     expect(screen.getByLabelText('About me')).toBeTruthy()
   })
 
-  it('asks on the ×, and keeps the edit when the answer is no', async () => {
+  it('has no × to press while editing — that corner is CANCEL', async () => {
     await openSelfPassport()
-    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
-    expect((screen.getByLabelText('About me') as HTMLTextAreaElement).value).toMatch(/!$/)
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'CANCEL' })).toBeTruthy()
   })
 
   it('asks on the Cancel action too — Escape must not be the one path that bins an edit', async () => {
@@ -101,10 +100,10 @@ describe('closing a passport with unsaved edits', () => {
     expect(screen.getByLabelText('About me')).toBeTruthy()
   })
 
-  it('closes on Discard', async () => {
+  it('closes the whole passport on Discard', async () => {
     await openSelfPassport()
-    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    act(() => closeTopPopup())
+    await userEvent.click(await screen.findByRole('button', { name: 'Discard' }))
     expect(screen.queryByLabelText('About me')).toBeNull()
   })
 
