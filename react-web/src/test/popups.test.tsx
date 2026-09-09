@@ -56,6 +56,20 @@ describe('popup stack', () => {
     expect(screen.getByText('locked')).toBeTruthy() // stayed open
   })
 
+  it('backdropClickCloses can be a predicate, re-read on every click (the passport vetoes while editing)', () => {
+    render(<PopupHost />)
+    let dirty = true
+    act(() => {
+      openPopup(() => <div>guarded</div>, { backdropClickCloses: () => !dirty })
+    })
+    fireEvent.click(document.querySelector('[class*="backdrop"]') as HTMLElement)
+    expect(screen.queryByText('guarded')).toBeTruthy() // held: the popup still has unsaved state
+
+    dirty = false
+    fireEvent.click(document.querySelector('[class*="backdrop"]') as HTMLElement)
+    expect(screen.queryByText('guarded')).toBeNull()
+  })
+
   it('a DOM Escape alone does not close popups — cancel is engine-resolved, and the key must reach the engine', () => {
     render(<PopupHost />)
     const onWindow = vi.fn() // stands in for boot.js's forward-to-canvas listener

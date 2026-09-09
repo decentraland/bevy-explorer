@@ -3,8 +3,8 @@
 // bar. Submits via the bridge (signed multipart POST). Thumbnail upload is deferred — kernelFetch
 // bodies are strings, so the chosen picture previews locally but isn't sent yet.
 
-import { useRef, useState } from 'react'
-import { openPopup } from '../../design'
+import { useEffect, useRef, useState } from 'react'
+import { openPopup, showConfirm } from '../../design'
 import styles from './CommunityCreateModal.module.css'
 
 const MEMBERSHIP = [
@@ -48,18 +48,28 @@ function PencilIcon(): React.JSX.Element {
 export function CommunityCreateModal({
   canCreate,
   onCreate,
-  onClose
+  onClose,
+  onDirtyChange
 }: {
   /** The user has a claimed NAME (community creation is gated behind one). */
   canCreate: boolean
   onCreate: (input: CreateCommunityInput) => void
   onClose: () => void
+  /** Announce entered details, so a stray backdrop click can't bin them. */
+  onDirtyChange?: (dirty: boolean) => void
 }): React.JSX.Element {
   const [name, setName] = useState('')
   const [privacy, setPrivacy] = useState<'public' | 'private'>('public')
   const [pfp, setPfp] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const valid = name.trim().length > 0
+  const dirty = name.trim() !== '' || pfp != null || privacy !== 'public'
+  const dirtyCb = useRef(onDirtyChange)
+  dirtyCb.current = onDirtyChange
+  useEffect(() => {
+    dirtyCb.current?.(dirty)
+    return () => dirtyCb.current?.(false)
+  }, [dirty])
 
   // Local-only preview; the picture isn't uploaded yet (see file header).
   const pickPfp = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -152,5 +162,30 @@ export function CommunityCreateModal({
  *  `canCreate` is a snapshot taken when the button is clicked — matches the other fire-once popups
  *  (WorldVisitModal/ExitConfirm): the profile's claimed-NAME state isn't expected to change mid-flow. */
 export function openCommunityCreateModal(canCreate: boolean, onCreate: (input: CreateCommunityInput) => void): () => void {
-  return openPopup((close) => <CommunityCreateModal canCreate={canCreate} onCreate={onCreate} onClose={close} />)
+  // Same contract as the passport: the scrim refuses while there is something to lose, and the
+  // deliberate closes (CANCEL, ×, the Cancel/Escape action) ask.
+  const dirty = { current: false }
+  return openPopup(
+    (close) => (
+      <CommunityCreateModal
+        canCreate={canCreate}
+        onCreate={onCreate}
+        onClose={close}
+        onDirtyChange={(d) => {
+          dirty.current = d
+        }}
+      />
+    ),
+    {
+      backdropClickCloses: () => !dirty.current,
+      confirmClose: () =>
+        !dirty.current ||
+        showConfirm({
+          title: 'Discard this community?',
+          body: 'The details you have entered will be lost.',
+          confirmLabel: 'Discard',
+          cancelLabel: 'Keep editing'
+        })
+    }
+  )
 }

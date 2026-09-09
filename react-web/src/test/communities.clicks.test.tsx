@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CommunitiesPage } from '../features/communities/CommunitiesPage'
 import { CommunityModal } from '../features/communities/CommunityModal'
+import { openCommunityCreateModal } from '../features/communities/CommunityCreateModal'
 import { SessionProvider } from '../features/session/SessionContext'
-import { PopupHost, resetPopups } from '../design'
+import { PopupHost, closeTopPopup, resetPopups } from '../design'
 import type { Community, CommunityDetailMessage } from '../engine/protocol'
 import type { CommunitiesState } from '../features/session/useEngineSession'
 import { fakeProfileState, fakeSession } from './harness'
@@ -99,5 +100,40 @@ describe('community modal clicks', () => {
     const s = renderModal(community({}))
     await userEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(s.onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+// The create modal holds typed details with nowhere to put them yet, so it takes the same close
+// contract as the passport: the scrim refuses, the deliberate closes ask.
+describe('community create modal guards what you typed', () => {
+  const openWithAName = async (): Promise<void> => {
+    render(<PopupHost />)
+    act(() => {
+      openCommunityCreateModal(true, vi.fn())
+    })
+    await userEvent.type(screen.getByLabelText(/community name/i), 'Builders')
+  }
+
+  it('ignores a backdrop click once something has been entered', async () => {
+    await openWithAName()
+    fireEvent.click(document.querySelector('[class*="backdrop"]') as HTMLElement)
+    expect(screen.queryByText('Discard this community?')).toBeNull()
+    expect((screen.getByLabelText(/community name/i) as HTMLInputElement).value).toBe('Builders')
+  })
+
+  it('asks on CANCEL, and keeps the details when the answer is no', async () => {
+    await openWithAName()
+    await userEvent.click(screen.getByRole('button', { name: 'CANCEL' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+    expect((screen.getByLabelText(/community name/i) as HTMLInputElement).value).toBe('Builders')
+  })
+
+  it('closes untouched, with nothing to lose', () => {
+    render(<PopupHost />)
+    act(() => {
+      openCommunityCreateModal(true, vi.fn())
+    })
+    act(() => closeTopPopup())
+    expect(screen.queryByRole('button', { name: 'CANCEL' })).toBeNull()
   })
 })
