@@ -191,3 +191,91 @@ describe('profile edit helpers', () => {
     }
   })
 })
+
+describe('unsaved edits are announced upward', () => {
+  const openWith = async (onClose: () => void, onDirtyChange?: (d: boolean) => void): Promise<void> => {
+    render(
+      <>
+        <ProfilePassport
+          profile={profile}
+          isSelf
+          editing={editing()}
+          onClose={onClose}
+          onDirtyChange={onDirtyChange}
+        />
+        <PopupHost />
+      </>
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'EDIT PROFILE' }))
+  }
+
+  it('announces unsaved edits, so the popup layer can refuse a stray backdrop click', async () => {
+    const onDirtyChange = vi.fn()
+    await openWith(vi.fn(), onDirtyChange)
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false)
+
+    await userEvent.type(screen.getByLabelText('About me'), '!')
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+
+    await userEvent.click(screen.getByRole('button', { name: 'CANCEL' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false)
+  })
+})
+
+describe('clearing a field', () => {
+  it('sends an empty description rather than dropping it — the schema requires the key', async () => {
+    const edit = editing()
+    await openEditor(edit)
+    await userEvent.clear(screen.getByLabelText('About me'))
+    await userEvent.click(screen.getByRole('button', { name: 'SAVE' }))
+    // Not undefined and not absent: the bridge turns this into `description: ''`, because a null
+    // would remove a key the profile schema requires and the deploy would be rejected.
+    expect(edit.save).toHaveBeenCalledWith(expect.objectContaining({ description: '' }))
+  })
+})
+
+describe('opening the editor changes nothing by itself', () => {
+  it('SAVE stays disabled when the passport swaps its profile object mid-edit', async () => {
+    // The passport renders the identity-only profile first and the rich fetch replaces it: a new
+    // object with the same values, which must not register as an edit.
+    const { rerender } = render(
+      <>
+        <ProfilePassport profile={profile} isSelf editing={editing()} onClose={vi.fn()} />
+        <PopupHost />
+      </>
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'EDIT PROFILE' }))
+    expect(screen.getByRole('button', { name: 'SAVE' })).toBeDisabled()
+
+    rerender(
+      <>
+        <ProfilePassport
+          profile={{ ...profile, badges: [], mutuals: 3 }}
+          isSelf
+          editing={editing()}
+          onClose={vi.fn()}
+        />
+        <PopupHost />
+      </>
+    )
+    expect(screen.getByRole('button', { name: 'SAVE' })).toBeDisabled()
+  })
+
+  it('does not count the stored formatting as an edit', async () => {
+    // Whitespace the profile happens to carry is normalised on BOTH sides of the comparison, so it
+    // is not a change until the user makes one.
+    await openEditor(editing(), { ...profile, description: '  gm  ', links: [{ title: ' x ', url: ' https://x.com ' }] })
+    expect(screen.getByRole('button', { name: 'SAVE' })).toBeDisabled()
+  })
+})
+
+describe('edit mode keeps the passport layout still', () => {
+  it('keeps a bar where the tabs were, so the avatar does not jump', async () => {
+    await openEditor(editing())
+    // The tabs stand down (there is nothing to switch to) but their bar remains, labelled.
+    expect(screen.queryByRole('button', { name: 'OVERVIEW' })).toBeNull()
+    const bar = screen.getByText('EDIT PROFILE')
+    expect(bar.tagName).toBe('SPAN') // a label, not the button that opened this
+  })
+})

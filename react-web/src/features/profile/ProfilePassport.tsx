@@ -7,8 +7,8 @@
 // NOTE: backend follow-up for OTHER users — the bridge must fetch their rich profile
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
-import { useEffect, useRef, useState } from 'react'
-import { Avatar, EquippedItemCard, Icon, Tooltip, type EquippedItemCardProps } from '../../design'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Avatar, Button, EquippedItemCard, Icon, Tooltip, type EquippedItemCardProps } from '../../design'
 import { CategoryIcon } from '../backpack/categoryIcons'
 import { catalystThumbUrl, nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileEdit, Wearable } from '../../engine/protocol'
@@ -106,7 +106,8 @@ export function ProfilePassport({
   isSelf = false,
   editing,
   onAddFriend,
-  onClose
+  onClose,
+  onDirtyChange
 }: {
   profile: Profile
   /** Relationship of the local user to this profile — drives the header CTA. Hides it entirely for
@@ -118,10 +119,29 @@ export function ProfilePassport({
   editing?: PassportEditing
   onAddFriend?: (address: string) => void
   onClose: () => void
+  /** Announce unsaved edits, so the popup layer can refuse to close on a stray backdrop click. */
+  onDirtyChange?: (dirty: boolean) => void
 }): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('overview')
   const [editMode, setEditMode] = useState(false)
   const canEdit = isSelf && editing != null
+  // SAVE sits in the header rather than at the end of the form: the form is taller than the panel,
+  // so a footer button is below the fold and easy to miss entirely.
+  const saveRef = useRef<(() => void) | null>(null)
+  const [editStatus, setEditStatus] = useState({ dirty: false, canSave: false })
+  const onStatusChange = useCallback(
+    (s: { dirty: boolean; canSave: boolean }) =>
+      setEditStatus((prev) => (prev.dirty === s.dirty && prev.canSave === s.canSave ? prev : s)),
+    []
+  )
+  // Only edit mode has unsaved state; leaving it (save, cancel) clears the guard.
+  const unsaved = editMode && editStatus.dirty
+  const dirtyCb = useRef(onDirtyChange)
+  dirtyCb.current = onDirtyChange
+  useEffect(() => {
+    dirtyCb.current?.(unsaved)
+    return () => dirtyCb.current?.(false)
+  }, [unsaved])
   // Leave edit mode only once a save has actually landed: a rejected deploy comes back as an error
   // on `editing`, and closing the form on click would throw away both the error and the user's
   // unsaved text.
@@ -176,7 +196,7 @@ export function ProfilePassport({
             {canEdit && !editMode && (
               <button
                 type="button"
-                className={styles.friendBtn}
+                className={styles.headBtn}
                 onClick={() => {
                   setTab('overview')
                   setEditMode(true)
@@ -187,17 +207,17 @@ export function ProfilePassport({
             )}
             {!isSelf && relationship !== 'incoming' && relationship !== 'blocked' &&
               (relationship === 'friend' ? (
-                <button type="button" className={`${styles.friendBtn} ${styles.isFriend}`} disabled>
+                <button type="button" className={`${styles.headBtn} ${styles.headBtnInert}`} disabled>
                   FRIEND
                 </button>
               ) : pending ? (
-                <button type="button" className={`${styles.friendBtn} ${styles.isFriend}`} disabled>
+                <button type="button" className={`${styles.headBtn} ${styles.headBtnInert}`} disabled>
                   REQUESTED
                 </button>
               ) : (
                 <button
                   type="button"
-                  className={styles.friendBtn}
+                  className={styles.headBtn}
                   onClick={() => {
                     onAddFriend?.(profile.address)
                     setJustRequested(true)
@@ -206,6 +226,11 @@ export function ProfilePassport({
                   ADD FRIEND
                 </button>
               ))}
+            {canEdit && editMode && (
+              <Button variant="primary" disabled={!editStatus.canSave} onClick={() => saveRef.current?.()}>
+                {editing.saving ? 'SAVING…' : 'SAVE'}
+              </Button>
+            )}
             <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>×</button>
           </div>
         </header>
@@ -220,13 +245,20 @@ export function ProfilePassport({
           ))}
         </nav>
         )}
+        {/* Edit mode has no tabs to offer, but it keeps the bar: dropping it shifts the avatar and
+            everything below it up by its height, so clicking EDIT PROFILE jumped the whole panel. */}
+        {editMode && (
+        <div className={styles.tabs}>
+          <span className={styles.tabLabel}>EDIT PROFILE</span>
+        </div>
+        )}
 
         <div className={styles.body}>
           {/* --- left: the avatar — the catalyst full-body snapshot (Unity-style hero),
                   falling back to the 2D face if the body render isn't available. --- */}
           <div className={styles.avatarCol}>
             {profile.bodyImage ? (
-              <img className={styles.body} src={profile.bodyImage} alt={base} />
+              <img className={styles.avatarImg} src={profile.bodyImage} alt={base} />
             ) : (
               <Avatar src={profile.picture} name={base} color={nameColor(profile.address || profile.name)} size={180} status="online" />
             )}
@@ -244,6 +276,8 @@ export function ProfilePassport({
                 saving={editing.saving}
                 error={editing.error}
                 onSave={editing.save}
+                onStatusChange={onStatusChange}
+                saveRef={saveRef}
                 onCancel={() => {
                   editing.dismissError()
                   setEditMode(false)

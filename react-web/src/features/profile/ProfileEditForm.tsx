@@ -2,7 +2,7 @@
 // your own passport. Drafts locally and saves once — the engine deploys a new profile version per
 // save, so a field-by-field save would deploy eleven times for one visit.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, FieldLabel, Select, TextArea, TextInput, Trash, showConfirm } from '../../design'
 import type { Profile, ProfileEdit, ProfileInfo } from '../../engine/protocol'
 import { FIELD_OPTIONS } from './profileFieldOptions'
@@ -39,22 +39,33 @@ const draftOf = (profile: Profile): Draft => ({
 
 const trimmedInfo = (info: ProfileInfo): ProfileInfo => {
   const out: ProfileInfo = {}
-  for (const [key, value] of Object.entries(info) as [keyof ProfileInfo, string | undefined][]) {
+  for (const [key, value] of (Object.entries(info) as [keyof ProfileInfo, string | undefined][]).sort(([a], [b]) =>
+    a.localeCompare(b)
+  )) {
     if (value != null && value.trim() !== '') out[key] = value.trim()
   }
   return out
 }
 
+/** Links as they would be saved: empties dropped, values trimmed, keys in a fixed order — so the
+ *  comparison below can't see a difference that is really just the shape the profile came in. */
+const trimmedLinks = (links: LinkDraft[]): LinkDraft[] =>
+  links.filter((l) => l.url.trim() !== '').map((l) => ({ title: (l.title ?? '').trim(), url: l.url.trim() }))
+
 /** Only what actually changed goes on the wire: the engine merges a partial update, so an
- *  untouched section is better left out than restated. */
-function editOf(profile: Profile, draft: Draft): ProfileEdit {
+ *  untouched section is better left out than restated.
+ *
+ *  Both sides go through the same normalization: comparing a trimmed draft against the profile's
+ *  raw value made stored whitespace (or a link whose keys arrived in another order) look like an
+ *  edit nobody made. */
+function editOf(base: Draft, draft: Draft): ProfileEdit {
   const edit: ProfileEdit = {}
-  if (draft.name !== profile.name) edit.name = draft.name
-  if (draft.description.trim() !== (profile.description ?? '')) edit.description = draft.description.trim()
-  const links = draft.links.filter((l) => l.url.trim() !== '').map((l) => ({ title: l.title.trim(), url: l.url.trim() }))
-  if (JSON.stringify(links) !== JSON.stringify(profile.links ?? [])) edit.links = links
+  if (draft.name.trim() !== base.name.trim()) edit.name = draft.name.trim()
+  if (draft.description.trim() !== base.description.trim()) edit.description = draft.description.trim()
+  const links = trimmedLinks(draft.links)
+  if (JSON.stringify(links) !== JSON.stringify(trimmedLinks(base.links))) edit.links = links
   const info = trimmedInfo(draft.info)
-  if (JSON.stringify(info) !== JSON.stringify(trimmedInfo(profile.info ?? {}))) edit.info = info
+  if (JSON.stringify(info) !== JSON.stringify(trimmedInfo(base.info))) edit.info = info
   return edit
 }
 
@@ -65,7 +76,9 @@ export function ProfileEditForm({
   error,
   onSave,
   onCancel,
-  onDismissError
+  onDismissError,
+  onStatusChange,
+  saveRef
 }: {
   profile: Profile
   ownedNames: string[]
@@ -74,19 +87,39 @@ export function ProfileEditForm({
   onSave: (edit: ProfileEdit) => void
   onCancel: () => void
   onDismissError: () => void
+  /** Report editability upward: SAVE lives in the passport header (always in view — the form is
+   *  taller than the panel), and the passport guards its close paths on `dirty`. */
+  onStatusChange?: (status: { dirty: boolean; canSave: boolean }) => void
+  /** Filled with the save trigger, so the header's button can fire this form's save. */
+  saveRef?: React.MutableRefObject<(() => void) | null>
 }): React.JSX.Element {
   const [draft, setDraft] = useState<Draft>(() => draftOf(profile))
   // Whether the name field is a picker or free text. Starts as free text when the current name
   // isn't one of the owned ones — which is every guest, and anyone who never bought a name.
   const [claimedName, setClaimedName] = useState(() => ownedNames.includes(profile.name))
 
-  const edit = useMemo(() => editOf(profile, draft), [profile, draft])
+  const edit = useMemo(() => editOf(draftOf(profile), draft), [profile, draft])
   const dirty = Object.keys(edit).length > 0
 
   const badLinks = draft.links.some((l) => l.url.trim() !== '' && !isValidLinkUrl(l.url.trim()))
   // A claimed name is picked from a list, so it needs no checking; a typed one does.
   const badName = !claimedName && !isValidName(draft.name)
   const canSave = dirty && !badLinks && !badName && !saving
+
+  // Primitive deps only: `edit` is a fresh object every keystroke, so depending on it here would
+  // re-notify the parent on every render.
+  useEffect(() => {
+    onStatusChange?.({ dirty, canSave })
+  }, [dirty, canSave, onStatusChange])
+  const latestSave = useRef<() => void>(() => {})
+  latestSave.current = () => onSave(edit)
+  useEffect(() => {
+    if (saveRef == null) return
+    saveRef.current = () => latestSave.current()
+    return () => {
+      saveRef.current = null
+    }
+  }, [saveRef])
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]): void => setDraft((d) => ({ ...d, [key]: value }))
   const setInfo = (key: keyof ProfileInfo, value: string): void =>
@@ -255,9 +288,6 @@ export function ProfileEditForm({
       <div className={styles.actions}>
         <Button variant="ghost" onClick={() => void cancel()} disabled={saving}>
           CANCEL
-        </Button>
-        <Button variant="primary" onClick={() => onSave(edit)} disabled={!canSave}>
-          {saving ? 'SAVING…' : 'SAVE'}
         </Button>
       </div>
     </section>
