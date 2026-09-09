@@ -39,6 +39,11 @@ type CatalystAvatar = {
   hobbies?: string
   realName?: string
   /** Epoch SECONDS (what the old scene writes), not the ISO string the passport shows. */
+  /** unity-explorer writes this key, in epoch SECONDS. @dcl/schemas declares the all-lowercase
+   *  `birthdate` instead, and the entity allows additional properties, so both can exist — but
+   *  unity is what actually writes profiles, so its spelling is the one that counts. `birthdate`
+   *  is read too, to pick up anything an earlier build of this HUD wrote. */
+  birthDate?: number
   birthdate?: number
   avatar?: {
     snapshots?: { face256?: string; body?: string }
@@ -175,7 +180,7 @@ function toInfo(av: CatalystAvatar | undefined): ProfileInfo | undefined {
     const value = av[profileKey]
     if (typeof value === 'string' && value !== '') info[wireKey] = value
   }
-  const birthdate = toIsoDate(av.birthdate)
+  const birthdate = toIsoDate(av.birthDate ?? av.birthdate)
   if (birthdate != null) info.birthdate = birthdate
   return Object.keys(info).length > 0 ? info : undefined
 }
@@ -255,7 +260,10 @@ function toProfileExtras(msg: SaveProfileRequest): Record<string, JsonValue> {
     for (const [wireKey, profileKey] of Object.entries(INFO_KEYS) as Array<[keyof ProfileInfo, string]>) {
       set(profileKey, msg.info[wireKey]?.trim())
     }
-    set('birthdate', fromIsoDate(msg.info.birthdate))
+    set('birthDate', fromIsoDate(msg.info.birthdate))
+    // Drop the all-lowercase key an earlier build of this HUD may have written, so a stale value
+    // can't sit alongside the one unity-explorer reads.
+    extras.birthdate = null
   }
   return extras
 }
