@@ -40,8 +40,14 @@ class FakeScene {
   }
 }
 
-/** BroadcastChannel delivery is a task, not microtask — let it land. */
-const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
+/** BroadcastChannel delivery is asynchronous, and on a loaded CI runner it takes more than the one
+ *  macrotask a bare setTimeout(0) waits for — so poll for the outcome rather than assume a turn.
+ *  (A single `settle()` passed locally and failed in CI: bridgeReadiness at Build and Deploy Web.) */
+const until = (check: () => boolean): Promise<void> =>
+  vi.waitFor(() => {
+    if (!check()) throw new Error('not yet')
+  })
+
 
 let open: Array<{ close: () => void }> = []
 const track = <T extends { close: () => void }>(x: T): T => {
@@ -62,8 +68,7 @@ describe('bridge readiness handshake', () => {
     const name = channelName()
     const scene = track(new FakeScene(name))
     track(new BridgeChannel(name, () => {}))
-    await settle()
-    expect(scene.kinds()).toContain('hello')
+    await until(() => scene.kinds().includes('hello'))
   })
 
   it('holds page messages until the scene answers, then flushes them IN ORDER', async () => {
@@ -73,14 +78,14 @@ describe('bridge readiness handshake', () => {
 
     ch.send({ kind: 'getProfile' })
     ch.send({ kind: 'getNotifications' })
-    await settle()
+    await until(() => scene.kinds().includes('hello'))
     // Nothing but the handshake has gone out.
     expect(scene.kinds().filter((k) => k !== 'hello')).toEqual([])
     expect(ch.isReady()).toBe(false)
 
     scene.announce()
-    await settle()
-    expect(ch.isReady()).toBe(true)
+    await until(() => ch.isReady())
+    await until(() => scene.kinds().filter((k) => k !== 'hello').length === 2)
     expect(scene.kinds().filter((k) => k !== 'hello')).toEqual(['getProfile', 'getNotifications'])
   })
 
@@ -89,11 +94,10 @@ describe('bridge readiness handshake', () => {
     const scene = track(new FakeScene(name))
     scene.autoAnswer = true
     const ch = track(new BridgeChannel(name, () => {}))
-    await settle()
+    await until(() => ch.isReady())
 
     ch.send({ kind: 'getProfile' })
-    await settle()
-    expect(scene.kinds()).toContain('getProfile')
+    await until(() => scene.kinds().includes('getProfile'))
   })
 
   it('keeps saying hello until answered, so a scene that starts LATE still hears it', async () => {
@@ -171,10 +175,9 @@ describe('bridge readiness handshake', () => {
 
     ch.send({ kind: 'getProfile' }) // belongs to the scene: queued
     ch.sendNow({ kind: 'rpc:req', id: 'a', method: 'loginPrevious' })
-    await settle()
+    await until(() => scene.kinds().includes('rpc:req'))
 
     // Sign-in reaches the engine while the scene is still booting; the scene's own request waits.
-    expect(scene.kinds()).toContain('rpc:req')
     expect(scene.kinds()).not.toContain('getProfile')
   })
 
@@ -183,13 +186,11 @@ describe('bridge readiness handshake', () => {
     const scene = track(new FakeScene(name))
     const seen: SceneToPage[] = []
     const ch = track(new BridgeChannel(name, (m) => seen.push(m)))
-    await settle()
+    await until(() => scene.kinds().includes('hello'))
 
     ch.send({ kind: 'getProfile' }) // page→scene: must not come back to us
     scene.send({ kind: 'event', name: 'playerReady' })
-    await settle()
-
-    expect(seen.map((m) => m.kind)).toContain('event')
+    await until(() => seen.some((m) => m.kind === 'event'))
     expect(seen.some((m) => m.kind === 'getProfile' as unknown)).toBe(false)
   })
 })
