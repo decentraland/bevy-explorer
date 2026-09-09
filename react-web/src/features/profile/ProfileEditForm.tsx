@@ -3,7 +3,7 @@
 // save, so a field-by-field save would deploy eleven times for one visit.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, FieldLabel, Select, TextArea, TextInput, Trash } from '../../design'
+import { Button, DateField, FieldLabel, Select, TextArea, TextInput, Trash } from '../../design'
 import type { Profile, ProfileEdit, ProfileInfo } from '../../engine/protocol'
 import { FIELD_OPTIONS } from './profileFieldOptions'
 import {
@@ -135,7 +135,7 @@ export function ProfileEditForm({
       <h2 className={styles.title}>Info</h2>
       <div className={styles.fields}>
         {PROFILE_FIELDS.map(({ key, label, kind }) => (
-          <div key={key} className={styles.field}>
+          <div key={key} className={`${styles.field} ${kind === 'date' ? styles.fieldWide : ''}`.trim()}>
             <FieldLabel>{label}</FieldLabel>
             {kind === 'select' ? (
               <Select
@@ -151,10 +151,16 @@ export function ProfileEditForm({
                 onChange={(value) => setInfo(key, value)}
                 disabled={saving}
               />
+            ) : kind === 'date' ? (
+              <DateField
+                label={label}
+                value={draft.info[key] ?? ''}
+                onChange={(value) => setInfo(key, value)}
+                disabled={saving}
+              />
             ) : (
               <TextInput
                 aria-label={label}
-                type={kind === 'date' ? 'date' : 'text'}
                 value={draft.info[key] ?? ''}
                 onChange={(value) => setInfo(key, value)}
                 disabled={saving}

@@ -11,6 +11,7 @@ import { Slider } from './Slider'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
 import { TextArea } from './TextArea'
+import { DateField } from './DateField'
 import { Panel } from './Panel'
 import { DclLogo } from './DclLogo'
 import { Avatar } from './Avatar'
@@ -136,6 +137,7 @@ export function Showcase(): React.JSX.Element {
   const [res, setRes] = useState('1080')
   const [name, setName] = useState('robtfm')
   const [bio, setBio] = useState('')
+  const [dob, setDob] = useState('2003-02-01')
   return (
     <div style={wrap}>
       {/* Showcase renders instead of Hud, so it hosts its own popup layer for the dialog demos below. */}
@@ -283,6 +285,10 @@ export function Showcase(): React.JSX.Element {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 14 }}>About me</span>
             <TextArea value={bio} onChange={setBio} placeholder="Tell people about yourself" maxLength={400} counter />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 14 }}>Birth date (no native picker — see DateField)</span>
+            <DateField label="Birth date" value={dob} onChange={setDob} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 14 }}>Resolution</span>

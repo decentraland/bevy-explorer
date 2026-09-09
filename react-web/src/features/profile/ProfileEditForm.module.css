@@ -36,6 +36,11 @@
   flex-direction: column;
   gap: 0.25rem;
 }
+/* A compound field (three controls) is two columns wide: it sits alongside the field before it and
+   spreads across the rest of that row, rather than taking a row to itself. */
+.fieldWide {
+  grid-column: span 2;
+}
 
 .links {
   display: flex;
