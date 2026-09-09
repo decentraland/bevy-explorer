@@ -8,12 +8,8 @@
 import { getStoredLogin, rootAddress, type AuthIdentity } from '../features/auth/sso'
 import type { LoginDriver } from './driver'
 import type { EngineRpc } from './engineRpc'
-import {
-  bridgeChannelName,
-  type Envelope,
-  type PageToScene,
-  type SceneToPage
-} from './protocol'
+import { BridgeChannel } from './bridgeChannel'
+import { bridgeChannelName, type PageToScene, type SceneToPage } from './protocol'
 
 // Pack a same-domain SSO AuthIdentity into a single base64 console-command argument. The
 // engine's `/login_identity` command decodes this (root address = authChain[0].payload,
@@ -23,21 +19,20 @@ function encodeIdentity(identity: AuthIdentity): string {
 }
 
 export class EngineDriver implements LoginDriver {
-  private readonly ch: BroadcastChannel
+  private readonly ch: BridgeChannel
   private readonly listeners = new Set<(msg: SceneToPage) => void>()
   private playerReadyFired = false
   private readyFallbackTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(private readonly rpc: EngineRpc) {
-    this.ch = new BroadcastChannel(bridgeChannelName())
-    this.ch.onmessage = (e: MessageEvent<Envelope>) => {
-      const env = e.data
-      if (env?.to !== 'page') return
-      if (env.msg.kind === 'event' && env.msg.name === 'playerReady') {
-        this.playerReadyFired = true
-      }
-      this.emit(env.msg)
-    }
+    this.ch = new BridgeChannel(
+      bridgeChannelName(),
+      (msg) => {
+        if (msg.kind === 'event' && msg.name === 'playerReady') this.playerReadyFired = true
+        this.emit(msg)
+      },
+      () => this.emit({ kind: 'bridgeUnavailable' })
+    )
   }
 
   async getPreviousLogin(): Promise<{ userId: string | null }> {
@@ -82,7 +77,11 @@ export class EngineDriver implements LoginDriver {
   }
 
   send(msg: PageToScene): void {
-    this.ch.postMessage({ to: 'scene', msg } satisfies Envelope)
+    this.ch.send(msg)
+  }
+
+  expectBridge(): void {
+    this.ch.expectReady()
   }
 
   on(fn: (msg: SceneToPage) => void): () => void {

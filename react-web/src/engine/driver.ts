@@ -44,6 +44,8 @@ export interface LoginDriver {
    *  screen keeps its CTAs in a "Starting…" state until this is true. Optional — the mock is always
    *  ready. */
   engineReady?(): boolean
+  /** Tell the transport the bridge scene is now expected, so its absence can be reported. */
+  expectBridge?(): void
   /** Real weighted boot progress (0–100) + active step id, surfaced from the engine loader for
    *  the login footer bar. Optional — the mock has no engine to download. */
   loadProgress?(): number

@@ -638,6 +638,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'systemAction':
           systemActionRef.current(msg.action, msg.pressed)
           break
+        case 'bridgeUnavailable':
+          // Every panel behind the bridge would stay empty with nothing to explain why.
+          // Dismissable: the engine and the world itself are fine (issue #1233).
+          setFatalError((prev) => prev ?? {
+            message: 'The HUD could not reach the explorer bridge, so panels may stay empty. Restarting usually fixes it.',
+            source: 'runtime'
+          })
+          break
         case 'profile':
           setProfile(msg.profile)
           break
@@ -1471,6 +1479,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       : loaderActive
         ? 'entering'
         : 'world'
+
+  // Past the login screen the bridge scene must exist — on web its realm has been picked, on
+  // native it booted with the engine — so from here on its absence is a fault, not a normal wait.
+  useEffect(() => {
+    if (phase !== 'login') driverRef.current?.expectBridge?.()
+  }, [phase])
 
   // HUD focus, declared to the engine (fire-and-forget; latest wins). `ui` reserves all
   // input above scenes — the avatar stops walking when a menu/popup opens — while the
