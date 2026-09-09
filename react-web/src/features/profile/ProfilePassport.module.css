@@ -56,6 +56,18 @@
 .copy:hover {
   color: #fff;
 }
+/* A small square icon control sitting inline with text (the name's edit pencil). */
+.iconBtn {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.55);
+  display: inline-flex;
+}
+.iconBtn:hover {
+  color: #fff;
+}
 .mutual {
   margin-top: 0.4rem;
   font-size: 0.85rem;

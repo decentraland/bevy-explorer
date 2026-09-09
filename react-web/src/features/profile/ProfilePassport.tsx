@@ -8,7 +8,7 @@
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Avatar, Button, EquippedItemCard, Icon, Tooltip, type EquippedItemCardProps } from '../../design'
+import { Avatar, Button, EquippedItemCard, Icon, Pencil, Tooltip, type EquippedItemCardProps } from '../../design'
 import { CategoryIcon } from '../backpack/categoryIcons'
 import { catalystThumbUrl, nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileEdit, Wearable } from '../../engine/protocol'
@@ -93,11 +93,13 @@ function EquippedRow({ tiles }: { tiles: EquippedTile[] }): React.JSX.Element {
 /** Everything the own-profile edit mode needs. Absent = view only, which is every OTHER user's
  *  passport and your own until the session has a profile to edit. */
 export interface PassportEditing {
-  ownedNames: string[]
   saving: boolean
   error: string | null
   save: (edit: ProfileEdit) => void
   dismissError: () => void
+  /** Open the name editor — its own popup, since picking a claimed NAME is a different shape of
+   *  choice from the rest of the form (see NameEditModal). */
+  editName: () => void
 }
 
 export function ProfilePassport({
@@ -183,6 +185,11 @@ export function ProfilePassport({
               {claimed && <Verified />}
               {tag && <span className={styles.tag}>{tag}</span>}
               <CopyButton value={profile.name} label="name" />
+              {canEdit && (
+                <button type="button" className={styles.iconBtn} aria-label="Edit name" onClick={editing.editName}>
+                  <Pencil size={16} />
+                </button>
+              )}
             </div>
             <div className={styles.addrRow}>
               <span className={styles.addr}>{shortAddr(profile.address)}</span>
@@ -272,7 +279,6 @@ export function ProfilePassport({
             {editMode && editing != null && (
               <ProfileEditForm
                 profile={profile}
-                ownedNames={editing.ownedNames}
                 saving={editing.saving}
                 error={editing.error}
                 onSave={editing.save}

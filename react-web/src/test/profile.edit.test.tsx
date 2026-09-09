@@ -18,7 +18,7 @@ const profile: Profile = {
 }
 
 function editing(over: Partial<PassportEditing> = {}): PassportEditing {
-  return { ownedNames: ['Mojito', 'MojitoDCL'], saving: false, error: null, save: vi.fn(), dismissError: vi.fn(), ...over }
+  return { saving: false, error: null, save: vi.fn(), dismissError: vi.fn(), editName: vi.fn(), ...over }
 }
 
 const renderPassport = (edit: PassportEditing, self = true, p: Profile = profile): void => {
@@ -104,22 +104,17 @@ describe('passport edit mode', () => {
     expect(edit.save).toHaveBeenCalledWith({ links: [] })
   })
 
-  it('offers owned names as claimed, and validates a typed one', async () => {
+  it('sends you to the name editor rather than editing the name inline', async () => {
     const edit = editing()
-    await openEditor(edit)
-    // Select is our own listbox primitive, not a native <select>: open it, then click an option.
-    await userEvent.click(screen.getByRole('button', { name: 'Display name' }))
-    expect(screen.getByRole('option', { name: 'MojitoDCL' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('option', { name: 'Custom name…' }))
+    renderPassport(edit)
+    // The name is a structural choice (a claimed NAME or a free-text one), so it has its own
+    // popup, reached from the passport itself — not a field among the others.
+    await userEvent.click(screen.getByRole('button', { name: 'Edit name' }))
+    expect(edit.editName).toHaveBeenCalled()
 
-    const custom = screen.getByLabelText('Custom display name')
-    await userEvent.type(custom, 'bad name!')
-    expect(screen.getByRole('button', { name: 'SAVE' })).toBeDisabled()
-
-    await userEvent.clear(custom)
-    await userEvent.type(custom, 'mojito2')
-    await userEvent.click(screen.getByRole('button', { name: 'SAVE' }))
-    expect(edit.save).toHaveBeenCalledWith({ name: 'mojito2' })
+    await userEvent.click(screen.getByRole('button', { name: 'EDIT PROFILE' }))
+    expect(screen.queryByLabelText('Custom display name')).toBeNull()
+    expect(screen.queryByLabelText('Display name')).toBeNull()
   })
 
   it('stays open on a failed save, keeping the edits and showing why', async () => {

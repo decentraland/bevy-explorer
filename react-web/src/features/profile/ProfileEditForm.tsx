@@ -10,28 +10,20 @@ import {
   DESCRIPTION_MAX,
   LINK_TITLE_MAX,
   MAX_LINKS,
-  NAME_MAX,
   PROFILE_FIELDS,
-  isValidLinkUrl,
-  isValidName
+  isValidLinkUrl
 } from './profileFields'
 import styles from './ProfileEditForm.module.css'
 
 type LinkDraft = { title: string; url: string }
 
 interface Draft {
-  name: string
   description: string
   info: ProfileInfo
   links: LinkDraft[]
 }
 
-/** The sentinel for "type your own name" in the name picker — an owned name can't be empty, so it
- *  can't collide with one. */
-const CUSTOM_NAME = ''
-
 const draftOf = (profile: Profile): Draft => ({
-  name: profile.name,
   description: profile.description ?? '',
   info: { ...(profile.info ?? {}) },
   links: (profile.links ?? []).map((l) => ({ ...l }))
@@ -60,7 +52,6 @@ const trimmedLinks = (links: LinkDraft[]): LinkDraft[] =>
  *  edit nobody made. */
 function editOf(base: Draft, draft: Draft): ProfileEdit {
   const edit: ProfileEdit = {}
-  if (draft.name.trim() !== base.name.trim()) edit.name = draft.name.trim()
   if (draft.description.trim() !== base.description.trim()) edit.description = draft.description.trim()
   const links = trimmedLinks(draft.links)
   if (JSON.stringify(links) !== JSON.stringify(trimmedLinks(base.links))) edit.links = links
@@ -71,7 +62,6 @@ function editOf(base: Draft, draft: Draft): ProfileEdit {
 
 export function ProfileEditForm({
   profile,
-  ownedNames,
   saving,
   error,
   onSave,
@@ -81,7 +71,6 @@ export function ProfileEditForm({
   saveRef
 }: {
   profile: Profile
-  ownedNames: string[]
   saving: boolean
   error: string | null
   onSave: (edit: ProfileEdit) => void
@@ -94,17 +83,11 @@ export function ProfileEditForm({
   saveRef?: React.MutableRefObject<(() => void) | null>
 }): React.JSX.Element {
   const [draft, setDraft] = useState<Draft>(() => draftOf(profile))
-  // Whether the name field is a picker or free text. Starts as free text when the current name
-  // isn't one of the owned ones — which is every guest, and anyone who never bought a name.
-  const [claimedName, setClaimedName] = useState(() => ownedNames.includes(profile.name))
-
   const edit = useMemo(() => editOf(draftOf(profile), draft), [profile, draft])
   const dirty = Object.keys(edit).length > 0
 
   const badLinks = draft.links.some((l) => l.url.trim() !== '' && !isValidLinkUrl(l.url.trim()))
-  // A claimed name is picked from a list, so it needs no checking; a typed one does.
-  const badName = !claimedName && !isValidName(draft.name)
-  const canSave = dirty && !badLinks && !badName && !saving
+  const canSave = dirty && !badLinks && !saving
 
   // Primitive deps only: `edit` is a fresh object every keystroke, so depending on it here would
   // re-notify the parent on every render.
@@ -152,47 +135,6 @@ export function ProfileEditForm({
           </button>
         </div>
       )}
-
-      <h2 className={styles.title}>Display Name</h2>
-      <div className={styles.nameRow}>
-        {ownedNames.length > 0 && (
-          <Select
-            aria-label="Display name"
-            value={claimedName ? draft.name : CUSTOM_NAME}
-            options={[...ownedNames.map((n) => ({ value: n, label: n })), { value: CUSTOM_NAME, label: 'Custom name…' }]}
-            onChange={(value) => {
-              setClaimedName(value !== CUSTOM_NAME)
-              // Leaving the picker keeps the typed name if there was one, rather than blanking the
-              // field the moment "Custom name…" is chosen.
-              if (value !== CUSTOM_NAME) set('name', value)
-              else if (ownedNames.includes(draft.name)) set('name', '')
-            }}
-            disabled={saving}
-          />
-        )}
-        {!claimedName && (
-          <div className={styles.field}>
-            <FieldLabel
-              sublabel={
-                badName && draft.name !== ''
-                  ? 'Letters and numbers only, up to 15 characters.'
-                  : 'Unclaimed names show a #1234 suffix in world.'
-              }
-            >
-              Custom name
-            </FieldLabel>
-            <TextInput
-              aria-label="Custom display name"
-              value={draft.name}
-              onChange={(value) => set('name', value)}
-              maxLength={NAME_MAX}
-              invalid={badName && draft.name !== ''}
-              disabled={saving}
-              placeholder="Your name"
-            />
-          </div>
-        )}
-      </div>
 
       <h2 className={styles.title}>About Me</h2>
       <TextArea

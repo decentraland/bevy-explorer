@@ -7,6 +7,7 @@ import { openPopup, showConfirm } from '../../design'
 import { useSession } from '../session/SessionContext'
 import { resolveIdentity } from '../session/resolveIdentity'
 import { relationshipOf } from '../../lib/relationship'
+import { openNameEdit } from './NameEditModal'
 import { ProfilePassport } from './ProfilePassport'
 import type { Profile } from '../../engine/protocol'
 
@@ -55,11 +56,11 @@ export function Passport({
       editing={
         isSelf && session.profile.data != null
           ? {
-              ownedNames: session.profile.ownedNames,
               saving: session.profile.saving,
               error: session.profile.saveError,
               save: session.profile.save,
-              dismissError: session.profile.dismissSaveError
+              dismissError: session.profile.dismissSaveError,
+              editName: () => void openNameEdit()
             }
           : undefined
       }
