@@ -1,0 +1,102 @@
+/* The edit form sits where the About card does, so it borrows that card's surface and section
+   headings rather than restating them — the passport's gradient panel is what they're tuned to. */
+.form {
+  composes: card from './ProfilePassport.module.css';
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.title {
+  composes: cardTitle from './ProfilePassport.module.css';
+  margin: 0;
+}
+.title:not(:first-of-type) {
+  margin-top: 0.6rem;
+}
+
+.hint {
+  margin: -0.3rem 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.nameRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fields {
+  composes: fields from './ProfilePassport.module.css';
+  margin-top: 0;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+/* Title is fixed-width (15 chars), the URL takes the rest, then the remove button. */
+.linkRow {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.35fr) 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+.removeLink {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--fill-4);
+  border-radius: var(--r-control);
+  background: var(--fill-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.removeLink:hover:not(:disabled) {
+  color: var(--error);
+  border-color: var(--error);
+}
+.removeLink:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--fill-3);
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--error);
+  border-radius: var(--r-control);
+  background: rgb(255 36 36 / 12%);
+  color: var(--error-text);
+  font-size: var(--fs-sm);
+}
+.errorDismiss {
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}

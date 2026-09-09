@@ -3,11 +3,11 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MapPage } from '../features/map/MapPage'
 import type { MapState } from '../features/session/useEngineSession'
-import { fakeSession } from './harness'
+import { fakeProfileState, fakeSession } from './harness'
 
 function renderMap(): MapState {
   const map: MapState = { ...fakeSession().map, open: true, teleportToPlace: vi.fn(), toggle: vi.fn() }
-  render(<MapPage map={map} profile={{ data: null, open: false, toggle: vi.fn() }} onNavigate={vi.fn()} />)
+  render(<MapPage map={map} profile={fakeProfileState()} onNavigate={vi.fn()} />)
   return map
 }
 

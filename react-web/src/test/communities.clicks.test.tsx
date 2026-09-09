@@ -7,7 +7,7 @@ import { SessionProvider } from '../features/session/SessionContext'
 import { PopupHost, resetPopups } from '../design'
 import type { Community, CommunityDetailMessage } from '../engine/protocol'
 import type { CommunitiesState } from '../features/session/useEngineSession'
-import { fakeSession } from './harness'
+import { fakeProfileState, fakeSession } from './harness'
 
 afterEach(resetPopups) // the community modal now lives on the module-level popup stack
 
@@ -30,7 +30,7 @@ describe('communities page clicks', () => {
     session.communities = { ...session.communities, open: true, list, join: vi.fn(), loadDetail: vi.fn() }
     render(
       <SessionProvider value={session}>
-        <CommunitiesPage communities={session.communities} profile={{ data: null, open: false, toggle: vi.fn() }} onNavigate={vi.fn()} />
+        <CommunitiesPage communities={session.communities} profile={fakeProfileState()} onNavigate={vi.fn()} />
         <PopupHost />
       </SessionProvider>
     )

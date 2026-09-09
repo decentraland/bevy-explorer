@@ -7,27 +7,17 @@
 // NOTE: backend follow-up for OTHER users — the bridge must fetch their rich profile
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Avatar, EquippedItemCard, Icon, Tooltip, type EquippedItemCardProps } from '../../design'
 import { CategoryIcon } from '../backpack/categoryIcons'
 import { catalystThumbUrl, nameColor, shortAddr, splitName } from '../../lib/identity'
-import type { Badge, Emote, Profile, ProfileInfo, Wearable } from '../../engine/protocol'
+import type { Badge, Emote, Profile, ProfileEdit, Wearable } from '../../engine/protocol'
+import { PROFILE_FIELDS } from './profileFields'
+import { ProfileEditForm } from './ProfileEditForm'
 import type { Relationship } from '../chat/ProfileCardPresentation'
 import styles from './ProfilePassport.module.css'
 
 type Tab = 'overview' | 'badges' | 'photos'
-
-const FIELD_LABELS: { key: keyof ProfileInfo; label: string }[] = [
-  { key: 'gender', label: 'Gender' },
-  { key: 'birthdate', label: 'Birth Date' },
-  { key: 'pronouns', label: 'Pronouns' },
-  { key: 'relationship', label: 'Relationship Status' },
-  { key: 'language', label: 'Language' },
-  { key: 'profession', label: 'Profession' },
-  { key: 'employment', label: 'Employment Status' },
-  { key: 'hobby', label: 'Favorite Hobby' },
-  { key: 'realName', label: 'Real Name' }
-]
 
 function CopyButton({ value, label }: { value: string; label: string }): React.JSX.Element {
   return (
@@ -100,10 +90,21 @@ function EquippedRow({ tiles }: { tiles: EquippedTile[] }): React.JSX.Element {
   )
 }
 
+/** Everything the own-profile edit mode needs. Absent = view only, which is every OTHER user's
+ *  passport and your own until the session has a profile to edit. */
+export interface PassportEditing {
+  ownedNames: string[]
+  saving: boolean
+  error: string | null
+  save: (edit: ProfileEdit) => void
+  dismissError: () => void
+}
+
 export function ProfilePassport({
   profile,
   relationship = 'none',
   isSelf = false,
+  editing,
   onAddFriend,
   onClose
 }: {
@@ -113,10 +114,23 @@ export function ProfilePassport({
   relationship?: Relationship
   /** Your own passport — hides the friend action (you can't friend yourself). */
   isSelf?: boolean
+  /** Own-profile edit mode. Only offered when this is your passport. */
+  editing?: PassportEditing
   onAddFriend?: (address: string) => void
   onClose: () => void
 }): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('overview')
+  const [editMode, setEditMode] = useState(false)
+  const canEdit = isSelf && editing != null
+  // Leave edit mode only once a save has actually landed: a rejected deploy comes back as an error
+  // on `editing`, and closing the form on click would throw away both the error and the user's
+  // unsaved text.
+  const wasSaving = useRef(false)
+  useEffect(() => {
+    if (editing == null) return
+    if (wasSaving.current && !editing.saving && editing.error == null) setEditMode(false)
+    wasSaving.current = editing.saving
+  }, [editing])
   // Optimistic: flip to "Requested" the instant Add Friend is clicked (the sent-list
   // poll catches up a beat later), so the button isn't a no-op visually.
   const [justRequested, setJustRequested] = useState(false)
@@ -124,7 +138,7 @@ export function ProfilePassport({
   // (Escape is handled centrally by the popup stack — see popups.tsx.)
   const { base, tag } = splitName(profile.name)
   const claimed = profile.hasClaimedName
-  const fields = FIELD_LABELS.filter(({ key }) => profile.info?.[key])
+  const fields = PROFILE_FIELDS.filter(({ key }) => profile.info?.[key])
   const hasBadges = (profile.badges?.length ?? 0) > 0
   const hasAbout = !!profile.description || fields.length > 0 || (profile.links?.length ?? 0) > 0
   // The body shape isn't a collectible you can shop for — Unity skips it before filling the grid
@@ -159,6 +173,18 @@ export function ProfilePassport({
             )}
           </div>
           <div className={styles.headActions}>
+            {canEdit && !editMode && (
+              <button
+                type="button"
+                className={styles.friendBtn}
+                onClick={() => {
+                  setTab('overview')
+                  setEditMode(true)
+                }}
+              >
+                EDIT PROFILE
+              </button>
+            )}
             {!isSelf && relationship !== 'incoming' && relationship !== 'blocked' &&
               (relationship === 'friend' ? (
                 <button type="button" className={`${styles.friendBtn} ${styles.isFriend}`} disabled>
@@ -184,7 +210,8 @@ export function ProfilePassport({
           </div>
         </header>
 
-        {/* --- tabs --- */}
+        {/* --- tabs (edit mode is overview-scoped, so they stand down while it's open) --- */}
+        {!editMode && (
         <nav className={styles.tabs}>
           {(['overview', 'badges', 'photos'] as Tab[]).map((t) => (
             <button key={t} type="button" className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`.trim()} onClick={() => setTab(t)}>
@@ -192,6 +219,7 @@ export function ProfilePassport({
             </button>
           ))}
         </nav>
+        )}
 
         <div className={styles.body}>
           {/* --- left: the avatar — the catalyst full-body snapshot (Unity-style hero),
@@ -206,12 +234,29 @@ export function ProfilePassport({
 
           {/* --- right: tab content --- */}
           <div className={styles.content}>
-            {tab === 'overview' && !hasOverview && (
+            {/* Edit mode replaces the About card (name, bio, fields and links are exactly what it
+                covers) and leaves the equipped/badges sections below it — those are the Backpack's
+                to change, not the passport's. */}
+            {editMode && editing != null && (
+              <ProfileEditForm
+                profile={profile}
+                ownedNames={editing.ownedNames}
+                saving={editing.saving}
+                error={editing.error}
+                onSave={editing.save}
+                onCancel={() => {
+                  editing.dismissError()
+                  setEditMode(false)
+                }}
+                onDismissError={editing.dismissError}
+              />
+            )}
+            {tab === 'overview' && !hasOverview && !editMode && (
               <div className={styles.empty}>This profile has no details to show yet.</div>
             )}
             {tab === 'overview' && hasOverview && (
               <>
-                {hasAbout && (
+                {hasAbout && !editMode && (
                 <section className={styles.card}>
                   {profile.description && (
                     <>
