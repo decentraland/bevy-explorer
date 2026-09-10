@@ -112,9 +112,11 @@ impl MaterialDefinition {
                     .map(Color4DclToBevy::convert_linear_rgba)
                     .unwrap_or(base.base_color);
 
-                let alpha_mode = if let Some(test) = unlit.alpha_test {
-                    AlphaMode::Mask(test)
-                } else if base_color.alpha() < 1.0 || tex_is_present(&unlit.alpha_texture) {
+                // Unlit materials have no transparency mode, so they always resolve like Auto:
+                // blend on diffuse alpha / alpha texture, otherwise opaque. `alpha_test` is
+                // ignored for the same reason as in the PBR Auto branch below.
+                let alpha_mode = if base_color.alpha() < 1.0 || tex_is_present(&unlit.alpha_texture)
+                {
                     AlphaMode::Blend
                 } else {
                     AlphaMode::Opaque
@@ -182,10 +184,13 @@ impl MaterialDefinition {
                         );
                         AlphaMode::Blend
                     }
+                    // Auto ignores `alpha_test`: the SDK documents a default of 0.5 for it and tools
+                    // (e.g. the Creator Hub inspector) write that default on every material, so its
+                    // presence is not a request for masking. Mirrors the Unity explorer's
+                    // `ResolveAutoMode`, which blends on albedo alpha / alpha texture and is otherwise
+                    // opaque; `alpha_test` only applies to the explicit alpha-test modes above.
                     Some(MaterialTransparencyMode::MtmAuto) | None => {
-                        if let Some(test) = pbr.alpha_test {
-                            AlphaMode::Mask(test)
-                        } else if base_color.alpha() < 1.0 || tex_is_present(&pbr.alpha_texture) {
+                        if base_color.alpha() < 1.0 || tex_is_present(&pbr.alpha_texture) {
                             AlphaMode::Blend
                         } else {
                             AlphaMode::Opaque
