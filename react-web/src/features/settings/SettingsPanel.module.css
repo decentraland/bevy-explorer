@@ -11,33 +11,6 @@
   font-weight: 800;
   color: var(--text);
 }
-.tabs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.tab {
-  display: flex;
-  align-items: center;
-  height: 38px;
-  padding: 0 18px;
-  border: none;
-  border-radius: var(--r-pill);
-  background: var(--fill-3);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) ease;
-}
-.tab:hover:not(.tabActive) {
-  background: var(--fill-4);
-}
-.tabActive,
-.tabActive:hover {
-  background: var(--accent); /* DCL orange for the selected category */
-}
 .reset {
   display: flex;
   align-items: center;

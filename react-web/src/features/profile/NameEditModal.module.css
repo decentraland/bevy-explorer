@@ -5,26 +5,6 @@
 }
 
 /* --- unique / non-unique --------------------------------------------------- */
-.tabs {
-  display: flex;
-  gap: 1.5rem;
-  border-bottom: 1px solid var(--fill-5);
-}
-.tab {
-  background: none;
-  border: none;
-  padding: 0.5rem 0;
-  color: var(--ink-6);
-  font-weight: 700;
-  font-size: var(--fs-xs);
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  border-bottom: 3px solid transparent;
-}
-.tabActive {
-  color: var(--text);
-  border-bottom-color: var(--brand);
-}
 
 /* --- the typed name -------------------------------------------------------- */
 /* The suffix sits inside the field's box, so it reads as part of the name rather than as a

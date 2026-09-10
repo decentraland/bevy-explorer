@@ -246,7 +246,7 @@ test.describe('visual — mock HUD', () => {
   test('panel — settings key bindings', async ({ page }) => {
     await enterWorld(page)
     await openPanel(page, 'Settings')
-    await page.getByRole('button', { name: 'Key Bindings', exact: true }).click()
+    await page.getByRole('tab', { name: 'Key Bindings', exact: true }).click()
     await settle(page)
     await expect(page).toHaveScreenshot('panel-settings-keybindings.png')
   })
@@ -274,7 +274,7 @@ test.describe('visual — mock HUD', () => {
   test('backpack — emotes', async ({ page }) => {
     await enterWorld(page)
     await openPanel(page, 'Backpack')
-    await page.getByRole('button', { name: 'Emotes', exact: true }).click()
+    await page.getByRole('tab', { name: 'Emotes', exact: true }).click()
     await settle(page)
     await expect(page).toHaveScreenshot('backpack-emotes.png')
   })

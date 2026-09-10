@@ -91,7 +91,7 @@ describe('community modal clicks', () => {
       community({ role: 'member' }),
       detail({ members: [{ address: '0xm', name: 'M', role: 'member', isFriend: false }] })
     )
-    await userEvent.click(screen.getByRole('button', { name: 'MEMBERS' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'MEMBERS' }))
     await userEvent.click(screen.getByRole('button', { name: /ADD FRIEND/i }))
     expect(s.onAddFriend).toHaveBeenCalledWith('0xm')
   })
