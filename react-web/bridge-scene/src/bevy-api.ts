@@ -15,6 +15,7 @@ import type {
   HoverEvent,
   LiveSceneInfo,
   PermissionRequestEvent,
+  ProfileChangedEvent,
   ProximityEvent,
   SceneLoadingUi,
   SetAvatarData,
@@ -115,6 +116,8 @@ export type BevyApiInterface = {
   getSceneLoadingUIStream: () => Promise<AsyncIterable<SceneLoadingState>>
   getHoverStream: () => Promise<AsyncIterable<SystemHoverEvent>>
   getProximityStream: () => Promise<AsyncIterable<SystemProximityEvent>>
+  /** Every profile the engine takes a new version of — a nearby player's, or the local player's own. */
+  getProfileChangedStream: () => Promise<AsyncIterable<ProfileChangedEvent>>
   /** Run an engine console command (no leading slash) and await its reply; rejects with the failure
    *  message. Optional: absent on runtimes whose SystemApi predates it, so callers must degrade. */
   consoleCommand?: (cmd: string, args: string[]) => Promise<string>

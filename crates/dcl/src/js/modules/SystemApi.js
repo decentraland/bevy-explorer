@@ -414,6 +414,25 @@ module.exports.getProximityStream = async function() {
   return streamGenerator();
 }
 
+// profile changes (any player the engine holds a profile for, including the local player) as a stream
+// type ProfileChangedEvent = {
+//   address: string,   // lowercase 0x address
+//   version: number,   // the profile version now held; re-read with getUserProfile if yours is older
+// }
+module.exports.getProfileChangedStream = async function() {
+  const rid = await Deno.core.ops.op_get_profile_changed_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_profile_changed_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
 // Social / Friends
 
 module.exports.social = {

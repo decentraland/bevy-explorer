@@ -29,7 +29,7 @@ use super::{
 };
 use common::{
     profile::{LambdaProfiles, SerializedProfile},
-    rpc::RpcEventSender,
+    rpc::{RpcEventSender, RpcStreamSender},
     sets::SceneSets,
     structs::PrimaryUser,
     util::{TaskCompat, TaskExt},
@@ -41,6 +41,7 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
+use system_bridge::{ProfileChangedEvent, SystemApi};
 use wallet::Wallet;
 
 pub struct UserProfilePlugin;
@@ -55,6 +56,7 @@ impl Plugin for UserProfilePlugin {
             )
                 .before(process_transport_updates), // .in_set(TODO)
         );
+        app.add_systems(Update, pipe_profile_changes_to_scene);
 
         // a server has no real local player: never insert/announce/deploy the fake
         // player's profile or write PLAYER identity into scene crdts
@@ -662,6 +664,45 @@ fn send_profile_request(player: &ForeignPlayer, transports: &Query<&Transport>) 
         }
     };
     true
+}
+
+/// Pipes every profile insert/replace the engine sees — a foreign player's, or the local
+/// player's own — to system-scene stream subscribers as (address, version).
+fn pipe_profile_changes_to_scene(
+    mut requests: EventReader<SystemApi>,
+    mut senders: Local<Vec<RpcStreamSender<ProfileChangedEvent>>>,
+    changed: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
+    wallet: Res<Wallet>,
+) {
+    senders.extend(requests.read().filter_map(|ev| {
+        if let SystemApi::GetProfileChangedStream(sender) = ev {
+            Some(sender.clone())
+        } else {
+            None
+        }
+    }));
+    senders.retain(|s| !s.is_closed());
+
+    if senders.is_empty() {
+        return;
+    }
+
+    for (player, profile) in &changed {
+        let address = match player {
+            Some(player) => player.address,
+            None => match wallet.address() {
+                Some(address) => address,
+                None => continue,
+            },
+        };
+        let event = ProfileChangedEvent {
+            address: format!("{:#x}", address),
+            version: profile.version,
+        };
+        for sender in senders.iter() {
+            let _ = sender.send(event.clone());
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

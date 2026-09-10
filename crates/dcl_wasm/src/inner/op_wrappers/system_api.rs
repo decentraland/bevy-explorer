@@ -371,6 +371,25 @@ pub async fn op_read_proximity_stream(
 }
 
 #[wasm_bindgen]
+pub async fn op_get_profile_changed_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_profile_changed_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_profile_changed_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    let event = dcl::js::system_api::op_read_profile_changed_stream(state.rc(), rid).await;
+    event
+        .map(|v| {
+            v.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                .unwrap()
+        })
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
 pub async fn op_get_scene_loading_ui_stream(state: &WorkerContext) -> u32 {
     dcl::js::system_api::op_get_scene_loading_ui_stream(state.rc()).await
 }

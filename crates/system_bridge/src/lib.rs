@@ -101,6 +101,7 @@ pub enum SystemApi {
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
     GetHoverStream(RpcStreamSender<HoverEvent>),
     GetProximityStream(RpcStreamSender<ProximityEvent>),
+    GetProfileChangedStream(RpcStreamSender<ProfileChangedEvent>),
     GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
     // Native-only transport for the super-user bridge scene's BroadcastChannel: the scene posts page
     // -bound Envelopes via BridgeToPage, and subscribes to page->scene Envelopes via GetBridgeStream.
