@@ -13,6 +13,7 @@ import { searchByShortcode, SHORTCODE_RE, type Emoji } from './emojiData'
 import { MessageText, mentionsMe, buildNameIndex } from './chatText'
 import { type ChatUser } from './ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
+import { peekProfile, useProfile } from '../session/profileStore'
 import { isCancelKey } from '../../lib/bindingLabels'
 import styles from './Chat.module.css'
 
@@ -145,8 +146,6 @@ const MSG_STYLES = { url: styles.url, mention: styles.mention, location: styles.
 
 export function ChatBubble({
   line,
-  name,
-  picture,
   members = [],
   me,
   onOpenProfile,
@@ -154,8 +153,6 @@ export function ChatBubble({
   onVisitWorld
 }: {
   line: ChatLine
-  name: string
-  picture?: string
   members?: NearbyMember[]
   me?: { address?: string; name?: string } | null
   /** Open the profile viewer for a user, anchored at the click. */
@@ -165,6 +162,11 @@ export function ChatBubble({
   /** A world name (e.g. boedo.dcl.eth) in the message was clicked → prompt to jump there. */
   onVisitWorld?: (name: string) => void
 }): React.JSX.Element {
+  // Resolved from the profile store for as long as the line is on screen: a sender who has since
+  // left keeps their name and face, and a name change reaches every line they sent.
+  const known = useProfile(line.sender)
+  const name = known?.name != null && known.name !== '' ? known.name : displaySender(line.sender)
+  const picture = known?.picture
   const color = senderColor(line.sender)
   const { base, tag } = splitName(name)
   const sender: ChatUser = { address: line.sender, name, picture }
@@ -175,10 +177,10 @@ export function ChatBubble({
     if (e.type === 'contextmenu') e.preventDefault()
     onOpenProfile?.(sender, e)
   }
-  // Clicking an @mention opens that user's profile (resolved against the roster).
+  // Clicking an @mention opens that user's profile.
   const onMention = (address: string, mname: string, e: React.MouseEvent): void => {
     if (e.type === 'contextmenu') e.preventDefault()
-    const m = members.find((mm) => mm.address.toLowerCase() === address.toLowerCase())
+    const m = peekProfile(address)
     onOpenProfile?.({ address, name: m?.name ?? `@${mname}`, picture: m?.picture }, e)
   }
 
@@ -287,19 +289,6 @@ export function Chat({
   // "active" = the user is interacting → show the full solid panel + chrome.
   const active = open && (hovered || focused || picker)
   const bare = !active // collapsed or idle-open → borderless translucent input only
-
-  const nameByAddr = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const mem of chat.members) if (mem.name.trim()) m.set(mem.address.toLowerCase(), mem.name)
-    return m
-  }, [chat.members])
-  const pictureByAddr = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const mem of chat.members) if (mem.picture) m.set(mem.address.toLowerCase(), mem.picture)
-    return m
-  }, [chat.members])
-  const resolveName = (sender: string): string =>
-    nameByAddr.get(sender.toLowerCase()) ?? displaySender(sender)
 
   const rows = useMemo(() => {
     const out: ({ kind: 'day'; ts: number; id: string } | { kind: 'msg'; line: ChatLine })[] = []
@@ -501,8 +490,6 @@ export function Chat({
                 <ChatBubble
                   key={r.line.id}
                   line={r.line}
-                  name={resolveName(r.line.sender)}
-                  picture={pictureByAddr.get(r.line.sender.toLowerCase())}
                   members={chat.members}
                   me={me}
                   onOpenProfile={openProfile}

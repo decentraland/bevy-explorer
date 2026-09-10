@@ -175,8 +175,6 @@ export function fakeSession(): EngineSession {
       capture: vi.fn(() => ({ input: new Promise<string>(() => {}), cancel: vi.fn() }))
     },
     profile: fakeProfileState(),
-    userProfiles: {},
-    requestUserProfile: vi.fn(),
     notifications: { list: [], unread: 0, open: false, toggle: vi.fn(), markAllRead: vi.fn() },
     emotes: { list: [], open: false, toggle: vi.fn(), play: vi.fn(), equip: vi.fn() },
     backpack: { list: [], total: 0, loading: false, query: vi.fn(), equipped: [], open: false, toggle: vi.fn(), equip: vi.fn(), preview: vi.fn(), outfits: [], outfitSlots: 5, saveOutfit: vi.fn(), deleteOutfit: vi.fn(), equipOutfit: vi.fn() },

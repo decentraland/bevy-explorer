@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { act } from '@testing-library/react'
 import type { Profile } from '../engine/protocol'
 import { renderSession, enterAsGuest } from './harness'
+import { peekProfile, requestPassport } from '../features/session/profileStore'
 
 // DOMAIN: profile — the local player's passport, fetched on world entry.
 describe('profile domain', () => {
@@ -26,24 +27,24 @@ describe('profile domain', () => {
     expect(h.session().profile.data).toMatchObject({ address: '0xme', name: 'Tester' })
   })
 
-  it('requestUserProfile fetches a user and caches the response by address', async () => {
+  it('a passport request goes to the bridge with extras, and the reply lands in the profile store', async () => {
     const h = renderSession()
     await enterAsGuest(h)
-    act(() => h.session().requestUserProfile('0xKURD'))
-    expect(h.driver.last('getUserProfile')).toEqual({ kind: 'getUserProfile', address: '0xKURD' })
+    act(() => requestPassport('0xKURD'))
+    expect(h.driver.last('getUserProfile')).toEqual({ kind: 'getUserProfile', address: '0xkurd', extras: true })
     h.driver.emit({
       kind: 'userProfile',
       address: '0xKURD',
       profile: { address: '0xkurd', name: 'kurd', hasClaimedName: true, isGuest: false, description: 'gm' }
     })
-    expect(h.session().userProfiles['0xkurd']?.name).toBe('kurd')
+    expect(peekProfile('0xKURD')?.name).toBe('kurd')
   })
 
   it('saves an edit optimistically, and reverts it when the engine rejects the deploy', async () => {
     const h = renderSession()
     await enterAsGuest(h)
     h.driver.emit({ kind: 'profile', profile })
-    act(() => h.session().requestUserProfile('0xme'))
+    act(() => requestPassport('0xme'))
     h.driver.emit({ kind: 'userProfile', address: '0xme', profile })
 
     act(() => h.session().profile.save({ description: 'gm from the beach' }))
@@ -51,13 +52,13 @@ describe('profile domain', () => {
     // Shown before the round trip — the deploy takes seconds, the catalyst reindex longer.
     expect(h.session().profile.saving).toBe(true)
     expect(h.session().profile.data?.description).toBe('gm from the beach')
-    expect(h.session().userProfiles['0xme']?.description).toBe('gm from the beach')
+    expect(peekProfile('0xme')?.description).toBe('gm from the beach')
 
     h.driver.emit({ kind: 'profileSaved', ok: false, error: 'failed to deploy to server.' })
     expect(h.session().profile.saving).toBe(false)
     expect(h.session().profile.saveError).toBe('failed to deploy to server.')
     expect(h.session().profile.data?.description).toBe('hi')
-    expect(h.session().userProfiles['0xme']?.description).toBe('hi')
+    expect(peekProfile('0xme')?.description).toBe('hi')
 
     act(() => h.session().profile.dismissSaveError())
     expect(h.session().profile.saveError).toBeNull()

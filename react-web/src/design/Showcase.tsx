@@ -20,8 +20,13 @@ import { EquippedItemCard } from './EquippedItemCard'
 import { showConfirm, showDialog, PopupHost } from './popups'
 import { Icon, type IconName } from './icons'
 import { ChatBubble, DaySeparator, MemberRow } from '../features/chat/Chat'
+import { seedProfiles } from '../features/session/profileStore'
 import { EmoteSlot } from '../features/emotes/EmoteSlot'
 import { catalystThumbUrl } from '../lib/identity'
+
+// A chat bubble resolves its sender through the profile store, so the demo line's author is seeded.
+const MOJITO = '0x5854cce95d5e25817b41f4c41f06b695a83bc495'
+seedProfiles([{ address: MOJITO, name: 'Mojito' }])
 
 const EMOTE_RARITIES = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
 const SLOT_THUMB = catalystThumbUrl('urn:decentraland:off-chain:base-emotes:raisehand')
@@ -428,14 +433,8 @@ export function Showcase(): React.JSX.Element {
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'rgba(19,19,19,0.6)', borderRadius: 14 }}>
             <DaySeparator ts={Date.now()} />
-            <ChatBubble
-              line={{ id: 1, sender: '0x5854cce95d5e25817b41f4c41f06b695a83bc495', message: 'gm everyone 👋 welcome to the plaza', channel: 'Nearby', ts: Date.now() }}
-              name="Mojito"
-            />
-            <ChatBubble
-              line={{ id: 2, sender: 'system', message: 'Type /help for available commands.', channel: 'System', ts: Date.now() }}
-              name="DCL System"
-            />
+            <ChatBubble line={{ id: 1, sender: MOJITO, message: 'gm everyone 👋 welcome to the plaza', channel: 'Nearby', ts: Date.now() }} />
+            <ChatBubble line={{ id: 2, sender: 'system', message: 'Type /help for available commands.', channel: 'System', ts: Date.now() }} />
           </div>
           <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 2, padding: 8, background: 'rgba(12,11,14,0.97)', borderRadius: 14 }}>
             <MemberRow member={{ address: '0x5854cce95d5e25817b41f4c41f06b695a83bc495', name: 'Mojito', picture: 'https://profile-images.decentraland.org/entities/bafkreid5btlh76opew65hxu6dtkdo6ybqhymdof6vrrmjy2p5a74oy4huq/face.png' }} />

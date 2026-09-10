@@ -776,6 +776,10 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       // Resolve a real name from the nearby roster (real engine gets it from the catalyst).
       const member = MOCK_NEARBY.find((m) => m.address.toLowerCase() === msg.address.toLowerCase())
       const name = member?.name || `${msg.address.slice(0, 6)}…${msg.address.slice(-4)}`
+      if (msg.extras !== true) {
+        reply({ kind: 'userProfile', address: msg.address, profile: { address: msg.address, name, picture: member?.picture, hasClaimedName: !name.includes('#'), isGuest: false } })
+        return
+      }
       reply({ kind: 'userProfile', address: msg.address, profile: richProfile(msg.address, name, false) })
       return
     }
