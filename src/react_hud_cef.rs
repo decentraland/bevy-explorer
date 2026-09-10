@@ -43,7 +43,7 @@ use cef_offscreen::prelude::{
     WebviewSize,
 };
 use common::rpc::{RpcResultReceiver, RpcResultSender, RpcStreamSender};
-use common::structs::PrimaryUser;
+use common::structs::{OutOfWorld, PrimaryUser};
 use input_manager::{InputPriorities, MouseInteractionComponent};
 use system_bridge::SystemApi;
 
@@ -677,9 +677,11 @@ fn pump_streams(state: Option<ResMut<ReactHudCef>>, mut commands: Commands) {
 }
 
 // Tell the page the player has spawned (drives entering -> world), once per page subscription.
+// The primary user entity exists from startup, so `Without<OutOfWorld>` is what makes this mean
+// "in world" rather than "signed in or not".
 fn player_ready(
     state: Option<ResMut<ReactHudCef>>,
-    players: Query<(), With<PrimaryUser>>,
+    players: Query<(), (With<PrimaryUser>, Without<OutOfWorld>)>,
     mut commands: Commands,
 ) {
     let Some(mut state) = state else { return };

@@ -43,6 +43,7 @@ import { untrustedLaunchParams } from './lib/launchGate'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
 import { CrashModal } from './features/error/CrashModal'
 import { openRealmError } from './features/error/RealmErrorModal'
+import { DIALOG_TITLE, isDialogSource } from './features/error/fatalError'
 import { openEntryParamsDialog } from './features/gate/EntryParamsDialog'
 import { unrecognisedEntryParams } from './lib/entryParams'
 
@@ -189,18 +190,22 @@ function Hud(): React.JSX.Element {
     return openEntryParamsDialog(UNRECOGNISED_PARAMS)
   }, [])
 
-  // A world that doesn't exist isn't a crash — it's an ordinary dialog on the popup layer, so it gets
-  // Escape/scrim-click for free and freezes nothing behind it (unlike CrashModal, see inputLock). Any
-  // close path clears the session's error, so a keyboard dismiss can't strand it.
-  const realmErrorMessage = session.fatalError?.source === 'realm' ? session.fatalError.message : null
+  // A world that doesn't exist, or a HUD bridge that never answered, isn't a crash — it's an ordinary
+  // dialog on the popup layer, so it gets Escape/scrim-click for free and freezes nothing behind it
+  // (unlike CrashModal, see inputLock). Any close path clears the session's error, so a keyboard
+  // dismiss can't strand it.
+  const dialogError =
+    session.fatalError != null && isDialogSource(session.fatalError.source)
+      ? { title: DIALOG_TITLE[session.fatalError.source], message: session.fatalError.message }
+      : null
   useEffect(() => {
-    if (realmErrorMessage == null) return
-    return openRealmError({ message: realmErrorMessage, onDismiss: session.dismissFatal })
+    if (dialogError == null) return
+    return openRealmError({ ...dialogError, onDismiss: session.dismissFatal })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the message changes
-  }, [realmErrorMessage])
-  // Everything else IS a crash → the full-screen CrashModal (narrowed so it never sees 'realm').
+  }, [dialogError?.message])
+  // Everything else IS a crash → the full-screen CrashModal (narrowed so it never sees a dialog source).
   const crash =
-    session.fatalError != null && session.fatalError.source !== 'realm'
+    session.fatalError != null && !isDialogSource(session.fatalError.source)
       ? { message: session.fatalError.message, source: session.fatalError.source }
       : null
 

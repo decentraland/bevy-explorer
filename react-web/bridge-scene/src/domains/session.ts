@@ -67,7 +67,8 @@ export function registerSession(ctx: Ctx): void {
     }
   })()
 
-  // Player-spawned signal (one-shot).
+  // Player-spawned signal: one-shot per page, not per scene. The page gates its world-entry
+  // fetches on it and never retries, so a page that arrives late is re-told on `hello`.
   let ready = false
   ctx.push(() => {
     if (ready) return
@@ -75,5 +76,8 @@ export function registerSession(ctx: Ctx): void {
       ready = true
       ctx.send({ kind: 'event', name: 'playerReady' })
     }
+  })
+  ctx.on('hello', () => {
+    if (ready) ctx.send({ kind: 'event', name: 'playerReady' })
   })
 }

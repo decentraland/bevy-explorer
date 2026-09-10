@@ -109,7 +109,23 @@ export interface NavActionRequest {
   action: NavAction
 }
 
+/** Page→scene handshake ping, repeated until the scene answers `bridgeReady` (see BridgeChannel). */
+export interface HelloRequest {
+  kind: 'hello'
+}
+
+/** Scene→page: every domain is registered and the scene is listening. */
+export interface BridgeReadyMessage {
+  kind: 'bridgeReady'
+}
+
+/** Synthesised BY THE PAGE (never sent by the scene) when the bridge never answered. */
+export interface BridgeUnavailableMessage {
+  kind: 'bridgeUnavailable'
+}
+
 export type PageToScene =
+  | HelloRequest
   | RpcRequest
   | SendChatRequest
   | ReloadSceneRequest
@@ -997,6 +1013,8 @@ export interface AvatarClickMessage {
 }
 
 export type SceneToPage =
+  | BridgeReadyMessage
+  | BridgeUnavailableMessage
   | RpcResponse
   | HoverMessage
   | CursorLockMessage

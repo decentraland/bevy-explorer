@@ -352,8 +352,12 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
 
   // Simulate the engine spawning the player + loading the spawn scene after a
   // successful login: player-ready, then a scene-asset countdown, then "done".
+  // Mirrors the real session domain's latch, so a page that says hello after the player spawned
+  // (a reload) is re-told, as the bridge scene does.
+  let playerSpawned = false
   const spawnPlayer = (): void => {
     setTimeout(() => {
+      playerSpawned = true
       reply({ kind: 'event', name: 'playerReady' })
       reply({ kind: 'chatVisibility', open: true })
       // Two-step countdown then done — kept short so a throttled/backgrounded tab
@@ -481,6 +485,14 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     const env = e.data
     if (env?.to !== 'scene') return
     const msg: PageToScene = env.msg
+
+    // Answered before the simulated latency: the page holds everything else until this lands.
+    if (msg.kind === 'hello') {
+      reply({ kind: 'bridgeReady' })
+      if (playerSpawned) reply({ kind: 'event', name: 'playerReady' })
+      return
+    }
+
     await wait(o.latency)
 
     if (msg.kind === 'sendChat') {
