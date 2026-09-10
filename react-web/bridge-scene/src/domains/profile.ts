@@ -10,7 +10,11 @@ import { catalystBase, getJson } from '../http'
 import type { UserData } from '~system/Players'
 import { resolveEquippedSet, resolveWearables } from './wearables'
 import { equippedSlots, resolveEquippedEmotes } from './emotes'
-import type { Badge, Profile } from '../../../src/engine/protocol'
+import type { Badge, Profile, ProfileInfo, SaveProfileRequest } from '../../../src/engine/protocol'
+import type { SetAvatarData } from '../../../src/engine/generated'
+// Not via the generated barrel: it only re-exports the top-level files, not serde_json/.
+import type { JsonValue } from '../../../src/engine/generated/serde_json/JsonValue'
+import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
 
 type CatalystAvatar = {
@@ -20,6 +24,27 @@ type CatalystAvatar = {
   nameColor?: { r: number; g: number; b: number }
   description?: string
   links?: Array<{ title: string; url: string }>
+  // --- about-me fields. The renderer doesn't model these, so they ride the profile as free-form
+  // extra keys (SerializedProfile::extra_fields) and reach us flattened onto the avatar. Names are
+  // the ones unity-explorer and the old system scene write — matching them is what makes a profile
+  // edited in either client read back correctly in the other.
+  country?: string
+  language?: string
+  gender?: string
+  pronouns?: string
+  relationshipStatus?: string
+  sexualOrientation?: string
+  employmentStatus?: string
+  profession?: string
+  hobbies?: string
+  realName?: string
+  /** Epoch SECONDS, not the ISO string the passport shows. unity-explorer writes this key;
+   *  @dcl/schemas declares the all-lowercase `birthdate` instead, and the entity allows additional
+   *  properties, so both can exist — but unity is what actually writes profiles, so its spelling is
+   *  the one that counts. `birthdate` is read too, to pick up anything an earlier build of this
+   *  HUD wrote. */
+  birthDate?: number
+  birthdate?: number
   avatar?: {
     snapshots?: { face256?: string; body?: string }
     /** Deployed equipped-wearables urns — resolved into the passport's Equipped Wearables section. */
@@ -96,18 +121,75 @@ const shortAddress = (a: string): string => (a.length > 12 ? `${a.slice(0, 6)}�
 
 const httpOrUndef = (s?: string | null): string | undefined => (typeof s === 'string' && s.startsWith('http') ? s : undefined)
 
+/** The profile stores a non-claimed name bare; every explorer shows it with four hex digits of
+ *  the address appended (the engine builds nametags the same way — `crates/avatar`), so the
+ *  passport must too, or a name saved here would read back without the tag the world shows. */
+const withAddressTag = (name: string, address: string, claimed: boolean): string =>
+  claimed || name.includes('#') ? name : `${name}#${address.slice(-4)}`
+
 function toProfile(av: CatalystAvatar | undefined, address: string, isGuest: boolean, fallbackName: string): Profile {
   const snaps = av?.avatar?.snapshots
+  const claimed = av?.hasClaimedName ?? !fallbackName.includes('#')
   return {
     address,
-    name: av?.name != null && av.name !== '' ? av.name : fallbackName,
+    name: withAddressTag(av?.name != null && av.name !== '' ? av.name : fallbackName, address, claimed),
     picture: httpOrUndef(snaps?.face256),
     bodyImage: httpOrUndef(snaps?.body),
-    hasClaimedName: av?.hasClaimedName ?? !fallbackName.includes('#'),
+    hasClaimedName: claimed,
     isGuest,
     description: av?.description != null && av.description !== '' ? av.description : undefined,
-    links: av?.links ?? undefined
+    links: av?.links ?? undefined,
+    info: toInfo(av)
   }
+}
+
+// --- about-me fields ------------------------------------------------------------
+// The wire (`ProfileInfo`) names the fields as the passport labels them; the profile stores them
+// under the names unity-explorer chose. One table drives both directions so a rename can't leave
+// the read and the write disagreeing — which would look like an edit that silently didn't save.
+const INFO_KEYS = {
+  country: 'country',
+  language: 'language',
+  gender: 'gender',
+  pronouns: 'pronouns',
+  relationship: 'relationshipStatus',
+  sexualOrientation: 'sexualOrientation',
+  employment: 'employmentStatus',
+  profession: 'profession',
+  hobby: 'hobbies',
+  realName: 'realName'
+} as const satisfies Partial<Record<keyof ProfileInfo, keyof CatalystAvatar>>
+
+/** Epoch seconds (how the profile stores a birthdate) → the `YYYY-MM-DD` the passport edits.
+ *  UTC on both sides: a birthday is a date, and shifting it by the viewer's timezone would let a
+ *  profile read back a day out from the one that was saved. */
+const toIsoDate = (seconds: number | undefined): string | undefined => {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds === 0) return undefined
+  const date = new Date(seconds * 1000)
+  // A profile is user-supplied data: an out-of-range timestamp makes toISOString THROW rather than
+  // return anything, so the date has to be checked before it's formatted.
+  if (Number.isNaN(date.getTime())) return undefined
+  return date.toISOString().slice(0, 10)
+}
+
+const fromIsoDate = (iso: string | undefined): number | undefined => {
+  if (iso == null || iso === '') return undefined
+  const ms = Date.parse(`${iso}T00:00:00Z`)
+  return Number.isNaN(ms) ? undefined : Math.floor(ms / 1000)
+}
+
+/** `undefined` when the profile carries no about-me fields at all, so the passport can tell an
+ *  empty section from a missing one. */
+function toInfo(av: CatalystAvatar | undefined): ProfileInfo | undefined {
+  if (av == null) return undefined
+  const info: ProfileInfo = {}
+  for (const [wireKey, profileKey] of Object.entries(INFO_KEYS) as Array<[keyof ProfileInfo, keyof CatalystAvatar]>) {
+    const value = av[profileKey]
+    if (typeof value === 'string' && value !== '') info[wireKey] = value
+  }
+  const birthdate = toIsoDate(av.birthDate ?? av.birthdate)
+  if (birthdate != null) info.birthdate = birthdate
+  return Object.keys(info).length > 0 ? info : undefined
 }
 
 // --- badges (achieved only) ----------------------------------------------------
@@ -144,7 +226,120 @@ async function fetchPhotos(address: string): Promise<string[] | undefined> {
   return imgs.map((i) => i.thumbnailUrl ?? i.url).filter((u): u is string => typeof u === 'string')
 }
 
+// --- claimed names -------------------------------------------------------------
+// The NFT names this wallet owns. Only one of them can be worn without the `#1234` suffix, so the
+// picker offers exactly these; anything else is an unclaimed name.
+type NamesResponse = { elements?: Array<{ name?: string }> }
+
+let ownedNames: string[] | undefined
+async function fetchOwnedNames(address: string): Promise<string[]> {
+  if (ownedNames != null) return ownedNames
+  const base = await catalystBase()
+  const r = await getJson<NamesResponse>(`${base}/lambdas/users/${address}/names`).catch(() => undefined)
+  // Cached only on success: a failed lookup must not pin an empty picker for the whole session.
+  if (r == null) return []
+  ownedNames = (r.elements ?? []).map((e) => e.name).filter((n): n is string => typeof n === 'string' && n !== '')
+  return ownedNames
+}
+
+/**
+ * A save turns the passport's edits into the profile keys the deployed profile actually holds.
+ * Everything here is a PARTIAL update — the engine merges `profileExtras` per key and treats an
+ * empty `bodyShapeUrn`/absent colors as "unchanged" — so we send only what the user edited and
+ * never have to restate (and risk clobbering) the rest of their profile. Clearing a field sends
+ * `null`, which removes the key outright rather than leaving an empty string behind.
+ */
+function toProfileExtras(msg: SaveProfileRequest): Record<string, JsonValue> {
+  const extras: Record<string, JsonValue> = {}
+  const set = (key: string, value: string | number | undefined): void => {
+    extras[key] = value == null || value === '' ? null : value
+  }
+  // `description` is REQUIRED by the profile schema (@dcl/schemas Avatar), so clearing it means
+  // sending an empty string: a null here removes the key, and the catalyst rejects the deploy with
+  // "failed to deploy to server." Every other field below is nullable/optional, so for those a
+  // null — which the engine applies by removing the key — is the right way to clear.
+  if (msg.description !== undefined) extras.description = msg.description.trim()
+  if (msg.links !== undefined) {
+    const links = msg.links.filter((l) => l.url !== '')
+    extras.links = links.length > 0 ? links : null
+  }
+  if (msg.info !== undefined) {
+    for (const [wireKey, profileKey] of Object.entries(INFO_KEYS) as Array<[keyof ProfileInfo, string]>) {
+      set(profileKey, msg.info[wireKey]?.trim())
+    }
+    set('birthDate', fromIsoDate(msg.info.birthdate))
+    // Drop the all-lowercase key an earlier build of this HUD may have written, so a stale value
+    // can't sit alongside the one unity-explorer reads.
+    extras.birthdate = null
+  }
+  return extras
+}
+
+/** Fold a save into the cached catalyst avatar, so every surface that re-reads the profile shows
+ *  the new values immediately. The deploy is asynchronous and the catalyst reindexes later still,
+ *  so without this a passport reopened right after saving would show the pre-edit profile. */
+function patchCachedAvatar(address: string, msg: SaveProfileRequest, hasClaimedName: boolean | undefined): void {
+  const cached = cache.get(profileKey(address)) ?? { avatars: [{}] }
+  const av = { ...((cached.avatars?.[0] ?? {}) as Record<string, unknown>) }
+  if (msg.name !== undefined) {
+    av.name = msg.name
+    if (hasClaimedName !== undefined) av.hasClaimedName = hasClaimedName
+  }
+  // A `null` from toProfileExtras means "remove this key", so those are dropped rather than
+  // written — the engine does the same to the profile itself.
+  const patch = toProfileExtras(msg)
+  const cleared = new Set(Object.keys(patch).filter((key) => patch[key] == null))
+  const patched = Object.fromEntries(Object.entries({ ...av, ...patch }).filter(([key]) => !cleared.has(key)))
+  cache.set(profileKey(address), { ...cached, avatars: [patched as CatalystAvatar, ...(cached.avatars ?? []).slice(1)] })
+}
+
 export function registerProfile(ctx: Ctx): void {
+  ctx.on('getOwnedNames', async () => {
+    const player = getPlayer()
+    ctx.send({ kind: 'ownedNames', names: player == null ? [] : await fetchOwnedNames(player.userId).catch(() => []) })
+  })
+
+  ctx.on('saveProfile', async (msg) => {
+    const player = getPlayer()
+    if (player == null) {
+      ctx.send({ kind: 'profileSaved', ok: false, error: 'Not signed in yet.' })
+      return
+    }
+
+    const data: SetAvatarData = {}
+    let hasClaimedName: boolean | undefined
+    if (msg.name !== undefined) {
+      const owned = await fetchOwnedNames(player.userId).catch(() => [])
+      hasClaimedName = owned.some((n) => n.toLowerCase() === msg.name?.toLowerCase())
+      // An empty bodyShapeUrn and null colors mean "leave the avatar alone" — the name is the only
+      // thing this edit touches, and the Backpack owns the rest.
+      data.base = { skinColor: null, eyesColor: null, hairColor: null, bodyShapeUrn: '', name: msg.name }
+      data.hasClaimedName = hasClaimedName
+    }
+    const extras = toProfileExtras(msg)
+    if (Object.keys(extras).length > 0) data.profileExtras = extras
+    if (data.base == null && data.profileExtras == null) {
+      ctx.send({ kind: 'profileSaved', ok: true })
+      return
+    }
+
+    try {
+      // setAvatar resolves only once the engine has deployed the new profile version (guests
+      // resolve immediately — they have no catalyst presence to deploy to), so a rejection here
+      // is a genuinely failed save and the HUD must not keep showing the edit as if it stuck.
+      await BevyApi.setAvatar(data)
+    } catch (e) {
+      console.error('[profile] save failed', e)
+      ctx.send({ kind: 'profileSaved', ok: false, error: e instanceof Error ? e.message : String(e) })
+      return
+    }
+
+    patchCachedAvatar(player.userId, msg, hasClaimedName)
+    ctx.send({ kind: 'profileSaved', ok: true })
+    const av = cache.get(profileKey(player.userId))?.avatars?.[0]
+    ctx.send({ kind: 'profile', profile: toProfile(av, player.userId, player.isGuest, player.name) })
+  })
+
   // The page marks its world-entry profile fetch done as soon as it ASKS, so an answer of `null`
   // costs it the profile for the whole session. `getPlayer()` is the scene's view of the player
   // CRDT, which lags world entry by a good few hundred frames, so a request that arrives in that

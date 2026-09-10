@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { render, screen, act, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { Passport, openPassport } from '../features/profile/Passport'
 import { SessionProvider } from '../features/session/SessionContext'
-import { fakeSession } from './harness'
-import { PopupHost, resetPopups } from '../design'
+import { fakeProfileState, fakeSession } from './harness'
+import { PopupHost, closeTopPopup, resetPopups } from '../design'
 import type { EngineSession } from '../features/session/useEngineSession'
 import type { Profile } from '../engine/protocol'
 
@@ -54,5 +55,66 @@ describe('Passport container', () => {
       openPassport('0xabc')
     })
     expect(screen.getByText('gm from the plaza')).toBeTruthy()
+  })
+})
+
+// The passport is the HUD's one popup that can hold unsaved work, so it is where the popup layer's
+// close guard is exercised: a stray backdrop click is refused outright, while the deliberate paths
+// (its ×, and the engine-resolved Cancel action) ask the same question.
+describe('closing a passport with unsaved edits', () => {
+  const openSelfPassport = async (): Promise<void> => {
+    renderWithSession(<PopupHost />, (s) => {
+      s.profile = fakeProfileState({ data: { ...RICH, address: '0xme', name: 'Me' } })
+      s.userProfiles['0xme'] = { ...RICH, address: '0xme', name: 'Me' }
+    })
+    act(() => {
+      openPassport('0xme')
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
+    await userEvent.type(screen.getByLabelText('About me'), '!')
+  }
+
+  const backdrop = (): HTMLElement => document.querySelector('[class*="backdrop"]') as HTMLElement
+
+  it('refuses a stray backdrop click outright — no dialog, nothing lost', async () => {
+    await openSelfPassport()
+    fireEvent.click(backdrop())
+    expect(screen.queryByText('Discard changes?')).toBeNull()
+    expect(screen.getByLabelText('About me')).toBeTruthy()
+  })
+
+  it('has no × to press while editing — that corner is CANCEL', async () => {
+    await openSelfPassport()
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'CANCEL' })).toBeTruthy()
+  })
+
+  it('asks on the Cancel action too — Escape must not be the one path that bins an edit', async () => {
+    await openSelfPassport()
+    act(() => closeTopPopup())
+    expect(await screen.findByText('Discard changes?')).toBeTruthy()
+
+    // Escape ON the confirm resolves it as dismissed, which is the non-destructive answer.
+    act(() => closeTopPopup())
+    expect(screen.queryByText('Discard changes?')).toBeNull()
+    expect(screen.getByLabelText('About me')).toBeTruthy()
+  })
+
+  it('closes the whole passport on Discard', async () => {
+    await openSelfPassport()
+    act(() => closeTopPopup())
+    await userEvent.click(await screen.findByRole('button', { name: 'Discard' }))
+    expect(screen.queryByLabelText('About me')).toBeNull()
+  })
+
+  it('closes without a word when nothing has been edited', async () => {
+    renderWithSession(<PopupHost />, (s) => {
+      s.userProfiles['0xabc'] = RICH
+    })
+    act(() => {
+      openPassport('0xabc')
+    })
+    act(() => closeTopPopup())
+    expect(screen.queryByText('gm from the plaza')).toBeNull()
   })
 })

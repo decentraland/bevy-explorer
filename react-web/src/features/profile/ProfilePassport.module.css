@@ -56,6 +56,18 @@
 .copy:hover {
   color: #fff;
 }
+/* A small square icon control sitting inline with text (the name's edit pencil). */
+.iconBtn {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-dim);
+  display: inline-flex;
+}
+.iconBtn:hover {
+  color: var(--text);
+}
 .mutual {
   margin-top: 0.4rem;
   font-size: 0.85rem;
@@ -67,7 +79,8 @@
   align-items: center;
   gap: 0.6rem;
 }
-.friendBtn {
+/* A header action pill: ADD FRIEND / EDIT PROFILE, and the inert FRIEND / REQUESTED states. */
+.headBtn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -80,10 +93,11 @@
   font-size: 0.85rem;
   cursor: pointer;
 }
-.friendBtn:not(.isFriend):hover {
+.headBtn:not(.headBtnInert):hover {
   background: var(--brand, #ff2d55);
 }
-.isFriend {
+/* A state, not a control: shown as a pill for consistency but nothing happens on click. */
+.headBtnInert {
   cursor: default;
 }
 .close {
@@ -123,6 +137,16 @@
   border-bottom-color: var(--brand, #ff2d55);
 }
 
+/* Edit mode has no tabs to offer but keeps their bar, so the panel below does not shift up. */
+.tabLabel {
+  padding: 0.6rem 0;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  border-bottom: 3px solid var(--brand);
+}
+
 /* --- body ----------------------------------------------------------------- */
 .body {
   flex: 1;
@@ -138,8 +162,10 @@
   justify-content: center;
   padding: 1rem;
 }
-/* Full-body avatar snapshot (catalyst body image) — the Unity-style hero. */
-.body {
+/* Full-body avatar snapshot (catalyst body image) — the Unity-style hero. Its own class: sharing
+   `.body` with the row above meant CSS Modules merged the two blocks, so the image also picked up
+   that row's `flex: 1; display: flex` and the row picked up these. */
+.avatarImg {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -156,10 +182,26 @@
 }
 
 .card {
+  position: relative;
   background: rgba(0, 0, 0, 0.22);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   padding: 1.1rem 1.25rem;
+}
+/* The info panel's own edit affordance, in its top-right corner. */
+.cardEdit {
+  position: absolute;
+  top: 0.9rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--ink-6);
+  display: inline-flex;
+}
+.cardEdit:hover {
+  color: var(--text);
 }
 .cardTitle {
   margin: 0 0 0.75rem;

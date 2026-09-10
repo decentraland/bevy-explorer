@@ -3,8 +3,8 @@
 // bar. Submits via the bridge (signed multipart POST). Thumbnail upload is deferred — kernelFetch
 // bodies are strings, so the chosen picture previews locally but isn't sent yet.
 
-import { useRef, useState } from 'react'
-import { openPopup } from '../../design'
+import { useEffect, useRef, useState } from 'react'
+import { Select, openPopup, showConfirm } from '../../design'
 import styles from './CommunityCreateModal.module.css'
 
 const MEMBERSHIP = [
@@ -48,18 +48,28 @@ function PencilIcon(): React.JSX.Element {
 export function CommunityCreateModal({
   canCreate,
   onCreate,
-  onClose
+  onClose,
+  onDirtyChange
 }: {
   /** The user has a claimed NAME (community creation is gated behind one). */
   canCreate: boolean
   onCreate: (input: CreateCommunityInput) => void
   onClose: () => void
+  /** Announce entered details, so a stray backdrop click can't bin them. */
+  onDirtyChange?: (dirty: boolean) => void
 }): React.JSX.Element {
   const [name, setName] = useState('')
   const [privacy, setPrivacy] = useState<'public' | 'private'>('public')
   const [pfp, setPfp] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const valid = name.trim().length > 0
+  const dirty = name.trim() !== '' || pfp != null || privacy !== 'public'
+  const dirtyCb = useRef(onDirtyChange)
+  dirtyCb.current = onDirtyChange
+  useEffect(() => {
+    dirtyCb.current?.(dirty)
+    return () => dirtyCb.current?.(false)
+  }, [dirty])
 
   // Local-only preview; the picture isn't uploaded yet (see file header).
   const pickPfp = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -124,17 +134,17 @@ export function CommunityCreateModal({
         </div>
 
         <div className={styles.group}>
-          <label className={styles.label} htmlFor="cc-membership">MEMBERSHIP</label>
-          <div className={styles.selectWrap}>
-            <select id="cc-membership" className={styles.select} value={privacy} onChange={(e) => setPrivacy(e.target.value as 'public' | 'private')}>
-              {MEMBERSHIP.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}  {o.note}</option>
-              ))}
-            </select>
-            <svg className={styles.chevron} viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-              <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
+          <span className={styles.label}>MEMBERSHIP</span>
+          {/* Our own listbox, not a native <select>: the HUD renders offscreen and CEF paints a
+              native dropdown as a popup surface the engine does not composite, which covers the
+              whole HUD (see DateField). The note rides along in the option's label. */}
+          <Select
+            aria-label="Membership"
+            variant="light"
+            value={privacy}
+            options={MEMBERSHIP.map((o) => ({ value: o.value, label: `${o.label}: ${o.note}` }))}
+            onChange={(value) => setPrivacy(value as 'public' | 'private')}
+          />
         </div>
       </div>
 
@@ -152,5 +162,30 @@ export function CommunityCreateModal({
  *  `canCreate` is a snapshot taken when the button is clicked — matches the other fire-once popups
  *  (WorldVisitModal/ExitConfirm): the profile's claimed-NAME state isn't expected to change mid-flow. */
 export function openCommunityCreateModal(canCreate: boolean, onCreate: (input: CreateCommunityInput) => void): () => void {
-  return openPopup((close) => <CommunityCreateModal canCreate={canCreate} onCreate={onCreate} onClose={close} />)
+  // Same contract as the passport: the scrim refuses while there is something to lose, and the
+  // deliberate closes (CANCEL, ×, the Cancel/Escape action) ask.
+  const dirty = { current: false }
+  return openPopup(
+    (close) => (
+      <CommunityCreateModal
+        canCreate={canCreate}
+        onCreate={onCreate}
+        onClose={close}
+        onDirtyChange={(d) => {
+          dirty.current = d
+        }}
+      />
+    ),
+    {
+      backdropClickCloses: () => !dirty.current,
+      confirmClose: () =>
+        !dirty.current ||
+        showConfirm({
+          title: 'Discard this community?',
+          body: 'The details you have entered will be lost.',
+          confirmLabel: 'Discard',
+          cancelLabel: 'Keep editing'
+        })
+    }
+  )
 }

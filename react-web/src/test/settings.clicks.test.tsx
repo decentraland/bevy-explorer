@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { SettingsPanel } from '../features/settings/SettingsPanel'
 import type { Setting } from '../engine/protocol'
 import type { SettingsState } from '../features/session/useEngineSession'
-import { fakeSession } from './harness'
+import { fakeProfileState, fakeSession } from './harness'
 
 const base = (over: Partial<Setting>): Setting => ({
   name: 'x',
@@ -29,7 +29,7 @@ function renderPanel(): SettingsState {
     <SettingsPanel
       settings={settings}
       bindings={fakeSession().bindings}
-      profile={{ data: null, open: false, toggle: vi.fn() }}
+      profile={fakeProfileState()}
       onNavigate={vi.fn()}
     />
   )

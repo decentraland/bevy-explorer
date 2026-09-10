@@ -141,6 +141,8 @@ export type PageToScene =
   | UiFocusMessage
   | GetProfileRequest
   | GetUserProfileRequest
+  | SaveProfileRequest
+  | GetOwnedNamesRequest
   | GetNotificationsRequest
   | MarkNotificationsReadRequest
   | GetEmotesRequest
@@ -312,7 +314,10 @@ export interface Badge {
 
 /** The about-me field grid on the passport (all optional). */
 export interface ProfileInfo {
+  country?: string
+  sexualOrientation?: string
   gender?: string
+  /** ISO `YYYY-MM-DD`. Stored in the profile as epoch seconds; the bridge converts. */
   birthdate?: string
   pronouns?: string
   relationship?: string
@@ -368,6 +373,39 @@ export interface UserProfileMessage {
   kind: 'userProfile'
   address: string
   profile: Profile | null
+}
+
+/** Edit the local player's own profile (passport edit mode). Every field is optional and an
+ *  omitted one is left as it is, so this carries one save, not the whole profile. `links` and
+ *  `info`, when present, replace their whole section — that's how a link or a field is cleared. */
+export interface SaveProfileRequest {
+  kind: 'saveProfile'
+  /** Display name. The bridge resolves whether it's a claimed (owned NFT) name. */
+  name?: string
+  description?: string
+  links?: { title: string; url: string }[]
+  info?: ProfileInfo
+}
+
+/** The outcome of a `saveProfile` — the engine acks the profile deploy, so a failed save is
+ *  reported rather than silently leaving the HUD showing something that was never stored. */
+export interface ProfileSavedMessage {
+  kind: 'profileSaved'
+  ok: boolean
+  error?: string
+}
+
+/** A `saveProfile` without the wire tag — what the UI hands the session. */
+export type ProfileEdit = Omit<SaveProfileRequest, 'kind'>
+
+/** The claimed (NFT) names this account owns — the display-name picker's options. */
+export interface GetOwnedNamesRequest {
+  kind: 'getOwnedNames'
+}
+
+export interface OwnedNamesMessage {
+  kind: 'ownedNames'
+  names: string[]
 }
 
 /** Mirrors the engine's BaseNotification (metadata varies by type). */
@@ -1036,6 +1074,8 @@ export type SceneToPage =
   | InputCapturedMessage
   | ProfileMessage
   | UserProfileMessage
+  | ProfileSavedMessage
+  | OwnedNamesMessage
   | NotificationsMessage
   | EmotesMessage
   | MicMessage

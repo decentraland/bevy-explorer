@@ -19,6 +19,30 @@ interface SelectProps {
   'aria-label'?: string
 }
 
+/** Roughly how tall the list can get (matches `max-height` in the stylesheet). */
+const LIST_MAX = 260
+
+/** Should the list open upwards? Only when the room below — inside whatever box would clip it —
+ *  cannot hold it and there is more room above. Kept pure so the decision is testable; jsdom has
+ *  no layout, so the measuring around it cannot be. */
+export function preferUp(space: { above: number; below: number; list: number }): boolean {
+  return space.below < space.list && space.above > space.below
+}
+
+/** The nearest ancestor that would clip the list (a scrolling panel, a modal card), or the
+ *  viewport if nothing does. A dropdown at the bottom of a scroll container is cut off by it long
+ *  before it reaches the bottom of the screen. */
+function clipBounds(el: HTMLElement): { top: number; bottom: number } {
+  for (let node = el.parentElement; node != null; node = node.parentElement) {
+    const { overflow, overflowY } = getComputedStyle(node)
+    if (`${overflow} ${overflowY}`.split(' ').some((v) => v === 'auto' || v === 'scroll' || v === 'hidden' || v === 'clip')) {
+      const r = node.getBoundingClientRect()
+      return { top: r.top, bottom: r.bottom }
+    }
+  }
+  return { top: 0, bottom: window.innerHeight }
+}
+
 export function Select({
   value,
   options,
@@ -28,6 +52,7 @@ export function Select({
   'aria-label': ariaLabel
 }: SelectProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const [up, setUp] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -50,7 +75,14 @@ export function Select({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open && ref.current != null) {
+            const r = ref.current.getBoundingClientRect()
+            const clip = clipBounds(ref.current)
+            setUp(preferUp({ above: r.top - clip.top, below: clip.bottom - r.bottom, list: LIST_MAX }))
+          }
+          setOpen((o) => !o)
+        }}
       >
         <span className={styles.value}>{current?.label ?? value}</span>
         <svg className={`${styles.chev} ${open ? styles.chevOpen : ''}`.trim()} viewBox="0 0 12 12" aria-hidden="true">
@@ -58,7 +90,7 @@ export function Select({
         </svg>
       </button>
       {open && (
-        <ul className={styles.list} role="listbox">
+        <ul className={`${styles.list} ${up ? styles.listUp : ''}`.trim()} role="listbox">
           {options.map((o) => (
             <li key={o.value}>
               <button
