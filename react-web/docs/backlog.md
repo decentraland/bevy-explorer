@@ -158,8 +158,8 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     rarity-tinted card + name + rarity tag + click → marketplace) — today `Wearable` only exists for
     your OWN backpack, not another user's passport. (b) **Richer badges** — add `category`
     (Explorer/Collector/Creator/Socializer/Builder), `completedAt`, and in-progress `progress
-    {current,total}` to `Badge` (today just `{id,name,tier,image}`). (c) **Profile fields** `country` +
-    `sexualOrientation` in `ProfileInfo` (has the other 9). **UI-only (data mostly present):** (d)
+    {current,total}` to `Badge` (today just `{id,name,tier,image}`). (c) ~~Profile fields `country` +
+    `sexualOrientation` in `ProfileInfo`~~ — DONE (PR #1249). **UI-only (data mostly present):** (d)
     Badges tab category-filter row + per-badge date / progress bar (once (b) lands). (e) Passport-header
     **⋮ menu** (Block/Unblock · Report · Invite to Community) — reuse the world `ProfileCard`'s action
     set. (f) Wire the **3D avatar preview** into the passport (machinery exists —
@@ -337,15 +337,6 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     moderation endpoint lands: re-add the `Report` row + `onBlock`-style `onReport` request prop
     (parent-owned confirm, same pattern as Block), the `ReportIcon` glyph, and wire the actual submit.
     (Old scene logged too — this is genuinely new backend work, not just UI.)
-33. `[feature]` **Passport / own-profile edit mode — no UI yet** — *feature, own-profile only; flagged by
-    Rob*. bevy-ui-scene lets you edit your own passport in place — About Me, the info-field dropdowns,
-    links (add/remove, up to 5), and display name — then deploys the updated profile. react-web can
-    *view* the profile (`ProfilePanel` = own profile, `ProfilePassport` = others) but has **no UI to
-    edit your own** display name, description/bio, links, etc. — completely unimplemented (no
-    `editProfile`/`deployProfile` path in `features/profile` or the session). Needs the edit surface +
-    wiring the profile deploy through the bridge/engine. Larger than the view-parity item (#16) — hence
-    separate and lower priority than showing OTHER users' passports correctly. Reference the old client
-    for the flow (`unity-explorer` `Explorer/Assets/DCL/UI/`, `bevy-ui-scene` profile screens).
 34. `[feature]` **Chat rate limiting** — *hardening, not in bevy-ui-scene*. unity-explorer's
     `MultiplayerChatMessagesBus` dedupes + rate-limits + buffers sends; react-web (like bevy-ui-scene)
     sends on every Enter with no client-side throttle. Only worth adding if spam becomes a real problem
@@ -513,7 +504,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
 `Modal` (portal + focus-trap + blur + `--ui-scale`, richer than the old backdrop), `IconButton`
 (badge + tooltip + shortcut), the **friend-state architecture** (single reactive source, simpler than
 the old version-bump), `tokens.css`, and primitives the old lacks (`WearableCard`, `EmptyState`,
-`PageHeader`, `CharCounter`, `SearchField`, `ContextMenu`).
+`PageHeader`, `CharCounter`, `SearchField`, `ContextMenu`, `TextInput`, `TextArea`, `DateField`).
 
 ## Deliberately NOT ported
 
