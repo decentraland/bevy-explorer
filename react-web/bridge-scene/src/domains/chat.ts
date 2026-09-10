@@ -1,10 +1,11 @@
 // Chat: incoming messages, sending, and the nearby-players roster.
 //   from: BevyApi.getChatStream() / sendChat(), @dcl/sdk PlayerIdentityData (nearby roster)
-//         + the catalyst profile cache (profile.ts) for faces.
+//         + the ENGINE's profile cache (~system/Players getPlayerData) for faces.
 import { engine, PlayerIdentityData, PointerLock } from '@dcl/sdk/ecs'
 import { getPlayer } from '@dcl/sdk/players'
+import { getPlayerData } from '~system/Players'
 import { BevyApi } from '../bevy-api'
-import { fetchProfile, profileCache, profileKey } from './profile'
+import { httpOrUndef, profileKey } from './profile'
 import { setChatBubble } from './nametags'
 import { onSystemAction } from './systemAction'
 import type { Ctx } from '../bridge'
@@ -64,6 +65,10 @@ export function registerChat(ctx: Ctx): void {
   })
 
   // Nearby players (PlayerIdentityData set) → chat header "Nearby · N". Poll ~3s, push on change.
+  // Faces come from the engine's profile cache, which already holds every nearby player's profile
+  // for their nametag: one RPC per address, answered once the engine has resolved it. An address
+  // it couldn't resolve is dropped, so the next tick asks again.
+  const faces = new Map<string, string | undefined>()
   let acc = 3
   let lastKey = ''
   ctx.push((dt) => {
@@ -73,14 +78,17 @@ export function registerChat(ctx: Ctx): void {
     const members: NearbyMember[] = []
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) {
       const address = data.address
-      if (!profileCache.has(profileKey(address))) {
-        void fetchProfile(address).catch(() => undefined)
+      const key = profileKey(address)
+      if (!faces.has(key)) {
+        faces.set(key, undefined)
+        getPlayerData({ userId: address })
+          .then((res) => faces.set(key, httpOrUndef(res.data?.avatar?.snapshots?.face256)))
+          .catch(() => faces.delete(key))
       }
-      const face = profileCache.get(profileKey(address))?.avatars?.[0]?.avatar?.snapshots?.face256
       members.push({
         address,
         name: getPlayer({ userId: address })?.name ?? '',
-        picture: typeof face === 'string' && face.startsWith('http') ? face : undefined
+        picture: faces.get(key)
       })
     }
     const key = members.map((m) => `${m.address}:${m.picture ?? ''}`).sort().join(',')

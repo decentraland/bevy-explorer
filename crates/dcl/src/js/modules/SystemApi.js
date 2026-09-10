@@ -121,8 +121,11 @@ module.exports.setAvatar = async function(avatar) {
     return await Deno.core.ops.op_set_avatar(avatar)
 }
 
-module.exports.getProfileExtras = async function() {
-    return await Deno.core.ops.op_get_profile_extras();
+// any user's full profile (own, nearby or remote), resolved through the engine's profile cache
+// and fetch cascade. Rejects if the address can't be resolved.
+// address: string => SerializedProfile
+module.exports.getUserProfile = async function(address) {
+    return await Deno.core.ops.op_get_user_profile(address);
 }
 
 // get the next key/button pressed by the user, identified as a string

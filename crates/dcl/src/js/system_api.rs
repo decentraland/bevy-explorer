@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use bevy::{log::debug, math::Vec4};
 use common::{
     inputs::{Action, BindingsData, HudPanel, InputIdentifier, SystemActionEvent},
+    profile::SerializedProfile,
     rpc::{RpcCall, RpcResultReceiver, RpcResultSender, RpcStreamReceiver, RpcStreamSender},
     structs::{
         MicState, PermissionLevel, PermissionStrings, PermissionType, PermissionUsed,
@@ -482,29 +483,31 @@ pub async fn op_read_bridge_stream(
     Ok(res)
 }
 
-pub async fn op_get_profile_extras(
+/// Any user's full profile (own, nearby, or remote) as the engine holds it, resolved through the
+/// same cache and fetch cascade as nametags and `getPlayerData` — but unlike the latter, not
+/// squeezed into the SDK's `UserData`, so `extra_fields`, `name_color` and emotes survive.
+/// Rejects once the cascade has concluded with nothing.
+pub async fn op_get_user_profile(
     state: Rc<RefCell<impl State>>,
-) -> Result<std::collections::HashMap<String, serde_json::Value>, anyhow::Error> {
+    address: String,
+) -> Result<SerializedProfile, anyhow::Error> {
     let (sx, rx) = RpcResultSender::channel();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
-    debug!("[{scene:?}] -> op_get_profile_extras");
+    debug!("[{scene:?}] -> op_get_user_profile {address}");
 
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::GetUserData {
-            user: None, // current user
+            user: Some(address),
             scene,
             response: sx,
         })?;
 
-    let profile = rx
-        .await
+    rx.await
         .map_err(|e| anyhow::anyhow!(e))?
-        .map_err(|_| anyhow::anyhow!("Not found"))?;
-
-    Ok(profile.extra_fields)
+        .map_err(|_| anyhow::anyhow!("Not found"))
 }
 
 pub fn op_quit(state: Rc<RefCell<impl State>>) {

@@ -3,6 +3,7 @@
 // the wire shapes React sees live in the shared protocol. Only the methods the domains use
 // are declared — extend as needed.
 import type { ActionWire, Setting } from '../../src/engine/protocol'
+import type { SerializedProfile } from './domains/profile'
 import type {
   AvatarModifierState,
   BlockedUserData,
@@ -128,6 +129,10 @@ export type BevyApiInterface = {
    *  never the bridge. */
   liveSceneInfo: () => Promise<LiveSceneInfo[]>
   setAvatar: (data: SetAvatarData) => Promise<unknown>
+  /** Any user's full deployed profile as the engine holds it (own, nearby and remote players,
+   *  guests included), resolved through its profile cache and fetch cascade. Rejects once the
+   *  engine has concluded the address can't be resolved. */
+  getUserProfile: (address: string) => Promise<SerializedProfile>
   kernelFetch: (req: KernelFetchRequest) => Promise<KernelFetchResponse>
   getRealmProvider: () => Promise<string>
   getPreviousLogin: () => Promise<{ userId: string | null }>

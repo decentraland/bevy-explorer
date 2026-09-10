@@ -209,10 +209,13 @@ pub fn op_send_chat(state: &WorkerContext, message: String, channel: String) {
 }
 
 #[wasm_bindgen]
-pub async fn op_get_profile_extras(state: &WorkerContext) -> Result<JsValue, WasmError> {
-    let extras = dcl::js::system_api::op_get_profile_extras(state.rc()).await;
+pub async fn op_get_user_profile(
+    state: &WorkerContext,
+    address: String,
+) -> Result<JsValue, WasmError> {
+    let profile = dcl::js::system_api::op_get_user_profile(state.rc(), address).await;
     // use a specific serializer to convert to object here, as wasm_bindgen's conversion otherwise produces a Map
-    extras
+    profile
         .map(|v| {
             v.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
                 .unwrap()
