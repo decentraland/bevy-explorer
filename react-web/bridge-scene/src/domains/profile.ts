@@ -38,11 +38,11 @@ type CatalystAvatar = {
   profession?: string
   hobbies?: string
   realName?: string
-  /** Epoch SECONDS (what the old scene writes), not the ISO string the passport shows. */
-  /** unity-explorer writes this key, in epoch SECONDS. @dcl/schemas declares the all-lowercase
-   *  `birthdate` instead, and the entity allows additional properties, so both can exist — but
-   *  unity is what actually writes profiles, so its spelling is the one that counts. `birthdate`
-   *  is read too, to pick up anything an earlier build of this HUD wrote. */
+  /** Epoch SECONDS, not the ISO string the passport shows. unity-explorer writes this key;
+   *  @dcl/schemas declares the all-lowercase `birthdate` instead, and the entity allows additional
+   *  properties, so both can exist — but unity is what actually writes profiles, so its spelling is
+   *  the one that counts. `birthdate` is read too, to pick up anything an earlier build of this
+   *  HUD wrote. */
   birthDate?: number
   birthdate?: number
   avatar?: {
@@ -121,14 +121,21 @@ const shortAddress = (a: string): string => (a.length > 12 ? `${a.slice(0, 6)}�
 
 const httpOrUndef = (s?: string | null): string | undefined => (typeof s === 'string' && s.startsWith('http') ? s : undefined)
 
+/** The profile stores a non-claimed name bare; every explorer shows it with four hex digits of
+ *  the address appended (the engine builds nametags the same way — `crates/avatar`), so the
+ *  passport must too, or a name saved here would read back without the tag the world shows. */
+const withAddressTag = (name: string, address: string, claimed: boolean): string =>
+  claimed || name.includes('#') ? name : `${name}#${address.slice(-4)}`
+
 function toProfile(av: CatalystAvatar | undefined, address: string, isGuest: boolean, fallbackName: string): Profile {
   const snaps = av?.avatar?.snapshots
+  const claimed = av?.hasClaimedName ?? !fallbackName.includes('#')
   return {
     address,
-    name: av?.name != null && av.name !== '' ? av.name : fallbackName,
+    name: withAddressTag(av?.name != null && av.name !== '' ? av.name : fallbackName, address, claimed),
     picture: httpOrUndef(snaps?.face256),
     bodyImage: httpOrUndef(snaps?.body),
-    hasClaimedName: av?.hasClaimedName ?? !fallbackName.includes('#'),
+    hasClaimedName: claimed,
     isGuest,
     description: av?.description != null && av.description !== '' ? av.description : undefined,
     links: av?.links ?? undefined,

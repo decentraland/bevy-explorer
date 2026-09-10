@@ -17,7 +17,7 @@ import {
   type Setting,
   type Wearable
 } from './protocol'
-import { applyProfileEdit } from '../features/profile/profileFields'
+import { applyProfileEdit } from './profileEdit'
 
 // A fully-populated passport for the mock, so the React passport shows every section.
 function richProfile(address: string, name: string, isGuest: boolean): Profile {
@@ -225,8 +225,13 @@ const defaultBindings = (): BindingEntry[] => [
 // sticks for the rest of the session — the real bridge gets the same effect by folding the save
 // into its catalyst cache.
 const ownEdits: ProfileEdit[] = []
+/** The returning mock user holds two NAMEs; a guest holds none. */
+const ownedNamesOf = (o: MockOptions): string[] => (o.hasPreviousLogin ? ['Mojito', 'MojitoDCL'] : [])
 const ownProfile = (o: MockOptions): Profile =>
-  ownEdits.reduce(applyProfileEdit, richProfile(o.userId, o.hasPreviousLogin ? 'Mojito' : 'Guest#beef', !o.hasPreviousLogin))
+  ownEdits.reduce<Profile>(
+    (p, edit) => applyProfileEdit(p, edit, ownedNamesOf(o)),
+    richProfile(o.userId, o.hasPreviousLogin ? 'Mojito' : 'Guest#beef', !o.hasPreviousLogin)
+  )
 
 interface MockOptions {
   /** Simulate a returning user (reuse-login flow) vs a fresh user. */
@@ -747,7 +752,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'getOwnedNames') {
-      reply({ kind: 'ownedNames', names: o.hasPreviousLogin ? ['Mojito', 'MojitoDCL'] : [] })
+      reply({ kind: 'ownedNames', names: ownedNamesOf(o) })
       return
     }
     if (msg.kind === 'saveProfile') {

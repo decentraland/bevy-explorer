@@ -12,7 +12,7 @@ import { bootMode } from '../../lib/bootMode'
 import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { dispatchCancelLayer } from '../../lib/cancelLayers'
 import { isInputLocked, subscribeInputLock } from '../../lib/inputLock'
-import { applyProfileEdit } from '../profile/profileFields'
+import { applyProfileEdit } from '../../engine/profileEdit'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
@@ -1324,13 +1324,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       setProfileSaveError(null)
       setProfileSaving(true)
       driverRef.current?.send({ kind: 'saveProfile', ...edit })
-      setProfile((prev) => (prev != null ? applyProfileEdit(prev, edit) : prev))
+      setProfile((prev) => (prev != null ? applyProfileEdit(prev, edit, ownedNames) : prev))
       setUserProfiles((prev) => {
         const mine = prev[address]
-        return mine != null ? { ...prev, [address]: applyProfileEdit(mine, edit) } : prev
+        return mine != null ? { ...prev, [address]: applyProfileEdit(mine, edit, ownedNames) } : prev
       })
     },
-    [profile, userProfiles]
+    [profile, userProfiles, ownedNames]
   )
   const dismissProfileSaveError = useCallback(() => setProfileSaveError(null), [])
   const friendAct = useCallback((op: FriendAction, address: string) => {

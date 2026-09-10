@@ -62,11 +62,11 @@
   border: none;
   padding: 2px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-dim);
   display: inline-flex;
 }
 .iconBtn:hover {
-  color: #fff;
+  color: var(--text);
 }
 .mutual {
   margin-top: 0.4rem;
@@ -140,11 +140,11 @@
 /* Edit mode has no tabs to offer but keeps their bar, so the panel below does not shift up. */
 .tabLabel {
   padding: 0.6rem 0;
-  color: #fff;
+  color: var(--text);
   font-weight: 700;
   font-size: 0.85rem;
   letter-spacing: 0.04em;
-  border-bottom: 3px solid var(--brand, #ff2d55);
+  border-bottom: 3px solid var(--brand);
 }
 
 /* --- body ----------------------------------------------------------------- */
@@ -197,11 +197,11 @@
   border: none;
   padding: 4px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ink-6);
   display: inline-flex;
 }
 .cardEdit:hover {
-  color: #fff;
+  color: var(--text);
 }
 .cardTitle {
   margin: 0 0 0.75rem;

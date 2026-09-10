@@ -108,7 +108,6 @@ export function ProfileEditForm({
   const setLink = (index: number, patch: Partial<LinkDraft>): void =>
     setDraft((d) => ({ ...d, links: d.links.map((l, i) => (i === index ? { ...l, ...patch } : l)) }))
 
-
   return (
     <section className={styles.form} aria-label="Edit profile">
       {error != null && (
@@ -216,7 +215,6 @@ export function ProfileEditForm({
           + ADD LINK
         </Button>
       )}
-
     </section>
   )
 }

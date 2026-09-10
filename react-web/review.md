@@ -68,7 +68,7 @@ each domain. Config: `playwright.visual.config.ts` (headless, 1600×900, `maxDif
 `permission-dialog` · `community-modal` · `community-create-modal` · `exit-confirm` ·
 `panel-friends` · `panel-settings` · `panel-settings-keybindings` · `panel-profile` ·
 `panel-notifications` · `panel-emote-wheel` · `panel-communities` · `panel-map` ·
-`minimap-settings` · `backpack-wearables` · `backpack-emotes`.
+`minimap-settings` · `backpack-wearables` · `backpack-emotes` · `passport-edit` · `name-edit`.
 
 **Updating baselines** (only when the change is intentional):
 ```bash
@@ -165,6 +165,11 @@ Run through this on every diff (it encodes `AGENTS.md`):
 - [ ] **No secrets / `.env`** staged; commit follows `CLAUDE.md` (imperative, no AI attribution).
 
 - [ ] **Input routing** — follows the §7 contracts (no hand-rolled Escape/hotkey handlers).
+- [ ] **No native popups** — no `<select>`, no `<input type="date|time|color">`, no
+      `alert`/`confirm`/`prompt`. On native the HUD is rendered offscreen and CEF paints popup
+      widgets as a separate surface the engine never composites (`update_hud_texture` takes whatever
+      paint arrives), so opening one replaces the whole HUD with the widget's bitmap. Use `Select`,
+      `DateField` and `showConfirm`/`showDialog` from `src/design/`.
 
 ---
 

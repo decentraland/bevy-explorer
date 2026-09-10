@@ -256,20 +256,20 @@ export function ProfilePassport({
 
         {/* --- tabs (edit mode is overview-scoped, so they stand down while it's open) --- */}
         {!editMode && (
-        <nav className={styles.tabs}>
-          {(['overview', 'badges', 'photos'] as Tab[]).map((t) => (
-            <button key={t} type="button" className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`.trim()} onClick={() => setTab(t)}>
-              {t.toUpperCase()}
-            </button>
-          ))}
-        </nav>
+          <nav className={styles.tabs}>
+            {(['overview', 'badges', 'photos'] as Tab[]).map((t) => (
+              <button key={t} type="button" className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`.trim()} onClick={() => setTab(t)}>
+                {t.toUpperCase()}
+              </button>
+            ))}
+          </nav>
         )}
         {/* Edit mode has no tabs to offer, but it keeps the bar: dropping it shifts the avatar and
             everything below it up by its height, so clicking EDIT PROFILE jumped the whole panel. */}
         {editMode && (
-        <div className={styles.tabs}>
-          <span className={styles.tabLabel}>EDIT PROFILE</span>
-        </div>
+          <div className={styles.tabs}>
+            <span className={styles.tabLabel}>EDIT PROFILE</span>
+          </div>
         )}
 
         <div className={styles.body}>

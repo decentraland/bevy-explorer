@@ -2,7 +2,7 @@
 // builds its controls from it, and the tests assert against it. Splitting the label list from the
 // input list is how the old scene ended up with fields you could see but not edit.
 
-import type { Profile, ProfileEdit, ProfileInfo } from '../../engine/protocol'
+import type { ProfileInfo } from '../../engine/protocol'
 
 /** How a field is edited. Text fields are free-form; select fields come from FIELD_OPTIONS. */
 export type FieldKind = 'text' | 'select' | 'date'
@@ -51,22 +51,4 @@ export function isValidLinkUrl(url: string): boolean {
   } catch {
     return false
   }
-}
-
-/** The profile as it will look once a save lands — used to show the edit immediately rather than
- *  waiting for the deploy and the catalyst reindex behind it. Mirrors how the bridge folds the
- *  same edit into its cache, so the optimistic view and the next fetch agree. */
-export function applyProfileEdit(profile: Profile, edit: ProfileEdit): Profile {
-  const next = { ...profile }
-  if (edit.name !== undefined) next.name = edit.name
-  if (edit.description !== undefined) next.description = edit.description.trim() || undefined
-  if (edit.links !== undefined) next.links = edit.links.length > 0 ? edit.links : undefined
-  if (edit.info !== undefined) {
-    const info: ProfileInfo = {}
-    for (const [key, value] of Object.entries(edit.info) as [keyof ProfileInfo, string | undefined][]) {
-      if (value != null && value !== '') info[key] = value
-    }
-    next.info = Object.keys(info).length > 0 ? info : undefined
-  }
-  return next
 }

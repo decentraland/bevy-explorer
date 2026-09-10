@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ProfilePassport, type PassportEditing } from '../features/profile/ProfilePassport'
-import { applyProfileEdit, isValidLinkUrl, isValidName } from '../features/profile/profileFields'
+import { isValidLinkUrl, isValidName } from '../features/profile/profileFields'
+import { applyProfileEdit } from '../engine/profileEdit'
 import { FIELD_OPTIONS } from '../features/profile/profileFieldOptions'
 import type { Profile, ProfileEdit } from '../engine/protocol'
 import { resetPopups, PopupHost } from '../design'
@@ -191,12 +192,19 @@ describe('profile edit helpers', () => {
   })
 
   it('applies an edit the way a save will land', () => {
-    const next = applyProfileEdit(profile, { description: '', info: { gender: 'Male' }, links: [] })
+    const next = applyProfileEdit(profile, { description: '', info: { gender: 'Male' }, links: [] }, [])
     expect(next.description).toBeUndefined()
     expect(next.links).toBeUndefined()
     expect(next.info).toEqual({ gender: 'Male' })
     // Untouched fields survive.
     expect(next.name).toBe('Mojito')
+  })
+
+  it('shows a renamed profile the way the world will — claimed NAMEs bare, anything else tagged', () => {
+    const tagged = applyProfileEdit({ ...profile, address: '0xabcdef1234' }, { name: 'mojito2' }, ['Mojito'])
+    expect(tagged).toMatchObject({ name: 'mojito2#1234', hasClaimedName: false })
+    const claimed = applyProfileEdit({ ...profile, hasClaimedName: false }, { name: 'MojitoDCL' }, ['Mojito', 'MojitoDCL'])
+    expect(claimed).toMatchObject({ name: 'MojitoDCL', hasClaimedName: true })
   })
 
   it('ships dropdown options with no stray whitespace', () => {

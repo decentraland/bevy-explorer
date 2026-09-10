@@ -19,7 +19,6 @@ interface SelectProps {
   'aria-label'?: string
 }
 
-
 /** Roughly how tall the list can get (matches `max-height` in the stylesheet). */
 const LIST_MAX = 260
 

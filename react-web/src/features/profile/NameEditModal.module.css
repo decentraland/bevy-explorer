@@ -8,22 +8,22 @@
 .tabs {
   display: flex;
   gap: 1.5rem;
-  border-bottom: 1px solid var(--ink-6, rgba(255, 255, 255, 0.12));
+  border-bottom: 1px solid var(--fill-5);
 }
 .tab {
   background: none;
   border: none;
   padding: 0.5rem 0;
-  color: var(--ink-3, rgba(255, 255, 255, 0.6));
+  color: var(--ink-6);
   font-weight: 700;
-  font-size: var(--fs-xs, 0.8rem);
+  font-size: var(--fs-xs);
   letter-spacing: 0.04em;
   cursor: pointer;
   border-bottom: 3px solid transparent;
 }
 .tabActive {
-  color: #fff;
-  border-bottom-color: var(--brand, #ff2d55);
+  color: var(--text);
+  border-bottom-color: var(--brand);
 }
 
 /* --- the typed name -------------------------------------------------------- */
@@ -41,22 +41,23 @@
 .suffix {
   position: absolute;
   right: 0.9rem;
-  color: var(--ink-4, rgba(0, 0, 0, 0.45));
+  color: var(--accent-ink);
+  opacity: 0.45;
   font-weight: 600;
   pointer-events: none;
 }
 .count {
   align-self: flex-start;
-  font-size: var(--fs-xs, 0.75rem);
-  color: var(--ink-3, rgba(255, 255, 255, 0.6));
+  font-size: var(--fs-xs);
+  color: var(--ink-6);
 }
 .hint {
-  font-size: var(--fs-xs, 0.75rem);
-  color: var(--ink-3, rgba(255, 255, 255, 0.6));
+  font-size: var(--fs-xs);
+  color: var(--ink-6);
 }
 .error {
-  font-size: var(--fs-sm, 0.85rem);
-  color: var(--brand, #ff2d55);
+  font-size: var(--fs-sm);
+  color: var(--error-text);
 }
 
 /* Equal-width pair, as in unity-explorer's dialog. */
@@ -75,7 +76,7 @@
 .promo {
   margin: 0.5rem -1.25rem -1.25rem;
   padding: 1.25rem;
-  background: linear-gradient(105deg, #7b2ea8 0%, #a92e93 100%);
+  background: var(--promo-bg);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -83,13 +84,13 @@
 }
 .promoTitle {
   margin: 0;
-  font-size: var(--fs-md, 1rem);
+  font-size: var(--fs-md);
   font-weight: 800;
-  color: #fff;
+  color: var(--text);
 }
 .promoBody {
   margin: 0;
-  font-size: var(--fs-sm, 0.85rem);
+  font-size: var(--fs-sm);
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--ink-85);
 }

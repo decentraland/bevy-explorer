@@ -24,22 +24,26 @@ type Tab = 'unique' | 'custom'
 
 export function NameEditModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const session = useSession()
-  const { ownedNames, saving, saveError, save, dismissSaveError, requestOwnedNames } = session.profile
+  const { ownedNames, saving, saveError, save, dismissSaveError } = session.profile
   const profile = session.profile.data
   const currentName = profile?.name ?? ''
   const { base } = splitName(currentName)
   const suffix = addressSuffix(profile?.address ?? '')
   const claimed = profile?.hasClaimedName === true
 
-  // The list can arrive after the popup opens (it is a catalyst round trip), so ask on mount and
-  // let the tabs appear when it lands.
-  useEffect(() => {
-    requestOwnedNames()
-  }, [requestOwnedNames])
-
   const hasNames = ownedNames.length > 0
   const [tab, setTab] = useState<Tab>(() => (claimed && hasNames ? 'unique' : 'custom'))
   const [picked, setPicked] = useState(() => (claimed ? currentName : (ownedNames[0] ?? '')))
+  // The passport asks for the list when it opens, but that is a catalyst round trip and this popup
+  // can open first. When the list lands, a claimed NAME's owner belongs on the picker — once; a
+  // tab they chose themselves afterwards is theirs to keep.
+  const hadNames = useRef(hasNames)
+  useEffect(() => {
+    if (hadNames.current || !hasNames) return
+    hadNames.current = true
+    if (claimed) setTab('unique')
+    setPicked((p) => (p === '' ? ownedNames[0] : p))
+  }, [hasNames, claimed, ownedNames])
   // Only the part before the '#': the suffix is the protocol's, not something you type.
   const [typed, setTyped] = useState(base)
 

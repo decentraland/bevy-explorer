@@ -61,6 +61,37 @@ describe('with claimed NAMEs', () => {
   })
 })
 
+describe('when the NAME list lands after the popup opened', () => {
+  it('moves a claimed NAME\'s owner onto the picker once, and leaves a tab they chose alone', async () => {
+    const s = fakeSession()
+    s.profile = fakeProfileState({ data: CLAIMED, ownedNames: [] })
+    const { rerender } = render(
+      <SessionProvider value={s}>
+        <NameEditModal onClose={vi.fn()} />
+      </SessionProvider>
+    )
+    expect(screen.queryByRole('tab')).toBeNull()
+
+    s.profile = { ...s.profile, ownedNames: ['Mojito', 'MojitoDCL'] }
+    rerender(
+      <SessionProvider value={{ ...s }}>
+        <NameEditModal onClose={vi.fn()} />
+      </SessionProvider>
+    )
+    expect(screen.getByRole('tab', { name: 'UNIQUE NAME' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'Claimed name' })).toHaveTextContent('Mojito')
+
+    await userEvent.click(screen.getByRole('tab', { name: 'NON-UNIQUE USERNAME' }))
+    s.profile = { ...s.profile, ownedNames: ['Mojito', 'MojitoDCL', 'MojitoTwo'] }
+    rerender(
+      <SessionProvider value={{ ...s }}>
+        <NameEditModal onClose={vi.fn()} />
+      </SessionProvider>
+    )
+    expect(screen.getByRole('tab', { name: 'NON-UNIQUE USERNAME' })).toHaveAttribute('aria-selected', 'true')
+  })
+})
+
 describe('without a claimed NAME', () => {
   it('offers only the free-text field, with the address suffix shown alongside', () => {
     renderModal(UNCLAIMED, [])
