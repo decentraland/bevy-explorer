@@ -18,8 +18,8 @@ import type { Envelope, PageToScene, SceneToPage } from './protocol'
 
 const HELLO_INTERVAL_MS = 250
 
-/** Only armed by `expectReady()`: before sign-in there is legitimately no bridge on web, and a
- *  clock started at construction just accuses an idle login screen. */
+/** Only armed by `expectReady()`: before the engine is launched there is legitimately no bridge on
+ *  web, and a clock started at construction just accuses an idle login screen or picker. */
 const READY_TIMEOUT_MS = 30_000
 
 export class BridgeChannel {
@@ -29,6 +29,8 @@ export class BridgeChannel {
   private readonly queue: PageToScene[] = []
   private helloTimer: ReturnType<typeof setInterval> | null = null
   private timeoutTimer: ReturnType<typeof setTimeout> | null = null
+  /** `expectReady()` is one-shot: a fault already reported must not come back on the next arm. */
+  private expected = false
 
   constructor(
     channelName: string,
@@ -46,11 +48,13 @@ export class BridgeChannel {
     this.helloTimer = setInterval(() => this.hello(), HELLO_INTERVAL_MS)
   }
 
-  /** Start the clock: sign-in has begun, so a still-absent bridge is a fault worth showing rather
-   *  than a normal wait. Idempotent — the session calls it on every render past the login screen.
-   *  Keeps saying hello afterwards, so a scene that turns up late still recovers the queue. */
+  /** Start the clock: the engine has been launched at a realm, so a still-absent bridge is a fault
+   *  worth showing rather than a normal wait. One-shot — the session calls it on every phase change
+   *  past launch, and a fault already reported must not be raised again by the next one. Keeps
+   *  saying hello afterwards, so a scene that turns up late still recovers the queue. */
   expectReady(): void {
-    if (this.ready || this.timeoutTimer != null) return
+    if (this.ready || this.expected) return
+    this.expected = true
     this.timeoutTimer = setTimeout(() => {
       this.timeoutTimer = null
       if (!this.ready) this.onUnavailable?.()

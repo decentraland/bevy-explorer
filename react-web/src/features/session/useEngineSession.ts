@@ -639,11 +639,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           systemActionRef.current(msg.action, msg.pressed)
           break
         case 'bridgeUnavailable':
-          // Every panel behind the bridge would stay empty with nothing to explain why.
-          // Dismissable: the engine and the world itself are fine (issue #1233).
+          // Every panel behind the bridge would stay empty with nothing to explain why. Not a crash:
+          // the engine and the world itself are fine, so it opens as an ordinary dialog (issue #1233).
           setFatalError((prev) => prev ?? {
             message: 'The HUD could not reach the explorer bridge, so panels may stay empty. Restarting usually fixes it.',
-            source: 'runtime'
+            source: 'bridge'
           })
           break
         case 'profile':
@@ -1480,10 +1480,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         ? 'entering'
         : 'world'
 
-  // Past the login screen the bridge scene must exist — on web its realm has been picked, on
-  // native it booted with the engine — so from here on its absence is a fault, not a normal wait.
+  // Once a launch has been requested the bridge scene must exist — on web the engine boots at the
+  // picked realm and the scene with it, on native it booted with the engine — so from here on its
+  // absence is a fault, not a normal wait. NOT 'picking': on web nothing is launched until the
+  // user picks, so an idle picker has no bridge to wait for.
   useEffect(() => {
-    if (phase !== 'login') driverRef.current?.expectBridge?.()
+    if (phase === 'entering' || phase === 'world') driverRef.current?.expectBridge?.()
   }, [phase])
 
   // HUD focus, declared to the engine (fire-and-forget; latest wins). `ui` reserves all

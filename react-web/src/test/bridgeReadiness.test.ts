@@ -141,6 +141,21 @@ describe('bridge readiness handshake', () => {
     expect(ch.isReady()).toBe(false)
   })
 
+  it('reports once: re-arming after the report does not raise it again', async () => {
+    vi.useFakeTimers()
+    const name = channelName()
+    const onUnavailable = vi.fn()
+    const ch = track(new BridgeChannel(name, () => {}, onUnavailable))
+    ch.expectReady()
+    await vi.advanceTimersByTimeAsync(31_000)
+    expect(onUnavailable).toHaveBeenCalledTimes(1)
+
+    // The session arms on every phase change past launch (entering → world).
+    ch.expectReady()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(onUnavailable).toHaveBeenCalledTimes(1)
+  })
+
   it('does not report unavailable once the scene has answered', async () => {
     vi.useFakeTimers()
     const name = channelName()
@@ -196,17 +211,17 @@ describe('bridge readiness handshake', () => {
 })
 
 describe('an unreachable bridge is surfaced, not silent', () => {
-  it('turns bridgeUnavailable into a dismissable crash the user can act on', async () => {
+  it('turns bridgeUnavailable into a dismissable dialog, not a crash', async () => {
     const h = renderSession()
     await enterAsGuest(h)
     expect(h.session().fatalError).toBeNull()
 
     h.driver.emit({ kind: 'bridgeUnavailable' })
-    expect(h.session().fatalError?.source).toBe('runtime')
+    expect(h.session().fatalError?.source).toBe('bridge')
     expect(h.session().fatalError?.message).toMatch(/bridge/i)
   })
 
-  it('does not overwrite a crash already on screen', async () => {
+  it('does not overwrite an error already on screen', async () => {
     const h = renderSession()
     await enterAsGuest(h)
     h.driver.emit({ kind: 'bridgeUnavailable' })
