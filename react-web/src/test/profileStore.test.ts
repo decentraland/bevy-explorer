@@ -67,6 +67,15 @@ describe('profile store', () => {
     expect(peekProfile('0xabc')?.badges?.length).toBe(1)
   })
 
+  it('the engine copy replaces a seed only where it says something', () => {
+    seedProfiles([{ address: '0xabc', name: 'Alice', picture: 'a.png' }])
+    receiveProfile('0xabc', full({ name: 'Alicia', picture: undefined }))
+    expect(peekProfile('0xabc')).toMatchObject({ name: 'Alicia', picture: 'a.png', version: 3 })
+    receiveProfile('0xabc', full({ name: '0xabc', picture: 'b.png', description: undefined }))
+    expect(peekProfile('0xabc')).toMatchObject({ name: 'Alicia', picture: 'b.png' })
+    expect(peekProfile('0xabc')?.description).toBeUndefined() // a cleared field is the engine's word
+  })
+
   it('a "no profile" answer stands for a while rather than being re-asked per subscriber', () => {
     subscribeProfile('0xabc', vi.fn())
     receiveProfile('0xabc', null)

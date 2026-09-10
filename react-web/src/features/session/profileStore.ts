@@ -45,6 +45,8 @@ const IDLE_TTL = 120_000
 const MISSING_TTL = 60_000
 const SWEEP_EVERY = 30_000
 
+const EXTRAS = ['badges', 'photos', 'equippedWearables', 'equippedEmotes'] as const
+
 const entries = new Map<string, Entry>()
 const listeners = new Map<string, Set<() => void>>()
 let request: (address: string, extras: boolean) => void = () => {}
@@ -152,14 +154,19 @@ export function receiveProfile(address: string, profile: Profile | null): void {
     return
   }
   e.missingAt = undefined
-  // A plain identity reply carries no badges/photos/equipped items; merged over what's held so a
-  // passport's extras survive the re-reads that follow. Absent keys, not undefined values, are what
-  // ride the wire, but the mock and tests build these by hand, so both are treated as "not sent".
-  let merged: Profile = profile
-  if (e.full && e.profile != null) {
-    merged = { ...e.profile, ...Object.fromEntries(Object.entries(profile).filter(([, v]) => v !== undefined)) }
+  const prev = e.profile
+  const next: Profile = { ...profile }
+  if (prev != null) {
+    // The engine's copy replaces what a list seeded, but only where it says something: a profile
+    // with no snapshot must not blank a face the friends service supplied, and vice versa when
+    // that service stops sending faces — either way the row keeps the one it has.
+    if (next.name === '' || next.name.toLowerCase() === key) next.name = prev.name
+    if (next.picture == null) next.picture = prev.picture
+    // A plain identity reply carries no badges/photos/equipped items; a passport's extras survive
+    // the re-reads that follow. Everything else is the engine's word, including a cleared field.
+    for (const k of EXTRAS) if (next[k] === undefined && prev[k] !== undefined) Object.assign(next, { [k]: prev[k] })
   }
-  e.profile = merged
+  e.profile = next
   e.full = true
   notify(key)
   sweep(Date.now())

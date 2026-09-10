@@ -777,7 +777,9 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       const member = MOCK_NEARBY.find((m) => m.address.toLowerCase() === msg.address.toLowerCase())
       const name = member?.name || `${msg.address.slice(0, 6)}…${msg.address.slice(-4)}`
       if (msg.extras !== true) {
-        reply({ kind: 'userProfile', address: msg.address, profile: { address: msg.address, name, picture: member?.picture, hasClaimedName: !name.includes('#'), isGuest: false } })
+        // Like the engine, hold nothing for someone never seen: a friend's seeded name stays.
+        const profile = member == null ? null : { address: msg.address, name, picture: member.picture, hasClaimedName: !name.includes('#'), isGuest: false }
+        reply({ kind: 'userProfile', address: msg.address, profile })
         return
       }
       reply({ kind: 'userProfile', address: msg.address, profile: richProfile(msg.address, name, false) })
