@@ -1,7 +1,9 @@
 // Profile: the local player's profile card + any user's passport (View Profile).
 //   from: @dcl/sdk getPlayer() (address/name/isGuest)
-//       + catalyst lambda  GET /lambdas/profiles/:userId  (avatar face + body, name, links)
-//       + the ENGINE's profile cache via ~system/Players getPlayerData (display identity for a list)
+//       + the ENGINE's profile cache: BevyApi.getUserProfile (the full deployed profile — face +
+//         body snapshots, name, links, about-me) and ~system/Players getPlayerData (display
+//         identity for a list)
+//       + catalyst lambda  GET /lambdas/users/:id/names  (owned NFT names)
 //       + badges service   GET badges.decentraland.org/users/:id/badges
 //       + camera-reel       GET camera-reel-service.decentraland.org/api/users/:id/images
 import { getPlayer } from '@dcl/sdk/players'
@@ -17,7 +19,9 @@ import type { JsonValue } from '../../../src/engine/generated/serde_json/JsonVal
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
 
-type CatalystAvatar = {
+/** A deployed profile as the engine holds it (`common::profile::SerializedProfile`, serde JSON).
+ *  Only the keys the passport reads are typed here; anything else rides along untyped. */
+export type SerializedProfile = {
   name?: string
   hasClaimedName?: boolean
   /** Profile-set custom name colour (claimed names only), 0–1 floats. */
@@ -53,21 +57,17 @@ type CatalystAvatar = {
     emotes?: Array<{ slot: number; urn: string }>
   }
 }
-export type ProfileResponse = { avatars?: CatalystAvatar[] }
 
-/** Addresses are the cache key, always lowercased — the same wallet reaches us in either case. */
+/** Addresses are always lowercased — the same wallet reaches us in either case, and the engine
+ *  matches its cache on the lowercase form. */
 export const profileKey = (address: string): string => address.toLowerCase()
 
-const cache = new Map<string, ProfileResponse>()
-export { cache as profileCache }
-
-export async function fetchProfile(userId: string): Promise<ProfileResponse | undefined> {
-  const cached = cache.get(profileKey(userId))
-  if (cached != null) return cached
-  const base = await catalystBase()
-  const data = await getJson<ProfileResponse>(`${base}/lambdas/profiles/${userId}`).catch(() => undefined)
-  if (data != null) cache.set(profileKey(userId), data)
-  return data
+/** A user's deployed profile as the ENGINE holds it — the same cache and fetch cascade (registry,
+ *  catalyst, then peers) that nametags read, so a guest resolves too (their profile only exists
+ *  on the wire), and a save made through `setAvatar` is visible on the next read without a cache
+ *  of our own to keep in step. `undefined` when the engine can't resolve the address. */
+export async function fetchProfile(address: string): Promise<SerializedProfile | undefined> {
+  return await BevyApi.getUserProfile(profileKey(address)).catch(() => undefined)
 }
 
 /** What a list row needs to show a person: their name, face, and claimed-name seal. */
@@ -119,7 +119,7 @@ function identityOf(data: PlayerData | undefined, address: string): ProfileIdent
 
 const shortAddress = (a: string): string => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a)
 
-const httpOrUndef = (s?: string | null): string | undefined => (typeof s === 'string' && s.startsWith('http') ? s : undefined)
+export const httpOrUndef = (s?: string | null): string | undefined => (typeof s === 'string' && s.startsWith('http') ? s : undefined)
 
 /** The profile stores a non-claimed name bare; every explorer shows it with four hex digits of
  *  the address appended (the engine builds nametags the same way — `crates/avatar`), so the
@@ -127,7 +127,7 @@ const httpOrUndef = (s?: string | null): string | undefined => (typeof s === 'st
 const withAddressTag = (name: string, address: string, claimed: boolean): string =>
   claimed || name.includes('#') ? name : `${name}#${address.slice(-4)}`
 
-function toProfile(av: CatalystAvatar | undefined, address: string, isGuest: boolean, fallbackName: string): Profile {
+function toProfile(av: SerializedProfile | undefined, address: string, isGuest: boolean, fallbackName: string): Profile {
   const snaps = av?.avatar?.snapshots
   const claimed = av?.hasClaimedName ?? !fallbackName.includes('#')
   return {
@@ -158,7 +158,7 @@ const INFO_KEYS = {
   profession: 'profession',
   hobby: 'hobbies',
   realName: 'realName'
-} as const satisfies Partial<Record<keyof ProfileInfo, keyof CatalystAvatar>>
+} as const satisfies Partial<Record<keyof ProfileInfo, keyof SerializedProfile>>
 
 /** Epoch seconds (how the profile stores a birthdate) → the `YYYY-MM-DD` the passport edits.
  *  UTC on both sides: a birthday is a date, and shifting it by the viewer's timezone would let a
@@ -180,10 +180,10 @@ const fromIsoDate = (iso: string | undefined): number | undefined => {
 
 /** `undefined` when the profile carries no about-me fields at all, so the passport can tell an
  *  empty section from a missing one. */
-function toInfo(av: CatalystAvatar | undefined): ProfileInfo | undefined {
+function toInfo(av: SerializedProfile | undefined): ProfileInfo | undefined {
   if (av == null) return undefined
   const info: ProfileInfo = {}
-  for (const [wireKey, profileKey] of Object.entries(INFO_KEYS) as Array<[keyof ProfileInfo, keyof CatalystAvatar]>) {
+  for (const [wireKey, profileKey] of Object.entries(INFO_KEYS) as Array<[keyof ProfileInfo, keyof SerializedProfile]>) {
     const value = av[profileKey]
     if (typeof value === 'string' && value !== '') info[wireKey] = value
   }
@@ -275,24 +275,6 @@ function toProfileExtras(msg: SaveProfileRequest): Record<string, JsonValue> {
   return extras
 }
 
-/** Fold a save into the cached catalyst avatar, so every surface that re-reads the profile shows
- *  the new values immediately. The deploy is asynchronous and the catalyst reindexes later still,
- *  so without this a passport reopened right after saving would show the pre-edit profile. */
-function patchCachedAvatar(address: string, msg: SaveProfileRequest, hasClaimedName: boolean | undefined): void {
-  const cached = cache.get(profileKey(address)) ?? { avatars: [{}] }
-  const av = { ...((cached.avatars?.[0] ?? {}) as Record<string, unknown>) }
-  if (msg.name !== undefined) {
-    av.name = msg.name
-    if (hasClaimedName !== undefined) av.hasClaimedName = hasClaimedName
-  }
-  // A `null` from toProfileExtras means "remove this key", so those are dropped rather than
-  // written — the engine does the same to the profile itself.
-  const patch = toProfileExtras(msg)
-  const cleared = new Set(Object.keys(patch).filter((key) => patch[key] == null))
-  const patched = Object.fromEntries(Object.entries({ ...av, ...patch }).filter(([key]) => !cleared.has(key)))
-  cache.set(profileKey(address), { ...cached, avatars: [patched as CatalystAvatar, ...(cached.avatars ?? []).slice(1)] })
-}
-
 export function registerProfile(ctx: Ctx): void {
   ctx.on('getOwnedNames', async () => {
     const player = getPlayer()
@@ -307,14 +289,12 @@ export function registerProfile(ctx: Ctx): void {
     }
 
     const data: SetAvatarData = {}
-    let hasClaimedName: boolean | undefined
     if (msg.name !== undefined) {
       const owned = await fetchOwnedNames(player.userId).catch(() => [])
-      hasClaimedName = owned.some((n) => n.toLowerCase() === msg.name?.toLowerCase())
       // An empty bodyShapeUrn and null colors mean "leave the avatar alone" — the name is the only
       // thing this edit touches, and the Backpack owns the rest.
       data.base = { skinColor: null, eyesColor: null, hairColor: null, bodyShapeUrn: '', name: msg.name }
-      data.hasClaimedName = hasClaimedName
+      data.hasClaimedName = owned.some((n) => n.toLowerCase() === msg.name?.toLowerCase())
     }
     const extras = toProfileExtras(msg)
     if (Object.keys(extras).length > 0) data.profileExtras = extras
@@ -334,9 +314,10 @@ export function registerProfile(ctx: Ctx): void {
       return
     }
 
-    patchCachedAvatar(player.userId, msg, hasClaimedName)
     ctx.send({ kind: 'profileSaved', ok: true })
-    const av = cache.get(profileKey(player.userId))?.avatars?.[0]
+    // setAvatar amends the engine's own copy of the profile before it resolves, so re-reading it
+    // is the post-save state — no need to fold the edit in by hand.
+    const av = await fetchProfile(player.userId)
     ctx.send({ kind: 'profile', profile: toProfile(av, player.userId, player.isGuest, player.name) })
   })
 
@@ -352,8 +333,8 @@ export function registerProfile(ctx: Ctx): void {
     wanted = false
     inFlight = true
     try {
-      const data = await fetchProfile(player.userId).catch(() => undefined)
-      ctx.send({ kind: 'profile', profile: toProfile(data?.avatars?.[0], player.userId, player.isGuest, player.name) })
+      const av = await fetchProfile(player.userId)
+      ctx.send({ kind: 'profile', profile: toProfile(av, player.userId, player.isGuest, player.name) })
     } finally {
       inFlight = false
     }
@@ -368,20 +349,18 @@ export function registerProfile(ctx: Ctx): void {
 
   // View Profile: fetch another user's full passport by address (profile + badges + photos).
   ctx.on('getUserProfile', async (msg) => {
-    const [data, badges, photos] = await Promise.all([
-      fetchProfile(msg.address).catch(() => undefined),
+    const [av, badges, photos] = await Promise.all([
+      fetchProfile(msg.address),
       fetchBadges(msg.address).catch(() => undefined),
       fetchPhotos(msg.address).catch(() => undefined)
     ])
-    const av = data?.avatars?.[0]
     if (av == null && badges == null && photos == null) {
       ctx.send({ kind: 'userProfile', address: msg.address, profile: null })
       return
     }
-    // Your OWN passport: read the live avatar (getPlayer()) rather than the deployed catalyst
-    // profile, so it matches the Backpack exactly — a just-equipped item shows immediately instead
-    // of waiting for the profile to redeploy and the catalyst to reindex it. Other users have no
-    // live source (getPlayer(userId) only resolves nearby avatars), so they stay catalyst-only.
+    // Your OWN passport: read the live avatar (getPlayer()) so it matches the Backpack exactly.
+    // Other users have no live source (getPlayer(userId) only resolves nearby avatars), so they
+    // read the equipment their deployed profile lists.
     const me = getPlayer()
     const isSelf = me != null && me.userId.toLowerCase() === msg.address.toLowerCase()
     const wearableUrns = isSelf ? (me.wearables ?? []).map(String) : (av?.avatar?.wearables ?? [])

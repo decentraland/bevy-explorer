@@ -479,7 +479,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     Needs a WASM rebuild, so it belongs in its own PR, not in the HUD stack.
 46. `[arch]` **Passport open blocks the whole panel on the equipped-items resolution** — *perceived
     latency, from PR #1058*. `getUserProfile` (`bridge-scene/src/domains/profile.ts`) awaits the
-    catalyst profile + badges + photos, then awaits `resolveEquippedSet` / `resolveEquippedEmotes`
+    engine profile + badges + photos, then awaits `resolveEquippedSet` / `resolveEquippedEmotes`
     (catalyst collections lambda, plus the marketplace items API for legacy collections-v1 items)
     before sending a single `userProfile` message. So name, avatar, About and badges — all already
     fetched — sit behind ~3 sequential round trips of work only the equipped grid needs. Unity does

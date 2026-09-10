@@ -1,5 +1,6 @@
 use common::{
     inputs::{HudPanel, SystemActionEvent},
+    profile::SerializedProfile,
     structs::{MicState, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
@@ -48,7 +49,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_bridge_to_page(),
             op_get_bridge_stream(),
             op_read_bridge_stream(),
-            op_get_profile_extras(),
+            op_get_user_profile(),
             op_quit(),
             op_get_permission_request_stream(),
             op_read_permission_request_stream(),
@@ -315,10 +316,11 @@ pub async fn op_read_bridge_stream(
 
 #[op2(async)]
 #[serde]
-pub async fn op_get_profile_extras(
+pub async fn op_get_user_profile(
     state: Rc<RefCell<OpState>>,
-) -> Result<std::collections::HashMap<String, serde_json::Value>, deno_core::anyhow::Error> {
-    dcl::js::system_api::op_get_profile_extras(state).await
+    #[string] address: String,
+) -> Result<SerializedProfile, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_get_user_profile(state, address).await
 }
 
 #[op2(fast)]
