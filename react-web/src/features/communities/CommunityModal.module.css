@@ -131,43 +131,7 @@
 }
 
 .tabs {
-  display: flex;
-  gap: 28px;
   margin-top: 22px;
-  border-bottom: 1px solid var(--white-10);
-}
-.tab {
-  position: relative;
-  padding: 12px 2px;
-  border: none;
-  background: transparent;
-  color: var(--ink-6);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  transition: color var(--dur-fast) ease;
-}
-.tab::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  background: var(--brand);
-  transform: scaleX(0);
-  transition: transform 0.2s var(--ease-spring, ease);
-}
-.tab:hover {
-  color: var(--text);
-}
-.tabActive {
-  color: var(--text);
-}
-.tabActive::after {
-  transform: scaleX(1);
 }
 
 .tabBody {

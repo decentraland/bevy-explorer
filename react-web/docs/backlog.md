@@ -13,8 +13,6 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
 1. `[DS]` **Toast system** — *new*. Nothing transient/cross-cutting exists. Needed for real-time events
    (remote friend accepted, community invites, item sold…), ephemeral confirmations, and operational
    errors. Today faked with per-component `setTimeout`. (Old: `notification-toast-stack`.)
-2. `[DS]` **`Tabs` primitive** — *new*. Tabs are reimplemented bespoke in ~37 files (Settings,
-   Backpack, FriendsPanel, CommunityModal…). (Old: `tab-component.tsx`.)
 3. `[DS]` **Reusable `FriendButton` + full relationship model** — *new + pattern*. State is already a
    single reactive source ✅, but the add-friend CTA is duplicated per view (ProfileCard,
    ProfilePassport, CommunityModal) with ad-hoc optimism. Need `<FriendButton address>` /
@@ -504,7 +502,8 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
 `Modal` (portal + focus-trap + blur + `--ui-scale`, richer than the old backdrop), `IconButton`
 (badge + tooltip + shortcut), the **friend-state architecture** (single reactive source, simpler than
 the old version-bump), `tokens.css`, and primitives the old lacks (`WearableCard`, `EmptyState`,
-`PageHeader`, `CharCounter`, `SearchField`, `ContextMenu`, `TextInput`, `TextArea`, `DateField`).
+`PageHeader`, `CharCounter`, `SearchField`, `ContextMenu`, `TextInput`, `TextArea`, `DateField`,
+`Tabs`).
 
 ## Deliberately NOT ported
 

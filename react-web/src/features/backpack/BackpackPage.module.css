@@ -25,36 +25,6 @@
   font-weight: 800;
   color: var(--text);
 }
-.tabs {
-  display: flex;
-  gap: 8px;
-}
-.tab {
-  height: 34px;
-  padding: 0 18px;
-  border: none;
-  border-radius: var(--r-pill);
-  background: var(--fill-3);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  transition:
-    transform 0.16s var(--ease-spring, ease),
-    background-color var(--dur-fast) ease;
-}
-.tab:hover {
-  transform: scale(1.06);
-}
-.tab:hover:not(.tabActive) {
-  background: var(--fill-4);
-}
-.tabActive,
-.tabActive:hover {
-  background: var(--accent);
-  animation: pillPop 0.24s var(--ease-spring, ease);
-}
 @keyframes pillPop {
   0% {
     transform: scale(0.92);

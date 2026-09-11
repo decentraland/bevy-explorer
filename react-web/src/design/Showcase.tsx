@@ -10,6 +10,8 @@ import { Toggle } from './Toggle'
 import { Slider } from './Slider'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
+import { Tabs } from './Tabs'
+import { Bag, People, Pin } from './Glyphs'
 import { TextArea } from './TextArea'
 import { DateField } from './DateField'
 import { Panel } from './Panel'
@@ -138,6 +140,8 @@ export function Showcase(): React.JSX.Element {
   const [name, setName] = useState('robtfm')
   const [bio, setBio] = useState('')
   const [dob, setDob] = useState('2003-02-01')
+  const [pillTab, setPillTab] = useState('wearables')
+  const [lineTab, setLineTab] = useState('friends')
   return (
     <div style={wrap}>
       {/* Showcase renders instead of Hud, so it hosts its own popup layer for the dialog demos below. */}
@@ -262,6 +266,32 @@ export function Showcase(): React.JSX.Element {
           <ControlButton shape="pill">＋ Pill</ControlButton>
           <ControlButton active aria-label="active">✓</ControlButton>
           <ControlButton size="sm" aria-label="small">✕</ControlButton>
+        </div>
+      </Section>
+
+      <Section title="Tabs (pill · underline — arrows/Home/End move the selection)">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 420 }}>
+          <Tabs
+            aria-label="Pill example"
+            value={pillTab}
+            onChange={setPillTab}
+            items={[
+              { id: 'wearables', label: 'Wearables', icon: <Bag size={14} /> },
+              { id: 'emotes', label: 'Emotes' },
+              { id: 'outfits', label: 'Outfits', iconAfter: <Pin size={14} /> }
+            ]}
+          />
+          <Tabs
+            variant="underline"
+            aria-label="Underline example"
+            value={lineTab}
+            onChange={setLineTab}
+            items={[
+              { id: 'friends', label: 'Friends', icon: <People size={14} /> },
+              { id: 'requests', label: 'Requests', badge: 3 },
+              { id: 'blocked', label: 'Blocked', disabled: true }
+            ]}
+          />
         </div>
       </Section>
 

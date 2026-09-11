@@ -6,7 +6,7 @@
 // (Mirrors unity-explorer's Edit Username dialog.)
 
 import { useEffect, useRef, useState } from 'react'
-import { Button, ModalShell, Select, TextInput, openPopup } from '../../design'
+import { Button, ModalShell, Select, Tabs, TextInput, openPopup, type TabItem } from '../../design'
 import { useSession } from '../session/SessionContext'
 import { splitName } from '../../lib/identity'
 import { NAME_MAX, isValidName } from './profileFields'
@@ -21,6 +21,10 @@ const NAMES_URL = 'https://decentraland.org/marketplace/names/claim'
 const addressSuffix = (address: string): string => (address === '' ? '' : `#${address.slice(-4)}`)
 
 type Tab = 'unique' | 'custom'
+const NAME_TABS: TabItem<Tab>[] = [
+  { id: 'unique', label: 'UNIQUE NAME' },
+  { id: 'custom', label: 'NON-UNIQUE USERNAME' }
+]
 
 export function NameEditModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const session = useSession()
@@ -70,23 +74,16 @@ export function NameEditModal({ onClose }: { onClose: () => void }): React.JSX.E
       bodyClassName={styles.body}
     >
       {hasNames && (
-        <div className={styles.tabs} role="tablist">
-          {([['unique', 'UNIQUE NAME'], ['custom', 'NON-UNIQUE USERNAME']] as Array<[Tab, string]>).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={tab === id}
-              className={`${styles.tab} ${tab === id ? styles.tabActive : ''}`.trim()}
-              onClick={() => {
-                dismissSaveError()
-                setTab(id)
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          variant="underline"
+          items={NAME_TABS}
+          value={tab}
+          onChange={(id) => {
+            dismissSaveError()
+            setTab(id)
+          }}
+          aria-label="Name type"
+        />
       )}
 
       {tab === 'unique' ? (

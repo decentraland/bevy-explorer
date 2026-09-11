@@ -116,7 +116,7 @@ describe('backpack page clicks', () => {
 
   it('switching to the Emotes tab shows the equipped emotes', async () => {
     renderBackpack()
-    await userEvent.click(screen.getByRole('button', { name: 'Emotes' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Emotes' }))
     expect(screen.getByText('Wave')).toBeInTheDocument()
   })
 
