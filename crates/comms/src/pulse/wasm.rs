@@ -16,7 +16,7 @@
 
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use bevy::log::warn;
 use futures_util::future::{select, Either};
@@ -57,7 +57,6 @@ async fn run(config: PulseTransportConfig, channels: PulseDriverChannels, stop: 
         outbound,
         inbound,
         status,
-        presence,
     } = channels;
 
     let _ = status.try_send(PulseStatus::Connecting);
@@ -114,19 +113,17 @@ async fn run(config: PulseTransportConfig, channels: PulseDriverChannels, stop: 
 
     let transport = Rc::new(transport);
 
-    // Reader tasks reassemble/forward inbound, gated by presence exactly like native. Each closes the
-    // session (→ the watcher reports Disconnected) when its stream ends or errors.
+    // Reader tasks reassemble/forward inbound. Each closes the session (→ the watcher reports
+    // Disconnected) when its stream ends or errors.
     spawn_local(read_stream(
         stream_reader,
         inbound.clone(),
-        presence.clone(),
         stop.clone(),
         transport.clone(),
     ));
     spawn_local(read_datagrams(
         datagram_reader,
         inbound,
-        presence,
         stop.clone(),
         transport.clone(),
     ));
@@ -220,12 +217,11 @@ async fn pump_outbound(
     }
 }
 
-/// Read the reliable bidi stream, reassemble length-framed messages, and forward each (while a
-/// routing entity is alive) into the shared inbound channel.
+/// Read the reliable bidi stream, reassemble length-framed messages, and forward each into the
+/// shared inbound channel.
 async fn read_stream(
     reader: ReadableStreamDefaultReader,
     inbound: mpsc::Sender<Vec<u8>>,
-    presence: Weak<()>,
     stop: Arc<AtomicBool>,
     transport: Rc<WebTransport>,
 ) {
@@ -241,7 +237,9 @@ async fn read_stream(
         assembler.append(&chunk);
         loop {
             match assembler.next_message() {
-                Ok(Some(message)) => surface(&inbound, &presence, message),
+                Ok(Some(message)) => {
+                    let _ = inbound.try_send(message);
+                }
                 Ok(None) => break,
                 Err(err) => {
                     // Unrecoverable framing — the stream's next boundary is lost; drop the session.
@@ -261,13 +259,14 @@ async fn read_stream(
 async fn read_datagrams(
     reader: ReadableStreamDefaultReader,
     inbound: mpsc::Sender<Vec<u8>>,
-    presence: Weak<()>,
     stop: Arc<AtomicBool>,
     transport: Rc<WebTransport>,
 ) {
     while !stop.load(Ordering::Relaxed) {
         match read_chunk(&reader).await {
-            Ok(Some(chunk)) => surface(&inbound, &presence, chunk),
+            Ok(Some(chunk)) => {
+                let _ = inbound.try_send(chunk);
+            }
             Ok(None) | Err(_) => break,
         }
     }
@@ -291,15 +290,6 @@ async fn watch_closed(
     };
     let _ = status.try_send(PulseStatus::Disconnected(reason));
     stop.store(true, Ordering::Relaxed);
-}
-
-/// Forward one inbound message only while a routing entity is alive (we're on a Pulse realm) — the
-/// same gate as native. Off-realm we keep draining the streams to keep them flowing but drop the
-/// payload; the decoder's resulting gap is healed by resync/teleport on return.
-fn surface(inbound: &mpsc::Sender<Vec<u8>>, presence: &Weak<()>, message: Vec<u8>) {
-    if presence.strong_count() > 1 {
-        let _ = inbound.try_send(message);
-    }
 }
 
 /// Read one chunk from a reader: `Ok(Some(bytes))` for data, `Ok(None)` when the stream is done,
