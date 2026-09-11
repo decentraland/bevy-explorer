@@ -10,6 +10,7 @@ import type { Friend, FriendRequest } from '../../engine/protocol'
 import type { FriendsState } from '../session/useEngineSession'
 import { type ChatUser } from '../chat/ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
+import { useProfile } from '../session/profileStore'
 import styles from './FriendsPanel.module.css'
 
 type Tab = 'friends' | 'requests' | 'blocked'
@@ -84,17 +85,26 @@ function Collapsible({
 
 const STATUS_LABEL = { online: 'Online', away: 'Away', offline: 'Offline' } as const
 
+/** Who a row shows: the profile store's copy once it has one (the engine's, kept current), and
+ *  until then the name and face the friends service sent — which only ever seed the store, so a
+ *  service that stops sending faces costs one round trip, not the face. */
+function useRowIdentity(user: { address: string; name: string; picture?: string }): { name: string; picture?: string } {
+  const known = useProfile(user.address)
+  return { name: known?.name ?? user.name, picture: known?.picture ?? user.picture }
+}
+
 function FriendRow({ friend, onOpen }: { friend: Friend; onOpen?: OpenMenu }): React.JSX.Element {
-  const user: ChatUser = { address: friend.address, name: friend.name, picture: friend.picture }
+  const { name, picture } = useRowIdentity(friend)
+  const user: ChatUser = { address: friend.address, name, picture }
   const open = (e: React.MouseEvent): void => {
     if (e.type === 'contextmenu') e.preventDefault()
     onOpen?.(user, e)
   }
   return (
     <button type="button" className={`${styles.row} ${styles.rowBtn}`} onClick={open} onContextMenu={open}>
-      <Avatar src={friend.picture} name={label(friend.name, friend.address)} color={nameColor(friend.address)} size={40} status={friend.status} />
+      <Avatar src={picture} name={label(name, friend.address)} color={nameColor(friend.address)} size={40} status={friend.status} />
       <div className={styles.info}>
-        <NameLabel name={friend.name} address={friend.address} />
+        <NameLabel name={name} address={friend.address} />
         <span className={`${styles.status} ${styles[friend.status]}`}>{STATUS_LABEL[friend.status]}</span>
       </div>
     </button>
@@ -115,11 +125,12 @@ function ReceivedRow({
   onAccept: () => void
   onReject: () => void
 }): React.JSX.Element {
+  const { name, picture } = useRowIdentity(req)
   return (
     <div className={styles.row}>
-      <Avatar src={req.picture} name={label(req.name, req.address)} color={nameColor(req.address)} size={40} />
+      <Avatar src={picture} name={label(name, req.address)} color={nameColor(req.address)} size={40} />
       <div className={styles.info}>
-        <NameLabel name={req.name} address={req.address} />
+        <NameLabel name={name} address={req.address} />
         {req.message && <span className={styles.sub}>{req.message}</span>}
       </div>
       <span className={styles.date}>{reqDate(req.createdAt)}</span>
@@ -136,11 +147,12 @@ function ReceivedRow({
 }
 
 function SentRow({ req, onCancel }: { req: FriendRequest; onCancel: () => void }): React.JSX.Element {
+  const { name, picture } = useRowIdentity(req)
   return (
     <div className={styles.row}>
-      <Avatar src={req.picture} name={label(req.name, req.address)} color={nameColor(req.address)} size={40} />
+      <Avatar src={picture} name={label(name, req.address)} color={nameColor(req.address)} size={40} />
       <div className={styles.info}>
-        <NameLabel name={req.name} address={req.address} />
+        <NameLabel name={name} address={req.address} />
         <span className={styles.sub}>Request sent</span>
       </div>
       <span className={styles.date}>{reqDate(req.createdAt)}</span>

@@ -6,6 +6,7 @@ import { openProfileCard } from '../features/profileCard/ProfileCard'
 import type { ChatLine, ChatState } from '../features/session/useEngineSession'
 import type { NearbyMember } from '../engine/protocol'
 import { fakeSession } from './harness'
+import { seedProfiles } from '../features/session/profileStore'
 
 // Chat opens the shared profile card via openProfileCard (the card itself is covered by the container
 // + presentational tests). Stub it so we can assert the trigger + the resolved address.
@@ -38,6 +39,7 @@ function renderChat(
     members: opts.members ?? [],
     ...opts.chatOver
   }
+  seedProfiles(chat.members) // what the session does on every roster message
   const { container } = render(<Chat chat={chat} me={opts.me} onTeleport={opts.onTeleport} />)
   return { chat, container }
 }

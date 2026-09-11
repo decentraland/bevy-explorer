@@ -1,11 +1,11 @@
-// Smart wrapper for the full-screen passport: resolves a user by address from the session, kicks off
+// Smart wrapper for the full-screen passport: resolves a user by address from the profile store, kicks off
 // the rich-profile fetch, and renders the presentational ProfilePassport. Opened as a popup via
 // openPassport() (from the profile card's "View Passport" and the sidebar's own profile), so it lives
 // in the HUD-wide popup layer and reads the session via useSession() like the profile card.
 import { useEffect } from 'react'
 import { openPopup, showConfirm } from '../../design'
 import { useSession } from '../session/SessionContext'
-import { resolveIdentity } from '../session/resolveIdentity'
+import { requestPassport, useProfile } from '../session/profileStore'
 import { relationshipOf } from '../../lib/relationship'
 import { openNameEdit } from './NameEditModal'
 import { ProfilePassport } from './ProfilePassport'
@@ -21,27 +21,20 @@ export function Passport({
   onDirtyChange?: (dirty: boolean) => void
 }): React.JSX.Element {
   const session = useSession()
-  const { requestUserProfile } = session
   const { requestOwnedNames } = session.profile
   // Fetch the rich profile (badges/photos/about) on open; render identity-only until it lands.
   useEffect(() => {
-    requestUserProfile(userId)
-  }, [requestUserProfile, userId])
+    requestPassport(userId)
+  }, [userId])
 
   const a = userId.toLowerCase()
   const isSelf = !!session.profile.data && session.profile.data.address.toLowerCase() === a
-  const { name, picture } = resolveIdentity(session, userId)
+  const known = useProfile(userId)
   const profile: Profile =
-    session.userProfiles[a] ??
+    known ??
     (isSelf && session.profile.data
       ? session.profile.data
-      : {
-          address: userId,
-          name,
-          picture,
-          hasClaimedName: !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name),
-          isGuest: false
-        })
+      : { address: userId, name: userId, hasClaimedName: false, isGuest: false })
 
   // Only your own passport can be edited, so the claimed-name list is only worth fetching there.
   useEffect(() => {

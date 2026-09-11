@@ -17,8 +17,9 @@ use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
     FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequestEvent, ProximityEvent, SceneLoadingUi, SetAvatarData,
-    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
+    PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent, ProximityEvent,
+    SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
+    VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -790,6 +791,40 @@ pub async fn op_read_proximity_stream(
     let Some(mut receiver) = state
         .borrow_mut()
         .try_take::<RpcStreamReceiver<ProximityEvent>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub async fn op_get_profile_changed_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetProfileChangedStream(sx))
+        .unwrap();
+
+    8
+}
+
+pub async fn op_read_profile_changed_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<ProfileChangedEvent>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<ProfileChangedEvent>>()
     else {
         return Ok(None);
     };

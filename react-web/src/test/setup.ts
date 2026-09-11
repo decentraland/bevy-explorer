@@ -1,8 +1,12 @@
 import '@testing-library/jest-dom/vitest'
 import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
+import { resetProfileStore } from '../features/session/profileStore'
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  resetProfileStore()
+})
 
 // jsdom doesn't implement these; components touch them on mount.
 class ResizeObserverStub {

@@ -13,6 +13,7 @@ import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot
 import { dispatchCancelLayer } from '../../lib/cancelLayers'
 import { isInputLocked, subscribeInputLock } from '../../lib/inputLock'
 import { applyProfileEdit } from '../../engine/profileEdit'
+import { peekProfile, profileChanged, receiveProfile, seedProfiles, setProfileRequester, updateProfile } from './profileStore'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
@@ -359,10 +360,6 @@ export interface EngineSession {
   settings: SettingsState
   bindings: BindingsState
   profile: ProfileState
-  /** Fetched OTHER-user passports (View Profile), keyed by lowercased address. */
-  userProfiles: Record<string, Profile | null>
-  /** Request a user's passport by address (populates `userProfiles`). */
-  requestUserProfile: (address: string) => void
   notifications: NotificationsState
   emotes: EmotesState
   backpack: BackpackState
@@ -519,14 +516,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const captureSeq = useRef(0)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
-  // Fetched OTHER-user passports (View Profile), keyed by lowercased address.
-  const [userProfiles, setUserProfiles] = useState<Record<string, Profile | null>>({})
   // Own-profile edit: the claimed names the picker offers, and the state of the save in flight.
   const [ownedNames, setOwnedNames] = useState<string[]>([])
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null)
   // What the profile looked like before the in-flight save, to put back if the engine rejects it.
-  const profileRevertRef = useRef<{ address: string; profile: Profile | null; userProfile: Profile | null } | null>(null)
+  const profileRevertRef = useRef<{ address: string; profile: Profile | null; stored: Profile | undefined } | null>(null)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [emotes, setEmotes] = useState<Emote[]>([])
@@ -565,6 +560,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   useEffect(() => {
     const driver = createDriver()
     driverRef.current = driver
+    // The profile store asks the engine itself for any address it's shown and doesn't hold.
+    setProfileRequester((address, extras) => driver.send({ kind: 'getUserProfile', address, extras }))
 
     // One generic subscription; switch on kind (mirrors dcl-editor's onSceneMessage).
     const off = driver.on((msg) => {
@@ -627,6 +624,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'members':
           setMembers(msg.members)
+          seedProfiles(msg.members)
           break
         case 'menuVisibility':
           setMenuOpen(msg.open)
@@ -639,6 +637,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             sent: msg.sent,
             blocked: msg.blocked
           })
+          seedProfiles([...msg.friends, ...msg.received, ...msg.sent])
           break
         case 'settings':
           setSettings(msg.settings)
@@ -666,16 +665,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'profile':
           setProfile(msg.profile)
-          // The passport reads `userProfiles`, so an authoritative profile has to reach that copy
-          // too or a just-saved name would keep its stale claimed-name seal until reopened. Merged,
-          // not replaced: this message carries no badges/photos/equipped items.
-          if (msg.profile != null) {
-            const self = msg.profile.address.toLowerCase()
-            setUserProfiles((prev) => (prev[self] != null ? { ...prev, [self]: { ...prev[self], ...msg.profile } } : prev))
-          }
+          // The passport reads the store, so an authoritative own profile has to reach it too or a
+          // just-saved name would keep its stale claimed-name seal until reopened.
+          if (msg.profile != null) receiveProfile(msg.profile.address, msg.profile)
           break
         case 'userProfile':
-          setUserProfiles((prev) => ({ ...prev, [msg.address.toLowerCase()]: msg.profile }))
+          receiveProfile(msg.address, msg.profile)
+          break
+        case 'profileChanged':
+          profileChanged(msg.address, msg.version)
           break
         case 'ownedNames':
           setOwnedNames(msg.names)
@@ -689,7 +687,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             const revert = profileRevertRef.current
             if (revert != null) {
               setProfile(revert.profile)
-              setUserProfiles((prev) => ({ ...prev, [revert.address]: revert.userProfile }))
+              updateProfile(revert.address, () => revert.stored)
             }
           }
           profileRevertRef.current = null
@@ -1305,11 +1303,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'markNotificationsRead', ids: unreadIds })
     setNotifications((prev) => prev.map((n) => (n.read ? n : { ...n, read: true })))
   }, [notifications])
-  // Fetch another user's passport (View Profile). The reply arrives as a 'userProfile'
-  // message and lands in the userProfiles cache.
-  const requestUserProfile = useCallback((address: string) => {
-    driverRef.current?.send({ kind: 'getUserProfile', address })
-  }, [])
   const requestOwnedNames = useCallback(() => {
     driverRef.current?.send({ kind: 'getOwnedNames' })
   }, [])
@@ -1320,17 +1313,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const saveProfile = useCallback(
     (edit: ProfileEdit) => {
       const address = profile?.address.toLowerCase() ?? ''
-      profileRevertRef.current = { address, profile, userProfile: userProfiles[address] ?? null }
+      profileRevertRef.current = { address, profile, stored: peekProfile(address) }
       setProfileSaveError(null)
       setProfileSaving(true)
       driverRef.current?.send({ kind: 'saveProfile', ...edit })
       setProfile((prev) => (prev != null ? applyProfileEdit(prev, edit, ownedNames) : prev))
-      setUserProfiles((prev) => {
-        const mine = prev[address]
-        return mine != null ? { ...prev, [address]: applyProfileEdit(mine, edit, ownedNames) } : prev
-      })
+      updateProfile(address, (mine) => (mine != null ? applyProfileEdit(mine, edit, ownedNames) : mine))
     },
-    [profile, userProfiles, ownedNames]
+    [profile, ownedNames]
   )
   const dismissProfileSaveError = useCallback(() => setProfileSaveError(null), [])
   const friendAct = useCallback((op: FriendAction, address: string) => {
@@ -1794,8 +1784,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       requestOwnedNames,
       dismissSaveError: dismissProfileSaveError
     },
-    userProfiles,
-    requestUserProfile,
     notifications: {
       list: notifications,
       unread: notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0),

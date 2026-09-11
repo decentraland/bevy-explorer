@@ -1,11 +1,11 @@
-// Smart wrapper for the world profile card: resolves a user by address from the session and renders
+// Smart wrapper for the world profile card: resolves a user by address from the profile store and renders
 // the presentational card. Opened as a popup via openProfileCard() (see the avatarClick handler in
 // useEngineSession); because <PopupHost/> is mounted inside Hud's <SessionProvider>, the popup can
 // read the session with useSession() even though it renders through a portal.
 import { openPopup } from '../../design'
 import { relationshipOf } from '../../lib/relationship'
 import { useSession } from '../session/SessionContext'
-import { resolveIdentity } from '../session/resolveIdentity'
+import { useProfile } from '../session/profileStore'
 import { openPassport } from '../profile/Passport'
 import { ProfileCardPresentation, type ChatUser } from '../chat/ProfileCardPresentation'
 
@@ -21,8 +21,8 @@ export function ProfileCard({
   onClose: () => void
 }): React.JSX.Element {
   const session = useSession()
-  const { name, picture } = resolveIdentity(session, userId)
-  const user: ChatUser = { address: userId, name, picture }
+  const known = useProfile(userId)
+  const user: ChatUser = { address: userId, name: known?.name ?? userId, picture: known?.picture }
   return (
     <ProfileCardPresentation
       user={user}

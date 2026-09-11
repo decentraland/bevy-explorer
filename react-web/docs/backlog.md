@@ -390,15 +390,6 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     re-render only `<Pointer>`, not the tree. Optional bridge-side dedupe (skip `ctx.send` when `tips`
     is unchanged) zeroes the standing-still case but not the moving one (positions legitimately change
     each frame), so the store is the structural fix.
-39. `[bug]` **Chat name click shows the raw address for players who left nearby range** — *UX regression,
-    P2 pending PR #915 review*. `Chat`/`FriendsPanel` now open the shared card via
-    `openProfileCard(user.address, …)` (address only); the container re-resolves name/picture with
-    `resolveIdentity` (nearby roster → friends/requests → fetched passports). For a **non-friend who
-    has since left `chat.members`**, nothing resolves, so the card shows the bare `0x…` address instead
-    of the display name that was in the historical message (the old `ChatUser`-carrying path preserved
-    it). Common cases (nearby / friends) are unaffected. Fix if it matters: pass the message's known
-    name/picture into `openProfileCard` as a fallback hint, or give `resolveIdentity` a small
-    last-seen name cache.
 40. `[test]` **No tier-1.5 visual baseline for `WorldVisitModal`** — *coverage gap, PR #1014
     follow-up*. Passport, PermissionDialog, CommunityModal, CommunityCreateModal and ExitConfirm all
     got `e2e/visual.spec.ts` baselines; `WorldVisitModal` (`src/components/WorldVisitModal.tsx`) didn't
@@ -501,9 +492,10 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
 
 `Modal` (portal + focus-trap + blur + `--ui-scale`, richer than the old backdrop), `IconButton`
 (badge + tooltip + shortcut), the **friend-state architecture** (single reactive source, simpler than
-the old version-bump), `tokens.css`, and primitives the old lacks (`WearableCard`, `EmptyState`,
-`PageHeader`, `CharCounter`, `SearchField`, `ContextMenu`, `TextInput`, `TextArea`, `DateField`,
-`Tabs`).
+the old version-bump), the **profile store** (`features/session/profileStore.ts`: one address→identity
+map, subscription-scoped, invalidated by the engine's `profileChanged` stream), `tokens.css`, and
+primitives the old lacks (`WearableCard`, `EmptyState`, `PageHeader`, `CharCounter`, `SearchField`,
+`ContextMenu`, `TextInput`, `TextArea`, `DateField`, `Tabs`).
 
 ## Deliberately NOT ported
 

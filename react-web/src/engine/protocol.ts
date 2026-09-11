@@ -335,6 +335,9 @@ export interface Profile {
   picture?: string
   hasClaimedName: boolean
   isGuest: boolean
+  /** The deployed profile's version, when this came from the engine; compared against
+   *  `profileChanged` to tell a stale copy from a current one. */
+  version?: number
   description?: string
   links?: { title: string; url: string }[]
   // --- rich passport fields (optional; populated by the passport fetch) -----
@@ -361,10 +364,12 @@ export interface GetProfileRequest {
   kind: 'getProfile'
 }
 
-/** Fetch another user's full passport by address (View Profile). */
+/** Fetch a user's profile by address from the engine's cache. With `extras`, the passport's badges,
+ *  photos and equipped items come too (each a service call of its own, so only the passport asks). */
 export interface GetUserProfileRequest {
   kind: 'getUserProfile'
   address: string
+  extras?: boolean
 }
 
 /** A fetched user's passport (kept separate from the local `profile` message so it
@@ -373,6 +378,14 @@ export interface UserProfileMessage {
   kind: 'userProfile'
   address: string
   profile: Profile | null
+}
+
+/** The engine now holds this version of a profile (its own player's or anyone nearby). The page
+ *  re-reads what it is still showing. */
+export interface ProfileChangedMessage {
+  kind: 'profileChanged'
+  address: string
+  version: number
 }
 
 /** Edit the local player's own profile (passport edit mode). Every field is optional and an
@@ -1074,6 +1087,7 @@ export type SceneToPage =
   | InputCapturedMessage
   | ProfileMessage
   | UserProfileMessage
+  | ProfileChangedMessage
   | ProfileSavedMessage
   | OwnedNamesMessage
   | NotificationsMessage

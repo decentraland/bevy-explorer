@@ -1,16 +1,23 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Passport, openPassport } from '../features/profile/Passport'
 import { SessionProvider } from '../features/session/SessionContext'
 import { fakeProfileState, fakeSession } from './harness'
+import { receiveProfile, seedProfiles, setProfileRequester } from '../features/session/profileStore'
 import { PopupHost, closeTopPopup, resetPopups } from '../design'
 import type { EngineSession } from '../features/session/useEngineSession'
 import type { Profile } from '../engine/protocol'
 
 // COMPONENT: the smart <Passport userId> fetches the rich profile on open, renders identity-only from
-// the session until it lands, and shows the presentational ProfilePassport; openPassport mounts it.
+// the profile store until it lands, and shows the presentational ProfilePassport; openPassport mounts it.
 afterEach(resetPopups)
+
+const request = vi.fn()
+beforeEach(() => {
+  request.mockClear()
+  setProfileRequester(request)
+})
 
 function renderWithSession(node: React.ReactNode, mutate?: (s: EngineSession) => void): EngineSession {
   const s = fakeSession()
@@ -31,26 +38,23 @@ const RICH: Profile = {
 
 describe('Passport container', () => {
   it('fetches the rich profile on open and renders it', () => {
-    const s = renderWithSession(<Passport userId="0xabc" onClose={vi.fn()} />, (sess) => {
-      sess.userProfiles['0xabc'] = RICH
-    })
-    expect(s.requestUserProfile).toHaveBeenCalledWith('0xabc')
+    receiveProfile('0xabc', RICH)
+    renderWithSession(<Passport userId="0xabc" onClose={vi.fn()} />)
+    expect(request).toHaveBeenCalledWith('0xabc', true)
     expect(screen.getByText('gm from the plaza')).toBeTruthy() // rich field from the fetched profile
     expect(screen.getByText('5 Mutual')).toBeTruthy()
   })
 
-  it('renders identity-only from the roster while the fetch is in flight', () => {
-    const s = renderWithSession(<Passport userId="0xabc" onClose={vi.fn()} />, (sess) => {
-      sess.chat.members = [{ address: '0xabc', name: 'Alice', picture: 'a.png' }] // no userProfiles entry yet
-    })
-    expect(s.requestUserProfile).toHaveBeenCalledWith('0xabc')
+  it('renders identity-only from a roster seed while the fetch is in flight', () => {
+    seedProfiles([{ address: '0xabc', name: 'Alice', picture: 'a.png' }]) // no engine profile yet
+    renderWithSession(<Passport userId="0xabc" onClose={vi.fn()} />)
+    expect(request).toHaveBeenCalledWith('0xabc', true)
     expect(screen.getByText('Alice')).toBeTruthy() // resolved from the roster
   })
 
   it('openPassport mounts the passport via the popup layer', () => {
-    renderWithSession(<PopupHost />, (s) => {
-      s.userProfiles['0xabc'] = RICH
-    })
+    receiveProfile('0xabc', RICH)
+    renderWithSession(<PopupHost />)
     act(() => {
       openPassport('0xabc')
     })
@@ -63,9 +67,9 @@ describe('Passport container', () => {
 // (its ×, and the engine-resolved Cancel action) ask the same question.
 describe('closing a passport with unsaved edits', () => {
   const openSelfPassport = async (): Promise<void> => {
+    receiveProfile('0xme', { ...RICH, address: '0xme', name: 'Me' })
     renderWithSession(<PopupHost />, (s) => {
       s.profile = fakeProfileState({ data: { ...RICH, address: '0xme', name: 'Me' } })
-      s.userProfiles['0xme'] = { ...RICH, address: '0xme', name: 'Me' }
     })
     act(() => {
       openPassport('0xme')
@@ -108,9 +112,8 @@ describe('closing a passport with unsaved edits', () => {
   })
 
   it('closes without a word when nothing has been edited', async () => {
-    renderWithSession(<PopupHost />, (s) => {
-      s.userProfiles['0xabc'] = RICH
-    })
+    receiveProfile('0xabc', RICH)
+    renderWithSession(<PopupHost />)
     act(() => {
       openPassport('0xabc')
     })

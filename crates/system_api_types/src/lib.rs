@@ -168,6 +168,18 @@ pub struct ProximityEvent {
     pub actions: Vec<HoverAction>,
 }
 
+/// A profile the engine holds was inserted or replaced: a foreign player's, or the local
+/// player's own. Carries only the address and the new version; a consumer holding an older
+/// version re-reads the profile itself.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub struct ProfileChangedEvent {
+    pub address: String,
+    pub version: u32,
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]

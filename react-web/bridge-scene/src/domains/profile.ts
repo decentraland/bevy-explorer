@@ -22,6 +22,7 @@ import type { Ctx } from '../bridge'
 /** A deployed profile as the engine holds it (`common::profile::SerializedProfile`, serde JSON).
  *  Only the keys the passport reads are typed here; anything else rides along untyped. */
 export type SerializedProfile = {
+  version?: number
   name?: string
   hasClaimedName?: boolean
   /** Profile-set custom name colour (claimed names only), 0–1 floats. */
@@ -137,6 +138,7 @@ function toProfile(av: SerializedProfile | undefined, address: string, isGuest: 
     bodyImage: httpOrUndef(snaps?.body),
     hasClaimedName: claimed,
     isGuest,
+    version: av?.version,
     description: av?.description != null && av.description !== '' ? av.description : undefined,
     links: av?.links ?? undefined,
     info: toInfo(av)
@@ -347,8 +349,29 @@ export function registerProfile(ctx: Ctx): void {
     if (wanted) void answerProfile()
   })
 
-  // View Profile: fetch another user's full passport by address (profile + badges + photos).
+  // The engine tells us when any profile it holds moves to a new version; the page decides what
+  // it is still showing and re-reads only that.
+  void (async () => {
+    try {
+      const stream = await BevyApi.getProfileChangedStream()
+      for await (const ev of stream) ctx.send({ kind: 'profileChanged', address: ev.address, version: ev.version })
+    } catch (e) {
+      console.error('[profile] change stream failed', e)
+    }
+  })()
+
+  // A user's profile by address: the engine's copy alone for a name and a face (chat lines, the
+  // profile card), plus badges + photos + equipped items when the passport asks (`extras`).
   ctx.on('getUserProfile', async (msg) => {
+    if (msg.extras !== true) {
+      const av = await fetchProfile(msg.address)
+      ctx.send({
+        kind: 'userProfile',
+        address: msg.address,
+        profile: av == null ? null : toProfile(av, msg.address, false, av.name ?? msg.address)
+      })
+      return
+    }
     const [av, badges, photos] = await Promise.all([
       fetchProfile(msg.address),
       fetchBadges(msg.address).catch(() => undefined),
