@@ -8,7 +8,7 @@
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Avatar, Button, EquippedItemCard, Icon, Pencil, Tooltip, showConfirm, type EquippedItemCardProps } from '../../design'
+import { Avatar, Button, EquippedItemCard, Icon, Pencil, Tabs, Tooltip, showConfirm, type EquippedItemCardProps, type TabItem } from '../../design'
 import { CategoryIcon } from '../backpack/categoryIcons'
 import { catalystThumbUrl, nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileEdit, Wearable } from '../../engine/protocol'
@@ -18,6 +18,9 @@ import type { Relationship } from '../chat/ProfileCardPresentation'
 import styles from './ProfilePassport.module.css'
 
 type Tab = 'overview' | 'badges' | 'photos'
+const PASSPORT_TABS: TabItem<Tab>[] = (['overview', 'badges', 'photos'] as const).map((t) => ({ id: t, label: t.toUpperCase() }))
+// A single selected-but-disabled tab: the same bar, holding the same height, with nothing to switch to.
+const EDIT_TAB: TabItem<'edit'>[] = [{ id: 'edit', label: 'EDIT PROFILE', disabled: true }]
 
 function CopyButton({ value, label }: { value: string; label: string }): React.JSX.Element {
   return (
@@ -256,20 +259,12 @@ export function ProfilePassport({
 
         {/* --- tabs (edit mode is overview-scoped, so they stand down while it's open) --- */}
         {!editMode && (
-          <nav className={styles.tabs}>
-            {(['overview', 'badges', 'photos'] as Tab[]).map((t) => (
-              <button key={t} type="button" className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`.trim()} onClick={() => setTab(t)}>
-                {t.toUpperCase()}
-              </button>
-            ))}
-          </nav>
+          <Tabs variant="underline" className={styles.tabs} items={PASSPORT_TABS} value={tab} onChange={setTab} aria-label="Passport sections" />
         )}
         {/* Edit mode has no tabs to offer, but it keeps the bar: dropping it shifts the avatar and
             everything below it up by its height, so clicking EDIT PROFILE jumped the whole panel. */}
         {editMode && (
-          <div className={styles.tabs}>
-            <span className={styles.tabLabel}>EDIT PROFILE</span>
-          </div>
+          <Tabs variant="underline" className={styles.tabs} items={EDIT_TAB} value="edit" onChange={() => {}} aria-label="Passport sections" />
         )}
 
         <div className={styles.body}>

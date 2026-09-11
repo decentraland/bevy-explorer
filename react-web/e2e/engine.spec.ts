@@ -93,7 +93,7 @@ test.describe('react HUD ↔ real engine', () => {
     // reading the relayed profile) — it never toggles the small profile panel, so the button has
     // no pressed state.
     await sidebar(page, 'Profile')
-    await expect(page.getByRole('button', { name: 'OVERVIEW', exact: true })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'OVERVIEW', exact: true })).toBeVisible()
   })
 
   // --- notifications: open → fetch -------------------------------------------
@@ -139,7 +139,7 @@ test.describe('react HUD ↔ real engine', () => {
   // --- bindings: the engine's table renders in the Key Bindings tab ----------
   test('bindings: the Key Bindings tab renders the engine binding table', async () => {
     await sidebar(page, 'Settings')
-    await page.getByRole('button', { name: 'Key Bindings', exact: true }).click()
+    await page.getByRole('tab', { name: 'Key Bindings', exact: true }).click()
     await expectBridge(page, 'scene', 'getBindings')
     // A default row straight from the engine's InputMap (Move Forward = KeyW → chip "W").
     const row = page.locator('div', { hasText: /^Move Forward/ }).last()

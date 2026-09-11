@@ -41,40 +41,6 @@
   margin-bottom: 20px;
 }
 
-/* Section pills: Explore all / Favourites / My places (decentraland-ui2 TabButton). */
-.tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-}
-.tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 16px;
-  border: none;
-  border-radius: 50px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.46px;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease;
-}
-.tab:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-.tabActive {
-  background: #fff;
-  color: #16131a;
-}
-.tabActive:hover {
-  background: #fff;
-}
 
 .controls {
   display: flex;

@@ -116,36 +116,10 @@
 
 /* --- tabs ----------------------------------------------------------------- */
 .tabs {
-  display: flex;
-  gap: 1.5rem;
   padding: 0 1.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-}
-.tab {
-  background: none;
-  border: none;
-  padding: 0.6rem 0;
-  color: rgba(255, 255, 255, 0.6);
-  font-weight: 700;
-  font-size: 0.85rem;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  border-bottom: 3px solid transparent;
-}
-.tabActive {
-  color: #fff;
-  border-bottom-color: var(--brand, #ff2d55);
 }
 
 /* Edit mode has no tabs to offer but keeps their bar, so the panel below does not shift up. */
-.tabLabel {
-  padding: 0.6rem 0;
-  color: var(--text);
-  font-weight: 700;
-  font-size: 0.85rem;
-  letter-spacing: 0.04em;
-  border-bottom: 3px solid var(--brand);
-}
 
 /* --- body ----------------------------------------------------------------- */
 .body {

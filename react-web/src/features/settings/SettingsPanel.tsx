@@ -4,7 +4,7 @@
 // of BevyApi.getSettings / setSetting.
 
 import { memo, useMemo, useState } from 'react'
-import { Select, Slider, Toggle, showConfirm } from '../../design'
+import { Select, Slider, Tabs, Toggle, showConfirm } from '../../design'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import type { Setting } from '../../engine/protocol'
 import type { BindingsState, ProfileState, SettingsState } from '../session/useEngineSession'
@@ -108,13 +108,7 @@ export function SettingsPanel({
     >
       <div className={styles.head}>
         <h1 className={styles.title}>Settings</h1>
-        <div className={styles.tabs}>
-          {categories.map((c) => (
-            <button key={c} type="button" className={`${styles.tab} ${c === activeTab ? styles.tabActive : ''}`.trim()} onClick={() => setTab(c)}>
-              {humanize(c)}
-            </button>
-          ))}
-        </div>
+        <Tabs items={categories.map((c) => ({ id: c, label: humanize(c) }))} value={activeTab} onChange={setTab} aria-label="Settings categories" />
         <button type="button" className={styles.reset} onClick={resetAll}>
           ↺ Reset all defaults
         </button>

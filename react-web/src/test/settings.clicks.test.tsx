@@ -61,7 +61,7 @@ describe('settings panel controls', () => {
   })
 
   it('switching category tab + selecting an option sets the variant index', async () => {
-    await userEvent.click(screen.getByRole('button', { name: 'Graphics' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Graphics' }))
     await userEvent.click(screen.getByRole('button', { name: 'quality' }))
     await userEvent.click(screen.getByRole('option', { name: 'High' }))
     expect(vi.mocked(settings.set)).toHaveBeenCalledWith('quality', 2)

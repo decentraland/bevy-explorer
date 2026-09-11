@@ -4,7 +4,7 @@
 // relay of the scene social state (BevyApi.social.*), guest-disabled.
 
 import { useMemo, useState } from 'react'
-import { Avatar, Button, ControlButton } from '../../design'
+import { Avatar, Button, ControlButton, Tabs, type TabItem } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Friend, FriendRequest } from '../../engine/protocol'
 import type { FriendsState } from '../session/useEngineSession'
@@ -186,7 +186,7 @@ export function FriendsPanel({
   if (!friends.open) return null
 
   const requestCount = friends.received.length
-  const TABS: { id: Tab; label: string; badge?: number }[] = [
+  const TABS: TabItem<Tab>[] = [
     { id: 'friends', label: 'Friends' },
     { id: 'requests', label: 'Requests', badge: requestCount },
     { id: 'blocked', label: 'Blocked' }
@@ -194,18 +194,8 @@ export function FriendsPanel({
 
   return (
     <div className={styles.root}>
-      <header className={styles.tabs}>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`${styles.tab} ${tab === t.id ? styles.tabActive : ''}`.trim()}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-            {t.badge ? <span className={styles.tabBadge}>{t.badge}</span> : null}
-          </button>
-        ))}
+      <header className={styles.head}>
+        <Tabs variant="underline" className={styles.tabs} items={TABS} value={tab} onChange={setTab} aria-label="Friends sections" />
         <ControlButton variant="solid" className={styles.closeGlyph} aria-label="Close friends" onClick={friends.toggle}>
           ×
         </ControlButton>

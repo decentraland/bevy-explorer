@@ -297,7 +297,7 @@ describe('edit mode keeps the passport layout still', () => {
     await openEditor(editing())
     // The tabs stand down (there is nothing to switch to) but their bar remains, labelled.
     expect(screen.queryByRole('button', { name: 'OVERVIEW' })).toBeNull()
-    const bar = screen.getByText('EDIT PROFILE')
-    expect(bar.tagName).toBe('SPAN') // a label, not the button that opened this
+    const bar = screen.getByRole('tab', { name: 'EDIT PROFILE' })
+    expect(bar).toBeDisabled() // the same strip holding the same height, with nothing to switch to
   })
 })
