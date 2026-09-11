@@ -295,7 +295,7 @@ where
                 file_path.push_str(stripped_file_name);
                 Ok(IpfsType::ContentFile {
                     content_hash,
-                    file_path,
+                    file_path: normalize_path(&file_path),
                 })
             }
             "$entity" => {
@@ -615,7 +615,91 @@ impl From<&IpfsPath> for PathBuf {
     }
 }
 
-// must be a better way to do this
+/// Content-map key form: forward slashes, `.`/`..` resolved. bevy_gltf joins a gltf's folder with
+/// its relative image uris, so `models/tree/../../textures/bark.png` must match the map's
+/// `textures/bark.png`. Empty segments are kept so a fallthrough url (`https://host/x`) survives.
 pub fn normalize_path(path: &str) -> String {
-    path.replace('\\', "/")
+    let forward = path.replace('\\', "/");
+    let mut segments: Vec<&str> = Vec::new();
+    for segment in forward.split('/') {
+        match segment {
+            "." => {}
+            ".." => {
+                if segments.last().is_some_and(|last| !last.is_empty()) {
+                    segments.pop();
+                }
+            }
+            other => segments.push(other),
+        }
+    }
+    segments.join("/")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{normalize_path, IpfsPath, IpfsType};
+
+    #[test]
+    fn normalize_resolves_parent_and_current_segments() {
+        assert_eq!(
+            normalize_path("assets/models/tree/../../textures/bark.png"),
+            "assets/textures/bark.png"
+        );
+        assert_eq!(
+            normalize_path("assets/./models/./tree.glb"),
+            "assets/models/tree.glb"
+        );
+        assert_eq!(
+            normalize_path(r"assets\models\..\tex.png"),
+            "assets/tex.png"
+        );
+    }
+
+    #[test]
+    fn normalize_leaves_plain_paths_and_urls_alone() {
+        assert_eq!(
+            normalize_path("assets/textures/bark.png"),
+            "assets/textures/bark.png"
+        );
+        assert_eq!(
+            normalize_path("https://example.com/a/b.png"),
+            "https://example.com/a/b.png"
+        );
+        assert_eq!(
+            normalize_path("https://example.com/a/../b.png"),
+            "https://example.com/b.png"
+        );
+    }
+
+    #[test]
+    fn normalize_drops_a_climb_above_the_root() {
+        assert_eq!(
+            normalize_path("../../textures/bark.png"),
+            "textures/bark.png"
+        );
+        assert_eq!(normalize_path(".."), "");
+    }
+
+    #[test]
+    fn content_file_path_with_parent_segments_resolves_to_the_map_key() {
+        // bevy_gltf's path for uri `../../optimized-textures/Image_2.png` in
+        // `assets/asset-packs/admin_tools/admin_toolkit.glb`
+        let path = Path::new(
+            "$ipfs/$content_file/bafyhash/assets/asset-packs/admin_tools/../../optimized-textures/Image_2.png",
+        );
+        let ipfs_path = IpfsPath::new_from_path(path).unwrap().unwrap();
+        assert_eq!(
+            ipfs_path.ipfs_type,
+            IpfsType::ContentFile {
+                content_hash: "bafyhash".to_owned(),
+                file_path: "assets/optimized-textures/Image_2.png".to_owned(),
+            }
+        );
+        assert_eq!(
+            ipfs_path.content_path(),
+            Some("assets/optimized-textures/Image_2.png")
+        );
+    }
 }

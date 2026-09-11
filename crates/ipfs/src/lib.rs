@@ -224,11 +224,11 @@ impl AssetLoader for SceneJsLoader {
 pub struct ContentMap(pub HashMap<String, String>);
 
 impl ContentMap {
-    // keys are stored lowercase with '/' separators (the dev server normalizes the
-    // same way); lookups mirror that so backslashed srcs still resolve
+    // keys are lowercase, '/'-separated, `.`/`..` resolved (the dev server normalizes the same
+    // way); lookups mirror that so backslashed and `../` srcs still resolve
     pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, str>> {
         self.0
-            .get(file.replace('\\', "/").to_lowercase().as_str())
+            .get(normalize_path(file).to_lowercase().as_str())
             .map(Into::into)
     }
 
@@ -245,7 +245,7 @@ impl ContentMap {
     }
 
     pub fn with(mut self, file: String, hash: String) -> Self {
-        self.0.insert(file.replace('\\', "/").to_lowercase(), hash);
+        self.0.insert(normalize_path(&file).to_lowercase(), hash);
         self
     }
 }
@@ -2009,7 +2009,19 @@ fn b64_split_at_key<'a>(decoded: &'a str, key: &str) -> Option<(&'a str, &'a str
 
 #[cfg(test)]
 mod tests {
-    use super::b64_split_at_key;
+    use super::{b64_split_at_key, ContentMap};
+
+    #[test]
+    fn content_map_resolves_a_reference_that_climbs_out_of_the_gltf_folder() {
+        let map = ContentMap::default().with(
+            "assets/optimized-textures/Image_2.png".to_owned(),
+            "bafyimage".to_owned(),
+        );
+        let looked_up =
+            map.hash("assets/asset-packs/admin_tools/../../optimized-textures/Image_2.png");
+        assert_eq!(looked_up.as_deref(), Some("bafyimage"));
+        assert_eq!(map.hash("assets/optimized-textures/missing.png"), None);
+    }
 
     #[test]
     fn splits_unix_path() {
