@@ -125,7 +125,7 @@ pub fn web_params() -> Vec<WebParam> {
         .collect();
     args.sort_by_key(|arg| section(arg));
     args.into_iter()
-        .filter(|arg| !native_only(arg.get_id().as_str()))
+        .filter(|arg| !arg.is_hide_set() && !native_only(arg.get_id().as_str()))
         .map(|arg| {
             let field = arg.get_id().as_str();
             WebParam {

@@ -293,3 +293,19 @@ fn js_error_message(e: &wasm_bindgen::JsValue) -> String {
         })
         .unwrap_or_else(|| "save failed".to_string())
 }
+
+/// Deep-link sign-in is a native flow; the web page logs in through `LoginWithIdentity`.
+pub mod deeplink {
+    use std::time::Duration;
+
+    pub fn ensure_scheme_handler() -> Result<(), anyhow::Error> {
+        anyhow::bail!("deep-link sign-in is not available on web")
+    }
+
+    pub async fn await_signin(
+        _request_id: &str,
+        _timeout: Duration,
+    ) -> Result<String, anyhow::Error> {
+        anyhow::bail!("deep-link sign-in is not available on web")
+    }
+}

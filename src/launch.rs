@@ -71,6 +71,8 @@ pub fn apply_client(
         // the scene set is the binary's: the ui scene and the startup scenes
         system_scene: _,
         portables: _,
+        // mapped onto the launch options before they are latched (main.rs)
+        deep_link: _,
         editor,
         imposter_source,
         gpu_bytes_per_frame,
