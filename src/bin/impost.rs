@@ -190,6 +190,10 @@ fn main() -> AppExit {
                 unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
                 ..Default::default()
             })
+            .set(
+                bevy::gltf::GltfPlugin::default()
+                    .with_uri_resolver(std::sync::Arc::new(ipfs::ipfs_path::resolve_content_uri)),
+            )
             .disable::<WinitPlugin>()
             .set(bevy::log::LogPlugin {
                 filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error".to_string(),

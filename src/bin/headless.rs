@@ -398,7 +398,10 @@ fn main() -> AppExit {
         })
         .add_plugins(AssetPlugin::default())
         .add_plugins(MeshPlugin)
-        .add_plugins(GltfPlugin::default())
+        .add_plugins(
+            GltfPlugin::default()
+                .with_uri_resolver(std::sync::Arc::new(ipfs::ipfs_path::resolve_content_uri)),
+        )
         .add_plugins(AnimationPlugin)
         .add_plugins(InputPlugin)
         .add_plugins(ScenePlugin)

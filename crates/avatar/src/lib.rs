@@ -52,7 +52,7 @@ use common::{
     asset_cache::{clean_asset_cache, AssetCache},
     sets::SetupSets,
     structs::{AppConfig, AttachPoints, EmoteCommand, PrimaryUser},
-    util::{DespawnWith, SceneSpawnerPlus, TaskExt, TryPushChildrenEx},
+    util::{DespawnWith, JoinRelativeExt, SceneSpawnerPlus, TaskExt, TryPushChildrenEx},
 };
 use comms::{
     global_crdt::{ForeignPlayer, GlobalCrdtState},
@@ -1973,7 +1973,13 @@ fn debug_dump_avatar(
                         return;
                     }
 
-                    let file = dump_folder.join(&content_file);
+                    // the key is the deployer's string and may still carry `..`
+                    let Some(file) = dump_folder.join_relative(&content_file) else {
+                        report(Some(format!(
+                            "{content_file} failed: escapes the dump folder"
+                        )));
+                        return;
+                    };
                     if let Some(parent) = file.parent() {
                         if let Err(e) = std::fs::create_dir_all(parent) {
                             report(Some(format!(

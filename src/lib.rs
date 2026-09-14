@@ -773,6 +773,10 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
             unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
             ..Default::default()
         })
+        .set(
+            bevy::gltf::GltfPlugin::default()
+                .with_uri_resolver(std::sync::Arc::new(ipfs::ipfs_path::resolve_content_uri)),
+        )
         .build()
         .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
             preview: decentraland_app_config.arguments.launch.preview,
@@ -809,6 +813,10 @@ fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> Plug
             unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
             ..Default::default()
         })
+        .set(
+            bevy::gltf::GltfPlugin::default()
+                .with_uri_resolver(std::sync::Arc::new(ipfs::ipfs_path::resolve_content_uri)),
+        )
         .disable::<LogPlugin>()
         .add_before::<AssetPlugin>(IpfsIoPlugin {
             preview: decentraland_app_config.arguments.launch.preview,

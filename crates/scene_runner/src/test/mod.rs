@@ -97,7 +97,10 @@ impl PluginGroup for TestPlugins {
             })
             .add(AssetPlugin::default())
             .add(MeshPlugin)
-            .add(GltfPlugin::default())
+            .add(
+                GltfPlugin::default()
+                    .with_uri_resolver(std::sync::Arc::new(ipfs::ipfs_path::resolve_content_uri)),
+            )
             .add(AnimationPlugin)
             .add(InputPlugin)
             .add(ScenePlugin)

@@ -5,7 +5,7 @@ use bevy::{
     platform::collections::{HashMap, HashSet},
     prelude::*,
 };
-use ipfs::EntityDefinitionLoader;
+use ipfs::{ipfs_path::ContentPathExt, EntityDefinitionLoader};
 use serde::{Deserialize, Serialize};
 
 use once_cell::sync::Lazy;
@@ -503,7 +503,7 @@ impl AssetLoader for EmoteLoader {
             .path()
             .parent()
             .unwrap()
-            .join(&meta.thumbnail)
+            .resolve_content_uri(&meta.thumbnail)
             .to_string_lossy()
             .into_owned();
 
@@ -515,14 +515,22 @@ impl AssetLoader for EmoteLoader {
                     .path()
                     .parent()
                     .unwrap()
-                    .join(&representation.main_file),
+                    .resolve_content_uri(&representation.main_file),
             );
 
             let sound = representation
                 .contents
                 .iter()
                 .find(|f| f.ends_with(".mp3") || f.ends_with(".ogg"))
-                .map(|af| load_context.load(load_context.path().parent().unwrap().join(af)));
+                .map(|af| {
+                    load_context.load(
+                        load_context
+                            .path()
+                            .parent()
+                            .unwrap()
+                            .resolve_content_uri(af),
+                    )
+                });
 
             for body_shape in representation.body_shapes {
                 representations.insert(
@@ -579,7 +587,7 @@ impl AssetLoader for EmoteMetaLoader {
             .path()
             .parent()
             .unwrap()
-            .join(&meta.thumbnail)
+            .resolve_content_uri(&meta.thumbnail)
             .to_string_lossy()
             .into_owned();
 

@@ -58,6 +58,7 @@ pub fn ffmpeg_worker(
     };
 
     // source might be a content map file or a url
+    let mut from_content_map = false;
     if let Some(content_url) = ipfas.content_url(&path, &hash) {
         // check if it changed as content_url will return Some(path) when not found and path is url-compliant.
         // if it is a raw url we don't want to download initially as some servers reject http get requests on videos.
@@ -68,8 +69,22 @@ pub fn ffmpeg_worker(
                 path, content_url
             );
             path = download(&content_url)?;
+            from_content_map = true;
         }
     };
+
+    // Anything we didn't just download into our own cache is still the scene's raw string, and
+    // ffmpeg will take far more than an http url: a bare local path, or one of its own protocols
+    // (`concat:`, `subfile:`, `rtsp:`, `tcp:`, ...). Restrict it to http(s) before handing it over.
+    // A literal prefix test rather than a url parse, so ffmpeg can't read the scheme differently.
+    if !from_content_map {
+        let lower = path.to_ascii_lowercase();
+        if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+            anyhow::bail!(
+                "av source must be an entity content file or an http(s) url, got `{path}`"
+            );
+        }
+    }
 
     let mut input_context = input(&path)?;
 

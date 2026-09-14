@@ -18,7 +18,7 @@ use bevy::{
 use serde::Deserialize;
 
 use common::util::{TaskCompat, TaskExt};
-use ipfs::{EntityDefinitionLoader, IpfsAssetServer};
+use ipfs::{ipfs_path::ContentPathExt, EntityDefinitionLoader, IpfsAssetServer};
 
 pub struct WearablePlugin;
 
@@ -346,7 +346,7 @@ impl AssetLoader for WearableLoader {
             .path()
             .parent()
             .unwrap()
-            .join(&meta.thumbnail)
+            .resolve_content_uri(&meta.thumbnail)
             .to_string_lossy()
             .into_owned();
 
@@ -363,7 +363,7 @@ impl AssetLoader for WearableLoader {
                             && !f.to_lowercase().ends_with("_mask.png")
                     })
                     .map(|f| {
-                        let path = load_context.path().parent().unwrap().join(f);
+                        let path = load_context.path().parent().unwrap().resolve_content_uri(f);
                         load_context
                             .loader()
                             .with_settings::<ImageLoaderSettings>(|s| {
@@ -377,7 +377,7 @@ impl AssetLoader for WearableLoader {
                     .iter()
                     .find(|f| f.to_lowercase().ends_with("_mask.png"))
                     .map(|f| {
-                        let path = load_context.path().parent().unwrap().join(f);
+                        let path = load_context.path().parent().unwrap().resolve_content_uri(f);
                         load_context
                             .loader()
                             .with_settings::<ImageLoaderSettings>(|s| {
@@ -402,7 +402,7 @@ impl AssetLoader for WearableLoader {
                     .path()
                     .parent()
                     .unwrap()
-                    .join(&representation.main_file);
+                    .resolve_content_uri(&representation.main_file);
                 let model = load_context
                     .loader()
                     .with_settings::<GltfLoaderSettings>(|s| {
@@ -550,7 +550,7 @@ impl AssetLoader for WearableMetaLoader {
             .path()
             .parent()
             .unwrap()
-            .join(&meta.thumbnail)
+            .resolve_content_uri(&meta.thumbnail)
             .to_string_lossy()
             .into_owned();
 

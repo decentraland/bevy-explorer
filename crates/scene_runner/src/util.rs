@@ -13,7 +13,7 @@ use bevy::{
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{
     structs::{PreviewCommand, PrimaryUser},
-    util::TaskExt,
+    util::{JoinRelativeExt, TaskExt},
 };
 use console::DoAddConsoleCommand;
 use futures_lite::AsyncReadExt;
@@ -153,7 +153,13 @@ fn debug_dump_scene(
                         return;
                     }
 
-                    let file = dump_folder.join(&content_file);
+                    // the key is the deployer's string and may still carry `..`
+                    let Some(file) = dump_folder.join_relative(&content_file) else {
+                        report(Some(format!(
+                            "{content_file} failed: escapes the dump folder"
+                        )));
+                        return;
+                    };
                     if let Some(parent) = file.parent() {
                         if let Err(e) = std::fs::create_dir_all(parent) {
                             report(Some(format!(
