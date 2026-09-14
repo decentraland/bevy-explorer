@@ -18,7 +18,7 @@
 //! the whole driver/link from `Down` (unless the last reason was terminal, in which case it parks in
 //! `Dead`). Initial connect is just the first such build.
 
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
@@ -138,11 +138,6 @@ pub(crate) struct PulseSession {
     /// connection, one outbound stream, so it lives with the session rather than with any one of
     /// the transports feeding it.
     last_state: Option<pulse::PlayerState>,
-    /// Liveness anchor for the realm's Pulse routing entity. The routing entity holds a strong clone
-    /// (`PulsePresence`) while it exists; the driver holds a `Weak` and surfaces inbound only while
-    /// `strong_count() > 1`. Lives here (not on the entity) so reconnects, which rebuild the driver,
-    /// can hand it a fresh `Weak` — the entity (and thus the signal) outlives any single driver.
-    liveness: Arc<()>,
     state: Connection,
 }
 
@@ -179,7 +174,8 @@ struct PlayerRole {
     sink: mpsc::Sender<NetworkUpdate>,
     /// The realm's routing `Transport` entity, which doubles as the `transport_id` every inbound
     /// Pulse update is attributed to. `None` off a Pulse realm (the entity is despawned with the
-    /// realm's transports), which is also when inbound is gated off by the liveness anchor.
+    /// realm's transports): nothing routes then, so peers the decoder still tracks stay out of
+    /// the engine until a routing entity exists again.
     ///
     /// Using the real transport entity — rather than a synthetic marker — is what makes presence
     /// work: `ForeignPlayer.transports` holds it, so despawning it on a realm change drops every
@@ -188,6 +184,10 @@ struct PlayerRole {
     /// The realm `routing_transport` was spawned for. `StartPulse` also fires for archipelago
     /// island hops within one realm, and those must NOT rebuild the transport — see `start_pulse`.
     routing_realm: Option<String>,
+    /// Set by `start_pulse` on a realm change, cleared by `flush_replay` once it has re-emitted the
+    /// decoder's held state for the realm — see [`PulseDecoder::replay`]. A flag rather than an
+    /// immediate replay because the routing entity it delivers on is spawned by a deferred command.
+    replay_pending: bool,
 }
 
 /// A scene listener's view of the world it hosts: which crdt context owns each parcel, the AoI those
@@ -219,11 +219,6 @@ struct ListenerRole {
     /// other. Never pruned: an entry for a despawned transport simply stops resolving, and the
     /// peer's next movement re-places it.
     peer_transport: HashMap<Address, Entity>,
-    /// A strong clone of [`PulseSession::liveness`]. A player anchors that on its routing transport;
-    /// a listener has none, and its per-context transports come and go with the scenes, so it holds
-    /// the anchor itself for as long as the session lives.
-    #[expect(dead_code)]
-    anchor: Arc<()>,
 }
 
 /// The crdt context channel a Pulse `Transport` feeds, held by the transport entity itself. Every
@@ -420,12 +415,6 @@ impl PulseSession {
     }
 }
 
-/// The realm's Pulse routing entity holds this while it exists (i.e. while we're on a Pulse realm).
-/// It's a strong clone of [`PulseSession::liveness`]; despawning the entity drops it, which the driver
-/// observes via its `Weak` to stop surfacing inbound peer state. See [`PulseSession::liveness`].
-#[derive(Component)]
-struct PulsePresence(#[expect(dead_code)] Arc<()>);
-
 /// The drain end of a Pulse `Transport` entity's channel — its companion, like
 /// `WebsocketRoomTransport.receiver`. `drain_pulse_outbox` decodes and bridges what lands here.
 #[derive(Component)]
@@ -535,13 +524,9 @@ fn configure_pulse(mut commands: Commands) {
     });
 }
 
-/// Build a fresh driver + its protocol-side link for `config`. `presence` is a weak handle to the
-/// session's liveness anchor, handed fresh to every (re)built driver so it survives reconnects.
-fn spawn_driver(
-    config: &PulseTransportConfig,
-    presence: Weak<()>,
-) -> (PulseLink, PulseDriverHandle) {
-    let (link, channels) = transport::pulse_channels(1024, presence);
+/// Build a fresh driver + its protocol-side link for `config`.
+fn spawn_driver(config: &PulseTransportConfig) -> (PulseLink, PulseDriverHandle) {
+    let (link, channels) = transport::pulse_channels(1024);
     let driver = transport::spawn_pulse_driver(config.clone(), channels);
     (link, driver)
 }
@@ -568,22 +553,15 @@ fn connect_pulse(
         return;
     };
 
-    let liveness = Arc::new(());
     let role = if common::structs::server_mode() {
-        // A listener never spawns a routing transport, so nothing else would hold the liveness
-        // anchor and the driver would drop every inbound frame — the handshake response included.
-        // Its connection is governed by its AoI, not by any one transport entity, so the anchor
-        // lives for as long as the role does.
-        PulseRole::Listener(ListenerRole {
-            anchor: liveness.clone(),
-            ..default()
-        })
+        PulseRole::Listener(ListenerRole::default())
     } else {
         PulseRole::Player(PlayerRole {
             context,
             sink: crdt.get_sender(),
             routing_transport: None,
             routing_realm: None,
+            replay_pending: false,
         })
     };
 
@@ -599,7 +577,6 @@ fn connect_pulse(
         server_id: config.server_id.clone(),
         wanted: false,
         last_state: None,
-        liveness,
         state: Connection::Down { respawn_at: 0.0 },
     });
 
@@ -614,6 +591,11 @@ fn connect_pulse(
 /// connected — announce the new realm with a teleport. The previous routing entity has been
 /// despawned by `process_realm_change` this same frame, so we spawn unconditionally (once per frame
 /// with an event) rather than presence-checking, which would race that deferred despawn.
+///
+/// That sweep also despawned every peer the old entity carried, while the server keeps its view of
+/// them for us across our own realm change and will not announce them again on a quick return. So a
+/// realm change also flags a replay of the decoder's held state for the realm entered
+/// ([`PulseDecoder::replay`]), which `flush_replay` delivers once the new entity is queryable.
 fn start_pulse(
     mut commands: Commands,
     mut events: EventReader<StartPulse>,
@@ -681,15 +663,13 @@ fn start_pulse(
             },
             PulseOutbox(receiver),
             PulseSink(player_role.sink.clone()),
-            // While this entity lives (i.e. we're on a Pulse realm) the driver sees a strong ref and
-            // surfaces inbound peer state; despawn (realm change away from Pulse) drops it.
-            PulsePresence(session.liveness.clone()),
         ))
         .id();
 
     let player_role = session.role.player_mut().expect("checked above");
     player_role.routing_transport = Some(routing_transport);
     player_role.routing_realm = Some(realm.address.clone());
+    player_role.replay_pending = true;
     session.wanted = true;
     // Already up (a later realm) → re-teleport now, unless out of world (position provisional behind
     // the loading screen); the spawn `PlayerTeleported` re-announces realm + position. Otherwise the
@@ -760,8 +740,103 @@ fn pump_pulse(
 
     drain_status(session, now);
     drive_connection(session, &wallet, profile_version, now);
+    flush_replay(session, &sinks, &realm);
     drain_inbound(session, &sinks, &realm, &player, in_world, now);
     flush_listener_aoi(session, now);
+}
+
+/// Deliver a `PulseDecoder::replay` of the realm just entered, the frame after `start_pulse` flagged
+/// it — its routing entity is a deferred spawn, and delivery resolves the `PulseSink` on it. Held
+/// while the realm can't be named yet (a local realm's key may still be fetching); a realm change in
+/// the meantime re-flags it for the new realm, and nothing is replayed for the one skipped.
+fn flush_replay(session: &mut PulseSession, sinks: &Query<&PulseSink>, realm: &CurrentRealm) {
+    let Some(player) = session.role.player_mut() else {
+        return;
+    };
+    if !player.replay_pending {
+        return;
+    }
+    match player.routing_transport {
+        Some(transport) if sinks.contains(transport) => {}
+        Some(_) => return,
+        None => {
+            player.replay_pending = false;
+            return;
+        }
+    }
+    let Some(realm_name) = realm_name(session, realm) else {
+        return;
+    };
+    session
+        .role
+        .player_mut()
+        .expect("checked above")
+        .replay_pending = false;
+
+    let events = session.decoder.replay(&realm_name);
+    if events.is_empty() {
+        return;
+    }
+    info!(
+        "pulse: replaying {} held peer(s) for realm {realm_name}",
+        events.len() / 2
+    );
+    for event in events {
+        match event {
+            PulseEvent::Joined {
+                address,
+                profile_version,
+                parcel,
+                realm,
+                ..
+            } => {
+                session.forward_at(sinks, address, &realm, parcel, PlayerMessage::Joined);
+                bridge_profile_version(session, sinks, address, profile_version);
+            }
+            PulseEvent::Movement {
+                address,
+                movement,
+                realm,
+                teleport,
+                timestamp,
+            } => forward_movement(
+                session, sinks, address, &realm, movement, teleport, timestamp,
+            ),
+            // `replay` emits only the two above
+            _ => {}
+        }
+    }
+}
+
+/// Bridge a decoded movement into the shared foreign-player pipeline as its own
+/// `PlayerMessage::Movement`, reusing `update_player` / `foreign_dynamics` verbatim. Realm + position
+/// is the placement: together they decide which of the server's scenes the peer is in, and so which
+/// context sees this and everything after it.
+fn forward_movement(
+    session: &mut PulseSession,
+    sinks: &Query<&PulseSink>,
+    address: Address,
+    realm: &str,
+    movement: Box<rfc4::Movement>,
+    teleport: bool,
+    timestamp: f64,
+) {
+    let parcel = session.grid.parcel_coords(Vec3::new(
+        movement.position_x,
+        movement.position_y,
+        movement.position_z,
+    ));
+    session.forward_at(
+        sinks,
+        address,
+        realm,
+        parcel,
+        PlayerMessage::Movement {
+            movement,
+            teleport,
+            timestamp,
+        },
+    )
 }
 
 /// Drain the driver's status channel into the connection state machine. `link`'s borrow ends at
@@ -811,8 +886,7 @@ fn drive_connection(session: &mut PulseSession, wallet: &Wallet, profile_version
             if !session.wanted || now < *respawn_at {
                 return;
             }
-            let (link, driver) =
-                spawn_driver(&session.transport_config, Arc::downgrade(&session.liveness));
+            let (link, driver) = spawn_driver(&session.transport_config);
             session.link = Some(link);
             session._driver = Some(driver);
             session.state = Connection::Connecting;
@@ -885,6 +959,16 @@ fn drain_inbound(
     in_world: bool,
     now: f64,
 ) {
+    // A player's realm is its whole area of interest, so a peer the server places anywhere else is
+    // not for the engine: a delta still in flight from the realm just left, or a peer teleporting
+    // out of this one. The decoder keeps tracking them regardless — that is what a later
+    // `replay` on returning to their realm is built from. A listener places by realm itself.
+    let own_realm = match session.role {
+        PulseRole::Player(_) => realm_name(session, realm),
+        PulseRole::Listener(_) => None,
+    };
+    let for_engine = |peer_realm: &str| own_realm.as_deref().is_none_or(|own| own == peer_realm);
+
     while let Some(Ok(bytes)) = session.link.as_mut().map(|link| link.inbound.try_recv()) {
         let events = match pulse::ServerMessage::decode(bytes.as_slice()) {
             Ok(message) => session.decoder.handle(message),
@@ -899,8 +983,6 @@ fn drain_inbound(
                 PulseEvent::Connected { success, error } => {
                     on_handshake_response(session, realm, player, in_world, now, success, error)
                 }
-                // Movement is bridged into the shared foreign-player pipeline as its own
-                // `PlayerMessage::Movement`, reusing `update_player` / `foreign_dynamics` verbatim.
                 PulseEvent::Movement {
                     address,
                     movement,
@@ -908,23 +990,11 @@ fn drain_inbound(
                     teleport,
                     timestamp,
                 } => {
-                    // Realm + position is the placement: together they decide which of the server's
-                    // scenes the peer is in, and so which context sees this and everything after it.
-                    let parcel = session.grid.parcel_coords(Vec3::new(
-                        movement.position_x,
-                        movement.position_y,
-                        movement.position_z,
-                    ));
-                    session.forward_at(
-                        sinks,
-                        address,
-                        &realm,
-                        parcel,
-                        PlayerMessage::Movement {
-                            movement,
-                            teleport,
-                            timestamp,
-                        },
+                    if !for_engine(&realm) {
+                        continue;
+                    }
+                    forward_movement(
+                        session, sinks, address, &realm, movement, teleport, timestamp,
                     )
                 }
                 // A sequence gap was detected — ask the server to replay full state, reliably.
@@ -972,6 +1042,9 @@ fn drain_inbound(
                     realm,
                     ..
                 } => {
+                    if !for_engine(&realm) {
+                        continue;
+                    }
                     session.forward_at(sinks, address, &realm, parcel, PlayerMessage::Joined);
                     bridge_profile_version(session, sinks, address, profile_version);
                 }
@@ -1020,6 +1093,9 @@ fn lost_connection(session: &mut PulseSession, retry: bool, now: f64) {
     }
     session.link = None;
     session._driver = None; // dropping joins the already-exited driver thread
+
+    // Whatever the next connection announces is the whole truth; nothing held from this one is.
+    session.decoder.reset();
     session.state = if retry {
         info!("pulse: transport dropped — reinitialising after cooldown");
         Connection::Down {
@@ -1319,6 +1395,16 @@ fn flush_listener_aoi(session: &mut PulseSession, now: f64) {
 /// by the server. `None` until the realm name is known, and on a locally served realm until a
 /// `b64-` addressed scene has loaded.
 fn announced_realm(session: &PulseSession, realm: &CurrentRealm) -> Option<String> {
+    let name = realm_name(session, realm);
+    if name.is_none() && !common::structs::multi_tenant() && !is_local_realm(realm) {
+        warn!("pulse: no realm name yet (no peers will be visible)");
+    }
+    name
+}
+
+/// The realm name as `announced_realm` resolves it, silently — for the per-frame inbound filter
+/// and the replay hold, which retry rather than complain.
+fn realm_name(session: &PulseSession, realm: &CurrentRealm) -> Option<String> {
     if let Some(announced) = session.realm_override.as_ref() {
         return Some(announced.clone());
     }
@@ -1345,10 +1431,6 @@ fn announced_realm(session: &PulseSession, realm: &CurrentRealm) -> Option<Strin
         .realm_name
         .clone()
         .filter(|name| !name.is_empty())
-        .or_else(|| {
-            warn!("pulse: no realm name yet (no peers will be visible)");
-            None
-        })
 }
 
 /// Pulse's `FieldValidator` `MaxRealmLength`.

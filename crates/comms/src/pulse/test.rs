@@ -370,3 +370,134 @@ fn ticks_stay_monotonic_across_u32_rollover() {
     assert!((stamps[2] - stamps[1] - 0.041).abs() < 1e-6);
     assert!((stamps[3] - stamps[2] - 0.040).abs() < 1e-6);
 }
+
+fn joined_in_realm(
+    subject_id: u32,
+    wallet: &str,
+    realm: &str,
+    local: (f32, f32, f32),
+) -> pulse::server_message::Message {
+    pulse::server_message::Message::PlayerJoined(pulse::PlayerJoined {
+        user_id: wallet.to_string(),
+        profile_version: 3,
+        state: Some(pulse::PlayerStateFull {
+            subject_id,
+            sequence: 1,
+            server_tick: 1000,
+            state: Some(player_state(local, 0)),
+        }),
+        realm: realm.to_string(),
+    })
+}
+
+fn delta(
+    subject_id: u32,
+    baseline_seq: u32,
+    new_seq: u32,
+    tick: u32,
+    x: f32,
+) -> pulse::ServerMessage {
+    server_msg(pulse::server_message::Message::PlayerStateDelta(
+        pulse::PlayerStateDeltaTier0 {
+            subject_id,
+            baseline_seq,
+            new_seq,
+            server_tick: tick,
+            position_x: Some(pulse::PlayerStateDeltaTier0::position_x_quantized(x)),
+            ..Default::default()
+        },
+    ))
+}
+
+/// A realm change despawns every peer client-side while the server keeps its view of them for us,
+/// so a quick return brings no re-announcement. The decoder replays what it still holds for that
+/// realm — and only that realm — as a join plus a teleport-flagged snapshot of the latest state.
+#[test]
+fn replay_re_emits_held_subjects_of_that_realm_only() {
+    const OTHER_WALLET: &str = "0x0000000000000000000000000000000000000002";
+    let mut decoder = PulseDecoder::new(PulseParcelGrid::default());
+    decoder.handle(server_msg(joined_in_realm(
+        SUBJECT,
+        WALLET,
+        "home",
+        (1.0, 2.0, 3.0),
+    )));
+    decoder.handle(server_msg(joined_in_realm(
+        SUBJECT + 1,
+        OTHER_WALLET,
+        "elsewhere",
+        (1.0, 2.0, 3.0),
+    )));
+    // state moves on after the join: the replay must carry the latest, not the join snapshot
+    decoder.handle(delta(SUBJECT, 1, 2, 1500, 5.0));
+    decoder.handle(server_msg(
+        pulse::server_message::Message::PlayerProfileVersionAnnounced(
+            pulse::PlayerProfileVersionsAnnounced {
+                subject_id: SUBJECT,
+                version: 9,
+            },
+        ),
+    ));
+
+    let events = decoder.replay("home");
+    assert_eq!(
+        events.len(),
+        2,
+        "one join + one movement for the one home subject"
+    );
+    let PulseEvent::Joined {
+        subject_id,
+        address,
+        profile_version,
+        realm,
+        ..
+    } = &events[0]
+    else {
+        panic!("expected Joined first, got {:?}", events[0]);
+    };
+    assert_eq!(
+        (*subject_id, *address, *profile_version),
+        (SUBJECT, wallet(), 9)
+    );
+    assert_eq!(&**realm, "home");
+    let PulseEvent::Movement {
+        address,
+        movement,
+        teleport,
+        timestamp,
+        ..
+    } = &events[1]
+    else {
+        panic!("expected Movement second, got {:?}", events[1]);
+    };
+    assert_eq!(*address, wallet());
+    assert!(
+        *teleport,
+        "a replayed snapshot is a discontinuity, not travel"
+    );
+    approx(movement.position_x, 165.0); // 10*16 + 5 after the delta
+    assert!(
+        (*timestamp - 1.5).abs() < 1e-6,
+        "stamped with the delta's tick"
+    );
+
+    assert!(decoder.replay("nowhere").is_empty());
+    // replay is a read: the other realm's subject is still held for its own return
+    assert_eq!(decoder.replay("elsewhere").len(), 2);
+}
+
+#[test]
+fn reset_forgets_every_subject() {
+    let mut decoder = PulseDecoder::new(PulseParcelGrid::default());
+    decoder.handle(server_msg(joined_in_realm(
+        SUBJECT,
+        WALLET,
+        "home",
+        (1.0, 2.0, 3.0),
+    )));
+    decoder.reset();
+    assert!(decoder.replay("home").is_empty());
+    // and a delta for it is now a stranger's: full state is requested rather than applied
+    let events = decoder.handle(delta(SUBJECT, 1, 2, 1500, 5.0));
+    assert!(matches!(events.as_slice(), [PulseEvent::Resync(r)] if r.known_seq == 0));
+}
