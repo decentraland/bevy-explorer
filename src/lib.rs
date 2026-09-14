@@ -178,6 +178,9 @@ pub struct DecentralandArguments {
     pub launch: LaunchOptions,
     #[command(flatten)]
     pub client: ClientOptions,
+    /// Skip the sign-in screen with an auto guest-login (`?guest=1` on web)
+    #[arg(long)]
+    pub guest: bool,
     /// Echo scene logs to the console
     #[arg(long = "scene_log_to_console", help_heading = DEBUG)]
     pub scene_log_to_console: bool,
@@ -356,15 +359,19 @@ impl DecentralandApp {
         // an explicit --system-scene opted out of the HUD in favour of the engine-side ui.
         #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
         if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode() {
+            let launch = &decentraland_app_config.arguments.launch;
             app.add_plugins(react_hud_cef::ReactHudCefPlugin {
-                // a non-default boot server (explicit --realm or a configured home realm)
-                // IS the destination: injected into the page URL as ?realm= so the HUD skips
-                // its places picker (parity with ?realm= on web). On the stock default the
-                // param is omitted so the picker shows — and the HUD's own default-realm
-                // assumption then matches the realm the engine actually booted.
-                server: (decentraland_app_config.boot_server()
-                    != AppConfig::default().home_realm())
+                // an explicit destination (--realm and/or --position) or a non-default
+                // configured home realm IS the destination: injected into the page URL as
+                // ?realm= so the HUD skips its places picker (parity with ?realm= on web).
+                // Otherwise the param is omitted so the picker shows — and the HUD's own
+                // default-realm assumption then matches the realm the engine actually booted.
+                server: (launch.realm.is_some()
+                    || launch.position.is_some()
+                    || decentraland_app_config.boot_server() != AppConfig::default().home_realm())
                 .then(|| decentraland_app_config.boot_server()),
+                position: launch.position.clone(),
+                guest: decentraland_app_config.arguments.guest,
             });
         }
 
