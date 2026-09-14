@@ -178,6 +178,9 @@ pub struct DecentralandArguments {
     pub launch: LaunchOptions,
     #[command(flatten)]
     pub client: ClientOptions,
+    /// Skip the sign-in screen with an auto guest-login (`?guest=1` on web)
+    #[arg(long)]
+    pub guest: bool,
     /// Echo scene logs to the console
     #[arg(long = "scene_log_to_console", help_heading = DEBUG)]
     pub scene_log_to_console: bool,
@@ -365,6 +368,7 @@ impl DecentralandApp {
                 server: (decentraland_app_config.boot_server()
                     != AppConfig::default().home_realm())
                 .then(|| decentraland_app_config.boot_server()),
+                guest: decentraland_app_config.arguments.guest,
             });
         }
 
