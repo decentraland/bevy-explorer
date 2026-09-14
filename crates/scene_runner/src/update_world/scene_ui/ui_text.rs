@@ -11,8 +11,12 @@ use dcl_component::proto_components::{
 };
 
 use crate::{
+    renderer_context::RendererSceneContext,
     update_scene::pointer_results::UiPointerTarget,
-    update_world::text_shape::{make_text_section, UnrecognisedTags},
+    update_world::{
+        fonts::SceneFontServer,
+        text_shape::{make_text_section, UnrecognisedTags},
+    },
     SceneEntity,
 };
 
@@ -32,6 +36,7 @@ pub struct UiText {
     pub h_align: JustifyText,
     pub v_align: VAlign,
     pub font: components::common::Font,
+    pub font_src: Option<String>,
     pub font_size: f32,
     pub wrapping: bool,
 }
@@ -72,6 +77,7 @@ impl From<PbUiText> for UiText {
                 | components::common::TextAlignMode::TamBottomRight => VAlign::Bottom,
             },
             font: value.font(),
+            font_src: value.font_src.clone(),
             font_size: value.font_size.unwrap_or(10) as f32,
             wrapping: value.text_wrap == Some(components::TextWrap::TwWrap as i32),
         }
@@ -93,6 +99,8 @@ pub fn set_ui_text(
     prev_texts: Query<&UiTextMarker>,
     mut node_style: Query<&mut Node>,
     mut unrecognized_tags: ResMut<UnrecognisedTags>,
+    mut scene_fonts: SceneFontServer,
+    scenes: Query<&RendererSceneContext>,
 ) {
     for ent in removed.read() {
         let Ok(link) = links.get(ent) else {
@@ -127,6 +135,15 @@ pub fn set_ui_text(
         let Ok(mut ent_cmds) = commands.get_entity(link.ui_entity) else {
             continue;
         };
+        let Ok(scene) = scenes.get(scene_ent.root) else {
+            continue;
+        };
+        let family = scene_fonts.family(
+            scene_ent.root,
+            &scene.hash,
+            ui_text.font,
+            ui_text.font_src.as_deref(),
+        );
 
         let (text, links) = make_text_section(
             ui_text.text.as_str(),
@@ -134,7 +151,8 @@ pub fn set_ui_text(
             ui_text
                 .color
                 .with_alpha(ui_text.color.alpha() * link.opacity.0),
-            ui_text.font,
+            &family,
+            &mut scene_fonts,
             ui_text.h_align,
             ui_text.wrapping,
             &mut unrecognized_tags,

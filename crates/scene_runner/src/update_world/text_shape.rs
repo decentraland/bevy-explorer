@@ -93,7 +93,7 @@ use bevy::{
     platform::collections::HashSet,
     prelude::*,
     render::view::VisibilitySystems,
-    text::{ComputedTextBlock, CosmicBuffer, CosmicFontSystem, Font, LineBreak, TextPipeline},
+    text::{ComputedTextBlock, CosmicBuffer, CosmicFontSystem, LineBreak, TextPipeline},
     ui::{update::update_clipping_system, widget::text_system, UiSystem},
 };
 use common::{
@@ -108,13 +108,16 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName, FONT_SIZE_SCALE};
+use ui_core::{ui_builder::SpawnSpacer, WeightName, FONT_SIZE_SCALE};
 use unicode_segmentation::UnicodeSegmentation;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
 
-use super::AddCrdtInterfaceExt;
+use super::{
+    fonts::{SceneFontServer, TextFontFamily},
+    AddCrdtInterfaceExt,
+};
 
 pub struct TextShapePlugin;
 
@@ -192,10 +195,11 @@ fn auto_fit_point_size(
     source: &str,
     raster_pt: f32,
     text_pipeline: &mut TextPipeline,
-    fonts: &Assets<Font>,
+    fonts: &mut SceneFontServer,
     font_system: &mut CosmicFontSystem,
     measure_entity: Entity,
     unrecognized_tags: &mut UnrecognisedTags,
+    family: &TextFontFamily,
 ) -> Option<f32> {
     if !text_shape.text_wrapping() {
         return Some(AUTO_MIN_PT);
@@ -205,14 +209,15 @@ fn auto_fit_point_size(
         source,
         raster_pt,
         Color::WHITE,
-        text_shape.font(),
+        family,
+        fonts,
         unrecognized_tags,
     );
 
     // create_text_measure panics if a span's font hasn't loaded yet.
     if spans
         .iter()
-        .any(|(_, font, _, _)| fonts.get(font.font.id()).is_none())
+        .any(|(_, font, _, _)| fonts.assets().get(font.font.id()).is_none())
     {
         return None;
     }
@@ -223,7 +228,7 @@ fn auto_fit_point_size(
     let natural = text_pipeline
         .create_text_measure(
             measure_entity,
-            fonts,
+            fonts.assets(),
             spans.iter().enumerate().map(|(i, (span, font, color, _))| {
                 (measure_entity, i, span.0.as_str(), font, color.0)
             }),
@@ -267,7 +272,7 @@ fn update_text_shapes(
     mut views: Query<&mut TextShapeUi>,
     mut unrecognized_tags: ResMut<UnrecognisedTags>,
     mut text_pipeline: ResMut<TextPipeline>,
-    fonts: Res<Assets<Font>>,
+    mut scene_fonts: SceneFontServer,
     mut font_system: ResMut<CosmicFontSystem>,
 ) {
     // remove deleted ui nodes
@@ -343,6 +348,12 @@ fn update_text_shapes(
             warn!("no scene!");
             continue;
         };
+        let family = scene_fonts.family(
+            scene_ent.root,
+            &scene.hash,
+            text_shape.0.font(),
+            text_shape.0.font_src.as_deref(),
+        );
 
         if let Some(prior) = maybe_prior {
             if prior.1 == text_shape.0 {
@@ -466,10 +477,11 @@ fn update_text_shapes(
                 source,
                 font_size,
                 &mut text_pipeline,
-                &fonts,
+                &mut scene_fonts,
                 &mut font_system,
                 ent,
                 &mut unrecognized_tags,
+                &family,
             ) {
                 Some(pt) => pt,
                 None => {
@@ -522,11 +534,19 @@ fn update_text_shapes(
                 .text_color
                 .map(Color4DclToBevy::convert_srgba)
                 .unwrap_or(Color::WHITE),
-            text_shape.0.font(),
+            &family,
+            &mut scene_fonts,
             halign_flex,
             wrapping,
             &mut unrecognized_tags,
         );
+
+        // the view only renders for a couple of frames after the build, so
+        // wait for the fonts rather than rendering without them
+        if !scene_fonts.family_ready(&family) {
+            commands.entity(ent).try_insert(RetryTextShape(frame.0));
+            continue;
+        }
 
         let ui_node = commands
             .spawn((
@@ -831,7 +851,8 @@ fn build_text_spans(
     text: &str,
     font_size: f32,
     color: Color,
-    font: dcl_component::proto_components::sdk::components::common::Font,
+    family: &TextFontFamily,
+    fonts: &mut SceneFontServer,
     unrecognized_tags: &mut UnrecognisedTags,
 ) -> (Vec<TextSpanData>, Vec<(usize, String)>) {
     let mut links = Vec::default();
@@ -841,16 +862,6 @@ fn build_text_spans(
     // CRLF renders as a single line break and a lone CR collapses onto one line
     // (the realistic cases). A lone LF is left as a normal line break.
     let text = text.replace("\\n", "\n").replace('\r', "");
-
-    let font_name = match font {
-        dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
-            FontName::Sans
-        }
-        dcl_component::proto_components::sdk::components::common::Font::FSerif => FontName::Serif,
-        dcl_component::proto_components::sdk::components::common::Font::FMonospace => {
-            FontName::Mono
-        }
-    };
 
     // split by <b>s and <i>s
     let mut b_count = 0usize;
@@ -957,7 +968,7 @@ fn build_text_spans(
         }
 
         let font = TextFont {
-            font: user_font(font_name, weight),
+            font: fonts.face(family, weight),
             font_size: font_size * FONT_SIZE_SCALE,
             ..Default::default()
         };
@@ -1028,12 +1039,13 @@ pub fn make_text_section(
     text: &str,
     font_size: f32,
     color: Color,
-    font: dcl_component::proto_components::sdk::components::common::Font,
+    family: &TextFontFamily,
+    fonts: &mut SceneFontServer,
     justify: JustifyText,
     wrapping: bool,
     unrecognized_tags: &mut UnrecognisedTags,
 ) -> (impl Bundle, Vec<(usize, String)>) {
-    let (spans, links) = build_text_spans(text, font_size, color, font, unrecognized_tags);
+    let (spans, links) = build_text_spans(text, font_size, color, family, fonts, unrecognized_tags);
 
     let f = move |parent: &mut RelatedSpawner<ChildOf>| {
         for (span, font, color, maybe_extras) in spans {
