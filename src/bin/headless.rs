@@ -446,6 +446,7 @@ fn main() {
             // getPlayer()/onEnterScene never see names or wearables
             avatar::update_avatar_info,
             reap_terminal_scene_rooms,
+            announce_scene_room_connected,
         ),
     );
 
@@ -733,6 +734,16 @@ fn reap_scene_contexts(
         }
         false
     });
+}
+
+/// Emits `[headless] scene room connected: <hash>` on stdout when a scene room's LiveKit
+/// connection is established. `SceneRoom` and `Connected` share the transport entity.
+fn announce_scene_room_connected(
+    rooms: Query<&comms::SceneRoom, Added<comms::livekit::room::Connected>>,
+) {
+    for scene_room in rooms.iter() {
+        println!("[headless] scene room connected: {}", scene_room.0);
+    }
 }
 
 /// Tear down scene-room transports whose LiveKit room hit a terminal disconnect
