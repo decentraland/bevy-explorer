@@ -69,9 +69,6 @@ pub struct FamilyKey {
 pub struct SceneFonts {
     families: HashMap<FamilyKey, SceneFontFamily>,
     builtin_metrics: HashMap<FontName, FamilyMetrics>,
-    /// Multiplier from a font's own line metric to its default line height, chosen so the
-    /// built-in fonts land on [`REFERENCE_LINE_HEIGHT`].
-    line_height_scale: Option<f32>,
 }
 
 struct SceneFontFamily {
@@ -84,6 +81,10 @@ struct SceneFontFamily {
 
 /// Line height (in ems) of the built-in fonts, calibrated against the reference renderer.
 const REFERENCE_LINE_HEIGHT: f32 = 1.2;
+
+/// Ascent + descent + line gap (in ems) shared by every built-in Noto face; a font with this
+/// line metric gets [`REFERENCE_LINE_HEIGHT`].
+const BUILTIN_LINE_METRIC: f32 = 1.362;
 
 /// Vertical metrics of a family, in ems.
 #[derive(Clone, Copy, Debug)]
@@ -140,12 +141,13 @@ impl FaceMetrics {
 }
 
 impl FamilyMetrics {
-    fn from_faces(faces: &[FaceMetrics], line_height_scale: f32) -> Self {
+    fn from_faces(faces: &[FaceMetrics]) -> Self {
         let metric = faces
             .iter()
             .map(FaceMetrics::line_metric)
             .fold(0.0, f32::max);
-        let line_height = (metric * line_height_scale).max(REFERENCE_LINE_HEIGHT);
+        let line_height =
+            (metric * REFERENCE_LINE_HEIGHT / BUILTIN_LINE_METRIC).max(REFERENCE_LINE_HEIGHT);
         // cosmic-text centres a line's ascent + descent within the line box, so the ink
         // overflow is whatever the win bounds add beyond that, less the box's slack
         let padding = faces
@@ -252,7 +254,6 @@ impl SceneFontServer<'_, '_> {
         if !self.family_ready(family) {
             return self.builtin_metrics(fallback);
         }
-        let line_height_scale = self.line_height_scale();
         let Some(family) = self.families.families.get_mut(key) else {
             return self.builtin_metrics(fallback);
         };
@@ -262,7 +263,7 @@ impl SceneFontServer<'_, '_> {
             .filter_map(|slot| self.assets.get(slot.handle.id()))
             .filter_map(FaceMetrics::parse)
             .collect::<Vec<_>>();
-        let metrics = FamilyMetrics::from_faces(&faces, line_height_scale);
+        let metrics = FamilyMetrics::from_faces(&faces);
         family.metrics = Some(metrics);
         metrics
     }
@@ -280,30 +281,11 @@ impl SceneFontServer<'_, '_> {
         .collect()
     }
 
-    fn line_height_scale(&mut self) -> f32 {
-        if let Some(scale) = self.families.line_height_scale {
-            return scale;
-        }
-        let metric = self
-            .builtin_faces(FontName::Sans)
-            .iter()
-            .map(FaceMetrics::line_metric)
-            .fold(0.0, f32::max);
-        let scale = if metric > 0.0 {
-            REFERENCE_LINE_HEIGHT / metric
-        } else {
-            1.0
-        };
-        self.families.line_height_scale = Some(scale);
-        scale
-    }
-
     fn builtin_metrics(&mut self, name: FontName) -> FamilyMetrics {
         if let Some(metrics) = self.families.builtin_metrics.get(&name) {
             return *metrics;
         }
-        let line_height_scale = self.line_height_scale();
-        let metrics = FamilyMetrics::from_faces(&self.builtin_faces(name), line_height_scale);
+        let metrics = FamilyMetrics::from_faces(&self.builtin_faces(name));
         self.families.builtin_metrics.insert(name, metrics);
         metrics
     }
