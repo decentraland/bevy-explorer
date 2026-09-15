@@ -168,6 +168,8 @@ pub enum PulseEvent {
         address: Address,
         urn: String,
         tick: u32,
+        /// Wire enum: absent/`0` full body, `1` upper body.
+        mask: Option<i32>,
     },
     /// Subject's emote stopped. `completed`: the server's one-shot timer expired (a natural
     /// finish) rather than the player cancelling a looping emote.
@@ -387,6 +389,7 @@ impl PulseDecoder {
                         address: subject.wallet,
                         urn: e.emote_id,
                         tick: e.server_tick,
+                        mask: e.mask,
                     });
                 }
                 events

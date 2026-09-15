@@ -1,7 +1,10 @@
 mod result_sender;
 mod stream_sender;
 
-use crate::{profile::SerializedProfile, structs::PermissionType};
+use crate::{
+    profile::SerializedProfile,
+    structs::{EmoteMask, PermissionType},
+};
 use bevy::{platform::collections::HashMap, prelude::*};
 use ethers_core::types::H160;
 use serde::{Deserialize, Serialize};
@@ -277,6 +280,7 @@ pub enum RpcCall {
         scene: Entity,
         urn: String,
         r#loop: bool,
+        mask: EmoteMask,
     },
     StopEmote {
         scene: Entity,

@@ -68,8 +68,12 @@ pub async fn op_external_url(state: &WorkerContext, url: String) -> Result<bool,
 }
 
 #[wasm_bindgen]
-pub fn op_emote(op_state: &WorkerContext, emote: String) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_emote(&mut *op_state.state.borrow_mut(), emote)
+pub fn op_emote(
+    op_state: &WorkerContext,
+    emote: String,
+    upper_body: bool,
+) -> Result<(), WasmError> {
+    dcl::js::restricted_actions::op_emote(&mut *op_state.state.borrow_mut(), emote, upper_body)
         .map_err(WasmError::from)
 }
 
@@ -84,8 +88,9 @@ pub async fn op_scene_emote(
     op_state: &WorkerContext,
     emote: String,
     looping: bool,
+    upper_body: bool,
 ) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_scene_emote(op_state.rc(), emote, looping)
+    dcl::js::restricted_actions::op_scene_emote(op_state.rc(), emote, looping, upper_body)
         .await
         .map_err(WasmError::from)
 }
