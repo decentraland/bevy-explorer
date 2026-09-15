@@ -939,9 +939,10 @@ fn drain_inbound(
                         });
                     }
                 }
-                // Emote start/stop are delivered natively (`PlayerMessage::Emote`) rather than as an
-                // rfc4 `PlayerEmote`: byte-transport emotes are dropped as duplicates, so the Pulse
-                // copy has to be distinguishable from them by variant, exactly as movement is.
+                // Emote start/stop are delivered natively (`PlayerMessage::EmoteStart` / `EmoteStop`)
+                // rather than as an rfc4 `PlayerEmote`: byte-transport emotes are dropped as
+                // duplicates, so the Pulse copy has to be distinguishable from them by variant,
+                // exactly as movement is.
                 PulseEvent::EmoteStart {
                     address,
                     urn,
@@ -950,25 +951,15 @@ fn drain_inbound(
                 } => session.forward(
                     sinks,
                     address,
-                    PlayerMessage::Emote {
+                    PlayerMessage::EmoteStart {
                         urn,
                         incremental_id: tick,
-                        stopping: false,
-                        completed: false,
                         mask: EmoteMask::from_wire(mask),
                     },
                 ),
-                PulseEvent::EmoteStop { address, completed } => session.forward(
-                    sinks,
-                    address,
-                    PlayerMessage::Emote {
-                        urn: String::new(),
-                        incremental_id: 0,
-                        stopping: true,
-                        completed,
-                        mask: EmoteMask::FullBody,
-                    },
-                ),
+                PulseEvent::EmoteStop { address, completed } => {
+                    session.forward(sinks, address, PlayerMessage::EmoteStop { completed })
+                }
                 // A peer entered our interest set. Report the arrival, then their initial profile
                 // version; the version alone would register presence, but saying so explicitly
                 // matches the other transports and doesn't depend on it carrying one.
