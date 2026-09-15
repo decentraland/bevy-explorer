@@ -343,9 +343,6 @@ fn update_text_shapes(
 
         commands.entity(ent).try_remove::<RetryTextShape>();
 
-        active_count += 1;
-        debug!("ts: {:?}", text_shape.0);
-
         let Ok(scene) = scenes.get(scene_ent.root) else {
             warn!("no scene!");
             continue;
@@ -356,6 +353,17 @@ fn update_text_shapes(
             text_shape.0.font(),
             text_shape.0.font_src.as_deref(),
         );
+
+        // wait for the family before taking a build slot. requesting the regular face
+        // starts a new family loading; other weights are requested when the spans are built
+        scene_fonts.face(&family, WeightName::Regular);
+        if !scene_fonts.family_ready(&family) {
+            commands.entity(ent).try_insert(RetryTextShape(frame.0));
+            continue;
+        }
+
+        active_count += 1;
+        debug!("ts: {:?}", text_shape.0);
 
         if let Some(prior) = maybe_prior {
             if prior.1 == text_shape.0 {
