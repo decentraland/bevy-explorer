@@ -113,6 +113,9 @@ struct MaskedRequest {
     playback: EmotePlayback,
     /// Rendered this frame — not suspended under a full-body emote. Set by `animate`.
     active: bool,
+    /// Waiting out a full-body emote (or the glide), reported to scenes as ended; the resume is
+    /// reported as a fresh start.
+    suspended: bool,
 }
 
 impl Deref for MaskedRequest {
@@ -544,7 +547,7 @@ fn animate(
 
         let emote_changed = emote != last_emote.as_ref().map(|l| &l.0);
 
-        let mut ended = |event: EmoteLifecycle, mask: EmoteMask| {
+        let mut report = |event: EmoteLifecycle, mask: EmoteMask| {
             lifecycle.write(EmoteLifecycleEvent {
                 avatar: avatar_ent,
                 event,
@@ -570,6 +573,7 @@ fn animate(
                             ..Default::default()
                         },
                         active: false,
+                        suspended: false,
                     });
                     commands
                         .entity(avatar_ent)
@@ -578,7 +582,7 @@ fn animate(
                 // `stopEmote` ends both slots
                 Some(command) if command.urn.is_empty() => {
                     if masked.request.take().is_some() {
-                        ended(EmoteLifecycle::Interrupted, EmoteMask::UpperBody);
+                        report(EmoteLifecycle::Interrupted, EmoteMask::UpperBody);
                     }
                     commands
                         .entity(avatar_ent)
@@ -620,7 +624,7 @@ fn animate(
                 debug!("clear on scene anim {:?}", active_emote.urn);
                 requested_emote = None;
                 anim_state.current_emote_min_velocity = 0.0;
-                ended(EmoteLifecycle::Interrupted, EmoteMask::FullBody);
+                report(EmoteLifecycle::Interrupted, EmoteMask::FullBody);
             } else if velocity_cancels && damped_velocity_len * 0.9 > playing_min_vel {
                 // stop emotes on move
                 debug!(
@@ -629,7 +633,7 @@ fn animate(
                 );
                 requested_emote = None;
                 anim_state.current_emote_min_velocity = 0.0;
-                ended(EmoteLifecycle::Interrupted, EmoteMask::FullBody);
+                report(EmoteLifecycle::Interrupted, EmoteMask::FullBody);
             } else {
                 anim_state.current_emote_min_velocity = damped_velocity_len.min(playing_min_vel);
             }
@@ -637,7 +641,7 @@ fn animate(
             if active_emote.finished {
                 debug!("finished emoting {:?}", active_emote.urn);
                 requested_emote = None;
-                ended(EmoteLifecycle::Finished, EmoteMask::FullBody);
+                report(EmoteLifecycle::Finished, EmoteMask::FullBody);
             }
         } else {
             anim_state.current_emote_min_velocity = damped_velocity_len;
@@ -649,7 +653,7 @@ fn animate(
                 && !active_emote.finished
             {
                 debug!("clear on stop {:?}", active_emote.urn);
-                ended(EmoteLifecycle::Interrupted, EmoteMask::FullBody);
+                report(EmoteLifecycle::Interrupted, EmoteMask::FullBody);
             }
         }
 
@@ -838,19 +842,34 @@ fn animate(
             let suspended = active_emote.source == ActiveEmoteSource::TriggeredEmote
                 || active_emote.urn == *URN_GLIDE;
             if suspended {
+                if request.active {
+                    // scenes hear the suspension as an end and the resume as a fresh start, as
+                    // observers hear it from the wire
+                    report(EmoteLifecycle::Interrupted, EmoteMask::UpperBody);
+                }
                 if request.active && !request.repeat {
                     debug!("dropping suspended one-shot {:?}", request.urn);
                     masked.request = None;
-                    ended(EmoteLifecycle::Interrupted, EmoteMask::UpperBody);
                 } else {
                     request.active = false;
+                    request.suspended = true;
                     request.restart = true;
                 }
             } else if request.finished {
                 debug!("finished masked emoting {:?}", request.urn);
                 masked.request = None;
-                ended(EmoteLifecycle::Finished, EmoteMask::UpperBody);
+                report(EmoteLifecycle::Finished, EmoteMask::UpperBody);
             } else {
+                if request.suspended {
+                    request.suspended = false;
+                    report(
+                        EmoteLifecycle::Started {
+                            urn: request.urn.as_str().to_owned(),
+                            r#loop: request.repeat,
+                        },
+                        EmoteMask::UpperBody,
+                    );
+                }
                 request.active = true;
             }
         }
