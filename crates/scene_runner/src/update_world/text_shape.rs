@@ -551,15 +551,15 @@ fn update_text_shapes(
         }
 
         // room for ink outside the line box (deep descenders, swashes), which the
-        // node would otherwise clip. the line box itself must not move: with an auto
-        // height the region grows, so the quad is shifted back by the padding on the
-        // anchored side; in a fixed box a negative margin cancels it in the layout
-        let ink_padding = scene_fonts.metrics(&family).padding * font_size * FONT_SIZE_SCALE;
-        let (ink_margin, add_y_pix) = if height == Val::Auto {
-            (0.0, add_y_pix - valign_wui * 2.0 * ink_padding)
+        // node would otherwise clip. only the auto-height node clips at the line box
+        // (a fixed box clips at its own edge), and the line box itself must not move,
+        // so the quad is shifted back by the padding on the anchored side
+        let ink_padding = if height == Val::Auto {
+            scene_fonts.metrics(&family).padding * font_size * FONT_SIZE_SCALE
         } else {
-            (-ink_padding, add_y_pix)
+            0.0
         };
+        let add_y_pix = add_y_pix - valign_wui * 2.0 * ink_padding;
 
         let ui_node = commands
             .spawn((
@@ -592,7 +592,6 @@ fn update_text_shapes(
 
                 c.spawn(Node {
                     padding: UiRect::vertical(Val::Px(ink_padding)),
-                    margin: UiRect::vertical(Val::Px(ink_margin)),
                     ..Default::default()
                 })
                 .with_child((
@@ -688,6 +687,7 @@ fn apply_text_extras(
         ),
     >,
     spans: Query<(&TextSpan, &TextColor, Option<&TextExtras>)>,
+    parents: Query<(&GlobalTransform, &ComputedNode)>,
     existing: Query<(), With<TextExtraMarker>>,
     mut removed: RemovedComponents<TextExtras>,
 ) {
@@ -770,6 +770,16 @@ fn apply_text_extras(
             }
         }
 
+        // the marks are children of the text node's parent, and their insets resolve
+        // against its edge, so account for the text node's offset within it (padding)
+        let parent_tl = gt.translation().truncate() - computed_node.size * 0.5;
+        let parent_offset = parents
+            .get(parent.parent())
+            .map(|(parent_gt, parent_node)| {
+                parent_tl - (parent_gt.translation().truncate() - parent_node.size * 0.5)
+            })
+            .unwrap_or(Vec2::ZERO);
+
         let mut make_mark = |bound: Vec4, color: Color, top: f32, height: f32| -> Entity {
             // because we make marks based on calculated text positions, we have to run after the ui layout functions
             // but that means our marks won't be positioned until next frame. if text is deleted/replaced every frame
@@ -780,14 +790,13 @@ fn apply_text_extras(
             view_visibility.set();
             let height = (bound.w * height).max(1.0);
             let size = Vec2::new(bound.z, height);
-            let parent_tl = gt.translation().truncate() - computed_node.size * 0.5;
             let my_tl = parent_tl + Vec2::new(bound.x, bound.y + bound.w * top);
             let my_global_translation = round_layout_coords(my_tl) + size * 0.5;
             let mut cmds = commands.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(bound.x),
-                    top: Val::Px(bound.y + bound.w * top),
+                    left: Val::Px(bound.x + parent_offset.x),
+                    top: Val::Px(bound.y + bound.w * top + parent_offset.y),
                     width: Val::Px(bound.z),
                     height: Val::Px(height),
                     ..Default::default()
