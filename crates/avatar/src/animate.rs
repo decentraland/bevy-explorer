@@ -77,9 +77,8 @@ pub const LOWER_BODY_BONES: [&str; 9] = [
     "avatar_righttoebase",
 ];
 
-/// Upper-body emote crossfade times (unity's masked layer: 0.1s in, 0.25s out).
-const MASKED_FADE_IN_SECS: f32 = 0.1;
-const MASKED_FADE_OUT_SECS: f32 = 0.25;
+/// Upper-body emote crossfade, in and out: the triggered-emote transition time.
+const MASKED_FADE_SECS: f32 = 0.2;
 /// The evaluator blends every playing clip by weighted average, and the locomotion transitions
 /// always sum to weight 1, so an upper-body clip at weight `s / (1 - s)` gets share `s` of the
 /// bones it animates. Capped short of 1 to keep the weight finite; the remaining locomotion share
@@ -1803,12 +1802,7 @@ fn play_masked_emote(
 
         // drive the fade; a fully faded-out clip is stopped
         if let Some((clip_ix, share)) = masked.playing.as_mut() {
-            let secs = if target_share > *share {
-                MASKED_FADE_IN_SECS
-            } else {
-                MASKED_FADE_OUT_SECS
-            };
-            let step = time.delta_secs() / secs;
+            let step = time.delta_secs() / MASKED_FADE_SECS;
             *share = if target_share > *share {
                 (*share + step).min(target_share)
             } else {
