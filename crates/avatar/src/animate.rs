@@ -560,10 +560,23 @@ fn animate(
         // command slot moves on to a full-body emote (which suspends it) or a stop (which ends it).
         // The full-body path below sees a masked command as "no request", so a masked start
         // interrupts a playing full-body emote through its usual clear-on-stop.
+        // The command's start is reported last, after whatever it ends below, so scenes hear the
+        // transitions in playback order.
+        let mut started = None;
         if emote_changed {
             match emote {
                 Some(command) if command.mask == EmoteMask::UpperBody => {
                     let (urn, repeat) = parse_request(&command.urn, command.r#loop);
+                    if masked
+                        .request
+                        .as_ref()
+                        .is_some_and(|request| request.active)
+                    {
+                        report(EmoteLifecycle::Interrupted, EmoteMask::UpperBody);
+                    }
+                    started = urn
+                        .as_ref()
+                        .map(|urn| (urn.as_str().to_owned(), repeat, EmoteMask::UpperBody));
                     masked.request = urn.map(|urn| MaskedRequest {
                         playback: EmotePlayback {
                             urn,
@@ -581,7 +594,8 @@ fn animate(
                 }
                 // `stopEmote` ends both slots
                 Some(command) if command.urn.is_empty() => {
-                    if masked.request.take().is_some() {
+                    // a suspended request was reported ended when it was suspended
+                    if masked.request.take().is_some_and(|request| request.active) {
                         report(EmoteLifecycle::Interrupted, EmoteMask::UpperBody);
                     }
                     commands
@@ -645,14 +659,13 @@ fn animate(
             }
         } else {
             anim_state.current_emote_min_velocity = damped_velocity_len;
-            // the command was cleared under a playing emote: an explicit stop (`stopEmote`, or a
-            // scene avatar's trigger cleared)
+            // the command moved on under a playing emote: another emote (of either mask), an
+            // explicit stop (`stopEmote`), or a scene avatar's trigger cleared
             if emote_changed
-                && requested_emote.is_none()
                 && active_emote.source == ActiveEmoteSource::TriggeredEmote
                 && !active_emote.finished
             {
-                debug!("clear on stop {:?}", active_emote.urn);
+                debug!("clear on command {:?}", active_emote.urn);
                 report(EmoteLifecycle::Interrupted, EmoteMask::FullBody);
             }
         }
@@ -787,6 +800,11 @@ fn animate(
         *active_emote = if let Some(requested_emote) = requested_emote {
             if emote_changed {
                 dynamic_state.move_kind = MoveKind::Emote;
+                started = Some((
+                    requested_emote.as_str().to_owned(),
+                    request_loop,
+                    EmoteMask::FullBody,
+                ));
             }
             commands
                 .entity(avatar_ent)
@@ -872,6 +890,10 @@ fn animate(
                 }
                 request.active = true;
             }
+        }
+
+        if let Some((urn, r#loop, mask)) = started {
+            report(EmoteLifecycle::Started { urn, r#loop }, mask);
         }
     }
 }
