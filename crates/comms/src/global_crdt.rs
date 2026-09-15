@@ -1368,10 +1368,8 @@ fn receive_new_voice_message_senders(
     }
 }
 
-/// Room for any collectible or scene-emote urn, not for a peer to fill scene crdt with. A
-/// local-preview scene emote carries two base64-encoded absolute paths (scene id + file id), so
-/// it runs well past 256 bytes.
-const MAX_EMOTE_URN_BYTES: usize = 1024;
+/// Room for any collectible or scene-emote urn, not for a peer to fill scene crdt with.
+const MAX_EMOTE_URN_BYTES: usize = 256;
 
 /// Whether a peer's emote urn may reach scenes: it lands verbatim in `AvatarEmoteCommand`, and
 /// nothing upstream bounds it (Pulse validates an emote's duration and position, not its id).
