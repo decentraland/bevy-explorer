@@ -24,7 +24,7 @@ use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 use common::{
     bounds_calc::scene_regions,
-    structs::{CurrentRealm, OutOfWorld, PlayerTeleported, PrimaryUser},
+    structs::{CurrentRealm, EmoteMask, OutOfWorld, PlayerTeleported, PrimaryUser},
     util::{TaskCompat, TaskExt},
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -1011,6 +1011,7 @@ fn drain_inbound(
                     urn,
                     tick,
                     realm,
+                    mask,
                 } => {
                     if !for_engine(&realm) {
                         continue;
@@ -1023,6 +1024,7 @@ fn drain_inbound(
                             incremental_id: tick,
                             stopping: false,
                             completed: false,
+                            mask: EmoteMask::from_wire(mask),
                         },
                     )
                 }
@@ -1042,6 +1044,7 @@ fn drain_inbound(
                             incremental_id: 0,
                             stopping: true,
                             completed,
+                            mask: EmoteMask::FullBody,
                         },
                     )
                 }

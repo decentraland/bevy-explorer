@@ -12,7 +12,7 @@ use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, EmoteCommand, PrimaryUser, SystemAudio, ZOrder},
+    structs::{ActiveDialog, EmoteCommand, EmoteMask, PrimaryUser, SystemAudio, ZOrder},
     util::{ModifyComponentExt, TryPushChildrenEx},
 };
 use comms::profile::CurrentUserProfile;
@@ -150,6 +150,7 @@ fn handle_emote_key(
                             urn: button.0.clone(),
                             r#loop: false,
                             timestamp: frame.0 as i64,
+                            mask: EmoteMask::FullBody,
                         });
                     w.write(EmoteUiEvent::Hide);
                 }
@@ -282,6 +283,7 @@ fn show_emote_ui(
                             urn: button.0.clone(),
                             r#loop: false,
                             timestamp: frame.0 as i64,
+                            mask: EmoteMask::FullBody,
                         });
                 }
             }

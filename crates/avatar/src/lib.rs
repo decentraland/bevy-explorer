@@ -51,7 +51,7 @@ mod two_bone_ik;
 use common::{
     asset_cache::{clean_asset_cache, AssetCache},
     sets::SetupSets,
-    structs::{AppConfig, AttachPoints, EmoteCommand, PrimaryUser},
+    structs::{AppConfig, AttachPoints, EmoteCommand, EmoteMask, PrimaryUser},
     util::{DespawnWith, JoinRelativeExt, SceneSpawnerPlus, TaskExt, TryPushChildrenEx},
 };
 use comms::{
@@ -84,7 +84,7 @@ use system_bridge::NativeUi;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{
-    animate::AvatarAnimPlayer,
+    animate::{AvatarAnimPlayer, LOWER_BODY_BONES, LOWER_BODY_MASK_GROUP},
     dynamic_nametag::DynamicNametagPlugin,
     foot_ik::FootIkPlugin,
     head_ik::HeadIkPlugin,
@@ -862,6 +862,7 @@ fn update_render_avatar(
                                     .0
                                     .expression_trigger_timestamp
                                     .unwrap_or_default(),
+                                mask: EmoteMask::FullBody,
                             })
                         }),
                     disable_dither: selection.disable_dither,
@@ -1145,6 +1146,8 @@ fn process_avatar(
         let mut armature_node = None;
         let mut target_armature_entities = HashMap::new();
 
+        // a fresh graph gets its lower-body mask group once the bone targets are known below
+        let mut new_graph = None;
         if previous_animator.get(root_player_entity.parent()).is_err() {
             let mut player = AnimationPlayer::default();
             let mut graph = AnimationGraph::new();
@@ -1161,11 +1164,13 @@ fn process_avatar(
                 clips.named.insert("Idle_Male".into(), (ix, 0.0));
                 transitions.play(&mut player, ix, Duration::from_secs_f32(0.2));
             }
+            let graph = graphs.add(graph);
+            new_graph = Some(graph.clone());
             commands.entity(root_player_entity.parent()).try_insert((
                 player,
                 transitions,
                 clips,
-                AnimationGraphHandle(graphs.add(graph)),
+                AnimationGraphHandle(graph),
             ));
         }
 
@@ -1445,7 +1450,7 @@ fn process_avatar(
             }
 
             // add AnimationTargets
-            for ent in target_armature_entities.values() {
+            for (bone, ent) in target_armature_entities.iter() {
                 let mut path = VecDeque::default();
                 let mut e = *ent;
                 loop {
@@ -1456,9 +1461,18 @@ fn process_avatar(
                     }
                     e = parent.parent();
                 }
+                let id = AnimationTargetId::from_names(path.into_iter());
+
+                // hips and legs stay with locomotion under an upper-body emote (`MaskedEmote`)
+                if LOWER_BODY_BONES.contains(&bone.as_str()) {
+                    if let Some(graph) = new_graph.as_ref().and_then(|graph| graphs.get_mut(graph))
+                    {
+                        graph.add_target_to_mask_group(id, LOWER_BODY_MASK_GROUP);
+                    }
+                }
 
                 commands.entity(*ent).try_insert(AnimationTarget {
-                    id: AnimationTargetId::from_names(path.into_iter()),
+                    id,
                     player: root_player_entity.parent(),
                 });
             }

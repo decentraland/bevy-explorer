@@ -11,7 +11,8 @@ use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
         AudioDecoderError, EmoteCommand, EmoteLifecycle, EmoteLifecycleEvent, EmoteLifecycleSource,
-        GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync, SceneDrivenAnimationRequest,
+        EmoteMask, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
+        SceneDrivenAnimationRequest,
     },
     util::ModifyComponentExt,
 };
@@ -156,6 +157,8 @@ pub enum PlayerMessage {
         /// On a stop: the server's one-shot timer expired (a natural finish) rather than the
         /// player cancelling.
         completed: bool,
+        /// Which bones the emote drives. A stop has none (the wire doesn't say which emote).
+        mask: EmoteMask,
     },
     AudioStreamAvailable {
         transport: Entity,
@@ -186,12 +189,14 @@ impl std::fmt::Debug for PlayerMessage {
                 incremental_id,
                 stopping,
                 completed,
+                mask,
             } => f
                 .debug_struct("Emote")
                 .field("urn", urn)
                 .field("incremental_id", incremental_id)
                 .field("stopping", stopping)
                 .field("completed", completed)
+                .field("mask", mask)
                 .finish(),
             Self::AudioStreamAvailable { transport } => f
                 .debug_tuple("AudioStreamAvailable")
@@ -921,8 +926,9 @@ pub fn process_transport_updates(
                             incremental_id,
                             stopping,
                             completed,
+                            mask,
                         } => {
-                            debug!("emote: {urn} (stopping: {stopping})");
+                            debug!("emote: {urn} (stopping: {stopping}, mask: {mask:?})");
                             // The wire is the only source of a foreign player's emote lifecycle
                             // for scenes: raised here in wire order, on the client and the headless
                             // server alike, so both report the same sequence.
@@ -939,6 +945,7 @@ pub fn process_transport_updates(
                                         EmoteLifecycle::Interrupted
                                     },
                                     source: EmoteLifecycleSource::Wire,
+                                    mask,
                                 });
                             } else if !acceptable_emote_urn(&urn) {
                                 debug!(
@@ -950,11 +957,13 @@ pub fn process_transport_updates(
                                     timestamp: incremental_id as i64,
                                     urn: urn.clone(),
                                     r#loop: false,
+                                    mask,
                                 });
                                 emote_events.write(EmoteLifecycleEvent {
                                     avatar: entity,
                                     event: EmoteLifecycle::Started { urn, r#loop: false },
                                     source: EmoteLifecycleSource::Wire,
+                                    mask,
                                 });
                             }
                         }

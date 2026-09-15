@@ -23,7 +23,7 @@ use bevy_dui::{DuiRegistry, DuiTemplate};
 use collectibles::{urn::CollectibleUrn, Emote};
 use common::{
     sets::SetupSets,
-    structs::{AvatarDynamicState, EmoteCommand},
+    structs::{AvatarDynamicState, EmoteCommand, EmoteMask},
     util::TryPushChildrenEx,
 };
 use platform::default_camera_components;
@@ -144,6 +144,7 @@ impl PhotoBooth<'_, '_> {
                 urn: emote.to_string(),
                 r#loop: false,
                 timestamp: self.frame.0 as i64,
+                mask: EmoteMask::FullBody,
             });
     }
 }

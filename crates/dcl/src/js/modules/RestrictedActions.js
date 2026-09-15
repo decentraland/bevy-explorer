@@ -23,13 +23,19 @@ module.exports.teleportTo = async function (body) {
     return {} 
 }
 
-module.exports.triggerEmote = async function (body) { 
-    Deno.core.ops.op_emote(body.predefinedEmote)
-    return {} 
+// `mask` is the sdk's `AvatarMask`, whose only value `AM_UPPER_BODY` is 0: presence, not value, is
+// the signal.
+function upperBody(body) {
+    return body.mask !== undefined && body.mask !== null
+}
+
+module.exports.triggerEmote = async function (body) {
+    Deno.core.ops.op_emote(body.predefinedEmote, upperBody(body))
+    return {}
 }
 
 module.exports.triggerSceneEmote = async function (body) {
-    Deno.core.ops.op_scene_emote(body.src, body.loop)
+    Deno.core.ops.op_scene_emote(body.src, body.loop, upperBody(body))
     return { success: true }
 }
 
