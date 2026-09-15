@@ -93,7 +93,9 @@ use bevy::{
     platform::collections::HashSet,
     prelude::*,
     render::view::VisibilitySystems,
-    text::{ComputedTextBlock, CosmicBuffer, CosmicFontSystem, LineBreak, TextPipeline},
+    text::{
+        ComputedTextBlock, CosmicBuffer, CosmicFontSystem, LineBreak, LineHeight, TextPipeline,
+    },
     ui::{update::update_clipping_system, widget::text_system, UiSystem},
 };
 use common::{
@@ -548,6 +550,11 @@ fn update_text_shapes(
             continue;
         }
 
+        // room for ink outside the line box (deep descenders, swashes), which the
+        // node would otherwise clip
+        let ink_padding =
+            Val::Px(scene_fonts.metrics(&family).padding * font_size * FONT_SIZE_SCALE);
+
         let ui_node = commands
             .spawn((
                 Node {
@@ -577,7 +584,11 @@ fn update_text_shapes(
                     c.spacer();
                 }
 
-                c.spawn(Node::default()).with_child((
+                c.spawn(Node {
+                    padding: UiRect::vertical(ink_padding),
+                    ..Default::default()
+                })
+                .with_child((
                     text,
                     Node {
                         align_self: match halign_flex {
@@ -863,6 +874,8 @@ fn build_text_spans(
     // (the realistic cases). A lone LF is left as a normal line break.
     let text = text.replace("\\n", "\n").replace('\r', "");
 
+    let line_height = LineHeight::RelativeToFont(fonts.metrics(family).line_height);
+
     // split by <b>s and <i>s
     let mut b_count = 0usize;
     let mut i_count = 0usize;
@@ -970,6 +983,7 @@ fn build_text_spans(
         let font = TextFont {
             font: fonts.face(family, weight),
             font_size: font_size * FONT_SIZE_SCALE,
+            line_height,
             ..Default::default()
         };
 

@@ -10084,6 +10084,7 @@ dependencies = [
  "spin_sleep",
  "system_bridge",
  "tokio",
+ "ttf-parser 0.21.1",
  "ui_core",
  "unicode-segmentation",
  "urlencoding",

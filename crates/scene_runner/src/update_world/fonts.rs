@@ -12,6 +12,10 @@
 //! Text is handed reserved handles which are filled once the source arrives, so a text
 //! entity never has to be re-evaluated when a font lands or fails: bevy's text systems wait
 //! for the handle to load, and on failure the handle is filled with the fallback font's data.
+//!
+//! Each family also reports [`FamilyMetrics`]: a default line height derived from the font's
+//! own vertical metrics, and the vertical padding a text block needs so glyph ink reaching
+//! beyond the line box (deep descenders, tall swashes) is not clipped.
 
 use std::{path::PathBuf, time::Duration};
 
@@ -64,12 +68,98 @@ pub struct FamilyKey {
 #[derive(Resource, Default)]
 pub struct SceneFonts {
     families: HashMap<FamilyKey, SceneFontFamily>,
+    builtin_metrics: HashMap<FontName, FamilyMetrics>,
+    /// Multiplier from a font's own line metric to its default line height, chosen so the
+    /// built-in fonts land on [`REFERENCE_LINE_HEIGHT`].
+    line_height_scale: Option<f32>,
 }
 
 struct SceneFontFamily {
     fallback: FontName,
     stage: Stage,
     slots: HashMap<WeightName, Slot>,
+    /// Computed once every slot has data.
+    metrics: Option<FamilyMetrics>,
+}
+
+/// Line height (in ems) of the built-in fonts, calibrated against the reference renderer.
+const REFERENCE_LINE_HEIGHT: f32 = 1.2;
+
+/// Vertical metrics of a family, in ems.
+#[derive(Clone, Copy, Debug)]
+pub struct FamilyMetrics {
+    /// Default line height: the font's ascent + descent + line gap, scaled so the built-in
+    /// fonts land on [`REFERENCE_LINE_HEIGHT`], and floored there.
+    pub line_height: f32,
+    /// Vertical padding a text block needs above and below so ink outside the line box is
+    /// not clipped.
+    pub padding: f32,
+}
+
+/// Vertical metrics of one face, in ems.
+#[derive(Clone, Copy)]
+struct FaceMetrics {
+    ascent: f32,
+    descent: f32,
+    line_gap: f32,
+    /// Ink bounds (the os/2 "win" metrics), never less than the ascent / descent.
+    ink_ascent: f32,
+    ink_descent: f32,
+}
+
+impl FaceMetrics {
+    /// Uses the same ascent / descent tables as cosmic-text so the padding matches how the
+    /// glyphs are actually placed within the line box.
+    fn parse(font: &Font) -> Option<Self> {
+        let face = ttf_parser::Face::parse(&font.data, 0).ok()?;
+        let em = face.units_per_em() as f32;
+        let ascent = face.ascender() as f32 / em;
+        let descent = -face.descender() as f32 / em;
+        let (ink_ascent, ink_descent) = face
+            .tables()
+            .os2
+            .map(|os2| {
+                (
+                    os2.windows_ascender() as f32 / em,
+                    os2.windows_descender() as f32 / em,
+                )
+            })
+            .unwrap_or((ascent, descent));
+        Some(Self {
+            ascent,
+            descent,
+            line_gap: face.line_gap() as f32 / em,
+            ink_ascent: ink_ascent.max(ascent),
+            ink_descent: ink_descent.max(descent),
+        })
+    }
+
+    fn line_metric(&self) -> f32 {
+        self.ascent + self.descent + self.line_gap
+    }
+}
+
+impl FamilyMetrics {
+    fn from_faces(faces: &[FaceMetrics], line_height_scale: f32) -> Self {
+        let metric = faces
+            .iter()
+            .map(FaceMetrics::line_metric)
+            .fold(0.0, f32::max);
+        let line_height = (metric * line_height_scale).max(REFERENCE_LINE_HEIGHT);
+        // cosmic-text centres a line's ascent + descent within the line box, so the ink
+        // overflow is whatever the win bounds add beyond that, less the box's slack
+        let padding = faces
+            .iter()
+            .map(|face| {
+                let slack = (line_height - (face.ascent + face.descent)) / 2.0;
+                (face.ink_ascent - face.ascent - slack).max(face.ink_descent - face.descent - slack)
+            })
+            .fold(0.0, f32::max);
+        Self {
+            line_height,
+            padding,
+        }
+    }
 }
 
 enum Stage {
@@ -152,6 +242,74 @@ impl SceneFontServer<'_, '_> {
             .all(|slot| self.assets.contains(slot.handle.id()))
     }
 
+    /// Metrics of a family; the fallback family's until every slot has data.
+    pub fn metrics(&mut self, family: &TextFontFamily) -> FamilyMetrics {
+        let (key, fallback) = match family {
+            TextFontFamily::Builtin(name) => return self.builtin_metrics(*name),
+            TextFontFamily::Scene { key, fallback, .. } => (key, *fallback),
+        };
+        if let Some(metrics) = self.families.families.get(key).and_then(|f| f.metrics) {
+            return metrics;
+        }
+        if !self.family_ready(family) {
+            return self.builtin_metrics(fallback);
+        }
+        let line_height_scale = self.line_height_scale();
+        let Some(family) = self.families.families.get_mut(key) else {
+            return self.builtin_metrics(fallback);
+        };
+        let faces = family
+            .slots
+            .values()
+            .filter_map(|slot| self.assets.get(slot.handle.id()))
+            .filter_map(FaceMetrics::parse)
+            .collect::<Vec<_>>();
+        let metrics = FamilyMetrics::from_faces(&faces, line_height_scale);
+        family.metrics = Some(metrics);
+        metrics
+    }
+
+    fn builtin_faces(&self, name: FontName) -> Vec<FaceMetrics> {
+        [
+            WeightName::Regular,
+            WeightName::Bold,
+            WeightName::Italic,
+            WeightName::BoldItalic,
+        ]
+        .into_iter()
+        .filter_map(|weight| self.assets.get(user_font(name, weight).id()))
+        .filter_map(FaceMetrics::parse)
+        .collect()
+    }
+
+    fn line_height_scale(&mut self) -> f32 {
+        if let Some(scale) = self.families.line_height_scale {
+            return scale;
+        }
+        let metric = self
+            .builtin_faces(FontName::Sans)
+            .iter()
+            .map(FaceMetrics::line_metric)
+            .fold(0.0, f32::max);
+        let scale = if metric > 0.0 {
+            REFERENCE_LINE_HEIGHT / metric
+        } else {
+            1.0
+        };
+        self.families.line_height_scale = Some(scale);
+        scale
+    }
+
+    fn builtin_metrics(&mut self, name: FontName) -> FamilyMetrics {
+        if let Some(metrics) = self.families.builtin_metrics.get(&name) {
+            return *metrics;
+        }
+        let line_height_scale = self.line_height_scale();
+        let metrics = FamilyMetrics::from_faces(&self.builtin_faces(name), line_height_scale);
+        self.families.builtin_metrics.insert(name, metrics);
+        metrics
+    }
+
     pub fn face(&mut self, family: &TextFontFamily, weight: WeightName) -> Handle<Font> {
         let (key, scene_hash, fallback) = match family {
             TextFontFamily::Builtin(name) => return user_font(*name, weight),
@@ -176,6 +334,7 @@ impl SceneFontServer<'_, '_> {
                     fallback,
                     stage,
                     slots: HashMap::default(),
+                    metrics: None,
                 },
             );
         }
