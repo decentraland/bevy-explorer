@@ -7,13 +7,14 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bevy_console::ConsoleCommand;
-use common::util::JoinRelativeExt;
 use common::{structs::DebugInfo, util::TaskExt};
 use console::DoAddConsoleCommand;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 
 #[cfg(target_arch = "wasm32")]
 use crate::CHANNELS;
+#[cfg(not(target_arch = "wasm32"))]
+use common::util::JoinRelativeExt;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::mpsc::unbounded_channel;
 
