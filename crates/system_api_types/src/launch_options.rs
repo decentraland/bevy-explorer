@@ -96,6 +96,12 @@ pub struct ClientOptions {
     /// Embedded in a scene editor (creator hub). Set by editor front-ends.
     #[arg(long, help_heading = HOST)]
     pub editor: bool,
+
+    /// A `decentraland://` link as the scheme handler or the launcher passes it: `realm`,
+    /// `position` and `dclenv` fill the matching launch options (main.rs)
+    #[arg(hide = true, value_name = "decentraland://…")]
+    #[serde(skip)]
+    pub deep_link: Option<String>,
 }
 
 /// The web page's `engine_run` options: both structs as ONE flat object, which is also what the

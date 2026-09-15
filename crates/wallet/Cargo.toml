@@ -24,3 +24,4 @@ rand = { workspace = true }
 http = { workspace = true }
 platform = { workspace = true }
 web-time = { workspace = true }
+uuid = { workspace = true }

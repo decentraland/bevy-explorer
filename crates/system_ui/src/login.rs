@@ -177,32 +177,8 @@ fn login(
     // handle task results
     if let Some(mut t) = req_code.take() {
         match t.try_recv() {
-            Ok(Ok(code)) => {
-                if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
-                    commands.despawn();
-                    *dialog = None;
-                }
-
-                let components = commands
-                    .spawn(ZOrder::Login.default())
-                    .apply_template(
-                        &dui,
-                        "cancel-login",
-                        DuiProps::new()
-                            .with_prop(
-                                "buttons",
-                                vec![DuiButton::new_enabled(
-                                    "Cancel",
-                                    |mut e: EventWriter<LoginType>| {
-                                        e.write(LoginType::Cancel);
-                                    },
-                                )],
-                            )
-                            .with_prop("code", format!("{}", code.unwrap_or(-1))),
-                    )
-                    .unwrap();
-
-                *dialog = Some(components.root);
+            Ok(Ok(_)) => {
+                // no code to show: the waiting dialog spawned on click stays up
             }
             Ok(Err(e)) => {
                 toaster.add_toast("login profile", format!("Login failed: {e}"));
@@ -276,17 +252,15 @@ fn login(
                     .apply_template(
                         &dui,
                         "cancel-login",
-                        DuiProps::new()
-                            .with_prop(
-                                "buttons",
-                                vec![DuiButton::new_enabled(
-                                    "Cancel",
-                                    |mut e: EventWriter<LoginType>| {
-                                        e.write(LoginType::Cancel);
-                                    },
-                                )],
-                            )
-                            .with_prop("code", "...".to_string()),
+                        DuiProps::new().with_prop(
+                            "buttons",
+                            vec![DuiButton::new_enabled(
+                                "Cancel",
+                                |mut e: EventWriter<LoginType>| {
+                                    e.write(LoginType::Cancel);
+                                },
+                            )],
+                        ),
                     )
                     .unwrap();
 
@@ -394,56 +368,9 @@ fn get_previous_login(config: &AppConfig) -> Option<PreviousLogin> {
 /// user signed in (wallet/MetaMask, social, OTP, magic). The web page just reads it from
 /// localStorage and forwards it — there is nothing login-method-specific here.
 fn parse_auth_identity(payload: &str) -> Result<(Address, LocalWallet, Vec<ChainLink>), String> {
-    use base64::Engine as _;
-
-    #[derive(serde::Deserialize)]
-    struct Ephemeral {
-        #[serde(rename = "privateKey")]
-        private_key: String,
-    }
-    #[derive(serde::Deserialize)]
-    struct AuthIdentity {
-        #[serde(rename = "ephemeralIdentity")]
-        ephemeral_identity: Ephemeral,
-        #[serde(rename = "authChain")]
-        auth_chain: Vec<ChainLink>,
-    }
-
-    let json = base64::engine::general_purpose::STANDARD
-        .decode(payload.trim())
-        .map_err(|e| format!("bad identity base64: {e}"))?;
-    let identity: AuthIdentity =
-        serde_json::from_slice(&json).map_err(|e| format!("bad identity json: {e}"))?;
-
-    // Root wallet address = the SIGNER link's payload.
-    let signer = identity
-        .auth_chain
-        .iter()
-        .find(|l| l.ty == "SIGNER")
-        .ok_or_else(|| "identity missing SIGNER link".to_string())?;
-    let root_address =
-        Address::from_str(signer.payload.trim()).map_err(|e| format!("bad root address: {e}"))?;
-
-    // Ephemeral signer from the 0x-prefixed private key.
-    let key_hex = identity
-        .ephemeral_identity
-        .private_key
-        .trim()
-        .trim_start_matches("0x");
-    let local_wallet =
-        LocalWallet::from_str(key_hex).map_err(|e| format!("bad ephemeral key: {e}"))?;
-
-    // Delegate chain = everything except the SIGNER (the ECDSA_EPHEMERAL link the engine stores).
-    let auth: Vec<ChainLink> = identity
-        .auth_chain
-        .into_iter()
-        .filter(|l| l.ty != "SIGNER")
-        .collect();
-    if auth.is_empty() {
-        return Err("identity missing ephemeral delegate link".to_string());
-    }
-
-    Ok((root_address, local_wallet, auth))
+    wallet::browser_auth::parse_auth_identity(payload)
+        .and_then(wallet::browser_auth::auth_identity_parts)
+        .map_err(|e| e.to_string())
 }
 
 /// Fetch the profile, retrying on failure. Ok(None) means the user has no profile (or
@@ -564,7 +491,8 @@ fn process_login_bridge(
                         Ok(res) => res,
                     };
 
-                    code_sender.send(Ok(req.code));
+                    // the deep-link flow has no verification code
+                    code_sender.send(Ok(None));
 
                     let (root_address, local_wallet, auth, _) =
                         match finish_remote_ephemeral_request(req).await {
