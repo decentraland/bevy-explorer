@@ -1212,6 +1212,9 @@ struct PlayParams<'w, 's> {
     sounds: Res<'w, Assets<bevy_kira_audio::AudioSource>>,
     emitters: Query<'w, 's, &'static mut AudioEmitter>,
     prop_details: Query<'w, 's, (Option<&'static Name>, &'static Transform, &'static ChildOf)>,
+    ipfas: IpfsAssetServer<'w, 's>,
+    cached_gltf_handles: Local<'s, HashSet<Handle<Gltf>>>,
+    time: Res<'w, Time>,
 }
 
 /// Resolve what a slot plays to its loaded avatar clip and duration, folding the collectible's
@@ -1418,6 +1421,286 @@ fn fire_slot_sound(
     );
 }
 
+/// How a slot's clip goes onto the avatar's player.
+enum Slot<'a> {
+    /// The locomotion main clip, cross-faded in through the `AnimationTransitions`.
+    FullBody { transition_seconds: f32 },
+    /// The upper-body overlay: the clip is added with the lower body masked out and run outside the
+    /// transitions at the weight for its share (see `masked_weight`), replacing any other overlay
+    /// clip still fading out.
+    UpperBody {
+        /// the overlay's graph nodes, by urn
+        clips: &'a mut HashMap<String, AnimationNodeIndex>,
+        /// the overlay clip running and its share
+        playing: &'a mut Option<(AnimationNodeIndex, f32)>,
+    },
+}
+
+/// Why a slot didn't play this frame.
+enum Hold {
+    /// Clip, prop or sound still loading.
+    Loading,
+    /// The prop was spawned this frame; play waits for it.
+    PropSpawned,
+    /// The emote can't be played.
+    Failed,
+    /// No animation player.
+    NoPlayer,
+}
+
+/// What a slot played this frame.
+struct Played {
+    clip_duration: f32,
+    /// seconds into the emote, completed loops included
+    elapsed: f32,
+    /// the prop was set up this frame
+    prop_fresh: bool,
+    /// the emote is known to have no prop
+    no_prop: bool,
+}
+
+/// Play a slot for one frame: its clip on the avatar's player (started unless it's the one already
+/// running, and on a `restart`), with its loop, `speed` and `seek`, the prop clip alongside, and
+/// the sound due. `playback` gets the clip duration and end.
+#[allow(clippy::too_many_arguments)]
+fn play_slot(
+    commands: &mut Commands,
+    params: &mut PlayParams,
+    emote_loader: &mut CollectibleManager<Emote>,
+    gltfs: &mut Assets<Gltf>,
+    players: &mut PlayerQuery,
+    extras: &mut HashMap<Entity, SpawnedExtras>,
+    avatar: Entity,
+    player_ent: Entity,
+    bodyshape: &str,
+    playback: &mut EmotePlayback,
+    mut slot: Slot,
+    speed: f32,
+    seek: &mut Option<f32>,
+    default_mark: Option<f32>,
+) -> Result<Played, Hold> {
+    let (clip, clip_duration) = resolve_playback(
+        playback,
+        bodyshape,
+        emote_loader,
+        gltfs,
+        &params.ipfas,
+        &mut params.cached_gltf_handles,
+        &params.anim_clips,
+    )
+    .map_err(|outcome| match outcome {
+        Outcome::Failed => Hold::Failed,
+        _ => Hold::Loading,
+    })?;
+    let emote = emote_loader
+        .get_representation(&playback.urn, bodyshape)
+        .map_err(|_| Hold::Loading)?;
+
+    // extract props and prop anim
+    let (prop_fresh, prop_player_and_clip) = match ensure_prop(
+        commands,
+        params,
+        gltfs,
+        players,
+        emote,
+        avatar,
+        &playback.urn,
+        extras,
+    ) {
+        PropState::Spawned => {
+            // Carry any seek requested this frame across the deferred play (below), so a
+            // one-shot scene `playback_time` isn't lost while the prop loads. Stash the
+            // intended clip-start time so the deferred play resumes advanced by the load
+            // duration rather than at the (now-stale) requested value.
+            if let Some(extras) = extras.get_mut(&avatar) {
+                extras.deferred_start =
+                    seek.map(|seek| params.time.elapsed_secs_f64() - seek as f64);
+            }
+            return Err(Hold::PropSpawned);
+        }
+        PropState::Loading => return Err(Hold::Loading),
+        PropState::Ready { fresh, players } => (fresh, players),
+        PropState::None => (false, None),
+    };
+    // `Err(Loading)` is left pending: the caller keeps showing the old prop until we know.
+    let no_prop = matches!(emote.prop_scene(gltfs), Ok(None));
+
+    let Ok((mut player, transitions, clips, graph)) = players.get_mut(player_ent) else {
+        return Err(Hold::NoPlayer);
+    };
+    let graph = graph.and_then(|graph| params.graphs.get_mut(graph));
+    let (clip_ix, restart) = match &mut slot {
+        Slot::FullBody { .. } => {
+            let mut clips = clips.unwrap();
+            // look up by &str first — the entry api would allocate a String per call
+            let clip_ix = match clips.named.get(playback.urn.as_str()) {
+                Some((ix, _)) => *ix,
+                None => {
+                    debug!("adding clip");
+                    let ix = match graph {
+                        Some(graph) => graph.add_clip(clip, 1.0, graph.root),
+                        None => AnimationNodeIndex::new(u32::MAX as usize),
+                    };
+                    clips.named.insert(playback.urn.to_string(), (ix, 0.0));
+                    ix
+                }
+            };
+            let running = match &transitions {
+                Some(transitions) => transitions.get_main_animation() == Some(clip_ix),
+                None => player.is_playing_animation(clip_ix),
+            };
+            (clip_ix, playback.restart || !running)
+        }
+        Slot::UpperBody { clips, .. } => {
+            let Some(graph) = graph else {
+                return Err(Hold::NoPlayer);
+            };
+            let clip_ix = *clips.entry(playback.urn.to_string()).or_insert_with(|| {
+                debug!("adding masked clip {}", playback.urn);
+                graph.add_clip_with_mask(clip, LOWER_BODY_MASK, 1.0, graph.root)
+            });
+            (
+                clip_ix,
+                playback.restart || !player.is_playing_animation(clip_ix),
+            )
+        }
+    };
+
+    let sound = slot_sound(
+        emote,
+        params,
+        extras.get(&avatar),
+        restart,
+        default_mark,
+        clip_duration,
+        playback.repeat,
+    )
+    .map_err(|_| Hold::Loading)?;
+
+    // Prefer a seek requested this frame; otherwise apply one stashed when the prop was
+    // spawned (deferred a frame), advanced by the load duration via the stashed start time,
+    // so the avatar + prop pick up in phase regardless of load time.
+    let seek = seek
+        .take()
+        .or_else(|| {
+            extras
+                .get_mut(&avatar)
+                .and_then(|extras| extras.deferred_start.take())
+                .map(|start| (params.time.elapsed_secs_f64() - start) as f32)
+        })
+        .map(|seek| seek.clamp(0.0, clip_duration));
+
+    let active_animation = if restart {
+        debug!("starting clip {:?}", clip_ix);
+        let active_animation = match slot {
+            Slot::FullBody { transition_seconds } => match transitions {
+                Some(mut transitions) => transitions.play(
+                    &mut player,
+                    clip_ix,
+                    Duration::from_secs_f32(transition_seconds),
+                ),
+                None => player.start(clip_ix),
+            },
+            Slot::UpperBody { playing, .. } => {
+                // a different clip still fading out is cut; the new one fades in over it
+                let share = match playing.take() {
+                    Some((running, share)) if running == clip_ix => share,
+                    Some((running, _)) => {
+                        player.stop(running);
+                        0.0
+                    }
+                    None => 0.0,
+                };
+                *playing = Some((clip_ix, share));
+                player.start(clip_ix).set_weight(masked_weight(share))
+            }
+        };
+        active_animation.seek_to(0.0);
+        active_animation
+    } else {
+        let Some(active_animation) = player.animation_mut(clip_ix) else {
+            return Err(Hold::NoPlayer);
+        };
+        active_animation
+    };
+
+    if playback.repeat {
+        active_animation.repeat();
+    } else {
+        active_animation.set_repeat(RepeatAnimation::Never);
+    }
+
+    // println!("active weight {}", active_animation.weight());
+    active_animation.set_speed(speed);
+
+    if let Some(seek) = seek {
+        // `replay()` in bevy_animation resets `seek_time` to 0.0
+        // (among other state), so it must run BEFORE `seek_to`
+        // or the seek is clobbered. We still call it so a non-
+        // looping clip that has completed can be restarted by a
+        // new seek.
+        active_animation.replay();
+        active_animation.seek_to(seek);
+    }
+
+    // nasty hack for falling animation
+    if playback.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
+        && active_animation.seek_time() >= 0.4
+        && playback.repeat
+    {
+        active_animation.set_speed(speed * 0.125);
+    }
+    if playback.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
+        && active_animation.seek_time() >= 0.5833
+        && playback.repeat
+    {
+        active_animation.seek_to(0.5833);
+        active_animation.set_speed(0.0);
+    }
+
+    playback.finished |= active_animation.is_finished();
+    let elapsed =
+        active_animation.seek_time() + active_animation.completions() as f32 * clip_duration;
+
+    // reset audio mark if we've rewound (jump hacks again)
+    if let Some(mark) = extras
+        .get_mut(&avatar)
+        .and_then(|extras| extras.audio.as_mut())
+        .map(|a| &mut a.1)
+    {
+        if elapsed < *mark {
+            *mark = elapsed;
+        }
+    }
+
+    if let Some(prop) = prop_player_and_clip {
+        play_prop_clip(players, prop, restart, playback.repeat, speed, seek);
+    }
+
+    // Stamped for every avatar: `animate` reads it back as "this emote resolved, so `repeat`
+    // now includes the collectible's `default_repeat`" before reporting the emote to scenes.
+    playback.duration_ms = Some((clip_duration * 1000.0) as u32);
+    playback.restart = false;
+
+    fire_slot_sound(
+        commands,
+        params,
+        extras,
+        avatar,
+        &playback.urn,
+        player_ent,
+        sound,
+        elapsed,
+    );
+
+    Ok(Played {
+        clip_duration,
+        elapsed,
+        prop_fresh,
+        no_prop,
+    })
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn play_current_emote(
     mut commands: Commands,
@@ -1432,9 +1715,6 @@ fn play_current_emote(
     mut emote_loader: CollectibleManager<Emote>,
     mut gltfs: ResMut<Assets<Gltf>>,
     mut players: PlayerQuery,
-    mut playing: Local<HashMap<Entity, EmoteUrn>>,
-    ipfas: IpfsAssetServer,
-    mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
     // spawned_extras: prop/audio for the current clip. retiring_extras: prop kept alive
     // across a clip change until its replacement is visible (or the new clip has no
     // prop), so a prop carried by both clips (e.g. an embedded glider) doesn't blink out
@@ -1445,13 +1725,11 @@ fn play_current_emote(
         Local<HashMap<Entity, (Entity, InstanceId)>>,
     ),
     mut params: PlayParams,
-    time: Res<Time>,
     (mut feedback, mut frozen_feedback): (
         ResMut<SceneDrivenAnimationFeedback>,
         Local<Option<SceneDrivenAnimationFeedbackState>>,
     ),
 ) {
-    let mut prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
     for (entity, mut active_emote, target_entity, children, maybe_primary) in q.iter_mut() {
@@ -1491,22 +1769,32 @@ fn play_current_emote(
 
         let ent = target_entity.0;
         let bodyshape = &definition.body_shape;
+        let active_emote = &mut *active_emote;
 
-        // Resolve the URN. On permanent failure, if a fallback is present (populated by
-        // `animate` for scene-driven anims with the velocity-based choice), swap to it
-        // and retry. The swap persists so downstream `SceneDrivenAnimationFeedback`
-        // publishing reports the fallback source, not the failed scene-driven one.
-        let resolved = loop {
-            match resolve_playback(
-                &mut active_emote.playback,
-                bodyshape,
+        // Play. On permanent failure, if a fallback is present (populated by `animate` for
+        // scene-driven anims with the velocity-based choice), swap to it and retry. The swap
+        // persists so downstream `SceneDrivenAnimationFeedback` publishing reports the
+        // fallback source, not the failed scene-driven one.
+        let played = loop {
+            match play_slot(
+                &mut commands,
+                &mut params,
                 &mut emote_loader,
                 &mut gltfs,
-                &ipfas,
-                &mut cached_gltf_handles,
-                &params.anim_clips,
+                &mut players,
+                &mut spawned_extras,
+                entity,
+                ent,
+                bodyshape,
+                &mut active_emote.playback,
+                Slot::FullBody {
+                    transition_seconds: active_emote.transition_seconds,
+                },
+                active_emote.speed,
+                &mut active_emote.pending_seek,
+                active_emote.initial_audio_mark,
             ) {
-                Err(Outcome::Failed) => {
+                Err(Hold::Failed) => {
                     if let Some(fb) = active_emote.fallback.take() {
                         *active_emote = *fb;
                         continue;
@@ -1514,63 +1802,24 @@ fn play_current_emote(
                     active_emote.finished = true;
                     break None;
                 }
+                Err(Hold::NoPlayer) => {
+                    debug!("no player");
+                    active_emote.finished = true;
+                    break None;
+                }
                 Err(_) => break None,
-                Ok(resolved) => break Some(resolved),
+                Ok(played) => break Some(played),
             }
         };
-        let Some((clip, clip_duration)) = resolved else {
-            continue;
-        };
-        let Ok(emote) = emote_loader.get_representation(&active_emote.urn, bodyshape) else {
+        let Some(played) = played else {
             continue;
         };
 
-        // extract props and prop anim
-        let prop_player_and_clip = match ensure_prop(
-            &mut commands,
-            &mut params,
-            &gltfs,
-            &players,
-            emote,
-            entity,
-            &active_emote.urn,
-            &mut spawned_extras,
-        ) {
-            PropState::Spawned => {
-                // Carry any seek requested this frame across the deferred play (below), so
-                // a one-shot scene `playback_time` isn't lost while the prop loads. Stash
-                // the intended clip-start time so the deferred play resumes advanced by
-                // the load duration rather than at the (now-stale) requested value.
-                if let Some(extras) = spawned_extras.get_mut(&entity) {
-                    extras.deferred_start = active_emote
-                        .pending_seek
-                        .map(|seek| time.elapsed_secs_f64() - seek as f64);
-                }
-                continue;
-            }
-            PropState::Loading => continue,
-            PropState::Ready { fresh, players } => {
-                if fresh {
-                    // Replacement is up — and posed this same frame thanks to the
-                    // thread_animation_graphs ordering fix in the engine — so drop the
-                    // prop we kept alive across the switch. The overlap covers the new
-                    // prop's load time; the engine fix covers the would-be bind-pose frame.
-                    if let Some((old_wrapper, old_scene)) = retiring_extras.remove(&entity) {
-                        params.scene_spawner.despawn_instance(old_scene);
-                        if let Ok(mut commands) = commands.get_entity(old_wrapper) {
-                            commands.despawn();
-                        }
-                    }
-                }
-                players
-            }
-            PropState::None => None,
-        };
-
-        // New clip definitively has no prop — drop any prop kept alive across the switch
-        // (e.g. glide ended). `Err(Loading)` is left pending so we keep showing the old
-        // prop until we know.
-        if matches!(emote.prop_scene(&gltfs), Ok(None)) {
+        // Replacement is up (and posed this same frame thanks to the thread_animation_graphs
+        // ordering fix in the engine), or the new clip definitively has no prop (e.g. glide
+        // ended): drop the prop we kept alive across the switch. The overlap covers the new
+        // prop's load time; the engine fix covers the would-be bind-pose frame.
+        if played.prop_fresh || played.no_prop {
             if let Some((old_wrapper, old_scene)) = retiring_extras.remove(&entity) {
                 params.scene_spawner.despawn_instance(old_scene);
                 if let Ok(mut commands) = commands.get_entity(old_wrapper) {
@@ -1579,153 +1828,12 @@ fn play_current_emote(
             }
         }
 
-        let Ok(sound) = slot_sound(
-            emote,
-            &params,
-            spawned_extras.get(&entity),
-            active_emote.restart,
-            active_emote.initial_audio_mark,
-            clip_duration,
-            active_emote.repeat,
-        ) else {
-            continue;
-        };
-
-        let urn_was_playing = prior_playing.get(&ent) == Some(&active_emote.urn);
-        let play = |transitions: Option<Mut<AnimationTransitions>>,
-                    player: &mut AnimationPlayer,
-                    clip_ix: AnimationNodeIndex,
-                    active_emote: &ActiveEmote,
-                    pending_seek: Option<f32>|
-         -> f32 {
-            let active_animation = if !urn_was_playing || active_emote.restart {
-                let active_animation = match transitions {
-                    Some(mut t) => t.play(
-                        player,
-                        clip_ix,
-                        Duration::from_secs_f32(active_emote.transition_seconds),
-                    ),
-                    None => player.start(clip_ix),
-                };
-                debug!("starting clip {:?}", clip_ix);
-                active_animation.seek_to(0.0);
-                Some(active_animation)
-            } else {
-                player
-                    .playing_animations_mut()
-                    .find(|(nix, _)| **nix == clip_ix)
-                    .map(|(_, anim)| anim)
-            };
-
-            if let Some(active_animation) = active_animation {
-                if active_emote.repeat {
-                    active_animation.repeat();
-                } else {
-                    active_animation.set_repeat(RepeatAnimation::Never);
-                }
-
-                // println!("active weight {}", active_animation.weight());
-                active_animation.set_speed(active_emote.speed);
-
-                if let Some(seek) = pending_seek {
-                    // `replay()` in bevy_animation resets `seek_time` to 0.0
-                    // (among other state), so it must run BEFORE `seek_to`
-                    // or the seek is clobbered. We still call it so a non-
-                    // looping clip that has completed can be restarted by a
-                    // new seek.
-                    active_animation.replay();
-                    active_animation.seek_to(seek.clamp(0.0, clip_duration));
-                }
-
-                // nasty hack for falling animation
-                if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
-                    && active_animation.seek_time() >= 0.4
-                    && active_emote.repeat
-                {
-                    active_animation.set_speed(active_emote.speed * 0.125);
-                }
-                if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
-                    && active_animation.seek_time() >= 0.5833
-                    && active_emote.repeat
-                {
-                    active_animation.seek_to(0.5833);
-                    active_animation.set_speed(0.0);
-                }
-
-                active_animation.seek_time() + active_animation.completions() as f32 * clip_duration
-            } else {
-                0.0
-            }
-        };
-
-        let Ok((mut player, transitions, clips, graph)) = players.get_mut(ent) else {
-            debug!("no player");
-            active_emote.finished = true;
-            continue;
-        };
-
-        let mut clips = clips.unwrap();
-        // look up by &str first — the entry api would allocate a String per call
-        let clip_ix = match clips.named.get(active_emote.urn.as_str()) {
-            Some((ix, _)) => *ix,
-            None => {
-                debug!("adding clip");
-                let ix = match graph.and_then(|graph| params.graphs.get_mut(graph)) {
-                    Some(graph) => graph.add_clip(clip, 1.0, graph.root),
-                    None => AnimationNodeIndex::new(u32::MAX as usize),
-                };
-                clips.named.insert(active_emote.urn.to_string(), (ix, 0.0));
-                ix
-            }
-        };
-
-        // Prefer a seek requested this frame; otherwise apply one stashed when the prop
-        // was spawned (deferred a frame), advanced by the load duration via the stashed
-        // start time, so the avatar + prop pick up in phase regardless of load time.
-        let pending_seek = active_emote.pending_seek.take().or_else(|| {
-            spawned_extras
-                .get_mut(&entity)
-                .and_then(|extras| extras.deferred_start.take())
-                .map(|start| (time.elapsed_secs_f64() - start) as f32)
-        });
-        let elapsed = play(
-            transitions,
-            &mut player,
-            clip_ix,
-            &active_emote,
-            pending_seek,
-        );
-        // reset audio mark if we've rewound (jump hacks again)
-        if let Some(mark) = spawned_extras
-            .get_mut(&entity)
-            .and_then(|extras| extras.audio.as_mut())
-            .map(|a| &mut a.1)
-        {
-            if elapsed < *mark {
-                *mark = elapsed;
-            }
-        }
-
-        if !active_emote.finished && player.all_finished() {
-            active_emote.finished = true;
-        }
-
-        if let Some(prop) = prop_player_and_clip {
-            play_prop_clip(
-                &mut players,
-                prop,
-                !urn_was_playing || active_emote.restart,
-                active_emote.repeat,
-                active_emote.speed,
-                pending_seek.map(|seek| seek.clamp(0.0, clip_duration)),
-            );
-        }
-
-        // Stamped for every avatar: `animate` reads it back as "this emote resolved, so `repeat`
-        // now includes the collectible's `default_repeat`" before reporting the emote to scenes.
-        active_emote.duration_ms = Some((clip_duration * 1000.0) as u32);
-
         if maybe_primary.is_some() {
+            let Played {
+                clip_duration,
+                elapsed,
+                ..
+            } = played;
             match active_emote.source {
                 ActiveEmoteSource::SceneMovementAnim => {
                     let loops = elapsed / clip_duration;
@@ -1760,35 +1868,11 @@ fn play_current_emote(
                 }
             }
         }
-
-        active_emote.restart = false;
-
-        fire_slot_sound(
-            &mut commands,
-            &mut params,
-            &mut spawned_extras,
-            entity,
-            &active_emote.urn,
-            ent,
-            sound,
-            elapsed,
-        );
-
-        // move the prior entry back when unchanged to avoid a per-frame clone
-        playing.insert(
-            ent,
-            match prior_playing.remove(&ent) {
-                Some(prev) if prev == active_emote.urn => prev,
-                _ => active_emote.urn.clone(),
-            },
-        );
     }
 }
 
-/// Play each avatar's upper-body emote request over whatever `play_current_emote` has going: the
-/// clip is added to the avatar graph with the lower body masked out and driven on the same player,
-/// outside the locomotion transitions, at a weight that gives it (nearly) the whole upper body —
-/// see `masked_weight`. Faded in on start and out when the request ends or is suspended.
+/// Play each avatar's upper-body emote request over whatever `play_current_emote` has going, as
+/// the `Slot::UpperBody` overlay: faded in on start and out when the request ends or is suspended.
 ///
 /// The emote's prop and audio come along like a full-body emote's, and go the moment the request
 /// ends or is suspended (unity drops them too; a resume brings them back from the top).
@@ -1800,26 +1884,22 @@ fn play_masked_emote(
     mut emote_loader: CollectibleManager<Emote>,
     mut gltfs: ResMut<Assets<Gltf>>,
     mut players: PlayerQuery,
-    ipfas: IpfsAssetServer,
-    mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
     mut params: PlayParams,
-    time: Res<Time>,
     // prop/audio for each avatar's rendered request
     mut spawned_extras: Local<HashMap<Entity, SpawnedExtras>>,
 ) {
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
     for (entity, mut masked, target_entity, children) in q.iter_mut() {
-        let masked = &mut *masked;
+        let MaskedEmote {
+            request,
+            clips,
+            playing,
+        } = &mut *masked;
         let ent = target_entity.0;
-        let Ok((_, _, _, graph)) = players.get(ent) else {
-            continue;
-        };
-        let graph = graph.map(|graph| graph.0.clone());
 
         // the request rendered this frame; extras of any other (ended, suspended, replaced) go
-        let rendered = masked
-            .request
+        let rendered = request
             .as_mut()
             .filter(|request| request.active && !request.finished);
         if let Some(extras) = prev_spawned_extras.remove(&entity) {
@@ -1835,7 +1915,7 @@ fn play_masked_emote(
 
         // the share of the upper body the request wants this frame: 1 while it plays, 0 once it
         // ends or is suspended, unchanged while its clip loads
-        let current_share = masked.playing.map(|(_, share)| share).unwrap_or(0.0);
+        let current_share = playing.map(|(_, share)| share).unwrap_or(0.0);
         let target_share = 'request: {
             let Some(request) = rendered else {
                 break 'request 0.0;
@@ -1844,122 +1924,32 @@ fn play_masked_emote(
             else {
                 break 'request current_share;
             };
-            let bodyshape = &definition.body_shape;
-
-            let (clip, clip_duration) = match resolve_playback(
-                &mut request.playback,
-                bodyshape,
+            match play_slot(
+                &mut commands,
+                &mut params,
                 &mut emote_loader,
                 &mut gltfs,
-                &ipfas,
-                &mut cached_gltf_handles,
-                &params.anim_clips,
-            ) {
-                Ok(resolved) => resolved,
-                Err(Outcome::Failed) => {
-                    request.finished = true;
-                    break 'request 0.0;
-                }
-                Err(_) => break 'request current_share,
-            };
-            let Ok(emote) = emote_loader.get_representation(&request.urn, bodyshape) else {
-                break 'request current_share;
-            };
-            request.duration_ms = Some((clip_duration * 1000.0) as u32);
-
-            // spawn the prop and wait for it, so avatar and prop start together
-            let prop_player_and_clip = match ensure_prop(
-                &mut commands,
-                &mut params,
-                &gltfs,
-                &players,
-                emote,
-                entity,
-                &request.urn,
-                &mut spawned_extras,
-            ) {
-                PropState::Spawned | PropState::Loading => break 'request current_share,
-                PropState::Ready { players, .. } => players,
-                PropState::None => None,
-            };
-
-            let Some(graph) = graph
-                .as_ref()
-                .and_then(|graph| params.graphs.get_mut(graph))
-            else {
-                break 'request current_share;
-            };
-            let clip_ix = *masked
-                .clips
-                .entry(request.urn.to_string())
-                .or_insert_with(|| {
-                    debug!("adding masked clip {}", request.urn);
-                    graph.add_clip_with_mask(clip, LOWER_BODY_MASK, 1.0, graph.root)
-                });
-
-            let Ok((mut player, _, _, _)) = players.get_mut(ent) else {
-                break 'request current_share;
-            };
-
-            // a different clip still fading out is cut; the new one fades in over it
-            match masked.playing {
-                Some((playing, _)) if playing != clip_ix => {
-                    player.stop(playing);
-                    masked.playing = None;
-                }
-                _ => (),
-            }
-
-            let restart = request.restart || !player.is_playing_animation(clip_ix);
-            let Ok(sound) = slot_sound(
-                emote,
-                &params,
-                spawned_extras.get(&entity),
-                restart,
-                None,
-                clip_duration,
-                request.repeat,
-            ) else {
-                break 'request current_share;
-            };
-
-            if restart {
-                debug!("starting masked clip {:?}", clip_ix);
-                let share = masked.playing.map(|(_, share)| share).unwrap_or(0.0);
-                player.start(clip_ix).set_weight(masked_weight(share));
-                masked.playing = Some((clip_ix, share));
-                request.restart = false;
-            }
-
-            let Some(active_animation) = player.animation_mut(clip_ix) else {
-                break 'request current_share;
-            };
-            if request.repeat {
-                active_animation.repeat();
-            } else {
-                active_animation.set_repeat(RepeatAnimation::Never);
-            }
-            active_animation.set_speed(1.0);
-            if active_animation.is_finished() {
-                request.finished = true;
-            }
-            let elapsed = active_animation.seek_time()
-                + active_animation.completions() as f32 * clip_duration;
-
-            if let Some(prop) = prop_player_and_clip {
-                play_prop_clip(&mut players, prop, restart, request.repeat, 1.0, None);
-            }
-            fire_slot_sound(
-                &mut commands,
-                &mut params,
+                &mut players,
                 &mut spawned_extras,
                 entity,
-                &request.urn,
                 ent,
-                sound,
-                elapsed,
-            );
-            1.0
+                &definition.body_shape,
+                &mut request.playback,
+                Slot::UpperBody {
+                    clips: &mut *clips,
+                    playing: &mut *playing,
+                },
+                1.0,
+                &mut None,
+                None,
+            ) {
+                Ok(_) => 1.0,
+                Err(Hold::Failed) => {
+                    request.finished = true;
+                    0.0
+                }
+                Err(_) => current_share,
+            }
         };
 
         let Ok((mut player, _, _, _)) = players.get_mut(ent) else {
@@ -1967,8 +1957,8 @@ fn play_masked_emote(
         };
 
         // drive the fade; a fully faded-out clip is stopped
-        if let Some((clip_ix, share)) = masked.playing.as_mut() {
-            let step = time.delta_secs() / MASKED_FADE_SECS;
+        if let Some((clip_ix, share)) = playing.as_mut() {
+            let step = params.time.delta_secs() / MASKED_FADE_SECS;
             *share = if target_share > *share {
                 (*share + step).min(target_share)
             } else {
@@ -1976,7 +1966,7 @@ fn play_masked_emote(
             };
             if *share <= 0.0 {
                 player.stop(*clip_ix);
-                masked.playing = None;
+                *playing = None;
             } else if let Some(active_animation) = player.animation_mut(*clip_ix) {
                 active_animation.set_weight(masked_weight(*share));
             }
