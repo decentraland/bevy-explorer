@@ -113,9 +113,6 @@ struct MaskedRequest {
     playback: EmotePlayback,
     /// Rendered this frame — not suspended under a full-body emote. Set by `animate`.
     active: bool,
-    /// Waiting out a full-body emote (or the glide), reported to scenes as ended; the resume is
-    /// reported as a fresh start.
-    suspended: bool,
 }
 
 impl Deref for MaskedRequest {
@@ -242,26 +239,15 @@ fn broadcast_emote(
         senders.push(sender.clone());
     }
 
-    // The currently-broadcastable emote: a user-triggered emote that's still playing, whose clip has
-    // resolved (`duration_ms` is stamped by `play_current_emote` only once the clip loads, which is
-    // also where `repeat` gets `default_repeat` folded in). Gating on it means we never announce a
-    // start with a stale `repeat`/`duration` — an emote that never resolves is simply never sent.
-    // Velocity-selected locomotion and scene movement anims aren't user emotes; a finished one-shot
-    // has ended. The wire has one emote slot, so an upper-body emote is announced only while it's
-    // actually rendered: a full-body emote over it goes out in its place, and the resume
-    // afterwards is a fresh start (as unity does).
+    // The currently-broadcastable emote: the one `playing` (the wire has one emote slot too), still
+    // going, whose clip has resolved (`duration_ms` is stamped by the play system only once the
+    // clip loads, which is also where `repeat` gets `default_repeat` folded in). Gating on it means
+    // we never announce a start with a stale `repeat`/`duration` — an emote that never resolves is
+    // simply never sent. A finished one-shot has ended.
     let current = q.single().ok().and_then(|(active, masked)| {
-        let resolved =
-            |playback: &EmotePlayback| !playback.finished && playback.duration_ms.is_some();
-        (active.source == ActiveEmoteSource::TriggeredEmote && resolved(active))
-            .then(|| active.playback.clone())
-            .or_else(|| {
-                masked
-                    .request
-                    .as_ref()
-                    .filter(|request| request.active && resolved(request))
-                    .map(|request| request.playback.clone())
-            })
+        playing(active, masked)
+            .filter(|playback| !playback.finished && playback.duration_ms.is_some())
+            .cloned()
     });
 
     let prev = last.take();
@@ -362,6 +348,9 @@ pub struct EmotePlayback {
     pub duration_ms: Option<u32>,
     /// The slot this plays in.
     pub mask: EmoteMask,
+    /// Timestamp of the command that triggered it, so a re-trigger of the same emote reads as a
+    /// new one (see [`identity`]).
+    pub generation: i64,
 }
 
 impl Default for EmotePlayback {
@@ -373,6 +362,7 @@ impl Default for EmotePlayback {
             finished: false,
             duration_ms: None,
             mask: EmoteMask::FullBody,
+            generation: 0,
         }
     }
 }
@@ -450,6 +440,26 @@ impl ActiveEmote {
     }
 }
 
+/// The one emote the avatar is playing as far as the wire and scenes are concerned: a triggered
+/// full-body emote (velocity-selected locomotion and scene movement anims aren't user emotes),
+/// else the upper-body request while it's rendered. A full-body emote over an upper-body one takes
+/// its place, and the resume afterwards is a fresh start (as unity does).
+fn playing<'a>(active: &'a ActiveEmote, masked: &'a MaskedEmote) -> Option<&'a EmotePlayback> {
+    if active.source == ActiveEmoteSource::TriggeredEmote {
+        return Some(&active.playback);
+    }
+    masked
+        .request
+        .as_ref()
+        .filter(|request| request.active)
+        .map(|request| &request.playback)
+}
+
+/// What tells one played emote from another: a re-trigger of the same urn is a new emote.
+fn identity(playback: &EmotePlayback) -> (&EmoteUrn, EmoteMask, i64) {
+    (&playback.urn, playback.mask, playback.generation)
+}
+
 // TODO this function is a POS
 // lots of magic numbers that don't even deserve to be constants, needs reworking
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -505,6 +515,10 @@ fn animate(
             continue;
         };
 
+        // what the avatar came into the frame playing, compared with what it leaves it playing
+        // at the end of the loop
+        let was = playing(&active_emote, &masked).cloned();
+
         // calculate/store damped velocity
         let prior_velocity = anim_state.damped_velocity;
         let ratio = time.delta_secs().clamp(0.0, 0.1) / 0.1;
@@ -547,46 +561,24 @@ fn animate(
 
         let emote_changed = emote != last_emote.as_ref().map(|l| &l.0);
 
-        let mut report = |event: EmoteLifecycle, mask: EmoteMask| {
-            lifecycle.write(EmoteLifecycleEvent {
-                avatar: avatar_ent,
-                event,
-                source: EmoteLifecycleSource::Playback,
-                mask,
-            });
-        };
-
         // The upper-body request: taken from the command when it arrives, then kept here — the
         // command slot moves on to a full-body emote (which suspends it) or a stop (which ends it).
         // The full-body path below sees a masked command as "no request", so a masked start
         // interrupts a playing full-body emote through its usual clear-on-stop.
-        // The command's start is reported last, after whatever it ends below, so scenes hear the
-        // transitions in playback order.
-        let mut started = None;
         if emote_changed {
             match emote {
                 Some(command) if command.mask == EmoteMask::UpperBody => {
                     let (urn, repeat) = parse_request(&command.urn, command.r#loop);
-                    if masked
-                        .request
-                        .as_ref()
-                        .is_some_and(|request| request.active)
-                    {
-                        report(EmoteLifecycle::Interrupted, EmoteMask::UpperBody);
-                    }
-                    started = urn
-                        .as_ref()
-                        .map(|urn| (urn.as_str().to_owned(), repeat, EmoteMask::UpperBody));
                     masked.request = urn.map(|urn| MaskedRequest {
                         playback: EmotePlayback {
                             urn,
                             repeat,
                             restart: true,
                             mask: EmoteMask::UpperBody,
+                            generation: command.timestamp,
                             ..Default::default()
                         },
                         active: false,
-                        suspended: false,
                     });
                     commands
                         .entity(avatar_ent)
@@ -594,10 +586,7 @@ fn animate(
                 }
                 // `stopEmote` ends both slots
                 Some(command) if command.urn.is_empty() => {
-                    // a suspended request was reported ended when it was suspended
-                    if masked.request.take().is_some_and(|request| request.active) {
-                        report(EmoteLifecycle::Interrupted, EmoteMask::UpperBody);
-                    }
+                    masked.request = None;
                     commands
                         .entity(avatar_ent)
                         .try_insert(LastEmoteCommand(command.clone()));
@@ -638,7 +627,6 @@ fn animate(
                 debug!("clear on scene anim {:?}", active_emote.urn);
                 requested_emote = None;
                 anim_state.current_emote_min_velocity = 0.0;
-                report(EmoteLifecycle::Interrupted, EmoteMask::FullBody);
             } else if velocity_cancels && damped_velocity_len * 0.9 > playing_min_vel {
                 // stop emotes on move
                 debug!(
@@ -647,7 +635,6 @@ fn animate(
                 );
                 requested_emote = None;
                 anim_state.current_emote_min_velocity = 0.0;
-                report(EmoteLifecycle::Interrupted, EmoteMask::FullBody);
             } else {
                 anim_state.current_emote_min_velocity = damped_velocity_len.min(playing_min_vel);
             }
@@ -655,7 +642,6 @@ fn animate(
             if active_emote.finished {
                 debug!("finished emoting {:?}", active_emote.urn);
                 requested_emote = None;
-                report(EmoteLifecycle::Finished, EmoteMask::FullBody);
             }
         } else {
             anim_state.current_emote_min_velocity = damped_velocity_len;
@@ -666,7 +652,6 @@ fn animate(
                 && !active_emote.finished
             {
                 debug!("clear on command {:?}", active_emote.urn);
-                report(EmoteLifecycle::Interrupted, EmoteMask::FullBody);
             }
         }
 
@@ -800,20 +785,17 @@ fn animate(
         *active_emote = if let Some(requested_emote) = requested_emote {
             if emote_changed {
                 dynamic_state.move_kind = MoveKind::Emote;
-                started = Some((
-                    requested_emote.as_str().to_owned(),
-                    request_loop,
-                    EmoteMask::FullBody,
-                ));
             }
+            let command = emote.unwrap();
             commands
                 .entity(avatar_ent)
-                .try_insert(LastEmoteCommand(emote.unwrap().clone()));
+                .try_insert(LastEmoteCommand(command.clone()));
             ActiveEmote {
                 playback: EmotePlayback {
                     urn: requested_emote,
                     repeat: request_loop,
                     restart: emote_changed,
+                    generation: command.timestamp,
                     ..Default::default()
                 },
                 source: ActiveEmoteSource::TriggeredEmote,
@@ -860,40 +842,51 @@ fn animate(
             let suspended = active_emote.source == ActiveEmoteSource::TriggeredEmote
                 || active_emote.urn == *URN_GLIDE;
             if suspended {
-                if request.active {
-                    // scenes hear the suspension as an end and the resume as a fresh start, as
-                    // observers hear it from the wire
-                    report(EmoteLifecycle::Interrupted, EmoteMask::UpperBody);
-                }
                 if request.active && !request.repeat {
                     debug!("dropping suspended one-shot {:?}", request.urn);
                     masked.request = None;
                 } else {
                     request.active = false;
-                    request.suspended = true;
                     request.restart = true;
                 }
             } else if request.finished {
                 debug!("finished masked emoting {:?}", request.urn);
                 masked.request = None;
-                report(EmoteLifecycle::Finished, EmoteMask::UpperBody);
             } else {
-                if request.suspended {
-                    request.suspended = false;
-                    report(
-                        EmoteLifecycle::Started {
-                            urn: request.urn.as_str().to_owned(),
-                            r#loop: request.repeat,
-                        },
-                        EmoteMask::UpperBody,
-                    );
-                }
                 request.active = true;
             }
         }
 
-        if let Some((urn, r#loop, mask)) = started {
-            report(EmoteLifecycle::Started { urn, r#loop }, mask);
+        // Report what changed in what's playing, in playback order: the emote that ended (however
+        // it did: ran out, cancelled, replaced, suspended), then the one that started. Scenes hear
+        // the same sequence for this avatar as observers hear for it from the wire.
+        let now = playing(&active_emote, &masked);
+        if was.as_ref().map(identity) != now.map(identity) {
+            let mut report = |event: EmoteLifecycle, mask: EmoteMask| {
+                lifecycle.write(EmoteLifecycleEvent {
+                    avatar: avatar_ent,
+                    event,
+                    source: EmoteLifecycleSource::Playback,
+                    mask,
+                });
+            };
+            if let Some(was) = &was {
+                let event = if was.finished {
+                    EmoteLifecycle::Finished
+                } else {
+                    EmoteLifecycle::Interrupted
+                };
+                report(event, was.mask);
+            }
+            if let Some(now) = now {
+                report(
+                    EmoteLifecycle::Started {
+                        urn: now.urn.as_str().to_owned(),
+                        r#loop: now.repeat,
+                    },
+                    now.mask,
+                );
+            }
         }
     }
 }
