@@ -228,17 +228,18 @@ impl SceneFontServer<'_, '_> {
         }
     }
 
-    /// Whether every requested face of the family has data (real or fallback).
+    /// Whether every requested face of the family has data (real or fallback). A family no
+    /// face has been requested from yet is not ready.
     pub fn family_ready(&self, family: &TextFontFamily) -> bool {
         let TextFontFamily::Scene { key, .. } = family else {
             return true;
         };
-        self.families
-            .families
-            .get(key)
-            .into_iter()
-            .flat_map(|family| family.slots.values())
-            .all(|slot| self.assets.contains(slot.handle.id()))
+        self.families.families.get(key).is_some_and(|family| {
+            family
+                .slots
+                .values()
+                .all(|slot| self.assets.contains(slot.handle.id()))
+        })
     }
 
     /// Metrics of a family, from its regular face; the fallback family's until that face has
