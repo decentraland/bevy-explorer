@@ -14,10 +14,10 @@
 //! around it) hears it start, the way the reference client adds and removes the player's
 //! command in each scene.
 //!
-//! An avatar has two slots, full body and upper body (`EmoteMask`), each reported on its own: a
-//! looping upper-body emote outlives a full-body one played over it, and scenes hear its start and
-//! its end, not the suspension in between. A foreign avatar is the wire's single slot: a start
-//! there ends whatever was reported, and a stop (which names no slot) ends whichever is left.
+//! One emote at a time, whatever its mask, as on the wire: a start ends whatever was reported. An
+//! upper-body emote suspended under a full-body one is reported ended, and its resume as a fresh
+//! start (`animate` raises both), so a scene hears the same sequence for the local player as a
+//! scene elsewhere hears for it.
 
 use std::collections::VecDeque;
 
@@ -64,25 +64,14 @@ impl Plugin for EmoteReportPlugin {
     }
 }
 
-/// The two emote slots, indexed by [`slot`].
-const SLOTS: [EmoteMask; 2] = [EmoteMask::FullBody, EmoteMask::UpperBody];
-
-fn slot(mask: EmoteMask) -> usize {
-    match mask {
-        EmoteMask::FullBody => 0,
-        EmoteMask::UpperBody => 1,
-    }
-}
-
 /// Per-avatar report state. Despawns with the avatar.
 #[derive(Component, Default)]
 pub struct EmoteReportQueue {
     pending: VecDeque<(EmoteMask, EmoteLifecycle)>,
-    /// Per slot, the start the scenes have been told about, `(urn, loop)`, echoed by its stop
-    /// entry.
-    reported: [Option<(String, bool)>; 2],
-    /// Per slot, the scenes told `reported`.
-    told: [HashSet<Entity>; 2],
+    /// The start the scenes have been told about, `(urn, loop, mask)`, echoed by its stop entry.
+    reported: Option<(String, bool, EmoteMask)>,
+    /// The scenes told `reported`.
+    told: HashSet<Entity>,
     /// `timestamp` of the last entry written. The sdk's grow-only set orders and trims by it, so
     /// it only has to be monotonic per avatar.
     sequence: u32,
@@ -187,7 +176,7 @@ fn flush_emote_reports(
     let now = time.elapsed_secs_f64();
 
     for (avatar, mut queue, foreign, primary, container) in queues.iter_mut() {
-        if queue.pending.is_empty() && queue.reported.iter().all(Option::is_none) {
+        if queue.pending.is_empty() && queue.reported.is_none() {
             continue;
         }
 
@@ -226,7 +215,6 @@ fn flush_emote_reports(
         });
         queue.advance(
             now,
-            foreign.is_some(),
             |urn, hint, force| resolve_loop(&mut emotes, urn, hint, force),
             |urn, loops, mask, state, timestamp| {
                 for scene in &targets {
@@ -279,72 +267,64 @@ impl EmoteReportQueue {
         targets: &[Entity],
         mut emit: impl FnMut(Entity, &str, bool, EmoteMask, EmoteState, u32),
     ) {
-        for (ix, mask) in SLOTS.into_iter().enumerate() {
-            let Some((urn, loops)) = self.reported[ix].clone() else {
-                continue;
-            };
-            let told = &mut self.told[ix];
-            let left = told
-                .iter()
-                .copied()
-                .filter(|scene| !targets.contains(scene))
-                .collect::<Vec<_>>();
-            for scene in left {
-                told.remove(&scene);
-                self.sequence += 1;
-                emit(
-                    scene,
-                    &urn,
-                    loops,
-                    mask,
-                    EmoteState::EsInterrupted,
-                    self.sequence,
-                );
-            }
-            let entered = targets
-                .iter()
-                .copied()
-                .filter(|scene| !told.contains(scene))
-                .collect::<Vec<_>>();
-            for scene in entered {
-                told.insert(scene);
-                self.sequence += 1;
-                emit(
-                    scene,
-                    &urn,
-                    loops,
-                    mask,
-                    EmoteState::EsStarted,
-                    self.sequence,
-                );
-            }
+        let Some((urn, loops, mask)) = self.reported.clone() else {
+            return;
+        };
+        let left = self
+            .told
+            .iter()
+            .copied()
+            .filter(|scene| !targets.contains(scene))
+            .collect::<Vec<_>>();
+        for scene in left {
+            self.told.remove(&scene);
+            self.sequence += 1;
+            emit(
+                scene,
+                &urn,
+                loops,
+                mask,
+                EmoteState::EsInterrupted,
+                self.sequence,
+            );
+        }
+        let entered = targets
+            .iter()
+            .copied()
+            .filter(|scene| !self.told.contains(scene))
+            .collect::<Vec<_>>();
+        for scene in entered {
+            self.told.insert(scene);
+            self.sequence += 1;
+            emit(
+                scene,
+                &urn,
+                loops,
+                mask,
+                EmoteState::EsStarted,
+                self.sequence,
+            );
         }
     }
 
-    /// After [`Self::advance`] wrote to `targets`: which scenes know the reported starts.
+    /// After [`Self::advance`] wrote to `targets`: which scenes know the reported start.
     fn heard(&mut self, targets: &[Entity]) {
-        for (told, reported) in self.told.iter_mut().zip(&self.reported) {
-            told.clear();
-            if reported.is_some() {
-                told.extend(targets.iter().copied());
-            }
+        self.told.clear();
+        if self.reported.is_some() {
+            self.told.extend(targets.iter().copied());
         }
     }
 
     /// Drain the queue for as long as its head can be written. `resolve` gives a start's loop
     /// flag (`None` while it's loading; the last argument asks it to answer regardless);
-    /// `emit` writes an entry: `(urn, loop, mask, state, timestamp)`. With `single_slot` (a
-    /// foreign avatar, driven by the wire's one slot) a start ends whatever is reported and a stop
-    /// ends whichever slot is left.
+    /// `emit` writes an entry: `(urn, loop, mask, state, timestamp)`.
     fn advance(
         &mut self,
         now: f64,
-        single_slot: bool,
         mut resolve: impl FnMut(&str, bool, bool) -> Option<bool>,
         mut emit: impl FnMut(&str, bool, EmoteMask, EmoteState, u32),
     ) {
         while let Some((mask, head)) = self.pending.front() {
-            let mask = *mask;
             let (urn, loops, mask, state) = match head {
                 EmoteLifecycle::Started { urn, r#loop } => {
                     let waiting_since = *self.waiting_since.get_or_insert(now);
@@ -353,15 +333,10 @@ impl EmoteReportQueue {
                     let Some(loops) = resolve(urn, *r#loop, force) else {
                         break;
                     };
-                    (urn.clone(), loops, mask, EmoteState::EsStarted)
+                    (urn.clone(), loops, *mask, EmoteState::EsStarted)
                 }
                 EmoteLifecycle::Finished | EmoteLifecycle::Interrupted => {
-                    let ended = SLOTS
-                        .into_iter()
-                        .enumerate()
-                        .filter(|(_, m)| *m == mask || single_slot)
-                        .find_map(|(ix, m)| self.reported[ix].take().map(|r| (r, m)));
-                    let Some(((urn, loops), mask)) = ended else {
+                    let Some((urn, loops, mask)) = self.reported.take() else {
                         // a stop for a start the scene never heard of
                         self.pending.pop_front();
                         continue;
@@ -378,18 +353,13 @@ impl EmoteReportQueue {
             self.waiting_since = None;
 
             if state == EmoteState::EsStarted {
-                // the previous play in the slot ends where the new one starts; stop first, like
-                // the reference client
-                for (ix, m) in SLOTS.into_iter().enumerate() {
-                    if m != mask && !single_slot {
-                        continue;
-                    }
-                    if let Some((urn, loops)) = self.reported[ix].take() {
-                        self.sequence += 1;
-                        emit(&urn, loops, m, EmoteState::EsInterrupted, self.sequence);
-                    }
+                // the previous play ends where the new one starts; stop first, like the reference
+                // client
+                if let Some((urn, loops, mask)) = self.reported.take() {
+                    self.sequence += 1;
+                    emit(&urn, loops, mask, EmoteState::EsInterrupted, self.sequence);
                 }
-                self.reported[slot(mask)] = Some((urn.clone(), loops));
+                self.reported = Some((urn.clone(), loops, mask));
             }
             self.sequence += 1;
             emit(&urn, loops, mask, state, self.sequence);
@@ -459,22 +429,20 @@ mod tests {
         now: f64,
         slow_ready: bool,
     ) -> Vec<(String, bool, EmoteState, u32)> {
-        advance_slots(queue, now, slow_ready, false)
+        advance_masked(queue, now, slow_ready)
             .into_iter()
             .map(|(urn, loops, _, state, ts)| (urn, loops, state, ts))
             .collect()
     }
 
-    fn advance_slots(
+    fn advance_masked(
         queue: &mut EmoteReportQueue,
         now: f64,
         slow_ready: bool,
-        single_slot: bool,
     ) -> Vec<(String, bool, EmoteMask, EmoteState, u32)> {
         let mut out = Vec::new();
         queue.advance(
             now,
-            single_slot,
             |urn, hint, force| match (urn == SLOW, slow_ready, force) {
                 (true, false, false) => None,
                 (true, true, _) => Some(true),
@@ -501,7 +469,7 @@ mod tests {
                 (CACHED.to_owned(), false, EmoteState::EsStarted, 3),
             ]
         );
-        assert_eq!(queue.reported[0], Some((CACHED.to_owned(), false)));
+        assert_eq!(queue.reported, Some((CACHED.to_owned(), false, FULL)));
     }
 
     #[test]
@@ -564,7 +532,7 @@ mod tests {
         // nothing reported: nowhere to move it
         assert!(migrate(&mut queue, &[a]).is_empty());
         queue.heard(&[a]);
-        assert!(queue.told[0].is_empty());
+        assert!(queue.told.is_empty());
 
         queue.pending.push_back(start(CACHED));
         advance(&mut queue, 0.0, true);
@@ -588,50 +556,23 @@ mod tests {
             vec![(CACHED.to_owned(), false, EmoteState::EsFinished, 4)]
         );
         queue.heard(&[b]);
-        assert!(queue.told[0].is_empty());
+        assert!(queue.told.is_empty());
         assert!(migrate(&mut queue, &[a]).is_empty());
     }
 
     #[test]
-    fn a_full_body_emote_over_an_upper_body_one_leaves_it_reported() {
-        let mut queue = EmoteReportQueue::default();
-        queue.pending.extend([
-            start_masked("carry", UPPER),
-            start(CACHED),
-            finished(),
-            (UPPER, EmoteLifecycle::Interrupted),
-        ]);
-        assert_eq!(
-            advance_slots(&mut queue, 0.0, true, false),
-            vec![
-                ("carry".to_owned(), false, UPPER, EmoteState::EsStarted, 1),
-                (CACHED.to_owned(), false, FULL, EmoteState::EsStarted, 2),
-                (CACHED.to_owned(), false, FULL, EmoteState::EsFinished, 3),
-                (
-                    "carry".to_owned(),
-                    false,
-                    UPPER,
-                    EmoteState::EsInterrupted,
-                    4
-                ),
-            ]
-        );
-        assert!(queue.reported.iter().all(Option::is_none));
-    }
-
-    #[test]
-    fn the_wires_single_slot_supersedes_either_and_a_stop_ends_whichever_is_left() {
+    fn a_start_of_either_mask_ends_the_reported_one_and_a_stop_names_no_mask() {
         let mut queue = EmoteReportQueue::default();
         queue.pending.extend([
             start_masked("carry", UPPER),
             start(CACHED),
             (UPPER, EmoteLifecycle::Interrupted),
             start_masked("carry", UPPER),
-            // a wire stop names no slot
+            // a wire stop carries no mask
             interrupted(),
         ]);
         assert_eq!(
-            advance_slots(&mut queue, 0.0, true, true),
+            advance_masked(&mut queue, 0.0, true),
             vec![
                 ("carry".to_owned(), false, UPPER, EmoteState::EsStarted, 1),
                 (
@@ -642,7 +583,7 @@ mod tests {
                     2
                 ),
                 (CACHED.to_owned(), false, FULL, EmoteState::EsStarted, 3),
-                // the upper-body stop finds its slot empty and ends the full-body one
+                // ends what is reported, with the mask it was reported with
                 (CACHED.to_owned(), false, FULL, EmoteState::EsInterrupted, 4),
                 ("carry".to_owned(), false, UPPER, EmoteState::EsStarted, 5),
                 (
@@ -654,5 +595,6 @@ mod tests {
                 ),
             ]
         );
+        assert!(queue.reported.is_none());
     }
 }
