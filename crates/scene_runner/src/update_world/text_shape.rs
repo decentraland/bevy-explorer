@@ -551,9 +551,15 @@ fn update_text_shapes(
         }
 
         // room for ink outside the line box (deep descenders, swashes), which the
-        // node would otherwise clip
-        let ink_padding =
-            Val::Px(scene_fonts.metrics(&family).padding * font_size * FONT_SIZE_SCALE);
+        // node would otherwise clip. the line box itself must not move: with an auto
+        // height the region grows, so the quad is shifted back by the padding on the
+        // anchored side; in a fixed box a negative margin cancels it in the layout
+        let ink_padding = scene_fonts.metrics(&family).padding * font_size * FONT_SIZE_SCALE;
+        let (ink_margin, add_y_pix) = if height == Val::Auto {
+            (0.0, add_y_pix - valign_wui * 2.0 * ink_padding)
+        } else {
+            (-ink_padding, add_y_pix)
+        };
 
         let ui_node = commands
             .spawn((
@@ -585,7 +591,8 @@ fn update_text_shapes(
                 }
 
                 c.spawn(Node {
-                    padding: UiRect::vertical(ink_padding),
+                    padding: UiRect::vertical(Val::Px(ink_padding)),
+                    margin: UiRect::vertical(Val::Px(ink_margin)),
                     ..Default::default()
                 })
                 .with_child((
