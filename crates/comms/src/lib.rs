@@ -22,7 +22,7 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use common::{
-    structs::{CurrentRealm, MicState},
+    structs::{CurrentRealm, EmoteMask, MicState},
     util::{TaskCompat, TaskExt},
 };
 use ethers_core::types::H160;
@@ -272,6 +272,8 @@ pub struct Emote {
     pub duration_ms: Option<u32>,
     /// A stop: clears a looping emote. rfc4 `is_stopping = true` / Pulse `EmoteStop`.
     pub stopping: bool,
+    /// Which bones the emote drives. Pulse only; the vendored rfc4 `PlayerEmote` has no mask.
+    pub mask: EmoteMask,
 }
 
 impl Broadcast for Emote {
@@ -298,8 +300,7 @@ impl Broadcast for Emote {
                 emote_id: self.urn.clone(),
                 duration_ms: self.duration_ms,
                 player_state: Some(state),
-                // Emote animation bone mask (upstream field); bevy doesn't drive bone masking yet.
-                mask: None,
+                mask: self.mask.to_wire(),
             })
         };
         Some(PulseFrame {

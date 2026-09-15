@@ -24,7 +24,7 @@ use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 use common::{
     bounds_calc::scene_regions,
-    structs::{CurrentRealm, OutOfWorld, PlayerTeleported, PrimaryUser},
+    structs::{CurrentRealm, EmoteMask, OutOfWorld, PlayerTeleported, PrimaryUser},
     util::{TaskCompat, TaskExt},
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -942,7 +942,12 @@ fn drain_inbound(
                 // Emote start/stop are delivered natively (`PlayerMessage::Emote`) rather than as an
                 // rfc4 `PlayerEmote`: byte-transport emotes are dropped as duplicates, so the Pulse
                 // copy has to be distinguishable from them by variant, exactly as movement is.
-                PulseEvent::EmoteStart { address, urn, tick } => session.forward(
+                PulseEvent::EmoteStart {
+                    address,
+                    urn,
+                    tick,
+                    mask,
+                } => session.forward(
                     sinks,
                     address,
                     PlayerMessage::Emote {
@@ -950,6 +955,7 @@ fn drain_inbound(
                         incremental_id: tick,
                         stopping: false,
                         completed: false,
+                        mask: EmoteMask::from_wire(mask),
                     },
                 ),
                 PulseEvent::EmoteStop { address, completed } => session.forward(
@@ -960,6 +966,7 @@ fn drain_inbound(
                         incremental_id: 0,
                         stopping: true,
                         completed,
+                        mask: EmoteMask::FullBody,
                     },
                 ),
                 // A peer entered our interest set. Report the arrival, then their initial profile

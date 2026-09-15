@@ -223,11 +223,40 @@ impl AttachPoints {
     }
 }
 
+/// Which bones an emote drives. Upper body = the `Avatar_Spine` subtree; hips and legs stay with
+/// locomotion so the player keeps walking. Scene-only (`triggerEmote` / `triggerSceneEmote` with
+/// `AvatarMask.AM_UPPER_BODY`); the wheel is always full body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum EmoteMask {
+    #[default]
+    FullBody,
+    UpperBody,
+}
+
+impl EmoteMask {
+    /// The wire enum (rfc4 / Pulse / `AvatarEmoteCommand`): `0`/absent full body, `1` upper body.
+    /// Not the sdk's `AvatarMask`, whose only value `AM_UPPER_BODY` is `0`.
+    pub fn to_wire(self) -> Option<i32> {
+        match self {
+            EmoteMask::FullBody => None,
+            EmoteMask::UpperBody => Some(1),
+        }
+    }
+
+    pub fn from_wire(mask: Option<i32>) -> Self {
+        match mask {
+            Some(1) => EmoteMask::UpperBody,
+            _ => EmoteMask::FullBody,
+        }
+    }
+}
+
 #[derive(Component, Clone, Debug, PartialEq, Default)]
 pub struct EmoteCommand {
     pub urn: String,
     pub timestamp: i64,
     pub r#loop: bool,
+    pub mask: EmoteMask,
 }
 
 /// A transition in an avatar's triggered-emote playback, reported to scenes as an
@@ -239,6 +268,9 @@ pub struct EmoteLifecycleEvent {
     pub avatar: Entity,
     pub event: EmoteLifecycle,
     pub source: EmoteLifecycleSource,
+    /// Which of the avatar's two emote slots (full body / upper body) the transition is in. A wire
+    /// stop carries no mask; the reporter ends whichever slot it has reported.
+    pub mask: EmoteMask,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
