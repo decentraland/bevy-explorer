@@ -183,10 +183,8 @@ struct Slot {
 enum SlotSource {
     /// Waiting for the family stage to settle.
     Pending,
-    /// Loading a dedicated file for this weight.
+    /// Loading the file chosen for this weight.
     Loading(Handle<Font>),
-    /// Copies another weight's face once that lands.
-    Alias(WeightName),
     /// Uses the built-in fallback family.
     Fallback,
     Done,
@@ -345,37 +343,13 @@ impl SceneFontServer<'_, '_> {
         }
 
         let handle = self.assets.reserve_handle();
-        let source = match &family.stage {
-            Stage::ContentFile(_) | Stage::Lookup(_) => SlotSource::Pending,
-            Stage::Single(font) => {
-                self.assets.insert(handle.id(), font.clone());
-                SlotSource::Done
-            }
-            Stage::Fontsource(family) => fontsource_source(family, weight, &self.ipfas),
-            Stage::Failed => SlotSource::Fallback,
-        };
-        let alias_target = match source {
-            SlotSource::Alias(target) => Some(target),
-            _ => None,
-        };
         family.slots.insert(
             weight,
             Slot {
                 handle: handle.clone(),
-                source,
+                source: SlotSource::Pending,
             },
         );
-
-        // an alias needs its target slot to exist
-        if let Some(target) = alias_target {
-            let family = TextFontFamily::Scene {
-                key: key.clone(),
-                scene_hash: scene_hash.clone(),
-                fallback,
-            };
-            self.face(&family, target);
-        }
-
         handle
     }
 }
@@ -413,27 +387,31 @@ impl FontsourceFamily {
     }
 }
 
-/// Pick the source for `weight` from a resolved Fontsource family: a dedicated file when
-/// the family has a suitable variant, else an alias of the nearest available weight.
+/// Pick the source for `weight` from a resolved Fontsource family: the nearest variant the
+/// family has, falling back from bold / italic towards regular. Weights that resolve to the
+/// same file share one asset load.
 fn fontsource_source(
     family: &FontsourceFamily,
     weight: WeightName,
     ipfas: &IpfsAssetServer,
 ) -> SlotSource {
-    let (weights, style): (&[&str], &str) = match weight {
-        WeightName::Regular => (&["400", "500", "300", "600"], "normal"),
-        WeightName::Bold => (&["700", "600", "800", "500", "900"], "normal"),
-        WeightName::Italic => (&["400", "500", "300", "600"], "italic"),
-        WeightName::BoldItalic => (&["700", "600", "800", "500", "900"], "italic"),
+    const REGULAR: &[&str] = &["400", "500", "300", "600"];
+    const BOLD: &[&str] = &["700", "600", "800", "500", "900"];
+    let candidates: &[(&[&str], &str)] = match weight {
+        WeightName::Regular => &[(REGULAR, "normal")],
+        WeightName::Bold => &[(BOLD, "normal"), (REGULAR, "normal")],
+        WeightName::Italic => &[(REGULAR, "italic"), (REGULAR, "normal")],
+        WeightName::BoldItalic => &[(BOLD, "italic"), (BOLD, "normal"), (REGULAR, "normal")],
     };
-    if let Some(url) = weights.iter().find_map(|w| family.ttf(w, style)) {
-        let path = IpfsPath::new_from_url(&url, "ttf");
-        return SlotSource::Loading(ipfas.asset_server().load::<Font>(PathBuf::from(&path)));
-    }
-    match weight {
-        WeightName::Regular => SlotSource::Fallback,
-        WeightName::Bold | WeightName::Italic => SlotSource::Alias(WeightName::Regular),
-        WeightName::BoldItalic => SlotSource::Alias(WeightName::Bold),
+    let url = candidates
+        .iter()
+        .find_map(|(weights, style)| weights.iter().find_map(|w| family.ttf(w, style)));
+    match url {
+        Some(url) => {
+            let path = IpfsPath::new_from_url(&url, "ttf");
+            SlotSource::Loading(ipfas.asset_server().load::<Font>(PathBuf::from(&path)))
+        }
+        None => SlotSource::Fallback,
     }
 }
 
@@ -534,7 +512,6 @@ fn update_scene_fonts(mut fonts: SceneFontServer, scenes: Query<(), With<Rendere
 
         // assign pending slots once the stage has settled
         if !matches!(family.stage, Stage::ContentFile(_) | Stage::Lookup(_)) {
-            let mut aliases = Vec::default();
             for (weight, slot) in family.slots.iter_mut() {
                 if !matches!(slot.source, SlotSource::Pending) {
                     continue;
@@ -547,20 +524,6 @@ fn update_scene_fonts(mut fonts: SceneFontServer, scenes: Query<(), With<Rendere
                     Stage::Fontsource(record) => fontsource_source(record, *weight, ipfas),
                     _ => SlotSource::Fallback,
                 };
-                if let SlotSource::Alias(target) = slot.source {
-                    aliases.push(target);
-                }
-            }
-            // alias targets must exist as slots; they were not requested by any text yet
-            for target in aliases {
-                if !family.slots.contains_key(&target) {
-                    let handle = assets.reserve_handle();
-                    let source = match &family.stage {
-                        Stage::Fontsource(record) => fontsource_source(record, target, ipfas),
-                        _ => SlotSource::Pending,
-                    };
-                    family.slots.insert(target, Slot { handle, source });
-                }
             }
         }
 
@@ -579,13 +542,6 @@ fn update_scene_fonts(mut fonts: SceneFontServer, scenes: Query<(), With<Rendere
                     }
                     _ => (),
                 },
-                SlotSource::Alias(target) => {
-                    if let Some(target) = family.slots.get(target) {
-                        if matches!(target.source, SlotSource::Done) {
-                            landed.push((*weight, Ok(target.handle.id())));
-                        }
-                    }
-                }
                 SlotSource::Fallback => landed.push((*weight, Err(()))),
                 _ => (),
             }
