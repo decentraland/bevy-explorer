@@ -14,7 +14,7 @@ use crate::{
     renderer_context::RendererSceneContext,
     update_scene::pointer_results::UiPointerTarget,
     update_world::{
-        fonts::SceneFontServer,
+        fonts::{SceneFontServer, TextFontFamily},
         text_shape::{make_text_section, UnrecognisedTags},
     },
     SceneEntity,
@@ -87,6 +87,24 @@ impl From<PbUiText> for UiText {
 #[derive(Component)]
 pub struct UiTextMarker;
 
+/// A text built before its font family was ready; rebuilt once it is, so the text picks up
+/// the family's metrics.
+#[derive(Component)]
+pub struct UiTextFontPending(TextFontFamily);
+
+pub fn retry_ui_text_fonts(
+    mut commands: Commands,
+    mut texts: Query<(Entity, &mut UiText, &UiTextFontPending)>,
+    scene_fonts: SceneFontServer,
+) {
+    for (ent, mut ui_text, pending) in texts.iter_mut() {
+        if scene_fonts.family_ready(&pending.0) {
+            ui_text.set_changed();
+            commands.entity(ent).remove::<UiTextFontPending>();
+        }
+    }
+}
+
 pub fn set_ui_text(
     mut commands: Commands,
     texts: Query<
@@ -127,6 +145,7 @@ pub fn set_ui_text(
                 }
             }
         }
+        commands.entity(ent).try_remove::<UiTextFontPending>();
 
         if ui_text.text.is_empty() || ui_text.font_size <= 0.0 {
             continue;
@@ -157,6 +176,12 @@ pub fn set_ui_text(
             ui_text.wrapping,
             &mut unrecognized_tags,
         );
+        if !scene_fonts.family_ready(&family) {
+            ent_cmds
+                .commands()
+                .entity(ent)
+                .try_insert(UiTextFontPending(family));
+        }
 
         // with text nodes the axis sizes are unusual.
         // a) if either size axis is NOT NONE, (explicit or auto), we want auto to size appropriately for the content.

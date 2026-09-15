@@ -34,14 +34,15 @@ use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 use serde::Deserialize;
 use ui_core::{user_font, FontName, WeightName};
 
-use crate::renderer_context::RendererSceneContext;
+use crate::{renderer_context::RendererSceneContext, SceneSets};
 
 pub struct SceneFontsPlugin;
 
 impl Plugin for SceneFontsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SceneFonts>();
-        app.add_systems(Update, update_scene_fonts);
+        // before scene ui, so text waiting on a family rebuilds in the frame it lands
+        app.add_systems(Update, update_scene_fonts.before(SceneSets::PostLoop));
     }
 }
 
