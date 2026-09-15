@@ -93,7 +93,9 @@ use bevy::{
     platform::collections::HashSet,
     prelude::*,
     render::view::VisibilitySystems,
-    text::{ComputedTextBlock, CosmicBuffer, CosmicFontSystem, Font, LineBreak, TextPipeline},
+    text::{
+        ComputedTextBlock, CosmicBuffer, CosmicFontSystem, LineBreak, LineHeight, TextPipeline,
+    },
     ui::{update::update_clipping_system, widget::text_system, UiSystem},
 };
 use common::{
@@ -108,13 +110,16 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName, FONT_SIZE_SCALE};
+use ui_core::{ui_builder::SpawnSpacer, WeightName, FONT_SIZE_SCALE};
 use unicode_segmentation::UnicodeSegmentation;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
 
-use super::AddCrdtInterfaceExt;
+use super::{
+    fonts::{SceneFontServer, TextFontFamily},
+    AddCrdtInterfaceExt,
+};
 
 pub struct TextShapePlugin;
 
@@ -192,10 +197,11 @@ fn auto_fit_point_size(
     source: &str,
     raster_pt: f32,
     text_pipeline: &mut TextPipeline,
-    fonts: &Assets<Font>,
+    fonts: &mut SceneFontServer,
     font_system: &mut CosmicFontSystem,
     measure_entity: Entity,
     unrecognized_tags: &mut UnrecognisedTags,
+    family: &TextFontFamily,
 ) -> Option<f32> {
     if !text_shape.text_wrapping() {
         return Some(AUTO_MIN_PT);
@@ -205,14 +211,15 @@ fn auto_fit_point_size(
         source,
         raster_pt,
         Color::WHITE,
-        text_shape.font(),
+        family,
+        fonts,
         unrecognized_tags,
     );
 
     // create_text_measure panics if a span's font hasn't loaded yet.
     if spans
         .iter()
-        .any(|(_, font, _, _)| fonts.get(font.font.id()).is_none())
+        .any(|(_, font, _, _)| fonts.assets().get(font.font.id()).is_none())
     {
         return None;
     }
@@ -223,7 +230,7 @@ fn auto_fit_point_size(
     let natural = text_pipeline
         .create_text_measure(
             measure_entity,
-            fonts,
+            fonts.assets(),
             spans.iter().enumerate().map(|(i, (span, font, color, _))| {
                 (measure_entity, i, span.0.as_str(), font, color.0)
             }),
@@ -267,7 +274,7 @@ fn update_text_shapes(
     mut views: Query<&mut TextShapeUi>,
     mut unrecognized_tags: ResMut<UnrecognisedTags>,
     mut text_pipeline: ResMut<TextPipeline>,
-    fonts: Res<Assets<Font>>,
+    mut scene_fonts: SceneFontServer,
     mut font_system: ResMut<CosmicFontSystem>,
 ) {
     // remove deleted ui nodes
@@ -336,13 +343,27 @@ fn update_text_shapes(
 
         commands.entity(ent).try_remove::<RetryTextShape>();
 
-        active_count += 1;
-        debug!("ts: {:?}", text_shape.0);
-
         let Ok(scene) = scenes.get(scene_ent.root) else {
             warn!("no scene!");
             continue;
         };
+        let family = scene_fonts.family(
+            scene_ent.root,
+            &scene.hash,
+            text_shape.0.font(),
+            text_shape.0.font_src.as_deref(),
+        );
+
+        // wait for the family before taking a build slot. requesting the regular face
+        // starts a new family loading; other weights are requested when the spans are built
+        scene_fonts.face(&family, WeightName::Regular);
+        if !scene_fonts.family_ready(&family) {
+            commands.entity(ent).try_insert(RetryTextShape(frame.0));
+            continue;
+        }
+
+        active_count += 1;
+        debug!("ts: {:?}", text_shape.0);
 
         if let Some(prior) = maybe_prior {
             if prior.1 == text_shape.0 {
@@ -466,10 +487,11 @@ fn update_text_shapes(
                 source,
                 font_size,
                 &mut text_pipeline,
-                &fonts,
+                &mut scene_fonts,
                 &mut font_system,
                 ent,
                 &mut unrecognized_tags,
+                &family,
             ) {
                 Some(pt) => pt,
                 None => {
@@ -522,11 +544,30 @@ fn update_text_shapes(
                 .text_color
                 .map(Color4DclToBevy::convert_srgba)
                 .unwrap_or(Color::WHITE),
-            text_shape.0.font(),
+            &family,
+            &mut scene_fonts,
             halign_flex,
             wrapping,
             &mut unrecognized_tags,
         );
+
+        // the view only renders for a couple of frames after the build, so
+        // wait for the fonts rather than rendering without them
+        if !scene_fonts.family_ready(&family) {
+            commands.entity(ent).try_insert(RetryTextShape(frame.0));
+            continue;
+        }
+
+        // room for ink outside the line box (deep descenders, swashes), which the
+        // node would otherwise clip. only the auto-height node clips at the line box
+        // (a fixed box clips at its own edge), and the line box itself must not move,
+        // so the quad is shifted back by the padding on the anchored side
+        let ink_padding = if height == Val::Auto {
+            scene_fonts.metrics(&family).padding * font_size * FONT_SIZE_SCALE
+        } else {
+            0.0
+        };
+        let add_y_pix = add_y_pix - valign_wui * 2.0 * ink_padding;
 
         let ui_node = commands
             .spawn((
@@ -557,7 +598,11 @@ fn update_text_shapes(
                     c.spacer();
                 }
 
-                c.spawn(Node::default()).with_child((
+                c.spawn(Node {
+                    padding: UiRect::vertical(Val::Px(ink_padding)),
+                    ..Default::default()
+                })
+                .with_child((
                     text,
                     Node {
                         align_self: match halign_flex {
@@ -650,6 +695,7 @@ fn apply_text_extras(
         ),
     >,
     spans: Query<(&TextSpan, &TextColor, Option<&TextExtras>)>,
+    parents: Query<(&GlobalTransform, &ComputedNode)>,
     existing: Query<(), With<TextExtraMarker>>,
     mut removed: RemovedComponents<TextExtras>,
 ) {
@@ -732,6 +778,16 @@ fn apply_text_extras(
             }
         }
 
+        // the marks are children of the text node's parent, and their insets resolve
+        // against its edge, so account for the text node's offset within it (padding)
+        let parent_tl = gt.translation().truncate() - computed_node.size * 0.5;
+        let parent_offset = parents
+            .get(parent.parent())
+            .map(|(parent_gt, parent_node)| {
+                parent_tl - (parent_gt.translation().truncate() - parent_node.size * 0.5)
+            })
+            .unwrap_or(Vec2::ZERO);
+
         let mut make_mark = |bound: Vec4, color: Color, top: f32, height: f32| -> Entity {
             // because we make marks based on calculated text positions, we have to run after the ui layout functions
             // but that means our marks won't be positioned until next frame. if text is deleted/replaced every frame
@@ -742,14 +798,13 @@ fn apply_text_extras(
             view_visibility.set();
             let height = (bound.w * height).max(1.0);
             let size = Vec2::new(bound.z, height);
-            let parent_tl = gt.translation().truncate() - computed_node.size * 0.5;
             let my_tl = parent_tl + Vec2::new(bound.x, bound.y + bound.w * top);
             let my_global_translation = round_layout_coords(my_tl) + size * 0.5;
             let mut cmds = commands.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(bound.x),
-                    top: Val::Px(bound.y + bound.w * top),
+                    left: Val::Px(bound.x + parent_offset.x),
+                    top: Val::Px(bound.y + bound.w * top + parent_offset.y),
                     width: Val::Px(bound.z),
                     height: Val::Px(height),
                     ..Default::default()
@@ -831,7 +886,8 @@ fn build_text_spans(
     text: &str,
     font_size: f32,
     color: Color,
-    font: dcl_component::proto_components::sdk::components::common::Font,
+    family: &TextFontFamily,
+    fonts: &mut SceneFontServer,
     unrecognized_tags: &mut UnrecognisedTags,
 ) -> (Vec<TextSpanData>, Vec<(usize, String)>) {
     let mut links = Vec::default();
@@ -842,15 +898,7 @@ fn build_text_spans(
     // (the realistic cases). A lone LF is left as a normal line break.
     let text = text.replace("\\n", "\n").replace('\r', "");
 
-    let font_name = match font {
-        dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
-            FontName::Sans
-        }
-        dcl_component::proto_components::sdk::components::common::Font::FSerif => FontName::Serif,
-        dcl_component::proto_components::sdk::components::common::Font::FMonospace => {
-            FontName::Mono
-        }
-    };
+    let line_height = LineHeight::RelativeToFont(fonts.metrics(family).line_height);
 
     // split by <b>s and <i>s
     let mut b_count = 0usize;
@@ -957,8 +1005,9 @@ fn build_text_spans(
         }
 
         let font = TextFont {
-            font: user_font(font_name, weight),
+            font: fonts.face(family, weight),
             font_size: font_size * FONT_SIZE_SCALE,
+            line_height,
             ..Default::default()
         };
 
@@ -1028,12 +1077,13 @@ pub fn make_text_section(
     text: &str,
     font_size: f32,
     color: Color,
-    font: dcl_component::proto_components::sdk::components::common::Font,
+    family: &TextFontFamily,
+    fonts: &mut SceneFontServer,
     justify: JustifyText,
     wrapping: bool,
     unrecognized_tags: &mut UnrecognisedTags,
 ) -> (impl Bundle, Vec<(usize, String)>) {
-    let (spans, links) = build_text_spans(text, font_size, color, font, unrecognized_tags);
+    let (spans, links) = build_text_spans(text, font_size, color, family, fonts, unrecognized_tags);
 
     let f = move |parent: &mut RelatedSpawner<ChildOf>| {
         for (span, font, color, maybe_extras) in spans {
