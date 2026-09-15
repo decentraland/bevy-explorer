@@ -13,8 +13,8 @@
 //! entity never has to be re-evaluated when a font lands or fails: bevy's text systems wait
 //! for the handle to load, and on failure the handle is filled with the fallback font's data.
 //!
-//! Each family also reports [`FamilyMetrics`]: a default line height derived from the font's
-//! own vertical metrics, and the vertical padding a text block needs so glyph ink reaching
+//! Each family also reports [`FamilyMetrics`]: a default line height derived from its regular
+//! face's vertical metrics, and the vertical padding a text block needs so glyph ink reaching
 //! beyond the line box (deep descenders, tall swashes) is not clipped.
 
 use std::{path::PathBuf, time::Duration};
@@ -75,7 +75,7 @@ struct SceneFontFamily {
     fallback: FontName,
     stage: Stage,
     slots: HashMap<WeightName, Slot>,
-    /// Computed once every slot has data.
+    /// Computed once the regular face has data.
     metrics: Option<FamilyMetrics>,
 }
 
@@ -141,22 +141,21 @@ impl FaceMetrics {
 }
 
 impl FamilyMetrics {
-    fn from_faces(faces: &[FaceMetrics]) -> Self {
-        let metric = faces
-            .iter()
-            .map(FaceMetrics::line_metric)
-            .fold(0.0, f32::max);
-        let line_height =
-            (metric * REFERENCE_LINE_HEIGHT / BUILTIN_LINE_METRIC).max(REFERENCE_LINE_HEIGHT);
+    /// Used when a face's metrics can't be read.
+    const DEFAULT: Self = Self {
+        line_height: REFERENCE_LINE_HEIGHT,
+        padding: 0.0,
+    };
+
+    fn from_face(face: &FaceMetrics) -> Self {
+        let line_height = (face.line_metric() * REFERENCE_LINE_HEIGHT / BUILTIN_LINE_METRIC)
+            .max(REFERENCE_LINE_HEIGHT);
         // cosmic-text centres a line's ascent + descent within the line box, so the ink
         // overflow is whatever the win bounds add beyond that, less the box's slack
-        let padding = faces
-            .iter()
-            .map(|face| {
-                let slack = (line_height - (face.ascent + face.descent)) / 2.0;
-                (face.ink_ascent - face.ascent - slack).max(face.ink_descent - face.descent - slack)
-            })
-            .fold(0.0, f32::max);
+        let slack = (line_height - (face.ascent + face.descent)) / 2.0;
+        let padding = (face.ink_ascent - face.ascent - slack)
+            .max(face.ink_descent - face.descent - slack)
+            .max(0.0);
         Self {
             line_height,
             padding,
@@ -242,7 +241,8 @@ impl SceneFontServer<'_, '_> {
             .all(|slot| self.assets.contains(slot.handle.id()))
     }
 
-    /// Metrics of a family; the fallback family's until every slot has data.
+    /// Metrics of a family, from its regular face; the fallback family's until that face has
+    /// data.
     pub fn metrics(&mut self, family: &TextFontFamily) -> FamilyMetrics {
         let (key, fallback) = match family {
             TextFontFamily::Builtin(name) => return self.builtin_metrics(*name),
@@ -251,41 +251,29 @@ impl SceneFontServer<'_, '_> {
         if let Some(metrics) = self.families.families.get(key).and_then(|f| f.metrics) {
             return metrics;
         }
-        if !self.family_ready(family) {
-            return self.builtin_metrics(fallback);
-        }
-        let Some(family) = self.families.families.get_mut(key) else {
+        // request the regular face even if no span uses it, so the family waits for it
+        let regular = self.face(family, WeightName::Regular);
+        let Some(face) = self.assets.get(regular.id()).and_then(FaceMetrics::parse) else {
             return self.builtin_metrics(fallback);
         };
-        let faces = family
-            .slots
-            .values()
-            .filter_map(|slot| self.assets.get(slot.handle.id()))
-            .filter_map(FaceMetrics::parse)
-            .collect::<Vec<_>>();
-        let metrics = FamilyMetrics::from_faces(&faces);
-        family.metrics = Some(metrics);
+        let metrics = FamilyMetrics::from_face(&face);
+        if let Some(family) = self.families.families.get_mut(key) {
+            family.metrics = Some(metrics);
+        }
         metrics
-    }
-
-    fn builtin_faces(&self, name: FontName) -> Vec<FaceMetrics> {
-        [
-            WeightName::Regular,
-            WeightName::Bold,
-            WeightName::Italic,
-            WeightName::BoldItalic,
-        ]
-        .into_iter()
-        .filter_map(|weight| self.assets.get(user_font(name, weight).id()))
-        .filter_map(FaceMetrics::parse)
-        .collect()
     }
 
     fn builtin_metrics(&mut self, name: FontName) -> FamilyMetrics {
         if let Some(metrics) = self.families.builtin_metrics.get(&name) {
             return *metrics;
         }
-        let metrics = FamilyMetrics::from_faces(&self.builtin_faces(name));
+        let metrics = self
+            .assets
+            .get(user_font(name, WeightName::Regular).id())
+            .and_then(FaceMetrics::parse)
+            .map_or(FamilyMetrics::DEFAULT, |face| {
+                FamilyMetrics::from_face(&face)
+            });
         self.families.builtin_metrics.insert(name, metrics);
         metrics
     }
