@@ -1,5 +1,8 @@
 use core::f32;
-use std::time::Duration;
+use std::{
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
 use bevy::{
     animation::{graph::AnimationMask, RepeatAnimation},
@@ -106,17 +109,23 @@ pub struct MaskedEmote {
 }
 
 struct MaskedRequest {
-    urn: EmoteUrn,
-    repeat: bool,
+    playback: EmotePlayback,
     /// Rendered this frame — not suspended under a full-body emote. Set by `animate`.
     active: bool,
-    /// Play the clip from the top: a new request, or a resume.
-    restart: bool,
-    /// A one-shot ran to its end (or the urn failed to resolve); `animate` drops the request.
-    finished: bool,
-    /// Resolved clip duration, stamped by `play_masked_emote`; `broadcast_emote` announces the
-    /// emote once it's known, like a full-body one.
-    duration_ms: Option<u32>,
+}
+
+impl Deref for MaskedRequest {
+    type Target = EmotePlayback;
+
+    fn deref(&self) -> &Self::Target {
+        &self.playback
+    }
+}
+
+impl DerefMut for MaskedRequest {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.playback
+    }
 }
 
 impl MaskedEmote {
@@ -214,8 +223,8 @@ fn handle_trigger_emotes(
 fn broadcast_emote(
     q: Query<(&ActiveEmote, &MaskedEmote), With<PrimaryUser>>,
     transports: Query<&Transport>,
-    // (urn, looping, mask) of the emote we last announced a start for.
-    mut last: Local<Option<(EmoteUrn, bool, EmoteMask)>>,
+    // the emote we last announced a start for
+    mut last: Local<Option<EmotePlayback>>,
     mut count: Local<u32>,
     time: Res<Time>,
     mut senders: Local<Vec<RpcEventSender>>,
@@ -238,95 +247,86 @@ fn broadcast_emote(
     // actually rendered: a full-body emote over it goes out in its place, and the resume
     // afterwards is a fresh start (as unity does).
     let current = q.single().ok().and_then(|(active, masked)| {
-        (active.source == ActiveEmoteSource::TriggeredEmote
-            && !active.finished
-            && active.duration_ms.is_some())
-        .then(|| {
-            (
-                active.urn.clone(),
-                active.repeat,
-                active.duration_ms,
-                EmoteMask::FullBody,
-            )
-        })
-        .or_else(|| {
-            masked
-                .request
-                .as_ref()
-                .filter(|request| {
-                    request.active && !request.finished && request.duration_ms.is_some()
-                })
-                .map(|request| {
-                    (
-                        request.urn.clone(),
-                        request.repeat,
-                        request.duration_ms,
-                        EmoteMask::UpperBody,
-                    )
-                })
-        })
+        let resolved =
+            |playback: &EmotePlayback| !playback.finished && playback.duration_ms.is_some();
+        (active.source == ActiveEmoteSource::TriggeredEmote && resolved(active))
+            .then(|| active.playback.clone())
+            .or_else(|| {
+                masked
+                    .request
+                    .as_ref()
+                    .filter(|request| request.active && resolved(request))
+                    .map(|request| request.playback.clone())
+            })
     });
 
     let prev = last.take();
     match (&prev, &current) {
         // New emote, or a switch to a different urn or mask: announce the start.
-        (p, Some((urn, repeat, duration_ms, mask)))
-            if p.as_ref().map(|(u, _, m)| (u, m)) != Some((urn, mask)) =>
+        (p, Some(emote))
+            if p.as_ref().map(|p| (&p.urn, p.mask)) != Some((&emote.urn, emote.mask)) =>
         {
             *count += 1;
             debug!(
                 "sending emote start: {} {} {:?}",
-                urn.as_str(),
+                emote.urn.as_str(),
                 *count,
-                mask
+                emote.mask
             );
             // A one-shot carries its duration (observers and the Pulse completion timer use it); a
             // looping emote omits it and is ended by the explicit stop below.
-            let duration_ms = if *repeat { None } else { *duration_ms };
+            let duration_ms = if emote.repeat {
+                None
+            } else {
+                emote.duration_ms
+            };
             broadcast(
                 transports.iter(),
                 BroadcastTarget::PULSE,
                 false,
                 comms::Emote {
-                    urn: urn.as_str().to_owned(),
+                    urn: emote.urn.as_str().to_owned(),
                     incremental_id: *count,
                     timestamp: time.elapsed_secs_f64(),
                     duration_ms,
                     stopping: false,
-                    mask: *mask,
+                    mask: emote.mask,
                 },
             );
             senders.retain(|sender| {
-                let _ = sender.send(format!("{{ \"expressionId\": \"{}\" }}", urn.as_str()));
+                let _ = sender.send(format!(
+                    "{{ \"expressionId\": \"{}\" }}",
+                    emote.urn.as_str()
+                ));
                 !sender.is_closed()
             });
         }
         // A looping emote ended: send an explicit stop. One-shots end on the receiver's own timer
         // (and the Pulse server's), so they need no stop and fall through to the `_` arm.
-        (Some((urn, repeat, mask)), None) if *repeat => {
+        (Some(emote), None) if emote.repeat => {
             *count += 1;
-            debug!("sending emote stop: {}", urn.as_str());
+            debug!("sending emote stop: {}", emote.urn.as_str());
             broadcast(
                 transports.iter(),
                 BroadcastTarget::PULSE,
                 false,
                 comms::Emote {
-                    urn: urn.as_str().to_owned(),
+                    urn: emote.urn.as_str().to_owned(),
                     incremental_id: *count,
                     timestamp: time.elapsed_secs_f64(),
                     duration_ms: None,
                     stopping: true,
-                    mask: *mask,
+                    mask: emote.mask,
                 },
             );
         }
         _ => {}
     }
 
-    // Track the current emote (urn, looping, mask) so the next frame can detect a change; `None`
-    // when nothing is playing. Set in one place so the unchanged `_` case can't drop the state and
-    // re-fire the start.
-    *last = current.map(|(urn, repeat, _, mask)| (urn, repeat, mask));
+    // Track the current emote so the next frame can detect a change; `None` when nothing is
+    // playing. Set in one place so the unchanged `_` case can't drop the state and re-fire the
+    // start.
+    *last = current;
 }
 
 /// Where the current ActiveEmote came from. Controls override precedence and whether
@@ -342,17 +342,43 @@ pub enum ActiveEmoteSource {
     SceneMovementAnim,
 }
 
-#[derive(Component)]
-pub struct ActiveEmote {
-    urn: EmoteUrn,
-    speed: f32,
-    restart: bool,
-    repeat: bool,
-    finished: bool,
-    /// Resolved clip duration in milliseconds, stamped by `play_current_emote` once the clip is
+/// What one of an avatar's emote slots plays: the part of a full-body `ActiveEmote` and of an
+/// upper-body request that the play, broadcast and report paths share.
+#[derive(Clone, Debug)]
+pub struct EmotePlayback {
+    pub urn: EmoteUrn,
+    pub repeat: bool,
+    /// Play the clip from the top: a new request, or a resume.
+    pub restart: bool,
+    /// A one-shot ran to its end (or the urn failed to resolve).
+    pub finished: bool,
+    /// Resolved clip duration in milliseconds, stamped by the play system once the clip is
     /// playing. `broadcast_emote` attaches it to a one-shot emote's start so observers know when it
     /// ends; `animate` uses its presence as the signal that `repeat` has settled.
-    duration_ms: Option<u32>,
+    pub duration_ms: Option<u32>,
+    /// The slot this plays in.
+    pub mask: EmoteMask,
+}
+
+impl Default for EmotePlayback {
+    fn default() -> Self {
+        Self {
+            urn: URN_IDLE.clone(),
+            repeat: false,
+            restart: false,
+            finished: false,
+            duration_ms: None,
+            mask: EmoteMask::FullBody,
+        }
+    }
+}
+
+/// The full-body slot: the emote the avatar's body plays, whether triggered, scene-driven or
+/// selected from its velocity. Derefs to its [`EmotePlayback`].
+#[derive(Component)]
+pub struct ActiveEmote {
+    playback: EmotePlayback,
+    speed: f32,
     transition_seconds: f32,
     initial_audio_mark: Option<f32>,
     /// Whether a `triggerSceneEmote` should be allowed to take over. Mirrors the movement
@@ -375,12 +401,8 @@ pub struct ActiveEmote {
 impl Default for ActiveEmote {
     fn default() -> Self {
         Self {
-            urn: URN_IDLE.clone(),
+            playback: EmotePlayback::default(),
             speed: 1.0,
-            restart: false,
-            repeat: false,
-            finished: false,
-            duration_ms: None,
             transition_seconds: 0.2,
             initial_audio_mark: None,
             overridable: true,
@@ -389,6 +411,20 @@ impl Default for ActiveEmote {
             scene_anim_src: None,
             fallback: None,
         }
+    }
+}
+
+impl Deref for ActiveEmote {
+    type Target = EmotePlayback;
+
+    fn deref(&self) -> &Self::Target {
+        &self.playback
+    }
+}
+
+impl DerefMut for ActiveEmote {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.playback
     }
 }
 
@@ -525,12 +561,14 @@ fn animate(
                 Some(command) if command.mask == EmoteMask::UpperBody => {
                     let (urn, repeat) = parse_request(&command.urn, command.r#loop);
                     masked.request = urn.map(|urn| MaskedRequest {
-                        urn,
-                        repeat,
+                        playback: EmotePlayback {
+                            urn,
+                            repeat,
+                            restart: true,
+                            mask: EmoteMask::UpperBody,
+                            ..Default::default()
+                        },
                         active: false,
-                        restart: true,
-                        finished: false,
-                        duration_ms: None,
                     });
                     commands
                         .entity(avatar_ent)
@@ -625,10 +663,11 @@ fn animate(
                 // Set on foreign avatars from rfc4::Movement.jump_count >= 2 (see foreign_dynamics).
                 (
                     ActiveEmote {
-                        urn: URN_DOUBLE_JUMP.clone(),
+                        playback: EmotePlayback {
+                            urn: URN_DOUBLE_JUMP.clone(),
+                            ..Default::default()
+                        },
                         speed: 1.0,
-                        repeat: false,
-                        restart: false,
                         transition_seconds: 0.1,
                         ..Default::default()
                     },
@@ -639,10 +678,12 @@ fn animate(
                 // Frozen at the neutral (straight) pose since we have no tilt input available.
                 (
                     ActiveEmote {
-                        urn: URN_GLIDE.clone(),
+                        playback: EmotePlayback {
+                            urn: URN_GLIDE.clone(),
+                            repeat: true,
+                            ..Default::default()
+                        },
                         speed: 0.0,
-                        repeat: true,
-                        restart: false,
                         transition_seconds: 0.1,
                         pending_seek: Some(2.0 / 24.0),
                         ..Default::default()
@@ -659,11 +700,14 @@ fn animate(
                 };
                 (
                     ActiveEmote {
-                        urn: URN_JUMP.clone(),
+                        playback: EmotePlayback {
+                            urn: URN_JUMP.clone(),
+                            repeat: true,
+                            restart: dynamic_state.jump_time
+                                > time.elapsed_secs_f64() - time.delta_secs_f64(),
+                            ..Default::default()
+                        },
                         speed: time_to_peak.recip() * 0.5,
-                        repeat: true,
-                        restart: dynamic_state.jump_time
-                            > time.elapsed_secs_f64() - time.delta_secs_f64(),
                         transition_seconds: 0.1,
                         initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
                         ..Default::default()
@@ -673,10 +717,11 @@ fn animate(
             } else if active_emote.urn == *URN_JUMP && !active_emote.finished {
                 (
                     ActiveEmote {
-                        urn: URN_JUMP.clone(),
+                        playback: EmotePlayback {
+                            urn: URN_JUMP.clone(),
+                            ..Default::default()
+                        },
                         speed: 1.5,
-                        repeat: false,
-                        restart: false,
                         transition_seconds: 0.1,
                         initial_audio_mark: Some(0.1),
                         ..Default::default()
@@ -690,10 +735,12 @@ fn animate(
                     if damped_velocity_len.abs() <= 2.6 {
                         (
                             ActiveEmote {
-                                urn: URN_WALK.clone(),
+                                playback: EmotePlayback {
+                                    urn: URN_WALK.clone(),
+                                    repeat: true,
+                                    ..Default::default()
+                                },
                                 speed: directional_velocity_len / 1.5,
-                                restart: false,
-                                repeat: true,
                                 transition_seconds: 0.4,
                                 ..Default::default()
                             },
@@ -702,10 +749,12 @@ fn animate(
                     } else {
                         (
                             ActiveEmote {
-                                urn: URN_RUN.clone(),
+                                playback: EmotePlayback {
+                                    urn: URN_RUN.clone(),
+                                    repeat: true,
+                                    ..Default::default()
+                                },
                                 speed: directional_velocity_len / 4.5,
-                                restart: false,
-                                repeat: true,
                                 transition_seconds: 0.4,
                                 ..Default::default()
                             },
@@ -715,10 +764,12 @@ fn animate(
                 } else {
                     (
                         ActiveEmote {
-                            urn: URN_IDLE.clone(),
+                            playback: EmotePlayback {
+                                urn: URN_IDLE.clone(),
+                                repeat: true,
+                                ..Default::default()
+                            },
                             speed: 1.0,
-                            restart: false,
-                            repeat: true,
                             transition_seconds: 0.4,
                             ..Default::default()
                         },
@@ -736,9 +787,12 @@ fn animate(
                 .entity(avatar_ent)
                 .try_insert(LastEmoteCommand(emote.unwrap().clone()));
             ActiveEmote {
-                urn: requested_emote,
-                restart: emote_changed,
-                repeat: request_loop,
+                playback: EmotePlayback {
+                    urn: requested_emote,
+                    repeat: request_loop,
+                    restart: emote_changed,
+                    ..Default::default()
+                },
                 source: ActiveEmoteSource::TriggeredEmote,
                 ..Default::default()
             }
@@ -756,12 +810,13 @@ fn animate(
             let is_new_anim = active_emote.source != ActiveEmoteSource::SceneMovementAnim
                 || active_emote.urn != urn;
             ActiveEmote {
-                urn,
+                playback: EmotePlayback {
+                    urn,
+                    repeat: req.r#loop,
+                    restart: is_new_anim,
+                    ..Default::default()
+                },
                 speed: req.speed,
-                restart: is_new_anim,
-                repeat: req.r#loop,
-                finished: false,
-                duration_ms: None,
                 transition_seconds: req.transition_seconds,
                 initial_audio_mark: None,
                 overridable: req.idle,
