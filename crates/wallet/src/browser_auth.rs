@@ -1,3 +1,6 @@
+use ethers_core::utils::{hex, keccak256};
+use http::Uri;
+use crate::{Wallet, sign_request};
 use anyhow::anyhow;
 use bevy::prelude::*;
 use common::{rpc::RPCSendableMessage, structs::ChainLink, util::AsH160};
@@ -121,19 +124,35 @@ async fn fetch_server(req_id: String) -> Result<(H160, serde_json::Value), anyho
     }
 }
 
-async fn init_request(request: CreateRequest) -> Result<InitializedRequest, anyhow::Error> {
-    let body = serde_json::to_string(&request).expect("valid json");
+// Signed-fetch metadata carrying the hash of the exact body bytes; lowercase so the signed payload folds to itself.
+fn body_hash_metadata(body: &str) -> String {
+    format!(r#"{{"bodyhash":"0x{}"}}"#, hex::encode(keccak256(body.as_bytes())))
+}
 
-    let response = reqwest::Client::builder()
+async fn init_request(
+    request: CreateRequest,
+    wallet: Option<&Wallet>,
+) -> Result<InitializedRequest, anyhow::Error> {
+    let body = serde_json::to_string(&request).expect("valid json");
+    let endpoint = auth_server_endpoint_url();
+
+    let mut req = reqwest::Client::builder()
         .use_native_tls()
         .build()
         .unwrap()
-        .post(auth_server_endpoint_url())
+        .post(endpoint.as_str())
         .header("Content-Type", "application/json")
-        .timeout(AUTH_SERVER_TIMEOUT)
-        .body(body)
-        .send()
-        .await?;
+        .timeout(AUTH_SERVER_TIMEOUT);
+
+    // The ephemeral key signs the request so the server can tell it apart from a reused delegation.
+    if let Some(wallet) = wallet {
+        let uri: Uri = endpoint.parse()?;
+        for (key, value) in sign_request("post", &uri, wallet, body_hash_metadata(&body)).await? {
+            req = req.header(key, value);
+        }
+    }
+
+    let response = req.body(body).send().await?;
 
     if response.status().is_success() {
         let response = response.json::<InitializedRequest>().await?;
@@ -157,13 +176,17 @@ async fn finish_request(request_id: String) -> Result<(H160, serde_json::Value),
 
 pub async fn remote_send_async(
     message: RPCSendableMessage,
-    auth_chain: Option<SimpleAuthChain>,
+    wallet: Wallet,
 ) -> Result<serde_json::Value, anyhow::Error> {
-    let req = init_request(CreateRequest {
-        method: message.method,
-        params: message.params,
-        auth_chain,
-    })
+    let auth_chain = wallet.auth_chain().ok();
+    let req = init_request(
+        CreateRequest {
+            method: message.method,
+            params: message.params,
+            auth_chain,
+        },
+        Some(&wallet),
+    )
     .await?;
 
     println!(
@@ -208,7 +231,7 @@ pub async fn init_remote_ephemeral_request() -> Result<RemoteEphemeralRequest, a
         params: vec![message.clone().into()],
         auth_chain: None,
     };
-    init_request(request)
+    init_request(request, None)
         .await
         .map(|init| RemoteEphemeralRequest {
             code: init.code,
