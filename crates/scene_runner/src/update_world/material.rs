@@ -245,11 +245,10 @@ impl MaterialDefinition {
         };
 
         let shadow_caster = match &pb_material.material {
-            Some(pb_material::Material::Unlit(unlit)) => unlit.cast_shadows,
-            Some(pb_material::Material::Pbr(pbr)) => pbr.cast_shadows,
-            _ => None,
-        }
-        .unwrap_or(true);
+            Some(pb_material::Material::Unlit(unlit)) => unlit.cast_shadows.unwrap_or(false),
+            Some(pb_material::Material::Pbr(pbr)) => pbr.cast_shadows.unwrap_or(true),
+            None => true,
+        };
 
         Self {
             material,
