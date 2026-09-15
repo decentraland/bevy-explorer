@@ -268,9 +268,6 @@ pub struct EmoteLifecycleEvent {
     pub avatar: Entity,
     pub event: EmoteLifecycle,
     pub source: EmoteLifecycleSource,
-    /// Which of the avatar's two emote slots (full body / upper body) the transition is in. A wire
-    /// stop carries no mask; the reporter ends whichever slot it has reported.
-    pub mask: EmoteMask,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -279,10 +276,16 @@ pub enum EmoteLifecycleSource {
     Wire,
 }
 
+/// One emote plays at a time, whatever its slot, so an end names no emote: it ends the last start.
 #[derive(Clone, Debug)]
 pub enum EmoteLifecycle {
     /// `r#loop` is the flag known at trigger time; the emote's own metadata may still make it loop.
-    Started { urn: String, r#loop: bool },
+    /// `mask` is the slot (full body / upper body) it plays in.
+    Started {
+        urn: String,
+        r#loop: bool,
+        mask: EmoteMask,
+    },
     /// A one-shot ran to its end.
     Finished,
     /// Playback was cut short: movement, a scene animation, a stop from the wire.

@@ -862,30 +862,26 @@ fn animate(
         // the same sequence for this avatar as observers hear for it from the wire.
         let now = playing(&active_emote, &masked);
         if was.as_ref().map(identity) != now.map(identity) {
-            let mut report = |event: EmoteLifecycle, mask: EmoteMask| {
+            let mut report = |event: EmoteLifecycle| {
                 lifecycle.write(EmoteLifecycleEvent {
                     avatar: avatar_ent,
                     event,
                     source: EmoteLifecycleSource::Playback,
-                    mask,
                 });
             };
             if let Some(was) = &was {
-                let event = if was.finished {
+                report(if was.finished {
                     EmoteLifecycle::Finished
                 } else {
                     EmoteLifecycle::Interrupted
-                };
-                report(event, was.mask);
+                });
             }
             if let Some(now) = now {
-                report(
-                    EmoteLifecycle::Started {
-                        urn: now.urn.as_str().to_owned(),
-                        r#loop: now.repeat,
-                    },
-                    now.mask,
-                );
+                report(EmoteLifecycle::Started {
+                    urn: now.urn.as_str().to_owned(),
+                    r#loop: now.repeat,
+                    mask: now.mask,
+                });
             }
         }
     }

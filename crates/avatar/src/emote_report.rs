@@ -65,7 +65,7 @@ impl Plugin for EmoteReportPlugin {
 /// Per-avatar report state. Despawns with the avatar.
 #[derive(Component, Default)]
 pub struct EmoteReportQueue {
-    pending: VecDeque<(EmoteMask, EmoteLifecycle)>,
+    pending: VecDeque<EmoteLifecycle>,
     /// The start the scenes have been told about, `(urn, loop, mask)`, echoed by its stop entry.
     reported: Option<(String, bool, EmoteMask)>,
     /// The scenes told `reported`.
@@ -84,7 +84,7 @@ fn queue_emote_reports(
     mut events: EventReader<EmoteLifecycleEvent>,
 ) {
     // this frame's entries per avatar
-    let mut incoming: HashMap<Entity, VecDeque<(EmoteMask, EmoteLifecycle)>> = HashMap::default();
+    let mut incoming: HashMap<Entity, VecDeque<EmoteLifecycle>> = HashMap::default();
 
     // the wire's word for a foreign avatar, playback's for the rest; the other is what this
     // binary happens to observe, and the two would disagree on timing
@@ -92,7 +92,6 @@ fn queue_emote_reports(
         avatar,
         event,
         source,
-        mask,
     } in events.read()
     {
         let authoritative = if foreign.contains(*avatar) {
@@ -106,7 +105,7 @@ fn queue_emote_reports(
         incoming
             .entry(*avatar)
             .or_default()
-            .push_back((*mask, event.clone()));
+            .push_back(event.clone());
     }
 
     for (avatar, pending) in incoming {
@@ -287,9 +286,9 @@ impl EmoteReportQueue {
         mut resolve: impl FnMut(&str, bool, bool) -> Option<bool>,
         mut emit: impl FnMut(&str, bool, EmoteMask, EmoteState, u32),
     ) {
-        while let Some((mask, head)) = self.pending.front() {
+        while let Some(head) = self.pending.front() {
             let (urn, loops, mask, state) = match head {
-                EmoteLifecycle::Started { urn, r#loop } => {
+                EmoteLifecycle::Started { urn, r#loop, mask } => {
                     let waiting_since = *self.waiting_since.get_or_insert(now);
                     let force =
                         self.pending.len() > MAX_PENDING || now - waiting_since > MAX_RESOLVE_SECS;
@@ -364,26 +363,16 @@ mod tests {
     const FULL: EmoteMask = EmoteMask::FullBody;
     const UPPER: EmoteMask = EmoteMask::UpperBody;
 
-    fn start(urn: &str) -> (EmoteMask, EmoteLifecycle) {
+    fn start(urn: &str) -> EmoteLifecycle {
         start_masked(urn, FULL)
     }
 
-    fn start_masked(urn: &str, mask: EmoteMask) -> (EmoteMask, EmoteLifecycle) {
-        (
+    fn start_masked(urn: &str, mask: EmoteMask) -> EmoteLifecycle {
+        EmoteLifecycle::Started {
+            urn: urn.to_owned(),
+            r#loop: false,
             mask,
-            EmoteLifecycle::Started {
-                urn: urn.to_owned(),
-                r#loop: false,
-            },
-        )
-    }
-
-    fn finished() -> (EmoteMask, EmoteLifecycle) {
-        (FULL, EmoteLifecycle::Finished)
-    }
-
-    fn interrupted() -> (EmoteMask, EmoteLifecycle) {
-        (FULL, EmoteLifecycle::Interrupted)
+        }
     }
 
     /// `SLOW` loops but resolves only once `slow_ready`; everything else is a one-shot, ready.
@@ -421,7 +410,7 @@ mod tests {
         let mut queue = EmoteReportQueue::default();
         queue
             .pending
-            .extend([start(SLOW), interrupted(), start(CACHED)]);
+            .extend([start(SLOW), EmoteLifecycle::Interrupted, start(CACHED)]);
         // emote 2 is cached, but emote 1 hasn't resolved: nothing goes out yet
         assert!(advance(&mut queue, 0.0, false).is_empty());
         assert_eq!(
@@ -440,7 +429,7 @@ mod tests {
         let mut queue = EmoteReportQueue::default();
         queue
             .pending
-            .extend([finished(), start(CACHED), start("other")]);
+            .extend([EmoteLifecycle::Finished, start(CACHED), start("other")]);
         assert_eq!(
             advance(&mut queue, 0.0, true),
             vec![
@@ -449,8 +438,8 @@ mod tests {
                 ("other".to_owned(), false, EmoteState::EsStarted, 3),
             ]
         );
-        queue.pending.push_back(finished());
-        queue.pending.push_back(finished());
+        queue.pending.push_back(EmoteLifecycle::Finished);
+        queue.pending.push_back(EmoteLifecycle::Finished);
         assert_eq!(
             advance(&mut queue, 0.0, true),
             vec![("other".to_owned(), false, EmoteState::EsFinished, 4)]
@@ -513,7 +502,7 @@ mod tests {
         assert!(migrate(&mut queue, &[b]).is_empty());
 
         // the stop goes to b alone, then there's nothing left to carry
-        queue.pending.push_back(finished());
+        queue.pending.push_back(EmoteLifecycle::Finished);
         assert_eq!(
             advance(&mut queue, 0.0, true),
             vec![(CACHED.to_owned(), false, EmoteState::EsFinished, 4)]
@@ -529,10 +518,9 @@ mod tests {
         queue.pending.extend([
             start_masked("carry", UPPER),
             start(CACHED),
-            (UPPER, EmoteLifecycle::Interrupted),
+            EmoteLifecycle::Interrupted,
             start_masked("carry", UPPER),
-            // a wire stop carries no mask
-            interrupted(),
+            EmoteLifecycle::Interrupted,
         ]);
         assert_eq!(
             advance_masked(&mut queue, 0.0, true),
@@ -567,7 +555,7 @@ mod tests {
         // an upper-body emote suspended by a full-body start, as `animate` raises them
         queue.pending.extend([
             start_masked("carry", UPPER),
-            (UPPER, EmoteLifecycle::Interrupted),
+            EmoteLifecycle::Interrupted,
             start(CACHED),
         ]);
         assert_eq!(
