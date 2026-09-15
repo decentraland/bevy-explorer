@@ -247,7 +247,7 @@ impl MaterialDefinition {
         let shadow_caster = match &pb_material.material {
             Some(pb_material::Material::Unlit(unlit)) => unlit.cast_shadows.unwrap_or(false),
             Some(pb_material::Material::Pbr(pbr)) => pbr.cast_shadows.unwrap_or(true),
-            None => true,
+            None => !base.unlit,
         };
 
         Self {
@@ -454,6 +454,10 @@ impl TextureResolver<'_, '_> {
 #[derive(Component)]
 pub struct MeshMaterial3dLoading(Handle<SceneMaterial>);
 
+/// explicit shadow casting (from a gltf node modifier), takes precedence over the material's setting
+#[derive(Component)]
+pub struct ShadowCasterOverride(pub bool);
+
 #[derive(Component, Default)]
 pub struct CachedMaterials(HashMap<u64, (AssetId<SceneMaterial>, MaterialDefinition)>);
 
@@ -476,6 +480,7 @@ pub fn update_materials(
             &ContainerEntity,
             Option<&SceneEntity>,
             Option<&BaseMaterial>,
+            Option<&ShadowCasterOverride>,
         ),
         Or<(
             Changed<PbMaterialComponent>,
@@ -496,7 +501,7 @@ pub fn update_materials(
 ) {
     gltf_resolver.begin_frame();
 
-    for (ent, mat, container, maybe_scene_ent, base) in new_materials.iter_mut() {
+    for (ent, mat, container, maybe_scene_ent, base, shadow_override) in new_materials.iter_mut() {
         let Ok((mut scene, mut cache)) = scenes.get_mut(container.root) else {
             continue;
         };
@@ -643,7 +648,7 @@ pub fn update_materials(
         commands
             .remove::<RetryMaterial>()
             .try_insert(MeshMaterial3dLoading(material));
-        if defn.shadow_caster {
+        if shadow_override.map_or(defn.shadow_caster, |shadows| shadows.0) {
             commands.remove::<NotShadowCaster>();
         } else {
             commands.try_insert(NotShadowCaster);
@@ -842,7 +847,7 @@ pub fn dcl_material_from_standard_material(
         pb_material::Material::Unlit(pb_material::UnlitMaterial {
             texture: base.base_color_texture.as_ref().map(dcl_texture),
             alpha_test,
-            cast_shadows: Some(true),
+            cast_shadows: Some(false),
             diffuse_color: Some(base.base_color.convert_linear_rgba()),
             alpha_texture,
         })
