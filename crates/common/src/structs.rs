@@ -552,9 +552,9 @@ pub struct AppConfig {
     pub inputs_generation: u32,
 }
 
-/// bump to force a one-time reset of the preset-managed settings in existing configs
+/// bump to run one-time migrations of the preset-managed settings in existing configs
 /// (see [`AppConfig::reset_outdated_settings`])
-pub const SETTINGS_GENERATION: u32 = 1;
+pub const SETTINGS_GENERATION: u32 = 2;
 
 /// bump to run one-time migrations of saved input binding tables
 /// (see [`AppConfig::migrate_inputs`])
@@ -608,13 +608,24 @@ impl AppConfig {
         self.home_location.unwrap_or(IVec2::ZERO)
     }
 
-    /// one-time forced reinitialization: configs saved with an older generation get the
-    /// current defaults for the preset-managed settings, keeping everything else
+    /// one-time migrations for configs saved with an older generation, keeping everything
+    /// else. gen 1: reinitialize the preset-managed settings to the current defaults.
+    /// gen 2: default bloom dropped High -> Low; move configs still on the old default.
     pub fn reset_outdated_settings(&mut self) {
         if self.settings_generation >= SETTINGS_GENERATION {
             return;
         }
         let default = Self::default();
+        if self.settings_generation < 1 {
+            self.reset_preset_settings(&default);
+        }
+        if self.settings_generation < 2 && self.graphics.bloom == BloomSetting::High {
+            self.graphics.bloom = default.graphics.bloom;
+        }
+        self.settings_generation = SETTINGS_GENERATION;
+    }
+
+    fn reset_preset_settings(&mut self, default: &Self) {
         self.graphics.msaa = default.graphics.msaa;
         self.graphics.shadow_distance = default.graphics.shadow_distance;
         self.graphics.shadow_settings = default.graphics.shadow_settings;
@@ -627,13 +638,12 @@ impl AppConfig {
         self.graphics.oob = default.graphics.oob;
         self.scene_load_distance = default.scene_load_distance;
         self.scene_unload_extra_distance = default.scene_unload_extra_distance;
-        self.scene_imposter_distances = default.scene_imposter_distances;
+        self.scene_imposter_distances = default.scene_imposter_distances.clone();
         self.scene_imposter_multisample = default.scene_imposter_multisample;
         self.scene_imposter_multisample_amount = default.scene_imposter_multisample_amount;
         self.parcel_grass_setting = default.parcel_grass_setting;
         self.max_avatars = default.max_avatars;
         self.max_videos = default.max_videos;
-        self.settings_generation = SETTINGS_GENERATION;
     }
 
     /// migrate saved input tables: replace bindings still on changed old defaults
@@ -791,7 +801,7 @@ impl Default for GraphicsSettings {
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
-            bloom: BloomSetting::High,
+            bloom: BloomSetting::Low,
             dof: DofSetting::High,
             ssao: SsaoSetting::Off,
             oob: 2.0,
