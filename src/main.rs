@@ -1,12 +1,10 @@
 #![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
 
-use std::{
-    error::Error, fmt::Display, fs::File, io::Write, path::PathBuf, str::FromStr, sync::OnceLock,
-};
+use std::{error::Error, fmt::Display, fs::File, io::Write, path::PathBuf, sync::OnceLock};
 
 use bevy::{log::LogPlugin, prelude::*};
 use clap::Parser;
-use common::structs::{AppConfig, IVec2Arg};
+use common::structs::AppConfig;
 use dcl_deno_ipc::init_runtime;
 use mimalloc::MiMalloc;
 use webgpu_build::{DecentralandApp, DecentralandAppConfig, DecentralandArguments};
@@ -120,12 +118,6 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
         error!("{e}");
         UserError(USAGE_ERROR)
     })?;
-    if let Some(position) = &args.launch.position {
-        IVec2Arg::from_str(position).map_err(|e| {
-            error!("--position {position}: {e}");
-            UserError(USAGE_ERROR)
-        })?;
-    }
 
     // An explicit --system-scene (a scene source, or "none" for the engine's builtin ui) opts out of the
     // react HUD entirely — the given ui scene drives instead (see lib.rs).

@@ -12,17 +12,23 @@
 //! destructures its struct without `..`, so a new field fails to compile until it is given a
 //! meaning here (or, for the destination and scene set, explicitly left to the binary).
 
+use std::str::FromStr;
+
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
     render::render_asset::RenderAssetBytesPerFrame,
 };
-use common::structs::{AppConfig, EditorMode, PreviewMode};
+use common::structs::{AppConfig, EditorMode, IVec2Arg, PreviewMode};
 use system_api_types::launch_options::{ClientOptions, LaunchOptions};
 
 /// The base domain every backend host composes from — so this runs before
-/// `AppConfig::default()`, which composes the default realm.
+/// `AppConfig::default()`, which composes the default realm. Also rejects an unparseable
+/// position up front, rather than silently spawning at the home parcel.
 pub fn latch(launch: &LaunchOptions) -> Result<(), String> {
+    if let Some(position) = &launch.position {
+        IVec2Arg::from_str(position).map_err(|e| format!("--position {position}: {e}"))?;
+    }
     if let Some(domain) = &launch.base_domain {
         common::base_domain::set(domain)?;
     }
