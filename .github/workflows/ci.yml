@@ -121,6 +121,13 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+      # The macOS/Windows legs are the longest jobs in the workflow; cache their dependency
+      # artifacts (rust-cache never keeps workspace crates). Linux finishes inside the other
+      # legs uncached, and every other cache in this repo was measured to give no reuse.
+      - uses: Swatinem/rust-cache@v2
+        if: runner.os != 'Linux'
+        with:
+          save-if: true # TEMPORARY warm-up; final value is main-only
       - name: Install protoc
         if: matrix.os != 'self-hosted-windows'
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master

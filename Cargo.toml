@@ -1,3 +1,4 @@
+# cache warm-up: temporary, removed before merge
 [package]
 name = "decentra-bevy"
 version = "0.1.0"
