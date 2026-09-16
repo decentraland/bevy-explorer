@@ -264,7 +264,13 @@ pub fn set_ui_background(
                         node,
                         Ui9Slice {
                             image: image.image,
-                            center_region: rect.into(),
+                            // slices arrive as fractions of the texture size
+                            center_region: UiRect {
+                                left: Val::Percent(rect.left * 100.0),
+                                right: Val::Percent(rect.right * 100.0),
+                                top: Val::Percent(rect.top * 100.0),
+                                bottom: Val::Percent(rect.bottom * 100.0),
+                            },
                             tint: Some(image_color),
                         },
                         UiBackgroundMarker,

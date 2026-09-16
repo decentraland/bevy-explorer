@@ -149,6 +149,13 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "pbr_light_textures",
   "reduce_image_sizes",
 ] }
+# leaf bevy crates for dcl_component, which has to build without the engine (system_api_types TS export)
+bevy_math = { version = "0.16.1", default-features = false, features = ["std"] }
+bevy_color = { version = "0.16.1", default-features = false, features = [
+  "std",
+] }
+bevy_transform = { version = "0.16.1", default-features = false }
+bevy_ecs = { version = "0.16.1", default-features = false, features = ["std"] }
 disqualified = "1.0"
 wgpu = "24"
 cef = "139"
@@ -426,6 +433,8 @@ bevy_image = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dc
 bevy_input = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_log = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_math = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_color = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_transform = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_reflect = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_render = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_time = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }

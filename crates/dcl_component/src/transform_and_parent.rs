@@ -1,6 +1,7 @@
 use std::ops::{Add, Sub};
 
-use bevy::prelude::{Quat, Transform, Vec3};
+use bevy_math::{Quat, Vec3};
+use bevy_transform::components::Transform;
 
 use super::{
     DclReader, DclReaderError, FromDclReader, GlobalCrdtData, Localizer, SceneEntityId, ToDclWriter,
@@ -187,7 +188,7 @@ impl DclTransformAndParent {
         let rotation = if rotation.is_finite() {
             rotation
         } else {
-            bevy::prelude::Quat::IDENTITY
+            Quat::IDENTITY
         };
 
         let scale = sanitize_scale(self.scale);

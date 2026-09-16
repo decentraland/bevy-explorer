@@ -3482,7 +3482,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "bevy",
+ "bevy_color",
+ "bevy_ecs",
+ "bevy_math",
+ "bevy_transform",
  "dcl-rpc",
  "prost 0.11.9",
  "prost-build 0.11.9",
