@@ -501,3 +501,57 @@ fn reset_forgets_every_subject() {
     let events = decoder.handle(delta(SUBJECT, 1, 2, 1500, 5.0));
     assert!(matches!(events.as_slice(), [PulseEvent::Resync(r)] if r.known_seq == 0));
 }
+
+fn teleported(sequence: u32, tick: u32, realm: &str) -> pulse::ServerMessage {
+    server_msg(pulse::server_message::Message::Teleported(
+        pulse::TeleportPerformed {
+            subject_id: SUBJECT,
+            sequence,
+            server_tick: tick,
+            state: Some(player_state((4.0, 0.0, 4.0), 0)),
+            realm: realm.to_string(),
+        },
+    ))
+}
+
+/// An observer in the destination realm filtered out whatever it was sent while the subject was
+/// elsewhere, and the server won't re-announce a subject it already has in view, so a teleport
+/// into another realm is announced as a join (with the held profile version) ahead of its movement.
+/// A teleport within the realm is just movement.
+#[test]
+fn teleport_into_another_realm_emits_join_first() {
+    let mut decoder = PulseDecoder::new(PulseParcelGrid::default());
+    decoder.handle(server_msg(joined_in_realm(
+        SUBJECT,
+        WALLET,
+        "elsewhere",
+        (1.0, 2.0, 3.0),
+    )));
+    decoder.handle(server_msg(
+        pulse::server_message::Message::PlayerProfileVersionAnnounced(
+            pulse::PlayerProfileVersionsAnnounced {
+                subject_id: SUBJECT,
+                version: 9,
+            },
+        ),
+    ));
+
+    let events = decoder.handle(teleported(2, 1500, "home"));
+    let [PulseEvent::Joined {
+        address,
+        profile_version,
+        realm: join_realm,
+        ..
+    }, PulseEvent::Movement {
+        realm, teleport, ..
+    }] = events.as_slice()
+    else {
+        panic!("expected Joined then Movement, got {events:?}");
+    };
+    assert_eq!((*address, *profile_version), (wallet(), 9));
+    assert_eq!((&**join_realm, &**realm), ("home", "home"));
+    assert!(*teleport);
+
+    let events = decoder.handle(teleported(3, 1600, "home"));
+    assert!(matches!(events.as_slice(), [PulseEvent::Movement { .. }]));
+}

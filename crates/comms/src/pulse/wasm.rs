@@ -237,8 +237,10 @@ async fn read_stream(
         assembler.append(&chunk);
         loop {
             match assembler.next_message() {
+                // Waits for room rather than dropping: the decoder must see every reliable message
+                // (each `PlayerLeft` above all), and holding the stream back is just flow control.
                 Ok(Some(message)) => {
-                    let _ = inbound.try_send(message);
+                    let _ = inbound.send(message).await;
                 }
                 Ok(None) => break,
                 Err(err) => {

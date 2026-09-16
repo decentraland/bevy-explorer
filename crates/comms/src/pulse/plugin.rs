@@ -962,7 +962,8 @@ fn drain_inbound(
     // A player's realm is its whole area of interest, so a peer the server places anywhere else is
     // not for the engine: a delta still in flight from the realm just left, or a peer teleporting
     // out of this one. The decoder keeps tracking them regardless — that is what a later
-    // `replay` on returning to their realm is built from. A listener places by realm itself.
+    // `replay` on returning to their realm, or the join it synthesizes when they enter ours, is
+    // built from. A listener places by realm itself.
     let own_realm = match session.role {
         PulseRole::Player(_) => realm_name(session, realm),
         PulseRole::Listener(_) => None,
@@ -1012,26 +1013,45 @@ fn drain_inbound(
                 // Emote start/stop are delivered natively (`PlayerMessage::Emote`) rather than as an
                 // rfc4 `PlayerEmote`: byte-transport emotes are dropped as duplicates, so the Pulse
                 // copy has to be distinguishable from them by variant, exactly as movement is.
-                PulseEvent::EmoteStart { address, urn, tick } => session.forward(
-                    sinks,
+                PulseEvent::EmoteStart {
                     address,
-                    PlayerMessage::Emote {
-                        urn,
-                        incremental_id: tick,
-                        stopping: false,
-                        completed: false,
-                    },
-                ),
-                PulseEvent::EmoteStop { address, completed } => session.forward(
-                    sinks,
+                    urn,
+                    tick,
+                    realm,
+                } => {
+                    if !for_engine(&realm) {
+                        continue;
+                    }
+                    session.forward(
+                        sinks,
+                        address,
+                        PlayerMessage::Emote {
+                            urn,
+                            incremental_id: tick,
+                            stopping: false,
+                            completed: false,
+                        },
+                    )
+                }
+                PulseEvent::EmoteStop {
                     address,
-                    PlayerMessage::Emote {
-                        urn: String::new(),
-                        incremental_id: 0,
-                        stopping: true,
-                        completed,
-                    },
-                ),
+                    completed,
+                    realm,
+                } => {
+                    if !for_engine(&realm) {
+                        continue;
+                    }
+                    session.forward(
+                        sinks,
+                        address,
+                        PlayerMessage::Emote {
+                            urn: String::new(),
+                            incremental_id: 0,
+                            stopping: true,
+                            completed,
+                        },
+                    )
+                }
                 // A peer entered our interest set. Report the arrival, then their initial profile
                 // version; the version alone would register presence, but saying so explicitly
                 // matches the other transports and doesn't depend on it carrying one.
@@ -1050,7 +1070,14 @@ fn drain_inbound(
                 }
                 // A later announcement. Bridged as an rfc4 `AnnounceProfileVersion` so it reuses the
                 // same profile path as the byte transports; the set is idempotent.
-                PulseEvent::ProfileVersion { address, version } => {
+                PulseEvent::ProfileVersion {
+                    address,
+                    version,
+                    realm,
+                } => {
+                    if !for_engine(&realm) {
+                        continue;
+                    }
                     bridge_profile_version(session, sinks, address, version)
                 }
                 // The peer left our interest set (or disconnected). Report the departure on the

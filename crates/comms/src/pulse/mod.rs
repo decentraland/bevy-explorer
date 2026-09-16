@@ -160,18 +160,28 @@ pub enum PulseEvent {
     },
     /// Subject left the interest set (or disconnected). Drop the alias / foreign player.
     Left { address: Address },
-    /// Subject announced a new profile version.
-    ProfileVersion { address: Address, version: i32 },
+    /// Subject announced a new profile version. `realm` is where the server last placed them, as on
+    /// every per-subject event.
+    ProfileVersion {
+        address: Address,
+        version: i32,
+        realm: Arc<str>,
+    },
     /// Subject started an emote. Emitted alongside the piggybacked `Movement`. `tick` is the
     /// server tick, used downstream only as a monotonic id so re-triggering the same urn replays.
     EmoteStart {
         address: Address,
         urn: String,
         tick: u32,
+        realm: Arc<str>,
     },
     /// Subject's emote stopped. `completed`: the server's one-shot timer expired (a natural
     /// finish) rather than the player cancelling a looping emote.
-    EmoteStop { address: Address, completed: bool },
+    EmoteStop {
+        address: Address,
+        completed: bool,
+        realm: Arc<str>,
+    },
     /// A sequence gap was detected — transmit this reliably so the server replays full state.
     Resync(pulse::ResyncRequest),
 }
@@ -391,6 +401,7 @@ impl PulseDecoder {
                         address: subject.wallet,
                         urn: e.emote_id,
                         tick: e.server_tick,
+                        realm: subject.realm.clone(),
                     });
                 }
                 events
@@ -408,6 +419,7 @@ impl PulseDecoder {
                     events.push(PulseEvent::EmoteStop {
                         address: subject.wallet,
                         completed: e.reason == pulse::EmoteStopReason::Completed as i32,
+                        realm: subject.realm.clone(),
                     });
                 }
                 events
@@ -500,19 +512,31 @@ impl PulseDecoder {
         subject.last_seq = sequence;
         subject.last_tick = server_tick;
         // Only a teleport carries one, and only then can it differ.
-        if let Some(realm) = realm.filter(|realm| &*subject.realm != realm.as_str()) {
-            subject.realm = Arc::from(realm.as_str());
-        }
+        let changed_realm = match realm.filter(|realm| &*subject.realm != realm.as_str()) {
+            Some(realm) => {
+                subject.realm = Arc::from(realm.as_str());
+                true
+            }
+            None => false,
+        };
         let address = subject.wallet;
         let realm = subject.realm.clone();
         let movement = self.to_movement_for(subject_id);
-        vec![PulseEvent::Movement {
+        // Entering a realm is announced like a first sighting: an observer there filtered out
+        // whatever it was sent while the subject was elsewhere, and the server won't re-announce a
+        // subject it already has in view.
+        let mut events = Vec::with_capacity(2);
+        if changed_realm {
+            events.push(self.joined_event(subject_id, &movement));
+        }
+        events.push(PulseEvent::Movement {
             address,
             movement: Box::new(movement),
             realm,
             teleport,
             timestamp: self.tick_secs(server_tick),
-        }]
+        });
+        events
     }
 
     fn on_delta(&mut self, delta: pulse::PlayerStateDeltaTier0) -> Vec<PulseEvent> {
@@ -577,6 +601,7 @@ impl PulseDecoder {
                 vec![PulseEvent::ProfileVersion {
                     address: subject.wallet,
                     version,
+                    realm: subject.realm.clone(),
                 }]
             }
             None => Vec::new(),
@@ -614,20 +639,9 @@ impl PulseDecoder {
             let subject = &self.subjects[&id];
             let address = subject.wallet;
             let realm = subject.realm.clone();
-            let profile_version = subject.profile_version;
             let last_tick = subject.last_tick;
             let movement = self.to_movement(&subject.baseline);
-            events.push(PulseEvent::Joined {
-                subject_id: id,
-                address,
-                profile_version,
-                parcel: self.grid.parcel_coords(Vec3::new(
-                    movement.position_x,
-                    movement.position_y,
-                    movement.position_z,
-                )),
-                realm: realm.clone(),
-            });
+            events.push(self.joined_event(id, &movement));
             events.push(PulseEvent::Movement {
                 address,
                 movement: Box::new(movement),
@@ -637,6 +651,23 @@ impl PulseDecoder {
             });
         }
         events
+    }
+
+    /// A `Joined` for a held subject, from its stored identity and `movement` (its converted
+    /// baseline).
+    fn joined_event(&self, subject_id: u32, movement: &rfc4::Movement) -> PulseEvent {
+        let subject = &self.subjects[&subject_id];
+        PulseEvent::Joined {
+            subject_id,
+            address: subject.wallet,
+            profile_version: subject.profile_version,
+            parcel: self.grid.parcel_coords(Vec3::new(
+                movement.position_x,
+                movement.position_y,
+                movement.position_z,
+            )),
+            realm: subject.realm.clone(),
+        }
     }
 
     /// Convenience: convert an already-stored subject baseline.
