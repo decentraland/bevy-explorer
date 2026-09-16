@@ -1486,7 +1486,7 @@ fn debug_modifiers(
             .collect::<HashSet<_>>();
 
         for (path, child) in processed.named_nodes.iter() {
-            let Ok((existing_material, _)) = child_nodes.get(*child) else {
+            let Ok((existing_material, existing_hidden)) = child_nodes.get(*child) else {
                 continue;
             };
 
@@ -1532,7 +1532,7 @@ fn debug_modifiers(
 
                 if let Some(material) = maybe_material {
                     material_modified = true;
-                    if let Some(existing) = existing_material {
+                    if let (Some(existing), None) = (existing_material, existing_hidden) {
                         commands
                             .entity(*child)
                             .try_insert(HiddenMaterial(existing.clone()));
@@ -1907,6 +1907,8 @@ fn expose_gltfs(
                     let base = mats.get(material.id()).unwrap();
                     if base.base.unlit {
                         commands.entity(ent).try_insert(NotShadowCaster);
+                    } else {
+                        commands.entity(ent).try_remove::<NotShadowCaster>();
                     }
                     commands.entity(ent).try_insert(BaseMaterial {
                         material: base.base.clone(),
