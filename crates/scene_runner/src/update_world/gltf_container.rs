@@ -35,7 +35,10 @@ use crate::{
     renderer_context::RendererSceneContext,
     update_world::{
         lights::LightSource,
-        material::{dcl_material_from_standard_material, BaseMaterial, PbMaterialComponent},
+        material::{
+            dcl_material_from_standard_material, BaseMaterial, PbMaterialComponent,
+            ShadowCasterOverride,
+        },
         mesh_collider::{ColliderType, CtCollider},
         trigger_area::CtTrigger,
     },
@@ -969,6 +972,12 @@ fn update_ready_gltfs(
                             *tracker.0.entry("Unique Materials").or_default() += 1;
                             h_scene_material
                         };
+                        if bound_mats
+                            .get(&h_scene_material)
+                            .is_some_and(|mat| mat.base.unlit)
+                        {
+                            commands.entity(spawned_ent).try_insert(NotShadowCaster);
+                        }
                         commands
                             .entity(spawned_ent)
                             .try_insert(MeshMaterial3d(h_scene_material))
@@ -1400,7 +1409,25 @@ fn debug_modifiers(
     >,
     removed_q: Query<&GltfProcessed>,
     mut removed_components: RemovedComponents<GltfNodeModifiers>,
+    scene_materials: Res<Assets<SceneMaterial>>,
 ) {
+    // reset to the gltf default: unlit materials don't cast shadows
+    let reset_shadows = |commands: &mut Commands, child: Entity| {
+        let original_material = child_nodes
+            .get(child)
+            .ok()
+            .and_then(|(material, hidden)| hidden.map(|hidden| &hidden.0).or(material));
+        if original_material
+            .and_then(|material| scene_materials.get(material))
+            .is_some_and(|material| material.base.unlit)
+        {
+            commands.entity(child).try_insert(NotShadowCaster);
+        } else {
+            commands.entity(child).try_remove::<NotShadowCaster>();
+        }
+        commands.entity(child).try_remove::<ShadowCasterOverride>();
+    };
+
     // turn Cube1_4 into Cube1/Primitive4
     fn path_subsegments(segment: &str) -> Vec<String> {
         let Some(last_underscore) = segment.rfind('_') else {
@@ -1459,7 +1486,7 @@ fn debug_modifiers(
             .collect::<HashSet<_>>();
 
         for (path, child) in processed.named_nodes.iter() {
-            let Ok((existing_material, _)) = child_nodes.get(*child) else {
+            let Ok((existing_material, existing_hidden)) = child_nodes.get(*child) else {
                 continue;
             };
 
@@ -1468,7 +1495,7 @@ fn debug_modifiers(
                 .filter(|segment| !segment.is_empty())
                 .collect::<Vec<_>>();
 
-            commands.entity(*child).try_remove::<NotShadowCaster>();
+            reset_shadows(&mut commands, *child);
 
             let mut material_modified = false;
             for (modifier_path, (shadows, maybe_material)) in
@@ -1493,6 +1520,9 @@ fn debug_modifiers(
                 }
 
                 if let Some(shadows) = shadows {
+                    commands
+                        .entity(*child)
+                        .try_insert(ShadowCasterOverride(*shadows));
                     if *shadows {
                         commands.entity(*child).try_remove::<NotShadowCaster>();
                     } else {
@@ -1502,7 +1532,7 @@ fn debug_modifiers(
 
                 if let Some(material) = maybe_material {
                     material_modified = true;
-                    if let Some(existing) = existing_material {
+                    if let (Some(existing), None) = (existing_material, existing_hidden) {
                         commands
                             .entity(*child)
                             .try_insert(HiddenMaterial(existing.clone()));
@@ -1539,9 +1569,10 @@ fn debug_modifiers(
         };
 
         for (_, child) in processed.named_nodes.iter() {
+            reset_shadows(&mut commands, *child);
             commands
                 .entity(*child)
-                .try_remove::<(NotShadowCaster, HiddenMaterial, PbMaterialComponent)>();
+                .try_remove::<(HiddenMaterial, PbMaterialComponent)>();
             if let Ok((_, Some(prev_material))) = child_nodes.get(*child) {
                 commands.entity(*child).try_insert(prev_material.0.clone());
             }
@@ -1874,6 +1905,11 @@ fn expose_gltfs(
                     commands.entity(ent).try_insert(material.clone());
                     // set base
                     let base = mats.get(material.id()).unwrap();
+                    if base.base.unlit {
+                        commands.entity(ent).try_insert(NotShadowCaster);
+                    } else {
+                        commands.entity(ent).try_remove::<NotShadowCaster>();
+                    }
                     commands.entity(ent).try_insert(BaseMaterial {
                         material: base.base.clone(),
                         gltf: src.to_owned(),
