@@ -241,6 +241,7 @@ async-compat = "0.2"
 async-fs = "2.0"
 base64 = "0.22"
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
+mimalloc = { version = "*", default-features = false }
 # pinned: alpha releases make no api stability promises between versions
 draco-oxide-decoder = "=0.1.0-alpha.9"
 draco-oxide-core = "=0.1.0-alpha.9"
@@ -375,7 +376,7 @@ bevy_simple_text_input = { workspace = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dcl_deno = { workspace = true }
 dcl_deno_ipc = { workspace = true }
-mimalloc = { version = "*", default-features = false }
+mimalloc = { workspace = true }
 cef_offscreen = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
