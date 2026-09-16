@@ -203,6 +203,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 kira = "0.9.6"
 zip = { version = "2", default-features = false }
 image = "0.25"
+ttf-parser = { version = "0.21", default-features = false }
 opener = { version = "0.8", git = "https://github.com/robtfm/opener" }
 chrono = { version = "0.4.31", features = ["serde"] }
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "0.16" }

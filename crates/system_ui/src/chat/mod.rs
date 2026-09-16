@@ -348,7 +348,7 @@ fn append_chat_messages(
     }
 }
 
-fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMessage) -> Entity {
+fn make_log(commands: &mut Commands, log: SceneLogMessage) -> Entity {
     let SceneLogMessage {
         timestamp,
         level,
@@ -372,7 +372,7 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
             FontSize(0.0175),
             Text::new(message),
             TextFont {
-                font: asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
+                font: ui_core::user_font(ui_core::FontName::Sans, ui_core::WeightName::Bold),
                 font_size: 15.0,
                 ..Default::default()
             },
@@ -388,7 +388,6 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
 #[allow(clippy::too_many_arguments)]
 fn display_chat(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
     mut chatbox: Query<(Entity, &mut ChatBox, Option<&Children>)>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
@@ -453,7 +452,6 @@ fn display_chat(
                     if missed > 0 {
                         msgs.push(make_log(
                             &mut commands,
-                            &asset_server,
                             SceneLogMessage {
                                 timestamp: 0.0,
                                 level: SceneLogLevel::SystemError,
@@ -462,14 +460,14 @@ fn display_chat(
                         ));
                     }
                     for message in backlog.into_iter() {
-                        msgs.push(make_log(&mut commands, &asset_server, message));
+                        msgs.push(make_log(&mut commands, message));
                     }
                     commands.entity(entity).replace_children(&msgs);
                 }
 
                 if let Some((_, ref mut rec)) = chatbox.active_log_sink.as_mut() {
                     while let Ok(log) = rec.try_recv() {
-                        let msg = make_log(&mut commands, &asset_server, log);
+                        let msg = make_log(&mut commands, log);
                         commands.entity(entity).add_child(msg);
                     }
                 }
@@ -477,7 +475,7 @@ fn display_chat(
         } else if let Some((_, sink)) = chatbox.active_log_sink.as_mut() {
             let mut msgs = Vec::default();
             while let Ok(message) = sink.try_recv() {
-                msgs.push(make_log(&mut commands, &asset_server, message));
+                msgs.push(make_log(&mut commands, message));
             }
             commands.entity(entity).try_push_children(&msgs);
         }

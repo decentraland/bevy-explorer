@@ -40,6 +40,7 @@ pub mod animation;
 pub mod avatar_modifier_area;
 pub mod billboard;
 pub mod camera_mode_area;
+pub mod fonts;
 pub mod gltf_container;
 pub mod light_gradients;
 pub mod lights;
@@ -198,6 +199,7 @@ impl Plugin for SceneOutputPlugin {
             app.add_plugins(PointerEventsPlugin);
             app.add_plugins(SceneUiPlugin);
             app.add_plugins(TextShapePlugin);
+            app.add_plugins(fonts::SceneFontsPlugin);
         }
         app.add_plugins(CameraModeAreaPlugin);
         if !headless {

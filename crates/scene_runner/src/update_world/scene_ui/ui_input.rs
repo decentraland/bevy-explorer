@@ -3,7 +3,7 @@ use common::util::ModifyComponentExt;
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::{
-        sdk::components::{self, PbUiInput, PbUiInputResult},
+        sdk::components::{PbUiInput, PbUiInputResult},
         Color4DclToBevy,
     },
     SceneComponentId,
@@ -11,10 +11,12 @@ use dcl_component::{
 use ui_core::{
     text_entry::{TextEntry, TextEntrySubmit, TextEntryValue},
     ui_actions::{DataChanged, On, Submit, UiCaller},
-    user_font, FontName, FONT_SIZE_SCALE,
+    FONT_SIZE_SCALE,
 };
 
-use crate::{renderer_context::RendererSceneContext, SceneEntity};
+use crate::{
+    renderer_context::RendererSceneContext, update_world::fonts::SceneFontServer, SceneEntity,
+};
 
 use super::UiLink;
 
@@ -35,6 +37,8 @@ pub fn set_ui_input(
     >,
     mut removed: RemovedComponents<UiInput>,
     mut links: Query<&mut UiLink, Without<UiInput>>,
+    mut scene_fonts: SceneFontServer,
+    contexts: Query<&RendererSceneContext>,
 ) {
     for ent in removed.read() {
         if let Ok(mut link) = links.get_mut(ent) {
@@ -50,11 +54,15 @@ pub fn set_ui_input(
             continue;
         };
 
-        let font_name = match input.0.font() {
-            components::common::Font::FSansSerif => FontName::Sans,
-            components::common::Font::FSerif => FontName::Serif,
-            components::common::Font::FMonospace => FontName::Mono,
+        let Ok(context) = contexts.get(scene_ent.root) else {
+            continue;
         };
+        let family = scene_fonts.family(
+            scene_ent.root,
+            &context.hash,
+            input.0.font(),
+            input.0.font_src.as_deref(),
+        );
         let font_size = input.0.font_size.unwrap_or(10).max(1) as f32;
         let multiline = input.0.multi_line.unwrap_or(false);
         let clear_on_submit = input.0.clear_on_submit.unwrap_or(true);
@@ -123,7 +131,7 @@ pub fn set_ui_input(
                 multiline: if multiline { 2 } else { 1 },
                 text_style: Some((
                     TextFont {
-                        font: user_font(font_name, ui_core::WeightName::Regular),
+                        font: scene_fonts.face(&family, ui_core::WeightName::Regular),
                         font_size: font_size * FONT_SIZE_SCALE,
                         ..Default::default()
                     },
