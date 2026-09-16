@@ -107,9 +107,12 @@ fn av_sinks_inserted<T: AVPlayer>(
     mut audio_manager: NonSendMut<bevy_kira_audio::audio_output::AudioOutput<DefaultBackend>>,
 ) {
     let entity = trigger.target();
-    let Ok(mut av_sinks) = av_sinks.get_mut(entity) else {
-        unreachable!("Infallible query");
-    };
+    let mut av_sinks = av_sinks.get_mut(entity).unwrap_or_else(|e| {
+        panic!(
+            "av_sinks_inserted::<{}> query failed: {e}",
+            disqualified::ShortName::of::<T>()
+        )
+    });
     debug!(
         "AVSink<{}> inserted to {}",
         disqualified::ShortName::of::<T>(),

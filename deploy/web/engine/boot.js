@@ -124,7 +124,15 @@ publish()
 
   function recordError(err, source) {
     console.error('[engine error]', source || 'error', err)
-    lastError = { err, source: source || 'error', at: nowMs() }
+    // A panic is followed by the generic "unreachable" trap it causes (window 'error' /
+    // 'unhandledrejection'); keep the panic text as the crash reason and append later errors.
+    if (lastError?.source === 'panic' && source !== 'panic') {
+      if (lastError.appended++ < 5) {
+        lastError.err = `${errMessage(lastError.err)}\n\nthen (${source || 'error'}): ${errMessage(err)}`
+      }
+      return
+    }
+    lastError = { err, source: source || 'error', at: nowMs(), appended: 0 }
   }
   window.reportEngineError = recordError
 
