@@ -1,4 +1,4 @@
-use bevy::math::FloatOrd;
+use bevy_math::FloatOrd;
 
 use super::{FromDclReader, GlobalCrdtData, Localizer, PositionFree, ToDclWriter};
 
@@ -168,15 +168,15 @@ impl GlobalCrdtData for sdk::components::PbAvatarMovementInfo {
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}
-impl From<bevy::prelude::Vec2> for common::Vector2 {
-    fn from(value: bevy::prelude::Vec2) -> Self {
+impl From<bevy_math::Vec2> for common::Vector2 {
+    fn from(value: bevy_math::Vec2) -> Self {
         Self {
             x: value.x,
             y: value.y,
         }
     }
 }
-impl From<&common::Vector2> for bevy::prelude::Vec2 {
+impl From<&common::Vector2> for bevy_math::Vec2 {
     fn from(value: &common::Vector2) -> Self {
         Self {
             x: value.x,
@@ -212,16 +212,16 @@ impl std::ops::Add<common::Vector3> for common::Vector3 {
 
 impl common::Vector3 {
     // flip z coordinate for handedness
-    pub fn world_vec_to_vec3(&self) -> bevy::prelude::Vec3 {
-        let vec = bevy::prelude::Vec3::new(self.x, self.y, -self.z);
+    pub fn world_vec_to_vec3(&self) -> bevy_math::Vec3 {
+        let vec = bevy_math::Vec3::new(self.x, self.y, -self.z);
         if vec.is_nan() {
-            bevy::prelude::Vec3::ZERO
+            bevy_math::Vec3::ZERO
         } else {
             vec
         }
     }
 
-    pub fn world_vec_from_vec3(vec3: &bevy::prelude::Vec3) -> Self {
+    pub fn world_vec_from_vec3(vec3: &bevy_math::Vec3) -> Self {
         Self {
             x: vec3.x,
             y: vec3.y,
@@ -229,11 +229,11 @@ impl common::Vector3 {
         }
     }
 
-    pub fn abs_vec_to_vec3(&self) -> bevy::prelude::Vec3 {
-        bevy::prelude::Vec3::new(self.x, self.y, self.z)
+    pub fn abs_vec_to_vec3(&self) -> bevy_math::Vec3 {
+        bevy_math::Vec3::new(self.x, self.y, self.z)
     }
 
-    pub fn abs_vec_from_vec3(vec3: &bevy::prelude::Vec3) -> Self {
+    pub fn abs_vec_from_vec3(vec3: &bevy_math::Vec3) -> Self {
         Self {
             x: vec3.x,
             y: vec3.y,
@@ -244,25 +244,25 @@ impl common::Vector3 {
 
 // QUATERNION conversions
 impl Copy for common::Quaternion {}
-impl From<common::Quaternion> for bevy::math::Quat {
+impl From<common::Quaternion> for bevy_math::Quat {
     fn from(q: common::Quaternion) -> Self {
-        bevy::math::Quat::from_xyzw(q.x, q.y, -q.z, -q.w)
+        bevy_math::Quat::from_xyzw(q.x, q.y, -q.z, -q.w)
     }
 }
 
 impl common::Quaternion {
-    pub fn to_bevy_normalized(self) -> bevy::math::Quat {
-        let quat = bevy::math::Quat::from(self).normalize();
+    pub fn to_bevy_normalized(self) -> bevy_math::Quat {
+        let quat = bevy_math::Quat::from(self).normalize();
         if quat.is_finite() {
             quat
         } else {
-            bevy::math::Quat::IDENTITY
+            bevy_math::Quat::IDENTITY
         }
     }
 }
 
-impl From<bevy::math::Quat> for common::Quaternion {
-    fn from(q: bevy::math::Quat) -> Self {
+impl From<bevy_math::Quat> for common::Quaternion {
+    fn from(q: bevy_math::Quat) -> Self {
         common::Quaternion {
             x: q.x,
             y: q.y,
@@ -278,21 +278,21 @@ impl Copy for common::Color4 {}
 impl Copy for common::ColorRange {}
 
 pub trait Color4DclToBevy {
-    fn convert_linear_rgba(self) -> bevy::prelude::Color;
-    fn convert_srgba(self) -> bevy::prelude::Color;
+    fn convert_linear_rgba(self) -> bevy_color::Color;
+    fn convert_srgba(self) -> bevy_color::Color;
 }
 
 impl Color4DclToBevy for common::Color4 {
-    fn convert_linear_rgba(self) -> bevy::prelude::Color {
-        bevy::prelude::Color::linear_rgba(
+    fn convert_linear_rgba(self) -> bevy_color::Color {
+        bevy_color::Color::linear_rgba(
             self.r.clamp(0.0, 1.0),
             self.g.clamp(0.0, 1.0),
             self.b.clamp(0.0, 1.0),
             self.a.clamp(0.0, 1.0),
         )
     }
-    fn convert_srgba(self) -> bevy::prelude::Color {
-        bevy::prelude::Color::srgba(
+    fn convert_srgba(self) -> bevy_color::Color {
+        bevy_color::Color::srgba(
             self.r.clamp(0.0, 1.0),
             self.g.clamp(0.0, 1.0),
             self.b.clamp(0.0, 1.0),
@@ -306,7 +306,7 @@ pub trait Color4BevyToDcl {
     fn convert_srgba(self) -> common::Color4;
 }
 
-impl Color4BevyToDcl for bevy::prelude::Color {
+impl Color4BevyToDcl for bevy_color::Color {
     fn convert_linear_rgba(self) -> common::Color4 {
         let rgba = self.to_linear();
         common::Color4 {
@@ -328,20 +328,20 @@ impl Color4BevyToDcl for bevy::prelude::Color {
 }
 
 pub trait Color3DclToBevy {
-    fn convert_linear_rgb(self) -> bevy::prelude::Color;
-    fn convert_srgb(self) -> bevy::prelude::Color;
+    fn convert_linear_rgb(self) -> bevy_color::Color;
+    fn convert_srgb(self) -> bevy_color::Color;
 }
 
 impl Color3DclToBevy for common::Color3 {
-    fn convert_linear_rgb(self) -> bevy::prelude::Color {
-        bevy::prelude::Color::linear_rgb(
+    fn convert_linear_rgb(self) -> bevy_color::Color {
+        bevy_color::Color::linear_rgb(
             self.r.clamp(0.0, 1.0),
             self.g.clamp(0.0, 1.0),
             self.b.clamp(0.0, 1.0),
         )
     }
-    fn convert_srgb(self) -> bevy::prelude::Color {
-        bevy::prelude::Color::srgb(
+    fn convert_srgb(self) -> bevy_color::Color {
+        bevy_color::Color::srgb(
             self.r.clamp(0.0, 1.0),
             self.g.clamp(0.0, 1.0),
             self.b.clamp(0.0, 1.0),
@@ -354,7 +354,7 @@ pub trait Color3BevyToDcl {
     fn convert_srgb(self) -> common::Color3;
 }
 
-impl Color3BevyToDcl for bevy::prelude::Color {
+impl Color3BevyToDcl for bevy_color::Color {
     fn convert_linear_rgb(self) -> common::Color3 {
         let rgba = self.to_linear();
         common::Color3 {
@@ -374,17 +374,6 @@ impl Color3BevyToDcl for bevy::prelude::Color {
 }
 
 impl Copy for common::BorderRect {}
-impl From<common::BorderRect> for bevy::prelude::UiRect {
-    fn from(value: common::BorderRect) -> Self {
-        Self {
-            left: bevy::prelude::Val::Percent(value.left * 100.0),
-            right: bevy::prelude::Val::Percent(value.right * 100.0),
-            top: bevy::prelude::Val::Percent(value.top * 100.0),
-            bottom: bevy::prelude::Val::Percent(value.bottom * 100.0),
-        }
-    }
-}
-
 impl Copy for common::FloatRange {}
 
 // util for rounding, scenes expect near 0 to be == 0, etc
@@ -392,7 +381,7 @@ pub trait RoughRoundExt {
     fn round_at_pow2(self, pow2: i8) -> Self;
 }
 
-impl RoughRoundExt for bevy::math::Vec3 {
+impl RoughRoundExt for bevy_math::Vec3 {
     fn round_at_pow2(self, pow2: i8) -> Self {
         (self * 2f32.powf(-pow2 as f32)).round() * 2f32.powf(pow2 as f32)
     }

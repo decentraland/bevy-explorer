@@ -1,7 +1,7 @@
 use std::ops::RangeInclusive;
 
 // structs representing dcl components and de/serialization
-use bevy::prelude::Vec3;
+use bevy_math::Vec3;
 
 pub mod component_name_registry;
 pub mod component_schema;
