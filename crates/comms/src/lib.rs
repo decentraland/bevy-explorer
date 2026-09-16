@@ -688,7 +688,7 @@ pub struct AdapterManager<'w, 's> {
 }
 
 impl AdapterManager<'_, '_> {
-    /// Connect the realm's island comms, feeding `context`. 
+    /// Connect the realm's island comms, feeding `context`.
     pub fn connect(&mut self, adapter: &str, context: Entity) -> Option<Entity> {
         self.connect_inner(adapter, context)
     }
