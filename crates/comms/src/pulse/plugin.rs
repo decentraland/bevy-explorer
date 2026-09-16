@@ -129,10 +129,6 @@ pub(crate) struct PulseSession {
     transport_config: PulseTransportConfig,
     /// Server instance id, folded into the connect signature (re-signed on each attempt).
     server_id: String,
-    /// Latched true once we first enter a Pulse realm. Gates the driver bring-up so we
-    /// don't dial out until needed, then stays set so the connection is kept alive across non-Pulse
-    /// realms (we simply stop sending to it there — the routing entity is gone).
-    wanted: bool,
     /// Last `PlayerState` we sent, cached by movement's `Broadcast::to_pulse`. An outbound
     /// `EmoteStart` attaches this — the server rejects an emote with a null `player_state`. One
     /// connection, one outbound stream, so it lives with the session rather than with any one of
@@ -181,10 +177,10 @@ struct PlayerRole {
     /// work: `ForeignPlayer.transports` holds it, so despawning it on a realm change drops every
     /// Pulse peer from their presence set, exactly as it does for LiveKit and ws-room.
     routing_transport: Option<Entity>,
-    /// The realm `routing_transport` was spawned for. `StartPulse` also fires for archipelago
-    /// island hops within one realm, and those must NOT rebuild the transport — see `start_pulse`.
+    /// The realm `routing_transport` was spawned for: `follow_realm` rebuilds the transport only
+    /// when this no longer matches the current realm.
     routing_realm: Option<String>,
-    /// Set by `start_pulse` on a realm change, cleared by `flush_replay` once it has re-emitted the
+    /// Set by `follow_realm` on a realm change, cleared by `flush_replay` once it has re-emitted the
     /// decoder's held state for the realm — see [`PulseDecoder::replay`]. A flag rather than an
     /// immediate replay because the routing entity it delivers on is spawned by a deferred command.
     replay_pending: bool,
@@ -307,18 +303,29 @@ impl PulseRole {
         }
     }
 
-    /// What this role announces itself as at handshake. `None` when there is nothing to announce
-    /// yet — a listener with no scenes has no area of interest, and burning a connection on an empty
-    /// one only earns a rejection.
-    fn announcement(&self, profile_version: i32) -> Option<Announcement> {
+    /// Whether there is anything to connect for. A player always has: avatar state rides Pulse on
+    /// every realm, so its connection is dialled as soon as there is an identity and kept alive
+    /// across realm changes. A listener has only while it has scenes to observe — an empty AoI is
+    /// not announceable, and burning a connection on one only earns a rejection.
+    fn wants_connection(&self) -> bool {
         match self {
-            Self::Player(_) => Some(Announcement::Player { profile_version }),
-            Self::Listener(listener) => {
-                (!listener.aoi.is_empty()).then(|| Announcement::Listener {
-                    aoi: listener.aoi.clone(),
-                })
-            }
+            Self::Player(_) => true,
+            Self::Listener(listener) => !listener.aoi.is_empty(),
         }
+    }
+
+    /// What this role announces itself as at handshake. `None` when there is nothing to announce
+    /// yet (see [`Self::wants_connection`]).
+    fn announcement(&self, profile_version: i32) -> Option<Announcement> {
+        if !self.wants_connection() {
+            return None;
+        }
+        Some(match self {
+            Self::Player(_) => Announcement::Player { profile_version },
+            Self::Listener(listener) => Announcement::Listener {
+                aoi: listener.aoi.clone(),
+            },
+        })
     }
 
     fn listener_mut(&mut self) -> Option<&mut ListenerRole> {
@@ -420,30 +427,27 @@ impl PulseSession {
 #[derive(Component)]
 struct PulseOutbox(mpsc::Receiver<NetworkMessage>);
 
-/// Written from `AdapterManager` when a livekit (Pulse) realm is entered: (re)spawn the routing
-/// transport, ensure the connection is up, and announce the realm.
-#[derive(Event)]
-pub struct StartPulse;
-
 pub struct PulsePlugin;
 
 impl Plugin for PulsePlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<StartPulse>();
         app.add_event::<PlayerTeleported>();
         app.add_systems(Startup, configure_pulse);
         app.add_systems(
             Update,
             (
                 connect_pulse,
-                // ahead of `start_pulse`: a realm change clears the derived key here, so the
-                // re-announce that `start_pulse` may send can't carry the previous realm's one.
+                // ahead of `follow_realm`: a realm change clears the derived key here, so the
+                // re-announce that `follow_realm` may send can't carry the previous realm's one.
                 resolve_lsd_realm,
-                start_pulse,
+                follow_realm,
                 pump_pulse,
                 drain_pulse_outbox,
             )
-                .chain(),
+                .chain()
+                // After the realm-change sweep, so the routing entity `follow_realm` spawns for
+                // the new realm is never the one that sweep despawns.
+                .after(crate::process_realm_change),
         );
         // Only a server listens, so only a server pays for keeping the listener's routing in step
         // with its scenes — a client has no server contexts to route to and would sweep every
@@ -575,7 +579,6 @@ fn connect_pulse(
         grid: config.parcel_grid,
         transport_config: config.transport.clone(),
         server_id: config.server_id.clone(),
-        wanted: false,
         last_state: None,
         state: Connection::Down { respawn_at: 0.0 },
     });
@@ -586,56 +589,45 @@ fn connect_pulse(
     );
 }
 
-/// React to a livekit (Pulse) realm being entered: (re)spawn the routing `Transport` entity,
-/// mark the session `wanted` (establishing the connection on the first realm), and — if already
-/// connected — announce the new realm with a teleport. The previous routing entity has been
-/// despawned by `process_realm_change` this same frame, so we spawn unconditionally (once per frame
-/// with an event) rather than presence-checking, which would race that deferred despawn.
+/// Keep the routing `Transport` entity in step with the current realm: (re)spawn it on a realm
+/// change and — if already connected — announce the new realm with a teleport. Pulse is the
+/// realm's avatar-state transport whatever its byte protocol is, so this follows the realm itself
+/// rather than any island or room the realm's comms bring up.
 ///
-/// That sweep also despawned every peer the old entity carried, while the server keeps its view of
-/// them for us across our own realm change and will not announce them again on a quick return. So a
-/// realm change also flags a replay of the decoder's held state for the realm entered
-/// ([`PulseDecoder::replay`]), which `flush_replay` delivers once the new entity is queryable.
-fn start_pulse(
+/// `process_realm_change` sweeps every `Transport` on a realm change, ours included, and with it
+/// every peer the old entity carried, while the server keeps its view of them for us across our own
+/// realm change and will not announce them again on a quick return. So a realm change also flags a
+/// replay of the decoder's held state for the realm entered ([`PulseDecoder::replay`]), which
+/// `flush_replay` delivers once the new entity is queryable.
+fn follow_realm(
     mut commands: Commands,
-    mut events: EventReader<StartPulse>,
     session: Option<ResMut<PulseSession>>,
     realm: Res<CurrentRealm>,
     player: Query<(&GlobalTransform, Has<OutOfWorld>), With<PrimaryUser>>,
     routing: Query<(), With<PulseOutbox>>,
 ) {
-    if events.is_empty() {
-        return;
-    }
-    events.clear();
     let Some(mut session) = session else {
-        // `PulseConfig` absent, or `connect_pulse`'s deferred insert hasn't applied yet. A realm
-        // change re-fires `StartPulse`, so a missed first event self-heals on the next one.
+        // `PulseConfig` absent, or `connect_pulse`'s deferred insert hasn't applied yet.
         return;
     };
 
-    // `StartPulse` fires whenever a livekit realm island connects — which includes an archipelago
-    // island hop *within* the same realm. Only a realm change sweeps the transports
-    // (`process_realm_change` despawns everything `With<Transport>`), so only then is a new routing
-    // entity needed.
-    //
-    // Rebuilding it on an island hop would be actively harmful. Pulse peers are held in
-    // `ForeignPlayer.transports` by this entity alone, and a player with an empty set is despawned
-    // on the spot now that the inactivity grace period is gone — so an island hop would despawn and
-    // respawn every peer, firing `playerDisconnected`/`onLeaveScene` for people who never left. Peers
-    // riding Pulse are precisely the ones who should survive the hop: unlike a livekit island, their
-    // transport does not change. Leaving it alone also avoids re-teleporting for a realm that hasn't
-    // changed, and the churn of a fresh channel per hop.
     let Some(player_role) = session.role.player_mut() else {
-        // A listener has no realm island to follow: its transports track the scenes it hosts, not
-        // the realm the process is on. `update_listener_aoi` owns them.
+        // A listener has no realm to follow: its transports track the scenes it hosts, not the
+        // realm the process is on. `update_listener_aoi` owns them.
         return;
     };
+    // Only a realm change sweeps the transports (`process_realm_change` despawns everything
+    // `With<Transport>`), so only then is a new routing entity needed. Rebuilding it otherwise
+    // would be actively harmful: Pulse peers are held in `ForeignPlayer.transports` by this entity
+    // alone, and a player with an empty set is despawned on the spot — so every peer would be
+    // despawned and respawned, firing `playerDisconnected`/`onLeaveScene` for people who never
+    // left. The realm's island can hop (archipelago) without touching this: a peer's Pulse
+    // transport does not change with the island.
     let realm_changed = player_role.routing_realm.as_deref() != Some(realm.address.as_str());
     // Confirmed against the world rather than trusted from the id alone. Nothing sweeps transports
     // while the realm is unchanged, so this particular check cannot race a deferred despawn — and if
-    // the entity did go away for some other reason, falling through rebuilds it instead of leaving
-    // Pulse silently holding a dead id with nothing to send on.
+    // the entity did go away for some other reason (a wallet change sweeps too), falling through
+    // rebuilds it instead of leaving Pulse silently holding a dead id with nothing to send on.
     let routing_alive = player_role
         .routing_transport
         .is_some_and(|entity| routing.contains(entity));
@@ -643,9 +635,9 @@ fn start_pulse(
         return;
     }
 
-    // A realm change: the sweep above already queued our old entity for despawn, but that is a
-    // deferred command we cannot observe yet — so drop the one we own explicitly (idempotent) and
-    // spawn fresh, rather than presence-checking and racing the flush.
+    // A realm change: the sweep may have queued our old entity for despawn this same frame, but
+    // that is a deferred command we cannot observe yet — so drop the one we own explicitly
+    // (idempotent) and spawn fresh, rather than presence-checking and racing the flush.
     if let Some(previous) = player_role.routing_transport.take() {
         if let Ok(mut entity) = commands.get_entity(previous) {
             entity.despawn();
@@ -670,7 +662,6 @@ fn start_pulse(
     player_role.routing_transport = Some(routing_transport);
     player_role.routing_realm = Some(realm.address.clone());
     player_role.replay_pending = true;
-    session.wanted = true;
     // Already up (a later realm) → re-teleport now, unless out of world (position provisional behind
     // the loading screen); the spawn `PlayerTeleported` re-announces realm + position. Otherwise the
     // first handshake's `on_handshake_response` sends the initial teleport once established.
@@ -745,7 +736,7 @@ fn pump_pulse(
     flush_listener_aoi(session, now);
 }
 
-/// Deliver a `PulseDecoder::replay` of the realm just entered, the frame after `start_pulse` flagged
+/// Deliver a `PulseDecoder::replay` of the realm just entered, the frame after `follow_realm` flagged
 /// it — its routing entity is a deferred spawn, and delivery resolves the `PulseSink` on it. Held
 /// while the realm can't be named yet (a local realm's key may still be fetching); a realm change in
 /// the meantime re-flags it for the new realm, and nothing is replayed for the one skipped.
@@ -882,8 +873,10 @@ fn drive_connection(session: &mut PulseSession, wallet: &Wallet, profile_version
         // steady.
         Connection::Dead | Connection::Established | Connection::Connecting => {}
         Connection::Down { respawn_at } => {
-            // Don't dial out until a livekit realm has been entered (`start_pulse` sets `wanted`).
-            if !session.wanted || now < *respawn_at {
+            // Nothing to dial for without an identity to hand the handshake; the server drops an
+            // unauthenticated peer after a timeout, which would otherwise cycle the connection
+            // for as long as the login screen is up.
+            if !session.role.wants_connection() || now < *respawn_at || wallet.address().is_none() {
                 return;
             }
             let (link, driver) = spawn_driver(&session.transport_config);
@@ -1375,8 +1368,7 @@ fn set_listener_aoi(session: &mut PulseSession, aoi: Vec<pulse::SceneListenerAoi
     // nearly always momentary: a scene reload drops the old entity definition a frame before the
     // new one lands. So hold the last announced AoI and wait for the next non-empty one rather
     // than cycling the connection over a reload. `drive_connection` stays idle until there is
-    // something to observe.
-    session.wanted = !listener.aoi.is_empty();
+    // something to observe (`PulseRole::wants_connection`).
 }
 
 /// Bring the server's AoI up to date with ours: one `SceneListenerUpdate` carrying the current set
