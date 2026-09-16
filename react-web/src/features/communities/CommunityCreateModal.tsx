@@ -160,7 +160,7 @@ export function CommunityCreateModal({
 
 /** Open the create-a-community flow (NAME gate or form) as a popup; returns the close handle.
  *  `canCreate` is a snapshot taken when the button is clicked — matches the other fire-once popups
- *  (WorldVisitModal/ExitConfirm): the profile's claimed-NAME state isn't expected to change mid-flow. */
+ *  (WorldVisitModal): the profile's claimed-NAME state isn't expected to change mid-flow. */
 export function openCommunityCreateModal(canCreate: boolean, onCreate: (input: CreateCommunityInput) => void): () => void {
   // Same contract as the passport: the scrim refuses while there is something to lose, and the
   // deliberate closes (CANCEL, ×, the Cancel/Escape action) ask.

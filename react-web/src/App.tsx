@@ -30,9 +30,7 @@ import { SessionProvider } from './features/session/SessionContext'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
-import { openExitConfirm } from './features/session/ExitConfirm'
 import { useEngineSession } from './features/session/useEngineSession'
-import { useExitGuard } from './lib/useExitGuard'
 import { useWindowKeyDown } from './lib/useWindowKeyDown'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
@@ -174,14 +172,6 @@ function Hud(): React.JSX.Element {
   }, [])
 
   const session = useEngineSession(createDriver)
-  // Warn before the back gesture / Back button unloads the engine (only once in-world). Shown through
-  // the popup layer so hasOpenPopup() covers it (Enter must not focus the chat behind it); Escape /
-  // scrim-click resolve to "stay", which clears `confirming` and the effect closes the (already-closed) popup.
-  const exitGuard = useExitGuard(session.phase === 'entering' || session.phase === 'world')
-  useEffect(() => {
-    if (!exitGuard.confirming) return
-    return openExitConfirm(exitGuard.stay, exitGuard.leave)
-  }, [exitGuard.confirming, exitGuard.stay, exitGuard.leave])
 
   // A link with params the Explorer doesn't know gets an ordinary dialog listing what was ignored
   // and what it accepts — informational, nothing is frozen behind it.

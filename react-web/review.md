@@ -65,7 +65,7 @@ each domain. Config: `playwright.visual.config.ts` (headless, 1600×900, `maxDif
 **Domains covered** (one baseline each, in `e2e/visual.spec.ts-snapshots/`):
 `showcase` · `login-fresh` · `login-welcome` · `mobile-gate` · `browser-gate` · `gpu-gate` ·
 `engine-error` · `realm-error` · `world-hud` · `profile-card` · `passport` · `hover-tooltips` ·
-`permission-dialog` · `community-modal` · `community-create-modal` · `exit-confirm` ·
+`permission-dialog` · `community-modal` · `community-create-modal` ·
 `panel-friends` · `panel-settings` · `panel-settings-keybindings` · `panel-profile` ·
 `panel-notifications` · `panel-emote-wheel` · `panel-communities` · `panel-map` ·
 `minimap-settings` · `backpack-wearables` · `backpack-emotes` · `passport-edit` · `name-edit`.

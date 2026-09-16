@@ -160,15 +160,6 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('community-create-modal.png')
   })
 
-  // Exit confirm — the browser Back gesture is trapped by useExitGuard while in-world.
-  test('exit confirm', async ({ page }) => {
-    await enterWorld(page)
-    await page.goBack()
-    await page.getByText('Leave Decentraland?').waitFor()
-    await settle(page)
-    await expect(page).toHaveScreenshot('exit-confirm.png')
-  })
-
   test('world HUD (sidebar + chat)', async ({ page }) => {
     await enterWorld(page)
     await settle(page)
