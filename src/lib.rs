@@ -178,7 +178,7 @@ pub struct DecentralandArguments {
     pub launch: LaunchOptions,
     #[command(flatten)]
     pub client: ClientOptions,
-    /// Skip the sign-in screen with an auto guest-login (`?guest=1` on web)
+    /// Skip the sign-in screen with an auto guest-login (default HUD only; `?guest=1` on web)
     #[arg(long)]
     pub guest: bool,
     /// Echo scene logs to the console

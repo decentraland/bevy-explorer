@@ -52,7 +52,8 @@ pub struct ReactHudCefPlugin {
     /// the page skips its post-login places picker for it (parity with ?realm= on web); the native
     /// driver knows the engine is already there, so it keeps the realm rather than re-switching.
     pub server: Option<String>,
-    /// An explicit --position, injected as ?position= alongside the realm (parity with web).
+    /// An explicit --position, injected as ?position= alongside the realm for consistency with the
+    /// web page URL. The page's native path doesn't read it: the engine already spawned there.
     pub position: Option<String>,
     /// --guest: injected into the page URL as ?guest=1, the page's own auto guest-login boot flag
     /// (parity with ?guest=1 on web).
