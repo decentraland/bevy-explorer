@@ -287,7 +287,7 @@ impl DecentralandArguments {
             .filter(|scene| *scene != "none")
     }
 
-    /// `--position` / `?position=` as a parcel; main.rs rejects an unparseable one up front.
+    /// `--position` / `?position=` as a parcel; `launch::latch` rejects an unparseable one up front.
     pub fn location(&self) -> Option<IVec2> {
         self.launch
             .position
