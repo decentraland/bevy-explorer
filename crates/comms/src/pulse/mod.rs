@@ -160,18 +160,28 @@ pub enum PulseEvent {
     },
     /// Subject left the interest set (or disconnected). Drop the alias / foreign player.
     Left { address: Address },
-    /// Subject announced a new profile version.
-    ProfileVersion { address: Address, version: i32 },
+    /// Subject announced a new profile version. `realm` is where the server last placed them, as on
+    /// every per-subject event.
+    ProfileVersion {
+        address: Address,
+        version: i32,
+        realm: Arc<str>,
+    },
     /// Subject started an emote. Emitted alongside the piggybacked `Movement`. `tick` is the
     /// server tick, used downstream only as a monotonic id so re-triggering the same urn replays.
     EmoteStart {
         address: Address,
         urn: String,
         tick: u32,
+        realm: Arc<str>,
     },
     /// Subject's emote stopped. `completed`: the server's one-shot timer expired (a natural
     /// finish) rather than the player cancelling a looping emote.
-    EmoteStop { address: Address, completed: bool },
+    EmoteStop {
+        address: Address,
+        completed: bool,
+        realm: Arc<str>,
+    },
     /// A sequence gap was detected — transmit this reliably so the server replays full state.
     Resync(pulse::ResyncRequest),
 }
@@ -193,7 +203,11 @@ struct Subject {
     /// none and don't need to: a realm change is always a teleport. A listener observing several
     /// realms needs this to tell two identically-numbered parcels apart.
     realm: Arc<str>,
+    /// Latest version the server has told us of, from `PlayerJoined` then each announcement.
+    profile_version: i32,
     last_seq: u32,
+    /// Raw server tick of the state in `baseline`, so a replay can stamp it honestly.
+    last_tick: u32,
     baseline: SubjectState,
 }
 
@@ -387,6 +401,7 @@ impl PulseDecoder {
                         address: subject.wallet,
                         urn: e.emote_id,
                         tick: e.server_tick,
+                        realm: subject.realm.clone(),
                     });
                 }
                 events
@@ -404,6 +419,7 @@ impl PulseDecoder {
                     events.push(PulseEvent::EmoteStop {
                         address: subject.wallet,
                         completed: e.reason == pulse::EmoteStopReason::Completed as i32,
+                        realm: subject.realm.clone(),
                     });
                 }
                 events
@@ -436,7 +452,9 @@ impl PulseDecoder {
             Subject {
                 wallet: address,
                 realm: realm.clone(),
+                profile_version: joined.profile_version,
                 last_seq: full.sequence,
+                last_tick: full.server_tick,
                 baseline,
             },
         );
@@ -492,20 +510,33 @@ impl PulseDecoder {
 
         subject.baseline = SubjectState::from_player_state(&state);
         subject.last_seq = sequence;
+        subject.last_tick = server_tick;
         // Only a teleport carries one, and only then can it differ.
-        if let Some(realm) = realm.filter(|realm| &*subject.realm != realm.as_str()) {
-            subject.realm = Arc::from(realm.as_str());
-        }
+        let changed_realm = match realm.filter(|realm| &*subject.realm != realm.as_str()) {
+            Some(realm) => {
+                subject.realm = Arc::from(realm.as_str());
+                true
+            }
+            None => false,
+        };
         let address = subject.wallet;
         let realm = subject.realm.clone();
         let movement = self.to_movement_for(subject_id);
-        vec![PulseEvent::Movement {
+        // Entering a realm is announced like a first sighting: an observer there filtered out
+        // whatever it was sent while the subject was elsewhere, and the server won't re-announce a
+        // subject it already has in view.
+        let mut events = Vec::with_capacity(2);
+        if changed_realm {
+            events.push(self.joined_event(subject_id, &movement));
+        }
+        events.push(PulseEvent::Movement {
             address,
             movement: Box::new(movement),
             realm,
             teleport,
             timestamp: self.tick_secs(server_tick),
-        }]
+        });
+        events
     }
 
     fn on_delta(&mut self, delta: pulse::PlayerStateDeltaTier0) -> Vec<PulseEvent> {
@@ -541,6 +572,7 @@ impl PulseDecoder {
 
         subject.baseline.apply_delta(&delta);
         subject.last_seq = delta.new_seq;
+        subject.last_tick = delta.server_tick;
         let address = subject.wallet;
         let realm = subject.realm.clone();
         let mut movement = self.to_movement_for(delta.subject_id);
@@ -562,13 +594,79 @@ impl PulseDecoder {
         }]
     }
 
-    fn on_profile(&self, subject_id: u32, version: i32) -> Vec<PulseEvent> {
-        match self.subjects.get(&subject_id) {
-            Some(subject) => vec![PulseEvent::ProfileVersion {
-                address: subject.wallet,
-                version,
-            }],
+    fn on_profile(&mut self, subject_id: u32, version: i32) -> Vec<PulseEvent> {
+        match self.subjects.get_mut(&subject_id) {
+            Some(subject) => {
+                subject.profile_version = version;
+                vec![PulseEvent::ProfileVersion {
+                    address: subject.wallet,
+                    version,
+                    realm: subject.realm.clone(),
+                }]
+            }
             None => Vec::new(),
+        }
+    }
+
+    /// Forget every subject. For a new connection: the server starts it with an empty view set and
+    /// re-announces everyone, and the ids it hands out are its own, so nothing from the previous
+    /// connection can be trusted — least of all the promise that a `PlayerLeft` would have arrived
+    /// for anyone who left while the link was down.
+    pub fn reset(&mut self) {
+        self.subjects.clear();
+    }
+
+    /// Re-emit the join + last known state of every subject the server placed in `realm`, as if
+    /// they had just been announced. The server keeps its per-observer view of a subject across the
+    /// observer's own realm change and only sends `PlayerJoined` on first sight, so a return to a
+    /// realm within its stale-view window brings no announcement at all; but it does send a
+    /// `PlayerLeft` for anyone dropped from that view, and every message reaches this decoder, so a
+    /// subject still held here is still held there. The baselines match too — deltas are diffed
+    /// from the last state the server sent us — so the first delta after the return corrects a
+    /// replayed position rather than fighting it. Flagged as a teleport: the state is a snapshot,
+    /// not travel. Subjects tagged with other realms stay as they are, untouched.
+    pub fn replay(&mut self, realm: &str) -> Vec<PulseEvent> {
+        let mut ids: Vec<u32> = self
+            .subjects
+            .iter()
+            .filter(|(_, subject)| &*subject.realm == realm)
+            .map(|(id, _)| *id)
+            .collect();
+        ids.sort_unstable();
+
+        let mut events = Vec::with_capacity(ids.len() * 2);
+        for id in ids {
+            let subject = &self.subjects[&id];
+            let address = subject.wallet;
+            let realm = subject.realm.clone();
+            let last_tick = subject.last_tick;
+            let movement = self.to_movement(&subject.baseline);
+            events.push(self.joined_event(id, &movement));
+            events.push(PulseEvent::Movement {
+                address,
+                movement: Box::new(movement),
+                realm,
+                teleport: true,
+                timestamp: self.tick_secs(last_tick),
+            });
+        }
+        events
+    }
+
+    /// A `Joined` for a held subject, from its stored identity and `movement` (its converted
+    /// baseline).
+    fn joined_event(&self, subject_id: u32, movement: &rfc4::Movement) -> PulseEvent {
+        let subject = &self.subjects[&subject_id];
+        PulseEvent::Joined {
+            subject_id,
+            address: subject.wallet,
+            profile_version: subject.profile_version,
+            parcel: self.grid.parcel_coords(Vec3::new(
+                movement.position_x,
+                movement.position_y,
+                movement.position_z,
+            )),
+            realm: subject.realm.clone(),
         }
     }
 
