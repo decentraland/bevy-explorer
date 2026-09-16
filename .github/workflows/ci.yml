@@ -60,17 +60,12 @@ jobs:
       group: ${{ github.workflow }}-scenes-${{ github.ref }}
       cancel-in-progress: true
     steps:
-      # Checkout must precede rust-cache: the cache key hashes Cargo.lock, and
-      # without it the key is constant — saved once from main, then frozen stale.
       - uses: actions/checkout@v7
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -126,7 +121,6 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-#      - uses: Swatinem/rust-cache@v2
       - name: Install protoc
         if: matrix.os != 'self-hosted-windows'
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
@@ -227,10 +221,6 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: headless-linux-x64
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       # NOT apt protobuf-compiler: ubuntu-22.04 ships protoc 3.12, which rejects the
       # proto3 optional fields in billboard.proto. The rest of this workflow uses the
       # action for the same reason.
@@ -314,9 +304,6 @@ jobs:
           toolchain: stable
           override: true
       - run: rustup component add clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -384,12 +371,6 @@ jobs:
           target: wasm32-unknown-unknown
           components: rust-src
           override: true
-      # Save only from main so PR runs restore main's cache instead of writing
-      # per-PR copies that thrash the repo's 10GB cache quota.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: wasm-web
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
