@@ -422,12 +422,30 @@ pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
     unreliable: bool,
     message: B,
 ) {
-    for transport in transports.filter(|t| target.includes(&t.transport_type)) {
-        let _ = transport.sender.try_send(NetworkMessage {
-            message: Box::new(message.clone()),
-            unreliable,
-            recipient: NetworkMessageRecipient::All,
-        });
+    // Avatar state that rides Pulse still has to reach the LiveKit `authoritative-server` participant
+    // (scene room / a LiveKit realm island) while it has no Pulse feed. So a Pulse-targeted broadcast
+    // also fans a copy out to the auth server on every LiveKit transport (a no-op where no such
+    // participant exists), targeted at the auth server alone: human peers already get avatar state
+    // via Pulse. Client only: a server is the auth server. Temporary.
+    let auth_server_fanout = !common::structs::server_mode()
+        && target.contains(BroadcastTarget::PULSE)
+        && !target.contains(BroadcastTarget::LIVEKIT);
+
+    for transport in transports {
+        if target.includes(&transport.transport_type) {
+            let _ = transport.sender.try_send(NetworkMessage {
+                message: Box::new(message.clone()),
+                unreliable,
+                recipient: NetworkMessageRecipient::All,
+            });
+        } else if auth_server_fanout && BroadcastTarget::LIVEKIT.includes(&transport.transport_type)
+        {
+            let _ = transport.sender.try_send(NetworkMessage {
+                message: Box::new(message.clone()),
+                unreliable,
+                recipient: NetworkMessageRecipient::AuthServer,
+            });
+        }
     }
 }
 
