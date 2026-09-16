@@ -70,6 +70,8 @@ use wallet::{
     sign_request, Wallet, WalletPlugin,
 };
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
 // The shared launch params (realm, position, preview, base domain, pulse server, content

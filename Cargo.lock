@@ -3544,6 +3544,7 @@ dependencies = [
  "http 1.5.0",
  "interprocess",
  "ipfs",
+ "mimalloc",
  "multihash-codetable",
  "once_cell",
  "platform",
@@ -6863,7 +6864,7 @@ dependencies = [
 [[package]]
 name = "libwebrtc"
 version = "0.3.6"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#3db4328ac42dee8e09c1b497f15a0cbe60ef90f1"
+source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#41c059a3a4a97cf2856fd1cbb8c8e6455fd8d5bd"
 dependencies = [
  "cxx",
  "jni 0.21.1",
@@ -6925,7 +6926,7 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 [[package]]
 name = "livekit"
 version = "0.5.2"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#3db4328ac42dee8e09c1b497f15a0cbe60ef90f1"
+source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#41c059a3a4a97cf2856fd1cbb8c8e6455fd8d5bd"
 dependencies = [
  "futures-util",
  "lazy_static",
@@ -6945,7 +6946,7 @@ dependencies = [
 [[package]]
 name = "livekit-api"
 version = "0.4.0"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#3db4328ac42dee8e09c1b497f15a0cbe60ef90f1"
+source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#41c059a3a4a97cf2856fd1cbb8c8e6455fd8d5bd"
 dependencies = [
  "async-tungstenite",
  "base64 0.21.7",
@@ -6971,7 +6972,7 @@ dependencies = [
 [[package]]
 name = "livekit-protocol"
 version = "0.3.5"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#3db4328ac42dee8e09c1b497f15a0cbe60ef90f1"
+source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#41c059a3a4a97cf2856fd1cbb8c8e6455fd8d5bd"
 dependencies = [
  "futures-util",
  "livekit-runtime",
@@ -6988,7 +6989,7 @@ dependencies = [
 [[package]]
 name = "livekit-runtime"
 version = "0.3.0"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#3db4328ac42dee8e09c1b497f15a0cbe60ef90f1"
+source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#41c059a3a4a97cf2856fd1cbb8c8e6455fd8d5bd"
 dependencies = [
  "tokio",
  "tokio-stream",
@@ -12817,7 +12818,7 @@ dependencies = [
 [[package]]
 name = "webrtc-sys"
 version = "0.3.4"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#3db4328ac42dee8e09c1b497f15a0cbe60ef90f1"
+source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#41c059a3a4a97cf2856fd1cbb8c8e6455fd8d5bd"
 dependencies = [
  "cc",
  "cxx",
@@ -12830,7 +12831,7 @@ dependencies = [
 [[package]]
 name = "webrtc-sys-build"
 version = "0.3.4"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#3db4328ac42dee8e09c1b497f15a0cbe60ef90f1"
+source = "git+https://github.com/robtfm/client-sdk-rust?branch=decentraland-webrtc#41c059a3a4a97cf2856fd1cbb8c8e6455fd8d5bd"
 dependencies = [
  "fs2",
  "regex",
