@@ -355,7 +355,8 @@ fn main() -> AppExit {
         // load everything around the fake player generously; unload never.
         scene_load_distance: 100.0,
         scene_unload_extra_distance: 0.0,
-        scene_log_to_console: true,
+        // orchestrated: scene console output is creator-only, served via @scene-log frames
+        scene_log_to_console: !args.orchestrated,
         // headless permission policy (hammurabi parity): network APIs allowed, everything
         // user-facing denied. Without an explicit value these resolve to Ask, and the Ask
         // queue has no consumer headless — the scene promise would hang forever.
