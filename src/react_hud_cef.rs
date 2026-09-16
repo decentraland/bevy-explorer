@@ -48,22 +48,32 @@ use input_manager::{InputPriorities, MouseInteractionComponent};
 use system_bridge::SystemApi;
 
 pub struct ReactHudCefPlugin {
-    /// An explicit --server destination, if given. Injected into the page URL as ?realm= — the
-    /// page skips its post-login places picker for it (parity with ?realm= on web); the native
+    /// The boot realm when it is an explicit destination. Injected into the page URL as ?realm= —
+    /// the page skips its post-login places picker for it (parity with ?realm= on web); the native
     /// driver knows the engine is already there, so it keeps the realm rather than re-switching.
     pub server: Option<String>,
+    /// An explicit --position, injected as ?position= alongside the realm for consistency with the
+    /// web page URL. The page's native path doesn't read it: the engine already spawned there.
+    pub position: Option<String>,
+    /// --guest: injected into the page URL as ?guest=1, the page's own auto guest-login boot flag
+    /// (parity with ?guest=1 on web).
+    pub guest: bool,
 }
 
 /// Options threaded from the plugin into [`spawn_hud`].
 #[derive(Resource)]
 struct ReactHudOptions {
     server: Option<String>,
+    position: Option<String>,
+    guest: bool,
 }
 
 impl Plugin for ReactHudCefPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ReactHudOptions {
             server: self.server.clone(),
+            position: self.position.clone(),
+            guest: self.guest,
         });
         // Needed to read engine fps for the perf overlay; may already be added by --log-fps/preview.
         if !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>() {
@@ -172,6 +182,15 @@ fn spawn_hud(
         url.push_str(if url.contains('?') { "&" } else { "?" });
         url.push_str("realm=");
         url.push_str(&urlencoding::encode(server));
+    }
+    if let Some(position) = &options.position {
+        url.push_str(if url.contains('?') { "&" } else { "?" });
+        url.push_str("position=");
+        url.push_str(&urlencoding::encode(position));
+    }
+    if options.guest {
+        url.push_str(if url.contains('?') { "&" } else { "?" });
+        url.push_str("guest=1");
     }
     // A non-default --base-domain reaches the HUD the same way it reaches the web page: as the
     // ?baseDomain= param the page composes all its backend fetch hosts from.
