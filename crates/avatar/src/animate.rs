@@ -221,8 +221,10 @@ fn handle_trigger_emotes(
 // one-shot can carry its resolved duration and a loop is known. A start goes out on first appearance
 // (or a switch to a different urn); a looping emote also sends an explicit stop when it ends —
 // one-shots end on the receiver's own timer (and the Pulse server's), so they need no stop.
+#[allow(clippy::too_many_arguments)]
 fn broadcast_emote(
     q: Query<(&ActiveEmote, &MaskedEmote), With<PrimaryUser>>,
+    emotes: CollectibleManager<Emote>,
     transports: Query<&Transport>,
     // the emote we last announced a start for
     mut last: Local<Option<EmotePlayback>>,
@@ -257,12 +259,8 @@ fn broadcast_emote(
             if p.as_ref().map(|p| (&p.urn, p.mask)) != Some((&emote.urn, emote.mask)) =>
         {
             *count += 1;
-            debug!(
-                "sending emote start: {} {} {:?}",
-                emote.urn.as_str(),
-                *count,
-                emote.mask
-            );
+            let urn = emotes.source_urn(&emote.urn);
+            debug!("sending emote start: {urn} {} {:?}", *count, emote.mask);
             // A one-shot carries its duration (observers and the Pulse completion timer use it); a
             // looping emote omits it and is ended by the explicit stop below.
             let duration_ms = if emote.repeat {
@@ -275,7 +273,7 @@ fn broadcast_emote(
                 BroadcastTarget::PULSE,
                 false,
                 comms::Emote {
-                    urn: emote.urn.as_str().to_owned(),
+                    urn: urn.to_owned(),
                     incremental_id: *count,
                     timestamp: time.elapsed_secs_f64(),
                     duration_ms,
@@ -284,10 +282,7 @@ fn broadcast_emote(
                 },
             );
             senders.retain(|sender| {
-                let _ = sender.send(format!(
-                    "{{ \"expressionId\": \"{}\" }}",
-                    emote.urn.as_str()
-                ));
+                let _ = sender.send(format!("{{ \"expressionId\": \"{urn}\" }}"));
                 !sender.is_closed()
             });
         }
@@ -295,13 +290,14 @@ fn broadcast_emote(
         // (and the Pulse server's), so they need no stop and fall through to the `_` arm.
         (Some(emote), None) if emote.repeat => {
             *count += 1;
-            debug!("sending emote stop: {}", emote.urn.as_str());
+            let urn = emotes.source_urn(&emote.urn);
+            debug!("sending emote stop: {urn}");
             broadcast(
                 transports.iter(),
                 BroadcastTarget::PULSE,
                 false,
                 comms::Emote {
-                    urn: emote.urn.as_str().to_owned(),
+                    urn: urn.to_owned(),
                     incremental_id: *count,
                     timestamp: time.elapsed_secs_f64(),
                     duration_ms: None,
@@ -1548,16 +1544,10 @@ fn play_slot(
     }
 
     // nasty hack for falling animation
-    if playback.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
-        && active_animation.seek_time() >= 0.4
-        && playback.repeat
-    {
+    if playback.urn == *URN_JUMP && active_animation.seek_time() >= 0.4 && playback.repeat {
         active_animation.set_speed(speed * 0.125);
     }
-    if playback.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
-        && active_animation.seek_time() >= 0.5833
-        && playback.repeat
-    {
+    if playback.urn == *URN_JUMP && active_animation.seek_time() >= 0.5833 && playback.repeat {
         active_animation.seek_to(0.5833);
         active_animation.set_speed(0.0);
     }

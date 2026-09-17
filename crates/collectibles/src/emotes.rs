@@ -464,8 +464,11 @@ impl CollectibleType for Emote {
     type Meta = EmoteMeta;
     type ExtraData = EmoteExtraData;
 
-    fn base_collection() -> Option<&'static str> {
-        Some("urn:decentraland:off-chain:base-emotes")
+    fn source_collections() -> &'static [&'static str] {
+        &[
+            "urn:decentraland:off-chain:base-emotes",
+            "urn:decentraland:off-chain:base-scene-emotes",
+        ]
     }
 
     fn extension() -> &'static str {

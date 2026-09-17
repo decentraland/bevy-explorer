@@ -842,10 +842,10 @@ fn update_render_avatar(
                                         ))
                                     });
 
-                                // otherwise a bare base-emote name ("robot"). content map
-                                // first because a file path is also a valid single-segment urn.
-                                match scene_emote
-                                    .or_else(|| EmoteUrn::new(e).ok().map(String::from))
+                                // otherwise a bare emote name ("robot"), kept as written: the
+                                // collection it comes from is only known once it resolves. content
+                                // map first because a file path is also a valid single-segment urn.
+                                match scene_emote.or_else(|| EmoteUrn::new(e).ok().map(|_| e.clone()))
                                 {
                                     Some(urn) => urn,
                                     None => {
