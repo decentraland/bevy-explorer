@@ -69,6 +69,29 @@ extern "C" {
     fn set_engine_text_focus(focused: bool);
 }
 
+#[cfg(all(feature = "web-worker", not(target_feature = "atomics")))]
+compile_error!("web-worker requires wasm atomics; use the repository's .cargo/config.toml");
+
+#[cfg(all(feature = "web-worker", target_feature = "atomics"))]
+#[wasm_bindgen]
+pub fn engine_prepare_worker(canvas: web_sys::HtmlCanvasElement) -> Result<js_sys::Array, JsValue> {
+    let (id, canvas) = winit::platform::web::prepare_worker(canvas)?;
+    Ok([JsValue::from(id), canvas.into()].into_iter().collect())
+}
+
+#[cfg(all(feature = "web-worker", target_feature = "atomics"))]
+#[wasm_bindgen]
+pub fn engine_attach_worker(id: u32, canvas: web_sys::OffscreenCanvas) -> Result<(), JsValue> {
+    winit::platform::web::attach_worker(id, canvas)
+}
+
+#[cfg(feature = "web-worker")]
+#[wasm_bindgen]
+pub fn engine_browser_state(pointer_locked: bool, fullscreen: bool, fullscreen_available: bool) {
+    platform::set_pointer_lock_state(pointer_locked);
+    system_bridge::settings::set_fullscreen_reality(fullscreen, fullscreen_available);
+}
+
 /// call from a separate worker to initialize a channel for asset load processing
 #[wasm_bindgen]
 pub fn init_asset_load_thread() {
@@ -162,8 +185,10 @@ pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
     let mut app = decentraland_app.build(decentraland_app_config);
 
     // on wasm we need to explicitly specify key binds for the platform
-    let user_agent = web_sys::window()
-        .and_then(|w| w.navigator().user_agent().ok())
+    let user_agent = js_sys::Reflect::get(&js_sys::global(), &"navigator".into())
+        .and_then(|navigator| js_sys::Reflect::get(&navigator, &"userAgent".into()))
+        .ok()
+        .and_then(|value| value.as_string())
         .unwrap_or_default();
     let text_bindings = if user_agent.contains("Mac") {
         bevy_simple_text_input::TextInputNavigationBindings::macos_default()

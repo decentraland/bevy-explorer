@@ -26,6 +26,7 @@ required-features = ["headless"]
 default = ["livekit", "ffmpeg", "inspect", "social", "react-hud-cef"]
 # default = ["wasm"]
 console = []
+web-worker = ["bevy/web-worker", "dep:winit"]
 dcl-assert = ["common/dcl-assert"]
 gen-tests = []
 tracy = ["bevy/trace_tracy"]
@@ -387,6 +388,7 @@ mimalloc = { workspace = true }
 cef_offscreen = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+winit = { version = "0.30", optional = true, default-features = false, features = ["web-worker", "rwh_06"] }
 av = { workspace = true, features = ["html"] }
 bevy = { workspace = true, features = [
   "webgpu",
@@ -423,24 +425,24 @@ draco-oxide-decoder = { git = "https://github.com/robtfm/draco-oxide", branch = 
 draco-oxide-core = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
 draco-nd-vector = { git = "https://github.com/robtfm/draco-oxide", branch = "fix/wasm32-rans-refill" }
 # mess required by ecosystem crates referencing bevy subcrates directly
-bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_a11y = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_asset = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_app = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_derive = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_ecs = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_image = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_input = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_log = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_math = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_color = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_transform = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_reflect = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_render = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_time = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_winit = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_window = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-bevy_platform = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_a11y = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_asset = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_app = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_derive = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_ecs = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_image = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_input = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_log = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_math = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_color = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_transform = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_reflect = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_render = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_time = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_winit = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_window = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
+bevy_platform = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }
 # bevy = { path = "../bevy-fork" }
 # bevy_a11y = { path = "../bevy-fork/crates/bevy_a11y" }
 # bevy_asset = { path = "../bevy-fork/crates/bevy_asset" }
@@ -493,7 +495,7 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 gltf = { git = "https://github.com/gltf-rs/gltf", rev = "12fc1b7c" }
 gltf-json = { git = "https://github.com/gltf-rs/gltf", rev = "12fc1b7c" }
 
-winit = { git = "https://github.com/robtfm/winit", branch = "v0.30.x" }
+winit = { git = "https://github.com/eordano/winit", rev = "54e1fbb990c1ccd8cf205127381617509979dcb9" }
 wgpu = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 wgpu-types = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 naga = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
@@ -512,3 +514,6 @@ naga = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 
 # [patch."https://github.com/robtfm/bevy_atmosphere"]
 # bevy_atmosphere = { path = "../bevy_atmosphere" }
+
+[patch."https://github.com/robtfm/bevy"]
+bevy = { git = "https://github.com/eordano/bevy", rev = "eca1a83254f242537dc2113d013b0dfaaa2f65ea" }

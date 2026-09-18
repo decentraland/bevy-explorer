@@ -30,6 +30,7 @@ const INTERNAL_PARAMS = [
   'gate',
   'nogate',
   'bundled',
+  'renderWorker',
   'simerror',
   'simhover',
   'previousLogin',
