@@ -4,6 +4,7 @@ module.exports.getSceneInfo = async function (body) {
     return {
         cid: scene_information.urn,
         metadata: scene_information.metadataJson,
+        contents: scene_information.content,
         ...scene_information
     } 
 }
