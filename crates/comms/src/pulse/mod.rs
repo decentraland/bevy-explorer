@@ -174,6 +174,8 @@ pub enum PulseEvent {
         urn: String,
         tick: u32,
         realm: Arc<str>,
+        /// Wire enum: absent/`0` full body, `1` upper body.
+        mask: Option<i32>,
     },
     /// Subject's emote stopped. `completed`: the server's one-shot timer expired (a natural
     /// finish) rather than the player cancelling a looping emote.
@@ -402,6 +404,7 @@ impl PulseDecoder {
                         urn: e.emote_id,
                         tick: e.server_tick,
                         realm: subject.realm.clone(),
+                        mask: e.mask,
                     });
                 }
                 events

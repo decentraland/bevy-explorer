@@ -4,7 +4,10 @@ use bevy::{
     math::{IVec2, Vec3},
     transform::components::Transform,
 };
-use common::rpc::{OpenExplorerUiResult, RpcCall, RpcResultSender, RpcUiFocusAction};
+use common::{
+    rpc::{OpenExplorerUiResult, RpcCall, RpcResultSender, RpcUiFocusAction},
+    structs::EmoteMask,
+};
 use dcl_component::proto_components::common::Vector3 as DclVector3;
 use serde::Serialize;
 use std::{cell::RefCell, rc::Rc};
@@ -157,9 +160,13 @@ pub async fn op_external_url(
     Ok(matches!(rx.await, Ok(Ok(_))))
 }
 
-pub fn op_emote(op_state: &mut impl State, emote: String) -> Result<(), anyhow::Error> {
+pub fn op_emote(
+    op_state: &mut impl State,
+    emote: String,
+    upper_body: bool,
+) -> Result<(), anyhow::Error> {
     debug!("op_emote");
-    send_emote(op_state, emote, false)
+    send_emote(op_state, emote, false, upper_body)
 }
 
 pub fn op_stop_emote(op_state: &mut impl State) -> Result<(), anyhow::Error> {
@@ -174,6 +181,7 @@ pub async fn op_scene_emote(
     op_state: Rc<RefCell<impl State>>,
     emote: String,
     looping: bool,
+    upper_body: bool,
 ) -> Result<(), anyhow::Error> {
     debug!("op_scene_emote");
     let scene_info = scene_information(op_state.clone()).await?;
@@ -197,20 +205,31 @@ pub async fn op_scene_emote(
     let emote_urn =
         format!("urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-{looping}");
 
-    send_emote(&mut *op_state.borrow_mut(), emote_urn, looping)
+    send_emote(&mut *op_state.borrow_mut(), emote_urn, looping, upper_body)
 }
 
 pub fn send_emote(
     op_state: &mut impl State,
     urn: String,
     r#loop: bool,
+    upper_body: bool,
 ) -> Result<(), anyhow::Error> {
     let context = op_state.borrow::<CrdtContext>();
     let scene = context.scene_id.0;
+    let mask = if upper_body {
+        EmoteMask::UpperBody
+    } else {
+        EmoteMask::FullBody
+    };
 
     op_state
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::TriggerEmote { scene, urn, r#loop })
+        .push(RpcCall::TriggerEmote {
+            scene,
+            urn,
+            r#loop,
+            mask,
+        })
 }
 
 pub async fn op_open_nft_dialog(

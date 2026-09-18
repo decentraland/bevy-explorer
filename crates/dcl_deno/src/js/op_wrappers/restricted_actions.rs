@@ -77,8 +77,12 @@ async fn op_external_url(
 }
 
 #[op2(fast)]
-fn op_emote(op_state: &mut OpState, #[string] emote: String) -> Result<(), anyhow::Error> {
-    dcl::js::restricted_actions::op_emote(op_state, emote)
+fn op_emote(
+    op_state: &mut OpState,
+    #[string] emote: String,
+    upper_body: bool,
+) -> Result<(), anyhow::Error> {
+    dcl::js::restricted_actions::op_emote(op_state, emote, upper_body)
 }
 
 #[op2(fast)]
@@ -91,8 +95,9 @@ async fn op_scene_emote(
     op_state: Rc<RefCell<OpState>>,
     #[string] emote: String,
     looping: bool,
+    upper_body: bool,
 ) -> Result<(), anyhow::Error> {
-    dcl::js::restricted_actions::op_scene_emote(op_state, emote, looping).await
+    dcl::js::restricted_actions::op_scene_emote(op_state, emote, looping, upper_body).await
 }
 
 #[op2(async)]

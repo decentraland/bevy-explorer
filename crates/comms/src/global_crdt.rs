@@ -11,7 +11,8 @@ use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
         AudioDecoderError, EmoteCommand, EmoteLifecycle, EmoteLifecycleEvent, EmoteLifecycleSource,
-        GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync, SceneDrivenAnimationRequest,
+        EmoteMask, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
+        SceneDrivenAnimationRequest,
     },
     util::ModifyComponentExt,
 };
@@ -145,16 +146,20 @@ pub enum PlayerMessage {
         /// its proto `float` timestamp, which is too narrow for an absolute millisecond tick.
         timestamp: f64,
     },
-    /// Pulse-decoded emote start (`stopping: false`) or stop, delivered natively for the same reason
-    /// as [`PlayerMessage::Movement`]: an rfc4 `PlayerEmote` on a byte transport is a duplicate to be
+    /// Pulse-decoded emote start, delivered natively for the same reason as
+    /// [`PlayerMessage::Movement`]: an rfc4 `PlayerEmote` on a byte transport is a duplicate to be
     /// dropped, so the Pulse copy must be distinguishable from it by variant.
-    Emote {
+    EmoteStart {
         urn: String,
         /// The server tick the emote started on; ordering only.
         incremental_id: u32,
-        stopping: bool,
-        /// On a stop: the server's one-shot timer expired (a natural finish) rather than the
-        /// player cancelling.
+        /// Which bones the emote drives.
+        mask: EmoteMask,
+    },
+    /// Pulse-decoded emote stop. The wire doesn't say which emote: it ends the one playing.
+    EmoteStop {
+        /// The server's one-shot timer expired (a natural finish) rather than the player
+        /// cancelling.
         completed: bool,
     },
     AudioStreamAvailable {
@@ -181,16 +186,18 @@ impl std::fmt::Debug for PlayerMessage {
                 .field("teleport", teleport)
                 .field("timestamp", timestamp)
                 .finish(),
-            Self::Emote {
+            Self::EmoteStart {
                 urn,
                 incremental_id,
-                stopping,
-                completed,
+                mask,
             } => f
-                .debug_struct("Emote")
+                .debug_struct("EmoteStart")
                 .field("urn", urn)
                 .field("incremental_id", incremental_id)
-                .field("stopping", stopping)
+                .field("mask", mask)
+                .finish(),
+            Self::EmoteStop { completed } => f
+                .debug_struct("EmoteStop")
                 .field("completed", completed)
                 .finish(),
             Self::AudioStreamAvailable { transport } => f
@@ -916,31 +923,16 @@ pub fn process_transport_updates(
                             &mut state,
                             &mut position_events,
                         ),
-                        PlayerMessage::Emote {
+                        // The wire is the only source of a foreign player's emote lifecycle for
+                        // scenes: raised here in wire order, on the client and the headless server
+                        // alike, so both report the same sequence.
+                        PlayerMessage::EmoteStart {
                             urn,
                             incremental_id,
-                            stopping,
-                            completed,
+                            mask,
                         } => {
-                            debug!("emote: {urn} (stopping: {stopping})");
-                            // The wire is the only source of a foreign player's emote lifecycle
-                            // for scenes: raised here in wire order, on the client and the headless
-                            // server alike, so both report the same sequence.
-                            if stopping {
-                                // Explicit stop (a looping emote cancelled, or a one-shot's server
-                                // completion). Foreign emotes no longer self-cancel on motion (see
-                                // `animate`), so the wire stop is what ends a looping one.
-                                commands.entity(entity).remove::<EmoteCommand>();
-                                emote_events.write(EmoteLifecycleEvent {
-                                    avatar: entity,
-                                    event: if completed {
-                                        EmoteLifecycle::Finished
-                                    } else {
-                                        EmoteLifecycle::Interrupted
-                                    },
-                                    source: EmoteLifecycleSource::Wire,
-                                });
-                            } else if !acceptable_emote_urn(&urn) {
+                            debug!("emote: {urn} (mask: {mask:?})");
+                            if !acceptable_emote_urn(&urn) {
                                 debug!(
                                     "dropping emote with unacceptable urn from {:#x}",
                                     update.address
@@ -950,13 +942,34 @@ pub fn process_transport_updates(
                                     timestamp: incremental_id as i64,
                                     urn: urn.clone(),
                                     r#loop: false,
+                                    mask,
                                 });
                                 emote_events.write(EmoteLifecycleEvent {
                                     avatar: entity,
-                                    event: EmoteLifecycle::Started { urn, r#loop: false },
+                                    event: EmoteLifecycle::Started {
+                                        urn,
+                                        r#loop: false,
+                                        mask,
+                                    },
                                     source: EmoteLifecycleSource::Wire,
                                 });
                             }
+                        }
+                        // Explicit stop (a looping emote cancelled, or a one-shot's server
+                        // completion). Foreign emotes no longer self-cancel on motion (see
+                        // `animate`), so the wire stop is what ends a looping one.
+                        PlayerMessage::EmoteStop { completed } => {
+                            debug!("emote stop (completed: {completed})");
+                            commands.entity(entity).remove::<EmoteCommand>();
+                            emote_events.write(EmoteLifecycleEvent {
+                                avatar: entity,
+                                event: if completed {
+                                    EmoteLifecycle::Finished
+                                } else {
+                                    EmoteLifecycle::Interrupted
+                                },
+                                source: EmoteLifecycleSource::Wire,
+                            });
                         }
                         PlayerMessage::PlayerData(Message::SceneDrivenAnimation(sda)) => {
                             // Standalone scene-driven animation (decoupled from movement). Order by the
@@ -1359,10 +1372,8 @@ fn receive_new_voice_message_senders(
     }
 }
 
-/// Room for any collectible or scene-emote urn, not for a peer to fill scene crdt with. A
-/// local-preview scene emote carries two base64-encoded absolute paths (scene id + file id), so
-/// it runs well past 256 bytes.
-const MAX_EMOTE_URN_BYTES: usize = 1024;
+/// Room for any collectible or scene-emote urn, not for a peer to fill scene crdt with.
+const MAX_EMOTE_URN_BYTES: usize = 256;
 
 /// Whether a peer's emote urn may reach scenes: it lands verbatim in `AvatarEmoteCommand`, and
 /// nothing upstream bounds it (Pulse validates an emote's duration and position, not its id).
