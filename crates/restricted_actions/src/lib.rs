@@ -1917,7 +1917,7 @@ pub fn handle_copy_to_clipboard(
             .detach();
     }
 
-    for (_, response) in perms.drain_fail(PermissionType::Web3) {
+    for (_, response) in perms.drain_fail(PermissionType::CopyToClipboard) {
         response.send(Err("permission denied".to_owned()));
     }
 }
