@@ -253,14 +253,14 @@ jobs:
       - name: Build engine
         run: >
           cargo build --release --locked
-          --bin headless --no-default-features --features headless,livekit
+          --bin dcl_headless_server --no-default-features --features headless,livekit
       # scene-explorer-tests is a static GitHub Pages site already relied on by Test
       # Scenes above, so this adds no new infrastructure dependency. 52,-52 co-tenants
       # 8 scenes, which exercises the multi-scene scheduling path rather than just boot.
       - name: Smoke test
         run: |
           set -o pipefail
-          ./target/release/headless \
+          ./target/release/dcl_headless_server \
             --realm https://decentraland.github.io/scene-explorer-tests/scene-explorer-tests \
             --location 52,-52 --server-mode --preview --timeout 90 2>&1 | tee smoke.log
       - name: Assert scenes ticked
