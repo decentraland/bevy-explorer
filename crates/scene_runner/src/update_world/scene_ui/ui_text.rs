@@ -79,7 +79,9 @@ impl From<PbUiText> for UiText {
             font: value.font(),
             font_src: value.font_src.clone(),
             font_size: value.font_size.unwrap_or(10) as f32,
-            wrapping: value.text_wrap == Some(components::TextWrap::TwWrap as i32),
+            wrapping: value
+                .text_wrap
+                .is_none_or(|w| w == components::TextWrap::TwWrap as i32),
         }
     }
 }
