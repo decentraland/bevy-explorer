@@ -397,6 +397,7 @@ fn apply_player_move(
                 });
             } else {
                 player_transform.translation = world_target;
+                movement_control.deliberate_penetration = true;
                 debug!("player teleported to {world_target}");
                 // Instant reposition → announce as a Pulse teleport so peers snap rather than lerp.
                 teleport_events.write(PlayerTeleported {
@@ -524,6 +525,7 @@ pub fn update_player_move(
                 movement_control
                     .suppress_avatar_physics
                     .remove("player_move");
+                movement_control.deliberate_penetration = true;
                 commands.entity(entity).remove::<ActivePlayerMove>();
             }
         }
