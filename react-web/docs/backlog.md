@@ -148,7 +148,10 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     then only ever reports `player`. (b) *faithful, engine + ~15-20min wasm rebuild* — make bevy's
     interaction `camera_distance` player-focus-relative in third-person like Unity, fixing **all**
     SDK pointer events, not just passports. Analysis-only for now (2026-07-09) — user deferred the
-    code change.
+    code change. **Update 2026-09-18:** engine PR #1158 made `maxDistance` (and the no-field
+    default) player-relative, so cause (2) is gone; the bridge's `tooFarReason` mapping was
+    updated to match (only `maxCameraDistance` → 'camera'). Remaining: none unless a scene sets
+    `maxCameraDistance` alone in third-person, where the boom-inflated camera leg still applies.
 17. `[feature]` **Passport — finish the sections (feature parity with unity-explorer / bevy-ui-scene)**
     — *feature parity*. The passport has OVERVIEW/BADGES/PHOTOS tabs but is missing sections the old
     scene renders (`bevy-ui-scene`: `ui-classes/main-hud/passport/passport-popup.tsx`). Gaps that

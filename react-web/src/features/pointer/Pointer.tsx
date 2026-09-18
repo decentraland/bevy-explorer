@@ -91,24 +91,24 @@ function slotStyle(s: Slot): React.CSSProperties {
 }
 
 // Out-of-range hint: which rule gates it decides both the glyph and the copy. 'player' is the
-// bevy-ui-scene case (its hover-actions showed a walking-person icon for the unreachable state);
-// 'camera' — including entries with no distance rule at all, the implicit 10m default — is new here
-// since the old scene never distinguished the two.
+// bevy-ui-scene case (its hover-actions showed a walking-person icon for the unreachable state) and
+// covers entries with no distance rule at all, the implicit 10m player default; 'camera' (only
+// `maxCameraDistance` set) is new here since the old scene never distinguished the two.
 const TOO_FAR_COPY: Record<'camera' | 'player', { Icon: (p: { size: number; className?: string }) => React.JSX.Element; text: string }> = {
   camera: { Icon: CameraIcon, text: 'Get camera closer' },
-  player: { Icon: WalkIcon, text: 'Get player closer' }
+  player: { Icon: WalkIcon, text: 'Get closer' }
 }
 
 function Hint({ action, slot }: { action: HoverAction; slot?: Slot }): React.JSX.Element {
   const reverse = slot?.side === 'l'
-  const tooFar = !action.enabled ? TOO_FAR_COPY[action.tooFarReason ?? 'camera'] : null
+  const tooFar = !action.enabled ? TOO_FAR_COPY[action.tooFarReason ?? 'player'] : null
   return (
     <div
       className={`${styles.hint}${reverse ? ` ${styles.hintReverse}` : ''}${action.enabled ? '' : ` ${styles.hintDisabled}`}`}
       style={slot ? slotStyle(slot) : undefined}
     >
       {tooFar ? (
-        <span className={styles.mouse} data-testid={`too-far-icon-${action.tooFarReason ?? 'camera'}`}>
+        <span className={styles.mouse} data-testid={`too-far-icon-${action.tooFarReason ?? 'player'}`}>
           <tooFar.Icon size={22} />
         </span>
       ) : (

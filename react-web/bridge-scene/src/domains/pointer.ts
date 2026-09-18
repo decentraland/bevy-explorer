@@ -5,8 +5,14 @@ import { PointerEventType, PointerLock, engine } from '@dcl/sdk/ecs'
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
 import type { HoverAction } from '../../../src/engine/protocol'
+import type { Info } from '../../../src/engine/generated'
 
 const TARGET_UI = 1 // HoverTargetType.UI — ignore hovers over engine UI
+
+function tooFarReason(info: Info | null): 'camera' | 'player' {
+  const playerRule = info?.maxDistance != null || info?.maxPlayerDistance != null
+  return !playerRule && info?.maxCameraDistance != null ? 'camera' : 'player'
+}
 
 export function registerPointer(ctx: Ctx): void {
   // Cursor-lock → crosshair. The engine writes PbPointerLock.isPointerLocked to the CAMERA entity
@@ -37,9 +43,10 @@ export function registerPointer(ctx: Ctx): void {
             button: a.eventInfo?.button ?? 1,
             text: a.eventInfo?.hoverText ?? 'Interact',
             enabled: a.enabled,
-            // maxPlayerDistance configured → the entry is (also) range-gated by player distance;
-            // otherwise it's the camera-distance rule (incl. the implicit 10m default).
-            tooFarReason: !a.enabled ? (a.eventInfo?.maxPlayerDistance == null ? 'camera' : 'player') : undefined
+            // Only maxCameraDistance configured → the entry is gated by camera distance; otherwise
+            // it's the player-distance rule (maxDistance, its deprecated alias maxPlayerDistance, or
+            // the implicit 10m default — and when both rules are set either one passing suffices).
+            tooFarReason: !a.enabled ? tooFarReason(a.eventInfo) : undefined
           }))
         ctx.send({ kind: 'hover', actions })
       }
