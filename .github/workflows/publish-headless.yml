@@ -107,18 +107,18 @@ jobs:
       - name: Build engine
         run: >
           cargo build --release --locked --target ${{ matrix.target }}
-          --bin headless --no-default-features --features headless,livekit
+          --bin decentraland_headless_authoritative --no-default-features --features headless,livekit
 
       - name: Strip binaries
         if: runner.os != 'Windows'
-        run: strip target/${{ matrix.target }}/release/headless target/${{ matrix.target }}/release/dcl_deno_ipc
+        run: strip target/${{ matrix.target }}/release/decentraland_headless_authoritative target/${{ matrix.target }}/release/dcl_deno_ipc
 
       - name: Smoke test
         if: matrix.platform != 'darwin-x64'
         shell: bash
         run: |
           set -euo pipefail
-          bin="target/${{ matrix.target }}/release/headless"
+          bin="target/${{ matrix.target }}/release/decentraland_headless_authoritative"
           [ "${{ runner.os }}" = "Windows" ] && bin="$bin.exe"
           # Boots the engine and the sidecar against a realm that does not exist; proves the
           # binary links, starts, spawns its sidecar and shuts down cleanly.
@@ -134,7 +134,7 @@ jobs:
           node deploy/headless/build-platform-package.js \
             --platform ${{ matrix.platform }} \
             --version "$(node -p "require('./deploy/headless/launcher/package.json').version")" \
-            --engine "target/${{ matrix.target }}/release/headless$suffix" \
+            --engine "target/${{ matrix.target }}/release/decentraland_headless_authoritative$suffix" \
             --sidecar "target/${{ matrix.target }}/release/dcl_deno_ipc$suffix" \
             --out deploy/headless/dist
 
