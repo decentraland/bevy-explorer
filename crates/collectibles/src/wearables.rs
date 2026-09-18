@@ -307,8 +307,8 @@ impl CollectibleType for Wearable {
     type Meta = WearableMeta;
     type ExtraData = WearableExtraData;
 
-    fn base_collection() -> Option<&'static str> {
-        None
+    fn source_collections() -> &'static [&'static str] {
+        &[]
     }
 
     fn extension() -> &'static str {
