@@ -5,10 +5,26 @@ use common::{
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{ContainingScene, SceneEntity};
+use wasm_bindgen::prelude::*;
 use web_sys::{
     js_sys::Float32Array, AudioBuffer, AudioBufferSourceNode, AudioContext,
     AudioScheduledSourceNode, GainNode, StereoPannerNode,
 };
+
+#[wasm_bindgen]
+extern "C" {
+    /// One JSON audio op for the page audio host (worker mode). Keys are
+    /// always double-quoted -- the host JSON.parses this.
+    #[wasm_bindgen(js_name = __dclAudioOp, catch)]
+    fn audio_op(json: &str) -> Result<(), JsValue>;
+    /// Decoded mono PCM for buffer `id`; the shim copies out of wasm memory
+    /// and transfers to the page.
+    #[wasm_bindgen(js_name = __dclAudioPcm, catch)]
+    fn audio_pcm(id: f64, samples: &[f32], sample_rate: f32) -> Result<(), JsValue>;
+    /// Batched per-frame [instance, volume, pan] triples.
+    #[wasm_bindgen(js_name = __dclAudioParams, catch)]
+    fn audio_params(data: &[f64]) -> Result<(), JsValue>;
+}
 
 pub struct AudioSourcePluginImpl;
 
@@ -33,22 +49,48 @@ impl Plugin for AudioSourcePluginImpl {
     }
 }
 
+enum AudioBackend {
+    Direct { context: AudioContext },
+    Bridged,
+}
+
+enum BufferEntry {
+    Direct(AudioBuffer),
+    Bridged { id: u64, duration: f64 },
+}
+
+impl BufferEntry {
+    fn duration(&self) -> f64 {
+        match self {
+            BufferEntry::Direct(buffer) => buffer.duration(),
+            BufferEntry::Bridged { duration, .. } => *duration,
+        }
+    }
+}
+
 pub struct HtmlAudioContext {
-    context: AudioContext,
-    buffers: HashMap<AssetId<bevy_kira_audio::AudioSource>, AudioBuffer>,
-    graphs: HashMap<
-        Entity,
-        (
-            AssetId<bevy_kira_audio::AudioSource>,
-            AudioGraphHtmlElements,
-        ),
-    >,
+    backend: AudioBackend,
+    next_id: u64,
+    buffers: HashMap<AssetId<bevy_kira_audio::AudioSource>, BufferEntry>,
+    graphs: HashMap<Entity, (AssetId<bevy_kira_audio::AudioSource>, AudioGraphSlot)>,
 }
 
 impl Default for HtmlAudioContext {
     fn default() -> Self {
+        // Direct on the page main thread; bridged on a worker global (no
+        // AudioContext there -- engine-worker mode).
+        let backend = match web_sys::window() {
+            Some(_) => AudioBackend::Direct {
+                context: AudioContext::new().unwrap(),
+            },
+            None => {
+                info!("no window: scene audio bridged to the page audio host");
+                AudioBackend::Bridged
+            }
+        };
         Self {
-            context: AudioContext::new().unwrap(),
+            backend,
+            next_id: 1,
             buffers: default(),
             graphs: default(),
         }
@@ -56,6 +98,17 @@ impl Default for HtmlAudioContext {
 }
 
 impl HtmlAudioContext {
+    /// Keep elapsed-time bookkeeping monotonic on both rendering threads.
+    fn now(&self) -> f64 {
+        match &self.backend {
+            AudioBackend::Direct { context } => context.current_time(),
+            AudioBackend::Bridged => web_sys::js_sys::Reflect::get(&web_sys::js_sys::global(), &"performance".into())
+                .unwrap()
+                .unchecked_into::<web_sys::Performance>()
+                .now() / 1000.0,
+        }
+    }
+
     fn tick(
         &mut self,
         mut asset_events: EventReader<AssetEvent<bevy_kira_audio::AudioSource>>,
@@ -70,23 +123,43 @@ impl HtmlAudioContext {
                         continue;
                     };
                     let frame_count = asset.sound.frames.len();
-                    let buffer = self
-                        .context
-                        .create_buffer(1, frame_count as u32, asset.sound.sample_rate as f32)
-                        .unwrap();
+                    let sample_rate = asset.sound.sample_rate as f32;
                     let frames = asset
                         .sound
                         .frames
                         .iter()
                         .map(|f| (f.left + f.right) / 2.0)
                         .collect::<Vec<_>>();
-                    let js_array = Float32Array::new_with_length(frames.len() as u32);
-                    js_array.copy_from(&frames);
-                    buffer.copy_to_channel_with_f32_array(&js_array, 0).unwrap();
-                    self.buffers.insert(*id, buffer);
+
+                    match &self.backend {
+                        AudioBackend::Direct { context } => {
+                            let buffer = context
+                                .create_buffer(1, frame_count as u32, sample_rate)
+                                .unwrap();
+                            let js_array = Float32Array::new_with_length(frames.len() as u32);
+                            js_array.copy_from(&frames);
+                            buffer.copy_to_channel_with_f32_array(&js_array, 0).unwrap();
+                            self.buffers.insert(*id, BufferEntry::Direct(buffer));
+                        }
+                        AudioBackend::Bridged => {
+                            let buf_id = self.next_id;
+                            self.next_id += 1;
+                            let duration = frame_count as f64 / sample_rate as f64;
+                            audio_pcm(buf_id as f64, &frames, sample_rate).report();
+                            self.buffers.insert(
+                                *id,
+                                BufferEntry::Bridged {
+                                    id: buf_id,
+                                    duration,
+                                },
+                            );
+                        }
+                    }
                 }
                 AssetEvent::Removed { id } => {
-                    self.buffers.remove(id);
+                    if let Some(BufferEntry::Bridged { id: buf_id, .. }) = self.buffers.remove(id) {
+                        audio_op(&format!(r#"{{"op":"dropbuf","buf":{buf_id}}}"#)).report();
+                    }
                 }
                 _ => (),
             }
@@ -97,34 +170,115 @@ impl HtmlAudioContext {
         &mut self,
         id: AssetId<bevy_kira_audio::AudioSource>,
         offset: Option<f32>,
-    ) -> Option<AudioGraphHtmlElements> {
-        // make new graph
+    ) -> Option<AudioGraphSlot> {
         let buffer = self.buffers.get(&id)?;
-        let source_node = self.context.create_buffer_source().ok()?;
-        source_node.set_buffer(Some(buffer));
-        let gain_node = self.context.create_gain().ok()?;
-        let panner_node = self.context.create_stereo_panner().ok()?;
-        source_node.connect_with_audio_node(&gain_node).ok()?;
-        gain_node.connect_with_audio_node(&panner_node).ok()?;
-        panner_node
-            .connect_with_audio_node(&self.context.destination())
-            .ok()?;
+        let duration = buffer.duration();
+        match (&self.backend, buffer) {
+            (AudioBackend::Direct { context }, BufferEntry::Direct(buffer)) => {
+                let source_node = context.create_buffer_source().ok()?;
+                source_node.set_buffer(Some(buffer));
+                let gain_node = context.create_gain().ok()?;
+                let panner_node = context.create_stereo_panner().ok()?;
+                source_node.connect_with_audio_node(&gain_node).ok()?;
+                gain_node.connect_with_audio_node(&panner_node).ok()?;
+                panner_node
+                    .connect_with_audio_node(&context.destination())
+                    .ok()?;
 
-        if let Some(offset) = offset {
-            source_node
-                .start_with_when_and_grain_offset(0.0, offset as f64)
-                .ok()?;
-        } else {
-            source_node.start().ok()?;
+                if let Some(offset) = offset {
+                    source_node
+                        .start_with_when_and_grain_offset(0.0, offset as f64)
+                        .ok()?;
+                } else {
+                    source_node.start().ok()?;
+                }
+
+                Some(AudioGraphSlot {
+                    elapsed_time: 0.0,
+                    duration,
+                    kind: GraphKind::Direct(AudioGraphHtmlElements {
+                        source_node,
+                        gain_node,
+                        panner_node,
+                    }),
+                })
+            }
+            (AudioBackend::Bridged, BufferEntry::Bridged { id: buf_id, .. }) => {
+                let inst = self.next_id;
+                self.next_id += 1;
+                let offset = offset.unwrap_or(0.0);
+                audio_op(&format!(
+                    r#"{{"op":"play","inst":{inst},"buf":{buf_id},"offset":{offset}}}"#
+                ))
+                .report();
+                Some(AudioGraphSlot {
+                    elapsed_time: 0.0,
+                    duration,
+                    kind: GraphKind::Bridged { inst },
+                })
+            }
+            // A backend/buffer mismatch cannot happen (buffers are created by
+            // the same backend), but don't panic if it somehow does.
+            _ => None,
         }
+    }
+}
 
-        Some(AudioGraphHtmlElements {
-            source_node,
-            gain_node,
-            panner_node,
-            elapsed_time: 0.0,
-            duration: buffer.duration(),
-        })
+pub struct AudioGraphSlot {
+    pub elapsed_time: f64,
+    pub duration: f64,
+    kind: GraphKind,
+}
+
+enum GraphKind {
+    Direct(AudioGraphHtmlElements),
+    Bridged { inst: u64 },
+}
+
+impl AudioGraphSlot {
+    fn stop(&self, now: f64) {
+        match &self.kind {
+            GraphKind::Direct(elements) => elements.stop(now),
+            GraphKind::Bridged { inst } => {
+                audio_op(&format!(r#"{{"op":"stop","inst":{inst}}}"#)).report();
+            }
+        }
+    }
+
+    fn configure(&self, playback_rate: f32, looping: bool) {
+        match &self.kind {
+            GraphKind::Direct(elements) => {
+                elements
+                    .source_node
+                    .playback_rate()
+                    .set_value(playback_rate);
+                elements.source_node.set_loop(looping);
+            }
+            GraphKind::Bridged { inst } => {
+                audio_op(&format!(
+                    r#"{{"op":"cfg","inst":{inst},"rate":{playback_rate},"loop":{looping}}}"#
+                ))
+                .report();
+            }
+        }
+    }
+
+    /// Apply volume/pan: direct sets the nodes; bridged appends to the
+    /// per-frame batch flushed once by `manage_audio_sources`.
+    fn set_output(&self, volume: f32, panning: f32, batch: &mut Vec<f64>) {
+        match &self.kind {
+            GraphKind::Direct(elements) => {
+                elements.gain_node.gain().set_value(volume);
+                elements.panner_node.pan().set_value(panning * 2.0 - 1.0);
+            }
+            GraphKind::Bridged { inst } => {
+                batch.extend_from_slice(&[
+                    *inst as f64,
+                    volume as f64,
+                    (panning * 2.0 - 1.0) as f64,
+                ]);
+            }
+        }
     }
 }
 
@@ -132,8 +286,6 @@ pub struct AudioGraphHtmlElements {
     pub source_node: AudioBufferSourceNode,
     pub gain_node: GainNode,
     pub panner_node: StereoPannerNode,
-    pub elapsed_time: f64,
-    pub duration: f64,
 }
 
 impl AudioGraphHtmlElements {
@@ -181,6 +333,7 @@ fn manage_audio_sources(
     settings: Res<AudioSettings>,
     pan: VolumePanning,
     mut prev_time: Local<f64>,
+    mut params_batch: Local<Vec<f64>>,
 ) {
     let current_scenes = player
         .single()
@@ -189,9 +342,10 @@ fn manage_audio_sources(
         .unwrap_or_default();
 
     let mut prev_instances = std::mem::take(&mut audio.graphs);
-    let now = audio.context.current_time();
+    let now = audio.now();
     let elapsed = now - *prev_time;
     *prev_time = now;
+    params_batch.clear();
 
     for (ent, emitter, maybe_gt, maybe_scene_ent, maybe_layers, maybe_retry) in query.iter() {
         commands.entity(ent).try_remove::<RetryEmitter>();
@@ -267,23 +421,17 @@ fn manage_audio_sources(
         };
 
         if emitter.is_changed() || maybe_retry.is_some() {
-            instance
-                .source_node
-                .playback_rate()
-                .set_value(emitter.playback_speed);
-            instance.source_node.set_loop(emitter.r#loop);
+            instance.configure(emitter.playback_speed, emitter.r#loop);
         }
 
-        instance
-            .gain_node
-            .gain()
-            .set_value(source_volume * emitter_volume);
-        // PannerNode is -1 to 1, vs kira range of 0 to 1
-        instance.panner_node.pan().set_value(panning * 2.0 - 1.0);
+        instance.set_output(source_volume * emitter_volume, panning, &mut params_batch);
     }
 
     for (_, (_, instance)) in prev_instances.drain() {
         instance.stop(now);
+    }
+    if !params_batch.is_empty() {
+        audio_params(&params_batch).report();
     }
 }
 

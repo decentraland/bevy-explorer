@@ -469,10 +469,10 @@ fn is_fullscreen_available() -> bool {
 #[cfg(target_arch = "wasm32")]
 #[inline(always)]
 fn is_fullscreen_available() -> bool {
-    let window = web_sys::window().unwrap();
-    let document = window.document().unwrap();
-
-    document.fullscreen_enabled()
+    web_sys::window()
+        .and_then(|window| window.document())
+        .map(|document| document.fullscreen_enabled())
+        .unwrap_or_else(|| FULLSCREEN_AVAILABLE.load(std::sync::atomic::Ordering::Relaxed))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -480,12 +480,34 @@ fn is_fullscreen_available() -> bool {
 struct FullscreenListener(watch::Receiver<WindowSetting>);
 
 #[cfg(target_arch = "wasm32")]
+static FULLSCREEN_AVAILABLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_arch = "wasm32")]
+static FULLSCREEN_REALITY: std::sync::OnceLock<watch::Sender<WindowSetting>> =
+    std::sync::OnceLock::new();
+
+#[cfg(target_arch = "wasm32")]
+pub fn set_fullscreen_reality(fullscreen: bool, available: bool) {
+    FULLSCREEN_AVAILABLE.store(available, std::sync::atomic::Ordering::Relaxed);
+    if let Some(sender) = FULLSCREEN_REALITY.get() {
+        sender.send_replace(if fullscreen {
+            WindowSetting::Borderless
+        } else {
+            WindowSetting::Windowed
+        });
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
 fn setup_fullscreen_listeners_and_callbacks(mut commands: Commands, app_config: Res<AppConfig>) {
-    let window = web_sys::window().unwrap();
+    let (sender, receiver) = tokio::sync::watch::channel(app_config.graphics.window);
+    let Some(window) = web_sys::window() else {
+        let _ = FULLSCREEN_REALITY.set(sender);
+        commands.insert_resource(FullscreenListener(receiver));
+        return;
+    };
     let document = window.document().unwrap();
     let canvas = document.get_element_by_id("mygame-canvas").unwrap();
-
-    let (sender, receiver) = tokio::sync::watch::channel(app_config.graphics.window);
 
     let listener = Closure::wrap(Box::new(move |_event: Event| {
         let window = web_sys::window().unwrap();

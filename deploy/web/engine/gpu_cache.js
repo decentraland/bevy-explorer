@@ -1,3 +1,9 @@
+function setShaderCompiling(visible) {
+  if (globalThis.__setShaderCompiling) return globalThis.__setShaderCompiling(visible);
+  const badge = document.getElementById("shader-compiling");
+  if (badge) badge.style.display = visible ? "flex" : "none";
+}
+
 var count = 0;
 
 function simpleHash(s) {
@@ -243,7 +249,7 @@ function patchWebgpuAdapter(fakeAsync) {
         if (!window.nextPipelineCanFail) {
           return inline_function.apply(device, args);
         }
-        const sc = document.getElementById("shader-compiling"); if (sc) sc.style.display = "flex";
+        setShaderCompiling(true);
         window.nextPipelineCanFail = false;
         window.lastPipelineWasValidFlag = false;
         window.pendingAsyncPipelineCount++;
@@ -268,7 +274,7 @@ function patchWebgpuAdapter(fakeAsync) {
             while (window.wgpuResolveIdle.length > 0) {
               window.wgpuResolveIdle.pop()();
             }
-            const sc2 = document.getElementById("shader-compiling"); if (sc2) sc2.style.display = "none";
+            setShaderCompiling(false);
           }
 
           return item;

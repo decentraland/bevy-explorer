@@ -3681,6 +3681,7 @@ dependencies = [
  "web-sys",
  "web-time",
  "wgpu",
+ "winit",
  "world_ui",
  "zip 2.4.2",
 ]

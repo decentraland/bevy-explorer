@@ -2,10 +2,72 @@
 // Handles WASM/WebGPU initialization and game execution
 
 import init, { engine_init, engine_run, engine_console_command, engine_home_scene, gpu_cache_hash } from "./pkg/webgpu_build.js";
-import { initGpuCache } from "./gpu_cache.js";
+import * as wasmExports from "./pkg/webgpu_build.js";
+import { initGpuCache as initPageGpuCache } from "./gpu_cache.js";
+import { createWorkerRpc } from "./worker-rpc.js";
+
+let engineWorker;
+let engineRpc;
+const workerRequested = new URLSearchParams(location.search).get('renderWorker') === '1';
+
+export function initGpuCache(key) {
+  return engineRpc ? engineRpc.call('gpuCache', [key]) : initPageGpuCache(key);
+}
+
+async function initRenderWorker(compiledModule, sharedMemory) {
+  if (!wasmExports.engine_prepare_worker) {
+    throw new Error('renderWorker=1 requires an Explorer build with --features web-worker');
+  }
+  if (!crossOriginIsolated || !HTMLCanvasElement.prototype.transferControlToOffscreen) {
+    throw new Error('Worker rendering requires cross-origin isolation and OffscreenCanvas');
+  }
+  const { createWorkerAudioHost } = await import('./worker-audio.js');
+  const audio = createWorkerAudioHost();
+  const methods = { audioPcm: audio.pcm, audioOp: audio.op, audioParams: audio.params };
+  for (const name of ['_buildEngineApi', 'set_url_params', '__engineHeartbeat', '__setEngineTextFocus',
+    'setLoadingStepActive', 'setLoadingStepCompleted', 'setLoadingStepProgress',
+    'spawn_and_init_sandbox', 'terminate_sandbox']) {
+    methods[name] = (...args) => window[name](...args);
+  }
+  methods.error = message => window.reportEngineError?.(message, 'engine worker');
+  methods.persistCache = (key, value) => {
+    if (key === 'gpuCacheKey' || key === 'deviceDescriptor') localStorage.setItem(key, value);
+  };
+  methods.shaderCompiling = visible => {
+    const badge = document.getElementById('shader-compiling');
+    if (badge) badge.style.display = visible ? 'flex' : 'none';
+  };
+  engineWorker = new Worker(new URL('./engine_worker.js', import.meta.url), { type: 'module', name: 'Explorer renderer' });
+  const { installLivekitHost } = await import('./worker-livekit-host.js');
+  const closeLivekit = installLivekitHost(engineWorker, globalThis.__engineLivekitBindings);
+  engineRpc = createWorkerRpc(engineWorker, methods);
+  engineWorker.onerror = event => {
+    engineRpc.close(new Error(event.message || 'Engine worker crashed'));
+    void audio.close().catch(console.error);
+    closeLivekit();
+    workerCrashHandler('engine')(event);
+  };
+  engineWorker.onmessageerror = () => {
+    const error = new Error('Engine worker could not deserialize a message');
+    engineRpc.close(error);
+    methods.error(error.message);
+  };
+  const cache = {};
+  for (const key of ['gpuCacheKey', 'deviceDescriptor']) {
+    const value = localStorage.getItem(key);
+    if (value !== null) cache[key] = value;
+  }
+  await engineRpc.call('init', [compiledModule, sharedMemory, cache]);
+  const browserState = () => engineRpc.notify('browserState',
+    document.pointerLockElement !== null, document.fullscreenElement !== null, document.fullscreenEnabled);
+  document.addEventListener('pointerlockchange', browserState);
+  document.addEventListener('fullscreenchange', browserState);
+  browserState();
+}
+
 
 // Re-export for main.js
-export { engine_home_scene, gpu_cache_hash, initGpuCache };
+export { engine_home_scene, gpu_cache_hash };
 
 /**
  * Records an uncaught worker error as context for the crash watchdog. A worker
@@ -486,6 +548,7 @@ export async function initEngine() {
     };
   });
   setLoadingStepCompleted('workers');
+  if (workerRequested) await initRenderWorker(compiledModule, sharedMemory);
 }
 
 /**
@@ -570,8 +633,16 @@ export function start(options = {}) {
   };
 
   // Everything the host handed us goes through as-is (the engine rejects unknown keys).
-  engine_run(options);
-  window.engine_console_command = engine_console_command;
+  if (engineRpc) {
+    const [id, canvas] = wasmExports.engine_prepare_worker(document.getElementById('mygame-canvas'));
+    engineRpc.call('start', [id, canvas, options], [canvas]).catch(error => {
+      window.reportEngineError?.(error, 'engine worker startup');
+    });
+    window.engine_console_command = command => engineRpc.call('console', [command]);
+  } else {
+    engine_run(options);
+    window.engine_console_command = engine_console_command;
+  }
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {
       const s = document.createElement('script');

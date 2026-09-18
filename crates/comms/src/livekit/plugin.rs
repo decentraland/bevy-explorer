@@ -1,5 +1,10 @@
 use bevy::prelude::*;
-use common::{debug_panic, structs::AudioSettings};
+use common::debug_panic;
+#[cfg(not(target_arch = "wasm32"))]
+use common::structs::AudioSettings;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit::LivekitAudioManager;
+#[cfg(not(target_arch = "wasm32"))]
 use kira::{
     manager::{AudioManager, AudioManagerSettings, DefaultBackend},
     tween::Tween,
@@ -13,7 +18,7 @@ use crate::{
     livekit::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
-        track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitAudioManager,
+        track::plugin::LivekitTrackPlugin, ConnectionAvailability,
         LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
         StartLivekit,
     },
@@ -34,7 +39,9 @@ impl Plugin for LivekitPlugin {
         app.add_plugins(LivekitTrackPlugin);
 
         app.add_systems(Update, (start_livekit, verify_player_update_tasks));
+        #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(Startup, build_kira_audio_manager);
+        #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(
             Update,
             respond_to_audio_settings_change.run_if(resource_exists_and_changed::<AudioSettings>),
@@ -116,6 +123,7 @@ fn verify_player_update_tasks(mut player_update_tasks: ResMut<PlayerUpdateTasks>
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn build_kira_audio_manager(mut commands: Commands) {
     match AudioManager::new(AudioManagerSettings::<DefaultBackend>::default()) {
         Ok(manager) => {
@@ -128,6 +136,7 @@ fn build_kira_audio_manager(mut commands: Commands) {
     };
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn respond_to_audio_settings_change(
     mut livekit_audio_manager: ResMut<LivekitAudioManager>,
     audio_settings: Res<AudioSettings>,

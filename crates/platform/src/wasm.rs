@@ -197,11 +197,19 @@ impl<T> AsyncRwLock<T> {
 #[derive(Debug)]
 pub struct NoError;
 
+thread_local! {
+    static POINTER_LOCKED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn set_pointer_lock_state(locked: bool) {
+    POINTER_LOCKED.set(locked);
+}
+
 pub fn platform_pointer_is_locked(_expected: bool) -> bool {
     web_sys::window()
         .and_then(|w| w.document())
         .map(|d| d.pointer_lock_element().is_some())
-        .unwrap_or(false)
+        .unwrap_or_else(|| POINTER_LOCKED.get())
 }
 
 pub fn default_camera_components() -> impl Bundle {

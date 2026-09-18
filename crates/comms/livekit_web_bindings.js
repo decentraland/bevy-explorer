@@ -10,8 +10,11 @@ function error(...args) {
 
 var audioContext = null;
 var microphonePermission = "denied";
+const workerRpc = () => globalThis.__dclLivekitRpc;
+const sendWorker = (method, args) => workerRpc()(method, args).catch(error);
 
 export function setupMicrophonePermission() {
+    if (workerRpc()) return;
     navigator.permissions.query({ name: "microphone" }).then((permissionState) => {
         microphonePermission = permissionState.state;
 
@@ -26,6 +29,7 @@ export function setupMicrophonePermission() {
  * @returns boolean
  */
 export function is_microphone_available() {
+    if (workerRpc()) return !!globalThis.__dclMicrophoneAvailable;
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 }
 
@@ -34,6 +38,7 @@ export function is_microphone_available() {
  * @returns "granted" | "prompt" | "denied"
  */
 export function microphonePermissionState() {
+    if (workerRpc()) return globalThis.__dclMicrophonePermission || "denied";
     return microphonePermission;
 }
 
@@ -41,6 +46,7 @@ export function microphonePermissionState() {
  * Prompts for microphone permission
  */
 export function promptMicrophonePermission() {
+    if (workerRpc()) return sendWorker("promptMicrophonePermission", []);
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         navigator.mediaDevices.getUserMedia({ audio: true });
     }
@@ -56,6 +62,7 @@ export function promptMicrophonePermission() {
  * @returns livekit.Room
  */
 export async function room_connect(url, token, room_options, room_connect_options, handler) {
+    if (workerRpc()) return workerRpc()("room_connect", [url, token, room_options, room_connect_options, handler]);
     const room = new LivekitClient.Room(room_options);
 
     set_room_event_handler(room, handler);
@@ -70,6 +77,7 @@ export async function room_connect(url, token, room_options, room_connect_option
  * @param {livekit.Room} room
  */
 export async function room_close(room) {
+    if (workerRpc()) return workerRpc()("room_close", [room]);
     await room.disconnect();
 }
 
@@ -293,6 +301,7 @@ export async function participant_is_local(participant) {
  * @param {string[]} destination_identities
  */
 export async function local_participant_publish_data(local_participant, payload, reliable, topic, destination_identities) {
+    if (workerRpc()) return workerRpc()("local_participant_publish_data", [local_participant, payload, reliable, topic, destination_identities]);
     await local_participant.publishData(payload, {
         reliable,
         topic: topic ?? undefined,
@@ -308,6 +317,7 @@ export async function local_participant_publish_data(local_participant, payload,
  * @returns livekit.LocalTrackPublication
  */
 export async function local_participant_publish_track(local_participant, local_track, track_publishing_option) {
+    if (workerRpc()) return workerRpc()("local_participant_publish_track", [local_participant, local_track, track_publishing_option]);
     return await local_participant.publishTrack(local_track, track_publishing_option);
 }
 
@@ -318,6 +328,7 @@ export async function local_participant_publish_track(local_participant, local_t
  * @returns livekit.LocalTrackPublication
  */
 export async function local_participant_unpublish_track(local_participant, local_track) {
+    if (workerRpc()) return workerRpc()("local_participant_unpublish_track", [local_participant, local_track]);
     return await local_participant.unpublishTrack(local_track, true);
 }
 
@@ -427,6 +438,7 @@ export function remote_track_publication_source(remote_track_publication) {
  * @returns string
  */
 export function remote_track_publication_set_subscribed(remote_track_publication, subscribed) {
+    if (workerRpc()) return sendWorker("remote_track_publication_set_subscribed", [remote_track_publication, subscribed]);
     remote_track_publication.setSubscribed(subscribed);
 }
 
@@ -445,6 +457,11 @@ export function remote_track_publication_track(remote_track_publication) {
  * @returns livekit.LocalAudioTrack
  */
 export async function local_audio_track_new(options) {
+    if (workerRpc()) {
+        const fields = ["autoGainControl", "channelCount", "echoCancellation", "latency", "noiseSuppression", "voiceIsolation", "sampleRate", "sampleSize"];
+        const snapshot = Object.fromEntries(fields.map(key => [key, typeof options[key] === "bigint" ? Number(options[key]) : options[key]]));
+        return workerRpc()("local_audio_track_new", [snapshot]);
+    }
     try {
         return await LivekitClient.createLocalAudioTrack(options);
     } catch (err) {
@@ -520,6 +537,7 @@ function track_rig_drop(remote_track) {
  * @param {float} volume 
  */
 export function remote_track_pan_and_volume(remote_track, pan, volume) {
+    if (workerRpc()) return sendWorker("remote_track_pan_and_volume", [remote_track, pan, volume]);
     // log(`Setting pan and volume for track ${remote_track.sid}.`);
     const track_rig = remote_track.trackRig;
     // Pan value should be between -1 (left) and 1 (right)
@@ -547,5 +565,16 @@ export function remote_track_pan_and_volume(remote_track, pan, volume) {
  * @param {number} volume 
  */
 export function remote_audio_track_set_volume(remote_audio_track, volume) {
+    if (workerRpc()) return sendWorker("remote_audio_track_set_volume", [remote_audio_track, volume]);
     remote_audio_track.setVolume(volume);
+}
+
+if (typeof document !== 'undefined') {
+    globalThis.__engineLivekitBindings = {
+        setupMicrophonePermission, is_microphone_available, microphonePermissionState,
+        promptMicrophonePermission, room_connect, room_close, local_participant_publish_data,
+        local_participant_publish_track, local_participant_unpublish_track,
+        remote_track_publication_set_subscribed, local_audio_track_new,
+        remote_track_pan_and_volume, remote_audio_track_set_volume,
+    };
 }

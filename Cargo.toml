@@ -26,6 +26,7 @@ required-features = ["headless"]
 default = ["livekit", "ffmpeg", "inspect", "social", "react-hud-cef"]
 # default = ["wasm"]
 console = []
+web-worker = ["bevy/web-worker", "dep:winit"]
 dcl-assert = ["common/dcl-assert"]
 gen-tests = []
 tracy = ["bevy/trace_tracy"]
@@ -387,6 +388,7 @@ mimalloc = { workspace = true }
 cef_offscreen = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+winit = { version = "0.30", optional = true, default-features = false, features = ["web-worker", "rwh_06"] }
 av = { workspace = true, features = ["html"] }
 bevy = { workspace = true, features = [
   "webgpu",
