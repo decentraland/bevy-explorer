@@ -9,6 +9,7 @@ use std::{
 
 use bevy::{
     color::palettes,
+    math::DVec3,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
@@ -1343,6 +1344,16 @@ pub struct EngineMovementControl {
     /// orientation survives until the controller scene reads the new transform and
     /// echoes it back, rather than being clobbered by an in-flight stale tick.
     pub accept_movement_after: f64,
+    /// Set by `movePlayerTo` (teleport or interpolation end): the scene deliberately
+    /// placed the player here, possibly inside a collider (sit-on-chair emotes).
+    /// While set, depenetration is not applied in x/z and the sweep ignores colliders
+    /// the player starts inside; movement is only clamped to not go deeper. Cleared
+    /// by `resolve_collisions` once no correction is required.
+    pub deliberate_penetration: bool,
+    /// While `deliberate_penetration` is set: the per-axis depenetration bounds
+    /// (min, max) relative to the current transform, refreshed each frame by
+    /// `resolve_collisions`. `min.axis > 0` means the eject direction is +axis.
+    pub penetration_bounds: (DVec3, DVec3),
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
