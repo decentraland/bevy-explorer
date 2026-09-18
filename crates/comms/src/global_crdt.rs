@@ -782,7 +782,9 @@ pub fn process_transport_updates(
 
                             let new_entity = commands
                                 .spawn((
-                                    Transform::default(),
+                                    // Below ground until a position arrives, so a peer with no
+                                    // avatar-state channel is not shown standing at the origin.
+                                    Transform::from_xyz(0.0, -10.0, 0.0),
                                     Visibility::default(),
                                     ForeignPlayer {
                                         address: update.address,
