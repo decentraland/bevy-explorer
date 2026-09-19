@@ -24,7 +24,7 @@ const PRESET_VALUES: Record<string, [number | string, number | string, number | 
   'Light Count': [4, 8, 32],
   'Shadow Caster Count': [0, 4, 8],
   Fog: ['Atmospheric', 'Atmospheric', 'Atmospheric'],
-  Bloom: ['High', 'High', 'High'],
+  Bloom: ['Low', 'Low', 'Low'],
   'Depth of Field': ['High', 'High', 'High'],
   'Out-of-bounds Effect': ['On', 'On', 'On'],
   'Scene Load Distance': [10, 25, 100],
