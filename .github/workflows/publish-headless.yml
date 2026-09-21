@@ -91,7 +91,7 @@ jobs:
           node-version: 24
 
       - name: Stamp snapshot version
-        uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
+        uses: decentraland/oddish-action@v1
         with:
           cwd: './deploy/headless/launcher'
           deterministic-snapshot: true
@@ -167,7 +167,7 @@ jobs:
       - name: Stamp snapshot version
         # deterministic-snapshot derives the version from the commit, so this matches
         # what the build legs baked into the platform packages
-        uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
+        uses: decentraland/oddish-action@v1
         with:
           cwd: './deploy/headless/launcher'
           deterministic-snapshot: true
@@ -200,7 +200,7 @@ jobs:
           done
 
       - name: Publish launcher
-        uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
+        uses: decentraland/oddish-action@v1
         with:
           cwd: './deploy/headless/launcher'
           deterministic-snapshot: true
