@@ -9,7 +9,7 @@ import { projectToScreen, createFovTracker, type Quat } from './project'
 
 function toActions(entries: HoverEntry[]): HoverAction[] {
   return entries
-    .filter((a) => a.eventType === PointerEventType.PET_DOWN && a.enabled !== false && a.eventInfo?.showFeedback !== false)
+    .filter((a) => a.eventType === PointerEventType.PET_DOWN && a.enabled && a.eventInfo?.showFeedback !== false)
     .slice(0, 4)
     .map((a) => ({ button: a.eventInfo?.button ?? 1, text: a.eventInfo?.hoverText ?? 'Interact', enabled: true }))
 }

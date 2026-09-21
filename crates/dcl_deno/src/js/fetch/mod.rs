@@ -1,4 +1,8 @@
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    time::Duration,
+};
 
 mod fetch_response_body_resource;
 
@@ -67,6 +71,21 @@ impl NetPermissions for NP {
     }
 }
 
+// DoS caps for the multi-tenant authoritative server, enforced only in is_server mode.
+const SERVER_MAX_BODY_BYTES: u64 = 10 * 1024 * 1024;
+const SERVER_MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
+const SERVER_MAX_CONCURRENT_FETCHES: u32 = 32;
+const SERVER_FETCH_TIMEOUT: Duration = Duration::from_secs(15);
+
+struct SceneFetchInflight(Rc<Cell<u32>>);
+
+struct InflightGuard(Rc<Cell<u32>>);
+impl Drop for InflightGuard {
+    fn drop(&mut self) {
+        self.0.set(self.0.get().saturating_sub(1));
+    }
+}
+
 // list of op declarations
 pub fn override_ops() -> Vec<OpDecl> {
     vec![op_fetch::<FP>(), op_fetch_send(), op_fetch_custom_client()]
@@ -85,6 +104,7 @@ struct FetchRequestResource {
     url: String,
     /// URL host is the world-storage service (`storage.decentraland.*`).
     is_storage: bool,
+    range_request: bool,
 }
 impl deno_core::Resource for FetchRequestResource {}
 
@@ -190,6 +210,7 @@ where
         (None, None)
     };
 
+    let mut range_request = false;
     for (key, value) in headers {
         let name =
             HeaderName::from_bytes(key.as_bytes()).map_err(|err| type_error(err.to_string()))?;
@@ -197,6 +218,7 @@ where
             HeaderValue::from_bytes(value.as_bytes()).map_err(|err| type_error(err.to_string()))?;
 
         if matches!(name, RANGE) {
+            range_request = true;
             request = request.header(name, v);
             // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch step 18
             // If httpRequest’s header list contains `Range`, then append (`Accept-Encoding`, `identity`)
@@ -216,6 +238,7 @@ where
         request,
         url,
         is_storage,
+        range_request,
     });
 
     debug!("returning {:?}", request_rid);
@@ -292,6 +315,7 @@ async fn fetch_send_inner(
         request_body_rid,
         url,
         is_storage: _,
+        range_request,
     } = Rc::try_unwrap(request)
         .ok()
         .expect("multiple op_fetch_send ongoing");
@@ -317,11 +341,35 @@ async fn fetch_send_inner(
     // untrusted code with the user's network position — the web build is already held to
     // this by the browser's Private Network Access rules). `preview` widens the allowance
     // to the local network for local development, but never to link-local / metadata.
-    let preview = {
+    let (is_server, preview) = {
         let op_state = state.borrow();
-        op_state.borrow::<CrdtContext>().preview
+        let ctx = op_state.borrow::<CrdtContext>();
+        (ctx.is_server, ctx.preview)
     };
     common::util::assert_public_url(&url, preview).await?;
+
+    let _inflight_guard = if is_server {
+        let counter = {
+            let mut op_state = state.borrow_mut();
+            if op_state.try_borrow::<SceneFetchInflight>().is_none() {
+                op_state.put(SceneFetchInflight(Rc::new(Cell::new(0))));
+            }
+            op_state.borrow::<SceneFetchInflight>().0.clone()
+        };
+        if counter.get() >= SERVER_MAX_CONCURRENT_FETCHES {
+            anyhow::bail!("fetch: too many concurrent requests");
+        }
+        counter.set(counter.get() + 1);
+        Some(InflightGuard(counter))
+    } else {
+        None
+    };
+
+    let request = if is_server {
+        request.timeout(SERVER_FETCH_TIMEOUT)
+    } else {
+        request
+    };
 
     let async_req = if let Some(body_id) = request_body_rid {
         let body = state.borrow_mut().resource_table.take_any(body_id)?;
@@ -340,7 +388,7 @@ async fn fetch_send_inner(
         client.execute(request).await
     };
 
-    let res = match async_req {
+    let mut res = match async_req {
         Ok(res) => res,
         Err(err) => return Err(type_error(err.to_string())),
     };
@@ -352,7 +400,43 @@ async fn fetch_send_inner(
     }
 
     let content_length = res.content_length();
-    let chunk = res.bytes().await?;
+
+    let body_cap = if is_server {
+        Some(if range_request {
+            SERVER_MAX_ASSET_BYTES
+        } else {
+            SERVER_MAX_BODY_BYTES
+        })
+    } else {
+        None
+    };
+
+    if let (Some(cap), Some(declared)) = (body_cap, content_length) {
+        if declared > cap {
+            anyhow::bail!("response body exceeds {cap} bytes (declared {declared}) ({url})");
+        }
+    }
+
+    let chunk = if let Some(cap) = body_cap {
+        let mut collected = bytes::BytesMut::new();
+        let mut total: u64 = 0;
+        loop {
+            match res.chunk().await {
+                Ok(Some(c)) => {
+                    total += c.len() as u64;
+                    if total > cap {
+                        anyhow::bail!("response body exceeds {cap} bytes ({url})");
+                    }
+                    collected.extend_from_slice(&c);
+                }
+                Ok(None) => break,
+                Err(err) => return Err(type_error(err.to_string())),
+            }
+        }
+        collected.freeze()
+    } else {
+        res.bytes().await?
+    };
 
     state
         .borrow_mut()

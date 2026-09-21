@@ -22,52 +22,19 @@
 }
 
 /* Tabs row = the header (FRIENDS / REQUESTS / BLOCKED + close). */
-.tabs {
+.head {
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 52px;
   padding: 0 8px;
   border-bottom: 1px solid var(--white-10);
   flex: none;
 }
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 100%;
-  padding: 0 10px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--ink-6);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color var(--dur-fast) ease;
-}
-.tab:hover {
-  color: var(--text);
-}
-.tabActive {
-  color: var(--text);
-  border-bottom-color: var(--brand);
-}
-.tabBadge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: var(--r-pill);
-  background: var(--brand);
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 700;
+/* The strip shares its row with the close button, so the header owns the hairline; the panel
+   is narrow, so the gap comes in from the variant's 28px. */
+.tabs {
+  flex: 1;
+  gap: 16px;
+  border-bottom: 0;
 }
 .closeGlyph {
   margin-left: auto;

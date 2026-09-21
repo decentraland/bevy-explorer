@@ -5,12 +5,13 @@ use bevy::{
     platform::collections::{HashMap, HashSet},
     prelude::*,
 };
-use ipfs::EntityDefinitionLoader;
+use ipfs::{ipfs_path::ContentPathExt, EntityDefinitionLoader};
 use serde::{Deserialize, Serialize};
 
 use once_cell::sync::Lazy;
 
 use crate::{
+    ext::AvatarEmotesExt,
     urn::{CollectibleInstance, CollectibleUrn},
     Collectible, CollectibleData, CollectibleError, CollectibleManager, CollectibleType,
     CollectiblesTypePlugin,
@@ -23,14 +24,24 @@ pub fn base_bodyshapes() -> Vec<String> {
     ]
 }
 
+/// Emote pointer resolution and metadata (`CollectibleManager<Emote>`) alone: what a headless
+/// server needs to report an emote's loop flag. Loads no clip or sound.
+pub struct EmoteMetadataPlugin;
+
+impl Plugin for EmoteMetadataPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(CollectiblesTypePlugin::<Emote>::default());
+        app.register_asset_loader(EmoteMetaLoader);
+    }
+}
+
 pub struct EmotesPlugin;
 
 impl Plugin for EmotesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<BaseEmotes>();
-        app.add_plugins(CollectiblesTypePlugin::<Emote>::default());
+        app.add_plugins(EmoteMetadataPlugin);
         app.register_asset_loader(EmoteLoader);
-        app.register_asset_loader(EmoteMetaLoader);
         app.add_systems(Update, (load_animations,));
     }
 }
@@ -231,7 +242,7 @@ fn load_animations(
                                         .collect(),
                                     name: friendly_name.to_owned(),
                                     description: Default::default(),
-                                    extra_data: (),
+                                    extra_data: EmoteExtraData { loops: repeat },
                                 },
                                 representations,
                             };
@@ -381,8 +392,7 @@ impl Emote {
         let gltf = gltfs.get(self.gltf.id()).ok_or(CollectibleError::Loading)?;
         if let Some(anim) = gltf
             .named_animations
-            .iter()
-            .find(|(name, _)| name.ends_with("_Avatar"))
+            .find_avatar_emote()
             .map(|(_, handle)| handle)
             .cloned()
         {
@@ -443,12 +453,22 @@ impl Emote {
     }
 }
 
+/// Emote metadata available without loading the clip (`collectible.emote_data`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EmoteExtraData {
+    /// `emoteDataADR74.loop`: the emote loops until stopped.
+    pub loops: bool,
+}
+
 impl CollectibleType for Emote {
     type Meta = EmoteMeta;
-    type ExtraData = ();
+    type ExtraData = EmoteExtraData;
 
-    fn base_collection() -> Option<&'static str> {
-        Some("urn:decentraland:off-chain:base-emotes")
+    fn source_collections() -> &'static [&'static str] {
+        &[
+            "urn:decentraland:off-chain:base-emotes",
+            "urn:decentraland:off-chain:base-scene-emotes",
+        ]
     }
 
     fn extension() -> &'static str {
@@ -486,7 +506,7 @@ impl AssetLoader for EmoteLoader {
             .path()
             .parent()
             .unwrap()
-            .join(&meta.thumbnail)
+            .resolve_content_uri(&meta.thumbnail)
             .to_string_lossy()
             .into_owned();
 
@@ -498,14 +518,22 @@ impl AssetLoader for EmoteLoader {
                     .path()
                     .parent()
                     .unwrap()
-                    .join(&representation.main_file),
+                    .resolve_content_uri(&representation.main_file),
             );
 
             let sound = representation
                 .contents
                 .iter()
                 .find(|f| f.ends_with(".mp3") || f.ends_with(".ogg"))
-                .map(|af| load_context.load(load_context.path().parent().unwrap().join(af)));
+                .map(|af| {
+                    load_context.load(
+                        load_context
+                            .path()
+                            .parent()
+                            .unwrap()
+                            .resolve_content_uri(af),
+                    )
+                });
 
             for body_shape in representation.body_shapes {
                 representations.insert(
@@ -527,7 +555,9 @@ impl AssetLoader for EmoteLoader {
                 name: meta.name,
                 description: meta.description,
                 available_representations: representations.keys().cloned().collect(),
-                extra_data: (),
+                extra_data: EmoteExtraData {
+                    loops: meta.emote_extended_data.loops,
+                },
             },
             representations,
         })
@@ -560,7 +590,7 @@ impl AssetLoader for EmoteMetaLoader {
             .path()
             .parent()
             .unwrap()
-            .join(&meta.thumbnail)
+            .resolve_content_uri(&meta.thumbnail)
             .to_string_lossy()
             .into_owned();
 
@@ -582,7 +612,9 @@ impl AssetLoader for EmoteMetaLoader {
             name: meta.name,
             description: meta.description,
             available_representations,
-            extra_data: (),
+            extra_data: EmoteExtraData {
+                loops: meta.emote_extended_data.loops,
+            },
         })
     }
 }

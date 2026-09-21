@@ -51,6 +51,7 @@ fn move_player_to_cmd(
             to,
             looking_at: None,
             duration: command.duration,
+            camera_rotation: None,
             response: Some(response),
         });
         let (x, y, z) = (command.x, command.y, command.z);

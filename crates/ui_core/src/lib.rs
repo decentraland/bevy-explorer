@@ -18,13 +18,15 @@ pub mod ui_builder;
 
 use std::{any::type_name, marker::PhantomData};
 
+use std::sync::Arc;
+
 use bevy::{
     asset::{DependencyLoadState, LoadState, RecursiveDependencyLoadState},
     ecs::{schedule::ScheduleConfigs, system::ScheduleSystem},
     platform::collections::{HashMap, HashSet},
     prelude::*,
     state::state::FreelyMutableState,
-    text::CosmicFontSystem,
+    text::{cosmic_text::fontdb::Source, CosmicFontSystem},
 };
 use bevy_dui::{DuiNodeList, DuiPlugin, DuiRegistry};
 use bound_node::BoundedNodePlugin;
@@ -75,59 +77,63 @@ pub fn user_font(name: FontName, weight: WeightName) -> Handle<Font> {
     FONTS.get().unwrap().get(&(name, weight)).unwrap().clone()
 }
 
-/// Register the SDK font handles. Called by UiCorePlugin's setup; also callable by
-/// headless binaries that skip the UI plugins but still process scene text.
-pub fn init_fonts(asset_server: &AssetServer) {
+/// Create the SDK font assets from the embedded font files and register them with the
+/// cosmic font system, synchronously, so they exist for any text from the first frame.
+///
+/// Fonts otherwise enter the font db only when a span first uses them, and cosmic-text
+/// caches a text's glyph fallback until the text changes, so text shaped before its
+/// fallback faces exist keeps the wrong glyphs (e.g. U+25BC ▼ resolving to the emoji face).
+/// Registering every built-in first also gives them the lowest face ids, which cosmic-text
+/// prefers among equal fallback matches, ahead of any scene font. (bevy registers the asset
+/// again when text first uses it, sharing the same bytes; the copy registered here wins.)
+pub fn init_fonts(fonts: &mut Assets<Font>, font_system: &mut CosmicFontSystem) {
     use FontName::*;
     use WeightName::*;
+    let mut load = |bytes: &[u8]| {
+        let data = Arc::new(bytes.to_vec());
+        font_system
+            .db_mut()
+            .load_font_source(Source::Binary(data.clone()));
+        fonts.add(Font { data })
+    };
+    let mono_regular = load(include_bytes!("fonts/NotoSansMono-Regular.ttf"));
+    let mono_bold = load(include_bytes!("fonts/NotoSansMono-Bold.ttf"));
     let _ = FONTS.set(HashMap::from_iter([
-        (
-            (Mono, Regular),
-            asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
-        ),
-        (
-            (Mono, Bold),
-            asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
-        ),
-        (
-            (Mono, Italic),
-            asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
-        ),
-        (
-            (Mono, BoldItalic),
-            asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
-        ),
+        ((Mono, Regular), mono_regular.clone()),
+        ((Mono, Bold), mono_bold.clone()),
+        ((Mono, Italic), mono_regular),
+        ((Mono, BoldItalic), mono_bold),
         (
             (Sans, Regular),
-            asset_server.load("embedded://fonts/NotoSans-Regular.ttf"),
+            load(include_bytes!("fonts/NotoSans-Regular.ttf")),
         ),
         (
             (Sans, Bold),
-            asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
+            load(include_bytes!("fonts/NotoSans-Bold.ttf")),
         ),
         (
             (Sans, Italic),
-            asset_server.load("embedded://fonts/NotoSans-Italic.ttf"),
+            load(include_bytes!("fonts/NotoSans-Italic.ttf")),
         ),
         (
             (Sans, BoldItalic),
-            asset_server.load("embedded://fonts/NotoSans-BoldItalic.ttf"),
+            load(include_bytes!("fonts/NotoSans-BoldItalic.ttf")),
         ),
         (
             (Serif, Regular),
-            asset_server.load("embedded://fonts/NotoSerif-Regular.ttf"),
+            load(include_bytes!("fonts/NotoSerif-Regular.ttf")),
         ),
         (
             (Serif, Bold),
-            asset_server.load("embedded://fonts/NotoSerif-Bold.ttf"),
+            load(include_bytes!("fonts/NotoSerif-Bold.ttf")),
         ),
         (
             (Serif, Italic),
-            asset_server.load("embedded://fonts/NotoSerif-Italic.ttf"),
+            load(include_bytes!("fonts/NotoSerif-Italic.ttf")),
         ),
         (
             (Serif, BoldItalic),
-            asset_server.load("embedded://fonts/NotoSerif-BoldItalic.ttf"),
+            load(include_bytes!("fonts/NotoSerif-BoldItalic.ttf")),
         ),
     ]));
 }
@@ -168,19 +174,12 @@ fn setup(
     mut tracker: ResMut<StateTracker<State>>,
     mut dui: ResMut<DuiRegistry>,
     mut font_system: ResMut<CosmicFontSystem>,
+    mut fonts: ResMut<Assets<Font>>,
 ) {
     // Load emoji font as fallback for all text rendering
     font_system
         .db_mut()
         .load_font_data(include_bytes!("NotoColorEmoji.ttf").to_vec());
-    // Pre-register a broad-coverage fallback so glyphs missing from the primary
-    // font (e.g. geometric shapes like U+25BC ▼) resolve on first paint. Fonts
-    // loaded via the AssetServer only enter the cosmic-text db when a span first
-    // uses them, so without this they are absent from the fallback scan during a
-    // text element's initial layout and render as tofu until the value changes.
-    font_system.db_mut().load_font_data(
-        include_bytes!("../../assets/src/assets/fonts/NotoSansMono-Regular.ttf").to_vec(),
-    );
 
     // tracker.load_asset(asset_server.load_folder("ui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/app_settings.dui"));
@@ -219,12 +218,12 @@ fn setup(
     dui.register_template("button-set", DuiButtonSetTemplate);
     dui.register_template("tab-group", DuiTabGroupTemplate);
 
-    init_fonts(&asset_server);
+    init_fonts(&mut fonts, &mut font_system);
 
     TITLE_TEXT_STYLE
         .set((
             TextFont {
-                font: asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
+                font: user_font(FontName::Sans, WeightName::Bold),
                 font_size: 35.0 / 1.3,
                 ..Default::default()
             },
@@ -234,7 +233,7 @@ fn setup(
     BODY_TEXT_STYLE
         .set((
             TextFont {
-                font: asset_server.load("embedded://fonts/NotoSans-Regular.ttf"),
+                font: user_font(FontName::Sans, WeightName::Regular),
                 font_size: 25.0 / 1.3,
                 ..Default::default()
             },
@@ -247,7 +246,7 @@ fn setup(
                 .map(|i| {
                     (
                         TextFont {
-                            font: asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
+                            font: user_font(FontName::Sans, WeightName::Bold),
                             font_size: 25.0 / 1.3,
                             ..Default::default()
                         },

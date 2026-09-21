@@ -121,8 +121,11 @@ module.exports.setAvatar = async function(avatar) {
     return await Deno.core.ops.op_set_avatar(avatar)
 }
 
-module.exports.getProfileExtras = async function() {
-    return await Deno.core.ops.op_get_profile_extras();
+// any user's full profile (own, nearby or remote), resolved through the engine's profile cache
+// and fetch cascade. Rejects if the address can't be resolved.
+// address: string => SerializedProfile
+module.exports.getUserProfile = async function(address) {
+    return await Deno.core.ops.op_get_user_profile(address);
 }
 
 // get the next key/button pressed by the user, identified as a string
@@ -155,9 +158,13 @@ module.exports.setInputBindings = async function(bindings) {
 //   scroll: bool, // the cursor is over a scrollable HUD element: the Scroll actions are
 //                 // reserved, so every input bound to them stands down for world consumers
 //                 // while the action stream still resolves Scroll for the HUD to consume
+//   covered: bool, // a full-screen HUD surface (menu page, loading overlay) hides the world:
+//                  // scenes are told they are hidden (EngineInfo.scene_hidden)
+//   menu: string | null, // the open full-screen menu page, by the SystemAction that toggles it
+//                        // ("Map", "Backpack", ...): backs the scene-facing openExplorerUi action
 // }
 module.exports.setUiFocus = async function(focus) {
-    Deno.core.ops.op_set_ui_focus(focus?.ui ?? false, focus?.text ?? false, focus?.scroll ?? false)
+    Deno.core.ops.op_set_ui_focus(focus?.ui ?? false, focus?.text ?? false, focus?.scroll ?? false, focus?.covered ?? false, focus?.menu ?? null)
 }
 
 
@@ -343,11 +350,6 @@ module.exports.getAvatarModifiers = async function() {
     return await Deno.core.ops.op_get_avatar_modifiers();
 }
 
-// Returns key-value params passed via --params (desktop) or URL query string (web)
-module.exports.getParams = async function() {
-    return await Deno.core.ops.op_get_params();
-}
-
 // get voice stream / mic activations as a stream
 // type MicActivation = {
 //   senderAddress: string,
@@ -404,6 +406,25 @@ module.exports.getProximityStream = async function() {
   async function* streamGenerator() {
     while (true) {
       const next = await Deno.core.ops.op_read_proximity_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// profile changes (any player the engine holds a profile for, including the local player) as a stream
+// type ProfileChangedEvent = {
+//   address: string,   // lowercase 0x address
+//   version: number,   // the profile version now held; re-read with getUserProfile if yours is older
+// }
+module.exports.getProfileChangedStream = async function() {
+  const rid = await Deno.core.ops.op_get_profile_changed_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_profile_changed_stream(rid);
       if (next === null) break;
       yield next;
     }

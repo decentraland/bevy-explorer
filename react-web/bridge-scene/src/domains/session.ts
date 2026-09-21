@@ -18,7 +18,7 @@ export function registerSession(ctx: Ctx): void {
         case 'loginNew': {
           const login = BevyApi.loginNew()
           void login.code
-            .then((code) => ctx.send({ kind: 'loginCode', code: code ?? null }))
+            .then((code) => { ctx.send({ kind: 'loginCode', code: code ?? null }); })
             .catch(() => undefined) // errors surface through `success` below
           await login.success
           value = { success: true, error: '' }
@@ -55,8 +55,8 @@ export function registerSession(ctx: Ctx): void {
         ctx.send({
           kind: 'sceneLoading',
           state: {
-            visible: s.visible === true,
-            realmConnected: s.realmConnected !== false,
+            visible: s.visible,
+            realmConnected: s.realmConnected,
             title: s.title ?? '',
             pendingAssets: s.pendingAssets ?? null
           }
@@ -67,7 +67,8 @@ export function registerSession(ctx: Ctx): void {
     }
   })()
 
-  // Player-spawned signal (one-shot).
+  // Player-spawned signal: one-shot per page, not per scene. The page gates its world-entry
+  // fetches on it and never retries, so a page that arrives late is re-told on `hello`.
   let ready = false
   ctx.push(() => {
     if (ready) return
@@ -75,5 +76,8 @@ export function registerSession(ctx: Ctx): void {
       ready = true
       ctx.send({ kind: 'event', name: 'playerReady' })
     }
+  })
+  ctx.on('hello', () => {
+    if (ready) ctx.send({ kind: 'event', name: 'playerReady' })
   })
 }

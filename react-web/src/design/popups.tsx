@@ -16,14 +16,29 @@ export interface PopupOptions {
   /** The backdrop is the shared dimmed+blurred modal scrim (default). `false` → transparent
    *  click-catcher, for an anchored popover that must not dim the HUD behind it. */
   dim?: boolean
-  backdropClickCloses?: boolean
+  /** A predicate is evaluated at click time, so a popup can refuse while it holds unsaved
+   *  state (the passport in edit mode) without reopening itself with new options. */
+  backdropClickCloses?: boolean | (() => boolean)
+  /** Guard the DELIBERATE close paths — the popup's own `close` (its ×/Cancel button) and the
+   *  central Escape/Cancel action — so both ask the same question. Return false to keep the popup
+   *  open. The backdrop is governed by `backdropClickCloses` instead: a stray click on the scrim
+   *  should refuse silently rather than interrogate. The handle returned by openPopup bypasses
+   *  this (it is the owner closing its own popup, not the user). */
+  confirmClose?: () => boolean | Promise<boolean>
   /** Dismiss contract: run once when the popup leaves the stack by ANY path — backdrop click, the
    *  returned handle, or the central Escape. Owners that hold state behind the popup settle it here
    *  (e.g. showDialog resolves its promise), so a keyboard/Escape close never leaks. */
   onClose?: () => void
 }
-type ResolvedOptions = Required<Omit<PopupOptions, 'onClose'>> & Pick<PopupOptions, 'onClose'>
-const DEFAULTS: Required<Omit<PopupOptions, 'onClose'>> = { backdrop: true, dim: true, backdropClickCloses: true }
+type ResolvedOptions = Required<Omit<PopupOptions, 'onClose' | 'confirmClose'>> &
+  Pick<PopupOptions, 'onClose' | 'confirmClose'>
+const DEFAULTS: Required<Omit<PopupOptions, 'onClose' | 'confirmClose'>> = {
+  backdrop: true,
+  dim: true,
+  backdropClickCloses: true
+}
+const closesOnBackdrop = (o: ResolvedOptions): boolean =>
+  typeof o.backdropClickCloses === 'function' ? o.backdropClickCloses() : o.backdropClickCloses
 type PopupNode = { id: number; render: PopupRender; options: ResolvedOptions }
 
 // Module-level popup stack — a single HUD-wide layer (like the hoverPos store), NOT React state.
@@ -44,12 +59,35 @@ const closeById = (id: number): void => {
   node.options.onClose?.()
 }
 
+/** The USER asking to close: runs the popup's `confirmClose` guard first, so a form that would
+ *  lose work asks the same question however it is dismissed. Stays synchronous when there is no
+ *  guard, which is every popup that holds nothing worth keeping. */
+const requestCloseById = (id: number): void => {
+  const node = stack.find((n) => n.id === id)
+  if (!node) return
+  const guard = node.options.confirmClose
+  if (guard == null) {
+    closeById(id)
+    return
+  }
+  // A guard that answers synchronously closes synchronously: only a popup that actually needs to
+  // ask (and so opens a dialog) defers, and nothing downstream has to learn a new timing.
+  const answer = guard()
+  if (typeof answer === 'boolean') {
+    if (answer) closeById(id)
+    return
+  }
+  void answer.then((ok) => {
+    if (ok) closeById(id)
+  })
+}
+
 /** Close the topmost popup (no-op if the stack is empty). Fired by the session's 'Cancel'
  *  system-action handler in-world (the engine resolves the cancel key/button and streams the
  *  action back), and by its DOM fallback pre-world where the stream doesn't exist yet — see
  *  useEngineSession. Closes one layer at a time, so stacked popups dismiss in order. */
 export function closeTopPopup(): void {
-  if (stack.length > 0) closeById(stack[stack.length - 1].id)
+  if (stack.length > 0) requestCloseById(stack[stack.length - 1].id)
 }
 
 /** Subscribe to popup-stack changes — the module store changes outside React, so the session's
@@ -94,7 +132,7 @@ const getSnapshot = (): typeof stack => stack
  *  popup needs its own trap. A `backdrop:false` popup renders bare, with no trap of its own. */
 function PopupLayer({ node, isTop, locked }: { node: PopupNode; isTop: boolean; locked: boolean }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
-  const close = (): void => closeById(node.id)
+  const close = (): void => requestCloseById(node.id)
   const content = node.render(close)
 
   // Only the top backdrop popup traps focus (bare content, if any, has no ref → the hook no-ops).
@@ -109,7 +147,7 @@ function PopupLayer({ node, isTop, locked }: { node: PopupNode; isTop: boolean; 
   if (!node.options.backdrop) return <>{content}</>
   const className = node.options.dim ? `${styles.backdrop} ${styles.dim}` : styles.backdrop
   return (
-    <div ref={ref} className={className} tabIndex={-1} onClick={node.options.backdropClickCloses ? close : undefined}>
+    <div ref={ref} className={className} tabIndex={-1} onClick={() => { if (closesOnBackdrop(node.options)) close() }}>
       {/* dim popups scale in via the pop layer; an anchored popover (dim:false) just appears. */}
       {node.options.dim ? <div className={styles.pop}>{content}</div> : content}
     </div>

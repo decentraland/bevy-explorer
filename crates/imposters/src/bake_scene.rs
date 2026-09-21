@@ -1234,17 +1234,17 @@ fn output_progress(
     mut max_count: Local<usize>,
     config: Res<AppConfig>,
     time: Res<Time>,
-    mut last_time: Local<f32>,
+    mut last_time: Local<f64>,
     plugin: Res<DclImposterPlugin>,
 ) {
     if plugin.zip_output.is_none() {
         return;
     }
 
-    if time.elapsed_secs() < *last_time + 5.0 {
+    if time.elapsed_secs_f64() < *last_time + 5.0 {
         return;
     }
-    *last_time = time.elapsed_secs();
+    *last_time = time.elapsed_secs_f64();
 
     let max_level = config.scene_imposter_distances.len() - 1;
     let count = q.iter().filter(|i| i.level == max_level).count();

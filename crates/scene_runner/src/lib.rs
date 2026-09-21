@@ -186,7 +186,7 @@ impl Toaster<'_, '_> {
         let message = message.into();
         if let Some(existing) = self.toasts.0.get_mut(&key) {
             if existing.message == message {
-                existing.last_update = self.time.elapsed_secs();
+                existing.last_update = self.time.elapsed_secs_f64();
                 return;
             }
         }
@@ -195,8 +195,8 @@ impl Toaster<'_, '_> {
             key,
             Toast {
                 message,
-                time: self.time.elapsed_secs(),
-                last_update: self.time.elapsed_secs(),
+                time: self.time.elapsed_secs_f64(),
+                last_update: self.time.elapsed_secs_f64(),
                 on_click,
             },
         );
@@ -222,8 +222,8 @@ impl Toaster<'_, '_> {
 
 pub struct Toast {
     pub message: String,
-    pub time: f32,
-    pub last_update: f32,
+    pub time: f64,
+    pub last_update: f64,
     pub on_click: Option<On<Click>>,
 }
 
@@ -246,6 +246,25 @@ pub struct SceneLoopSchedule {
 #[derive(Default, Resource)]
 pub struct InteractableArea(pub Option<Vec4>);
 
+/// A full-screen HUD surface covers the world (`SystemApi::SetUiFocus.covered`).
+#[derive(Default, Resource)]
+pub struct HudFullscreen(pub bool);
+
+/// Frame-global inputs to `PBEngineInfo`. The world is hidden from the user while the engine's
+/// loading backdrop (player `OutOfWorld`) or a full-screen HUD surface covers it.
+#[derive(SystemParam)]
+struct EngineInfoSource<'w, 's> {
+    frame: Res<'w, FrameCount>,
+    hud_fullscreen: Res<'w, HudFullscreen>,
+    oow: Query<'w, 's, (), (With<PrimaryUser>, With<OutOfWorld>)>,
+}
+
+impl EngineInfoSource<'_, '_> {
+    fn scene_hidden(&self) -> bool {
+        self.hud_fullscreen.0 || !self.oow.is_empty()
+    }
+}
+
 impl InteractableArea {
     pub fn get_or_default(&self, width: f32, height: f32) -> Vec4 {
         self.0.unwrap_or_else(|| {
@@ -266,6 +285,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<Toasts>();
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
+        app.init_resource::<HudFullscreen>();
         // shared by pointer results, trigger areas and the avatar crate — owned here so
         // trigger areas keep working when the pointer-result systems are skipped
         app.init_resource::<update_scene::pointer_results::AvatarColliders>();
@@ -449,12 +469,12 @@ fn update_scene_priority(
 
     // mark scenes that have been in-flight past the timeout as broken and free their
     // slot, so a wedged scene worker can't hold a scene thread forever
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
     for (ent, _, mut context, _) in scenes.iter_mut() {
         if context.in_flight()
             && !context.inspected
             && elapsed - context.last_sent
-                > renderer_context::SCENE_NOT_RESPONDING_TIMEOUT.as_secs_f32()
+                > renderer_context::SCENE_NOT_RESPONDING_TIMEOUT.as_secs_f64()
         {
             warn!(
                 "scene {} ({} @ {}) has not responded for {:.0}s, marking broken",
@@ -515,7 +535,7 @@ fn update_scene_priority(
             } else {
                 distance
             };
-            let not_yet_run = context.last_sent < time.elapsed_secs();
+            let not_yet_run = context.last_sent < time.elapsed_secs_f64();
 
             if !context.in_flight() && !not_yet_run {
                 skipped_already_sent += 1;
@@ -523,8 +543,9 @@ fn update_scene_priority(
 
             (!context.in_flight() && not_yet_run).then(|| {
                 updates.eligible_jobs += 1;
-                let priority =
-                    FloatOrd(context.priority / (time.elapsed_secs() - context.last_sent));
+                let priority = FloatOrd(
+                    context.priority / (time.elapsed_secs_f64() - context.last_sent) as f32,
+                );
                 (ent, priority)
             })
         })
@@ -786,7 +807,7 @@ fn send_scene_updates(
     )>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
-    frame: Res<FrameCount>,
+    engine_info: EngineInfoSource,
     player: Query<&Transform, With<PrimaryUser>>,
     camera: Query<&Transform, With<PrimaryCamera>>,
     config: Res<AppConfig>,
@@ -1020,9 +1041,11 @@ fn send_scene_updates(
     // add engine info, only for the scene actually being sent
     buf.clear();
     DclWriter::new(buf).write(&PbEngineInfo {
-        frame_number: frame.0,
-        total_runtime: context.total_runtime,
+        frame_number: engine_info.frame.0,
+        total_runtime: context.total_runtime as f32,
         tick_number: context.tick_number,
+        scene_hidden: engine_info.scene_hidden(),
+        total_runtime_f64: context.total_runtime,
     });
     context.crdt_store.force_update(
         SceneComponentId::ENGINE_INFO,
@@ -1052,7 +1075,7 @@ fn send_scene_updates(
         context.state = SceneState::Broken;
     } else {
         context.set_in_flight(true);
-        context.last_sent = time.elapsed_secs();
+        context.last_sent = time.elapsed_secs_f64();
         dcl_assert!(!updates.jobs_in_flight.contains(&ent));
         updates.jobs_in_flight.insert(ent);
     }
@@ -1112,7 +1135,7 @@ fn receive_scene_updates(
                     if let Some(root) = updates.scene_ids.get(&scene_id) {
                         if let Ok(mut context) = scenes.get_mut(*root) {
                             context.state = SceneState::Broken;
-                            let timestamp = context.total_runtime as f64 + 1.0;
+                            let timestamp = context.total_runtime + 1.0;
                             error!("[{scene_id:?} @ {}] error: {message}", context.tick_number);
                             context.log(SceneLogMessage {
                                 timestamp,
@@ -1330,10 +1353,13 @@ fn log_app_errors(mut toaster: Toaster, mut errors: EventReader<AppError>, frame
 fn set_ui_constraints(
     mut events: EventReader<SystemApi>,
     mut interactable_area: ResMut<InteractableArea>,
+    mut hud_fullscreen: ResMut<HudFullscreen>,
 ) {
     for ev in events.read() {
-        if let SystemApi::SetInteractableArea(area) = ev {
-            interactable_area.0 = Some(*area);
+        match ev {
+            SystemApi::SetInteractableArea(area) => interactable_area.0 = Some(*area),
+            SystemApi::SetUiFocus { covered, .. } => hud_fullscreen.0 = *covered,
+            _ => (),
         }
     }
 }
@@ -1351,12 +1377,12 @@ fn push_camera_fov_to_crdt(
     camera: Query<&Projection, With<PrimaryCamera>>,
     mut contexts: Query<&mut GlobalCrdtState>,
     time: Res<Time>,
-    mut last_pushed: Local<Option<(f32, f32)>>,
+    mut last_pushed: Local<Option<(f32, f64)>>,
 ) {
     let Ok(Projection::Perspective(p)) = camera.single() else {
         return;
     };
-    let now = time.elapsed_secs();
+    let now = time.elapsed_secs_f64();
     let should_push = match *last_pushed {
         None => true,
         Some((last_fov, last_time)) => last_fov != p.fov || now - last_time >= 2.0,

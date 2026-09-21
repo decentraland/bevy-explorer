@@ -12,7 +12,7 @@ use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, EmoteCommand, PrimaryUser, SystemAudio, ZOrder},
+    structs::{ActiveDialog, EmoteCommand, EmoteMask, PrimaryUser, SystemAudio, ZOrder},
     util::{ModifyComponentExt, TryPushChildrenEx},
 };
 use comms::profile::CurrentUserProfile;
@@ -99,7 +99,7 @@ fn handle_emote_key(
     time: Res<Time>,
     existing: Query<&EmoteDialog>,
     buttons: Query<&EmoteButton>,
-    mut press_time: Local<f32>,
+    mut press_time: Local<f64>,
     mut lost_focus_events: EventReader<WindowFocused>,
     frame: Res<FrameCount>,
 ) {
@@ -117,10 +117,10 @@ fn handle_emote_key(
         };
 
         w.write(EmoteUiEvent::Show { coords });
-        *press_time = time.elapsed_secs();
+        *press_time = time.elapsed_secs_f64();
     }
 
-    if input_manager.just_up(SystemAction::Emote) && time.elapsed_secs() > *press_time + 0.25 {
+    if input_manager.just_up(SystemAction::Emote) && time.elapsed_secs_f64() > *press_time + 0.25 {
         w.write(EmoteUiEvent::Hide);
     }
 
@@ -150,6 +150,7 @@ fn handle_emote_key(
                             urn: button.0.clone(),
                             r#loop: false,
                             timestamp: frame.0 as i64,
+                            mask: EmoteMask::FullBody,
                         });
                     w.write(EmoteUiEvent::Hide);
                 }
@@ -282,6 +283,7 @@ fn show_emote_ui(
                             urn: button.0.clone(),
                             r#loop: false,
                             timestamp: frame.0 as i64,
+                            mask: EmoteMask::FullBody,
                         });
                 }
             }

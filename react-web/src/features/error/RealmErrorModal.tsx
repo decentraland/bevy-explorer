@@ -1,4 +1,5 @@
-// "World not found" — the realm the user asked for doesn't exist or isn't reachable.
+// "World not found" — the realm the user asked for doesn't exist or isn't reachable. Also carries
+// the other not-a-crash session error, "HUD not connected" (the bridge scene never answered).
 //
 // Not a crash: nothing is broken, the app just can't honour the request, so this is an ordinary
 // dialog on the popup layer (PopupHost owns the scrim, entrance, focus trap and Escape) rather than
@@ -19,7 +20,7 @@ import styles from './RealmErrorModal.module.css'
  *  error before the second mount and the dialog would self-destruct. (Contrast openPermissionDialog,
  *  where the cleanup close deliberately denies: its state is empty at mount, so the spurious run
  *  settles nothing.) */
-export function openRealmError(opts: { message: string; onDismiss: () => void }): () => void {
+export function openRealmError(opts: { title: string; message: string; onDismiss: () => void }): () => void {
   let settled = false
   const done = (): void => {
     if (settled) return
@@ -32,13 +33,13 @@ export function openRealmError(opts: { message: string; onDismiss: () => void })
         // Alert-style dialog: centered header with title-scale type, centered footer button.
         header={
           <div className={styles.head}>
-            <h2 className={styles.title}>World not found</h2>
-            {/* The realm message is human-readable and names the world — it IS the subtitle. */}
+            <h2 className={styles.title}>{opts.title}</h2>
+            {/* The message is human-readable (it names the world) — it IS the subtitle. */}
             <p className={styles.subtitle}>{opts.message}</p>
           </div>
         }
         role="alertdialog"
-        ariaLabel="World not found"
+        ariaLabel={opts.title}
         closeButton={false}
         actionsAlign="center"
         actions={

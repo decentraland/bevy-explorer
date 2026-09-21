@@ -104,7 +104,7 @@ impl std::ops::Deref for SuperUserScene {
 pub struct CommunicatedWithRenderer;
 
 // scene-elapsed time (seconds) of the last SceneResponse::Stats flush
-pub struct SceneStatsFlush(pub f32);
+pub struct SceneStatsFlush(pub f64);
 
 // Count of CRDT batches sent this tick, incremented by `crdt_send_to_renderer` and cleared
 // at each tick boundary by the scene loop: a scene may send at most MAX_CRDT_SENDS_PER_TICK
@@ -308,14 +308,14 @@ pub fn op_log(state: Rc<RefCell<impl State>>, message: String) {
     debug!("op_log {}", message);
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
     let mut state = state.borrow_mut();
-    push_scene_log(&mut *state, SceneLogLevel::Log, message, time as f64)
+    push_scene_log(&mut *state, SceneLogLevel::Log, message, time)
 }
 
 pub fn op_error(state: Rc<RefCell<impl State>>, message: String) {
     debug!("op_error");
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
     let mut state = state.borrow_mut();
-    push_scene_log(&mut *state, SceneLogLevel::SceneError, message, time as f64)
+    push_scene_log(&mut *state, SceneLogLevel::SceneError, message, time)
 }
 
 pub fn player_identity(state: &impl State) -> Result<PbPlayerIdentityData, anyhow::Error> {

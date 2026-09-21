@@ -72,7 +72,7 @@ test.describe('react HUD ↔ engine — in-panel clicks (console-verified)', () 
   // --- backpack → Emotes tab: assigning an emote to a slot (bridge: equipEmote) --
   test('backpack: assigning an emote to a slot posts equipEmote', async () => {
     await sidebar(page, 'Backpack')
-    await page.getByRole('button', { name: 'Emotes', exact: true }).click()
+    await page.getByRole('tab', { name: 'Emotes', exact: true }).click()
     await expectBridge(page, 'page', 'emotes')
     const card = page.locator('button[class*="card"]').first()
     await card.scrollIntoViewIfNeeded()

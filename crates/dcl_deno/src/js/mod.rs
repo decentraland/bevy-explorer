@@ -377,7 +377,7 @@ pub(crate) fn scene_thread(
 
         state
             .borrow_mut()
-            .put(SceneElapsedTime(elapsed.as_secs_f32()));
+            .put(SceneElapsedTime(elapsed.as_secs_f64()));
         // tick boundary: reset the bounded per-tick send allowance
         state.borrow_mut().try_take::<CrdtSendsThisTick>();
 

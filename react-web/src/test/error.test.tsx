@@ -39,7 +39,7 @@ describe('openRealmError', () => {
     const onDismiss = vi.fn()
     render(<PopupHost />)
     act(() => {
-      openRealmError({ message: 'The world "nope.dcl.eth" doesn\'t exist.', onDismiss })
+      openRealmError({ title: 'World not found', message: 'The world "nope.dcl.eth" doesn\'t exist.', onDismiss })
     })
     expect(screen.getByText(/World not found/i)).toBeInTheDocument()
     expect(screen.getByText(/nope\.dcl\.eth/)).toBeInTheDocument()
@@ -53,7 +53,7 @@ describe('openRealmError', () => {
     const onDismiss = vi.fn()
     render(<PopupHost />)
     act(() => {
-      openRealmError({ message: 'The world "nope.dcl.eth" doesn\'t exist.', onDismiss })
+      openRealmError({ title: 'World not found', message: 'The world "nope.dcl.eth" doesn\'t exist.', onDismiss })
     })
     // Unlike a crash, a world-not-found freezes nothing behind it.
     expect(isInputLocked()).toBe(false)

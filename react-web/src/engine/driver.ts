@@ -44,6 +44,8 @@ export interface LoginDriver {
    *  screen keeps its CTAs in a "Starting…" state until this is true. Optional — the mock is always
    *  ready. */
   engineReady?(): boolean
+  /** Tell the transport the bridge scene is now expected, so its absence can be reported. */
+  expectBridge?(): void
   /** Real weighted boot progress (0–100) + active step id, surfaced from the engine loader for
    *  the login footer bar. Optional — the mock has no engine to download. */
   loadProgress?(): number
@@ -56,7 +58,11 @@ export interface LoginDriver {
    *  flag so a second genuine crash still shows). Optional — the mock has no engine. */
   rearmCrashWatchdog?(): void
   /** Boot the engine at a chosen realm/position (deferred-start: nothing loads until the user picks
-   *  a destination). A parcel passes `position` "x,y"; a world passes `realm`; skip passes "0,0".
-   *  Optional — the mock has no engine to launch. */
+   *  a destination). A parcel passes `position` "x,y"; a world passes `realm`; skip passes the
+   *  home scene. Optional — the mock has no engine to launch. */
   launch?(realm?: string, position?: string): void
+  /** The engine's persisted home scene — the Skip target. Available pre-launch; null until the
+   *  engine module is up. Optional — the mock has no engine (and native skips keep the engine's
+   *  own start realm, which already IS home). */
+  homeScene?(): { realm: string | null; parcel: string } | null
 }

@@ -6,8 +6,9 @@
 //! uses. `--server-mode` makes `isServer()` return true to scene JS, so a scene's
 //! authoritative-server branch runs. Intended to replace hammurabi-headless.
 
-use std::{sync::OnceLock, time::Duration};
+use std::{str::FromStr, sync::OnceLock, time::Duration};
 
+use avatar::AvatarCorePlugin;
 use bevy::tasks::IoTaskPool;
 use bevy::{
     app::ScheduleRunnerPlugin,
@@ -23,6 +24,8 @@ use bevy::{
     time::TimePlugin,
 };
 use bevy_dui::DuiPlugin;
+use clap::Parser;
+use collectibles::EmoteMetadataPlugin;
 use common::{
     inputs::InputMap,
     profile::SerializedProfile,
@@ -30,9 +33,10 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CursorLocks, EngineMovementControl,
-        GraphicsSettings, HeadSync, NoRenderApp, PermissionType, PermissionUsed, PermissionValue,
-        PointAtSync, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
-        SceneGlobalLight, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
+        GraphicsSettings, HeadSync, IVec2Arg, NoRenderApp, PermissionType, PermissionUsed,
+        PermissionValue, PointAtSync, PreviewMode, PrimaryCamera, PrimaryCameraRes,
+        PrimaryPlayerRes, PrimaryUser, SceneGlobalLight, SceneLoadDistance, SystemAudio, TimeOfDay,
+        ToolTips,
     },
     util::{TaskCompat, TaskExt, UtilsPlugin},
 };
@@ -55,6 +59,7 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
     SceneRunnerPlugin,
 };
+use system_api_types::launch_options::{help_heading::HEADLESS, LaunchOptions};
 use system_bridge::SystemBridgePlugin;
 use tween::TweenPlugin;
 use user_input::avatar_movement::{
@@ -65,91 +70,143 @@ use wallet::{
     sign_request, Wallet, WalletPlugin,
 };
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
+// The shared launch params (realm, position, preview, base domain, pulse server, content
+// server, and whatever gets added later — accepted here automatically) plus the server-role
+// flags. The rendering clients' options (`ClientOptions`) are not flags here at all.
+#[derive(clap::Parser)]
+#[command(
+    name = "headless",
+    about = "Headless scene runner: an authoritative scene server, or a render-free test client",
+    mut_arg("realm", |a| a.help("Realm to boot into; absent = http://localhost:8000")),
+    mut_arg("position", |a| {
+        a.visible_alias("location")
+            .help("Parcel to load as `x,y`; absent = 0,0")
+    }),
+)]
 struct Args {
-    realm: String,
-    location: IVec2,
-    preview: bool,
+    #[command(flatten)]
+    launch: LaunchOptions,
+
+    /// Serve the scene: `isServer()` is true to scene code and realm-wide comms are never
+    /// joined. Standalone (without --orchestrated) is a local-dev flow and requires --preview
+    #[arg(long, help_heading = HEADLESS)]
     server_mode: bool,
+
+    /// Multi-scene worker driven over stdin by an orchestrator; implies --server-mode
+    #[arg(long, help_heading = HEADLESS)]
     orchestrated: bool,
+
+    /// Exit cleanly after this many seconds
+    #[arg(long, value_name = "secs", help_heading = HEADLESS)]
     timeout: Option<f32>,
-    scene_threads: usize,
+
+    /// Scene javascript threads; absent = 16 orchestrated, 4 otherwise
+    #[arg(
+        long,
+        value_name = "n",
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..), help_heading = HEADLESS
+    )]
+    scene_threads: Option<usize>,
+
+    /// Scene tick rate
+    #[arg(
+        long,
+        value_name = "hz",
+        default_value_t = 30,
+        value_parser = clap::value_parser!(u32).range(1..), help_heading = HEADLESS
+    )]
     tick_hz: u32,
-    /// base64 world-storage delegation (hammurabi envelope); single-scene runs only —
-    /// orchestrated scenes receive theirs via the control channel
+
+    /// base64 world-storage delegation (hammurabi envelope), or the PROCESS_STORAGE_DELEGATION
+    /// env var; single-scene runs only — orchestrated scenes receive theirs via the control
+    /// channel
+    #[arg(long, value_name = "base64", help_heading = HEADLESS)]
     storage_delegation: Option<String>,
-    /// deterministic guest wallet (test harness): address derivable offline from the seed
+
+    /// Deterministic guest wallet (test harness): the address is derivable offline from the seed
+    #[arg(long, value_name = "seed", help_heading = HEADLESS)]
     wallet_seed: Option<u64>,
-    /// Pulse realm to announce verbatim; `--server-mode` only. Orchestrated servers host several
-    /// realms at once and take one per scene on `add-scene` instead.
+
+    /// Pulse realm to announce verbatim; `--server-mode` only, and optional there: absent, the
+    /// engine derives the same key from a locally hosted scene's entity id once it loads, this
+    /// just announces it sooner. Orchestrated servers host several realms at once and take one
+    /// per scene on `add-scene` instead
+    #[arg(long, value_name = "key", help_heading = HEADLESS)]
     pulse_realm: Option<String>,
-    /// Pulse server as `host:port`; the orchestrator passes its deployment's (zone or prod)
-    pulse_server: Option<String>,
+
+    // resolved after parsing: realm defaults to a local preview server, position to 0,0
+    #[arg(skip)]
+    realm: String,
+    #[arg(skip)]
+    location: IVec2,
+}
+
+/// The launcher's "permanently unavailable here" status (EX_CONFIG). A refused argument is not
+/// worth retrying, and callers fall back to another server implementation on it — the npm
+/// launcher already answers its own argument checks with this
+/// (deploy/headless/launcher/bin/cli.js) and forwards whatever the engine returns.
+const EXIT_UNAVAILABLE: i32 = 78;
+
+fn usage_error(message: impl std::fmt::Display) -> ! {
+    eprintln!("{message}");
+    std::process::exit(EXIT_UNAVAILABLE);
 }
 
 fn parse_args() -> Args {
-    let mut args = pico_args::Arguments::from_env();
-    let realm: String = args
-        .value_from_str("--realm")
-        .unwrap_or_else(|_| "http://localhost:8000".to_owned());
-    let location = args
-        .value_from_str::<_, common::structs::IVec2Arg>("--location")
-        .ok()
-        .map(|va| va.0)
-        .unwrap_or(IVec2::ZERO);
-    let preview = args.contains("--preview");
-    let orchestrated = args.contains("--orchestrated");
+    let mut args = match Args::try_parse() {
+        Ok(args) => args,
+        Err(e) => {
+            let _ = e.print();
+            std::process::exit(if e.use_stderr() { EXIT_UNAVAILABLE } else { 0 });
+        }
+    };
+    // latch first: everything below that composes a backend host reads it
+    if let Err(e) = webgpu_build::launch::latch(&args.launch) {
+        usage_error(e);
+    }
+    args.realm = args
+        .launch
+        .realm
+        .clone()
+        .unwrap_or_else(|| "http://localhost:8000".to_owned());
+    args.location = match &args.launch.position {
+        Some(position) => {
+            IVec2Arg::from_str(position)
+                .unwrap_or_else(|e| usage_error(format!("--location {position}: {e}")))
+                .0
+        }
+        None => IVec2::ZERO,
+    };
     // orchestrated mode is always a server
-    let server_mode = args.contains("--server-mode") || orchestrated;
+    args.server_mode |= args.orchestrated;
     // standalone server mode is a local-dev flow (single scene on the shared context,
     // self-minted scene room); production servers are always orchestrated
-    if server_mode && !orchestrated && !preview {
-        eprintln!(
-            "--server-mode without --orchestrated is a local-dev mode and requires --preview"
+    if args.server_mode && !args.orchestrated && !args.launch.preview {
+        usage_error(
+            "--server-mode without --orchestrated is a local-dev mode and requires --preview",
         );
-        std::process::exit(2);
     }
     // latch the process-global server-role flags before the app is built
-    if server_mode {
+    if args.server_mode {
         common::structs::set_server_mode();
     }
-    if orchestrated {
+    if args.orchestrated {
         common::structs::set_multi_tenant();
     }
-    let timeout: Option<f32> = args.value_from_str("--timeout").ok();
-    let scene_threads: usize = args
-        .value_from_str("--scene-threads")
-        .unwrap_or(if orchestrated { 16 } else { 4 });
-    let tick_hz: u32 = args.value_from_str("--tick-hz").unwrap_or(30);
     // mirror hammurabi's worker env contract (PROCESS_STORAGE_DELEGATION)
-    let storage_delegation: Option<String> = args
-        .value_from_str("--storage-delegation")
-        .ok()
-        .or_else(|| std::env::var("PROCESS_STORAGE_DELEGATION").ok());
-    let wallet_seed: Option<u64> = args.value_from_str("--wallet-seed").ok();
-    let pulse_realm: Option<String> = args.value_from_str("--pulse-realm").ok();
-    let pulse_server: Option<String> = args.value_from_str("--pulse-server").ok();
-    if pulse_realm.is_some() && orchestrated {
-        eprintln!(
-            "--pulse-realm is a --server-mode flag; orchestrated scenes carry their own realm"
+    if args.storage_delegation.is_none() {
+        args.storage_delegation = std::env::var("PROCESS_STORAGE_DELEGATION").ok();
+    }
+    if args.pulse_realm.is_some() && args.orchestrated {
+        usage_error(
+            "--pulse-realm is a --server-mode flag; orchestrated scenes carry their own realm",
         );
-        std::process::exit(2);
     }
-    Args {
-        realm,
-        location,
-        preview,
-        server_mode,
-        orchestrated,
-        timeout,
-        scene_threads,
-        tick_hz,
-        storage_delegation,
-        wallet_seed,
-        pulse_realm,
-        pulse_server,
-    }
+    args
 }
 
 /// harness support: a seeded wallet gives a deterministic address, so livekit tokens
@@ -251,7 +308,7 @@ fn spawn_stdin_reader() -> std::sync::mpsc::Receiver<ControlCommand> {
     rx
 }
 
-fn main() {
+fn main() -> AppExit {
     let session_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
         web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
@@ -270,34 +327,38 @@ fn main() {
         .set(session_log.to_string_lossy().into_owned())
         .unwrap();
 
+    // args first, so --help and a bad flag answer without spawning the scene runtime
+    let args = parse_args();
+    TIMEOUT.set(args.timeout).ok();
+
     // v8 runtime must init on the main thread before the App is built (matches the tests).
     // Headless is always a server: a lost JS sidecar must restart the whole engine (the
     // desktop client and the scene_runner tests leave this false).
     dcl_deno_ipc::EXIT_ON_SIDECAR_LOSS.store(true, std::sync::atomic::Ordering::SeqCst);
     init_runtime().unwrap();
 
-    let args = parse_args();
-    TIMEOUT.set(args.timeout).ok();
-
     println!(
         "[headless] realm={} location={} preview={} server_mode={} tick_hz={}",
-        args.realm, args.location, args.preview, args.server_mode, args.tick_hz
+        args.realm, args.location, args.launch.preview, args.server_mode, args.tick_hz
     );
 
     let config = AppConfig {
-        server: args.realm.clone(),
-        location: args.location,
+        home_realm: Some(args.realm.clone()),
+        home_location: Some(args.location),
         graphics: GraphicsSettings {
             vsync: false,
             log_fps: false,
             fps_target: args.tick_hz as usize,
             ..Default::default()
         },
-        scene_threads: args.scene_threads,
+        scene_threads: args
+            .scene_threads
+            .unwrap_or(if args.orchestrated { 16 } else { 4 }),
         // load everything around the fake player generously; unload never.
         scene_load_distance: 100.0,
         scene_unload_extra_distance: 0.0,
-        scene_log_to_console: true,
+        // orchestrated: scene console output is creator-only, served via @scene-log frames
+        scene_log_to_console: !args.orchestrated,
         // headless permission policy (hammurabi parity): network APIs allowed, everything
         // user-facing denied. Without an explicit value these resolve to Ask, and the Ask
         // queue has no consumer headless — the scene promise would hang forever.
@@ -332,15 +393,18 @@ fn main() {
         .add_plugins(TransformPlugin)
         .add_plugins(DiagnosticsPlugin)
         .add_plugins(IpfsIoPlugin {
-            preview: args.preview,
+            preview: args.launch.preview,
             assets_root: None,
             starting_realm: Some(map_realm_name(&args.realm)),
-            content_server_override: None,
+            content_server_override: args.launch.content_server.clone(),
             num_slots: config.max_concurrent_remotes,
         })
         .add_plugins(AssetPlugin::default())
         .add_plugins(MeshPlugin)
-        .add_plugins(GltfPlugin::default())
+        .add_plugins(
+            GltfPlugin::default()
+                .with_uri_resolver(std::sync::Arc::new(ipfs::ipfs_path::resolve_content_uri)),
+        )
         .add_plugins(AnimationPlugin)
         .add_plugins(InputPlugin)
         .add_plugins(ScenePlugin)
@@ -350,10 +414,14 @@ fn main() {
         })
         .add_plugins(WalletPlugin)
         .add_plugins(CommsPlugin)
-        // foreign avatar bevy transforms (render-free, unlike the rest of AvatarPlugin):
-        // without these, engine-side position logic — scene membership, avatar colliders,
-        // trigger areas — sees every remote player at the origin
-        .add_plugins(avatar::foreign_dynamics::PlayerMovementPlugin)
+        // emote metadata (the loop flag scenes are told) resolves through the collectible
+        // manager; no clip or sound is ever loaded here
+        .add_plugins(EmoteMetadataPlugin)
+        // the render-free part of the avatar stack: foreign avatar bevy transforms (without
+        // these, engine-side position logic — scene membership, avatar colliders, trigger
+        // areas — sees every remote player at the origin), profile info and emote reports
+        // in scene crdt
+        .add_plugins(AvatarCorePlugin)
         .add_plugins(DuiPlugin)
         .add_plugins(SystemBridgePlugin { bare: true });
 
@@ -384,6 +452,15 @@ fn main() {
 
     // embedded assets: the scene-loading material (grid.png / loading.wgsl)
     app.add_plugins(assets::EmbedAssetsPlugin);
+
+    // the shared launch options' resources and plugins (--log-fps logs the tick rate, against
+    // --tick-hz)
+    webgpu_build::launch::apply(
+        &mut app,
+        &args.launch,
+        &config,
+        &map_realm_name(&args.realm),
+    );
 
     // world-storage delegations (per scene; CLI/env value is the single-scene fallback)
     let mut delegations = StorageDelegations::default();
@@ -441,11 +518,6 @@ fn main() {
             unload: 0.0,
             load_imposter: 0.0,
         })
-        .insert_resource(PreviewMode {
-            server: args.preview.then(|| map_realm_name(&args.realm)),
-            is_preview: args.preview,
-            preview_parcel: None,
-        })
         // servers must never join realm-wide comms (archipelago / world room) — they would
         // show up as a ghost participant. A non-server headless follows its realm about's
         // fixed_adapter like any client (offline about ⇒ no comms), so it can act as a
@@ -461,9 +533,6 @@ fn main() {
     if let Some(realm) = args.pulse_realm.clone() {
         app.insert_resource(comms::pulse::plugin::PulseRealmOverride(realm));
     }
-    if let Some(endpoint) = args.pulse_server.clone() {
-        app.insert_resource(comms::pulse::plugin::PulseEndpointOverride(endpoint));
-    }
 
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
     app.add_systems(Startup, setup.in_set(SetupSets::Init));
@@ -473,16 +542,7 @@ fn main() {
         shutdown_signal::install();
         app.add_systems(Update, exit_on_shutdown_signal);
     }
-    app.add_systems(
-        Update,
-        (
-            drain_permissions,
-            // AvatarPlugin (render-bound) is omitted headless; without this, SDK
-            // getPlayer()/onEnterScene never see names or wearables
-            avatar::update_avatar_info,
-            reap_terminal_scene_rooms,
-        ),
-    );
+    app.add_systems(Update, (drain_permissions, reap_terminal_scene_rooms));
 
     if args.orchestrated {
         app.insert_resource(ControlChannel(std::sync::Mutex::new(spawn_stdin_reader())))
@@ -520,7 +580,9 @@ fn main() {
         .set(bevy::ecs::error::warn)
         .ok();
 
-    app.run();
+    // returned, not dropped: the supervisor's AppExit is the process status the launcher
+    // forwards (deploy/headless/launcher/bin/cli.js)
+    app.run()
 }
 
 /// Stands in for the render-only `ImageLoader`: without it the asset server errors
@@ -615,9 +677,9 @@ fn setup(
     // and PrimaryEntities::player() panics without the marker. Placed at the scene
     // location so position-based loading picks up the parcel scene.
     let player_pos = Vec3::new(
-        8.0 + PARCEL_SIZE * config.location.x as f32,
+        8.0 + PARCEL_SIZE * config.home_location().x as f32,
         0.0,
-        -8.0 + -PARCEL_SIZE * config.location.y as f32,
+        -8.0 + -PARCEL_SIZE * config.home_location().y as f32,
     );
     // NOT OutOfWorld: the player must count as "inside" the scene parcel so
     // update_scene_room fires the authoritative scene-room connection.
@@ -712,11 +774,11 @@ fn supervisor(
     mut errors: EventReader<AppError>,
     mut exit: EventWriter<AppExit>,
     mut announced: Local<bool>,
-    mut last_report: Local<f32>,
+    mut last_report: Local<f64>,
     orchestrated: Option<Res<OrchestratedScenes>>,
     updates: Res<scene_runner::SceneUpdates>,
 ) {
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
 
     for e in errors.read() {
         error!("[headless] scene error: {e:?}");
@@ -757,7 +819,7 @@ fn supervisor(
     // wall-clock timeout: graceful success exit for smoke tests
     // (checked in main via arg-injected resource below)
     if let Some(limit) = TIMEOUT.get().copied().flatten() {
-        if elapsed > limit {
+        if elapsed > limit as f64 {
             println!("[headless] timeout {limit}s reached, exiting");
             exit.write_default();
         }
@@ -842,16 +904,16 @@ fn reap_terminal_scene_rooms(
 fn request_delegation_renewals(
     delegations: Res<StorageDelegations>,
     time: Res<Time>,
-    mut last_request: Local<std::collections::HashMap<String, f32>>,
+    mut last_request: Local<std::collections::HashMap<String, f64>>,
 ) {
     const REFRESH_BUFFER_MS: i64 = 5 * 60 * 1000;
-    const REQUEST_THROTTLE_SECS: f32 = 30.0;
+    const REQUEST_THROTTLE_SECS: f64 = 30.0;
 
     let now_ms = web_time::SystemTime::now()
         .duration_since(web_time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64;
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
 
     // drop throttle state for scenes no longer holding a delegation (removed scenes),
     // so this map doesn't grow unbounded over the engine's lifetime
@@ -901,7 +963,7 @@ fn drain_control_commands(
     >,
 ) {
     let store_delegation = |scene_id: &str, encoded: &str, delegations: &mut StorageDelegations| {
-        match StorageDelegation::parse(encoded, &map_realm_name(&config.server)) {
+        match StorageDelegation::parse(encoded, &map_realm_name(&config.home_realm())) {
             Ok(delegation) => {
                 // reject a renewal that rebinds to another scene's credential
                 // (hammurabi's same-scene guard)
@@ -1064,9 +1126,11 @@ fn drain_control_commands(
                     let client = ipfs.ipfs().client();
                     let sid = scene_id.clone();
                     let task = IoTaskPool::get().spawn_compat(async move {
-                        let url =
-                            "https://comms-gatekeeper-local.decentraland.org/get-server-scene-adapter";
-                        let uri = http::Uri::try_from(url)?;
+                        let url = common::base_domain::url(
+                            common::base_domain::Service::PreviewGatekeeper,
+                            "/get-server-scene-adapter",
+                        );
+                        let uri = http::Uri::try_from(url.as_str())?;
                         let meta = serde_json::json!({
                             "intent": "dcl:explorer:comms-handshake",
                             "signer": "dcl:explorer",
@@ -1175,7 +1239,7 @@ fn emit_scene_log(hash: &str, log: &SceneLogMessage) {
 fn emit_scene_status(
     time: Res<Time>,
     scenes: Query<&RendererSceneContext>,
-    mut last: Local<f32>,
+    mut last: Local<f64>,
     mut live: Local<std::collections::HashSet<String>>,
     mut broken: Local<std::collections::HashSet<String>>,
 ) {
@@ -1200,7 +1264,7 @@ fn emit_scene_status(
         }
     }
 
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
     if elapsed - *last > 5.0 {
         *last = elapsed;
         for ctx in scenes.iter() {
@@ -1218,10 +1282,10 @@ fn emit_scene_status(
 fn emit_scene_stats(
     time: Res<Time>,
     scenes: Query<&RendererSceneContext>,
-    mut last: Local<f32>,
-    mut prev: Local<std::collections::HashMap<String, (SceneResourceCounters, f32)>>,
+    mut last: Local<f64>,
+    mut prev: Local<std::collections::HashMap<String, (SceneResourceCounters, f64)>>,
 ) {
-    let elapsed = time.elapsed_secs();
+    let elapsed = time.elapsed_secs_f64();
     if elapsed - *last <= 10.0 {
         return;
     }

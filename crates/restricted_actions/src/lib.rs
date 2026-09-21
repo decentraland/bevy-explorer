@@ -1,4 +1,5 @@
 pub mod agent_commands;
+pub mod explorer_ui;
 pub mod teleport;
 
 use std::{
@@ -40,6 +41,7 @@ use comms::{
 use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
+use explorer_ui::{open_explorer_ui, track_explorer_ui, ExplorerUiState};
 use http::Uri;
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
@@ -71,7 +73,7 @@ impl Plugin for RestrictedActionsPlugin {
                 (
                     handle_player_move_requests,
                     update_player_move.after(handle_player_move_requests),
-                    move_camera,
+                    move_camera.after(handle_player_move_requests),
                     change_realm,
                     external_url,
                     spawn_portable,
@@ -102,11 +104,16 @@ impl Plugin for RestrictedActionsPlugin {
                     handle_sign_request,
                     handle_entity_definition,
                     handle_read_file,
+                    open_explorer_ui,
+                    track_explorer_ui.after(open_explorer_ui),
                 ),
             )
                 .in_set(SceneSets::RestrictedActions),
         );
         app.init_resource::<PendingPortableCommands>();
+        app.init_resource::<ExplorerUiState>();
+        // headless has no InputManagerPlugin; open_explorer_ui still needs the (empty) streams
+        app.init_resource::<input_manager::SystemActionStreams>();
         app.add_console_command::<SpawnPortableCommand, _>(spawn_portable_command);
         app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
         app.add_plugins(agent_commands::AgentCommandsPlugin);
@@ -142,6 +149,7 @@ pub enum PendingPlayerMove {
         target: Vec3,
         looking_at: Option<Vec3>,
         duration: Option<f32>,
+        camera_rotation: Option<Quat>,
         response: Option<RpcResultSender<bool>>,
     },
     Walk {
@@ -213,7 +221,7 @@ pub fn handle_player_move_requests(
     // Engine dispatch clock, matching RendererSceneContext::last_sent. Constant
     // within a frame, so a same-frame scene dispatch compares equal (and is treated
     // as stale by the strict `>` acceptance test in apply_movement).
-    let now = time.elapsed_secs();
+    let now = time.elapsed_secs_f64();
     let Ok((player_entity, _, _, _)) = player.single() else {
         return;
     };
@@ -225,12 +233,14 @@ pub fn handle_player_move_requests(
                 to,
                 looking_at,
                 duration,
+                camera_rotation,
                 response,
             } => PendingPlayerMove::Move {
                 scene: *scene,
                 target: *to,
                 looking_at: *looking_at,
                 duration: *duration,
+                camera_rotation: *camera_rotation,
                 response: response.clone(),
             },
             RpcCall::WalkPlayer {
@@ -350,7 +360,7 @@ fn apply_player_move(
     movement_control: &mut EngineMovementControl,
     movement_info: &mut AvatarMovementInfo,
     teleport_events: &mut EventWriter<PlayerTeleported>,
-    now: f32,
+    now: f64,
 ) {
     let (_, mut player_transform, mut dynamics, maybe_active) = player.single_mut().unwrap();
     if let Some(active) = maybe_active {
@@ -369,7 +379,8 @@ fn apply_player_move(
             looking_at,
             duration,
             response,
-            ..
+            camera_rotation,
+            scene,
         } => {
             if let Some(d) = duration {
                 let d = d.max(f32::EPSILON);
@@ -386,6 +397,7 @@ fn apply_player_move(
                 });
             } else {
                 player_transform.translation = world_target;
+                movement_control.deliberate_penetration = true;
                 debug!("player teleported to {world_target}");
                 // Instant reposition → announce as a Pulse teleport so peers snap rather than lerp.
                 teleport_events.write(PlayerTeleported {
@@ -409,6 +421,17 @@ fn apply_player_move(
                 // this, the next apply_movement re-applies the scene's stale orientation
                 // and the avatar snaps back (e.g. a keeper placed facing the kicker).
                 movement_control.accept_movement_after = now;
+            }
+
+            if let Some(camera_rotation) = camera_rotation {
+                if let Some(scene) = scene {
+                    commands.send_event(RpcCall::MoveCamera {
+                        scene,
+                        facing: camera_rotation,
+                    });
+                } else {
+                    warn!("MoveTo action without scene had camera_rotation");
+                }
             }
         }
 
@@ -502,6 +525,7 @@ pub fn update_player_move(
                 movement_control
                     .suppress_avatar_physics
                     .remove("player_move");
+                movement_control.deliberate_penetration = true;
                 commands.entity(entity).remove::<ActivePlayerMove>();
             }
         }
@@ -609,7 +633,10 @@ fn change_realm(
             PermissionType::ChangeRealm,
             *scene,
             (to.clone(), response.clone()),
-            message.clone(),
+            Some(match message {
+                Some(message) => format!("{to}: {message}"),
+                None => to.clone(),
+            }),
             false,
         );
     }
@@ -667,12 +694,12 @@ pub async fn lookup_ens(
     ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
     #[cfg(not(target_arch = "wasm32"))]
-    // parent_scene gates on WHO is asking: only user-initiated lookups (--ui / console commands,
+    // parent_scene gates on WHO is asking: only user-initiated lookups (--system-scene / console commands,
     // which pass None) may resolve a local directory — a scene's spawnPortableExperience must
     // not probe or load local paths.
     if parent_scene.is_none() && std::path::Path::new(&ens).join("about").is_file() {
         // file realm: a local directory containing an `about` (sdk-commands export-static
-        // layout, e.g. `--ui react-web/bridge-scene/static/BevyExplorerUI`). No ens.
+        // layout, e.g. `--system-scene react-web/bridge-scene/static/BevyExplorerUI`). No ens.
         return lookup_local_realm(parent_scene, &ens, super_user, &ipfs);
     }
     if ens.to_ascii_lowercase().starts_with("http") {
@@ -680,7 +707,10 @@ pub async fn lookup_ens(
     } else {
         lookup_portable(
             parent_scene,
-            format!("https://worlds-content-server.decentraland.org/world/{ens}"),
+            common::base_domain::url(
+                common::base_domain::Service::WorldsServer,
+                &format!("/world/{ens}"),
+            ),
             super_user,
             ipfs,
         )
@@ -1789,11 +1819,11 @@ pub fn handle_eth_async(
             .ok()
             .and_then(|scene| scene.last_action_event)
             .unwrap_or_default();
-        if last_action_time < time.elapsed_secs() - 1.0 {
+        if last_action_time < time.elapsed_secs_f64() - 1.0 {
             response.send(Err(format!(
                 "no recent user activity (last action {}, time {}).",
                 last_action_time,
-                time.elapsed_secs()
+                time.elapsed_secs_f64()
             )));
             continue;
         }
@@ -1854,11 +1884,11 @@ pub fn handle_copy_to_clipboard(
             .ok()
             .and_then(|scene| scene.last_action_event)
             .unwrap_or_default();
-        if last_action_time < time.elapsed_secs() - 1.0 {
+        if last_action_time < time.elapsed_secs_f64() - 1.0 {
             response.send(Err(format!(
                 "no recent user activity (last action {}, time {}).",
                 last_action_time,
-                time.elapsed_secs()
+                time.elapsed_secs_f64()
             )));
             continue;
         }
@@ -1887,7 +1917,7 @@ pub fn handle_copy_to_clipboard(
             .detach();
     }
 
-    for (_, response) in perms.drain_fail(PermissionType::Web3) {
+    for (_, response) in perms.drain_fail(PermissionType::CopyToClipboard) {
         response.send(Err("permission denied".to_owned()));
     }
 }

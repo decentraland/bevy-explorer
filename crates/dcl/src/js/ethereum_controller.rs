@@ -10,7 +10,12 @@ use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 use super::State;
 
-const PROVIDER_URL: &str = "wss://rpc.decentraland.org/mainnet?project=kernel-local";
+fn provider_url() -> String {
+    common::base_domain::url(
+        common::base_domain::Service::EthereumRpc,
+        "/mainnet?project=kernel-local",
+    )
+}
 
 pub async fn op_send_async(
     state: Rc<RefCell<impl State>>,
@@ -91,7 +96,7 @@ impl EthereumProvider {
         let provider = match &*this_provider {
             Some(p) => p,
             None => {
-                let ws = WsConnect::new(PROVIDER_URL);
+                let ws = WsConnect::new(provider_url());
                 let builder = ProviderBuilder::new().connect_ws(ws).await?;
                 let provider = builder.erased();
 

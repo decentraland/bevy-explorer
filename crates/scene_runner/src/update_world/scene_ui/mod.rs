@@ -23,7 +23,7 @@ use ui_background::{set_ui_background, StretchUvKey, UiBackground};
 use ui_dropdown::{set_ui_dropdown, UiDropdown};
 use ui_input::{set_ui_input, UiInput};
 use ui_pointer::set_ui_pointer_events;
-use ui_text::{check_text_links, set_ui_text, UiText};
+use ui_text::{check_text_links, retry_ui_text_fonts, set_ui_text, UiText};
 
 use crate::{
     initialize_scene::{LiveScenes, SuperUserScene},
@@ -473,6 +473,7 @@ impl Plugin for SceneUiPlugin {
                 update_scene_ui_components,
                 create_ui_roots,
                 layout_scene_ui,
+                retry_ui_text_fonts,
                 (
                     set_ui_text,       // text runs before background as both insert to position 0.
                     set_ui_background, // so text is actually in front of background, but "behind"/before children

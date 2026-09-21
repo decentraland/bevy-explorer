@@ -4,10 +4,11 @@
 // image. Confirm → onConfirm (the caller calls the engine's changeRealm via the bridge).
 
 import { useEffect, useState } from 'react'
+import { serviceUrl } from '../lib/baseDomain'
 import { openPopup } from '../design'
 import styles from './WorldVisitModal.module.css'
 
-const WORLDS_API = 'https://places.decentraland.org/api/worlds'
+const WORLDS_API = `${serviceUrl('places')}/api/worlds`
 
 /** The bits of a places-API world entry this prompt shows. All optional — a world may have none. */
 interface WorldInfo {

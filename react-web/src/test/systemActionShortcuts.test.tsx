@@ -148,23 +148,30 @@ describe('system-action menu shortcuts', () => {
     expect(screen.queryByText('realm error')).toBeNull()
   })
 
-  it("declares uiFocus to the engine: panels/popups set ui, a focused text field sets text", async () => {
+  it('declares the loading overlay as covered until the world is revealed', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h, { keepSent: true })
+    const focus = h.driver.sent.filter((m) => m.kind === 'uiFocus').map((m) => m.covered)
+    expect(focus).toEqual([true, false])
+  })
+
+  it("declares uiFocus to the engine: panels/popups set ui, a full-screen page sets covered, a focused text field sets text", async () => {
     const h = await world()
     h.driver.clearSent()
     h.driver.emit(action('Places'))
     await waitFor(() =>
-      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: true, text: false, scroll: false })
+      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: true, text: false, scroll: false, covered: true, menu: 'Places' })
     )
     h.driver.emit(action('Places'))
     await waitFor(() =>
-      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: false, text: false, scroll: false })
+      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: false, text: false, scroll: false, covered: false, menu: null })
     )
 
     const input = document.createElement('input')
     document.body.appendChild(input)
     act(() => input.focus())
     await waitFor(() =>
-      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: false, text: true, scroll: false })
+      expect(h.driver.last('uiFocus')).toEqual({ kind: 'uiFocus', ui: false, text: true, scroll: false, covered: false, menu: null })
     )
   })
 

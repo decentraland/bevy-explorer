@@ -2,15 +2,18 @@
 // Owns the driver and exposes the login flow + scene-loading state + phase.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { serviceUrl } from '../../lib/baseDomain'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/fatalError'
-import { DEFAULT_REALM } from '../engine/EngineHost'
+import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
 import { bootMode } from '../../lib/bootMode'
 import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { dispatchCancelLayer } from '../../lib/cancelLayers'
 import { isInputLocked, subscribeInputLock } from '../../lib/inputLock'
+import { applyProfileEdit } from '../../engine/profileEdit'
+import { peekProfile, profileChanged, receiveProfile, seedProfiles, setProfileRequester, updateProfile } from './profileStore'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
@@ -38,6 +41,7 @@ import type {
   PermissionRequestMessage,
   ProximityTip,
   Profile,
+  ProfileEdit,
   SceneLoadingState,
   Setting,
   Wearable
@@ -108,6 +112,10 @@ export interface MapState {
   open: boolean
   toggle: () => void
   teleport: (x: number, y: number) => void
+  /** Teleport to a Genesis City place: from inside a World the parcel carries the Genesis realm,
+   *  so the engine changes realm first. In Genesis already it is a plain teleport — a realm-carrying
+   *  teleport is a full realm reconnect, like changeRealm, even to the realm the player is in. */
+  teleportToPlace: (x: number, y: number) => void
   /** Travel to a world/realm by name (e.g. `boedo.dcl.eth`). */
   changeRealm: (realm: string) => void
 }
@@ -203,6 +211,16 @@ export interface ProfileState {
   data: Profile | null
   open: boolean
   toggle: () => void
+  /** Claimed (NFT) names this account owns — the display-name picker's options. */
+  ownedNames: string[]
+  /** A save is in flight: the engine acks it only once the new profile version has deployed. */
+  saving: boolean
+  /** Why the last save failed, or null. */
+  saveError: string | null
+  /** Apply a partial edit to your own profile. Omitted fields are left alone. */
+  save: (edit: ProfileEdit) => void
+  requestOwnedNames: () => void
+  dismissSaveError: () => void
 }
 
 export interface FriendsState {
@@ -342,10 +360,6 @@ export interface EngineSession {
   settings: SettingsState
   bindings: BindingsState
   profile: ProfileState
-  /** Fetched OTHER-user passports (View Profile), keyed by lowercased address. */
-  userProfiles: Record<string, Profile | null>
-  /** Request a user's passport by address (populates `userProfiles`). */
-  requestUserProfile: (address: string) => void
   notifications: NotificationsState
   emotes: EmotesState
   backpack: BackpackState
@@ -502,8 +516,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const captureSeq = useRef(0)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
-  // Fetched OTHER-user passports (View Profile), keyed by lowercased address.
-  const [userProfiles, setUserProfiles] = useState<Record<string, Profile | null>>({})
+  // Own-profile edit: the claimed names the picker offers, and the state of the save in flight.
+  const [ownedNames, setOwnedNames] = useState<string[]>([])
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null)
+  // What the profile looked like before the in-flight save, to put back if the engine rejects it.
+  const profileRevertRef = useRef<{ address: string; profile: Profile | null; stored: Profile | undefined } | null>(null)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [emotes, setEmotes] = useState<Emote[]>([])
@@ -542,6 +560,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   useEffect(() => {
     const driver = createDriver()
     driverRef.current = driver
+    // The profile store asks the engine itself for any address it's shown and doesn't hold.
+    setProfileRequester((address, extras) => driver.send({ kind: 'getUserProfile', address, extras }))
 
     // One generic subscription; switch on kind (mirrors dcl-editor's onSceneMessage).
     const off = driver.on((msg) => {
@@ -604,6 +624,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'members':
           setMembers(msg.members)
+          seedProfiles(msg.members)
           break
         case 'menuVisibility':
           setMenuOpen(msg.open)
@@ -616,6 +637,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             sent: msg.sent,
             blocked: msg.blocked
           })
+          seedProfiles([...msg.friends, ...msg.received, ...msg.sent])
           break
         case 'settings':
           setSettings(msg.settings)
@@ -633,11 +655,42 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'systemAction':
           systemActionRef.current(msg.action, msg.pressed)
           break
+        case 'bridgeUnavailable':
+          // Every panel behind the bridge would stay empty with nothing to explain why. Not a crash:
+          // the engine and the world itself are fine, so it opens as an ordinary dialog (issue #1233).
+          setFatalError((prev) => prev ?? {
+            message: 'The HUD could not reach the explorer bridge, so panels may stay empty. Restarting usually fixes it.',
+            source: 'bridge'
+          })
+          break
         case 'profile':
           setProfile(msg.profile)
+          // The passport reads the store, so an authoritative own profile has to reach it too or a
+          // just-saved name would keep its stale claimed-name seal until reopened.
+          if (msg.profile != null) receiveProfile(msg.profile.address, msg.profile)
           break
         case 'userProfile':
-          setUserProfiles((prev) => ({ ...prev, [msg.address.toLowerCase()]: msg.profile }))
+          receiveProfile(msg.address, msg.profile)
+          break
+        case 'profileChanged':
+          profileChanged(msg.address, msg.version)
+          break
+        case 'ownedNames':
+          setOwnedNames(msg.names)
+          break
+        case 'profileSaved':
+          setProfileSaving(false)
+          // A failed save must not leave the optimistic edit on screen claiming to be saved, so the
+          // pre-save profile goes back — see saveProfile.
+          if (!msg.ok) {
+            setProfileSaveError(msg.error ?? 'Could not save your profile.')
+            const revert = profileRevertRef.current
+            if (revert != null) {
+              setProfile(revert.profile)
+              updateProfile(revert.address, () => revert.stored)
+            }
+          }
+          profileRevertRef.current = null
           break
         case 'notifications':
           setNotifications(msg.notifications)
@@ -958,6 +1011,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const teleport = useCallback((x: number, y: number) => {
     driverRef.current?.send({ kind: 'teleport', x, y })
   }, [])
+  const teleportToPlace = useCallback(
+    (x: number, y: number) => {
+      if (isWorld) driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
+      else driverRef.current?.send({ kind: 'teleport', x, y })
+    },
+    [isWorld]
+  )
   const changeRealm = useCallback((realm: string) => {
     driverRef.current?.send({ kind: 'changeRealm', realm })
   }, [])
@@ -1050,8 +1110,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // override (possibly an invalid world after a failed validation), and inheriting it would
       // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
-        if (dest == null) driver.launch?.(DEFAULT_REALM, '0,0')
-        else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
+        if (dest == null) {
+          // Skip goes HOME — the engine's persisted home scene (0,0 on the default realm unless
+          // the user pinned one; the engine gives no realm before launch, so the default is ours).
+          const home = driver.homeScene?.()
+          driver.launch?.(home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0')
+        } else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
         else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
@@ -1127,7 +1191,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       validatingRealm.current = true
       const base =
         dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
-          ? `https://worlds-content-server.decentraland.org/world/${dest.realm}`
+          ? `${serviceUrl('worldsServer')}/world/${dest.realm}`
           : dest.realm
       // Launching against an unreachable realm strands the engine in a cryptic login failure, so
       // block up front: 404 → not found, no/failed answer (incl. timeout) → unreachable.
@@ -1239,11 +1303,26 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'markNotificationsRead', ids: unreadIds })
     setNotifications((prev) => prev.map((n) => (n.read ? n : { ...n, read: true })))
   }, [notifications])
-  // Fetch another user's passport (View Profile). The reply arrives as a 'userProfile'
-  // message and lands in the userProfiles cache.
-  const requestUserProfile = useCallback((address: string) => {
-    driverRef.current?.send({ kind: 'getUserProfile', address })
+  const requestOwnedNames = useCallback(() => {
+    driverRef.current?.send({ kind: 'getOwnedNames' })
   }, [])
+  // Save an edit to YOUR OWN profile. Applied locally straight away — the engine only acks once it
+  // has deployed the new version, and the catalyst reindexes later still, so waiting for the round
+  // trip would leave the passport showing the old profile for seconds after a save. `profileSaved`
+  // either confirms it or hands back the pre-save state (see the message handler).
+  const saveProfile = useCallback(
+    (edit: ProfileEdit) => {
+      const address = profile?.address.toLowerCase() ?? ''
+      profileRevertRef.current = { address, profile, stored: peekProfile(address) }
+      setProfileSaveError(null)
+      setProfileSaving(true)
+      driverRef.current?.send({ kind: 'saveProfile', ...edit })
+      setProfile((prev) => (prev != null ? applyProfileEdit(prev, edit, ownedNames) : prev))
+      updateProfile(address, (mine) => (mine != null ? applyProfileEdit(mine, edit, ownedNames) : mine))
+    },
+    [profile, ownedNames]
+  )
+  const dismissProfileSaveError = useCallback(() => setProfileSaveError(null), [])
   const friendAct = useCallback((op: FriendAction, address: string) => {
     driverRef.current?.send({ kind: 'friendAction', op, address })
   }, [])
@@ -1456,6 +1535,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         ? 'entering'
         : 'world'
 
+  // Once a launch has been requested the bridge scene must exist — on web the engine boots at the
+  // picked realm and the scene with it, on native it booted with the engine — so from here on its
+  // absence is a fault, not a normal wait. NOT 'picking': on web nothing is launched until the
+  // user picks, so an idle picker has no bridge to wait for.
+  useEffect(() => {
+    if (phase === 'entering' || phase === 'world') driverRef.current?.expectBridge?.()
+  }, [phase])
+
   // HUD focus, declared to the engine (fire-and-forget; latest wins). `ui` reserves all
   // input above scenes — the avatar stops walking when a menu/popup opens — while the
   // system-action stream keeps flowing so Cancel/hotkeys still arrive here. `text` reserves
@@ -1557,10 +1644,23 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     []
   )
   const uiFocus = anyPanelOpen || popupOpen || locked
+  // `covered` also spans the loading overlay: it outlives the engine's own out-of-world state
+  // (player spawn, render-settle, reveal debounce), so the engine can't see that tail itself.
+  const covered = menuPageOpen || phase === 'entering'
+  // The open menu page, by the SystemAction that toggles it (the pages are exclusive, so at most
+  // one is open). The engine answers a scene's openExplorerUi from this, and writes the page's
+  // opened/closed events to the scene whose request opened it.
+  const menu = settingsOpen ? 'Settings'
+    : backpackOpen ? 'Backpack'
+    : communitiesOpen ? 'Communities'
+    : mapOpen ? 'Map'
+    : placesOpen ? 'Places'
+    : galleryOpen ? 'Gallery'
+    : null
   useEffect(() => {
-    if (phase !== 'world') return
-    driverRef.current?.send({ kind: 'uiFocus', ui: uiFocus, text: textFocused, scroll: scrollHover })
-  }, [phase, uiFocus, textFocused, scrollHover])
+    if (phase !== 'world' && phase !== 'entering') return
+    driverRef.current?.send({ kind: 'uiFocus', ui: uiFocus, text: textFocused, scroll: scrollHover, covered, menu })
+  }, [phase, uiFocus, textFocused, scrollHover, covered, menu])
 
   // Pre-world the bridge stream doesn't exist, so popups opened during login/entering
   // (realm errors, world-visit prompts) need a DOM cancel fallback; in-world the engine's
@@ -1673,9 +1773,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     settings: { list: settings, open: settingsOpen, toggle: toggleSettings, set: settingSet },
     bindings: { list: bindings, set: bindingsSet, reset: bindingsReset, capture: captureBinding },
-    profile: { data: profile, open: profileOpen, toggle: toggleProfile },
-    userProfiles,
-    requestUserProfile,
+    profile: {
+      data: profile,
+      open: profileOpen,
+      toggle: toggleProfile,
+      ownedNames,
+      saving: profileSaving,
+      saveError: profileSaveError,
+      save: saveProfile,
+      requestOwnedNames,
+      dismissSaveError: dismissProfileSaveError
+    },
     notifications: {
       list: notifications,
       unread: notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0),
@@ -1691,7 +1799,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       saveOutfit, deleteOutfit, equipOutfit
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
-    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
+    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace },
     minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },
     gallery: {

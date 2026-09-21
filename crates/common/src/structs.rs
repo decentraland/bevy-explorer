@@ -10,6 +10,7 @@ use std::{
 use alloy_core::primitives::Address;
 use bevy::{
     color::palettes,
+    math::DVec3,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
@@ -223,11 +224,73 @@ impl AttachPoints {
     }
 }
 
+/// Which bones an emote drives. Upper body = the `Avatar_Spine` subtree; hips and legs stay with
+/// locomotion so the player keeps walking. Scene-only (`triggerEmote` / `triggerSceneEmote` with
+/// `AvatarMask.AM_UPPER_BODY`); the wheel is always full body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum EmoteMask {
+    #[default]
+    FullBody,
+    UpperBody,
+}
+
+impl EmoteMask {
+    /// The wire enum (rfc4 / Pulse / `AvatarEmoteCommand`): `0`/absent full body, `1` upper body.
+    /// Not the sdk's `AvatarMask`, whose only value `AM_UPPER_BODY` is `0`.
+    pub fn to_wire(self) -> Option<i32> {
+        match self {
+            EmoteMask::FullBody => None,
+            EmoteMask::UpperBody => Some(1),
+        }
+    }
+
+    pub fn from_wire(mask: Option<i32>) -> Self {
+        match mask {
+            Some(1) => EmoteMask::UpperBody,
+            _ => EmoteMask::FullBody,
+        }
+    }
+}
+
 #[derive(Component, Clone, Debug, PartialEq, Default)]
 pub struct EmoteCommand {
     pub urn: String,
     pub timestamp: i64,
     pub r#loop: bool,
+    pub mask: EmoteMask,
+}
+
+/// A transition in an avatar's triggered-emote playback, reported to scenes as an
+/// `AvatarEmoteCommand` entry by `avatar::emote_report`. Raised by `comms` from the wire (in wire
+/// order, so client and server report the same sequence) and by the avatar animator from
+/// playback; the reporter keeps the wire's word for foreign players and playback's for the rest.
+#[derive(Event, Clone, Debug)]
+pub struct EmoteLifecycleEvent {
+    pub avatar: Entity,
+    pub event: EmoteLifecycle,
+    pub source: EmoteLifecycleSource,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EmoteLifecycleSource {
+    Playback,
+    Wire,
+}
+
+/// One emote plays at a time, whatever its slot, so an end names no emote: it ends the last start.
+#[derive(Clone, Debug)]
+pub enum EmoteLifecycle {
+    /// `r#loop` is the flag known at trigger time; the emote's own metadata may still make it loop.
+    /// `mask` is the slot (full body / upper body) it plays in.
+    Started {
+        urn: String,
+        r#loop: bool,
+        mask: EmoteMask,
+    },
+    /// A one-shot ran to its end.
+    Finished,
+    /// Playback was cut short: movement, a scene animation, a stop from the wire.
+    Interrupted,
 }
 
 // Current scene-driven movement animation request for a player avatar. For the
@@ -343,6 +406,10 @@ pub struct SceneDrivenAnimationFeedbackState {
     pub loop_count: u32,
 }
 
+/// vertical fov of the player camera, in radians (60 degrees). also the
+/// `PBVirtualCamera.fov` default, per the proto definition.
+pub const PLAYER_CAMERA_FOV: f32 = std::f32::consts::PI / 3.0;
+
 // main camera entity
 #[derive(Component)]
 pub struct PrimaryCamera {
@@ -365,10 +432,10 @@ pub struct CinematicSettings {
     pub yaw_range: Option<f32>,
     pub pitch_range: Option<f32>,
     pub roll_range: Option<f32>,
-    pub zoom_min: Option<f32>,
-    pub zoom_max: Option<f32>,
     pub look_at_entity: Option<Entity>,
     pub transition: Option<CameraTransition>,
+    /// vertical fov, in radians
+    pub fov: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -471,12 +538,22 @@ pub struct PreviousLogin {
     pub auth: Vec<ChainLink>,
 }
 
+pub fn default_home_realm() -> String {
+    crate::base_domain::url(crate::base_domain::Service::RealmProvider, "/main")
+}
 // app configuration
 #[derive(Serialize, Deserialize, Resource, Clone)]
 #[serde(default)]
 pub struct AppConfig {
-    pub server: String,
-    pub location: IVec2,
+    /// The pinned home scene. Written ONLY by SetHomeScene; None = never pinned, so the
+    /// home keeps tracking the base-domain-derived default. A pinned home persists (and
+    /// survives switching base domains) even when it happens to equal some domain's
+    /// default. --realm / --position are startup params (like the web's ?realm= /
+    /// ?position=) and are deliberately never merged in here — the config file is
+    /// rewritten wholesale on any settings change, which would silently persist a
+    /// one-off CLI target as home.
+    pub home_realm: Option<String>,
+    pub home_location: Option<IVec2>,
     pub previous_login: Option<PreviousLogin>,
     pub graphics: GraphicsSettings,
     pub audio: AudioSettings,
@@ -511,9 +588,9 @@ pub struct AppConfig {
     pub inputs_generation: u32,
 }
 
-/// bump to force a one-time reset of the preset-managed settings in existing configs
+/// bump to run one-time migrations of the preset-managed settings in existing configs
 /// (see [`AppConfig::reset_outdated_settings`])
-pub const SETTINGS_GENERATION: u32 = 1;
+pub const SETTINGS_GENERATION: u32 = 2;
 
 /// bump to run one-time migrations of saved input binding tables
 /// (see [`AppConfig::migrate_inputs`])
@@ -522,8 +599,8 @@ pub const INPUTS_GENERATION: u32 = 1;
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: "https://realm-provider-ea.decentraland.org/main".to_owned(),
-            location: IVec2::new(0, 0),
+            home_realm: None,
+            home_location: None,
             previous_login: None,
             graphics: Default::default(),
             audio: Default::default(),
@@ -557,13 +634,34 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    /// one-time forced reinitialization: configs saved with an older generation get the
-    /// current defaults for the preset-managed settings, keeping everything else
+    /// The effective home realm: the pinned value, else the base-domain-derived default.
+    pub fn home_realm(&self) -> String {
+        self.home_realm.clone().unwrap_or_else(default_home_realm)
+    }
+
+    /// The effective home parcel: the pinned value, else 0,0.
+    pub fn home_location(&self) -> IVec2 {
+        self.home_location.unwrap_or(IVec2::ZERO)
+    }
+
+    /// one-time migrations for configs saved with an older generation, keeping everything
+    /// else. gen 1: reinitialize the preset-managed settings to the current defaults.
+    /// gen 2: default bloom dropped High -> Low; move configs still on the old default.
     pub fn reset_outdated_settings(&mut self) {
         if self.settings_generation >= SETTINGS_GENERATION {
             return;
         }
         let default = Self::default();
+        if self.settings_generation < 1 {
+            self.reset_preset_settings(&default);
+        }
+        if self.settings_generation < 2 && self.graphics.bloom == BloomSetting::High {
+            self.graphics.bloom = default.graphics.bloom;
+        }
+        self.settings_generation = SETTINGS_GENERATION;
+    }
+
+    fn reset_preset_settings(&mut self, default: &Self) {
         self.graphics.msaa = default.graphics.msaa;
         self.graphics.shadow_distance = default.graphics.shadow_distance;
         self.graphics.shadow_settings = default.graphics.shadow_settings;
@@ -576,13 +674,12 @@ impl AppConfig {
         self.graphics.oob = default.graphics.oob;
         self.scene_load_distance = default.scene_load_distance;
         self.scene_unload_extra_distance = default.scene_unload_extra_distance;
-        self.scene_imposter_distances = default.scene_imposter_distances;
+        self.scene_imposter_distances = default.scene_imposter_distances.clone();
         self.scene_imposter_multisample = default.scene_imposter_multisample;
         self.scene_imposter_multisample_amount = default.scene_imposter_multisample_amount;
         self.parcel_grass_setting = default.parcel_grass_setting;
         self.max_avatars = default.max_avatars;
         self.max_videos = default.max_videos;
-        self.settings_generation = SETTINGS_GENERATION;
     }
 
     /// migrate saved input tables: replace bindings still on changed old defaults
@@ -692,7 +789,8 @@ impl AppConfig {
             | PermissionType::PlayEmote
             | PermissionType::SetLocomotion
             | PermissionType::HideAvatarsNametags
-            | PermissionType::DisableVoice => PermissionValue::Allow,
+            | PermissionType::DisableVoice
+            | PermissionType::OpenExplorerUi => PermissionValue::Allow,
             _ => PermissionValue::Ask,
         }
     }
@@ -729,7 +827,7 @@ impl Default for GraphicsSettings {
     fn default() -> Self {
         Self {
             vsync: false,
-            log_fps: true,
+            log_fps: !cfg!(target_arch = "wasm32"),
             msaa: AaSetting::FxaaLow,
             fps_target: 60,
             shadow_distance: 20.0,
@@ -739,14 +837,18 @@ impl Default for GraphicsSettings {
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
-            bloom: BloomSetting::High,
+            bloom: BloomSetting::Low,
             dof: DofSetting::High,
             ssao: SsaoSetting::Off,
             oob: 2.0,
             ambient_brightness: 50,
             cel_shading: true,
             avatar_outline: true,
-            gpu_bytes_per_frame: 0,
+            gpu_bytes_per_frame: if cfg!(target_arch = "wasm32") {
+                10_000_000
+            } else {
+                0
+            },
         }
     }
 }
@@ -1016,6 +1118,7 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "Open Websocket",
             PermissionType::OpenUrl => "Open Url",
             PermissionType::CopyToClipboard => "Copy to Clipboard",
+            PermissionType::OpenExplorerUi => "Open Explorer Menu",
         }
     }
 
@@ -1073,6 +1176,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "open a web socket to communicate with a remote server",
             PermissionType::OpenUrl => "open a url in your browser",
             PermissionType::CopyToClipboard => "copy text into the clipboard",
+            PermissionType::OpenExplorerUi => {
+                "open an explorer menu panel (map, backpack, settings, ...)"
+            }
         }
     }
 
@@ -1095,6 +1201,7 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "opening a websocket",
             PermissionType::OpenUrl => "opening a url in your browser",
             PermissionType::CopyToClipboard => "copying text into the clipboard",
+            PermissionType::OpenExplorerUi => "opening an explorer menu panel",
         }
     }
 }
@@ -1236,7 +1343,17 @@ pub struct EngineMovementControl {
     /// is received. Set by `movePlayerTo` when it imposes a facing, so the imposed
     /// orientation survives until the controller scene reads the new transform and
     /// echoes it back, rather than being clobbered by an in-flight stale tick.
-    pub accept_movement_after: f32,
+    pub accept_movement_after: f64,
+    /// Set by `movePlayerTo` (teleport or interpolation end): the scene deliberately
+    /// placed the player here, possibly inside a collider (sit-on-chair emotes).
+    /// While set, depenetration is not applied in x/z and the sweep ignores colliders
+    /// the player starts inside; movement is only clamped to not go deeper. Cleared
+    /// by `resolve_collisions` once no correction is required.
+    pub deliberate_penetration: bool,
+    /// While `deliberate_penetration` is set: the per-axis depenetration bounds
+    /// (min, max) relative to the current transform, refreshed each frame by
+    /// `resolve_collisions`. `min.axis > 0` means the eject direction is +axis.
+    pub penetration_bounds: (DVec3, DVec3),
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -1264,7 +1381,7 @@ pub enum MoveKind {
 pub struct AvatarDynamicState {
     pub velocity: Vec3,
     pub ground_height: f32,
-    pub jump_time: f32,
+    pub jump_time: f64,
     pub move_kind: MoveKind,
 }
 

@@ -6,9 +6,9 @@
 // `on(msg => …)` subscription; only request/response (login) is correlated by id.
 
 import type { AuthIdentity } from '../features/auth/sso'
+import { BridgeChannel } from './bridgeChannel'
 import {
   bridgeChannelName,
-  type Envelope,
   type LoginPreviousResult,
   type PageToScene,
   type PreviousLogin,
@@ -19,17 +19,16 @@ import {
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void }
 
 export class BridgeClient {
-  private readonly ch: BroadcastChannel
+  private readonly ch: BridgeChannel
   private readonly pending = new Map<string, Pending>()
   private readonly listeners = new Set<(msg: SceneToPage) => void>()
 
   constructor(channel: string = bridgeChannelName()) {
-    this.ch = new BroadcastChannel(channel)
-    this.ch.onmessage = (e: MessageEvent<Envelope>) => {
-      const env = e.data
-      if (env?.to !== 'page') return // ignore our own / scene-addressed posts
-      this.handle(env.msg)
-    }
+    this.ch = new BridgeChannel(
+      channel,
+      (msg) => this.handle(msg),
+      () => this.handle({ kind: 'bridgeUnavailable' })
+    )
   }
 
   getPreviousLogin(): Promise<PreviousLogin> {
@@ -75,7 +74,11 @@ export class BridgeClient {
   }
 
   send(msg: PageToScene): void {
-    this.ch.postMessage({ to: 'scene', msg } satisfies Envelope)
+    this.ch.send(msg)
+  }
+
+  expectBridge(): void {
+    this.ch.expectReady()
   }
 
   on(fn: (msg: SceneToPage) => void): () => void {
@@ -93,7 +96,9 @@ export class BridgeClient {
     const id = crypto.randomUUID()
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
-      this.send({ kind: 'rpc:req', id, method })
+      // The engine's boot shim answers these before any bridge scene exists, so they skip the
+      // handshake queue rather than gating the login screen on a scene sign-in does not involve.
+      this.ch.sendNow({ kind: 'rpc:req', id, method })
     })
   }
 

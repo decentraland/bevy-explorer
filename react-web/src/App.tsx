@@ -30,20 +30,20 @@ import { SessionProvider } from './features/session/SessionContext'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
-import { openExitConfirm } from './features/session/ExitConfirm'
 import { useEngineSession } from './features/session/useEngineSession'
-import { useExitGuard } from './lib/useExitGuard'
-import { useHudScale } from './lib/useHudScale'
 import { useWindowKeyDown } from './lib/useWindowKeyDown'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
 import { hasUsableGpu } from './lib/gpu'
 import { MobileGate, GateChecking } from './features/gate/MobileGate'
 import { UntrustedLaunchGate } from './features/gate/UntrustedLaunchGate'
-import { isTrustedSystemScene } from './lib/systemScene'
+import { untrustedLaunchParams } from './lib/launchGate'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
 import { CrashModal } from './features/error/CrashModal'
 import { openRealmError } from './features/error/RealmErrorModal'
+import { DIALOG_TITLE, isDialogSource } from './features/error/fatalError'
+import { openEntryParamsDialog } from './features/gate/EntryParamsDialog'
+import { unrecognisedEntryParams } from './lib/entryParams'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
@@ -51,7 +51,7 @@ const params = new URLSearchParams(location.search)
 // NATIVE (?native=1): HUD in a CEF offscreen webview over the native bevy engine — a JS shim
 // bridges this app's BroadcastChannel to the engine's native relay (no iframe, no mock).
 const MODE: 'mock' | 'engine' | 'native' =
-  params.get('mock') === '1' ? 'mock' : params.get('native') === '1' ? 'native' : 'engine'
+  params.get('mock') === '1' ? 'mock' : __NATIVE_HUD__ && params.get('native') === '1' ? 'native' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
 // Embedded/debug mode (?hud=0 or ?systemScene= — see lib/bootMode.ts): render ONLY the
 // engine — no React HUD at all (no sidebar, chat, pointer, panels, or the sign-in /
@@ -79,16 +79,15 @@ function gateReason(): 'mobile' | 'browser' | 'gpu' | null {
 }
 const GATE_REASON = gateReason()
 
-// `?systemScene=` picks the super-user scene, which permissions.rs waves through every permission
-// check and hands the whole SystemApi. A link carrying an unrecognised one is a session takeover
-// with no sandbox escape involved, so it gets an interstitial before anything boots — captured at
-// module scope, from the ENTRY url, so a later history.replaceState can't retire the warning.
-const SYSTEM_SCENE_OVERRIDE = bootMode().systemScene
-const UNTRUSTED_SYSTEM_SCENE =
-  SYSTEM_SCENE_OVERRIDE != null && !isTrustedSystemScene(SYSTEM_SCENE_OVERRIDE) ? SYSTEM_SCENE_OVERRIDE : null
+// Gated entry-url params (lib/launchGate.ts: `?systemScene=` is a session takeover delivered as
+// a link, `?baseDomain=` points every backend at another deployment) carrying a value this
+// front-end doesn't recognise get an interstitial before anything boots — captured at module
+// scope, from the ENTRY url, so a later history.replaceState can't retire the warning.
+const UNTRUSTED_PARAMS = untrustedLaunchParams({ native: MODE === 'native' })
+// Entry-url params nothing reads (lib/entryParams.ts) — told to the user once the HUD is up.
+const UNRECOGNISED_PARAMS = unrecognisedEntryParams(params)
 
 export function App(): React.JSX.Element {
-  useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
   const showFps = useFpsToggle()
   // Probe the GPU before booting the engine — but only on the real boot path (a sync gate already
   // decided, mock, native, or the design showcase all skip it). Native renders through the host's
@@ -98,8 +97,8 @@ export function App(): React.JSX.Element {
   // Ahead of every other gate: returning here is what keeps EngineHost unmounted, and EngineHost is
   // what injects boot.js and starts the scene.
   const [trustUntrusted, setTrustUntrusted] = useState(false)
-  if (UNTRUSTED_SYSTEM_SCENE != null && !trustUntrusted) {
-    return <UntrustedLaunchGate systemScene={UNTRUSTED_SYSTEM_SCENE} onProceed={() => setTrustUntrusted(true)} />
+  if (UNTRUSTED_PARAMS.length > 0 && !trustUntrusted) {
+    return <UntrustedLaunchGate params={UNTRUSTED_PARAMS} onProceed={() => setTrustUntrusted(true)} />
   }
   if (GATE_REASON) return <MobileGate reason={GATE_REASON} />
   if (gpu === 'checking') return <GateChecking />
@@ -173,27 +172,30 @@ function Hud(): React.JSX.Element {
   }, [])
 
   const session = useEngineSession(createDriver)
-  // Warn before the back gesture / Back button unloads the engine (only once in-world). Shown through
-  // the popup layer so hasOpenPopup() covers it (Enter must not focus the chat behind it); Escape /
-  // scrim-click resolve to "stay", which clears `confirming` and the effect closes the (already-closed) popup.
-  const exitGuard = useExitGuard(session.phase === 'entering' || session.phase === 'world')
-  useEffect(() => {
-    if (!exitGuard.confirming) return
-    return openExitConfirm(exitGuard.stay, exitGuard.leave)
-  }, [exitGuard.confirming, exitGuard.stay, exitGuard.leave])
 
-  // A world that doesn't exist isn't a crash — it's an ordinary dialog on the popup layer, so it gets
-  // Escape/scrim-click for free and freezes nothing behind it (unlike CrashModal, see inputLock). Any
-  // close path clears the session's error, so a keyboard dismiss can't strand it.
-  const realmErrorMessage = session.fatalError?.source === 'realm' ? session.fatalError.message : null
+  // A link with params the Explorer doesn't know gets an ordinary dialog listing what was ignored
+  // and what it accepts — informational, nothing is frozen behind it.
   useEffect(() => {
-    if (realmErrorMessage == null) return
-    return openRealmError({ message: realmErrorMessage, onDismiss: session.dismissFatal })
+    if (UNRECOGNISED_PARAMS.length === 0) return
+    return openEntryParamsDialog(UNRECOGNISED_PARAMS)
+  }, [])
+
+  // A world that doesn't exist, or a HUD bridge that never answered, isn't a crash — it's an ordinary
+  // dialog on the popup layer, so it gets Escape/scrim-click for free and freezes nothing behind it
+  // (unlike CrashModal, see inputLock). Any close path clears the session's error, so a keyboard
+  // dismiss can't strand it.
+  const dialogError =
+    session.fatalError != null && isDialogSource(session.fatalError.source)
+      ? { title: DIALOG_TITLE[session.fatalError.source], message: session.fatalError.message }
+      : null
+  useEffect(() => {
+    if (dialogError == null) return
+    return openRealmError({ ...dialogError, onDismiss: session.dismissFatal })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the message changes
-  }, [realmErrorMessage])
-  // Everything else IS a crash → the full-screen CrashModal (narrowed so it never sees 'realm').
+  }, [dialogError?.message])
+  // Everything else IS a crash → the full-screen CrashModal (narrowed so it never sees a dialog source).
   const crash =
-    session.fatalError != null && session.fatalError.source !== 'realm'
+    session.fatalError != null && !isDialogSource(session.fatalError.source)
       ? { message: session.fatalError.message, source: session.fatalError.source }
       : null
 
@@ -309,7 +311,7 @@ function Hud(): React.JSX.Element {
             places={session.places}
             profile={session.profile}
             onNavigate={goToMenuPage}
-            onTeleport={(x, y) => session.map.teleport(x, y)}
+            onTeleport={(x, y) => session.map.teleportToPlace(x, y)}
             onVisitWorld={(realm) => session.map.changeRealm(realm)}
           />
           <GalleryPage

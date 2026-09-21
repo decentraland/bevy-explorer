@@ -1,18 +1,18 @@
 use common::{
-    inputs::SystemActionEvent,
+    inputs::{HudPanel, SystemActionEvent},
+    profile::SerializedProfile,
     structs::{MicState, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
 use dcl_component::proto_components::common::Vector2;
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
-use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
     FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequestEvent, ProximityEvent, SceneLoadingUi, SetAvatarData,
-    VoiceMessage,
+    PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent, ProximityEvent,
+    SceneLoadingUi, SetAvatarData, VoiceMessage,
 };
 
 // list of op declarations
@@ -49,7 +49,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_bridge_to_page(),
             op_get_bridge_stream(),
             op_read_bridge_stream(),
-            op_get_profile_extras(),
+            op_get_user_profile(),
             op_quit(),
             op_get_permission_request_stream(),
             op_read_permission_request_stream(),
@@ -68,6 +68,8 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_read_hover_stream(),
             op_get_proximity_stream(),
             op_read_proximity_stream(),
+            op_get_profile_changed_stream(),
+            op_read_profile_changed_stream(),
             op_get_scene_loading_ui_stream(),
             op_read_scene_loading_ui_stream(),
             op_get_avatar_modifiers(),
@@ -94,7 +96,6 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_blocking_status(),
             op_get_block_update_stream(),
             op_read_block_update_stream(),
-            op_get_params(),
         ]
     } else {
         Vec::default()
@@ -214,14 +215,16 @@ pub async fn op_set_bindings(
     dcl::js::system_api::op_set_bindings(state, bindings).await
 }
 
-#[op2(fast)]
+#[op2]
 pub fn op_set_ui_focus(
     state: Rc<RefCell<OpState>>,
     ui: bool,
     text: bool,
     scroll: bool,
+    covered: bool,
+    #[serde] menu: Option<HudPanel>,
 ) -> Result<(), AnyError> {
-    dcl::js::system_api::op_set_ui_focus(state, ui, text, scroll)
+    dcl::js::system_api::op_set_ui_focus(state, ui, text, scroll, covered, menu)
 }
 
 #[op2(async)]
@@ -315,10 +318,11 @@ pub async fn op_read_bridge_stream(
 
 #[op2(async)]
 #[serde]
-pub async fn op_get_profile_extras(
+pub async fn op_get_user_profile(
     state: Rc<RefCell<OpState>>,
-) -> Result<std::collections::HashMap<String, serde_json::Value>, deno_core::anyhow::Error> {
-    dcl::js::system_api::op_get_profile_extras(state).await
+    #[string] address: String,
+) -> Result<SerializedProfile, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_get_user_profile(state, address).await
 }
 
 #[op2(fast)]
@@ -449,6 +453,20 @@ pub async fn op_read_proximity_stream(
     rid: u32,
 ) -> Result<Option<ProximityEvent>, deno_core::anyhow::Error> {
     dcl::js::system_api::op_read_proximity_stream(state, rid).await
+}
+
+#[op2(async)]
+pub async fn op_get_profile_changed_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_profile_changed_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_profile_changed_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<ProfileChangedEvent>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_profile_changed_stream(state, rid).await
 }
 
 #[op2(async)]
@@ -641,12 +659,4 @@ pub async fn op_read_block_update_stream(
     #[smi] rid: u32,
 ) -> Result<Option<BlockUpdateData>, anyhow::Error> {
     dcl::js::system_api::op_read_block_update_stream(state, rid).await
-}
-
-#[op2(async)]
-#[serde]
-pub async fn op_get_params(
-    state: Rc<RefCell<OpState>>,
-) -> Result<HashMap<String, String>, anyhow::Error> {
-    dcl::js::system_api::op_get_params(state).await
 }

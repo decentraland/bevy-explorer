@@ -135,7 +135,7 @@ function createJsContext(wasmApi, context) {
   deleteFromPrototypeChain(self, "caches");
 
   // BroadcastChannel is a same-origin, serverless side channel — handed ONLY to the trusted
-  // super-user (--ui) scene, so an embedded host page can drive it; ordinary scenes never see it
+  // super-user (--system-scene) scene, so an embedded host page can drive it; ordinary scenes never see it
   // (it would otherwise let an untrusted scene coordinate with the page / other scenes off-network).
   //
   // Same-origin means same-origin across ALL tabs, so when the host page provided a session id

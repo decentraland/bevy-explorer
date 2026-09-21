@@ -138,12 +138,21 @@ fn manage_islands(
         senders.push(sender.clone());
     }
 
+    // Only the latest assignment matters. Acting on two in one frame would spawn the first
+    // island's transport via `manager`'s command buffer and despawn it via `commands`, and
+    // the buffers apply in parameter order: the despawn lands first, then the spawn's
+    // bookkeeping runs on an entity that no longer exists and panics.
+    let mut latest = None;
     while let Ok(island) = channel.receiver.try_recv() {
+        latest = Some(island);
+    }
+
+    if let Some(island) = latest {
         // client-only (see start_archipelago): islands feed the single shared context.
         // Checked before despawning the previous island so a failed lookup can't leave
         // no island transport at all.
         let Ok(context) = contexts.single() else {
-            continue;
+            return;
         };
         if let Some(entity) = current_island.remove(&island.owner) {
             commands.entity(entity).despawn();

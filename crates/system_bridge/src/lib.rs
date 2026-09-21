@@ -1,7 +1,6 @@
 pub mod agent_commands;
 pub mod settings;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use bevy::{
@@ -13,7 +12,7 @@ use bevy::{
 };
 use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, ConsoleResponder};
 use common::{
-    inputs::{BindingsData, InputIdentifier, SystemActionEvent},
+    inputs::{BindingsData, HudPanel, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{AppConfig, MicState, PermissionUsed},
 };
@@ -30,16 +29,7 @@ impl Plugin for SystemBridgePlugin {
         app.add_event::<SystemApi>();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
-        app.init_resource::<SceneParams>();
-        app.add_systems(
-            Update,
-            (
-                post_events,
-                handle_home_scene,
-                handle_exit,
-                handle_get_params,
-            ),
-        );
+        app.add_systems(Update, (post_events, handle_home_scene, handle_exit));
 
         if self.bare {
             return;
@@ -92,10 +82,16 @@ pub enum SystemApi {
     /// HUD element — the Scroll ACTIONS are reserved, so every input bound to them (wheel,
     /// key, gamepad button) stands down for world consumers while the action stream still
     /// resolves Scroll itself; the HUD scrolls the hovered panel from those edges.
+    /// `covered`: a full-screen HUD surface (a menu page, the HUD's loading overlay) hides
+    /// the world — scenes are told they are hidden (`PBEngineInfo.scene_hidden`). `menu`: the
+    /// open full-screen menu page — backs the OpenExplorerUi restricted action's verdict and
+    /// the scene-facing ExplorerUiEventsResult lifecycle events.
     SetUiFocus {
         ui: bool,
         text: bool,
         scroll: bool,
+        covered: bool,
+        menu: Option<HudPanel>,
     },
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),
@@ -105,6 +101,7 @@ pub enum SystemApi {
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
     GetHoverStream(RpcStreamSender<HoverEvent>),
     GetProximityStream(RpcStreamSender<ProximityEvent>),
+    GetProfileChangedStream(RpcStreamSender<ProfileChangedEvent>),
     GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
     // Native-only transport for the super-user bridge scene's BroadcastChannel: the scene posts page
     // -bound Envelopes via BridgeToPage, and subscribes to page->scene Envelopes via GetBridgeStream.
@@ -145,33 +142,6 @@ pub enum SystemApi {
     GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
     GetBlockingStatus(RpcResultSender<Result<BlockingStatusData, String>>),
     GetBlockUpdateStream(RpcStreamSender<BlockUpdateData>),
-    GetParams(RpcResultSender<HashMap<String, String>>),
-}
-
-#[derive(Resource, Default, Clone, Debug)]
-pub struct SceneParams(pub HashMap<String, String>);
-
-impl SceneParams {
-    pub fn from_query_string(query: &str, decode: bool) -> Self {
-        let map = query
-            .split('&')
-            .filter(|s| !s.is_empty())
-            .filter_map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                let key = parts.next()?.to_owned();
-                let value = parts.next().unwrap_or("").to_owned();
-                if decode {
-                    Some((
-                        urlencoding::decode(&key).unwrap_or_default().into_owned(),
-                        urlencoding::decode(&value).unwrap_or_default().into_owned(),
-                    ))
-                } else {
-                    Some((key, value))
-                }
-            })
-            .collect();
-        Self(map)
-    }
 }
 
 #[derive(Resource)]
@@ -230,12 +200,12 @@ fn handle_home_scene(mut ev: EventReader<SystemApi>, mut config: ResMut<AppConfi
     for ev in ev.read() {
         match ev {
             SystemApi::GetHomeScene(rpc_result_sender) => rpc_result_sender.send(HomeScene {
-                realm: config.server.clone(),
-                parcel: config.location.as_vec2().into(),
+                realm: config.home_realm(),
+                parcel: config.home_location().as_vec2().into(),
             }),
             SystemApi::SetHomeScene(home_scene) => {
-                config.server = home_scene.realm.clone();
-                config.location = bevy::math::Vec2::from(&home_scene.parcel).as_ivec2();
+                config.home_realm = Some(home_scene.realm.clone());
+                config.home_location = Some(bevy::math::Vec2::from(&home_scene.parcel).as_ivec2());
                 platform::write_config_file(&*config);
             }
             _ => (),
@@ -251,13 +221,5 @@ fn handle_exit(mut ev: EventReader<SystemApi>, mut exit: EventWriter<AppExit>) {
         .is_some()
     {
         exit.write_default();
-    }
-}
-
-fn handle_get_params(mut ev: EventReader<SystemApi>, params: Res<SceneParams>) {
-    for ev in ev.read() {
-        if let SystemApi::GetParams(sender) = ev {
-            sender.send(params.0.clone());
-        }
     }
 }

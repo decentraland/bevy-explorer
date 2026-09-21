@@ -43,13 +43,13 @@ fn capture_point_at(
     pointer_ray: Res<PointerRay>,
     time: Res<Time>,
     mut player: Query<(&mut PointAtSync, &AvatarDynamicState, &GlobalTransform), With<PrimaryUser>>,
-    mut latch_until: Local<f32>,
+    mut latch_until: Local<f64>,
     mut press_origin_dir: Local<Option<Vec3>>,
 ) {
     let Ok((mut sync, dynamics, player_global)) = player.single_mut() else {
         return;
     };
-    let now = time.elapsed_secs();
+    let now = time.elapsed_secs_f64();
     let idle = dynamics.move_kind == MoveKind::Idle;
 
     // Drop the latch the moment we leave idle — pointing while running looks
@@ -132,7 +132,7 @@ fn capture_point_at(
             let dcl = DclTranslation::from_bevy_translation(target_bevy);
             sync.target_world = Vec3::new(dcl.0[0], dcl.0[1], dcl.0[2]);
             sync.is_pointing = true;
-            *latch_until = now + POINT_AT_DURATION;
+            *latch_until = now + POINT_AT_DURATION as f64;
             return;
         }
     }

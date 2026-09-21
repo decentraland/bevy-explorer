@@ -71,11 +71,13 @@ fn new_player_source<T: AVPlayer>(
 ) {
     let entity = trigger.target();
 
-    let Ok((source, container_entity, mut maybe_video_texture_output, maybe_sinks, has_stream)) =
-        av_players.get(entity)
-    else {
-        unreachable!("Infallible query");
-    };
+    let (source, container_entity, mut maybe_video_texture_output, maybe_sinks, has_stream) =
+        av_players.get(entity).unwrap_or_else(|e| {
+            panic!(
+                "new_player_source::<{}> query failed: {e}",
+                disqualified::ShortName::of::<T>()
+            )
+        });
     let Ok(context) = scenes.get(container_entity.root) else {
         debug_panic!(
             "{} has an invalid link to RendererSceneContext",
@@ -168,9 +170,12 @@ fn player_source_replaced<T: AVPlayer>(
     av_players: Query<Option<&AVSinks<T>>, With<T::Source>>,
 ) {
     let entity = trigger.target();
-    let Ok(maybe_sinks) = av_players.get(entity) else {
-        unreachable!("Infallible query");
-    };
+    let maybe_sinks = av_players.get(entity).unwrap_or_else(|e| {
+        panic!(
+            "player_source_replaced::<{}> query failed: {e}",
+            disqualified::ShortName::of::<T>()
+        )
+    });
 
     debug!(
         "{}'s {} was replaced.",
@@ -201,11 +206,13 @@ fn player_config_added<T: AVPlayer>(
     )>,
 ) {
     let entity = trigger.target();
-    let Ok((config, maybe_sinks, has_should_be_playing, has_stream, maybe_receiver_volume)) =
-        av_players.get_mut(entity)
-    else {
-        unreachable!("Infallible query");
-    };
+    let (config, maybe_sinks, has_should_be_playing, has_stream, maybe_receiver_volume) =
+        av_players.get_mut(entity).unwrap_or_else(|e| {
+            panic!(
+                "player_config_added::<{}> query failed: {e}",
+                disqualified::ShortName::of::<T>()
+            )
+        });
     let Some(mut sinks) = maybe_sinks else {
         if !has_stream {
             debug_panic!(
@@ -252,9 +259,12 @@ fn player_position_added<T: AVPlayer>(
     mut av_players: Query<(&T::Position, Option<&mut AVSinks<T>>, Has<Stream>)>,
 ) {
     let entity = trigger.target();
-    let Ok((position, maybe_sinks, has_stream)) = av_players.get_mut(entity) else {
-        unreachable!("Infallible query");
-    };
+    let (position, maybe_sinks, has_stream) = av_players.get_mut(entity).unwrap_or_else(|e| {
+        panic!(
+            "player_position_added::<{}> query failed: {e}",
+            disqualified::ShortName::of::<T>()
+        )
+    });
     let Some(mut sinks) = maybe_sinks else {
         if !has_stream {
             debug_panic!(

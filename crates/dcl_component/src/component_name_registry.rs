@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::anyhow;
-use bevy::prelude::Resource;
+use bevy_ecs::prelude::Resource;
 
 use crate::{CrdtType, SceneComponentId};
 

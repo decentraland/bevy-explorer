@@ -6,10 +6,12 @@ import {
   MAX_VISIBLE_METERS,
   MIN_VISIBLE_METERS,
   loadMarkers,
+  loadOpen,
   loadRotation,
   loadStyle,
   loadZoom,
   saveMarkers,
+  saveOpen,
   saveRotation,
   saveStyle,
   saveZoom
@@ -44,6 +46,29 @@ describe('minimap prefs — defaults and validation', () => {
     localStorage.setItem('dcl-minimap-rotation', 'sideways')
     expect(loadStyle()).toBe('satellite')
     expect(loadRotation()).toBe('north')
+  })
+})
+
+describe('minimap prefs — open state per realm type', () => {
+  it('defaults open in Genesis City and closed in a World', () => {
+    expect(loadOpen(false)).toBe(true)
+    expect(loadOpen(true)).toBe(false)
+  })
+
+  it('keeps the two realm types independent', () => {
+    saveOpen(false, false)
+    expect(loadOpen(false)).toBe(false)
+    expect(loadOpen(true)).toBe(false)
+    saveOpen(true, true)
+    expect(loadOpen(true)).toBe(true)
+    expect(loadOpen(false)).toBe(false)
+  })
+
+  it('falls back to the default on a hand-edited value', () => {
+    localStorage.setItem('dcl-minimap-open', 'maybe')
+    localStorage.setItem('dcl-minimap-open-world', '1')
+    expect(loadOpen(false)).toBe(true)
+    expect(loadOpen(true)).toBe(false)
   })
 })
 

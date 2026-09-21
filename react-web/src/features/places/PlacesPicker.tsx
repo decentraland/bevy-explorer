@@ -1,6 +1,7 @@
 // PlacesPicker — shown right after Jump In (phase 'picking') so the user chooses where to spawn
-// instead of dropping straight into Genesis Plaza. Reuses the exact in-world Places browser; a card
-// click resolves a destination (parcel teleport / world realm) and a Skip button takes the default.
+// instead of dropping straight into their home scene. Reuses the exact in-world Places browser; a
+// card click resolves a destination (parcel teleport / world realm) and a Skip button takes home
+// (the default realm at 0,0 — Genesis Plaza — unless the user pinned one).
 
 import { Button } from '../../design'
 import { PlacesBrowser } from './PlacesBrowser'
@@ -19,7 +20,7 @@ export function PlacesPicker({ onPick }: { onPick: (dest: Destination) => void }
               <h1 className={styles.title}>Where do you want to go?</h1>
             </div>
             <Button variant="secondary" size="md" className={styles.skip} onClick={() => onPick(null)}>
-              Skip to Genesis Plaza
+              Skip to Home
             </Button>
           </div>
           <PlacesBrowser onPick={(place: DiscoverPlace) => onPick(placeTeleport(place))} />

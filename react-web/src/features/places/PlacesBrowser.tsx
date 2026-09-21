@@ -8,14 +8,14 @@
 // PlacesPage and the post-jump-in PlacesPicker; the host supplies an `onPick(place)` action.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Dropdown, EmptyState, Heart, Pin, SearchField, Spinner } from '../../design'
+import { Dropdown, EmptyState, Heart, Pin, SearchField, Spinner, Tabs, type TabItem } from '../../design'
 import { PlaceCard } from './PlaceCard'
 import { FeaturedCarousel } from './FeaturedCarousel'
 import { usePlaces, type PlacesSection, type PlacesSort } from './usePlaces'
 import { placeIsFeatured, placePlayers, type DiscoverPlace } from './placesApi'
 import styles from './PlacesPage.module.css'
 
-const SECTIONS: { id: PlacesSection; label: string; icon: React.ReactNode }[] = [
+const SECTIONS: TabItem<PlacesSection>[] = [
   { id: 'all', label: 'Explore all', icon: <CompassGlyph /> },
   { id: 'favourites', label: 'Favourites', icon: <Heart size={15} /> },
   { id: 'my', label: 'My places', icon: <Pin size={15} /> }
@@ -120,21 +120,7 @@ export function PlacesBrowser({
       )}
 
       <div className={styles.toolbar}>
-        <div className={styles.tabs} role="tablist" aria-label="Places sections">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              role="tab"
-              aria-selected={s.id === section}
-              className={`${styles.tab} ${s.id === section ? styles.tabActive : ''}`.trim()}
-              onClick={() => setSection(s.id)}
-            >
-              {s.icon}
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <Tabs items={SECTIONS} value={section} onChange={setSection} aria-label="Places sections" />
         <div className={styles.controls}>
           <div className={styles.search}>
             <SearchField value={draft} onChange={setDraft} placeholder="Search places" />

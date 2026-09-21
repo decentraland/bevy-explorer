@@ -19,6 +19,9 @@ use std::{env, sync::Arc};
 use system_bridge::SystemApi;
 use tokio::io::AsyncReadExt;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 // how long a killed scene gets to exit cleanly (finish its in-flight tick after its
 // renderer channel closes) before its isolate is forcibly terminated
 const KILL_GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(5);

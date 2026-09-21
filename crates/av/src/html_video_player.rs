@@ -118,11 +118,13 @@ fn new_player_source<T: AVPlayer>(
 ) {
     let entity = trigger.target();
 
-    let Ok((player_source, container_entity, mut maybe_video_texture_output, has_stream)) =
-        av_players.get(entity)
-    else {
-        unreachable!("Infallible query");
-    };
+    let (player_source, container_entity, mut maybe_video_texture_output, has_stream) =
+        av_players.get(entity).unwrap_or_else(|e| {
+            panic!(
+                "new_player_source::<{}> query failed: {e}",
+                disqualified::ShortName::of::<T>()
+            )
+        });
     let Ok(context) = scenes.get(container_entity.root) else {
         debug_panic!("AVPlayer has an invalid link to RendererSceneContext");
     };
@@ -243,16 +245,13 @@ fn player_config_added<T: AVPlayer>(
     audio_settings: Res<AudioSettings>,
 ) {
     let entity = trigger.target();
-    let Ok((
-        config,
-        maybe_html_media_entity,
-        has_should_be_playing,
-        has_stream,
-        maybe_receiver_volume,
-    )) = av_players.get_mut(entity)
-    else {
-        unreachable!("Infallible query");
-    };
+    let (config, maybe_html_media_entity, has_should_be_playing, has_stream, maybe_receiver_volume) =
+        av_players.get_mut(entity).unwrap_or_else(|e| {
+            panic!(
+                "player_config_added::<{}> query failed: {e}",
+                disqualified::ShortName::of::<T>()
+            )
+        });
     if has_stream {
         if let Some(mut receiver_volume) = maybe_receiver_volume {
             debug!("Updated volume of stream.");
@@ -281,9 +280,13 @@ fn player_position_added<T: AVPlayer>(
     mut av_players: Query<(&T::Position, Option<&mut HtmlMediaEntity<T>>, Has<Stream>)>,
 ) {
     let entity = trigger.target();
-    let Ok((position, maybe_html_media_entity, has_stream)) = av_players.get_mut(entity) else {
-        unreachable!("Infallible query");
-    };
+    let (position, maybe_html_media_entity, has_stream) =
+        av_players.get_mut(entity).unwrap_or_else(|e| {
+            panic!(
+                "player_position_added::<{}> query failed: {e}",
+                disqualified::ShortName::of::<T>()
+            )
+        });
     let Some(mut html_media_entity) = maybe_html_media_entity else {
         if !has_stream {
             debug_panic!("Non-stream AVPlayer did not have html media entity.");

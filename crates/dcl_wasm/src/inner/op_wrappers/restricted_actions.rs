@@ -40,10 +40,11 @@ pub async fn op_walk_player_to(
 #[wasm_bindgen]
 pub async fn op_teleport_to(
     state: &WorkerContext,
-    position_x: i32,
-    position_y: i32,
+    position_x: Option<i32>,
+    position_y: Option<i32>,
+    realm: Option<String>,
 ) -> Result<bool, WasmError> {
-    dcl::js::restricted_actions::op_teleport_to(state.rc(), position_x, position_y)
+    dcl::js::restricted_actions::op_teleport_to(state.rc(), position_x, position_y, realm)
         .await
         .map_err(WasmError::from)
 }
@@ -67,8 +68,18 @@ pub async fn op_external_url(state: &WorkerContext, url: String) -> Result<bool,
 }
 
 #[wasm_bindgen]
-pub fn op_emote(op_state: &WorkerContext, emote: String) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_emote(&mut *op_state.state.borrow_mut(), emote)
+pub fn op_emote(
+    op_state: &WorkerContext,
+    emote: String,
+    upper_body: bool,
+) -> Result<(), WasmError> {
+    dcl::js::restricted_actions::op_emote(&mut *op_state.state.borrow_mut(), emote, upper_body)
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub fn op_stop_emote(op_state: &WorkerContext) -> Result<(), WasmError> {
+    dcl::js::restricted_actions::op_stop_emote(&mut *op_state.state.borrow_mut())
         .map_err(WasmError::from)
 }
 
@@ -77,8 +88,9 @@ pub async fn op_scene_emote(
     op_state: &WorkerContext,
     emote: String,
     looping: bool,
+    upper_body: bool,
 ) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_scene_emote(op_state.rc(), emote, looping)
+    dcl::js::restricted_actions::op_scene_emote(op_state.rc(), emote, looping, upper_body)
         .await
         .map_err(WasmError::from)
 }
@@ -97,6 +109,13 @@ pub async fn op_ui_focus(
     element_id: Option<String>,
 ) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::restricted_actions::op_ui_focus(op_state.rc(), apply, element_id).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_open_explorer_ui(op_state: &WorkerContext, ui: i32) -> Result<i32, WasmError> {
+    dcl::js::restricted_actions::op_open_explorer_ui(op_state.rc(), ui)
+        .await
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

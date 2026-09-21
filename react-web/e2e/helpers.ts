@@ -7,7 +7,7 @@
 // bridge scene. Many calls (friend accept, community leave, mark-read) need seeded data
 // a fresh guest doesn't have, so they live only in tier 1.
 
-import { type Page, expect } from '@playwright/test'
+import { type Page, expect, test } from '@playwright/test'
 
 export const APP_URL = process.env.E2E_URL ?? 'http://localhost:5173/'
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
@@ -42,23 +42,40 @@ export const walkPlayerTo = (page: Page, x: number, y: number, z: number, timeou
  *  arrives — the walk respects colliders and the spawn has steps/props nearby, so any fixed
  *  target can be blocked. Returns the target reached. */
 export async function walkNearby(page: Page, dist = 3): Promise<{ x: number; y: number; z: number }> {
-  const from = await position(page)
-  const errors: string[] = []
-  for (const [dx, dz] of [
-    [dist, 0],
-    [-dist, 0],
-    [0, dist],
-    [0, -dist]
-  ]) {
-    const to = { x: from.x + dx, y: from.y, z: from.z + dz }
+  const attempt = async (): Promise<{ x: number; y: number; z: number }> => {
+    const from = await position(page)
+    const errors: string[] = []
+    for (const [dx, dz] of [
+      [dist, 0],
+      [-dist, 0],
+      [0, dist],
+      [0, -dist]
+    ]) {
+      const to = { x: from.x + dx, y: from.y, z: from.z + dz }
+      try {
+        await walkPlayerTo(page, to.x, to.y, to.z, 10)
+        return to
+      } catch (e) {
+        errors.push(`(${to.x}, ${to.z}): ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    throw new Error(`walk_player_to blocked in every direction from (${from.x}, ${from.z}): ${errors.join('; ')}`)
+  }
+  try {
+    return await attempt()
+  } catch (first) {
+    // Some Genesis Plaza spawn points sit in fenced pockets where every cardinal walk hits a
+    // railing — and the plaza scene owns all its parcels, so an in-scene teleport respawns at
+    // the same points. Teleport OFF the scene instead: 0,-11 is the DAO road parcel just south
+    // of the plaza (flat, permanently unclaimable), then retry once from there.
+    await teleport(page, 0, -11)
+    await page.waitForTimeout(2000)
     try {
-      await walkPlayerTo(page, to.x, to.y, to.z, 10)
-      return to
-    } catch (e) {
-      errors.push(`(${to.x}, ${to.z}): ${e instanceof Error ? e.message : String(e)}`)
+      return await attempt()
+    } catch {
+      throw first
     }
   }
-  throw new Error(`walk_player_to blocked in every direction from (${from.x}, ${from.z}): ${errors.join('; ')}`)
 }
 export const teleport = (page: Page, x: number, y: number): Promise<string> => cmd(page, `teleport ${x} ${y}`)
 export const playerPosition = (page: Page): Promise<string> => cmd(page, 'player_position')
@@ -118,13 +135,17 @@ export async function expectBridge(page: Page, to: Dir, kind: string, timeout = 
 
 /** Enter the world as a guest (the e2e "login" step), with the bridge spy armed. */
 export async function enterAsGuest(page: Page): Promise<void> {
+  // Fresh browser profile every run = cold asset cache: a Genesis Plaza boot can take 3+
+  // minutes on a slow line, which is over the default 180s hook budget. Extend it for the
+  // boot only; the per-test timeout is untouched.
+  test.setTimeout(420_000)
   await installBridgeSpy(page)
   await page.goto(APP_URL)
   await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click({ timeout: 90000 })
-  // Entry now goes through the destination picker — skip it (default spawn → Genesis Plaza).
-  await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click({ timeout: 60000 })
+  // Entry now goes through the destination picker — skip to home (default spawn → Genesis Plaza on a fresh profile).
+  await page.getByRole('button', { name: /SKIP TO HOME/i }).click({ timeout: 60000 })
   // World-ready: the React sidebar nav mounts once phase === 'world'.
-  await page.waitForSelector('nav[aria-label="Main navigation"]', { timeout: 180000 })
+  await page.waitForSelector('nav[aria-label="Main navigation"]', { timeout: 360000 })
 }
 
 /** Click a sidebar nav icon by its aria-label (Profile, Map, Settings, Emotes, …).

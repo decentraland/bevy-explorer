@@ -5,8 +5,8 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { WearableCard, type Rarity } from '../../design'
-import { catalystThumbUrl, rarityColor } from '../../lib/identity'
+import { Tabs, WearableCard, type Rarity, type TabItem } from '../../design'
+import { catalystThumbUrl } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
 import { CategoryIcon } from './categoryIcons'
 import { EngineViewport } from '../engine/EngineViewport'
@@ -14,6 +14,12 @@ import { MainMenuShell } from '../menu/MainMenuShell'
 import type { Emote, Outfit, Wearable } from '../../engine/protocol'
 import type { BackpackState, EmotesState, ProfileState } from '../session/useEngineSession'
 import styles from './BackpackPage.module.css'
+
+type BackpackTab = 'wearables' | 'emotes'
+const BACKPACK_TABS: TabItem<BackpackTab>[] = [
+  { id: 'wearables', label: 'Wearables' },
+  { id: 'emotes', label: 'Emotes' }
+]
 
 const PAGE_SIZE = 16
 const NO_DESC = 'This wearable does not have a description set.'
@@ -110,11 +116,11 @@ function DetailPanel({ item }: { item: Wearable | Emote | null }): React.JSX.Ele
   const category = 'category' in item ? item.category : 'emote'
   return (
     <aside className={styles.detail}>
-      <div className={styles.detailThumb} style={{ background: `radial-gradient(circle at 50% 35%, ${rarityColor(rarity)}, rgba(0,0,0,0.35))` }}>
+      <div className={styles.detailThumb} data-rarity={rarity}>
         <CatalystImg src={item.thumbnail} urn={item.urn} />
       </div>
       <div className={styles.detailName}>{item.name}</div>
-      <div className={styles.detailRarity} style={{ background: rarityColor(rarity) }}>
+      <div className={styles.detailRarity} data-rarity={rarity}>
         {humanize(rarity)}
       </div>
       <div className={styles.detailMetaRow}>
@@ -241,7 +247,7 @@ export function BackpackPage({
   /** Which tab to open on (e.g. the emote wheel's "Customise [E]" opens 'emotes'). */
   initialTab?: 'wearables' | 'emotes'
 }): React.JSX.Element | null {
-  const [tab, setTab] = useState<'wearables' | 'emotes'>(initialTab)
+  const [tab, setTab] = useState<BackpackTab>(initialTab)
   const [section, setSection] = useState<'categories' | 'outfits'>('categories')
   // The saved-outfit slot currently selected (shown in the detail panel; null = none).
   const [outfitSlot, setOutfitSlot] = useState<number | null>(null)
@@ -396,14 +402,7 @@ export function BackpackPage({
         {/* Top bar: title + Wearables/Emotes pills (left), Filter & Search (right). */}
         <div className={styles.head}>
           <h1 className={styles.title}>Backpack</h1>
-          <div className={styles.tabs}>
-            <button type="button" className={`${styles.tab} ${tab === 'wearables' ? styles.tabActive : ''}`.trim()} onClick={() => setTab('wearables')}>
-              Wearables
-            </button>
-            <button type="button" className={`${styles.tab} ${tab === 'emotes' ? styles.tabActive : ''}`.trim()} onClick={() => setTab('emotes')}>
-              Emotes
-            </button>
-          </div>
+          <Tabs items={BACKPACK_TABS} value={tab} onChange={setTab} aria-label="Backpack sections" />
           <div className={styles.filterWrap}>
             <button type="button" className={`${styles.filterBtn} ${showFilter ? styles.filterBtnOpen : ''}`.trim()} onClick={() => setShowFilter((s) => !s)}>
               <FilterIcon /> FILTER &amp; SORT
@@ -570,7 +569,7 @@ export function BackpackPage({
                       >
                         <span className={styles.emoteSlotNum}>{num}</span>
                         <span className={styles.emoteSlotName}>{e?.name ?? 'Empty'}</span>
-                        <span className={styles.emoteSlotThumb} style={{ background: rarityColor(e?.rarity) }}>
+                        <span className={styles.emoteSlotThumb} data-rarity={e?.rarity ?? 'base'}>
                           {e && <CatalystImg urn={e.urn} />}
                         </span>
                       </button>

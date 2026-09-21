@@ -1,7 +1,7 @@
 use std::ops::RangeInclusive;
 
 // structs representing dcl components and de/serialization
-use bevy::prelude::Vec3;
+use bevy_math::Vec3;
 
 pub mod component_name_registry;
 pub mod component_schema;
@@ -252,6 +252,8 @@ impl SceneComponentId {
     pub const PHYSICS_COMBINED_FORCE: SceneComponentId = SceneComponentId(1216);
 
     pub const PARTICLE_SYSTEM: SceneComponentId = SceneComponentId(1217);
+
+    pub const EXPLORER_UI_EVENTS_RESULT: SceneComponentId = SceneComponentId(1220);
 }
 
 #[derive(

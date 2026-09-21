@@ -133,7 +133,7 @@ function fnv1a64(str: string): bigint {
 // Name colour, matching the engine's UserProfile::name_color() resolution so the pill agrees with the
 // in-world point-at marker: a profile-set CUSTOM colour wins (claimed names only), else the address-
 // hashed palette. (We keep colouring unclaimed names by hash rather than greying them, per the
-// reference mobile nametags.) Custom colours come from the catalyst profile (resolveClaimed) and the
+// reference mobile nametags.) Custom colours come from the engine's profile (resolveClaimed) and the
 // hash is memoised — tagElement re-evaluates per texture render.
 const customColorCache = new Map<string, Color4>()
 const colorCache = new Map<string, Color4>()
@@ -148,25 +148,30 @@ function nameColor(userId: string): Color4 {
   return c
 }
 
-// hasClaimedName + custom name colour from the catalyst profile (async, cached); fall back to the
-// name-suffix heuristic until it resolves so the badge / discriminator don't flicker on first sight.
-const claimedCache = new Map<string, boolean>()
-const pendingClaimed = new Set<string>()
-function resolveClaimed(userId: string): void {
-  if (claimedCache.has(userId) || pendingClaimed.has(userId)) return
-  pendingClaimed.add(userId)
+// hasClaimedName + custom name colour from the engine's profile (async, cached per NAME: a rename is
+// exactly what claims or drops a unique name, and the engine's copy of the profile is already the
+// renamed one by the time the tag sees the new name); fall back to the name-suffix heuristic until
+// it resolves so the badge / discriminator don't flicker on first sight.
+const claimedCache = new Map<string, { name: string; claimed: boolean }>()
+const pendingClaimed = new Map<string, string>()
+function resolveClaimed(userId: string, name: string): void {
+  if (claimedCache.get(userId)?.name === name || pendingClaimed.get(userId) === name) return
+  pendingClaimed.set(userId, name)
   fetchProfile(userId)
-    .then((p) => {
-      const av = p?.avatars?.[0]
-      const name = getPlayer({ userId })?.name ?? ''
+    .then((av) => {
       const claimed = av?.hasClaimedName ?? !name.includes('#')
-      claimedCache.set(userId, claimed)
+      claimedCache.set(userId, { name, claimed })
       // The profile can set a custom name colour — engine logic applies it for claimed names only.
       const nc = av?.nameColor
       if (claimed && nc != null) customColorCache.set(userId, Color4.create(nc.r, nc.g, nc.b, 1))
+      else customColorCache.delete(userId)
     })
-    .catch(() => undefined)
-    .finally(() => pendingClaimed.delete(userId))
+    // Settle on the heuristic rather than leave the entry empty: Tag asks every frame, so an
+    // unresolvable profile would otherwise be re-requested every frame.
+    .catch(() => claimedCache.set(userId, { name, claimed: !name.includes('#') }))
+    .finally(() => {
+      if (pendingClaimed.get(userId) === name) pendingClaimed.delete(userId)
+    })
 }
 
 // The pill rendered into the tag's UiCanvas → texture. Re-evaluated each frame, so name/colour/
@@ -179,7 +184,8 @@ function tagElement(userId: string): () => ReactEcs.JSX.Element | null {
     const firstPerson = CameraMode.get(engine.CameraEntity).mode === CameraType.CT_FIRST_PERSON
     if (isSelf && firstPerson) return null
 
-    const isClaimed = claimedCache.get(userId) ?? !name.includes('#')
+    resolveClaimed(userId, name)
+    const isClaimed = claimedCache.get(userId)?.claimed ?? !name.includes('#')
     const baseName = name.split('#')[0]
     // ONE text element so the name and #wallet-id sit tight (no inter-element gap — the Figma shows
     // them flush). Name is bold in its hash colour (the element's base colour); the wallet id uses
@@ -342,7 +348,6 @@ export function initNametags(): void {
       const built = createPoolEntry(userId)
       entry = { anchor: built.anchor, plane: built.plane, userId }
       pool.set(key, entry)
-      resolveClaimed(userId)
     }
     AvatarAttach.createOrReplace(entry.anchor, { avatarId: entry.userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
     const t = Transform.getMutableOrNull(entry.plane)

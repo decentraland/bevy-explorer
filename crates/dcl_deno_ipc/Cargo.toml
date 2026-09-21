@@ -27,6 +27,7 @@ multihash-codetable = { workspace = true }
 alloy-core = { workspace = true }
 anyhow = { workspace = true }
 fastrand = { workspace = true }
+mimalloc = { workspace = true }
 
 interprocess = { version = "2.0", features = ["tokio"] }
 rmp-serde = "1.3"

@@ -13,8 +13,6 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
 1. `[DS]` **Toast system** — *new*. Nothing transient/cross-cutting exists. Needed for real-time events
    (remote friend accepted, community invites, item sold…), ephemeral confirmations, and operational
    errors. Today faked with per-component `setTimeout`. (Old: `notification-toast-stack`.)
-2. `[DS]` **`Tabs` primitive** — *new*. Tabs are reimplemented bespoke in ~37 files (Settings,
-   Backpack, FriendsPanel, CommunityModal…). (Old: `tab-component.tsx`.)
 3. `[DS]` **Reusable `FriendButton` + full relationship model** — *new + pattern*. State is already a
    single reactive source ✅, but the add-friend CTA is duplicated per view (ProfileCard,
    ProfilePassport, CommunityModal) with ad-hoc optimism. Need `<FriendButton address>` /
@@ -158,8 +156,8 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     rarity-tinted card + name + rarity tag + click → marketplace) — today `Wearable` only exists for
     your OWN backpack, not another user's passport. (b) **Richer badges** — add `category`
     (Explorer/Collector/Creator/Socializer/Builder), `completedAt`, and in-progress `progress
-    {current,total}` to `Badge` (today just `{id,name,tier,image}`). (c) **Profile fields** `country` +
-    `sexualOrientation` in `ProfileInfo` (has the other 9). **UI-only (data mostly present):** (d)
+    {current,total}` to `Badge` (today just `{id,name,tier,image}`). (c) ~~Profile fields `country` +
+    `sexualOrientation` in `ProfileInfo`~~ — DONE (PR #1249). **UI-only (data mostly present):** (d)
     Badges tab category-filter row + per-badge date / progress bar (once (b) lands). (e) Passport-header
     **⋮ menu** (Block/Unblock · Report · Invite to Community) — reuse the world `ProfileCard`'s action
     set. (f) Wire the **3D avatar preview** into the passport (machinery exists —
@@ -337,15 +335,6 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     moderation endpoint lands: re-add the `Report` row + `onBlock`-style `onReport` request prop
     (parent-owned confirm, same pattern as Block), the `ReportIcon` glyph, and wire the actual submit.
     (Old scene logged too — this is genuinely new backend work, not just UI.)
-33. `[feature]` **Passport / own-profile edit mode — no UI yet** — *feature, own-profile only; flagged by
-    Rob*. bevy-ui-scene lets you edit your own passport in place — About Me, the info-field dropdowns,
-    links (add/remove, up to 5), and display name — then deploys the updated profile. react-web can
-    *view* the profile (`ProfilePanel` = own profile, `ProfilePassport` = others) but has **no UI to
-    edit your own** display name, description/bio, links, etc. — completely unimplemented (no
-    `editProfile`/`deployProfile` path in `features/profile` or the session). Needs the edit surface +
-    wiring the profile deploy through the bridge/engine. Larger than the view-parity item (#16) — hence
-    separate and lower priority than showing OTHER users' passports correctly. Reference the old client
-    for the flow (`unity-explorer` `Explorer/Assets/DCL/UI/`, `bevy-ui-scene` profile screens).
 34. `[feature]` **Chat rate limiting** — *hardening, not in bevy-ui-scene*. unity-explorer's
     `MultiplayerChatMessagesBus` dedupes + rate-limits + buffers sends; react-web (like bevy-ui-scene)
     sends on every Enter with no client-side throttle. Only worth adding if spam becomes a real problem
@@ -401,15 +390,6 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     re-render only `<Pointer>`, not the tree. Optional bridge-side dedupe (skip `ctx.send` when `tips`
     is unchanged) zeroes the standing-still case but not the moving one (positions legitimately change
     each frame), so the store is the structural fix.
-39. `[bug]` **Chat name click shows the raw address for players who left nearby range** — *UX regression,
-    P2 pending PR #915 review*. `Chat`/`FriendsPanel` now open the shared card via
-    `openProfileCard(user.address, …)` (address only); the container re-resolves name/picture with
-    `resolveIdentity` (nearby roster → friends/requests → fetched passports). For a **non-friend who
-    has since left `chat.members`**, nothing resolves, so the card shows the bare `0x…` address instead
-    of the display name that was in the historical message (the old `ChatUser`-carrying path preserved
-    it). Common cases (nearby / friends) are unaffected. Fix if it matters: pass the message's known
-    name/picture into `openProfileCard` as a fallback hint, or give `resolveIdentity` a small
-    last-seen name cache.
 40. `[test]` **No tier-1.5 visual baseline for `WorldVisitModal`** — *coverage gap, PR #1014
     follow-up*. Passport, PermissionDialog, CommunityModal, CommunityCreateModal and ExitConfirm all
     got `e2e/visual.spec.ts` baselines; `WorldVisitModal` (`src/components/WorldVisitModal.tsx`) didn't
@@ -486,13 +466,36 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
       out of 60 Hz instead of the engine guessing. Bigger process; the engine-side cycle is the cheap
       first step.
     Needs a WASM rebuild, so it belongs in its own PR, not in the HUD stack.
+46. `[arch]` **Passport open blocks the whole panel on the equipped-items resolution** — *perceived
+    latency, from PR #1058*. `getUserProfile` (`bridge-scene/src/domains/profile.ts`) awaits the
+    engine profile + badges + photos, then awaits `resolveEquippedSet` / `resolveEquippedEmotes`
+    (catalyst collections lambda, plus the marketplace items API for legacy collections-v1 items)
+    before sending a single `userProfile` message. So name, avatar, About and badges — all already
+    fetched — sit behind ~3 sequential round trips of work only the equipped grid needs. Unity does
+    the opposite: `PassportController` renders each module immediately and every module owns its
+    loading placeholders and its own error state. The fix is to split the reply: send the profile as
+    soon as it lands, then a follow-up message (e.g. `userProfileEquipped`) that fills the grid, with
+    the passport rendering skeleton tiles meanwhile. Protocol change plus a second reducer path in
+    `useEngineSession`, hence its own PR.
+47. `[feature]` **Passport equipped grid doesn't filter hidden categories** — *parity gap, from PR
+    #1058*. Unity's `EquippedItems_PassportModuleController.SetGridElements` builds
+    `Wearable.ComposeHiddenCategories(bodyShape, wearables, forceRender)` and skips any item whose
+    category is hidden by another equipped item, so a shirt under a full-body robe never gets a tile.
+    We skip only `body_shape` (`ProfilePassport.tsx`), because the equipped set the bridge sends
+    carries urn/name/rarity/category/thumbnail and nothing else. Doing it properly means carrying each
+    item's `hides` / `replaces` (and the profile's `forceRender`) through `resolveEquippedSet` — the
+    catalyst collections lambda already returns them in `data` — and porting the compose rules. Worth
+    it when someone reports a phantom tile; until then the grid just shows a couple of items Unity
+    would have dropped.
 
 ## Not gaps (already good / ahead)
 
 `Modal` (portal + focus-trap + blur + `--ui-scale`, richer than the old backdrop), `IconButton`
 (badge + tooltip + shortcut), the **friend-state architecture** (single reactive source, simpler than
-the old version-bump), `tokens.css`, and primitives the old lacks (`WearableCard`, `EmptyState`,
-`PageHeader`, `CharCounter`, `SearchField`, `ContextMenu`).
+the old version-bump), the **profile store** (`features/session/profileStore.ts`: one address→identity
+map, subscription-scoped, invalidated by the engine's `profileChanged` stream), `tokens.css`, and
+primitives the old lacks (`WearableCard`, `EmptyState`, `PageHeader`, `CharCounter`, `SearchField`,
+`ContextMenu`, `TextInput`, `TextArea`, `DateField`, `Tabs`).
 
 ## Deliberately NOT ported
 

@@ -17,7 +17,7 @@ import type { Envelope, PageToScene, SceneToPage } from '../../src/engine/protoc
 // (sandbox_worker.js), matching the page's bridgeChannelName() — so two tabs never share a bridge.
 const CHANNEL = 'bevy-ui-bridge'
 
-// BroadcastChannel is a runtime global injected only into the super-user (--ui) scene
+// BroadcastChannel is a runtime global injected only into the super-user (--system-scene) scene
 // sandbox; it is not in the SDK type defs.
 declare const BroadcastChannel: new (name: string) => {
   postMessage: (msg: unknown) => void
@@ -85,9 +85,15 @@ export function startBridge(register: (ctx: Ctx) => void): void {
 
   register(ctx)
 
+  // Announce only once every domain is registered — the page starts sending as soon as it hears.
+  ctx.send({ kind: 'bridgeReady' })
+
   channel.onmessage = (e): void => {
     const env = e.data as Envelope | null
     if (env === null || env.to !== 'scene') return
+    // Every hello, not just the first: a page that reloads or starts late missed the
+    // announcement above and would otherwise queue forever.
+    if (env.msg.kind === 'hello') ctx.send({ kind: 'bridgeReady' })
     const list = handlers.get(env.msg.kind)
     if (list == null) return
     // Each handler is isolated: one domain throwing must not stop the others from seeing the

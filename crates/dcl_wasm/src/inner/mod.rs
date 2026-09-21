@@ -253,7 +253,7 @@ impl From<WasmError> for JsValue {
 }
 
 #[wasm_bindgen]
-pub fn op_set_elapsed(state: &WorkerContext, elapsed: f32) {
+pub fn op_set_elapsed(state: &WorkerContext, elapsed: f64) {
     let mut state = state.state.borrow_mut();
     state.put(SceneElapsedTime(elapsed));
     // tick boundary: reset the bounded per-tick send allowance

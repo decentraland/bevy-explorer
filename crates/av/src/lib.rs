@@ -545,9 +545,12 @@ fn stream_on_add<T: AVPlayer>(
     av_players: Query<(Has<ShouldBePlaying<T>>, Option<&T::Config>), (With<T>, With<Stream>)>,
 ) {
     let entity = trigger.target();
-    let Ok((has_should_be_playing, maybe_config)) = av_players.get(entity) else {
-        unreachable!("Infallible query");
-    };
+    let (has_should_be_playing, maybe_config) = av_players.get(entity).unwrap_or_else(|e| {
+        panic!(
+            "stream_on_add::<{}> query failed: {e}",
+            disqualified::ShortName::of::<T>()
+        )
+    });
 
     if has_should_be_playing {
         debug!("New stream {} should be playing.", entity);
@@ -583,9 +586,12 @@ fn should_be_playing_on_add<T: AVPlayer>(
     av_players: Query<(Has<Stream>, Option<&T::Config>), (With<T>, With<ShouldBePlaying<T>>)>,
 ) {
     let entity = trigger.target();
-    let Ok((has_stream, maybe_config)) = av_players.get(entity) else {
-        unreachable!("Infallible query");
-    };
+    let (has_stream, maybe_config) = av_players.get(entity).unwrap_or_else(|e| {
+        panic!(
+            "should_be_playing_on_add::<{}> query failed: {e}",
+            disqualified::ShortName::of::<T>()
+        )
+    });
 
     if has_stream {
         debug!("Stream {} should be playing.", entity);
@@ -599,10 +605,23 @@ fn should_be_playing_on_add<T: AVPlayer>(
 fn should_be_playing_on_remove<T: AVPlayer>(
     trigger: Trigger<OnRemove, ShouldBePlaying<T>>,
     mut commands: Commands,
+    av_players: Query<(Has<Stream>, &ContainerEntity), With<T>>,
 ) {
     let entity = trigger.target();
     debug!("Stream {} no longer playing.", entity);
     commands.entity(entity).try_remove::<ActiveReceiver>();
+
+    let Ok((has_stream, container_entity)) = av_players.get(entity) else {
+        debug!("AVPlayer {entity} not a scene entity.");
+        return;
+    };
+    if has_stream {
+        commands.trigger(SetState::<VideoPlayer> {
+            entity: *container_entity,
+            state: VideoState::VsPaused,
+            _phantom: PhantomData,
+        });
+    }
 }
 
 #[expect(clippy::type_complexity)]

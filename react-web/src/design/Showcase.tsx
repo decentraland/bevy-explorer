@@ -9,15 +9,26 @@ import { Tooltip } from './Tooltip'
 import { Toggle } from './Toggle'
 import { Slider } from './Slider'
 import { Select } from './Select'
+import { TextInput } from './TextInput'
+import { Tabs } from './Tabs'
+import { Bag, People, Pin } from './Glyphs'
+import { TextArea } from './TextArea'
+import { DateField } from './DateField'
 import { Panel } from './Panel'
 import { DclLogo } from './DclLogo'
 import { Avatar } from './Avatar'
 import { WearableCard, type Rarity } from './WearableCard'
+import { EquippedItemCard } from './EquippedItemCard'
 import { showConfirm, showDialog, PopupHost } from './popups'
-import type { IconName } from './icons'
+import { Icon, type IconName } from './icons'
 import { ChatBubble, DaySeparator, MemberRow } from '../features/chat/Chat'
+import { seedProfiles } from '../features/session/profileStore'
 import { EmoteSlot } from '../features/emotes/EmoteSlot'
 import { catalystThumbUrl } from '../lib/identity'
+
+// A chat bubble resolves its sender through the profile store, so the demo line's author is seeded.
+const MOJITO = '0x5854cce95d5e25817b41f4c41f06b695a83bc495'
+seedProfiles([{ address: MOJITO, name: 'Mojito' }])
 
 const EMOTE_RARITIES = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
 const SLOT_THUMB = catalystThumbUrl('urn:decentraland:off-chain:base-emotes:raisehand')
@@ -131,6 +142,11 @@ export function Showcase(): React.JSX.Element {
   const [on, setOn] = useState(true)
   const [vol, setVol] = useState(60)
   const [res, setRes] = useState('1080')
+  const [name, setName] = useState('robtfm')
+  const [bio, setBio] = useState('')
+  const [dob, setDob] = useState('2003-02-01')
+  const [pillTab, setPillTab] = useState('wearables')
+  const [lineTab, setLineTab] = useState('friends')
   return (
     <div style={wrap}>
       {/* Showcase renders instead of Hud, so it hosts its own popup layer for the dialog demos below. */}
@@ -258,6 +274,32 @@ export function Showcase(): React.JSX.Element {
         </div>
       </Section>
 
+      <Section title="Tabs (pill · underline — arrows/Home/End move the selection)">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 420 }}>
+          <Tabs
+            aria-label="Pill example"
+            value={pillTab}
+            onChange={setPillTab}
+            items={[
+              { id: 'wearables', label: 'Wearables', icon: <Bag size={14} /> },
+              { id: 'emotes', label: 'Emotes' },
+              { id: 'outfits', label: 'Outfits', iconAfter: <Pin size={14} /> }
+            ]}
+          />
+          <Tabs
+            variant="underline"
+            aria-label="Underline example"
+            value={lineTab}
+            onChange={setLineTab}
+            items={[
+              { id: 'friends', label: 'Friends', icon: <People size={14} /> },
+              { id: 'requests', label: 'Requests', badge: 3 },
+              { id: 'blocked', label: 'Blocked', disabled: true }
+            ]}
+          />
+        </div>
+      </Section>
+
       <Section title="Form controls">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 320 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -268,6 +310,20 @@ export function Showcase(): React.JSX.Element {
             <span style={{ fontSize: 14, width: 60 }}>Volume</span>
             <Slider value={vol} onChange={setVol} aria-label="Volume" />
             <span style={{ fontSize: 13, color: 'var(--ink-45)', width: 32 }}>{vol}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 14 }}>Display name</span>
+            <TextInput value={name} onChange={setName} placeholder="Your name" maxLength={15} />
+            <TextInput value={name} onChange={setName} variant="light" placeholder="light variant" maxLength={15} />
+            <TextInput value="not-a-url" onChange={() => {}} invalid aria-label="Invalid example" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 14 }}>About me</span>
+            <TextArea value={bio} onChange={setBio} placeholder="Tell people about yourself" maxLength={400} counter />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 14 }}>Birth date (no native picker — see DateField)</span>
+            <DateField label="Birth date" value={dob} onChange={setDob} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 14 }}>Resolution</span>
@@ -389,18 +445,26 @@ export function Showcase(): React.JSX.Element {
         </div>
       </Section>
 
+      <Section title="EquippedItemCard (passport)">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 108px)', gap: 12 }}>
+          {(['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic', 'base'] as Rarity[]).map((r, i) => (
+            <EquippedItemCard
+              key={r}
+              name={`${r[0].toUpperCase()}${r.slice(1)} Item`}
+              rarity={r}
+              shopUrl={i % 2 === 0 ? 'https://decentraland.org/shop/item/0xa42e166edac870aa5351b098ae6458d39ca0fca6/0' : undefined}
+              categoryIcon={<Icon name="emotes" size={15} />}
+            />
+          ))}
+        </div>
+      </Section>
+
       <Section title="Chat components">
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'rgba(19,19,19,0.6)', borderRadius: 14 }}>
             <DaySeparator ts={Date.now()} />
-            <ChatBubble
-              line={{ id: 1, sender: '0x5854cce95d5e25817b41f4c41f06b695a83bc495', message: 'gm everyone 👋 welcome to the plaza', channel: 'Nearby', ts: Date.now() }}
-              name="Mojito"
-            />
-            <ChatBubble
-              line={{ id: 2, sender: 'system', message: 'Type /help for available commands.', channel: 'System', ts: Date.now() }}
-              name="DCL System"
-            />
+            <ChatBubble line={{ id: 1, sender: MOJITO, message: 'gm everyone 👋 welcome to the plaza', channel: 'Nearby', ts: Date.now() }} />
+            <ChatBubble line={{ id: 2, sender: 'system', message: 'Type /help for available commands.', channel: 'System', ts: Date.now() }} />
           </div>
           <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 2, padding: 8, background: 'rgba(12,11,14,0.97)', borderRadius: 14 }}>
             <MemberRow member={{ address: '0x5854cce95d5e25817b41f4c41f06b695a83bc495', name: 'Mojito', picture: 'https://profile-images.decentraland.org/entities/bafkreid5btlh76opew65hxu6dtkdo6ybqhymdof6vrrmjy2p5a74oy4huq/face.png' }} />

@@ -42,8 +42,12 @@ struct ServerResponseError {
     message: String,
 }
 
-const AUTH_FRONT_URL: &str = "https://decentraland.org/auth/requests";
-const AUTH_SERVER_ENDPOINT_URL: &str = "https://auth-api.decentraland.org/requests";
+fn auth_front_url() -> String {
+    common::base_domain::url(common::base_domain::Service::AuthPage, "/requests")
+}
+fn auth_server_endpoint_url() -> String {
+    common::base_domain::url(common::base_domain::Service::AuthApi, "/requests")
+}
 const AUTH_SERVER_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 const AUTH_SERVER_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -61,7 +65,7 @@ async fn fetch_server(req_id: String) -> Result<(Address, serde_json::Value), an
         }
         attempt += 1;
 
-        let url = format!("{AUTH_SERVER_ENDPOINT_URL}/{req_id}");
+        let url = format!("{}/{req_id}", auth_server_endpoint_url());
         let response = reqwest::Client::builder()
             .use_native_tls()
             .build()
@@ -125,7 +129,7 @@ async fn init_request(request: CreateRequest) -> Result<InitializedRequest, anyh
         .use_native_tls()
         .build()
         .unwrap()
-        .post(AUTH_SERVER_ENDPOINT_URL)
+        .post(auth_server_endpoint_url())
         .header("Content-Type", "application/json")
         .timeout(AUTH_SERVER_TIMEOUT)
         .body(body)
@@ -143,7 +147,10 @@ async fn init_request(request: CreateRequest) -> Result<InitializedRequest, anyh
 }
 
 async fn finish_request(request_id: String) -> Result<(Address, serde_json::Value), anyhow::Error> {
-    let url = format!("{AUTH_FRONT_URL}/{request_id}?targetConfigId=alternative");
+    let url = format!(
+        "{}/{request_id}?targetConfigId=alternative",
+        auth_front_url()
+    );
     opener::open_browser(url)?;
 
     fetch_server(request_id).await

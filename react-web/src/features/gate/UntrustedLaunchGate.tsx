@@ -1,5 +1,7 @@
-// Interstitial for a link that picks its own super-user scene (`?systemScene=`) — see
-// lib/systemScene.ts for why that parameter is worth stopping on.
+// Interstitial for a link that carries an infrastructure-pointing parameter (lib/launchGate.ts
+// decides which, and supplies the per-param copy): its own super-user scene (`?systemScene=` — see
+// lib/systemScene.ts for why that is worth stopping on) and/or its own backend deployment
+// (`?baseDomain=` — see lib/baseDomain.ts).
 //
 // Not dismissible: ModalShell is scrimless (its host owns the overlay, Escape and focus — see
 // design/Modal.tsx), so this gate draws its own inert full-screen layer and `closeButton={false}`
@@ -12,6 +14,7 @@
 
 import { useState } from 'react'
 import { Button, DclLogo, ModalShell } from '../../design'
+import type { UntrustedParam } from '../../lib/launchGate'
 import styles from './UntrustedLaunchGate.module.css'
 
 // A tab the user opened themselves can't be closed by script, so send them somewhere safe instead.
@@ -23,10 +26,10 @@ function exitApplication(): void {
 const TITLE = 'This Launch Link Is Not Trusted'
 
 export function UntrustedLaunchGate({
-  systemScene,
+  params,
   onProceed
 }: {
-  systemScene: string
+  params: UntrustedParam[]
   onProceed: () => void
 }): React.JSX.Element {
   const [advanced, setAdvanced] = useState(false)
@@ -71,18 +74,19 @@ export function UntrustedLaunchGate({
       >
         <p className={styles.lead}>Someone may be trying to change how your Explorer behaves.</p>
         <p className={styles.lead}>
-          This link carries a parameter the Explorer does not accept from links, because it replaces the
-          interface with code that runs as you:
+          This link carries {params.length > 1 ? 'parameters' : 'a parameter'} the Explorer does not accept
+          from links:
         </p>
 
         <dl className={styles.params}>
-          <dt>
-            systemScene = <span className={styles.paramValue}>{systemScene}</span>
-          </dt>
-          <dd className={styles.paramDesc}>
-            Replaces the Explorer&apos;s interface with a scene loaded from this address. It can move
-            your avatar, change your profile, and answer permission prompts on your behalf.
-          </dd>
+          {params.map((p) => (
+            <div key={p.name}>
+              <dt>
+                {p.name} = <span className={styles.paramValue}>{p.value}</span>
+              </dt>
+              <dd className={styles.paramDesc}>{p.warning}</dd>
+            </div>
+          ))}
         </dl>
 
         <p className={styles.lead}>Unless you built this link yourself, the safe choice is to exit.</p>

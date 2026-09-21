@@ -36,7 +36,7 @@ impl Plugin for PointerLockPlugin {
 #[derive(Component)]
 pub struct CumulativePointerDelta {
     pub delta: Vec2,
-    pub since: f32,
+    pub since: f64,
 }
 
 #[derive(Component)]
@@ -51,7 +51,7 @@ impl From<PbPointerLock> for PointerLock {
 #[derive(SystemParam)]
 pub struct CameraInteractionState<'w, 's> {
     input_manager: InputManager<'w, 's>,
-    state: Local<'s, (ClickState, f32)>,
+    state: Local<'s, (ClickState, f64)>,
     time: Res<'w, Time>,
     _p: PhantomData<&'s ()>,
 }
@@ -70,14 +70,14 @@ impl CameraInteractionState<'_, '_> {
         match self.state.0 {
             ClickState::None | ClickState::Released => {
                 if self.input_manager.just_down(action, InputPriority::None) {
-                    *self.state = (ClickState::Held, self.time.elapsed_secs());
+                    *self.state = (ClickState::Held, self.time.elapsed_secs_f64());
                 } else {
                     self.state.0 = ClickState::None;
                 }
             }
             ClickState::Held => {
                 if self.input_manager.just_up(action) {
-                    if self.time.elapsed_secs() - self.state.1 > 0.25 {
+                    if self.time.elapsed_secs_f64() - self.state.1 > 0.25 {
                         self.state.0 = ClickState::Released;
                     } else {
                         self.state.0 = ClickState::Clicked;

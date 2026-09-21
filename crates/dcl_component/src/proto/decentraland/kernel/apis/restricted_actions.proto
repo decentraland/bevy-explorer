@@ -2,6 +2,7 @@ syntax = "proto3";
 package decentraland.kernel.apis;
 
 import "decentraland/common/vectors.proto";
+import "decentraland/sdk/components/common/explorer_ui.proto";
 
 message MovePlayerToRequest {
   decentraland.common.Vector3 new_relative_position = 1;
@@ -11,7 +12,12 @@ message MovePlayerToRequest {
 }
 
 message TeleportToRequest {
-  decentraland.common.Vector2 world_coordinates = 1;
+  // The parcel to land on. Omitted: the realm's default spawn (only meaningful with `realm`).
+  optional decentraland.common.Vector2 world_coordinates = 1;
+  // The realm the parcel belongs to: a world name (`foo.dcl.eth`) or a realm url. When set, the
+  // client changes realm (a full reconnect, even to the realm the player is in) and lands on the
+  // parcel there. Omitted: the parcel is in the player's current realm.
+  optional string realm = 2;
 }
 
 message TriggerEmoteRequest {
@@ -54,6 +60,25 @@ message MovePlayerToResponse {
 
 message TeleportToResponse { }
 
+// Verdict of an OpenExplorerUi request (enum rather than a bool so new outcomes stay expressible).
+enum OpenExplorerUiResult {
+  UNSPECIFIED = 0;
+  OPENED = 1;
+  WAS_ALREADY_OPEN = 2;             // a fullscreen panel is already open
+  REJECTED_NOT_CURRENT_SCENE = 3;   // the standard restricted-actions current-scene gate rejected the call
+  REJECTED_FEATURE_DISABLED = 4;    // the requested section is hidden by feature flags or client doesn't have that feature
+  REJECTED_NO_USER_GESTURE = 5;     // rejected: the call did not originate from a user gesture
+}
+
+message OpenExplorerUiRequest {
+  decentraland.sdk.components.common.ExplorerUi ui = 1;
+}
+
+message OpenExplorerUiResponse {
+  // Carries only the verdict of the open action.
+  OpenExplorerUiResult open_result = 1;
+}
+
 service RestrictedActionsService {
   // MovePlayerTo will move the player to a position relative to the current scene.
   // If 'duration' field is used in the request, the success response depends on the
@@ -66,6 +91,7 @@ service RestrictedActionsService {
   // TriggerEmote will trigger an emote in this current user
   rpc TriggerEmote(TriggerEmoteRequest) returns (TriggerEmoteResponse) {}
 
+  // @deprecated, use TeleportTo with `realm` (and no `world_coordinates` for the realm's default spawn)
   // ChangeRealm prompts the user to change to a specific realm
   rpc ChangeRealm(ChangeRealmRequest) returns (SuccessResponse) {}
 
@@ -81,4 +107,7 @@ service RestrictedActionsService {
 
   // TriggerSceneEmote will trigger an scene emote file in this current user
   rpc TriggerSceneEmote(TriggerSceneEmoteRequest) returns (SuccessResponse) {}
+
+  // OpenExplorerUi opens a specific fullscreen explorer panel and returns the open verdict.
+  rpc OpenExplorerUi(OpenExplorerUiRequest) returns (OpenExplorerUiResponse) {}
 }

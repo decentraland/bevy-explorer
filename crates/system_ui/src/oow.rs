@@ -23,7 +23,7 @@ use crate::change_realm::ChangeRealmDialog;
 /// Extracts scene loading info: (title, pending_assets_count)
 fn get_scene_loading_info(
     player: Entity,
-    now: f32,
+    now: f64,
     containing_scene: &ContainingScene,
     scenes: &Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
 ) -> (String, Option<u32>) {
@@ -41,7 +41,7 @@ fn get_scene_loading_info(
     // script is stalling. Surface a countdown to the not-responding timeout, after which
     // handle_out_of_world lets the player into the world.
     if let Some((context, _)) = scene {
-        let in_flight_for = now - context.last_sent;
+        let in_flight_for = (now - context.last_sent) as f32;
         if pending_assets.unwrap_or(0) == 0
             && context.in_flight()
             && in_flight_for >= SCENE_NOT_RESPONDING_DISPLAY_AFTER.as_secs_f32()
@@ -98,7 +98,7 @@ fn update_loading_scene_dialog(
     };
 
     let (title_text, pending_assets) =
-        get_scene_loading_info(player, time.elapsed_secs(), &containing_scene, &scenes);
+        get_scene_loading_info(player, time.elapsed_secs_f64(), &containing_scene, &scenes);
     let state_text = pending_assets
         .map(|count| format!("{} assets", count))
         .unwrap_or_else(|| "assets".to_owned());
@@ -146,7 +146,7 @@ struct LogoPulse;
 fn animate_logo_pulse(mut logos: Query<&mut ImageNode, With<LogoPulse>>, time: Res<Time>) {
     for mut img in logos.iter_mut() {
         // ping-pong opacity 0.5..1.0 over 1 second
-        let alpha = 0.75 + 0.25 * (time.elapsed_secs() * TAU).sin();
+        let alpha = (0.75 + 0.25 * (time.elapsed_secs_f64() * TAU as f64).sin()) as f32;
         img.color = img.color.with_alpha(alpha);
     }
 }
@@ -265,7 +265,7 @@ fn pipe_scene_loading_ui_stream(
 
     let current_state = if let (true, Ok(player)) = (visible, player.single()) {
         let (title, pending_assets) =
-            get_scene_loading_info(player, time.elapsed_secs(), &containing_scene, &scenes);
+            get_scene_loading_info(player, time.elapsed_secs_f64(), &containing_scene, &scenes);
         SceneLoadingUi {
             visible: true,
             realm_connected: current_realm.connected,

@@ -14,9 +14,9 @@ import type { Outfit, OutfitsMetadata, RGBColor } from '../../../src/engine/prot
 
 // The Bevy engine injects a persistent localStorage into system scenes (same as bevy-ui-scene).
 declare const localStorage: {
-  getItem(key: string): string | null
-  setItem(key: string, value: string): void
-  removeItem(key: string): void
+  getItem: (key: string) => string | null
+  setItem: (key: string, value: string) => void
+  removeItem: (key: string) => void
 }
 
 const EMPTY: OutfitsMetadata = { outfits: [], namesForExtraSlots: [] }
@@ -65,7 +65,7 @@ function currentOutfit(player: NonNullable<ReturnType<typeof getPlayer>>): Outfi
 }
 
 export function registerOutfits(ctx: Ctx): void {
-  const emit = (metadata: OutfitsMetadata): void => ctx.send({ kind: 'outfits', metadata })
+  const emit = (metadata: OutfitsMetadata): void => { ctx.send({ kind: 'outfits', metadata }); }
 
   ctx.on('getOutfits', async () => {
     const me = getPlayer()

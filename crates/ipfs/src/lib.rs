@@ -66,7 +66,9 @@ use platform::ReqwestBuilderExt;
 #[cfg(feature = "ipfs_debug")]
 use crate::ipfs_debug::{IpfsDebug, IpfsDebugReceiver, IpfsDebugStatus};
 
-use self::ipfs_path::{normalize_path, IpfsKey, IpfsPath, IpfsType};
+use common::util::JoinRelativeExt;
+
+use self::ipfs_path::{content_file_path, IpfsKey, IpfsPath, IpfsType};
 
 const IPFS_IN_FLIGHT_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_IN_FLIGHT");
 static IPFS_IN_FLIGHT: AtomicU32 = AtomicU32::new(0);
@@ -145,10 +147,12 @@ impl EntityDefinitionLoader {
             // if the source was an empty vec, we have loaded a pointer with no content, just set default
             return Ok(EntityDefinition::default());
         };
-        let content =
-            ContentMap(HashMap::from_iter(definition_json.content.into_iter().map(
-                |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
-            )));
+        let content = ContentMap::from_content(
+            definition_json
+                .content
+                .into_iter()
+                .map(|ipfs| (ipfs.file, ipfs.hash)),
+        );
         let id = definition_json.id.unwrap_or_else(id_fn);
 
         let definition = EntityDefinition {
@@ -224,12 +228,29 @@ impl AssetLoader for SceneJsLoader {
 pub struct ContentMap(pub HashMap<String, String>);
 
 impl ContentMap {
-    // keys are stored lowercase with '/' separators (the dev server normalizes the
-    // same way); lookups mirror that so backslashed srcs still resolve
+    /// Keys are stored lowercase, and put through the same [`content_file_path`] the access side
+    /// applies to a requested file, so the two agree. Anything the access side makes relative
+    /// (`c:/x.png`, `/x.png`) would otherwise be deployable but unreferenceable.
+    fn key(file: &str) -> String {
+        content_file_path(file).to_lowercase()
+    }
+
+    pub fn from_content(content: impl IntoIterator<Item = (String, String)>) -> Self {
+        let mut map = HashMap::<String, String>::default();
+        for (file, hash) in content {
+            let key = Self::key(&file);
+            if let Some(prev) = map.get(&key) {
+                if *prev != hash {
+                    warn!("content map key `{key}` collision: `{prev}` shadowed by `{hash}`");
+                }
+            }
+            map.insert(key, hash);
+        }
+        Self(map)
+    }
+
     pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, str>> {
-        self.0
-            .get(file.replace('\\', "/").to_lowercase().as_str())
-            .map(Into::into)
+        self.0.get(Self::key(file).as_str()).map(Into::into)
     }
 
     pub fn files(&self) -> impl Iterator<Item = &String> {
@@ -241,11 +262,11 @@ impl ContentMap {
     }
 
     pub fn new_single(file: String, hash: String) -> Self {
-        Self(HashMap::from_iter([(file, hash)]))
+        Self::from_content([(file, hash)])
     }
 
     pub fn with(mut self, file: String, hash: String) -> Self {
-        self.0.insert(file.replace('\\', "/").to_lowercase(), hash);
+        self.0.insert(Self::key(&file), hash);
         self
     }
 }
@@ -574,6 +595,8 @@ impl Plugin for IpfsIoPlugin {
 pub enum RealmInitialLocation {
     None,
     Base,
+    /// Land on this parcel of the new realm (a teleport that named its realm).
+    Parcel(IVec2),
 }
 
 /// Switch to a new realm
@@ -684,7 +707,10 @@ pub fn change_realm(
 
 pub fn map_realm_name(request: &str) -> String {
     if request.ends_with(".dcl.eth") && !request.starts_with("https://") {
-        format!("https://worlds-content-server.decentraland.org/world/{request}")
+        common::base_domain::url(
+            common::base_domain::Service::WorldsServer,
+            &format!("/world/{request}"),
+        )
     } else {
         request.to_owned()
     }
@@ -1036,7 +1062,8 @@ impl IpfsIo {
     /// True if bytes for `hash` are already in the on-disk content cache.
     pub fn is_cached(&self, hash: &str) -> bool {
         self.cache_path()
-            .map(|p| p.join(hash).exists())
+            .and_then(|p| p.join_relative(hash))
+            .map(|p| p.exists())
             .unwrap_or(false)
     }
 
@@ -1047,13 +1074,16 @@ impl IpfsIo {
         let Some(cache_path) = self.cache_path() else {
             return Ok(());
         };
-        let mut part = PathBuf::from(cache_path);
-        part.push(format!("{hash}.part"));
+        // `hash` is supplied by the caller, so it must not steer the write out of the cache dir
+        let (Some(part), Some(final_path)) = (
+            cache_path.join_relative(format!("{hash}.part")),
+            cache_path.join_relative(hash),
+        ) else {
+            anyhow::bail!("refusing to cache under `{hash}`");
+        };
         let mut f = async_fs::File::create(&part).await?;
         f.write_all(data).await?;
         f.sync_all().await?;
-        let mut final_path = PathBuf::from(cache_path);
-        final_path.push(hash);
         async_fs::rename(&part, &final_path).await?;
         Ok(())
     }
@@ -1118,9 +1148,10 @@ impl IpfsIo {
                         let id = entity.id.as_ref().unwrap();
                         // cache to file system
 
-                        if let Some(cache_path) = &maybe_cache_path {
-                            let cache_path = cache_path.join(id);
-
+                        // `id` is read straight out of the response body
+                        if let Some(cache_path) =
+                            maybe_cache_path.as_ref().and_then(|p| p.join_relative(id))
+                        {
                             if id.starts_with("b64-") || !cache_path.exists() {
                                 let mut file = async_fs::File::create(&cache_path).await?;
                                 let mut buf = Vec::default();
@@ -1135,11 +1166,12 @@ impl IpfsIo {
                             id: entity.id.unwrap(),
                             pointers: entity.pointers,
                             metadata: entity.metadata,
-                            content: ContentMap(HashMap::from_iter(
-                                entity.content.into_iter().map(|ipfs| {
-                                    (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)
-                                }),
-                            )),
+                            content: ContentMap::from_content(
+                                entity
+                                    .content
+                                    .into_iter()
+                                    .map(|ipfs| (ipfs.file, ipfs.hash)),
+                            ),
                         });
                     }
 
@@ -1546,8 +1578,11 @@ impl AssetReader for IpfsIo {
             if let Some(cache_path) = self.cache_path() {
                 if let Some(hash) = &hash {
                     debug!("hash: {}", hash);
-                    if !hash.starts_with("b64") {
-                        if let Ok(mut res) = self.default_io.read(&cache_path.join(hash)).await {
+                    let cached = (!hash.starts_with("b64"))
+                        .then(|| cache_path.join_relative(&**hash))
+                        .flatten();
+                    if let Some(cached) = cached {
+                        if let Ok(mut res) = self.default_io.read(&cached).await {
                             let mut daft_buffer = Vec::default();
                             ipfs_io_read_state
                                 .send_failure(res.read_to_end(&mut daft_buffer).await)?;
@@ -1587,7 +1622,7 @@ impl AssetReader for IpfsIo {
             }
             let remote = ipfs_io_read_state.send_failure(remote)?;
 
-            // file realm: a `file://` baseUrl (local static scene export, e.g. `--ui <dir>`)
+            // file realm: a `file://` baseUrl (local static scene export, e.g. `--system-scene <dir>`)
             // reads straight from disk — no cache write, no request slot, no retries.
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(local) = remote.strip_prefix("file://") {
@@ -1744,10 +1779,16 @@ impl AssetReader for IpfsIo {
                 break fetched.body;
             };
 
-            if let (Some(hash), Some(cache_path)) = (hash, self.cache_path()) {
+            // `hash` reaches us from the entity json, so it must not steer the cache path
+            let cache_paths = self.cache_path().zip(hash.as_ref()).and_then(|(root, h)| {
+                Some((
+                    root.join_relative(format!("{h}.part"))?,
+                    root.join_relative(&**h)?,
+                ))
+            });
+
+            if let (Some(hash), Some((cache_path, final_path))) = (hash, cache_paths) {
                 if !no_cache && ipfs_path.should_cache(&hash) {
-                    let mut cache_path = PathBuf::from(cache_path);
-                    cache_path.push(format!("{hash}.part"));
                     let cache_path_str = cache_path.to_string_lossy().into_owned();
                     // ignore errors trying to cache
                     match async_fs::File::create(&cache_path).await {
@@ -1760,9 +1801,6 @@ impl AssetReader for IpfsIo {
                             } else if let Err(e) = f.sync_all().await {
                                 warn!("failed to sync cache `{cache_path_str}`: {e}");
                             } else {
-                                let mut final_path = cache_path.clone();
-                                final_path.pop();
-                                final_path.push(hash);
                                 if let Err(e) = async_fs::rename(cache_path, &final_path).await {
                                     warn!("failed to rename cache item `{cache_path_str}`: {e}");
                                 } else {
@@ -2004,7 +2042,7 @@ fn b64_split_at_key<'a>(decoded: &'a str, key: &str) -> Option<(&'a str, &'a str
 
 #[cfg(test)]
 mod tests {
-    use super::b64_split_at_key;
+    use super::{b64_split_at_key, ContentMap};
 
     #[test]
     fn splits_unix_path() {
@@ -2040,5 +2078,27 @@ mod tests {
         let decoded = "C:\\Users\\bob\\scene\\models\\Tree.glb\u{0}1786032377138-my-pc";
         let split = b64_split_at_key(decoded, "models/tree.glb");
         assert_eq!(split, Some((r"C:\Users\bob\scene", "my-pc")));
+    }
+
+    #[test]
+    fn content_map_keys_match_the_access_side() {
+        let map = ContentMap::from_content([
+            ("c:/Textures/X.png".to_owned(), "hash_drive".to_owned()),
+            ("/a/Y.png".to_owned(), "hash_root".to_owned()),
+            (r"b\Z.png".to_owned(), "hash_bs".to_owned()),
+        ]);
+
+        // the drive/root forms resolved before the access side started forcing srcs relative;
+        // normalizing the keys the same way keeps them referenceable, under either spelling
+        for (src, expected) in [
+            ("c:/Textures/X.png", "hash_drive"),
+            ("Textures/X.png", "hash_drive"),
+            ("/a/Y.png", "hash_root"),
+            ("a/y.png", "hash_root"),
+            (r"b\Z.png", "hash_bs"),
+            ("b/z.png", "hash_bs"),
+        ] {
+            assert_eq!(map.hash(src).as_deref(), Some(expected), "{src}");
+        }
     }
 }

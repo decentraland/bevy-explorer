@@ -32,13 +32,11 @@ export function installCefNativeBridge(): void {
   })
   // (HUD focus — including text focus — now flows through the bridge scene as a 'uiFocus'
   // message on every platform; see useEngineSession. No engine-addressed messages remain.)
-  // Engine fps for the perf overlay and logical height for --ui-scale (see useFps/useHudScale).
+  // Engine fps for the perf overlay (see useFps). HUD geometry does NOT come through here:
+  // --ui-scale and the engine cutout rects are keyed off the scene's canvas report on every
+  // platform (see lib/uiCanvasStore.ts).
   cef.listen('engineFps', (v) => {
     ;(window as Window & { __nativeEngineFps?: number }).__nativeEngineFps = Number(v)
-  })
-  cef.listen('uiHeight', (v) => {
-    ;(window as Window & { __nativeUiHeight?: number }).__nativeUiHeight = Number(v)
-    window.dispatchEvent(new Event('resize'))
   })
   // Engine-side text focus (scene textinput / engine text box): keys forward to this page
   // unconditionally, so the systemAction dispatcher needs the same don't-treat-keys-as-shortcuts

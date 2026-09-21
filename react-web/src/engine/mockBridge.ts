@@ -6,15 +6,18 @@
 import {
   bridgeChannelName,
   type BindingEntry,
+  type Emote,
   type Envelope,
   type Outfit,
   type OutfitsMetadata,
   type PageToScene,
   type Profile,
+  type ProfileEdit,
   type SceneToPage,
   type Setting,
   type Wearable
 } from './protocol'
+import { applyProfileEdit } from './profileEdit'
 
 // A fully-populated passport for the mock, so the React passport shows every section.
 function richProfile(address: string, name: string, isGuest: boolean): Profile {
@@ -33,12 +36,16 @@ function richProfile(address: string, name: string, isGuest: boolean): Profile {
     mutuals: 30,
     badges: Array.from({ length: 8 }, (_, i) => ({ id: `b${i}`, name: `Badge ${i + 1}`, tier: ['bronze', 'silver', 'gold'][i % 3], image: `https://picsum.photos/seed/badge${i}/96/96` })),
     photos: Array.from({ length: 6 }, (_, i) => `https://picsum.photos/seed/photo${i}/300/300`),
+    equippedWearables: equippedNow(),
+    equippedEmotes: mockEquippedEmotes(),
     info: {
       gender: 'Male',
-      birthdate: '26/11/1991',
+      birthdate: '1991-11-26',
       pronouns: 'He / Him',
       relationship: 'Single',
+      sexualOrientation: 'Heterosexual',
       language: 'Persian',
+      country: 'Argentina',
       profession: 'IT',
       employment: 'Chilling',
       hobby: 'games.movie.party',
@@ -127,7 +134,27 @@ const mockOutfit = (urns: string[]): Outfit => ({
 const MOCK_OFF_CATALOG_EQUIPPED: Wearable[] = [
   { urn: 'urn:decentraland:off-chain:base-avatars:thug_life', name: 'Off-catalog Eyewear', rarity: 'epic', category: 'eyewear', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:black_sun_glasses'), equipped: true }
 ]
-const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED]
+// Equipped collectibles, both carrying the shopUrl the scene resolves (→ the passport shows the SHOP
+// hover button): a collections-v2 item, whose urn already ends in the numeric item id, and a legacy
+// collections-v1 item, whose slug urn needs the marketplace lookup to reach item 3. Base/off-chain
+// wearables have no listing and so never get one.
+const MOCK_COLLECTIBLE_EQUIPPED: Wearable[] = [
+  { urn: 'urn:decentraland:matic:collections-v2:0xa42e166edac870aa5351b098ae6458d39ca0fca6:0', name: 'Neon Tiara', rarity: 'legendary', category: 'tiara', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hat'), equipped: true, shopUrl: 'https://decentraland.org/shop/item/0xa42e166edac870aa5351b098ae6458d39ca0fca6/0' },
+  { urn: 'urn:decentraland:ethereum:collections-v1:mf_sammichgamer:mf_animehair', name: 'Anime warrior hair', rarity: 'legendary', category: 'hair', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hair_anime_01'), equipped: true, shopUrl: 'https://decentraland.org/shop/item/0x30d3387ff3de2a21bef7032f82d00ff7739e403c/3' }
+]
+const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED, ...MOCK_COLLECTIBLE_EQUIPPED]
+
+// The 10 wheel-slot base emotes — shared by getEmotes (the wheel) and the passport's Equipped
+// Emotes section, so both mocks agree.
+const MOCK_EMOTE_NAMES = ['Hands Air', 'Wave', 'Fist Pump', 'Dance', 'Raise Hand', 'Clap', 'Money', 'Kiss', 'Head Explode', 'Shrug']
+const mockEquippedEmotes = (): Emote[] =>
+  // No `thumbnail` field — mirrors the scene relay so we validate URN-derived thumbnails too.
+  MOCK_EMOTE_NAMES.map((name, slot) => ({
+    slot,
+    urn: `urn:decentraland:off-chain:base-emotes:${name.toLowerCase().replace(/ /g, '')}`,
+    name,
+    rarity: 'base'
+  }))
 
 const v = (name: string): { name: string; description: string } => ({ name, description: '' })
 
@@ -193,6 +220,18 @@ const defaultBindings = (): BindingEntry[] => [
   [{ System: 'Friends' }, ['KeyL']],
   [{ System: 'ChatPanel' }, ['KeyT']]
 ]
+
+// Saved profile edits, in order. Applied over the mock's stock passport so an edit made in ?mock=1
+// sticks for the rest of the session — the real bridge gets the same effect by folding the save
+// into its catalyst cache.
+const ownEdits: ProfileEdit[] = []
+/** The returning mock user holds two NAMEs; a guest holds none. */
+const ownedNamesOf = (o: MockOptions): string[] => (o.hasPreviousLogin ? ['Mojito', 'MojitoDCL'] : [])
+const ownProfile = (o: MockOptions): Profile =>
+  ownEdits.reduce<Profile>(
+    (p, edit) => applyProfileEdit(p, edit, ownedNamesOf(o)),
+    richProfile(o.userId, o.hasPreviousLogin ? 'Mojito' : 'Guest#beef', !o.hasPreviousLogin)
+  )
 
 interface MockOptions {
   /** Simulate a returning user (reuse-login flow) vs a fresh user. */
@@ -329,8 +368,12 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
 
   // Simulate the engine spawning the player + loading the spawn scene after a
   // successful login: player-ready, then a scene-asset countdown, then "done".
+  // Mirrors the real session domain's latch, so a page that says hello after the player spawned
+  // (a reload) is re-told, as the bridge scene does.
+  let playerSpawned = false
   const spawnPlayer = (): void => {
     setTimeout(() => {
+      playerSpawned = true
       reply({ kind: 'event', name: 'playerReady' })
       reply({ kind: 'chatVisibility', open: true })
       // Two-step countdown then done — kept short so a throttled/backgrounded tab
@@ -458,6 +501,14 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     const env = e.data
     if (env?.to !== 'scene') return
     const msg: PageToScene = env.msg
+
+    // Answered before the simulated latency: the page holds everything else until this lands.
+    if (msg.kind === 'hello') {
+      reply({ kind: 'bridgeReady' })
+      if (playerSpawned) reply({ kind: 'event', name: 'playerReady' })
+      return
+    }
+
     await wait(o.latency)
 
     if (msg.kind === 'sendChat') {
@@ -501,17 +552,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'getEmotes') {
-      const names = ['Hands Air', 'Wave', 'Fist Pump', 'Dance', 'Raise Hand', 'Clap', 'Money', 'Kiss', 'Head Explode', 'Shrug']
-      reply({
-        kind: 'emotes',
-        // The 10 default emotes are all 'base' rarity (matches the real relay). Custom
-        // equipped emotes would carry their own rarity from the catalog. No `thumbnail`
-        // field — mirrors the scene relay so we validate URN-derived thumbnails too.
-        emotes: names.map((name, slot) => {
-          const urn = `urn:decentraland:off-chain:base-emotes:${name.toLowerCase().replace(/ /g, '')}`
-          return { slot, urn, name, rarity: 'base' }
-        })
-      })
+      reply({ kind: 'emotes', emotes: mockEquippedEmotes() })
       return
     }
     if (msg.kind === 'triggerEmote') return // no-op in the mock
@@ -707,16 +748,40 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'getProfile') {
-      reply({
-        kind: 'profile',
-        profile: richProfile(o.userId, o.hasPreviousLogin ? 'Mojito' : 'Guest#beef', !o.hasPreviousLogin)
-      })
+      reply({ kind: 'profile', profile: ownProfile(o) })
+      return
+    }
+    if (msg.kind === 'getOwnedNames') {
+      reply({ kind: 'ownedNames', names: ownedNamesOf(o) })
+      return
+    }
+    if (msg.kind === 'saveProfile') {
+      const { kind: _kind, ...edit } = msg
+      // `robtfmfail` is the mock's failure switch: renaming to it exercises the error path (the
+      // engine rejects a deploy the same way) without needing a broken catalyst.
+      if (edit.name === 'robtfmfail') {
+        reply({ kind: 'profileSaved', ok: false, error: 'failed to deploy to server.' })
+        return
+      }
+      ownEdits.push(edit)
+      reply({ kind: 'profileSaved', ok: true })
+      reply({ kind: 'profile', profile: ownProfile(o) })
       return
     }
     if (msg.kind === 'getUserProfile') {
+      if (msg.address.toLowerCase() === o.userId.toLowerCase()) {
+        reply({ kind: 'userProfile', address: msg.address, profile: ownProfile(o) })
+        return
+      }
       // Resolve a real name from the nearby roster (real engine gets it from the catalyst).
       const member = MOCK_NEARBY.find((m) => m.address.toLowerCase() === msg.address.toLowerCase())
       const name = member?.name || `${msg.address.slice(0, 6)}…${msg.address.slice(-4)}`
+      if (msg.extras !== true) {
+        // Like the engine, hold nothing for someone never seen: a friend's seeded name stays.
+        const profile = member == null ? null : { address: msg.address, name, picture: member.picture, hasClaimedName: !name.includes('#'), isGuest: false }
+        reply({ kind: 'userProfile', address: msg.address, profile })
+        return
+      }
       reply({ kind: 'userProfile', address: msg.address, profile: richProfile(msg.address, name, false) })
       return
     }

@@ -25,33 +25,37 @@ option (common.ecs_component_id) = 1062;
 // --------------
 // PointerEvents can enforce interaction range using two independent distance checks:
 //
-// - Camera distance (`max_distance`): distance from the active camera to the target entity.
-// - Player distance (`max_player_distance`): distance from the avatar/player position to the target entity.
+// - Player distance (`max_distance`): distance from the avatar/player position to the target entity.
+// - Camera distance (`max_camera_distance`): distance from the active camera to the target entity.
+//
+// `max_player_distance` is deprecated: it is an alias for `max_distance` (both are player distance).
+// If both are present, the larger of the two is used as the player distance threshold.
 //
 // How the interaction checks are combined:
 //
 // 1) Only `max_distance` is present
-//    - The interaction is allowed only if the camera distance is <= `max_distance`.
+//    - The interaction is allowed only if the player distance is <= `max_distance`.
 //
-// 2) Only `max_player_distance` is present
-//    - The interaction is allowed only if the player distance is <= `max_player_distance`.
+// 2) Only `max_camera_distance` is present
+//    - The interaction is allowed only if the camera distance is <= `max_camera_distance`.
 //
-// 3) Both `max_distance` and `max_player_distance` are present
+// 3) Both `max_distance` and `max_camera_distance` are present
 //    - The interaction is allowed if ANY of the checks passes (OR logic):
-//      (camera distance <= `max_distance`) OR (player distance <= `max_player_distance`).
+//      (player distance <= `max_distance`) OR (camera distance <= `max_camera_distance`).
 //
-// 4) Neither `max_distance` nor `max_player_distance` is present
+// 4) Neither `max_distance` nor `max_camera_distance` is present
 //    - The system behaves as if `max_distance` were set to its default value (10),
-//      i.e., it uses the camera distance check with a threshold of 10.
+//      i.e., it uses the player distance check with a threshold of 10.
 message PBPointerEvents {
   message Info {
     optional common.InputAction button = 1; // key/button in use (default IA_ANY)
     optional string hover_text = 2;         // feedback on hover (default 'Interact')
-    optional float max_distance = 3;        // range of interaction (default 10)
+    optional float max_distance = 3;        // range of interaction from the avatar's position (default 10)
     optional bool show_feedback = 4;        // enable or disable hover text and highlight (default true)
     optional bool show_highlight = 5;       // enable or disable hover highlight (default true)
-    optional float max_player_distance = 6; // range of interaction from the avatar's position (default 0)
+    optional float max_player_distance = 6; // @deprecated use `max_distance` instead (same semantics)
     optional uint32 priority = 7;           // resolution order when multiple events overlap, higher wins (default 0)
+    optional float max_camera_distance = 8; // range of interaction from the active camera's position (default none)
   }
 
   message Entry {

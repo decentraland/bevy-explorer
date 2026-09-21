@@ -41,12 +41,26 @@ let lastShapeKey = ''
 // avatar wears these urns instead of the player's actual equipped set. null = no override.
 let previewUrns: string[] | null = null
 
-// TextureCamera resolution matching the cutout's aspect ratio, so a 1:1 stretch into the
-// rect never distorts the avatar (the column is tall/narrow; a square render would squash it).
+// Render-target bounds, physical px. Fit inside the engine's 2048 cap here — a one-axis
+// engine-side clamp would break the aspect.
+const MIN_RES = 256
+const MAX_RES = 2048
+
+// The page reports it with each rect; 1 is the safe read (CSS px == physical px).
+let dpr = 1
+
+// TextureCamera resolution: the cutout's physical pixels (CSS px x dpr) at its exact aspect,
+// so a 1:1 stretch never distorts and the render target follows the window.
 function camRes(r: Rect): { width: number; height: number } {
-  const h = 1600
   const aspect = r.height > 0 ? r.width / r.height : 0.55
-  return { width: Math.max(64, Math.round(h * aspect)), height: h }
+  let h = Math.min(MAX_RES, Math.max(MIN_RES, Math.round(r.height * dpr)))
+  let w = Math.max(64, Math.round(h * aspect))
+  if (w > MAX_RES) {
+    // ultra-wide cutout: fit the other way, keep the aspect
+    w = MAX_RES
+    h = Math.max(MIN_RES, Math.round(w / aspect))
+  }
+  return { width: w, height: h }
 }
 
 function avatarShape(): {
@@ -158,13 +172,14 @@ export function registerAvatarPreview(ctx: Ctx): void {
   ctx.on('engineViewport', (msg) => {
     if (msg.region !== 'avatarPreview') return
     rect = msg.rect
+    dpr = msg.dpr ?? 1
     if (rect == null) {
       disposePreview()
       return
     }
     if (avatarEntity == null) createPreview()
     else if (cameraEntity != null) {
-      // Window resized → keep the camera aspect matched to the new rect.
+      // Window resized → re-size the render target to the hole, not just re-aspect it.
       const res = camRes(rect)
       const cam = TextureCamera.getMutableOrNull(cameraEntity)
       if (cam != null && (cam.width !== res.width || cam.height !== res.height)) {

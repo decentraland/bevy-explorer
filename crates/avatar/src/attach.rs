@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use bevy::{
     app::{HierarchyPropagatePlugin, Propagate},
+    ecs::entity::Entities,
     prelude::*,
     render::mesh::MeshTag,
 };
@@ -57,13 +58,22 @@ impl From<PbAvatarAttach> for AvatarAttachment {
     }
 }
 
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_attached(
     mut commands: Commands,
-    attachments: Query<(Entity, &AvatarAttachment), Changed<AvatarAttachment>>,
+    attachments: Query<(
+        Entity,
+        Ref<AvatarAttachment>,
+        Option<&ParentPositionSync<AvatarAttachStage>>,
+    )>,
     mut removed_attachments: RemovedComponents<AvatarAttachment>,
     visibility_component: Query<&VisibilityComponent>,
     primary_user: Query<(Entity, &AttachPoints), With<PrimaryUser>>,
     all_users: Query<(Entity, &AttachPoints, &AvatarShape, Has<PrimaryUser>)>,
+    // an avatar appeared or changed this frame: retry attachments that missed
+    // their target, or whose target has since despawned
+    changed_avatars: Query<(), Or<(Added<AttachPoints>, Changed<AvatarShape>)>>,
+    entities: &Entities,
 ) {
     for removed in removed_attachments.read() {
         if let Ok(mut commands) = commands.get_entity(removed) {
@@ -86,7 +96,13 @@ pub fn update_attached(
         }
     }
 
-    for (ent, attach) in attachments.iter() {
+    let retry = !changed_avatars.is_empty();
+    for (ent, attach, current_sync) in attachments.iter() {
+        if !attach.is_changed()
+            && (!retry || current_sync.is_some_and(|sync| entities.contains(sync.sync_to)))
+        {
+            continue;
+        }
         let (is_primary, player, attach_points) = match attach.0.avatar_id.as_ref() {
             None => {
                 let Ok((player, data)) = primary_user.single() else {
@@ -101,14 +117,16 @@ pub fn update_attached(
                     .iter()
                     .find(|(_, _, avatar_shape, _)| avatar_shape.0.id.to_lowercase() == id)
                 else {
-                    warn!("avatar shape id {:?} not found", id);
-                    warn!(
-                        "available avatar shapes: {:?}",
-                        all_users
-                            .iter()
-                            .map(|(_, _, avatar_shape, _)| &avatar_shape.0.id)
-                            .collect::<Vec<_>>()
-                    );
+                    if attach.is_changed() {
+                        warn!("avatar shape id {:?} not found", id);
+                        warn!(
+                            "available avatar shapes: {:?}",
+                            all_users
+                                .iter()
+                                .map(|(_, _, avatar_shape, _)| &avatar_shape.0.id)
+                                .collect::<Vec<_>>()
+                        );
+                    }
                     continue;
                 };
                 (has_primary, player, attach_points)

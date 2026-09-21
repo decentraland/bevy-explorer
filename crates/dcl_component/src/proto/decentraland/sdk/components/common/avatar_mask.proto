@@ -1,0 +1,7 @@
+syntax = "proto3";
+package decentraland.sdk.components.common;
+
+// Mask for which bones an animation applies to.
+enum AvatarMask {
+  AM_UPPER_BODY = 0;
+}

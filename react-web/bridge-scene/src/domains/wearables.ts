@@ -1,11 +1,14 @@
 // Wearables / backpack: equipped wearables (category slots) + equipping, plus the paged owned
 // catalog fetcher used by the generic `catalog` domain.
 //   from: catalyst GET /explorer/:address/wearables (owned catalog, paged),
-//         GET /lambdas/collections/wearables?wearableId=… (equipped-by-urn resolve),
+//         GET /lambdas/collections/wearables (equipped-by-urn resolve, via ./collections),
 //         @dcl/sdk getPlayer().wearables (equipped), BevyApi.setAvatar (equip).
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
+import { resolveDefsByUrn, thumbnailUrl } from './collections'
+import { resolveShopUrls } from './marketplace'
+import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Wearable } from '../../../src/engine/protocol'
 
@@ -20,80 +23,19 @@ type CatalogElement = {
   entity?: { metadata?: { thumbnail?: string }; content?: Array<{ file: string; hash: string }> }
 }
 
-// Collection wearables must be referenced in the DEPLOYED profile by their full token URN
-// (…:{contract}:{itemId}:{tokenId}); the catalyst rejects the bare item URN with
-// "should be an item, not an asset. The URN must include the tokenId.". individualData carries the
-// owned tokenId per item, so we map item-urn → token-urn and send the token form on equip. Base
-// (off-chain) wearables have no tokenId and pass through unchanged. The map accumulates across
-// fetched pages + the equipped set, so any item the user has actually seen/equipped can be equipped.
+// item-urn → deployable token urn (see tokenUrnOf), what the equip handler sends. The map
+// accumulates across fetched pages + the equipped set, so any item the user has actually
+// seen/equipped can be equipped.
 const tokenUrnByItem = new Map<string, string>()
-
-function tokenUrnFor(el: CatalogElement): string {
-  const d = el.individualData?.[0]
-  if (d?.id != null && d.id.startsWith(`${el.urn}:`)) return d.id
-  if (d?.tokenId != null && d.tokenId !== '') return `${el.urn}:${d.tokenId}`
-  return el.urn
-}
 
 function accumulateTokens(elements: CatalogElement[]): void {
   for (const el of elements) {
-    const full = tokenUrnFor(el)
+    const full = tokenUrnOf(el)
     if (full !== el.urn) tokenUrnByItem.set(el.urn, full)
   }
 }
 
-// A deployed/owned urn may carry a tokenId (…:collections-v{1,2}:<contract>:<itemId>:<tokenId>);
-// the item form drops it. Both v1 (ethereum) and v2 (matic) items are 6 segments, so a trailing
-// token makes it >6 — strip it for either, else the equipped-set resolve (which needs the bare
-// item urn) misses the item and its category slot renders empty. Base urns pass through.
-function itemUrnOf(urn: string): string {
-  const parts = urn.split(':')
-  if ((parts[3] === 'collections-v2' || parts[3] === 'collections-v1') && parts.length > 6) {
-    return parts.slice(0, 6).join(':')
-  }
-  return urn
-}
-
-type WearableDef = { id: string; name?: string; rarity?: string; thumbnail?: string; data?: { category?: string } }
-
-// A wearable's DEFINITION (name/category/thumbnail/model/rarity) is stable enough within a session to
-// cache, though NOT truly immutable: a creator can re-publish edits (new content entity) under the
-// same urn. The cache is in-memory and session-lifetime, so at worst it serves stale metadata until a
-// reload — acceptable for the HUD. Cache defs by ITEM urn (tokenId already stripped by itemUrnOf;
-// every token of an item shares one entry) to serve repeat resolves — getWearables on reopen,
-// equipOutfit — from memory instead of re-hitting the catalyst. Mirrors bevy-ui-scene's
-// catalystMetadataMap. Misses aren't cached (a transient failure or a not-yet-resolvable urn is
-// retried next time).
-const defByItemUrn = new Map<string, WearableDef>()
-
-// Resolve wearable definitions by item urn (equipped set) to learn each one's category (slot
-// placement). Cached hits skip the network; only misses are fetched, batched to bound URL length.
-async function resolveByUrn(baseUrl: string, itemUrns: string[]): Promise<Map<string, WearableDef>> {
-  const out = new Map<string, WearableDef>()
-  const missing: string[] = []
-  for (const u of itemUrns) {
-    const cached = defByItemUrn.get(u)
-    if (cached != null) out.set(u, cached)
-    else missing.push(u)
-  }
-  const CHUNK = 50
-  for (let i = 0; i < missing.length; i += CHUNK) {
-    const qs = missing.slice(i, i + CHUNK).map((u) => `wearableId=${u}`).join('&')
-    const data = await getJson<{ wearables?: WearableDef[] }>(`${baseUrl}/lambdas/collections/wearables?${qs}`).catch((e: unknown) => {
-      // Loud on purpose: a swallowed chunk failure shrinks the resolved set, and downstream that
-      // once meant silently undressing the avatar on the next equip (see resolveEquippedSet).
-      console.error('[wearables] resolve-by-urn chunk failed', e)
-      return undefined
-    })
-    for (const w of data?.wearables ?? []) {
-      defByItemUrn.set(w.id, w)
-      out.set(w.id, w)
-    }
-  }
-  return out
-}
-
-export interface CatalogPageParams {
+export type CatalogPageParams = {
   /** 0-based page. */
   page: number
   pageSize: number
@@ -136,25 +78,29 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
   return { items, total: data?.totalAmount ?? items.length }
 }
 
-// Resolve a set of (possibly token-form) urns into the equipped category-slot list, indexing
-// item→token so a later equip can deploy them. Resolution is by urn (catalyst lambdas) and DECOUPLED
-// from the paged grid, so every item resolves regardless of which catalog page is loaded — shared by
-// `getWearables` (the live avatar) and `equipOutfit` (a saved outfit's wearables). Mirrors
-// bevy-ui-scene's fetchWearablesData(...)(...wearables) on outfit equip.
-export async function resolveEquippedSet(urns: string[]): Promise<Wearable[]> {
+type ResolveOpts = {
+  /** Opt-in: only the passport's EquippedItemCard renders a SHOP action — the Backpack's
+   *  WearableCard ignores it — and resolving a legacy (collections-v1) item costs a marketplace-api
+   *  round trip the Backpack and outfit equip would pay for nothing. */
+  shopUrls?: boolean
+}
+
+// Resolve a set of (possibly token-form) urns into displayable wearables. Resolution is by urn
+// (catalyst lambdas) and DECOUPLED from the paged grid, so every item resolves regardless of which
+// catalog page is loaded. Pure — no side effects — so it serves ANY address's urns (another user's
+// passport). Mirrors bevy-ui-scene's fetchWearablesData(...)(...wearables) on outfit equip.
+export async function resolveWearables(urns: string[], opts: ResolveOpts = {}): Promise<Wearable[]> {
   const baseUrl = await catalystBase()
-  // Equipped urns are the deployable token form → index item→token now (equip needs it even
-  // before any grid page is fetched).
-  for (const u of urns) {
-    const item = itemUrnOf(u)
-    if (item !== u) tokenUrnByItem.set(item, u)
-  }
-  const equippedItemUrns = [...new Set(urns.map(itemUrnOf))]
-  const resolved = equippedItemUrns.length > 0 ? await resolveByUrn(baseUrl, equippedItemUrns) : new Map<string, WearableDef>()
-  return equippedItemUrns.map((itemUrn): Wearable => {
-    const def = resolved.get(itemUrn)
+  const equippedItemUrns = [...new Set(urns.map(itemUrn))]
+  const resolved = await resolveDefsByUrn('wearables', baseUrl, equippedItemUrns)
+  const shopUrls =
+    opts.shopUrls === true
+      ? await resolveShopUrls(equippedItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress })))
+      : undefined
+  return equippedItemUrns.map((item): Wearable => {
+    const def = resolved.get(item)
     return {
-      urn: itemUrn,
+      urn: item,
       name: def?.name ?? '',
       rarity: def?.rarity ?? 'base',
       // No def (resolve failure or an urn the lambda doesn't know): keep the item under 'unknown'
@@ -162,10 +108,26 @@ export async function resolveEquippedSet(urns: string[]): Promise<Wearable[]> {
       // equipped set, so the next equip round-trip (equipSetWith) still deploys it. Dropping here
       // silently undressed the avatar whenever the lambdas request failed mid-session.
       category: def?.data?.category ?? 'unknown',
-      thumbnail: `${baseUrl}/lambdas/collections/contents/${itemUrn}/thumbnail`,
-      equipped: true
+      thumbnail: thumbnailUrl(baseUrl, item),
+      equipped: true,
+      shopUrl: shopUrls?.get(item)
     }
   })
+}
+
+// The LOCAL PLAYER's equipped set: resolveWearables plus item→token indexing so a later equip can
+// deploy them (equip needs it even before any grid page is fetched). Shared by `getWearables` (the
+// live avatar), `equipOutfit` (a saved outfit's wearables) and the passport's own-profile path.
+// Own urns ONLY: tokenUrnByItem is keyed by ITEM urn and is what the equip handler deploys, so
+// another user's tokenId would overwrite ours for a commonly-owned item and the next equip would
+// claim a token we don't own — the catalyst rejects that deploy and the change silently doesn't
+// persist. Anyone else's urns go through resolveWearables.
+export async function resolveEquippedSet(urns: string[], opts: ResolveOpts = {}): Promise<Wearable[]> {
+  for (const u of urns) {
+    const item = itemUrn(u)
+    if (item !== u) tokenUrnByItem.set(item, u)
+  }
+  return await resolveWearables(urns, opts)
 }
 
 export function registerWearables(ctx: Ctx): void {

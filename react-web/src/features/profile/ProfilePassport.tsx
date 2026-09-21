@@ -7,26 +7,20 @@
 // NOTE: backend follow-up for OTHER users — the bridge must fetch their rich profile
 // (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
-import { useState } from 'react'
-import { Avatar } from '../../design'
-import { nameColor, shortAddr, splitName } from '../../lib/identity'
-import type { Badge, Profile, ProfileInfo } from '../../engine/protocol'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Avatar, Button, EquippedItemCard, Icon, Pencil, Tabs, Tooltip, showConfirm, type EquippedItemCardProps, type TabItem } from '../../design'
+import { CategoryIcon } from '../backpack/categoryIcons'
+import { catalystThumbUrl, nameColor, shortAddr, splitName } from '../../lib/identity'
+import type { Badge, Emote, Profile, ProfileEdit, Wearable } from '../../engine/protocol'
+import { PROFILE_FIELDS } from './profileFields'
+import { ProfileEditForm } from './ProfileEditForm'
 import type { Relationship } from '../chat/ProfileCardPresentation'
 import styles from './ProfilePassport.module.css'
 
 type Tab = 'overview' | 'badges' | 'photos'
-
-const FIELD_LABELS: { key: keyof ProfileInfo; label: string }[] = [
-  { key: 'gender', label: 'Gender' },
-  { key: 'birthdate', label: 'Birth Date' },
-  { key: 'pronouns', label: 'Pronouns' },
-  { key: 'relationship', label: 'Relationship Status' },
-  { key: 'language', label: 'Language' },
-  { key: 'profession', label: 'Profession' },
-  { key: 'employment', label: 'Employment Status' },
-  { key: 'hobby', label: 'Favorite Hobby' },
-  { key: 'realName', label: 'Real Name' }
-]
+const PASSPORT_TABS: TabItem<Tab>[] = (['overview', 'badges', 'photos'] as const).map((t) => ({ id: t, label: t.toUpperCase() }))
+// A single selected-but-disabled tab: the same bar, holding the same height, with nothing to switch to.
+const EDIT_TAB: TabItem<'edit'>[] = [{ id: 'edit', label: 'EDIT PROFILE', disabled: true }]
 
 function CopyButton({ value, label }: { value: string; label: string }): React.JSX.Element {
   return (
@@ -56,18 +50,69 @@ function Verified(): React.JSX.Element {
 
 function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
   return (
-    <div className={styles.badge} title={badge.name}>
-      {badge.image ? <img src={badge.image} alt={badge.name} /> : <span className={styles.badgePlaceholder} />}
+    <Tooltip label={badge.tier != null ? `${badge.name} · ${badge.tier}` : badge.name} side="top">
+      <div className={styles.badge}>
+        {badge.image ? <img src={badge.image} alt={badge.name} /> : <span className={styles.badgePlaceholder} />}
+      </div>
+    </Tooltip>
+  )
+}
+
+// Read-only equipped-item tiles, 6 per row like unity-explorer's passport. No equip affordance
+// (this is someone else's passport, or a view-only summary of your own) — instead the SHOP button
+// deep-links to the item's shop page. The link is resolved by the bridge (it needs the item's
+// on-chain contract + item id); items with no listing — base wearables and emotes — simply show no
+// button.
+type EquippedTile = EquippedItemCardProps & { key: string }
+
+const wearableTile = (w: Wearable): EquippedTile => ({
+  key: w.urn,
+  thumbnail: w.thumbnail ?? catalystThumbUrl(w.urn),
+  name: w.name,
+  rarity: w.rarity,
+  shopUrl: w.shopUrl,
+  categoryIcon: <CategoryIcon category={w.category} size={15} />
+})
+
+const emoteTile = (e: Emote): EquippedTile => ({
+  // Keyed by slot too: the same emote can sit in more than one wheel slot (the equipped set is
+  // deduped, the wheel isn't), and a duplicate key drops the second tile.
+  key: `${e.urn}:${e.slot}`,
+  thumbnail: e.thumbnail ?? catalystThumbUrl(e.urn),
+  name: e.name,
+  rarity: e.rarity,
+  shopUrl: e.shopUrl,
+  categoryIcon: <Icon name="emotes" size={15} />
+})
+
+function EquippedRow({ tiles }: { tiles: EquippedTile[] }): React.JSX.Element {
+  return (
+    <div className={styles.equippedRow}>
+      {tiles.map(({ key, ...tile }) => <EquippedItemCard key={key} {...tile} />)}
     </div>
   )
+}
+
+/** Everything the own-profile edit mode needs. Absent = view only, which is every OTHER user's
+ *  passport and your own until the session has a profile to edit. */
+export interface PassportEditing {
+  saving: boolean
+  error: string | null
+  save: (edit: ProfileEdit) => void
+  dismissError: () => void
+  /** Open the name editor — its own popup, since picking a claimed NAME is a different shape of
+   *  choice from the rest of the form (see NameEditModal). */
+  editName: () => void
 }
 
 export function ProfilePassport({
   profile,
   relationship = 'none',
   isSelf = false,
+  editing,
   onAddFriend,
-  onClose
+  onClose,
+  onDirtyChange
 }: {
   profile: Profile
   /** Relationship of the local user to this profile — drives the header CTA. Hides it entirely for
@@ -75,10 +120,60 @@ export function ProfilePassport({
   relationship?: Relationship
   /** Your own passport — hides the friend action (you can't friend yourself). */
   isSelf?: boolean
+  /** Own-profile edit mode. Only offered when this is your passport. */
+  editing?: PassportEditing
   onAddFriend?: (address: string) => void
   onClose: () => void
+  /** Announce unsaved edits, so the popup layer can refuse to close on a stray backdrop click. */
+  onDirtyChange?: (dirty: boolean) => void
 }): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('overview')
+  const [editMode, setEditMode] = useState(false)
+  const canEdit = isSelf && editing != null
+  // SAVE sits in the header rather than at the end of the form: the form is taller than the panel,
+  // so a footer button is below the fold and easy to miss entirely.
+  const saveRef = useRef<(() => void) | null>(null)
+  const [editStatus, setEditStatus] = useState({ dirty: false, canSave: false })
+  const onStatusChange = useCallback(
+    (s: { dirty: boolean; canSave: boolean }) =>
+      setEditStatus((prev) => (prev.dirty === s.dirty && prev.canSave === s.canSave ? prev : s)),
+    []
+  )
+  // Only edit mode has unsaved state; leaving it (save, cancel) clears the guard.
+  const unsaved = editMode && editStatus.dirty
+
+  // Leaving edit mode without saving. Asks the same question the popup layer asks when you close
+  // the whole passport with work in progress — this is the same loss, by a shorter route.
+  const cancelEdit = async (): Promise<void> => {
+    if (
+      unsaved &&
+      !(await showConfirm({
+        title: 'Discard changes?',
+        body: 'Your edits to this profile will be lost.',
+        confirmLabel: 'Discard',
+        cancelLabel: 'Keep editing'
+      }))
+    ) {
+      return
+    }
+    editing?.dismissError()
+    setEditMode(false)
+  }
+  const dirtyCb = useRef(onDirtyChange)
+  dirtyCb.current = onDirtyChange
+  useEffect(() => {
+    dirtyCb.current?.(unsaved)
+    return () => dirtyCb.current?.(false)
+  }, [unsaved])
+  // Leave edit mode only once a save has actually landed: a rejected deploy comes back as an error
+  // on `editing`, and closing the form on click would throw away both the error and the user's
+  // unsaved text.
+  const wasSaving = useRef(false)
+  useEffect(() => {
+    if (editing == null) return
+    if (wasSaving.current && !editing.saving && editing.error == null) setEditMode(false)
+    wasSaving.current = editing.saving
+  }, [editing])
   // Optimistic: flip to "Requested" the instant Add Friend is clicked (the sent-list
   // poll catches up a beat later), so the button isn't a no-op visually.
   const [justRequested, setJustRequested] = useState(false)
@@ -86,10 +181,17 @@ export function ProfilePassport({
   // (Escape is handled centrally by the popup stack — see popups.tsx.)
   const { base, tag } = splitName(profile.name)
   const claimed = profile.hasClaimedName
-  const fields = FIELD_LABELS.filter(({ key }) => profile.info?.[key])
+  const fields = PROFILE_FIELDS.filter(({ key }) => profile.info?.[key])
   const hasBadges = (profile.badges?.length ?? 0) > 0
   const hasAbout = !!profile.description || fields.length > 0 || (profile.links?.length ?? 0) > 0
-  const hasOverview = hasBadges || hasAbout
+  // The body shape isn't a collectible you can shop for — Unity skips it before filling the grid
+  // (EquippedItems_PassportModuleController.SetGridElements). It skips hidden categories too, but
+  // that needs each item's hides/replaces metadata, which the equipped set doesn't carry.
+  const wearables = (profile.equippedWearables ?? []).filter((w) => w.category !== 'body_shape')
+  const hasWearables = wearables.length > 0
+  const hasEmotes = (profile.equippedEmotes?.length ?? 0) > 0
+  const hasEquipped = hasWearables || hasEmotes
+  const hasOverview = hasBadges || hasAbout || hasEquipped
 
   return (
     // The dimmed scrim + click-outside-to-close are owned by the popup layer (openPassport →
@@ -104,6 +206,11 @@ export function ProfilePassport({
               {claimed && <Verified />}
               {tag && <span className={styles.tag}>{tag}</span>}
               <CopyButton value={profile.name} label="name" />
+              {canEdit && (
+                <button type="button" className={styles.iconBtn} aria-label="Edit name" onClick={editing.editName}>
+                  <Pencil size={16} />
+                </button>
+              )}
             </div>
             <div className={styles.addrRow}>
               <span className={styles.addr}>{shortAddr(profile.address)}</span>
@@ -116,17 +223,17 @@ export function ProfilePassport({
           <div className={styles.headActions}>
             {!isSelf && relationship !== 'incoming' && relationship !== 'blocked' &&
               (relationship === 'friend' ? (
-                <button type="button" className={`${styles.friendBtn} ${styles.isFriend}`} disabled>
+                <button type="button" className={`${styles.headBtn} ${styles.headBtnInert}`} disabled>
                   FRIEND
                 </button>
               ) : pending ? (
-                <button type="button" className={`${styles.friendBtn} ${styles.isFriend}`} disabled>
+                <button type="button" className={`${styles.headBtn} ${styles.headBtnInert}`} disabled>
                   REQUESTED
                 </button>
               ) : (
                 <button
                   type="button"
-                  className={styles.friendBtn}
+                  className={styles.headBtn}
                   onClick={() => {
                     onAddFriend?.(profile.address)
                     setJustRequested(true)
@@ -135,25 +242,37 @@ export function ProfilePassport({
                   ADD FRIEND
                 </button>
               ))}
-            <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>×</button>
+            {canEdit && editMode && (
+              <Button variant="primary" disabled={!editStatus.canSave} onClick={() => saveRef.current?.()}>
+                {editing.saving ? 'SAVING…' : 'SAVE'}
+              </Button>
+            )}
+            {canEdit && editMode ? (
+              <Button variant="secondary" onClick={() => void cancelEdit()} disabled={editing.saving}>
+                CANCEL
+              </Button>
+            ) : (
+              <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>×</button>
+            )}
           </div>
         </header>
 
-        {/* --- tabs --- */}
-        <nav className={styles.tabs}>
-          {(['overview', 'badges', 'photos'] as Tab[]).map((t) => (
-            <button key={t} type="button" className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`.trim()} onClick={() => setTab(t)}>
-              {t.toUpperCase()}
-            </button>
-          ))}
-        </nav>
+        {/* --- tabs (edit mode is overview-scoped, so they stand down while it's open) --- */}
+        {!editMode && (
+          <Tabs variant="underline" className={styles.tabs} items={PASSPORT_TABS} value={tab} onChange={setTab} aria-label="Passport sections" />
+        )}
+        {/* Edit mode has no tabs to offer, but it keeps the bar: dropping it shifts the avatar and
+            everything below it up by its height, so clicking EDIT PROFILE jumped the whole panel. */}
+        {editMode && (
+          <Tabs variant="underline" className={styles.tabs} items={EDIT_TAB} value="edit" onChange={() => {}} aria-label="Passport sections" />
+        )}
 
         <div className={styles.body}>
           {/* --- left: the avatar — the catalyst full-body snapshot (Unity-style hero),
                   falling back to the 2D face if the body render isn't available. --- */}
           <div className={styles.avatarCol}>
             {profile.bodyImage ? (
-              <img className={styles.body} src={profile.bodyImage} alt={base} />
+              <img className={styles.avatarImg} src={profile.bodyImage} alt={base} />
             ) : (
               <Avatar src={profile.picture} name={base} color={nameColor(profile.address || profile.name)} size={180} status="online" />
             )}
@@ -161,21 +280,43 @@ export function ProfilePassport({
 
           {/* --- right: tab content --- */}
           <div className={styles.content}>
-            {tab === 'overview' && !hasOverview && (
+            {/* Edit mode replaces the About card (name, bio, fields and links are exactly what it
+                covers) and leaves the equipped/badges sections below it — those are the Backpack's
+                to change, not the passport's. */}
+            {editMode && editing != null && (
+              <ProfileEditForm
+                profile={profile}
+                saving={editing.saving}
+                error={editing.error}
+                onSave={editing.save}
+                onStatusChange={onStatusChange}
+                saveRef={saveRef}
+                onDismissError={editing.dismissError}
+              />
+            )}
+            {tab === 'overview' && !hasOverview && !editMode && !canEdit && (
               <div className={styles.empty}>This profile has no details to show yet.</div>
             )}
-            {tab === 'overview' && hasOverview && (
+            {tab === 'overview' && (hasOverview || canEdit) && (
               <>
-                {profile.badges && profile.badges.length > 0 && (
-                  <section className={styles.card}>
-                    <h2 className={styles.cardTitle}>Badges</h2>
-                    <div className={styles.badgeRow}>
-                      {profile.badges.map((b) => <BadgeTile key={b.id} badge={b} />)}
-                    </div>
-                  </section>
-                )}
-                {hasAbout && (
+                {/* Rendered for your own passport even when empty: the pencil in its corner is how
+                    profile editing is reached, so an untouched profile still has a way in. */}
+                {(hasAbout || canEdit) && !editMode && (
                 <section className={styles.card}>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className={styles.cardEdit}
+                      aria-label="Edit profile"
+                      onClick={() => {
+                        setTab('overview')
+                        setEditMode(true)
+                      }}
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  )}
+                  {!hasAbout && <p className={styles.about}>Nothing here yet — the pencil adds your details.</p>}
                   {profile.description && (
                     <>
                       <h2 className={styles.cardTitle}>About Me</h2>
@@ -205,6 +346,30 @@ export function ProfilePassport({
                     </>
                   )}
                 </section>
+                )}
+                {hasEquipped && (
+                  <section className={styles.card}>
+                    {hasWearables && (
+                      <>
+                        <h2 className={styles.cardTitle}>Equipped Wearables</h2>
+                        <EquippedRow tiles={wearables.map(wearableTile)} />
+                      </>
+                    )}
+                    {hasEmotes && (
+                      <>
+                        <h2 className={styles.cardTitle}>Equipped Emotes</h2>
+                        <EquippedRow tiles={(profile.equippedEmotes ?? []).map(emoteTile)} />
+                      </>
+                    )}
+                  </section>
+                )}
+                {profile.badges && profile.badges.length > 0 && (
+                  <section className={styles.card}>
+                    <h2 className={styles.cardTitle}>Badges</h2>
+                    <div className={styles.badgeRow}>
+                      {profile.badges.map((b) => <BadgeTile key={b.id} badge={b} />)}
+                    </div>
+                  </section>
                 )}
               </>
             )}

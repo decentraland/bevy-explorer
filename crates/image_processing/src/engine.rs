@@ -14,6 +14,8 @@ use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 #[cfg(target_arch = "wasm32")]
 use crate::CHANNELS;
 #[cfg(not(target_arch = "wasm32"))]
+use common::util::JoinRelativeExt;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::mpsc::unbounded_channel;
 
 use crate::{AssetForProcessing, ProcessingAssetType};
@@ -241,12 +243,11 @@ fn check_assets(
                     };
 
                     if ipfs_path.should_cache(&hash) {
+                        // `hash` comes from the entity json, so it must not steer the path
                         #[cfg(not(target_arch = "wasm32"))]
-                        let cache_path = {
-                            let mut cache_path = std::path::PathBuf::from(&cache_root);
-                            cache_path.push(hash);
-                            cache_path.to_string_lossy().into_owned()
-                        };
+                        let cache_path = std::path::Path::new(&cache_root)
+                            .join_relative(hash)
+                            .map(|p| p.to_string_lossy().into_owned())?;
 
                         #[cfg(target_arch = "wasm32")]
                         let Ok(cache_path) = ipfs_path.to_url(&ctx) else {

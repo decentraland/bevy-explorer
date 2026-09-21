@@ -29,7 +29,7 @@ use super::{
 };
 use common::{
     profile::{LambdaProfiles, SerializedProfile},
-    rpc::RpcEventSender,
+    rpc::{RpcEventSender, RpcStreamSender},
     sets::SceneSets,
     structs::PrimaryUser,
     util::{TaskCompat, TaskExt},
@@ -41,6 +41,7 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
+use system_bridge::{ProfileChangedEvent, SystemApi};
 use wallet::Wallet;
 
 pub struct UserProfilePlugin;
@@ -55,6 +56,7 @@ impl Plugin for UserProfilePlugin {
             )
                 .before(process_transport_updates), // .in_set(TODO)
         );
+        app.add_systems(Update, pipe_profile_changes_to_scene);
 
         // a server has no real local player: never insert/announce/deploy the fake
         // player's profile or write PLAYER identity into scene crdts
@@ -106,8 +108,8 @@ struct ProfileEntry {
     fetching: Option<ProfileSource>,
     /// when the next cascade may start; None = due now. Irrelevant once satisfied.
     next_fetch: Option<web_time::Instant>,
-    /// `time.elapsed_secs()` of the last `ProfileRequest` sent to the peer
-    last_p2p: Option<f32>,
+    /// `time.elapsed_secs_f64()` of the last `ProfileRequest` sent to the peer
+    last_p2p: Option<f64>,
 }
 
 impl ProfileEntry {
@@ -168,7 +170,7 @@ impl ProfileEntry {
     /// its own latest profile. Held back until the first cascade concludes so the
     /// authoritative sources get first go, except when we already hold (stale) data —
     /// then the request rides alongside the re-fetch.
-    fn wants_p2p(&self, now: f32) -> bool {
+    fn wants_p2p(&self, now: f64) -> bool {
         let behind = self
             .data
             .as_ref()
@@ -301,7 +303,7 @@ pub fn setup_primary_profile(
     ipfas: IpfsAssetServer,
     mut contexts: Query<&mut GlobalCrdtState>,
     mut cache: ProfileManager,
-    mut last_announce: Local<f32>,
+    mut last_announce: Local<f64>,
     time: Res<Time>,
 ) {
     // gather any event receivers
@@ -357,7 +359,7 @@ pub fn setup_primary_profile(
                     version: profile.version,
                 },
             );
-            *last_announce = time.elapsed_secs();
+            *last_announce = time.elapsed_secs_f64();
 
             // send to event receivers
             senders.retain(|sender| {
@@ -382,7 +384,7 @@ pub fn setup_primary_profile(
                 current_profile.is_deployed = true;
             }
         } else if let Some(current_profile) = current_profile.profile.as_ref() {
-            let now = time.elapsed_secs();
+            let now = time.elapsed_secs_f64();
             if now > *last_announce + 5.0 {
                 debug!("announcing profile v {}", current_profile.version);
                 // The keepalive re-announce goes the same way as the version bump above: Pulse
@@ -525,7 +527,7 @@ fn drive_profile_fetches(mut manager: ProfileManager) {
 
     // collect due entries into registry batches, one set per registry host
     let now = web_time::Instant::now();
-    let mut wants: HashMap<&'static str, Vec<Address>> = HashMap::default();
+    let mut wants: HashMap<String, Vec<Address>> = HashMap::default();
     for (address, entry) in entries.iter_mut() {
         if entry.wants_fetch(now) {
             entry.fetching = Some(ProfileSource::Registry);
@@ -543,7 +545,7 @@ fn drive_profile_fetches(mut manager: ProfileManager) {
     for (url, addresses) in wants {
         for chunk in addresses.chunks(PROFILE_REQUEST_BATCH) {
             registry_batches.push(IoTaskPool::get().spawn_compat(fetch_registry_profiles(
-                url,
+                url.clone(),
                 chunk.to_vec(),
                 ipfs.ipfs().clone(),
             )));
@@ -560,7 +562,7 @@ fn request_missing_profiles(
     transports: Query<&Transport>,
     time: Res<Time>,
 ) {
-    let now = time.elapsed_secs();
+    let now = time.elapsed_secs_f64();
 
     // resolved players: push cache movement, but diff before any push — only real
     // changes reach the entity/scenes
@@ -664,12 +666,51 @@ fn send_profile_request(player: &ForeignPlayer, transports: &Query<&Transport>) 
     true
 }
 
+/// Pipes every profile insert/replace the engine sees — a foreign player's, or the local
+/// player's own — to system-scene stream subscribers as (address, version).
+fn pipe_profile_changes_to_scene(
+    mut requests: EventReader<SystemApi>,
+    mut senders: Local<Vec<RpcStreamSender<ProfileChangedEvent>>>,
+    changed: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
+    wallet: Res<Wallet>,
+) {
+    senders.extend(requests.read().filter_map(|ev| {
+        if let SystemApi::GetProfileChangedStream(sender) = ev {
+            Some(sender.clone())
+        } else {
+            None
+        }
+    }));
+    senders.retain(|s| !s.is_closed());
+
+    if senders.is_empty() {
+        return;
+    }
+
+    for (player, profile) in &changed {
+        let address = match player {
+            Some(player) => player.address,
+            None => match wallet.address() {
+                Some(address) => address,
+                None => continue,
+            },
+        };
+        let event = ProfileChangedEvent {
+            address: format!("{:#x}", address),
+            version: profile.version,
+        };
+        for sender in senders.iter() {
+            let _ = sender.send(event.clone());
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn process_profile_events(
     mut commands: Commands,
     mut players: Query<(&mut ForeignPlayer, Option<&mut UserProfile>)>,
     mut events: EventReader<ProfileEvent>,
-    mut last_sent_request: Local<HashMap<Entity, f32>>,
+    mut last_sent_request: Local<HashMap<Entity, f64>>,
     time: Res<Time>,
     wallet: Res<Wallet>,
     transports: Query<&Transport>,
@@ -719,7 +760,7 @@ pub fn process_profile_events(
                         let _ = transport
                             .sender
                             .try_send(NetworkMessage::reliable(&response));
-                        last_sent_request.insert(*request_transport, time.elapsed_secs());
+                        last_sent_request.insert(*request_transport, time.elapsed_secs_f64());
                     }
                 }
             }
@@ -797,7 +838,7 @@ pub fn process_profile_events(
         }
     }
 
-    last_sent_request.retain(|_, req_time| *req_time > time.elapsed_secs() - 10.0);
+    last_sent_request.retain(|_, req_time| *req_time > time.elapsed_secs_f64() - 10.0);
 }
 
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
@@ -922,16 +963,27 @@ const REGISTRY_ZONE: &str = "https://asset-bundle-registry.decentraland.zone/pro
 
 /// The .zone and .org registries hold separate profile namespaces, so the registry must
 /// match the profile owner's environment, judged by their announced lambdas endpoint:
-/// a host under the zone tld uses the zone registry.
-fn registry_url(endpoint: Option<&str>) -> &'static str {
-    let is_zone = endpoint
+/// a host under the custom base domain uses that domain's registry, else a host under
+/// the zone tld uses the zone registry. An explicit registry override serves everyone.
+fn registry_url(endpoint: Option<&str>) -> String {
+    let host = endpoint
         .and_then(|e| reqwest::Url::parse(e).ok())
-        .is_some_and(|url| url.host_str().and_then(|host| host.rsplit('.').next()) == Some("zone"));
-    if is_zone {
-        REGISTRY_ZONE
-    } else {
-        REGISTRY_ORG
+        .and_then(|url| url.host_str().map(str::to_owned));
+    let registry = common::base_domain::Service::AssetBundleRegistry;
+    if common::base_domain::service_override(registry).is_some() {
+        return common::base_domain::url(registry, "/profiles");
     }
+    if let Some(host) = host {
+        let base = common::base_domain::get();
+        if common::base_domain::is_custom() && (host == base || host.ends_with(&format!(".{base}")))
+        {
+            return common::base_domain::url(registry, "/profiles");
+        }
+        if host.rsplit('.').next() == Some("zone") {
+            return REGISTRY_ZONE.to_owned();
+        }
+    }
+    REGISTRY_ORG.to_owned()
 }
 
 /// One registry POST for a chunk of ids, reported per item: Ok(Some) found, Ok(None)
@@ -939,7 +991,7 @@ fn registry_url(endpoint: Option<&str>) -> &'static str {
 /// the addresses that were asked for — the response identifies each profile by its
 /// deployed metadata, which is written by whoever deployed it.
 async fn fetch_registry_profiles(
-    registry_url: &'static str,
+    registry_url: String,
     addresses: Vec<Address>,
     ipfs: std::sync::Arc<IpfsIo>,
 ) -> Vec<(Address, Result<Option<UserProfile>, anyhow::Error>)> {
@@ -953,7 +1005,7 @@ async fn fetch_registry_profiles(
     let outcome: Result<Vec<LambdaProfiles>, anyhow::Error> = async {
         let response = ipfs
             .client()
-            .post(registry_url)
+            .post(&registry_url)
             .timeout(std::time::Duration::from_secs(10))
             .body(serde_json::json!({ "ids": ids }).to_string())
             .header("content-type", "application/json")
@@ -1028,7 +1080,20 @@ async fn fetch_catalyst_profile(
         );
     }
 
-    let content = response.json::<LambdaProfiles>().await?;
+    let body = response.text().await?;
+    let content = match serde_json::from_str::<LambdaProfiles>(&body) {
+        Ok(content) => content,
+        Err(e) => {
+            // the sdk preview server reports a missing profile as a 200 with an
+            // `{"error": ...}` body rather than a 404; treat it as authoritatively absent
+            if serde_json::from_str::<serde_json::Value>(&body)
+                .is_ok_and(|value| value.get("error").is_some())
+            {
+                return Ok(None);
+            }
+            return Err(anyhow!("catalyst fetch from {url}: {e}"));
+        }
+    };
     let base_url = ipfs.contents_endpoint().unwrap_or_default();
     Ok(content
         .avatars

@@ -1,0 +1,102 @@
+.tabs {
+  display: flex;
+  align-items: center;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tab:disabled {
+  cursor: default;
+}
+
+/* ---- pill: filled pills, selected = accent (Unity's backpack/settings category pills) ---- */
+.pill {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pill .tab {
+  height: 34px;
+  padding: 0 18px;
+  border-radius: var(--r-pill);
+  background: var(--fill-3);
+  transition:
+    transform 0.16s var(--ease-spring, ease),
+    background-color var(--dur-fast) ease;
+}
+.pill .tab:hover:not(:disabled) {
+  transform: scale(1.06);
+}
+.pill .tab:hover:not(:disabled):not(.active) {
+  background: var(--fill-4);
+}
+.pill .active,
+.pill .active:hover {
+  background: var(--accent);
+  animation: pillPop 0.24s var(--ease-spring, ease);
+}
+@keyframes pillPop {
+  0% {
+    transform: scale(0.92);
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ---- underline: bare labels on a hairline, selected = brand underline sliding in ---- */
+.underline {
+  gap: 28px;
+  border-bottom: 1px solid var(--white-10);
+}
+.underline .tab {
+  position: relative;
+  padding: 12px 2px;
+  color: var(--ink-6);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: color var(--dur-fast) ease;
+}
+.underline .tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--brand);
+  transform: scaleX(0);
+  transition: transform 0.2s var(--ease-spring, ease);
+}
+.underline .tab:hover:not(:disabled),
+.underline .active {
+  color: var(--text);
+}
+.underline .active::after {
+  transform: scaleX(1);
+}
+
+.badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
