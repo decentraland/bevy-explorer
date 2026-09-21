@@ -138,8 +138,12 @@ pub fn op_set_ui_focus(
     ui: bool,
     text: bool,
     scroll: bool,
+    covered: bool,
+    menu: JsValue,
 ) -> Result<(), WasmError> {
-    dcl::js::system_api::op_set_ui_focus(state.rc(), ui, text, scroll).map_err(WasmError::from)
+    serde_parse!(menu);
+    dcl::js::system_api::op_set_ui_focus(state.rc(), ui, text, scroll, covered, menu)
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -205,10 +209,13 @@ pub fn op_send_chat(state: &WorkerContext, message: String, channel: String) {
 }
 
 #[wasm_bindgen]
-pub async fn op_get_profile_extras(state: &WorkerContext) -> Result<JsValue, WasmError> {
-    let extras = dcl::js::system_api::op_get_profile_extras(state.rc()).await;
+pub async fn op_get_user_profile(
+    state: &WorkerContext,
+    address: String,
+) -> Result<JsValue, WasmError> {
+    let profile = dcl::js::system_api::op_get_user_profile(state.rc(), address).await;
     // use a specific serializer to convert to object here, as wasm_bindgen's conversion otherwise produces a Map
-    extras
+    profile
         .map(|v| {
             v.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
                 .unwrap()
@@ -356,6 +363,25 @@ pub async fn op_read_proximity_stream(
 ) -> Result<JsValue, WasmError> {
     let proximity_event = dcl::js::system_api::op_read_proximity_stream(state.rc(), rid).await;
     proximity_event
+        .map(|v| {
+            v.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                .unwrap()
+        })
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_profile_changed_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_profile_changed_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_profile_changed_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    let event = dcl::js::system_api::op_read_profile_changed_stream(state.rc(), rid).await;
+    event
         .map(|v| {
             v.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
                 .unwrap()

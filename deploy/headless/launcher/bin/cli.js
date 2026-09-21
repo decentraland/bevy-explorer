@@ -27,7 +27,10 @@ const USAGE = `
     --timeout <secs>       Exit cleanly after N seconds.
     --pulse-realm <key>    Pulse realm to announce verbatim (what sdk-commands mints for a
                            local preview). Standalone only; orchestrated scenes carry their own.
-    --pulse-server <h:p>   Pulse server to join, host:port. Default: the production server.
+    --pulse-server <h:p>   Pulse server to join, host:port. Default: derived from --base-domain.
+    --base-domain <domain> Domain every backend host is composed from. Default decentraland.org.
+    --<service> <url>      Per-service url override (--catalyst, --preview-gatekeeper, ...);
+                           the engine's --help lists them all.
     --version              Print version and exit.
     -h, --help             This message.
 
@@ -48,7 +51,32 @@ function translate(argv) {
   let position = null
   let production = false
   let orchestrated = false
-  const passthrough = { '--tick-hz': true, '--timeout': true, '--scene-threads': true, '--pulse-realm': true, '--pulse-server': true, '--base-domain': true }
+  const passthrough = {
+    '--tick-hz': true,
+    '--timeout': true,
+    '--scene-threads': true,
+    '--pulse-realm': true,
+    '--pulse-server': true,
+    '--base-domain': true,
+    '--content-server': true,
+    // the per-service url overrides (crates/system_api_types/src/services.rs — the
+    // Service::field names, kebab-cased); keep in sync when a service is added
+    '--asset-bundle-registry': true,
+    '--auth-api': true,
+    '--auth-page': true,
+    '--catalyst': true,
+    '--comms-gatekeeper': true,
+    '--ethereum-rpc': true,
+    '--map-api': true,
+    '--opensea': true,
+    '--places': true,
+    '--preview-gatekeeper': true,
+    '--realm-provider': true,
+    '--reels': true,
+    '--social-rpc': true,
+    '--storage': true,
+    '--worlds-server': true
+  }
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]

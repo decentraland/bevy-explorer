@@ -4,13 +4,12 @@ import userEvent from '@testing-library/user-event'
 import { GalleryPage } from '../features/gallery/GalleryPage'
 import { dispatchCancelLayer } from '../lib/cancelLayers'
 import type { GalleryState, ProfileState } from '../features/session/useEngineSession'
+import { fakeProfileState } from './harness'
 import type { GalleryPhoto } from '../engine/protocol'
 
-const profile: ProfileState = {
-  data: { address: '0xme', name: 'Mojito', hasClaimedName: true, isGuest: false },
-  open: false,
-  toggle: vi.fn()
-}
+const profile: ProfileState = fakeProfileState({
+  data: { address: '0xme', name: 'Mojito', hasClaimedName: true, isGuest: false }
+})
 
 function gallery(over: Partial<GalleryState> = {}): GalleryState {
   return {

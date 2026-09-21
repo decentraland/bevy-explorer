@@ -31,6 +31,8 @@ prost = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+reqwest = { workspace = true }
+ttf-parser = { workspace = true }
 anyhow = { workspace = true }
 bevy_console = { workspace = true }
 clap = { workspace = true }

@@ -7,6 +7,7 @@
 pub mod launch_options;
 #[cfg(feature = "livekit")]
 pub mod livekit;
+pub mod services;
 pub mod web_params;
 
 use dcl_component::proto_components::{
@@ -41,16 +42,23 @@ impl ClearableColor3 {
     }
 }
 
+/// A partial update to the local player's profile: every field is optional, and an omitted one is
+/// left as it is. Applying it bumps the profile version and redeploys, so callers should send one
+/// update per user-visible save rather than one per edited field.
 #[derive(Serialize, Deserialize, Clone, Debug, ts_rs::TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct SetAvatarData {
+    /// Body shape, colors and name. An empty `body_shape_urn` and absent colors are "unchanged",
+    /// so a name-only edit needn't restate the avatar.
     #[ts(optional)]
     pub base: Option<PbAvatarBase>,
     #[ts(optional)]
     pub equip: Option<PbAvatarEquippedData>,
     #[ts(optional)]
     pub has_claimed_name: Option<bool>,
+    /// Profile keys the renderer doesn't model (description, links, country, …), MERGED over the
+    /// current set: omit a key to leave it alone, send `null` to remove it.
     #[ts(optional)]
     pub profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
     #[ts(optional)]
@@ -160,6 +168,18 @@ pub struct ProximityEvent {
     pub entity: u32,
     pub entity_position: Vector3,
     pub actions: Vec<HoverAction>,
+}
+
+/// A profile the engine holds was inserted or replaced: a foreign player's, or the local
+/// player's own. Carries only the address and the new version; a consumer holding an older
+/// version re-reads the profile itself.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub struct ProfileChangedEvent {
+    pub address: String,
+    pub version: u32,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
@@ -336,6 +356,7 @@ pub enum PermissionType {
     Fetch,
     Websocket,
     OpenUrl,
+    OpenExplorerUi,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]

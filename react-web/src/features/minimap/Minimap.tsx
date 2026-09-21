@@ -23,10 +23,12 @@ import {
   MIN_VISIBLE_METERS,
   ZOOM_STEP,
   loadMarkers,
+  loadOpen,
   loadRotation,
   loadStyle,
   loadZoom,
   saveMarkers,
+  saveOpen,
   saveRotation,
   saveStyle,
   saveZoom
@@ -55,7 +57,7 @@ export function Minimap({
   sceneTitle: string
   setEngineViewport: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
 }): React.JSX.Element {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(() => loadOpen(minimap.isWorld))
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [style, setStyle] = useState<MinimapStyle>(loadStyle)
   const [rotation, setRotation] = useState(loadRotation)
@@ -78,6 +80,12 @@ export function Minimap({
   // In a World there are no satellite/parcel tiles, so only the engine-rendered style can show
   // anything. Matches the SDK7 HUD's forceImposters.
   const effectiveStyle: MinimapStyle = minimap.isWorld ? 'imposters' : style
+
+  // Crossing between Genesis City and a World swaps to that realm type's own open/closed
+  // preference, so a World opens collapsed without discarding a manual collapse in Genesis.
+  useEffect(() => {
+    setOpen(loadOpen(minimap.isWorld))
+  }, [minimap.isWorld])
 
   const { pose, setConfig } = minimap
 
@@ -205,6 +213,10 @@ export function Minimap({
   }, [settingsOpen])
 
   // Every preference persists the moment it changes — the menu has no confirm step.
+  const toggleOpen = useCallback(() => {
+    setOpen(!open)
+    saveOpen(minimap.isWorld, !open)
+  }, [open, minimap.isWorld])
   const pickStyle = useCallback((s: MinimapStyle) => {
     setStyle(s)
     saveStyle(s)
@@ -240,7 +252,7 @@ export function Minimap({
         <button
           type="button"
           className={styles.collapse}
-          onClick={() => setOpen((v) => !v)}
+          onClick={toggleOpen}
           aria-label={open ? 'Collapse minimap' : 'Expand minimap'}
           aria-expanded={open}
         >

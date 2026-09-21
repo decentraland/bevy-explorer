@@ -4,7 +4,7 @@
 // (members/posts/places/events) arrives via the bridge `communityDetail` relay.
 
 import { useEffect, useState } from 'react'
-import { Avatar, Button, openPopup } from '../../design'
+import { Avatar, Button, Tabs, openPopup, type TabItem } from '../../design'
 import { nameColor } from '../../lib/identity'
 import { useSession } from '../session/SessionContext'
 import type {
@@ -19,7 +19,7 @@ import type {
 import styles from './CommunityModal.module.css'
 
 type Tab = 'announcements' | 'members' | 'places' | 'photos'
-const TABS: { id: Tab; label: string }[] = [
+const TABS: TabItem<Tab>[] = [
   { id: 'announcements', label: 'ANNOUNCEMENTS' },
   { id: 'members', label: 'MEMBERS' },
   { id: 'places', label: 'PLACES' },
@@ -266,18 +266,7 @@ export function CommunityModal({
           </div>
         </header>
 
-        <nav className={styles.tabs}>
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={`${styles.tab} ${tab === t.id ? styles.tabActive : ''}`.trim()}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
+        <Tabs variant="underline" className={styles.tabs} items={TABS} value={tab} onChange={setTab} aria-label="Community sections" />
 
         <div className={styles.tabBody}>
           {loading ? (

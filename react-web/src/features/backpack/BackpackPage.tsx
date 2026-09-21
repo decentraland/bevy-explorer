@@ -5,7 +5,7 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { WearableCard, type Rarity } from '../../design'
+import { Tabs, WearableCard, type Rarity, type TabItem } from '../../design'
 import { catalystThumbUrl } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
 import { CategoryIcon } from './categoryIcons'
@@ -14,6 +14,12 @@ import { MainMenuShell } from '../menu/MainMenuShell'
 import type { Emote, Outfit, Wearable } from '../../engine/protocol'
 import type { BackpackState, EmotesState, ProfileState } from '../session/useEngineSession'
 import styles from './BackpackPage.module.css'
+
+type BackpackTab = 'wearables' | 'emotes'
+const BACKPACK_TABS: TabItem<BackpackTab>[] = [
+  { id: 'wearables', label: 'Wearables' },
+  { id: 'emotes', label: 'Emotes' }
+]
 
 const PAGE_SIZE = 16
 const NO_DESC = 'This wearable does not have a description set.'
@@ -241,7 +247,7 @@ export function BackpackPage({
   /** Which tab to open on (e.g. the emote wheel's "Customise [E]" opens 'emotes'). */
   initialTab?: 'wearables' | 'emotes'
 }): React.JSX.Element | null {
-  const [tab, setTab] = useState<'wearables' | 'emotes'>(initialTab)
+  const [tab, setTab] = useState<BackpackTab>(initialTab)
   const [section, setSection] = useState<'categories' | 'outfits'>('categories')
   // The saved-outfit slot currently selected (shown in the detail panel; null = none).
   const [outfitSlot, setOutfitSlot] = useState<number | null>(null)
@@ -396,14 +402,7 @@ export function BackpackPage({
         {/* Top bar: title + Wearables/Emotes pills (left), Filter & Search (right). */}
         <div className={styles.head}>
           <h1 className={styles.title}>Backpack</h1>
-          <div className={styles.tabs}>
-            <button type="button" className={`${styles.tab} ${tab === 'wearables' ? styles.tabActive : ''}`.trim()} onClick={() => setTab('wearables')}>
-              Wearables
-            </button>
-            <button type="button" className={`${styles.tab} ${tab === 'emotes' ? styles.tabActive : ''}`.trim()} onClick={() => setTab('emotes')}>
-              Emotes
-            </button>
-          </div>
+          <Tabs items={BACKPACK_TABS} value={tab} onChange={setTab} aria-label="Backpack sections" />
           <div className={styles.filterWrap}>
             <button type="button" className={`${styles.filterBtn} ${showFilter ? styles.filterBtnOpen : ''}`.trim()} onClick={() => setShowFilter((s) => !s)}>
               <FilterIcon /> FILTER &amp; SORT

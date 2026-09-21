@@ -87,9 +87,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         ],
     ));
 
-    commands.insert_resource(RoomDebugOverlayDefaultFont(
-        DEFAULT_FONT.with_font(asset_server.load("embedded://fonts/NotoSans-Regular.ttf")),
-    ));
+    commands.insert_resource(RoomDebugOverlayDefaultFont(DEFAULT_FONT.with_font(
+        ui_core::user_font(ui_core::FontName::Sans, ui_core::WeightName::Regular),
+    )));
 }
 
 fn room_connected(

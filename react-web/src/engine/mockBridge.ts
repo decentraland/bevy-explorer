@@ -12,10 +12,12 @@ import {
   type OutfitsMetadata,
   type PageToScene,
   type Profile,
+  type ProfileEdit,
   type SceneToPage,
   type Setting,
   type Wearable
 } from './protocol'
+import { applyProfileEdit } from './profileEdit'
 
 // A fully-populated passport for the mock, so the React passport shows every section.
 function richProfile(address: string, name: string, isGuest: boolean): Profile {
@@ -38,10 +40,12 @@ function richProfile(address: string, name: string, isGuest: boolean): Profile {
     equippedEmotes: mockEquippedEmotes(),
     info: {
       gender: 'Male',
-      birthdate: '26/11/1991',
+      birthdate: '1991-11-26',
       pronouns: 'He / Him',
       relationship: 'Single',
+      sexualOrientation: 'Heterosexual',
       language: 'Persian',
+      country: 'Argentina',
       profession: 'IT',
       employment: 'Chilling',
       hobby: 'games.movie.party',
@@ -217,6 +221,18 @@ const defaultBindings = (): BindingEntry[] => [
   [{ System: 'ChatPanel' }, ['KeyT']]
 ]
 
+// Saved profile edits, in order. Applied over the mock's stock passport so an edit made in ?mock=1
+// sticks for the rest of the session — the real bridge gets the same effect by folding the save
+// into its catalyst cache.
+const ownEdits: ProfileEdit[] = []
+/** The returning mock user holds two NAMEs; a guest holds none. */
+const ownedNamesOf = (o: MockOptions): string[] => (o.hasPreviousLogin ? ['Mojito', 'MojitoDCL'] : [])
+const ownProfile = (o: MockOptions): Profile =>
+  ownEdits.reduce<Profile>(
+    (p, edit) => applyProfileEdit(p, edit, ownedNamesOf(o)),
+    richProfile(o.userId, o.hasPreviousLogin ? 'Mojito' : 'Guest#beef', !o.hasPreviousLogin)
+  )
+
 interface MockOptions {
   /** Simulate a returning user (reuse-login flow) vs a fresh user. */
   hasPreviousLogin: boolean
@@ -352,8 +368,12 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
 
   // Simulate the engine spawning the player + loading the spawn scene after a
   // successful login: player-ready, then a scene-asset countdown, then "done".
+  // Mirrors the real session domain's latch, so a page that says hello after the player spawned
+  // (a reload) is re-told, as the bridge scene does.
+  let playerSpawned = false
   const spawnPlayer = (): void => {
     setTimeout(() => {
+      playerSpawned = true
       reply({ kind: 'event', name: 'playerReady' })
       reply({ kind: 'chatVisibility', open: true })
       // Two-step countdown then done — kept short so a throttled/backgrounded tab
@@ -481,6 +501,14 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     const env = e.data
     if (env?.to !== 'scene') return
     const msg: PageToScene = env.msg
+
+    // Answered before the simulated latency: the page holds everything else until this lands.
+    if (msg.kind === 'hello') {
+      reply({ kind: 'bridgeReady' })
+      if (playerSpawned) reply({ kind: 'event', name: 'playerReady' })
+      return
+    }
+
     await wait(o.latency)
 
     if (msg.kind === 'sendChat') {
@@ -720,16 +748,40 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'getProfile') {
-      reply({
-        kind: 'profile',
-        profile: richProfile(o.userId, o.hasPreviousLogin ? 'Mojito' : 'Guest#beef', !o.hasPreviousLogin)
-      })
+      reply({ kind: 'profile', profile: ownProfile(o) })
+      return
+    }
+    if (msg.kind === 'getOwnedNames') {
+      reply({ kind: 'ownedNames', names: ownedNamesOf(o) })
+      return
+    }
+    if (msg.kind === 'saveProfile') {
+      const { kind: _kind, ...edit } = msg
+      // `robtfmfail` is the mock's failure switch: renaming to it exercises the error path (the
+      // engine rejects a deploy the same way) without needing a broken catalyst.
+      if (edit.name === 'robtfmfail') {
+        reply({ kind: 'profileSaved', ok: false, error: 'failed to deploy to server.' })
+        return
+      }
+      ownEdits.push(edit)
+      reply({ kind: 'profileSaved', ok: true })
+      reply({ kind: 'profile', profile: ownProfile(o) })
       return
     }
     if (msg.kind === 'getUserProfile') {
+      if (msg.address.toLowerCase() === o.userId.toLowerCase()) {
+        reply({ kind: 'userProfile', address: msg.address, profile: ownProfile(o) })
+        return
+      }
       // Resolve a real name from the nearby roster (real engine gets it from the catalyst).
       const member = MOCK_NEARBY.find((m) => m.address.toLowerCase() === msg.address.toLowerCase())
       const name = member?.name || `${msg.address.slice(0, 6)}…${msg.address.slice(-4)}`
+      if (msg.extras !== true) {
+        // Like the engine, hold nothing for someone never seen: a friend's seeded name stays.
+        const profile = member == null ? null : { address: msg.address, name, picture: member.picture, hasClaimedName: !name.includes('#'), isGuest: false }
+        reply({ kind: 'userProfile', address: msg.address, profile })
+        return
+      }
       reply({ kind: 'userProfile', address: msg.address, profile: richProfile(msg.address, name, false) })
       return
     }

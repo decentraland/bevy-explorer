@@ -2,7 +2,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { PopupHost, openPopup, closeTopPopup, showConfirm, resetPopups } from '../design'
 import { CrashModal } from '../features/error/CrashModal'
-import { openExitConfirm } from '../features/session/ExitConfirm'
 
 // The popup layer has NO keyboard handling of its own: the cancel key flows to the engine
 // like any other input and comes back as the 'Cancel' system action, which the session
@@ -54,6 +53,20 @@ describe('popup stack', () => {
     })
     fireEvent.click(document.querySelector('[class*="backdrop"]') as HTMLElement)
     expect(screen.getByText('locked')).toBeTruthy() // stayed open
+  })
+
+  it('backdropClickCloses can be a predicate, re-read on every click (the passport vetoes while editing)', () => {
+    render(<PopupHost />)
+    let dirty = true
+    act(() => {
+      openPopup(() => <div>guarded</div>, { backdropClickCloses: () => !dirty })
+    })
+    fireEvent.click(document.querySelector('[class*="backdrop"]') as HTMLElement)
+    expect(screen.queryByText('guarded')).toBeTruthy() // held: the popup still has unsaved state
+
+    dirty = false
+    fireEvent.click(document.querySelector('[class*="backdrop"]') as HTMLElement)
+    expect(screen.queryByText('guarded')).toBeNull()
   })
 
   it('a DOM Escape alone does not close popups — cancel is engine-resolved, and the key must reach the engine', () => {
@@ -136,27 +149,5 @@ describe('popup stack', () => {
     act(() => closeTopPopup())
     expect(screen.queryByText('passport')).toBeNull()
     expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('openExitConfirm settles exactly one outcome: Leave never runs the stay contract, a dismiss stays once', async () => {
-    render(<PopupHost />)
-
-    const onStay = vi.fn()
-    const onLeave = vi.fn()
-    act(() => {
-      openExitConfirm(onStay, onLeave)
-    })
-    fireEvent.click(screen.getByRole('button', { name: /Leave/i }))
-    expect(onLeave).toHaveBeenCalledTimes(1)
-    expect(onStay).not.toHaveBeenCalled() // close() fires onClose, but Leave already settled
-
-    const onStay2 = vi.fn()
-    const onLeave2 = vi.fn()
-    act(() => {
-      openExitConfirm(onStay2, onLeave2)
-    })
-    act(() => closeTopPopup())
-    expect(onStay2).toHaveBeenCalledTimes(1)
-    expect(onLeave2).not.toHaveBeenCalled()
   })
 })

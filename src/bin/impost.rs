@@ -51,7 +51,7 @@ use wallet::Wallet;
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
-fn main() {
+fn main() -> AppExit {
     let session_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
         web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
@@ -148,7 +148,7 @@ fn main() {
                 .collect::<Vec<_>>()
                 .join(" ")
         );
-        return;
+        return AppExit::from_code(2);
     }
 
     let mut app = App::new();
@@ -190,6 +190,10 @@ fn main() {
                 unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
                 ..Default::default()
             })
+            .set(
+                bevy::gltf::GltfPlugin::default()
+                    .with_uri_resolver(std::sync::Arc::new(ipfs::ipfs_path::resolve_content_uri)),
+            )
             .disable::<WinitPlugin>()
             .set(bevy::log::LogPlugin {
                 filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error".to_string(),
@@ -316,7 +320,7 @@ fn main() {
 
     app.add_systems(PreUpdate, check_done);
 
-    app.run();
+    app.run()
 }
 
 #[allow(clippy::type_complexity)]

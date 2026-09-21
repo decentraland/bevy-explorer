@@ -80,7 +80,7 @@ describe('profile passport', () => {
 
   it('Photos tab renders the camera-reel photos', async () => {
     render(<ProfilePassport profile={{ ...profile, photos: ['https://x/p1.png', 'https://x/p2.png'] }} onClose={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'PHOTOS' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'PHOTOS' }))
     expect(screen.getAllByRole('link').some((a) => a.getAttribute('href') === 'https://x/p1.png')).toBe(true)
   })
 
@@ -91,7 +91,7 @@ describe('profile passport', () => {
 
   it('switches tabs (Photos shows empty state)', async () => {
     render(<ProfilePassport profile={profile} onClose={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'PHOTOS' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'PHOTOS' }))
     expect(screen.getByText(/No photos shared yet/i)).toBeInTheDocument()
   })
 })

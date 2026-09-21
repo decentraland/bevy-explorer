@@ -7,18 +7,12 @@
 import { useEffect } from 'react'
 import type { EngineRpc } from '../../engine/engineRpc'
 import { bridgeChannelName } from '../../engine/protocol'
-import { serviceUrl } from '../../lib/baseDomain'
+import { BASE_DOMAIN, SERVICE_OVERRIDES } from '../../lib/baseDomain'
 import { bootMode } from '../../lib/bootMode'
 import { PAGE_DIR } from '../../lib/publicUrl'
 // Moved to lib/systemScene.ts; whether a link may override it is lib/launchGate.ts's call.
 import { SYSTEM_SCENE } from '../../lib/systemScene'
 import { launchOptionsFromUrl, type LaunchOptions } from '../../lib/webParams'
-
-// The main (Genesis City) realm, on the ?baseDomain= entry param when present (parity with the
-// engine's own derived default). Exported: parcel launches pass it EXPLICITLY so a ?realm
-// override — possibly an invalid world — never leaks into a Places pick (always a Genesis
-// coordinate).
-export const DEFAULT_REALM = `${serviceUrl('realm-provider-ea')}/main`
 
 // Engine media libs the wasm expects as globals (LivekitClient, Hls) — loaded from CDNs like the
 // old boot page did.
@@ -43,10 +37,13 @@ function injectEngine(): void {
   const params = new URLSearchParams(location.search)
   // pkg/ fetch base: the versioned CDN in prod builds (BASE_URL), the served engine dir otherwise.
   window.PUBLIC_URL = new URL('engine', new URL(import.meta.env.BASE_URL, PAGE_DIR)).href
-  // Every launch param the engine's web param table lists, read from the entry url; only the
+  // Every launch param the engine's web param table lists, read from the entry url; the
+  // `resolved` ones are what this HUD resolved for itself (lib/baseDomain.ts), and only the
   // ui scene has a HUD-side default (our bundled bridge scene, unless a link overrode it).
   window.__bevyBootConfig = {
     ...launchOptionsFromUrl(params),
+    ...SERVICE_OVERRIDES,
+    baseDomain: BASE_DOMAIN,
     systemScene: bootMode().systemScene ?? SYSTEM_SCENE
   }
 

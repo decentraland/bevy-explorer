@@ -105,7 +105,7 @@ export function fetchWorlds(args: FetchPlacesArgs = {}): Promise<PlacesResponse>
 // only covers Genesis City, and /worlds user counts lag behind live presence. We fetch the
 // live counts and resolve card metadata for those names in one batch.
 
-const WORLDS_LIVE_URL = `${serviceUrl('worlds-content-server')}/live-data`
+const WORLDS_LIVE_URL = `${serviceUrl('worldsServer')}/live-data`
 
 type LiveWorldEntry = { worldName: string; users: number }
 

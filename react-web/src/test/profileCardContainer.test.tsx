@@ -5,14 +5,15 @@ import { ProfileCard, openProfileCard } from '../features/profileCard/ProfileCar
 import { openPassport } from '../features/profile/Passport'
 import { SessionProvider } from '../features/session/SessionContext'
 import { fakeSession } from './harness'
+import { seedProfiles } from '../features/session/profileStore'
 import { PopupHost, resetPopups } from '../design'
 import type { EngineSession } from '../features/session/useEngineSession'
 
 // View Passport opens the passport popup; stub it so we can assert the trigger.
 vi.mock('../features/profile/Passport', () => ({ openPassport: vi.fn() }))
 
-// COMPONENT: the smart <ProfileCard userId> resolves name/picture/relationship from the session
-// (read via useSession) and renders the presentational card; openProfileCard mounts it as a popup.
+// COMPONENT: the smart <ProfileCard userId> resolves name/picture from the profile store and the
+// relationship from the session, and renders the presentational card; openProfileCard mounts it as a popup.
 afterEach(() => {
   resetPopups()
   vi.mocked(openPassport).mockClear()
@@ -28,9 +29,9 @@ function renderWithSession(node: React.ReactNode, mutate?: (s: EngineSession) =>
 const card = (userId: string): React.JSX.Element => <ProfileCard userId={userId} x={10} y={10} onClose={vi.fn()} />
 
 describe('ProfileCard container — resolution', () => {
-  it('resolves name + avatar + relationship from the session by userId', () => {
+  it('resolves name + avatar from the store and the relationship from the session by userId', () => {
+    seedProfiles([{ address: '0xabc', name: 'Alice', picture: 'alice.png' }])
     renderWithSession(card('0xabc'), (s) => {
-      s.chat.members = [{ address: '0xabc', name: 'Alice', picture: 'alice.png' }]
       s.friends.received = [{ id: 'r1', address: '0xabc', name: 'Alice' }] // → incoming
     })
     expect(screen.getByText('Alice')).toBeTruthy()
@@ -40,9 +41,9 @@ describe('ProfileCard container — resolution', () => {
     expect(screen.getByText(/reject/i)).toBeTruthy()
   })
 
-  it('resolves a friend not in the nearby roster from the friends list', () => {
+  it('resolves an address however the store learned it — here from a friends-list seed', () => {
+    seedProfiles([{ address: '0xDEF', name: 'Bob', picture: 'bob.png' }]) // case-insensitive
     renderWithSession(card('0xdef'), (s) => {
-      s.chat.members = [] // not nearby
       s.friends.list = [{ address: '0xdef', name: 'Bob', status: 'online', picture: 'bob.png' }]
     })
     expect(screen.getByText('Bob')).toBeTruthy()
@@ -59,8 +60,8 @@ describe('ProfileCard container — resolution', () => {
 })
 
 describe('ProfileCard container — action wiring', () => {
-  const asAlice = (s: EngineSession): void => {
-    s.chat.members = [{ address: '0xabc', name: 'Alice' }] // relationship none → ADD FRIEND
+  const asAlice = (): void => {
+    seedProfiles([{ address: '0xabc', name: 'Alice' }]) // relationship none → ADD FRIEND
   }
 
   it('ADD FRIEND fires the session friend action', async () => {
@@ -98,9 +99,8 @@ describe('ProfileCard container — action wiring', () => {
 
 describe('openProfileCard', () => {
   it('mounts the card via the popup layer for the resolved user', () => {
-    renderWithSession(<PopupHost />, (s) => {
-      s.chat.members = [{ address: '0xabc', name: 'Alice' }]
-    })
+    seedProfiles([{ address: '0xabc', name: 'Alice' }])
+    renderWithSession(<PopupHost />)
     act(() => {
       openProfileCard('0xabc', 5, 5)
     })

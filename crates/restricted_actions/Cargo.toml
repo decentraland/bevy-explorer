@@ -17,6 +17,8 @@ nft = { workspace = true }
 console = { workspace = true }
 
 user_input = { workspace = true }
+input_manager = { workspace = true }
+system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 bevy_dui = { workspace = true }

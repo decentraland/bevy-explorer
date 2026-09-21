@@ -5,6 +5,10 @@ use itertools::Itertools;
 
 use crate::CollectibleType;
 
+/// The collection a bare name (`"sittingChair2"`) is keyed under until the manager finds it in one
+/// of the type's `source_collections`. Never sent to a content server.
+pub const UNKNOWN_SOURCE_COLLECTION: &str = "urn:decentraland:off-chain:unknown-source";
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct CollectibleUrnErr {
     msg: &'static str,
@@ -84,14 +88,14 @@ impl<T: CollectibleType> CollectibleUrn<T> {
         let mut urn = value.to_owned();
         let count = urn.chars().filter(|c| *c == ':').count();
         if count == 0 {
-            let Some(base) = T::base_collection() else {
+            if T::source_collections().is_empty() {
                 return Err(CollectibleUrnErr {
                     msg: "single segment urn with no base",
                     value: value.to_owned(),
                 });
-            };
+            }
 
-            urn = format!("{base}:{urn}");
+            urn = format!("{UNKNOWN_SOURCE_COLLECTION}:{urn}");
         }
 
         let parts: Vec<_> = urn.split(':').collect();
@@ -104,7 +108,7 @@ impl<T: CollectibleType> CollectibleUrn<T> {
         };
 
         let collection_segments = match *collection {
-            "base-avatars" | "base-emotes" => 4,
+            "base-avatars" | "base-emotes" | "base-scene-emotes" | "unknown-source" => 4,
             "collections-v1" | "collections-v2" | "scene-emote" => 5,
             "collections-thirdparty" => 6,
             _ => {
@@ -187,6 +191,13 @@ impl<T: CollectibleType> CollectibleUrn<T> {
 
     pub fn as_str(&self) -> &str {
         self.urn.as_str()
+    }
+
+    /// The bare name of a urn keyed under `UNKNOWN_SOURCE_COLLECTION`.
+    pub(crate) fn unknown_source_name(&self) -> Option<&str> {
+        self.urn
+            .strip_prefix(UNKNOWN_SOURCE_COLLECTION)?
+            .strip_prefix(':')
     }
 }
 

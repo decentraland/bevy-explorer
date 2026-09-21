@@ -20,7 +20,7 @@ use system_bridge::{SystemApi, SystemBridge};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::js_sys;
 
-use system_api_types::launch_options::LaunchOptions;
+use system_api_types::launch_options::{ClientOptions, EngineRunOptions, LaunchOptions};
 
 use crate::{DecentralandApp, DecentralandAppConfig, DecentralandArguments};
 
@@ -30,7 +30,7 @@ static CONSOLE_BRIDGE_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<System
     OnceCell::new();
 /// The options the page launched with; the url sync echoes them back with the live values
 /// (realm, position, …) swapped in.
-static LAUNCH_OPTIONS: OnceCell<LaunchOptions> = OnceCell::new();
+static LAUNCH_OPTIONS: OnceCell<EngineRunOptions> = OnceCell::new();
 
 #[wasm_bindgen]
 extern "C" {
@@ -67,24 +67,6 @@ extern "C" {
     /// leave keys alone while the user types into scene UI.
     #[wasm_bindgen(js_name = "__setEngineTextFocus")]
     fn set_engine_text_focus(focused: bool);
-
-    /// The ?baseDomain= entry param, captured by boot.js (web parity with --base-domain).
-    /// `catch` so a host page without boot.js just falls through to the default domain.
-    #[wasm_bindgen(js_name = "__baseDomain", catch)]
-    fn base_domain_param() -> Result<String, JsValue>;
-}
-
-/// Latch the base domain before any backend URL is composed. Called at the top of BOTH wasm
-/// entry points: engine_init's config deserialization already materializes
-/// `AppConfig::default()` fields, so engine_run alone would be too late.
-fn apply_base_domain() {
-    if let Ok(domain) = base_domain_param() {
-        if !domain.is_empty() {
-            if let Err(e) = common::base_domain::set(&domain) {
-                warn!("ignoring baseDomain param: {e}");
-            }
-        }
-    }
 }
 
 /// call from a separate worker to initialize a channel for asset load processing
@@ -99,7 +81,6 @@ pub fn init_asset_load_thread() {
 #[wasm_bindgen]
 pub async fn engine_init() -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
-    apply_base_domain();
 
     let mut file = match web_fs::File::open("config.json").await {
         Ok(f) => f,
@@ -125,65 +106,40 @@ pub async fn engine_init() -> Result<JsValue, JsValue> {
     Ok("Config loaded".into())
 }
 
-/// The persisted home scene — realm + "x,y" parcel — as a JSON string, falling back to the
-/// derived defaults. Valid after [`engine_init`] (it reads the loaded config); exposed so the
-/// HUD's places picker can target home from "Skip" BEFORE the engine is launched.
+/// The persisted home scene — the pinned realm (null = none pinned: the HUD substitutes its own
+/// default realm, since this runs before `engine_run` latches the base domain the engine would
+/// compose one from) + "x,y" parcel — as a JSON string. Valid after [`engine_init`] (it reads the
+/// loaded config); exposed so the HUD's places picker can target home from "Skip" BEFORE the
+/// engine is launched.
 #[wasm_bindgen]
 pub fn engine_home_scene() -> String {
     let (realm, parcel) = INIT_DATA
         .get()
-        .map(|config| (config.home_realm(), config.home_location()))
-        .unwrap_or_else(|| {
-            let config = AppConfig::default();
-            (config.home_realm(), config.home_location())
-        });
+        .map(|config| (config.home_realm.clone(), config.home_location()))
+        .unwrap_or_else(|| (None, AppConfig::default().home_location()));
     serde_json::json!({ "realm": realm, "parcel": format!("{},{}", parcel.x, parcel.y) })
         .to_string()
 }
 
-/// Bytes of gpu uploads per frame on web — was a constant the page passed in; the engine owns it.
-const WEB_GPU_BYTES_PER_FRAME: usize = 10_000_000;
-
-// Type the `engine_run` parameter in the generated .d.ts — keep in step with
-// `system_api_types::launch_options::LaunchOptions` (the web param table's source).
-#[wasm_bindgen(typescript_custom_section)]
-const ENGINE_RUN_OPTIONS_TS: &str = r#"
-export interface EngineRunOptions {
-    realm?: string;
-    position?: string;
-    systemScene?: string;
-    portables?: string;
-    preview?: boolean;
-    editor?: boolean;
-    contentServer?: string;
-    pulseServer?: string;
-    imposterSource?: string;
-    logFps?: boolean;
-    gpuBytesPerFrame?: number;
-}
-"#;
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(typescript_type = "EngineRunOptions")]
-    pub type EngineRunOptionsJs;
-}
-
 /// Round-trip the page's object through JSON rather than `serde_wasm_bindgen::from_value`: that
 /// only visits the struct's own fields, so `deny_unknown_fields` would never see a misspelt key.
-fn parse_options(options: &JsValue) -> Result<LaunchOptions, JsValue> {
+fn parse_options(options: &JsValue) -> Result<EngineRunOptions, JsValue> {
     let json = String::from(js_sys::JSON::stringify(options)?);
-    LaunchOptions::from_json(&json)
-        .map(LaunchOptions::without_empty_strings)
+    EngineRunOptions::from_json(&json)
+        .map(EngineRunOptions::without_empty_strings)
         .map_err(|e| JsValue::from_str(&format!("engine_run: invalid options: {e}")))
 }
 
-/// Launch the engine. Throws (rejects the launch) on an invalid options object.
+/// Launch the engine. `options` is the `engine_run` object keyed by the web param table (one
+/// key per launch option; absent = the engine's default). Throws (rejects the launch) on an
+/// invalid one.
 #[wasm_bindgen]
-pub fn engine_run(options: EngineRunOptionsJs) -> Result<(), JsValue> {
+pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
     let options = parse_options(&options)?;
     let _ = LAUNCH_OPTIONS.set(options.clone());
-    apply_base_domain();
+    // the shared launch options' globals (src/launch.rs) — before anything composes a backend url
+    crate::launch::latch(&options.launch)
+        .map_err(|e| JsValue::from_str(&format!("engine_run: {e}")))?;
     init_runtime();
 
     let default_filter = "symphonia=warn";
@@ -349,19 +305,10 @@ fn update_url_params(
     startup_scenes: Option<Res<StartupScenes>>,
     preview: Res<PreviewMode>,
     editor: Res<EditorMode>,
-    mut prev: Local<Option<LaunchOptions>>,
+    mut prev: Local<Option<EngineRunOptions>>,
 ) {
-    // realms with fixed scene urns (worlds) spawn at their base scene and ignore an explicit
-    // position (see load_active_entities' base-position handling) - don't write one into the url
-    let position_honoured = current_realm
-        .config
-        .scenes_urn
-        .as_ref()
-        .is_none_or(Vec::is_empty);
-    let position = position_honoured.then(|| {
-        let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
-        format!("{},{}", parcel.x, parcel.y)
-    });
+    let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
+    let position = Some(format!("{},{}", parcel.x, parcel.y));
     let Some(server) = current_realm.about_url.strip_suffix("/about") else {
         return;
     };
@@ -388,15 +335,21 @@ fn update_url_params(
         (None, None)
     };
 
-    let options = LaunchOptions {
-        realm: Some(server.to_owned()),
-        position,
-        system_scene,
-        // the default set is omitted so the canonical url stays clean (the page doesn't know it)
-        portables: portables.filter(|p| p != system_api_types::web_params::DEFAULT_PORTABLES),
-        preview: preview.is_preview,
-        editor: editor.0,
-        ..LAUNCH_OPTIONS.get().cloned().unwrap_or_default()
+    let launched = LAUNCH_OPTIONS.get().cloned().unwrap_or_default();
+    let options = EngineRunOptions {
+        launch: LaunchOptions {
+            realm: Some(server.to_owned()),
+            position,
+            preview: preview.is_preview,
+            ..launched.launch
+        },
+        client: ClientOptions {
+            system_scene,
+            // the default set is omitted so the canonical url stays clean (the page doesn't know it)
+            portables: portables.filter(|p| p != system_api_types::web_params::DEFAULT_PORTABLES),
+            editor: editor.0,
+            ..launched.client
+        },
     };
 
     if prev.as_ref() != Some(&options) {
@@ -407,24 +360,14 @@ fn update_url_params(
 }
 
 fn decentraland_serialized_app_config() -> AppConfig {
-    INIT_DATA.get().cloned().unwrap_or_else(|| AppConfig {
-        graphics: common::structs::GraphicsSettings {
-            shadow_distance: 20.0,
-            shadow_settings: common::structs::ShadowSetting::Low,
-            ..Default::default()
-        },
-        ..Default::default()
-    })
+    INIT_DATA.get().cloned().unwrap_or_default()
 }
 
-fn decentraland_app_arguments(options: &LaunchOptions) -> DecentralandArguments {
-    let mut launch = options.clone();
-    launch
-        .gpu_bytes_per_frame
-        .get_or_insert(WEB_GPU_BYTES_PER_FRAME);
-    launch.log_fps.get_or_insert(false);
+fn decentraland_app_arguments(options: &EngineRunOptions) -> DecentralandArguments {
+    let EngineRunOptions { launch, client } = options.clone();
     DecentralandArguments {
         launch,
+        client,
         // wasm has no engine-managed HUD: the react page hosting the engine is the HUD
         hud: false,
         ..Default::default()

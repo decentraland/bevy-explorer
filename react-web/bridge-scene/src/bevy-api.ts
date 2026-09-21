@@ -3,6 +3,7 @@
 // the wire shapes React sees live in the shared protocol. Only the methods the domains use
 // are declared — extend as needed.
 import type { ActionWire, Setting } from '../../src/engine/protocol'
+import type { SerializedProfile } from './domains/profile'
 import type {
   AvatarModifierState,
   BlockedUserData,
@@ -15,6 +16,7 @@ import type {
   LivekitUpdate,
   LiveSceneInfo,
   PermissionRequestEvent,
+  ProfileChangedEvent,
   ProximityEvent,
   SceneLoadingUi,
   SetAvatarData,
@@ -103,14 +105,20 @@ export type BevyApiInterface = {
    *  system-action stream keeps flowing); `text` = a HUD text field holds keyboard focus
    *  (keys are typing — no actions resolve at all); `scroll` = the cursor is over a
    *  scrollable HUD element (the Scroll ACTIONS are reserved, so every input bound to
-   *  them drives the panel rather than world consumers like camera zoom). */
-  setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean }) => Promise<void>
+   *  them drives the panel rather than world consumers like camera zoom); `covered` = a
+   *  full-screen HUD surface (menu page, loading overlay) hides the world (scenes see
+   *  EngineInfo.scene_hidden); `menu` = the open full-screen menu page, named by the SystemAction
+   *  that toggles it ('Map', 'Backpack', ...), else null (backs the scene-facing openExplorerUi
+   *  action: its WAS_ALREADY_OPEN verdict and the page's opened/closed events). */
+  setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean; covered: boolean; menu: string | null }) => Promise<void>
   sendChat: (message: string, channel: string) => void
   getChatStream: () => Promise<AsyncIterable<ChatStreamMessage>>
   getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>
   getSceneLoadingUIStream: () => Promise<AsyncIterable<SceneLoadingState>>
   getHoverStream: () => Promise<AsyncIterable<SystemHoverEvent>>
   getProximityStream: () => Promise<AsyncIterable<SystemProximityEvent>>
+  /** Every profile the engine takes a new version of — a nearby player's, or the local player's own. */
+  getProfileChangedStream: () => Promise<AsyncIterable<ProfileChangedEvent>>
   /** Run an engine console command (no leading slash) and await its reply; rejects with the failure
    *  message. Optional: absent on runtimes whose SystemApi predates it, so callers must degrade. */
   consoleCommand?: (cmd: string, args: string[]) => Promise<string>
@@ -125,6 +133,10 @@ export type BevyApiInterface = {
    *  never the bridge. */
   liveSceneInfo: () => Promise<LiveSceneInfo[]>
   setAvatar: (data: SetAvatarData) => Promise<unknown>
+  /** Any user's full deployed profile as the engine holds it (own, nearby and remote players,
+   *  guests included), resolved through its profile cache and fetch cascade. Rejects once the
+   *  engine has concluded the address can't be resolved. */
+  getUserProfile: (address: string) => Promise<SerializedProfile>
   kernelFetch: (req: KernelFetchRequest) => Promise<KernelFetchResponse>
   getRealmProvider: () => Promise<string>
   getPreviousLogin: () => Promise<{ userId: string | null }>

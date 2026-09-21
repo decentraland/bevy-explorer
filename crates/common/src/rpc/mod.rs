@@ -1,7 +1,10 @@
 mod result_sender;
 mod stream_sender;
 
-use crate::{profile::SerializedProfile, structs::PermissionType};
+use crate::{
+    profile::SerializedProfile,
+    structs::{EmoteMask, PermissionType},
+};
 use bevy::{platform::collections::HashMap, prelude::*};
 use ethers_core::types::H160;
 use serde::{Deserialize, Serialize};
@@ -110,6 +113,19 @@ pub struct RPCSendableMessage {
 
 pub type RpcEventSender = RpcStreamSender<String>;
 
+/// `decentraland.kernel.apis.OpenExplorerUiResult` (restricted_actions.proto; the kernel api
+/// protos are not compiled, so the wire values are mirrored here).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(i32)]
+pub enum OpenExplorerUiResult {
+    Unspecified = 0,
+    Opened = 1,
+    WasAlreadyOpen = 2,
+    RejectedNotCurrentScene = 3,
+    RejectedFeatureDisabled = 4,
+    RejectedNoUserGesture = 5,
+}
+
 #[derive(Event, Debug, Clone, Serialize, Deserialize)]
 pub enum RpcCall {
     ChangeRealm {
@@ -140,7 +156,10 @@ pub enum RpcCall {
     },
     TeleportPlayer {
         scene: Option<Entity>,
-        to: IVec2,
+        /// The parcel to land on; `None` (with a realm) is the realm's default spawn.
+        to: Option<IVec2>,
+        /// The realm `to` belongs to: a realm change (a full reconnect, as for `ChangeRealm`) happens first.
+        realm: Option<String>,
         response: RpcResultSender<Result<(), String>>,
     },
     MoveCamera {
@@ -178,6 +197,12 @@ pub enum RpcCall {
         scene: Entity,
         urn: String,
         response: RpcResultSender<Result<(), String>>,
+    },
+    OpenExplorerUi {
+        scene: Entity,
+        /// raw `decentraland.sdk.components.common.ExplorerUi` value
+        ui: i32,
+        response: RpcResultSender<OpenExplorerUiResult>,
     },
     SubscribePlayerConnected {
         scene: Entity,
@@ -255,6 +280,10 @@ pub enum RpcCall {
         scene: Entity,
         urn: String,
         r#loop: bool,
+        mask: EmoteMask,
+    },
+    StopEmote {
+        scene: Entity,
     },
     UiFocus {
         scene: Entity,

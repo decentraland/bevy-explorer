@@ -1,0 +1,47 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.field {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.45;
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--dur-fast) ease;
+}
+.field::placeholder {
+  color: var(--ink-45);
+}
+.field:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.field:focus {
+  border-color: var(--brand);
+}
+
+.dark {
+  background: var(--fill-2);
+  border: 1px solid var(--fill-4);
+  color: var(--text);
+}
+
+.light {
+  background: var(--pearl);
+  border: 1px solid transparent;
+  color: var(--accent-ink);
+}
+
+.counter {
+  align-self: flex-end;
+}

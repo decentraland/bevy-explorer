@@ -1,4 +1,5 @@
 pub mod agent_commands;
+pub mod explorer_ui;
 pub mod teleport;
 
 use std::{
@@ -40,6 +41,7 @@ use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
+use explorer_ui::{open_explorer_ui, track_explorer_ui, ExplorerUiState};
 use http::Uri;
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
@@ -102,11 +104,16 @@ impl Plugin for RestrictedActionsPlugin {
                     handle_sign_request,
                     handle_entity_definition,
                     handle_read_file,
+                    open_explorer_ui,
+                    track_explorer_ui.after(open_explorer_ui),
                 ),
             )
                 .in_set(SceneSets::RestrictedActions),
         );
         app.init_resource::<PendingPortableCommands>();
+        app.init_resource::<ExplorerUiState>();
+        // headless has no InputManagerPlugin; open_explorer_ui still needs the (empty) streams
+        app.init_resource::<input_manager::SystemActionStreams>();
         app.add_console_command::<SpawnPortableCommand, _>(spawn_portable_command);
         app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
         app.add_plugins(agent_commands::AgentCommandsPlugin);
@@ -390,6 +397,7 @@ fn apply_player_move(
                 });
             } else {
                 player_transform.translation = world_target;
+                movement_control.deliberate_penetration = true;
                 debug!("player teleported to {world_target}");
                 // Instant reposition → announce as a Pulse teleport so peers snap rather than lerp.
                 teleport_events.write(PlayerTeleported {
@@ -517,6 +525,7 @@ pub fn update_player_move(
                 movement_control
                     .suppress_avatar_physics
                     .remove("player_move");
+                movement_control.deliberate_penetration = true;
                 commands.entity(entity).remove::<ActivePlayerMove>();
             }
         }
@@ -624,7 +633,10 @@ fn change_realm(
             PermissionType::ChangeRealm,
             *scene,
             (to.clone(), response.clone()),
-            message.clone(),
+            Some(match message {
+                Some(message) => format!("{to}: {message}"),
+                None => to.clone(),
+            }),
             false,
         );
     }
@@ -695,7 +707,10 @@ pub async fn lookup_ens(
     } else {
         lookup_portable(
             parent_scene,
-            common::base_domain::https("worlds-content-server", &format!("/world/{ens}")),
+            common::base_domain::url(
+                common::base_domain::Service::WorldsServer,
+                &format!("/world/{ens}"),
+            ),
             super_user,
             ipfs,
         )
@@ -1902,7 +1917,7 @@ pub fn handle_copy_to_clipboard(
             .detach();
     }
 
-    for (_, response) in perms.drain_fail(PermissionType::Web3) {
+    for (_, response) in perms.drain_fail(PermissionType::CopyToClipboard) {
         response.send(Err("permission denied".to_owned()));
     }
 }

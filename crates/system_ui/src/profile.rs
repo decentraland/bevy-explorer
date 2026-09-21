@@ -463,7 +463,11 @@ fn process_profile(
         };
 
         if let Some(base) = &set_avatar.base {
-            profile.content.avatar.body_shape = Some(base.body_shape_urn.clone());
+            // As with the colors below, a base that doesn't carry a body shape must not strip the
+            // profile's — a caller editing only the name has no reason to restate it.
+            if !base.body_shape_urn.is_empty() {
+                profile.content.avatar.body_shape = Some(base.body_shape_urn.clone());
+            }
 
             // a base without colors must not strip them from the profile
             if let Some(hair) = base.hair_color {
@@ -507,7 +511,20 @@ fn process_profile(
         }
 
         if let Some(extras) = &set_avatar.profile_extras {
-            profile.content.extra_fields = extras.clone();
+            // Merged per key, not assigned: `extra_fields` is a catch-all for every profile key we
+            // don't model (and for keys written by other explorers), so a caller that edits one
+            // field must not have to restate the rest to avoid deleting them. An explicit `null`
+            // removes a key — the only way back out, now that omission means "leave alone".
+            for (key, value) in extras {
+                if value.is_null() {
+                    profile.content.extra_fields.remove(key);
+                } else {
+                    profile
+                        .content
+                        .extra_fields
+                        .insert(key.clone(), value.clone());
+                }
+            }
         }
 
         if let Some(name_color) = set_avatar.name_color {

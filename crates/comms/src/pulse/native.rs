@@ -31,6 +31,7 @@ use super::transport::{
 /// Channels in server order: RELIABLE=0, UNRELIABLE_SEQUENCED=1, UNRELIABLE_UNSEQUENCED=2
 /// (the server's `ENetChannel.COUNT`).
 const CHANNEL_COUNT: usize = 3;
+const CHANNEL_RELIABLE: u8 = 0;
 
 /// How long to block with no inbound/outbound activity before servicing the host anyway, so ENet's
 /// pings and reliable retransmits keep ticking on an otherwise-idle connection.
@@ -165,13 +166,21 @@ async fn drive(channels: &mut PulseDriverChannels, address: SocketAddr, stop: &A
                     let _ = channels.status.try_send(PulseStatus::Disconnected(reason));
                     return;
                 }
-                Ok(Some(enet::Event::Receive { packet, .. })) => {
-                    // Only surface peer state while a routing entity is alive (we're on a Pulse
-                    // realm). Off-realm we stay connected — the host is still serviced, keeping the
-                    // peer warm — but drop inbound so old-realm peers don't leak through; the Bevy
-                    // decoder's resulting gap is healed by resync/teleport on return.
-                    if channels.presence.strong_count() > 1 {
-                        let _ = channels.inbound.try_send(packet.data().to_vec());
+                Ok(Some(enet::Event::Receive {
+                    channel_id, packet, ..
+                })) => {
+                    // Every packet is surfaced, on or off a Pulse realm: the protocol layer's
+                    // decoder must see each `PlayerLeft` to keep its subject table an honest mirror
+                    // of the server's view of us, and it gates what reaches the engine itself
+                    // (nothing routes without a live routing entity). So a reliable packet waits
+                    // for room rather than being dropped while the main thread stalls; ENet's
+                    // peer timeout is seconds, well past an ordinary frame hitch or scene load.
+                    // Unreliable ones are superseded anyway.
+                    let bytes = packet.data().to_vec();
+                    if channel_id == CHANNEL_RELIABLE {
+                        let _ = channels.inbound.send(bytes).await;
+                    } else {
+                        let _ = channels.inbound.try_send(bytes);
                     }
                 }
                 Ok(None) => break,

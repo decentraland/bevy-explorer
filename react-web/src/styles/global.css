@@ -11,6 +11,8 @@ body,
   height: 100%;
   width: 100%;
   overflow: hidden;
+  /* no trackpad swipe-to-navigate: a horizontal overscroll must not unload the engine */
+  overscroll-behavior-x: none;
 }
 
 body {

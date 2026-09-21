@@ -3,10 +3,11 @@ use dcl_component::{
     component_name_registry::{derive_component_name, make_proto_closures},
     proto_components::sdk::components::{
         PbAudioEvent, PbAvatarBase, PbAvatarEmoteCommand, PbAvatarEquippedData,
-        PbAvatarMovementInfo, PbCameraMode, PbEngineInfo, PbGltfContainerLoadingState,
-        PbGltfNodeState, PbPlayerIdentityData, PbPointerEventsResult, PbPointerLock,
-        PbPrimaryPointerInfo, PbRaycastResult, PbRealmInfo, PbTriggerAreaResult, PbTweenState,
-        PbUiCanvasInformation, PbUiDropdownResult, PbUiInputResult, PbUiScrollResult, PbVideoEvent,
+        PbAvatarMovementInfo, PbCameraMode, PbEngineInfo, PbExplorerUiEventsResult,
+        PbGltfContainerLoadingState, PbGltfNodeState, PbPlayerIdentityData, PbPointerEventsResult,
+        PbPointerLock, PbPrimaryPointerInfo, PbRaycastResult, PbRealmInfo, PbTriggerAreaResult,
+        PbTweenState, PbUiCanvasInformation, PbUiDropdownResult, PbUiInputResult, PbUiScrollResult,
+        PbVideoEvent,
     },
     ComponentNameRegistry, CrdtType, SceneComponentId,
 };
@@ -128,6 +129,12 @@ pub fn register_engine_components(app: &mut App) {
     reg!(
         PbTriggerAreaResult,
         SceneComponentId::TRIGGER_AREA_RESULT,
+        CrdtType::GO_ENT,
+        ro
+    );
+    reg!(
+        PbExplorerUiEventsResult,
+        SceneComponentId::EXPLORER_UI_EVENTS_RESULT,
         CrdtType::GO_ENT,
         ro
     );

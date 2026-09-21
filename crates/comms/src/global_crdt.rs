@@ -10,7 +10,8 @@ use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
-        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
+        AudioDecoderError, EmoteCommand, EmoteLifecycle, EmoteLifecycleEvent, EmoteLifecycleSource,
+        EmoteMask, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
         SceneDrivenAnimationRequest,
     },
     util::ModifyComponentExt,
@@ -102,6 +103,7 @@ impl Plugin for GlobalCrdtPlugin {
 
         app.init_resource::<VoiceMessageStreams>();
 
+        app.add_event::<EmoteLifecycleEvent>();
         app.add_systems(Update, process_transport_updates);
         app.add_systems(Update, despawn_players);
         app.add_observer(remove_transport_from_foreign_audio_source);
@@ -144,14 +146,21 @@ pub enum PlayerMessage {
         /// its proto `float` timestamp, which is too narrow for an absolute millisecond tick.
         timestamp: f64,
     },
-    /// Pulse-decoded emote start (`stopping: false`) or stop, delivered natively for the same reason
-    /// as [`PlayerMessage::Movement`]: an rfc4 `PlayerEmote` on a byte transport is a duplicate to be
+    /// Pulse-decoded emote start, delivered natively for the same reason as
+    /// [`PlayerMessage::Movement`]: an rfc4 `PlayerEmote` on a byte transport is a duplicate to be
     /// dropped, so the Pulse copy must be distinguishable from it by variant.
-    Emote {
+    EmoteStart {
         urn: String,
         /// The server tick the emote started on; ordering only.
         incremental_id: u32,
-        stopping: bool,
+        /// Which bones the emote drives.
+        mask: EmoteMask,
+    },
+    /// Pulse-decoded emote stop. The wire doesn't say which emote: it ends the one playing.
+    EmoteStop {
+        /// The server's one-shot timer expired (a natural finish) rather than the player
+        /// cancelling.
+        completed: bool,
     },
     AudioStreamAvailable {
         transport: Entity,
@@ -177,15 +186,19 @@ impl std::fmt::Debug for PlayerMessage {
                 .field("teleport", teleport)
                 .field("timestamp", timestamp)
                 .finish(),
-            Self::Emote {
+            Self::EmoteStart {
                 urn,
                 incremental_id,
-                stopping,
+                mask,
             } => f
-                .debug_struct("Emote")
+                .debug_struct("EmoteStart")
                 .field("urn", urn)
                 .field("incremental_id", incremental_id)
-                .field("stopping", stopping)
+                .field("mask", mask)
+                .finish(),
+            Self::EmoteStop { completed } => f
+                .debug_struct("EmoteStop")
+                .field("completed", completed)
                 .finish(),
             Self::AudioStreamAvailable { transport } => f
                 .debug_tuple("AudioStreamAvailable")
@@ -695,6 +708,7 @@ pub fn process_transport_updates(
     mut profile_events: EventWriter<ProfileEvent>,
     mut position_events: EventWriter<PlayerPositionEvent>,
     mut anim_events: EventWriter<PlayerSceneAnimEvent>,
+    mut emote_events: EventWriter<EmoteLifecycleEvent>,
     mut chat_events: EventWriter<ChatEvent>,
     mut string_senders: Local<HashMap<String, RpcEventSender>>,
     mut binary_senders: Local<HashMap<String, RpcStreamSender<(String, Vec<u8>)>>>,
@@ -768,7 +782,9 @@ pub fn process_transport_updates(
 
                             let new_entity = commands
                                 .spawn((
-                                    Transform::default(),
+                                    // Below ground until a position arrives, so a peer with no
+                                    // avatar-state channel is not shown standing at the origin.
+                                    Transform::from_xyz(0.0, -10.0, 0.0),
                                     Visibility::default(),
                                     ForeignPlayer {
                                         address: update.address,
@@ -909,24 +925,53 @@ pub fn process_transport_updates(
                             &mut state,
                             &mut position_events,
                         ),
-                        PlayerMessage::Emote {
+                        // The wire is the only source of a foreign player's emote lifecycle for
+                        // scenes: raised here in wire order, on the client and the headless server
+                        // alike, so both report the same sequence.
+                        PlayerMessage::EmoteStart {
                             urn,
                             incremental_id,
-                            stopping,
+                            mask,
                         } => {
-                            debug!("emote: {urn} (stopping: {stopping})");
-                            if stopping {
-                                // Explicit stop (a looping emote cancelled, or a one-shot's server
-                                // completion). Foreign emotes no longer self-cancel on motion (see
-                                // `animate`), so the wire stop is what ends a looping one.
-                                commands.entity(entity).remove::<EmoteCommand>();
+                            debug!("emote: {urn} (mask: {mask:?})");
+                            if !acceptable_emote_urn(&urn) {
+                                debug!(
+                                    "dropping emote with unacceptable urn from {:#x}",
+                                    update.address
+                                );
                             } else {
                                 commands.entity(entity).try_insert(EmoteCommand {
                                     timestamp: incremental_id as i64,
-                                    urn,
+                                    urn: urn.clone(),
                                     r#loop: false,
+                                    mask,
+                                });
+                                emote_events.write(EmoteLifecycleEvent {
+                                    avatar: entity,
+                                    event: EmoteLifecycle::Started {
+                                        urn,
+                                        r#loop: false,
+                                        mask,
+                                    },
+                                    source: EmoteLifecycleSource::Wire,
                                 });
                             }
+                        }
+                        // Explicit stop (a looping emote cancelled, or a one-shot's server
+                        // completion). Foreign emotes no longer self-cancel on motion (see
+                        // `animate`), so the wire stop is what ends a looping one.
+                        PlayerMessage::EmoteStop { completed } => {
+                            debug!("emote stop (completed: {completed})");
+                            commands.entity(entity).remove::<EmoteCommand>();
+                            emote_events.write(EmoteLifecycleEvent {
+                                avatar: entity,
+                                event: if completed {
+                                    EmoteLifecycle::Finished
+                                } else {
+                                    EmoteLifecycle::Interrupted
+                                },
+                                source: EmoteLifecycleSource::Wire,
+                            });
                         }
                         PlayerMessage::PlayerData(Message::SceneDrivenAnimation(sda)) => {
                             // Standalone scene-driven animation (decoupled from movement). Order by the
@@ -957,6 +1002,15 @@ pub fn process_transport_updates(
                         }
                         PlayerMessage::PlayerData(Message::SceneEmote(scene_emote)) => {
                             debug!("scene emote: {scene_emote:?}");
+                        }
+                        PlayerMessage::PlayerData(Message::LookAtPosition(look_at_position)) => {
+                            debug!("look at position: {look_at_position:?}");
+                        }
+                        PlayerMessage::PlayerData(Message::Reaction(reaction)) => {
+                            debug!("reaction: {reaction:?}");
+                        }
+                        PlayerMessage::PlayerData(Message::ChatReaction(chat_reaction)) => {
+                            debug!("chat reaction: {chat_reaction:?}");
                         }
                     }
                 }
@@ -1317,5 +1371,34 @@ fn receive_new_voice_message_senders(
         if let SystemApi::GetVoiceStream(stream) = event {
             voice_message_streams.push(stream.clone());
         }
+    }
+}
+
+/// Room for any collectible or scene-emote urn, not for a peer to fill scene crdt with.
+const MAX_EMOTE_URN_BYTES: usize = 256;
+
+/// Whether a peer's emote urn may reach scenes: it lands verbatim in `AvatarEmoteCommand`, and
+/// nothing upstream bounds it (Pulse validates an emote's duration and position, not its id).
+pub fn acceptable_emote_urn(urn: &str) -> bool {
+    !urn.is_empty()
+        && urn.len() <= MAX_EMOTE_URN_BYTES
+        && !urn.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn peer_emote_urns_are_bounded() {
+        assert!(acceptable_emote_urn(
+            "urn:decentraland:off-chain:base-emotes:wave"
+        ));
+        assert!(acceptable_emote_urn(&"x".repeat(MAX_EMOTE_URN_BYTES)));
+        assert!(!acceptable_emote_urn(""));
+        assert!(!acceptable_emote_urn(&"x".repeat(MAX_EMOTE_URN_BYTES + 1)));
+        assert!(!acceptable_emote_urn("urn:with space"));
+        assert!(!acceptable_emote_urn("urn:with\nnewline"));
+        assert!(!acceptable_emote_urn("urn:with\u{0}nul"));
     }
 }

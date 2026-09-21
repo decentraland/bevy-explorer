@@ -91,7 +91,7 @@ export function parcelTileFor(worldX: number, worldZ: number): ParcelTile {
   const centerParcelY = chunkY * PARCEL_TILE_CHUNK + PARCEL_TILE_CHUNK / 2
   const px = PARCEL_TILE_PARCELS * PARCEL_TILE_PX_PER_PARCEL
   return {
-    url: `${serviceUrl('api')}/v1/map.png?center=${centerParcelX},${centerParcelY}&width=${px}&height=${px}&size=${PARCEL_TILE_PX_PER_PARCEL}`,
+    url: `${serviceUrl('mapApi')}/v1/map.png?center=${centerParcelX},${centerParcelY}&width=${px}&height=${px}&size=${PARCEL_TILE_PX_PER_PARCEL}`,
     centerX: centerParcelX * PARCEL_METERS,
     centerZ: centerParcelY * PARCEL_METERS,
     meters: PARCEL_TILE_PARCELS * PARCEL_METERS

@@ -13,6 +13,7 @@ common = { workspace = true }
 dcl = { workspace = true }
 dcl_component = { workspace = true }
 ipfs = { workspace = true }
+ui_core = { workspace = true }
 wallet = { workspace = true }
 platform = { workspace = true }
 system_bridge = { workspace = true }

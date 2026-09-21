@@ -4,7 +4,10 @@ use bevy::{
     math::{IVec2, Vec3},
     transform::components::Transform,
 };
-use common::rpc::{RpcCall, RpcResultSender, RpcUiFocusAction};
+use common::{
+    rpc::{OpenExplorerUiResult, RpcCall, RpcResultSender, RpcUiFocusAction},
+    structs::EmoteMask,
+};
 use dcl_component::proto_components::common::Vector3 as DclVector3;
 use serde::Serialize;
 use std::{cell::RefCell, rc::Rc};
@@ -93,8 +96,9 @@ pub async fn op_walk_player_to(
 
 pub async fn op_teleport_to(
     state: Rc<RefCell<impl State>>,
-    position_x: i32,
-    position_y: i32,
+    position_x: Option<i32>,
+    position_y: Option<i32>,
+    realm: Option<String>,
 ) -> Result<bool, anyhow::Error> {
     debug!("op_teleport_to");
     let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
@@ -104,11 +108,16 @@ pub async fn op_teleport_to(
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::TeleportPlayer {
             scene: Some(scene),
-            to: IVec2::new(position_x, position_y),
+            to: position_x.zip(position_y).map(|(x, y)| IVec2::new(x, y)),
+            realm,
             response: sx,
         })?;
 
-    Ok(matches!(rx.await, Ok(Ok(_))))
+    match rx.await {
+        Ok(Ok(())) => Ok(true),
+        Ok(Err(e)) => Err(anyhow::anyhow!(e)),
+        Err(_) => Err(anyhow::anyhow!("teleport request dropped")),
+    }
 }
 
 pub async fn op_change_realm(
@@ -151,15 +160,28 @@ pub async fn op_external_url(
     Ok(matches!(rx.await, Ok(Ok(_))))
 }
 
-pub fn op_emote(op_state: &mut impl State, emote: String) -> Result<(), anyhow::Error> {
+pub fn op_emote(
+    op_state: &mut impl State,
+    emote: String,
+    upper_body: bool,
+) -> Result<(), anyhow::Error> {
     debug!("op_emote");
-    send_emote(op_state, emote, false)
+    send_emote(op_state, emote, false, upper_body)
+}
+
+pub fn op_stop_emote(op_state: &mut impl State) -> Result<(), anyhow::Error> {
+    debug!("op_stop_emote");
+    let scene = op_state.borrow::<CrdtContext>().scene_id.0;
+    op_state
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::StopEmote { scene })
 }
 
 pub async fn op_scene_emote(
     op_state: Rc<RefCell<impl State>>,
     emote: String,
     looping: bool,
+    upper_body: bool,
 ) -> Result<(), anyhow::Error> {
     debug!("op_scene_emote");
     let scene_info = scene_information(op_state.clone()).await?;
@@ -183,20 +205,31 @@ pub async fn op_scene_emote(
     let emote_urn =
         format!("urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-{looping}");
 
-    send_emote(&mut *op_state.borrow_mut(), emote_urn, looping)
+    send_emote(&mut *op_state.borrow_mut(), emote_urn, looping, upper_body)
 }
 
 pub fn send_emote(
     op_state: &mut impl State,
     urn: String,
     r#loop: bool,
+    upper_body: bool,
 ) -> Result<(), anyhow::Error> {
     let context = op_state.borrow::<CrdtContext>();
     let scene = context.scene_id.0;
+    let mask = if upper_body {
+        EmoteMask::UpperBody
+    } else {
+        EmoteMask::FullBody
+    };
 
     op_state
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::TriggerEmote { scene, urn, r#loop })
+        .push(RpcCall::TriggerEmote {
+            scene,
+            urn,
+            r#loop,
+            mask,
+        })
 }
 
 pub async fn op_open_nft_dialog(
@@ -221,6 +254,30 @@ pub async fn op_open_nft_dialog(
     }
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
+}
+
+pub async fn op_open_explorer_ui(
+    op_state: Rc<RefCell<impl State>>,
+    ui: i32,
+) -> Result<i32, anyhow::Error> {
+    debug!("op_open_explorer_ui");
+    let (sx, rx) = RpcResultSender::<OpenExplorerUiResult>::channel();
+
+    {
+        let mut state = op_state.borrow_mut();
+        let context = state.borrow::<CrdtContext>();
+        let scene = context.scene_id.0;
+
+        state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::OpenExplorerUi {
+                scene,
+                ui,
+                response: sx,
+            })?;
+    }
+
+    Ok(rx.await.map_err(|e| anyhow!(e))? as i32)
 }
 
 #[derive(Serialize)]

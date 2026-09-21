@@ -109,7 +109,23 @@ export interface NavActionRequest {
   action: NavAction
 }
 
+/** Page→scene handshake ping, repeated until the scene answers `bridgeReady` (see BridgeChannel). */
+export interface HelloRequest {
+  kind: 'hello'
+}
+
+/** Scene→page: every domain is registered and the scene is listening. */
+export interface BridgeReadyMessage {
+  kind: 'bridgeReady'
+}
+
+/** Synthesised BY THE PAGE (never sent by the scene) when the bridge never answered. */
+export interface BridgeUnavailableMessage {
+  kind: 'bridgeUnavailable'
+}
+
 export type PageToScene =
+  | HelloRequest
   | RpcRequest
   | SendChatRequest
   | ReloadSceneRequest
@@ -125,6 +141,8 @@ export type PageToScene =
   | UiFocusMessage
   | GetProfileRequest
   | GetUserProfileRequest
+  | SaveProfileRequest
+  | GetOwnedNamesRequest
   | GetNotificationsRequest
   | MarkNotificationsReadRequest
   | GetEmotesRequest
@@ -296,7 +314,10 @@ export interface Badge {
 
 /** The about-me field grid on the passport (all optional). */
 export interface ProfileInfo {
+  country?: string
+  sexualOrientation?: string
   gender?: string
+  /** ISO `YYYY-MM-DD`. Stored in the profile as epoch seconds; the bridge converts. */
   birthdate?: string
   pronouns?: string
   relationship?: string
@@ -314,6 +335,9 @@ export interface Profile {
   picture?: string
   hasClaimedName: boolean
   isGuest: boolean
+  /** The deployed profile's version, when this came from the engine; compared against
+   *  `profileChanged` to tell a stale copy from a current one. */
+  version?: number
   description?: string
   links?: { title: string; url: string }[]
   // --- rich passport fields (optional; populated by the passport fetch) -----
@@ -340,10 +364,12 @@ export interface GetProfileRequest {
   kind: 'getProfile'
 }
 
-/** Fetch another user's full passport by address (View Profile). */
+/** Fetch a user's profile by address from the engine's cache. With `extras`, the passport's badges,
+ *  photos and equipped items come too (each a service call of its own, so only the passport asks). */
 export interface GetUserProfileRequest {
   kind: 'getUserProfile'
   address: string
+  extras?: boolean
 }
 
 /** A fetched user's passport (kept separate from the local `profile` message so it
@@ -352,6 +378,47 @@ export interface UserProfileMessage {
   kind: 'userProfile'
   address: string
   profile: Profile | null
+}
+
+/** The engine now holds this version of a profile (its own player's or anyone nearby). The page
+ *  re-reads what it is still showing. */
+export interface ProfileChangedMessage {
+  kind: 'profileChanged'
+  address: string
+  version: number
+}
+
+/** Edit the local player's own profile (passport edit mode). Every field is optional and an
+ *  omitted one is left as it is, so this carries one save, not the whole profile. `links` and
+ *  `info`, when present, replace their whole section — that's how a link or a field is cleared. */
+export interface SaveProfileRequest {
+  kind: 'saveProfile'
+  /** Display name. The bridge resolves whether it's a claimed (owned NFT) name. */
+  name?: string
+  description?: string
+  links?: { title: string; url: string }[]
+  info?: ProfileInfo
+}
+
+/** The outcome of a `saveProfile` — the engine acks the profile deploy, so a failed save is
+ *  reported rather than silently leaving the HUD showing something that was never stored. */
+export interface ProfileSavedMessage {
+  kind: 'profileSaved'
+  ok: boolean
+  error?: string
+}
+
+/** A `saveProfile` without the wire tag — what the UI hands the session. */
+export type ProfileEdit = Omit<SaveProfileRequest, 'kind'>
+
+/** The claimed (NFT) names this account owns — the display-name picker's options. */
+export interface GetOwnedNamesRequest {
+  kind: 'getOwnedNames'
+}
+
+export interface OwnedNamesMessage {
+  kind: 'ownedNames'
+  names: string[]
 }
 
 /** Mirrors the engine's BaseNotification (metadata varies by type). */
@@ -479,6 +546,10 @@ export interface TeleportRequest {
   kind: 'teleport'
   x: number
   y: number
+  /** Realm the parcel belongs to (a world name or realm url). The engine changes realm first —
+   *  a full reconnect, as for changeRealm, even to the realm the player is in. Omitted: a parcel of
+   *  the realm the player is in. */
+  realm?: string
 }
 
 /** Change to a world/realm (page → scene → changeRealm). `realm` is a world name
@@ -905,12 +976,18 @@ export interface CaptureInputRequest {
  *  `scroll`: the cursor is over a scrollable HUD element — the engine reserves the Scroll
  *  ACTIONS, so every input bound to them (wheel, key, gamepad button) stands down for
  *  world consumers (camera zoom on a shared wheel) while the action stream still resolves
- *  Scroll for the HUD to drive the hovered panel. */
+ *  Scroll for the HUD to drive the hovered panel. `covered`: a full-screen HUD surface (a
+ *  menu page, the loading overlay) hides the world — the engine tells scenes they are hidden
+ *  (EngineInfo.scene_hidden). `menu`: the open full-screen menu page, named by the engine
+ *  SystemAction that toggles it ('Map', 'Backpack', ...), else null — the engine answers a
+ *  scene's openExplorerUi from it and writes the page's opened/closed events. */
 export interface UiFocusMessage {
   kind: 'uiFocus'
   ui: boolean
   text: boolean
   scroll: boolean
+  covered: boolean
+  menu: string | null
 }
 
 /** One interaction hint (a single key binding) for a world entity: the button to press + its label.
@@ -987,6 +1064,8 @@ export interface AvatarClickMessage {
 }
 
 export type SceneToPage =
+  | BridgeReadyMessage
+  | BridgeUnavailableMessage
   | RpcResponse
   | HoverMessage
   | CursorLockMessage
@@ -1008,6 +1087,9 @@ export type SceneToPage =
   | InputCapturedMessage
   | ProfileMessage
   | UserProfileMessage
+  | ProfileChangedMessage
+  | ProfileSavedMessage
+  | OwnedNamesMessage
   | NotificationsMessage
   | EmotesMessage
   | MicMessage

@@ -1,5 +1,10 @@
 use core::f32;
-use std::{collections::VecDeque, marker::PhantomData, panic::Location};
+use std::{
+    collections::VecDeque,
+    marker::PhantomData,
+    panic::Location,
+    path::{Path, PathBuf},
+};
 
 use bevy::{
     app::Update,
@@ -933,5 +938,65 @@ mod tests {
         make_test!(Vec3::new(-1., 1., -1.), false);
         make_test!(Vec3::new(1., -1., -1.), false);
         make_test!(Vec3::new(-1., -1., -1.), true);
+    }
+}
+
+/// Join a path fragment that came from outside, keeping the result under the base.
+pub trait JoinRelativeExt {
+    /// `self.join(rhs)`, or `None` if `rhs` would escape `self`.
+    ///
+    /// [`Path::join`] and [`PathBuf::push`] discard the base entirely when the right side is
+    /// absolute, so any fragment whose contents we do not control has to be checked first.
+    ///
+    /// Tests the components rather than [`Path::is_absolute`], which on windows demands both a
+    /// prefix and a root and so answers `false` for `C:x` and `\\windows\\x` - both of which still
+    /// replace all or part of the base. Ordinary separators are fine; only escapes are rejected.
+    fn join_relative(&self, rhs: impl AsRef<Path>) -> Option<PathBuf>;
+}
+
+impl JoinRelativeExt for Path {
+    fn join_relative(&self, rhs: impl AsRef<Path>) -> Option<PathBuf> {
+        let rhs = rhs.as_ref();
+        use std::path::Component;
+        let escapes = rhs.components().any(|c| {
+            matches!(
+                c,
+                Component::Prefix(_) | Component::RootDir | Component::ParentDir
+            )
+        });
+        (!escapes).then(|| self.join(rhs))
+    }
+}
+
+#[cfg(test)]
+mod join_relative_tests {
+    use super::*;
+
+    #[test]
+    fn only_escapes_are_rejected() {
+        let base = Path::new("/cache");
+        for ok in ["abc", "b64-aGVsbG8/d29ybGQ", "a/b", "./a"] {
+            assert!(base.join_relative(ok).is_some(), "{ok} should be allowed");
+        }
+        // a `b64-` id is standard base64, so `/` is expected and must stay allowed
+        assert_eq!(
+            base.join_relative("b64-aGVsbG8/d29ybGQ"),
+            Some(PathBuf::from("/cache/b64-aGVsbG8/d29ybGQ"))
+        );
+        for bad in ["/etc/x", "../x", "a/../../x"] {
+            assert!(
+                base.join_relative(bad).is_none(),
+                "{bad} should be rejected"
+            );
+        }
+        // these are only prefix/root components on windows; elsewhere they are ordinary names,
+        // which is the correct platform answer - `Component` decides, not a hand-rolled rule
+        #[cfg(windows)]
+        for bad in [r"\\host\share", r"C:\x", "C:x", r"\windows\x"] {
+            assert!(
+                base.join_relative(bad).is_none(),
+                "{bad} should be rejected"
+            );
+        }
     }
 }

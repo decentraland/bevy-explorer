@@ -29,7 +29,7 @@ export const SYSTEM_SCENE =
 // the engine's ipfs layer expands `name.dcl.eth` into the latter, and boot.js reverses it for the
 // address bar, so both spellings reach users.
 const TRUSTED_WORLDS = ['tortilla.dcl.eth', 'sceneviewer.dcl.eth']
-const WORLDS_PREFIX = `${serviceUrl('worlds-content-server')}/world/`
+const WORLDS_PREFIX = `${serviceUrl('worldsServer')}/world/`
 
 // A scene served from the developer's own machine. `sdk-commands start` is the whole point of the
 // parameter, and a link can't make someone else's machine serve it.

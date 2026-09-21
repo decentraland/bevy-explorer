@@ -157,6 +157,13 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "pbr_light_textures",
   "reduce_image_sizes",
 ] }
+# leaf bevy crates for dcl_component, which has to build without the engine (system_api_types TS export)
+bevy_math = { version = "0.16.1", default-features = false, features = ["std"] }
+bevy_color = { version = "0.16.1", default-features = false, features = [
+  "std",
+] }
+bevy_transform = { version = "0.16.1", default-features = false }
+bevy_ecs = { version = "0.16.1", default-features = false, features = ["std"] }
 disqualified = "1.0"
 wgpu = "24"
 cef = "139"
@@ -211,6 +218,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 kira = "0.9.6"
 zip = { version = "2", default-features = false }
 image = "0.25"
+ttf-parser = { version = "0.21", default-features = false }
 opener = { version = "0.8", git = "https://github.com/robtfm/opener" }
 chrono = { version = "0.4.31", features = ["serde"] }
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "0.16" }
@@ -248,6 +256,7 @@ async-compat = "0.2"
 async-fs = "2.0"
 base64 = "0.22"
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
+mimalloc = { version = "*", default-features = false }
 # pinned: alpha releases make no api stability promises between versions
 draco-oxide-decoder = "=0.1.0-alpha.9"
 draco-oxide-core = "=0.1.0-alpha.9"
@@ -382,7 +391,7 @@ bevy_simple_text_input = { workspace = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dcl_deno = { workspace = true }
 dcl_deno_ipc = { workspace = true }
-mimalloc = { version = "*", default-features = false }
+mimalloc = { workspace = true }
 cef_offscreen = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -432,6 +441,8 @@ bevy_image = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dc
 bevy_input = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_log = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_math = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_color = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_transform = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_reflect = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_render = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_time = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }

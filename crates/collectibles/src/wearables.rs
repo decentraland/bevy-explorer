@@ -18,7 +18,7 @@ use bevy::{
 use serde::Deserialize;
 
 use common::util::{TaskCompat, TaskExt};
-use ipfs::{EntityDefinitionLoader, IpfsAssetServer};
+use ipfs::{ipfs_path::ContentPathExt, EntityDefinitionLoader, IpfsAssetServer};
 
 pub struct WearablePlugin;
 
@@ -58,6 +58,7 @@ pub struct WearableData {
     pub hides: Vec<WearableCategory>,
     pub replaces: Vec<WearableCategory>,
     pub removes_default_hiding: Option<Vec<String>>,
+    pub outline_compatible: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -97,7 +98,10 @@ fn load_collections(
             let t: Task<Result<Collections, anyhow::Error>> =
                 IoTaskPool::get().spawn_compat(async move {
                     let response = client
-                        .get(common::base_domain::https("peer", "/lambdas/collections"))
+                        .get(common::base_domain::url(
+                            common::base_domain::Service::Catalyst,
+                            "/lambdas/collections",
+                        ))
                         .timeout(std::time::Duration::from_secs(10))
                         .send()
                         .await
@@ -279,11 +283,17 @@ impl WearableCategory {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct WearableModel {
+    pub gltf: Handle<Gltf>,
+    pub outline_compatible: bool,
+}
+
 #[derive(Debug, TypePath, Clone)]
 pub struct Wearable {
     pub category: WearableCategory,
     pub hides: HashSet<WearableCategory>,
-    pub model: Option<Handle<Gltf>>,
+    pub model: Option<WearableModel>,
     pub texture: Option<Handle<Image>>,
     pub mask: Option<Handle<Image>>,
 }
@@ -297,8 +307,8 @@ impl CollectibleType for Wearable {
     type Meta = WearableMeta;
     type ExtraData = WearableExtraData;
 
-    fn base_collection() -> Option<&'static str> {
-        None
+    fn source_collections() -> &'static [&'static str] {
+        &[]
     }
 
     fn extension() -> &'static str {
@@ -336,7 +346,7 @@ impl AssetLoader for WearableLoader {
             .path()
             .parent()
             .unwrap()
-            .join(&meta.thumbnail)
+            .resolve_content_uri(&meta.thumbnail)
             .to_string_lossy()
             .into_owned();
 
@@ -353,7 +363,7 @@ impl AssetLoader for WearableLoader {
                             && !f.to_lowercase().ends_with("_mask.png")
                     })
                     .map(|f| {
-                        let path = load_context.path().parent().unwrap().join(f);
+                        let path = load_context.path().parent().unwrap().resolve_content_uri(f);
                         load_context
                             .loader()
                             .with_settings::<ImageLoaderSettings>(|s| {
@@ -367,7 +377,7 @@ impl AssetLoader for WearableLoader {
                     .iter()
                     .find(|f| f.to_lowercase().ends_with("_mask.png"))
                     .map(|f| {
-                        let path = load_context.path().parent().unwrap().join(f);
+                        let path = load_context.path().parent().unwrap().resolve_content_uri(f);
                         load_context
                             .loader()
                             .with_settings::<ImageLoaderSettings>(|s| {
@@ -392,7 +402,7 @@ impl AssetLoader for WearableLoader {
                     .path()
                     .parent()
                     .unwrap()
-                    .join(&representation.main_file);
+                    .resolve_content_uri(&representation.main_file);
                 let model = load_context
                     .loader()
                     .with_settings::<GltfLoaderSettings>(|s| {
@@ -469,7 +479,10 @@ impl AssetLoader for WearableLoader {
                     Wearable {
                         category,
                         hides,
-                        model: model.clone(),
+                        model: model.clone().map(|gltf| WearableModel {
+                            gltf,
+                            outline_compatible: meta.data.outline_compatible.unwrap_or(true),
+                        }),
                         texture: texture.clone(),
                         mask: mask.clone(),
                     },
@@ -537,7 +550,7 @@ impl AssetLoader for WearableMetaLoader {
             .path()
             .parent()
             .unwrap()
-            .join(&meta.thumbnail)
+            .resolve_content_uri(&meta.thumbnail)
             .to_string_lossy()
             .into_owned();
 

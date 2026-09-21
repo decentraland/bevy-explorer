@@ -222,6 +222,7 @@ fn set_emotes_content(
                     scale: Vec3::ONE,
                 },
                 time: 0.5,
+                fov: None,
             });
         };
 

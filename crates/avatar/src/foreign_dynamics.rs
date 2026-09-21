@@ -183,7 +183,8 @@ fn update_foreign_user_target_position(
                         update_freq: 0.01,
                         grounded: ev.grounded,
                         remote_move_kind: ev.remote_move_kind,
-                        teleport: ev.teleport,
+                        // First placement: snap from the spawn position rather than travel from it.
+                        teleport: true,
                     },
                     AvatarDynamicState::default(),
                     PendingSceneAnim::default(),

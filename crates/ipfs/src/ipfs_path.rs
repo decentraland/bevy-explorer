@@ -104,7 +104,7 @@ impl IpfsType {
     pub fn new_content_file(content_hash: String, file_path: String) -> Self {
         Self::ContentFile {
             content_hash,
-            file_path: normalize_path(&file_path),
+            file_path: content_file_path(&file_path).into_owned(),
         }
     }
 
@@ -295,7 +295,7 @@ where
                 file_path.push_str(stripped_file_name);
                 Ok(IpfsType::ContentFile {
                     content_hash,
-                    file_path,
+                    file_path: content_file_path(&file_path).into_owned(),
                 })
             }
             "$entity" => {
@@ -616,6 +616,347 @@ impl From<&IpfsPath> for PathBuf {
 }
 
 // must be a better way to do this
-pub fn normalize_path(path: &str) -> String {
+pub(crate) fn normalize_path(path: &str) -> String {
     path.replace('\\', "/")
+}
+
+/// A content file is always addressed relative to its entity's root: `From<&IpfsType> for PathBuf`
+/// assembles the `$ipfs/$content_file/<hash>` prefix with `join`s, which an absolute path (or a
+/// windows drive prefix) would discard.
+///
+/// Both `ContentFile` constructors funnel through here, so the invariant holds by construction.
+pub(crate) fn content_file_path(file_path: &str) -> Cow<'_, str> {
+    if is_http_url(file_path) {
+        return Cow::Borrowed(file_path);
+    }
+
+    // bytes to drop from the front: a windows drive prefix (`c:/..`), then any root separator,
+    // repeated until neither is left - stripping once would let `/c:/x` or `c:/c:/x` keep a drive.
+    // a single-letter prefix can't be a scheme we accept, so it is always a drive
+    let cut = |s: &str| {
+        let mut cut = 0;
+        loop {
+            let rest = &s[cut..];
+            let after_drive = match rest.as_bytes() {
+                [drive, b':', ..] if drive.is_ascii_alphabetic() => 2,
+                _ => 0,
+            };
+            let after_root = rest.len() - rest[after_drive..].trim_start_matches('/').len();
+            if after_root == 0 {
+                return cut;
+            }
+            cut += after_root;
+        }
+    };
+
+    if file_path.contains('\\') {
+        let mut normalized = normalize_path(file_path);
+        normalized.drain(..cut(&normalized));
+        Cow::Owned(normalized)
+    } else {
+        Cow::Borrowed(&file_path[cut(file_path)..])
+    }
+}
+
+/// True when `file_path` is an http(s) url. A content-map miss hands the file path to the fetcher
+/// verbatim, so a url must survive byte-for-byte rather than be rewritten as a path.
+///
+/// Deliberately not `Url::parse`, and deliberately only http(s): those are the only schemes the
+/// fetcher can use, and the wider syntax admits shapes that are better treated as paths.
+fn is_http_url(file_path: &str) -> bool {
+    let Some((scheme, _)) = file_path.split_once("://") else {
+        return false;
+    };
+    scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+}
+
+/// Number of leading segments that address the entity rather than a file within it, i.e.
+/// everything up to and including the `<hash>` of `$ipfs/../$content_file/<hash>/..`.
+fn content_prefix_len(segments: &[&str]) -> Option<usize> {
+    segments
+        .iter()
+        .position(|segment| *segment == "$content_file")
+        .map(|idx| idx + 2)
+        .filter(|len| *len <= segments.len())
+}
+
+/// Path helpers for resolving references made from *inside* an entity's content, where the path
+/// carries the `$ipfs/../$content_file/<hash>` prefix.
+pub trait ContentPathExt {
+    /// Resolve a relative `uri` against this directory, keeping the result inside the entity's own
+    /// content collection.
+    fn resolve_content_uri(&self, uri: &str) -> PathBuf;
+}
+
+impl ContentPathExt for Path {
+    fn resolve_content_uri(&self, uri: &str) -> PathBuf {
+        let Some(parent) = self.to_str() else {
+            return self.join(uri);
+        };
+        // split the way [`IpfsPath::new_from_path`] does rather than walking [`Path::components`],
+        // which drops the empty segment of a `//`. A content-map miss falls through to fetching the
+        // file path as a url, so the entity-relative part may itself be one - and rewriting
+        // `https://host/x` to `https:/host/x` is exactly what we are here to avoid.
+        let parent = if parent.contains('\\') {
+            Cow::Owned(normalize_path(parent))
+        } else {
+            Cow::Borrowed(parent)
+        };
+        let segments = parent.split('/').collect::<Vec<_>>();
+
+        let Some(prefix_len) = content_prefix_len(&segments) else {
+            // not a content-file path - leave the default behaviour alone
+            return self.join(uri);
+        };
+
+        // force the uri relative first - an absolute one would otherwise discard the prefix
+        let uri = content_file_path(uri);
+
+        let mut resolved: Vec<&str> = Vec::new();
+        for segment in segments.iter().copied().chain(uri.split('/')) {
+            match segment {
+                // `.` is noise, but an empty segment carries the `//` of a url, so it is kept
+                "." => (),
+                ".." if resolved.len() > prefix_len
+                    && resolved.last() != Some(&"..")
+                    // `prefix_len >= 2`, so the guard above puts this index in range. an empty
+                    // segment two back means the last one is a url authority (`https:`, ``,
+                    // `host`) rather than a directory, and `..` may not eat that either - a url
+                    // resolves its own overshooting `..` against the host
+                    && !resolved[resolved.len() - 2].is_empty() =>
+                {
+                    resolved.pop();
+                }
+                segment => resolved.push(segment),
+            }
+        }
+        PathBuf::from(resolved.join("/"))
+    }
+}
+
+/// Fn-pointer form of [`ContentPathExt::resolve_content_uri`], for
+/// [`bevy::gltf::GltfPlugin::with_uri_resolver`].
+pub fn resolve_content_uri(parent_path: &Path, uri: &str) -> PathBuf {
+    parent_path.resolve_content_uri(uri)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::{
+        content_file_path, is_http_url, resolve_content_uri, ContentPathExt, IpfsPath, IpfsType,
+    };
+
+    #[test]
+    fn content_paths_are_forced_relative() {
+        assert_eq!(
+            content_file_path("models/tree.glb").as_ref(),
+            "models/tree.glb"
+        );
+        assert_eq!(
+            content_file_path("/windows/x.png").as_ref(),
+            "windows/x.png"
+        );
+        assert_eq!(
+            content_file_path("//host/share/x.png").as_ref(),
+            "host/share/x.png"
+        );
+        assert_eq!(
+            content_file_path(r"\windows\x.png").as_ref(),
+            "windows/x.png"
+        );
+        assert_eq!(
+            content_file_path("c:/windows/x.png").as_ref(),
+            "windows/x.png"
+        );
+        assert_eq!(
+            content_file_path(r"C:\windows\x.png").as_ref(),
+            "windows/x.png"
+        );
+    }
+
+    #[test]
+    fn content_paths_leave_urls_alone() {
+        // a content-map miss falls through to fetching the file_path as a url, so it must survive
+        for url in [
+            "https://example.com/a/b.png",
+            "http://example.com/v.mp4",
+            "https://example.com/a/b.png?x=1&y=2",
+            // the `..` belongs to the url, not to us - collapsing it would eat the host
+            "https://example.com/a/../b.png",
+            // a `\\` in a query or fragment is not a separator - the url parser keeps it
+            r"https://example.com/a?x=a\b",
+            r"https://example.com/a#frag\ment",
+        ] {
+            assert_eq!(content_file_path(url).as_ref(), url);
+        }
+    }
+
+    #[test]
+    fn path_shapes_are_never_mistaken_for_urls() {
+        // every shape that lets `join` discard its base must fail the url guard and so still be
+        // forced relative. only an http(s) scheme is exempt, which none of these have.
+        for src in [
+            r"c:\passwords.txt://",
+            "/windows/x.png://",
+            r"\windows\x.png://",
+            r"\\host\share://x",
+            r"\\?\c:\windows\x.png://",
+            "c:/windows/x.png",
+            // `c:` is a windows drive plus a root separator, not a scheme
+            "c://windows/x.png",
+            // a drive behind a root, or behind another drive, is still a drive
+            "/c:/windows/x.png",
+            "//c:/windows/x.png",
+            r"\c:\windows\x.png",
+            "c:/c:/windows/x.png",
+            "c:/d:/e:/windows/x.png",
+            // only http(s) reaches the fetcher, so every other scheme is handled as a path.
+            // the transforms happen to leave these untouched - that is asserted, not assumed.
+            "file:///windows/x.png",
+            "git+ssh://example.com/x.png",
+            "chrome-extension://abc/x.png",
+            "soap.beep://example.com/x",
+        ] {
+            assert!(!is_http_url(src), "{src} must not pass as a url");
+            let out = content_file_path(src);
+            assert!(
+                !out.starts_with('/') && !out.starts_with('\\'),
+                "{src} -> {out} is still root-relative"
+            );
+            assert!(
+                !matches!(out.as_bytes(), [d, b':', ..] if d.is_ascii_alphabetic()),
+                "{src} -> {out} still carries a drive prefix"
+            );
+        }
+    }
+
+    #[test]
+    fn an_absolute_src_cannot_shed_the_ipfs_prefix() {
+        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+            "bafyhash".to_owned(),
+            "/windows/textures/bark.png".to_owned(),
+        ));
+        let as_path = PathBuf::from(&ipfs_path);
+        assert_eq!(
+            as_path,
+            Path::new("$ipfs/$content_file/bafyhash/windows/textures/.bark.png")
+        );
+        assert!(IpfsPath::new_from_path(&as_path).unwrap().is_some());
+    }
+
+    #[test]
+    fn gltf_uris_resolve_within_the_entity() {
+        let parent = Path::new("$ipfs/$content_file/bafyhash/assets/asset-packs/admin_tools");
+
+        assert_eq!(
+            resolve_content_uri(parent, "Image_2.png"),
+            Path::new("$ipfs/$content_file/bafyhash/assets/asset-packs/admin_tools/Image_2.png")
+        );
+        // the case that never resolved: a texture shared from outside the model's own folder
+        assert_eq!(
+            resolve_content_uri(parent, "../../optimized-textures/Image_2.png"),
+            Path::new("$ipfs/$content_file/bafyhash/assets/optimized-textures/Image_2.png")
+        );
+    }
+
+    #[test]
+    fn a_uri_can_climb_to_the_entity_root() {
+        // pins the prefix length: the first folder below the entity root must still be poppable,
+        // otherwise a one-level-up reference resolves to a path that isn't in the content map
+        assert_eq!(
+            Path::new("$ipfs/$content_file/bafyhash/assets").resolve_content_uri("../x.png"),
+            Path::new("$ipfs/$content_file/bafyhash/x.png")
+        );
+    }
+
+    #[test]
+    fn url_sourced_gltf_uris_keep_their_url() {
+        // a content-map miss falls through to fetching the file path as a url, so a gltf can be
+        // sourced from one - and its own relative uris must still resolve against it
+        let parent = Path::new("$ipfs/$content_file/bafyhash/https://example.com/models");
+
+        assert_eq!(
+            resolve_content_uri(parent, "tex.png"),
+            Path::new("$ipfs/$content_file/bafyhash/https://example.com/models/tex.png")
+        );
+        assert_eq!(
+            resolve_content_uri(parent, "../shared/tex.png"),
+            Path::new("$ipfs/$content_file/bafyhash/https://example.com/shared/tex.png")
+        );
+        // the host is not a directory: `..` past the url root is left for the url parser to
+        // resolve (it collapses against the host) rather than eating `example.com`
+        assert_eq!(
+            resolve_content_uri(parent, "../../tex.png"),
+            Path::new("$ipfs/$content_file/bafyhash/https://example.com/../tex.png")
+        );
+        // an absolute url uri survives byte-for-byte, `//` included
+        assert_eq!(
+            resolve_content_uri(Path::new("$ipfs/$content_file/bafyhash/models"), URL),
+            Path::new("$ipfs/$content_file/bafyhash/models").join(URL)
+        );
+        const URL: &str = "https://example.com/a/x.png";
+    }
+
+    #[test]
+    fn gltf_uris_cannot_leave_the_entity() {
+        let parent = Path::new("$ipfs/$content_file/bafyhash/assets/models");
+
+        // `..` cannot pop the `$ipfs/$content_file/<hash>` prefix, so a uri can never address
+        // another entity's collection or fall out of the ipfs asset source
+        for uri in [
+            "../../../otherhash/x.png",
+            "../../../../../../otherhash/x.png",
+            "/windows/x.png",
+            "../../../../",
+        ] {
+            let resolved = resolve_content_uri(parent, uri);
+            assert!(
+                resolved.starts_with("$ipfs/$content_file/bafyhash"),
+                "`{uri}` resolved out of the entity: {resolved:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn collectible_metadata_stays_inside_the_entity() {
+        // the wearable/emote loaders resolve metadata strings against the entity root itself
+        let parent = Path::new("$ipfs/$content_file/bafyhash");
+        assert_eq!(
+            parent.resolve_content_uri("thumbnail.png"),
+            Path::new("$ipfs/$content_file/bafyhash/thumbnail.png")
+        );
+        for uri in [
+            "/windows/x.png",
+            r"\windows\x.png",
+            "c:/windows/x.png",
+            "../otherhash/x.png",
+        ] {
+            let resolved = parent.resolve_content_uri(uri);
+            assert!(
+                resolved.starts_with("$ipfs/$content_file/bafyhash"),
+                "`{uri}` resolved out of the entity: {resolved:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_content_paths_keep_the_default_join() {
+        let parent = Path::new("some/local/folder");
+        assert_eq!(
+            resolve_content_uri(parent, "../tex.png"),
+            parent.join("../tex.png")
+        );
+    }
+
+    #[test]
+    fn a_parsed_path_cannot_shed_the_ipfs_prefix() {
+        // an empty leading component would otherwise assemble an absolute `file_path`
+        let ipfs_path = IpfsPath::new_from_path(Path::new("$ipfs/$content_file/bafyhash//x.png"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(ipfs_path.content_path(), Some("x.png"));
+        assert!(PathBuf::from(&ipfs_path).starts_with("$ipfs"));
+    }
 }

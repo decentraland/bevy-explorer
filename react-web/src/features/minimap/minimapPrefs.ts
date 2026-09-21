@@ -11,6 +11,8 @@ const STYLE_KEY = 'dcl-minimap-style'
 const ROTATION_KEY = 'dcl-minimap-rotation'
 const ZOOM_KEY = 'dcl-minimap-zoom'
 const MARKERS_KEY = 'dcl-minimap-markers'
+const OPEN_KEY = 'dcl-minimap-open'
+const WORLD_OPEN_KEY = 'dcl-minimap-open-world'
 
 const STYLES: MinimapStyle[] = ['parcel', 'satellite', 'imposters']
 const ROTATIONS: MinimapRotation[] = ['camera', 'north']
@@ -96,4 +98,19 @@ export function loadMarkers(): string[] {
 
 export function saveMarkers(categories: string[]): void {
   write(MARKERS_KEY, JSON.stringify(categories))
+}
+
+/** Whether the map circle is expanded. Kept per realm type: Genesis City defaults open, a
+ *  World defaults closed — Unity shows no map in a World, so scenes built against it expect
+ *  that corner of the screen to be free. Each chevron click writes only the bit for the
+ *  realm the player is in, so collapsing in one never changes the other. */
+export function loadOpen(isWorld: boolean): boolean {
+  const v = read(isWorld ? WORLD_OPEN_KEY : OPEN_KEY)
+  if (v === 'true') return true
+  if (v === 'false') return false
+  return !isWorld
+}
+
+export function saveOpen(isWorld: boolean, open: boolean): void {
+  write(isWorld ? WORLD_OPEN_KEY : OPEN_KEY, String(open))
 }

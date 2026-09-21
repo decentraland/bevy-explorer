@@ -106,41 +106,6 @@
   color: rgba(0, 0, 0, 0.35);
 }
 
-/* White membership dropdown. */
-.selectWrap {
-  position: relative;
-}
-.select {
-  width: 100%;
-  box-sizing: border-box;
-  appearance: none;
-  -webkit-appearance: none;
-  background: #fff;
-  border: 1px solid transparent;
-  border-radius: var(--r-control);
-  color: #1a1a1a;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 12px 40px 12px 14px;
-  outline: none;
-  cursor: pointer;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.select:focus {
-  border-color: var(--brand);
-}
-.chevron {
-  position: absolute;
-  top: 50%;
-  right: 12px;
-  transform: translateY(-50%);
-  color: #1a1a1a;
-  pointer-events: none;
-}
-
 /* Actions + policy. */
 .actions {
   display: flex;

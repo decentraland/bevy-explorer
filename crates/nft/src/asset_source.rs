@@ -82,8 +82,8 @@ impl AssetReader for NftReader {
                 ))));
             }
 
-            let remote = common::base_domain::https(
-                "opensea",
+            let remote = common::base_domain::url(
+                common::base_domain::Service::Opensea,
                 &format!("/api/v2/chain/{chain}/contract/{address}/nfts/{token}"),
             );
 

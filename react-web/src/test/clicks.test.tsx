@@ -68,7 +68,7 @@ describe('friends panel action clicks', () => {
 
   it('accept / reject a received request', async () => {
     const friends = renderPanel({ received: [{ address: '0xr', name: 'R', id: 'r1' }] })
-    await userEvent.click(screen.getByRole('button', { name: /Requests/ }))
+    await userEvent.click(screen.getByRole('tab', { name: /Requests/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Accept' }))
     expect(vi.mocked(friends.act)).toHaveBeenCalledWith('accept', '0xr')
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
@@ -77,14 +77,14 @@ describe('friends panel action clicks', () => {
 
   it('cancel a sent request', async () => {
     const friends = renderPanel({ sent: [{ address: '0xs', name: 'S', id: 's1' }] })
-    await userEvent.click(screen.getByRole('button', { name: /Requests/ }))
+    await userEvent.click(screen.getByRole('tab', { name: /Requests/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(vi.mocked(friends.act)).toHaveBeenCalledWith('cancel', '0xs')
   })
 
   it('unblock a blocked user', async () => {
     const friends = renderPanel({ blocked: ['0xb'] })
-    await userEvent.click(screen.getByRole('button', { name: /Blocked/ }))
+    await userEvent.click(screen.getByRole('tab', { name: /Blocked/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Unblock' }))
     expect(vi.mocked(friends.act)).toHaveBeenCalledWith('unblock', '0xb')
   })

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { SettingsPanel } from '../features/settings/SettingsPanel'
 import type { Setting } from '../engine/protocol'
 import type { SettingsState } from '../features/session/useEngineSession'
-import { fakeSession } from './harness'
+import { fakeProfileState, fakeSession } from './harness'
 
 const base = (over: Partial<Setting>): Setting => ({
   name: 'x',
@@ -29,7 +29,7 @@ function renderPanel(): SettingsState {
     <SettingsPanel
       settings={settings}
       bindings={fakeSession().bindings}
-      profile={{ data: null, open: false, toggle: vi.fn() }}
+      profile={fakeProfileState()}
       onNavigate={vi.fn()}
     />
   )
@@ -61,7 +61,7 @@ describe('settings panel controls', () => {
   })
 
   it('switching category tab + selecting an option sets the variant index', async () => {
-    await userEvent.click(screen.getByRole('button', { name: 'Graphics' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Graphics' }))
     await userEvent.click(screen.getByRole('button', { name: 'quality' }))
     await userEvent.click(screen.getByRole('option', { name: 'High' }))
     expect(vi.mocked(settings.set)).toHaveBeenCalledWith('quality', 2)

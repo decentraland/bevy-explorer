@@ -10,7 +10,7 @@ import { renderHook, act, waitFor, type RenderHookResult } from '@testing-librar
 import { expect, vi } from 'vitest'
 import type { LoginDriver } from '../engine/driver'
 import type { PageToScene, SceneToPage } from '../engine/protocol'
-import { useEngineSession, type EngineSession } from '../features/session/useEngineSession'
+import { useEngineSession, type EngineSession, type ProfileState } from '../features/session/useEngineSession'
 
 export class FakeDriver implements LoginDriver {
   /** Every page→scene message posted via `send` (the API calls under test). */
@@ -139,6 +139,21 @@ export async function enterAsGuest(h: Harness, opts: { keepSent?: boolean } = {}
  * matching session method fired. Tier 1 separately proves each method posts the
  * right wire message, so click → method → API call is covered end to end.
  */
+/** A ProfileState fixture — the profile slice grew edit commands, and every panel that takes it
+ *  needs the whole shape. */
+export const fakeProfileState = (over: Partial<ProfileState> = {}): ProfileState => ({
+  data: null,
+  open: false,
+  toggle: vi.fn(),
+  ownedNames: [],
+  saving: false,
+  saveError: null,
+  save: vi.fn(),
+  requestOwnedNames: vi.fn(),
+  dismissSaveError: vi.fn(),
+  ...over
+})
+
 export function fakeSession(): EngineSession {
   return {
     phase: 'world',
@@ -159,14 +174,12 @@ export function fakeSession(): EngineSession {
       reset: vi.fn(),
       capture: vi.fn(() => ({ input: new Promise<string>(() => {}), cancel: vi.fn() }))
     },
-    profile: { data: null, open: false, toggle: vi.fn() },
-    userProfiles: {},
-    requestUserProfile: vi.fn(),
+    profile: fakeProfileState(),
     notifications: { list: [], unread: 0, open: false, toggle: vi.fn(), markAllRead: vi.fn() },
     emotes: { list: [], open: false, toggle: vi.fn(), play: vi.fn(), equip: vi.fn() },
     backpack: { list: [], total: 0, loading: false, query: vi.fn(), equipped: [], open: false, toggle: vi.fn(), equip: vi.fn(), preview: vi.fn(), outfits: [], outfitSlots: 5, saveOutfit: vi.fn(), deleteOutfit: vi.fn(), equipOutfit: vi.fn() },
     communities: { list: [], open: false, toggle: vi.fn(), create: vi.fn(), join: vi.fn(), leave: vi.fn(), detail: null, loadDetail: vi.fn() },
-    map: { x: 0, y: 0, open: false, toggle: vi.fn(), teleport: vi.fn(), changeRealm: vi.fn() },
+    map: { x: 0, y: 0, open: false, toggle: vi.fn(), teleport: vi.fn(), changeRealm: vi.fn(), teleportToPlace: vi.fn() },
     minimap: { pose: { current: { x: 0, z: 0, yaw: 0, camYaw: 0 } }, isWorld: false, sceneTitle: '', setConfig: vi.fn() },
     places: { open: false, toggle: vi.fn() },
     gallery: { list: [], current: 0, max: 0, loaded: false, open: false, toggle: vi.fn(), metas: {}, loadPhoto: vi.fn(), remove: vi.fn() },

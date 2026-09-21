@@ -4,12 +4,13 @@
 // relay of the scene social state (BevyApi.social.*), guest-disabled.
 
 import { useMemo, useState } from 'react'
-import { Avatar, Button, ControlButton } from '../../design'
+import { Avatar, Button, ControlButton, Tabs, type TabItem } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Friend, FriendRequest } from '../../engine/protocol'
 import type { FriendsState } from '../session/useEngineSession'
 import { type ChatUser } from '../chat/ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
+import { useProfile } from '../session/profileStore'
 import styles from './FriendsPanel.module.css'
 
 type Tab = 'friends' | 'requests' | 'blocked'
@@ -84,17 +85,26 @@ function Collapsible({
 
 const STATUS_LABEL = { online: 'Online', away: 'Away', offline: 'Offline' } as const
 
+/** Who a row shows: the profile store's copy once it has one (the engine's, kept current), and
+ *  until then the name and face the friends service sent — which only ever seed the store, so a
+ *  service that stops sending faces costs one round trip, not the face. */
+function useRowIdentity(user: { address: string; name: string; picture?: string }): { name: string; picture?: string } {
+  const known = useProfile(user.address)
+  return { name: known?.name ?? user.name, picture: known?.picture ?? user.picture }
+}
+
 function FriendRow({ friend, onOpen }: { friend: Friend; onOpen?: OpenMenu }): React.JSX.Element {
-  const user: ChatUser = { address: friend.address, name: friend.name, picture: friend.picture }
+  const { name, picture } = useRowIdentity(friend)
+  const user: ChatUser = { address: friend.address, name, picture }
   const open = (e: React.MouseEvent): void => {
     if (e.type === 'contextmenu') e.preventDefault()
     onOpen?.(user, e)
   }
   return (
     <button type="button" className={`${styles.row} ${styles.rowBtn}`} onClick={open} onContextMenu={open}>
-      <Avatar src={friend.picture} name={label(friend.name, friend.address)} color={nameColor(friend.address)} size={40} status={friend.status} />
+      <Avatar src={picture} name={label(name, friend.address)} color={nameColor(friend.address)} size={40} status={friend.status} />
       <div className={styles.info}>
-        <NameLabel name={friend.name} address={friend.address} />
+        <NameLabel name={name} address={friend.address} />
         <span className={`${styles.status} ${styles[friend.status]}`}>{STATUS_LABEL[friend.status]}</span>
       </div>
     </button>
@@ -115,11 +125,12 @@ function ReceivedRow({
   onAccept: () => void
   onReject: () => void
 }): React.JSX.Element {
+  const { name, picture } = useRowIdentity(req)
   return (
     <div className={styles.row}>
-      <Avatar src={req.picture} name={label(req.name, req.address)} color={nameColor(req.address)} size={40} />
+      <Avatar src={picture} name={label(name, req.address)} color={nameColor(req.address)} size={40} />
       <div className={styles.info}>
-        <NameLabel name={req.name} address={req.address} />
+        <NameLabel name={name} address={req.address} />
         {req.message && <span className={styles.sub}>{req.message}</span>}
       </div>
       <span className={styles.date}>{reqDate(req.createdAt)}</span>
@@ -136,11 +147,12 @@ function ReceivedRow({
 }
 
 function SentRow({ req, onCancel }: { req: FriendRequest; onCancel: () => void }): React.JSX.Element {
+  const { name, picture } = useRowIdentity(req)
   return (
     <div className={styles.row}>
-      <Avatar src={req.picture} name={label(req.name, req.address)} color={nameColor(req.address)} size={40} />
+      <Avatar src={picture} name={label(name, req.address)} color={nameColor(req.address)} size={40} />
       <div className={styles.info}>
-        <NameLabel name={req.name} address={req.address} />
+        <NameLabel name={name} address={req.address} />
         <span className={styles.sub}>Request sent</span>
       </div>
       <span className={styles.date}>{reqDate(req.createdAt)}</span>
@@ -174,7 +186,7 @@ export function FriendsPanel({
   if (!friends.open) return null
 
   const requestCount = friends.received.length
-  const TABS: { id: Tab; label: string; badge?: number }[] = [
+  const TABS: TabItem<Tab>[] = [
     { id: 'friends', label: 'Friends' },
     { id: 'requests', label: 'Requests', badge: requestCount },
     { id: 'blocked', label: 'Blocked' }
@@ -182,18 +194,8 @@ export function FriendsPanel({
 
   return (
     <div className={styles.root}>
-      <header className={styles.tabs}>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`${styles.tab} ${tab === t.id ? styles.tabActive : ''}`.trim()}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-            {t.badge ? <span className={styles.tabBadge}>{t.badge}</span> : null}
-          </button>
-        ))}
+      <header className={styles.head}>
+        <Tabs variant="underline" className={styles.tabs} items={TABS} value={tab} onChange={setTab} aria-label="Friends sections" />
         <ControlButton variant="solid" className={styles.closeGlyph} aria-label="Close friends" onClick={friends.toggle}>
           ×
         </ControlButton>

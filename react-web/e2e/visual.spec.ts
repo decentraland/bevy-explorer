@@ -46,6 +46,15 @@ async function enterWorld(page: Page): Promise<void> {
   await page.waitForSelector('nav[aria-label="Main navigation"]')
 }
 
+/** Enter as the returning mock user (`previousLogin=1`): a wallet holding two claimed NAMEs, which
+ *  is what the name editor's picker and tabs need in order to appear. */
+async function enterWorldReturning(page: Page): Promise<void> {
+  await page.goto('/?mock=1&previousLogin=1')
+  await page.getByRole('button', { name: /JUMP INTO DECENTRALAND/i }).click()
+  await page.getByRole('button', { name: /SKIP TO HOME/i }).click()
+  await page.waitForSelector('nav[aria-label="Main navigation"]')
+}
+
 const openPanel = (page: Page, label: string): Promise<void> =>
   page.getByRole('button', { name: label, exact: true }).click()
 
@@ -151,15 +160,6 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('community-create-modal.png')
   })
 
-  // Exit confirm — the browser Back gesture is trapped by useExitGuard while in-world.
-  test('exit confirm', async ({ page }) => {
-    await enterWorld(page)
-    await page.goBack()
-    await page.getByText('Leave Decentraland?').waitFor()
-    await settle(page)
-    await expect(page).toHaveScreenshot('exit-confirm.png')
-  })
-
   test('world HUD (sidebar + chat)', async ({ page }) => {
     await enterWorld(page)
     await settle(page)
@@ -211,12 +211,33 @@ test.describe('visual — mock HUD', () => {
     })
   }
 
+  // Your own passport in edit mode — reached by the pencil on the About card; SAVE and CANCEL take
+  // over the header, the tab bar stands down and the form replaces the card.
+  test('passport — edit mode', async ({ page }) => {
+    await enterWorld(page)
+    await openPanel(page, 'Profile')
+    await page.getByRole('button', { name: 'Edit profile' }).click()
+    await settle(page)
+    await expect(page).toHaveScreenshot('passport-edit.png')
+  })
+
+  // The name editor, opened by the pencil beside the name. The returning user owns NAMEs, so the
+  // tabs, the picker and the upsell panel are all on screen.
+  test('name editor', async ({ page }) => {
+    await enterWorldReturning(page)
+    await openPanel(page, 'Profile')
+    await page.getByRole('button', { name: 'Edit name' }).click()
+    await page.getByRole('dialog').waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('name-edit.png')
+  })
+
   // The Key Bindings tab inside Settings: chip rows, pair/quad boxes, the fixed wheel chips —
   // rendered from the mock's default binding table.
   test('panel — settings key bindings', async ({ page }) => {
     await enterWorld(page)
     await openPanel(page, 'Settings')
-    await page.getByRole('button', { name: 'Key Bindings', exact: true }).click()
+    await page.getByRole('tab', { name: 'Key Bindings', exact: true }).click()
     await settle(page)
     await expect(page).toHaveScreenshot('panel-settings-keybindings.png')
   })
@@ -244,7 +265,7 @@ test.describe('visual — mock HUD', () => {
   test('backpack — emotes', async ({ page }) => {
     await enterWorld(page)
     await openPanel(page, 'Backpack')
-    await page.getByRole('button', { name: 'Emotes', exact: true }).click()
+    await page.getByRole('tab', { name: 'Emotes', exact: true }).click()
     await settle(page)
     await expect(page).toHaveScreenshot('backpack-emotes.png')
   })

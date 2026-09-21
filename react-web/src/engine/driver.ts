@@ -44,6 +44,8 @@ export interface LoginDriver {
    *  screen keeps its CTAs in a "Starting…" state until this is true. Optional — the mock is always
    *  ready. */
   engineReady?(): boolean
+  /** Tell the transport the bridge scene is now expected, so its absence can be reported. */
+  expectBridge?(): void
   /** Real weighted boot progress (0–100) + active step id, surfaced from the engine loader for
    *  the login footer bar. Optional — the mock has no engine to download. */
   loadProgress?(): number
@@ -62,5 +64,5 @@ export interface LoginDriver {
   /** The engine's persisted home scene — the Skip target. Available pre-launch; null until the
    *  engine module is up. Optional — the mock has no engine (and native skips keep the engine's
    *  own start realm, which already IS home). */
-  homeScene?(): { realm: string; parcel: string } | null
+  homeScene?(): { realm: string | null; parcel: string } | null
 }

@@ -22,7 +22,7 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use common::{
-    structs::{CurrentRealm, MicState},
+    structs::{CurrentRealm, EmoteMask, MicState},
     util::{TaskCompat, TaskExt},
 };
 use ethers_core::types::H160;
@@ -58,19 +58,21 @@ use self::{
 #[cfg(feature = "livekit")]
 use self::livekit::{plugin::LivekitPlugin, StartLivekit};
 
+use common::base_domain::Service;
+
 fn gatekeeper_url() -> String {
-    common::base_domain::https("comms-gatekeeper", "/get-scene-adapter")
+    common::base_domain::url(Service::CommsGatekeeper, "/get-scene-adapter")
 }
 fn preview_gatekeeper_url() -> String {
-    common::base_domain::https("comms-gatekeeper-local", "/get-scene-adapter")
+    common::base_domain::url(Service::PreviewGatekeeper, "/get-scene-adapter")
 }
 // Authoritative-server endpoints: yield a token with the LiveKit identity
 // `authoritative-server`, which clients target for authoritative-scene traffic.
 fn server_gatekeeper_url() -> String {
-    common::base_domain::https("comms-gatekeeper", "/get-server-scene-adapter")
+    common::base_domain::url(Service::CommsGatekeeper, "/get-server-scene-adapter")
 }
 fn preview_server_gatekeeper_url() -> String {
-    common::base_domain::https("comms-gatekeeper-local", "/get-server-scene-adapter")
+    common::base_domain::url(Service::PreviewGatekeeper, "/get-server-scene-adapter")
 }
 
 pub mod chat_marker_things {
@@ -270,6 +272,8 @@ pub struct Emote {
     pub duration_ms: Option<u32>,
     /// A stop: clears a looping emote. rfc4 `is_stopping = true` / Pulse `EmoteStop`.
     pub stopping: bool,
+    /// Which bones the emote drives. Pulse only; the vendored rfc4 `PlayerEmote` has no mask.
+    pub mask: EmoteMask,
 }
 
 impl Broadcast for Emote {
@@ -296,8 +300,7 @@ impl Broadcast for Emote {
                 emote_id: self.urn.clone(),
                 duration_ms: self.duration_ms,
                 player_state: Some(state),
-                // Emote animation bone mask (upstream field); bevy doesn't drive bone masking yet.
-                mask: None,
+                mask: self.mask.to_wire(),
             })
         };
         Some(PulseFrame {
@@ -420,12 +423,30 @@ pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
     unreliable: bool,
     message: B,
 ) {
-    for transport in transports.filter(|t| target.includes(&t.transport_type)) {
-        let _ = transport.sender.try_send(NetworkMessage {
-            message: Box::new(message.clone()),
-            unreliable,
-            recipient: NetworkMessageRecipient::All,
-        });
+    // Avatar state that rides Pulse still has to reach the LiveKit `authoritative-server` participant
+    // (scene room / a LiveKit realm island) while it has no Pulse feed. So a Pulse-targeted broadcast
+    // also fans a copy out to the auth server on every LiveKit transport (a no-op where no such
+    // participant exists), targeted at the auth server alone: human peers already get avatar state
+    // via Pulse. Client only: a server is the auth server. Temporary.
+    let auth_server_fanout = !common::structs::server_mode()
+        && target.contains(BroadcastTarget::PULSE)
+        && !target.contains(BroadcastTarget::LIVEKIT);
+
+    for transport in transports {
+        if target.includes(&transport.transport_type) {
+            let _ = transport.sender.try_send(NetworkMessage {
+                message: Box::new(message.clone()),
+                unreliable,
+                recipient: NetworkMessageRecipient::All,
+            });
+        } else if auth_server_fanout && BroadcastTarget::LIVEKIT.includes(&transport.transport_type)
+        {
+            let _ = transport.sender.try_send(NetworkMessage {
+                message: Box::new(message.clone()),
+                unreliable,
+                recipient: NetworkMessageRecipient::AuthServer,
+            });
+        }
     }
 }
 
@@ -661,9 +682,6 @@ pub struct AdapterManager<'w, 's> {
     ws_room_events: EventWriter<'w, StartWsRoom>,
     #[cfg(feature = "livekit")]
     livekit_events: EventWriter<'w, StartLivekit>,
-    // Pulse is the realm's avatar-state transport whatever the realm's byte protocol is; written
-    // from the livekit and ws-room arms of `connect` (not from `connect_scene`).
-    pulse_events: EventWriter<'w, pulse::plugin::StartPulse>,
     archipelago_events: EventWriter<'w, StartArchipelago>,
     // can't use event writer due to conflict on Res<Events>
     pub signed_login_events: ResMut<'w, Events<StartSignedLogin>>,
@@ -671,28 +689,20 @@ pub struct AdapterManager<'w, 's> {
 }
 
 impl AdapterManager<'_, '_> {
-    /// Connect the realm's island comms, feeding `context`. A livekit island also brings up the
-    /// realm's Pulse avatar-state transport.
+    /// Connect the realm's island comms, feeding `context`.
     pub fn connect(&mut self, adapter: &str, context: Entity) -> Option<Entity> {
-        self.connect_inner(adapter, context, true)
+        self.connect_inner(adapter, context)
     }
 
-    /// Connect a per-scene messagebus room, feeding `context`. Even when it resolves to livekit it
-    /// must NOT bring up Pulse: Pulse is the *realm's* avatar-state transport, not a per-scene room.
-    /// A scene room is distinguished only by its [`SceneRoom`] marker — its `TransportType` is its
-    /// wire protocol (livekit/ws-room), so the realm island and a livekit scene room are otherwise
-    /// identical here.
+    /// Connect a per-scene messagebus room, feeding `context`. A scene room is distinguished only
+    /// by its [`SceneRoom`] marker — its `TransportType` is its wire protocol (livekit/ws-room), so
+    /// the realm island and a livekit scene room are otherwise identical here.
     pub fn connect_scene(&mut self, adapter: &str, context: Entity) -> Option<Entity> {
-        self.connect_inner(adapter, context, false)
+        self.connect_inner(adapter, context)
     }
 
     #[cfg_attr(not(feature = "livekit"), allow(unused_variables))]
-    fn connect_inner(
-        &mut self,
-        adapter: &str,
-        context: Entity,
-        is_realm_island: bool,
-    ) -> Option<Entity> {
+    fn connect_inner(&mut self, adapter: &str, context: Entity) -> Option<Entity> {
         let Some((protocol, address)) = adapter.split_once(':') else {
             warn!("unrecognised adapter string: {adapter}");
             return None;
@@ -704,13 +714,6 @@ impl AdapterManager<'_, '_> {
                     address: address.to_owned(),
                     context,
                 });
-                // A ws-room *realm* (the `dcl start` preview server) is a Pulse realm too: avatar
-                // state rides Pulse there just as it does on a livekit realm, keyed by the preview
-                // scene's entity id so two previews don't share a partition. A ws-room *scene room*
-                // must not touch Pulse, hence the gate.
-                if is_realm_island {
-                    self.pulse_events.write(pulse::plugin::StartPulse);
-                }
             }
             "signed-login" => {
                 self.signed_login_events.send(StartSignedLogin {
@@ -726,13 +729,6 @@ impl AdapterManager<'_, '_> {
                     address: address.to_owned(),
                     context,
                 });
-                // A livekit *realm island* is a Pulse realm: (re)spawn the Pulse routing transport
-                // and announce the new realm. On the first such realm this also establishes the
-                // connection; on later ones it just re-teleports. A livekit *scene room* lands here
-                // too but must not touch Pulse, hence the realm-island gate.
-                if is_realm_island {
-                    self.pulse_events.write(pulse::plugin::StartPulse);
-                }
                 return Some(entity);
             }
             #[cfg(not(feature = "livekit"))]
@@ -752,7 +748,7 @@ impl AdapterManager<'_, '_> {
             }
             "fixed-adapter" => {
                 // fixed-adapter should be ignored and we use the tail as the full protocol:address
-                return self.connect_inner(address, context, is_realm_island);
+                return self.connect_inner(address, context);
             }
             _ => {
                 warn!("unrecognised adapter protocol: {protocol}");

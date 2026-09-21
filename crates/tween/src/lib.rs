@@ -571,34 +571,56 @@ fn clean_scene_tween_state(
 pub struct SystemTween {
     pub target: Transform,
     pub time: f32,
+    /// target perspective fov, tweened alongside the transform
+    pub fov: Option<f32>,
 }
 
 #[derive(Component)]
 pub struct SystemTweenData {
     start_pos: Transform,
+    start_fov: Option<f32>,
     start_time: f64,
 }
 
+fn perspective_fov(projection: Option<&Mut<Projection>>) -> Option<f32> {
+    match projection.map(|p| &**p) {
+        Some(Projection::Perspective(p)) => Some(p.fov),
+        _ => None,
+    }
+}
+
+fn set_perspective_fov(projection: &mut Option<Mut<Projection>>, fov: Option<f32>) {
+    if let (Some(Projection::Perspective(p)), Some(fov)) = (projection.as_deref_mut(), fov) {
+        if p.fov != fov {
+            p.fov = fov;
+        }
+    }
+}
+
+#[allow(clippy::type_complexity)]
 pub fn update_system_tween(
     mut commands: Commands,
     mut q: Query<(
         Entity,
         &mut Transform,
+        Option<&mut Projection>,
         Ref<SystemTween>,
         Option<&SystemTweenData>,
     )>,
     time: Res<Time>,
 ) {
-    for (ent, mut transform, tween, data) in q.iter_mut() {
+    for (ent, mut transform, mut projection, tween, data) in q.iter_mut() {
         match (tween.is_changed(), data) {
             (true, _) | (_, None) => {
                 if tween.time <= 0.0 {
                     debug!("system tween instant complete @ {:?}", tween.target);
                     *transform = tween.target;
+                    set_perspective_fov(&mut projection, tween.fov);
                 } else {
                     debug!("system tween starting {} @ {:?}", tween.time, tween.target);
                     commands.entity(ent).try_insert(SystemTweenData {
                         start_pos: *transform,
+                        start_fov: perspective_fov(projection.as_ref()),
                         start_time: time.elapsed_secs_f64(),
                     });
                 }
@@ -608,6 +630,7 @@ pub fn update_system_tween(
                 if elapsed >= tween.time {
                     debug!("system tween complete @ {:?}", tween.target);
                     *transform = tween.target;
+                    set_perspective_fov(&mut projection, tween.fov);
                     commands
                         .entity(ent)
                         .remove::<SystemTween>()
@@ -620,6 +643,12 @@ pub fn update_system_tween(
                         (1.0 - ratio) * data.start_pos.scale + ratio * tween.target.scale;
                     transform.rotation =
                         data.start_pos.rotation.slerp(tween.target.rotation, ratio);
+                    if let (Some(start), Some(target)) = (data.start_fov, tween.fov) {
+                        set_perspective_fov(
+                            &mut projection,
+                            Some((1.0 - ratio) * start + ratio * target),
+                        );
+                    }
                     debug!(
                         "system tween partial {}/{} @ {:?}",
                         elapsed, tween.time, transform
