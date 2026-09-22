@@ -63,14 +63,14 @@ describe('Pointer overlay rendering', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('shows the camera-gated hint (default reason) but no reticle when unlocked', () => {
+  it('shows the player-gated hint (default reason) but no reticle when unlocked', () => {
     const hover: HoverAction[] = [
       { button: 1, text: 'Open', enabled: true },
       { button: 0, text: 'Pick up', enabled: false }
     ]
     const { getByText, queryByTestId } = render(<Pointer locked={false} hover={hover} proximity={[]} />)
     expect(getByText('Open')).toBeTruthy()
-    expect(getByText('Get camera closer')).toBeTruthy()
+    expect(getByText('Get closer')).toBeTruthy()
     expect(queryByTestId('reticle')).toBeNull()
   })
 
@@ -81,11 +81,11 @@ describe('Pointer overlay rendering', () => {
     expect(getByText('Get camera closer')).toBeTruthy()
   })
 
-  it('shows the walking glyph + "Get player closer" when the player-distance rule gates it', () => {
+  it('shows the walking glyph + "Get closer" when the player-distance rule gates it', () => {
     const hover: HoverAction[] = [{ button: 0, text: 'Show Profile', enabled: false, tooFarReason: 'player' }]
     const { queryByTestId, getByText } = render(<Pointer locked={false} hover={hover} proximity={[]} />)
     expect(queryByTestId('too-far-icon-player')).toBeTruthy()
-    expect(getByText('Get player closer')).toBeTruthy()
+    expect(getByText('Get closer')).toBeTruthy()
   })
 
   it('anchors each proximity tooltip at its projected screen coords', () => {

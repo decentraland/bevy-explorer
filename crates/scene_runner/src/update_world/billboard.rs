@@ -32,23 +32,38 @@ impl Plugin for BillboardPlugin {
     }
 }
 
-#[allow(clippy::upper_case_acronyms)]
+// bit flags matching the proto `BillboardMode`: X = pitch to the target, Y = yaw to the
+// target, Z = copy the target's roll. unflagged axes keep the entity's current rotation.
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub enum BillboardMode {
-    None,
-    Y,
-    YX,
-    All,
+pub struct BillboardMode(u32);
+
+impl BillboardMode {
+    const X: u32 = 1;
+    const Y: u32 = 2;
+    const Z: u32 = 4;
+    const ALL: u32 = 7;
+
+    fn is_none(&self) -> bool {
+        self.0 == 0
+    }
+
+    fn pitch(&self) -> bool {
+        self.0 & Self::X != 0
+    }
+
+    fn yaw(&self) -> bool {
+        self.0 & Self::Y != 0
+    }
+
+    fn roll(&self) -> bool {
+        self.0 & Self::Z != 0
+    }
 }
 
 impl From<Option<i32>> for BillboardMode {
     fn from(value: Option<i32>) -> Self {
-        match value {
-            Some(0) => BillboardMode::None,
-            Some(2) => BillboardMode::Y,
-            Some(3) => BillboardMode::YX,
-            _ => BillboardMode::All,
-        }
+        // unset defaults to BM_ALL
+        Self(value.map_or(Self::ALL, |v| v as u32 & Self::ALL))
     }
 }
 
@@ -92,7 +107,7 @@ pub(crate) fn update_billboards(
     let cam_global_transform = cam.single().ok().map(|t| GlobalTransform::from(*t));
 
     for (mut local_transform, global_transform, billboard, parent, scene_entity) in q.iter_mut() {
-        if billboard.mode == BillboardMode::None {
+        if billboard.mode.is_none() {
             continue;
         }
 
@@ -111,61 +126,36 @@ pub(crate) fn update_billboards(
         };
         let (_, target_g_rotation, target_g_translation) =
             target_global_transform.to_scale_rotation_translation();
-        let target_z = target_g_rotation.to_euler(EulerRot::YXZ).2;
 
         // get reference frame
         let frame = global_transforms.get(parent.parent()).unwrap();
 
-        match billboard.mode {
-            BillboardMode::None => unreachable!(),
-            BillboardMode::All => {
-                // use global frame of reference
-                let (g_scale, _, g_translation) = global_transform.to_scale_rotation_translation();
-                let target_direction = target_g_translation - g_translation;
-                let target_global_rotation = Quat::from_euler(
-                    EulerRot::YXZ,
-                    target_direction.x.atan2(target_direction.z),
-                    -target_direction.y.atan2(target_direction.xz().length()),
-                    target_z,
-                );
-                let target_global_transform = Transform {
-                    translation: g_translation,
-                    rotation: target_global_rotation,
-                    scale: g_scale,
-                };
-                let target_local_matrix =
-                    frame.compute_matrix().inverse() * target_global_transform.compute_matrix();
-                let target_transform = Transform::from_matrix(target_local_matrix);
+        // use global frame of reference
+        let (g_scale, g_rotation, g_translation) = global_transform.to_scale_rotation_translation();
 
-                // just update the rotation so that scale and translation don't drift, or change on first frame if GlobalTransform is not yet updated
-                local_transform.rotation = target_transform.rotation;
-            }
-            BillboardMode::Y | BillboardMode::YX => {
-                // map target into local frame
-                // TODO use GlobalTransform::raparented_to
-                let target_local_matrix =
-                    frame.compute_matrix().inverse() * target_global_transform.compute_matrix();
-                let (_, _, target_local_translation) =
-                    target_local_matrix.to_scale_rotation_translation();
-
-                let target_direction = target_local_translation - local_transform.translation;
-                let mut euler_angles = local_transform.rotation.to_euler(EulerRot::YXZ);
-
-                // rotate to face / yaw
-                euler_angles.0 = target_direction.x.atan2(target_direction.z);
-
-                if billboard.mode == BillboardMode::YX {
-                    // tilt to face / pitch
-                    euler_angles.1 = -target_direction.y.atan2(target_direction.xz().length());
-                }
-
-                local_transform.rotation = Quat::from_euler(
-                    EulerRot::YXZ,
-                    euler_angles.0,
-                    euler_angles.1,
-                    euler_angles.2,
-                );
-            }
+        // overwrite only the requested axes
+        let (mut yaw, mut pitch, mut roll) = g_rotation.to_euler(EulerRot::YXZ);
+        let target_direction = target_g_translation - g_translation;
+        if billboard.mode.yaw() {
+            yaw = target_direction.x.atan2(target_direction.z);
         }
+        if billboard.mode.pitch() {
+            pitch = -target_direction.y.atan2(target_direction.xz().length());
+        }
+        if billboard.mode.roll() {
+            roll = target_g_rotation.to_euler(EulerRot::YXZ).2;
+        }
+
+        let target_global_transform = Transform {
+            translation: g_translation,
+            rotation: Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll),
+            scale: g_scale,
+        };
+        let target_local_matrix =
+            frame.compute_matrix().inverse() * target_global_transform.compute_matrix();
+        let target_transform = Transform::from_matrix(target_local_matrix);
+
+        // just update the rotation so that scale and translation don't drift, or change on first frame if GlobalTransform is not yet updated
+        local_transform.rotation = target_transform.rotation;
     }
 }

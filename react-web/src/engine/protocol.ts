@@ -998,9 +998,10 @@ export interface HoverAction {
   text: string
   /** false → out of range (shown greyed with a "get closer" hint instead of the key glyph). */
   enabled: boolean
-  /** Only meaningful when `enabled` is false — which distance rule gates the action: 'camera' (no
-   *  `maxPlayerDistance`, incl. the implicit default) → camera glyph + "Get camera closer";
-   *  'player' (`maxPlayerDistance` set) → walking glyph + "Get player closer". Defaults to 'camera'. */
+  /** Only meaningful when `enabled` is false — which distance rule gates the action: 'camera' (only
+   *  `maxCameraDistance` set) → camera glyph + "Get camera closer"; 'player' (`maxDistance` / its
+   *  deprecated alias `maxPlayerDistance`, incl. the implicit 10m default) → walking glyph +
+   *  "Get closer". Defaults to 'player'. */
   tooFarReason?: 'camera' | 'player'
 }
 /** Interaction hints for the entity under the reticle. Empty array = nothing hovered. The tooltip's
