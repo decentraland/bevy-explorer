@@ -1485,6 +1485,10 @@ impl Default for AudioEmitter {
     }
 }
 
+// despawns the `AudioEmitter` entity once its (non-looping) sound has finished playing
+#[derive(Component, Debug, Default)]
+pub struct OneShotAudio;
+
 #[derive(Clone, Copy)]
 #[repr(i32)]
 pub enum ZOrder {

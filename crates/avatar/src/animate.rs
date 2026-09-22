@@ -23,8 +23,8 @@ use common::{
     sets::SceneSets,
     structs::{
         AudioEmitter, AudioType, AvatarDynamicState, EmoteCommand, EmoteLifecycle,
-        EmoteLifecycleEvent, EmoteLifecycleSource, EmoteMask, MoveKind, PlayerModifiers,
-        PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback,
+        EmoteLifecycleEvent, EmoteLifecycleSource, EmoteMask, MoveKind, OneShotAudio,
+        PlayerModifiers, PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback,
         SceneDrivenAnimationFeedbackState,
     },
     util::TryPushChildrenEx,
@@ -1925,7 +1925,8 @@ fn emote_console_command(
 // Dedups against the last observed sound list per avatar so that the scene holding
 // the same list across frames doesn't re-fire sounds — a new play is triggered
 // only when the list transitions to a different value (including the scene clearing
-// and re-asserting it on a later frame).
+// and re-asserting it on a later frame). Emitters are `OneShotAudio`, so the audio
+// backend despawns them once they finish.
 fn play_scene_driven_sounds(
     mut commands: Commands,
     avatars: Query<(Entity, &SceneDrivenAnim)>,
@@ -1957,6 +1958,7 @@ fn play_scene_driven_sounds(
                         ty: AudioType::Avatar,
                         ..Default::default()
                     },
+                    OneShotAudio,
                 ))
                 .id();
             if let Ok(mut entity_commands) = commands.get_entity(entity) {
