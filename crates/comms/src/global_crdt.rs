@@ -615,6 +615,14 @@ pub struct RemoteAnimState {
     last_sequence: HashMap<Entity, u32>,
 }
 
+impl RemoteAnimState {
+    /// Drop state for players that no longer exist.
+    fn retain_players(&mut self, is_live: impl Fn(Entity) -> bool) {
+        self.cache.retain(|e, _| is_live(*e));
+        self.last_sequence.retain(|e, _| is_live(*e));
+    }
+}
+
 /// Apply a foreign player's [`rfc4::Movement`], whether it arrived over Pulse (as
 /// [`PlayerMessage::Movement`]) or as a legacy rfc4 packet over a websocket transport (as
 /// [`PlayerMessage::PlayerData`]). Writes the CRDT transform and emits a [`PlayerPositionEvent`]
@@ -732,6 +740,10 @@ pub fn process_transport_updates(
     }
     string_senders.retain(|_, s| !s.is_closed());
     binary_senders.retain(|_, s| !s.is_closed());
+
+    // forget per-player state for players despawned since the last run
+    duplicate_chat_filter.retain(|e, _| players.contains(*e));
+    remote_anim.retain_players(|e| players.contains(e));
 
     // each context is fully independent: its own transports feed it, its own player
     // entities live in it, and only its own scenes observe it
@@ -1400,5 +1412,39 @@ mod tests {
         assert!(!acceptable_emote_urn("urn:with space"));
         assert!(!acceptable_emote_urn("urn:with\nnewline"));
         assert!(!acceptable_emote_urn("urn:with\u{0}nul"));
+    }
+
+    #[test]
+    fn remote_anim_state_drops_despawned_players() {
+        let mut world = World::new();
+        let live = world.spawn_empty().id();
+        let gone = world.spawn_empty().id();
+
+        let mut state = RemoteAnimState::default();
+        for entity in [live, gone] {
+            state.last_sequence.insert(entity, 7);
+            state.cache.insert(
+                entity,
+                CachedRemoteAnim {
+                    scene_hash: "scene".to_owned(),
+                    content_hash: "content".to_owned(),
+                    urn: "urn".to_owned(),
+                },
+            );
+        }
+
+        world.despawn(gone);
+        state.retain_players(|e| world.get_entity(e).is_ok());
+
+        assert!(state.cache.contains_key(&live));
+        assert!(state.last_sequence.contains_key(&live));
+        assert!(!state.cache.contains_key(&gone));
+        assert!(!state.last_sequence.contains_key(&gone));
+
+        // a recycled entity index gets a new generation, so it can't inherit stale state
+        let reused = world.spawn_empty().id();
+        assert_eq!(reused.index(), gone.index());
+        assert!(!state.cache.contains_key(&reused));
+        assert!(!state.last_sequence.contains_key(&reused));
     }
 }
