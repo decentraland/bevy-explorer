@@ -173,12 +173,8 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcResultSe
             let endpoint = IpcResultCallback {
                 sender: Some(sender),
             };
-            let (id, close_sender) = ipc_register(endpoint);
-            let cancel = cancel.clone();
-            tokio::spawn(async move {
-                cancel.cancelled().await;
-                let _ = close_sender.send(id);
-            });
+            let (id, close_sender, removed) = ipc_register(endpoint);
+            spawn_close_watcher(id, cancel.clone(), removed, close_sender);
             debug!("created sender {id} -> {}", std::any::type_name::<T>());
             id
         });
@@ -200,7 +196,7 @@ impl<'de, T> Deserialize<'de> for RpcResultSender<T> {
         tokio::spawn(async move {
             rx.recv().await; // block till all senders are dropped
             debug!("last dropped {id} - {}", std::any::type_name::<T>());
-            let _ = cancel_router.send((id, IpcMessage::Closed));
+            ipc_router_close(id, &cancel_router);
         });
 
         Ok(Self::Remote {

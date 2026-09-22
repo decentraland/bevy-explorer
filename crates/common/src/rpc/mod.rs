@@ -1,5 +1,7 @@
 mod result_sender;
 mod stream_sender;
+#[cfg(test)]
+mod tests;
 
 use crate::{
     profile::SerializedProfile,
@@ -9,7 +11,7 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use ethers_core::types::H160;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, DropGuard};
 
 pub use result_sender::{RpcResultReceiver, RpcResultSender};
 pub use stream_sender::{RpcStreamReceiver, RpcStreamSender};
@@ -18,9 +20,27 @@ pub trait IpcEndpoint: Send {
     fn send(&mut self, raw_bytes: Vec<u8>);
 }
 
+// wraps a registered endpoint so that removing it from the registry (on either side
+// closing) cancels `removed`, letting the task that watches for the receiver being
+// dropped exit instead of waiting forever
+struct RegisteredEndpoint<T: IpcEndpoint> {
+    endpoint: T,
+    _removed: DropGuard,
+}
+
+impl<T: IpcEndpoint> IpcEndpoint for RegisteredEndpoint<T> {
+    fn send(&mut self, raw_bytes: Vec<u8>) {
+        self.endpoint.send(raw_bytes);
+    }
+}
+
 pub(crate) fn ipc_register<T: IpcEndpoint + 'static>(
     endpoint: T,
-) -> (u64, tokio::sync::mpsc::UnboundedSender<u64>) {
+) -> (
+    u64,
+    tokio::sync::mpsc::UnboundedSender<u64>,
+    CancellationToken,
+) {
     SCENE_IPC_CONTEXT.with(|cell| {
         let mut ctx = cell.borrow_mut();
         let ctx = ctx.as_mut().unwrap();
@@ -28,9 +48,34 @@ pub(crate) fn ipc_register<T: IpcEndpoint + 'static>(
         ctx.next_id += 1;
         let id = ctx.next_id;
 
-        ctx.registry.insert(id, Box::new(endpoint));
-        (id, ctx.close_sender.clone())
+        let removed = CancellationToken::new();
+        ctx.registry.insert(
+            id,
+            Box::new(RegisteredEndpoint {
+                endpoint,
+                _removed: removed.clone().drop_guard(),
+            }),
+        );
+        (id, ctx.close_sender.clone(), removed)
     })
+}
+
+// notify the engine when the local receiver is dropped early, or stop watching once the
+// endpoint has been removed from the registry
+pub(crate) fn spawn_close_watcher(
+    id: u64,
+    cancel: CancellationToken,
+    removed: CancellationToken,
+    close_sender: tokio::sync::mpsc::UnboundedSender<u64>,
+) {
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                let _ = close_sender.send(id);
+            }
+            _ = removed.cancelled() => (),
+        }
+    });
 }
 
 pub(crate) fn ipc_router(
@@ -47,6 +92,21 @@ pub(crate) fn ipc_router(
         ctx.ipc_channel_registry.insert(id, token.clone());
         (ctx.ipc_router.clone(), token)
     })
+}
+
+// called once the last engine-side sender for `id` is dropped. the scene host doesn't
+// echo the close back, so drop the receiver-dropped token here rather than waiting for a
+// message that never comes
+pub(crate) fn ipc_router_close(
+    id: u64,
+    router: &tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>,
+) {
+    let _ = ENGINE_IPC_CONTEXT.try_with(|cell| {
+        if let Some(ctx) = cell.borrow_mut().as_mut() {
+            ctx.ipc_channel_registry.remove(&id);
+        }
+    });
+    let _ = router.send((id, IpcMessage::Closed));
 }
 
 pub struct RequestContext {

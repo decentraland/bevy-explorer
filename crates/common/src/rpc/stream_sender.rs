@@ -183,13 +183,8 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcStreamSe
 
         let id = channel.lock().unwrap().serialize_with(|sender| {
             let endpoint = IpcStreamCallback { sender };
-            let (id, close_sender) = ipc_register(endpoint);
-
-            let cancel = cancel.clone();
-            tokio::spawn(async move {
-                cancel.cancelled().await;
-                let _ = close_sender.send(id);
-            });
+            let (id, close_sender, removed) = ipc_register(endpoint);
+            spawn_close_watcher(id, cancel.clone(), removed, close_sender);
 
             id
         });
@@ -210,7 +205,7 @@ impl<'de, T> Deserialize<'de> for RpcStreamSender<T> {
         let cancel_router = router.clone();
         tokio::spawn(async move {
             rx.recv().await; // block till all senders are dropped
-            let _ = cancel_router.send((id, IpcMessage::Closed));
+            ipc_router_close(id, &cancel_router);
         });
 
         Ok(Self::Remote {
