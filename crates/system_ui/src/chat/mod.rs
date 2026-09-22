@@ -398,7 +398,10 @@ fn display_chat(
         return;
     };
 
-    if let Some(children) = maybe_children {
+    if chatbox.active_tab == "Nearby" {
+        // consecutive messages from one sender share a bubble, so cap messages rather than bubbles
+        conversation.trim(entity, 255);
+    } else if let Some(children) = maybe_children {
         if children.len() > 255 {
             let mut iter = children.iter();
             for _ in 0..children.len() - 255 {
