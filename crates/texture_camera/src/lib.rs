@@ -108,8 +108,6 @@ fn update_layer_properties(
     mut props: ResMut<SceneLayerProperties>,
     mut cache: ResMut<TextureLayersCache>,
 ) {
-    let mut changed = HashSet::new();
-
     for removed in removed.read() {
         if let Some(layer) = props.ent_to_layer.remove(&removed) {
             if props.layers.get(&layer).is_some_and(|(e, _)| e == &removed) {
@@ -123,7 +121,7 @@ fn update_layer_properties(
         if let Some(layer) = props.ent_to_layer.remove(&ent) {
             if props.layers.get(&layer).is_some_and(|(e, _)| e == &ent) {
                 props.layers.remove(&layer);
-                changed.insert(layer);
+                cache.changed_layers.insert(layer);
             }
         }
 
@@ -134,6 +132,7 @@ fn update_layer_properties(
 
         let render_layer = cache.get_layer(container.root, layer.0.layer);
         props.layers.insert(render_layer, (ent, layer.0.clone()));
+        props.ent_to_layer.insert(ent, render_layer);
         cache.changed_layers.insert(render_layer);
         debug!("changed layer {:?} -> {:?}", render_layer, &layer.0);
     }
@@ -503,5 +502,96 @@ impl TextureLayersCache {
         });
         slf.changed_layers.clear();
         slf.free = free;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dcl_component::SceneEntityId;
+
+    fn setup() -> (App, Entity) {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .init_resource::<TextureLayersCache>()
+            .init_resource::<SceneLayerProperties>()
+            .add_systems(Update, update_layer_properties);
+        let root = app.world_mut().spawn_empty().id();
+        (app, root)
+    }
+
+    fn spawn_layer(app: &mut App, root: Entity, layer: u32) -> Entity {
+        app.world_mut()
+            .spawn((
+                CameraLayer(PbCameraLayer {
+                    layer,
+                    ..Default::default()
+                }),
+                ContainerEntity {
+                    container: root,
+                    root,
+                    container_id: SceneEntityId::ROOT,
+                },
+            ))
+            .id()
+    }
+
+    fn render_layer(app: &mut App, root: Entity, layer: u32) -> u32 {
+        app.world_mut()
+            .resource_mut::<TextureLayersCache>()
+            .get_layer(root, layer)
+    }
+
+    #[test]
+    fn removing_camera_layer_removes_layer_properties() {
+        let (mut app, root) = setup();
+        let ent = spawn_layer(&mut app, root, 1);
+        app.update();
+        let ix = render_layer(&mut app, root, 1);
+        assert!(app
+            .world()
+            .resource::<SceneLayerProperties>()
+            .layers
+            .contains_key(&ix));
+
+        app.world_mut().entity_mut(ent).remove::<CameraLayer>();
+        app.update();
+        let props = app.world().resource::<SceneLayerProperties>();
+        assert!(!props.layers.contains_key(&ix));
+        assert!(props.ent_to_layer.is_empty());
+    }
+
+    #[test]
+    fn despawning_camera_layer_entity_removes_layer_properties() {
+        let (mut app, root) = setup();
+        let ent = spawn_layer(&mut app, root, 1);
+        app.update();
+
+        app.world_mut().despawn(ent);
+        app.update();
+        let props = app.world().resource::<SceneLayerProperties>();
+        assert!(props.layers.is_empty());
+        assert!(props.ent_to_layer.is_empty());
+    }
+
+    #[test]
+    fn moving_camera_layer_removes_old_layer() {
+        let (mut app, root) = setup();
+        let ent = spawn_layer(&mut app, root, 1);
+        app.update();
+        let old_ix = render_layer(&mut app, root, 1);
+        let new_ix = render_layer(&mut app, root, 2);
+
+        app.world_mut()
+            .entity_mut(ent)
+            .insert(CameraLayer(PbCameraLayer {
+                layer: 2,
+                ..Default::default()
+            }));
+        app.update();
+        let props = app.world().resource::<SceneLayerProperties>();
+        assert!(!props.layers.contains_key(&old_ix));
+        assert!(props.layers.contains_key(&new_ix));
+        assert_eq!(props.ent_to_layer.get(&ent), Some(&new_ix));
     }
 }
