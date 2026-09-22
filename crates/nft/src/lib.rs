@@ -55,6 +55,7 @@ impl Plugin for NftShapePlugin {
             )
                 .in_set(SceneSets::PostLoop),
         );
+        app.add_observer(release_frame_instance);
     }
 
     fn finish(&self, app: &mut App) {
@@ -148,6 +149,18 @@ pub struct FrameLoading {
 pub struct FrameProcess {
     instance: InstanceId,
     color: Color,
+}
+
+// the frame entities outlive `FrameProcess` as children of the nft entity, but the spawner
+// keeps an entity map per instance until told otherwise
+fn release_frame_instance(
+    trigger: Trigger<OnReplace, FrameProcess>,
+    frames: Query<&FrameProcess>,
+    mut scene_spawner: ResMut<SceneSpawner>,
+) {
+    if let Ok(frame) = frames.get(trigger.target()) {
+        scene_spawner.unregister_instance(frame.instance);
+    }
 }
 
 fn load_frame(
@@ -386,3 +399,46 @@ static NFTSHAPE_LOOKUP: Lazy<HashMap<NftFrameType, Option<&'static str>>> = Lazy
         (NftNone, None),
     ])
 });
+
+#[cfg(test)]
+mod tests {
+    use bevy::scene::{ScenePlugin, SceneSpawner};
+
+    use super::*;
+
+    #[test]
+    fn frame_instance_is_released_when_processed() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), ScenePlugin));
+        app.add_observer(release_frame_instance);
+
+        let mut scene_world = World::new();
+        scene_world.spawn_empty();
+        let h_scene = app
+            .world_mut()
+            .resource_mut::<Assets<Scene>>()
+            .add(Scene::new(scene_world));
+
+        let ent = app.world_mut().spawn_empty().id();
+        let instance = app
+            .world_mut()
+            .resource_mut::<SceneSpawner>()
+            .spawn_as_child(h_scene, ent);
+        app.world_mut().entity_mut(ent).insert(FrameProcess {
+            instance,
+            color: Color::WHITE,
+        });
+        app.update();
+        assert!(app
+            .world()
+            .resource::<SceneSpawner>()
+            .instance_is_ready(instance));
+
+        app.world_mut().entity_mut(ent).remove::<FrameProcess>();
+
+        assert!(!app
+            .world()
+            .resource::<SceneSpawner>()
+            .instance_is_ready(instance));
+    }
+}

@@ -1763,6 +1763,21 @@ fn play_current_emote(
             }
         }
     }
+
+    // extras of avatars that weren't handled this frame (despawned, or no longer emoting) go
+    for extras in prev_spawned_extras.into_values() {
+        despawn_extras(&mut commands, &mut params.scene_spawner, extras);
+    }
+    retiring_extras.retain(|avatar, (wrapper, scene)| {
+        if q.contains(*avatar) {
+            return true;
+        }
+        params.scene_spawner.despawn_instance(*scene);
+        if let Ok(mut commands) = commands.get_entity(*wrapper) {
+            commands.despawn();
+        }
+        false
+    });
 }
 
 /// Play each avatar's upper-body emote request over whatever `play_current_emote` has going, as
@@ -1865,6 +1880,11 @@ fn play_masked_emote(
                 active_animation.set_weight(masked_weight(*share));
             }
         }
+    }
+
+    // extras of avatars no longer in the query go
+    for extras in prev_spawned_extras.into_values() {
+        despawn_extras(&mut commands, &mut params.scene_spawner, extras);
     }
 }
 

@@ -207,6 +207,7 @@ impl Plugin for GltfDefinitionPlugin {
         app.add_systems(Update, debug_modifiers);
 
         app.add_observer(clear_stale_instance);
+        app.add_observer(clear_unprocessed_instance);
         app.add_observer(on_gltf_container_removed);
     }
 }
@@ -239,7 +240,7 @@ fn clear_stale_instance(
     trigger: Trigger<OnReplace, GltfReady>,
     mut commands: Commands,
     gltf_readys: Query<&GltfReady>,
-    scene_spawner: Res<SceneSpawner>,
+    mut scene_spawner: ResMut<SceneSpawner>,
 ) {
     let entity = trigger.target();
     let Ok(gltf_ready) = gltf_readys.get(entity) else {
@@ -250,6 +251,31 @@ fn clear_stale_instance(
         &mut commands,
         scene_spawner.iter_instance_entities(**gltf_ready),
     );
+    // the spawner keeps an entity map per instance until told otherwise
+    scene_spawner.unregister_instance(**gltf_ready);
+}
+
+// an instance that never became ready (src changed, container removed or despawned
+// before processing) is owned by `GltfLoaded` alone. once processed, `GltfReady` holds
+// the same instance and `clear_stale_instance` releases it instead.
+fn clear_unprocessed_instance(
+    trigger: Trigger<OnReplace, GltfLoaded>,
+    mut commands: Commands,
+    gltfs: Query<(&GltfLoaded, Option<&GltfReady>)>,
+    mut scene_spawner: ResMut<SceneSpawner>,
+) {
+    let Ok((GltfLoaded(Some(instance)), maybe_ready)) = gltfs.get(trigger.target()) else {
+        return;
+    };
+    if maybe_ready.is_some_and(|ready| ready.0 == *instance) {
+        return;
+    }
+
+    despawn_instance_non_recursive(
+        &mut commands,
+        scene_spawner.iter_instance_entities(*instance),
+    );
+    scene_spawner.unregister_instance(*instance);
 }
 
 fn despawn_instance_non_recursive(commands: &mut Commands, entities: impl Iterator<Item = Entity>) {
@@ -293,16 +319,7 @@ pub fn scene_gltf_loader_settings(
 fn update_gltf(
     mut commands: Commands,
     mut commands2: Commands,
-    new_gltfs: Query<
-        (
-            Entity,
-            &SceneEntity,
-            &GltfDefinition,
-            Option<&GltfLoaded>,
-            Has<GltfProcessed>,
-        ),
-        Changed<GltfDefinition>,
-    >,
+    new_gltfs: Query<(Entity, &SceneEntity, &GltfDefinition), Changed<GltfDefinition>>,
     unprocessed_gltfs: Query<
         (Entity, &SceneEntity, &GltfHandle, &GltfDefinition),
         (With<GltfDefinition>, Without<GltfLoaded>),
@@ -350,7 +367,7 @@ fn update_gltf(
         };
     };
 
-    for (ent, scene_ent, gltf, maybe_loaded, has_gltf_processed) in new_gltfs.iter() {
+    for (ent, scene_ent, gltf) in new_gltfs.iter() {
         debug!("{} has {}", scene_ent.id, gltf.0.src);
 
         commands
@@ -358,15 +375,6 @@ fn update_gltf(
             .remove::<GltfLoaded>()
             .remove::<GltfProcessed>()
             .remove::<GltfAssetFailed>();
-
-        if let Some(GltfLoaded(Some(instance_id))) = maybe_loaded {
-            if !has_gltf_processed {
-                despawn_instance_non_recursive(
-                    &mut commands,
-                    scene_spawner.iter_instance_entities(*instance_id),
-                );
-            }
-        }
 
         let Ok(h_scene_def) = scene_def_handles.get(scene_ent.root) else {
             warn!("no scene definition found, can't process file request");
@@ -2283,5 +2291,96 @@ fn update_gltf_linked_visibility(
         if let Ok(mut target_vis) = gltf_nodes.get_mut(link.gltf_entity) {
             *target_vis = *vis;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::scene::{ScenePlugin, SceneSpawner};
+
+    use super::*;
+
+    // an app with the gltf instance observers and a spawned one-entity scene instance
+    // under `parent`
+    fn setup() -> (App, Entity, InstanceId) {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), ScenePlugin));
+        app.add_observer(clear_stale_instance);
+        app.add_observer(clear_unprocessed_instance);
+
+        let mut scene_world = World::new();
+        scene_world.spawn_empty();
+        let h_scene = app
+            .world_mut()
+            .resource_mut::<Assets<Scene>>()
+            .add(Scene::new(scene_world));
+
+        let parent = app.world_mut().spawn_empty().id();
+        let instance = app
+            .world_mut()
+            .resource_mut::<SceneSpawner>()
+            .spawn_as_child(h_scene, parent);
+        app.world_mut()
+            .entity_mut(parent)
+            .insert(GltfLoaded(Some(instance)));
+        app.update();
+        assert!(app
+            .world()
+            .resource::<SceneSpawner>()
+            .instance_is_ready(instance));
+
+        (app, parent, instance)
+    }
+
+    #[test]
+    fn unprocessed_instance_is_released_when_loaded_is_removed() {
+        let (mut app, parent, instance) = setup();
+        let scene_ent = app
+            .world()
+            .resource::<SceneSpawner>()
+            .iter_instance_entities(instance)
+            .next()
+            .unwrap();
+
+        app.world_mut().entity_mut(parent).remove::<GltfLoaded>();
+
+        assert!(!app
+            .world()
+            .resource::<SceneSpawner>()
+            .instance_is_ready(instance));
+        assert!(app.world().get_entity(scene_ent).is_err());
+    }
+
+    #[test]
+    fn unprocessed_instance_is_released_on_despawn() {
+        let (mut app, parent, instance) = setup();
+
+        app.world_mut().entity_mut(parent).despawn();
+
+        assert!(!app
+            .world()
+            .resource::<SceneSpawner>()
+            .instance_is_ready(instance));
+    }
+
+    #[test]
+    fn ready_instance_outlives_loaded_and_is_released_with_ready() {
+        let (mut app, parent, instance) = setup();
+        app.world_mut()
+            .entity_mut(parent)
+            .insert(GltfReady(instance));
+
+        // src change: the processed instance stays until its replacement is ready
+        app.world_mut().entity_mut(parent).remove::<GltfLoaded>();
+        assert!(app
+            .world()
+            .resource::<SceneSpawner>()
+            .instance_is_ready(instance));
+
+        app.world_mut().entity_mut(parent).despawn();
+        assert!(!app
+            .world()
+            .resource::<SceneSpawner>()
+            .instance_is_ready(instance));
     }
 }
