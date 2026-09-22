@@ -874,7 +874,9 @@ fn update_emote_item(
                 }
                 EmoteItemState::PendingImage(handle) => {
                     let Ok(data) = emote_loader.get_data(urn.base()) else {
-                        panic!();
+                        // the meta can be evicted while we are paused (tab hidden); the call
+                        // above re-requests it, retry next frame
+                        continue;
                     };
 
                     let fits = data

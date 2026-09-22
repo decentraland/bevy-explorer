@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use bevy::{
     asset::AssetLoader,
+    diagnostic::FrameCount,
     gltf::Gltf,
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -14,7 +15,7 @@ use crate::{
     ext::AvatarEmotesExt,
     urn::{CollectibleInstance, CollectibleUrn},
     Collectible, CollectibleData, CollectibleError, CollectibleManager, CollectibleType,
-    CollectiblesTypePlugin,
+    Collectibles, CollectiblesTypePlugin,
 };
 
 pub fn base_bodyshapes() -> Vec<String> {
@@ -32,7 +33,14 @@ impl Plugin for EmoteMetadataPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(CollectiblesTypePlugin::<Emote>::default());
         app.register_asset_loader(EmoteMetaLoader);
+        app.add_systems(Update, retain_emotes);
     }
+}
+
+// playing emotes are re-requested every frame (see `play_current_emote`), so frame expiry alone
+// keeps them; anything else is dropped a few frames after its last use
+fn retain_emotes(mut collectibles: ResMut<Collectibles<Emote>>, frame: Res<FrameCount>) {
+    collectibles.retain(frame.0, |_| false);
 }
 
 pub struct EmotesPlugin;
@@ -616,5 +624,31 @@ impl AssetLoader for EmoteMetaLoader {
                 loops: meta.emote_extended_data.loops,
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ecs::system::RunSystemOnce;
+
+    use super::*;
+
+    #[test]
+    fn unused_emotes_are_dropped_from_the_cache() {
+        let urn = EmoteUrn::new("urn:decentraland:off-chain:base-emotes:wave").unwrap();
+        let mut world = World::new();
+        world.insert_resource(FrameCount(10));
+        let mut collectibles = Collectibles::<Emote>::default();
+        collectibles
+            .cache
+            .insert(urn.clone(), (5, Handle::default()));
+        collectibles.data_cache.insert(urn, (5, Handle::default()));
+        world.insert_resource(collectibles);
+
+        world.run_system_once(retain_emotes).unwrap();
+
+        let collectibles = world.resource::<Collectibles<Emote>>();
+        assert!(collectibles.cache.is_empty());
+        assert!(collectibles.data_cache.is_empty());
     }
 }

@@ -955,7 +955,9 @@ fn update_wearable_item(
                 }
                 WearableItemState::PendingImage(handle) => {
                     let Ok(data) = wearable_loader.get_data(urn.base()) else {
-                        panic!();
+                        // the meta can be evicted while we are paused (tab hidden); the call
+                        // above re-requests it, retry next frame
+                        continue;
                     };
 
                     let fits = entry.category == WearableCategory::BODY_SHAPE
