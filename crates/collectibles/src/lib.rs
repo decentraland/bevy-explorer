@@ -108,6 +108,20 @@ pub struct Collectibles<T: CollectibleType> {
 }
 
 impl<T: CollectibleType> Collectibles<T> {
+    /// cached collectibles (or their metadata) accessed within the last `RETAIN_TICKS` frames
+    pub fn recently_accessed(&self, frame: u32) -> impl Iterator<Item = &CollectibleUrn<T>> {
+        self.cache
+            .iter()
+            .map(|(urn, (expiry, _))| (urn, expiry))
+            .chain(
+                self.data_cache
+                    .iter()
+                    .map(|(urn, (expiry, _))| (urn, expiry)),
+            )
+            .filter(move |(_, expiry)| **expiry >= frame)
+            .map(|(urn, _)| urn)
+    }
+
     /// drop cached collectibles (and their metadata) not accessed within `RETAIN_TICKS` frames,
     /// unless `f` says they are still in use
     pub fn retain(&mut self, frame: u32, f: impl Fn(&CollectibleUrn<T>) -> bool) {
