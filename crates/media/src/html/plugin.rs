@@ -47,6 +47,8 @@ fn perform_video_copies(
         let frame_copy = request.video_frame.clone();
         let Some(gpu_image) = images.get(request.target) else {
             warn!("missing gpu image");
+            // release the frame now rather than waiting for gc
+            frame_copy.close();
             continue;
         };
         let frame = request.video_frame.into_inner();
@@ -56,6 +58,7 @@ fn perform_video_copies(
 
         if source_size != target_size {
             warn!("skip frame {source_size:?} != {target_size:?}");
+            frame_copy.close();
             continue;
         }
 
