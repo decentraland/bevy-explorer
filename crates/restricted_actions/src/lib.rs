@@ -2308,7 +2308,7 @@ fn handle_entity_definition(
     })
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_startup_scenes(
     mut startup_scenes: ResMut<StartupScenes>,
     mut tasks: Local<Vec<(usize, Task<Result<(String, PortableSource), String>>)>>,
@@ -2322,6 +2322,7 @@ pub fn process_startup_scenes(
         )>,
     >,
     mut writer: EventWriter<PreviewCommand>,
+    mut sockets: Local<PreviewSockets>,
 ) {
     if let Some(command) = channel.as_mut().and_then(|(_, rx)| rx.try_recv().ok()) {
         writer.write(command);
@@ -2363,9 +2364,8 @@ pub fn process_startup_scenes(
                     .get_or_insert_with(tokio::sync::mpsc::unbounded_channel)
                     .0
                     .clone();
-                IoTaskPool::get()
-                    .spawn(handle_preview_socket(scene.source.clone(), sx.clone()))
-                    .detach();
+                // reload commands re-run the lookups, so reuse a live socket
+                ensure_preview_socket(&mut sockets, &scene.source, &sx);
                 scene.hot_reload = Some(sx);
             }
             false
@@ -2382,6 +2382,41 @@ pub fn process_startup_scenes(
 
     if tasks.is_empty() {
         *done = true;
+    }
+}
+
+type PreviewSockets = HashMap<String, Task<Result<(), anyhow::Error>>>;
+
+// spawn a preview socket for `source` unless one is still running. returns true if spawned
+fn ensure_preview_socket(
+    sockets: &mut PreviewSockets,
+    source: &str,
+    sx: &tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+) -> bool {
+    if sockets.get(source).is_some_and(|task| !task.is_finished()) {
+        return false;
+    }
+    let task = IoTaskPool::get().spawn(handle_preview_socket(source.to_owned(), sx.clone()));
+    sockets.insert(source.to_owned(), task);
+    true
+}
+
+#[cfg(test)]
+mod preview_socket_tests {
+    use super::*;
+    use bevy::tasks::TaskPool;
+
+    #[test]
+    fn live_preview_socket_is_not_duplicated() {
+        IoTaskPool::get_or_init(TaskPool::new);
+        let (sx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut sockets = PreviewSockets::default();
+
+        // an invalid address fails fast, then the task backs off for 5 secs
+        assert!(ensure_preview_socket(&mut sockets, "invalid", &sx));
+        assert!(!ensure_preview_socket(&mut sockets, "invalid", &sx));
+        assert!(ensure_preview_socket(&mut sockets, "other", &sx));
+        assert_eq!(sockets.len(), 2);
     }
 }
 
