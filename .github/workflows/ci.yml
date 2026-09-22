@@ -60,12 +60,17 @@ jobs:
       group: ${{ github.workflow }}-scenes-${{ github.ref }}
       cancel-in-progress: true
     steps:
+      # Checkout must precede rust-cache: the cache key hashes Cargo.lock, and
+      # without it the key is constant — saved once from main, then frozen stale.
       - uses: actions/checkout@v7
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -123,7 +128,7 @@ jobs:
           override: true
       # The macOS/Windows legs are the longest jobs in the workflow; cache their dependency
       # artifacts (rust-cache never keeps workspace crates). Linux finishes inside the other
-      # legs uncached, and every other cache in this repo was measured to give no reuse.
+      # legs uncached.
       - uses: Swatinem/rust-cache@v2
         if: runner.os != 'Linux'
         with:
@@ -228,6 +233,10 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: headless-linux-x64
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # NOT apt protobuf-compiler: ubuntu-22.04 ships protoc 3.12, which rejects the
       # proto3 optional fields in billboard.proto. The rest of this workflow uses the
       # action for the same reason.
@@ -311,6 +320,9 @@ jobs:
           toolchain: stable
           override: true
       - run: rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -378,6 +390,20 @@ jobs:
           target: wasm32-unknown-unknown
           components: rust-src
           override: true
+      # Plain cache rather than rust-cache: rust-cache prunes anything not in Cargo.lock
+      # before saving, which throws away the build-std std artifacts and forces a full
+      # wasm rebuild on every run. Saved only from main (see the Save step below).
+      - name: Restore wasm target cache
+        id: wasm-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: wasm-web-${{ hashFiles('Cargo.lock', 'Cargo.toml', '.cargo/config.toml') }}
+          restore-keys: wasm-web-
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -435,6 +461,16 @@ jobs:
       # from the Rust system-api structs and gitignored — regenerate before building.
       - name: Generate TS bindings
         run: ./scripts/gen-ts-bindings.sh
+      - name: Save wasm target cache
+        if: github.ref == 'refs/heads/main' && steps.wasm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ steps.wasm-cache.outputs.cache-primary-key }}
       # The React HUD is the production page: build it into deploy/web root (vite outDir).
       # PUBLIC_URL = the versioned CDN base prebuild.js just wrote into package.json homepage —
       # index.html asset refs must be ABSOLUTE because the entry URL (decentraland.zone/bevy-web)

@@ -101,6 +101,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: headless-${{ matrix.platform }}
+
       - name: Build sidecar
         run: cargo build --release --locked --target ${{ matrix.target }} -p dcl_deno_ipc
 
