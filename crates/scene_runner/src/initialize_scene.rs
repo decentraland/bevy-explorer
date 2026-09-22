@@ -88,6 +88,7 @@ impl Plugin for SceneLifecyclePlugin {
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
         app.init_resource::<PortableScenes>();
+        app.init_resource::<SceneCollections>();
         app.init_asset::<SerializedCrdtStore>();
         app.init_asset_loader::<CrdtLoader>();
         app.add_plugins(MaterialPlugin::<LoadingMaterial>::default());
@@ -95,6 +96,7 @@ impl Plugin for SceneLifecyclePlugin {
         app.add_systems(
             Update,
             (
+                release_scene_collections.before(load_scene_entity),
                 load_scene_entity,
                 load_scene_json,
                 load_scene_javascript,
@@ -138,6 +140,66 @@ pub enum SceneLoading {
 
 #[derive(Component)]
 pub struct SceneEntityDefinitionHandle(pub Handle<EntityDefinition>);
+
+// content collections registered with ipfs per scene entity, so they can be dropped once no
+// scene uses the hash any more
+#[derive(Resource, Default)]
+pub struct SceneCollections(HashMap<Entity, HashSet<String>>);
+
+impl SceneCollections {
+    // forget entities that are gone, returning the hashes no remaining scene still uses
+    fn release(
+        &mut self,
+        is_alive: impl Fn(Entity) -> bool,
+        live_hashes: impl Iterator<Item = String>,
+    ) -> Vec<String> {
+        let mut released = Vec::default();
+        self.0.retain(|entity, hashes| {
+            let alive = is_alive(*entity);
+            if !alive {
+                released.extend(hashes.drain());
+            }
+            alive
+        });
+        if released.is_empty() {
+            return released;
+        }
+
+        let in_use: HashSet<String> = self
+            .0
+            .values()
+            .flatten()
+            .cloned()
+            .chain(live_hashes)
+            .collect();
+        released.sort();
+        released.dedup();
+        released.retain(|hash| !in_use.contains(hash));
+        released
+    }
+}
+
+// runs before `load_scene_entity` so entities registered last frame have been spawned
+fn release_scene_collections(
+    mut collections: ResMut<SceneCollections>,
+    scenes: Query<(), With<SceneEntityDefinitionHandle>>,
+    scene_hashes: Query<&SceneHash>,
+    ipfas: IpfsAssetServer,
+) {
+    if collections.0.is_empty() {
+        return;
+    }
+
+    // scenes spawned for a hash but not yet registered still count as users
+    let released = collections.release(
+        |entity| scenes.contains(entity),
+        scene_hashes.iter().map(|h| h.0.clone()),
+    );
+    for hash in released {
+        debug!("releasing scene collection {hash}");
+        ipfas.ipfs().remove_collection(&hash);
+    }
+}
 
 #[derive(Component)]
 pub struct SceneInitialData {
@@ -192,6 +254,7 @@ pub(crate) fn load_scene_json(
     mut loading_scenes: Query<(Entity, &mut SceneLoading, &SceneEntityDefinitionHandle)>,
     scene_definitions: Res<Assets<EntityDefinition>>,
     ipfas: IpfsAssetServer,
+    mut collections: ResMut<SceneCollections>,
 ) {
     for (entity, mut state, h_scene) in loading_scenes
         .iter_mut()
@@ -228,6 +291,11 @@ pub(crate) fn load_scene_json(
             None,
             definition.metadata.as_ref().map(|v| v.to_string()),
         );
+        collections
+            .0
+            .entry(entity)
+            .or_default()
+            .insert(definition.id.clone());
 
         let crdt = definition.content.hash("main.crdt").map(|_| {
             ipfas
@@ -2003,5 +2071,62 @@ pub fn handle_live_scene_info(
 
     for sender in senders {
         sender.send(scene_info.clone());
+    }
+}
+
+#[cfg(test)]
+mod scene_collections_tests {
+    use super::*;
+
+    fn register(collections: &mut SceneCollections, entity: Entity, hash: &str) {
+        collections
+            .0
+            .entry(entity)
+            .or_default()
+            .insert(hash.to_owned());
+    }
+
+    #[test]
+    fn releases_hash_of_despawned_scene() {
+        let (a, b) = (Entity::from_raw(1), Entity::from_raw(2));
+        let mut collections = SceneCollections::default();
+        register(&mut collections, a, "ha");
+        register(&mut collections, b, "hb");
+
+        let released = collections.release(|e| e != a, std::iter::empty());
+        assert_eq!(released, vec!["ha".to_owned()]);
+        assert!(!collections.0.contains_key(&a));
+        assert!(collections.0.contains_key(&b));
+
+        // nothing further to release
+        assert!(collections.release(|_| true, std::iter::empty()).is_empty());
+    }
+
+    #[test]
+    fn keeps_hash_shared_with_live_scene() {
+        let (a, b) = (Entity::from_raw(1), Entity::from_raw(2));
+        let mut collections = SceneCollections::default();
+        register(&mut collections, a, "shared");
+        register(&mut collections, b, "shared");
+
+        assert!(collections
+            .release(|e| e != a, std::iter::empty())
+            .is_empty());
+        assert_eq!(
+            collections.release(|_| false, std::iter::empty()),
+            vec!["shared".to_owned()]
+        );
+    }
+
+    #[test]
+    fn keeps_hash_of_scene_still_loading() {
+        let a = Entity::from_raw(1);
+        let mut collections = SceneCollections::default();
+        register(&mut collections, a, "reloading");
+
+        // a respawned scene with the same hash that hasn't registered yet
+        let released = collections.release(|_| false, std::iter::once("reloading".to_owned()));
+        assert!(released.is_empty());
+        assert!(collections.0.is_empty());
     }
 }
