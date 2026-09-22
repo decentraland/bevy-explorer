@@ -536,9 +536,26 @@ pub struct CachedMeshData {
 
 #[derive(Component, Default)]
 pub struct SceneResourceLookup {
-    pub materials: HashMap<Handle<StandardMaterial>, Handle<SceneMaterial>>,
+    // weak ids so the lookup doesn't keep gltf materials and their textures alive
+    pub materials: HashMap<AssetId<StandardMaterial>, AssetId<SceneMaterial>>,
     pub meshes_by_hash: HashMap<u64, CachedMeshData>,
     pub mesh_hashes_by_id: HashMap<AssetId<Mesh>, u64>,
+}
+
+impl SceneResourceLookup {
+    // drop entries whose assets have been freed, they can never be hit again
+    fn prune(
+        &mut self,
+        meshes: &Assets<Mesh>,
+        base_mats: &Assets<StandardMaterial>,
+        bound_mats: &Assets<SceneMaterial>,
+    ) {
+        self.meshes_by_hash
+            .retain(|_, data| meshes.contains(data.mesh_id));
+        self.mesh_hashes_by_id.retain(|id, _| meshes.contains(*id));
+        self.materials
+            .retain(|base, bound| base_mats.contains(*base) && bound_mats.contains(*bound));
+    }
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -940,10 +957,12 @@ fn update_ready_gltfs(
                                 format!("Material{ix}")
                             });
 
-                        let h_scene_material = if let Some(h_scene_material) =
-                            resource_lookup.materials.get(&h_material.0)
+                        let h_scene_material = if let Some(h_scene_material) = resource_lookup
+                            .materials
+                            .get(&h_material.0.id())
+                            .and_then(|id| bound_mats.get_strong_handle(*id))
                         {
-                            h_scene_material.clone()
+                            h_scene_material
                         } else {
                             let Some(base) = base_mats.get(h_material) else {
                                 warn!(
@@ -967,7 +986,7 @@ fn update_ready_gltfs(
                             });
                             resource_lookup
                                 .materials
-                                .insert(h_material.0.clone(), h_scene_material.clone());
+                                .insert(h_material.0.id(), h_scene_material.id());
 
                             *tracker.0.entry("Unique Materials").or_default() += 1;
                             h_scene_material
@@ -1185,11 +1204,8 @@ fn update_ready_gltfs(
                     animation_clips,
                 ));
             }
-            *tracker.0.entry("Live Meshes").or_default() = resource_lookup
-                .meshes_by_hash
-                .iter()
-                .filter(|(_, data)| meshes.get(data.mesh_id).is_some())
-                .count();
+            resource_lookup.prune(&meshes, &base_mats, &bound_mats);
+            *tracker.0.entry("Live Meshes").or_default() = resource_lookup.meshes_by_hash.len();
         }
     }
 
@@ -2283,5 +2299,63 @@ fn update_gltf_linked_visibility(
         if let Ok(mut target_vis) = gltf_nodes.get_mut(link.gltf_entity) {
             *target_vis = *vis;
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use bevy::render::mesh::PrimitiveTopology;
+    use scene_material::SceneMaterialExt;
+
+    #[test]
+    fn resource_lookup_prunes_freed_assets() {
+        let mut meshes = Assets::<Mesh>::default();
+        let mut base_mats = Assets::<StandardMaterial>::default();
+        let mut bound_mats = Assets::<SceneMaterial>::default();
+        let mut lookup = SceneResourceLookup::default();
+
+        let mut add_entry = |hash: u64,
+                             meshes: &mut Assets<Mesh>,
+                             base_mats: &mut Assets<StandardMaterial>,
+                             bound_mats: &mut Assets<SceneMaterial>| {
+            let mesh = meshes.add(Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::default(),
+            ));
+            let base = base_mats.add(StandardMaterial::default());
+            let bound = bound_mats.add(SceneMaterial::new_unbounded(StandardMaterial::default()));
+            lookup.meshes_by_hash.insert(
+                hash,
+                CachedMeshData {
+                    mesh_id: mesh.id(),
+                    is_skinned: false,
+                    shape: SharedShape::ball(0.01),
+                    maybe_collider: None,
+                },
+            );
+            lookup.mesh_hashes_by_id.insert(mesh.id(), hash);
+            lookup.materials.insert(base.id(), bound.id());
+            (mesh, base, bound)
+        };
+
+        let live = add_entry(0, &mut meshes, &mut base_mats, &mut bound_mats);
+        let dead = add_entry(1, &mut meshes, &mut base_mats, &mut bound_mats);
+        // a gltf whose materials outlive the scene materials built from them
+        let orphan = add_entry(2, &mut meshes, &mut base_mats, &mut bound_mats);
+        meshes.remove(dead.0.id());
+        base_mats.remove(dead.1.id());
+        bound_mats.remove(dead.2.id());
+        bound_mats.remove(orphan.2.id());
+
+        lookup.prune(&meshes, &base_mats, &bound_mats);
+
+        // live and orphan meshes are kept
+        assert_eq!(lookup.meshes_by_hash.len(), 2);
+        assert!(!lookup.meshes_by_hash.contains_key(&1));
+        assert!(!lookup.mesh_hashes_by_id.contains_key(&dead.0.id()));
+        assert_eq!(lookup.mesh_hashes_by_id.len(), 2);
+        assert_eq!(lookup.materials.len(), 1);
+        assert_eq!(lookup.materials.get(&live.1.id()), Some(&live.2.id()));
     }
 }
