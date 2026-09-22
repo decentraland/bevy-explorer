@@ -108,6 +108,11 @@ pub fn process_streams(
             trace!("Buffering stream");
             update_state(VideoState::VsBuffering, streams);
             while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
+                // stop if the player went away while we were waiting on the input
+                if commands.is_closed() || streams.iter().all(|ctx| !ctx.is_live()) {
+                    trace!("Player dropped while buffering.");
+                    return Ok(());
+                }
                 if let Some((stream_index, packet)) = input_context.blocking_next() {
                     for stream in streams.iter_mut() {
                         if Some(stream_index) == stream.stream_index() {
@@ -257,5 +262,63 @@ pub fn process_streams(
                 context.send_frame();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // input that never produces a packet and never reaches eof, like a source stuck on read errors
+    struct StuckInput;
+
+    impl PacketIter for StuckInput {
+        fn is_eof(&self) -> bool {
+            false
+        }
+        fn try_next(&mut self) -> Option<(usize, Packet)> {
+            None
+        }
+        fn blocking_next(&mut self) -> Option<(usize, Packet)> {
+            None
+        }
+        fn reset(&mut self) {}
+        fn seek_to(&mut self, _time: f64) {}
+    }
+
+    struct EmptyStream;
+
+    impl FfmpegContext for EmptyStream {
+        fn is_live(&self) -> bool {
+            true
+        }
+        fn stream_index(&self) -> Option<usize> {
+            Some(0)
+        }
+        fn has_frame(&self) -> bool {
+            false
+        }
+        fn buffered_time(&self) -> f64 {
+            0.0
+        }
+        fn receive_packet(&mut self, _packet: Packet) -> Result<(), anyhow::Error> {
+            Ok(())
+        }
+        fn send_frame(&mut self) {}
+        fn set_start_frame(&mut self) {}
+        fn reset_start_frame(&mut self) {}
+        fn seconds_till_next_frame(&self) -> f64 {
+            f64::MAX
+        }
+        fn update_state(&self, _state: VideoState) {}
+        fn clear(&mut self) {}
+    }
+
+    #[test]
+    fn buffering_exits_when_command_channel_closes() {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        drop(sender);
+        let mut stream = EmptyStream;
+        process_streams(StuckInput, &mut [&mut stream], receiver).unwrap();
     }
 }

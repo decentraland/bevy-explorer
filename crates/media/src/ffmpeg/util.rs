@@ -1,7 +1,15 @@
+use std::time::Duration;
+
+use bevy::log::warn;
 use common::util::ReportErr;
 use ffmpeg_next::{Packet, format::context::Input};
 
 pub const BUFFER_TIME: f64 = 10.0;
+
+// consecutive read errors before a blocking read gives up and treats the input as ended
+const MAX_READ_ERRORS: u32 = 100;
+// cap on the backoff between failed blocking reads
+const MAX_READ_BACKOFF: Duration = Duration::from_millis(100);
 
 pub trait PacketIter {
     fn is_eof(&self) -> bool;
@@ -17,6 +25,7 @@ pub struct InputWrapper {
     pending_input: Option<tokio::sync::oneshot::Receiver<Input>>,
     path: String,
     is_eof: bool,
+    read_errors: u32,
 }
 
 impl InputWrapper {
@@ -26,6 +35,7 @@ impl InputWrapper {
             pending_input: None,
             path,
             is_eof: false,
+            read_errors: 0,
         }
     }
 }
@@ -78,7 +88,10 @@ impl PacketIter for InputWrapper {
         let mut packet = Packet::empty();
 
         match packet.read(input) {
-            Ok(..) => Some((packet.stream(), packet)),
+            Ok(..) => {
+                self.read_errors = 0;
+                Some((packet.stream(), packet))
+            }
             Err(ffmpeg_next::util::error::Error::Eof) => {
                 self.is_eof = true;
                 None
@@ -87,18 +100,33 @@ impl PacketIter for InputWrapper {
         }
     }
 
+    // returns None on a read error (after a short backoff) so the caller can check for disposal
+    // before retrying. gives up and marks the input as ended after too many consecutive errors.
     fn blocking_next(&mut self) -> Option<(usize, Packet)> {
         let input = self.get_input(true)?;
         let mut packet = Packet::empty();
 
-        loop {
-            match packet.read(input) {
-                Ok(..) => return Some((packet.stream(), packet)),
-                Err(ffmpeg_next::util::error::Error::Eof) => {
+        match packet.read(input) {
+            Ok(..) => {
+                self.read_errors = 0;
+                Some((packet.stream(), packet))
+            }
+            Err(ffmpeg_next::util::error::Error::Eof) => {
+                self.is_eof = true;
+                None
+            }
+            Err(e) => {
+                self.read_errors += 1;
+                if self.read_errors >= MAX_READ_ERRORS {
+                    warn!("giving up on {} after repeated read errors: {e}", self.path);
+                    self.read_errors = 0;
                     self.is_eof = true;
-                    return None;
+                } else {
+                    std::thread::sleep(
+                        Duration::from_millis(1 << self.read_errors.min(7)).min(MAX_READ_BACKOFF),
+                    );
                 }
-                Err(..) => (),
+                None
             }
         }
     }
