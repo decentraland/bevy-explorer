@@ -250,7 +250,7 @@ pub(crate) fn load_scene_javascript(
     main_crdts: Res<Assets<SerializedCrdtStore>>,
     ipfas: IpfsAssetServer,
     crdt_component_interfaces: Res<CrdtExtractors>,
-    mut scene_updates: ResMut<SceneUpdates>,
+    scene_updates: Res<SceneUpdates>,
     crdt_contexts: Res<CrdtContexts>,
     global_scenes: Query<&GlobalCrdtState>,
     portable_scenes: Res<PortableScenes>,
@@ -424,8 +424,6 @@ pub(crate) fn load_scene_javascript(
             false,
             meta.authoritative_multiplayer.unwrap_or_default(),
         );
-
-        scene_updates.scene_ids.insert(scene_id, root);
 
         // start from this scene's crdt context (its own room's on a multi-tenant server,
         // the shared context otherwise), with position data localized for this scene.
