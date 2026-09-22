@@ -5,8 +5,8 @@ use crate::{
     profile::SerializedProfile,
     structs::{EmoteMask, PermissionType},
 };
+use alloy_core::primitives::Address;
 use bevy::{platform::collections::HashMap, prelude::*};
-use ethers_core::types::H160;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use tokio_util::sync::CancellationToken;
@@ -239,7 +239,7 @@ pub enum RpcCall {
     SendMessageBus {
         scene: Entity,
         data: Vec<u8>,
-        recipient: Option<H160>,
+        recipient: Option<Address>,
     },
     SubscribeMessageBus {
         hash: String,

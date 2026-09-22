@@ -8,9 +8,9 @@
 
 use std::{collections::HashMap, str::FromStr};
 
+use alloy_signer_local::PrivateKeySigner;
 use base64::Engine;
 use bevy::prelude::*;
-use ethers_signers::{LocalWallet, Signer};
 use serde::Deserialize;
 
 use crate::Wallet;
@@ -88,7 +88,7 @@ impl StorageDelegation {
             .timestamp_millis();
 
         let local_wallet =
-            LocalWallet::from_str(envelope.ephemeral.private_key.trim_start_matches("0x"))
+            PrivateKeySigner::from_str(envelope.ephemeral.private_key.trim_start_matches("0x"))
                 .map_err(|_| anyhow::anyhow!("delegation ephemeral key is invalid"))?;
         let claimed = envelope.ephemeral.address.to_lowercase();
         let derived = format!("{:#x}", local_wallet.address());
