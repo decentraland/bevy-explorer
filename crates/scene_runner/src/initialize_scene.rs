@@ -217,8 +217,11 @@ pub(crate) fn load_scene_json(
 
         if definition.id.is_empty() {
             // there was nothing at this pointer
-            // stop loading but don't despawn
-            commands.entity(entity).remove::<SceneLoading>();
+            // stop loading but don't despawn. mark as failed rather than removing the load
+            // state, so the lifecycle still tracks (and eventually despawns) the entity
+            // instead of orphaning it and spawning a replacement
+            debug!("{entity:?} scene entity definition is empty");
+            *state = SceneLoading::Failed;
             continue;
         }
 
