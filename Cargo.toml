@@ -184,7 +184,7 @@ alloy-core = { version = "1.7", default-features = false }
 alloy-network = { version = "2.4.2", default-features = false }
 alloy-signer = { version = "2.4.2", default-features = false }
 alloy-signer-local = { version = "2.4.2", default-features = false }
-alloy-provider = { version = "2.4.2", default-features = false }
+alloy-rpc-client = { version = "2.4.2", default-features = false }
 
 itertools = "0.14"
 libc = "0.2"
