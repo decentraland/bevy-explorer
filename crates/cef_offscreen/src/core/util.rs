@@ -4,7 +4,6 @@ pub mod v8_interceptor;
 
 use crate::core::util::v8_accessor::V8DefaultAccessorBuilder;
 use crate::core::util::v8_interceptor::V8DefaultInterceptorBuilder;
-use cef::rc::ConvertParam;
 use cef::{
     CefStringList, CefStringUserfreeUtf16, CefStringUtf16, ImplV8Value, V8Propertyattribute,
     v8_value_create_array, v8_value_create_bool, v8_value_create_double, v8_value_create_int,
@@ -57,8 +56,12 @@ pub trait IntoString {
 
 impl IntoString for CefStringUserfreeUtf16 {
     fn into_string(self) -> String {
-        let ptr: *mut _cef_string_utf16_t = self.into_raw();
-        CefStringUtf16::from(ptr).to_string()
+        // borrow the buffer rather than `into_raw()`-ing it: that takes the pointer out of
+        // `self`, so its drop never calls `cef_string_userfree_utf16_free` and the string leaks
+        let value: Option<&_cef_string_utf16_t> = (&self).into();
+        value
+            .map(|value| CefStringUtf16::from(std::ptr::from_ref(value)).to_string())
+            .unwrap_or_default()
     }
 }
 
