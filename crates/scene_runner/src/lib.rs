@@ -1268,6 +1268,10 @@ fn process_scene_entity_lifecycle(
         // update deleted entities list, used by crdt processors to filter results
         deleted_entities.0 = std::mem::take(&mut context.death_row);
 
+        // drop dead entities from the renderer-side store, otherwise their timestamp /
+        // renderer-written entries are retained for the scene's lifetime
+        context.crdt_store.clean_up(&deleted_entities.0);
+
         for deleted_scene_entity in &deleted_entities.0 {
             if let Some(deleted_bevy_entity) = context.bevy_entity(*deleted_scene_entity) {
                 // reparent scene-entity children to the root entity

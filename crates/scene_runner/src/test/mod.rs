@@ -9,7 +9,7 @@ use bevy::{
     gltf::GltfPlugin,
     input::InputPlugin,
     log::LogPlugin,
-    platform::collections::HashMap,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::mesh::MeshPlugin,
     scene::ScenePlugin,
@@ -32,8 +32,8 @@ use crate::{
     update_world::{
         transform_and_parent::process_transform_and_parent_updates, CrdtStateComponent,
     },
-    RendererSceneContext, SceneEntity, SceneLoopLabel, SceneLoopSchedule, SceneRunnerPlugin,
-    SceneUpdates,
+    DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopLabel, SceneLoopSchedule,
+    SceneRunnerPlugin, SceneUpdates,
 };
 use common::{
     inputs::InputMap,
@@ -523,6 +523,60 @@ fn cyclic_recovery() {
         let graph = make_graph(&mut app);
         check_or_write!(graph, "expected/cyclic_recovery.dot");
     }
+}
+
+#[test]
+fn lifecycle_cleans_dead_entities_from_crdt_store() {
+    let mut world = World::new();
+
+    let dead = SceneEntityId::new(600, 0);
+    let live = SceneEntityId::new(601, 0);
+
+    let mut context = RendererSceneContext::new(
+        dcl::SceneId::DUMMY,
+        "hash".to_owned(),
+        "storage_root".to_owned(),
+        false,
+        0,
+        "title".to_owned(),
+        IVec2::ZERO,
+        HashSet::from_iter([IVec2::ZERO]),
+        vec![],
+        vec![],
+        Entity::PLACEHOLDER,
+        0.0,
+        false,
+        "sdk_version",
+        false,
+        false,
+    );
+    for id in [dead, live] {
+        context.crdt_store.force_update(
+            SceneComponentId::TRANSFORM,
+            CrdtType::LWW_ENT,
+            id,
+            Some(&mut DclReader::new(&make_reparent_buffer(0))),
+        );
+    }
+    context.death_row.insert(dead);
+    world.spawn((context, DeletedSceneEntities::default()));
+
+    Schedule::new(SceneLoopLabel)
+        .add_systems(process_scene_entity_lifecycle)
+        .run(&mut world);
+
+    let context = world
+        .query::<&RendererSceneContext>()
+        .single(&world)
+        .unwrap();
+    let lww = context
+        .crdt_store
+        .lww
+        .get(&SceneComponentId::TRANSFORM)
+        .unwrap();
+    assert!(!lww.last_write.contains_key(&dead));
+    assert!(!lww.updates.contains(&dead));
+    assert!(lww.last_write.contains_key(&live));
 }
 
 #[test]
