@@ -51,7 +51,12 @@ impl Plugin for UserProfilePlugin {
         app.add_systems(
             Update,
             (
-                (drive_profile_fetches, request_missing_profiles).chain(),
+                (
+                    evict_stale_profiles,
+                    drive_profile_fetches,
+                    request_missing_profiles,
+                )
+                    .chain(),
                 process_profile_events,
             )
                 .before(process_transport_updates), // .in_set(TODO)
@@ -82,6 +87,12 @@ const PROFILE_FETCH_RETRY: std::time::Duration = std::time::Duration::from_secs(
 /// The registry serves many ids per request; keep a batch well under any server-side cap
 /// and split anything longer across requests.
 const PROFILE_REQUEST_BATCH: usize = 100;
+/// An entry nobody has asked about for this long is dropped (and its fetch retries with
+/// it). Live foreign players touch their entry every frame, so this only reaps departed
+/// peers and addresses scenes/ui asked about once.
+const PROFILE_EVICT_AFTER: std::time::Duration = std::time::Duration::from_secs(300);
+/// How often the eviction pass runs.
+const PROFILE_EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Where held profile data came from. Declared in ascending order of authority so the
 /// derived `Ord` ranks them: an equal-version answer only displaces held data when it
@@ -110,6 +121,8 @@ struct ProfileEntry {
     next_fetch: Option<web_time::Instant>,
     /// `time.elapsed_secs_f64()` of the last `ProfileRequest` sent to the peer
     last_p2p: Option<f64>,
+    /// last time anyone read, announced or wrote this entry; drives eviction
+    last_access: Option<web_time::Instant>,
 }
 
 impl ProfileEntry {
@@ -196,6 +209,32 @@ pub struct ProfileCache {
     catalyst_fetches: HashMap<Address, CatalystFetch>,
 }
 
+impl ProfileCache {
+    /// the entry for `address`, created if missing, marked as accessed now
+    fn touch(&mut self, address: Address) -> &mut ProfileEntry {
+        let entry = self.entries.entry(address).or_default();
+        entry.last_access = Some(web_time::Instant::now());
+        entry
+    }
+
+    /// drop entries nobody has accessed within `PROFILE_EVICT_AFTER`, except `keep` (the
+    /// local player) and entries with a fetch in flight. Returns the evicted addresses.
+    fn evict_stale(&mut self, now: web_time::Instant, keep: Option<Address>) -> Vec<Address> {
+        let mut evicted = Vec::new();
+        self.entries.retain(|address, entry| {
+            let stale = entry
+                .last_access
+                .is_none_or(|at| now.saturating_duration_since(at) >= PROFILE_EVICT_AFTER);
+            if !stale || entry.fetching.is_some() || Some(*address) == keep {
+                return true;
+            }
+            evicted.push(*address);
+            false
+        });
+        evicted
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct ProfileMetaCache(pub HashMap<Address, String>);
 
@@ -216,7 +255,7 @@ impl ProfileManager<'_, '_> {
         &mut self,
         address: Address,
     ) -> Result<Option<&UserProfile>, ProfileMissingError> {
-        let entry = self.cache.entries.entry(address).or_default();
+        let entry = self.cache.touch(address);
         if entry.data.is_none() && entry.fetching.is_none() && !entry.due(web_time::Instant::now())
         {
             return Err(ProfileMissingError);
@@ -227,7 +266,7 @@ impl ProfileManager<'_, '_> {
     /// Record that this address' profile is claimed to exist at `version`; a version
     /// ahead of what we hold makes the fetch cascade due immediately.
     pub fn announce(&mut self, address: Address, version: u32) {
-        let entry = self.cache.entries.entry(address).or_default();
+        let entry = self.cache.touch(address);
         if version > entry.announced {
             entry.announced = version;
             entry.next_fetch = None;
@@ -270,7 +309,7 @@ impl ProfileManager<'_, '_> {
     /// Unconditional: even a same-version edit replaces what the cache holds.
     pub fn update(&mut self, profile: UserProfile) {
         if let Some(address) = profile.content.eth_address.as_h160() {
-            let entry = self.cache.entries.entry(address).or_default();
+            let entry = self.cache.touch(address);
             entry.announced = entry.announced.max(profile.version);
             entry.data = Some((Box::new(profile), ProfileSource::Registry));
         }
@@ -282,9 +321,7 @@ impl ProfileManager<'_, '_> {
     pub fn update_from_peer(&mut self, profile: UserProfile) {
         if let Some(address) = profile.content.eth_address.as_h160() {
             self.cache
-                .entries
-                .entry(address)
-                .or_default()
+                .touch(address)
                 .apply(profile, ProfileSource::Peer);
         }
     }
@@ -429,6 +466,31 @@ pub struct CurrentUserProfile {
     pub profile: Option<UserProfile>,
     pub snapshots: Option<(Handle<Image>, Handle<Image>)>,
     pub is_deployed: bool,
+}
+
+/// Drop cache entries nobody has asked about recently, so departed peers and one-off
+/// lookups (unknown addresses especially, which never satisfy) stop being re-fetched
+/// every `PROFILE_FETCH_RETRY` for the rest of the session.
+fn evict_stale_profiles(
+    mut cache: ResMut<ProfileCache>,
+    mut meta_cache: ResMut<ProfileMetaCache>,
+    wallet: Res<Wallet>,
+    mut last_run: Local<Option<web_time::Instant>>,
+) {
+    let now = web_time::Instant::now();
+    if last_run.is_some_and(|at| now.saturating_duration_since(at) < PROFILE_EVICT_INTERVAL) {
+        return;
+    }
+    *last_run = Some(now);
+
+    let evicted = cache.evict_stale(now, wallet.address());
+    if !evicted.is_empty() {
+        debug!("evicted {} stale profile cache entries", evicted.len());
+    }
+    // meta is only written for live peers, which never go stale
+    for address in evicted {
+        meta_cache.0.remove(&address);
+    }
 }
 
 /// Run the fetch cascade for every entry that wants one: registry batches (grouped by
@@ -1153,5 +1215,44 @@ pub async fn get_remote_profile(
     match fetch_error {
         Some(e) => Err(e),
         None => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn aged(cache: &mut ProfileCache, address: Address, now: web_time::Instant, age_secs: u64) {
+        cache.touch(address).last_access = Some(now - std::time::Duration::from_secs(age_secs));
+    }
+
+    #[test]
+    fn evicts_only_stale_idle_entries() {
+        let now = web_time::Instant::now();
+        let evict_secs = PROFILE_EVICT_AFTER.as_secs();
+        let [recent, stale, fetching, local] = [1u64, 2, 3, 4].map(Address::from_low_u64_be);
+
+        let mut cache = ProfileCache::default();
+        aged(&mut cache, recent, now, evict_secs - 1);
+        aged(&mut cache, stale, now, evict_secs + 1);
+        aged(&mut cache, fetching, now, evict_secs + 1);
+        cache.entries.get_mut(&fetching).unwrap().fetching = Some(ProfileSource::Registry);
+        aged(&mut cache, local, now, evict_secs + 1);
+
+        assert_eq!(cache.evict_stale(now, Some(local)), vec![stale]);
+        assert!(!cache.entries.contains_key(&stale));
+        for kept in [recent, fetching, local] {
+            assert!(cache.entries.contains_key(&kept));
+        }
+    }
+
+    #[test]
+    fn touch_refreshes_access() {
+        let now = web_time::Instant::now();
+        let address = Address::from_low_u64_be(1);
+        let mut cache = ProfileCache::default();
+        aged(&mut cache, address, now, PROFILE_EVICT_AFTER.as_secs() + 1);
+        cache.touch(address);
+        assert!(cache.evict_stale(now, None).is_empty());
     }
 }
