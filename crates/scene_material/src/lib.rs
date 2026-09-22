@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension},
     platform::collections::{hash_map::Entry, HashMap},
@@ -7,7 +9,9 @@ use bevy::{
         render_resource::{AsBindGroup, Face, ShaderDefVal, ShaderRef},
     },
 };
-use boimp::bake::{ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin};
+use boimp::bake::{
+    ImposterBakeMaterial, ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin,
+};
 use common::{
     structs::{PreviewMode, ShowOutOfBounds},
     util::InvertedScaleExt,
@@ -304,16 +308,7 @@ pub struct SceneBoundPlugin;
 
 impl Plugin for SceneBoundPlugin {
     fn build(&self, app: &mut App) {
-        app.register_required_components::<MeshMaterial3d<SceneMaterial>, MeshTag>();
-
-        app.add_plugins(MaterialPlugin::<SceneMaterial>::default());
-        let preview_mode = app
-            .world()
-            .get_resource::<PreviewMode>()
-            .is_some_and(|p| p.is_preview);
-        if !preview_mode {
-            app.add_plugins(ImposterBakeMaterialPlugin::<SceneMaterial>::default());
-        }
+        app.add_plugins(MaterialExtPlugin::<SceneMaterial>::default());
 
         app.init_resource::<InvertedMaterials>();
         // Default false; the app entry overrides it.
@@ -326,15 +321,46 @@ impl Plugin for SceneBoundPlugin {
                 .chain()
                 .after(TransformSystem::TransformPropagate),
         );
-
-        app.add_observer(update_show_outside_bounds);
-        app.add_observer(scene_material_removed);
     }
 }
 
-fn update_show_outside_bounds(
-    trigger: Trigger<OnInsert, MeshMaterial3d<SceneMaterial>>,
-    mut meshes: Query<&mut MeshTag, With<MeshMaterial3d<SceneMaterial>>>,
+pub struct MaterialExtPlugin<T: ImposterBakeMaterial> {
+    _material_phantom: PhantomData<T>,
+}
+
+impl<T: ImposterBakeMaterial> Default for MaterialExtPlugin<T> {
+    fn default() -> Self {
+        Self {
+            _material_phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: ImposterBakeMaterial> Plugin for MaterialExtPlugin<T>
+where
+    MaterialPlugin<T>: Plugin,
+    ImposterBakeMaterialPlugin<T>: Plugin,
+{
+    fn build(&self, app: &mut App) {
+        app.register_required_components::<MeshMaterial3d<T>, MeshTag>();
+
+        app.add_plugins(MaterialPlugin::<T>::default());
+        let preview_mode = app
+            .world()
+            .get_resource::<PreviewMode>()
+            .is_some_and(|p| p.is_preview);
+        if !preview_mode {
+            app.add_plugins(ImposterBakeMaterialPlugin::<T>::default());
+        }
+
+        app.add_observer(update_show_outside_bounds::<T>);
+        app.add_observer(scene_material_removed::<T>);
+    }
+}
+
+fn update_show_outside_bounds<T: Material>(
+    trigger: Trigger<OnInsert, MeshMaterial3d<T>>,
+    mut meshes: Query<&mut MeshTag, With<MeshMaterial3d<T>>>,
     show_oob: Res<ShowOutOfBounds>,
 ) {
     // Tag the mesh to render out-of-bounds instead of being culled.
@@ -419,8 +445,8 @@ fn clear_old_materials(
     }
 }
 
-fn scene_material_removed(
-    trigger: Trigger<OnRemove, MeshMaterial3d<SceneMaterial>>,
+fn scene_material_removed<T: Material>(
+    trigger: Trigger<OnRemove, MeshMaterial3d<T>>,
     mut commands: Commands,
 ) {
     commands.entity(trigger.target()).try_remove::<MeshTag>();
