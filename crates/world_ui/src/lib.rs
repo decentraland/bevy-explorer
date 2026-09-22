@@ -10,7 +10,8 @@ use bevy::{
         primitives::Aabb,
         render_asset::RenderAssetUsages,
         render_resource::{
-            AsBindGroup, Extent3d, ShaderRef, TextureDimension, TextureFormat, TextureUsages,
+            AsBindGroup, Extent3d, ShaderDefVal, ShaderRef, TextureDimension, TextureFormat,
+            TextureUsages,
         },
         renderer::RenderDevice,
         view::RenderLayers,
@@ -18,28 +19,18 @@ use bevy::{
     transform::TransformSystem,
     ui::UiSystem,
 };
-use boimp::bake::{
-    ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin, STANDARD_BAKE_HANDLE,
+use boimp::bake::{ImposterBakeMaterialExtension, STANDARD_BAKE_HANDLE};
+use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
+use scene_material::{
+    BoundRegion, MaterialExtPlugin, SceneBound, SceneMaterial,
+    SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG,
 };
-use common::{
-    sets::SceneSets,
-    structs::{AppConfig, PreviewMode},
-    util::TryPushChildrenEx,
-};
-use scene_material::{BoundRegion, SceneBound, SceneMaterial};
 
 pub struct WorldUiPlugin;
 
 impl Plugin for WorldUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<TextShapeMaterial>::default());
-        let preview_mode = app
-            .world()
-            .get_resource::<PreviewMode>()
-            .is_some_and(|p| p.is_preview);
-        if !preview_mode {
-            app.add_plugins(ImposterBakeMaterialPlugin::<TextShapeMaterial>::default());
-        }
+        app.add_plugins(MaterialExtPlugin::<TextShapeMaterial>::default());
 
         app.init_resource::<WorldUiQuadMesh>();
         app.add_systems(Update, add_worldui_materials.in_set(SceneSets::PostLoop));
@@ -388,6 +379,21 @@ impl MaterialExtension for TextQuad {
 
     fn prepass_vertex_shader() -> ShaderRef {
         ShaderRef::Path("embedded://shaders/text_quad_vertex.wgsl".into())
+    }
+
+    fn specialize(
+        _: &bevy::pbr::MaterialExtensionPipeline,
+        descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
+        _: &bevy::render::mesh::MeshVertexBufferLayoutRef,
+        _: bevy::pbr::MaterialExtensionKey<Self>,
+    ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
+        if let Some(fragment) = descriptor.fragment.as_mut() {
+            fragment.shader_defs.push(ShaderDefVal::UInt(
+                "SHOW_OUTSIDE_BOUNDS_MESH_TAG".to_owned(),
+                SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG,
+            ));
+        }
+        Ok(())
     }
 }
 
