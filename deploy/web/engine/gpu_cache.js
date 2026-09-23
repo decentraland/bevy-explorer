@@ -101,6 +101,26 @@ async function storeRequiredItems() {
   });
 }
 
+// The small settings that lived in localStorage, which a worker has no access to.
+async function getConfig(key) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const request = db.transaction("deviceConfig", "readonly").objectStore("deviceConfig").get(key);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(undefined);
+  });
+}
+
+async function setConfig(key, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("deviceConfig", "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.objectStore("deviceConfig").put(value, key);
+  });
+}
+
 async function fetchInstance(type, hash) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -170,7 +190,7 @@ function patchWebgpuAdapter(fakeAsync) {
       device = await originalRequestDevice.apply(this, []);
     }
     gpuSessionState.device = device;
-    localStorage.setItem("deviceDescriptor", jsonDescriptor);
+    await setConfig("deviceDescriptor", jsonDescriptor);
 
     function wrapDeviceFunction(itemType, originalFunction) {
       return (...args) => {
@@ -222,9 +242,9 @@ function patchWebgpuAdapter(fakeAsync) {
     } else {
       let inline_function = wrapDeviceFunction("pipeline", device.createRenderPipeline);
 
-      window.pendingAsyncPipelineCount = 0;
-      window.lastPipelineWasValidFlag = false;
-      window.wgpuResolveIdle = [];
+      globalThis.pendingAsyncPipelineCount = 0;
+      globalThis.lastPipelineWasValidFlag = false;
+      globalThis.wgpuResolveIdle = [];
       const itemType = "pipeline";
       const placeholderPipeline = getPlaceholder(device);
 
@@ -233,26 +253,26 @@ function patchWebgpuAdapter(fakeAsync) {
         const hash = simpleHash(jsonArgs);
         const cachedItem = gpuSessionState[itemType].get(hash);
         if (cachedItem !== undefined) {
-          window.nextPipelineCanFail = false;
-          window.lastPipelineWasValidFlag = true;
+          globalThis.nextPipelineCanFail = false;
+          globalThis.lastPipelineWasValidFlag = true;
           return cachedItem;
         }
 
         console.log(`[GPU Cache] (async) no cached ${itemType} for ${hash}`);
 
-        if (!window.nextPipelineCanFail) {
+        if (!globalThis.nextPipelineCanFail) {
           return inline_function.apply(device, args);
         }
-        const sc = document.getElementById("shader-compiling"); if (sc) sc.style.display = "flex";
-        window.nextPipelineCanFail = false;
-        window.lastPipelineWasValidFlag = false;
-        window.pendingAsyncPipelineCount++;
+        globalThis.__setShaderCompiling?.(true);
+        globalThis.nextPipelineCanFail = false;
+        globalThis.lastPipelineWasValidFlag = false;
+        globalThis.pendingAsyncPipelineCount++;
 
         const promise = device.createRenderPipelineAsync(args[0]).then(async (item) => {
           item.__gpu_item_type = itemType;
           item.__gpu_hash = hash;
           gpuSessionState[itemType].set(hash, item);
-          window.pendingAsyncPipelineCount--;
+          globalThis.pendingAsyncPipelineCount--;
 
           if (!requiredItemTypes.has(itemType)) {
             requiredItemTypes.set(itemType, new Set());
@@ -264,11 +284,11 @@ function patchWebgpuAdapter(fakeAsync) {
             await storeInstance(itemType, hash, args);
           }
 
-          if (window.pendingAsyncPipelineCount === 0) {
-            while (window.wgpuResolveIdle.length > 0) {
-              window.wgpuResolveIdle.pop()();
+          if (globalThis.pendingAsyncPipelineCount === 0) {
+            while (globalThis.wgpuResolveIdle.length > 0) {
+              globalThis.wgpuResolveIdle.pop()();
             }
-            const sc2 = document.getElementById("shader-compiling"); if (sc2) sc2.style.display = "none";
+            globalThis.__setShaderCompiling?.(false);
           }
 
           return item;
@@ -283,19 +303,20 @@ function patchWebgpuAdapter(fakeAsync) {
 }
 
 async function createGpuCache(key) {
-  const cachedKey = localStorage.getItem("gpuCacheKey");
+  const cachedKey = await getConfig("gpuCacheKey");
   if (cachedKey != key) {
     console.log("shaders updated, clearing db");
     await clearDatabase();
-    localStorage.setItem("gpuCacheKey", key);
+    await setConfig("gpuCacheKey", key);
     return;
   }
 
-  const cachedDeviceDescriptor = localStorage.getItem("deviceDescriptor");
-  if (cachedDeviceDescriptor === null) {
+  const cachedDeviceDescriptor = await getConfig("deviceDescriptor");
+  if (cachedDeviceDescriptor === undefined) {
     return;
   }
   precaching = true;
+  const started = performance.now();
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice(
     JSON.parse(cachedDeviceDescriptor)
@@ -322,7 +343,7 @@ async function createGpuCache(key) {
   const stats = Object.keys(gpuSessionState).map(
     (k) => `\n${k}: ${gpuSessionState[k].size ?? "ok"}`
   );
-  console.log(`[GPU Cache]: preloaded ${stats}`);
+  console.log(`[GPU Cache]: preloaded in ${Math.round(performance.now() - started)} ms ${stats}`);
 }
 
 async function createItemType(itemType, asyncCreateFunction) {
@@ -400,19 +421,19 @@ function getPlaceholder(device) {
   });
 }
 
-window.allowADummyPipeline = function() {
-    window.nextPipelineCanFail = true;
+globalThis.allowADummyPipeline = function() {
+    globalThis.nextPipelineCanFail = true;
 }
 
-window.lastPipelineWasValid = function() {
-    return window.lastPipelineWasValidFlag;
+globalThis.lastPipelineWasValid = function() {
+    return globalThis.lastPipelineWasValidFlag;
 }
 
-window.waitForPipelines = function() {
-    if (window.pendingAsyncPipelineCount === 0) {
+globalThis.waitForPipelines = function() {
+    if (globalThis.pendingAsyncPipelineCount === 0) {
         return Promise.resolve();
     }
     return new Promise((resolve) => {
-        window.wgpuResolveIdle.push(resolve);
+        globalThis.wgpuResolveIdle.push(resolve);
     });
 };

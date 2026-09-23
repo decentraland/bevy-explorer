@@ -65,10 +65,30 @@ extern "C" {
     /// leave keys alone while the user types into scene UI.
     #[wasm_bindgen(js_name = "__setEngineTextFocus")]
     fn set_engine_text_focus(focused: bool);
+
+    /// Shows or hides the page's `#shader-compiling` indicator (the HUD's `renderBusy` probe)
+    /// while gpu_cache.js compiles pipelines asynchronously on the render worker; boot.js
+    /// defines it, gpu_cache.js calls the relay directly.
+    #[allow(dead_code)]
+    #[wasm_bindgen(js_name = "__setShaderCompiling")]
+    fn set_shader_compiling(on: bool);
+
+    /// The render worker's gpu cache is warm (`engine_render_setup` done): boot.js completes
+    /// the loading bar's gpu step.
+    #[wasm_bindgen(js_name = "__gpuCacheReady")]
+    fn gpu_cache_ready();
 }
 
-// The pipeline-compilation hooks `PipelineHandler` calls, stubbed on the render worker's global
-// by `engine_render_main`.
+// gpu_cache.js: the device-level cache and async pipeline creation, run on the render worker
+// where the device lives.
+#[wasm_bindgen(module = "/deploy/web/engine/gpu_cache.js")]
+extern "C" {
+    #[wasm_bindgen(js_name = initGpuCache)]
+    fn init_gpu_cache(key: &str) -> js_sys::Promise;
+}
+
+// The pipeline-compilation hooks `PipelineHandler` calls, which gpu_cache.js defines on the
+// global of every realm that loads the glue.
 #[wasm_bindgen(js_namespace = self)]
 extern "C" {
     #[wasm_bindgen(js_name = "allowADummyPipeline")]
@@ -201,6 +221,23 @@ fn web_worker_config(glue_url: String, options: JsValue, compute_threads: u32) -
     }
 }
 
+thread_local! {
+    /// The render worker `engine_prepare_render` spawned ahead of `engine_start`.
+    static RENDER_WORKER: std::cell::RefCell<Option<bevy::web_worker::RenderWorker>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Page side: spawns the render worker on `canvas` ahead of `engine_start`, so its setup
+/// (`engine_render_setup`: the gpu cache's precache) runs while the user is still choosing
+/// where to go; `__gpuCacheReady` reports when it is done. `engine_start` attaches the rest.
+#[wasm_bindgen]
+pub fn engine_prepare_render(canvas: HtmlCanvasElement, glue_url: String) -> Result<(), JsValue> {
+    let render =
+        bevy::web_worker::start_render(canvas, &web_worker_config(glue_url, JsValue::NULL, 0))?;
+    RENDER_WORKER.with(|slot| *slot.borrow_mut() = Some(render));
+    Ok(())
+}
+
 /// Page side: starts the engine on `canvas`. `options` is the `engine_run` options object,
 /// `glue_url` the url of this module's JS glue for the workers to import. Returns
 /// `{ engine, render, compute: [...] }`, the workers.
@@ -214,10 +251,11 @@ pub fn engine_start(
         .client
         .compute_threads
         .map_or_else(default_compute_threads, |n| n as u32);
-    let workers = bevy::web_worker::start(
-        canvas,
-        &web_worker_config(glue_url, options, compute_threads),
-    )?;
+    let config = web_worker_config(glue_url, options, compute_threads);
+    let workers = match RENDER_WORKER.with(|slot| slot.borrow_mut().take()) {
+        Some(render) => bevy::web_worker::start_with_render(render, &config)?,
+        None => bevy::web_worker::start(canvas, &config)?,
+    };
     let result = js_sys::Object::new();
     js_sys::Reflect::set(&result, &"engine".into(), &workers.engine)?;
     js_sys::Reflect::set(&result, &"render".into(), &workers.render)?;
@@ -259,21 +297,14 @@ pub fn engine_spawn_worker(
     )
 }
 
-/// Render worker setup, before bevy creates the render world there: the pipeline-compilation
-/// hooks `PipelineHandler` calls. On the page gpu_cache.js backs them with its device-level
-/// cache and async pipeline creation; the device lives here, where that cache does not apply,
-/// so pipelines compile synchronously for now.
+/// Render worker setup, before bevy creates the render world there: gpu_cache.js patches the
+/// worker's WebGPU device creation with its device-level cache and precreates the last run's
+/// pipelines, as it did on the page when the device lived there.
 #[wasm_bindgen]
-pub fn engine_render_setup(_canvas: OffscreenCanvas) -> Result<(), JsValue> {
+pub async fn engine_render_setup(_canvas: OffscreenCanvas) -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
-    let global = js_sys::global();
-    for (name, body) in [
-        ("allowADummyPipeline", ""),
-        ("lastPipelineWasValid", "return true;"),
-        ("waitForPipelines", "return Promise.resolve();"),
-    ] {
-        js_sys::Reflect::set(&global, &name.into(), &js_sys::Function::new_no_args(body))?;
-    }
+    wasm_bindgen_futures::JsFuture::from(init_gpu_cache(&assets::gpu_cache_hash())).await?;
+    gpu_cache_ready();
     Ok(())
 }
 

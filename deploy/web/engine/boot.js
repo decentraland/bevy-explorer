@@ -25,7 +25,7 @@
 //       here. The engine itself takes the domain and the overrides as engine_run options.
 //     __bevyHomeScene() — the persisted home scene { realm, parcel: "x,y" } (realm null = none
 //       pinned), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
-import { initEngine, start, applyOptionsToUrlParams, engine_home_scene, gpu_cache_hash, initGpuCache } from './engine.js'
+import { initEngine, start, prepareRender, applyOptionsToUrlParams, engine_home_scene } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
 // Weight of each step in the overall bar (sums to 100). Step ids are read by the React login bar
@@ -242,6 +242,13 @@ window.__setEngineTextFocus = (focused) => {
   window.__engineTextFocus = !!focused
 }
 
+// gpu_cache.js (on the render worker) shows the page's #shader-compiling indicator while it
+// compiles pipelines asynchronously; the HUD's renderBusy probe reads it.
+window.__setShaderCompiling = (on) => {
+  const el = document.getElementById('shader-compiling')
+  if (el) el.style.display = on ? 'flex' : 'none'
+}
+
 // ---- keyboard forwarding to the engine -----------------------------------------------------------
 // winit attaches its keyboard listeners to the CANVAS element, so the engine only hears keys while
 // the canvas holds DOM focus — click any HUD control and movement + every engine binding (which
@@ -334,7 +341,8 @@ window.addEventListener('keydown', (event) => {
 initEngine()
   .then(() => {
     window.setLoadingStepActive('gpu')
-    return initGpuCache(gpu_cache_hash())
+    // spawns the render worker; gpu_cache.js warms its device there before the launch
+    return prepareRender()
   })
   .then(() => {
     window.setLoadingStepCompleted('gpu')

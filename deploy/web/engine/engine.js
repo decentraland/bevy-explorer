@@ -1,11 +1,24 @@
 // Engine logic - ES module
 // Handles WASM/WebGPU initialization and game execution
 
-import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, gpu_cache_hash, report_pointer_lock, media_host_main, audio_host_main, livekit_host_main } from "./pkg/webgpu_build.js";
-import { initGpuCache } from "./gpu_cache.js";
+import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, gpu_cache_hash, report_pointer_lock, media_host_main, audio_host_main, livekit_host_main, engine_prepare_render } from "./pkg/webgpu_build.js";
 
 // Re-export for main.js
-export { engine_home_scene, gpu_cache_hash, initGpuCache };
+export { engine_home_scene, gpu_cache_hash };
+
+// Spawns the render worker ahead of start(), so gpu_cache.js warms its device there (src/web.rs
+// engine_render_setup) while the user is still on the login screen; resolves once it has.
+// start() attaches the engine to that worker.
+export function prepareRender() {
+  return new Promise((resolve, reject) => {
+    window.__gpuCacheReady = resolve;
+    try {
+      engine_prepare_render(document.getElementById("mygame-canvas"), glueUrl);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
 
 // The compiled engine module and its shared memory: every worker (asset loader/processor, scene
 // sandboxes, and the engine + render workers started by start()) instantiates the same module on
