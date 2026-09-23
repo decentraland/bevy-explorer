@@ -126,11 +126,8 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      # The macOS/Windows legs are the longest jobs in the workflow; cache their dependency
-      # artifacts (rust-cache never keeps workspace crates). Linux finishes inside the other
-      # legs uncached.
+      # rust-cache never keeps workspace crates, only dependency artifacts.
       - uses: Swatinem/rust-cache@v2
-        if: runner.os != 'Linux'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
