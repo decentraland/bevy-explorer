@@ -4,6 +4,7 @@ mod ffmpeg;
 #[cfg(all(target_arch = "wasm32", feature = "html"))]
 pub mod html;
 pub mod plugin;
+pub mod util;
 
 pub use av::*;
 #[cfg(all(not(target_arch = "wasm32"), feature = "ffmpeg"))]

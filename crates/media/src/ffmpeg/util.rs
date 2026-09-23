@@ -118,7 +118,10 @@ impl PacketIter for InputWrapper {
             Err(e) => {
                 self.read_errors += 1;
                 if self.read_errors >= MAX_READ_ERRORS {
-                    warn!("giving up on {} after repeated read errors: {e}", self.path);
+                    warn!(
+                        "giving up on {} after repeated read errors: {e}",
+                        crate::util::loggable_url(&self.path)
+                    );
                     self.read_errors = 0;
                     self.is_eof = true;
                 } else {
