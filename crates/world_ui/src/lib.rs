@@ -18,28 +18,15 @@ use bevy::{
     transform::TransformSystem,
     ui::UiSystem,
 };
-use boimp::bake::{
-    ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin, STANDARD_BAKE_HANDLE,
-};
-use common::{
-    sets::SceneSets,
-    structs::{AppConfig, PreviewMode},
-    util::TryPushChildrenEx,
-};
-use scene_material::{BoundRegion, SceneBound, SceneMaterial};
+use boimp::bake::{ImposterBakeMaterialExtension, STANDARD_BAKE_HANDLE};
+use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
+use scene_material::{BoundRegion, MaterialExtPlugin, SceneBound, SceneMaterial};
 
 pub struct WorldUiPlugin;
 
 impl Plugin for WorldUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<TextShapeMaterial>::default());
-        let preview_mode = app
-            .world()
-            .get_resource::<PreviewMode>()
-            .is_some_and(|p| p.is_preview);
-        if !preview_mode {
-            app.add_plugins(ImposterBakeMaterialPlugin::<TextShapeMaterial>::default());
-        }
+        app.add_plugins(MaterialExtPlugin::<TextShapeMaterial>::default());
 
         app.init_resource::<WorldUiQuadMesh>();
         app.add_systems(Update, add_worldui_materials.in_set(SceneSets::PostLoop));
