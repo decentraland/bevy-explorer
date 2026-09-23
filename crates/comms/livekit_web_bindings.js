@@ -11,12 +11,17 @@ function error(...args) {
 var audioContext = null;
 var microphonePermission = "denied";
 
-export function setupMicrophonePermission() {
+/**
+ * @param {function} on_change called with the permission state now and whenever it changes
+ */
+export function setupMicrophonePermission(on_change) {
     navigator.permissions.query({ name: "microphone" }).then((permissionState) => {
         microphonePermission = permissionState.state;
+        on_change(microphonePermission);
 
         permissionState.onchange = () => {
             microphonePermission = permissionState.state;
+            on_change(microphonePermission);
         };
     });
 }
@@ -60,7 +65,13 @@ export async function room_connect(url, token, room_options, room_connect_option
 
     set_room_event_handler(room, handler);
 
-    await room.connect(url, token, room_connect_options);
+    try {
+        await room.connect(url, token, room_connect_options);
+    } catch (err) {
+        // the handler does not outlive a failed connect
+        room.removeAllListeners();
+        throw err;
+    }
 
     return room;
 }
@@ -71,6 +82,14 @@ export async function room_connect(url, token, room_options, room_connect_option
  */
 export async function room_close(room) {
     await room.disconnect();
+}
+
+/**
+ * Releases a room the engine dropped: its event handler is gone.
+ * @param {livekit.Room} room
+ */
+export function room_drop(room) {
+    room.removeAllListeners();
 }
 
 /**
@@ -440,6 +459,30 @@ export function remote_track_publication_track(remote_track_publication) {
 }
 
 /**
+ * @param {livekit.LocalTrackPublication} local_track_publication
+ * @returns string
+ */
+export function local_track_publication_sid(local_track_publication) {
+    return local_track_publication.trackSid;
+}
+
+/**
+ * @param {livekit.LocalTrackPublication} local_track_publication
+ * @returns string
+ */
+export function local_track_publication_kind(local_track_publication) {
+    return local_track_publication.kind;
+}
+
+/**
+ * @param {livekit.LocalTrackPublication} local_track_publication
+ * @returns string
+ */
+export function local_track_publication_source(local_track_publication) {
+    return local_track_publication.source;
+}
+
+/**
  * 
  * @param {livekit.AudioCaptureOptions} options 
  * @returns livekit.LocalAudioTrack
@@ -450,15 +493,6 @@ export async function local_audio_track_new(options) {
     } catch (err) {
         error(err);
     }
-}
-
-/**
- * 
- * @param {livekit.LocalAudioTrack} local_audio_track 
- * @returns livekit.TrackSid
- */
-export function local_audio_track_sid(local_audio_track) {
-    return local_audio_track.sid;
 }
 
 /**

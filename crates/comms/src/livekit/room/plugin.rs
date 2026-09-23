@@ -30,7 +30,7 @@ use crate::{
             Connected, Connecting, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting,
         },
         track, ConnectionAvailability, LivekitChannelControl, LivekitNetworkMessage,
-        LivekitRuntime, LivekitTransport,
+        LivekitRuntimeRes, LivekitTransport,
     },
     NetworkMessageRecipient,
 };
@@ -85,7 +85,7 @@ fn initiate_room_connection(
     trigger: Trigger<OnAdd, Connecting>,
     mut commands: Commands,
     livekit_transports: Query<&LivekitTransport>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
     connection_availability: Res<State<ConnectionAvailability>>,
 ) {
     if *connection_availability.get() == ConnectionAvailability::Unavailable {
@@ -126,7 +126,7 @@ fn initiate_room_connection(
 fn poll_connecting_rooms(
     mut commands: Commands,
     livekit_rooms: Populated<(Entity, &mut ConnectingLivekitRoom)>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     for (entity, mut connecting_livekit_room) in livekit_rooms.into_inner() {
         if connecting_livekit_room.is_finished() {
@@ -344,7 +344,7 @@ fn process_network_message(
         &mut LivekitNetworkMessage,
         Option<&mut RoomTasks>,
     )>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let mut new_room_tasks = vec![];
     for (entity, room, mut network_message, maybe_room_tasks) in rooms {
@@ -416,7 +416,7 @@ fn create_local_participant(
 fn disconnect_from_room_on_replace(
     trigger: Trigger<OnReplace, LivekitRoom>,
     livekit_rooms: Query<&LivekitRoom>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let entity = trigger.target();
     let Ok(livekit_room) = livekit_rooms.get(entity) else {
@@ -551,7 +551,7 @@ fn unsubscribe_to_voice(
 
 fn verify_room_tasks(
     rooms: Query<&mut RoomTasks, With<LivekitRoom>>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     for mut room_tasks in rooms {
         let mut i = 0;
@@ -576,7 +576,7 @@ fn verify_room_tasks(
     }
 }
 
-fn close_rooms_on_app_exit(rooms: Query<&LivekitRoom>, livekit_runtime: Res<LivekitRuntime>) {
+fn close_rooms_on_app_exit(rooms: Query<&LivekitRoom>, livekit_runtime: LivekitRuntimeRes) {
     for room in rooms {
         if let Err(err) = livekit_runtime.block_on(room.close()) {
             error!(

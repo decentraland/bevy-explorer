@@ -24,8 +24,18 @@ pub struct LivekitPlugin;
 
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
+        #[cfg(not(target_arch = "wasm32"))]
         app.init_resource::<PlayerUpdateTasks>();
+        #[cfg(target_arch = "wasm32")]
+        app.init_non_send_resource::<PlayerUpdateTasks>();
         app.init_state::<ConnectionAvailability>();
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            app.insert_resource(crate::livekit::web::take_event_receiver())
+                .init_resource::<crate::livekit::web::MicrophoneStatus>()
+                .add_systems(PreUpdate, crate::livekit::web::dispatch_page_events);
+        }
 
         app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRuntimePlugin);
@@ -47,8 +57,15 @@ impl Plugin for LivekitPlugin {
     }
 }
 
-#[derive(Default, Resource, Deref, DerefMut)]
+/// Holds [`LivekitRuntime`]s, so on the web it is non-send like them (see `runtime.rs`).
+#[derive(Default, Deref, DerefMut)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Resource))]
 pub(super) struct PlayerUpdateTasks(Vec<PlayerUpdateTask>);
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) type PlayerUpdateTasksMut<'w> = ResMut<'w, PlayerUpdateTasks>;
+#[cfg(target_arch = "wasm32")]
+pub(super) type PlayerUpdateTasksMut<'w> = NonSendMut<'w, PlayerUpdateTasks>;
 
 pub(super) struct PlayerUpdateTask {
     pub runtime: LivekitRuntime,
@@ -85,7 +102,7 @@ fn start_livekit(mut commands: Commands, mut room_events: EventReader<StartLivek
     }
 }
 
-fn verify_player_update_tasks(mut player_update_tasks: ResMut<PlayerUpdateTasks>) {
+fn verify_player_update_tasks(mut player_update_tasks: PlayerUpdateTasksMut) {
     let mut done = vec![];
     for (
         i,
@@ -129,9 +146,13 @@ fn build_kira_audio_manager(mut commands: Commands) {
 }
 
 fn respond_to_audio_settings_change(
-    mut livekit_audio_manager: ResMut<LivekitAudioManager>,
+    livekit_audio_manager: Option<ResMut<LivekitAudioManager>>,
     audio_settings: Res<AudioSettings>,
 ) {
+    // absent when no audio output device could be opened (e.g. the engine runs on a web worker)
+    let Some(mut livekit_audio_manager) = livekit_audio_manager else {
+        return;
+    };
     livekit_audio_manager
         .main_track()
         .set_volume(audio_settings.scene() as f64, Tween::default());

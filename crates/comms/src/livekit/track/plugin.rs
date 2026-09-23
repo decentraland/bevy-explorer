@@ -37,14 +37,14 @@ use crate::{
     global_crdt::{PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{ActiveSpeaker, HostedBy, LivekitParticipant},
-        plugin::{PlayerUpdateTask, PlayerUpdateTasks},
+        plugin::{PlayerUpdateTask, PlayerUpdateTasksMut},
         track::{
             Audio, Camera, LivekitTrack, Microphone, PublishedBy, ScreenshareAudio,
             ScreenshareVideo, SubscribeToAudioTrack, SubscribeToTrack, Subscribed, Subscribing,
             TrackPublished, TrackSubscribed, TrackUnpublished, TrackUnsubscribed,
             UnsubscribeToTrack, Unsubscribed, Unsubscribing, Video,
         },
-        LivekitRuntime,
+        LivekitRuntimeRes,
     },
 };
 
@@ -90,8 +90,8 @@ fn track_published(
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant, &HostedBy, Has<ActiveSpeaker>)>,
     transport_senders: crate::global_crdt::TransportSenders,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    livekit_runtime: Res<LivekitRuntime>,
+    mut player_update_tasks: PlayerUpdateTasksMut,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let TrackPublished { participant, track } = trigger.event();
 
@@ -209,8 +209,8 @@ fn track_unpublished(
     tracks: Query<(Entity, &LivekitTrack, &PublishedBy)>,
     participants: Query<(Entity, &LivekitParticipant, &HostedBy)>,
     transport_senders: crate::global_crdt::TransportSenders,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    livekit_runtime: Res<LivekitRuntime>,
+    mut player_update_tasks: PlayerUpdateTasksMut,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let TrackUnpublished { participant, track } = trigger.event();
 
@@ -301,6 +301,11 @@ fn track_subscribed(
     };
 
     debug!("Subscribed to track {}.", track.sid());
+    // the page's snapshot now carries the subscribed RemoteTrack
+    #[cfg(target_arch = "wasm32")]
+    commands.entity(entity).try_insert(LivekitTrack {
+        track: track.clone(),
+    });
     commands.entity(entity).try_insert(Subscribed);
 }
 
@@ -319,6 +324,10 @@ fn track_unsubscribed(
     };
 
     debug!("Unsubscribed to track {}.", track.sid());
+    #[cfg(target_arch = "wasm32")]
+    commands.entity(entity).try_insert(LivekitTrack {
+        track: track.clone(),
+    });
     commands.entity(entity).try_insert(Unsubscribed);
 }
 
@@ -326,7 +335,7 @@ fn subscribe_to_audio_track(
     mut trigger: Trigger<SubscribeToAudioTrack>,
     mut commands: Commands,
     tracks: Query<&LivekitTrack, With<Audio>>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let entity = trigger.target();
     let SubscribeToAudioTrack {
@@ -373,7 +382,7 @@ fn subscribe_to_track(
     trigger: Trigger<SubscribeToTrack>,
     mut commands: Commands,
     tracks: Query<(&LivekitTrack, AnyOf<(&Audio, &Video)>)>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let entity = trigger.target();
 
@@ -405,7 +414,7 @@ fn unsubscribe_to_track(
     trigger: Trigger<UnsubscribeToTrack>,
     mut commands: Commands,
     tracks: Query<&LivekitTrack>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let entity = trigger.target();
 
@@ -435,7 +444,7 @@ fn subscribed_audio_track_with_open_sender(
         (Entity, &LivekitTrack, &mut OpenAudioSender),
         (With<Audio>, With<Subscribed>),
     >,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     for (entity, track, mut sender) in tracks.iter_mut() {
         let runtime = livekit_runtime.clone();
@@ -470,7 +479,7 @@ fn audio_track_is_now_subscribed(
         ),
         With<Subscribed>,
     >,
-    mut livekit_audio_manager: ResMut<LivekitAudioManager>,
+    livekit_audio_manager: Option<ResMut<LivekitAudioManager>>,
 ) {
     let entity = trigger.target();
     let Ok((track, is_audio, has_audio_streaming_sound, has_open_audio_sender)) =
@@ -496,6 +505,10 @@ fn audio_track_is_now_subscribed(
         debug_panic!("A subscribed audio track did not have a audio RemoteTrack.");
     };
 
+    // absent when no audio output device could be opened (e.g. the engine runs on a web worker)
+    let Some(mut livekit_audio_manager) = livekit_audio_manager else {
+        return;
+    };
     let decoder = AudioTrackKiraBridge::new(audio, 48_000);
 
     let Ok(handle) = livekit_audio_manager.play(StreamingSoundData::from_decoder(decoder)) else {
@@ -535,7 +548,7 @@ fn video_track_is_now_subscribed(
     trigger: Trigger<OnAdd, Subscribed>,
     mut commands: Commands,
     tracks: Query<(&LivekitTrack, Has<Video>), With<Subscribed>>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let entity = trigger.target();
     let Ok((track, is_video)) = tracks.get(entity) else {
@@ -580,15 +593,16 @@ fn video_track_is_now_subscribed(
         return;
     };
 
-    let Some(RemoteTrack::Video(_video)) = track.track() else {
+    let Some(RemoteTrack::Video(video)) = track.track() else {
         debug_panic!("A subscribed video track did not have a video RemoteTrack.");
     };
 
     let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
     let image = (*active_transmitter).clone();
-    // the page registers the track's video element with the media host under this id
-    let _media_id = media::adopt_video(command_receiver, video_sender, &image);
+    // the page attaches the track's video element to the media host under this id
+    let media_id = media::adopt_video(command_receiver, video_sender, &image);
+    video.attach(media_id);
     commands.entity(entity).try_insert(HtmlMediaEntity {
         _commands: command_sender,
         video: video_receiver,

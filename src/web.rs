@@ -103,6 +103,14 @@ pub fn audio_host_main() {
     av::audio_host_wasm::audio_host_main();
 }
 
+/// Page: starts the livekit host (the livekit-client rooms, tracks and mic live on the page).
+/// Before the engine worker starts.
+#[cfg(feature = "livekit")]
+#[wasm_bindgen]
+pub fn livekit_host_main() {
+    comms::livekit::web::host::livekit_host_main();
+}
+
 /// call from a separate worker to initialize a channel for asset load processing
 #[wasm_bindgen]
 pub fn init_asset_load_thread() {
