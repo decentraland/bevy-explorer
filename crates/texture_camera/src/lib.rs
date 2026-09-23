@@ -620,6 +620,66 @@ mod tests {
     }
 
     #[test]
+    fn directional_light_layer_cleared_when_camera_layer_removed_or_disabled() {
+        let (mut app, root) = setup();
+        // update_directional_light rebuilds SceneGlobalLight (layers included) every frame
+        app.init_resource::<SceneGlobalLight>()
+            .init_resource::<scene_runner::initialize_scene::ScenePointers>()
+            .init_resource::<scene_runner::initialize_scene::LiveScenes>()
+            .init_resource::<scene_runner::initialize_scene::PortableScenes>()
+            .insert_resource(common::structs::TimeOfDay { time: 0.0 })
+            .add_systems(
+                Update,
+                (
+                    update_directional_light,
+                    update_directional_light_layers
+                        .after(update_directional_light)
+                        .after(update_layer_properties),
+                ),
+            );
+        let light_layer = |directional_light| {
+            CameraLayer(PbCameraLayer {
+                layer: 1,
+                directional_light: Some(directional_light),
+                ..Default::default()
+            })
+        };
+        let ent = app
+            .world_mut()
+            .spawn((
+                light_layer(true),
+                ContainerEntity {
+                    container: root,
+                    root,
+                    container_id: SceneEntityId::ROOT,
+                },
+            ))
+            .id();
+        app.update();
+        let ix = RenderLayers::layer(render_layer(&mut app, root, 1) as usize);
+        let lit = |app: &App| {
+            app.world()
+                .resource::<SceneGlobalLight>()
+                .layers
+                .intersects(&ix)
+        };
+        assert!(lit(&app));
+
+        // disabling directional_light clears the bit
+        app.world_mut().entity_mut(ent).insert(light_layer(false));
+        app.update();
+        assert!(!lit(&app));
+
+        // re-enabling then removing the layer clears the bit
+        app.world_mut().entity_mut(ent).insert(light_layer(true));
+        app.update();
+        assert!(lit(&app));
+        app.world_mut().entity_mut(ent).remove::<CameraLayer>();
+        app.update();
+        assert!(!lit(&app));
+    }
+
+    #[test]
     fn moving_camera_layer_removes_old_layer() {
         let (mut app, root) = setup();
         let ent = spawn_layer(&mut app, root, 1);
