@@ -67,11 +67,16 @@ impl Plugin for TextureCameraPlugin {
             (
                 update_layer_properties,
                 update_camera_layers,
-                update_texture_cameras,
-                update_avatar_layers,
-                update_directional_light_layers
-                    .after(update_directional_light)
-                    .before(PropagateSet::<RenderLayers>::default()),
+                // consumers of layer properties / changed_layers must see this frame's changes,
+                // since changed_layers is cleared in PostUpdate
+                (
+                    update_texture_cameras,
+                    update_avatar_layers,
+                    update_directional_light_layers
+                        .after(update_directional_light)
+                        .before(PropagateSet::<RenderLayers>::default()),
+                )
+                    .after(update_layer_properties),
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -572,6 +577,46 @@ mod tests {
         let props = app.world().resource::<SceneLayerProperties>();
         assert!(props.layers.is_empty());
         assert!(props.ent_to_layer.is_empty());
+    }
+
+    #[test]
+    fn avatar_layers_follow_camera_layer_add_and_remove() {
+        let (mut app, root) = setup();
+        app.add_systems(Update, update_avatar_layers.after(update_layer_properties))
+            .add_systems(PostUpdate, TextureLayersCache::cleanup);
+        let avatar = app
+            .world_mut()
+            .spawn((PrimaryUser::default(), Propagate(RenderLayers::default())))
+            .id();
+        let ent = app
+            .world_mut()
+            .spawn((
+                CameraLayer(PbCameraLayer {
+                    layer: 1,
+                    show_avatars: Some(true),
+                    ..Default::default()
+                }),
+                ContainerEntity {
+                    container: root,
+                    root,
+                    container_id: SceneEntityId::ROOT,
+                },
+            ))
+            .id();
+        app.update();
+        let ix = render_layer(&mut app, root, 1) as usize;
+        let avatar_layers = |app: &App| {
+            app.world()
+                .get::<Propagate<RenderLayers>>(avatar)
+                .unwrap()
+                .0
+                .clone()
+        };
+        assert!(avatar_layers(&app).intersects(&RenderLayers::layer(ix)));
+
+        app.world_mut().entity_mut(ent).remove::<CameraLayer>();
+        app.update();
+        assert!(!avatar_layers(&app).intersects(&RenderLayers::layer(ix)));
     }
 
     #[test]
