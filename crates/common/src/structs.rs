@@ -1657,6 +1657,13 @@ impl Default for ParcelGrassConfig {
 }
 
 #[derive(Resource, Default, Debug)]
+pub struct LandscapeTerrain {
+    pub generation: u64,
+    pub field: Option<std::sync::Arc<crate::terrain::TerrainField>>,
+    pub rendered_generation: Option<u64>,
+}
+
+#[derive(Resource, Default, Debug)]
 pub struct CurrentRealm {
     pub about_url: String,
     pub address: String,

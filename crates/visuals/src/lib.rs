@@ -1,14 +1,39 @@
 mod atmosphere_params;
+mod coast_profile;
 mod day_night;
 pub mod env_downsample;
+mod grass_blades;
+mod grass_cutouts;
+mod grass_look;
+mod ground_mask;
+mod ground_visibility;
+mod landscape_coast;
+mod landscape_coast_geometry;
+mod landscape_prop_geometry;
+mod landscape_props;
+mod landscape_rigid;
+mod landscape_trees;
+mod meadow_texture;
 mod nishita_cloud;
+mod ocean_texture;
 pub mod shell_texturing;
+pub mod sky_reflection;
+mod terrain_loading;
+mod terrain_mesh;
+mod terrain_support;
+mod tree_geometry;
+mod tree_leaves;
+mod unity_ambient;
+mod unity_sun;
 
 use bevy::{
     core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
     pbr::{wireframe::WireframePlugin, CascadeShadowConfigBuilder, DirectionalLightShadowMap},
     prelude::*,
-    render::view::{Layer, RenderLayers},
+    render::{
+        camera::Exposure,
+        view::{Layer, RenderLayers},
+    },
 };
 
 use bevy::render::RenderApp;
@@ -41,6 +66,8 @@ impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .init_resource::<SceneGlobalLight>()
+            .init_resource::<BlendedGlobalLight>()
+            .init_resource::<unity_ambient::UnityAmbientLight>()
             .insert_resource(CloudCover {
                 cover: 0.35,
                 speed: 30.0,
@@ -53,8 +80,17 @@ impl Plugin for VisualsPlugin {
             .add_plugins(WireframePlugin::default())
             .add_plugins(DayNightPlugin)
             .add_plugins(ShellTexturingPlugin)
-            .add_systems(Update, apply_global_light)
+            .add_systems(
+                Update,
+                (
+                    apply_global_light,
+                    unity_ambient::update_world_ambient,
+                    update_atmosphere.run_if(sky_needs_update),
+                )
+                    .chain(),
+            )
             .add_systems(Update, update_dof)
+            .add_systems(PostUpdate, unity_ambient::sync_ambient_buffer)
             .add_systems(Startup, setup.in_set(SetupSets::Main));
 
         app.insert_resource(AtmosphereSettings {
@@ -66,7 +102,7 @@ impl Plugin for VisualsPlugin {
                 ),
         })
         .insert_resource(AtmosphereModel::new(NishitaCloud::default()))
-        .add_plugins(AtmospherePlugin);
+        .add_plugins((AtmospherePlugin, sky_reflection::SkyReflectionPlugin));
 
         // app.add_plugins(EnvmapDownsamplePlugin);
 
@@ -135,14 +171,111 @@ fn setup(
     // );
 }
 
+#[derive(Resource, Default)]
+struct BlendedGlobalLight(SceneGlobalLight);
+
 static TRANSITION_TIME: f32 = 1.0;
+const SKY_UPDATE_INTERVAL: u32 = 8;
+const SKY_JUMP_BURST_FRAMES: u32 = 64;
+
+fn color_delta(a: Color, b: Color) -> f32 {
+    let a = a.to_srgba();
+    let b = b.to_srgba();
+    (a.red - b.red)
+        .abs()
+        .max((a.green - b.green).abs())
+        .max((a.blue - b.blue).abs())
+}
+
+fn sky_needs_update(
+    scene_global_light: Res<SceneGlobalLight>,
+    mut frames_since_update: Local<u32>,
+    mut burst_frames: Local<u32>,
+    mut last_applied: Local<Option<SceneGlobalLight>>,
+) -> bool {
+    let jumped = match last_applied.as_ref() {
+        None => true,
+        Some(prev) => {
+            prev.source != scene_global_light.source
+                || prev
+                    .dir_direction
+                    .angle_between(scene_global_light.dir_direction)
+                    > 0.02
+                || (prev.dir_illuminance - scene_global_light.dir_illuminance).abs()
+                    > prev.dir_illuminance.max(100.0) * 0.05
+                || color_delta(prev.dir_color, scene_global_light.dir_color) > 0.05
+                || color_delta(prev.ambient_color, scene_global_light.ambient_color) > 0.05
+                || (prev.ambient_brightness - scene_global_light.ambient_brightness).abs() > 0.1
+        }
+    };
+
+    if jumped {
+        *burst_frames = SKY_JUMP_BURST_FRAMES;
+    }
+
+    *frames_since_update += 1;
+    if *burst_frames > 0 || *frames_since_update >= SKY_UPDATE_INTERVAL {
+        *burst_frames = burst_frames.saturating_sub(1);
+        *frames_since_update = 0;
+        *last_applied = Some(scene_global_light.clone());
+        true
+    } else {
+        false
+    }
+}
+
+fn update_atmosphere(
+    mut atmosphere: AtmosphereMut<NishitaCloud>,
+    cloud: Res<CloudCover>,
+    blended: Res<BlendedGlobalLight>,
+    time_of_day: Res<TimeOfDay>,
+    time: Res<Time>,
+    mut cloud_dt: Local<f32>,
+    mut last_elapsed: Local<Option<f32>>,
+) {
+    let elapsed = time.elapsed_secs();
+    let dt = elapsed - last_elapsed.unwrap_or(elapsed);
+    *last_elapsed = Some(elapsed);
+
+    let light = &blended.0;
+    let day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
+    atmosphere.sun_position = -light.dir_direction;
+    atmosphere.rayleigh_coefficient = atmosphere_params::RAYLEIGH.sample(day);
+    atmosphere.mie_coefficient = atmosphere_params::MIE.sample(day);
+    atmosphere.night_color = atmosphere_params::NIGHT_SKY;
+    const MOON_PEAK_ELEV: f32 = 0.45;
+    let a = day * std::f32::consts::TAU + std::f32::consts::FRAC_PI_2;
+    let (sin_a, cos_a) = a.sin_cos();
+    let (sin_b, cos_b) = MOON_PEAK_ELEV.sin_cos();
+    atmosphere.moon_position = Vec3::new(cos_a, sin_a * sin_b, -sin_a * cos_b);
+    atmosphere.dir_light_intensity = light.dir_illuminance;
+    atmosphere.sun_color = light.dir_color.to_srgba().to_vec3();
+    atmosphere.tick += 1;
+
+    if atmosphere.cloudy != cloud.cover {
+        *cloud_dt = (*cloud_dt + dt * 20.0)
+            .min(80.0 * (atmosphere.cloudy - cloud.cover).abs())
+            .max(1.0);
+        atmosphere.cloudy += (cloud.cover - atmosphere.cloudy)
+            .clamp(-dt * 0.005 * *cloud_dt, dt * 0.005 * *cloud_dt);
+    } else {
+        *cloud_dt = f32::max(*cloud_dt - dt, cloud.speed);
+    }
+
+    atmosphere.time += dt * *cloud_dt;
+
+    atmosphere.cloud_density_cap = cloud.density_cap;
+    atmosphere.cloud_shadow = cloud.shadow;
+    atmosphere.cloud_scale = cloud.scale;
+    atmosphere.cloud_steps = cloud.steps;
+    atmosphere.cloud_lacunarity = cloud.lacunarity;
+}
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn apply_global_light(
     mut commands: Commands,
     setting: Res<AppConfig>,
-    mut atmosphere: AtmosphereMut<NishitaCloud>,
-    cloud: Res<CloudCover>,
+    mut blended: ResMut<BlendedGlobalLight>,
     mut sun: Query<(
         Entity,
         &DirectionalLightLayer,
@@ -151,14 +284,28 @@ fn apply_global_light(
     )>,
     mut ambient: ResMut<AmbientLight>,
     time: Res<Time>,
-    mut cameras: Query<(Option<&PrimaryCamera>, Option<&mut DistanceFog>), With<Camera3d>>,
+    mut cameras: Query<
+        (
+            Option<&PrimaryCamera>,
+            Option<&mut DistanceFog>,
+            Option<&Exposure>,
+        ),
+        With<Camera3d>,
+    >,
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
     time_of_day: Res<TimeOfDay>,
     mut prev: Local<(f32, SceneGlobalLight)>,
-    mut cloud_dt: Local<f32>,
     mut last_primary_distance: Local<f32>,
 ) {
+    let target_light = unity_sun::world_light(
+        &scene_global_light,
+        &time_of_day,
+        cameras.iter().find_map(|(primary, _, exposure)| {
+            primary.map(|_| exposure.copied().unwrap_or_default())
+        }),
+    );
+    let scene_global_light = &target_light;
     // the transition has settled once the previous output exactly matches the target
     let settled = prev.0 >= TRANSITION_TIME && prev.1 == *scene_global_light;
 
@@ -194,54 +341,13 @@ fn apply_global_light(
 
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
 
-    // physically-simulated sky: rayleigh (hue) and mie (haze) are baked day-cycle
-    // curves keyed by time of day; the sun sets naturally (no floor), and a flat
-    // night colour (added in-shader) provides the night sky.
-    let day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
-    atmosphere.sun_position = -next_light.dir_direction;
-    atmosphere.rayleigh_coefficient = atmosphere_params::RAYLEIGH.sample(day);
-    atmosphere.mie_coefficient = atmosphere_params::MIE.sample(day);
-    atmosphere.night_color = atmosphere_params::NIGHT_SKY;
-    // moon on its own low orbit: rises at dusk, peaks at MOON_PEAK_ELEV around
-    // midnight (well below the zenith, so it never sits overhead like the sun),
-    // sets at dawn. Anti-phase to the sun but on an independent arc, so it has
-    // no singularity at midnight (where the antisolar direction is undefined).
-    const MOON_PEAK_ELEV: f32 = 0.45; // radians (~26°)
-    let a = day * std::f32::consts::TAU + std::f32::consts::FRAC_PI_2;
-    let (sin_a, cos_a) = a.sin_cos();
-    let (sin_b, cos_b) = MOON_PEAK_ELEV.sin_cos();
-    atmosphere.moon_position = Vec3::new(cos_a, sin_a * sin_b, -sin_a * cos_b);
-    atmosphere.dir_light_intensity = next_light.dir_illuminance;
-    atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
-    atmosphere.tick += 1;
-
-    if atmosphere.cloudy != cloud.cover {
-        *cloud_dt = (*cloud_dt + time.delta_secs() * 20.0)
-            .min(80.0 * (atmosphere.cloudy - cloud.cover).abs())
-            .max(1.0);
-        atmosphere.cloudy += (cloud.cover - atmosphere.cloudy).clamp(
-            -time.delta_secs() * 0.005 * *cloud_dt,
-            time.delta_secs() * 0.005 * *cloud_dt,
-        );
-        // atmosphere.time += time.delta_secs() * 10.0;
-    } else {
-        *cloud_dt = f32::max(*cloud_dt - time.delta_secs(), cloud.speed);
-    }
-
-    atmosphere.time += time.delta_secs() * *cloud_dt;
-
-    // cloud look (live-tunable, baked later)
-    atmosphere.cloud_density_cap = cloud.density_cap;
-    atmosphere.cloud_shadow = cloud.shadow;
-    atmosphere.cloud_scale = cloud.scale;
-    atmosphere.cloud_steps = cloud.steps;
-    atmosphere.cloud_lacunarity = cloud.lacunarity;
+    blended.0 = next_light.clone();
 
     // skip the light/fog/ambient writes (which trigger change detection and re-extraction)
     // when the light has settled and nothing else affecting them has changed
     let primary_distance = cameras
         .iter()
-        .find_map(|(maybe_primary, _)| maybe_primary.map(|camera| camera.distance))
+        .find_map(|(maybe_primary, _, _)| maybe_primary.map(|camera| camera.distance))
         .unwrap_or(0.0);
     // a (re)inserted DistanceFog fires `is_added` and must be written even when the light has
     // settled. reading the tick through the existing `&mut` access avoids the query conflict an
@@ -250,7 +356,7 @@ fn apply_global_light(
     // re-engage.
     let fog_added = cameras
         .iter_mut()
-        .any(|(_, fog)| fog.is_some_and(|fog| fog.is_added()));
+        .any(|(_, fog, _)| fog.is_some_and(|fog| fog.is_added()));
     let skip_writes = settled
         && !setting.is_changed()
         && !scene_distance.is_changed()
@@ -327,7 +433,7 @@ fn apply_global_light(
         ));
     }
 
-    for (maybe_primary, maybe_fog) in cameras.iter_mut() {
+    for (maybe_primary, maybe_fog, _) in cameras.iter_mut() {
         let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
         // floor keeps night fog tinted instead of going black
         let skybox_brightness =
@@ -759,4 +865,11 @@ fn bloom_console_command(
         bloom.intensity = command.intensity;
         input.reply_ok(format!("bloom intensity: {}", command.intensity));
     }
+}
+
+/// Owned CPU work off the main thread; the result is polled with `TaskExt::complete`.
+pub(crate) fn spawn_cpu<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> bevy::tasks::Task<T> {
+    bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { work() })
 }
