@@ -143,19 +143,19 @@ fn dropping_the_receiver_early_still_notifies_the_engine() {
 }
 
 #[test]
-fn a_sender_serialized_twice_is_released_only_after_both_remotes_drop() {
+fn each_serialization_of_a_sender_is_released_independently() {
     let mut bridge = Bridge::new();
     let _guard = bridge.rt.enter();
 
     let (sender, mut receiver) = RpcStreamSender::<u32>::channel();
     let first_bytes = rmp_encode(&sender).unwrap();
     let second_bytes = rmp_encode(&sender).unwrap();
-    assert_eq!(first_bytes, second_bytes);
+    assert_ne!(first_bytes, second_bytes);
     let first: RpcStreamSender<u32> = rmp_serde::from_slice(&first_bytes).unwrap();
     let second: RpcStreamSender<u32> = rmp_serde::from_slice(&second_bytes).unwrap();
-    assert_eq!(bridge.scene_endpoints(), 1);
-    assert_eq!(bridge.engine_tokens(), 1);
-    assert_eq!(bridge.close_watchers(), 1);
+    assert_eq!(bridge.scene_endpoints(), 2);
+    assert_eq!(bridge.engine_tokens(), 2);
+    assert_eq!(bridge.close_watchers(), 2);
 
     drop(first);
     bridge.settle();
@@ -178,6 +178,101 @@ fn a_sender_serialized_twice_is_released_only_after_both_remotes_drop() {
     assert_eq!(bridge.scene_endpoints(), 0);
     assert_eq!(bridge.engine_tokens(), 0);
     assert_eq!(bridge.close_watchers(), 0);
+
+    // the stream ends once the local handle is gone too
+    drop(sender);
+    assert!(matches!(
+        receiver.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+    ));
+}
+
+#[test]
+fn a_sender_serialized_again_after_its_first_remote_closed_still_delivers() {
+    let mut bridge = Bridge::new();
+    let _guard = bridge.rt.enter();
+
+    let (sender, mut receiver) = RpcStreamSender::<u32>::channel();
+    let first: RpcStreamSender<u32> = rmp_serde::from_slice(&rmp_encode(&sender).unwrap()).unwrap();
+    drop(first);
+    bridge.settle();
+    bridge.route_to_scene();
+    bridge.settle();
+    assert_eq!(bridge.scene_endpoints(), 0);
+    assert_eq!(bridge.engine_tokens(), 0);
+
+    let second: RpcStreamSender<u32> =
+        rmp_serde::from_slice(&rmp_encode(&sender).unwrap()).unwrap();
+    assert!(!second.is_closed());
+    second.send(9).unwrap();
+    bridge.route_to_scene();
+    assert_eq!(receiver.try_recv().unwrap(), 9);
+
+    drop(second);
+    drop(sender);
+    bridge.settle();
+    bridge.route_to_scene();
+    bridge.settle();
+
+    assert_eq!(bridge.scene_endpoints(), 0);
+    assert_eq!(bridge.engine_tokens(), 0);
+    assert_eq!(bridge.close_watchers(), 0);
+    assert!(matches!(
+        receiver.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+    ));
+    drop(receiver);
+    bridge.settle();
+    assert!(bridge.close_rx.try_recv().is_err());
+}
+
+#[test]
+fn a_result_sender_serialized_twice_takes_the_first_reply_and_closes_when_all_are_gone() {
+    let mut bridge = Bridge::new();
+    let _guard = bridge.rt.enter();
+
+    // one remote replies after another was dropped without replying
+    let (sender, mut receiver) = RpcResultSender::<u32>::channel();
+    let first: RpcResultSender<u32> = rmp_serde::from_slice(&rmp_encode(&sender).unwrap()).unwrap();
+    let second: RpcResultSender<u32> =
+        rmp_serde::from_slice(&rmp_encode(&sender).unwrap()).unwrap();
+    drop(first);
+    bridge.settle();
+    bridge.route_to_scene();
+    bridge.settle();
+    assert_eq!(receiver.poll_once(), Ok(None));
+
+    second.send(3);
+    drop(second);
+    bridge.settle();
+    bridge.route_to_scene();
+    bridge.settle();
+    assert_eq!(receiver.poll_once(), Ok(Some(3)));
+    drop(sender);
+    assert_eq!(bridge.scene_endpoints(), 0);
+    assert_eq!(bridge.engine_tokens(), 0);
+    assert_eq!(bridge.close_watchers(), 0);
+
+    // nobody replies: the receiver sees the close once every holder is gone
+    let (sender, mut receiver) = RpcResultSender::<u32>::channel();
+    let first: RpcResultSender<u32> = rmp_serde::from_slice(&rmp_encode(&sender).unwrap()).unwrap();
+    let second: RpcResultSender<u32> =
+        rmp_serde::from_slice(&rmp_encode(&sender).unwrap()).unwrap();
+    drop(sender);
+    drop(first);
+    bridge.settle();
+    bridge.route_to_scene();
+    bridge.settle();
+    assert_eq!(receiver.poll_once(), Ok(None));
+
+    drop(second);
+    bridge.settle();
+    bridge.route_to_scene();
+    bridge.settle();
+    assert_eq!(receiver.poll_once(), Err(()));
+    assert_eq!(bridge.scene_endpoints(), 0);
+    assert_eq!(bridge.engine_tokens(), 0);
+    assert_eq!(bridge.close_watchers(), 0);
 }
 
 #[test]
@@ -193,14 +288,20 @@ fn dropping_the_receiver_early_closes_every_remote_of_a_sender_serialized_twice(
     drop(receiver);
     bridge.settle();
 
-    // deliver the close the way the scene host and the engine do
-    let id = bridge.close_rx.try_recv().unwrap();
-    SCENE_IPC_CONTEXT.with_borrow_mut(|ctx| ctx.as_mut().unwrap().registry.remove(&id));
-    ENGINE_IPC_CONTEXT.with_borrow_mut(|ctx| {
-        if let Some(lease) = ctx.as_mut().unwrap().ipc_channel_registry.remove(&id) {
-            lease.token.cancel();
-        }
-    });
+    // deliver each close the way the scene host and the engine do
+    let mut closed = 0;
+    while let Ok(id) = bridge.close_rx.try_recv() {
+        closed += 1;
+        SCENE_IPC_CONTEXT.with_borrow_mut(|ctx| ctx.as_mut().unwrap().registry.remove(&id));
+        ENGINE_IPC_CONTEXT.with_borrow_mut(|ctx| {
+            if let Some(lease) = ctx.as_mut().unwrap().ipc_channel_registry.remove(&id) {
+                lease.token.cancel();
+            }
+        });
+    }
+    assert_eq!(closed, 2);
+    assert_eq!(bridge.scene_endpoints(), 0);
+    assert_eq!(bridge.close_watchers(), 0);
 
     assert!(first.is_closed());
     assert!(second.is_closed());

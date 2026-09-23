@@ -88,8 +88,9 @@ pub(crate) fn ipc_router(
         let mut ctx = cell.borrow_mut();
         let ctx = ctx.as_mut().unwrap();
 
-        // a local sender serialized more than once reuses its id, so every deserialization
-        // of that id shares one token and takes a lease on the entry
+        // each serialization registers its own id, but the same serialized bytes can still be
+        // deserialized more than once, so every deserialization of an id shares one token and
+        // takes a lease on the entry
         let lease = ctx
             .ipc_channel_registry
             .entry(id)

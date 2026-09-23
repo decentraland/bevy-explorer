@@ -4,42 +4,20 @@ use platform::AsyncRwLock;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::{
     future::Future,
-    sync::Arc,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
 };
 use tokio_util::sync::CancellationToken;
 
-pub enum LocalChannel<T> {
-    Channel(tokio::sync::oneshot::Sender<T>),
-    Serialized(u64),
-    Used,
-}
-
-impl<T> LocalChannel<T> {
-    fn serialize_with<F: FnOnce(tokio::sync::oneshot::Sender<T>) -> u64>(&mut self, f: F) -> u64 {
-        let id = match std::mem::replace(self, LocalChannel::Used) {
-            LocalChannel::Channel(sender) => (f)(sender),
-            LocalChannel::Serialized(id) => id,
-            LocalChannel::Used => panic!(),
-        };
-
-        *self = LocalChannel::Serialized(id);
-        id
-    }
-
-    fn take(&mut self) -> Option<tokio::sync::oneshot::Sender<T>> {
-        match std::mem::replace(self, LocalChannel::Used) {
-            LocalChannel::Channel(sender) => Some(sender),
-            LocalChannel::Serialized(_) => panic!(),
-            LocalChannel::Used => None,
-        }
-    }
-}
+// the oneshot sender, shared between the local handle and every ipc endpoint registered for
+// it; the first send takes it. the receiver sees the channel close once the local handle
+// (all its clones) and every endpoint holding the slot have been dropped without a send
+type SharedOneshot<T> = Arc<Mutex<Option<tokio::sync::oneshot::Sender<T>>>>;
 
 #[derive(Clone)]
 pub enum RpcResultSender<T> {
     Local {
-        channel: Arc<AsyncRwLock<LocalChannel<T>>>,
+        channel: SharedOneshot<T>,
         cancel: CancellationToken,
     },
     Remote {
@@ -102,7 +80,7 @@ impl<T> std::fmt::Debug for RpcResultSender<T> {
 impl<T: 'static> Default for RpcResultSender<T> {
     fn default() -> Self {
         Self::Local {
-            channel: Arc::new(AsyncRwLock::new(LocalChannel::Used)),
+            channel: Arc::new(Mutex::new(None)),
             cancel: CancellationToken::new(),
         }
     }
@@ -115,7 +93,7 @@ impl<T: Serialize + 'static> RpcResultSender<T> {
 
         (
             Self::Local {
-                channel: Arc::new(AsyncRwLock::new(LocalChannel::Channel(sx))),
+                channel: Arc::new(Mutex::new(Some(sx))),
                 cancel: cancel.clone(),
             },
             RpcResultReceiver {
@@ -128,8 +106,8 @@ impl<T: Serialize + 'static> RpcResultSender<T> {
     pub fn send(&self, result: T) {
         match self {
             RpcResultSender::Local { channel, .. } => {
-                let mut guard = channel.blocking_write();
-                if let Some(response) = guard.take() {
+                let response = channel.lock().unwrap().take();
+                if let Some(response) = response {
                     let _ = response.send(result);
                 }
             }
@@ -145,13 +123,14 @@ impl<T: Serialize + 'static> RpcResultSender<T> {
 }
 
 struct IpcResultCallback<T: DeserializeOwned + Send + 'static> {
-    sender: Option<tokio::sync::oneshot::Sender<T>>,
+    sender: SharedOneshot<T>,
 }
 
 impl<T: DeserializeOwned + Send + 'static> IpcEndpoint for IpcResultCallback<T> {
     fn send(&mut self, raw_bytes: Vec<u8>) {
         if let Ok(val) = rmp_serde::from_slice::<T>(&raw_bytes) {
-            if let Some(sx) = self.sender.take() {
+            let sx = self.sender.lock().unwrap().take();
+            if let Some(sx) = sx {
                 let _ = sx.send(val);
             }
         } else {
@@ -169,15 +148,14 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcResultSe
             panic!();
         };
 
-        let id = channel.try_write().unwrap().serialize_with(|sender| {
-            let endpoint = IpcResultCallback {
-                sender: Some(sender),
-            };
-            let (id, close_sender, removed) = ipc_register(endpoint);
-            spawn_close_watcher(id, cancel.clone(), removed, close_sender);
-            debug!("created sender {id} -> {}", std::any::type_name::<T>());
-            id
-        });
+        // every serialization gets its own endpoint and id, so each remote sender's lifetime
+        // is tracked independently and dropping one never closes an endpoint another uses
+        let endpoint = IpcResultCallback {
+            sender: channel.clone(),
+        };
+        let (id, close_sender, removed) = ipc_register(endpoint);
+        spawn_close_watcher(id, cancel.clone(), removed, close_sender);
+        debug!("created sender {id} -> {}", std::any::type_name::<T>());
 
         serializer.serialize_u64(id)
     }

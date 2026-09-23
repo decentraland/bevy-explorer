@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use bevy::log::warn;
 
 use crate::rpc::*;
@@ -27,27 +25,12 @@ fn warn_dropped<T: Serialize>(val: &T) {
 }
 
 #[derive(Clone)]
-pub enum LocalChannel<T> {
-    Channel(tokio::sync::mpsc::Sender<T>),
-    Serialized(u64),
-}
-
-impl<T> LocalChannel<T> {
-    fn serialize_with<F: FnOnce(tokio::sync::mpsc::Sender<T>) -> u64>(&mut self, f: F) -> u64 {
-        let id = match std::mem::replace(self, LocalChannel::Serialized(u64::MAX)) {
-            LocalChannel::Channel(sender) => (f)(sender),
-            LocalChannel::Serialized(id) => id,
-        };
-
-        *self = LocalChannel::Serialized(id);
-        id
-    }
-}
-
-#[derive(Clone)]
 pub enum RpcStreamSender<T> {
+    // serializing registers an ipc endpoint holding a clone of `channel`, so the receiver sees
+    // the stream end once the local handle (all its clones) and every endpoint registered
+    // for it have been dropped
     Local {
-        channel: Arc<Mutex<LocalChannel<T>>>,
+        channel: tokio::sync::mpsc::Sender<T>,
         cancel: CancellationToken,
     },
     Remote {
@@ -98,7 +81,7 @@ impl<T: Serialize> RpcStreamSender<T> {
 
         (
             Self::Local {
-                channel: Arc::new(Mutex::new(LocalChannel::Channel(sx))),
+                channel: sx,
                 cancel: cancel.clone(),
             },
             RpcStreamReceiver {
@@ -110,19 +93,16 @@ impl<T: Serialize> RpcStreamSender<T> {
 
     pub fn send(&self, val: T) -> Result<(), tokio::sync::mpsc::error::SendError<T>> {
         match self {
-            RpcStreamSender::Local { channel, .. } => match &*channel.lock().unwrap() {
-                LocalChannel::Channel(sender) => match sender.try_send(val) {
-                    Ok(()) => Ok(()),
-                    // full: drop the message, that's the bound
-                    Err(tokio::sync::mpsc::error::TrySendError::Full(val)) => {
-                        warn_dropped(&val);
-                        Ok(())
-                    }
-                    Err(tokio::sync::mpsc::error::TrySendError::Closed(val)) => {
-                        Err(tokio::sync::mpsc::error::SendError(val))
-                    }
-                },
-                LocalChannel::Serialized(_) => panic!(),
+            RpcStreamSender::Local { channel, .. } => match channel.try_send(val) {
+                Ok(()) => Ok(()),
+                // full: drop the message, that's the bound
+                Err(tokio::sync::mpsc::error::TrySendError::Full(val)) => {
+                    warn_dropped(&val);
+                    Ok(())
+                }
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(val)) => {
+                    Err(tokio::sync::mpsc::error::SendError(val))
+                }
             },
             RpcStreamSender::Remote {
                 id,
@@ -143,10 +123,7 @@ impl<T: Serialize> RpcStreamSender<T> {
 
     pub fn is_closed(&self) -> bool {
         match self {
-            RpcStreamSender::Local { channel, .. } => match &*channel.lock().unwrap() {
-                LocalChannel::Channel(sender) => sender.is_closed(),
-                LocalChannel::Serialized(_) => panic!(),
-            },
+            RpcStreamSender::Local { channel, .. } => channel.is_closed(),
             RpcStreamSender::Remote {
                 receiver_dropped: close_token,
                 ..
@@ -181,13 +158,13 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcStreamSe
             panic!();
         };
 
-        let id = channel.lock().unwrap().serialize_with(|sender| {
-            let endpoint = IpcStreamCallback { sender };
-            let (id, close_sender, removed) = ipc_register(endpoint);
-            spawn_close_watcher(id, cancel.clone(), removed, close_sender);
-
-            id
-        });
+        // every serialization gets its own endpoint and id, so each remote sender's lifetime
+        // is tracked independently and dropping one never closes an endpoint another uses
+        let endpoint = IpcStreamCallback {
+            sender: channel.clone(),
+        };
+        let (id, close_sender, removed) = ipc_register(endpoint);
+        spawn_close_watcher(id, cancel.clone(), removed, close_sender);
 
         serializer.serialize_u64(id)
     }
