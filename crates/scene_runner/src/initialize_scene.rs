@@ -1568,6 +1568,7 @@ pub fn process_scene_lifecycle(
             Entity,
             &SceneHash,
             Option<&RendererSceneContext>,
+            Option<&SceneLoading>,
             Has<SuperUserScene>,
         ),
         Or<(With<SceneLoading>, With<RendererSceneContext>)>,
@@ -1670,7 +1671,7 @@ pub fn process_scene_lifecycle(
     // despawn any no-longer required entities
     let mut current_scene_loading = false;
     let mut system_scene_loading = false;
-    for (entity, scene_hash, maybe_ctx, is_super) in &scene_entities {
+    for (entity, scene_hash, maybe_ctx, maybe_loading, is_super) in &scene_entities {
         match keep_entities.get(&entity) {
             Some((hash, _)) => {
                 existing_ids.insert(<&String>::clone(hash));
@@ -1684,12 +1685,16 @@ pub fn process_scene_lifecycle(
             }
         }
 
-        // a frozen scene never advances its tick, so it's as loaded as it's going to get;
+        // a failed load is terminal: the entity is kept (so the scene isn't respawned while
+        // in range) but it will never get further, so it must not defer other scenes. a
+        // frozen scene never advances its tick, so it's as loaded as it's going to get;
         // without the exemption a scene frozen before tick 7 defers other scenes (and
         // imposters) forever
-        let still_loading = maybe_ctx.is_none_or(|ctx| {
-            ctx.tick_number <= 6 && !ctx.broken() && !ctx.blocked.contains(FROZEN_BLOCK)
-        });
+        let failed = matches!(maybe_loading, Some(SceneLoading::Failed));
+        let still_loading = !failed
+            && maybe_ctx.is_none_or(|ctx| {
+                ctx.tick_number <= 6 && !ctx.broken() && !ctx.blocked.contains(FROZEN_BLOCK)
+            });
 
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {
@@ -2006,5 +2011,100 @@ pub fn handle_live_scene_info(
 
     for sender in senders {
         sender.send(scene_info.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ecs::system::RunSystemOnce;
+
+    use super::*;
+
+    fn lifecycle_world() -> World {
+        let mut world = World::new();
+        world.init_resource::<CurrentRealm>();
+        world.init_resource::<PortableScenes>();
+        world.init_resource::<LiveScenes>();
+        world.init_resource::<Events<LoadSceneEvent>>();
+        world.init_resource::<CurrentImposterScene>();
+        world.init_resource::<PreviewMode>();
+        world.init_resource::<CurrentSceneLoading>();
+        world.insert_resource(SceneLoadDistance {
+            load: 20.0,
+            unload: 10.0,
+            load_imposter: 0.0,
+        });
+
+        let mut pointers = ScenePointers::default();
+        for (parcel, hash) in [(IVec2::ZERO, "current"), (IVec2::X, "neighbour")] {
+            pointers.insert(
+                parcel,
+                PointerResult::Exists {
+                    realm: String::default(),
+                    hash: hash.to_owned(),
+                    urn: None,
+                },
+            );
+        }
+        world.insert_resource(pointers);
+
+        // stand in the middle of parcel (0,0)
+        world.spawn((
+            PrimaryUser::default(),
+            GlobalTransform::from_translation(Vec3::new(8.0, 0.0, -8.0)),
+        ));
+        world
+    }
+
+    fn spawned_hashes(world: &World) -> Vec<String> {
+        world
+            .resource::<Events<LoadSceneEvent>>()
+            .iter_current_update_events()
+            .map(|ev| match &ev.location {
+                SceneIpfsLocation::Hash(hash) => hash.clone(),
+                SceneIpfsLocation::Urn(urn) => urn.clone(),
+            })
+            .collect()
+    }
+
+    fn spawn_current_scene(world: &mut World, state: SceneLoading) -> Entity {
+        let current = world.spawn((SceneHash("current".to_owned()), state)).id();
+        world
+            .resource_mut::<LiveScenes>()
+            .scenes
+            .insert("current".to_owned(), current);
+        current
+    }
+
+    #[test]
+    fn failed_current_scene_does_not_defer_other_scenes() {
+        let mut world = lifecycle_world();
+        let current = spawn_current_scene(&mut world, SceneLoading::Failed);
+
+        world.run_system_once(process_scene_lifecycle).unwrap();
+
+        assert!(
+            !world.resource::<CurrentSceneLoading>().0,
+            "a failed current scene must not count as loading"
+        );
+        // the failed entity is kept and tracked, so it isn't respawned
+        assert!(world.get_entity(current).is_ok());
+        assert_eq!(
+            world.resource::<LiveScenes>().scenes.get("current"),
+            Some(&current)
+        );
+        // and the neighbouring scene is no longer deferred behind it
+        assert_eq!(spawned_hashes(&world), vec!["neighbour".to_owned()]);
+    }
+
+    #[test]
+    fn loading_current_scene_defers_other_scenes() {
+        let mut world = lifecycle_world();
+        spawn_current_scene(&mut world, SceneLoading::SceneEntity);
+
+        world.run_system_once(process_scene_lifecycle).unwrap();
+
+        assert!(world.resource::<CurrentSceneLoading>().0);
+        assert!(spawned_hashes(&world).is_empty());
     }
 }
