@@ -16,6 +16,7 @@ impl Bridge {
             registry: Default::default(),
             close_sender,
             next_id: 1,
+            pending: None,
         }));
         let (ipc_router, router_rx) = unbounded_channel();
         ENGINE_IPC_CONTEXT.set(Some(ResponseContext {
@@ -313,4 +314,128 @@ fn dropping_the_receiver_early_closes_every_remote_of_a_sender_serialized_twice(
 
     assert_eq!(bridge.engine_tokens(), 0);
     assert!(bridge.router_rx.try_recv().is_err());
+}
+
+// rmp_serde's compact encoding accepts every shape our ipc types use, so stand in for a
+// compact failure with a field that fails the first encoding attempt only, after the
+// sender before it has been serialized
+#[derive(Serialize)]
+struct CompactFails {
+    sender: RpcStreamSender<u32>,
+    flaky: FailsOnce,
+}
+
+struct FailsOnce(std::cell::Cell<bool>);
+
+impl Serialize for FailsOnce {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.0.replace(true) {
+            serializer.serialize_unit()
+        } else {
+            Err(serde::ser::Error::custom("first attempt fails"))
+        }
+    }
+}
+
+// fails in every encoding, after the sender has been serialized
+#[derive(Serialize)]
+struct AlwaysFails {
+    sender: RpcStreamSender<u32>,
+    failing: Failing,
+}
+
+struct Failing;
+
+impl Serialize for Failing {
+    fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom("unserializable"))
+    }
+}
+
+#[derive(Deserialize)]
+struct CompactFailsRemote {
+    sender: RpcStreamSender<u32>,
+}
+
+#[test]
+fn a_failed_compact_attempt_drops_the_endpoints_it_registered() {
+    let mut bridge = Bridge::new();
+    let _guard = bridge.rt.enter();
+
+    let (sender, mut receiver) = RpcStreamSender::<u32>::channel();
+    let value = CompactFails {
+        sender,
+        flaky: FailsOnce(Default::default()),
+    };
+
+    let bytes = rmp_encode(&value).unwrap();
+    drop(value);
+    bridge.settle();
+    assert_eq!(bridge.scene_endpoints(), 1);
+    assert_eq!(bridge.close_watchers(), 1);
+
+    let remote: CompactFailsRemote = rmp_serde::from_slice(&bytes).unwrap();
+    let RpcStreamSender::Remote { id, .. } = &remote.sender else {
+        panic!("expected a remote sender");
+    };
+    SCENE_IPC_CONTEXT.with_borrow(|ctx| assert!(ctx.as_ref().unwrap().registry.contains_key(id)));
+
+    remote.sender.send(4).unwrap();
+    drop(remote);
+    bridge.settle();
+    bridge.route_to_scene();
+    bridge.settle();
+
+    assert_eq!(receiver.try_recv().unwrap(), 4);
+    assert_eq!(bridge.scene_endpoints(), 0);
+    assert_eq!(bridge.engine_tokens(), 0);
+    assert_eq!(bridge.close_watchers(), 0);
+    assert!(matches!(
+        receiver.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+    ));
+}
+
+#[test]
+fn a_failed_encoding_leaves_nothing_registered() {
+    let bridge = Bridge::new();
+    let _guard = bridge.rt.enter();
+
+    let (sender, mut receiver) = RpcStreamSender::<u32>::channel();
+    let value = AlwaysFails {
+        sender,
+        failing: Failing,
+    };
+    assert!(rmp_encode(&value).is_err());
+    drop(value);
+    bridge.settle();
+
+    assert_eq!(bridge.scene_endpoints(), 0);
+    assert_eq!(bridge.close_watchers(), 0);
+    assert!(matches!(
+        receiver.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+    ));
+    SCENE_IPC_CONTEXT.with_borrow(|ctx| assert!(ctx.as_ref().unwrap().pending.is_none()));
+}
+
+#[test]
+fn a_nested_encoding_commits_into_the_enclosing_attempt() {
+    let bridge = Bridge::new();
+    let _guard = bridge.rt.enter();
+
+    let (sender, _receiver) = RpcStreamSender::<u32>::channel();
+    let (outer_sender, _outer_receiver) = RpcStreamSender::<u32>::channel();
+    let result = encode_tracked(|| {
+        rmp_encode(&sender).unwrap();
+        rmp_serde::to_vec(&outer_sender).unwrap();
+        Err::<(), ()>(())
+    });
+    assert!(result.is_err());
+    bridge.settle();
+
+    // the inner success belonged to the failed outer attempt, so both are rolled back
+    assert_eq!(bridge.scene_endpoints(), 0);
+    assert_eq!(bridge.close_watchers(), 0);
+    SCENE_IPC_CONTEXT.with_borrow(|ctx| assert!(ctx.as_ref().unwrap().pending.is_none()));
 }

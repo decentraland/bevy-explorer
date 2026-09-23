@@ -47,6 +47,9 @@ pub(crate) fn ipc_register<T: IpcEndpoint + 'static>(
 
         ctx.next_id += 1;
         let id = ctx.next_id;
+        if let Some(pending) = ctx.pending.as_mut() {
+            pending.push(id);
+        }
 
         let removed = CancellationToken::new();
         ctx.registry.insert(
@@ -139,6 +142,9 @@ pub struct RequestContext {
     pub registry: HashMap<u64, Box<dyn IpcEndpoint>>,
     pub close_sender: tokio::sync::mpsc::UnboundedSender<u64>,
     pub next_id: u64,
+    /// ids registered during the current `rmp_encode` attempt, so a failed attempt can drop
+    /// the endpoints it registered; `None` outside of `rmp_encode`
+    pub pending: Option<Vec<u64>>,
 }
 
 // one entry per remote channel id: the token cancelled when the scene-side receiver is
@@ -434,5 +440,46 @@ pub struct EntityDefinitionResponse {
 // the message format is much larger but flattens and values are rare in our ipc api,
 // so we default try to encode without
 pub fn rmp_encode<T: Serialize>(value: &T) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-    rmp_serde::to_vec(value).or_else(|_| rmp_serde::to_vec_named(value))
+    // serializing a local rpc sender registers an endpoint, so each attempt is tracked and
+    // a failed one drops what it registered: no remote will ever learn those ids
+    encode_tracked(|| rmp_serde::to_vec(value))
+        .or_else(|_| encode_tracked(|| rmp_serde::to_vec_named(value)))
+}
+
+fn encode_tracked<R, E>(encode: impl FnOnce() -> Result<R, E>) -> Result<R, E> {
+    // outer `None`: no scene context on this thread (the engine side), nothing to track.
+    // inner value: the enclosing attempt's list, restored afterwards so nesting works
+    let outer = SCENE_IPC_CONTEXT
+        .try_with(|cell| {
+            cell.borrow_mut()
+                .as_mut()
+                .map(|ctx| ctx.pending.replace(Vec::new()))
+        })
+        .ok()
+        .flatten();
+
+    let result = encode();
+
+    if let Some(outer) = outer {
+        let mut rolled_back = Vec::new();
+        let _ = SCENE_IPC_CONTEXT.try_with(|cell| {
+            let mut ctx = cell.borrow_mut();
+            let Some(ctx) = ctx.as_mut() else {
+                return;
+            };
+            let registered = std::mem::replace(&mut ctx.pending, outer).unwrap_or_default();
+            if result.is_ok() {
+                if let Some(outer) = ctx.pending.as_mut() {
+                    outer.extend(registered);
+                }
+            } else {
+                rolled_back.extend(registered.iter().filter_map(|id| ctx.registry.remove(id)));
+            }
+        });
+        // dropping an endpoint cancels its close watcher and releases its channel sender;
+        // do it outside the borrow
+        drop(rolled_back);
+    }
+
+    result
 }

@@ -59,6 +59,7 @@ fn main() -> Result<()> {
         registry: Default::default(),
         close_sender: close_sx,
         next_id: 1,
+        pending: None,
     }));
 
     let f_in = rt.spawn(scene_ipc_in(recv_half, scene_sx, system_api_sx));
