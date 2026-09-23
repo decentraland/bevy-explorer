@@ -81,6 +81,12 @@ extern "C" {
     fn wait_for_async_pipelines() -> js_sys::Promise;
 }
 
+/// Page side: forwards the browser's pointer-lock state to the engine (see platform/wasm.rs).
+#[wasm_bindgen]
+pub fn report_pointer_lock(locked: bool) {
+    platform::report_pointer_lock(locked);
+}
+
 /// call from a separate worker to initialize a channel for asset load processing
 #[wasm_bindgen]
 pub fn init_asset_load_thread() {

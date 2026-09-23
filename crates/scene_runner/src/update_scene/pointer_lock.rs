@@ -6,7 +6,7 @@ use common::{
     structs::{ActiveDialog, AppConfig, CursorLocks, PrimaryCamera},
 };
 use input_manager::{InputManager, InputPriority};
-use platform::platform_pointer_is_locked;
+use platform::{platform_pointer_is_locked, platform_pointer_lock_requested};
 
 use crate::{
     initialize_scene::SuperUserScene, renderer_context::RendererSceneContext,
@@ -152,7 +152,7 @@ pub fn update_pointer_lock(
     let input_manager = &mb_state.input_manager;
     if state == ClickState::None
         && (input_manager.just_down(SystemAction::Cancel, InputPriority::None)
-            || !platform_pointer_is_locked(true))
+            || platform_pointer_is_locked() == Some(false))
         && *toggle
     {
         // override
@@ -162,6 +162,9 @@ pub fn update_pointer_lock(
 
     if state == ClickState::Clicked {
         *toggle = !*toggle;
+        if *toggle {
+            platform_pointer_lock_requested();
+        }
     }
 
     let mut camera_locked =
@@ -170,6 +173,9 @@ pub fn update_pointer_lock(
     for changed_lock in changed_pointer_locks.iter() {
         info!("lock updated by scene");
         *toggle = changed_lock.0.is_pointer_locked;
+        if *toggle {
+            platform_pointer_lock_requested();
+        }
         camera_locked = *toggle;
     }
 

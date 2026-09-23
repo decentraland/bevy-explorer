@@ -1,7 +1,7 @@
 // Engine logic - ES module
 // Handles WASM/WebGPU initialization and game execution
 
-import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, gpu_cache_hash } from "./pkg/webgpu_build.js";
+import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, gpu_cache_hash, report_pointer_lock } from "./pkg/webgpu_build.js";
 import { initGpuCache } from "./gpu_cache.js";
 
 // Re-export for main.js
@@ -604,6 +604,11 @@ export function start(options = {}) {
   workerReady(engineWorker).then(() => {
     window.engine_console_command = engine_console_command;
   });
+
+  // The engine worker cannot see the document's pointer-lock state (Escape, a refused request):
+  // report it through the shared wasm memory (src/web.rs report_pointer_lock).
+  document.addEventListener("pointerlockchange", () => report_pointer_lock(document.pointerLockElement === canvas));
+  document.addEventListener("pointerlockerror", () => report_pointer_lock(false));
 
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {

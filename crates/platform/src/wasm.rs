@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use anyhow::anyhow;
 use bevy::log::warn;
@@ -199,11 +202,29 @@ impl<T> AsyncRwLock<T> {
 #[derive(Debug)]
 pub struct NoError;
 
-pub fn platform_pointer_is_locked(_expected: bool) -> bool {
-    web_sys::window()
-        .and_then(|w| w.document())
-        .map(|d| d.pointer_lock_element().is_some())
-        .unwrap_or(false)
+// The engine runs on a worker with no document to ask, so the page reports the browser's
+// pointer-lock state here ([`report_pointer_lock`], exported by the root crate's web.rs and
+// called from engine.js on `pointerlockchange` / `pointerlockerror`); page and engine share the
+// wasm memory, so these two atomics are the whole channel. A request takes effect
+// asynchronously (winit dispatches it to the page, the browser then fires the change event), so
+// the engine marks its request pending and the page's next report settles it.
+static POINTER_LOCKED: AtomicBool = AtomicBool::new(false);
+static POINTER_LOCK_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Page side: the browser's pointer-lock state changed (or a request was refused).
+pub fn report_pointer_lock(locked: bool) {
+    POINTER_LOCKED.store(locked, Ordering::Relaxed);
+    POINTER_LOCK_PENDING.store(false, Ordering::Release);
+}
+
+/// The engine is about to request the pointer lock.
+pub fn platform_pointer_lock_requested() {
+    POINTER_LOCK_PENDING.store(true, Ordering::Relaxed);
+}
+
+/// The browser's pointer-lock state as last reported, or `None` while a request is pending.
+pub fn platform_pointer_is_locked() -> Option<bool> {
+    (!POINTER_LOCK_PENDING.load(Ordering::Acquire)).then(|| POINTER_LOCKED.load(Ordering::Relaxed))
 }
 
 pub fn default_camera_components() -> impl Bundle {
