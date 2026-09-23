@@ -68,14 +68,7 @@ impl Room {
             }
         });
 
-        let room = room_connect(
-            &url,
-            &token,
-            room_options.into(),
-            room_connect_options.into(),
-            &handler,
-        )
-        .await?;
+        let room = room_connect(&url, &token, room_options, room_connect_options, &handler).await?;
 
         let _ = handler.into_js_value();
 
