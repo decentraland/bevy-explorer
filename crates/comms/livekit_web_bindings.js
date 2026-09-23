@@ -556,8 +556,8 @@ function track_rig_drop(remote_track) {
 export function remote_track_pan_and_volume(remote_track, pan, volume) {
     // log(`Setting pan and volume for track ${remote_track.sid}.`);
     const track_rig = remote_track.trackRig;
-    // Pan value should be between -1 (left) and 1 (right)
-    track_rig.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
+    // kira's 0 (left) .. 1 (right) to the stereo panner's -1 .. 1
+    track_rig.pannerNode.pan.value = Math.max(-1, Math.min(1, pan * 2 - 1));
     // Volume should be between 0 and 1 (or higher for boost)
     track_rig.gainNode.gain.value = Math.max(0, volume);
 
