@@ -78,43 +78,6 @@ impl ConversationManager<'_, '_> {
             .despawn_related::<Children>();
     }
 
-    // despawn the oldest messages (and any emptied bubbles) so at most `max` remain
-    pub fn trim(&mut self, container: Entity, max: usize) {
-        let Ok(bubbles) = self.children.get(container) else {
-            return;
-        };
-
-        let bubble_messages = bubbles
-            .iter()
-            .filter_map(|bubble| {
-                let (_, entities) = self.containers.get(bubble).ok()?;
-                let messages = self.children.get(entities.named("content")).ok()?;
-                Some((bubble, messages))
-            })
-            .collect::<Vec<_>>();
-
-        let total = bubble_messages
-            .iter()
-            .map(|(_, messages)| messages.len())
-            .sum::<usize>();
-        let mut excess = total.saturating_sub(max);
-
-        for (bubble, messages) in bubble_messages {
-            if excess == 0 {
-                break;
-            }
-            if excess >= messages.len() {
-                excess -= messages.len();
-                self.commands.entity(bubble).try_despawn();
-            } else {
-                for message in messages.iter().take(excess) {
-                    self.commands.entity(message).try_despawn();
-                }
-                excess = 0;
-            }
-        }
-    }
-
     pub fn add_history_button(&mut self, container: Entity, private_chat_ent: Entity) {
         let button = self
             .commands

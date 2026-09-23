@@ -22,7 +22,7 @@ use comms::{
     BroadcastTarget, Transport,
 };
 use console::DoAddConsoleCommand;
-use conversation_manager::ConversationManager;
+use conversation_manager::{ChatBubble, ConversationManager};
 use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use history::ChatHistoryPlugin;
@@ -54,7 +54,11 @@ impl Plugin for ChatPanelPlugin {
         let native_chat = app.world().resource::<NativeUi>().chat;
 
         if native_chat {
-            app.add_systems(Update, display_chat);
+            // sync point so the trim sees messages spawned by display_chat this frame
+            app.add_systems(
+                Update,
+                (display_chat, ApplyDeferred, trim_nearby_chat).chain(),
+            );
             app.add_systems(Update, append_chat_messages);
             app.add_systems(Startup, setup.in_set(SetupSets::Main));
             app.add_systems(
@@ -398,10 +402,8 @@ fn display_chat(
         return;
     };
 
-    if chatbox.active_tab == "Nearby" {
-        // consecutive messages from one sender share a bubble, so cap messages rather than bubbles
-        conversation.trim(entity, 255);
-    } else if let Some(children) = maybe_children {
+    // nearby is capped by message count in trim_nearby_chat
+    if let Some(children) = maybe_children.filter(|_| chatbox.active_tab != "Nearby") {
         if children.len() > 255 {
             let mut iter = children.iter();
             for _ in 0..children.len() - 255 {
@@ -481,6 +483,57 @@ fn display_chat(
                 msgs.push(make_log(&mut commands, message));
             }
             commands.entity(entity).try_push_children(&msgs);
+        }
+    }
+}
+
+const MAX_NEARBY_MESSAGES: usize = 255;
+
+// consecutive messages from one sender share a bubble, so cap messages rather than bubbles.
+// despawns the oldest messages, and any bubbles left empty
+fn trim_nearby_chat(
+    mut commands: Commands,
+    chatbox: Query<(Entity, &ChatBox)>,
+    children: Query<&Children>,
+    bubbles: Query<&DuiEntities, With<ChatBubble>>,
+) {
+    let Ok((entity, chatbox)) = chatbox.single() else {
+        return;
+    };
+    if chatbox.active_tab != "Nearby" {
+        return;
+    }
+    let Ok(container_children) = children.get(entity) else {
+        return;
+    };
+
+    let bubble_messages = container_children
+        .iter()
+        .filter_map(|bubble| {
+            let content = bubbles.get(bubble).ok()?.get_named("content")?;
+            Some((bubble, children.get(content).ok()?))
+        })
+        .collect::<Vec<_>>();
+
+    let total = bubble_messages
+        .iter()
+        .map(|(_, messages)| messages.len())
+        .sum::<usize>();
+    let mut excess = total.saturating_sub(MAX_NEARBY_MESSAGES);
+
+    // each bubble is visited once, and the newest bubble is never fully removed
+    for (bubble, messages) in bubble_messages {
+        if excess == 0 {
+            break;
+        }
+        if excess >= messages.len() {
+            excess -= messages.len();
+            commands.entity(bubble).try_despawn();
+        } else {
+            for message in messages.iter().take(excess) {
+                commands.entity(message).try_despawn();
+            }
+            excess = 0;
         }
     }
 }
@@ -787,5 +840,77 @@ fn pipe_chats_from_scene(
             channel: "System".to_owned(),
             message: line.to_string(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ecs::system::RunSystemOnce;
+
+    use super::*;
+
+    fn setup(bubble_sizes: &[usize]) -> (World, Entity, Vec<Vec<Entity>>) {
+        let mut world = World::new();
+        let container = world
+            .spawn(ChatBox {
+                chat_log: RingBuffer::new(100, 100),
+                active_tab: "Nearby",
+                active_chat_sink: None,
+                active_log_sink: None,
+            })
+            .id();
+        let bubbles = bubble_sizes
+            .iter()
+            .map(|&count| {
+                let bubble = world.spawn(ChildOf(container)).id();
+                let content = world.spawn(ChildOf(bubble)).id();
+                let mut entities = DuiEntities::new(bubble);
+                entities.named_nodes.insert("content".to_owned(), content);
+                world
+                    .entity_mut(bubble)
+                    .insert((ChatBubble(None, Color::WHITE), entities));
+                (0..count)
+                    .map(|_| world.spawn(ChildOf(content)).id())
+                    .collect()
+            })
+            .collect();
+        (world, container, bubbles)
+    }
+
+    fn message_count(world: &World, messages: &[Entity]) -> usize {
+        messages
+            .iter()
+            .filter(|m| world.get_entity(**m).is_ok())
+            .count()
+    }
+
+    #[test]
+    fn trims_oldest_messages_within_a_single_bubble() {
+        let (mut world, _, bubbles) = setup(&[300]);
+        world.run_system_once(trim_nearby_chat).unwrap();
+
+        assert_eq!(message_count(&world, &bubbles[0]), MAX_NEARBY_MESSAGES);
+        assert!(world.get_entity(bubbles[0][44]).is_err());
+        assert!(world.get_entity(bubbles[0][45]).is_ok());
+    }
+
+    #[test]
+    fn despawns_emptied_bubbles_and_trims_the_next() {
+        let (mut world, container, bubbles) = setup(&[50, 250, 10]);
+        world.run_system_once(trim_nearby_chat).unwrap();
+
+        assert_eq!(world.get::<Children>(container).unwrap().len(), 2);
+        assert_eq!(message_count(&world, &bubbles[0]), 0);
+        assert_eq!(message_count(&world, &bubbles[1]), 245);
+        assert_eq!(message_count(&world, &bubbles[2]), 10);
+    }
+
+    #[test]
+    fn leaves_other_tabs_alone() {
+        let (mut world, container, bubbles) = setup(&[300]);
+        world.get_mut::<ChatBox>(container).unwrap().active_tab = "Scene Log";
+        world.run_system_once(trim_nearby_chat).unwrap();
+
+        assert_eq!(message_count(&world, &bubbles[0]), 300);
     }
 }
