@@ -83,9 +83,10 @@ publish()
   // Only these engine messages can trip the flood. A healthy session floods the console with benign
   // ERROR lines at exactly this rate — a 404 asset retried per frame by bevy_asset, comms "channel
   // closed" during startup — so an allowlist, not a denylist, is what keeps the modal off a working
-  // world. `captured wgpu error` is src/lib.rs's on_uncaptured_error handler: the device-level GPU
-  // fault that blanks the screen while the render loop keeps beating.
-  const FATAL_SIGNALS = ['captured wgpu error']
+  // world. `uncaptured wgpu error` is the render worker's on_uncaptured_error handler (bevy's
+  // web_worker module), mirrored to this console: the device-level GPU fault that blanks the screen
+  // while the render loop keeps beating.
+  const FATAL_SIGNALS = ['uncaptured wgpu error']
   // signature -> { count, since }. Per-signature counters (not a single last-seen key) so an identical
   // per-frame error still floods even when the loop interleaves it with a second error each frame.
   const floodCounts = new Map()

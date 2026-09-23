@@ -88,6 +88,11 @@ pub struct ClientOptions {
     #[arg(long, value_name = "bytes", help_heading = SETTINGS)]
     pub gpu_bytes_per_frame: Option<usize>,
 
+    /// Compute task-pool threads (on web, the workers the page spawns for it); absent = from the
+    /// core count
+    #[arg(long, value_name = "n", help_heading = SETTINGS)]
+    pub compute_threads: Option<usize>,
+
     /// Base url of the imposter store; absent = the default store. The realm-keyed path under
     /// it is the same as the default store's
     #[arg(long, value_name = "url", help_heading = SERVICES)]

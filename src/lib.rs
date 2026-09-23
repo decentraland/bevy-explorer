@@ -17,12 +17,9 @@ use avatar::AvatarPlugin;
 #[cfg(all(feature = "remote", not(target_arch = "wasm32")))]
 use bevy::remote::{http::RemoteHttpPlugin, RemotePlugin};
 #[cfg(not(target_arch = "wasm32"))]
+use bevy::window::{PresentMode, WindowResolution};
 use bevy::{
-    app::TaskPoolThreadAssignmentPolicy,
-    window::{PresentMode, WindowResolution},
-};
-use bevy::{
-    app::{PluginGroupBuilder, Propagate},
+    app::{PluginGroupBuilder, Propagate, TaskPoolThreadAssignmentPolicy},
     log::LogPlugin,
     prelude::*,
     render::view::RenderLayers,
@@ -30,7 +27,7 @@ use bevy::{
 #[cfg(target_arch = "wasm32")]
 use bevy::{
     asset::WasmLoaderHandle,
-    render::{render_resource::PipelineCompilationMode, renderer::RenderDevice, RenderPlugin},
+    render::{render_resource::PipelineCompilationMode, settings::RenderCreation, RenderPlugin},
 };
 #[cfg(not(debug_assertions))]
 use build_time::build_time_utc;
@@ -66,6 +63,8 @@ use scene_runner::{
     OutOfWorld, SceneRunnerPlugin,
 };
 use social::SocialPlugin;
+#[cfg(target_arch = "wasm32")]
+use std::sync::{Arc, Mutex};
 use system_api_types::{
     launch_options::{
         help_heading::{DEBUG, SETTINGS, SYSTEM_SCENES},
@@ -114,6 +113,10 @@ pub struct DecentralandAppConfig {
     pub crash_file: Option<PathBuf>,
     #[cfg(target_arch = "wasm32")]
     pub wasm_loader_handle: Option<WasmLoaderHandle>,
+    /// Workers the page created for the compute task pool (they join it from
+    /// `web::compute_worker_main`).
+    #[cfg(target_arch = "wasm32")]
+    pub compute_threads: usize,
 }
 
 impl DecentralandAppConfig {
@@ -122,6 +125,7 @@ impl DecentralandAppConfig {
         arguments: DecentralandArguments,
         #[cfg(not(target_arch = "wasm32"))] crash_file: Option<PathBuf>,
         #[cfg(target_arch = "wasm32")] wasm_loader_handle: Option<WasmLoaderHandle>,
+        #[cfg(target_arch = "wasm32")] compute_threads: usize,
     ) -> Self {
         update_app_config_from_arguments(&mut app_config, &arguments);
         app_config.migrate_inputs();
@@ -133,6 +137,8 @@ impl DecentralandAppConfig {
             crash_file,
             #[cfg(target_arch = "wasm32")]
             wasm_loader_handle,
+            #[cfg(target_arch = "wasm32")]
+            compute_threads,
         }
     }
 
@@ -630,15 +636,7 @@ fn setup(
     mut cam_resource: ResMut<PrimaryCameraRes>,
     config: Res<AppConfig>,
     boot_location: Res<BootLocation>,
-    #[cfg(target_arch = "wasm32")] render_device: ResMut<RenderDevice>,
 ) {
-    #[cfg(target_arch = "wasm32")]
-    render_device
-        .wgpu_device()
-        .on_uncaptured_error(Box::new(|e: wgpu::Error| {
-            error!("captured wgpu error: {e:?}")
-        }));
-
     info!("main::setup");
     // create the main player
     let player_id = commands
@@ -734,6 +732,7 @@ fn update_app_config_from_arguments(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> PluginGroupBuilder {
+    let compute_threads = decentraland_app_config.arguments.client.compute_threads;
     DefaultPlugins
         .set(TaskPoolPlugin {
             task_pool_options: TaskPoolOptions {
@@ -752,8 +751,8 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
                     on_thread_destroy: None,
                 },
                 compute: TaskPoolThreadAssignmentPolicy {
-                    min_threads: 2,
-                    max_threads: 8,
+                    min_threads: compute_threads.unwrap_or(2),
+                    max_threads: compute_threads.unwrap_or(8),
                     percent: 0.25,
                     on_thread_spawn: None,
                     on_thread_destroy: None,
@@ -801,8 +800,29 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
 
 #[cfg(target_arch = "wasm32")]
 fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> PluginGroupBuilder {
+    // Only the compute pool has real threads on the web (the page's compute workers); the io and
+    // async compute pools run their tasks on the engine worker's event loop, so one nominal
+    // thread each.
+    let fixed = |n: usize| TaskPoolThreadAssignmentPolicy {
+        min_threads: n,
+        max_threads: n,
+        percent: 1.0,
+        on_thread_spawn: None,
+        on_thread_destroy: None,
+    };
+    let compute_threads = decentraland_app_config.compute_threads.max(1);
     DefaultPlugins
+        .set(TaskPoolPlugin {
+            task_pool_options: TaskPoolOptions {
+                min_total_threads: compute_threads + 2,
+                max_total_threads: compute_threads + 2,
+                io: fixed(1),
+                async_compute: fixed(1),
+                compute: fixed(compute_threads),
+            },
+        })
         .set(RenderPlugin {
+            render_creation: RenderCreation::WebWorker,
             pipeline_compilation_mode: PipelineCompilationMode::async_with_handler(PipelineHandler),
             ..default()
         })

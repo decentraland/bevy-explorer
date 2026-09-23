@@ -305,6 +305,8 @@ web-sys = { version = "0.3", features = [
   "WebTransportSendStream",
   "WebTransportDatagramDuplexStream",
   "WebTransportCloseInfo",
+  # the engine/render worker split (src/web.rs)
+  "OffscreenCanvas",
 ] }
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
@@ -391,11 +393,15 @@ mimalloc = { workspace = true }
 cef_offscreen = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+# parking_lot only parks with Atomics.wait (instead of panicking on contention) behind its
+# `nightly` feature; bevy_asset's locks are contended once systems run on the compute workers.
+parking_lot = { version = "0.12", features = ["nightly"] }
 av = { workspace = true, features = ["html"] }
 bevy = { workspace = true, features = [
   "webgpu",
   "wasm_threaded_asset_loader",
   "reduce_image_sizes",
+  "web-worker",
 ] }
 uuid = { workspace = true, features = ["js"] }
 dcl_wasm = { workspace = true }

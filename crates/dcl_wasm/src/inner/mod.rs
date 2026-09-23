@@ -108,8 +108,10 @@ pub fn spawn_scene(
 
 use wasm_bindgen::prelude::*;
 
-// This block imports the global JS function we defined in main.js
-#[wasm_bindgen(js_namespace = window)]
+// The page functions the engine's host script defines (engine.js), relayed to the page when the
+// engine runs on a worker (bevy::web_worker).
+#[bevy::web_worker::page_functions]
+#[wasm_bindgen(js_namespace = self)]
 extern "C" {
     #[wasm_bindgen(js_name = spawn_and_init_sandbox)]
     async fn spawn_and_init_sandbox();

@@ -12,7 +12,7 @@ use bevy::{
         render_resource::{
             AsBindGroup, Extent3d, ShaderRef, TextureDimension, TextureFormat, TextureUsages,
         },
-        renderer::RenderDevice,
+        renderer::RenderCapabilities,
         view::RenderLayers,
     },
     transform::TransformSystem,
@@ -262,7 +262,7 @@ pub fn update_worldui_materials(
     mut images: ResMut<Assets<Image>>,
     mut cameras: Query<(&mut Camera, &mut Projection, &WorldUiRenderTarget)>,
     frame: Res<FrameCount>,
-    render_device: Res<RenderDevice>,
+    render_device: Res<RenderCapabilities>,
     mut prev_changed_targets: Local<HashSet<AssetId<Image>>>,
 ) {
     let mut changed_targets = std::mem::take(&mut *prev_changed_targets);

@@ -130,7 +130,7 @@ function createJsContext(wasmApi, context) {
   // CacheStorage is the last same-origin store the sandbox could see — it holds the ipfs fetch
   // cache (`ipfs-path-cache-v1`), so a scene could read every asset the client has pulled and, more
   // to the point, write to keys the loader later serves. Its users are elsewhere:
-  // image_processing/src/processor/wasm_fs.rs runs under asset_processor.js, which engine.js spawns
+  // image_processing/src/processor/wasm_fs.rs runs on the asset processor worker, which engine.js spawns
   // as its own worker, and service_worker.js is a different context entirely.
   deleteFromPrototypeChain(self, "caches");
 

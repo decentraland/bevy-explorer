@@ -1,11 +1,53 @@
 // Engine logic - ES module
 // Handles WASM/WebGPU initialization and game execution
 
-import init, { engine_init, engine_run, engine_console_command, engine_home_scene, gpu_cache_hash } from "./pkg/webgpu_build.js";
+import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, gpu_cache_hash } from "./pkg/webgpu_build.js";
 import { initGpuCache } from "./gpu_cache.js";
 
 // Re-export for main.js
 export { engine_home_scene, gpu_cache_hash, initGpuCache };
+
+// The compiled engine module and its shared memory: every worker (asset loader/processor, scene
+// sandboxes, and the engine + render workers started by start()) instantiates the same module on
+// the same memory.
+let compiledModule = null;
+let sharedMemory = null;
+
+/**
+ * Logs the app-level messages of a worker (bevy's own relay handles the workers' console
+ * mirroring and page calls).
+ * @param {string} name - worker name for logging
+ * @returns {(e: MessageEvent) => void}
+ */
+function workerMessageHandler(name) {
+  return (e) => {
+    const data = e.data;
+    if (!data) return;
+    if (data.__bevy_ready !== undefined) console.log(`[Main JS] ${name} worker ready`);
+    else if (data.type) console.log(`[Main JS] ${name} worker: ${data.type}`);
+  };
+}
+
+/** The url of this module's wasm-bindgen glue, for bevy's workers to import. */
+const glueUrl = new URL("./pkg/webgpu_build.js", import.meta.url).href;
+
+/**
+ * Resolves once a worker bevy spawned has run its entry (it posts `__bevy_ready`), or rejects if
+ * it failed to (`__bevy_ready` with an `error`).
+ * @param {Worker} worker
+ * @returns {Promise<void>}
+ */
+function workerReady(worker) {
+  return new Promise((resolve, reject) => {
+    const onReady = (e) => {
+      if (e.data?.__bevy_ready === undefined) return;
+      worker.removeEventListener("message", onReady);
+      if (e.data.error !== undefined) reject(new Error(e.data.error));
+      else resolve();
+    };
+    worker.addEventListener("message", onReady);
+  });
+}
 
 /**
  * Records an uncaught worker error as context for the crash watchdog. A worker
@@ -159,7 +201,7 @@ export async function initEngine() {
   // so the 'compile' step only covers the tail left after the last byte arrives.
   setLoadingStepActive('download');
   console.time("compileTime")
-  const compiledModule = await compileWasmWithProgress(
+  compiledModule = await compileWasmWithProgress(
     wasmUrl,
     expectedWasmSize,
     (percent) => setLoadingStepProgress('download', percent),
@@ -173,7 +215,7 @@ export async function initEngine() {
 
   const initialMemoryPages = 1280; // setting initial memory high causes malloc failures
   const maximumMemoryPages = 65536;
-  const sharedMemory = new WebAssembly.Memory({
+  sharedMemory = new WebAssembly.Memory({
     initial: initialMemoryPages,
     maximum: maximumMemoryPages,
     shared: true,
@@ -442,49 +484,16 @@ export async function initEngine() {
   setLoadingStepActive('workers');
   setLoadingStepProgress('workers', 0);
 
-  // start asset loader thread
-  await new Promise((resolve, _reject) => {
-    const assetLoaderPath = new URL("./asset_loader.js", import.meta.url);
-
-    const assetLoader = new Worker(assetLoaderPath, { type: "module" });
-    assetLoader.onerror = workerCrashHandler("asset loader");
-    // Unprompted, as for the sandbox above.
-    assetLoader.postMessage({
-      type: "INIT_ASSET_LOADER",
-      payload: {
-        compiledModule,
-        sharedMemory,
-      },
-    });
-    assetLoader.onmessage = (workerEvent) => {
-      if (workerEvent.data.type === "INITIALIZED") {
-        assetLoader.onmessage = null;
-        resolve();
-      }
-    };
-  });
+  // The asset loader and processor threads: workers of ours, spawned on bevy's terms
+  // (src/web.rs init_asset_load_thread / image_processor_main).
+  const assetLoader = engine_spawn_worker(glueUrl, "init_asset_load_thread", "asset loader");
+  assetLoader.onerror = workerCrashHandler("asset loader");
+  await workerReady(assetLoader);
   setLoadingStepProgress('workers', 50);
 
-  // start asset processor thread
-  await new Promise((resolve, _reject) => {
-    const assetProcessorPath = new URL("./asset_processor.js", import.meta.url);
-
-    const assetProcessor = new Worker(assetProcessorPath, { type: "module" });
-    assetProcessor.onerror = workerCrashHandler("asset processor");
-    assetProcessor.postMessage({
-      type: "INIT_ASSET_PROCESSOR",
-      payload: {
-        compiledModule,
-        sharedMemory,
-      },
-    });
-    assetProcessor.onmessage = (workerEvent) => {
-      if (workerEvent.data.type === "INITIALIZED") {
-        assetProcessor.onmessage = null;
-        resolve();
-      }
-    };
-  });
+  const assetProcessor = engine_spawn_worker(glueUrl, "image_processor_main", "asset processor");
+  assetProcessor.onerror = workerCrashHandler("asset processor");
+  await workerReady(assetProcessor);
   setLoadingStepCompleted('workers');
 }
 
@@ -569,9 +578,33 @@ export function start(options = {}) {
     delete window._buildEngineApi;
   };
 
+  // The engine runs off the page: winit's DOM side stays here on the canvas, the app world runs
+  // on an engine worker, the render world on a render worker that owns the canvas as an
+  // OffscreenCanvas, and the ComputeTaskPool's systems on compute workers (bevy::web_worker,
+  // src/web.rs engine_start), as many as the `computeThreads` launch option says, else sized
+  // from the core count there.
+  const canvas = document.getElementById("mygame-canvas");
   // Everything the host handed us goes through as-is (the engine rejects unknown keys).
-  engine_run(options);
-  window.engine_console_command = engine_console_command;
+  const { engine: engineWorker, render: renderWorker, compute: computeWorkers } = engine_start(
+    canvas,
+    options,
+    glueUrl
+  );
+  console.log(`[Main JS] compute workers: ${computeWorkers.length}`);
+  renderWorker.onerror = workerCrashHandler("render");
+  renderWorker.addEventListener("message", workerMessageHandler("render"));
+  computeWorkers.forEach((worker, i) => {
+    worker.onerror = workerCrashHandler(`compute ${i}`);
+    worker.addEventListener("message", workerMessageHandler(`compute ${i}`));
+  });
+  engineWorker.onerror = workerCrashHandler("engine");
+  engineWorker.addEventListener("message", workerMessageHandler("engine"));
+  // The console RPC is the host's "engine is up" signal (engineRpc.ts ready()); the engine
+  // worker is ready once engine_run has returned, having wired the command channel.
+  workerReady(engineWorker).then(() => {
+    window.engine_console_command = engine_console_command;
+  });
+
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {
       const s = document.createElement('script');

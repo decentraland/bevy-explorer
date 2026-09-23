@@ -19,7 +19,6 @@ use futures_util::{
 };
 use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
-use wasm_bindgen_futures::spawn_local;
 use ws_stream_wasm::{WsMessage, WsMeta, WsStream};
 pub struct WebSocket {
     _meta: WsMeta,
@@ -143,22 +142,25 @@ pub fn write_config_file<T: Serialize + Clone + 'static>(config: &T) {
     use futures_lite::io::AsyncWriteExt;
     let config = config.clone();
 
-    spawn_local(async move {
-        let mut f = match web_fs::File::create("config.json").await {
-            Ok(f) => f,
-            Err(e) => {
-                warn!("couldn't create config file: {e:?}");
-                return;
-            }
-        };
+    // Systems may run on a compute worker; the io pool drives this on the engine worker's event loop.
+    bevy::tasks::IoTaskPool::get()
+        .spawn(async move {
+            let mut f = match web_fs::File::create("config.json").await {
+                Ok(f) => f,
+                Err(e) => {
+                    warn!("couldn't create config file: {e:?}");
+                    return;
+                }
+            };
 
-        if let Err(e) = f
-            .write_all(serde_json::to_string(&config).unwrap().as_bytes())
-            .await
-        {
-            warn!("couldn't write config file: {e:?}");
-        }
-    })
+            if let Err(e) = f
+                .write_all(serde_json::to_string(&config).unwrap().as_bytes())
+                .await
+            {
+                warn!("couldn't write config file: {e:?}");
+            }
+        })
+        .detach();
 }
 
 #[derive(Default)]
