@@ -10,8 +10,7 @@ use bevy::{
         primitives::Aabb,
         render_asset::RenderAssetUsages,
         render_resource::{
-            AsBindGroup, Extent3d, ShaderDefVal, ShaderRef, TextureDimension, TextureFormat,
-            TextureUsages,
+            AsBindGroup, Extent3d, ShaderRef, TextureDimension, TextureFormat, TextureUsages,
         },
         renderer::RenderDevice,
         view::RenderLayers,
@@ -21,10 +20,7 @@ use bevy::{
 };
 use boimp::bake::{ImposterBakeMaterialExtension, STANDARD_BAKE_HANDLE};
 use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
-use scene_material::{
-    BoundRegion, MaterialExtPlugin, SceneBound, SceneMaterial,
-    SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG,
-};
+use scene_material::{BoundRegion, MaterialExtPlugin, SceneBound, SceneMaterial};
 
 pub struct WorldUiPlugin;
 
