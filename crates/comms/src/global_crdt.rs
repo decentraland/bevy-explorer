@@ -616,10 +616,24 @@ pub struct RemoteAnimState {
 }
 
 impl RemoteAnimState {
-    /// Drop state for players that no longer exist.
-    fn retain_players(&mut self, is_live: impl Fn(Entity) -> bool) {
-        self.cache.retain(|e, _| is_live(*e));
-        self.last_sequence.retain(|e, _| is_live(*e));
+    /// Drop state for players that no longer exist. Keys are only ever live players when
+    /// inserted, so a map can only hold stale keys worth scanning for once it outgrows the
+    /// live player count; below that it is left alone, keeping the per-frame cost O(1).
+    fn prune_players(&mut self, live_players: usize, is_live: impl Fn(Entity) -> bool) {
+        prune_player_map(&mut self.cache, live_players, &is_live);
+        prune_player_map(&mut self.last_sequence, live_players, &is_live);
+    }
+}
+
+/// Retain only live players' entries in `map`, but only once it holds more entries than there
+/// are live players (see [`RemoteAnimState::prune_players`]).
+fn prune_player_map<V>(
+    map: &mut HashMap<Entity, V>,
+    live_players: usize,
+    is_live: impl Fn(Entity) -> bool,
+) {
+    if map.len() > live_players {
+        map.retain(|e, _| is_live(*e));
     }
 }
 
@@ -741,9 +755,12 @@ pub fn process_transport_updates(
     string_senders.retain(|_, s| !s.is_closed());
     binary_senders.retain(|_, s| !s.is_closed());
 
-    // forget per-player state for players despawned since the last run
-    duplicate_chat_filter.retain(|e, _| players.contains(*e));
-    remote_anim.retain_players(|e| players.contains(e));
+    // forget per-player state for despawned players (cheap unless a map outgrew the live set)
+    let live_players = players.iter().len();
+    prune_player_map(&mut duplicate_chat_filter, live_players, |e| {
+        players.contains(e)
+    });
+    remote_anim.prune_players(live_players, |e| players.contains(e));
 
     // each context is fully independent: its own transports feed it, its own player
     // entities live in it, and only its own scenes observe it
@@ -1433,8 +1450,11 @@ mod tests {
             );
         }
 
+        // no scan while the maps don't outnumber the live players
+        state.prune_players(2, |_| panic!("should not scan"));
+
         world.despawn(gone);
-        state.retain_players(|e| world.get_entity(e).is_ok());
+        state.prune_players(1, |e| world.get_entity(e).is_ok());
 
         assert!(state.cache.contains_key(&live));
         assert!(state.last_sequence.contains_key(&live));
