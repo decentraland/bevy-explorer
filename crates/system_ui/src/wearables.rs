@@ -883,6 +883,34 @@ pub enum WearableItemState {
     PendingImage(Handle<Image>),
 }
 
+/// Replaces a pending item with the empty placeholder once its metadata is known to be
+/// unavailable (missing or failed), so it doesn't stay pending forever.
+fn spawn_failed_item(
+    commands: &mut Commands,
+    dui: &DuiRegistry,
+    ipfas: &IpfsAssetServer,
+    ent: Entity,
+    entry: &WearableEntry,
+) {
+    commands
+        .entity(ent)
+        .despawn_related::<Children>()
+        .remove::<WearableItemState>()
+        .spawn_template(
+            dui,
+            "wearable-item",
+            DuiProps::new()
+                .with_prop(
+                    "img",
+                    ipfas
+                        .asset_server()
+                        .load::<Image>("embedded://images/backback/empty.png"),
+                )
+                .with_prop("rarity-color", entry.rarity.color()),
+        )
+        .unwrap();
+}
+
 #[allow(clippy::too_many_arguments)]
 fn update_wearable_item(
     mut commands: Commands,
@@ -931,33 +959,23 @@ fn update_wearable_item(
                             commands.entity(button_bg).try_insert(Enabled(fits));
                         }
                         Err(CollectibleError::Loading) => (),
-                        other => {
+                        Err(other) => {
                             warn!("failed to load wearable: {other:?}");
-                            commands
-                                .entity(ent)
-                                .despawn_related::<Children>()
-                                .remove::<WearableItemState>()
-                                .spawn_template(
-                                    &dui,
-                                    "wearable-item",
-                                    DuiProps::new()
-                                        .with_prop(
-                                            "img",
-                                            ipfas.asset_server().load::<Image>(
-                                                "embedded://images/backback/empty.png",
-                                            ),
-                                        )
-                                        .with_prop("rarity-color", entry.rarity.color()),
-                                )
-                                .unwrap();
+                            spawn_failed_item(&mut commands, &dui, &ipfas, ent, entry);
                         }
                     }
                 }
                 WearableItemState::PendingImage(handle) => {
-                    let Ok(data) = wearable_loader.get_data(urn.base()) else {
+                    let data = match wearable_loader.get_data(urn.base()) {
+                        Ok(data) => data,
                         // the meta can be evicted while we are paused (tab hidden); the call
                         // above re-requests it, retry next frame
-                        continue;
+                        Err(CollectibleError::Loading) => continue,
+                        Err(other) => {
+                            warn!("failed to load wearable: {other:?}");
+                            spawn_failed_item(&mut commands, &dui, &ipfas, ent, entry);
+                            continue;
+                        }
                     };
 
                     let fits = entry.category == WearableCategory::BODY_SHAPE
