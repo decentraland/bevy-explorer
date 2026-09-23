@@ -557,6 +557,15 @@ fn lifecycle_cleans_dead_entities_from_crdt_store() {
             id,
             Some(&mut DclReader::new(&make_reparent_buffer(0))),
         );
+        // grow-only entries are kept per entity too
+        for _ in 0..2 {
+            context.crdt_store.force_update(
+                SceneComponentId::POINTER_RESULT,
+                CrdtType::GO_ENT,
+                id,
+                Some(&mut DclReader::new(&[1, 2, 3])),
+            );
+        }
     }
     context.death_row.insert(dead);
     world.spawn((context, DeletedSceneEntities::default()));
@@ -577,6 +586,14 @@ fn lifecycle_cleans_dead_entities_from_crdt_store() {
     assert!(!lww.last_write.contains_key(&dead));
     assert!(!lww.updates.contains(&dead));
     assert!(lww.last_write.contains_key(&live));
+
+    let go = context
+        .crdt_store
+        .go
+        .get(&SceneComponentId::POINTER_RESULT)
+        .unwrap();
+    assert!(!go.0.contains_key(&dead));
+    assert_eq!(go.0.get(&live).map(|entries| entries.len()), Some(2));
 }
 
 #[test]
