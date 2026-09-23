@@ -3,7 +3,10 @@ use bevy::log::{debug, info, trace};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::Packet;
 use kira::tween::Tween;
-use std::time::{Duration, Instant};
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
 use tokio::sync::mpsc::error::TryRecvError;
 
 use crate::{
@@ -94,6 +97,8 @@ pub fn process_streams(
     };
 
     let mut tick = 0;
+    // commands received while buffering, handled once buffering is done
+    let mut deferred = VecDeque::new();
 
     loop {
         trace!("Process stream");
@@ -109,9 +114,17 @@ pub fn process_streams(
             update_state(VideoState::VsBuffering, streams);
             while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
                 // stop if the player went away while we were waiting on the input
-                if commands.is_closed() || streams.iter().all(|ctx| !ctx.is_live()) {
+                if streams.iter().all(|ctx| !ctx.is_live()) {
                     trace!("Player dropped while buffering.");
                     return Ok(());
+                }
+                match commands.try_recv() {
+                    Ok(AVCommand::Dispose) | Err(TryRecvError::Disconnected) => {
+                        trace!("Disposed while buffering.");
+                        return Ok(());
+                    }
+                    Ok(cmd) => deferred.push_back(cmd),
+                    Err(TryRecvError::Empty) => (),
                 }
                 if let Some((stream_index, packet)) = input_context.blocking_next() {
                     for stream in streams.iter_mut() {
@@ -149,7 +162,9 @@ pub fn process_streams(
             }
         }
 
-        let cmd = if start_instant.is_some() {
+        let cmd = if let Some(cmd) = deferred.pop_front() {
+            Ok(cmd)
+        } else if start_instant.is_some() {
             commands.try_recv()
         } else {
             trace!("Blocking on command channel.");
@@ -312,6 +327,15 @@ mod tests {
         }
         fn update_state(&self, _state: VideoState) {}
         fn clear(&mut self) {}
+    }
+
+    #[test]
+    fn buffering_exits_on_dispose_with_open_channel() {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        sender.send(AVCommand::Dispose).unwrap();
+        let mut stream = EmptyStream;
+        process_streams(StuckInput, &mut [&mut stream], receiver).unwrap();
+        drop(sender);
     }
 
     #[test]
