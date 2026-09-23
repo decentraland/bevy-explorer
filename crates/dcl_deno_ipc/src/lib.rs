@@ -344,8 +344,8 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
                     let mut ctx = ctx.borrow_mut();
                     let ctx = ctx.as_mut().unwrap();
 
-                    if let Some(token) = ctx.ipc_channel_registry.remove(&id) {
-                        token.cancel();
+                    if let Some(lease) = ctx.ipc_channel_registry.remove(&id) {
+                        lease.token.cancel();
                     }
                 })
             }

@@ -141,3 +141,75 @@ fn dropping_the_receiver_early_still_notifies_the_engine() {
     SCENE_IPC_CONTEXT.with_borrow(|ctx| assert!(ctx.as_ref().unwrap().registry.contains_key(&id)));
     assert_eq!(bridge.close_watchers(), 0);
 }
+
+#[test]
+fn a_sender_serialized_twice_is_released_only_after_both_remotes_drop() {
+    let mut bridge = Bridge::new();
+    let _guard = bridge.rt.enter();
+
+    let (sender, mut receiver) = RpcStreamSender::<u32>::channel();
+    let first_bytes = rmp_encode(&sender).unwrap();
+    let second_bytes = rmp_encode(&sender).unwrap();
+    assert_eq!(first_bytes, second_bytes);
+    let first: RpcStreamSender<u32> = rmp_serde::from_slice(&first_bytes).unwrap();
+    let second: RpcStreamSender<u32> = rmp_serde::from_slice(&second_bytes).unwrap();
+    assert_eq!(bridge.scene_endpoints(), 1);
+    assert_eq!(bridge.engine_tokens(), 1);
+    assert_eq!(bridge.close_watchers(), 1);
+
+    drop(first);
+    bridge.settle();
+    bridge.route_to_scene();
+    bridge.settle();
+
+    assert_eq!(bridge.scene_endpoints(), 1);
+    assert_eq!(bridge.engine_tokens(), 1);
+    assert_eq!(bridge.close_watchers(), 1);
+
+    second.send(5).unwrap();
+    bridge.route_to_scene();
+    assert_eq!(receiver.try_recv().unwrap(), 5);
+
+    drop(second);
+    bridge.settle();
+    bridge.route_to_scene();
+    bridge.settle();
+
+    assert_eq!(bridge.scene_endpoints(), 0);
+    assert_eq!(bridge.engine_tokens(), 0);
+    assert_eq!(bridge.close_watchers(), 0);
+}
+
+#[test]
+fn dropping_the_receiver_early_closes_every_remote_of_a_sender_serialized_twice() {
+    let mut bridge = Bridge::new();
+    let _guard = bridge.rt.enter();
+
+    let (sender, receiver) = RpcStreamSender::<u32>::channel();
+    let first: RpcStreamSender<u32> = rmp_serde::from_slice(&rmp_encode(&sender).unwrap()).unwrap();
+    let second: RpcStreamSender<u32> =
+        rmp_serde::from_slice(&rmp_encode(&sender).unwrap()).unwrap();
+
+    drop(receiver);
+    bridge.settle();
+
+    // deliver the close the way the scene host and the engine do
+    let id = bridge.close_rx.try_recv().unwrap();
+    SCENE_IPC_CONTEXT.with_borrow_mut(|ctx| ctx.as_mut().unwrap().registry.remove(&id));
+    ENGINE_IPC_CONTEXT.with_borrow_mut(|ctx| {
+        if let Some(lease) = ctx.as_mut().unwrap().ipc_channel_registry.remove(&id) {
+            lease.token.cancel();
+        }
+    });
+
+    assert!(first.is_closed());
+    assert!(second.is_closed());
+    assert!(second.send(1).is_err());
+
+    drop(first);
+    drop(second);
+    bridge.settle();
+
+    assert_eq!(bridge.engine_tokens(), 0);
+    assert!(bridge.router_rx.try_recv().is_err());
+}

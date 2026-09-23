@@ -88,25 +88,50 @@ pub(crate) fn ipc_router(
         let mut ctx = cell.borrow_mut();
         let ctx = ctx.as_mut().unwrap();
 
-        let token = CancellationToken::new();
-        ctx.ipc_channel_registry.insert(id, token.clone());
-        (ctx.ipc_router.clone(), token)
+        // a local sender serialized more than once reuses its id, so every deserialization
+        // of that id shares one token and takes a lease on the entry
+        let lease = ctx
+            .ipc_channel_registry
+            .entry(id)
+            .and_modify(|lease| lease.count += 1)
+            .or_insert_with(|| IpcChannelLease {
+                token: CancellationToken::new(),
+                count: 1,
+            });
+        (ctx.ipc_router.clone(), lease.token.clone())
     })
 }
 
-// called once the last engine-side sender for `id` is dropped. the scene host doesn't
-// echo the close back, so drop the receiver-dropped token here rather than waiting for a
-// message that never comes
+// called once all clones of one deserialized engine-side sender for `id` are dropped. only
+// the last lease on the id releases the entry and closes the scene-side endpoint; the scene
+// host doesn't echo the close back, so drop the entry here rather than waiting for a
+// message that never comes. if the scene already closed the channel the entry is gone and
+// the scene endpoint with it, so there is nothing left to notify
 pub(crate) fn ipc_router_close(
     id: u64,
     router: &tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>,
 ) {
-    let _ = ENGINE_IPC_CONTEXT.try_with(|cell| {
-        if let Some(ctx) = cell.borrow_mut().as_mut() {
-            ctx.ipc_channel_registry.remove(&id);
-        }
-    });
-    let _ = router.send((id, IpcMessage::Closed));
+    let released = ENGINE_IPC_CONTEXT
+        .try_with(|cell| {
+            let mut ctx = cell.borrow_mut();
+            let Some(ctx) = ctx.as_mut() else {
+                return true;
+            };
+            let Some(lease) = ctx.ipc_channel_registry.get_mut(&id) else {
+                return false;
+            };
+            lease.count -= 1;
+            if lease.count == 0 {
+                ctx.ipc_channel_registry.remove(&id);
+                true
+            } else {
+                false
+            }
+        })
+        .unwrap_or(true);
+    if released {
+        let _ = router.send((id, IpcMessage::Closed));
+    }
 }
 
 pub struct RequestContext {
@@ -115,8 +140,16 @@ pub struct RequestContext {
     pub next_id: u64,
 }
 
+// one entry per remote channel id: the token cancelled when the scene-side receiver is
+// dropped, shared by every engine-side sender deserialized from that id, and the number of
+// those senders still alive
+pub struct IpcChannelLease {
+    pub token: CancellationToken,
+    pub count: usize,
+}
+
 pub struct ResponseContext {
-    pub ipc_channel_registry: HashMap<u64, CancellationToken>,
+    pub ipc_channel_registry: HashMap<u64, IpcChannelLease>,
     pub ipc_router: tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>,
 }
 
