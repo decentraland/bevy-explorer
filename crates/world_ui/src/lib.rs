@@ -380,21 +380,6 @@ impl MaterialExtension for TextQuad {
     fn prepass_vertex_shader() -> ShaderRef {
         ShaderRef::Path("embedded://shaders/text_quad_vertex.wgsl".into())
     }
-
-    fn specialize(
-        _: &bevy::pbr::MaterialExtensionPipeline,
-        descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        _: &bevy::render::mesh::MeshVertexBufferLayoutRef,
-        _: bevy::pbr::MaterialExtensionKey<Self>,
-    ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
-        if let Some(fragment) = descriptor.fragment.as_mut() {
-            fragment.shader_defs.push(ShaderDefVal::UInt(
-                "SHOW_OUTSIDE_BOUNDS_MESH_TAG".to_owned(),
-                SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG,
-            ));
-        }
-        Ok(())
-    }
 }
 
 impl ImposterBakeMaterialExtension for TextQuad {
