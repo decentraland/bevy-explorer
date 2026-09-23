@@ -5,6 +5,7 @@ use std::{
     collections::BTreeMap,
     f32::consts::{PI, TAU},
     hash::{Hash, Hasher},
+    time::Duration,
 };
 
 use bevy::{
@@ -20,6 +21,7 @@ use bevy::{
         view::NoFrustumCulling,
     },
     scene::{scene_spawner_system, InstanceId},
+    time::common_conditions::on_timer,
     transform::TransformSystem,
 };
 use common::{
@@ -189,6 +191,10 @@ impl Plugin for GltfDefinitionPlugin {
                 .before(update_gltf),
         );
         app.add_systems(Update, maintain_gltf_name_cache);
+        app.add_systems(
+            Update,
+            prune_resource_lookups.run_if(on_timer(Duration::from_secs(5))),
+        );
         app.add_systems(SpawnScene, update_ready_gltfs.after(scene_spawner_system));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
         app.add_systems(
@@ -555,6 +561,19 @@ impl SceneResourceLookup {
         self.mesh_hashes_by_id.retain(|id, _| meshes.contains(*id));
         self.materials
             .retain(|base, bound| base_mats.contains(*base) && bound_mats.contains(*bound));
+    }
+}
+
+// assets are freed a frame or more after their last user goes away, so also prune
+// periodically rather than only when a gltf becomes ready
+fn prune_resource_lookups(
+    mut lookups: Query<&mut SceneResourceLookup>,
+    meshes: Res<Assets<Mesh>>,
+    base_mats: Res<Assets<StandardMaterial>>,
+    bound_mats: Res<Assets<SceneMaterial>>,
+) {
+    for mut lookup in lookups.iter_mut() {
+        lookup.prune(&meshes, &base_mats, &bound_mats);
     }
 }
 
@@ -2305,7 +2324,7 @@ fn update_gltf_linked_visibility(
 #[cfg(test)]
 mod test {
     use super::*;
-    use bevy::render::mesh::PrimitiveTopology;
+    use bevy::{ecs::system::RunSystemOnce, render::mesh::PrimitiveTopology};
     use scene_material::SceneMaterialExt;
 
     #[test]
@@ -2357,5 +2376,44 @@ mod test {
         assert_eq!(lookup.mesh_hashes_by_id.len(), 2);
         assert_eq!(lookup.materials.len(), 1);
         assert_eq!(lookup.materials.get(&live.1.id()), Some(&live.2.id()));
+    }
+
+    #[test]
+    fn prune_resource_lookups_system_prunes_idle_scenes() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<Assets<SceneMaterial>>();
+
+        // a scene whose last gltf has gone: no gltf will become ready to trigger a prune
+        let mut lookup = SceneResourceLookup::default();
+        let freed = app
+            .world_mut()
+            .resource_mut::<Assets<Mesh>>()
+            .add(Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::default(),
+            ))
+            .id();
+        app.world_mut().resource_mut::<Assets<Mesh>>().remove(freed);
+        lookup.mesh_hashes_by_id.insert(freed, 1);
+        lookup.meshes_by_hash.insert(
+            1,
+            CachedMeshData {
+                mesh_id: freed,
+                is_skinned: true,
+                shape: SharedShape::ball(0.01),
+                maybe_collider: Some(Handle::default()),
+            },
+        );
+        let scene = app.world_mut().spawn(lookup).id();
+
+        app.world_mut()
+            .run_system_once(prune_resource_lookups)
+            .unwrap();
+
+        let lookup = app.world().get::<SceneResourceLookup>(scene).unwrap();
+        assert!(lookup.meshes_by_hash.is_empty());
+        assert!(lookup.mesh_hashes_by_id.is_empty());
     }
 }
