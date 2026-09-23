@@ -97,6 +97,12 @@ pub fn media_host_main(render_worker: web_sys::Worker) {
     media::html::host::media_host_main(render_worker);
 }
 
+/// Page: starts the WebAudio host for scene audio sources. Before the engine worker starts.
+#[wasm_bindgen]
+pub fn audio_host_main() {
+    av::audio_host_wasm::audio_host_main();
+}
+
 /// call from a separate worker to initialize a channel for asset load processing
 #[wasm_bindgen]
 pub fn init_asset_load_thread() {

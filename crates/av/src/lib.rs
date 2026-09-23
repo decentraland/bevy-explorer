@@ -8,6 +8,8 @@ pub mod audio_sink;
 pub mod video_stream;
 
 // audio source (non-streaming audio)
+#[cfg(feature = "html")]
+pub mod audio_host_wasm;
 pub mod audio_loader;
 pub mod audio_source;
 #[cfg(not(feature = "html"))]

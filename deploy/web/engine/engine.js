@@ -1,7 +1,7 @@
 // Engine logic - ES module
 // Handles WASM/WebGPU initialization and game execution
 
-import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, gpu_cache_hash, report_pointer_lock, media_host_main } from "./pkg/webgpu_build.js";
+import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, gpu_cache_hash, report_pointer_lock, media_host_main, audio_host_main } from "./pkg/webgpu_build.js";
 import { initGpuCache } from "./gpu_cache.js";
 
 // Re-export for main.js
@@ -622,6 +622,8 @@ export function start(options = {}) {
   // engine drives it over channels and the page transfers decoded frames to the render worker
   // (crates/media/src/html).
   media_host_main(renderWorker);
+  // Scene audio sources: the WebAudio graphs live here too (crates/av/src/audio_host_wasm.rs).
+  audio_host_main();
 
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {
