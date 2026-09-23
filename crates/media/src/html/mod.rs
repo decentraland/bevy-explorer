@@ -1,362 +1,162 @@
+//! Html media on the web: the page owns the `<video>` elements (the engine runs on a worker,
+//! which has no DOM) and plays the engine's av sources in them ([`host`]). The engine drives
+//! them with the [`AVCommand`]s and [`VideoData`] native's ffmpeg thread takes and reports
+//! ([`spawn_av`]); commands go engine → page and state comes back over `futures_channel`
+//! (lock-free: the page must never block). Decoded frames never touch the engine: the page
+//! transfers each `VideoFrame` straight to the render worker, tagged with the media id, and the
+//! render world copies it into the media's target image, sized to the frame
+//! ([`plugin::HtmlMediaPlugin`]); the engine only learns the frame's time and size.
+
+pub mod host;
 pub mod plugin;
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex, atomic::AtomicU32},
+use std::sync::{
+    Mutex,
+    atomic::{AtomicU32, Ordering},
 };
 
-use bevy::{prelude::*, render::renderer::WgpuWrapper};
-use common::util::ReportErr;
+use bevy::prelude::*;
 use dcl_component::proto_components::sdk::components::VideoState;
-use js_sys::{Function, Reflect};
-use wasm_bindgen::{JsCast, JsValue, closure::Closure, prelude::wasm_bindgen};
-use web_sys::{HtmlMediaElement, HtmlVideoElement, VideoFrame};
+use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender};
+use once_cell::sync::OnceCell;
 
-pub type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
+use crate::{AVCommand, VideoData, VideoInfo};
 
-pub struct HtmlMedia {
-    source: String,
-    media: HtmlMediaElement,
-    video: Option<HtmlVideoElement>,
-    image: Option<Handle<Image>>,
+pub type MediaId = u32;
+
+/// Engine → page.
+#[derive(Debug)]
+pub enum HostCommand {
+    /// A `<video>` element for `url`; `None` creates one without a source (a placeholder that
+    /// never plays).
+    Create {
+        id: MediaId,
+        url: Option<String>,
+    },
+    Command(MediaId, AVCommand),
+    Drop(MediaId),
+}
+
+/// Page → engine.
+#[derive(Debug, Clone, Copy)]
+pub enum MediaEvent {
+    State {
+        id: MediaId,
+        state: VideoState,
+        duration: f64,
+    },
+    /// A frame was transferred to the render worker.
+    Frame {
+        id: MediaId,
+        media_time: f64,
+        width: u32,
+        height: u32,
+    },
+}
+
+/// Engine → render worker: which image a media's frames are copied into.
+pub struct MediaTarget {
+    pub id: MediaId,
+    pub target: Option<AssetId<Image>>,
+}
+
+/// Set by the page ([`host::media_host_main`]) before the engine starts.
+struct HostHandle {
+    commands: UnboundedSender<HostCommand>,
+    events: Mutex<Option<UnboundedReceiver<MediaEvent>>>,
+}
+
+static HOST: OnceCell<HostHandle> = OnceCell::new();
+/// Set by the engine's [`plugin::HtmlMediaPlugin`].
+static TARGETS: OnceCell<tokio::sync::mpsc::UnboundedSender<MediaTarget>> = OnceCell::new();
+static NEXT_ID: AtomicU32 = AtomicU32::new(1);
+/// Sources opened since the plugin last looked.
+static NEW_SOURCES: Mutex<Vec<AvSource>> = Mutex::new(Vec::new());
+
+fn send_host(command: HostCommand) {
+    match HOST.get() {
+        Some(host) => {
+            let _ = host.commands.unbounded_send(command);
+        }
+        None => debug!("no media host: dropping {command:?}"),
+    }
+}
+
+fn send_target(id: MediaId, target: Option<AssetId<Image>>) {
+    if let Some(targets) = TARGETS.get() {
+        let _ = targets.send(MediaTarget { id, target });
+    }
+}
+
+/// A source the engine opened: its commands are relayed to the page and the page's events
+/// reported as [`VideoData`] by the plugin.
+struct AvSource {
+    id: MediaId,
+    commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
+    video: tokio::sync::mpsc::Sender<VideoData>,
     size: Option<(u32, u32)>,
-    last_state: VideoState,
-    last_reported_time: f32,
-    current_time: f32,
-    new_frame_time: Arc<AtomicU32>,
-    state: Arc<Mutex<VideoState>>,
-    _closures: Vec<Closure<dyn FnMut()>>,
-    frame_closure: RcClosure,
-    frame_callback_handle: Rc<RefCell<Option<u32>>>,
+    duration: f64,
 }
 
-/// safety: engine is single threaded
-unsafe impl Sync for HtmlMedia {}
-unsafe impl Send for HtmlMedia {}
-
-// This block imports the global JS function we defined in main.js
-#[wasm_bindgen(js_namespace = window)]
-extern "C" {
-    #[wasm_bindgen(js_name = setVideoSource)]
-    fn set_video_source(elt: &HtmlVideoElement, src: &str);
-}
-
-impl HtmlMedia {
-    pub fn new_noop(source: String, image: Handle<Image>) -> Self {
-        let window = web_sys::window().unwrap();
-        let document = window.document().unwrap();
-        let video = document.create_element("video").unwrap();
-        let media = video.clone().dyn_into::<HtmlMediaElement>().unwrap();
-
-        let mut slf = HtmlMedia::common_init(source, media);
-        slf.set_image(Some(image));
-
-        slf
-    }
-
-    pub fn new_audio(url: &str, source: String) -> Self {
-        let window = web_sys::window().unwrap();
-        let document = window.document().unwrap();
-        let audio = document.create_element("audio").unwrap();
-        let media = audio.dyn_into::<HtmlMediaElement>().unwrap();
-        media.set_src(url);
-
-        Self::common_init(source, media)
-    }
-
-    pub fn new_video(url: &str, source: String, image: Handle<Image>) -> Self {
-        let window = web_sys::window().unwrap();
-        let document = window.document().unwrap();
-        let video = document.create_element("video").unwrap();
-        let media = video.clone().dyn_into::<HtmlMediaElement>().unwrap();
-        let video = video.dyn_into::<HtmlVideoElement>().unwrap();
-
-        let mut slf = HtmlMedia::common_init(source, media);
-        set_video_source(&video, url);
-        slf.video_init(video);
-
-        slf.set_image(Some(image));
-
-        slf
-    }
-
-    pub fn audio_from_element(media: HtmlMediaElement, source: String) -> Self {
-        Self::common_init(source, media)
-    }
-
-    pub fn video_from_element(
-        media: HtmlMediaElement,
-        source: String,
-        image: Handle<Image>,
+impl AvSource {
+    fn new(
+        commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
+        video: tokio::sync::mpsc::Sender<VideoData>,
+        image: &Handle<Image>,
     ) -> Self {
-        let video = media.clone().dyn_into::<HtmlVideoElement>().unwrap();
-
-        let mut slf = HtmlMedia::common_init(source, media);
-        slf.video_init(video);
-
-        slf.set_image(Some(image));
-
-        slf
-    }
-
-    fn common_init(source: String, media: HtmlMediaElement) -> Self {
-        let mut closures = Vec::default();
-        let state = Arc::new(Mutex::new(VideoState::VsLoading));
-
-        fn register_callback<'a>(
-            closures: &'a mut Vec<Closure<dyn FnMut()>>,
-            state: &Arc<Mutex<VideoState>>,
-            new_state: VideoState,
-        ) -> Option<&'a Function> {
-            let state = state.clone();
-            let closure = Closure::wrap(Box::new({
-                move || {
-                    let mut state = state.lock().unwrap();
-                    *state = new_state;
-                    debug!("state -> {new_state:?}");
-                }
-            }) as Box<dyn FnMut()>);
-            closures.push(closure);
-            closures.last().map(move |c| c.as_ref().unchecked_ref())
-        }
-
-        media.set_oncanplay(register_callback(
-            &mut closures,
-            &state,
-            VideoState::VsReady,
-        ));
-        media.set_onabort(register_callback(
-            &mut closures,
-            &state,
-            VideoState::VsError,
-        ));
-        media.set_onerror(register_callback(
-            &mut closures,
-            &state,
-            VideoState::VsError,
-        ));
-        media.set_onwaiting(register_callback(
-            &mut closures,
-            &state,
-            VideoState::VsBuffering,
-        ));
-        media.set_onplaying(register_callback(
-            &mut closures,
-            &state,
-            VideoState::VsPlaying,
-        ));
-        media.set_onpause(register_callback(
-            &mut closures,
-            &state,
-            VideoState::VsPaused,
-        ));
-        media.set_onended(register_callback(
-            &mut closures,
-            &state,
-            VideoState::VsPaused,
-        ));
-
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        send_target(id, Some(image.id()));
         Self {
-            source,
-            media,
-            video: None,
-            image: None,
+            id,
+            commands,
+            video,
             size: None,
-            last_state: VideoState::VsNone,
-            last_reported_time: -1.0,
-            current_time: -1.0,
-            new_frame_time: Default::default(),
-            state,
-            _closures: closures,
-            frame_closure: Default::default(),
-            frame_callback_handle: Default::default(),
+            duration: 0.0,
         }
     }
 
-    fn video_init(&mut self, video: HtmlVideoElement) {
-        video.set_cross_origin(Some("anonymous"));
-
-        let frame_time = Arc::new(AtomicU32::default());
-
-        // video frame callback - no wasm_bindgen for this!
-        let rvc_prop = Reflect::get(&video, &"requestVideoFrameCallback".into()).unwrap();
-        if rvc_prop.is_undefined() {
-            panic!("no requestVideoFrameCallback");
+    fn send(&self, data: VideoData) {
+        if self.video.try_send(data).is_err() {
+            trace!("media {}: video channel full or closed", self.id);
         }
-        let rvc_fn = rvc_prop.dyn_into::<web_sys::js_sys::Function>().unwrap();
-
-        let callback: RcClosure = Rc::new(RefCell::new(None));
-        let callback_handle: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
-        let callback_clone = callback.clone();
-        let handle_clone = callback_handle.clone();
-        let frame_time_clone = frame_time.clone();
-        let rvc_clone = rvc_fn.clone();
-
-        *callback.borrow_mut() = Some(Closure::wrap(Box::new({
-            let video = video.clone();
-            move |_now: f64, metadata: JsValue| {
-                trace!("frame received");
-                if let Some(media_time) = Reflect::get(&metadata, &"mediaTime".into())
-                    .ok()
-                    .and_then(|mt| mt.as_f64())
-                {
-                    trace!("frame received -> {media_time}");
-                    frame_time_clone.store(
-                        (media_time as f32).to_bits(),
-                        std::sync::atomic::Ordering::Relaxed,
-                    );
-                };
-
-                if let Some(cb) = callback_clone.borrow().as_ref() {
-                    if let Ok(new_handle) = rvc_clone.call1(&video, cb.as_ref().unchecked_ref()) {
-                        *handle_clone.borrow_mut() = new_handle.as_f64().map(|f| f as u32);
-                    }
-                } else {
-                    debug!("no cb - dropping");
-                }
-            }
-        }) as Box<dyn FnMut(f64, JsValue)>));
-        let initial_handle = rvc_fn
-            .call1(
-                &video,
-                callback.borrow().as_ref().unwrap().as_ref().unchecked_ref(),
-            )
-            .unwrap();
-        *callback_handle.borrow_mut() = initial_handle.as_f64().map(|f| f as u32);
-
-        self.set_new_frame_time(frame_time);
-        self.set_frame_closure(callback);
-        self.set_frame_callback_handle(callback_handle);
-        self.set_video(Some(video));
     }
 
-    pub fn set_loop(&mut self, looping: bool) {
-        self.media.set_loop(looping)
-    }
-
-    pub fn set_volume(&self, volume: f32) {
-        self.media.set_volume(volume.clamp(0.0, 1.0) as f64)
-    }
-
-    pub fn play(&mut self) {
-        debug!("called play");
-        self.media.play().report();
-    }
-
-    pub fn stop(&mut self) {
-        debug!("called stop");
-        self.media.pause().report();
-    }
-
-    pub fn state(&self) -> VideoState {
-        *self.state.lock().unwrap()
-    }
-
-    pub fn source(&self) -> &str {
-        &self.source
-    }
-
-    pub fn duration(&self) -> f64 {
-        self.media.duration()
-    }
-
-    pub fn video(&self) -> Option<&HtmlVideoElement> {
-        self.video.as_ref()
-    }
-
-    pub fn image(&self) -> Option<&Handle<Image>> {
-        self.image.as_ref()
-    }
-
-    pub fn size(&self) -> Option<(u32, u32)> {
-        self.size
-    }
-
-    pub fn current_time(&self) -> f32 {
-        self.current_time
-    }
-
-    pub fn last_reported_time(&self) -> f32 {
-        self.last_reported_time
-    }
-
-    pub fn new_frame_time(&self) -> &AtomicU32 {
-        &self.new_frame_time
-    }
-
-    pub fn last_state(&self) -> VideoState {
-        self.last_state
-    }
-
-    pub fn set_video(&mut self, video: Option<HtmlVideoElement>) {
-        self.video = video;
-    }
-
-    pub fn set_size(&mut self, size: Option<(u32, u32)>) {
-        self.size = size;
-    }
-
-    pub fn set_current_time(&mut self, current_time: f32) {
-        self.current_time = current_time;
-    }
-
-    pub fn set_last_reported_time(&mut self, current_time: f32) {
-        self.last_reported_time = current_time;
-    }
-
-    pub fn set_new_frame_time(&mut self, new_frame_time: Arc<AtomicU32>) {
-        self.new_frame_time = new_frame_time;
-    }
-
-    pub fn set_last_state(&mut self, state: VideoState) {
-        self.last_state = state;
-    }
-
-    pub fn set_image(&mut self, image: Option<Handle<Image>>) {
-        self.image = image;
-    }
-
-    pub fn set_frame_closure(&mut self, frame_closure: RcClosure) {
-        self.frame_closure = frame_closure;
-    }
-
-    pub fn set_frame_callback_handle(&mut self, frame_callback_handle: Rc<RefCell<Option<u32>>>) {
-        self.frame_callback_handle = frame_callback_handle;
+    fn send_info(&self) {
+        if let Some((width, height)) = self.size {
+            self.send(VideoData::Info(VideoInfo {
+                width,
+                height,
+                rate: 0.0,
+                length: self.duration,
+            }));
+        }
     }
 }
 
-impl Drop for HtmlMedia {
-    fn drop(&mut self) {
-        debug!("shutdown");
-        if let (Some(video), Some(handle)) =
-            (&self.video, self.frame_callback_handle.borrow_mut().take())
-        {
-            Reflect::get(video, &"cancelVideoFrameCallback".into())
-                .unwrap()
-                .dyn_into::<web_sys::js_sys::Function>()
-                .unwrap()
-                .call1(video, &JsValue::from(handle))
-                .unwrap();
-            let _ = video.pause();
-        }
-        self.frame_closure.take();
-        self.media.set_oncanplay(None);
-        self.media.set_onabort(None);
-        self.media.set_onerror(None);
-        self.media.set_onwaiting(None);
-        self.media.set_onplaying(None);
-        self.media.set_onpause(None);
-        self.media.set_onended(None);
-        let _ = self.media.pause();
-        self.media.remove();
-    }
+/// Plays `url` in a page element whose frames are copied into `image`: the web counterpart of
+/// native's ffmpeg thread, driven by `commands` and reporting on `video`. `None` opens a
+/// placeholder that never plays.
+pub fn spawn_av(
+    commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
+    video: tokio::sync::mpsc::Sender<VideoData>,
+    url: Option<String>,
+    image: &Handle<Image>,
+) {
+    let source = AvSource::new(commands, video, image);
+    send_host(HostCommand::Create { id: source.id, url });
+    NEW_SOURCES.lock().unwrap().push(source);
 }
 
-#[derive(Resource, Deref, DerefMut)]
-pub struct FrameCopyRequestQueue(tokio::sync::mpsc::UnboundedSender<FrameCopyRequest>);
-
-pub struct FrameCopyRequest {
-    pub video_frame: WgpuWrapper<VideoFrame>,
-    pub target: AssetId<Image>,
+/// A page `<video>` element the page registers itself (a livekit track's) under the returned
+/// id with [`host::adopt_video_element`]; its frames flow into `image` like any other
+/// source's. Dropping `commands`' sender releases it.
+pub fn adopt_video(
+    commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
+    video: tokio::sync::mpsc::Sender<VideoData>,
+    image: &Handle<Image>,
+) -> MediaId {
+    let source = AvSource::new(commands, video, image);
+    let id = source.id;
+    NEW_SOURCES.lock().unwrap().push(source);
+    id
 }

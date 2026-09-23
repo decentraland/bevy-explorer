@@ -2,18 +2,58 @@ use anyhow::bail;
 use bevy::log::{debug, info, trace};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::Packet;
+use kira::tween::Tween;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::ffmpeg::util::{BUFFER_TIME, PacketIter};
+use crate::{
+    AVCommand,
+    ffmpeg::{
+        AudioHandle,
+        util::{BUFFER_TIME, PacketIter},
+    },
+};
 
-#[derive(Debug)]
-pub enum AVCommand {
-    Play,
-    Pause,
-    Repeat(bool),
-    Seek(f64),
-    Dispose,
+/// The stream's audio output: the kira sound the engine spawns once the stream's sound data
+/// reaches it, handed here so the backend applies `AVCommand::Volume` itself.
+pub struct AudioOutput {
+    handle: tokio::sync::oneshot::Receiver<AudioHandle>,
+    sound: Option<AudioHandle>,
+    volume: f32,
+}
+
+impl AudioOutput {
+    pub fn new(handle: tokio::sync::oneshot::Receiver<AudioHandle>) -> Self {
+        Self {
+            handle,
+            sound: None,
+            volume: 1.0,
+        }
+    }
+
+    fn poll(&mut self) {
+        if self.sound.is_none()
+            && let Ok(mut sound) = self.handle.try_recv()
+        {
+            sound.set_volume(self.volume as f64, Tween::default());
+            self.sound = Some(sound);
+        }
+    }
+
+    fn set_volume(&mut self, volume: f32) {
+        self.volume = volume;
+        if let Some(sound) = &mut self.sound {
+            sound.set_volume(volume as f64, Tween::default());
+        }
+    }
+}
+
+impl Drop for AudioOutput {
+    fn drop(&mut self) {
+        if let Some(sound) = &mut self.sound {
+            sound.stop(Tween::default());
+        }
+    }
 }
 
 pub trait FfmpegContext {
@@ -36,6 +76,7 @@ pub fn process_streams(
     mut input_context: impl PacketIter,
     streams: &mut [&mut dyn FfmpegContext],
     mut commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
+    mut audio: AudioOutput,
 ) -> Result<(), anyhow::Error> {
     let mut start_instant: Option<Instant> = None;
     let mut repeat = false;
@@ -56,6 +97,7 @@ pub fn process_streams(
 
     loop {
         trace!("Process stream");
+        audio.poll();
         // check if all receivers were dropped
         if streams.iter().all(|ctx| !ctx.is_live()) {
             bail!("all streams disconnected without dispose command");
@@ -135,6 +177,10 @@ pub fn process_streams(
                 input_context.seek_to(time);
                 update_state(VideoState::VsSeeking, streams);
                 continue;
+            }
+            Ok(AVCommand::Volume(volume)) => {
+                trace!("Volume command.");
+                audio.set_volume(volume);
             }
             Ok(AVCommand::Dispose) => {
                 trace!("Dispose stream.");

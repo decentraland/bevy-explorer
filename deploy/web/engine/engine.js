@@ -1,7 +1,7 @@
 // Engine logic - ES module
 // Handles WASM/WebGPU initialization and game execution
 
-import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, gpu_cache_hash, report_pointer_lock } from "./pkg/webgpu_build.js";
+import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, gpu_cache_hash, report_pointer_lock, media_host_main } from "./pkg/webgpu_build.js";
 import { initGpuCache } from "./gpu_cache.js";
 
 // Re-export for main.js
@@ -617,6 +617,11 @@ export function start(options = {}) {
   // report it through the shared wasm memory (src/web.rs report_pointer_lock).
   document.addEventListener("pointerlockchange", () => report_pointer_lock(document.pointerLockElement === canvas));
   document.addEventListener("pointerlockerror", () => report_pointer_lock(false));
+
+  // Html media (scene video/audio) lives here on the page, the only thread with a DOM; the
+  // engine drives it over channels and the page transfers decoded frames to the render worker
+  // (crates/media/src/html).
+  media_host_main(renderWorker);
 
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {

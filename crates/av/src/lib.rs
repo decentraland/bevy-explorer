@@ -4,7 +4,7 @@ pub mod test;
 // util
 #[cfg(feature = "ffmpeg")]
 pub mod audio_sink;
-#[cfg(feature = "ffmpeg")]
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 pub mod video_stream;
 
 // audio source (non-streaming audio)
@@ -16,9 +16,7 @@ pub mod audio_source_native;
 pub mod audio_source_wasm;
 
 // video
-#[cfg(feature = "html")]
-pub mod html_video_player;
-#[cfg(feature = "ffmpeg")]
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 pub mod video_player;
 
 #[cfg(feature = "av_player_debug")]
@@ -27,11 +25,13 @@ pub mod av_player_debug;
 use std::{borrow::Borrow, cmp::Ordering, collections::BTreeSet, marker::PhantomData, ops::Deref};
 
 #[cfg(feature = "ffmpeg")]
-use crate::{audio_sink::AudioSink, video_stream::VideoSink};
+use crate::audio_sink::AudioSink;
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
+use crate::video_stream::VideoSink;
 use audio_source::AudioSourcePlugin;
 #[cfg(not(feature = "html"))]
 use audio_source_native::AudioSourcePluginImpl;
-#[cfg(feature = "ffmpeg")]
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 use bevy::ecs::component::Mutable;
 use bevy::{diagnostic::FrameCount, math::FloatOrd, prelude::*};
 use common::{
@@ -57,14 +57,10 @@ use scene_runner::{
 
 #[cfg(all(not(test), feature = "ffmpeg"))]
 use crate::audio_sink::AudioSinkPlugin;
-#[cfg(feature = "ffmpeg")]
-use crate::video_player::VideoPlayerPlugin;
 #[cfg(feature = "html")]
-use crate::{
-    // foreign players
-    audio_source_wasm::AudioSourcePluginImpl,
-    html_video_player::VideoPlayerPlugin,
-};
+use crate::audio_source_wasm::AudioSourcePluginImpl;
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
+use crate::video_player::VideoPlayerPlugin;
 
 const LIVEKIT_VIDEO_STREAM: &str = "livekit-video://current-stream";
 
@@ -80,11 +76,6 @@ pub trait AVPlayer: Component {
     fn config(&self) -> Self::Config;
     fn position(&self) -> Self::Position;
 
-    #[cfg(feature = "ffmpeg")]
-    fn build_sink_component(audio_sink: AudioSink, video_sink: VideoSink) -> AVSinks<Self>
-    where
-        Self: Sized;
-
     fn has_video() -> bool;
 }
 
@@ -95,28 +86,35 @@ pub trait AVPlayerConfig {
     fn r#loop(&self) -> bool;
 }
 
-#[cfg(feature = "ffmpeg")]
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 pub trait AVPlayerSinks: Component<Mutability = Mutable> {
+    #[cfg(feature = "ffmpeg")]
     fn audio_sink(&self) -> Option<&AudioSink>;
+    #[cfg(feature = "ffmpeg")]
     fn audio_sink_mut(&mut self) -> Option<&mut AudioSink>;
     fn video_sink(&self) -> Option<&VideoSink>;
     fn video_sink_mut(&mut self) -> Option<&mut VideoSink>;
 }
 
-#[cfg(feature = "ffmpeg")]
+/// The av backend's ends of a player; the sinks share one command channel. Audio is mixed in
+/// kira on native and by the page element on the web, which has no audio sink.
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 #[derive(Component)]
 pub struct AVSinks<T: AVPlayer> {
+    #[cfg(feature = "ffmpeg")]
     pub audio: Option<AudioSink>,
     pub video: Option<VideoSink>,
     pub _phantom: PhantomData<T>,
 }
 
-#[cfg(feature = "ffmpeg")]
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 impl<T: AVPlayer> AVPlayerSinks for AVSinks<T> {
+    #[cfg(feature = "ffmpeg")]
     fn audio_sink(&self) -> Option<&AudioSink> {
         self.audio.as_ref()
     }
 
+    #[cfg(feature = "ffmpeg")]
     fn audio_sink_mut(&mut self) -> Option<&mut AudioSink> {
         self.audio.as_mut()
     }
@@ -166,15 +164,6 @@ impl AVPlayer for AudioStream {
         AudioStreamPosition(0.)
     }
 
-    #[cfg(feature = "ffmpeg")]
-    fn build_sink_component(audio_sink: AudioSink, _video_sink: VideoSink) -> AVSinks<Self> {
-        AVSinks {
-            audio: Some(audio_sink),
-            video: None,
-            _phantom: Default::default(),
-        }
-    }
-
     fn has_video() -> bool {
         false
     }
@@ -216,15 +205,6 @@ impl AVPlayer for VideoPlayer {
 
     fn position(&self) -> Self::Position {
         VideoPlayerPosition(self.position.unwrap_or(0.))
-    }
-
-    #[cfg(feature = "ffmpeg")]
-    fn build_sink_component(audio_sink: AudioSink, video_sink: VideoSink) -> AVSinks<Self> {
-        AVSinks {
-            audio: Some(audio_sink),
-            video: Some(video_sink),
-            _phantom: Default::default(),
-        }
     }
 
     fn has_video() -> bool {

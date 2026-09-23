@@ -1,6 +1,3 @@
-#[cfg(target_arch = "wasm32")]
-use std::sync::atomic::Ordering;
-
 use bevy::{
     ecs::{error::debug, relationship::Relationship, system::entity_command},
     prelude::*,
@@ -22,12 +19,7 @@ use {
     tokio::sync::{mpsc, oneshot},
 };
 #[cfg(target_arch = "wasm32")]
-use {
-    bevy::render::renderer::WgpuWrapper,
-    common::{structs::AudioSettings, util::ReportErr},
-    media::{FrameCopyRequest, FrameCopyRequestQueue, HtmlMedia},
-    web_sys::VideoFrame,
-};
+use {common::structs::AudioSettings, media::VideoData};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
@@ -588,18 +580,19 @@ fn video_track_is_now_subscribed(
         return;
     };
 
-    let Some(RemoteTrack::Video(video)) = track.track() else {
+    let Some(RemoteTrack::Video(_video)) = track.track() else {
         debug_panic!("A subscribed video track did not have a video RemoteTrack.");
     };
 
-    let Some(video_element) = video.html_video_element() else {
-        debug!("Could not build HtmlMedia from livekit track.");
-        return;
-    };
-    let html_media =
-        HtmlMedia::video_from_element(video_element, String::new(), (*active_transmitter).clone());
+    let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
+    let image = (*active_transmitter).clone();
+    // the page registers the track's video element with the media host under this id
+    let _media_id = media::adopt_video(command_receiver, video_sender, &image);
     commands.entity(entity).try_insert(HtmlMediaEntity {
-        element: html_media,
+        _commands: command_sender,
+        video: video_receiver,
+        image,
     });
 }
 
@@ -613,66 +606,29 @@ fn video_track_is_now_unsubscribed(
 }
 
 #[cfg(target_arch = "wasm32")]
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn queue_frame_copy(
     mut video_tracks: Query<&mut HtmlMediaEntity, (With<Video>, With<Subscribed>)>,
     mut images: ResMut<Assets<Image>>,
-    send_queue: Res<FrameCopyRequestQueue>,
     mut transmission_updated: EventWriter<TransmissionUpdated>,
 ) {
     for mut html_media_entity in video_tracks.iter_mut() {
-        #[allow(clippy::collapsible_else_if)]
-        if let Some(video) = html_media_entity.video().as_ref() {
-            let new_time = html_media_entity
-                .new_frame_time()
-                .swap(0, Ordering::Relaxed);
-            if new_time != 0 {
-                // new frame is ready
-                let new_time = f32::from_bits(new_time);
-                trace!("got new frame -> {new_time}");
-
-                let Ok(frame) = VideoFrame::new_with_html_video_element(video) else {
-                    warn!("failed to extract frame");
-                    continue;
-                };
-
-                let image_id = html_media_entity.image().as_ref().unwrap().id();
-                let visible_rect = frame.visible_rect().unwrap();
-                let video_size = (visible_rect.width() as u32, visible_rect.height() as u32);
-
-                // check size
-                if html_media_entity.size().is_none_or(|sz| sz != video_size) {
-                    let Some(image) = images.get_mut(image_id) else {
-                        continue;
-                    };
-                    debug!("Resizing active transmitter image.");
-                    image.resize(Extent3d {
-                        width: video_size.0,
-                        height: video_size.1,
-                        depth_or_array_layers: 1,
-                    });
-                    html_media_entity.set_size(Some(video_size));
-
-                    trace!("queue resized frame {:?}", video_size);
-                    transmission_updated.write(TransmissionUpdated);
-                }
-
-                // queue copy
-                trace!("queue frame {:?}", video_size);
-                send_queue
-                    .send(FrameCopyRequest {
-                        video_frame: WgpuWrapper::new(frame),
-                        target: image_id,
-                    })
-                    .report();
-
-                html_media_entity.set_current_time(new_time);
-            } else {
-                trace!("no frame (new_time == 0)");
-            }
-        } else {
-            debug!("no video");
-            // we don't report audio timestamps, otherwise would need to grab it here
+        while let Ok(data) = html_media_entity.video.try_recv() {
+            // the render world copies the frames into the image itself; only its size is
+            // followed here
+            let VideoData::Info(info) = data else {
+                continue;
+            };
+            let Some(image) = images.get_mut(html_media_entity.image.id()) else {
+                continue;
+            };
+            debug!("Resizing active transmitter image.");
+            image.data = None;
+            image.texture_descriptor.size = Extent3d {
+                width: info.width,
+                height: info.height,
+                depth_or_array_layers: 1,
+            };
+            transmission_updated.write(TransmissionUpdated);
         }
     }
 }
