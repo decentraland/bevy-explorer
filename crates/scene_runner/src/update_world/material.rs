@@ -1,6 +1,7 @@
 use std::{
     hash::{Hash, Hasher},
     sync::OnceLock,
+    time::Duration,
 };
 
 use bevy::{
@@ -15,6 +16,7 @@ use bevy::{
     platform::collections::HashMap,
     prelude::*,
     render::primitives::Aabb,
+    time::common_conditions::on_timer,
 };
 use common::{structs::AppConfig, util::AsH160};
 use comms::profile::ProfileManager;
@@ -280,6 +282,10 @@ impl Plugin for MaterialDefinitionPlugin {
                 // we must run after update_mesh as that inserts a default material if none is present
                 .after(update_mesh),
         );
+        app.add_systems(
+            Update,
+            prune_caches.run_if(on_timer(Duration::from_secs(5))),
+        );
     }
 }
 
@@ -475,11 +481,28 @@ impl CachedMaterials {
         materials: &Assets<SceneMaterial>,
     ) {
         self.entries.insert(hash, (id, shadow_caster));
-        // drop entries whose material has been freed, amortized over inserts
+        // amortized over inserts
         if self.entries.len() >= self.prune_at {
-            self.entries.retain(|_, (id, _)| materials.contains(*id));
-            self.prune_at = (self.entries.len() * 2).max(64);
+            self.prune(materials);
         }
+    }
+
+    // drop entries whose material has been freed
+    fn prune(&mut self, materials: &Assets<SceneMaterial>) {
+        self.entries.retain(|_, (id, _)| materials.contains(*id));
+        // release capacity left over from a burst
+        if self.entries.capacity() > self.entries.len() * 4 {
+            self.entries.shrink_to_fit();
+        }
+        self.prune_at = (self.entries.len() * 2).max(64);
+    }
+}
+
+// the insert-time prune only runs while a scene keeps adding materials, so also prune
+// periodically to release entries from scenes that have gone static
+fn prune_caches(mut caches: Query<&mut CachedMaterials>, materials: Res<Assets<SceneMaterial>>) {
+    for mut cache in caches.iter_mut() {
+        cache.prune(&materials);
     }
 }
 
@@ -900,6 +923,7 @@ pub fn dcl_material_from_standard_material(
 #[cfg(test)]
 mod test {
     use super::*;
+    use bevy::ecs::system::RunSystemOnce;
     use scene_material::SceneMaterialExt;
 
     #[test]
@@ -920,5 +944,28 @@ mod test {
         assert!(cache.entries.len() < 128, "len {}", cache.entries.len());
         // live entries are kept
         assert_eq!(cache.entries.get(&0), Some(&(live.id(), true)));
+    }
+
+    #[test]
+    fn prune_caches_system_releases_static_scenes() {
+        let mut app = App::new();
+        app.init_resource::<Assets<SceneMaterial>>();
+
+        // a burst of materials, all freed, with no further inserts to trigger a prune
+        let mut cache = CachedMaterials::default();
+        for hash in 0..50u64 {
+            let mut materials = app.world_mut().resource_mut::<Assets<SceneMaterial>>();
+            let handle = materials.add(SceneMaterial::new_unbounded(StandardMaterial::default()));
+            cache.insert(hash, handle.id(), false, &materials);
+            materials.remove(handle.id());
+        }
+        assert_eq!(cache.entries.len(), 50);
+        let scene = app.world_mut().spawn(cache).id();
+
+        app.world_mut().run_system_once(prune_caches).unwrap();
+
+        let cache = app.world().get::<CachedMaterials>(scene).unwrap();
+        assert!(cache.entries.is_empty());
+        assert!(cache.entries.capacity() < 50);
     }
 }
