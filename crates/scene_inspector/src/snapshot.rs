@@ -86,8 +86,9 @@ pub fn handle_entity_allocated_events(
     }
 }
 
-/// Drop pending callbacks for scenes that can no longer reply: the scene entity is gone, or its
-/// worker is no longer live (a broken scene has dropped its thread handle and never comes back).
+/// Drop pending callbacks for scenes that can no longer reply: the scene entity is gone, its worker
+/// is no longer live (a broken scene has dropped its thread handle and never comes back), or the
+/// worker has exited and closed its end of the renderer channel.
 /// Dropping a callback drops the oneshot sender it captured, so the console reports the command
 /// as cancelled instead of polling it forever. Runs after the reply handlers so a reply received
 /// in the same frame the scene broke is still delivered.
@@ -96,7 +97,11 @@ pub fn prune_dead_scene_requests(
     mut allocations: ResMut<PendingEntityAllocations>,
     scenes: Query<&RendererSceneContext>,
 ) {
-    let alive = |ent: &Entity| scenes.get(*ent).is_ok_and(|ctx| ctx.sender().is_some());
+    let alive = |ent: &Entity| {
+        scenes
+            .get(*ent)
+            .is_ok_and(|ctx| ctx.sender().is_some_and(|sender| !sender.is_closed()))
+    };
     snapshots.0.retain(|ent, _| alive(ent));
     allocations.0.retain(|ent, _| alive(ent));
 }
@@ -105,11 +110,13 @@ pub fn prune_dead_scene_requests(
 mod tests {
     use super::*;
     use bevy::platform::collections::HashSet;
+    use dcl::RendererResponse;
     use dcl::SceneId;
     use scene_runner::{renderer_context::SceneState, SceneThreadHandle};
-    use tokio::sync::oneshot;
+    use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
 
-    fn live_context() -> RendererSceneContext {
+    // returns the renderer channel receiver too; dropping it simulates the worker exiting
+    fn live_context() -> (RendererSceneContext, UnboundedReceiver<RendererResponse>) {
         let mut ctx = RendererSceneContext::new(
             SceneId::DUMMY,
             "hash".to_owned(),
@@ -128,7 +135,7 @@ mod tests {
             false,
             false,
         );
-        let (sender, _) = tokio::sync::mpsc::unbounded_channel();
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         ctx.state = SceneState::Live {
             handle: SceneThreadHandle {
                 sender,
@@ -136,7 +143,7 @@ mod tests {
             },
             in_flight: false,
         };
-        ctx
+        (ctx, receiver)
     }
 
     // queue one snapshot and one allocation callback for `ent`, each holding a oneshot sender
@@ -174,15 +181,22 @@ mod tests {
         app.init_resource::<PendingEntityAllocations>();
         app.add_systems(Update, prune_dead_scene_requests);
 
-        let live = app.world_mut().spawn(live_context()).id();
-        let mut broken_ctx = live_context();
+        let (live_ctx, _live_receiver) = live_context();
+        let live = app.world_mut().spawn(live_ctx).id();
+        let (mut broken_ctx, _broken_receiver) = live_context();
         broken_ctx.state = SceneState::Broken;
         let broken = app.world_mut().spawn(broken_ctx).id();
-        let despawned = app.world_mut().spawn(live_context()).id();
+        // still Live and holding a sender, but the worker has gone away
+        let (exited_ctx, exited_receiver) = live_context();
+        let exited = app.world_mut().spawn(exited_ctx).id();
+        let (despawned_ctx, _despawned_receiver) = live_context();
+        let despawned = app.world_mut().spawn(despawned_ctx).id();
 
         let mut live_rx = queue(&mut app, live);
         let mut broken_rx = queue(&mut app, broken);
+        let mut exited_rx = queue(&mut app, exited);
         let mut despawned_rx = queue(&mut app, despawned);
+        drop(exited_receiver);
         app.world_mut().despawn(despawned);
 
         app.update();
@@ -194,6 +208,7 @@ mod tests {
 
         assert_eq!(closed(&mut live_rx), [false, false]);
         assert_eq!(closed(&mut broken_rx), [true, true]);
+        assert_eq!(closed(&mut exited_rx), [true, true]);
         assert_eq!(closed(&mut despawned_rx), [true, true]);
     }
 }
