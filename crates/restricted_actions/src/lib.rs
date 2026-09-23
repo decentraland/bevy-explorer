@@ -2469,6 +2469,8 @@ mod preview_socket_tests {
         assert_eq!(sockets.respawn_finished(), 0);
     }
 
+    // blocks a thread waiting on the task, which wasm can't do (nor call `is_finished`)
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn finished_preview_socket_is_respawned() {
         let (sx, _rx) = setup();
