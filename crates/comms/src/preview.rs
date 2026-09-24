@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 
 use anyhow::{anyhow, bail};
 use bevy::{
@@ -9,7 +9,9 @@ use common::{
     structs::{CurrentRealm, PreviewCommand, PreviewMode},
     util::TaskExt,
 };
+use dcl_component::proto_components::sdk::development::WsSceneMessage;
 use platform::IntoClientRequest;
+use prost::Message;
 
 pub struct PreviewPlugin;
 
@@ -107,35 +109,17 @@ async fn preview_socket(
     while let Some(msg) = read.next().await {
         let msg = msg?;
         info!("preview server message: {msg}");
+        let data = msg.into_data();
+        let Ok(ws_scene_message) = WsSceneMessage::decode(data.as_slice()) else {
+            debug!("Not a prost message.");
+            continue;
+        };
+        let Some(message) = ws_scene_message.message else {
+            debug!("Empty preview message.");
+            continue;
+        };
 
-        // the dev server interleaves protobuf binary frames (WsSceneMessage) with the
-        // legacy JSON text frames we speak; erroring here killed the socket before the
-        // SCENE_UPDATE text frame arrived, so hot reload never fired
-        let Ok(text) = msg.into_text() else { continue };
-        if let Ok(value) = serde_json::Value::from_str(text.as_str()) {
-            let Some(ty) = value
-                .get("type")
-                .and_then(|v| v.as_str().map(ToOwned::to_owned))
-            else {
-                continue;
-            };
-
-            #[allow(clippy::single_match)] // we will handle more messages in future
-            match ty.as_str() {
-                "SCENE_UPDATE" => {
-                    if let Some(hash) = value
-                        .get("payload")
-                        .and_then(|payload| payload.get("sceneId"))
-                        .and_then(|scene_id| scene_id.as_str().map(ToOwned::to_owned))
-                    {
-                        sender.send(PreviewCommand::ReloadScene { hash })?;
-                    } else {
-                        warn!("malformed scene update");
-                    }
-                }
-                _ => (),
-            }
-        }
+        sender.send(message.into())?;
     }
 
     warn!("preview socket disconnected, waiting 5 secs to attempt reconnect");
