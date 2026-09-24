@@ -14,6 +14,11 @@ pub mod sdk {
             ));
         }
     }
+
+    #[allow(clippy::all)]
+    pub mod development {
+        include!(concat!(env!("OUT_DIR"), "/decentraland.sdk.development.rs"));
+    }
 }
 
 pub mod kernel {
