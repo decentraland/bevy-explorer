@@ -77,6 +77,31 @@ extern "C" {
     /// the loading bar's gpu step.
     #[wasm_bindgen(js_name = "__gpuCacheReady")]
     fn gpu_cache_ready();
+
+    /// The page's `navigator.clipboard` (a worker's navigator has none), for copypwasmta: see
+    /// `engine_run`.
+    #[wasm_bindgen(js_name = "__copyToClipboard")]
+    fn page_copy_to_clipboard(text: &str) -> js_sys::Promise;
+    #[wasm_bindgen(js_name = "__readClipboard")]
+    fn page_read_clipboard() -> js_sys::Promise;
+}
+
+fn read_clipboard() -> copypwasmta::wasm_clipboard::ClipboardFuture<String> {
+    Box::pin(async {
+        let text = wasm_bindgen_futures::JsFuture::from(page_read_clipboard())
+            .await
+            .map_err(|e| format!("{e:?}"))?;
+        Ok(text.as_string().unwrap_or_default())
+    })
+}
+
+fn write_clipboard(text: String) -> copypwasmta::wasm_clipboard::ClipboardFuture<()> {
+    Box::pin(async move {
+        wasm_bindgen_futures::JsFuture::from(page_copy_to_clipboard(&text))
+            .await
+            .map(|_| ())
+            .map_err(|e| format!("{e:?}"))
+    })
 }
 
 // gpu_cache.js: the device-level cache and async pipeline creation, run on the render worker
@@ -315,6 +340,10 @@ pub async fn engine_render_setup(_canvas: OffscreenCanvas) -> Result<(), JsValue
 pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
     let compute_threads = bevy::web_worker::compute_threads();
+    copypwasmta::set_external_clipboard(copypwasmta::ExternalClipboard {
+        get: read_clipboard,
+        set: write_clipboard,
+    });
 
     let options = parse_options(&options)?;
     let _ = LAUNCH_OPTIONS.set(options.clone());

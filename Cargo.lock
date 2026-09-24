@@ -3738,7 +3738,7 @@ checksum = "a2df960f5d869b2dd8532793fde43eb5427cceb126c929747a26823ab0eeb536"
 [[package]]
 name = "copypwasmta"
 version = "0.1.0"
-source = "git+https://github.com/robtfm/copypwasmta#04da562fdfe1198f7ff4796ed5392938873505b9"
+source = "git+https://github.com/robtfm/copypwasmta#586bfd836b98aadc87ad4e30d65174ad4c9ac7a5"
 dependencies = [
  "async-trait",
  "clipboard-win",
@@ -4393,6 +4393,7 @@ dependencies = [
  "comms",
  "console 0.1.0",
  "console_error_panic_hook",
+ "copypwasmta",
  "crc",
  "dcl",
  "dcl_component",
@@ -10303,7 +10304,6 @@ dependencies = [
  "http 1.5.0",
  "input_manager",
  "ipfs",
- "js-sys",
  "nft",
  "opener",
  "rand 0.8.8",
@@ -10318,7 +10318,6 @@ dependencies = [
  "user_input",
  "wallet",
  "wasm-bindgen",
- "wasm-bindgen-futures",
  "web-time",
 ]
 

@@ -398,6 +398,7 @@ cef_offscreen = { workspace = true, optional = true }
 # `nightly` feature; bevy_asset's locks are contended once systems run on the compute workers.
 parking_lot = { version = "0.12", features = ["nightly"] }
 av = { workspace = true, features = ["html"] }
+copypwasmta = { workspace = true }
 bevy = { workspace = true, features = [
   "webgpu",
   "wasm_threaded_asset_loader",

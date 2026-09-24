@@ -36,7 +36,6 @@ use comms::{
     NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
 };
 use console::DoAddConsoleCommand;
-#[cfg(not(target_arch = "wasm32"))]
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use explorer_ui::{open_explorer_ui, track_explorer_ui, ExplorerUiState};
@@ -1862,35 +1861,16 @@ pub fn handle_eth_async(
     })
 }
 
-// On the web the engine runs on a worker, which has no `window`: the clipboard and `window.open`
-// only exist on the page. The page defines these on its window (deploy/web/engine/engine.js) and
-// the engine worker installs relays under the same names (engine_worker.js), so the lookup on
-// `self` resolves wherever the engine runs.
+// On the web the engine runs on a worker, which has no `window`: `window.open` only exists on
+// the page. The page defines this on its window (deploy/web/engine/engine.js) and the engine
+// worker installs a relay under the same name, so the lookup on `self` resolves wherever the
+// engine runs.
 #[cfg(target_arch = "wasm32")]
 #[bevy::web_worker::page_functions]
 #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = self)]
 extern "C" {
-    #[wasm_bindgen::prelude::wasm_bindgen(js_name = "__copyToClipboard")]
-    fn page_copy_to_clipboard(text: &str) -> js_sys::Promise;
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = "__openExternalUrl")]
     fn page_open_external_url(url: &str);
-}
-
-async fn set_clipboard(text: String) -> Result<(), String> {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        match ClipboardContext::new() {
-            Ok(mut ctx) => ctx.set_contents(text).await.map_err(|e| e.to_string()),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        wasm_bindgen_futures::JsFuture::from(page_copy_to_clipboard(&text))
-            .await
-            .map(|_| ())
-            .map_err(|e| format!("{e:?}"))
-    }
 }
 
 fn open_url(url: &str) -> Result<(), String> {
@@ -1945,7 +1925,14 @@ pub fn handle_copy_to_clipboard(
     for (text, response) in perms.drain_success(PermissionType::CopyToClipboard) {
         IoTaskPool::get()
             .spawn(async move {
-                response.send(set_clipboard(text).await);
+                let result = match ClipboardContext::new() {
+                    Ok(mut ctx) => ctx
+                        .set_contents(text.clone())
+                        .await
+                        .map_err(|e| e.to_string()),
+                    Err(e) => Err(e.to_string()),
+                };
+                response.send(result);
             })
             .detach();
     }

@@ -235,10 +235,11 @@ export async function initEngine() {
   });
   window.wasm_memory = sharedMemory;
 
-  // Browser-only actions the engine relays here (crates/restricted_actions): the engine worker has
-  // no clipboard and no window.open. The click on the canvas that triggered them gives the page the
-  // transient activation both need.
+  // Browser-only actions the engine relays here (copypwasmta via src/web.rs, crates/restricted_actions):
+  // the engine worker has no clipboard and no window.open. The click or key press that triggered
+  // them gives the page the transient activation they need.
   window.__copyToClipboard = (text) => navigator.clipboard.writeText(text);
+  window.__readClipboard = () => navigator.clipboard.readText();
   window.__openExternalUrl = (url) => {
     if (!window.open(url, "_blank")) console.warn("[Main JS] window.open blocked:", url);
   };
