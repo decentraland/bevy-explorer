@@ -334,7 +334,13 @@ mod tests {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         sender.send(AVCommand::Dispose).unwrap();
         let mut stream = EmptyStream;
-        process_streams(StuckInput, &mut [&mut stream], receiver).unwrap();
+        process_streams(
+            StuckInput,
+            &mut [&mut stream],
+            receiver,
+            AudioOutput::new(tokio::sync::oneshot::channel().1),
+        )
+        .unwrap();
         drop(sender);
     }
 
@@ -343,6 +349,12 @@ mod tests {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         drop(sender);
         let mut stream = EmptyStream;
-        process_streams(StuckInput, &mut [&mut stream], receiver).unwrap();
+        process_streams(
+            StuckInput,
+            &mut [&mut stream],
+            receiver,
+            AudioOutput::new(tokio::sync::oneshot::channel().1),
+        )
+        .unwrap();
     }
 }
