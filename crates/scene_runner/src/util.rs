@@ -290,7 +290,18 @@ fn handle_preview_command(
 ) {
     for command in events.read() {
         match command {
-            PreviewCommand::ReloadScene { hash } => {
+            PreviewCommand::ReloadScene { hash }
+            // TODO properly handle model commands
+            | PreviewCommand::ReloadModel {
+                hash: _,
+                src: _,
+                scene_id: hash,
+            }
+            | PreviewCommand::RemoveModel {
+                hash: _,
+                src: _,
+                scene_id: hash,
+            } => {
                 if let Some(ctx) = live_scenes
                     .scenes
                     .get(hash)
