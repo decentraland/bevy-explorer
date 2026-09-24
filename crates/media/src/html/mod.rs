@@ -28,10 +28,11 @@ pub type MediaId = u32;
 #[derive(Debug)]
 pub enum HostCommand {
     /// A `<video>` element for `url`; `None` creates one without a source (a placeholder that
-    /// never plays).
+    /// never plays). Only with `has_video` are its frames read (which needs a CORS load).
     Create {
         id: MediaId,
         url: Option<String>,
+        has_video: bool,
     },
     Command(MediaId, AVCommand),
     Drop(MediaId),
@@ -135,15 +136,20 @@ impl AvSource {
 
 /// Plays `url` in a page element whose frames are copied into `image`: the web counterpart of
 /// native's ffmpeg thread, driven by `commands` and reporting on `video`. `None` opens a
-/// placeholder that never plays.
+/// placeholder that never plays. Without `has_video` (an audio stream) no frames are read.
 pub fn spawn_av(
     commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
     video: tokio::sync::mpsc::Sender<VideoData>,
     url: Option<String>,
+    has_video: bool,
     image: &Handle<Image>,
 ) {
     let source = AvSource::new(commands, video, image);
-    send_host(HostCommand::Create { id: source.id, url });
+    send_host(HostCommand::Create {
+        id: source.id,
+        url,
+        has_video,
+    });
     NEW_SOURCES.lock().unwrap().push(source);
 }
 

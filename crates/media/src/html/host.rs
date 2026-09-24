@@ -74,10 +74,16 @@ pub fn media_host_main(render_worker: Worker) {
             MEDIA.with(|media| {
                 let mut media = media.borrow_mut();
                 match command {
-                    HostCommand::Create { id, url } => {
+                    HostCommand::Create { id, url, has_video } => {
                         media.insert(
                             id,
-                            HostMedia::new(id, url, events_tx.clone(), render_worker.clone()),
+                            HostMedia::new(
+                                id,
+                                url,
+                                has_video,
+                                events_tx.clone(),
+                                render_worker.clone(),
+                            ),
                         );
                     }
                     HostCommand::Command(id, command) => {
@@ -102,7 +108,7 @@ pub fn adopt_video_element(id: MediaId, element: HtmlVideoElement) {
         debug!("no media host: cannot adopt video element {id}");
         return;
     };
-    let media = HostMedia::from_element(id, element, None, events, render_worker);
+    let media = HostMedia::from_element(id, element, None, true, events, render_worker);
     MEDIA.with(|m| m.borrow_mut().insert(id, media));
 }
 
@@ -136,6 +142,7 @@ impl HostMedia {
     fn new(
         id: MediaId,
         url: Option<String>,
+        has_video: bool,
         events: UnboundedSender<MediaEvent>,
         render_worker: Worker,
     ) -> Self {
@@ -145,13 +152,14 @@ impl HostMedia {
             .unwrap()
             .dyn_into::<HtmlVideoElement>()
             .unwrap();
-        Self::from_element(id, video, url, events, render_worker)
+        Self::from_element(id, video, url, has_video, events, render_worker)
     }
 
     fn from_element(
         id: MediaId,
         video: HtmlVideoElement,
         url: Option<String>,
+        has_video: bool,
         events: UnboundedSender<MediaEvent>,
         render_worker: Worker,
     ) -> Self {
@@ -209,7 +217,11 @@ impl HostMedia {
         if let Some(url) = &url {
             set_video_source(&video, url);
         }
-        slf.video_init(id, video, events, render_worker);
+        // only a video's frames are read, which needs a CORS load: an audio stream from a server
+        // without CORS headers still plays
+        if has_video {
+            slf.video_init(id, video, events, render_worker);
+        }
 
         slf
     }

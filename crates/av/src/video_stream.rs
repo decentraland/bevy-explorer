@@ -83,7 +83,13 @@ pub fn av_sinks<T: AVPlayer>(
         let url = ipfs
             .content_url(&source, &hash)
             .unwrap_or_else(|| source.clone());
-        media::spawn_av(command_receiver, video_sender, Some(url), &image);
+        media::spawn_av(
+            command_receiver,
+            video_sender,
+            Some(url),
+            T::has_video(),
+            &image,
+        );
     }
 
     if playing {
@@ -164,7 +170,7 @@ pub fn noop_sinks<T: AVPlayer>(source: String, image: Handle<Image>) -> AVSinks<
         Some(AudioSink::new(audio_receiver, handle_sender))
     };
     #[cfg(feature = "html")]
-    media::spawn_av(command_receiver, video_sender, None, &image);
+    media::spawn_av(command_receiver, video_sender, None, T::has_video(), &image);
 
     AVSinks {
         #[cfg(feature = "ffmpeg")]
