@@ -11,13 +11,13 @@ use common::{
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
 #[cfg(not(target_arch = "wasm32"))]
-use livekit::prelude::Participant;
+use livekit::prelude::{ConnectionQuality as LivekitConnectionQuality, Participant};
 use livestream_manager::ActiveVideoCast;
 use prost::Message;
 use system_bridge::VoiceMessage;
 
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::Participant;
+use crate::livekit::web::{ConnectionQuality as LivekitConnectionQuality, Participant};
 use crate::{
     global_crdt::{
         NetworkUpdate, NonPlayerUpdate, PlayerMessage, PlayerUpdate, VoiceMessageStreams,
@@ -31,7 +31,7 @@ use crate::{
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
         track::{Camera as CameraTrack, Publishing, Video},
-        LivekitRuntime,
+        ConnectionQuality, LivekitParticipantConnectionQuality, LivekitRuntime,
     },
     SceneRoom,
 };
@@ -285,7 +285,25 @@ fn participant_connection_quality_changed(
         return;
     };
 
-    commands.entity(entity).try_insert(*connection_quality);
+    let internal_connection_quality = match connection_quality {
+        LivekitConnectionQuality::Excellent => {
+            system_api_types::livekit::ConnectionQuality::Excellent
+        }
+        LivekitConnectionQuality::Good => system_api_types::livekit::ConnectionQuality::Good,
+        LivekitConnectionQuality::Poor => system_api_types::livekit::ConnectionQuality::Poor,
+        LivekitConnectionQuality::Lost => system_api_types::livekit::ConnectionQuality::Lost,
+    };
+
+    commands
+        .entity(entity)
+        .try_insert(ConnectionQuality(internal_connection_quality));
+    commands.send_event(LivekitParticipantConnectionQuality(
+        system_api_types::livekit::LivekitParticipantConnectionQuality {
+            participant: participant.sid().to_string(),
+            room: livekit_room.name(),
+            connection_quality: internal_connection_quality,
+        },
+    ));
 }
 
 fn participant_payload(

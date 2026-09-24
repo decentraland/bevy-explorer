@@ -15,7 +15,7 @@ esac
 out="$root/react-web/src/engine/generated"
 rm -rf "$out"
 mkdir -p "$out"
-TS_RS_EXPORT_DIR="$out" cargo test --manifest-path "$root/Cargo.toml" -p system_api_types export_
+TS_RS_EXPORT_DIR="$out" cargo test --manifest-path "$root/Cargo.toml" -p system_api_types --features="livekit" export_
 cd "$out"
 : >index.ts
 for f in $(ls ./*.ts 2>/dev/null | grep -v '^\./index\.ts$' | LC_ALL=C sort); do

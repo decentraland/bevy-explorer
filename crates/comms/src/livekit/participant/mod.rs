@@ -67,19 +67,19 @@ pub struct ParticipantDisconnected {
 pub struct ParticipantConnectionQuality {
     participant: LivekitParticipant,
     room: Entity,
-    connection_quality: ConnectionQuality,
+    connection_quality: LivekitConnectionQuality,
 }
 
 impl ParticipantConnectionQuality {
-    pub fn new<C: Into<ConnectionQuality>>(
+    pub fn new(
         participant: LivekitParticipant,
         room: Entity,
-        connection_quality: C,
+        connection_quality: LivekitConnectionQuality,
     ) -> Self {
         Self {
             participant,
             room,
-            connection_quality: connection_quality.into(),
+            connection_quality,
         }
     }
 }
@@ -103,23 +103,4 @@ pub struct ActiveSpeaker;
 #[derive(Event)]
 pub struct ActiveSpeakersChanged {
     pub speakers: Vec<Participant>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
-pub enum ConnectionQuality {
-    Excellent,
-    Good,
-    Poor,
-    Lost,
-}
-
-impl From<LivekitConnectionQuality> for ConnectionQuality {
-    fn from(value: LivekitConnectionQuality) -> Self {
-        match value {
-            LivekitConnectionQuality::Excellent => Self::Excellent,
-            LivekitConnectionQuality::Good => Self::Good,
-            LivekitConnectionQuality::Poor => Self::Poor,
-            LivekitConnectionQuality::Lost => Self::Lost,
-        }
-    }
 }

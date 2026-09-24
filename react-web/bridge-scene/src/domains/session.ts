@@ -67,6 +67,19 @@ export function registerSession(ctx: Ctx): void {
     }
   })()
 
+  // Livekit Updates
+  void (async () => {
+    try {
+      const stream = await BevyApi.getLivekitStatusStream()
+      for await (const s of stream) {
+        // TODO properly treat messages
+        console.log(s);
+      }
+    } catch (e) {
+      console.error('[session] livekit relay failed', e)
+    }
+  })()
+
   // Player-spawned signal: one-shot per page, not per scene. The page gates its world-entry
   // fetches on it and never retries, so a page that arrives late is re-told on `hello`.
   let ready = false

@@ -49,7 +49,7 @@ native-debug *ARGS: _bundle-native-if-stale
 
 # build + run the native app (release) with the CEF react HUD
 native-release *ARGS: _bundle-native-if-stale
-    cargo build --release --package dcl_deno_ipc
+    cargo build --release --package dcl_deno_ipc --features="livekit"
     cargo build --release --bin decentra-bevy-cef
     cargo run --release --bin decentra-bevy -- {{ARGS}}
 

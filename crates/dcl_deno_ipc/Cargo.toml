@@ -5,6 +5,9 @@ edition = "2021"
 
 [lib]
 
+[features]
+livekit = ["dcl/livekit", "dcl_deno/livekit", "system_bridge/livekit"]
+
 [dependencies]
 common = { workspace = true }
 dcl = { workspace = true }

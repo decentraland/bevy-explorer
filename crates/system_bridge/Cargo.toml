@@ -8,6 +8,9 @@ edition = "2021"
 [lints]
 workspace = true
 
+[features]
+livekit = ["system_api_types/livekit"]
+
 [dependencies]
 common = { workspace = true }
 console = { workspace = true }

@@ -8,6 +8,7 @@ edition = "2021"
 [features]
 default = []
 inspect = ["fastwebsockets", "hyper", "uuid"]
+livekit = ["dcl/livekit", "system_bridge/livekit"]
 
 [dependencies]
 common = { workspace = true }
