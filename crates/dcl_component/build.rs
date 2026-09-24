@@ -113,6 +113,11 @@ fn gen_sdk_components() -> Result<()> {
         "Texture",
         "BorderRect",
         "FloatRange",
+        "WsSceneMessage",
+        "WsSceneMessage.message",
+        "UpdateScene",
+        "UpdateModel",
+        "UpdateModelType",
     ];
 
     for component in serde_components {
