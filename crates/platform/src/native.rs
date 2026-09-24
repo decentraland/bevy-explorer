@@ -132,8 +132,11 @@ impl<T> AsyncRwLock<T> {
     }
 }
 
-pub fn platform_pointer_is_locked(expected: bool) -> bool {
-    expected
+pub fn platform_pointer_lock_requested() {}
+
+/// Nothing outside the engine changes the grab natively.
+pub fn platform_pointer_is_locked() -> Option<bool> {
+    None
 }
 
 pub fn default_camera_components() -> impl Bundle {

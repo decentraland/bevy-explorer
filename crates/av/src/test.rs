@@ -20,9 +20,7 @@ use scene_runner::{
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::*;
 
-#[cfg(feature = "html")]
-use crate::html_video_player::HtmlMediaEntity;
-#[cfg(feature = "ffmpeg")]
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 use crate::AVSinks;
 use crate::{
     AVPlayer, AVPlayerPlugin, AudioStream, InScene, ShouldBePlaying, Stream, VideoPlayer,
@@ -70,10 +68,8 @@ fn test_components<T: AVPlayer>(
     test_component!(app, entity, ActiveReceiver, active_receiver);
     test_component!(app, entity, ReceiverImage, receiver_image);
     test_component!(app, entity, VideoTextureOutput, video_texture_output);
-    #[cfg(feature = "ffmpeg")]
+    #[cfg(any(feature = "ffmpeg", feature = "html"))]
     test_component!(app, entity, AVSinks<T>, media);
-    #[cfg(feature = "html")]
-    test_component!(app, entity, HtmlMediaEntity<T>, media);
 }
 
 #[cfg(any(feature = "ffmpeg", feature = "html"))]

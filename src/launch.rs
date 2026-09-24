@@ -80,6 +80,9 @@ pub fn apply_client(
         editor,
         imposter_source,
         gpu_bytes_per_frame,
+        // sizes the task pool, which exists before plugins run (lib.rs desktop_default_plugins;
+        // web.rs engine_start spawns the workers)
+        compute_threads: _,
     } = client;
 
     app.insert_resource(EditorMode(*editor));

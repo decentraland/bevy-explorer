@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use kira::manager::AudioManager;
 use tokio::sync::mpsc;
 
-pub use crate::livekit::runtime::LivekitRuntime;
+pub use crate::livekit::runtime::{LivekitRuntime, LivekitRuntimeRes};
 use crate::{ChannelControl, NetworkMessage};
 
 #[derive(Event)]

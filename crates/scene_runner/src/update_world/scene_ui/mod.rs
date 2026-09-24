@@ -10,7 +10,7 @@ use bevy::{
     math::{Affine2, FloatOrd, Mat2},
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::{render_resource::Extent3d, renderer::RenderDevice},
+    render::{render_resource::Extent3d, renderer::RenderCapabilities},
     transform::TransformSystem,
     ui::{CameraCursorPosition, FocusPolicy, UiSystem},
     window::PrimaryWindow,
@@ -875,7 +875,7 @@ fn update_canvas_atlas(
     mut images: ResMut<Assets<Image>>,
     mut cameras: Query<(&mut Camera, &mut Projection)>,
     // absent in headless tests (no render plugin); without a gpu there is nothing to overflow
-    render_device: Option<Res<RenderDevice>>,
+    render_device: Option<Res<RenderCapabilities>>,
 ) {
     // required atlas extent per scene = max bottom-right corner over its canvas slots
     let mut required: HashMap<Entity, UVec2> = HashMap::new();

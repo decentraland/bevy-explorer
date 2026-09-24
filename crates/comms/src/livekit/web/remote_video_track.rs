@@ -1,43 +1,24 @@
-use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, JsCast, JsValue};
-use web_sys::HtmlMediaElement;
+use media::MediaId;
 
-use crate::livekit::web::JsValueAbi;
+use crate::livekit::web::{send_command, LivekitCommand, ObjectId};
 
 #[derive(Debug, Clone)]
 pub struct RemoteVideoTrack {
-    inner: JsValue,
+    pub(super) id: ObjectId,
+    pub(super) sid: String,
 }
 
 impl RemoteVideoTrack {
-    pub fn html_video_element(&self) -> Option<HtmlMediaElement> {
-        let video_element =
-            js_sys::Reflect::get(&self.inner, &JsValue::from_str("videoElement")).ok()?;
-        video_element.dyn_into::<HtmlMediaElement>().ok()
+    /// Attaches the track's page video element to the media host as `media_id` (the id of a
+    /// [`media::HtmlMedia::new_adopted`] handle).
+    pub fn attach(&self, media_id: MediaId) {
+        send_command(LivekitCommand::AttachVideo {
+            track: self.id,
+            media_id,
+        });
     }
-}
 
-impl From<JsValue> for RemoteVideoTrack {
-    fn from(value: JsValue) -> Self {
-        Self { inner: value }
-    }
-}
-
-/// SAFETY: should be fine while WASM remains single-threaded
-unsafe impl Send for RemoteVideoTrack {}
-
-/// SAFETY: should be fine while WASM remains single-threaded
-unsafe impl Sync for RemoteVideoTrack {}
-
-impl WasmDescribe for RemoteVideoTrack {
-    fn describe() {
-        JsValue::describe();
-    }
-}
-
-impl IntoWasmAbi for &RemoteVideoTrack {
-    type Abi = JsValueAbi;
-
-    fn into_abi(self) -> Self::Abi {
-        self.inner.clone().into_abi()
+    pub fn sid(&self) -> String {
+        self.sid.clone()
     }
 }
