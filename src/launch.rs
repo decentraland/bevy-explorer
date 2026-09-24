@@ -87,6 +87,11 @@ pub fn apply_client(
 
     app.insert_resource(EditorMode(*editor));
 
+    if *editor {
+        app.insert_resource(comms::DisableRealmComms(true));
+        app.insert_resource(comms::DisableSceneRoomGatekeeper(true));
+    }
+
     // the preview stats and sysinfo panels (system_ui) read the frame rate
     if launch.preview && !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>() {
         app.add_plugins(FrameTimeDiagnosticsPlugin::default());
