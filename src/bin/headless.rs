@@ -568,6 +568,12 @@ fn main() -> AppExit {
                 ),
             );
         ctl_emit(&serde_json::json!({"type": "starting", "realm": args.realm}));
+    } else if args.server_mode {
+        // before the scene loads: the lifecycle spawns the SceneHash, loading starts next frame
+        app.add_systems(
+            PostUpdate,
+            claim_scene_locks.after(common::sets::RealmLifecycle),
+        );
     }
 
     log_panics::init();
@@ -828,6 +834,56 @@ fn supervisor(
 
 // timeout is read in the supervisor; stored globally to avoid threading it as a resource
 static TIMEOUT: OnceLock<Option<f32>> = OnceLock::new();
+
+/// Standalone servers hold an OS file lock per scene hash (the `b64-` project path in
+/// preview) for the life of the process, so a second local server for the same scene
+/// declines to run instead of fighting the first over the scene room. A crashed holder's
+/// lock is released by the OS.
+fn claim_scene_locks(
+    scenes: Query<&SceneHash, Added<SceneHash>>,
+    mut held: Local<Vec<std::fs::File>>,
+    mut exit: EventWriter<AppExit>,
+) {
+    for SceneHash(hash) in scenes.iter() {
+        let dir = platform::project_directories()
+            .unwrap()
+            .data_local_dir()
+            .join("scene-locks");
+        // base64 may contain '/'; '_' is outside its alphabet so names stay distinct.
+        // long hashes keep their tail to fit windows MAX_PATH under the data dir
+        let name = hash.replace('/', "_");
+        let name = &name[name.char_indices().rev().nth(127).map_or(0, |(i, _)| i)..];
+        let path = dir.join(format!("{name}.lock"));
+        let file = std::fs::create_dir_all(&dir).and_then(|_| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(&path)
+        });
+        let file = match file {
+            Ok(file) => file,
+            Err(e) => {
+                warn!("[headless] can't open scene lock {}: {e}", path.display());
+                continue;
+            }
+        };
+        match file.try_lock() {
+            Ok(()) => held.push(file),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                println!(
+                    "[headless] scene {} is already served by another local server (lock {}); exiting",
+                    hash,
+                    path.display()
+                );
+                exit.write(AppExit::from_code(1));
+            }
+            Err(std::fs::TryLockError::Error(e)) => {
+                warn!("[headless] can't lock {}: {e}", path.display());
+            }
+        }
+    }
+}
 
 /// Answer queued permission requests by the headless policy. The Ask queue's only
 /// consumer is the omitted system_ui crate, so anything that lands here (a permission
