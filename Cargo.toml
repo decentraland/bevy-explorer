@@ -243,6 +243,7 @@ async-trait = "0.1.68"
 fastrand = "2"
 rand = "0.8.5"
 futures-util = "0.3.28"
+futures-channel = "0.3"
 futures-timer = "3"
 async-native-tls = { version = "0.5", features = ["runtime-async-std"] }
 boimp = { git = "https://github.com/robtfm/boimp", branch = "feat/composite-bake-via-storage-texture" }
@@ -305,6 +306,8 @@ web-sys = { version = "0.3", features = [
   "WebTransportSendStream",
   "WebTransportDatagramDuplexStream",
   "WebTransportCloseInfo",
+  # the engine/render worker split (src/web.rs)
+  "OffscreenCanvas",
 ] }
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
@@ -391,11 +394,16 @@ mimalloc = { workspace = true }
 cef_offscreen = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+# parking_lot only parks with Atomics.wait (instead of panicking on contention) behind its
+# `nightly` feature; bevy_asset's locks are contended once systems run on the compute workers.
+parking_lot = { version = "0.12", features = ["nightly"] }
 av = { workspace = true, features = ["html"] }
+copypwasmta = { workspace = true }
 bevy = { workspace = true, features = [
   "webgpu",
   "wasm_threaded_asset_loader",
   "reduce_image_sizes",
+  "web-worker",
 ] }
 uuid = { workspace = true, features = ["js"] }
 dcl_wasm = { workspace = true }

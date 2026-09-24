@@ -2,10 +2,7 @@ pub mod agent_commands;
 pub mod explorer_ui;
 pub mod teleport;
 
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::PathBuf, sync::Arc};
 
 use alloy_core::primitives::Address;
 use anyhow::anyhow;
@@ -678,8 +675,7 @@ fn external_url(
     }
 
     for (response, url) in perms.drain_success(PermissionType::OpenUrl) {
-        let result = opener::open(Path::new(&url)).map_err(|e| e.to_string());
-        response.send(result);
+        response.send(open_url(&url));
     }
 
     for (response, _) in perms.drain_fail(PermissionType::OpenUrl) {
@@ -1758,7 +1754,7 @@ fn show_nft_dialog(
                             "buttons",
                             vec![
                                 DuiButton::new("View on OpenSea.io", link.is_some(), move || {
-                                    let _ = opener::open(link.as_ref().unwrap());
+                                    let _ = open_url(link.as_ref().unwrap());
                                 }),
                                 DuiButton::close_happy("Close"),
                             ],
@@ -1863,6 +1859,30 @@ pub fn handle_eth_async(
             true
         }
     })
+}
+
+// On the web the engine runs on a worker, which has no `window`: `window.open` only exists on
+// the page. The page defines this on its window (deploy/web/engine/engine.js) and the engine
+// worker installs a relay under the same name, so the lookup on `self` resolves wherever the
+// engine runs.
+#[cfg(target_arch = "wasm32")]
+#[bevy::web_worker::page_functions]
+#[wasm_bindgen::prelude::wasm_bindgen(js_namespace = self)]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = "__openExternalUrl")]
+    fn page_open_external_url(url: &str);
+}
+
+fn open_url(url: &str) -> Result<(), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        opener::open(std::path::Path::new(url)).map_err(|e| e.to_string())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        page_open_external_url(url);
+        Ok(())
+    }
 }
 
 pub fn handle_copy_to_clipboard(

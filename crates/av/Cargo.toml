@@ -49,6 +49,12 @@ web-sys = { workspace = true, optional = true, features = [
 ] }
 wasm-bindgen = { workspace = true, optional = true }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+futures-channel = { workspace = true }
+futures-lite = { workspace = true }
+once_cell = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+
 [dev-dependencies]
 wasm-bindgen-test = { workspace = true }
 js-sys = { workspace = true }

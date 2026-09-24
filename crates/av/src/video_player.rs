@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use bevy::{
     asset::RenderAssetTransferPriority,
     color::palettes::basic,
@@ -10,7 +8,11 @@ use bevy::{
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
 };
-use common::{debug_panic, util::ReportErr};
+use common::{
+    debug_panic,
+    structs::{AudioSettings, PrimaryUser},
+    util::ReportErr,
+};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbVideoEvent, VideoState},
@@ -22,13 +24,13 @@ use media::{AVCommand, VideoData, VideoInfo};
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::material::{update_materials, VideoTextureOutput},
-    ContainerEntity,
+    ContainerEntity, ContainingScene, SceneEntity,
 };
 
 use crate::{
     video_stream::{av_sinks, noop_sinks},
-    AVPlayer, AVPlayerConfig, AVPlayerSinks, AVSinks, AudioStream, ShouldBePlaying, Stream,
-    VideoPlayer, LIVEKIT_VIDEO_STREAM,
+    AVPlayer, AVPlayerConfig, AVSinks, AudioStream, ShouldBePlaying, Stream, VideoPlayer,
+    LIVEKIT_VIDEO_STREAM,
 };
 
 pub struct VideoPlayerPlugin;
@@ -36,6 +38,13 @@ pub struct VideoPlayerPlugin;
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, play_videos.before(update_materials));
+        app.add_systems(
+            Update,
+            (
+                update_av_volume::<AudioStream>,
+                update_av_volume::<VideoPlayer>,
+            ),
+        );
 
         app.add_observer(new_player_source::<AudioStream>);
         app.add_observer(new_player_source::<VideoPlayer>);
@@ -86,9 +95,6 @@ fn new_player_source<T: AVPlayer>(
     };
 
     if let Some(sinks) = maybe_sinks {
-        if let Some(audio_sink) = &sinks.audio {
-            audio_sink.command_sender.send(AVCommand::Dispose).report();
-        }
         if let Some(video_sink) = &sinks.video {
             video_sink.command_sender.send(AVCommand::Dispose).report();
         }
@@ -127,8 +133,9 @@ fn new_player_source<T: AVPlayer>(
                 TextureFormat::Rgba8UnormSrgb,
                 RenderAssetUsages::all(),
             );
-            image.texture_descriptor.usage =
-                TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
+            image.texture_descriptor.usage = TextureUsages::COPY_DST
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::RENDER_ATTACHMENT;
             image.transfer_priority = RenderAssetTransferPriority::Immediate;
             images.add(image)
         }
@@ -138,15 +145,17 @@ fn new_player_source<T: AVPlayer>(
         }
     };
 
-    let (video_sink, audio_sink) = match &(**source) {
-        "" => noop_sinks((**source).to_owned(), create_image_handle(), 1.),
+    let image = match &(**source) {
         LIVEKIT_VIDEO_STREAM if T::ALLOWS_LIVESTREAM => return,
-        other => av_sinks(
+        _ => create_image_handle(),
+    };
+    let sinks = match &(**source) {
+        "" => noop_sinks::<T>((**source).to_owned(), image.clone()),
+        other => av_sinks::<T>(
             (*ipfs).clone(),
             other.to_owned(),
             context.hash.clone(),
-            create_image_handle(),
-            1.,
+            image.clone(),
             true,
             false,
         ),
@@ -157,11 +166,9 @@ fn new_player_source<T: AVPlayer>(
         entity,
         &(**source)
     );
-    let video_output = VideoTextureOutput(video_sink.image.clone());
-    commands.entity(entity).try_insert((
-        video_output,
-        T::build_sink_component(audio_sink, video_sink),
-    ));
+    commands
+        .entity(entity)
+        .try_insert((VideoTextureOutput(image), sinks));
 }
 
 fn player_source_replaced<T: AVPlayer>(
@@ -185,9 +192,6 @@ fn player_source_replaced<T: AVPlayer>(
     commands.entity(entity).try_remove::<AVSinks<T>>();
 
     if let Some(sinks) = maybe_sinks {
-        if let Some(audio_sink) = &sinks.audio {
-            audio_sink.command_sender.send(AVCommand::Dispose).report();
-        }
         if let Some(video_sink) = &sinks.video {
             video_sink.command_sender.send(AVCommand::Dispose).report();
         }
@@ -227,18 +231,6 @@ fn player_config_added<T: AVPlayer>(
         return;
     };
 
-    if let Some(audio_sink) = &mut sinks.audio {
-        audio_sink.volume = config.volume();
-        if config.playing() && has_should_be_playing {
-            audio_sink.command_sender.send(AVCommand::Play).report();
-        } else {
-            audio_sink.command_sender.send(AVCommand::Pause).report();
-        }
-        audio_sink
-            .command_sender
-            .send(AVCommand::Repeat(config.r#loop()))
-            .report();
-    }
     if let Some(video_sink) = &mut sinks.video {
         if config.playing() && has_should_be_playing {
             video_sink.command_sender.send(AVCommand::Play).report();
@@ -250,6 +242,39 @@ fn player_config_added<T: AVPlayer>(
             .send(AVCommand::Repeat(config.r#loop()))
             .report();
         video_sink.rate = Some(config.playback_rate() as f64);
+    }
+}
+
+/// Where a player's volume is decided: its config, the user's scene-audio setting, and silence
+/// while the user is outside its scene. The backend applies it at its output.
+fn update_av_volume<T: AVPlayer>(
+    mut av_players: Query<(&SceneEntity, &T::Config, &mut AVSinks<T>)>,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+    audio_settings: Res<AudioSettings>,
+) {
+    let containing_scenes = player
+        .single()
+        .ok()
+        .map(|player| containing_scene.get(player))
+        .unwrap_or_default();
+
+    for (scene, config, mut sinks) in av_players.iter_mut() {
+        let Some(video_sink) = sinks.video.as_mut() else {
+            continue;
+        };
+        let volume = if containing_scenes.contains(&scene.root) {
+            config.volume() * audio_settings.scene()
+        } else {
+            0.0
+        };
+        if video_sink.sent_volume != Some(volume) {
+            video_sink.sent_volume = Some(volume);
+            video_sink
+                .command_sender
+                .send(AVCommand::Volume(volume))
+                .report();
+        }
     }
 }
 
@@ -280,12 +305,6 @@ fn player_position_added<T: AVPlayer>(
         disqualified::ShortName::of::<T::Source>(),
         (**position)
     );
-    if let Some(audio_sink) = &mut sinks.audio {
-        audio_sink
-            .command_sender
-            .send(AVCommand::Seek((**position) as f64))
-            .report();
-    }
     if let Some(video_sink) = &mut sinks.video {
         video_sink
             .command_sender
@@ -308,10 +327,7 @@ fn av_player_should_be_playing_on_add<T: AVPlayer>(
         return;
     };
 
-    if let Some(audio_sink) = sinks.audio_sink() {
-        audio_sink.command_sender.send(AVCommand::Play).report();
-    }
-    if let Some(video_sink) = sinks.video_sink() {
+    if let Some(video_sink) = &sinks.video {
         video_sink.command_sender.send(AVCommand::Play).report();
     }
 }
@@ -325,10 +341,7 @@ fn av_player_should_be_playing_on_remove<T: AVPlayer>(
         return;
     };
 
-    if let Some(audio_sink) = sinks.audio_sink() {
-        audio_sink.command_sender.send(AVCommand::Pause).report();
-    }
-    if let Some(video_sink) = sinks.video_sink() {
+    if let Some(video_sink) = &sinks.video {
         video_sink.command_sender.send(AVCommand::Pause).report();
     }
 }
@@ -343,20 +356,8 @@ fn play_videos(
     mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {
-    enum FrameSource {
-        Video(media::Video),
-    }
-
-    impl FrameSource {
-        fn data(&self) -> Cow<'_, [u8]> {
-            match self {
-                FrameSource::Video(video) => Cow::Borrowed(video.data(0)),
-            }
-        }
-    }
-
     for (mut video_player_sinks, container, mut output) in q.iter_mut() {
-        let Some(sink) = video_player_sinks.video_sink_mut() else {
+        let Some(sink) = video_player_sinks.video.as_mut() else {
             continue;
         };
 
@@ -382,12 +383,13 @@ fn play_videos(
                         image.data = None;
                         image.texture_descriptor.size = target_extent;
                         image.transfer_priority = RenderAssetTransferPriority::Immediate;
+                        sink.resized = true;
                     }
                     sink.length = Some(length);
                     sink.rate = Some(rate);
                 }
                 Ok(VideoData::Frame(frame, time)) => {
-                    last_frame_received = Some(FrameSource::Video(frame));
+                    last_frame_received = Some(frame);
                     sink.current_time = time;
                 }
                 Ok(VideoData::State(state)) => new_state = Some(state),
@@ -398,17 +400,23 @@ fn play_videos(
         if let Some(frame) = last_frame_received {
             trace!("set frame on {:?}", sink.image);
 
-            let image = images.get_mut(&sink.image).unwrap();
+            // no pixels: the render world copied the frame into the gpu image itself
+            if let Some(pixels) = frame.data() {
+                let image = images.get_mut(&sink.image).unwrap();
 
-            match &mut image.data {
-                Some(data) => {
-                    data.copy_from_slice(&frame.data());
-                    image.transfer_priority = RenderAssetTransferPriority::Priority(-2);
+                match &mut image.data {
+                    Some(data) => {
+                        data.copy_from_slice(pixels);
+                        image.transfer_priority = RenderAssetTransferPriority::Priority(-2);
+                    }
+                    None => {
+                        image.data = Some(pixels.to_owned());
+                    }
                 }
-                None => {
-                    image.data = Some(frame.data().into_owned());
-                    output.set_changed();
-                }
+            }
+            if sink.resized {
+                sink.resized = false;
+                output.set_changed();
             }
         }
 

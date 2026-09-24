@@ -212,7 +212,7 @@ fn init_social_client(
     mut connectivity: Local<Option<UnboundedReceiver<ConnectivityEvent>>>,
     mut block_updates: Local<Option<UnboundedReceiver<BlockUpdateEvent>>>,
     mut chats: Local<Option<UnboundedReceiver<DirectChatEvent>>>,
-    social_runtime: Res<runtime::SocialRuntime>,
+    social_runtime: runtime::SocialRuntimeRes,
     mut restart: ResMut<RestartSocialRequested>,
     mut consumer_requested: ResMut<SocialConsumerRequested>,
     mut system_api_events: EventReader<SystemApi>,

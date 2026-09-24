@@ -25,7 +25,7 @@
 //       here. The engine itself takes the domain and the overrides as engine_run options.
 //     __bevyHomeScene() — the persisted home scene { realm, parcel: "x,y" } (realm null = none
 //       pinned), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
-import { initEngine, start, applyOptionsToUrlParams, engine_home_scene, gpu_cache_hash, initGpuCache } from './engine.js'
+import { initEngine, start, prepareRender, applyOptionsToUrlParams, engine_home_scene } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
 // Weight of each step in the overall bar (sums to 100). Step ids are read by the React login bar
@@ -83,9 +83,10 @@ publish()
   // Only these engine messages can trip the flood. A healthy session floods the console with benign
   // ERROR lines at exactly this rate — a 404 asset retried per frame by bevy_asset, comms "channel
   // closed" during startup — so an allowlist, not a denylist, is what keeps the modal off a working
-  // world. `captured wgpu error` is src/lib.rs's on_uncaptured_error handler: the device-level GPU
-  // fault that blanks the screen while the render loop keeps beating.
-  const FATAL_SIGNALS = ['captured wgpu error']
+  // world. `uncaptured wgpu error` is the render worker's on_uncaptured_error handler (bevy's
+  // web_worker module), mirrored to this console: the device-level GPU fault that blanks the screen
+  // while the render loop keeps beating.
+  const FATAL_SIGNALS = ['uncaptured wgpu error']
   // signature -> { count, since }. Per-signature counters (not a single last-seen key) so an identical
   // per-frame error still floods even when the loop interleaves it with a second error each frame.
   const floodCounts = new Map()
@@ -241,6 +242,13 @@ window.__setEngineTextFocus = (focused) => {
   window.__engineTextFocus = !!focused
 }
 
+// gpu_cache.js (on the render worker) shows the page's #shader-compiling indicator while it
+// compiles pipelines asynchronously; the HUD's renderBusy probe reads it.
+window.__setShaderCompiling = (on) => {
+  const el = document.getElementById('shader-compiling')
+  if (el) el.style.display = on ? 'flex' : 'none'
+}
+
 // ---- keyboard forwarding to the engine -----------------------------------------------------------
 // winit attaches its keyboard listeners to the CANVAS element, so the engine only hears keys while
 // the canvas holds DOM focus — click any HUD control and movement + every engine binding (which
@@ -333,7 +341,8 @@ window.addEventListener('keydown', (event) => {
 initEngine()
   .then(() => {
     window.setLoadingStepActive('gpu')
-    return initGpuCache(gpu_cache_hash())
+    // spawns the render worker; gpu_cache.js warms its device there before the launch
+    return prepareRender()
   })
   .then(() => {
     window.setLoadingStepCompleted('gpu')
