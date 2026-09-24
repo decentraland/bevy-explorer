@@ -479,7 +479,7 @@ fn audio_track_is_now_subscribed(
         ),
         With<Subscribed>,
     >,
-    livekit_audio_manager: Option<ResMut<LivekitAudioManager>>,
+    mut livekit_audio_manager: ResMut<LivekitAudioManager>,
 ) {
     let entity = trigger.target();
     let Ok((track, is_audio, has_audio_streaming_sound, has_open_audio_sender)) =
@@ -505,10 +505,6 @@ fn audio_track_is_now_subscribed(
         debug_panic!("A subscribed audio track did not have a audio RemoteTrack.");
     };
 
-    // absent when no audio output device could be opened (e.g. the engine runs on a web worker)
-    let Some(mut livekit_audio_manager) = livekit_audio_manager else {
-        return;
-    };
     let decoder = AudioTrackKiraBridge::new(audio, 48_000);
 
     let Ok(handle) = livekit_audio_manager.play(StreamingSoundData::from_decoder(decoder)) else {

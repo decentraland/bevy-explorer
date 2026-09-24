@@ -1,10 +1,15 @@
 use bevy::prelude::*;
-use common::{debug_panic, structs::AudioSettings};
-use kira::{
-    manager::{AudioManager, AudioManagerSettings, DefaultBackend},
-    tween::Tween,
-};
+use common::debug_panic;
 use tokio::{sync::mpsc, task::JoinHandle};
+#[cfg(not(target_arch = "wasm32"))]
+use {
+    crate::livekit::LivekitAudioManager,
+    common::structs::AudioSettings,
+    kira::{
+        manager::{AudioManager, AudioManagerSettings, DefaultBackend},
+        tween::Tween,
+    },
+};
 
 #[cfg(feature = "room_debug")]
 use crate::livekit::room_debug::RoomDebugPlugin;
@@ -13,9 +18,8 @@ use crate::{
     livekit::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
-        track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitAudioManager,
-        LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
-        StartLivekit,
+        track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitChannelControl,
+        LivekitNetworkMessage, LivekitRuntime, LivekitTransport, StartLivekit,
     },
     Transport, TransportType,
 };
@@ -44,11 +48,16 @@ impl Plugin for LivekitPlugin {
         app.add_plugins(LivekitTrackPlugin);
 
         app.add_systems(Update, (start_livekit, verify_player_update_tasks));
-        app.add_systems(Startup, build_kira_audio_manager);
-        app.add_systems(
-            Update,
-            respond_to_audio_settings_change.run_if(resource_exists_and_changed::<AudioSettings>),
-        );
+        // on the web the page plays voice (livekit-client), and the engine worker has no audio output
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            app.add_systems(Startup, build_kira_audio_manager);
+            app.add_systems(
+                Update,
+                respond_to_audio_settings_change
+                    .run_if(resource_exists_and_changed::<AudioSettings>),
+            );
+        }
 
         app.add_event::<StartLivekit>();
 
@@ -133,6 +142,7 @@ fn verify_player_update_tasks(mut player_update_tasks: PlayerUpdateTasksMut) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn build_kira_audio_manager(mut commands: Commands) {
     match AudioManager::new(AudioManagerSettings::<DefaultBackend>::default()) {
         Ok(manager) => {
@@ -145,14 +155,11 @@ fn build_kira_audio_manager(mut commands: Commands) {
     };
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn respond_to_audio_settings_change(
-    livekit_audio_manager: Option<ResMut<LivekitAudioManager>>,
+    mut livekit_audio_manager: ResMut<LivekitAudioManager>,
     audio_settings: Res<AudioSettings>,
 ) {
-    // absent when no audio output device could be opened (e.g. the engine runs on a web worker)
-    let Some(mut livekit_audio_manager) = livekit_audio_manager else {
-        return;
-    };
     livekit_audio_manager
         .main_track()
         .set_volume(audio_settings.scene() as f64, Tween::default());
