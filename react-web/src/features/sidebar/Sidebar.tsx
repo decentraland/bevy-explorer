@@ -27,7 +27,7 @@ type Item =
   | { kind: 'map'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'places'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'gallery'; icon: IconName; label: string; hotkey?: string }
-  | { kind: 'help'; icon: IconName; label: string }
+  | { kind: 'link'; icon: IconName; label: string; url: string }
   | { kind: 'divider' }
 
 const TOP: Item[] = [
@@ -37,10 +37,11 @@ const TOP: Item[] = [
   { kind: 'places', icon: 'places', label: 'Places', hotkey: 'Places' },
   { kind: 'communities', icon: 'communities', label: 'Communities', hotkey: 'Communities' },
   { kind: 'backpack', icon: 'backpack', label: 'Backpack', hotkey: 'Backpack' },
+  { kind: 'link', icon: 'marketplace', label: 'Marketplace', url: 'https://decentraland.org/shop?utm_source=client' },
   { kind: 'gallery', icon: 'gallery', label: 'Gallery', hotkey: 'Gallery' },
   { kind: 'settings', icon: 'settings', label: 'Settings', hotkey: 'Settings' },
   { kind: 'divider' },
-  { kind: 'help', icon: 'help', label: 'Help & Support' }
+  { kind: 'link', icon: 'help', label: 'Help & Support', url: 'https://decentraland.org/help/' }
 ]
 
 const BOTTOM: Item[] = [
@@ -189,13 +190,13 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
         onClick={session.mic.toggle}
       />
     )
-  if (item.kind === 'help')
+  if (item.kind === 'link')
     return (
       <IconButton
-        key="help"
+        key={item.label}
         icon={item.icon}
         label={item.label}
-        onClick={() => window.open('https://decentraland.org/help/', '_blank', 'noopener')}
+        onClick={() => window.open(item.url, '_blank', 'noopener')}
       />
     )
   return (
