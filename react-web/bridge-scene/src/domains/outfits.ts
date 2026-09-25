@@ -1,14 +1,15 @@
 // Outfits: the player's saved avatar looks (backpack Outfits tab).
 //   load  ← localStorage cache first, else catalyst GET /lambdas/outfits/:address (unsigned)
 //   save/delete → localStorage (Phase 1; Phase 2 will deploy a signed `outfits` entity)
-//   equip → BevyApi.setAvatar (body shape + colors + wearables)
+//   equip → the Backpack's look (body shape + colors + wearables; ./avatarDraft deploys it on close)
 //
 // Mirrors bevy-ui-scene's outfits flow (localStorage-first read, host-mediated equip). The saved
 // shape matches the deployed catalyst `outfits` entity so Phase 2 can deploy it unchanged.
 import { getPlayer } from '@dcl/sdk/players'
-import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
 import { resolveEquippedSet } from './wearables'
+import { currentLook, editLook } from './avatarDraft'
+import type { AvatarLook } from '../../../src/engine/avatarEquip'
 import type { Ctx } from '../bridge'
 import type { Outfit, OutfitsMetadata, RGBColor } from '../../../src/engine/protocol'
 
@@ -51,16 +52,15 @@ async function loadMetadata(address: string): Promise<OutfitsMetadata> {
   return res?.metadata ?? EMPTY
 }
 
-// Capture the player's CURRENT look into a deployable Outfit (colors default to grey if absent).
-function currentOutfit(player: NonNullable<ReturnType<typeof getPlayer>>): Outfit {
-  const a = player.avatar
+// Capture the Backpack's CURRENT look into a deployable Outfit (colors default to grey if absent).
+function currentOutfit(look: AvatarLook): Outfit {
   return {
-    bodyShape: a?.bodyShapeUrn ?? '',
-    eyes: { color: a?.eyesColor ?? GREY },
-    hair: { color: a?.hairColor ?? GREY },
-    skin: { color: a?.skinColor ?? GREY },
-    wearables: (player.wearables ?? []).map(String),
-    forceRender: (player.forceRender ?? []).map(String)
+    bodyShape: look.bodyShape,
+    eyes: { color: look.eyes ?? GREY },
+    hair: { color: look.hair ?? GREY },
+    skin: { color: look.skin ?? GREY },
+    wearables: look.wearables,
+    forceRender: look.forceRender
   }
 }
 
@@ -79,10 +79,11 @@ export function registerOutfits(ctx: Ctx): void {
   // Save the current look into `slot`, replacing any existing outfit there, then re-emit.
   ctx.on('saveOutfit', async (msg) => {
     const me = getPlayer()
-    if (me == null) return
+    const look = currentLook()
+    if (me == null || look == null) return
     const metadata = await loadMetadata(me.userId)
     const outfits = metadata.outfits.filter((o) => o.slot !== msg.slot)
-    outfits.push({ slot: msg.slot, outfit: currentOutfit(me) })
+    outfits.push({ slot: msg.slot, outfit: currentOutfit(look) })
     outfits.sort((a, b) => a.slot - b.slot)
     const next = { ...metadata, outfits }
     writeLocal(me.userId, next)
@@ -98,7 +99,7 @@ export function registerOutfits(ctx: Ctx): void {
     emit(next)
   })
 
-  // Apply a saved outfit's body shape, colors and wearables to the live profile (keeps emotes).
+  // Put a saved outfit's body shape, colors and wearables on the Backpack's look (keeps emotes).
   ctx.on('equipOutfit', async (msg) => {
     const me = getPlayer()
     if (me == null) return
@@ -106,25 +107,17 @@ export function registerOutfits(ctx: Ctx): void {
     const found = metadata.outfits.find((o) => o.slot === msg.slot)
     if (found == null) return
     const { outfit } = found
-    BevyApi.setAvatar({
-      base: {
-        name: me.name,
-        bodyShapeUrn: outfit.bodyShape,
-        eyesColor: outfit.eyes.color,
-        hairColor: outfit.hair.color,
-        skinColor: outfit.skin.color
-      },
-      equip: {
-        wearableUrns: outfit.wearables,
-        emoteUrns: (me.emotes ?? []).map(String),
-        forceRender: outfit.forceRender
-      }
-    }).catch((e: unknown) => {
-      console.error('[outfits] equip failed', e)
+    editLook({
+      bodyShape: outfit.bodyShape,
+      eyes: outfit.eyes.color,
+      hair: outfit.hair.color,
+      skin: outfit.skin.color,
+      wearables: outfit.wearables,
+      forceRender: outfit.forceRender
     })
-    // setAvatar's deploy never pushes a wearables update, so re-emit the equipped set resolved from
-    // the outfit's wearables (by urn, independent of the loaded catalog page). Otherwise off-page
-    // outfit items never reach the HUD's category slots and the next single-item equip drops them.
+    // Re-emit the equipped set resolved from the outfit's wearables (by urn, independent of the
+    // loaded catalog page). Otherwise off-page outfit items never reach the HUD's category slots
+    // and the next single-item equip drops them.
     ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(outfit.wearables.map(String)) })
   })
 }

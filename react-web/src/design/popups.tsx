@@ -190,6 +190,9 @@ export interface DialogOptions {
   width?: number
   /** Equal-width buttons (see ModalShell). Defaults on for a 2-button dialog. */
   actionsEqual?: boolean
+  /** `false` → no × and a backdrop click does nothing, so a stray click can't make the choice; only
+   *  the actions and Escape (which resolves `null`) close it. Default true. */
+  dismissible?: boolean
 }
 
 /**
@@ -209,6 +212,7 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
         <ModalShell
           title={opts.title}
           onClose={close}
+          closeButton={opts.dismissible ?? true}
           width={opts.width ?? 420}
           actionsEqual={opts.actionsEqual ?? opts.actions.length === 2}
           actions={opts.actions.map((a) => (
@@ -227,7 +231,7 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
           {opts.body}
         </ModalShell>
       ),
-      { onClose: () => settle(null) } // default dim scrim from PopupHost
+      { onClose: () => settle(null), backdropClickCloses: opts.dismissible ?? true } // default dim scrim from PopupHost
     )
   })
 }

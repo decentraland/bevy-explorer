@@ -2,15 +2,14 @@
 // catalog fetcher used by the generic `catalog` domain.
 //   from: catalyst GET /explorer/:address/wearables (owned catalog, paged),
 //         GET /lambdas/collections/wearables (equipped-by-urn resolve, via ./collections),
-//         @dcl/sdk getPlayer().wearables (equipped), BevyApi.setAvatar (equip).
-import { getPlayer } from '@dcl/sdk/players'
-import { BevyApi } from '../bevy-api'
+//         the Backpack's look (equipped; ./avatarDraft, which deploys it on close).
 import { catalystBase, getJson } from '../http'
 import { resolveDefsByUrn, thumbnailUrl } from './collections'
 import { resolveShopUrls } from './marketplace'
 import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Wearable } from '../../../src/engine/protocol'
+import { currentLook, editLook } from './avatarDraft'
 
 type CatalogElement = {
   urn: string
@@ -61,7 +60,7 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
   const data = await getJson<{ elements?: CatalogElement[]; totalAmount?: number }>(url).catch(() => undefined)
   const elements = data?.elements ?? []
   accumulateTokens(elements)
-  const owned = (getPlayer()?.wearables ?? []).map(String)
+  const owned = currentLook()?.wearables ?? []
   const items: Wearable[] = elements.map((el) => {
     const file = el.entity?.metadata?.thumbnail
     const hash = el.entity?.content?.find((c) => c.file === file)?.hash
@@ -132,23 +131,17 @@ export async function resolveEquippedSet(urns: string[], opts: ResolveOpts = {})
 
 export function registerWearables(ctx: Ctx): void {
   ctx.on('equip', (msg) => {
-    const me = getPlayer()
-    const wearableUrns = msg.urns.map((u) => tokenUrnByItem.get(u) ?? u)
-    BevyApi.setAvatar({
-      equip: { wearableUrns, emoteUrns: (me?.emotes ?? []).map(String), forceRender: [] }
-    }).catch((e: unknown) => {
-      console.error('[wearables] equip failed', e)
-    })
+    editLook({ wearables: msg.urns.map((u) => tokenUrnByItem.get(u) ?? u) })
   })
 
   // Equipped set (category slots) for the live avatar, resolved by urn — DECOUPLED from the paged
   // grid so every equipped item shows regardless of which catalog page it's on.
   ctx.on('getWearables', async () => {
-    const player = getPlayer()
-    if (player == null) {
+    const look = currentLook()
+    if (look == null) {
       ctx.send({ kind: 'wearables', equipped: [] })
       return
     }
-    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet((player.wearables ?? []).map(String)) })
+    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(look.wearables) })
   })
 }

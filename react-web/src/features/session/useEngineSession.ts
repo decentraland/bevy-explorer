@@ -75,6 +75,9 @@ function parseTimeReply(reply: string): { hours: number; speed: number } | null 
   return m ? { hours: Number(m[2]) / 3600, speed: Number(m[1]) } : null
 }
 
+// Unity's wording (BackpackEquipStatusController's in-world warning) when a profile deploy fails.
+export const SAVE_FAILED_MESSAGE = 'There was an error updating your avatar profile. Please try again.'
+
 /** A server-side catalog page request (backpack grid). Filters/sort are applied by the catalyst. */
 export interface CatalogQuery {
   page: number
@@ -98,9 +101,15 @@ export interface BackpackState {
   equipped: Wearable[]
   open: boolean
   toggle: () => void
-  /** Persist a full equipped set to the profile (the explicit Equip action). */
+  /** Put a full equipped set on the Backpack's look (the explicit Equip action); deployed on close. */
   equip: (urns: string[]) => void
-  /** Preview a set on the avatar without persisting (selecting); null reverts to the profile. */
+  /** Why deploying the look failed, or null (until Retry or Revert). */
+  saveError: string | null
+  /** Deploy the look again now. */
+  retrySave: () => void
+  /** Drop the look and go back to the last one that deployed. */
+  revertSave: () => void
+  /** Preview a set on the avatar without equipping it (selecting); null reverts to the look. */
   preview: (urns: string[] | null) => void
   /** Saved outfits (Outfits tab), by slot index. */
   outfits: OutfitSlot[]
@@ -604,6 +613,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [catalogLoading, setCatalogLoading] = useState(false)
   const catalogReqId = useRef(0)
   const [equippedWearables, setEquippedWearables] = useState<Wearable[]>([])
+  const [saveError, setSaveError] = useState<string | null>(null)
   // Mirror of catalogItems for equipWearables' optimistic equipped-set rebuild (avoids stale closure).
   const catalogItemsRef = useRef<Wearable[]>([])
   useEffect(() => { catalogItemsRef.current = catalogItems }, [catalogItems])
@@ -788,6 +798,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'mic':
           setMic({ enabled: msg.enabled, available: msg.available })
+          break
+        case 'avatarSaveFailed':
+          setSaveError(SAVE_FAILED_MESSAGE)
+          console.error('[backpack] deploy failed:', msg.message)
           break
         case 'wearables':
           setEquippedWearables(msg.equipped)
@@ -1379,6 +1393,24 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'equip', urns })
     applyEquippedOptimistic(urns)
   }, [applyEquippedOptimistic])
+  const retrySave = useCallback(() => {
+    setSaveError(null)
+    driverRef.current?.send({ kind: 'commitAvatar' })
+  }, [])
+  // The bridge swaps its look back straight away, so re-reading the equipped sets picks it up.
+  const revertSave = useCallback(() => {
+    setSaveError(null)
+    driverRef.current?.send({ kind: 'revertAvatar' })
+    send('getWearables')
+    send('getEmotes')
+  }, [send])
+  // Closing the Backpack (its own toggle, or another page opening) deploys its look in one go, as
+  // Unity does; the bridge skips it when nothing changed.
+  const backpackWasOpen = useRef(false)
+  useEffect(() => {
+    if (backpackWasOpen.current && !backpackOpen) driverRef.current?.send({ kind: 'commitAvatar' })
+    backpackWasOpen.current = backpackOpen
+  }, [backpackOpen])
   const previewWearables = useCallback((urns: string[] | null) => {
     driverRef.current?.send({ kind: 'previewAvatar', urns })
   }, [])
@@ -1429,8 +1461,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'triggerEmote', urn })
     setEmotesOpen(false)
   }, [])
-  // Assign an owned emote to a wheel slot (urn:'' clears it); optimistically reflect the slot move
-  // so the UI updates before the engine round-trips the new profile.
+  // Assign an owned emote to a wheel slot (urn:'' clears it) on the Backpack's look, reflecting the
+  // slot move here straight away (nothing deploys until the Backpack closes).
   const equipEmote = useCallback((slot: number, urn: string) => {
     driverRef.current?.send({ kind: 'equipEmote', slot, urn })
     setEmotes((list) =>
@@ -1958,7 +1990,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
     backpack: {
       list: catalogItems, total: catalogTotal, loading: catalogLoading, query: queryCatalog,
-      equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables,
+      equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, saveError, retrySave, revertSave, preview: previewWearables,
       outfits: outfits.outfits, outfitSlots: Math.min(10, 5 + outfits.namesForExtraSlots.length),
       saveOutfit, deleteOutfit, equipOutfit
     },
