@@ -60,7 +60,11 @@ impl IntoString for CefStringUserfreeUtf16 {
         // `self`, so its drop never calls `cef_string_userfree_utf16_free` and the string leaks
         let value: Option<&_cef_string_utf16_t> = (&self).into();
         value
-            .map(|value| CefStringUtf16::from(std::ptr::from_ref(value)).to_string())
+            .and_then(|value| {
+                CefStringUtf16::from(std::ptr::from_ref(value))
+                    .as_slice()
+                    .map(String::from_utf16_lossy)
+            })
             .unwrap_or_default()
     }
 }
