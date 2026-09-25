@@ -19,6 +19,7 @@ import { registerEmotes } from './domains/emotes'
 import { registerWearables } from './domains/wearables'
 import { registerCatalog } from './domains/catalog'
 import { registerOutfits } from './domains/outfits'
+import { registerAvatarDraft } from './domains/avatarDraft'
 import { registerNotifications } from './domains/notifications'
 import { registerSettings } from './domains/settings'
 import { registerCommunities } from './domains/communities'
@@ -47,6 +48,7 @@ export function main(): void {
     registerWearables(ctx)
     registerCatalog(ctx)
     registerOutfits(ctx)
+    registerAvatarDraft(ctx)
     registerNotifications(ctx)
     registerSettings(ctx)
     registerCommunities(ctx)

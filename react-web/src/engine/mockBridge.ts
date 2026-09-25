@@ -560,6 +560,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     }
     if (msg.kind === 'triggerEmote') return // no-op in the mock
     if (msg.kind === 'equipEmote') return // no-op in the mock
+    if (msg.kind === 'commitAvatar' || msg.kind === 'revertAvatar') return // no-op in the mock
     if (msg.kind === 'getWearables') {
       reply({ kind: 'wearables', equipped: equippedNow() })
       return

@@ -28,7 +28,7 @@ import { Pointer } from './features/pointer/Pointer'
 import { openPassport } from './features/profile/Passport'
 import { openWorldVisit } from './components/WorldVisitModal'
 import { openPermissionDialog } from './features/permissions/PermissionDialog'
-import { PopupHost } from './design'
+import { PopupHost, showDialog } from './design'
 import { SessionProvider } from './features/session/SessionContext'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
@@ -220,6 +220,24 @@ function Hud(): React.JSX.Element {
     return openTravelError(travelError, session.dismissTravelError)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dismissTravelError is stable
   }, [travelError])
+
+  // Deploying the Backpack's look failed: try it again, or go back to the last look that deployed.
+  // A deliberate choice only: Escape reverts, a stray click outside does nothing.
+  const avatarSaveError = session.backpack.saveError
+  useEffect(() => {
+    if (avatarSaveError == null) return
+    const { retrySave, revertSave } = session.backpack
+    void showDialog({
+      title: "Couldn't save your look",
+      body: <p>{avatarSaveError}</p>,
+      dismissible: false,
+      actions: [
+        { id: 'revert', label: 'Revert', variant: 'secondary' },
+        { id: 'retry', label: 'Retry' }
+      ]
+    }).then((choice) => (choice === 'retry' ? retrySave() : revertSave()))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the backpack actions are stable
+  }, [avatarSaveError])
 
   // Which tab the Backpack opens on. The emote wheel's "Customise [E]" opens it on Emotes; it resets
   // to Wearables once the Backpack closes so a normal (sidebar/topbar) open lands on Wearables.

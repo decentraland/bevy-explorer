@@ -152,6 +152,8 @@ export type PageToScene =
   | GetWearablesRequest
   | CatalogQueryRequest
   | EquipRequest
+  | CommitAvatarRequest
+  | RevertAvatarRequest
   | PreviewAvatarRequest
   | GetOutfitsRequest
   | SaveOutfitRequest
@@ -653,6 +655,12 @@ export interface Community {
   pendingRequestId?: string
 }
 
+/** Deploying the Backpack's look was rejected (scene → page). */
+export interface AvatarSaveFailedMessage {
+  kind: 'avatarSaveFailed'
+  message: string
+}
+
 export interface CommunitiesMessage {
   kind: 'communities'
   communities: Community[]
@@ -891,14 +899,24 @@ export interface CatalogPageMessage {
   requestId: number
 }
 
-/** Equip a new full wearable set (page → scene → BevyApi.setAvatar). */
+/** Equip a new full wearable set on the Backpack's look (page → scene); deployed on commitAvatar. */
 export interface EquipRequest {
   kind: 'equip'
   urns: string[]
 }
 
-/** Preview a wearable set on the Backpack avatar WITHOUT persisting it to the profile
- *  (selecting an item, not equipping). `urns: null` clears the preview (revert to profile). */
+/** The Backpack closed: deploy its look if it changed (page → scene → BevyApi.setAvatar). */
+export interface CommitAvatarRequest {
+  kind: 'commitAvatar'
+}
+
+/** Drop the Backpack's look after a failed deploy and put back the last one that deployed. */
+export interface RevertAvatarRequest {
+  kind: 'revertAvatar'
+}
+
+/** Preview a wearable set on the Backpack avatar WITHOUT adding it to the Backpack's look
+ *  (selecting an item, not equipping). `urns: null` clears the preview (back to the look). */
 export interface PreviewAvatarRequest {
   kind: 'previewAvatar'
   urns: string[] | null
@@ -1148,6 +1166,7 @@ export type SceneToPage =
   | VoiceActivityMessage
   | CommunityActionFailedMessage
   | TravelResultMessage
+  | AvatarSaveFailedMessage
   | CommunityDetailMessage
   | MapMessage
   | PlayerPoseMessage

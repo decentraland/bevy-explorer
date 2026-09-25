@@ -5,14 +5,15 @@
 // (its own CameraLayer, so no world/skybox/other avatars) into a UI videoTexture positioned
 // at that rect — the engine composites it behind the React DOM, showing through the hole.
 //
-// The preview reads getPlayer()'s avatar, which React updates live via setAvatar (equip), so
-// equipping in the Backpack reflects here. Mounted via ReactEcsRenderer in index.ts.
+// The preview wears the Backpack's look (./avatarDraft), which equipping edits, so equipping in the
+// Backpack reflects here before anything is deployed. Mounted via ReactEcsRenderer in index.ts.
 import ReactEcs, { UiEntity } from '@dcl/react-ecs'
 import { AvatarShape, CameraLayer, CameraLayers, Material, MeshRenderer, PrimaryPointerInfo, TextureCamera, Transform, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { getPlayer } from '@dcl/sdk/players'
 import type { Entity } from '@dcl/ecs'
 import type { Ctx } from '../bridge'
+import { currentLook } from './avatarDraft'
 
 type Rect = { x: number; y: number; width: number; height: number }
 
@@ -73,19 +74,19 @@ function avatarShape(): {
   emotes: string[]
   forceRender: string[]
 } {
-  const p = getPlayer()
-  // Preview override (item selected, not equipped) takes precedence over the player's set,
-  // so selecting shows the look without persisting anything to the profile.
-  const wearables = previewUrns ?? (p?.wearables ?? []).filter((w): w is string => typeof w === 'string')
+  const look = currentLook()
+  // Preview override (item selected, not equipped) takes precedence over the look's set,
+  // so selecting shows the item without adding it to the look.
+  const wearables = previewUrns ?? look?.wearables ?? []
   return {
-    id: p?.userId ?? '',
-    bodyShape: p?.avatar?.bodyShapeUrn,
-    eyeColor: p?.avatar?.eyesColor,
-    hairColor: p?.avatar?.hairColor,
-    skinColor: p?.avatar?.skinColor,
+    id: getPlayer()?.userId ?? '',
+    bodyShape: look?.bodyShape || undefined,
+    eyeColor: look?.eyes ?? undefined,
+    hairColor: look?.hair ?? undefined,
+    skinColor: look?.skin ?? undefined,
     wearables,
     emotes: [],
-    forceRender: p?.forceRender ?? []
+    forceRender: look?.forceRender ?? []
   }
 }
 

@@ -346,8 +346,8 @@ export function BackpackPage({
   const equipSetWith = (w: Wearable): string[] =>
     [...backpack.equipped.filter((x) => x.category !== w.category).map((x) => x.urn), w.urn]
 
-  // Explicit equip/unequip (the hover pill) — persists to the profile, then drops the preview
-  // override so the avatar follows the (now updated) profile.
+  // Explicit equip/unequip (the hover pill) — changes the Backpack's look (deployed when it closes),
+  // then drops the preview override so the avatar follows the (now updated) look.
   const toggleEquip = (w: Wearable): void => {
     const next = w.equipped
       ? backpack.equipped.filter((x) => x.urn !== w.urn).map((x) => x.urn)

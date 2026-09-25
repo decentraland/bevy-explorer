@@ -1,19 +1,41 @@
 import { describe, it, expect } from 'vitest'
-import { equipPayload } from '../engine/avatarEquip'
+import { lookDeploy, sameLook, type AvatarLook } from '../engine/avatarEquip'
 
-// Audit backpack-emotes-2: every wearable/emote equip sent forceRender: [], erasing overrides.
-describe('equip payload', () => {
-  const me = { wearables: ['urn:hat'], emotes: ['wave'], forceRender: ['hair'] }
+const look = (over: Partial<AvatarLook> = {}): AvatarLook => ({
+  bodyShape: 'urn:body:a',
+  eyes: { r: 0, g: 0, b: 1 },
+  hair: { r: 1, g: 0, b: 0 },
+  skin: { r: 1, g: 1, b: 1 },
+  wearables: ['urn:hat'],
+  emotes: ['wave', '', '', '', '', '', '', '', '', ''],
+  forceRender: ['hair'],
+  ...over
+})
 
-  it('keeps force-render overrides when equipping wearables', () => {
-    expect(equipPayload(me, { wearableUrns: ['urn:cap'] })).toEqual({ wearableUrns: ['urn:cap'], emoteUrns: ['wave'], forceRender: ['hair'] })
+// The Backpack deploys its look on close, in one setAvatar.
+describe('look deploy', () => {
+  // Audit backpack-emotes-2: every wearable/emote equip sent forceRender: [], erasing overrides.
+  it('keeps force-render overrides with the equipped set', () => {
+    expect(lookDeploy(look({ wearables: ['urn:cap'] }), look(), 'Rob').equip).toEqual({
+      wearableUrns: ['urn:cap'],
+      emoteUrns: ['wave', '', '', '', '', '', '', '', '', ''],
+      forceRender: ['hair']
+    })
   })
 
-  it('keeps them when assigning an emote slot', () => {
-    expect(equipPayload(me, { emoteUrns: ['dance'] }).forceRender).toEqual(['hair'])
+  it('leaves the body, colors and name alone unless they changed', () => {
+    expect(lookDeploy(look({ wearables: [] }), look(), 'Rob').base).toBeUndefined()
+    expect(lookDeploy(look({ hair: { r: 0, g: 1, b: 0 } }), look(), 'Rob').base).toEqual({
+      name: 'Rob',
+      bodyShapeUrn: 'urn:body:a',
+      eyesColor: { r: 0, g: 0, b: 1 },
+      hairColor: { r: 0, g: 1, b: 0 },
+      skinColor: { r: 1, g: 1, b: 1 }
+    })
   })
 
-  it('sends none when the player has none', () => {
-    expect(equipPayload(null, { wearableUrns: [] }).forceRender).toEqual([])
+  it('compares looks by value', () => {
+    expect(sameLook(look(), look())).toBe(true)
+    expect(sameLook(look(), look({ forceRender: [] }))).toBe(false)
   })
 })
