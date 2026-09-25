@@ -2,11 +2,10 @@
 // events from the public events API; a card jumps to the event's parcel or world.
 
 import { useCallback, useEffect, useState } from 'react'
-import { EmptyState, People, Pin, Spinner, Tabs, type TabItem } from '../../design'
+import { DiscoverCard, EmptyState, Spinner, Tabs, type TabItem } from '../../design'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import type { EventsState, ProfileState } from '../session/useEngineSession'
 import { eventDestination, eventLocation, fetchEvents, type DclEvent, type EventsList } from './eventsApi'
-import cardStyles from '../places/PlaceCard.module.css'
 import styles from '../places/PlacesPage.module.css'
 
 const SECTIONS: TabItem<EventsList>[] = [
@@ -14,65 +13,24 @@ const SECTIONS: TabItem<EventsList>[] = [
   { id: 'upcoming', label: 'Upcoming' }
 ]
 
-function hueOf(id: string): number {
-  let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360
-  return h
-}
-
 function when(e: DclEvent): string {
   if (e.live) return 'Happening now'
   return new Date(e.start_at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
 function EventCard({ event, onClick }: { event: DclEvent; onClick: () => void }): React.JSX.Element {
-  const [failed, setFailed] = useState(false)
-  const attendees = event.total_attendees ?? 0
   return (
-    <article
-      className={cardStyles.card}
+    <DiscoverCard
+      id={event.id}
+      title={event.name}
+      image={event.image}
+      live={event.live}
+      count={event.total_attendees}
+      byline={when(event)}
+      location={{ text: eventLocation(event), world: event.world === true }}
+      label={event.name}
       onClick={onClick}
-      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
-      role="button"
-      tabIndex={0}
-      aria-label={event.name}
-    >
-      <div className={cardStyles.media} style={{ ['--hue' as string]: hueOf(event.id) }}>
-        {event.image && !failed && <img className={cardStyles.mediaImg} src={event.image} alt="" draggable={false} onError={() => setFailed(true)} />}
-        <div className={cardStyles.badges}>
-          <div className={cardStyles.badgeGroup}>
-            {event.live && (
-              <span className={`${cardStyles.badge} ${cardStyles.live}`}>
-                <span className={cardStyles.liveDot} /> LIVE
-              </span>
-            )}
-            {attendees > 0 && (
-              <span className={cardStyles.badge}>
-                <People size={13} />
-                {attendees}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-      <div className={cardStyles.body}>
-        <div className={cardStyles.info}>
-          <span className={cardStyles.title} title={event.name}>{event.name}</span>
-          <div className={cardStyles.creatorRow}>
-            <span className={cardStyles.by}>{when(event)}</span>
-            <span className={`${cardStyles.loc} ${event.world ? cardStyles.locWorld : ''}`.trim()} title={eventLocation(event)}>
-              <Pin size={12} />
-              {eventLocation(event)}
-            </span>
-          </div>
-        </div>
-        <div className={cardStyles.jumpInWrap}>
-          <span className={cardStyles.jumpIn}>
-            <span>Jump in</span>
-          </span>
-        </div>
-      </div>
-    </article>
+    />
   )
 }
 
