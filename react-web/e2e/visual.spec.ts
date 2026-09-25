@@ -166,6 +166,13 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('world-hud.png')
   })
 
+  // Element-level with a fixed pixel budget: 1% of this thin strip would hide a whole icon change.
+  test('sidebar', async ({ page }) => {
+    await enterWorldReturning(page)
+    await settle(page)
+    await expect(page.locator('nav[aria-label="Main navigation"]')).toHaveScreenshot('sidebar.png', { maxDiffPixels: 20 })
+  })
+
   // Profile card — the popover opened by clicking a chat sender / nearby avatar. Baselines the
   // action set (View Passport · Mention · Block). The block confirm and the relationship
   // states (Accept/Reject/Unblock) are covered deterministically by the tier-1 profileCard.test.tsx.
