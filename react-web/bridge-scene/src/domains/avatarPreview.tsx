@@ -162,7 +162,7 @@ function disposePreview(): void {
 function syncShape(): void {
   if (avatarEntity == null) return
   const shape = avatarShape()
-  const key = `${shape.bodyShape ?? ''}|${shape.wearables.join(',')}`
+  const key = JSON.stringify(shape)
   if (key === lastShapeKey) return
   lastShapeKey = key
   const mut = AvatarShape.getMutableOrNull(avatarEntity)

@@ -295,6 +295,11 @@
   gap: 10px;
   margin-bottom: 14px;
 }
+/* Avatar color picker for the selected category (hair / eyes / skin). */
+.colorPicker {
+  max-width: 22rem;
+  margin-bottom: 14px;
+}
 .chip {
   display: inline-flex;
   align-items: center;

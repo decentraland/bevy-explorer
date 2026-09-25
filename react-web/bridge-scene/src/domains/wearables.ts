@@ -142,7 +142,12 @@ export async function sendEquipped(ctx: Ctx): Promise<void> {
     return
   }
   const urns = look.bodyShape !== '' ? [look.bodyShape, ...look.wearables] : look.wearables
-  ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(urns), bodyShape: look.bodyShape || undefined })
+  ctx.send({
+    kind: 'wearables',
+    equipped: await resolveEquippedSet(urns),
+    bodyShape: look.bodyShape || undefined,
+    colors: { skin: look.skin ?? undefined, hair: look.hair ?? undefined, eyes: look.eyes ?? undefined }
+  })
 }
 
 export function registerWearables(ctx: Ctx): void {
@@ -154,6 +159,10 @@ export function registerWearables(ctx: Ctx): void {
     editLook(bodyShape != null ? { bodyShape, wearables: tokenUrns } : { wearables: tokenUrns })
     // Re-emit with the new shape so the grid re-checks compatibility right away.
     if (newShape) await sendEquipped(ctx)
+  })
+
+  ctx.on('setAvatarColor', (msg) => {
+    editLook({ [msg.target]: msg.color })
   })
 
   ctx.on('getWearables', async () => {

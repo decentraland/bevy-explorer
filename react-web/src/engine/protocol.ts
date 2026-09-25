@@ -7,7 +7,7 @@
 // Domain types mirror scene/src/bevy-api/interface.ts so the bridge scene can
 // forward SystemApi results verbatim.
 
-import type { SceneLoadingUi } from './generated'
+import type { Color3, SceneLoadingUi } from './generated'
 
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
@@ -159,6 +159,7 @@ export type PageToScene =
   | SaveOutfitRequest
   | DeleteOutfitRequest
   | EquipOutfitRequest
+  | SetAvatarColorRequest
   | GetCommunitiesRequest
   | CreateCommunityRequest
   | JoinCommunityRequest
@@ -857,11 +858,22 @@ export interface Wearable {
 
 /** Currently-equipped wearables, resolved by urn independently of the (paginated) grid so every
  *  equipped item drives its per-category slot even when it isn't on the current catalog page. */
+export type AvatarColorTarget = 'skin' | 'hair' | 'eyes'
+
 export interface WearablesMessage {
   kind: 'wearables'
   equipped: Wearable[]
   /** The avatar's current body shape urn. */
   bodyShape?: string
+  /** The avatar's colors (engine Color3, 0–1). */
+  colors?: { skin?: Color3; hair?: Color3; eyes?: Color3 }
+}
+
+/** Change one avatar color in the Backpack's look (deployed when it closes). */
+export interface SetAvatarColorRequest {
+  kind: 'setAvatarColor'
+  target: AvatarColorTarget
+  color: Color3
 }
 
 /** Load the equipped-wearables set (category slots). The owned catalog itself is paged via
