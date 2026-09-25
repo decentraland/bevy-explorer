@@ -194,16 +194,20 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
         onClick={session.emotes.toggle}
       />
     )
-  if (item.kind === 'mic')
+  if (item.kind === 'mic') {
+    const voice = !session.mic.available ? 'off' : session.mic.enabled ? 'speaking' : 'hearing'
     return (
       <IconButton
         key="mic"
-        icon={item.icon}
+        icon={`voice-${voice}`}
         label={item.label}
+        data-voice={voice}
+        indicator={voice !== 'off'}
         active={session.mic.enabled}
         onClick={session.mic.toggle}
       />
     )
+  }
   if (item.kind === 'skybox')
     return <IconButton key="skybox" icon={item.icon} label={item.label} active={session.skybox.open} onClick={session.skybox.toggle} />
   if (item.kind === 'events')

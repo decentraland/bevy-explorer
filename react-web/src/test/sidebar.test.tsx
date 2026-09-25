@@ -32,6 +32,19 @@ describe('sidebar parity', () => {
     expect(url.origin + url.pathname).toBe('https://github.com/decentraland/bevy-explorer/issues/new')
     expect(url.searchParams.get('body')).toContain(navigator.userAgent)
   })
+
+  it.each([
+    [{ available: false, enabled: false }, 'off', false],
+    [{ available: true, enabled: false }, 'hearing', true],
+    [{ available: true, enabled: true }, 'speaking', true]
+  ])('voice button mirrors Unity nearby-voice state for %o', (mic, state, dot) => {
+    const s = fakeSession()
+    s.mic = { ...s.mic, ...mic }
+    render(<Sidebar session={s} />)
+    const button = screen.getByRole('button', { name: 'Voice chat' })
+    expect(button).toHaveAttribute('data-voice', state)
+    expect(button.querySelector('[data-indicator]') != null).toBe(dot)
+  })
 })
 
 afterEach(() => vi.restoreAllMocks())

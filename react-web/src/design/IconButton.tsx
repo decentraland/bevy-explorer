@@ -20,6 +20,8 @@ interface IconButtonProps
   label: string
   /** Single-key shortcut shown dimmed in the tooltip, e.g. 'T' → "Chat [T]". */
   shortcut?: string
+  /** Green status dot (e.g. connected voice). */
+  indicator?: boolean
   /** Render this profile picture in place of the icon. */
   avatar?: { src?: string; name: string; color?: string }
 }
@@ -32,6 +34,7 @@ export function IconButton({
   label,
   shortcut,
   avatar,
+  indicator = false,
   className = '',
   type = 'button',
   ...rest
@@ -46,6 +49,7 @@ export function IconButton({
         {...rest}
       >
         {avatar ? <Avatar src={avatar.src} name={avatar.name} color={avatar.color} size={24} /> : <Icon name={icon} size={24} />}
+        {indicator && <span className={styles.indicator} data-indicator />}
         {badge != null && badge > 0 && (
           <span
             className={`${styles.badge} ${badgeTone === 'lavender' ? styles.badgeLavender : ''}`.trim()}

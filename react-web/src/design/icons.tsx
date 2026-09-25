@@ -20,6 +20,9 @@ import notificationsPng from '../assets/sidebar-icons/notifications.png'
 import placesPng from '../assets/sidebar-icons/places.png'
 import settingsPng from '../assets/sidebar-icons/settings.png'
 import skyboxPng from '../assets/sidebar-icons/skybox.png'
+import voiceHearingPng from '../assets/sidebar-icons/voice-hearing.png'
+import voiceOffPng from '../assets/sidebar-icons/voice-off.png'
+import voiceSpeakingPng from '../assets/sidebar-icons/voice-speaking.png'
 
 export type IconName =
   | 'profile'
@@ -39,6 +42,9 @@ export type IconName =
   | 'bug'
   | 'events'
   | 'skybox'
+  | 'voice-off'
+  | 'voice-hearing'
+  | 'voice-speaking'
 
 const MASK_ART: Partial<Record<IconName, string>> = {
   backpack: backpackPng,
@@ -56,7 +62,14 @@ const MASK_ART: Partial<Record<IconName, string>> = {
   notifications: notificationsPng,
   places: placesPng,
   settings: settingsPng,
-  skybox: skyboxPng
+  skybox: skyboxPng,
+  'voice-hearing': voiceHearingPng,
+  'voice-off': voiceOffPng
+}
+
+// Multicolour Unity art that must keep its own colours (drawn as an image, not a mask).
+const COLOR_ART: Partial<Record<IconName, string>> = {
+  'voice-speaking': voiceSpeakingPng
 }
 
 // Only the icons WITHOUT Unity png art — anything present in MASK_ART renders as a mask.
@@ -72,6 +85,8 @@ export function Icon({
   name: IconName
   size?: number
 }): React.JSX.Element {
+  const colorArt = COLOR_ART[name]
+  if (colorArt != null) return <img src={colorArt} alt="" aria-hidden="true" width={size} height={size} draggable={false} />
   const art = MASK_ART[name]
   if (art != null) {
     const url = `url(${art})`
