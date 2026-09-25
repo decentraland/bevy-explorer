@@ -1040,6 +1040,14 @@ impl IpfsIo {
         write.entities.insert(hash, entity);
     }
 
+    /// Drop the collection and modifier registered for `hash`. Call only once nothing will
+    /// resolve content through `hash` any more (e.g. the owning scene has been despawned).
+    pub fn remove_collection(&self, hash: &str) {
+        let mut write = self.context.blocking_write();
+        write.entities.remove(hash);
+        write.modifiers.remove(hash);
+    }
+
     /// Merge additional path→hash entries into an existing collection (creating it if absent),
     /// WITHOUT clobbering the collection's other entries — unlike `add_collection`, which replaces.
     /// Injects imported-asset files into the *current scene's* content map at runtime.

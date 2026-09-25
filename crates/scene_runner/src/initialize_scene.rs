@@ -88,6 +88,7 @@ impl Plugin for SceneLifecyclePlugin {
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
         app.init_resource::<PortableScenes>();
+        app.init_resource::<SceneCollections>();
         app.init_asset::<SerializedCrdtStore>();
         app.init_asset_loader::<CrdtLoader>();
         app.add_plugins(MaterialPlugin::<LoadingMaterial>::default());
@@ -95,6 +96,9 @@ impl Plugin for SceneLifecyclePlugin {
         app.add_systems(
             Update,
             (
+                collect_released_scene_collections
+                    .pipe(remove_released_scene_collections)
+                    .before(load_scene_entity),
                 load_scene_entity,
                 load_scene_json,
                 load_scene_javascript,
@@ -138,6 +142,104 @@ pub enum SceneLoading {
 
 #[derive(Component)]
 pub struct SceneEntityDefinitionHandle(pub Handle<EntityDefinition>);
+
+// content collections registered with ipfs per scene entity, so they can be dropped once no
+// scene uses the hash any more
+#[derive(Resource, Default)]
+pub struct SceneCollections {
+    registered: HashMap<Entity, String>,
+    // hashes an entity registered before its scene was replaced with a different definition
+    superseded: Vec<String>,
+}
+
+impl SceneCollections {
+    // record the collection an entity registered. an entity only runs one definition, so a
+    // replacement scene (a `LoadSceneEvent` targeting an existing entity) supersedes the
+    // previous hash, which is then released like the hash of a despawned scene once the old
+    // scene stops running
+    fn register(&mut self, entity: Entity, hash: String) {
+        if let Some(prev) = self.registered.insert(entity, hash.clone()) {
+            if prev != hash {
+                self.superseded.push(prev);
+            }
+        }
+    }
+
+    // forget entities that are gone, returning the hashes (of those entities, and superseded
+    // by replacements) that no remaining scene still uses. `pending_scenes` are scene entities
+    // and their `SceneHash`; those that haven't registered a collection yet still count as
+    // users of that hash. `running_scenes` are the hashes of the live `RendererSceneContext`s:
+    // a replaced scene keeps running on its entity (resolving content through its old hash)
+    // until the replacement installs a new context, and indefinitely if the replacement fails.
+    // a hash held only by pending or running scenes is rechecked next time, as they may never
+    // register it or may stop
+    fn release(
+        &mut self,
+        is_alive: impl Fn(Entity) -> bool,
+        pending_scenes: impl Iterator<Item = (Entity, String)>,
+        running_scenes: impl Iterator<Item = String>,
+    ) -> Vec<String> {
+        let mut released = std::mem::take(&mut self.superseded);
+        self.registered.retain(|entity, hash| {
+            let alive = is_alive(*entity);
+            if !alive {
+                released.push(std::mem::take(hash));
+            }
+            alive
+        });
+        if released.is_empty() {
+            return released;
+        }
+
+        // a registered entity's `SceneHash` is ignored: it is stale after a replacement, and
+        // otherwise matches the registered hash
+        let held: HashSet<String> = pending_scenes
+            .filter(|(entity, _)| !self.registered.contains_key(entity))
+            .map(|(_, hash)| hash)
+            .chain(running_scenes)
+            .collect();
+        let registered: HashSet<&String> = self.registered.values().collect();
+        released.sort();
+        released.dedup();
+        released.retain(|hash| {
+            if registered.contains(hash) {
+                // released again when its registered users go
+                false
+            } else if held.contains(hash) {
+                self.superseded.push(hash.clone());
+                false
+            } else {
+                true
+            }
+        });
+        released
+    }
+}
+
+// runs before `load_scene_entity` so entities registered last frame have been spawned
+fn collect_released_scene_collections(
+    mut collections: ResMut<SceneCollections>,
+    scenes: Query<(), With<SceneEntityDefinitionHandle>>,
+    scene_hashes: Query<(Entity, &SceneHash)>,
+    contexts: Query<&RendererSceneContext>,
+) -> Vec<String> {
+    if collections.registered.is_empty() && collections.superseded.is_empty() {
+        return Vec::default();
+    }
+
+    collections.release(
+        |entity| scenes.contains(entity),
+        scene_hashes.iter().map(|(e, h)| (e, h.0.clone())),
+        contexts.iter().map(|ctx| ctx.hash.clone()),
+    )
+}
+
+fn remove_released_scene_collections(In(released): In<Vec<String>>, ipfas: IpfsAssetServer) {
+    for hash in released {
+        debug!("releasing scene collection {hash}");
+        ipfas.ipfs().remove_collection(&hash);
+    }
+}
 
 #[derive(Component)]
 pub struct SceneInitialData {
@@ -192,6 +294,7 @@ pub(crate) fn load_scene_json(
     mut loading_scenes: Query<(Entity, &mut SceneLoading, &SceneEntityDefinitionHandle)>,
     scene_definitions: Res<Assets<EntityDefinition>>,
     ipfas: IpfsAssetServer,
+    mut collections: ResMut<SceneCollections>,
 ) {
     for (entity, mut state, h_scene) in loading_scenes
         .iter_mut()
@@ -228,6 +331,7 @@ pub(crate) fn load_scene_json(
             None,
             definition.metadata.as_ref().map(|v| v.to_string()),
         );
+        collections.register(entity, definition.id.clone());
 
         let crdt = definition.content.hash("main.crdt").map(|_| {
             ipfas
@@ -2003,5 +2107,213 @@ pub fn handle_live_scene_info(
 
     for sender in senders {
         sender.send(scene_info.clone());
+    }
+}
+
+#[cfg(test)]
+mod scene_collections_tests {
+    use bevy::ecs::system::RunSystemOnce;
+
+    use super::*;
+
+    fn context(hash: &str) -> RendererSceneContext {
+        RendererSceneContext::new(
+            dcl::SceneId::DUMMY,
+            hash.to_owned(),
+            "storage_root".to_owned(),
+            false,
+            0,
+            "title".to_owned(),
+            IVec2::ZERO,
+            HashSet::from_iter([IVec2::ZERO]),
+            vec![],
+            vec![],
+            Entity::PLACEHOLDER,
+            0.0,
+            false,
+            "sdk_version",
+            false,
+            false,
+        )
+    }
+
+    // a scene entity running `old`, whose replacement with `new` has registered its collection
+    // but not yet installed its context
+    fn replaced_scene_world() -> (World, Entity) {
+        let mut world = World::new();
+        let entity = world
+            .spawn((
+                SceneHash("old".to_owned()),
+                SceneEntityDefinitionHandle(Handle::default()),
+                SceneLoading::MainCrdt { crdt: None },
+                context("old"),
+            ))
+            .id();
+        let mut collections = SceneCollections::default();
+        collections.register(entity, "old".to_owned());
+        collections.register(entity, "new".to_owned());
+        world.insert_resource(collections);
+        (world, entity)
+    }
+
+    fn collect(world: &mut World) -> Vec<String> {
+        world
+            .run_system_once(collect_released_scene_collections)
+            .unwrap()
+    }
+
+    #[test]
+    fn replaced_scene_keeps_old_hash_until_new_context_is_installed() {
+        let (mut world, entity) = replaced_scene_world();
+
+        // the old scene is still running and resolving content through its hash
+        assert!(collect(&mut world).is_empty());
+        assert!(collect(&mut world).is_empty());
+
+        world.entity_mut(entity).insert(context("new"));
+        assert_eq!(collect(&mut world), vec!["old".to_owned()]);
+        assert!(collect(&mut world).is_empty());
+    }
+
+    #[test]
+    fn replaced_scene_releases_old_hash_once_old_context_is_removed() {
+        let (mut world, entity) = replaced_scene_world();
+        assert!(collect(&mut world).is_empty());
+
+        world.entity_mut(entity).remove::<RendererSceneContext>();
+        assert_eq!(collect(&mut world), vec!["old".to_owned()]);
+    }
+
+    #[test]
+    fn failed_replacement_keeps_old_hash_while_old_scene_runs() {
+        let (mut world, entity) = replaced_scene_world();
+
+        // the replacement fails after registering, leaving the old context running
+        world.entity_mut(entity).insert(SceneLoading::Failed);
+        assert!(collect(&mut world).is_empty());
+
+        // both collections go once the entity is despawned
+        world.despawn(entity);
+        let mut released = collect(&mut world);
+        released.sort();
+        assert_eq!(released, vec!["new".to_owned(), "old".to_owned()]);
+    }
+
+    fn register(collections: &mut SceneCollections, entity: Entity, hash: &str) {
+        collections.register(entity, hash.to_owned());
+    }
+
+    #[test]
+    fn releases_hash_of_despawned_scene() {
+        let (a, b) = (Entity::from_raw(1), Entity::from_raw(2));
+        let mut collections = SceneCollections::default();
+        register(&mut collections, a, "ha");
+        register(&mut collections, b, "hb");
+
+        let released = collections.release(|e| e != a, std::iter::empty(), std::iter::empty());
+        assert_eq!(released, vec!["ha".to_owned()]);
+        assert!(!collections.registered.contains_key(&a));
+        assert!(collections.registered.contains_key(&b));
+
+        // nothing further to release
+        assert!(collections
+            .release(|_| true, std::iter::empty(), std::iter::empty())
+            .is_empty());
+    }
+
+    #[test]
+    fn keeps_hash_shared_with_live_scene() {
+        let (a, b) = (Entity::from_raw(1), Entity::from_raw(2));
+        let mut collections = SceneCollections::default();
+        register(&mut collections, a, "shared");
+        register(&mut collections, b, "shared");
+
+        assert!(collections
+            .release(|e| e != a, std::iter::empty(), std::iter::empty())
+            .is_empty());
+        assert_eq!(
+            collections.release(|_| false, std::iter::empty(), std::iter::empty()),
+            vec!["shared".to_owned()]
+        );
+    }
+
+    #[test]
+    fn keeps_hash_of_scene_still_loading() {
+        let (a, b) = (Entity::from_raw(1), Entity::from_raw(2));
+        let mut collections = SceneCollections::default();
+        register(&mut collections, a, "reloading");
+
+        // a respawned scene with the same hash that hasn't registered yet
+        let released = collections.release(
+            |_| false,
+            std::iter::once((b, "reloading".to_owned())),
+            std::iter::empty(),
+        );
+        assert!(released.is_empty());
+        assert!(collections.registered.is_empty());
+
+        // released once the respawned scene is gone without registering it
+        assert_eq!(
+            collections.release(|_| false, std::iter::empty(), std::iter::empty()),
+            vec!["reloading".to_owned()]
+        );
+    }
+
+    #[test]
+    fn replacing_a_scene_releases_the_superseded_hash() {
+        let a = Entity::from_raw(1);
+        let mut collections = SceneCollections::default();
+        register(&mut collections, a, "first");
+        register(&mut collections, a, "second");
+        register(&mut collections, a, "third");
+
+        // the entity's `SceneHash` is still the original one after a replacement, and must
+        // not keep the superseded collection alive
+        let released = collections.release(
+            |_| true,
+            std::iter::once((a, "first".to_owned())),
+            std::iter::empty(),
+        );
+        assert_eq!(released, vec!["first".to_owned(), "second".to_owned()]);
+        assert_eq!(collections.registered.get(&a), Some(&"third".to_owned()));
+        assert!(collections
+            .release(|_| true, std::iter::empty(), std::iter::empty())
+            .is_empty());
+    }
+
+    #[test]
+    fn replacing_a_scene_keeps_a_superseded_hash_still_in_use() {
+        let (a, b, c) = (
+            Entity::from_raw(1),
+            Entity::from_raw(2),
+            Entity::from_raw(3),
+        );
+        let mut collections = SceneCollections::default();
+        register(&mut collections, a, "shared");
+        register(&mut collections, b, "shared");
+        register(&mut collections, a, "new");
+        // re-registering the same definition supersedes nothing
+        register(&mut collections, b, "shared");
+
+        assert!(collections
+            .release(|_| true, std::iter::empty(), std::iter::empty())
+            .is_empty());
+
+        // still kept while another scene is spawned for it but not yet registered
+        register(&mut collections, b, "other");
+        assert!(collections
+            .release(
+                |_| true,
+                std::iter::once((c, "shared".to_owned())),
+                std::iter::empty()
+            )
+            .is_empty());
+
+        // and kept for good once that scene registers it
+        register(&mut collections, c, "shared");
+        assert!(collections
+            .release(|_| true, std::iter::empty(), std::iter::empty())
+            .is_empty());
+        assert!(collections.superseded.is_empty());
     }
 }
