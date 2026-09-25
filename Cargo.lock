@@ -1962,7 +1962,7 @@ dependencies = [
 [[package]]
 name = "bevy_hanabi"
 version = "0.16.0"
-source = "git+https://github.com/robtfm/bevy_hanabi?branch=0.16-dcl#b74f574eec10f84741e732a31a78022621b4eb38"
+source = "git+https://github.com/robtfm/bevy_hanabi?branch=0.16-dcl#f4ec3a25039b65b32140bb487638a6b7b79daf58"
 dependencies = [
  "anyhow",
  "bevy",
