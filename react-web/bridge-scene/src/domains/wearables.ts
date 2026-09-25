@@ -10,7 +10,7 @@ import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Wearable } from '../../../src/engine/protocol'
 import { currentLook, editLook } from './avatarDraft'
-import { bodyShapesOf } from '../../../src/engine/bodyShape'
+import { bodyShapesOf, fittingUrns, splitBodyShape } from '../../../src/engine/bodyShape'
 
 type CatalogElement = {
   urn: string
@@ -111,6 +111,7 @@ export async function resolveWearables(urns: string[], opts: ResolveOpts = {}): 
       category: def?.data?.category ?? 'unknown',
       thumbnail: thumbnailUrl(baseUrl, item),
       equipped: true,
+      bodyShapes: def?.data?.representations != null ? bodyShapesOf({ entity: { metadata: { data: def.data } } }) : undefined,
       shopUrl: shopUrls?.get(item)
     }
   })
@@ -132,8 +133,17 @@ export async function resolveEquippedSet(urns: string[], opts: ResolveOpts = {})
 }
 
 export function registerWearables(ctx: Ctx): void {
-  ctx.on('equip', (msg) => {
-    editLook({ wearables: msg.urns.map((u) => tokenUrnByItem.get(u) ?? u) })
+  ctx.on('equip', async (msg) => {
+    const { bodyShape, wearables } = splitBodyShape(msg.urns)
+    const urns = wearables.map((u) => tokenUrnByItem.get(u) ?? u)
+    if (bodyShape == null || bodyShape === currentLook()?.bodyShape) {
+      editLook({ wearables: urns })
+      return
+    }
+    const fits = fittingUrns(await resolveEquippedSet(urns), bodyShape)
+    const kept = urns.filter((u) => fits.has(itemUrn(u)))
+    editLook({ bodyShape, wearables: kept })
+    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(kept), bodyShape })
   })
 
   // Equipped set (category slots) for the live avatar, resolved by urn — DECOUPLED from the paged

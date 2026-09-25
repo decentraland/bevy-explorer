@@ -19,6 +19,7 @@ import {
   type Wearable
 } from './protocol'
 import { applyProfileEdit } from './profileEdit'
+import { isCompatible, splitBodyShape } from './bodyShape'
 
 // A fully-populated passport for the mock, so the React passport shows every section.
 function richProfile(address: string, name: string, isGuest: boolean): Profile {
@@ -78,6 +79,10 @@ const mockCommunities: Community[] = [
   { id: 'c8', name: 'Community Building DCL', description: 'Helping communities grow in Decentraland.', thumbnail: '', membersCount: 639, role: 'owner', ownerName: 'TheCryptKeeper' }
 ]
 
+const BASE_MALE = 'urn:decentraland:off-chain:base-avatars:BaseMale'
+const BASE_FEMALE = 'urn:decentraland:off-chain:base-avatars:BaseFemale'
+let mockBodyShape = BASE_MALE
+
 const RARITIES = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
 const thumb = (urn: string): string => `https://peer.decentraland.org/lambdas/collections/contents/${urn}/thumbnail`
 // Real base-avatar wearables so the mock grid shows actual thumbnails (catalyst).
@@ -105,7 +110,9 @@ const BASE: { name: string; category: string; label: string }[] = [
   { name: 'piratepatch', category: 'eyewear', label: 'Pirate Patch' },
   { name: 'blue_bandana', category: 'mask', label: 'Blue Bandana' },
   { name: 'pink_gem_earring', category: 'earring', label: 'Pink Gem Earring' },
-  { name: 'Thunder_earring', category: 'earring', label: 'Thunder Earring' }
+  { name: 'Thunder_earring', category: 'earring', label: 'Thunder Earring' },
+  { name: 'BaseMale', category: 'body_shape', label: 'Body Shape A' },
+  { name: 'BaseFemale', category: 'body_shape', label: 'Body Shape B' }
 ]
 const mockWearables: Wearable[] = BASE.map((b, i) => {
   const urn = `urn:decentraland:off-chain:base-avatars:${b.name}`
@@ -115,14 +122,13 @@ const mockWearables: Wearable[] = BASE.map((b, i) => {
     rarity: RARITIES[i % RARITIES.length],
     category: b.category,
     thumbnail: thumb(urn),
-    // f_* base items are female-only in the catalyst (the mock avatar is BaseMale).
-    bodyShapes: b.name.startsWith('f_') ? ['urn:decentraland:off-chain:base-avatars:BaseFemale'] : undefined,
+    // f_*/m_* base items are female-/male-only in the catalyst.
+    bodyShapes: b.name.startsWith('f_') ? [BASE_FEMALE] : b.name.startsWith('m_') ? [BASE_MALE] : undefined,
     equipped: i % 6 === 0
   }
 })
 
 // A saved outfit from a set of wearable urns (fixed colors/body shape — no real avatar in the mock).
-const BASE_MALE = 'urn:decentraland:off-chain:base-avatars:BaseMale'
 const mockOutfit = (urns: string[]): Outfit => ({
   bodyShape: BASE_MALE,
   eyes: { color: { r: 0.37, g: 0.22, b: 0.19 } },
@@ -564,7 +570,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'equipEmote') return // no-op in the mock
     if (msg.kind === 'commitAvatar' || msg.kind === 'revertAvatar') return // no-op in the mock
     if (msg.kind === 'getWearables') {
-      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE })
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: mockBodyShape })
       return
     }
     if (msg.kind === 'catalogQuery') {
@@ -585,9 +591,11 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'equip') {
-      const set = new Set(msg.urns)
-      for (const w of mockWearables) w.equipped = set.has(w.urn)
-      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE })
+      const { bodyShape, wearables } = splitBodyShape(msg.urns)
+      if (bodyShape != null) mockBodyShape = bodyShape
+      const set = new Set(wearables)
+      for (const w of mockWearables) w.equipped = w.urn === mockBodyShape || (set.has(w.urn) && (bodyShape == null || isCompatible(w, bodyShape)))
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: mockBodyShape })
       return
     }
     if (msg.kind === 'getOutfits') {
@@ -614,7 +622,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       if (found) {
         const set = new Set(found.outfit.wearables)
         for (const w of mockWearables) w.equipped = set.has(w.urn)
-        reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE })
+        reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: mockBodyShape })
       }
       return
     }

@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Tabs, WearableCard, type Rarity, type TabItem } from '../../design'
-import { isCompatible } from './bodyShape'
+import { isCompatible } from '../../engine/bodyShape'
 import { catalystThumbUrl } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
 import { CategoryIcon } from './categoryIcons'
