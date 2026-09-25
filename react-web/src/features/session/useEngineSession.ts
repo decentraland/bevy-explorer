@@ -2,11 +2,11 @@
 // Owns the driver and exposes the login flow + scene-loading state + phase.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { serviceUrl } from '../../lib/baseDomain'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/fatalError'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
+import { checkRealm, realmCheckMessage } from '../../lib/realmCheck'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
 import { bootMode } from '../../lib/bootMode'
 import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
@@ -21,6 +21,7 @@ import { formatConsoleReply, parseChatCommand } from '../chat/chatCommands'
 import type {
   AppNotification,
   BindingEntry,
+  ChangeRealmRequest,
   ChatMessage,
   Community,
   CommunityAction,
@@ -45,6 +46,7 @@ import type {
   ProfileEdit,
   SceneLoadingState,
   Setting,
+  TeleportRequest,
   Wearable
 } from '../../engine/protocol'
 
@@ -386,6 +388,12 @@ export interface EngineSession {
    *  'entering'. NOT the scene the player is in — that is `minimap.sceneTitle`, resolved by
    *  parcel; this title is whatever was last loading and goes stale as the player moves. */
   sceneLoading: SceneLoadingState | null
+  /** Why the last in-world travel failed (the engine kept the player where they were), shown as a notice. */
+  travelError: string | null
+  dismissTravelError: () => void
+  /** The realm a HUD-requested travel is heading to, until the engine reports the outcome. The
+   *  loader shows meanwhile. */
+  travellingTo: string | null
   /** Fatal engine error → full-screen error popup. 'launch' = boot panic (fatal), 'runtime' =
    *  post-launch crash bridged from the engine watchdog (dismissable). null when healthy. */
   fatalError: FatalError | null
@@ -491,6 +499,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // when the engine is already running), so the pick is held until playerReady — or sent at once if
   // the player already spawned (see the no-launch pick path).
   const pendingParcel = useRef<{ x: number; y: number } | null>(null)
+  // A realm change the HUD asked for, until the bridge reports how it ended ('travelResult'). Only
+  // the latest counts: an earlier one is answered as superseded when a newer one replaces it.
+  const travelSeq = useRef(0)
+  const [travellingTo, setTravellingTo] = useState<string | null>(null)
+  const [travelError, setTravelError] = useState<string | null>(null)
   const [playerReady, setPlayerReady] = useState(false)
   // Ref twin of playerReady: the destination pick runs in a callback that would close over a
   // stale value of the state.
@@ -807,6 +820,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'realmInfo':
           setIsWorld(msg.isWorld)
           break
+        case 'travelResult':
+          if (msg.travelId !== travelSeq.current) break
+          setTravellingTo(null)
+          if (!msg.ok) setTravelError(`Couldn't travel to "${msg.realm}": ${msg.message ?? 'unknown error'}`)
+          break
         case 'sceneInfo':
           setSceneTitle(msg.title)
           break
@@ -921,6 +939,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     )
   }, [])
 
+  // A realm change from the HUD: the loader shows from the request until the engine reports the
+  // outcome (it validates the destination before leaving the current realm).
+  const travel = useCallback((msg: ChangeRealmRequest | (TeleportRequest & { realm: string })) => {
+    const travelId = ++travelSeq.current
+    setTravellingTo(msg.realm)
+    driverRef.current?.send({ ...msg, travelId })
+  }, [])
+  const changeRealm = useCallback((realm: string) => travel({ kind: 'changeRealm', realm }), [travel])
+  const dismissTravelError = useCallback(() => setTravelError(null), [])
+
   // Chat send doubles as the slash-command interceptor (parity with bevy-ui-scene's `sendChatMessage`):
   // a recognized `/command` never reaches other players — it teleports, reloads, runs an engine console
   // command, or echoes a system message. Anything else is sent as a normal Nearby message.
@@ -935,10 +963,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
           break
         case 'genesis':
-          driverRef.current?.send({ kind: 'changeRealm', realm: DEFAULT_REALM })
+          changeRealm(DEFAULT_REALM)
           break
         case 'world':
-          driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
+          changeRealm(cmd.realm)
           break
         case 'reload':
           driverRef.current?.send({ kind: 'reloadScene' })
@@ -954,7 +982,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
       }
     },
-    [pushSystemMessage]
+    [pushSystemMessage, changeRealm]
   )
 
   // Toggle one exclusive panel (closing chat + all others); optionally run onOpen.
@@ -1116,14 +1144,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const teleportToPlace = useCallback(
     (x: number, y: number) => {
-      if (isWorld) driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
+      if (isWorld) travel({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
       else driverRef.current?.send({ kind: 'teleport', x, y })
     },
-    [isWorld]
+    [isWorld, travel]
   )
-  const changeRealm = useCallback((realm: string) => {
-    driverRef.current?.send({ kind: 'changeRealm', realm })
-  }, [])
   const setMinimapConfig = useCallback(
     (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => {
       driverRef.current?.send({ kind: 'minimapConfig', ...config })
@@ -1196,7 +1221,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           else pendingParcel.current = { x, y }
         }
         if (dest?.kind === 'world') {
-          driver.send({ kind: 'changeRealm', realm: dest.realm })
+          travel({ kind: 'changeRealm', realm: dest.realm })
           const [x, y] = (dest.position ?? '').split(',').map(Number)
           if (Number.isFinite(x) && Number.isFinite(y)) sendParcel(x, y)
         } else if (dest?.kind === 'parcel') {
@@ -1249,7 +1274,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     }
     requestAnimationFrame(() => requestAnimationFrame(run))
     setTimeout(run, 60)
-  }, [])
+  }, [travel])
   // Boot-mode flags (?hud=0 / ?guest=1 / ?systemScene= — see lib/bootMode.ts), captured once
   // per session mount so tests can vary location.search between mounts.
   const boot = useRef(bootMode())
@@ -1292,23 +1317,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (dest != null && dest.kind === 'world') {
       if (validatingRealm.current) return
       validatingRealm.current = true
-      const base =
-        dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
-          ? `${serviceUrl('worldsServer')}/world/${dest.realm}`
-          : dest.realm
       // Launching against an unreachable realm strands the engine in a cryptic login failure, so
       // block up front: 404 → not found, no/failed answer (incl. timeout) → unreachable.
-      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))
-      const unreachable = (): void =>
-        setFatalError({ message: `The world "${dest.realm}" isn't reachable right now.`, source: 'realm' })
-      Promise.race([fetch(`${base.replace(/\/+$/, '')}/about`), timeout])
-        .then((r) => {
-          if (r?.ok) pickDestination(dest)
-          else if (r?.status === 404)
-            setFatalError({ message: `The world "${dest.realm}" doesn't exist.`, source: 'realm' })
-          else unreachable()
+      checkRealm(dest.realm)
+        .then((result) => {
+          if (result === 'ok') pickDestination(dest)
+          else setFatalError({ message: realmCheckMessage(dest.realm, result), source: 'realm' })
         })
-        .catch(unreachable)
         .finally(() => {
           urlDestination.current = null
           validatingRealm.current = false
@@ -1618,11 +1633,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // The engine keeps its loader visible until the player's scene is rendered, and flips it back on
   // for each scene streamed into Genesis Plaza. We debounce the *reveal* (loading→world) so a brief
   // `visible` gap between scenes doesn't flash the HUD; the loader still appears INSTANTLY whenever
-  // loading re-asserts. Loading = scene visible, or not spawned, or the render-settle still holding.
+  // loading re-asserts. Loading = a HUD travel pending, or scene visible, or not spawned, or the
+  // render-settle still holding.
   // No state received yet (sceneLoading == null) counts as loading: the loading stream is the
   // bridge-scene's domain, and until it's running and reports otherwise the world isn't ready
   // (on native the engine relay itself sends no loading state at all).
-  const loadingNow = sceneLoading?.visible !== false || !playerReady || revealing
+  const loadingNow = travellingTo != null || sceneLoading?.visible !== false || !playerReady || revealing
   const [loaderActive, setLoaderActive] = useState(true)
   useEffect(() => {
     if (loadingNow) {
@@ -1849,6 +1865,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     phase,
     pickDestination,
     sceneLoading,
+    travelError,
+    dismissTravelError,
+    travellingTo,
     fatalError,
     reload: () => location.reload(),
     dismissFatal: () => {

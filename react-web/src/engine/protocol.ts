@@ -552,6 +552,8 @@ export interface TeleportRequest {
    *  a full reconnect, as for changeRealm, even to the realm the player is in. Omitted: a parcel of
    *  the realm the player is in. */
   realm?: string
+  /** Set with `realm`: the scene answers with a `travelResult` carrying this id. */
+  travelId?: number
 }
 
 /** Change to a world/realm (page → scene → changeRealm). `realm` is a world name
@@ -559,6 +561,18 @@ export interface TeleportRequest {
 export interface ChangeRealmRequest {
   kind: 'changeRealm'
   realm: string
+  /** The scene answers with a `travelResult` carrying this id. */
+  travelId?: number
+}
+
+/** How a realm change the page asked for ended (scene → page). On failure the engine kept the
+ *  player in the realm they were in; `message` is the engine's reason. */
+export interface TravelResultMessage {
+  kind: 'travelResult'
+  travelId: number
+  realm: string
+  ok: boolean
+  message?: string
 }
 
 /** A scene's pending permission prompt relayed from the engine (e.g. it wants to move you
@@ -1125,6 +1139,7 @@ export type SceneToPage =
   | OutfitsMessage
   | CommunitiesMessage
   | CommunityActionFailedMessage
+  | TravelResultMessage
   | CommunityDetailMessage
   | MapMessage
   | PlayerPoseMessage

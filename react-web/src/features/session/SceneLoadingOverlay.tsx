@@ -6,9 +6,12 @@ import type { SceneLoadingState } from '../../engine/protocol'
 import styles from './SceneLoadingOverlay.module.css'
 
 export function SceneLoadingOverlay({
-  scene
+  scene,
+  travellingTo = null
 }: {
   scene: SceneLoadingState | null
+  /** A HUD travel is waiting on the engine: name the destination, not the scene being left. */
+  travellingTo?: string | null
 }): React.JSX.Element {
   // Track the peak pending-asset count to render a sensible progress bar.
   const peak = useRef(0)
@@ -34,8 +37,8 @@ export function SceneLoadingOverlay({
   return (
     <div className={styles.root}>
       <div className={styles.logo} />
-      <h2 className={styles.title}>{title}</h2>
-      <p className={styles.subtitle}>{subtitle}</p>
+      <h2 className={styles.title}>{travellingTo != null ? `Travelling to ${travellingTo}` : title}</h2>
+      <p className={styles.subtitle}>{travellingTo != null ? 'Connecting to the realm' : subtitle}</p>
       <div className={styles.track}>
         <div
           className={`${styles.fill}${known ? '' : ' ' + styles.indeterminate}`}

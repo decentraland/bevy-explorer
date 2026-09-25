@@ -32,6 +32,7 @@ import { SessionProvider } from './features/session/SessionContext'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
+import { openTravelError } from './features/session/TravelError'
 import { useEngineSession } from './features/session/useEngineSession'
 import { useWindowKeyDown } from './lib/useWindowKeyDown'
 import { bootMode } from './lib/bootMode'
@@ -211,6 +212,14 @@ function Hud(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the front request changes
   }, [permFrontId])
 
+  // A refused in-world travel (destination missing/unreachable): the player stays put and is told why.
+  const travelError = session.travelError
+  useEffect(() => {
+    if (travelError == null) return
+    return openTravelError(travelError, session.dismissTravelError)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dismissTravelError is stable
+  }, [travelError])
+
   // Which tab the Backpack opens on. The emote wheel's "Customise [E]" opens it on Emotes; it resets
   // to Wearables once the Backpack closes so a normal (sidebar/topbar) open lands on Wearables.
   const [backpackTab, setBackpackTab] = useState<'wearables' | 'emotes'>('wearables')
@@ -263,7 +272,9 @@ function Hud(): React.JSX.Element {
       {rpc && <EngineHost rpc={rpc} />}
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
-      {session.phase === 'entering' && <SceneLoadingOverlay scene={session.sceneLoading} />}
+      {session.phase === 'entering' && (
+        <SceneLoadingOverlay scene={session.sceneLoading} travellingTo={session.travellingTo} />
+      )}
       {session.phase === 'world' && !session.menuOpen && (
         <>
           {/* The full-screen menu pages own the whole screen; hide the rail + chat so

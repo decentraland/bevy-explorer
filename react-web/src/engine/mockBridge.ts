@@ -634,11 +634,22 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       // No engine in mock mode — avatar preview has nothing to render.
       return
     }
+    // No realm switching in the mock: a realm change just reports its outcome, failing for a
+    // `noexiste…` destination so the travel notice can be tried.
+    const travelResult = (realm: string, travelId: number | undefined): void => {
+      if (travelId == null) return
+      if (realm.startsWith('noexiste')) reply({ kind: 'travelResult', travelId, realm, ok: false, message: 'status: 404 Not Found' })
+      else reply({ kind: 'travelResult', travelId, realm, ok: true })
+    }
     if (msg.kind === 'teleport') {
       reply({ kind: 'mapState', x: msg.x, y: msg.y })
+      if (msg.realm != null) travelResult(msg.realm, msg.travelId)
       return
     }
-    if (msg.kind === 'changeRealm') return // no realm switching in the mock
+    if (msg.kind === 'changeRealm') {
+      travelResult(msg.realm, msg.travelId)
+      return
+    }
     if (msg.kind === 'permissionResolve') return // no engine to apply the decision in the mock
     if (msg.kind === 'getCommunities') {
       reply({ kind: 'communities', communities: mockCommunities })
