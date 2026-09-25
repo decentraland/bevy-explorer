@@ -31,11 +31,11 @@ leave assertions past the end of the run.
 - **`serve.py`** — static content server: serves the two scene entity definitions, the
   shared `game.js`, and one realm `about` per engine instance. Answers the
   `entities/active` pointer query with `[]` so synthetic clients load no scene of their own.
-- **Orchestrated server** — `headless --orchestrated`, fed two `add-scene` commands on
+- **Orchestrated server** — `dcl_headless_server --orchestrated`, fed two `add-scene` commands on
   stdin, each with a pre-minted `livekit:` adapter for a distinct room and the `realm` the
   scene belongs to. One `GlobalCrdtState` context per room; one Pulse scene-listener
   connection announcing both realms' parcels, demuxed into those contexts by (realm, parcel).
-- **Synthetic clients** — `headless` in client mode (`--realm-comms --no-scene-room
+- **Synthetic clients** — `dcl_headless_server` in client mode (`--realm-comms --no-scene-room
   --wallet-seed N`). A client-mode headless *is* a synthetic player: it broadcasts
   position/profile into whatever room its realm's `about.comms.fixedAdapter` points at.
   Client A joins room A, client B joins room B.

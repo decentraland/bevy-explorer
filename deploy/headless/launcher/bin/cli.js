@@ -35,7 +35,7 @@ const USAGE = `
     -h, --help             This message.
 
   Environment:
-    DCL_BEVY_SERVER_PATH   Absolute path to a pre-installed \`headless\` binary,
+    DCL_BEVY_SERVER_PATH   Absolute path to a pre-installed \`dcl_headless_server\` binary,
                            bypassing the bundled platform package.
 `
 
