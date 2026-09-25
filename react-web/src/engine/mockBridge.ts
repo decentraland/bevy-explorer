@@ -424,6 +424,8 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         }),
       1400
     )
+    // One nearby player is talking in voice chat, so the speaking indicator is visible in ?mock=1.
+    setTimeout(() => reply({ kind: 'voiceActivity', address: MOCK_NEARBY[0].address, active: true }), 1500)
 
     // ?simhover=N seeds N world-hover prompts so the radial cursor tooltips are visible/verifiable in
     // ?mock=1 (the real engine hover stream isn't mocked). React positions them at the live DOM cursor,

@@ -3,6 +3,7 @@
 
 import { Button } from './Button'
 import { IconButton } from './IconButton'
+import { VoiceBars } from './VoiceBars'
 import { useState } from 'react'
 import { ControlButton } from './ControlButton'
 import { Tooltip } from './Tooltip'
@@ -406,6 +407,10 @@ export function Showcase(): React.JSX.Element {
           <IconButton icon="profile" label="Profile (avatar)" avatar={{ name: 'Mojito', color: 'var(--lavender)' }} />
           <IconButton icon="voice-hearing" label="Voice (connected)" indicator />
         </Panel>
+      </Section>
+
+      <Section title="VoiceBars (speaking)">
+        <VoiceBars />
       </Section>
 
       <Section title="Panel">

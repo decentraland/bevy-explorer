@@ -301,6 +301,8 @@ export interface ChatState {
   toggle: () => void
   /** Nearby players (drives the "Nearby · N" header + members list). */
   members: NearbyMember[]
+  /** Lowercased addresses talking in voice chat right now (engine voice stream). */
+  speaking: ReadonlySet<string>
   /** Open chat and queue an @name mention into the draft (from a profile card's "Mention"). */
   mention: (name: string) => void
   /** A queued @name waiting to be dropped into the chat draft (consumed by Chat), or null. */
@@ -514,6 +516,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [cursorLocked, setCursorLocked] = useState(false)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
+  const [speaking, setSpeaking] = useState<ReadonlySet<string>>(() => new Set())
   // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
   // avatarClick uses it to centre the card while the camera has the pointer locked.
   const cursorLockedRef = useRef(false)
@@ -692,6 +695,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setMembers(msg.members)
           seedProfiles(msg.members)
           break
+        case 'voiceActivity': {
+          const address = msg.address.toLowerCase()
+          setSpeaking((prev) => {
+            if (prev.has(address) === msg.active) return prev
+            const next = new Set(prev)
+            if (msg.active) next.add(address)
+            else next.delete(address)
+            return next
+          })
+          break
+        }
         case 'menuVisibility':
           setMenuOpen(msg.open)
           break
@@ -1886,6 +1900,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       open: chatOpen,
       toggle: toggleChat,
       members,
+      speaking,
       mention: mentionInChat,
       pendingMention,
       consumeMention,
