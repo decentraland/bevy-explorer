@@ -17,18 +17,18 @@ pub const RAYLEIGH: Gradient = Gradient(&[
     (0.75, Vec3::new(6.0e-6, 1.0e-6, 22.0e-6)),
 ]);
 
-/// Flat night-sky colour added per-direction in the atmosphere shader by
-/// `max(-1, -sun·ray) * 0.25 + 0.75`, so the night sky isn't pure black.
+/// Flat night-sky colour, faded by sun elevation before uploading the sky
+/// uniform. The shader adds a mild directional weight so night isn't black;
+/// this purple fill must not contaminate the daytime horizon.
 pub const NIGHT_SKY: Vec3 = Vec3::new(0.1, 0.05, 0.3);
 
 /// Atmosphere mie (haze) coefficient over the day. Mie is a scalar, so it only
-/// controls horizon glow intensity, not hue. Strong by day (~42e-6) for a hazy
-/// horizon; floored low at dawn/dusk and through the night (the floor keeps the
-/// night term alive — exactly-zero mie kills it). Tracks the same sunrise/sunset
-/// elevation crossing as [`RAYLEIGH`].
+/// controls horizon glow intensity, not hue. A clear-air daytime value retains
+/// the sun halo without the former 42e-6 blanket of aerosol haze. The lower
+/// twilight/night floor and transition times are unchanged.
 pub const MIE: Curve = Curve(&[
     (0.25, 0.21e-6),
-    (0.35, 42.0e-6),
-    (0.65, 42.0e-6),
+    (0.35, 8.0e-6),
+    (0.65, 8.0e-6),
     (0.75, 0.21e-6),
 ]);

@@ -55,19 +55,31 @@ fn rsi(rd: vec3<f32>, r0: vec3<f32>, sr: f32) -> vec2<f32> {
     }
 }
 
+fn atmosphere_segment(r: vec3<f32>, r0: vec3<f32>, r_planet: f32, r_atmos: f32) -> vec2<f32> {
+    let atmosphere = rsi(r, r0, r_atmos);
+    let start = max(atmosphere.x, 0.0);
+    var end = atmosphere.y;
+    let ground = rsi(r, r0, r_planet);
+    // A negative planet entry is behind the camera, not the atmosphere exit.
+    // Misses have reversed roots and must not truncate a grazing sky ray.
+    if ground.x >= 0.0 && ground.x <= ground.y {
+        end = min(end, ground.x);
+    }
+    return vec2<f32>(start, end);
+}
+
 fn render_nishita(r_full: vec3<f32>, r0: vec3<f32>, p_sun_full: vec3<f32>, i_sun: f32, r_planet: f32, r_atmos: f32, k_rlh: vec3<f32>, k_mie: f32, sh_rlh: f32, sh_mie: f32, g: f32) -> vec3<f32> {
     // Normalize the ray direction and sun position.
     let r = normalize(r_full);
     let p_sun = normalize(p_sun_full);
 
     // Calculate the step size of the primary ray.
-    var p = rsi(r, r0, r_atmos);
-    if p.x > p.y { return vec3<f32>(0f); }
-    p.y = min(p.y, rsi(r, r0, r_planet).x);
+    let p = atmosphere_segment(r, r0, r_planet, r_atmos);
+    if p.x >= p.y { return vec3<f32>(0f); }
     let i_step_size = (p.y - p.x) / f32(ISTEPS);
 
     // Initialize the primary ray depth.
-    var i_depth = 0.0;
+    var i_depth = p.x;
 
     // Initialize accumulators for Rayleigh and Mie scattering.
     var total_rlh = vec3<f32>(0f);
@@ -182,9 +194,12 @@ fn cloudy() -> f32 {
 }
 
 fn density(p: vec3<f32>, m: mat3x3<f32>) -> f32 {
-	let density = clamp(FBM(p, m) * 0.5 + cloudy(), 0.0, 1.0);
     let cloud_range = CLOUD_UPPER - CLOUD_LOWER;
     let outside = clamp(abs(clamp(p.y, CLOUD_LOWER + 0.1 * cloud_range, CLOUD_UPPER - 0.1 * cloud_range) - p.y) / (0.1 * cloud_range), 0.0, 1.0);
+    // The existing vertical envelope has no contribution outside the shell.
+    // Avoid all six explicit-level noise samples in that exact-zero region.
+    if outside == 1.0 { return 0.0; }
+    let density = clamp(FBM(p, m) * 0.5 + cloudy(), 0.0, 1.0);
     return mix(density, 0.0, outside);
 }
 
@@ -209,22 +224,35 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     var shade_sum: vec2<f32> = vec2<f32>(0.0);
 
     let density_cap = nishita.cloud_density_cap;
-    for (var i = 0u; i < nishita.cloud_steps; i += 1u) {
-        if shade_sum.y >= density_cap {
-            break;
+    let base_density = clamp(cloudy(), 0.0, 1.0);
+    let base_light = pow(base_density, 0.25) * base_density;
+
+    let horizon_ray = dir.y == 0.0;
+    if horizon_ray || clamp(length(p.xz) / 100000.0, 0.0, 1.0) == 1.0 {
+        if base_density > 0.0 {
+            for (var i = 0u; i < nishita.cloud_steps; i += 1u) {
+                if shade_sum.y >= density_cap {
+                    break;
+                }
+
+                shade_sum += vec2<f32>(base_light, base_density) * (vec2<f32>(1.0) - shade_sum.y);
+            }
         }
+    } else {
+        for (var i = 0u; i < nishita.cloud_steps; i += 1u) {
+            if shade_sum.y >= density_cap {
+                break;
+            }
 
-        let base_density = clamp(cloudy(), 0.0, 1.0);
-        let base_light = pow(base_density, 0.25) * base_density;
+            let sample_density = density(p, m);
+            let sample_light = lighting(p, dir, p_sun, m) * sample_density;
 
-        let sample_density = density(p, m);
-        let sample_light = lighting(p, dir, p_sun, m) * sample_density;
+            let density = mix(sample_density, base_density, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
+            let light = mix(sample_light, base_light, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
 
-        let density = mix(sample_density, base_density, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
-        let light = mix(sample_light, base_light, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
-
-        shade_sum += vec2<f32>(light, density) * (vec2<f32>(1.0) - shade_sum.y);
-        p += add;
+            shade_sum += vec2<f32>(light, density) * (vec2<f32>(1.0) - shade_sum.y);
+            p += add;
+        }
     }
 
     shade_sum /= max(shade_sum.y, density_cap);
@@ -299,6 +327,15 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     }
 
     var initial_y = normalize(ray).y;
+    if initial_y <= -0.5 {
+        textureStore(
+            image,
+            vec2<i32>(invocation_id.xy),
+            i32(invocation_id.z),
+            vec4<f32>(vec3<f32>(0.0), 1.0)
+        );
+        return;
+    }
     if ray.y < 0.0 {
         ray.y = 0.0;
     }
@@ -330,8 +367,8 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
             nishita.mie_direction,
         );
 
-        // flat night-sky colour across the sky, weighted toward the anti-solar
-        // direction: (max(-1, -sun·ray) * 0.25 + 0.75)
+        // Night fill is already faded by sun elevation in the CPU uniform.
+        // This directional weight must not add purple haze during daytime.
         render_base += nishita.night_color
             * (max(-1.0, -dot(normalize(nishita.sun_position), ray)) * 0.25 + 0.75);
 
@@ -373,7 +410,9 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     // faint cool halo (full circle)
     render_base += vec3<f32>(0.5, 0.5, 0.6) * pow(max(moon_dot, 0.0), 250.0) * night_amount * 0.3;
 
-    if night_amount > 0.0 {
+    // Lower-hemisphere rays were clamped to y=0 above; their final star
+    // weight is exactly zero, so do not evaluate a thousand invisible stars.
+    if night_amount > 0.0 && ray.y > 0.0 {
         for (var i=0u; i<1000u; i++) {
             let star_world_dir = normalize(
                 vec3<f32>(

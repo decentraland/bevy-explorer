@@ -148,7 +148,7 @@ impl From<&NishitaCloud> for NishitaCloudUniform {
             tick: value.tick,
             sun_color: value.sun_color,
             dir_light_intensity: value.dir_light_intensity,
-            night_color: value.night_color,
+            night_color: value.night_color * night_sky_weight(value.sun_position),
             moon_position: value.moon_position,
             cloud_density_cap: value.cloud_density_cap,
             cloud_shadow: value.cloud_shadow,
@@ -157,6 +157,14 @@ impl From<&NishitaCloud> for NishitaCloudUniform {
             cloud_lacunarity: value.cloud_lacunarity,
         }
     }
+}
+
+fn night_sky_weight(sun_position: Vec3) -> f32 {
+    // Smooth twilight transition from about -7 to +5 degrees. Calculate once
+    // per sky update, not once per cubemap texel; stars/moon keep their own fade.
+    let elevation = sun_position.normalize_or_zero().y;
+    let daylight = ((elevation + 0.12) / 0.20).clamp(0.0, 1.0);
+    1.0 - daylight * daylight * (3.0 - 2.0 * daylight)
 }
 
 impl Default for NishitaCloud {
@@ -169,7 +177,7 @@ impl Default for NishitaCloud {
             atmosphere_radius: 6471e3,
             rayleigh_coefficient: Vec3::new(5.5e-6, 13.0e-6, 22.4e-6),
             rayleigh_scale_height: 8e3,
-            mie_coefficient: 21e-6,
+            mie_coefficient: 8e-6,
             mie_scale_height: 1.2e3,
             mie_direction: 0.758,
             noise_texture: Default::default(),

@@ -878,6 +878,10 @@ impl ScenePointers {
         self.pointers.get(parcel)
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (&IVec2, &PointerResult)> {
+        self.pointers.iter()
+    }
+
     pub fn set_realm(&mut self, min_bound: IVec2, max_bound: IVec2) {
         let (min_bound, max_bound) = match self.bake_clip {
             Some((clip_min, clip_max)) => (min_bound.max(clip_min), max_bound.min(clip_max)),

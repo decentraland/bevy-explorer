@@ -280,6 +280,55 @@ impl ScaleShapeExt for dyn Shape {
 }
 
 impl SceneColliderData {
+    pub fn from_terrain_mesh(mesh: &Mesh) -> Result<Self, String> {
+        use bevy::render::mesh::Indices;
+        let Some(VertexAttributeValues::Float32x3(vertices)) =
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+        else {
+            return Err("Terrain mesh has no positions".into());
+        };
+        let Some(Indices::U32(indices)) = mesh.indices() else {
+            return Err("Terrain mesh has no triangle indices".into());
+        };
+        if vertices.iter().flatten().any(|value| !value.is_finite())
+            || indices.len() % 3 != 0
+            || indices
+                .iter()
+                .any(|index| *index as usize >= vertices.len())
+        {
+            return Err("Terrain mesh has invalid geometry".into());
+        }
+        let shape = SharedShape::trimesh_with_flags(
+            vertices
+                .iter()
+                .map(|p| parry::math::Point::new(f64::from(p[0]), f64::from(p[1]), f64::from(p[2])))
+                .collect(),
+            indices
+                .chunks_exact(3)
+                .map(|triangle| [triangle[0], triangle[1], triangle[2]])
+                .collect(),
+            parry::shape::TriMeshFlags::DELETE_DEGENERATE_TRIANGLES
+                | parry::shape::TriMeshFlags::DELETE_DUPLICATE_TRIANGLES
+                | parry::shape::TriMeshFlags::MERGE_DUPLICATE_VERTICES,
+        )
+        .map_err(|error| error.to_string())?;
+        let collider = ColliderBuilder::new(shape)
+            .collision_groups(InteractionGroups::new(
+                Group::from_bits_truncate(GROUND_COLLISION_MASK),
+                Group::from_bits_truncate(GROUND_COLLISION_MASK),
+                InteractionTestMode::And,
+            ))
+            .build();
+        let mut data = Self::default();
+        data.set_collider(
+            &ColliderId::new(SceneEntityId::ROOT, Some("landscape".into()), 0),
+            collider,
+            None,
+        );
+        data.update_bvh();
+        Ok(data)
+    }
+
     pub fn set_collider(
         &mut self,
         id: &ColliderId,
