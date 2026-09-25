@@ -80,6 +80,8 @@ pub fn process_streams(
 ) -> Result<(), anyhow::Error> {
     let mut start_instant: Option<Instant> = None;
     let mut repeat = false;
+    // only repeat if the last pass produced data, else a dead or empty input spins on reset
+    let mut read_since_reset = false;
     let mut init = false;
     let mut last_state = VideoState::VsNone;
 
@@ -109,6 +111,7 @@ pub fn process_streams(
             update_state(VideoState::VsBuffering, streams);
             while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
                 if let Some((stream_index, packet)) = input_context.blocking_next() {
+                    read_since_reset = true;
                     for stream in streams.iter_mut() {
                         if Some(stream_index) == stream.stream_index() {
                             stream.receive_packet(packet)?;
@@ -129,8 +132,9 @@ pub fn process_streams(
         if input_context.is_eof() {
             trace!("End of stream");
             // eof
-            if repeat {
+            if repeat && read_since_reset {
                 input_context.reset();
+                read_since_reset = false;
                 for stream in streams.iter_mut() {
                     stream.reset_start_frame();
                 }
@@ -229,6 +233,7 @@ pub fn process_streams(
                 && Instant::now() < buffer_till_time
             {
                 if let Some((stream_index, packet)) = input_context.try_next() {
+                    read_since_reset = true;
                     for stream in streams.iter_mut() {
                         if Some(stream_index) == stream.stream_index() {
                             stream.receive_packet(packet)?;
