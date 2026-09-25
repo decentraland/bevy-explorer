@@ -8,6 +8,7 @@ import { IconButton } from '../../design'
 import type { IconName } from '../../design'
 import type { NavAction } from '../../engine/protocol'
 import { keyHintFor, useBindingsSnapshot, type BindingsSnapshot } from '../../lib/bindingLabels'
+import { nameColor } from '../../lib/identity'
 import type { EngineSession } from '../session/useEngineSession'
 import styles from './Sidebar.module.css'
 
@@ -88,16 +89,19 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
         onClick={session.settings.toggle}
       />
     )
-  if (item.kind === 'profile')
+  if (item.kind === 'profile') {
+    const p = session.profile.data
     return (
       <IconButton
         key="profile"
         icon={item.icon}
+        avatar={p ? { src: p.picture, name: p.name, color: nameColor(p.address || p.name) } : undefined}
         label={item.label}
         active={session.profile.open}
         onClick={onViewProfile ?? session.profile.toggle}
       />
     )
+  }
   if (item.kind === 'backpack')
     return (
       <IconButton
