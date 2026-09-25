@@ -187,6 +187,12 @@ export interface EventsState {
   toggle: () => void
 }
 
+// The Shop browses the public marketplace catalog over HTTP, like Places and Events.
+export interface ShopState {
+  open: boolean
+  toggle: () => void
+}
+
 // Unity's sidebar Skybox menu: time of day, driven through the engine's `/time <hours> <speed>`.
 export interface SkyboxState {
   open: boolean
@@ -423,6 +429,7 @@ export interface EngineSession {
   minimap: MinimapState
   places: PlacesState
   events: EventsState
+  shop: ShopState
   gallery: GalleryState
   /** Scene permission prompts (e.g. ChangeRealm) awaiting an Allow/Deny. */
   permissions: PermissionsState
@@ -614,6 +621,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [sceneTitle, setSceneTitle] = useState('')
   const [placesOpen, setPlacesOpen] = useState(false)
   const [eventsOpen, setEventsOpen] = useState(false)
+  const [shopOpen, setShopOpen] = useState(false)
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([])
   const [galleryStorage, setGalleryStorage] = useState({ current: 0, max: 0 })
   const [galleryLoaded, setGalleryLoaded] = useState(false)
@@ -1001,7 +1009,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // Toggle one exclusive panel (closing chat + all others); optionally run onOpen.
   // All exclusive (one-at-a-time) panel setters. Toggling one closes chat + the rest.
-  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setEventsOpen, setGalleryOpen, setSkyboxOpen]
+  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setEventsOpen, setShopOpen, setGalleryOpen, setSkyboxOpen]
   const exclusive = useCallback(
     (setSelf: React.Dispatch<React.SetStateAction<boolean>>, onOpen?: () => void) => {
       setChatOpen(false)
@@ -1060,7 +1068,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
-    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || galleryOpen
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || shopOpen || galleryOpen
   // Opening any full-screen menu frees the mouse: on web the camera-look IS the browser pointer lock,
   // so releasing it lets the cursor drive the menu (the engine self-heals camera-look on
   // `!document.pointerLockElement`, same as requestFocusChat). No-op on native (no DOM pointer lock).
@@ -1097,6 +1105,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Places fetches its own HTTP data (no bridge), so opening needs no engine request.
   const togglePlaces = useCallback(() => exclusive(setPlacesOpen), [exclusive])
   const toggleEvents = useCallback(() => exclusive(setEventsOpen), [exclusive])
+  const toggleShop = useCallback(() => exclusive(setShopOpen), [exclusive])
   // The engine clock as `/time` (no args) reports it; null when there is no engine console.
   const readClock = useCallback(async (): Promise<{ hours: number; speed: number } | null> => {
     const reply = await driverRef.current?.command?.('/time').catch(() => undefined)
@@ -1958,6 +1967,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },
     events: { open: eventsOpen, toggle: toggleEvents },
+    shop: { open: shopOpen, toggle: toggleShop },
     gallery: {
       list: galleryPhotos,
       current: galleryStorage.current,

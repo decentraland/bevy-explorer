@@ -123,6 +123,14 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+/* Shop section: MANA price between the rarity tag and the Buy link. */
+.price {
+  margin: -4px 8px 9px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
 
 .hasShop:hover {
   z-index: 2;

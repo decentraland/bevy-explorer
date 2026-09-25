@@ -19,6 +19,7 @@ import { CommunitiesPage } from './features/communities/CommunitiesPage'
 import { MapPage } from './features/map/MapPage'
 import { PlacesPage } from './features/places/PlacesPage'
 import { EventsPage } from './features/events/EventsPage'
+import { ShopPage } from './features/shop/ShopPage'
 import { PlacesPicker } from './features/places/PlacesPicker'
 import { GalleryPage } from './features/gallery/GalleryPage'
 import { Sidebar } from './features/sidebar/Sidebar'
@@ -242,6 +243,7 @@ function Hud(): React.JSX.Element {
     else if (page === 'map') session.map.toggle()
     else if (page === 'places') session.places.toggle()
     else if (page === 'events') session.events.toggle()
+    else if (page === 'shop') session.shop.toggle()
     else if (page === 'gallery') session.gallery.toggle()
     // Profile-chip actions (forwarded from MainMenuShell's ProfileChip): View Profile
     // opens the full passport (same as for other users), not the small profile card.
@@ -251,7 +253,7 @@ function Hud(): React.JSX.Element {
 
   // A full-screen MainMenuShell page is open (covers the whole HUD).
   const pageOpen =
-    session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.gallery.open
+    session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.shop.open || session.gallery.open
 
   // Embedded mode: mount only the engine (+ the error surfaces so a crash isn't silently blank).
   // No sidebar / chat / pointer / panels / sign-in UI. PopupHost renders nothing while the stack is
@@ -336,6 +338,7 @@ function Hud(): React.JSX.Element {
             onTeleport={(x, y) => session.map.teleportToPlace(x, y)}
             onVisitWorld={(realm) => session.map.changeRealm(realm)}
           />
+          <ShopPage shop={session.shop} profile={session.profile} onNavigate={goToMenuPage} />
           <GalleryPage
             gallery={session.gallery}
             profile={session.profile}

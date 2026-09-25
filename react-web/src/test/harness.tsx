@@ -195,6 +195,7 @@ export function fakeSession(): EngineSession {
     minimap: { pose: { current: { x: 0, z: 0, yaw: 0, camYaw: 0 } }, isWorld: false, sceneTitle: '', setConfig: vi.fn() },
     places: { open: false, toggle: vi.fn() },
     events: { open: false, toggle: vi.fn() },
+    shop: { open: false, toggle: vi.fn() },
     gallery: { list: [], current: 0, max: 0, loaded: false, open: false, toggle: vi.fn(), metas: {}, loadPhoto: vi.fn(), remove: vi.fn() },
     permissions: { pending: [], resolve: vi.fn() },
     mic: { enabled: false, available: true, toggle: vi.fn() },
