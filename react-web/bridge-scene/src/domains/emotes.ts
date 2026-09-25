@@ -13,6 +13,7 @@ import { resolveShopUrls } from './marketplace'
 import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
+import { readAllPages, type Page } from '../../../src/engine/paging'
 
 const SLOT_COUNT = 10 // the emote wheel has 10 slots
 const BASE_EMOTE_PREFIX = 'urn:decentraland:off-chain:base-emotes:'
@@ -57,10 +58,18 @@ type CatalogElement = {
   entity?: { metadata?: { name?: string; thumbnail?: string; rarity?: string }; content?: Array<{ file: string; hash: string }> }
 }
 
+const OWNED_PAGE_SIZE = 200
+const OWNED_MAX_PAGES = 25
+
+// Every page, not just the first 200: collectors own more. A failure rejects (see getOwned).
 async function fetchOwned(base: string, address: string): Promise<CatalogElement[]> {
-  const url = `${base}/explorer/${address}/emotes?pageNum=1&pageSize=200&includeEntities=true`
-  const data = await getJson<{ elements?: CatalogElement[] }>(url).catch(() => undefined)
-  return data?.elements ?? []
+  return await readAllPages<CatalogElement>(
+    async (pageNum) =>
+      (await getJson<Page<CatalogElement>>(
+        `${base}/explorer/${address}/emotes?pageNum=${pageNum}&pageSize=${OWNED_PAGE_SIZE}&includeEntities=true`
+      )) ?? {},
+    { pageSize: OWNED_PAGE_SIZE, maxPages: OWNED_MAX_PAGES }
+  )
 }
 
 function thumbUrl(base: string, el: CatalogElement): string {
