@@ -5,6 +5,7 @@
 //    backpack icons).
 //  • PATHS — Material-style SVG glyphs for the few icons with no Unity art.
 import backpackPng from '../assets/sidebar-icons/backpack.png'
+import bugPng from '../assets/sidebar-icons/bug.png'
 import chatPng from '../assets/sidebar-icons/chat.png'
 import communitiesPng from '../assets/sidebar-icons/communities.png'
 import emotesPng from '../assets/sidebar-icons/emotes.png'
@@ -33,9 +34,11 @@ export type IconName =
   | 'places'
   | 'gallery'
   | 'marketplace'
+  | 'bug'
 
 const MASK_ART: Partial<Record<IconName, string>> = {
   backpack: backpackPng,
+  bug: bugPng,
   chat: chatPng,
   communities: communitiesPng,
   emotes: emotesPng,

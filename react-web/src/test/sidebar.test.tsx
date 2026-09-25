@@ -21,6 +21,17 @@ describe('sidebar parity', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Marketplace' }))
     expect(open).toHaveBeenCalledWith('https://decentraland.org/shop?utm_source=client', '_blank', 'noopener')
   })
+
+  it('Bug report follows Help and opens a prefilled bevy-explorer issue', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    render(<Sidebar session={fakeSession()} />)
+    const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    expect(labels[labels.indexOf('Help & Support') + 1]).toBe('Report a bug')
+    await userEvent.click(screen.getByRole('button', { name: 'Report a bug' }))
+    const url = new URL(String(open.mock.calls[0][0]))
+    expect(url.origin + url.pathname).toBe('https://github.com/decentraland/bevy-explorer/issues/new')
+    expect(url.searchParams.get('body')).toContain(navigator.userAgent)
+  })
 })
 
 afterEach(() => vi.restoreAllMocks())

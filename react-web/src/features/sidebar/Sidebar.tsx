@@ -27,8 +27,13 @@ type Item =
   | { kind: 'map'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'places'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'gallery'; icon: IconName; label: string; hotkey?: string }
-  | { kind: 'link'; icon: IconName; label: string; url: string }
+  | { kind: 'link'; icon: IconName; label: string; url: string | (() => string) }
   | { kind: 'divider' }
+
+function bugReportUrl(): string {
+  const body = `**What happened**\n\n**Steps to reproduce**\n\n**Environment**\n- Browser: ${navigator.userAgent}\n`
+  return `https://github.com/decentraland/bevy-explorer/issues/new?body=${encodeURIComponent(body)}`
+}
 
 const TOP: Item[] = [
   { kind: 'profile', icon: 'profile', label: 'Profile' },
@@ -41,7 +46,8 @@ const TOP: Item[] = [
   { kind: 'gallery', icon: 'gallery', label: 'Gallery', hotkey: 'Gallery' },
   { kind: 'settings', icon: 'settings', label: 'Settings', hotkey: 'Settings' },
   { kind: 'divider' },
-  { kind: 'link', icon: 'help', label: 'Help & Support', url: 'https://decentraland.org/help/' }
+  { kind: 'link', icon: 'help', label: 'Help & Support', url: 'https://decentraland.org/help/' },
+  { kind: 'link', icon: 'bug', label: 'Report a bug', url: bugReportUrl }
 ]
 
 const BOTTOM: Item[] = [
@@ -196,7 +202,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
         key={item.label}
         icon={item.icon}
         label={item.label}
-        onClick={() => window.open(item.url, '_blank', 'noopener')}
+        onClick={() => window.open(typeof item.url === 'string' ? item.url : item.url(), '_blank', 'noopener')}
       />
     )
   return (
