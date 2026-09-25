@@ -240,6 +240,13 @@ export interface NearbyMember {
   picture?: string
 }
 
+/** A player started or stopped talking in voice chat (engine getVoiceStream, scene → page). */
+export interface VoiceActivityMessage {
+  kind: 'voiceActivity'
+  address: string
+  active: boolean
+}
+
 /** Nearby members + count, polled by the scene (chat header "Nearby · N"). */
 export interface MembersMessage {
   kind: 'members'
@@ -1138,6 +1145,7 @@ export type SceneToPage =
   | CatalogPageMessage
   | OutfitsMessage
   | CommunitiesMessage
+  | VoiceActivityMessage
   | CommunityActionFailedMessage
   | TravelResultMessage
   | CommunityDetailMessage

@@ -24,6 +24,7 @@ import { registerSettings } from './domains/settings'
 import { registerCommunities } from './domains/communities'
 import { registerGallery } from './domains/gallery'
 import { registerWorld } from './domains/world'
+import { registerVoice } from './domains/voice'
 import { registerPointer } from './domains/pointer'
 import { registerProximity } from './domains/proximity'
 import { registerSystemAction } from './domains/systemAction'
@@ -41,6 +42,7 @@ export function main(): void {
     registerProfile(ctx)
     registerFriends(ctx)
     registerChat(ctx)
+    registerVoice(ctx)
     registerEmotes(ctx)
     registerWearables(ctx)
     registerCatalog(ctx)

@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatLine, ChatState } from '../session/useEngineSession'
 import type { NearbyMember } from '../../engine/protocol'
-import { Avatar, ControlButton, DclLogo } from '../../design'
+import { Avatar, ControlButton, DclLogo, VoiceBars } from '../../design'
 import { EmojiPicker } from './EmojiPicker'
 import { searchByShortcode, SHORTCODE_RE, type Emoji } from './emojiData'
 import { MessageText, mentionsMe, buildNameIndex } from './chatText'
@@ -203,7 +203,7 @@ export function ChatBubble({
   )
 }
 
-export function MemberRow({ member }: { member: NearbyMember }): React.JSX.Element {
+export function MemberRow({ member, speaking = false }: { member: NearbyMember; speaking?: boolean }): React.JSX.Element {
   const { base, tag } = splitName(memberLabel(member))
   const color = senderColor(member.address)
   return (
@@ -214,7 +214,15 @@ export function MemberRow({ member }: { member: NearbyMember }): React.JSX.Eleme
           {base}
           {tag && <span className={styles.tag}>{tag}</span>}
         </span>
-        <span className={styles.memberStatus}>Online</span>
+        <span className={styles.memberStatus}>
+          {speaking ? (
+            <>
+              <VoiceBars /> Speaking
+            </>
+          ) : (
+            'Online'
+          )}
+        </span>
       </div>
     </div>
   )
@@ -222,10 +230,12 @@ export function MemberRow({ member }: { member: NearbyMember }): React.JSX.Eleme
 
 function MembersOverlay({
   members,
+  speaking,
   onBack,
   onClose
 }: {
   members: NearbyMember[]
+  speaking: ReadonlySet<string>
   onBack: () => void
   onClose: () => void
 }): React.JSX.Element {
@@ -250,7 +260,7 @@ function MembersOverlay({
         {members.length === 0 ? (
           <div className={styles.empty}>No one nearby</div>
         ) : (
-          members.map((m) => <MemberRow key={m.address} member={m} />)
+          members.map((m) => <MemberRow key={m.address} member={m} speaking={speaking.has(m.address.toLowerCase())} />)
         )}
       </div>
     </div>
@@ -589,6 +599,7 @@ export function Chat({
       {open && active && showMembers && (
         <MembersOverlay
           members={chat.members}
+          speaking={chat.speaking}
           onBack={() => setShowMembers(false)}
           onClose={() => {
             setShowMembers(false)
