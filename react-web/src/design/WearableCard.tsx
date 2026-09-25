@@ -69,13 +69,17 @@ export function WearableCard({
       {equipped && <span className={styles.equippedDot} aria-hidden="true" />}
       {isNew && <span className={styles.new}>NEW</span>}
       {count != null && count > 1 && <span className={styles.count}>×{count}</span>}
-      <span
-        className={`${styles.action} ${equipped ? styles.unequip : styles.equip}`}
-        role="button"
-        onClick={(e) => { e.stopPropagation(); onEquip?.() }}
-      >
-        {equipped ? 'UNEQUIP' : 'EQUIP'}
-      </span>
+      {incompatible && !equipped ? (
+        <span className={`${styles.action} ${styles.incompatibleNote}`}>Incompatible with body shape</span>
+      ) : (
+        <span
+          className={`${styles.action} ${equipped ? styles.unequip : styles.equip}`}
+          role="button"
+          onClick={(e) => { e.stopPropagation(); onEquip?.() }}
+        >
+          {equipped ? 'UNEQUIP' : 'EQUIP'}
+        </span>
+      )}
     </button>
   )
 }

@@ -110,6 +110,8 @@ export interface BackpackState {
   retrySave: () => void
   /** Drop the look and go back to the last one that deployed. */
   revertSave: () => void
+  /** The avatar's current body shape urn (items without a representation for it can't render). */
+  bodyShape?: string
   /** Preview a set on the avatar without equipping it (selecting); null reverts to the look. */
   preview: (urns: string[] | null) => void
   /** Saved outfits (Outfits tab), by slot index. */
@@ -617,6 +619,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const catalogReqId = useRef(0)
   const [equippedWearables, setEquippedWearables] = useState<Wearable[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [bodyShape, setBodyShape] = useState<string | undefined>(undefined)
   // Mirror of catalogItems for equipWearables' optimistic equipped-set rebuild (avoids stale closure).
   const catalogItemsRef = useRef<Wearable[]>([])
   useEffect(() => { catalogItemsRef.current = catalogItems }, [catalogItems])
@@ -808,6 +811,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'wearables':
           setEquippedWearables(msg.equipped)
+          if (msg.bodyShape) setBodyShape(msg.bodyShape)
           // The grid page carries its own per-item equipped flags (stamped at fetch, flipped by the
           // single-equip optimistic rebuild) — an authoritative emit (e.g. after equipOutfit) must
           // reconcile them too, or stale page flags shadow the new set in the category slots
@@ -2000,7 +2004,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
     backpack: {
       list: catalogItems, total: catalogTotal, loading: catalogLoading, query: queryCatalog,
-      equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, saveError, retrySave, revertSave, preview: previewWearables,
+      equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, bodyShape, equip: equipWearables, saveError, retrySave, revertSave, preview: previewWearables,
       outfits: outfits.outfits, outfitSlots: Math.min(10, 5 + outfits.namesForExtraSlots.length),
       saveOutfit, deleteOutfit, equipOutfit
     },

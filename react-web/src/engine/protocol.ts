@@ -851,6 +851,8 @@ export interface Wearable {
   /** Marketplace deep link (…/shop/item/<contract>/<itemId>) — set only for on-chain collectibles;
    *  base/off-chain items have no listing. Resolved scene-side (see resolveShopUrls). */
   shopUrl?: string
+  /** Body shapes the item has a representation for (from the catalog entity). */
+  bodyShapes?: string[]
 }
 
 /** Currently-equipped wearables, resolved by urn independently of the (paginated) grid so every
@@ -858,6 +860,8 @@ export interface Wearable {
 export interface WearablesMessage {
   kind: 'wearables'
   equipped: Wearable[]
+  /** The avatar's current body shape urn. */
+  bodyShape?: string
 }
 
 /** Load the equipped-wearables set (category slots). The owned catalog itself is paged via

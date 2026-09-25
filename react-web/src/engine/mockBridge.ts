@@ -115,6 +115,8 @@ const mockWearables: Wearable[] = BASE.map((b, i) => {
     rarity: RARITIES[i % RARITIES.length],
     category: b.category,
     thumbnail: thumb(urn),
+    // f_* base items are female-only in the catalyst (the mock avatar is BaseMale).
+    bodyShapes: b.name.startsWith('f_') ? ['urn:decentraland:off-chain:base-avatars:BaseFemale'] : undefined,
     equipped: i % 6 === 0
   }
 })
@@ -562,7 +564,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'equipEmote') return // no-op in the mock
     if (msg.kind === 'commitAvatar' || msg.kind === 'revertAvatar') return // no-op in the mock
     if (msg.kind === 'getWearables') {
-      reply({ kind: 'wearables', equipped: equippedNow() })
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE })
       return
     }
     if (msg.kind === 'catalogQuery') {
@@ -585,7 +587,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'equip') {
       const set = new Set(msg.urns)
       for (const w of mockWearables) w.equipped = set.has(w.urn)
-      reply({ kind: 'wearables', equipped: equippedNow() })
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE })
       return
     }
     if (msg.kind === 'getOutfits') {
@@ -612,7 +614,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       if (found) {
         const set = new Set(found.outfit.wearables)
         for (const w of mockWearables) w.equipped = set.has(w.urn)
-        reply({ kind: 'wearables', equipped: equippedNow() })
+        reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE })
       }
       return
     }
