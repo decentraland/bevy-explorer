@@ -2,12 +2,17 @@
 // open, the preview avatar wears it, and closing the Backpack deploys it in one setAvatar (Unity
 // publishes the profile when its Backpack closes: BackpackController.Deactivate).
 //   from: equip / equipEmote / equipOutfit (editLook), commitAvatar (the page, on close or Retry),
-//         revertAvatar (the page, Revert)
+//         revertAvatar (the page, Revert), /lambdas/collections (which body shapes each item fits,
+//         via ./collections)
 //   to:   BevyApi.setAvatar; avatarSaveFailed to the page
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
+import { catalystBase } from '../http'
+import { resolveDefsByUrn } from './collections'
+import { itemUrn } from './urns'
 import { lookDeploy, sameLook, type AvatarLook } from '../../../src/engine/avatarEquip'
+import { bodyShapesOf, isCompatible } from '../../../src/engine/bodyShape'
 
 let draft: AvatarLook | null = null
 // The look last known to be on the server: the draft's seed, then each successful deploy. A failed
@@ -42,14 +47,32 @@ export function editLook(change: Partial<AvatarLook>): void {
   draft = { ...from, ...change }
 }
 
-export function registerAvatarDraft(ctx: Ctx): void {
+// The look as it deploys: without the wearables that can't render on its body shape (Unity unequips
+// them when the body shape changes). The draft keeps them, so switching the body shape and back while
+// the Backpack is open loses nothing. An item the catalyst can't resolve is kept.
+async function fittingLook(look: AvatarLook): Promise<AvatarLook> {
+  const defs = await resolveDefsByUrn('wearables', await catalystBase(), look.wearables.map(itemUrn))
+  const fits = (urn: string): boolean => {
+    const def = defs.get(itemUrn(urn))
+    if (def == null) return true
+    return isCompatible({ category: def.data?.category ?? '', bodyShapes: bodyShapesOf(def.data?.representations) }, look.bodyShape || undefined)
+  }
+  return { ...look, wearables: look.wearables.filter(fits) }
+}
+
+// sendEquipped (./wearables) is passed in: it reads this module, so importing it here would be a cycle.
+export function registerAvatarDraft(ctx: Ctx, sendEquipped: () => Promise<void>): void {
   ctx.on('commitAvatar', async () => {
-    const look = draft
+    const edited = draft
     const from = deployed
     const me = getPlayer()
-    if (look == null || from == null || me == null) return
+    if (edited == null || from == null || me == null) return
+    const look = await fittingLook(edited)
+    // The page keeps its own copy of the equipped set, which still has the dropped wearables.
+    const dropped = look.wearables.length !== edited.wearables.length
     if (sameLook(look, from)) {
-      draft = null
+      if (draft === edited) draft = null
+      if (dropped) await sendEquipped()
       return
     }
     try {
@@ -64,7 +87,8 @@ export function registerAvatarDraft(ctx: Ctx): void {
       }
     }
     deployed = look
-    if (draft === look) draft = null
+    if (draft === edited) draft = null
+    if (dropped) await sendEquipped()
   })
 
   // Give up on a look the server keeps rejecting (a bad item, say) and put the last deployed one back.

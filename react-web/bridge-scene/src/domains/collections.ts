@@ -9,7 +9,7 @@ export type ItemDef = {
   rarity?: string
   thumbnail?: string
   collectionAddress?: string
-  data?: { category?: string }
+  data?: { category?: string; representations?: Array<{ bodyShapes?: string[] }> }
 }
 
 export type ItemKind = 'wearables' | 'emotes'
