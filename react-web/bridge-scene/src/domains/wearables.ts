@@ -10,6 +10,7 @@ import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Wearable } from '../../../src/engine/protocol'
 import { currentLook, editLook } from './avatarDraft'
+import { bodyShapesOf } from '../../../src/engine/bodyShape'
 
 type CatalogElement = {
   urn: string
@@ -19,7 +20,7 @@ type CatalogElement = {
   amount?: number
   // Per-owned-token data; carries the tokenId we need for the deployable URN.
   individualData?: Array<{ id?: string; tokenId?: string }>
-  entity?: { metadata?: { thumbnail?: string }; content?: Array<{ file: string; hash: string }> }
+  entity?: { metadata?: { thumbnail?: string; data?: { representations?: Array<{ bodyShapes?: string[] }> } }; content?: Array<{ file: string; hash: string }> }
 }
 
 // item-urn → deployable token urn (see tokenUrnOf), what the equip handler sends. The map
@@ -71,7 +72,8 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
       category: el.category,
       thumbnail: hash != null ? `${baseUrl}/content/contents/${hash}` : undefined,
       count: el.amount,
-      equipped: owned.some((w) => w === el.urn || w.startsWith(`${el.urn}:`))
+      equipped: owned.some((w) => w === el.urn || w.startsWith(`${el.urn}:`)),
+      bodyShapes: bodyShapesOf(el)
     }
   })
   return { items, total: data?.totalAmount ?? items.length }
@@ -142,6 +144,10 @@ export function registerWearables(ctx: Ctx): void {
       ctx.send({ kind: 'wearables', equipped: [] })
       return
     }
-    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(look.wearables) })
+    ctx.send({
+      kind: 'wearables',
+      equipped: await resolveEquippedSet(look.wearables),
+      bodyShape: look.bodyShape || undefined
+    })
   })
 }

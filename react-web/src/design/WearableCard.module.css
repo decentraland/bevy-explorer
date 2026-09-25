@@ -153,3 +153,11 @@
 .unequip {
   background: rgba(18, 13, 28, 0.92);
 }
+/* Unity's incompatible-with-body-shape hover: explains instead of offering EQUIP. */
+.incompatibleNote {
+  background: var(--scrim);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0;
+  text-align: center;
+  cursor: default;
+}

@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Tabs, WearableCard, type Rarity, type TabItem } from '../../design'
+import { isCompatible } from './bodyShape'
 import { catalystThumbUrl } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
 import { CategoryIcon } from './categoryIcons'
@@ -518,6 +519,7 @@ export function BackpackPage({
                           equipped={w.equipped}
                           selected={selected != null && 'urn' in selected && selected.urn === w.urn}
                           count={w.count}
+                          incompatible={!isCompatible(w, backpack.bodyShape)}
                           categoryIcon={<CategoryIcon category={w.category} size={15} />}
                           onClick={() => select(w)}
                           onDoubleClick={() => toggleEquip(w)}
