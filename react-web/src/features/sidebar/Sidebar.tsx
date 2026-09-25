@@ -4,13 +4,15 @@
 // scene's existing menus/popups over the bridge (session.nav) until each is
 // migrated to React.
 
-import { IconButton } from '../../design'
+import { useState } from 'react'
+import { ControlButton, IconButton, Panel, Toggle } from '../../design'
 import type { IconName } from '../../design'
 import type { NavAction } from '../../engine/protocol'
 import { keyHintFor, useBindingsSnapshot, type BindingsSnapshot } from '../../lib/bindingLabels'
 import { nameColor } from '../../lib/identity'
 import type { EngineSession } from '../session/useEngineSession'
 import { useLiveEventCount } from '../events/eventsApi'
+import { useAutoHide } from './useAutoHide'
 import styles from './Sidebar.module.css'
 
 // `hotkey` names the engine SystemAction whose live binding renders as the tooltip hint.
@@ -41,6 +43,7 @@ function bugReportUrl(): string {
 const TOP: Item[] = [
   { kind: 'profile', icon: 'profile', label: 'Profile' },
   { kind: 'notifications', icon: 'notifications', label: 'Notifications' },
+  { kind: 'divider' },
   { kind: 'events', icon: 'events', label: 'Events' },
   { kind: 'map', icon: 'map', label: 'Map', hotkey: 'Map' },
   { kind: 'places', icon: 'places', label: 'Places', hotkey: 'Places' },
@@ -235,6 +238,16 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
   )
 }
 
+function DotsGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 8" width="18" height="6" fill="currentColor" aria-hidden="true">
+      <circle cx="4" cy="4" r="3" />
+      <circle cx="12" cy="4" r="3" />
+      <circle cx="20" cy="4" r="3" />
+    </svg>
+  )
+}
+
 export function Sidebar({
   session,
   onViewProfile
@@ -245,10 +258,41 @@ export function Sidebar({
 }): React.JSX.Element {
   const snap = useBindingsSnapshot()
   const liveEvents = useLiveEventCount()
+  const [configOpen, setConfigOpen] = useState(false)
+  const autoHide = useAutoHide(configOpen)
   return (
-    <nav className={styles.root} aria-label="Main navigation">
-      <div className={styles.group}>{TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, onViewProfile))}</div>
-      <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, onViewProfile))}</div>
-    </nav>
+    <>
+      {autoHide.hidden && <div className={styles.reveal} data-testid="sidebar-reveal" onPointerEnter={autoHide.onPointerEnter} />}
+      <nav
+        className={styles.root}
+        aria-label="Main navigation"
+        data-hidden={autoHide.hidden}
+        onPointerEnter={autoHide.onPointerEnter}
+        onPointerLeave={autoHide.onPointerLeave}
+      >
+        <div className={styles.group}>
+          <ControlButton
+            size="sm"
+            shape="pill"
+            variant="solid"
+            className={styles.configButton}
+            aria-label="Sidebar settings"
+            aria-expanded={configOpen}
+            active={configOpen}
+            onClick={() => setConfigOpen((o) => !o)}
+          >
+            <DotsGlyph />
+          </ControlButton>
+          {TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, onViewProfile))}
+        </div>
+        <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, onViewProfile))}</div>
+      </nav>
+      {configOpen && (
+        <Panel className={styles.config} role="dialog" aria-label="Sidebar settings">
+          <span>Auto-hide sidebar</span>
+          <Toggle checked={autoHide.enabled} onChange={autoHide.setEnabled} aria-label="Auto-hide sidebar" />
+        </Panel>
+      )}
+    </>
   )
 }
