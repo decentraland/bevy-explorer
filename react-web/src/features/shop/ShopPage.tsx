@@ -2,11 +2,10 @@
 // emotes on sale; Buy opens the item on the web marketplace, where the wallet transaction happens.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Dropdown, EmptyState, EquippedItemCard, SearchField, Spinner, Tabs, type TabItem } from '../../design'
+import { BrowseControl, BrowseLoading, BrowsePanel, BrowseToolbar, Button, Dropdown, EmptyState, EquippedItemCard, SearchField, Tabs, type TabItem } from '../../design'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import type { ProfileState, ShopState } from '../session/useEngineSession'
 import { fetchShop, marketplaceUrl, shopItemPrice, type ShopCategory, type ShopItem, type ShopSort } from './shopApi'
-import placesStyles from '../places/PlacesPage.module.css'
 import styles from './ShopPage.module.css'
 
 const SECTIONS: TabItem<ShopCategory>[] = [
@@ -98,28 +97,23 @@ export function ShopPage({
       onNavigate={onNavigate}
       onClose={shop.toggle}
     >
-      <div className={placesStyles.toolbar}>
-        <Tabs items={SECTIONS} value={category} onChange={setCategory} aria-label="Shop sections" />
-        <div className={placesStyles.controls}>
-          <div className={placesStyles.search}>
-            <SearchField value={draft} onChange={setDraft} placeholder="Search the shop" />
-          </div>
-          <div className={placesStyles.dd}>
-            <Dropdown
-              options={SORTS.map((s) => s.label)}
-              value={SORTS.find((s) => s.value === sortBy)?.label ?? SORTS[0].label}
-              onChange={(label) => setSortBy(SORTS.find((s) => s.label === label)?.value ?? 'recently_listed')}
-            />
-          </div>
-        </div>
-      </div>
-      <div className={placesStyles.panel}>
+      <BrowseToolbar tabs={<Tabs items={SECTIONS} value={category} onChange={setCategory} aria-label="Shop sections" />}>
+        <BrowseControl size="search">
+          <SearchField value={draft} onChange={setDraft} placeholder="Search the shop" />
+        </BrowseControl>
+        <BrowseControl size="select">
+          <Dropdown
+            options={SORTS.map((s) => s.label)}
+            value={SORTS.find((s) => s.value === sortBy)?.label ?? SORTS[0].label}
+            onChange={(label) => setSortBy(SORTS.find((s) => s.label === label)?.value ?? 'recently_listed')}
+          />
+        </BrowseControl>
+      </BrowseToolbar>
+      <BrowsePanel>
         {error ? (
           <EmptyState variant="inline" tone="error" title="Couldn't load the shop" subtitle={error} actions={[{ label: 'Retry', onClick: retry }]} />
         ) : loading && items.length === 0 ? (
-          <div className={placesStyles.center}>
-            <Spinner size={34} />
-          </div>
+          <BrowseLoading />
         ) : items.length === 0 ? (
           <EmptyState variant="inline" title="Nothing on sale here" subtitle={search ? 'Nothing matched your search.' : 'Check back soon.'} />
         ) : (
@@ -146,7 +140,7 @@ export function ShopPage({
             )}
           </>
         )}
-      </div>
+      </BrowsePanel>
     </MainMenuShell>
   )
 }

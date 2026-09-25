@@ -2,11 +2,10 @@
 // events from the public events API; a card jumps to the event's parcel or world.
 
 import { useCallback, useEffect, useState } from 'react'
-import { DiscoverCard, EmptyState, Spinner, Tabs, type TabItem } from '../../design'
+import { BrowseLoading, BrowsePanel, BrowseToolbar, DiscoverCard, DiscoverGrid, EmptyState, Tabs, type TabItem } from '../../design'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import type { EventsState, ProfileState } from '../session/useEngineSession'
 import { eventDestination, eventLocation, fetchEvents, type DclEvent, type EventsList } from './eventsApi'
-import styles from '../places/PlacesPage.module.css'
 
 const SECTIONS: TabItem<EventsList>[] = [
   { id: 'live', label: 'Live now' },
@@ -94,14 +93,10 @@ export function EventsPage({
       onNavigate={onNavigate}
       onClose={events.toggle}
     >
-      <div className={styles.toolbar}>
-        <Tabs items={SECTIONS} value={section} onChange={setSection} aria-label="Events sections" />
-      </div>
-      <div className={styles.panel}>
+      <BrowseToolbar tabs={<Tabs items={SECTIONS} value={section} onChange={setSection} aria-label="Events sections" />} />
+      <BrowsePanel>
         {loading ? (
-          <div className={styles.center}>
-            <Spinner size={34} />
-          </div>
+          <BrowseLoading />
         ) : error ? (
           <EmptyState variant="inline" tone="error" title="Couldn't load events" subtitle={error} actions={[{ label: 'Retry', onClick: retry }]} />
         ) : list.length === 0 ? (
@@ -111,13 +106,13 @@ export function EventsPage({
             subtitle={section === 'live' ? 'Check Upcoming to see what is next.' : 'New events show up here when they are scheduled.'}
           />
         ) : (
-          <div className={styles.grid}>
+          <DiscoverGrid>
             {list.map((e) => (
               <EventCard key={e.id} event={e} onClick={() => visit(e)} />
             ))}
-          </div>
+          </DiscoverGrid>
         )}
-      </div>
+      </BrowsePanel>
     </MainMenuShell>
   )
 }

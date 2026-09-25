@@ -222,3 +222,10 @@
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 18px;
+  align-content: start;
+}
