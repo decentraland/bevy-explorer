@@ -12,9 +12,9 @@ use std::cmp::Ordering;
 
 use bevy::{platform::collections::HashSet, prelude::*};
 use bevy_hanabi::{
-    AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
-    EffectSpawner, ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, MatrixValue,
-    OrientMode, OrientModifier, ParticleEffect, ParticleTextureModifier, ScalarType,
+    AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial, EffectSpawner,
+    ExprHandle, ExprWriter, FlipbookModifier, GlobalAccelModifier, Gradient, HanabiPlugin,
+    MatrixValue, OrientMode, OrientModifier, ParticleEffect, ParticleTextureModifier, ScalarType,
     SetAttributeModifier, SetPositionCircleModifier, SetPositionSphereModifier,
     SetVelocitySphereModifier, SizeOverLifetimeModifier, SpawnerSettings, Value,
 };
@@ -376,6 +376,10 @@ fn make_particle_system(
 
     // Modifiers
     let init_position = make_position(shape, &writer);
+    let init_global_position_offset = SetAttributeModifier::new(
+        Attribute::GLOBAL_POSITION_OFFSET,
+        writer.lit(Vec3::ZERO).expr(),
+    );
     let init_rotation =
         SetAttributeModifier::new(ROTATION_ATTR, writer.lit(std::f32::consts::PI).expr());
     let init_axis_x = SetAttributeModifier::new(
@@ -395,6 +399,8 @@ fn make_particle_system(
         random_lerp(&writer, initial_size.start, initial_size.end),
     );
     let init_velocity = make_velocity(shape, initial_velocity_speed, &writer);
+    let init_global_velocity =
+        SetAttributeModifier::new(Attribute::GLOBAL_VELOCITY, writer.lit(Vec3::ZERO).expr());
     let init_age = SetAttributeModifier::new(Attribute::AGE, writer.lit(0.).expr());
     let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, writer.lit(lifetime).expr());
     let init_color = RandomColorModifier {
@@ -420,7 +426,7 @@ fn make_particle_system(
             .expr(),
     };
 
-    let update_accel = AccelModifier::new(
+    let update_accel = GlobalAccelModifier::new(
         (writer.lit(GRAVITY) * writer.lit(Vec3::new(1., gravity, 1.))
             + writer.lit(additional_force))
         .expr(),
@@ -503,12 +509,14 @@ fn make_particle_system(
         .with_simulation_space(simulation_space);
 
     set!(effect_asset, init, init_position);
+    set!(effect_asset, init, init_global_position_offset);
     set!(effect_asset, init, init_rotation);
     set!(effect_asset, init, init_axis_x);
     set!(effect_asset, init, init_axis_y);
     set!(effect_asset, init, init_axis_z);
     set!(effect_asset, init, init_size);
     set!(effect_asset, init, init_velocity);
+    set!(effect_asset, init, init_global_velocity);
     set!(effect_asset, init, init_age);
     set!(effect_asset, init, init_lifetime);
     set!(effect_asset, init, init_color);
