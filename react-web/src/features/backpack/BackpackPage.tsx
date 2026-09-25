@@ -524,7 +524,7 @@ export function BackpackPage({
                           unequippable={!REQUIRED_CATEGORIES.has(w.category)}
                           categoryIcon={<CategoryIcon category={w.category} size={15} />}
                           onClick={() => select(w)}
-                          onDoubleClick={() => toggleEquip(w)}
+                          onDoubleClick={() => { if (!w.equipped && isCompatible(w, backpack.bodyShape)) toggleEquip(w) }}
                           onEquip={() => toggleEquip(w)}
                         />
                       ))}
