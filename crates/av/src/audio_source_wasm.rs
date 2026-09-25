@@ -1,6 +1,6 @@
 use bevy::{platform::collections::HashMap, prelude::*, render::view::RenderLayers};
 use common::{
-    structs::{AudioEmitter, AudioSettings, AudioType, PrimaryUser, SystemAudio},
+    structs::{AudioEmitter, AudioSettings, AudioType, OneShotAudio, PrimaryUser, SystemAudio},
     util::VolumePanning,
 };
 use ipfs::IpfsAssetServer;
@@ -251,25 +251,25 @@ fn manage_audio_sources(
     }
 }
 
-#[derive(Component)]
-pub struct SystemSound;
-
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn play_system_audio(
     mut commands: Commands,
     mut events: EventReader<SystemAudio>,
     ipfas: IpfsAssetServer,
-    stopped_playing: Query<Entity, (With<SystemSound>, Without<RetryEmitter>, Without<Playing>)>,
+    stopped_playing: Query<Entity, (With<OneShotAudio>, Without<RetryEmitter>, Without<Playing>)>,
 ) {
     for event in events.read() {
         let handle = ipfas.asset_server().load(&event.0);
         debug!("play system audio {}", event.0);
-        commands.spawn(AudioEmitter {
-            handle,
-            global: true,
-            ty: AudioType::System,
-            ..Default::default()
-        });
+        commands.spawn((
+            AudioEmitter {
+                handle,
+                global: true,
+                ty: AudioType::System,
+                ..Default::default()
+            },
+            OneShotAudio,
+        ));
     }
 
     for ent in stopped_playing.iter() {
