@@ -10,7 +10,7 @@ import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Wearable } from '../../../src/engine/protocol'
 import { currentLook, editLook } from './avatarDraft'
-import { bodyShapesOf } from '../../../src/engine/bodyShape'
+import { bodyShapesOf, splitBodyShape } from '../../../src/engine/bodyShape'
 
 type CatalogElement = {
   urn: string
@@ -132,8 +132,17 @@ export async function resolveEquippedSet(urns: string[], opts: ResolveOpts = {})
 }
 
 export function registerWearables(ctx: Ctx): void {
-  ctx.on('equip', (msg) => {
-    editLook({ wearables: msg.urns.map((u) => tokenUrnByItem.get(u) ?? u) })
+  ctx.on('equip', async (msg) => {
+    const { bodyShape, wearables } = splitBodyShape(msg.urns)
+    const tokenUrns = wearables.map((u) => tokenUrnByItem.get(u) ?? u)
+    if (bodyShape == null) {
+      editLook({ wearables: tokenUrns })
+      return
+    }
+    // A body shape is the avatar base, not a wearable. Re-emit the equipped set with the new shape so
+    // the grid re-checks compatibility right away.
+    editLook({ bodyShape, wearables: tokenUrns })
+    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(tokenUrns), bodyShape })
   })
 
   // Equipped set (category slots) for the live avatar, resolved by urn — DECOUPLED from the paged

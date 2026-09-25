@@ -3,7 +3,7 @@ import { act, render, screen } from '@testing-library/react'
 import { WearableCard } from '../design'
 import { BackpackPage } from '../features/backpack/BackpackPage'
 import { isCompatible } from '../features/backpack/bodyShape'
-import { bodyShapesOf } from '../engine/bodyShape'
+import { splitBodyShape, bodyShapesOf } from '../engine/bodyShape'
 import { enterAsGuest, fakeProfileState, fakeSession, renderSession } from './harness'
 
 const MALE = 'urn:decentraland:off-chain:base-avatars:BaseMale'
@@ -14,6 +14,11 @@ describe('body shape', () => {
   it('reads the compatible body shapes from every representation', () => {
     expect(bodyShapesOf({ entity: { metadata: { data: { representations: [{ bodyShapes: [MALE] }, { bodyShapes: [FEMALE] }] } } } })).toEqual([MALE, FEMALE])
     expect(bodyShapesOf({})).toBeUndefined()
+  })
+
+  it('a body-shape item is deployed as the avatar base, not as a wearable', () => {
+    expect(splitBodyShape(['urn:hat', FEMALE, 'urn:shoes'])).toEqual({ bodyShape: FEMALE, wearables: ['urn:hat', 'urn:shoes'] })
+    expect(splitBodyShape(['urn:hat'])).toEqual({ bodyShape: undefined, wearables: ['urn:hat'] })
   })
 
   it('an item fits when it lists the body shape (or lists none, or is a body shape)', () => {
