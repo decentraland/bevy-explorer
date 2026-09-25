@@ -176,6 +176,13 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
     // engine-initiated deletes only reach the stores via this census, and there's no value
     // in retaining custom components for dead entities.
     filtered_store.0.clean_up(&census.died);
+    // and the renderer mirror: `update_from` only reaps engine-initiated deaths, so without
+    // this, renderer-written values for scene-deleted entities are retained for the scene's
+    // lifetime (and resurrected into snapshots by `merge_newer`).
+    op_state
+        .borrow_mut::<RendererStore>()
+        .0
+        .clean_up(&census.died);
     let updates = crdt_store.take_updates();
 
     let rpc_calls = std::mem::take(op_state.borrow_mut::<RpcCalls>());
