@@ -1,6 +1,7 @@
 use std::{
     hash::{Hash, Hasher},
     sync::OnceLock,
+    time::Duration,
 };
 
 use bevy::{
@@ -15,6 +16,7 @@ use bevy::{
     platform::collections::HashMap,
     prelude::*,
     render::primitives::Aabb,
+    time::common_conditions::on_timer,
 };
 use common::{structs::AppConfig, util::AsH160};
 use comms::profile::ProfileManager;
@@ -280,6 +282,10 @@ impl Plugin for MaterialDefinitionPlugin {
                 // we must run after update_mesh as that inserts a default material if none is present
                 .after(update_mesh),
         );
+        app.add_systems(
+            Update,
+            prune_caches.run_if(on_timer(Duration::from_secs(5))),
+        );
     }
 }
 
@@ -458,8 +464,47 @@ pub struct MeshMaterial3dLoading(Handle<SceneMaterial>);
 #[derive(Component)]
 pub struct ShadowCasterOverride(pub bool);
 
+// material hash -> (weak material id, shadow caster). only the id and shadow flag are kept so
+// the cache doesn't hold texture handles alive
 #[derive(Component, Default)]
-pub struct CachedMaterials(HashMap<u64, (AssetId<SceneMaterial>, MaterialDefinition)>);
+pub struct CachedMaterials {
+    entries: HashMap<u64, (AssetId<SceneMaterial>, bool)>,
+    prune_at: usize,
+}
+
+impl CachedMaterials {
+    fn insert(
+        &mut self,
+        hash: u64,
+        id: AssetId<SceneMaterial>,
+        shadow_caster: bool,
+        materials: &Assets<SceneMaterial>,
+    ) {
+        self.entries.insert(hash, (id, shadow_caster));
+        // amortized over inserts
+        if self.entries.len() >= self.prune_at {
+            self.prune(materials);
+        }
+    }
+
+    // drop entries whose material has been freed
+    fn prune(&mut self, materials: &Assets<SceneMaterial>) {
+        self.entries.retain(|_, (id, _)| materials.contains(*id));
+        // release capacity left over from a burst
+        if self.entries.capacity() > self.entries.len() * 4 {
+            self.entries.shrink_to_fit();
+        }
+        self.prune_at = (self.entries.len() * 2).max(64);
+    }
+}
+
+// the insert-time prune only runs while a scene keeps adding materials, so also prune
+// periodically to release entries from scenes that have gone static
+fn prune_caches(mut caches: Query<&mut CachedMaterials>, materials: Res<Assets<SceneMaterial>>) {
+    for mut cache in caches.iter_mut() {
+        cache.prune(&materials);
+    }
+}
 
 fn init_cache(
     q: Query<Entity, (With<RendererSceneContext>, Without<CachedMaterials>)>,
@@ -510,14 +555,16 @@ pub fn update_materials(
         mat.0.hash(hasher);
         let hash = hasher.finish();
 
-        let cached_data = cache.0.get(&hash).and_then(|(cached_handle, defn)| {
-            materials
-                .get_strong_handle(*cached_handle)
-                .map(|h| (h, defn))
-        });
+        let cached_data = cache
+            .entries
+            .get(&hash)
+            .and_then(|(cached_handle, shadow_caster)| {
+                materials
+                    .get_strong_handle(*cached_handle)
+                    .map(|h| (h, *shadow_caster))
+            });
 
-        let uncached_defn;
-        let (material, defn) = match cached_data {
+        let (material, shadow_caster) = match cached_data {
             Some(data) => data,
             None => {
                 let new_base;
@@ -635,12 +682,9 @@ pub fn update_materials(
                 });
 
                 if can_cache {
-                    cache.0.insert(hash, (material.id(), defn));
-                    (material, &cache.0.get(&hash).unwrap().1)
-                } else {
-                    uncached_defn = defn;
-                    (material, &uncached_defn)
+                    cache.insert(hash, material.id(), defn.shadow_caster, &materials);
                 }
+                (material, defn.shadow_caster)
             }
         };
 
@@ -648,7 +692,7 @@ pub fn update_materials(
         commands
             .remove::<RetryMaterial>()
             .try_insert(MeshMaterial3dLoading(material));
-        if shadow_override.map_or(defn.shadow_caster, |shadows| shadows.0) {
+        if shadow_override.map_or(shadow_caster, |shadows| shadows.0) {
             commands.remove::<NotShadowCaster>();
         } else {
             commands.try_insert(NotShadowCaster);
@@ -873,5 +917,55 @@ pub fn dcl_material_from_standard_material(
             emissive_intensity: None,
             direct_intensity: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+    use scene_material::SceneMaterialExt;
+
+    #[test]
+    fn cached_materials_prunes_freed_entries() {
+        let mut materials = Assets::<SceneMaterial>::default();
+        let mut cache = CachedMaterials::default();
+
+        // a scene animating material params adds a new hash every frame, and the previous
+        // material is freed once nothing uses it
+        let live = materials.add(SceneMaterial::new_unbounded(StandardMaterial::default()));
+        cache.insert(0, live.id(), true, &materials);
+        for hash in 1..1000u64 {
+            let handle = materials.add(SceneMaterial::new_unbounded(StandardMaterial::default()));
+            cache.insert(hash, handle.id(), false, &materials);
+            materials.remove(handle.id());
+        }
+
+        assert!(cache.entries.len() < 128, "len {}", cache.entries.len());
+        // live entries are kept
+        assert_eq!(cache.entries.get(&0), Some(&(live.id(), true)));
+    }
+
+    #[test]
+    fn prune_caches_system_releases_static_scenes() {
+        let mut app = App::new();
+        app.init_resource::<Assets<SceneMaterial>>();
+
+        // a burst of materials, all freed, with no further inserts to trigger a prune
+        let mut cache = CachedMaterials::default();
+        for hash in 0..50u64 {
+            let mut materials = app.world_mut().resource_mut::<Assets<SceneMaterial>>();
+            let handle = materials.add(SceneMaterial::new_unbounded(StandardMaterial::default()));
+            cache.insert(hash, handle.id(), false, &materials);
+            materials.remove(handle.id());
+        }
+        assert_eq!(cache.entries.len(), 50);
+        let scene = app.world_mut().spawn(cache).id();
+
+        app.world_mut().run_system_once(prune_caches).unwrap();
+
+        let cache = app.world().get::<CachedMaterials>(scene).unwrap();
+        assert!(cache.entries.is_empty());
+        assert!(cache.entries.capacity() < 50);
     }
 }
