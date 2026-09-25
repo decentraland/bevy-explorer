@@ -45,7 +45,7 @@ use cef_offscreen::prelude::{
 use common::rpc::{RpcResultReceiver, RpcResultSender, RpcStreamSender};
 use common::structs::{OutOfWorld, PrimaryUser};
 use input_manager::{InputPriorities, MouseInteractionComponent};
-use system_bridge::SystemApi;
+use system_bridge::{SystemApi, SystemBridge};
 
 pub struct ReactHudCefPlugin {
     /// The boot realm when it is an explicit destination. Injected into the page URL as ?realm= —
@@ -128,6 +128,8 @@ struct ReactHudCef {
     // loginNew verification codes awaiting the engine (forwarded to the page as 'loginCode'
     // messages mid-flight; the rpc result itself rides pending_login).
     pending_code: Vec<RpcResultReceiver<Result<Option<i32>, String>>>,
+    // The page's `window.engine_console_command` calls awaiting the engine, paired with its call id.
+    pending_console: Vec<(u64, RpcResultReceiver<Result<String, String>>)>,
     player_ready_sent: bool,
     // The page's bridge listener is live once it has sent us anything; until then events like
     // playerReady would be fired into the void (the page hasn't subscribed yet).
@@ -262,6 +264,7 @@ fn spawn_hud(
         pending_prev: Vec::new(),
         pending_login: Vec::new(),
         pending_code: Vec::new(),
+        pending_console: Vec::new(),
         player_ready_sent: false,
         page_seen: false,
         bridge_sender: None,
@@ -533,19 +536,51 @@ fn pump_bridge(
     }
 }
 
-// page -> engine: textFocus control messages, the bridge-scene pipe, and the fallback login rpcs.
+// page -> engine: console commands, the bridge-scene pipe, and the fallback login rpcs.
 fn on_page_envelope(
     trigger: Trigger<PageEnvelope>,
     state: Option<ResMut<ReactHudCef>>,
     mut sys: EventWriter<SystemApi>,
+    bridge: Res<SystemBridge>,
     mut commands: Commands,
 ) {
     let Some(mut state) = state else { return };
     state.page_seen = true;
     let env = &trigger.event().0;
     debug!("[react-hud-cef] page -> engine: {env}");
+    // `window.engine_console_command(line)` (the shim's native stand-in for web.rs's wasm export):
+    // dispatched through the SystemBridge channel like on web, answered by pump_streams.
+    if env.get("to").and_then(|t| t.as_str()) == Some("engine")
+        && env.get("kind").and_then(|k| k.as_str()) == Some("consoleCommand")
+    {
+        let id = env.get("id").and_then(|i| i.as_u64()).unwrap_or_default();
+        let line = env.get("line").and_then(|l| l.as_str()).unwrap_or("");
+        let mut parts = line.split_whitespace();
+        let Some(cmd) = parts.next() else {
+            console_reply(
+                &mut commands,
+                state.hud,
+                id,
+                Err("empty command".to_owned()),
+            );
+            return;
+        };
+        let cmd = if cmd.starts_with('/') {
+            cmd.to_owned()
+        } else {
+            format!("/{cmd}")
+        };
+        let (sx, rx) = RpcResultSender::channel();
+        let _ = bridge.sender.send(SystemApi::ConsoleCommand(
+            cmd,
+            parts.map(String::from).collect(),
+            sx,
+        ));
+        state.pending_console.push((id, rx));
+        return;
+    }
     // HUD focus (incl. text focus) now flows page -> bridge scene -> SystemApi::SetUiFocus,
-    // the same route as on web — no engine-addressed control messages remain.
+    // the same route as on web; the only engine-addressed message is the console command above.
     if env.get("to").and_then(|t| t.as_str()) != Some("scene") {
         return;
     }
@@ -623,11 +658,37 @@ fn on_page_envelope(
     }
 }
 
-// engine -> page: resolved login RPCs. These are only armed while the fallback is driving
-// (pre-bridge); if the bridge-scene takes the wire mid-flight they still resolve here.
+// Answer an `engine_console_command` call (the shim resolves/rejects the matching promise).
+fn console_reply(commands: &mut Commands, hud: Entity, id: u64, result: Result<String, String>) {
+    let (ok, output) = match result {
+        Ok(output) => (true, output),
+        Err(e) => (false, e),
+    };
+    commands.trigger_targets(
+        HostEmitEvent {
+            id: "consoleReply".to_string(),
+            payload: serde_json::json!({ "id": id, "ok": ok, "output": output }).to_string(),
+        },
+        hud,
+    );
+}
+
+// engine -> page: console command results, and resolved login RPCs. The login RPCs are only armed
+// while the fallback is driving (pre-bridge); if the bridge-scene takes the wire mid-flight they
+// still resolve here.
 fn pump_streams(state: Option<ResMut<ReactHudCef>>, mut commands: Commands) {
     let Some(mut state) = state else { return };
     let hud = state.hud;
+
+    state.pending_console.retain_mut(|(id, rx)| {
+        let result = match rx.poll_once() {
+            Ok(None) => return true,
+            Ok(Some(result)) => result,
+            Err(()) => Err("command response dropped".to_owned()),
+        };
+        console_reply(&mut commands, hud, *id, result);
+        false
+    });
 
     // forward loginNew verification codes as they arrive (a code error also lands on the
     // result sender, so the closed/error entries are just dropped here)
