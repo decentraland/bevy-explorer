@@ -32,4 +32,12 @@ describe('backpack follows Unity', () => {
     fireEvent.doubleClick(screen.getByRole('button', { name: 'Sun Glasses' }))
     expect(bp.equip).toHaveBeenCalledWith(['urn:hat', 'urn:cap'])
   })
+
+  it('shows the Categories / Saved Outfits tabs and Shop only on the Wearables tab', () => {
+    renderBackpack([])
+    expect(screen.getByRole('button', { name: /saved outfits/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /emotes/i }))
+    expect(screen.queryByRole('button', { name: /saved outfits/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /marketplace/i })).toBeNull()
+  })
 })
