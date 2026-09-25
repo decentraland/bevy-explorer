@@ -146,6 +146,12 @@ export function registerWearables(ctx: Ctx): void {
     ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(kept), bodyShape })
   })
 
+  // One avatar color from the backpack picker (the page debounces drags). Null colors and an empty
+  // body shape mean "unchanged", so only the edited color is deployed.
+  ctx.on('setAvatarColor', (msg) => {
+    editLook({ [msg.target]: msg.color })
+  })
+
   // Equipped set (category slots) for the live avatar, resolved by urn — DECOUPLED from the paged
   // grid so every equipped item shows regardless of which catalog page it's on.
   ctx.on('getWearables', async () => {
@@ -154,6 +160,11 @@ export function registerWearables(ctx: Ctx): void {
       ctx.send({ kind: 'wearables', equipped: [] })
       return
     }
-    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(look.wearables), bodyShape: look.bodyShape })
+    ctx.send({
+      kind: 'wearables',
+      equipped: await resolveEquippedSet(look.wearables),
+      bodyShape: look.bodyShape,
+      colors: { skin: look.skin ?? undefined, hair: look.hair ?? undefined, eyes: look.eyes ?? undefined }
+    })
   })
 }

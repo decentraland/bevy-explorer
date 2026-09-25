@@ -5,7 +5,8 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Tabs, WearableCard, type Rarity, type TabItem } from '../../design'
+import { ColorPicker, Tabs, WearableCard, type Rarity, type TabItem } from '../../design'
+import { COLOR_LABEL, COLOR_PRESETS, COLOR_TARGET } from './avatarColors'
 import { isCompatible } from '../../engine/bodyShape'
 import { catalystThumbUrl } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
@@ -506,6 +507,16 @@ export function BackpackPage({
                       </span>
                     )}
                   </div>
+                  {COLOR_TARGET[cat] != null && backpack.colors != null && (
+                    <div className={styles.colorPicker}>
+                      <ColorPicker
+                        label={COLOR_LABEL[COLOR_TARGET[cat]]}
+                        value={backpack.colors[COLOR_TARGET[cat]]}
+                        presets={COLOR_PRESETS[COLOR_TARGET[cat]]}
+                        onChange={(hex) => backpack.setColor(COLOR_TARGET[cat], hex)}
+                      />
+                    </div>
+                  )}
                   {pageItems.length === 0 ? (
                     <div className={styles.empty}>{backpack.loading ? 'Loading…' : 'No wearables.'}</div>
                   ) : (

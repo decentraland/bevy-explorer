@@ -20,6 +20,7 @@ import {
 } from './protocol'
 import { applyProfileEdit } from './profileEdit'
 import { isCompatible, splitBodyShape } from './bodyShape'
+import type { Color3 } from './generated'
 
 // A fully-populated passport for the mock, so the React passport shows every section.
 function richProfile(address: string, name: string, isGuest: boolean): Profile {
@@ -114,6 +115,13 @@ const BASE: { name: string; category: string; label: string }[] = [
   { name: 'BaseMale', category: 'body_shape', label: 'Body Shape A' },
   { name: 'BaseFemale', category: 'body_shape', label: 'Body Shape B' }
 ]
+// The mock avatar's colors (Unity preset values: skin #ddb18f, hair #5b310f, eyes #20b3f6).
+const mockColors: { skin?: Color3; hair?: Color3; eyes?: Color3 } = {
+  skin: { r: 221 / 255, g: 177 / 255, b: 143 / 255 },
+  hair: { r: 91 / 255, g: 49 / 255, b: 15 / 255 },
+  eyes: { r: 32 / 255, g: 179 / 255, b: 246 / 255 }
+}
+
 const mockWearables: Wearable[] = BASE.map((b, i) => {
   const urn = `urn:decentraland:off-chain:base-avatars:${b.name}`
   return {
@@ -570,7 +578,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'equipEmote') return // no-op in the mock
     if (msg.kind === 'commitAvatar' || msg.kind === 'revertAvatar') return // no-op in the mock
     if (msg.kind === 'getWearables') {
-      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: mockBodyShape })
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: mockBodyShape, colors: mockColors })
       return
     }
     if (msg.kind === 'catalogQuery') {
@@ -590,12 +598,17 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       reply({ kind: 'catalogPage', catalog: 'wearables', items: items.slice(start, start + msg.pageSize), total, requestId: msg.requestId })
       return
     }
+    if (msg.kind === 'setAvatarColor') {
+      mockColors[msg.target] = msg.color
+      reply({ kind: 'wearables', equipped: equippedNow(), colors: mockColors })
+      return
+    }
     if (msg.kind === 'equip') {
       const { bodyShape, wearables } = splitBodyShape(msg.urns)
       if (bodyShape != null) mockBodyShape = bodyShape
       const set = new Set(wearables)
       for (const w of mockWearables) w.equipped = w.urn === mockBodyShape || (set.has(w.urn) && (bodyShape == null || isCompatible(w, bodyShape)))
-      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: mockBodyShape })
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: mockBodyShape, colors: mockColors })
       return
     }
     if (msg.kind === 'getOutfits') {
@@ -622,7 +635,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       if (found) {
         const set = new Set(found.outfit.wearables)
         for (const w of mockWearables) w.equipped = set.has(w.urn)
-        reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: mockBodyShape })
+        reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: mockBodyShape, colors: mockColors })
       }
       return
     }

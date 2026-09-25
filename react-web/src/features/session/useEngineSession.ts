@@ -8,6 +8,7 @@ import type { FatalError } from '../error/fatalError'
 import { createLoadingProgress } from './loadingProgress'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { checkRealm, realmCheckMessage } from '../../lib/realmCheck'
+import { color3ToHex, hexToColor3 } from '../../lib/color'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
 import { bootMode } from '../../lib/bootMode'
 import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
@@ -20,6 +21,7 @@ import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { formatConsoleReply, parseChatCommand } from '../chat/chatCommands'
 import type {
+  AvatarColorTarget,
   AppNotification,
   BindingEntry,
   ChangeRealmRequest,
@@ -80,6 +82,9 @@ function parseTimeReply(reply: string): { hours: number; speed: number } | null 
 export const SAVE_FAILED_MESSAGE = 'There was an error updating your avatar profile. Please try again.'
 
 /** A server-side catalog page request (backpack grid). Filters/sort are applied by the catalyst. */
+
+// Every color change is a full profile deploy, so a drag only deploys its final value.
+const DEFAULT_COLOR = '#808080'
 export interface CatalogQuery {
   page: number
   pageSize: number
@@ -112,6 +117,10 @@ export interface BackpackState {
   revertSave: () => void
   /** The avatar's current body shape urn (items without a representation for it can't render). */
   bodyShape?: string
+  /** The avatar's skin/hair/eye colors as hex, once the bridge has reported them. */
+  colors?: { skin: string; hair: string; eyes: string }
+  /** Change one color: shown at once, deployed with the look when the Backpack closes. */
+  setColor: (target: AvatarColorTarget, hex: string) => void
   /** Preview a set on the avatar without equipping it (selecting); null reverts to the look. */
   preview: (urns: string[] | null) => void
   /** Saved outfits (Outfits tab), by slot index. */
@@ -620,6 +629,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [equippedWearables, setEquippedWearables] = useState<Wearable[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [bodyShape, setBodyShape] = useState<string | undefined>(undefined)
+  const [avatarColors, setAvatarColors] = useState<{ skin: string; hair: string; eyes: string } | undefined>(undefined)
   // Mirror of catalogItems for equipWearables' optimistic equipped-set rebuild (avoids stale closure).
   const catalogItemsRef = useRef<Wearable[]>([])
   useEffect(() => { catalogItemsRef.current = catalogItems }, [catalogItems])
@@ -812,6 +822,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'wearables':
           setEquippedWearables(msg.equipped)
           if (msg.bodyShape) setBodyShape(msg.bodyShape)
+          if (msg.colors) {
+            const c = msg.colors
+            setAvatarColors((prev) => ({
+              skin: c.skin ? color3ToHex(c.skin) : (prev?.skin ?? DEFAULT_COLOR),
+              hair: c.hair ? color3ToHex(c.hair) : (prev?.hair ?? DEFAULT_COLOR),
+              eyes: c.eyes ? color3ToHex(c.eyes) : (prev?.eyes ?? DEFAULT_COLOR)
+            }))
+          }
           // The grid page carries its own per-item equipped flags (stamped at fetch, flipped by the
           // single-equip optimistic rebuild) — an authoritative emit (e.g. after equipOutfit) must
           // reconcile them too, or stale page flags shadow the new set in the category slots
@@ -1418,6 +1436,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (backpackWasOpen.current && !backpackOpen) driverRef.current?.send({ kind: 'commitAvatar' })
     backpackWasOpen.current = backpackOpen
   }, [backpackOpen])
+  const setAvatarColor = useCallback((target: AvatarColorTarget, hex: string) => {
+    setAvatarColors((prev) => (prev ? { ...prev, [target]: hex } : prev))
+    driverRef.current?.send({ kind: 'setAvatarColor', target, color: hexToColor3(hex) })
+  }, [])
   const previewWearables = useCallback((urns: string[] | null) => {
     driverRef.current?.send({ kind: 'previewAvatar', urns })
   }, [])
@@ -2004,7 +2026,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
     backpack: {
       list: catalogItems, total: catalogTotal, loading: catalogLoading, query: queryCatalog,
-      equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, bodyShape, equip: equipWearables, saveError, retrySave, revertSave, preview: previewWearables,
+      equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, bodyShape, colors: avatarColors, setColor: setAvatarColor, equip: equipWearables, saveError, retrySave, revertSave, preview: previewWearables,
       outfits: outfits.outfits, outfitSlots: Math.min(10, 5 + outfits.namesForExtraSlots.length),
       saveOutfit, deleteOutfit, equipOutfit
     },
