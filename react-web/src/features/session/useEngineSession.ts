@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/fatalError'
+import { createLoadingProgress } from './loadingProgress'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { checkRealm, realmCheckMessage } from '../../lib/realmCheck'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
@@ -405,6 +406,8 @@ export interface EngineSession {
    *  'entering'. NOT the scene the player is in — that is `minimap.sceneTitle`, resolved by
    *  parcel; this title is whatever was last loading and goes stale as the player moves. */
   sceneLoading: SceneLoadingState | null
+  /** One 0–100 value for the whole loader, across every stage it waits on; it only rises. */
+  loadingProgress: number
   /** Why the last in-world travel failed (the engine kept the player where they were), shown as a notice. */
   travelError: string | null
   dismissTravelError: () => void
@@ -1709,6 +1712,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     return () => clearTimeout(t)
   }, [loadingNow])
 
+  const loadingTracker = useRef(createLoadingProgress())
+  if (!loaderActive) loadingTracker.current.reset()
+  const loadingProgress = loaderActive
+    ? loadingTracker.current.next({ scene: sceneLoading, playerReady, revealing, travelling: travellingTo != null })
+    : 100
+
   const phase: SessionPhase = !submitted
     ? 'login'
     : !destinationPicked
@@ -1920,6 +1929,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     phase,
     pickDestination,
     sceneLoading,
+    loadingProgress,
     travelError,
     dismissTravelError,
     travellingTo,
