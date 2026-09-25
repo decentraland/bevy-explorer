@@ -83,7 +83,6 @@ pub mod util;
 pub struct SceneUpdates {
     pub sender: SceneResponseSender,
     receiver: SceneResponseReceiver,
-    pub scene_ids: HashMap<SceneId, Entity>,
     pub jobs_in_flight: HashSet<Entity>,
     pub update_deadline: SystemTime,
     pub eligible_jobs: usize,
@@ -298,7 +297,6 @@ impl Plugin for SceneRunnerPlugin {
         app.insert_resource(SceneUpdates {
             sender,
             receiver,
-            scene_ids: Default::default(),
             jobs_in_flight: Default::default(),
             update_deadline: web_time::SystemTime::now(),
             eligible_jobs: 0,
@@ -1099,25 +1097,23 @@ fn receive_scene_updates(
         let maybe_completed_job = match updates.receiver().try_recv() {
             Ok(response) => match response {
                 SceneResponse::CrdtSnapshot(scene_id, crdt) => {
-                    if let Some(&scene_entity) = updates.scene_ids.get(&scene_id) {
-                        snapshot_events.write(CrdtSnapshotEvent { scene_entity, crdt });
-                    }
+                    // scene ids are the scene root entity
+                    snapshot_events.write(CrdtSnapshotEvent {
+                        scene_entity: scene_id.0,
+                        crdt,
+                    });
                     None
                 }
                 SceneResponse::EntityAllocated(scene_id, results) => {
-                    if let Some(&scene_entity) = updates.scene_ids.get(&scene_id) {
-                        entity_allocated_events.write(EntityAllocatedEvent {
-                            scene_entity,
-                            results,
-                        });
-                    }
+                    entity_allocated_events.write(EntityAllocatedEvent {
+                        scene_entity: scene_id.0,
+                        results,
+                    });
                     None
                 }
                 SceneResponse::Stats(scene_id, counters) => {
-                    if let Some(root) = updates.scene_ids.get(&scene_id) {
-                        if let Ok(mut context) = scenes.get_mut(*root) {
-                            context.resource_counters = Some(counters);
-                        }
+                    if let Ok(mut context) = scenes.get_mut(scene_id.0) {
+                        context.resource_counters = Some(counters);
                     }
                     None
                 }
@@ -1132,24 +1128,22 @@ fn receive_scene_updates(
                     None
                 }
                 SceneResponse::Error(scene_id, message) => {
-                    if let Some(root) = updates.scene_ids.get(&scene_id) {
-                        if let Ok(mut context) = scenes.get_mut(*root) {
-                            context.state = SceneState::Broken;
-                            let timestamp = context.total_runtime + 1.0;
-                            error!("[{scene_id:?} @ {}] error: {message}", context.tick_number);
-                            context.log(SceneLogMessage {
-                                timestamp,
-                                level: SceneLogLevel::SystemError,
-                                message,
-                            });
-                        }
-                        Some(*root)
-                    } else {
-                        None
+                    let root = scene_id.0;
+                    if let Ok(mut context) = scenes.get_mut(root) {
+                        context.state = SceneState::Broken;
+                        let timestamp = context.total_runtime + 1.0;
+                        error!("[{scene_id:?} @ {}] error: {message}", context.tick_number);
+                        context.log(SceneLogMessage {
+                            timestamp,
+                            level: SceneLogLevel::SystemError,
+                            message,
+                        });
                     }
+                    Some(root)
                 }
                 SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages, rpc_calls) => {
-                    let root = updates.scene_ids.get(&scene_id).unwrap();
+                    // scene ids are the scene root entity
+                    let root = scene_id.0;
                     debug!(
                         "scene {:?}/{:?} received updates! [+{}, -{}, {} rpc",
                         census.scene_id,
@@ -1158,7 +1152,7 @@ fn receive_scene_updates(
                         census.died.len(),
                         rpc_calls.len(),
                     );
-                    if let Ok(mut context) = scenes.get_mut(*root) {
+                    if let Ok(mut context) = scenes.get_mut(root) {
                         // this reply is the scene's in-flight tick coming back (a no-op for
                         // broken scenes, whose state holds no in-flight bit)
                         context.set_in_flight(false);
@@ -1197,7 +1191,7 @@ fn receive_scene_updates(
                             // Must happen before updates_to_entity drains `crdt`.
                             context.crdt_store.sync_lww_timestamps_from(&crdt);
 
-                            let mut commands = commands.entity(*root);
+                            let mut commands = commands.entity(root);
                             for (component_id, interface) in crdt_interfaces.0.iter() {
                                 interface.updates_to_entity(
                                     *component_id,
@@ -1218,7 +1212,7 @@ fn receive_scene_updates(
                             "no scene entity, probably got dropped before we processed the result"
                         );
                     }
-                    Some(*root)
+                    Some(root)
                 }
                 SceneResponse::ImmediateRpcCall(rpc_call) => {
                     debug!("immediate rpc: {rpc_call:?}");
