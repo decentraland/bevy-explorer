@@ -173,6 +173,22 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('world-hud.png')
   })
 
+  // In-world loading screen (tips carousel), driven by a scene-loading update on the mock's channel.
+  test('loading screen', async ({ page }) => {
+    await enterWorld(page)
+    const loadingUpdate = (pendingAssets: number): Promise<void> =>
+      page.evaluate((n) => {
+        const ch = new BroadcastChannel(`bevy-ui-bridge#${(window as { __bridgeSession?: string }).__bridgeSession}`)
+        ch.postMessage({ to: 'page', msg: { kind: 'sceneLoading', state: { visible: true, realmConnected: true, title: '', pendingAssets: n } } })
+      }, pendingAssets)
+    await loadingUpdate(30)
+    await page.getByRole('status').filter({ hasText: 'LOADING 0%' }).waitFor()
+    await loadingUpdate(9)
+    await page.getByRole('status').filter({ hasText: 'LOADING 70%' }).waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('loading-screen.png')
+  })
+
   // Element-level with a fixed pixel budget: 1% of this thin strip would hide a whole icon change.
   test('sidebar', async ({ page }) => {
     await enterWorldReturning(page)
