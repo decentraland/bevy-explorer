@@ -4,6 +4,7 @@
 import { Button } from './Button'
 import { IconButton } from './IconButton'
 import { VoiceBars } from './VoiceBars'
+import { ColorPicker } from './ColorPicker'
 import { useState } from 'react'
 import { ControlButton } from './ControlButton'
 import { Tooltip } from './Tooltip'
@@ -411,6 +412,12 @@ export function Showcase(): React.JSX.Element {
 
       <Section title="VoiceBars (speaking)">
         <VoiceBars />
+      </Section>
+
+      <Section title="ColorPicker (avatar colors)">
+        <div style={{ maxWidth: 320 }}>
+          <ColorPicker label="Hair color" value="#5b310f" presets={['#1c1c1c', '#3c210b', '#5b310f', '#7b4818', '#985f37', '#8c2014', '#e98234', '#ffbe28', '#fad281', '#d4d4d4']} onChange={() => undefined} />
+        </div>
       </Section>
 
       <Section title="Panel">
