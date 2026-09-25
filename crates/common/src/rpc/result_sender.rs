@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, DropGuard};
 
 pub enum LocalChannel<T> {
     Channel(tokio::sync::oneshot::Sender<T>),
@@ -146,6 +146,8 @@ impl<T: Serialize + 'static> RpcResultSender<T> {
 
 struct IpcResultCallback<T: DeserializeOwned + Send + 'static> {
     sender: Option<tokio::sync::oneshot::Sender<T>>,
+    // fires the close watcher once the endpoint leaves the registry, so it doesn't park forever
+    _cancel_on_drop: DropGuard,
 }
 
 impl<T: DeserializeOwned + Send + 'static> IpcEndpoint for IpcResultCallback<T> {
@@ -172,6 +174,7 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcResultSe
         let id = channel.try_write().unwrap().serialize_with(|sender| {
             let endpoint = IpcResultCallback {
                 sender: Some(sender),
+                _cancel_on_drop: cancel.clone().drop_guard(),
             };
             let (id, close_sender) = ipc_register(endpoint);
             let cancel = cancel.clone();

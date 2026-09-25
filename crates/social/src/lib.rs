@@ -1,5 +1,6 @@
 #[cfg(not(feature = "social"))]
 mod fake_client;
+use alloy_core::primitives::Address;
 #[cfg(not(feature = "social"))]
 pub use fake_client::{FriendshipEventBody, SocialClientHandler};
 
@@ -22,7 +23,6 @@ use common::structs::DebugInfo;
 use common::util::AsH160;
 #[cfg(feature = "social")]
 use console::DoAddConsoleCommand;
-use ethers_core::types::Address;
 #[cfg(feature = "social")]
 use system_bridge::BlockedUserData;
 #[cfg(feature = "social")]
@@ -212,7 +212,7 @@ fn init_social_client(
     mut connectivity: Local<Option<UnboundedReceiver<ConnectivityEvent>>>,
     mut block_updates: Local<Option<UnboundedReceiver<BlockUpdateEvent>>>,
     mut chats: Local<Option<UnboundedReceiver<DirectChatEvent>>>,
-    social_runtime: Res<runtime::SocialRuntime>,
+    social_runtime: runtime::SocialRuntimeRes,
     mut restart: ResMut<RestartSocialRequested>,
     mut consumer_requested: ResMut<SocialConsumerRequested>,
     mut system_api_events: EventReader<SystemApi>,

@@ -19,6 +19,10 @@ export class FakeDriver implements LoginDriver {
   readonly calls: string[] = []
   /** What getPreviousLogin resolves to (set before render to drive the login branch). */
   previousLogin: { userId: string | null } = { userId: null }
+  /** Every engine console command line run via `command`, in order. */
+  readonly commands: string[] = []
+  /** What `command` resolves to for a line (defaults to the engine's `/time` reply at 10:00, 12×). */
+  commandReply: (line: string) => string = () => 'time 10:0 -> 10:0, speed 12 (elapsed: 36000)'
 
   private readonly listeners = new Set<(msg: SceneToPage) => void>()
 
@@ -50,6 +54,10 @@ export class FakeDriver implements LoginDriver {
   }
   rearmCrashWatchdog(): void {
     this.calls.push('rearmCrashWatchdog')
+  }
+  async command(line: string): Promise<string> {
+    this.commands.push(line)
+    return this.commandReply(line)
   }
   send(msg: PageToScene): void {
     this.sent.push(msg)
@@ -159,6 +167,9 @@ export function fakeSession(): EngineSession {
     phase: 'world',
     pickDestination: vi.fn(),
     sceneLoading: null,
+    travelError: null,
+    dismissTravelError: vi.fn(),
+    travellingTo: null,
     fatalError: null,
     reload: vi.fn(),
     dismissFatal: vi.fn(),
@@ -176,12 +187,14 @@ export function fakeSession(): EngineSession {
     },
     profile: fakeProfileState(),
     notifications: { list: [], unread: 0, open: false, toggle: vi.fn(), markAllRead: vi.fn() },
+    skybox: { open: false, toggle: vi.fn(), hours: 10, progressing: true, setHours: vi.fn(), setProgressing: vi.fn() },
     emotes: { list: [], open: false, toggle: vi.fn(), play: vi.fn(), equip: vi.fn() },
     backpack: { list: [], total: 0, loading: false, query: vi.fn(), equipped: [], open: false, toggle: vi.fn(), equip: vi.fn(), preview: vi.fn(), outfits: [], outfitSlots: 5, saveOutfit: vi.fn(), deleteOutfit: vi.fn(), equipOutfit: vi.fn() },
-    communities: { list: [], open: false, toggle: vi.fn(), create: vi.fn(), join: vi.fn(), leave: vi.fn(), detail: null, loadDetail: vi.fn() },
+    communities: { list: [], open: false, toggle: vi.fn(), create: vi.fn(), join: vi.fn(), requestToJoin: vi.fn(), cancelRequest: vi.fn(), leave: vi.fn(), error: null, detail: null, loadDetail: vi.fn() },
     map: { x: 0, y: 0, open: false, toggle: vi.fn(), teleport: vi.fn(), changeRealm: vi.fn(), teleportToPlace: vi.fn() },
     minimap: { pose: { current: { x: 0, z: 0, yaw: 0, camYaw: 0 } }, isWorld: false, sceneTitle: '', setConfig: vi.fn() },
     places: { open: false, toggle: vi.fn() },
+    events: { open: false, toggle: vi.fn() },
     gallery: { list: [], current: 0, max: 0, loaded: false, open: false, toggle: vi.fn(), metas: {}, loadPhoto: vi.fn(), remove: vi.fn() },
     permissions: { pending: [], resolve: vi.fn() },
     mic: { enabled: false, available: true, toggle: vi.fn() },

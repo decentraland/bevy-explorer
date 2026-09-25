@@ -13,7 +13,8 @@
     "lint:fix": "eslint --fix \"./src/**/*.{ts,tsx}\"",
     "format": "prettier --config .prettierrc -c \"./src/**/*.{ts,tsx}\"",
     "format:fix": "prettier -w --config .prettierrc \"./src/**/*.{ts,tsx}\"",
-    "upgrade-sdk": "npm install @dcl/sdk@experimental-bevy @dcl/js-runtime@experimental-bevy @dcl/react-ecs@experimental-bevy @dcl/sdk-commands@experimental-bevy @dcl/ecs@experimental-bevy --save-exact"
+    "upgrade-sdk": "npm install @dcl/sdk@experimental-bevy @dcl/js-runtime@experimental-bevy @dcl/react-ecs@experimental-bevy @dcl/sdk-commands@experimental-bevy @dcl/ecs@experimental-bevy --save-exact",
+    "server-logs": "sdk-commands sdk-server-logs"
   },
   "devDependencies": {
     "@dcl/ecs": "7.28.1-34901226656.commit-44656ea",

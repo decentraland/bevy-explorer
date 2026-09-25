@@ -12,11 +12,13 @@ import { FriendsPanel } from './features/friends/FriendsPanel'
 import { SettingsPanel } from './features/settings/SettingsPanel'
 import { ProfilePanel } from './features/profile/ProfilePanel'
 import { NotificationsPanel } from './features/notifications/NotificationsPanel'
+import { SkyboxMenu } from './features/skybox/SkyboxMenu'
 import { EmotesWheel } from './features/emotes/EmotesWheel'
 import { BackpackPage } from './features/backpack/BackpackPage'
 import { CommunitiesPage } from './features/communities/CommunitiesPage'
 import { MapPage } from './features/map/MapPage'
 import { PlacesPage } from './features/places/PlacesPage'
+import { EventsPage } from './features/events/EventsPage'
 import { PlacesPicker } from './features/places/PlacesPicker'
 import { GalleryPage } from './features/gallery/GalleryPage'
 import { Sidebar } from './features/sidebar/Sidebar'
@@ -30,6 +32,7 @@ import { SessionProvider } from './features/session/SessionContext'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
+import { openTravelError } from './features/session/TravelError'
 import { useEngineSession } from './features/session/useEngineSession'
 import { useWindowKeyDown } from './lib/useWindowKeyDown'
 import { bootMode } from './lib/bootMode'
@@ -209,6 +212,14 @@ function Hud(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the front request changes
   }, [permFrontId])
 
+  // A refused in-world travel (destination missing/unreachable): the player stays put and is told why.
+  const travelError = session.travelError
+  useEffect(() => {
+    if (travelError == null) return
+    return openTravelError(travelError, session.dismissTravelError)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dismissTravelError is stable
+  }, [travelError])
+
   // Which tab the Backpack opens on. The emote wheel's "Customise [E]" opens it on Emotes; it resets
   // to Wearables once the Backpack closes so a normal (sidebar/topbar) open lands on Wearables.
   const [backpackTab, setBackpackTab] = useState<'wearables' | 'emotes'>('wearables')
@@ -230,6 +241,7 @@ function Hud(): React.JSX.Element {
     else if (page === 'communities') session.communities.toggle()
     else if (page === 'map') session.map.toggle()
     else if (page === 'places') session.places.toggle()
+    else if (page === 'events') session.events.toggle()
     else if (page === 'gallery') session.gallery.toggle()
     // Profile-chip actions (forwarded from MainMenuShell's ProfileChip): View Profile
     // opens the full passport (same as for other users), not the small profile card.
@@ -239,7 +251,7 @@ function Hud(): React.JSX.Element {
 
   // A full-screen MainMenuShell page is open (covers the whole HUD).
   const pageOpen =
-    session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.gallery.open
+    session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.gallery.open
 
   // Embedded mode: mount only the engine (+ the error surfaces so a crash isn't silently blank).
   // No sidebar / chat / pointer / panels / sign-in UI. PopupHost renders nothing while the stack is
@@ -260,7 +272,9 @@ function Hud(): React.JSX.Element {
       {rpc && <EngineHost rpc={rpc} />}
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
-      {session.phase === 'entering' && <SceneLoadingOverlay scene={session.sceneLoading} />}
+      {session.phase === 'entering' && (
+        <SceneLoadingOverlay scene={session.sceneLoading} travellingTo={session.travellingTo} />
+      )}
       {session.phase === 'world' && !session.menuOpen && (
         <>
           {/* The full-screen menu pages own the whole screen; hide the rail + chat so
@@ -293,6 +307,7 @@ function Hud(): React.JSX.Element {
           <SettingsPanel settings={session.settings} bindings={session.bindings} profile={session.profile} onNavigate={goToMenuPage} />
           <ProfilePanel profile={session.profile} />
           <NotificationsPanel notifications={session.notifications} />
+          <SkyboxMenu skybox={session.skybox} />
           <EmotesWheel
             emotes={session.emotes}
             onCustomise={() => {
@@ -309,6 +324,13 @@ function Hud(): React.JSX.Element {
           <MapPage map={session.map} profile={session.profile} onNavigate={goToMenuPage} />
           <PlacesPage
             places={session.places}
+            profile={session.profile}
+            onNavigate={goToMenuPage}
+            onTeleport={(x, y) => session.map.teleportToPlace(x, y)}
+            onVisitWorld={(realm) => session.map.changeRealm(realm)}
+          />
+          <EventsPage
+            events={session.events}
             profile={session.profile}
             onNavigate={goToMenuPage}
             onTeleport={(x, y) => session.map.teleportToPlace(x, y)}

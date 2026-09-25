@@ -71,7 +71,7 @@ export type SystemActionEvent = { action: string; pressed: boolean }
 
 export type KernelFetchRequest = {
   url: string
-  init: { headers?: Record<string, string>; method: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: string }
+  init: { headers?: Record<string, string>; method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: string }
   meta: string
 }
 export type KernelFetchResponse = { ok: boolean; status: number; statusText?: string; body: string }

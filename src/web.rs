@@ -4,6 +4,7 @@ use bevy::{
     prelude::*,
     render::{render_resource::PipelineCompilationHandler, renderer::RenderDevice},
     tasks::BoxedFuture,
+    web_worker::{WebWorkerConfig, WorkerSpec},
     winit::{UpdateMode, WinitSettings},
 };
 use bevy_console::ConsoleConfiguration;
@@ -19,6 +20,7 @@ use scene_runner::vec3_to_parcel;
 use system_bridge::{SystemApi, SystemBridge};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::js_sys;
+use web_sys::{HtmlCanvasElement, OffscreenCanvas};
 
 use system_api_types::launch_options::{ClientOptions, EngineRunOptions, LaunchOptions};
 
@@ -32,27 +34,23 @@ static CONSOLE_BRIDGE_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<System
 /// (realm, position, …) swapped in.
 static LAUNCH_OPTIONS: OnceCell<EngineRunOptions> = OnceCell::new();
 
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = window, js_name = _buildEngineApi)]
-    fn build_engine_api(json: &str);
-}
+// The page/engine-worker/render-worker split: the page owns the canvas and winit's DOM side,
+// the engine worker runs the app world and winit's event loop, and the render worker owns the
+// OffscreenCanvas, the wgpu device and the render world. `bevy::web_worker` spawns them and
+// carries the startup handoffs; the entries below are the exports its workers call.
 
-#[wasm_bindgen(js_namespace = window)]
+// Page functions (boot.js / engine.js define them on the window): looked up on `self`, which
+// on the engine worker is the relay bevy::web_worker installs for them.
+#[bevy::web_worker::page_functions]
+#[wasm_bindgen(js_namespace = self)]
 extern "C" {
+    #[wasm_bindgen(js_name = _buildEngineApi)]
+    fn build_engine_api(json: &str);
+
     /// The engine's current launch options as JSON — the `engine_run` options object minus the
     /// page-derived keys — for boot.js to mirror into the page url.
     #[wasm_bindgen(js_name = set_url_params)]
     fn set_url_params(options_json: &str);
-
-    #[wasm_bindgen(js_name = "allowADummyPipeline")]
-    fn allow_a_dummy_pipeline();
-
-    #[wasm_bindgen(js_name = "lastPipelineWasValid")]
-    fn last_pipeline_was_valid() -> bool;
-
-    #[wasm_bindgen(js_name = "waitForPipelines")]
-    fn wait_for_async_pipelines() -> js_sys::Promise;
 
     /// Ping the JS-side watchdog once per frame. If these stop arriving (e.g. the
     /// main thread is deadlocked waiting on a lock held by a crashed worker), the
@@ -67,6 +65,95 @@ extern "C" {
     /// leave keys alone while the user types into scene UI.
     #[wasm_bindgen(js_name = "__setEngineTextFocus")]
     fn set_engine_text_focus(focused: bool);
+
+    /// Shows or hides the page's `#shader-compiling` indicator (the HUD's `renderBusy` probe)
+    /// while gpu_cache.js compiles pipelines asynchronously on the render worker; boot.js
+    /// defines it, gpu_cache.js calls the relay directly.
+    #[allow(dead_code)]
+    #[wasm_bindgen(js_name = "__setShaderCompiling")]
+    fn set_shader_compiling(on: bool);
+
+    /// The render worker's gpu cache is warm (`engine_render_setup` done): boot.js completes
+    /// the loading bar's gpu step.
+    #[wasm_bindgen(js_name = "__gpuCacheReady")]
+    fn gpu_cache_ready();
+
+    /// The page's `navigator.clipboard` (a worker's navigator has none), for copypwasmta: see
+    /// `engine_run`.
+    #[wasm_bindgen(js_name = "__copyToClipboard")]
+    fn page_copy_to_clipboard(text: &str) -> js_sys::Promise;
+    #[wasm_bindgen(js_name = "__readClipboard")]
+    fn page_read_clipboard() -> js_sys::Promise;
+}
+
+fn read_clipboard() -> copypwasmta::wasm_clipboard::ClipboardFuture<String> {
+    Box::pin(async {
+        let text = wasm_bindgen_futures::JsFuture::from(page_read_clipboard())
+            .await
+            .map_err(|e| format!("{e:?}"))?;
+        Ok(text.as_string().unwrap_or_default())
+    })
+}
+
+fn write_clipboard(text: String) -> copypwasmta::wasm_clipboard::ClipboardFuture<()> {
+    Box::pin(async move {
+        wasm_bindgen_futures::JsFuture::from(page_copy_to_clipboard(&text))
+            .await
+            .map(|_| ())
+            .map_err(|e| format!("{e:?}"))
+    })
+}
+
+// gpu_cache.js: the device-level cache and async pipeline creation, run on the render worker
+// where the device lives.
+#[wasm_bindgen(module = "/deploy/web/engine/gpu_cache.js")]
+extern "C" {
+    #[wasm_bindgen(js_name = initGpuCache)]
+    fn init_gpu_cache(key: &str) -> js_sys::Promise;
+}
+
+// The pipeline-compilation hooks `PipelineHandler` calls, which gpu_cache.js defines on the
+// global of every realm that loads the glue.
+#[wasm_bindgen(js_namespace = self)]
+extern "C" {
+    #[wasm_bindgen(js_name = "allowADummyPipeline")]
+    fn allow_a_dummy_pipeline();
+
+    #[wasm_bindgen(js_name = "lastPipelineWasValid")]
+    fn last_pipeline_was_valid() -> bool;
+
+    #[wasm_bindgen(js_name = "waitForPipelines")]
+    fn wait_for_async_pipelines() -> js_sys::Promise;
+}
+
+/// Page side: forwards the browser's pointer-lock state to the engine (see platform/wasm.rs).
+#[wasm_bindgen]
+pub fn report_pointer_lock(locked: bool) {
+    platform::report_pointer_lock(locked);
+}
+
+// The page/worker entry points of the media hosts. Defined here rather than in their crates:
+// a `#[wasm_bindgen]` export in a dependency is only linked in if the root crate references it.
+
+/// Page: starts the html media host (scene video/audio elements), transferring video frames to
+/// `render_worker`. Before the engine worker starts.
+#[wasm_bindgen]
+pub fn media_host_main(render_worker: web_sys::Worker) {
+    media::html::host::media_host_main(render_worker);
+}
+
+/// Page: starts the WebAudio host for scene audio sources. Before the engine worker starts.
+#[wasm_bindgen]
+pub fn audio_host_main() {
+    av::audio_host_wasm::audio_host_main();
+}
+
+/// Page: starts the livekit host (the livekit-client rooms, tracks and mic live on the page).
+/// Before the engine worker starts.
+#[cfg(feature = "livekit")]
+#[wasm_bindgen]
+pub fn livekit_host_main() {
+    comms::livekit::web::host::livekit_host_main();
 }
 
 /// call from a separate worker to initialize a channel for asset load processing
@@ -76,6 +163,20 @@ pub fn init_asset_load_thread() {
     let Ok(()) = WASM_ASSET_LOADER_HANDLE.set(asset_server_channel) else {
         panic!("can't init wasm loader");
     };
+}
+
+/// Asset processor worker entry: the image processor's channels, then its loop. The loop parks
+/// this worker on the shared-memory request channel, so it starts from a later task: the entry
+/// has to return first for the page to see the worker ready.
+#[wasm_bindgen]
+pub fn image_processor_main() -> Result<(), JsValue> {
+    image_processing::image_processor_init();
+    let global: web_sys::DedicatedWorkerGlobalScope = js_sys::global().unchecked_into();
+    let run = Closure::once_into_js(|| {
+        wasm_bindgen_futures::spawn_local(image_processing::image_processor_run());
+    });
+    global.set_timeout_with_callback_and_timeout_and_arguments_0(run.unchecked_ref(), 0)?;
+    Ok(())
 }
 
 #[wasm_bindgen]
@@ -130,11 +231,120 @@ fn parse_options(options: &JsValue) -> Result<EngineRunOptions, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("engine_run: invalid options: {e}")))
 }
 
-/// Launch the engine. `options` is the `engine_run` object keyed by the web param table (one
-/// key per launch option; absent = the engine's default). Throws (rejects the launch) on an
-/// invalid one.
+fn web_worker_config(glue_url: String, options: JsValue, compute_threads: u32) -> WebWorkerConfig {
+    WebWorkerConfig {
+        glue_url,
+        engine_entry: "engine_run".into(),
+        engine_args: options,
+        render_setup: Some("engine_render_setup".into()),
+        compute_threads,
+        // The engine worker gets the main-thread stack size (.cargo/config.toml -z stack-size);
+        // the others need less.
+        render_stack_size: Some(4 * 1024 * 1024),
+        compute_stack_size: Some(4 * 1024 * 1024),
+        engine_stack_size: Some(10 * 1024 * 1024),
+    }
+}
+
+thread_local! {
+    /// The render worker `engine_prepare_render` spawned ahead of `engine_start`.
+    static RENDER_WORKER: std::cell::RefCell<Option<bevy::web_worker::RenderWorker>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Page side: spawns the render worker on `canvas` ahead of `engine_start`, so its setup
+/// (`engine_render_setup`: the gpu cache's precache) runs while the user is still choosing
+/// where to go; `__gpuCacheReady` reports when it is done. `engine_start` attaches the rest.
+#[wasm_bindgen]
+pub fn engine_prepare_render(canvas: HtmlCanvasElement, glue_url: String) -> Result<(), JsValue> {
+    let render =
+        bevy::web_worker::start_render(canvas, &web_worker_config(glue_url, JsValue::NULL, 0))?;
+    RENDER_WORKER.with(|slot| *slot.borrow_mut() = Some(render));
+    Ok(())
+}
+
+/// Page side: starts the engine on `canvas`. `options` is the `engine_run` options object,
+/// `glue_url` the url of this module's JS glue for the workers to import. Returns
+/// `{ engine, render, compute: [...] }`, the workers.
+#[wasm_bindgen]
+pub fn engine_start(
+    canvas: HtmlCanvasElement,
+    options: JsValue,
+    glue_url: String,
+) -> Result<JsValue, JsValue> {
+    let compute_threads = parse_options(&options)?
+        .client
+        .compute_threads
+        .map_or_else(default_compute_threads, |n| n as u32);
+    let config = web_worker_config(glue_url, options, compute_threads);
+    let workers = match RENDER_WORKER.with(|slot| slot.borrow_mut().take()) {
+        Some(render) => bevy::web_worker::start_with_render(render, &config)?,
+        None => bevy::web_worker::start(canvas, &config)?,
+    };
+    let result = js_sys::Object::new();
+    js_sys::Reflect::set(&result, &"engine".into(), &workers.engine)?;
+    js_sys::Reflect::set(&result, &"render".into(), &workers.render)?;
+    js_sys::Reflect::set(
+        &result,
+        &"compute".into(),
+        &workers.compute.iter().collect::<js_sys::Array>(),
+    )?;
+    Ok(result.into())
+}
+
+/// Compute workers when `computeThreads` is absent: the cores left after the page, the
+/// engine, render and two asset workers, at most 4 and at least 1.
+fn default_compute_threads() -> u32 {
+    let cores = web_sys::window()
+        .map(|window| window.navigator().hardware_concurrency())
+        .filter(|cores| *cores >= 1.0)
+        .unwrap_or(4.0) as u32;
+    cores.saturating_sub(5).clamp(1, 4)
+}
+
+/// Page side: spawns a further worker of ours that calls the export `entry` once its wasm
+/// instance is up (the asset loader and processor). Posts `{ __bevy_ready: tag }` when it has.
+#[wasm_bindgen]
+pub fn engine_spawn_worker(
+    glue_url: String,
+    entry: String,
+    tag: String,
+) -> Result<web_sys::Worker, JsValue> {
+    bevy::web_worker::spawn_worker(
+        &glue_url,
+        &WorkerSpec {
+            entry,
+            args: Vec::new(),
+            tag,
+            stack_size: None,
+            transfer: Vec::new(),
+        },
+    )
+}
+
+/// Render worker setup, before bevy creates the render world there: gpu_cache.js patches the
+/// worker's WebGPU device creation with its device-level cache and precreates the last run's
+/// pipelines, as it did on the page when the device lived there.
+#[wasm_bindgen]
+pub async fn engine_render_setup(_canvas: OffscreenCanvas) -> Result<(), JsValue> {
+    console_error_panic_hook::set_once();
+    wasm_bindgen_futures::JsFuture::from(init_gpu_cache(&assets::gpu_cache_hash())).await?;
+    gpu_cache_ready();
+    Ok(())
+}
+
+/// Engine worker entry (`bevy::web_worker` calls it once the worker is attached). `options` is
+/// the `engine_run` object keyed by the web param table (one key per launch option; absent =
+/// the engine's default). Throws (rejects the launch) on an invalid one.
 #[wasm_bindgen]
 pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
+    console_error_panic_hook::set_once();
+    let compute_threads = bevy::web_worker::compute_threads();
+    copypwasmta::set_external_clipboard(copypwasmta::ExternalClipboard {
+        get: read_clipboard,
+        set: write_clipboard,
+    });
+
     let options = parse_options(&options)?;
     let _ = LAUNCH_OPTIONS.set(options.clone());
     // the shared launch options' globals (src/launch.rs) — before anything composes a backend url
@@ -157,13 +367,16 @@ pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
         decentraland_serialized_app_config(),
         decentraland_app_arguments(&options),
         Some(WASM_ASSET_LOADER_HANDLE.get().unwrap().clone()),
+        compute_threads as usize,
     );
 
     let mut app = decentraland_app.build(decentraland_app_config);
 
     // on wasm we need to explicitly specify key binds for the platform
-    let user_agent = web_sys::window()
-        .and_then(|w| w.navigator().user_agent().ok())
+    let user_agent = js_sys::global()
+        .dyn_into::<web_sys::WorkerGlobalScope>()
+        .ok()
+        .and_then(|scope| scope.navigator().user_agent().ok())
         .unwrap_or_default();
     let text_bindings = if user_agent.contains("Mac") {
         bevy_simple_text_input::TextInputNavigationBindings::macos_default()
@@ -172,6 +385,9 @@ pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
     };
     app.insert_resource(text_bindings);
 
+    // The systems that call the page hooks take `NonSend<JsThread>` so the multi-threaded
+    // executor keeps them on this thread (the hooks are shims on this worker's global).
+    app.insert_non_send_resource(JsThread);
     app.add_systems(Update, update_winit_fps)
         .add_systems(Update, update_url_params)
         .add_systems(Update, update_text_focus)
@@ -224,8 +440,12 @@ pub async fn engine_console_command(command_line: String) -> Result<JsValue, JsV
         .map_err(|e| JsValue::from_str(&e))
 }
 
+/// Marker resource: a system taking `NonSend<JsThread>` runs on the engine worker, the thread
+/// whose JS global has the page hooks.
+struct JsThread;
+
 /// Extract console command metadata from clap and store as JSON for the JS API.
-fn extract_js_api(config: Res<ConsoleConfiguration>) {
+fn extract_js_api(config: Res<ConsoleConfiguration>, _js: NonSend<JsThread>) {
     let commands: Vec<serde_json::Value> = config
         .commands
         .iter()
@@ -270,11 +490,15 @@ fn extract_js_api(config: Res<ConsoleConfiguration>) {
 }
 
 /// Pings the JS watchdog each frame so it can detect a stalled engine loop.
-fn engine_heartbeat_system() {
+fn engine_heartbeat_system(_js: NonSend<JsThread>) {
     engine_heartbeat();
 }
 
-fn update_text_focus(priorities: Res<InputPriorities>, mut prev: Local<bool>) {
+fn update_text_focus(
+    priorities: Res<InputPriorities>,
+    mut prev: Local<bool>,
+    _js: NonSend<JsThread>,
+) {
     let focused = priorities.keyboard_claimed();
     if focused != *prev {
         *prev = focused;
@@ -306,6 +530,7 @@ fn update_url_params(
     preview: Res<PreviewMode>,
     editor: Res<EditorMode>,
     mut prev: Local<Option<EngineRunOptions>>,
+    _js: NonSend<JsThread>,
 ) {
     let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
     let position = Some(format!("{},{}", parcel.x, parcel.y));

@@ -81,7 +81,8 @@ fn delivery(field: &str) -> Delivery {
         | "imposter_source"
         | "content_server"
         | "log_fps"
-        | "gpu_bytes_per_frame" => Launch,
+        | "gpu_bytes_per_frame"
+        | "compute_threads" => Launch,
         "editor" => Host,
         "base_domain" => Resolved,
         other => {

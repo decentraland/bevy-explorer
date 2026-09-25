@@ -9,8 +9,9 @@ edition = "2021"
 common = { workspace = true }
 
 bevy = { workspace = true }
-ethers-signers = { workspace = true }
-ethers-core = { workspace = true }
+alloy-core = { workspace = true }
+alloy-signer = { workspace = true }
+alloy-signer-local = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

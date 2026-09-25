@@ -7,6 +7,7 @@ use std::{
     sync::{atomic::AtomicU32, Arc},
 };
 
+use alloy_core::primitives::Address;
 use bevy::{
     color::palettes,
     math::DVec3,
@@ -14,8 +15,10 @@ use bevy::{
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
 };
-use dcl_component::proto_components::sdk::components::common::CameraTransition;
-use ethers_core::abi::Address;
+use dcl_component::proto_components::sdk::{
+    components::common::CameraTransition,
+    development::{ws_scene_message, UpdateModelType},
+};
 use serde::{Deserialize, Serialize};
 pub use system_api_types::{PermissionLevel, PermissionType, PermissionValue, PointerTargetType};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -1387,7 +1390,41 @@ pub struct AvatarDynamicState {
 
 #[derive(Event)]
 pub enum PreviewCommand {
-    ReloadScene { hash: String },
+    ReloadScene {
+        hash: String,
+    },
+    ReloadModel {
+        hash: String,
+        src: String,
+        scene_id: String,
+    },
+    RemoveModel {
+        hash: String,
+        src: String,
+        scene_id: String,
+    },
+}
+
+impl From<ws_scene_message::Message> for PreviewCommand {
+    fn from(value: ws_scene_message::Message) -> Self {
+        match value {
+            ws_scene_message::Message::UpdateScene(update_scene) => Self::ReloadScene {
+                hash: update_scene.scene_id.to_owned(),
+            },
+            ws_scene_message::Message::UpdateModel(update_model) => match update_model.r#type() {
+                UpdateModelType::UmtChange => Self::ReloadModel {
+                    hash: update_model.hash.to_owned(),
+                    src: update_model.src.to_owned(),
+                    scene_id: update_model.scene_id.to_owned(),
+                },
+                UpdateModelType::UmtRemove => Self::RemoveModel {
+                    hash: update_model.hash.to_owned(),
+                    src: update_model.src.to_owned(),
+                    scene_id: update_model.scene_id.to_owned(),
+                },
+            },
+        }
+    }
 }
 
 /// The local player was instantly repositioned — a durationless `move_player_to`, a `teleport_player`,

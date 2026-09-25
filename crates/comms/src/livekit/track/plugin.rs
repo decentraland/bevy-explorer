@@ -1,6 +1,3 @@
-#[cfg(target_arch = "wasm32")]
-use std::sync::atomic::Ordering;
-
 use bevy::{
     ecs::{error::debug, relationship::Relationship, system::entity_command},
     prelude::*,
@@ -22,12 +19,7 @@ use {
     tokio::sync::{mpsc, oneshot},
 };
 #[cfg(target_arch = "wasm32")]
-use {
-    bevy::render::renderer::WgpuWrapper,
-    common::{structs::AudioSettings, util::ReportErr},
-    media::{FrameCopyRequest, FrameCopyRequestQueue, HtmlMedia},
-    web_sys::VideoFrame,
-};
+use {common::structs::AudioSettings, media::VideoData};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
@@ -45,14 +37,14 @@ use crate::{
     global_crdt::{PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{ActiveSpeaker, HostedBy, LivekitParticipant},
-        plugin::{PlayerUpdateTask, PlayerUpdateTasks},
+        plugin::{PlayerUpdateTask, PlayerUpdateTasksMut},
         track::{
             Audio, Camera, LivekitTrack, Microphone, PublishedBy, ScreenshareAudio,
             ScreenshareVideo, SubscribeToAudioTrack, SubscribeToTrack, Subscribed, Subscribing,
             TrackPublished, TrackSubscribed, TrackUnpublished, TrackUnsubscribed,
             UnsubscribeToTrack, Unsubscribed, Unsubscribing, Video,
         },
-        LivekitRuntime,
+        LivekitRuntimeRes,
     },
 };
 
@@ -98,8 +90,8 @@ fn track_published(
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant, &HostedBy, Has<ActiveSpeaker>)>,
     transport_senders: crate::global_crdt::TransportSenders,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    livekit_runtime: Res<LivekitRuntime>,
+    mut player_update_tasks: PlayerUpdateTasksMut,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let TrackPublished { participant, track } = trigger.event();
 
@@ -217,8 +209,8 @@ fn track_unpublished(
     tracks: Query<(Entity, &LivekitTrack, &PublishedBy)>,
     participants: Query<(Entity, &LivekitParticipant, &HostedBy)>,
     transport_senders: crate::global_crdt::TransportSenders,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    livekit_runtime: Res<LivekitRuntime>,
+    mut player_update_tasks: PlayerUpdateTasksMut,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let TrackUnpublished { participant, track } = trigger.event();
 
@@ -309,6 +301,11 @@ fn track_subscribed(
     };
 
     debug!("Subscribed to track {}.", track.sid());
+    // the page's snapshot now carries the subscribed RemoteTrack
+    #[cfg(target_arch = "wasm32")]
+    commands.entity(entity).try_insert(LivekitTrack {
+        track: track.clone(),
+    });
     commands.entity(entity).try_insert(Subscribed);
 }
 
@@ -327,6 +324,10 @@ fn track_unsubscribed(
     };
 
     debug!("Unsubscribed to track {}.", track.sid());
+    #[cfg(target_arch = "wasm32")]
+    commands.entity(entity).try_insert(LivekitTrack {
+        track: track.clone(),
+    });
     commands.entity(entity).try_insert(Unsubscribed);
 }
 
@@ -334,7 +335,7 @@ fn subscribe_to_audio_track(
     mut trigger: Trigger<SubscribeToAudioTrack>,
     mut commands: Commands,
     tracks: Query<&LivekitTrack, With<Audio>>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let entity = trigger.target();
     let SubscribeToAudioTrack {
@@ -381,7 +382,7 @@ fn subscribe_to_track(
     trigger: Trigger<SubscribeToTrack>,
     mut commands: Commands,
     tracks: Query<(&LivekitTrack, AnyOf<(&Audio, &Video)>)>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let entity = trigger.target();
 
@@ -413,7 +414,7 @@ fn unsubscribe_to_track(
     trigger: Trigger<UnsubscribeToTrack>,
     mut commands: Commands,
     tracks: Query<&LivekitTrack>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let entity = trigger.target();
 
@@ -443,7 +444,7 @@ fn subscribed_audio_track_with_open_sender(
         (Entity, &LivekitTrack, &mut OpenAudioSender),
         (With<Audio>, With<Subscribed>),
     >,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     for (entity, track, mut sender) in tracks.iter_mut() {
         let runtime = livekit_runtime.clone();
@@ -543,7 +544,7 @@ fn video_track_is_now_subscribed(
     trigger: Trigger<OnAdd, Subscribed>,
     mut commands: Commands,
     tracks: Query<(&LivekitTrack, Has<Video>), With<Subscribed>>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let entity = trigger.target();
     let Ok((track, is_video)) = tracks.get(entity) else {
@@ -592,14 +593,16 @@ fn video_track_is_now_subscribed(
         debug_panic!("A subscribed video track did not have a video RemoteTrack.");
     };
 
-    let Some(video_element) = video.html_video_element() else {
-        debug!("Could not build HtmlMedia from livekit track.");
-        return;
-    };
-    let html_media =
-        HtmlMedia::video_from_element(video_element, String::new(), (*active_transmitter).clone());
+    let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
+    let image = (*active_transmitter).clone();
+    // the page attaches the track's video element to the media host under this id
+    let media_id = media::adopt_video(command_receiver, video_sender, &image);
+    video.attach(media_id);
     commands.entity(entity).try_insert(HtmlMediaEntity {
-        element: html_media,
+        _commands: command_sender,
+        video: video_receiver,
+        image,
     });
 }
 
@@ -613,66 +616,29 @@ fn video_track_is_now_unsubscribed(
 }
 
 #[cfg(target_arch = "wasm32")]
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn queue_frame_copy(
     mut video_tracks: Query<&mut HtmlMediaEntity, (With<Video>, With<Subscribed>)>,
     mut images: ResMut<Assets<Image>>,
-    send_queue: Res<FrameCopyRequestQueue>,
     mut transmission_updated: EventWriter<TransmissionUpdated>,
 ) {
     for mut html_media_entity in video_tracks.iter_mut() {
-        #[allow(clippy::collapsible_else_if)]
-        if let Some(video) = html_media_entity.video().as_ref() {
-            let new_time = html_media_entity
-                .new_frame_time()
-                .swap(0, Ordering::Relaxed);
-            if new_time != 0 {
-                // new frame is ready
-                let new_time = f32::from_bits(new_time);
-                trace!("got new frame -> {new_time}");
-
-                let Ok(frame) = VideoFrame::new_with_html_video_element(video) else {
-                    warn!("failed to extract frame");
-                    continue;
-                };
-
-                let image_id = html_media_entity.image().as_ref().unwrap().id();
-                let visible_rect = frame.visible_rect().unwrap();
-                let video_size = (visible_rect.width() as u32, visible_rect.height() as u32);
-
-                // check size
-                if html_media_entity.size().is_none_or(|sz| sz != video_size) {
-                    let Some(image) = images.get_mut(image_id) else {
-                        continue;
-                    };
-                    debug!("Resizing active transmitter image.");
-                    image.resize(Extent3d {
-                        width: video_size.0,
-                        height: video_size.1,
-                        depth_or_array_layers: 1,
-                    });
-                    html_media_entity.set_size(Some(video_size));
-
-                    trace!("queue resized frame {:?}", video_size);
-                    transmission_updated.write(TransmissionUpdated);
-                }
-
-                // queue copy
-                trace!("queue frame {:?}", video_size);
-                send_queue
-                    .send(FrameCopyRequest {
-                        video_frame: WgpuWrapper::new(frame),
-                        target: image_id,
-                    })
-                    .report();
-
-                html_media_entity.set_current_time(new_time);
-            } else {
-                trace!("no frame (new_time == 0)");
-            }
-        } else {
-            debug!("no video");
-            // we don't report audio timestamps, otherwise would need to grab it here
+        while let Ok(data) = html_media_entity.video.try_recv() {
+            // the render world copies the frames into the image itself; only its size is
+            // followed here
+            let VideoData::Info(info) = data else {
+                continue;
+            };
+            let Some(image) = images.get_mut(html_media_entity.image.id()) else {
+                continue;
+            };
+            debug!("Resizing active transmitter image.");
+            image.data = None;
+            image.texture_descriptor.size = Extent3d {
+                width: info.width,
+                height: info.height,
+                depth_or_array_layers: 1,
+            };
+            transmission_updated.write(TransmissionUpdated);
         }
     }
 }

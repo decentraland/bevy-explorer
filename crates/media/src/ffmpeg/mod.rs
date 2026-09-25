@@ -14,18 +14,18 @@ use ffmpeg_next::format::input;
 use ipfs::IpfsIo;
 use kira::sound::streaming::StreamingSoundData;
 
-use crate::ffmpeg::{
-    audio_context::{AudioContext, AudioError},
-    stream_processor::process_streams,
-    util::InputWrapper,
-    video_context::{VideoContext, VideoError},
+use crate::{
+    AVCommand, VideoData,
+    ffmpeg::{
+        audio_context::{AudioContext, AudioError},
+        stream_processor::{AudioOutput, process_streams},
+        util::InputWrapper,
+        video_context::{VideoContext, VideoError},
+    },
 };
 
-pub use {
-    ffmpeg_next::frame::Video,
-    stream_processor::AVCommand,
-    video_context::{VideoData, VideoInfo},
-};
+/// The kira sound playing a stream's audio.
+pub type AudioHandle = <StreamingSoundData<AudioDecoderError> as kira::sound::SoundData>::Handle;
 
 pub fn init_ffmpeg() {
     ffmpeg_next::init().unwrap();
@@ -37,6 +37,7 @@ pub fn ffmpeg_worker(
     commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
     video: tokio::sync::mpsc::Sender<VideoData>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+    audio_handle: tokio::sync::oneshot::Receiver<AudioHandle>,
     mut path: String,
     hash: String,
 ) -> Result<(), anyhow::Error> {
@@ -117,20 +118,26 @@ pub fn ffmpeg_worker(
     }
 
     let input_context = InputWrapper::new(input_context, path);
+    let audio_output = AudioOutput::new(audio_handle);
 
     match (video_context, audio_context) {
         (None, None) => Ok(()),
         (None, Some(mut ac)) => {
             trace!("Processing stream with audio only");
-            process_streams(input_context, &mut [&mut ac], commands)
+            process_streams(input_context, &mut [&mut ac], commands, audio_output)
         }
         (Some(mut vc), None) => {
             trace!("Processing stream with video only");
-            process_streams(input_context, &mut [&mut vc], commands)
+            process_streams(input_context, &mut [&mut vc], commands, audio_output)
         }
         (Some(mut vc), Some(mut ac)) => {
             trace!("Processing stream");
-            process_streams(input_context, &mut [&mut vc, &mut ac], commands)
+            process_streams(
+                input_context,
+                &mut [&mut vc, &mut ac],
+                commands,
+                audio_output,
+            )
         }
     }
 }

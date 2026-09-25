@@ -28,10 +28,10 @@ use crate::{
             LivekitParticipant, Local, ParticipantConnected, ParticipantConnectionQuality,
             ParticipantDisconnected, ParticipantMetadataChanged, ParticipantPayload,
         },
-        plugin::{PlayerUpdateTask, PlayerUpdateTasks},
+        plugin::{PlayerUpdateTask, PlayerUpdateTasksMut},
         room::LivekitRoom,
         track::{Camera as CameraTrack, Publishing, Video},
-        LivekitRuntime,
+        LivekitRuntimeRes,
     },
     SceneRoom,
 };
@@ -91,8 +91,8 @@ fn participant_connected(
     mut commands: Commands,
     rooms: Query<&LivekitRoom>,
     transport_senders: crate::global_crdt::TransportSenders,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    livekit_runtime: Res<LivekitRuntime>,
+    mut player_update_tasks: PlayerUpdateTasksMut,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let ParticipantConnected {
         participant,
@@ -158,8 +158,8 @@ fn participant_disconnected(
     participants: Query<(Entity, &LivekitParticipant)>,
     rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
     transport_senders: crate::global_crdt::TransportSenders,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    livekit_runtime: Res<LivekitRuntime>,
+    mut player_update_tasks: PlayerUpdateTasksMut,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let ParticipantDisconnected {
         participant,
@@ -291,8 +291,8 @@ fn participant_connection_quality_changed(
 fn participant_payload(
     trigger: Trigger<ParticipantPayload>,
     transport_senders: crate::global_crdt::TransportSenders,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    livekit_runtime: Res<LivekitRuntime>,
+    mut player_update_tasks: PlayerUpdateTasksMut,
+    livekit_runtime: LivekitRuntimeRes,
     mut rate_limiter: ResMut<InboundRateLimiter>,
     time: Res<Time>,
 ) {
@@ -384,8 +384,8 @@ fn participant_payload(
 fn participant_metadata_changed(
     trigger: Trigger<ParticipantMetadataChanged>,
     transport_senders: crate::global_crdt::TransportSenders,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    livekit_runtime: Res<LivekitRuntime>,
+    mut player_update_tasks: PlayerUpdateTasksMut,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let ParticipantMetadataChanged { room, participant } = trigger.event();
 

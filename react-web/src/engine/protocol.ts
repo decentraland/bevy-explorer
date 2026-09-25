@@ -161,6 +161,8 @@ export type PageToScene =
   | CreateCommunityRequest
   | JoinCommunityRequest
   | LeaveCommunityRequest
+  | RequestToJoinCommunityRequest
+  | CancelJoinRequestRequest
   | GetCommunityDetailRequest
   | GetMapRequest
   | TeleportRequest
@@ -550,6 +552,8 @@ export interface TeleportRequest {
    *  a full reconnect, as for changeRealm, even to the realm the player is in. Omitted: a parcel of
    *  the realm the player is in. */
   realm?: string
+  /** Set with `realm`: the scene answers with a `travelResult` carrying this id. */
+  travelId?: number
 }
 
 /** Change to a world/realm (page → scene → changeRealm). `realm` is a world name
@@ -557,6 +561,18 @@ export interface TeleportRequest {
 export interface ChangeRealmRequest {
   kind: 'changeRealm'
   realm: string
+  /** The scene answers with a `travelResult` carrying this id. */
+  travelId?: number
+}
+
+/** How a realm change the page asked for ended (scene → page). On failure the engine kept the
+ *  player in the realm they were in; `message` is the engine's reason. */
+export interface TravelResultMessage {
+  kind: 'travelResult'
+  travelId: number
+  realm: string
+  ok: boolean
+  message?: string
 }
 
 /** A scene's pending permission prompt relayed from the engine (e.g. it wants to move you
@@ -626,6 +642,8 @@ export interface Community {
   ownerName: string
   /** 'public' | 'private' — gates the join flow (public = join, private = request). */
   privacy?: string
+  /** Id of the local user's pending request to join (private communities). */
+  pendingRequestId?: string
 }
 
 export interface CommunitiesMessage {
@@ -655,6 +673,28 @@ export interface JoinCommunityRequest {
 export interface LeaveCommunityRequest {
   kind: 'leaveCommunity'
   id: string
+}
+
+/** Ask to join a private community (social-api POST /communities/{id}/requests). */
+export interface RequestToJoinCommunityRequest {
+  kind: 'requestToJoinCommunity'
+  id: string
+}
+
+export interface CancelJoinRequestRequest {
+  kind: 'cancelJoinRequest'
+  id: string
+  requestId: string
+}
+
+export type CommunityAction = 'join' | 'requestToJoin' | 'cancelJoinRequest' | 'leave'
+
+/** A community write the social-api rejected (scene → page), so the UI can say so. */
+export interface CommunityActionFailedMessage {
+  kind: 'communityActionFailed'
+  id: string
+  action: CommunityAction
+  message: string
 }
 
 /** A member of a community (Members tab). */
@@ -1098,6 +1138,8 @@ export type SceneToPage =
   | CatalogPageMessage
   | OutfitsMessage
   | CommunitiesMessage
+  | CommunityActionFailedMessage
+  | TravelResultMessage
   | CommunityDetailMessage
   | MapMessage
   | PlayerPoseMessage

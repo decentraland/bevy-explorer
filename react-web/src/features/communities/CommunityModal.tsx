@@ -187,7 +187,10 @@ function EventRow({ event }: { event: CommunityEvent }): React.JSX.Element {
 export function CommunityModal({
   community,
   detail,
+  error = null,
   onJoin,
+  onRequestToJoin,
+  onCancelRequest,
   onLeave,
   onAddFriend,
   onOpenChat,
@@ -195,7 +198,11 @@ export function CommunityModal({
 }: {
   community: Community
   detail: CommunityDetailMessage | null
+  /** Why the last join/request/leave for this community failed. */
+  error?: string | null
   onJoin: (id: string) => void
+  onRequestToJoin: (id: string) => void
+  onCancelRequest: (id: string, requestId: string) => void
   onLeave: (id: string) => void
   onAddFriend: (address: string) => void
   onOpenChat: () => void
@@ -240,6 +247,7 @@ export function CommunityModal({
               <span><b>{compact(community.membersCount)}</b> Members</span>
             </div>
             {community.description && <p className={styles.desc}>{community.description}</p>}
+            {error && <p className={styles.error} role="alert">{error}</p>}
           </div>
           <div className={styles.headActions}>
             {member && (
@@ -247,8 +255,14 @@ export function CommunityModal({
             )}
             {member ? (
               <Button size="sm" variant="ghost" className={styles.joined} disabled>✓ Joined</Button>
+            ) : isPrivate && community.pendingRequestId != null ? (
+              <Button size="sm" variant="ghost" aria-label="Cancel join request" onClick={() => onCancelRequest(community.id, community.pendingRequestId!)}>
+                Requested
+              </Button>
+            ) : isPrivate ? (
+              <Button size="sm" onClick={() => onRequestToJoin(community.id)}>Request to Join</Button>
             ) : (
-              <Button size="sm" onClick={() => onJoin(community.id)}>{isPrivate ? 'Request to Join' : 'Join'}</Button>
+              <Button size="sm" onClick={() => onJoin(community.id)}>Join</Button>
             )}
             <div className={styles.kebabWrap}>
               <button type="button" className={styles.kebab} aria-label="More" onClick={() => setMenuOpen((o) => !o)}>⋮</button>
@@ -329,7 +343,10 @@ function CommunityModalContainer({ communityId, onClose }: { communityId: string
     <CommunityModal
       community={community}
       detail={detail}
+      error={communities.error?.id === communityId ? communities.error.message : null}
       onJoin={communities.join}
+      onRequestToJoin={communities.requestToJoin}
+      onCancelRequest={communities.cancelRequest}
       onLeave={communities.leave}
       onAddFriend={(address) => friends.act('request', address)}
       onOpenChat={() => {
