@@ -2,6 +2,7 @@ use common::util::ReportErr;
 use ffmpeg_next::{Packet, format::context::Input};
 
 pub const BUFFER_TIME: f64 = 10.0;
+const MAX_READ_RETRIES: usize = 100;
 
 pub trait PacketIter {
     fn is_eof(&self) -> bool;
@@ -91,16 +92,17 @@ impl PacketIter for InputWrapper {
         let input = self.get_input(true)?;
         let mut packet = Packet::empty();
 
-        loop {
+        for _ in 0..MAX_READ_RETRIES {
             match packet.read(input) {
                 Ok(..) => return Some((packet.stream(), packet)),
-                Err(ffmpeg_next::util::error::Error::Eof) => {
-                    self.is_eof = true;
-                    return None;
-                }
+                Err(ffmpeg_next::util::error::Error::Eof) => break,
                 Err(..) => (),
             }
         }
+
+        // eof, or persistent read errors: treat as end of stream
+        self.is_eof = true;
+        None
     }
 
     fn reset(&mut self) {

@@ -15,6 +15,11 @@ const BLANK_PNG = Buffer.from(
   'base64'
 )
 
+const EVENTS_FIXTURE = [
+  { id: 'e1', name: 'Genesis Plaza party', x: 0, y: 0, live: true, start_at: '2025-06-26T14:00:00Z', total_attendees: 12, image: 'https://example.com/e1.png' },
+  { id: 'e2', name: 'Galaga night', x: 0, y: 0, world: true, server: 'galaga.dcl.eth', live: true, start_at: '2025-06-26T14:30:00Z', total_attendees: 3 }
+]
+
 /** Make the page deterministic — call before the first navigation in each test. */
 async function prepare(page: Page): Promise<void> {
   // install (not setFixedTime): setFixedTime pins Date but leaves setTimeout on REAL time, so the
@@ -27,6 +32,8 @@ async function prepare(page: Page): Promise<void> {
     if (type === 'image' || type === 'media') return route.fulfill({ contentType: 'image/png', body: BLANK_PNG })
     return route.continue()
   })
+  // Live events data changes by the minute; serve a fixed list (sidebar badge + Events page).
+  await page.route(/\/api\/events\?list=/, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: EVENTS_FIXTURE }) }))
 }
 
 /** Fonts loaded + a beat for layout to settle (animations are frozen at screenshot time anyway). */
@@ -166,6 +173,29 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('world-hud.png')
   })
 
+  // In-world loading screen (tips carousel), driven by a scene-loading update on the mock's channel.
+  test('loading screen', async ({ page }) => {
+    await enterWorld(page)
+    const loadingUpdate = (pendingAssets: number): Promise<void> =>
+      page.evaluate((n) => {
+        const ch = new BroadcastChannel(`bevy-ui-bridge#${(window as { __bridgeSession?: string }).__bridgeSession}`)
+        ch.postMessage({ to: 'page', msg: { kind: 'sceneLoading', state: { visible: true, realmConnected: true, title: '', pendingAssets: n } } })
+      }, pendingAssets)
+    await loadingUpdate(30)
+    await page.getByRole('status').filter({ hasText: 'LOADING 0%' }).waitFor()
+    await loadingUpdate(9)
+    await page.getByRole('status').filter({ hasText: 'LOADING 70%' }).waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('loading-screen.png')
+  })
+
+  // Element-level with a fixed pixel budget: 1% of this thin strip would hide a whole icon change.
+  test('sidebar', async ({ page }) => {
+    await enterWorldReturning(page)
+    await settle(page)
+    await expect(page.locator('nav[aria-label="Main navigation"]')).toHaveScreenshot('sidebar.png', { maxDiffPixels: 20 })
+  })
+
   // Profile card — the popover opened by clicking a chat sender / nearby avatar. Baselines the
   // action set (View Passport · Mention · Block). The block confirm and the relationship
   // states (Accept/Reject/Unblock) are covered deterministically by the tier-1 profileCard.test.tsx.
@@ -201,7 +231,9 @@ test.describe('visual — mock HUD', () => {
     ['Notifications', 'notifications'],
     ['Emotes', 'emote-wheel'],
     ['Communities', 'communities'],
-    ['Map', 'map']
+    ['Map', 'map'],
+    ['Events', 'events'],
+    ['Skybox', 'skybox']
   ] as const) {
     test(`panel — ${name}`, async ({ page }) => {
       await enterWorld(page)

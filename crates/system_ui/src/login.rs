@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use alloy_core::primitives::{Address, B256};
+use alloy_signer_local::PrivateKeySigner;
 use analytics::segment_system::SegmentConfig;
 use bevy::{
     app::AppExit,
@@ -19,8 +21,6 @@ use common::{
     util::{TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
-use ethers_core::types::Address;
-use ethers_signers::LocalWallet;
 use ipfs::{IpfsAssetServer, IpfsIo};
 use scene_runner::Toaster;
 use system_bridge::{NativeUi, SystemApi, PROFILE_FETCH_FAILED};
@@ -393,7 +393,9 @@ fn get_previous_login(config: &AppConfig) -> Option<PreviousLogin> {
 /// This is the standard Decentraland AuthIdentity, so it is identical regardless of how the
 /// user signed in (wallet/MetaMask, social, OTP, magic). The web page just reads it from
 /// localStorage and forwards it — there is nothing login-method-specific here.
-fn parse_auth_identity(payload: &str) -> Result<(Address, LocalWallet, Vec<ChainLink>), String> {
+fn parse_auth_identity(
+    payload: &str,
+) -> Result<(Address, PrivateKeySigner, Vec<ChainLink>), String> {
     use base64::Engine as _;
 
     #[derive(serde::Deserialize)]
@@ -431,7 +433,7 @@ fn parse_auth_identity(payload: &str) -> Result<(Address, LocalWallet, Vec<Chain
         .trim()
         .trim_start_matches("0x");
     let local_wallet =
-        LocalWallet::from_str(key_hex).map_err(|e| format!("bad ephemeral key: {e}"))?;
+        PrivateKeySigner::from_str(key_hex).map_err(|e| format!("bad ephemeral key: {e}"))?;
 
     // Delegate chain = everything except the SIGNER (the ECDSA_EPHEMERAL link the engine stores).
     let auth: Vec<ChainLink> = identity
@@ -486,7 +488,7 @@ fn process_login_bridge(
                 Result<
                     (
                         Address,
-                        LocalWallet,
+                        PrivateKeySigner,
                         Vec<ChainLink>,
                         Option<UserProfile>,
                         RpcResultSender<Result<(), String>>,
@@ -540,7 +542,8 @@ fn process_login_bridge(
                             }
                         };
 
-                    let local_wallet = LocalWallet::from_bytes(&ephemeral_key).unwrap();
+                    let local_wallet =
+                        PrivateKeySigner::from_bytes(&B256::from_slice(&ephemeral_key)).unwrap();
 
                     Ok((
                         previous_login.root_address,
@@ -648,7 +651,7 @@ fn process_login_bridge(
                     window.focused = true;
                 }
 
-                let ephemeral_key = local_wallet.signer().to_bytes().to_vec();
+                let ephemeral_key = local_wallet.to_bytes().to_vec();
 
                 // store to app config
                 config.previous_login = Some(PreviousLogin {

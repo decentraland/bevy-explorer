@@ -28,6 +28,7 @@ import { Color4, Vector3 } from '@dcl/sdk/math'
 import { getPlayer, onEnterScene, onLeaveScene } from '@dcl/sdk/players'
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
 import type { Entity } from '@dcl/ecs'
+import { isSpeaking } from './voice'
 import { fetchProfile } from './profile'
 
 // UserNameColors.json — the 23-colour palette, indexed by FNV-1a(address) % 23. Kept in lockstep
@@ -56,6 +57,43 @@ const PAD = { top: 4, bottom: 4, right: 6, left: 13 }
 const RADIUS = 22
 const BADGE = 22
 const GAP = 6
+// Unity's speaking badge (NametagStyle.uss __badge-voice-chat): three 3px green bars in a 13×12 box,
+// sides 6px and middle 12px, swapping every beat. Drawn at the nametag canvas scale (font 30 vs 16).
+const VOICE_SCALE = FONT / 16
+const VOICE_BAR_W = 3 * VOICE_SCALE
+const VOICE_LOW = 6 * VOICE_SCALE
+const VOICE_HIGH = 12 * VOICE_SCALE
+const VOICE_BEAT_S = 0.3
+const VOICE_GREEN = Color4.fromHexString('#30CD00FF') // --green
+// The sandbox has no wall clock, so the beat advances on frame dt (see initNametags).
+let voiceAlt = false
+let voiceBeat = 0
+
+function VoiceBadge(): ReactEcs.JSX.Element {
+  const alt = voiceAlt
+  const bar = (tall: boolean): ReactEcs.JSX.Element => (
+    <UiEntity
+      uiTransform={{ width: VOICE_BAR_W, height: tall ? VOICE_HIGH : VOICE_LOW, borderRadius: VOICE_BAR_W / 2 }}
+      uiBackground={{ color: VOICE_GREEN }}
+    />
+  )
+  return (
+    <UiEntity
+      uiTransform={{
+        width: 13 * VOICE_SCALE,
+        height: VOICE_HIGH,
+        margin: { left: GAP },
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}
+    >
+      {bar(alt)}
+      {bar(!alt)}
+      {bar(alt)}
+    </UiEntity>
+  )
+}
 const BORDER = 2
 
 // FIXED world size for the pill — the previous SDK scene used a constant (2,1,1) scale and never
@@ -219,6 +257,7 @@ function tagElement(userId: string): () => ReactEcs.JSX.Element | null {
                 uiBackground={{ textureMode: 'stretch', texture: { src: 'images/icon-verified.png' } }}
               />
             )}
+            {isSpeaking(userId) && <VoiceBadge />}
           </UiEntity>
           {bubble != null && (
             <UiEntity
@@ -394,6 +433,13 @@ export function initNametags(): void {
       b.ttl -= dt
       if (b.ttl <= 0) bubbles.delete(addr)
     }
+  })
+
+  engine.addSystem((dt: number) => {
+    voiceBeat += dt
+    if (voiceBeat < VOICE_BEAT_S) return
+    voiceBeat = 0
+    voiceAlt = !voiceAlt
   })
 
   // PRESENCE + REBIND (~1s), driven by the engine's PlayerIdentityData (its source of truth), NOT the

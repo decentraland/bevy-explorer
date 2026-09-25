@@ -126,11 +126,8 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      # The macOS/Windows legs are the longest jobs in the workflow; cache their dependency
-      # artifacts (rust-cache never keeps workspace crates). Linux finishes inside the other
-      # legs uncached.
+      # rust-cache never keeps workspace crates, only dependency artifacts.
       - uses: Swatinem/rust-cache@v2
-        if: runner.os != 'Linux'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
@@ -390,6 +387,14 @@ jobs:
           target: wasm32-unknown-unknown
           components: rust-src
           override: true
+      # rustup installs rust-src with fresh mtimes on every runner, and cargo fingerprints
+      # build-std's path crates by mtime, so a restored target dir always rebuilds std.
+      # Stamp the sources with the toolchain's own commit date: older than any cached
+      # artifact built with it, newer than anything built with a previous nightly.
+      - name: Stamp rust-src with the toolchain date so cached build-std artifacts stay fresh
+        run: |
+          d=$(rustc -vV | sed -n 's/^commit-date: //p')
+          find "$(rustc --print sysroot)/lib/rustlib/src" -type f -exec touch -t "${d//-/}0000" {} +
       # Plain cache rather than rust-cache: rust-cache prunes anything not in Cargo.lock
       # before saving, which throws away the build-std std artifacts and forces a full
       # wasm rebuild on every run. Saved only from main (see the Save step below).

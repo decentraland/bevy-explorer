@@ -92,6 +92,13 @@ export class BridgeClient {
     this.listeners.clear()
   }
 
+  // Native: the CEF shim installs window.engine_console_command (see lib/cefNativeBridge). The
+  // mock has no engine console.
+  command(line: string): Promise<string> {
+    const run = (window as Window & { engine_console_command?: (line: string) => Promise<string> }).engine_console_command
+    return run ? run(line) : Promise.reject(new Error('engine console not available'))
+  }
+
   private rpc<T>(method: RpcMethod): Promise<T> {
     const id = crypto.randomUUID()
     return new Promise<T>((resolve, reject) => {

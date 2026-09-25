@@ -4,11 +4,12 @@ use common::{
     structs::{AvatarDynamicState, CurrentRealm, PermissionType, PrimaryUser},
 };
 use comms::global_crdt::ForeignPlayer;
-use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
 use ipfs::{ChangeRealmEvent, RealmInitialLocation};
+use rand::{seq::SliceRandom, Rng};
 use scene_runner::{
     initialize_scene::{
-        LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
+        LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, SuperUserScene,
+        PARCEL_SIZE,
     },
     permissions::Permission,
     renderer_context::{RendererSceneContext, FROZEN_BLOCK},
@@ -17,10 +18,12 @@ use scene_runner::{
 };
 use wallet::Wallet;
 
+// (parcel, realm, response, report a realm change's outcome)
 type TeleportAction = (
     Option<IVec2>,
     Option<String>,
     RpcResultSender<Result<(), String>>,
+    bool,
 );
 
 pub fn teleport_player(
@@ -29,6 +32,7 @@ pub fn teleport_player(
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     mut perms: Permission<TeleportAction>,
     mut realm_target: ResMut<RealmInitialLocation>,
+    super_user: Query<(), With<SuperUserScene>>,
 ) {
     let mut actions: Vec<TeleportAction> = Vec::new();
 
@@ -53,17 +57,26 @@ pub fn teleport_player(
                 continue;
             }
         };
+        // system requests reply to their requester; a scene is gone once its realm change lands,
+        // so its player is told in the console, unless it is the HUD's own bridge scene
         let Some(scene) = scene else {
-            actions.push((to, realm, response));
+            actions.push((to, realm, response, false));
             continue;
         };
-        perms.check(ty, scene, (to, realm, response), Some(detail), false);
+        let report = !super_user.contains(scene);
+        perms.check(
+            ty,
+            scene,
+            (to, realm, response, report),
+            Some(detail),
+            false,
+        );
     }
 
     actions.extend(perms.drain_success(PermissionType::Teleport));
     actions.extend(perms.drain_success(PermissionType::ChangeRealm));
 
-    for (to, realm, response) in actions {
+    for (to, realm, response, report) in actions {
         if let Some(realm) = realm {
             // A realm change (a full reconnect, even to the realm we are in — same as changeRealm),
             // landing on the parcel once it is live, or on the realm's default spawn without one.
@@ -74,11 +87,13 @@ pub fn teleport_player(
                 Some(to) => RealmInitialLocation::Parcel(to),
                 None => RealmInitialLocation::Base,
             };
+            // answered once the realm is actually set (or failed, keeping the player where they are)
             commands.send_event(ChangeRealmEvent {
                 new_realm: realm,
                 content_server_override: None,
+                response,
+                report,
             });
-            response.send(Ok(()));
             continue;
         }
 
@@ -108,10 +123,10 @@ pub fn teleport_player(
         info!("teleported to {to}");
     }
 
-    for (_, _, response) in perms.drain_fail(PermissionType::Teleport) {
+    for (_, _, response, _) in perms.drain_fail(PermissionType::Teleport) {
         response.send(Err("User declined".to_owned()))
     }
-    for (_, _, response) in perms.drain_fail(PermissionType::ChangeRealm) {
+    for (_, _, response, _) in perms.drain_fail(PermissionType::ChangeRealm) {
         response.send(Err("User declined".to_owned()))
     }
 }
@@ -222,7 +237,7 @@ pub fn handle_out_of_world(
             let base_position =
                 Vec3::new(context.base.x as f32, 0.0, -context.base.y as f32) * PARCEL_SIZE;
 
-            let rng = &mut thread_rng();
+            let rng = &mut rand::thread_rng();
             let mut best_distance = 0.0;
             let mut best_position = Vec3::new(
                 rng.gen_range(0.0..PARCEL_SIZE),

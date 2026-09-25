@@ -41,6 +41,21 @@ describe('sidebar clicks', () => {
     expect(onViewProfile).toHaveBeenCalledTimes(1)
     expect(vi.mocked(s.profile.toggle)).not.toHaveBeenCalled()
   })
+
+  it('Profile shows the player avatar once the profile has loaded', () => {
+    const s = fakeSession()
+    s.profile.data = { address: '0xabc', name: 'Mojito', picture: 'https://example.com/face.png', hasClaimedName: true, isGuest: false }
+    render(<Sidebar session={s} />)
+    const button = screen.getByRole('button', { name: 'Profile' })
+    expect(button.querySelector('img')).toHaveAttribute('src', 'https://example.com/face.png')
+  })
+
+  it('Profile keeps the generic icon while the profile is loading', () => {
+    const s = fakeSession()
+    s.profile.data = null
+    render(<Sidebar session={s} />)
+    expect(screen.getByRole('button', { name: 'Profile' }).querySelector('img')).toBeNull()
+  })
 })
 
 describe('chat input', () => {

@@ -2,11 +2,9 @@ pub mod agent_commands;
 pub mod explorer_ui;
 pub mod teleport;
 
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::PathBuf, sync::Arc};
 
+use alloy_core::primitives::Address;
 use anyhow::anyhow;
 use bevy::{
     asset::{io::AssetReader, AsyncReadExt, LoadState},
@@ -40,7 +38,6 @@ use comms::{
 use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
-use ethers_core::types::Address;
 use explorer_ui::{open_explorer_ui, track_explorer_ui, ExplorerUiState};
 use http::Uri;
 use ipfs::{
@@ -50,7 +47,9 @@ use ipfs::{
 use nft::asset_source::Nft;
 use reqwest::StatusCode;
 use scene_runner::{
-    initialize_scene::{LiveScenes, PortableScenes, PortableSource, SceneLoading, PARCEL_SIZE},
+    initialize_scene::{
+        LiveScenes, PortableScenes, PortableSource, SceneLoading, SuperUserScene, PARCEL_SIZE,
+    },
     permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
@@ -614,11 +613,15 @@ pub fn move_camera(
     }
 }
 
+// (realm, response, report the outcome)
+type ChangeRealmAction = (String, RpcResultSender<Result<(), String>>, bool);
+
 fn change_realm(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
-    mut perms: Permission<(String, RpcResultSender<Result<(), String>>)>,
+    mut perms: Permission<ChangeRealmAction>,
     mut target: ResMut<RealmInitialLocation>,
+    super_user: Query<(), With<SuperUserScene>>,
 ) {
     for (scene, to, message, response) in events.read().filter_map(|ev| match ev {
         RpcCall::ChangeRealm {
@@ -632,7 +635,9 @@ fn change_realm(
         perms.check(
             PermissionType::ChangeRealm,
             *scene,
-            (to.clone(), response.clone()),
+            // the scene is gone once the change lands, so its player is told in the console,
+            // unless it is the HUD's own bridge scene
+            (to.clone(), response.clone(), !super_user.contains(*scene)),
             Some(match message {
                 Some(message) => format!("{to}: {message}"),
                 None => to.clone(),
@@ -641,17 +646,19 @@ fn change_realm(
         );
     }
 
-    for (new_realm, response) in perms.drain_success(PermissionType::ChangeRealm) {
+    for (new_realm, response, report) in perms.drain_success(PermissionType::ChangeRealm) {
         debug!("change realm action -> base");
         *target = RealmInitialLocation::Base;
+        // answered once the realm is actually set (or failed, keeping the player where they are)
         commands.send_event(ChangeRealmEvent {
             new_realm,
             content_server_override: None,
+            response,
+            report,
         });
-        response.send(Ok(()));
     }
 
-    for (_, response) in perms.drain_fail(PermissionType::ChangeRealm) {
+    for (_, response, _) in perms.drain_fail(PermissionType::ChangeRealm) {
         response.send(Err("Denied".to_owned()));
     }
 }
@@ -678,8 +685,7 @@ fn external_url(
     }
 
     for (response, url) in perms.drain_success(PermissionType::OpenUrl) {
-        let result = opener::open(Path::new(&url)).map_err(|e| e.to_string());
-        response.send(result);
+        response.send(open_url(&url));
     }
 
     for (response, _) in perms.drain_fail(PermissionType::OpenUrl) {
@@ -1758,7 +1764,7 @@ fn show_nft_dialog(
                             "buttons",
                             vec![
                                 DuiButton::new("View on OpenSea.io", link.is_some(), move || {
-                                    let _ = opener::open(link.as_ref().unwrap());
+                                    let _ = open_url(link.as_ref().unwrap());
                                 }),
                                 DuiButton::close_happy("Close"),
                             ],
@@ -1863,6 +1869,30 @@ pub fn handle_eth_async(
             true
         }
     })
+}
+
+// On the web the engine runs on a worker, which has no `window`: `window.open` only exists on
+// the page. The page defines this on its window (deploy/web/engine/engine.js) and the engine
+// worker installs a relay under the same name, so the lookup on `self` resolves wherever the
+// engine runs.
+#[cfg(target_arch = "wasm32")]
+#[bevy::web_worker::page_functions]
+#[wasm_bindgen::prelude::wasm_bindgen(js_namespace = self)]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = "__openExternalUrl")]
+    fn page_open_external_url(url: &str);
+}
+
+fn open_url(url: &str) -> Result<(), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        opener::open(std::path::Path::new(url)).map_err(|e| e.to_string())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        page_open_external_url(url);
+        Ok(())
+    }
 }
 
 pub fn handle_copy_to_clipboard(

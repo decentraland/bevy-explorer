@@ -376,6 +376,9 @@
   white-space: nowrap;
 }
 .memberStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   line-height: 15px;
   color: var(--ink-6);

@@ -9,6 +9,7 @@ import type {
   BlockedUserData,
   BlockingStatusData,
   ChatMessage,
+  VoiceMessage,
   FriendRequestData,
   FriendStatusData,
   HoverAction,
@@ -71,7 +72,7 @@ export type SystemActionEvent = { action: string; pressed: boolean }
 
 export type KernelFetchRequest = {
   url: string
-  init: { headers?: Record<string, string>; method: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: string }
+  init: { headers?: Record<string, string>; method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: string }
   meta: string
 }
 export type KernelFetchResponse = { ok: boolean; status: number; statusText?: string; body: string }
@@ -112,6 +113,7 @@ export type BevyApiInterface = {
   setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean; covered: boolean; menu: string | null }) => Promise<void>
   sendChat: (message: string, channel: string) => void
   getChatStream: () => Promise<AsyncIterable<ChatStreamMessage>>
+  getVoiceStream: () => Promise<AsyncIterable<VoiceMessage>>
   getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>
   getSceneLoadingUIStream: () => Promise<AsyncIterable<SceneLoadingState>>
   getHoverStream: () => Promise<AsyncIterable<SystemHoverEvent>>

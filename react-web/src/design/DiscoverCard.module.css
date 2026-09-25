@@ -1,6 +1,6 @@
-/* PlaceCard — pixel-matched to decentraland-ui2 LiveNowCard (sites /whats-on). Exact values: 16px
-   radius, translucent body, 32px avatar with a faint white ring, white-glow hover, and a 46px
-   uppercase JUMP IN that slides up while the creator row lifts to make room. */
+/* DiscoverCard (Places, Events) — pixel-matched to decentraland-ui2 LiveNowCard (sites /whats-on).
+   Exact values: 16px radius, translucent body, 32px avatar with a faint white ring, white-glow
+   hover, and a 46px uppercase JUMP IN that slides up while the creator row lifts to make room. */
 
 .card {
   position: relative;

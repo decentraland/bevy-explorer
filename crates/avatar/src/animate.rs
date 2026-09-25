@@ -1,4 +1,3 @@
-use core::f32;
 use std::{
     ops::{Deref, DerefMut},
     time::Duration,

@@ -49,8 +49,28 @@ export function registerWorld(ctx: Ctx): void {
     ctx.send({ kind: 'mapState', x: Math.floor((pos?.x ?? 0) / 16), y: Math.floor((pos?.z ?? 0) / 16) })
   })
 
+  // A realm change settles once the engine has switched realm or failed to (keeping the player
+  // where they are); the page is told either way so it can drop its loader and explain a failure.
+  const travel = (realm: string, travelId: number | undefined, request: Promise<unknown>): void => {
+    request.then(
+      () => {
+        if (travelId != null) ctx.send({ kind: 'travelResult', travelId, realm, ok: true })
+      },
+      (e: unknown) => {
+        console.error('[world] realm change failed', e)
+        const message = e instanceof Error ? e.message : String(e)
+        if (travelId != null) ctx.send({ kind: 'travelResult', travelId, realm, ok: false, message })
+      }
+    )
+  }
+
   ctx.on('teleport', (msg) => {
-    teleportTo({ worldCoordinates: { x: msg.x, y: msg.y }, realm: msg.realm }).catch((e: unknown) => {
+    const request = teleportTo({ worldCoordinates: { x: msg.x, y: msg.y }, realm: msg.realm })
+    if (msg.realm != null) {
+      travel(msg.realm, msg.travelId, request)
+      return
+    }
+    request.catch((e: unknown) => {
       console.error('[world] teleport failed', e)
     })
   })
@@ -59,9 +79,7 @@ export function registerWorld(ctx: Ctx): void {
   // realm and no parcel (changeRealm is deprecated). The engine auto-grants ChangeRealm for our
   // super-user scene, so the React HUD owns the confirmation prompt.
   ctx.on('changeRealm', (msg) => {
-    teleportTo({ realm: msg.realm }).catch((e: unknown) => {
-      console.error('[world] changeRealm failed', e)
-    })
+    travel(msg.realm, msg.travelId, teleportTo({ realm: msg.realm }))
   })
 
   // `/reload` — reload the scene the player is standing in, resolved by parcel from liveSceneInfo.

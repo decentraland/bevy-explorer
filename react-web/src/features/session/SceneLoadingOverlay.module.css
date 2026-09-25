@@ -1,12 +1,9 @@
 .root {
   position: absolute;
   inset: 0;
-  z-index: 9998;
+  z-index: var(--z-loading);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.25rem;
   /* Base is the instant magenta menu gradient (same as login/picker) so the transition into
      loading never flashes the near-black --panel while the heavy gradient PNG decodes; the PNG
      layers on top once ready. Engine_run freezes the main thread right after we enter, so the
@@ -21,45 +18,123 @@
   animation: fade-in 400ms var(--ease-out) both;
 }
 
-.logo {
-  width: 8vh;
-  height: 8vh;
+/* Unity top bar: brand on the left, LOADING N% on the right, progress line underneath. */
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1.25rem;
+  background: var(--scrim);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+.brandLogo {
+  width: 1.4rem;
+  height: 1.4rem;
   background: url('/assets/logo.png') center / contain no-repeat;
 }
-
-.title {
-  font-size: var(--font-title-l);
+.status {
+  font-size: var(--fs-sm);
   font-weight: 700;
-  margin: 0;
-}
-
-.subtitle {
-  font-size: var(--font-body);
-  opacity: 0.8;
-  margin: 0;
+  letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
 }
 
-/* progress bar */
 .track {
-  width: min(28rem, 60vw);
   height: 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--white-10);
   overflow: hidden;
 }
-
 .fill {
   height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--color-ruby), #ff7a39);
+  background: var(--gold);
   transition: width 300ms var(--ease-out);
 }
-
 .fill.indeterminate {
   width: 35% !important;
   animation: slide 1.2s var(--ease-out) infinite;
 }
+
+/* Tips carousel: illustration + title/body/dots, arrows at the edges. */
+.tips {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 2rem 1.5rem;
+  min-height: 0;
+}
+.tip {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3rem;
+  animation: fade-in 400ms var(--ease-out) both;
+}
+.tipImage {
+  width: min(30rem, 55vh);
+  aspect-ratio: 1;
+  flex: none;
+  border-radius: var(--r-panel);
+  object-fit: cover;
+}
+.tipText {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 26rem;
+}
+.tipTitle {
+  margin: 0;
+  font-size: var(--fs-display);
+  font-weight: 700;
+  line-height: 1.1;
+}
+.tipBody {
+  margin: 0;
+  font-size: var(--fs-lg);
+  line-height: 1.5;
+}
+.key {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 0.35em;
+  margin: 0 0.2em;
+  border: 1px solid var(--ink-45);
+  border-radius: var(--r-control);
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+}
+.dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--white-10);
+  cursor: pointer;
+}
+.dotActive {
+  background: var(--gold);
+}
+.arrow {
+  flex: none;
+}
+
 
 @keyframes slide {
   0% {

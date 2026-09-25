@@ -79,6 +79,7 @@ fn gen_sdk_components() -> Result<()> {
         .map(|component| format!("src/proto/decentraland/sdk/components/{component}.proto"))
         .collect::<Vec<_>>();
 
+    sources.push("src/proto/decentraland/sdk/development/local_development.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/rfc5/ws_comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/rfc4/comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/v3/archipelago.proto".into());
@@ -112,6 +113,11 @@ fn gen_sdk_components() -> Result<()> {
         "Texture",
         "BorderRect",
         "FloatRange",
+        "WsSceneMessage",
+        "WsSceneMessage.message",
+        "UpdateScene",
+        "UpdateModel",
+        "UpdateModelType",
     ];
 
     for component in serde_components {

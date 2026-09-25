@@ -1,8 +1,9 @@
+use alloy_core::primitives::Address;
+use alloy_signer::Signature;
+use alloy_signer_local::PrivateKeySigner;
 use anyhow::anyhow;
 use bevy::prelude::*;
 use common::{rpc::RPCSendableMessage, structs::ChainLink, util::AsH160};
-use ethers_core::types::{Signature, H160};
-use ethers_signers::{LocalWallet, Signer};
 use http::StatusCode;
 use std::{str::FromStr, time::Duration};
 
@@ -50,7 +51,7 @@ fn auth_server_endpoint_url() -> String {
 const AUTH_SERVER_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 const AUTH_SERVER_TIMEOUT: Duration = Duration::from_secs(600);
 
-async fn fetch_server(req_id: String) -> Result<(H160, serde_json::Value), anyhow::Error> {
+async fn fetch_server(req_id: String) -> Result<(Address, serde_json::Value), anyhow::Error> {
     let start_time = web_time::Instant::now();
     let mut attempt = 0;
     loop {
@@ -145,7 +146,7 @@ async fn init_request(request: CreateRequest) -> Result<InitializedRequest, anyh
     }
 }
 
-async fn finish_request(request_id: String) -> Result<(H160, serde_json::Value), anyhow::Error> {
+async fn finish_request(request_id: String) -> Result<(Address, serde_json::Value), anyhow::Error> {
     let url = format!(
         "{}/{request_id}?targetConfigId=alternative",
         auth_front_url()
@@ -194,11 +195,11 @@ pub struct RemoteEphemeralRequest {
     pub code: Option<i32>,
     request_id: String,
     message: String,
-    ephemeral_wallet: LocalWallet,
+    ephemeral_wallet: PrivateKeySigner,
 }
 
 pub async fn init_remote_ephemeral_request() -> Result<RemoteEphemeralRequest, anyhow::Error> {
-    let ephemeral_wallet = LocalWallet::new(&mut thread_rng());
+    let ephemeral_wallet = PrivateKeySigner::random_with(&mut thread_rng());
     let ephemeral_address = format!("{:#x}", ephemeral_wallet.address());
     let expiration = web_time::SystemTime::now() + std::time::Duration::from_secs(30 * 24 * 3600);
     let message = get_ephemeral_message(ephemeral_address.as_str(), expiration);
@@ -220,7 +221,7 @@ pub async fn init_remote_ephemeral_request() -> Result<RemoteEphemeralRequest, a
 
 pub async fn finish_remote_ephemeral_request(
     request: RemoteEphemeralRequest,
-) -> Result<(H160, LocalWallet, Vec<ChainLink>, u64), anyhow::Error> {
+) -> Result<(Address, PrivateKeySigner, Vec<ChainLink>, u64), anyhow::Error> {
     let RemoteEphemeralRequest {
         request_id,
         message,

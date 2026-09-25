@@ -15,7 +15,7 @@ system_api_types = { workspace = true }
 
 bevy = { workspace = true }
 anyhow = { workspace = true }
-ethers-core = { workspace = true }
+alloy-core = { workspace = true, features = ["serde"] }
 futures-lite = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

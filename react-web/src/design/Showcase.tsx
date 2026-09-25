@@ -3,6 +3,7 @@
 
 import { Button } from './Button'
 import { IconButton } from './IconButton'
+import { VoiceBars } from './VoiceBars'
 import { useState } from 'react'
 import { ControlButton } from './ControlButton'
 import { Tooltip } from './Tooltip'
@@ -403,7 +404,13 @@ export function Showcase(): React.JSX.Element {
           {NAV.map((n, i) => (
             <IconButton key={n.icon} icon={n.icon} label={n.label} active={i === 8} badge={i === 1 ? 3 : undefined} />
           ))}
+          <IconButton icon="profile" label="Profile (avatar)" avatar={{ name: 'Mojito', color: 'var(--lavender)' }} />
+          <IconButton icon="voice-hearing" label="Voice (connected)" indicator />
         </Panel>
+      </Section>
+
+      <Section title="VoiceBars (speaking)">
+        <VoiceBars />
       </Section>
 
       <Section title="Panel">

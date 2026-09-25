@@ -133,6 +133,10 @@ export class EngineDriver implements LoginDriver {
     return this.rpc.homeScene()
   }
 
+  command(line: string): Promise<string> {
+    return this.rpc.command(line)
+  }
+
   private emit(msg: SceneToPage): void {
     this.listeners.forEach((fn) => fn(msg))
   }

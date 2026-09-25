@@ -1,12 +1,14 @@
 mod result_sender;
 mod stream_sender;
+#[cfg(test)]
+mod tests;
 
 use crate::{
     profile::SerializedProfile,
     structs::{EmoteMask, PermissionType},
 };
+use alloy_core::primitives::Address;
 use bevy::{platform::collections::HashMap, prelude::*};
-use ethers_core::types::H160;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use tokio_util::sync::CancellationToken;
@@ -44,7 +46,9 @@ pub(crate) fn ipc_router(
         let ctx = ctx.as_mut().unwrap();
 
         let token = CancellationToken::new();
-        ctx.ipc_channel_registry.insert(id, token.clone());
+        if ctx.ipc_channel_registry.insert(id, token.clone()).is_some() {
+            warn!("ipc channel {id} deserialized twice; the first remote's close will cut off the second");
+        }
         (ctx.ipc_router.clone(), token)
     })
 }
@@ -239,7 +243,7 @@ pub enum RpcCall {
     SendMessageBus {
         scene: Entity,
         data: Vec<u8>,
-        recipient: Option<H160>,
+        recipient: Option<Address>,
     },
     SubscribeMessageBus {
         hash: String,

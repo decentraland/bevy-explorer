@@ -6,6 +6,7 @@
 import {
   bridgeChannelName,
   type BindingEntry,
+  type Community,
   type Emote,
   type Envelope,
   type Outfit,
@@ -66,7 +67,7 @@ const MOCK_NEARBY = [
   { address: '0xc0ffee254729296a45a3885639ac7e10f9d54979', name: '' }
 ]
 
-const mockCommunities = [
+const mockCommunities: Community[] = [
   { id: 'c1', name: 'Decentraland Foundation', description: 'The official Decentraland Foundation community. Stay up to date with events, releases and everything happening across the metaverse.', thumbnail: 'https://picsum.photos/seed/dcl/540/360', membersCount: 1242, role: 'member', ownerName: 'DCLOfficial', privacy: 'public' },
   { id: 'c2', name: 'Chiri Storytelling', description: "This space brings to life Chiri's adventures. Gathering cozy Social Gamers, Creators, Digi Fashion lovers, Virtual Citizens & more!", thumbnail: '', membersCount: 374, role: 'none', ownerName: 'Chiri', privacy: 'private' },
   { id: 'c3', name: 'VTATV', description: 'Virtual television and live shows broadcast from inside Decentraland.', thumbnail: '', membersCount: 186, role: 'none', ownerName: 'VTATV' },
@@ -423,6 +424,8 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         }),
       1400
     )
+    // One nearby player is talking in voice chat, so the speaking indicator is visible in ?mock=1.
+    setTimeout(() => reply({ kind: 'voiceActivity', address: MOCK_NEARBY[0].address, active: true }), 1500)
 
     // ?simhover=N seeds N world-hover prompts so the radial cursor tooltips are visible/verifiable in
     // ?mock=1 (the real engine hover stream isn't mocked). React positions them at the live DOM cursor,
@@ -633,11 +636,22 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       // No engine in mock mode — avatar preview has nothing to render.
       return
     }
+    // No realm switching in the mock: a realm change just reports its outcome, failing for a
+    // `noexiste…` destination so the travel notice can be tried.
+    const travelResult = (realm: string, travelId: number | undefined): void => {
+      if (travelId == null) return
+      if (realm.startsWith('noexiste')) reply({ kind: 'travelResult', travelId, realm, ok: false, message: 'status: 404 Not Found' })
+      else reply({ kind: 'travelResult', travelId, realm, ok: true })
+    }
     if (msg.kind === 'teleport') {
       reply({ kind: 'mapState', x: msg.x, y: msg.y })
+      if (msg.realm != null) travelResult(msg.realm, msg.travelId)
       return
     }
-    if (msg.kind === 'changeRealm') return // no realm switching in the mock
+    if (msg.kind === 'changeRealm') {
+      travelResult(msg.realm, msg.travelId)
+      return
+    }
     if (msg.kind === 'permissionResolve') return // no engine to apply the decision in the mock
     if (msg.kind === 'getCommunities') {
       reply({ kind: 'communities', communities: mockCommunities })
@@ -663,6 +677,18 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         c.role = 'member'
         c.membersCount += 1
       }
+      reply({ kind: 'communities', communities: mockCommunities })
+      return
+    }
+    if (msg.kind === 'requestToJoinCommunity') {
+      const c = mockCommunities.find((x) => x.id === msg.id)
+      if (c) c.pendingRequestId = `req-${c.id}`
+      reply({ kind: 'communities', communities: mockCommunities })
+      return
+    }
+    if (msg.kind === 'cancelJoinRequest') {
+      const c = mockCommunities.find((x) => x.id === msg.id)
+      if (c) delete c.pendingRequestId
       reply({ kind: 'communities', communities: mockCommunities })
       return
     }

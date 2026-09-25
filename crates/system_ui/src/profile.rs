@@ -111,7 +111,7 @@ pub struct SettingsDialog {
 
 #[derive(Clone)]
 pub enum OnCloseEvent {
-    ChangeRealm(ChangeRealmEvent, RpcCall),
+    ChangeRealm(Box<ChangeRealmEvent>, RpcCall),
     SomethingElse,
 }
 
@@ -236,7 +236,7 @@ pub fn close_settings(
         let send_onclose =
             move |mut cr: EventWriter<ChangeRealmEvent>, mut rpc: EventWriter<RpcCall>| match &ev {
                 Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
-                    cr.write(cr_ev.clone());
+                    cr.write(cr_ev.as_ref().clone());
                     rpc.write(rpc_ev.clone());
                 }
                 Some(OnCloseEvent::SomethingElse) => (),
@@ -281,7 +281,7 @@ pub fn close_settings(
         commands.entity(settings_ent).despawn();
         match &ev {
             Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
-                cr.write(cr_ev.clone());
+                cr.write(cr_ev.as_ref().clone());
                 rpc.write(rpc_ev.clone());
                 commands.send_event(SystemAudio(
                     "embedded://sounds/ui/toggle_enable.wav".to_owned(),

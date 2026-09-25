@@ -1,27 +1,25 @@
 use bevy::{platform::collections::HashMap, prelude::*, render::view::RenderLayers};
 use common::{
     structs::{AudioEmitter, AudioSettings, AudioType, PrimaryUser, SystemAudio},
-    util::{ReportErr, VolumePanning},
+    util::VolumePanning,
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{ContainingScene, SceneEntity};
-use web_sys::{
-    js_sys::Float32Array, AudioBuffer, AudioBufferSourceNode, AudioContext,
-    AudioScheduledSourceNode, GainNode, StereoPannerNode,
-};
+
+use crate::audio_host_wasm::{send, AudioCommand, InstanceId};
 
 pub struct AudioSourcePluginImpl;
 
 impl Plugin for AudioSourcePluginImpl {
     fn build(&self, app: &mut App) {
         // still use kira for audio source asset management
-        app.init_non_send_resource::<HtmlAudioContext>();
+        app.init_resource::<WebAudio>();
         app.add_systems(
             PostUpdate,
             (
                 manage_audio_sources,
                 play_system_audio,
-                |mut ctx: NonSendMut<HtmlAudioContext>,
+                |mut ctx: ResMut<WebAudio>,
                  asset_events: EventReader<AssetEvent<bevy_kira_audio::AudioSource>>,
                  assets: Res<Assets<bevy_kira_audio::AudioSource>>| {
                     ctx.tick(asset_events, assets);
@@ -33,29 +31,16 @@ impl Plugin for AudioSourcePluginImpl {
     }
 }
 
-pub struct HtmlAudioContext {
-    context: AudioContext,
-    buffers: HashMap<AssetId<bevy_kira_audio::AudioSource>, AudioBuffer>,
-    graphs: HashMap<
-        Entity,
-        (
-            AssetId<bevy_kira_audio::AudioSource>,
-            AudioGraphHtmlElements,
-        ),
-    >,
+/// The engine's view of the page's audio graphs ([`crate::audio_host_wasm`]).
+#[derive(Resource, Default)]
+pub struct WebAudio {
+    /// Sounds the page has been given, with their durations.
+    buffers: HashMap<AssetId<bevy_kira_audio::AudioSource>, f64>,
+    graphs: HashMap<Entity, (AssetId<bevy_kira_audio::AudioSource>, AudioGraph)>,
+    next_instance: InstanceId,
 }
 
-impl Default for HtmlAudioContext {
-    fn default() -> Self {
-        Self {
-            context: AudioContext::new().unwrap(),
-            buffers: default(),
-            graphs: default(),
-        }
-    }
-}
-
-impl HtmlAudioContext {
+impl WebAudio {
     fn tick(
         &mut self,
         mut asset_events: EventReader<AssetEvent<bevy_kira_audio::AudioSource>>,
@@ -69,24 +54,24 @@ impl HtmlAudioContext {
                     let Some(asset) = assets.get(*id) else {
                         continue;
                     };
-                    let frame_count = asset.sound.frames.len();
-                    let buffer = self
-                        .context
-                        .create_buffer(1, frame_count as u32, asset.sound.sample_rate as f32)
-                        .unwrap();
                     let frames = asset
                         .sound
                         .frames
                         .iter()
                         .map(|f| (f.left + f.right) / 2.0)
                         .collect::<Vec<_>>();
-                    let js_array = Float32Array::new_with_length(frames.len() as u32);
-                    js_array.copy_from(&frames);
-                    buffer.copy_to_channel_with_f32_array(&js_array, 0).unwrap();
-                    self.buffers.insert(*id, buffer);
+                    let sample_rate = asset.sound.sample_rate as f32;
+                    self.buffers
+                        .insert(*id, frames.len() as f64 / sample_rate as f64);
+                    send(AudioCommand::LoadBuffer {
+                        id: *id,
+                        sample_rate,
+                        frames,
+                    });
                 }
                 AssetEvent::Removed { id } => {
                     self.buffers.remove(id);
+                    send(AudioCommand::DropBuffer { id: *id });
                 }
                 _ => (),
             }
@@ -97,53 +82,34 @@ impl HtmlAudioContext {
         &mut self,
         id: AssetId<bevy_kira_audio::AudioSource>,
         offset: Option<f32>,
-    ) -> Option<AudioGraphHtmlElements> {
-        // make new graph
-        let buffer = self.buffers.get(&id)?;
-        let source_node = self.context.create_buffer_source().ok()?;
-        source_node.set_buffer(Some(buffer));
-        let gain_node = self.context.create_gain().ok()?;
-        let panner_node = self.context.create_stereo_panner().ok()?;
-        source_node.connect_with_audio_node(&gain_node).ok()?;
-        gain_node.connect_with_audio_node(&panner_node).ok()?;
-        panner_node
-            .connect_with_audio_node(&self.context.destination())
-            .ok()?;
-
-        if let Some(offset) = offset {
-            source_node
-                .start_with_when_and_grain_offset(0.0, offset as f64)
-                .ok()?;
-        } else {
-            source_node.start().ok()?;
-        }
-
-        Some(AudioGraphHtmlElements {
-            source_node,
-            gain_node,
-            panner_node,
+    ) -> Option<AudioGraph> {
+        let duration = *self.buffers.get(&id)?;
+        let instance = self.next_instance;
+        self.next_instance += 1;
+        send(AudioCommand::Start {
+            instance,
+            buffer: id,
+            offset,
+        });
+        Some(AudioGraph {
+            instance,
             elapsed_time: 0.0,
-            duration: buffer.duration(),
+            duration,
         })
     }
 }
 
-pub struct AudioGraphHtmlElements {
-    pub source_node: AudioBufferSourceNode,
-    pub gain_node: GainNode,
-    pub panner_node: StereoPannerNode,
+pub struct AudioGraph {
+    pub instance: InstanceId,
     pub elapsed_time: f64,
     pub duration: f64,
 }
 
-impl AudioGraphHtmlElements {
-    pub fn stop(&self, now: f64) {
-        self.gain_node
-            .gain()
-            .linear_ramp_to_value_at_time(0.0, now + 0.01)
-            .report();
-        let node: &AudioScheduledSourceNode = self.source_node.as_ref();
-        node.stop_with_when(now + 0.01).report();
+impl AudioGraph {
+    pub fn stop(&self) {
+        send(AudioCommand::Stop {
+            instance: self.instance,
+        });
     }
 }
 
@@ -175,12 +141,12 @@ fn manage_audio_sources(
             With<RetryEmitter>,
         )>,
     >,
-    mut audio: NonSendMut<HtmlAudioContext>,
+    mut audio: ResMut<WebAudio>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     settings: Res<AudioSettings>,
     pan: VolumePanning,
-    mut prev_time: Local<f64>,
+    time: Res<Time>,
 ) {
     let current_scenes = player
         .single()
@@ -189,16 +155,14 @@ fn manage_audio_sources(
         .unwrap_or_default();
 
     let mut prev_instances = std::mem::take(&mut audio.graphs);
-    let now = audio.context.current_time();
-    let elapsed = now - *prev_time;
-    *prev_time = now;
+    let elapsed = time.delta_secs_f64();
 
     for (ent, emitter, maybe_gt, maybe_scene_ent, maybe_layers, maybe_retry) in query.iter() {
         commands.entity(ent).try_remove::<RetryEmitter>();
 
         if !emitter.playing {
             if let Some((_, instance)) = prev_instances.remove(&ent) {
-                instance.stop(now);
+                instance.stop();
             }
 
             commands.entity(ent).try_remove::<Playing>();
@@ -214,7 +178,7 @@ fn manage_audio_sources(
                     // reuse existing only if same source AND still playing
                     Some(&mut audio.graphs.entry(ent).insert((id, instance)).into_mut().1)
                 } else {
-                    instance.stop(now);
+                    instance.stop();
                     None
                 }
             }
@@ -267,23 +231,23 @@ fn manage_audio_sources(
         };
 
         if emitter.is_changed() || maybe_retry.is_some() {
-            instance
-                .source_node
-                .playback_rate()
-                .set_value(emitter.playback_speed);
-            instance.source_node.set_loop(emitter.r#loop);
+            send(AudioCommand::SetPlayback {
+                instance: instance.instance,
+                looping: emitter.r#loop,
+                rate: emitter.playback_speed,
+            });
         }
 
-        instance
-            .gain_node
-            .gain()
-            .set_value(source_volume * emitter_volume);
         // PannerNode is -1 to 1, vs kira range of 0 to 1
-        instance.panner_node.pan().set_value(panning * 2.0 - 1.0);
+        send(AudioCommand::Set {
+            instance: instance.instance,
+            gain: source_volume * emitter_volume,
+            pan: panning * 2.0 - 1.0,
+        });
     }
 
     for (_, (_, instance)) in prev_instances.drain() {
-        instance.stop(now);
+        instance.stop();
     }
 }
 

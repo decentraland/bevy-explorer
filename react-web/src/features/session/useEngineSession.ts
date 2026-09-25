@@ -2,11 +2,11 @@
 // Owns the driver and exposes the login flow + scene-loading state + phase.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { serviceUrl } from '../../lib/baseDomain'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/fatalError'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
+import { checkRealm, realmCheckMessage } from '../../lib/realmCheck'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
 import { bootMode } from '../../lib/bootMode'
 import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
@@ -21,8 +21,10 @@ import { formatConsoleReply, parseChatCommand } from '../chat/chatCommands'
 import type {
   AppNotification,
   BindingEntry,
+  ChangeRealmRequest,
   ChatMessage,
   Community,
+  CommunityAction,
   CommunityDetailMessage,
   Emote,
   Friend,
@@ -44,6 +46,7 @@ import type {
   ProfileEdit,
   SceneLoadingState,
   Setting,
+  TeleportRequest,
   Wearable
 } from '../../engine/protocol'
 
@@ -51,6 +54,26 @@ import type {
 // an engine-rendered text field (e.g. a scene textinput) holds keyboard focus. Those fields
 // live on the canvas, so document.activeElement can't see them.
 type EngineFocusWindow = Window & { __engineTextFocus?: boolean }
+
+// Unity's wording (CommunityCardController *_ERROR_MESSAGE); the raw HTTP error only goes to the log.
+const COMMUNITY_ERROR: Record<CommunityAction, string> = {
+  join: 'There was an error joining the community. Please try again.',
+  requestToJoin: 'There was an error requesting to join community. Please try again.',
+  cancelJoinRequest: 'There was an error cancelling join request. Please try again.',
+  leave: 'There was an error leaving the community. Please try again.'
+}
+
+// The engine's clock starts at 10:00 and runs at 12× (crates/visuals/src/day_night.rs start_clock).
+// Fallbacks only: the menu reads the live clock with `/time` when it opens.
+const SKYBOX_START_HOURS = 10
+const SKYBOX_DAY_SPEED = 12
+
+// The engine's `/time` reply (day_night.rs timeofday_console_command) ends with
+// "speed <S> (elapsed: <seconds since midnight>)".
+function parseTimeReply(reply: string): { hours: number; speed: number } | null {
+  const m = /speed (-?[\d.]+) \(elapsed: ([\d.]+)\)/.exec(reply)
+  return m ? { hours: Number(m[2]) / 3600, speed: Number(m[1]) } : null
+}
 
 /** A server-side catalog page request (backpack grid). Filters/sort are applied by the catalyst. */
 export interface CatalogQuery {
@@ -98,7 +121,12 @@ export interface CommunitiesState {
   /** Create a community (name + description + Public/Private + discoverable). */
   create: (input: { name: string; description: string; privacy: 'public' | 'private'; discoverable: boolean }) => void
   join: (id: string) => void
+  /** Ask to join a private community. */
+  requestToJoin: (id: string) => void
+  cancelRequest: (id: string, requestId: string) => void
   leave: (id: string) => void
+  /** The last community action the social-api rejected, for that community's modal. */
+  error: { id: string; message: string } | null
   /** Per-community detail (members/posts/places/events) for the open modal. */
   detail: CommunityDetailMessage | null
   /** Request a community's detail (call when its modal opens). */
@@ -151,6 +179,24 @@ export interface MinimapState {
 export interface PlacesState {
   open: boolean
   toggle: () => void
+}
+
+// Events browses the public events API over HTTP, like Places.
+export interface EventsState {
+  open: boolean
+  toggle: () => void
+}
+
+// Unity's sidebar Skybox menu: time of day, driven through the engine's `/time <hours> <speed>`.
+export interface SkyboxState {
+  open: boolean
+  toggle: () => void
+  /** Hour of day shown on the slider, 0–24. */
+  hours: number
+  /** The sky follows the engine's day cycle; the slider is locked while on. */
+  progressing: boolean
+  setHours: (hours: number) => void
+  setProgressing: (on: boolean) => void
 }
 
 export interface GalleryState {
@@ -255,6 +301,8 @@ export interface ChatState {
   toggle: () => void
   /** Nearby players (drives the "Nearby · N" header + members list). */
   members: NearbyMember[]
+  /** Lowercased addresses talking in voice chat right now (engine voice stream). */
+  speaking: ReadonlySet<string>
   /** Open chat and queue an @name mention into the draft (from a profile card's "Mention"). */
   mention: (name: string) => void
   /** A queued @name waiting to be dropped into the chat draft (consumed by Chat), or null. */
@@ -342,6 +390,12 @@ export interface EngineSession {
    *  'entering'. NOT the scene the player is in — that is `minimap.sceneTitle`, resolved by
    *  parcel; this title is whatever was last loading and goes stale as the player moves. */
   sceneLoading: SceneLoadingState | null
+  /** Why the last in-world travel failed (the engine kept the player where they were), shown as a notice. */
+  travelError: string | null
+  dismissTravelError: () => void
+  /** The realm a HUD-requested travel is heading to, until the engine reports the outcome. The
+   *  loader shows meanwhile. */
+  travellingTo: string | null
   /** Fatal engine error → full-screen error popup. 'launch' = boot panic (fatal), 'runtime' =
    *  post-launch crash bridged from the engine watchdog (dismissable). null when healthy. */
   fatalError: FatalError | null
@@ -361,12 +415,14 @@ export interface EngineSession {
   bindings: BindingsState
   profile: ProfileState
   notifications: NotificationsState
+  skybox: SkyboxState
   emotes: EmotesState
   backpack: BackpackState
   communities: CommunitiesState
   map: MapState
   minimap: MinimapState
   places: PlacesState
+  events: EventsState
   gallery: GalleryState
   /** Scene permission prompts (e.g. ChangeRealm) awaiting an Allow/Deny. */
   permissions: PermissionsState
@@ -445,6 +501,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // when the engine is already running), so the pick is held until playerReady — or sent at once if
   // the player already spawned (see the no-launch pick path).
   const pendingParcel = useRef<{ x: number; y: number } | null>(null)
+  // A realm change the HUD asked for, until the bridge reports how it ended ('travelResult'). Only
+  // the latest counts: an earlier one is answered as superseded when a newer one replaces it.
+  const travelSeq = useRef(0)
+  const [travellingTo, setTravellingTo] = useState<string | null>(null)
+  const [travelError, setTravelError] = useState<string | null>(null)
   const [playerReady, setPlayerReady] = useState(false)
   // Ref twin of playerReady: the destination pick runs in a callback that would close over a
   // stale value of the state.
@@ -455,6 +516,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [cursorLocked, setCursorLocked] = useState(false)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
+  const [speaking, setSpeaking] = useState<ReadonlySet<string>>(() => new Set())
   // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
   // avatarClick uses it to centre the card while the camera has the pointer locked.
   const cursorLockedRef = useRef(false)
@@ -524,6 +586,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const profileRevertRef = useRef<{ address: string; profile: Profile | null; stored: Profile | undefined } | null>(null)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [skyboxOpen, setSkyboxOpen] = useState(false)
+  const [skyboxHours, setSkyboxHoursState] = useState(SKYBOX_START_HOURS)
+  const [skyboxProgressing, setSkyboxProgressingState] = useState(true)
   const [emotes, setEmotes] = useState<Emote[]>([])
   const [emotesOpen, setEmotesOpen] = useState(false)
   const [mic, setMic] = useState({ enabled: false, available: false })
@@ -540,6 +605,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [communities, setCommunities] = useState<Community[]>([])
   const [communitiesOpen, setCommunitiesOpen] = useState(false)
   const [communityDetail, setCommunityDetail] = useState<CommunityDetailMessage | null>(null)
+  const [communityError, setCommunityError] = useState<{ id: string; message: string } | null>(null)
   const [mapParcel, setMapParcel] = useState({ x: 0, y: 0 })
   const [mapOpen, setMapOpen] = useState(false)
   // Minimap pose: a ref, not state — see MinimapState.pose for why.
@@ -547,6 +613,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [isWorld, setIsWorld] = useState(false)
   const [sceneTitle, setSceneTitle] = useState('')
   const [placesOpen, setPlacesOpen] = useState(false)
+  const [eventsOpen, setEventsOpen] = useState(false)
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([])
   const [galleryStorage, setGalleryStorage] = useState({ current: 0, max: 0 })
   const [galleryLoaded, setGalleryLoaded] = useState(false)
@@ -554,6 +621,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequestMessage[]>([])
   const chatId = useRef(0)
+  // The speed to restore when Time progression is turned back on (the last running speed seen).
+  const skyboxDaySpeed = useRef(SKYBOX_DAY_SPEED)
   // Catalog fetches done once per session (cache; relays re-emit on change).
   const fetchedRef = useRef<Set<string>>(new Set())
 
@@ -626,6 +695,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setMembers(msg.members)
           seedProfiles(msg.members)
           break
+        case 'voiceActivity': {
+          const address = msg.address.toLowerCase()
+          setSpeaking((prev) => {
+            if (prev.has(address) === msg.active) return prev
+            const next = new Set(prev)
+            if (msg.active) next.add(address)
+            else next.delete(address)
+            return next
+          })
+          break
+        }
         case 'menuVisibility':
           setMenuOpen(msg.open)
           break
@@ -728,6 +808,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'communities':
           setCommunities(msg.communities)
           break
+        case 'communityActionFailed':
+          setCommunityError({ id: msg.id, message: COMMUNITY_ERROR[msg.action] })
+          break
         case 'communityDetail':
           setCommunityDetail(msg)
           break
@@ -750,6 +833,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'realmInfo':
           setIsWorld(msg.isWorld)
+          break
+        case 'travelResult':
+          if (msg.travelId !== travelSeq.current) break
+          setTravellingTo(null)
+          if (!msg.ok) setTravelError(`Couldn't travel to "${msg.realm}": ${msg.message ?? 'unknown error'}`)
           break
         case 'sceneInfo':
           setSceneTitle(msg.title)
@@ -865,6 +953,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     )
   }, [])
 
+  // A realm change from the HUD: the loader shows from the request until the engine reports the
+  // outcome (it validates the destination before leaving the current realm).
+  const travel = useCallback((msg: ChangeRealmRequest | (TeleportRequest & { realm: string })) => {
+    const travelId = ++travelSeq.current
+    setTravellingTo(msg.realm)
+    driverRef.current?.send({ ...msg, travelId })
+  }, [])
+  const changeRealm = useCallback((realm: string) => travel({ kind: 'changeRealm', realm }), [travel])
+  const dismissTravelError = useCallback(() => setTravelError(null), [])
+
   // Chat send doubles as the slash-command interceptor (parity with bevy-ui-scene's `sendChatMessage`):
   // a recognized `/command` never reaches other players — it teleports, reloads, runs an engine console
   // command, or echoes a system message. Anything else is sent as a normal Nearby message.
@@ -879,10 +977,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
           break
         case 'genesis':
-          driverRef.current?.send({ kind: 'changeRealm', realm: DEFAULT_REALM })
+          changeRealm(DEFAULT_REALM)
           break
         case 'world':
-          driverRef.current?.send({ kind: 'changeRealm', realm: cmd.realm })
+          changeRealm(cmd.realm)
           break
         case 'reload':
           driverRef.current?.send({ kind: 'reloadScene' })
@@ -898,12 +996,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
       }
     },
-    [pushSystemMessage]
+    [pushSystemMessage, changeRealm]
   )
 
   // Toggle one exclusive panel (closing chat + all others); optionally run onOpen.
   // All exclusive (one-at-a-time) panel setters. Toggling one closes chat + the rest.
-  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setGalleryOpen]
+  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setEventsOpen, setGalleryOpen, setSkyboxOpen]
   const exclusive = useCallback(
     (setSelf: React.Dispatch<React.SetStateAction<boolean>>, onOpen?: () => void) => {
       setChatOpen(false)
@@ -962,7 +1060,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
-    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || galleryOpen
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || galleryOpen
   // Opening any full-screen menu frees the mouse: on web the camera-look IS the browser pointer lock,
   // so releasing it lets the cursor drive the menu (the engine self-heals camera-look on
   // `!document.pointerLockElement`, same as requestFocusChat). No-op on native (no DOM pointer lock).
@@ -979,7 +1077,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // performs the one layered close (topmost popup, else open panels) for keyboard and
   // gamepad alike. No DOM cancel handling here; see the pre-world fallback further down.
   const anyPanelOpen =
-    menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen
+    menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen || skyboxOpen
   const toggleFriends = useCallback(() => exclusive(setFriendsOpen), [exclusive])
   const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => ensure('getSettings')), [exclusive, ensure])
   const toggleProfile = useCallback(() => exclusive(setProfileOpen, () => ensure('getProfile')), [exclusive, ensure])
@@ -998,6 +1096,53 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const toggleMap = useCallback(() => exclusive(setMapOpen, () => send('getMap')), [exclusive, send])
   // Places fetches its own HTTP data (no bridge), so opening needs no engine request.
   const togglePlaces = useCallback(() => exclusive(setPlacesOpen), [exclusive])
+  const toggleEvents = useCallback(() => exclusive(setEventsOpen), [exclusive])
+  // The engine clock as `/time` (no args) reports it; null when there is no engine console.
+  const readClock = useCallback(async (): Promise<{ hours: number; speed: number } | null> => {
+    const reply = await driverRef.current?.command?.('/time').catch(() => undefined)
+    const clock = reply != null ? parseTimeReply(reply) : null
+    if (clock != null && clock.speed !== 0) skyboxDaySpeed.current = clock.speed
+    return clock
+  }, [])
+  const setClock = useCallback((hours: number, speed: number) => {
+    driverRef.current
+      ?.command?.(`/time ${hours.toFixed(2)} ${speed}`)
+      .catch((e: unknown) => console.warn('[hud] /time failed:', e))
+  }, [])
+  const toggleSkybox = useCallback(
+    () =>
+      exclusive(setSkyboxOpen, () => {
+        void readClock().then((clock) => {
+          if (clock == null) return
+          setSkyboxHoursState(clock.hours)
+          setSkyboxProgressingState(clock.speed !== 0)
+        })
+      }),
+    [exclusive, readClock]
+  )
+  const setSkyboxHours = useCallback(
+    (hours: number) => {
+      setSkyboxHoursState(hours)
+      if (!skyboxProgressing) setClock(hours, 0)
+    },
+    [skyboxProgressing, setClock]
+  )
+  const setSkyboxProgressing = useCallback(
+    (on: boolean) => {
+      setSkyboxProgressingState(on)
+      if (on) {
+        setClock(skyboxHours, skyboxDaySpeed.current)
+        return
+      }
+      // Freeze where the running clock is now, not where the slider last was.
+      void readClock().then((clock) => {
+        const hours = clock?.hours ?? skyboxHours
+        setSkyboxHoursState(hours)
+        setClock(hours, 0)
+      })
+    },
+    [skyboxHours, readClock, setClock]
+  )
   const toggleGallery = useCallback(() => exclusive(setGalleryOpen, () => ensure('getGallery')), [exclusive, ensure])
   const loadGalleryPhoto = useCallback((id: string) => {
     driverRef.current?.send({ kind: 'getGalleryPhoto', id })
@@ -1013,14 +1158,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const teleportToPlace = useCallback(
     (x: number, y: number) => {
-      if (isWorld) driverRef.current?.send({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
+      if (isWorld) travel({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
       else driverRef.current?.send({ kind: 'teleport', x, y })
     },
-    [isWorld]
+    [isWorld, travel]
   )
-  const changeRealm = useCallback((realm: string) => {
-    driverRef.current?.send({ kind: 'changeRealm', realm })
-  }, [])
   const setMinimapConfig = useCallback(
     (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => {
       driverRef.current?.send({ kind: 'minimapConfig', ...config })
@@ -1093,7 +1235,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           else pendingParcel.current = { x, y }
         }
         if (dest?.kind === 'world') {
-          driver.send({ kind: 'changeRealm', realm: dest.realm })
+          travel({ kind: 'changeRealm', realm: dest.realm })
           const [x, y] = (dest.position ?? '').split(',').map(Number)
           if (Number.isFinite(x) && Number.isFinite(y)) sendParcel(x, y)
         } else if (dest?.kind === 'parcel') {
@@ -1146,7 +1288,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     }
     requestAnimationFrame(() => requestAnimationFrame(run))
     setTimeout(run, 60)
-  }, [])
+  }, [travel])
   // Boot-mode flags (?hud=0 / ?guest=1 / ?systemScene= — see lib/bootMode.ts), captured once
   // per session mount so tests can vary location.search between mounts.
   const boot = useRef(bootMode())
@@ -1178,7 +1320,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!submitted || destinationPicked || urlDestination.current == null) return
     const dest = urlDestination.current
     if (dest.kind === 'world' && driverRef.current?.launch == null) {
-      // Native: ?realm= is injected by the engine from its own --server, so the engine is
+      // Native: ?realm= is injected by the engine from its own --realm, so the engine is
       // already there — skip the picker and keep the realm (the no-launch pickDestination(null)
       // path). No validation fetch either: the engine booted on this realm, and preview/file
       // realms wouldn't pass the worlds-server about probe anyway.
@@ -1189,23 +1331,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (dest != null && dest.kind === 'world') {
       if (validatingRealm.current) return
       validatingRealm.current = true
-      const base =
-        dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
-          ? `${serviceUrl('worldsServer')}/world/${dest.realm}`
-          : dest.realm
       // Launching against an unreachable realm strands the engine in a cryptic login failure, so
       // block up front: 404 → not found, no/failed answer (incl. timeout) → unreachable.
-      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))
-      const unreachable = (): void =>
-        setFatalError({ message: `The world "${dest.realm}" isn't reachable right now.`, source: 'realm' })
-      Promise.race([fetch(`${base.replace(/\/+$/, '')}/about`), timeout])
-        .then((r) => {
-          if (r?.ok) pickDestination(dest)
-          else if (r?.status === 404)
-            setFatalError({ message: `The world "${dest.realm}" doesn't exist.`, source: 'realm' })
-          else unreachable()
+      checkRealm(dest.realm)
+        .then((result) => {
+          if (result === 'ok') pickDestination(dest)
+          else setFatalError({ message: realmCheckMessage(dest.realm, result), source: 'realm' })
         })
-        .catch(unreachable)
         .finally(() => {
           urlDestination.current = null
           validatingRealm.current = false
@@ -1265,9 +1397,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     []
   )
   const joinCommunity = useCallback((id: string) => {
+    setCommunityError(null)
     driverRef.current?.send({ kind: 'joinCommunity', id })
   }, [])
+  const requestToJoinCommunity = useCallback((id: string) => {
+    setCommunityError(null)
+    driverRef.current?.send({ kind: 'requestToJoinCommunity', id })
+  }, [])
+  const cancelJoinRequest = useCallback((id: string, requestId: string) => {
+    setCommunityError(null)
+    driverRef.current?.send({ kind: 'cancelJoinRequest', id, requestId })
+  }, [])
   const leaveCommunity = useCallback((id: string) => {
+    setCommunityError(null)
     driverRef.current?.send({ kind: 'leaveCommunity', id })
   }, [])
   const loadCommunityDetail = useCallback((id: string) => {
@@ -1505,11 +1647,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // The engine keeps its loader visible until the player's scene is rendered, and flips it back on
   // for each scene streamed into Genesis Plaza. We debounce the *reveal* (loading→world) so a brief
   // `visible` gap between scenes doesn't flash the HUD; the loader still appears INSTANTLY whenever
-  // loading re-asserts. Loading = scene visible, or not spawned, or the render-settle still holding.
+  // loading re-asserts. Loading = a HUD travel pending, or scene visible, or not spawned, or the
+  // render-settle still holding.
   // No state received yet (sceneLoading == null) counts as loading: the loading stream is the
   // bridge-scene's domain, and until it's running and reports otherwise the world isn't ready
   // (on native the engine relay itself sends no loading state at all).
-  const loadingNow = sceneLoading?.visible !== false || !playerReady || revealing
+  const loadingNow = travellingTo != null || sceneLoading?.visible !== false || !playerReady || revealing
   const [loaderActive, setLoaderActive] = useState(true)
   useEffect(() => {
     if (loadingNow) {
@@ -1736,6 +1879,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     phase,
     pickDestination,
     sceneLoading,
+    travelError,
+    dismissTravelError,
+    travellingTo,
     fatalError,
     reload: () => location.reload(),
     dismissFatal: () => {
@@ -1754,6 +1900,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       open: chatOpen,
       toggle: toggleChat,
       members,
+      speaking,
       mention: mentionInChat,
       pendingMention,
       consumeMention,
@@ -1784,6 +1931,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       requestOwnedNames,
       dismissSaveError: dismissProfileSaveError
     },
+    skybox: {
+      open: skyboxOpen,
+      toggle: toggleSkybox,
+      hours: skyboxHours,
+      progressing: skyboxProgressing,
+      setHours: setSkyboxHours,
+      setProgressing: setSkyboxProgressing
+    },
     notifications: {
       list: notifications,
       unread: notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0),
@@ -1798,10 +1953,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       outfits: outfits.outfits, outfitSlots: Math.min(10, 5 + outfits.namesForExtraSlots.length),
       saveOutfit, deleteOutfit, equipOutfit
     },
-    communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
+    communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, requestToJoin: requestToJoinCommunity, cancelRequest: cancelJoinRequest, leave: leaveCommunity, error: communityError, detail: communityDetail, loadDetail: loadCommunityDetail },
     map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace },
     minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },
+    events: { open: eventsOpen, toggle: toggleEvents },
     gallery: {
       list: galleryPhotos,
       current: galleryStorage.current,

@@ -123,14 +123,14 @@ function createJsContext(wasmApi, context) {
   // the FileSystemDirectoryHandle for the user's picked scene folder there (db `dcl-editor`, store
   // `handles`), with readwrite permission already granted. A handle read back out of IndexedDB is
   // as live as the one that was stored, so a scene reaching it would get the user's real
-  // filesystem, not origin-private storage. Nothing in this worker uses IndexedDB — web_save.js and
-  // gpu_cache.js both run on the main thread.
+  // filesystem, not origin-private storage. Nothing in this worker uses IndexedDB — web_save.js
+  // runs on the main thread and gpu_cache.js on the render worker.
   deleteFromPrototypeChain(self, "indexedDB");
 
   // CacheStorage is the last same-origin store the sandbox could see — it holds the ipfs fetch
   // cache (`ipfs-path-cache-v1`), so a scene could read every asset the client has pulled and, more
   // to the point, write to keys the loader later serves. Its users are elsewhere:
-  // image_processing/src/processor/wasm_fs.rs runs under asset_processor.js, which engine.js spawns
+  // image_processing/src/processor/wasm_fs.rs runs on the asset processor worker, which engine.js spawns
   // as its own worker, and service_worker.js is a different context entirely.
   deleteFromPrototypeChain(self, "caches");
 
