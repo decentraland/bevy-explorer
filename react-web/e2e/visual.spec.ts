@@ -15,6 +15,11 @@ const BLANK_PNG = Buffer.from(
   'base64'
 )
 
+const EVENTS_FIXTURE = [
+  { id: 'e1', name: 'Genesis Plaza party', x: 0, y: 0, live: true, start_at: '2025-06-26T14:00:00Z', total_attendees: 12, image: 'https://example.com/e1.png' },
+  { id: 'e2', name: 'Galaga night', x: 0, y: 0, world: true, server: 'galaga.dcl.eth', live: true, start_at: '2025-06-26T14:30:00Z', total_attendees: 3 }
+]
+
 /** Make the page deterministic — call before the first navigation in each test. */
 async function prepare(page: Page): Promise<void> {
   // install (not setFixedTime): setFixedTime pins Date but leaves setTimeout on REAL time, so the
@@ -27,6 +32,8 @@ async function prepare(page: Page): Promise<void> {
     if (type === 'image' || type === 'media') return route.fulfill({ contentType: 'image/png', body: BLANK_PNG })
     return route.continue()
   })
+  // Live events data changes by the minute; serve a fixed list (sidebar badge + Events page).
+  await page.route(/\/api\/events\?list=/, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: EVENTS_FIXTURE }) }))
 }
 
 /** Fonts loaded + a beat for layout to settle (animations are frozen at screenshot time anyway). */
@@ -208,7 +215,8 @@ test.describe('visual — mock HUD', () => {
     ['Notifications', 'notifications'],
     ['Emotes', 'emote-wheel'],
     ['Communities', 'communities'],
-    ['Map', 'map']
+    ['Map', 'map'],
+    ['Events', 'events']
   ] as const) {
     test(`panel — ${name}`, async ({ page }) => {
       await enterWorld(page)

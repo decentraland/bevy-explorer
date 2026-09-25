@@ -10,6 +10,7 @@ import type { NavAction } from '../../engine/protocol'
 import { keyHintFor, useBindingsSnapshot, type BindingsSnapshot } from '../../lib/bindingLabels'
 import { nameColor } from '../../lib/identity'
 import type { EngineSession } from '../session/useEngineSession'
+import { useLiveEventCount } from '../events/eventsApi'
 import styles from './Sidebar.module.css'
 
 // `hotkey` names the engine SystemAction whose live binding renders as the tooltip hint.
@@ -26,6 +27,7 @@ type Item =
   | { kind: 'communities'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'map'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'places'; icon: IconName; label: string; hotkey?: string }
+  | { kind: 'events'; icon: IconName; label: string }
   | { kind: 'gallery'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'link'; icon: IconName; label: string; url: string | (() => string) }
   | { kind: 'divider' }
@@ -38,6 +40,7 @@ function bugReportUrl(): string {
 const TOP: Item[] = [
   { kind: 'profile', icon: 'profile', label: 'Profile' },
   { kind: 'notifications', icon: 'notifications', label: 'Notifications' },
+  { kind: 'events', icon: 'events', label: 'Events' },
   { kind: 'map', icon: 'map', label: 'Map', hotkey: 'Map' },
   { kind: 'places', icon: 'places', label: 'Places', hotkey: 'Places' },
   { kind: 'communities', icon: 'communities', label: 'Communities', hotkey: 'Communities' },
@@ -58,7 +61,7 @@ const BOTTOM: Item[] = [
   { kind: 'chat', icon: 'chat', label: 'Chat', hotkey: 'ChatPanel' }
 ]
 
-function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, onViewProfile?: () => void): React.JSX.Element {
+function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, onViewProfile?: () => void): React.JSX.Element {
   if (item.kind === 'divider') return <div key={`d${i}`} className={styles.divider} />
   const shortcut = 'hotkey' in item && item.hotkey != null ? keyHintFor(snap, item.hotkey) : undefined
   if (item.kind === 'chat')
@@ -196,6 +199,18 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
         onClick={session.mic.toggle}
       />
     )
+  if (item.kind === 'events')
+    return (
+      <IconButton
+        key="events"
+        icon={item.icon}
+        label={item.label}
+        badge={liveEvents}
+        badgeTone="lavender"
+        active={session.events.open}
+        onClick={session.events.toggle}
+      />
+    )
   if (item.kind === 'link')
     return (
       <IconButton
@@ -225,10 +240,11 @@ export function Sidebar({
   onViewProfile?: () => void
 }): React.JSX.Element {
   const snap = useBindingsSnapshot()
+  const liveEvents = useLiveEventCount()
   return (
     <nav className={styles.root} aria-label="Main navigation">
-      <div className={styles.group}>{TOP.map((item, i) => renderItem(item, i, session, snap, onViewProfile))}</div>
-      <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, onViewProfile))}</div>
+      <div className={styles.group}>{TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, onViewProfile))}</div>
+      <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, onViewProfile))}</div>
     </nav>
   )
 }

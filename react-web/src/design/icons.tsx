@@ -9,6 +9,7 @@ import bugPng from '../assets/sidebar-icons/bug.png'
 import chatPng from '../assets/sidebar-icons/chat.png'
 import communitiesPng from '../assets/sidebar-icons/communities.png'
 import emotesPng from '../assets/sidebar-icons/emotes.png'
+import eventsPng from '../assets/sidebar-icons/events.png'
 import friendsPng from '../assets/sidebar-icons/friends.png'
 import galleryPng from '../assets/sidebar-icons/gallery.png'
 import helpPng from '../assets/sidebar-icons/help.png'
@@ -35,6 +36,7 @@ export type IconName =
   | 'gallery'
   | 'marketplace'
   | 'bug'
+  | 'events'
 
 const MASK_ART: Partial<Record<IconName, string>> = {
   backpack: backpackPng,
@@ -42,6 +44,7 @@ const MASK_ART: Partial<Record<IconName, string>> = {
   chat: chatPng,
   communities: communitiesPng,
   emotes: emotesPng,
+  events: eventsPng,
   friends: friendsPng,
   gallery: galleryPng,
   help: helpPng,

@@ -153,6 +153,12 @@ export interface PlacesState {
   toggle: () => void
 }
 
+// Events browses the public events API over HTTP, like Places.
+export interface EventsState {
+  open: boolean
+  toggle: () => void
+}
+
 export interface GalleryState {
   /** The local player's camera-reel photos (newest first by dateTime). */
   list: GalleryPhoto[]
@@ -367,6 +373,7 @@ export interface EngineSession {
   map: MapState
   minimap: MinimapState
   places: PlacesState
+  events: EventsState
   gallery: GalleryState
   /** Scene permission prompts (e.g. ChangeRealm) awaiting an Allow/Deny. */
   permissions: PermissionsState
@@ -547,6 +554,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [isWorld, setIsWorld] = useState(false)
   const [sceneTitle, setSceneTitle] = useState('')
   const [placesOpen, setPlacesOpen] = useState(false)
+  const [eventsOpen, setEventsOpen] = useState(false)
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([])
   const [galleryStorage, setGalleryStorage] = useState({ current: 0, max: 0 })
   const [galleryLoaded, setGalleryLoaded] = useState(false)
@@ -903,7 +911,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // Toggle one exclusive panel (closing chat + all others); optionally run onOpen.
   // All exclusive (one-at-a-time) panel setters. Toggling one closes chat + the rest.
-  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setGalleryOpen]
+  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setEventsOpen, setGalleryOpen]
   const exclusive = useCallback(
     (setSelf: React.Dispatch<React.SetStateAction<boolean>>, onOpen?: () => void) => {
       setChatOpen(false)
@@ -962,7 +970,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
-    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || galleryOpen
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || galleryOpen
   // Opening any full-screen menu frees the mouse: on web the camera-look IS the browser pointer lock,
   // so releasing it lets the cursor drive the menu (the engine self-heals camera-look on
   // `!document.pointerLockElement`, same as requestFocusChat). No-op on native (no DOM pointer lock).
@@ -998,6 +1006,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const toggleMap = useCallback(() => exclusive(setMapOpen, () => send('getMap')), [exclusive, send])
   // Places fetches its own HTTP data (no bridge), so opening needs no engine request.
   const togglePlaces = useCallback(() => exclusive(setPlacesOpen), [exclusive])
+  const toggleEvents = useCallback(() => exclusive(setEventsOpen), [exclusive])
   const toggleGallery = useCallback(() => exclusive(setGalleryOpen, () => ensure('getGallery')), [exclusive, ensure])
   const loadGalleryPhoto = useCallback((id: string) => {
     driverRef.current?.send({ kind: 'getGalleryPhoto', id })
@@ -1802,6 +1811,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace },
     minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },
+    events: { open: eventsOpen, toggle: toggleEvents },
     gallery: {
       list: galleryPhotos,
       current: galleryStorage.current,
