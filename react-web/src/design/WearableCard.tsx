@@ -25,6 +25,8 @@ interface WearableCardProps {
   isNew?: boolean
   count?: number
   incompatible?: boolean
+  /** False for a required category (body shape, eyes…): equipped, it offers no UNEQUIP. */
+  unequippable?: boolean
   /** Body-part glyph shown in the top-left flap (matches Unity's category badge). */
   categoryIcon?: React.ReactNode
   /** Card click — selects the item (shows its detail; does not equip or preview). */
@@ -44,6 +46,7 @@ export function WearableCard({
   isNew = false,
   count,
   incompatible = false,
+  unequippable = true,
   categoryIcon,
   onClick,
   onDoubleClick,
@@ -71,7 +74,7 @@ export function WearableCard({
       {count != null && count > 1 && <span className={styles.count}>×{count}</span>}
       {incompatible && !equipped ? (
         <span className={`${styles.action} ${styles.incompatibleNote}`}>Incompatible with body shape</span>
-      ) : (
+      ) : equipped && !unequippable ? null : (
         <span
           className={`${styles.action} ${equipped ? styles.unequip : styles.equip}`}
           role="button"

@@ -61,7 +61,8 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
   const data = await getJson<{ elements?: CatalogElement[]; totalAmount?: number }>(url).catch(() => undefined)
   const elements = data?.elements ?? []
   accumulateTokens(elements)
-  const owned = currentLook()?.wearables ?? []
+  const look = currentLook()
+  const owned = look != null ? [look.bodyShape, ...look.wearables] : []
   const items: Wearable[] = elements.map((el) => {
     const file = el.entity?.metadata?.thumbnail
     const hash = el.entity?.content?.find((c) => c.file === file)?.hash
@@ -73,7 +74,7 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
       thumbnail: hash != null ? `${baseUrl}/content/contents/${hash}` : undefined,
       count: el.amount,
       equipped: owned.some((w) => w === el.urn || w.startsWith(`${el.urn}:`)),
-      bodyShapes: bodyShapesOf(el)
+      bodyShapes: bodyShapesOf(el.entity?.metadata?.data?.representations)
     }
   })
   return { items, total: data?.totalAmount ?? items.length }
@@ -131,32 +132,31 @@ export async function resolveEquippedSet(urns: string[], opts: ResolveOpts = {})
   return await resolveWearables(urns, opts)
 }
 
+// The Backpack's look as the page's equipped set (category slots): the body shape, which fills its own
+// slot, then the wearables. Resolved by urn, DECOUPLED from the paged grid so every equipped item shows
+// regardless of which catalog page it's on.
+export async function sendEquipped(ctx: Ctx): Promise<void> {
+  const look = currentLook()
+  if (look == null) {
+    ctx.send({ kind: 'wearables', equipped: [] })
+    return
+  }
+  const urns = look.bodyShape !== '' ? [look.bodyShape, ...look.wearables] : look.wearables
+  ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(urns), bodyShape: look.bodyShape || undefined })
+}
+
 export function registerWearables(ctx: Ctx): void {
   ctx.on('equip', async (msg) => {
+    // The equipped set carries the body shape, but it's the avatar base, not a wearable.
     const { bodyShape, wearables } = splitBodyShape(msg.urns)
     const tokenUrns = wearables.map((u) => tokenUrnByItem.get(u) ?? u)
-    if (bodyShape == null) {
-      editLook({ wearables: tokenUrns })
-      return
-    }
-    // A body shape is the avatar base, not a wearable. Re-emit the equipped set with the new shape so
-    // the grid re-checks compatibility right away.
-    editLook({ bodyShape, wearables: tokenUrns })
-    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(tokenUrns), bodyShape })
+    const newShape = bodyShape != null && bodyShape !== currentLook()?.bodyShape
+    editLook(bodyShape != null ? { bodyShape, wearables: tokenUrns } : { wearables: tokenUrns })
+    // Re-emit with the new shape so the grid re-checks compatibility right away.
+    if (newShape) await sendEquipped(ctx)
   })
 
-  // Equipped set (category slots) for the live avatar, resolved by urn — DECOUPLED from the paged
-  // grid so every equipped item shows regardless of which catalog page it's on.
   ctx.on('getWearables', async () => {
-    const look = currentLook()
-    if (look == null) {
-      ctx.send({ kind: 'wearables', equipped: [] })
-      return
-    }
-    ctx.send({
-      kind: 'wearables',
-      equipped: await resolveEquippedSet(look.wearables),
-      bodyShape: look.bodyShape || undefined
-    })
+    await sendEquipped(ctx)
   })
 }

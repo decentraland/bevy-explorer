@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Tabs, WearableCard, type Rarity, type TabItem } from '../../design'
-import { isCompatible } from './bodyShape'
+import { isCompatible } from '../../engine/bodyShape'
 import { catalystThumbUrl } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
 import { CategoryIcon } from './categoryIcons'
@@ -58,7 +58,7 @@ const CATEGORY_ORDER = [
   'hat', 'eyewear', 'mask', 'tiara', 'top_head', 'earring', 'helmet', 'skin'
 ]
 
-// Categories that must always keep something equipped, so their slot shows no unequip button —
+// Categories that must always keep something equipped, so neither their slot nor their grid card offers unequip —
 // mirrors Unity's IsUnequippable gate (BackpackGridController: not body_shape/eyes/eyebrows/mouth).
 const REQUIRED_CATEGORIES = new Set(['body_shape', 'eyes', 'eyebrows', 'mouth'])
 
@@ -350,6 +350,7 @@ export function BackpackPage({
   // Explicit equip/unequip (the hover pill) — changes the Backpack's look (deployed when it closes),
   // then drops the preview override so the avatar follows the (now updated) look.
   const toggleEquip = (w: Wearable): void => {
+    if (w.equipped && REQUIRED_CATEGORIES.has(w.category)) return
     const next = w.equipped
       ? backpack.equipped.filter((x) => x.urn !== w.urn).map((x) => x.urn)
       : equipSetWith(w)
@@ -520,6 +521,7 @@ export function BackpackPage({
                           selected={selected != null && 'urn' in selected && selected.urn === w.urn}
                           count={w.count}
                           incompatible={!isCompatible(w, backpack.bodyShape)}
+                          unequippable={!REQUIRED_CATEGORIES.has(w.category)}
                           categoryIcon={<CategoryIcon category={w.category} size={15} />}
                           onClick={() => select(w)}
                           onDoubleClick={() => toggleEquip(w)}

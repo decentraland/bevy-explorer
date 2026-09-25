@@ -7,7 +7,7 @@
 // shape matches the deployed catalyst `outfits` entity so Phase 2 can deploy it unchanged.
 import { getPlayer } from '@dcl/sdk/players'
 import { catalystBase, getJson } from '../http'
-import { resolveEquippedSet } from './wearables'
+import { sendEquipped } from './wearables'
 import { currentLook, editLook } from './avatarDraft'
 import type { AvatarLook } from '../../../src/engine/avatarEquip'
 import type { Ctx } from '../bridge'
@@ -118,6 +118,6 @@ export function registerOutfits(ctx: Ctx): void {
     // Re-emit the equipped set resolved from the outfit's wearables (by urn, independent of the
     // loaded catalog page). Otherwise off-page outfit items never reach the HUD's category slots
     // and the next single-item equip drops them.
-    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(outfit.wearables.map(String)) })
+    await sendEquipped(ctx)
   })
 }
