@@ -17,7 +17,7 @@
 //
 // Run (files only, no servers):
 //   cd react-web && npm run bundle:native   # page -> assets/react-hud, scene -> assets/bridge-scene
-//   cargo run --release --features react-hud-cef --bin decentra-bevy -- --server <realm>
+//   cargo run --release --features react-hud-cef --bin decentra-bevy -- --realm <realm>
 // The page loads from cef://localhost/react-hud (the bevy assets dir) and the bridge-scene loads
 // as a file realm from assets/bridge-scene. Override: REACT_HUD_URL (e.g. a vite dev server with
 // ?native=1 for HMR). The CEF framework loads bundle-relative

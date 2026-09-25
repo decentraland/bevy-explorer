@@ -47,7 +47,9 @@ use ipfs::{
 use nft::asset_source::Nft;
 use reqwest::StatusCode;
 use scene_runner::{
-    initialize_scene::{LiveScenes, PortableScenes, PortableSource, SceneLoading, PARCEL_SIZE},
+    initialize_scene::{
+        LiveScenes, PortableScenes, PortableSource, SceneLoading, SuperUserScene, PARCEL_SIZE,
+    },
     permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
@@ -611,11 +613,15 @@ pub fn move_camera(
     }
 }
 
+// (realm, response, report the outcome)
+type ChangeRealmAction = (String, RpcResultSender<Result<(), String>>, bool);
+
 fn change_realm(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
-    mut perms: Permission<(String, RpcResultSender<Result<(), String>>)>,
+    mut perms: Permission<ChangeRealmAction>,
     mut target: ResMut<RealmInitialLocation>,
+    super_user: Query<(), With<SuperUserScene>>,
 ) {
     for (scene, to, message, response) in events.read().filter_map(|ev| match ev {
         RpcCall::ChangeRealm {
@@ -629,7 +635,9 @@ fn change_realm(
         perms.check(
             PermissionType::ChangeRealm,
             *scene,
-            (to.clone(), response.clone()),
+            // the scene is gone once the change lands, so its player is told in the console,
+            // unless it is the HUD's own bridge scene
+            (to.clone(), response.clone(), !super_user.contains(*scene)),
             Some(match message {
                 Some(message) => format!("{to}: {message}"),
                 None => to.clone(),
@@ -638,17 +646,19 @@ fn change_realm(
         );
     }
 
-    for (new_realm, response) in perms.drain_success(PermissionType::ChangeRealm) {
+    for (new_realm, response, report) in perms.drain_success(PermissionType::ChangeRealm) {
         debug!("change realm action -> base");
         *target = RealmInitialLocation::Base;
+        // answered once the realm is actually set (or failed, keeping the player where they are)
         commands.send_event(ChangeRealmEvent {
             new_realm,
             content_server_override: None,
+            response,
+            report,
         });
-        response.send(Ok(()));
     }
 
-    for (_, response) in perms.drain_fail(PermissionType::ChangeRealm) {
+    for (_, response, _) in perms.drain_fail(PermissionType::ChangeRealm) {
         response.send(Err("Denied".to_owned()));
     }
 }

@@ -638,6 +638,8 @@ pub fn spawn_discover_popup(
         let cr_ev = ChangeRealmEvent {
             new_realm: url.clone(),
             content_server_override: None,
+            response: Default::default(),
+            report: true,
         };
         let rpc_ev = RpcCall::TeleportPlayer {
             scene: None,
@@ -647,7 +649,7 @@ pub fn spawn_discover_popup(
         };
 
         if let Ok(mut settings) = settings.single_mut() {
-            settings.on_close = Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev));
+            settings.on_close = Some(OnCloseEvent::ChangeRealm(Box::new(cr_ev), rpc_ev));
         } else {
             warn!("no settings");
         }
