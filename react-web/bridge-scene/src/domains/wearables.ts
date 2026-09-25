@@ -11,6 +11,7 @@ import { resolveShopUrls } from './marketplace'
 import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Wearable } from '../../../src/engine/protocol'
+import { equipPayload } from '../../../src/engine/avatarEquip'
 
 type CatalogElement = {
   urn: string
@@ -135,7 +136,7 @@ export function registerWearables(ctx: Ctx): void {
     const me = getPlayer()
     const wearableUrns = msg.urns.map((u) => tokenUrnByItem.get(u) ?? u)
     BevyApi.setAvatar({
-      equip: { wearableUrns, emoteUrns: (me?.emotes ?? []).map(String), forceRender: [] }
+      equip: equipPayload(me, { wearableUrns })
     }).catch((e: unknown) => {
       console.error('[wearables] equip failed', e)
     })

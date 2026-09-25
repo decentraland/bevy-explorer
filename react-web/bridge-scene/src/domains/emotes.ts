@@ -14,6 +14,7 @@ import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
 import { readAllPages, type Page } from '../../../src/engine/paging'
+import { equipPayload } from '../../../src/engine/avatarEquip'
 
 const SLOT_COUNT = 10 // the emote wheel has 10 slots
 const BASE_EMOTE_PREFIX = 'urn:decentraland:off-chain:base-emotes:'
@@ -153,7 +154,7 @@ export function registerEmotes(ctx: Ctx): void {
     const slots = equippedSlots(me.emotes)
     slots[msg.slot] = equipUrn(msg.urn)
     BevyApi.setAvatar({
-      equip: { wearableUrns: (me.wearables ?? []).map(String), emoteUrns: slots, forceRender: [] }
+      equip: equipPayload(me, { emoteUrns: slots })
     }).catch((e: unknown) => {
       console.error('[emotes] equip failed', e)
     })
