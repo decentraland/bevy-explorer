@@ -12,9 +12,9 @@ use std::cmp::Ordering;
 
 use bevy::{platform::collections::HashSet, prelude::*};
 use bevy_hanabi::{
-    AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
-    EffectSpawner, ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, MatrixValue,
-    OrientMode, OrientModifier, ParticleEffect, ParticleTextureModifier, ScalarType,
+    AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial, EffectSpawner,
+    ExprHandle, ExprWriter, FlipbookModifier, GlobalAccelModifier, Gradient, HanabiPlugin,
+    MatrixValue, OrientMode, OrientModifier, ParticleEffect, ParticleTextureModifier, ScalarType,
     SetAttributeModifier, SetPositionCircleModifier, SetPositionSphereModifier,
     SetVelocitySphereModifier, SizeOverLifetimeModifier, SpawnerSettings, Value,
 };
@@ -426,7 +426,7 @@ fn make_particle_system(
             .expr(),
     };
 
-    let update_accel = AccelModifier::new(
+    let update_accel = GlobalAccelModifier::new(
         (writer.lit(GRAVITY) * writer.lit(Vec3::new(1., gravity, 1.))
             + writer.lit(additional_force))
         .expr(),
