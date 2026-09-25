@@ -52,6 +52,18 @@ import type {
 // live on the canvas, so document.activeElement can't see them.
 type EngineFocusWindow = Window & { __engineTextFocus?: boolean }
 
+// The engine's clock starts at 10:00 and runs at 12× (crates/visuals/src/day_night.rs start_clock).
+// Fallbacks only: the menu reads the live clock with `/time` when it opens.
+const SKYBOX_START_HOURS = 10
+const SKYBOX_DAY_SPEED = 12
+
+// The engine's `/time` reply (day_night.rs timeofday_console_command) ends with
+// "speed <S> (elapsed: <seconds since midnight>)".
+function parseTimeReply(reply: string): { hours: number; speed: number } | null {
+  const m = /speed (-?[\d.]+) \(elapsed: ([\d.]+)\)/.exec(reply)
+  return m ? { hours: Number(m[2]) / 3600, speed: Number(m[1]) } : null
+}
+
 /** A server-side catalog page request (backpack grid). Filters/sort are applied by the catalyst. */
 export interface CatalogQuery {
   page: number
@@ -157,6 +169,18 @@ export interface PlacesState {
 export interface EventsState {
   open: boolean
   toggle: () => void
+}
+
+// Unity's sidebar Skybox menu: time of day, driven through the engine's `/time <hours> <speed>`.
+export interface SkyboxState {
+  open: boolean
+  toggle: () => void
+  /** Hour of day shown on the slider, 0–24. */
+  hours: number
+  /** The sky follows the engine's day cycle; the slider is locked while on. */
+  progressing: boolean
+  setHours: (hours: number) => void
+  setProgressing: (on: boolean) => void
 }
 
 export interface GalleryState {
@@ -367,6 +391,7 @@ export interface EngineSession {
   bindings: BindingsState
   profile: ProfileState
   notifications: NotificationsState
+  skybox: SkyboxState
   emotes: EmotesState
   backpack: BackpackState
   communities: CommunitiesState
@@ -531,6 +556,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const profileRevertRef = useRef<{ address: string; profile: Profile | null; stored: Profile | undefined } | null>(null)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [skyboxOpen, setSkyboxOpen] = useState(false)
+  const [skyboxHours, setSkyboxHoursState] = useState(SKYBOX_START_HOURS)
+  const [skyboxProgressing, setSkyboxProgressingState] = useState(true)
   const [emotes, setEmotes] = useState<Emote[]>([])
   const [emotesOpen, setEmotesOpen] = useState(false)
   const [mic, setMic] = useState({ enabled: false, available: false })
@@ -562,6 +590,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequestMessage[]>([])
   const chatId = useRef(0)
+  // The speed to restore when Time progression is turned back on (the last running speed seen).
+  const skyboxDaySpeed = useRef(SKYBOX_DAY_SPEED)
   // Catalog fetches done once per session (cache; relays re-emit on change).
   const fetchedRef = useRef<Set<string>>(new Set())
 
@@ -911,7 +941,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // Toggle one exclusive panel (closing chat + all others); optionally run onOpen.
   // All exclusive (one-at-a-time) panel setters. Toggling one closes chat + the rest.
-  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setEventsOpen, setGalleryOpen]
+  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setEventsOpen, setGalleryOpen, setSkyboxOpen]
   const exclusive = useCallback(
     (setSelf: React.Dispatch<React.SetStateAction<boolean>>, onOpen?: () => void) => {
       setChatOpen(false)
@@ -987,7 +1017,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // performs the one layered close (topmost popup, else open panels) for keyboard and
   // gamepad alike. No DOM cancel handling here; see the pre-world fallback further down.
   const anyPanelOpen =
-    menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen
+    menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen || skyboxOpen
   const toggleFriends = useCallback(() => exclusive(setFriendsOpen), [exclusive])
   const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => ensure('getSettings')), [exclusive, ensure])
   const toggleProfile = useCallback(() => exclusive(setProfileOpen, () => ensure('getProfile')), [exclusive, ensure])
@@ -1007,6 +1037,52 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Places fetches its own HTTP data (no bridge), so opening needs no engine request.
   const togglePlaces = useCallback(() => exclusive(setPlacesOpen), [exclusive])
   const toggleEvents = useCallback(() => exclusive(setEventsOpen), [exclusive])
+  // The engine clock as `/time` (no args) reports it; null when there is no engine console.
+  const readClock = useCallback(async (): Promise<{ hours: number; speed: number } | null> => {
+    const reply = await driverRef.current?.command?.('/time').catch(() => undefined)
+    const clock = reply != null ? parseTimeReply(reply) : null
+    if (clock != null && clock.speed !== 0) skyboxDaySpeed.current = clock.speed
+    return clock
+  }, [])
+  const setClock = useCallback((hours: number, speed: number) => {
+    driverRef.current
+      ?.command?.(`/time ${hours.toFixed(2)} ${speed}`)
+      .catch((e: unknown) => console.warn('[hud] /time failed:', e))
+  }, [])
+  const toggleSkybox = useCallback(
+    () =>
+      exclusive(setSkyboxOpen, () => {
+        void readClock().then((clock) => {
+          if (clock == null) return
+          setSkyboxHoursState(clock.hours)
+          setSkyboxProgressingState(clock.speed !== 0)
+        })
+      }),
+    [exclusive, readClock]
+  )
+  const setSkyboxHours = useCallback(
+    (hours: number) => {
+      setSkyboxHoursState(hours)
+      if (!skyboxProgressing) setClock(hours, 0)
+    },
+    [skyboxProgressing, setClock]
+  )
+  const setSkyboxProgressing = useCallback(
+    (on: boolean) => {
+      setSkyboxProgressingState(on)
+      if (on) {
+        setClock(skyboxHours, skyboxDaySpeed.current)
+        return
+      }
+      // Freeze where the running clock is now, not where the slider last was.
+      void readClock().then((clock) => {
+        const hours = clock?.hours ?? skyboxHours
+        setSkyboxHoursState(hours)
+        setClock(hours, 0)
+      })
+    },
+    [skyboxHours, readClock, setClock]
+  )
   const toggleGallery = useCallback(() => exclusive(setGalleryOpen, () => ensure('getGallery')), [exclusive, ensure])
   const loadGalleryPhoto = useCallback((id: string) => {
     driverRef.current?.send({ kind: 'getGalleryPhoto', id })
@@ -1792,6 +1868,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       save: saveProfile,
       requestOwnedNames,
       dismissSaveError: dismissProfileSaveError
+    },
+    skybox: {
+      open: skyboxOpen,
+      toggle: toggleSkybox,
+      hours: skyboxHours,
+      progressing: skyboxProgressing,
+      setHours: setSkyboxHours,
+      setProgressing: setSkyboxProgressing
     },
     notifications: {
       list: notifications,

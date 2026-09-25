@@ -216,7 +216,8 @@ test.describe('visual — mock HUD', () => {
     ['Emotes', 'emote-wheel'],
     ['Communities', 'communities'],
     ['Map', 'map'],
-    ['Events', 'events']
+    ['Events', 'events'],
+    ['Skybox', 'skybox']
   ] as const) {
     test(`panel — ${name}`, async ({ page }) => {
       await enterWorld(page)

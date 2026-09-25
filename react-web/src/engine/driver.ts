@@ -65,4 +65,7 @@ export interface LoginDriver {
    *  engine module is up. Optional — the mock has no engine (and native skips keep the engine's
    *  own start realm, which already IS home). */
   homeScene?(): { realm: string | null; parcel: string } | null
+  /** Run an engine console command line (e.g. "/time 12 0") and resolve with its reply, without
+   *  the reply landing in chat. Optional — the mock has no engine console. */
+  command?(line: string): Promise<string>
 }

@@ -12,6 +12,7 @@ import { FriendsPanel } from './features/friends/FriendsPanel'
 import { SettingsPanel } from './features/settings/SettingsPanel'
 import { ProfilePanel } from './features/profile/ProfilePanel'
 import { NotificationsPanel } from './features/notifications/NotificationsPanel'
+import { SkyboxMenu } from './features/skybox/SkyboxMenu'
 import { EmotesWheel } from './features/emotes/EmotesWheel'
 import { BackpackPage } from './features/backpack/BackpackPage'
 import { CommunitiesPage } from './features/communities/CommunitiesPage'
@@ -295,6 +296,7 @@ function Hud(): React.JSX.Element {
           <SettingsPanel settings={session.settings} bindings={session.bindings} profile={session.profile} onNavigate={goToMenuPage} />
           <ProfilePanel profile={session.profile} />
           <NotificationsPanel notifications={session.notifications} />
+          <SkyboxMenu skybox={session.skybox} />
           <EmotesWheel
             emotes={session.emotes}
             onCustomise={() => {

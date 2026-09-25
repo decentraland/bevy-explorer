@@ -28,6 +28,7 @@ type Item =
   | { kind: 'map'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'places'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'events'; icon: IconName; label: string }
+  | { kind: 'skybox'; icon: IconName; label: string }
   | { kind: 'gallery'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'link'; icon: IconName; label: string; url: string | (() => string) }
   | { kind: 'divider' }
@@ -55,6 +56,7 @@ const TOP: Item[] = [
 
 const BOTTOM: Item[] = [
   { kind: 'mic', icon: 'mic', label: 'Voice chat' },
+  { kind: 'skybox', icon: 'skybox', label: 'Skybox' },
   { kind: 'emotes', icon: 'emotes', label: 'Emotes', hotkey: 'Emote' },
   { kind: 'divider' },
   { kind: 'friends', icon: 'friends', label: 'Friends', hotkey: 'Friends' },
@@ -199,6 +201,8 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
         onClick={session.mic.toggle}
       />
     )
+  if (item.kind === 'skybox')
+    return <IconButton key="skybox" icon={item.icon} label={item.label} active={session.skybox.open} onClick={session.skybox.toggle} />
   if (item.kind === 'events')
     return (
       <IconButton

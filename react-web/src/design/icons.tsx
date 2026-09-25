@@ -19,6 +19,7 @@ import micPng from '../assets/sidebar-icons/mic.png'
 import notificationsPng from '../assets/sidebar-icons/notifications.png'
 import placesPng from '../assets/sidebar-icons/places.png'
 import settingsPng from '../assets/sidebar-icons/settings.png'
+import skyboxPng from '../assets/sidebar-icons/skybox.png'
 
 export type IconName =
   | 'profile'
@@ -37,6 +38,7 @@ export type IconName =
   | 'marketplace'
   | 'bug'
   | 'events'
+  | 'skybox'
 
 const MASK_ART: Partial<Record<IconName, string>> = {
   backpack: backpackPng,
@@ -53,7 +55,8 @@ const MASK_ART: Partial<Record<IconName, string>> = {
   mic: micPng,
   notifications: notificationsPng,
   places: placesPng,
-  settings: settingsPng
+  settings: settingsPng,
+  skybox: skyboxPng
 }
 
 // Only the icons WITHOUT Unity png art — anything present in MASK_ART renders as a mask.
