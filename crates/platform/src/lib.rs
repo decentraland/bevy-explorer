@@ -10,7 +10,6 @@ pub use wasm::*;
 
 use std::{future::Future, time::Duration};
 
-use futures_timer::Delay;
 use futures_util::{
     future::{select, Either},
     pin_mut, StreamExt,
@@ -23,11 +22,11 @@ struct Elapsed;
 ///
 /// Cross-target replacement for `tokio::time::timeout` (which isn't available here
 /// — tokio is built without the `time` feature, and it wouldn't work on wasm
-/// anyway). `futures-timer` backs this with a native timer thread or wasm
-/// `setTimeout`.
+/// anyway). `async-std` backs the timer natively and with `setTimeout` on wasm.
 async fn with_timeout<F: Future>(dur: Duration, fut: F) -> Result<F::Output, Elapsed> {
-    pin_mut!(fut);
-    match select(fut, Delay::new(dur)).await {
+    let timer = async_std::task::sleep(dur);
+    pin_mut!(fut, timer);
+    match select(fut, timer).await {
         Either::Left((out, _)) => Ok(out),
         Either::Right(_) => Err(Elapsed),
     }
