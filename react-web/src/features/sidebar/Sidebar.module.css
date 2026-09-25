@@ -37,3 +37,43 @@
   height: 0;
   border-top: 1px solid var(--white-10);
 }
+
+/* Auto-hide (Unity MainUIController): slide the rail off-screen; `translate` composes with the
+   scale transform above. */
+.root {
+  transition: translate 0.2s ease;
+}
+.root[data-hidden='true'] {
+  translate: -100% 0;
+}
+/* Unity's ••• is a slim pill above the profile, smaller than a rail button. */
+.root .configButton {
+  width: 26px;
+  height: 12px;
+  min-height: 0;
+  padding: 0;
+}
+/* Invisible strip on the screen edge that brings a hidden rail back. */
+.reveal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: var(--z-hud);
+}
+.config {
+  position: fixed;
+  left: 54px;
+  top: 8px;
+  z-index: var(--z-hud);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  box-shadow: var(--shadow-panel);
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+}

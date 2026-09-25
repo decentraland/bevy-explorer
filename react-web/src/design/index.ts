@@ -12,6 +12,7 @@ export { Panel } from './Panel'
 export { Avatar } from './Avatar'
 export { WearableCard, type Rarity } from './WearableCard'
 export { EquippedItemCard, type EquippedItemCardProps } from './EquippedItemCard'
+export { DiscoverCard, type CardCreator } from './DiscoverCard'
 export { DclLogo } from './DclLogo'
 export { Icon, type IconName } from './icons'
 

@@ -73,3 +73,16 @@
 .badgeLavender {
   background: var(--lavender);
 }
+
+/* Unity's green "connected" dot (nearby voice). */
+.indicator {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 2;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--green);
+  box-shadow: 0 0 0 1.5px var(--panel);
+}

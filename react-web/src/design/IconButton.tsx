@@ -2,6 +2,7 @@
 // active states + an optional notification badge, wrapped in the design-system
 // Tooltip (label + optional keyboard-shortcut hint, e.g. "Chat [T]").
 
+import { Avatar } from './Avatar'
 import { Icon, type IconName } from './icons'
 import { Tooltip } from './Tooltip'
 import styles from './IconButton.module.css'
@@ -19,6 +20,10 @@ interface IconButtonProps
   label: string
   /** Single-key shortcut shown dimmed in the tooltip, e.g. 'T' → "Chat [T]". */
   shortcut?: string
+  /** Green status dot (e.g. connected voice). */
+  indicator?: boolean
+  /** Render this profile picture in place of the icon. */
+  avatar?: { src?: string; name: string; color?: string }
 }
 
 export function IconButton({
@@ -28,6 +33,8 @@ export function IconButton({
   badgeTone = 'ruby',
   label,
   shortcut,
+  avatar,
+  indicator = false,
   className = '',
   type = 'button',
   ...rest
@@ -41,7 +48,8 @@ export function IconButton({
         aria-pressed={active}
         {...rest}
       >
-        <Icon name={icon} size={24} />
+        {avatar ? <Avatar src={avatar.src} name={avatar.name} color={avatar.color} size={24} /> : <Icon name={icon} size={24} />}
+        {indicator && <span className={styles.indicator} data-indicator />}
         {badge != null && badge > 0 && (
           <span
             className={`${styles.badge} ${badgeTone === 'lavender' ? styles.badgeLavender : ''}`.trim()}

@@ -1,0 +1,38 @@
+/* Beside the Skybox button, clear of the collapsed chat input below it. */
+.root {
+  position: fixed;
+  left: 58px;
+  bottom: 96px;
+  z-index: var(--z-hud);
+  width: 260px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-panel);
+  transform: scale(var(--ui-scale));
+  transform-origin: bottom left;
+}
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.heading {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+}
+.time {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
