@@ -15,6 +15,12 @@ const BLANK_PNG = Buffer.from(
   'base64'
 )
 
+const SHOP_FIXTURE = [
+  { id: 's1', name: 'Neon Tiara', thumbnail: 'https://example.com/s1.png', rarity: 'epic', category: 'wearable', url: '/contracts/0x1/items/1', isOnSale: true, price: '2500000000000000000' },
+  { id: 's2', name: 'Pixel Jacket', thumbnail: 'https://example.com/s2.png', rarity: 'rare', category: 'wearable', url: '/contracts/0x2/items/0', isOnSale: false, price: '0', minListingPrice: '12000000000000000000' },
+  { id: 's3', name: 'Free Cap', thumbnail: 'https://example.com/s3.png', rarity: 'common', category: 'wearable', url: '/contracts/0x3/items/2', isOnSale: true, price: '0' }
+]
+
 const EVENTS_FIXTURE = [
   { id: 'e1', name: 'Genesis Plaza party', x: 0, y: 0, live: true, start_at: '2025-06-26T14:00:00Z', total_attendees: 12, image: 'https://example.com/e1.png' },
   { id: 'e2', name: 'Galaga night', x: 0, y: 0, world: true, server: 'galaga.dcl.eth', live: true, start_at: '2025-06-26T14:30:00Z', total_attendees: 3 }
@@ -33,6 +39,7 @@ async function prepare(page: Page): Promise<void> {
     return route.continue()
   })
   // Live events data changes by the minute; serve a fixed list (sidebar badge + Events page).
+  await page.route(/marketplace-api\.[^/]+\/v1\/catalog/, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: SHOP_FIXTURE, total: SHOP_FIXTURE.length }) }))
   await page.route(/\/api\/events\?list=/, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: EVENTS_FIXTURE }) }))
 }
 
@@ -187,6 +194,16 @@ test.describe('visual — mock HUD', () => {
     await page.getByRole('status').filter({ hasText: 'LOADING 70%' }).waitFor()
     await settle(page)
     await expect(page).toHaveScreenshot('loading-screen.png')
+  })
+
+  // The Shop section, reached from the menu bar (it has no sidebar button, like Unity's Explore panel).
+  test('shop', async ({ page }) => {
+    await enterWorld(page)
+    await openPanel(page, 'Events')
+    await page.getByRole('button', { name: /^Shop/ }).click()
+    await page.getByText('Neon Tiara').waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('shop.png')
   })
 
   // Element-level with a fixed pixel budget: 1% of this thin strip would hide a whole icon change.
