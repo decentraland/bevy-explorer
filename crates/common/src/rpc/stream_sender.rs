@@ -4,7 +4,7 @@ use bevy::log::warn;
 
 use crate::rpc::*;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, DropGuard};
 
 // All stream channels are bounded: once `cap` items are in flight, further sends are dropped.
 // The default is sized so it is never approached by well-behaved producers; channels fed by
@@ -157,6 +157,8 @@ impl<T: Serialize> RpcStreamSender<T> {
 
 struct IpcStreamCallback<T: Serialize + DeserializeOwned + Send + 'static> {
     sender: tokio::sync::mpsc::Sender<T>,
+    // fires the close watcher once the endpoint leaves the registry, so it doesn't park forever
+    _cancel_on_drop: DropGuard,
 }
 
 impl<T: Serialize + DeserializeOwned + Send + 'static> IpcEndpoint for IpcStreamCallback<T> {
@@ -182,7 +184,10 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcStreamSe
         };
 
         let id = channel.lock().unwrap().serialize_with(|sender| {
-            let endpoint = IpcStreamCallback { sender };
+            let endpoint = IpcStreamCallback {
+                sender,
+                _cancel_on_drop: cancel.clone().drop_guard(),
+            };
             let (id, close_sender) = ipc_register(endpoint);
 
             let cancel = cancel.clone();

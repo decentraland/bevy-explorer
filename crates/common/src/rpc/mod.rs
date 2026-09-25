@@ -1,5 +1,7 @@
 mod result_sender;
 mod stream_sender;
+#[cfg(test)]
+mod tests;
 
 use crate::{
     profile::SerializedProfile,
@@ -44,7 +46,9 @@ pub(crate) fn ipc_router(
         let ctx = ctx.as_mut().unwrap();
 
         let token = CancellationToken::new();
-        ctx.ipc_channel_registry.insert(id, token.clone());
+        if ctx.ipc_channel_registry.insert(id, token.clone()).is_some() {
+            warn!("ipc channel {id} deserialized twice; the first remote's close will cut off the second");
+        }
         (ctx.ipc_router.clone(), token)
     })
 }
