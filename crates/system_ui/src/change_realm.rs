@@ -147,6 +147,8 @@ fn update_server_list(
                                         e.write(ChangeRealmEvent {
                                             new_realm: server.url.clone(),
                                             content_server_override: None,
+                                            response: Default::default(),
+                                            report: true,
                                         });
                                         commands.entity(root_id).despawn();
                                     }),

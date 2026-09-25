@@ -49,6 +49,7 @@ use bevy::asset::io::wasm::HttpWasmAssetReader;
 
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{
+    rpc::{RpcResultReceiver, RpcResultSender},
     sets::RealmLifecycle,
     structs::{AppConfig, CommsConfig, CurrentRealm, PreviewMode, ServerConfiguration},
     util::TaskCompat,
@@ -58,7 +59,7 @@ use platform::AsyncRwLock;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use console::DoAddConsoleCommand;
+use console::{DoAddConsoleCommand, PendingConsoleResponses};
 
 #[allow(unused_imports)]
 use platform::ReqwestBuilderExt;
@@ -584,7 +585,8 @@ impl Plugin for IpfsIoPlugin {
             let content_server_override = self.content_server_override.clone();
             IoTaskPool::get()
                 .spawn_compat(async move {
-                    ipfs.set_realm(realm, content_server_override).await;
+                    // a failure is published by set_realm itself (no realm to stay in at boot)
+                    let _ = ipfs.set_realm(realm, content_server_override).await;
                 })
                 .detach();
         }
@@ -611,15 +613,24 @@ fn change_realm_command(
     mut input: ConsoleCommand<ChangeRealmCommand>,
     mut writer: EventWriter<ChangeRealmEvent>,
     mut target: ResMut<RealmInitialLocation>,
+    mut pending: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(command)) = input.take() {
         *target = RealmInitialLocation::Base;
         debug!("change realm command -> base");
+        let (response, rx) = RpcResultSender::channel();
+        let realm = command.new_realm.clone();
         writer.write(ChangeRealmEvent {
             new_realm: command.new_realm,
             content_server_override: command.content_server_override,
+            response,
+            report: false,
         });
-        input.ok();
+        pending.push_receiver(
+            rx,
+            move |result| result.map(|()| format!("Realm set to `{realm}`")),
+            input.take_responder(),
+        );
     }
 }
 
@@ -627,9 +638,23 @@ fn change_realm_command(
 pub struct ChangeRealmEvent {
     pub new_realm: String,
     pub content_server_override: Option<String>,
+    /// Answered once the new realm is set, or with the reason it could not be (the current realm
+    /// is kept in that case).
+    pub response: RpcResultSender<Result<(), String>>,
+    /// Print the outcome to the console (and so the system chat): set when nothing else will tell
+    /// the player, e.g. a scene that is torn down by the change it asked for.
+    pub report: bool,
 }
 
-#[allow(clippy::type_complexity)]
+/// A realm change being attempted, see [`change_realm`].
+pub struct InFlightRealmChange {
+    id: u64,
+    realm: String,
+    report: bool,
+    result: RpcResultReceiver<Result<(), String>>,
+}
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn change_realm(
     mut change_realm_requests: EventReader<ChangeRealmEvent>,
     ipfs: Res<IpfsResource>,
@@ -637,6 +662,9 @@ pub fn change_realm(
     mut current_realm: ResMut<CurrentRealm>,
     mut print: EventWriter<PrintConsoleLine>,
     preview_mode: Res<PreviewMode>,
+    mut target: ResMut<RealmInitialLocation>,
+    mut in_flight: Local<Vec<InFlightRealmChange>>,
+    mut issued: Local<u64>,
 ) {
     match *realm_change {
         None => *realm_change = Some(ipfs.realm_config_receiver.clone()),
@@ -670,35 +698,70 @@ pub fn change_realm(
                             .map(|c| c.public_url.clone())
                             .unwrap_or_default(),
                     };
-
-                    match about.configurations {
-                        Some(_) => {
-                            print.write(PrintConsoleLine::new(format!("Realm set to `{realm}`")))
-                        }
-                        None => print.write(PrintConsoleLine::new(format!(
-                            "Failed to set realm `{realm}`"
-                        ))),
-                    };
                 }
             }
         }
     }
 
+    let latest = *issued;
+    in_flight.retain_mut(|change| {
+        let result = match change.result.poll_once() {
+            Ok(None) => return true,
+            Ok(Some(result)) => result,
+            Err(()) => return false,
+        };
+        // A failed change leaves the player in the current realm, so the landing target it set up
+        // for the new one must not carry over to a later change. Only the latest request owns it.
+        if result.is_err() && change.id == latest {
+            *target = RealmInitialLocation::None;
+        }
+        if change.report {
+            print.write(PrintConsoleLine::new(match result {
+                Ok(()) => format!("Realm set to `{}`", change.realm),
+                Err(e) => format!("Failed to set realm `{}`: {e}", change.realm),
+            }));
+        }
+        false
+    });
+
     if !change_realm_requests.is_empty() {
         if preview_mode.is_preview {
+            const DISABLED: &str = "Changing realm is disabled in preview mode.";
             print.write(PrintConsoleLine {
-                line: "Changing realm is disabled in preview mode.".to_owned(),
+                line: DISABLED.to_owned(),
             });
-            change_realm_requests.clear();
+            for request in change_realm_requests.read() {
+                request.response.send(Err(DISABLED.to_owned()));
+            }
         } else {
-            let ipfs = ipfs.clone();
-            let request = change_realm_requests.read().last().unwrap();
+            let mut requests = change_realm_requests.read().collect::<Vec<_>>();
+            let request = requests.pop().unwrap();
+            for superseded in requests {
+                superseded
+                    .response
+                    .send(Err("superseded by a later realm change".to_owned()));
+            }
 
+            let ipfs = ipfs.clone();
             let new_realm = map_realm_name(&request.new_realm);
             let content_server_override = request.content_server_override.to_owned();
+            let response = request.response.clone();
+            let (sx, rx) = RpcResultSender::channel();
+            *issued += 1;
+            in_flight.push(InFlightRealmChange {
+                id: *issued,
+                realm: request.new_realm.clone(),
+                report: request.report,
+                result: rx,
+            });
             IoTaskPool::get()
                 .spawn_compat(async move {
-                    ipfs.set_realm(new_realm, content_server_override).await;
+                    let result = ipfs
+                        .set_realm(new_realm, content_server_override)
+                        .await
+                        .map_err(|e| e.to_string());
+                    response.send(result.clone());
+                    sx.send(result);
                 })
                 .detach();
         }
@@ -884,21 +947,31 @@ impl IpfsIo {
         }
     }
 
-    pub async fn set_realm(&self, new_realm: String, content_server_override: Option<String>) {
+    /// Switch to `new_realm`. The current realm is only left once the new one has answered, so a
+    /// failure keeps the player where they are; with no current realm (boot) a failure is published
+    /// as a disconnected realm, as before.
+    pub async fn set_realm(
+        &self,
+        new_realm: String,
+        content_server_override: Option<String>,
+    ) -> Result<(), anyhow::Error> {
         let res = self
             .set_realm_inner(new_realm.clone(), content_server_override)
             .await;
-        if let Err(e) = res {
+        if let Err(e) = &res {
             error!("failed to set realm: {e}");
-            self.realm_config_sender
-                .send(Some(RealmConfig {
-                    about_url: new_realm.clone(),
-                    address: new_realm,
-                    about: Default::default(),
-                    connected: false,
-                }))
-                .expect("channel closed");
+            if self.context.read().await.about.is_none() {
+                self.realm_config_sender
+                    .send(Some(RealmConfig {
+                        about_url: new_realm.clone(),
+                        address: new_realm,
+                        about: Default::default(),
+                        connected: false,
+                    }))
+                    .expect("channel closed");
+            }
         }
+        res
     }
 
     pub fn set_realm_about(&self, about: ServerAbout) {
@@ -932,15 +1005,6 @@ impl IpfsIo {
         new_realm: String,
         content_server_override: Option<String>,
     ) -> Result<(), anyhow::Error> {
-        self.realm_config_sender.send(None).expect("channel closed");
-        let mut write = self.context.write().await;
-        if write.about.is_some() {
-            info!("disconnecting");
-        }
-
-        write.about = None;
-        drop(write);
-
         let mut retries = 0;
         let mut about;
         let mut final_url;
@@ -976,6 +1040,16 @@ impl IpfsIo {
                 break;
             }
         }
+
+        // The destination answered: only now leave the current realm.
+        self.realm_config_sender.send(None).expect("channel closed");
+        let mut write = self.context.write().await;
+        if write.about.is_some() {
+            info!("disconnecting");
+        }
+
+        write.about = None;
+        drop(write);
 
         if let Err(e) = self.update_scene_urns(&mut about, &new_realm).await {
             error!("failed to update scene urns: {e}");

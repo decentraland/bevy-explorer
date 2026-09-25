@@ -4,6 +4,7 @@ use common::{
     rpc::{RpcCall, RpcResultSender},
     structs::{AppConfig, PreviewMode, PrimaryUser, SceneLoadDistance},
 };
+use console::PendingConsoleResponses;
 use scene_runner::{
     initialize_scene::{parcels_in_range, ScenePointers},
     OutOfWorld,
@@ -25,19 +26,23 @@ pub fn change_location(
     mut commands: Commands,
     mut input: ConsoleCommand<ChangeLocationCommand>,
     mut player: Query<(Entity, &mut Transform), With<PrimaryUser>>,
+    mut pending: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(command)) = input.take() {
         if let Some(realm) = command.realm {
+            let (response, rx) = RpcResultSender::channel();
             commands.send_event(RpcCall::TeleportPlayer {
                 scene: None,
                 to: Some(IVec2::new(command.x, command.y)),
                 realm: Some(realm.clone()),
-                response: RpcResultSender::default(),
+                response,
             });
-            input.reply_ok(format!(
-                "new location: {:?} in {realm}",
-                (command.x, command.y)
-            ));
+            let location = (command.x, command.y);
+            pending.push_receiver(
+                rx,
+                move |result| result.map(|()| format!("new location: {location:?} in {realm}")),
+                input.take_responder(),
+            );
             return;
         }
         if let Ok((ent, mut transform)) = player.single_mut() {

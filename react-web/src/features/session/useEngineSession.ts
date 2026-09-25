@@ -1178,7 +1178,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!submitted || destinationPicked || urlDestination.current == null) return
     const dest = urlDestination.current
     if (dest.kind === 'world' && driverRef.current?.launch == null) {
-      // Native: ?realm= is injected by the engine from its own --server, so the engine is
+      // Native: ?realm= is injected by the engine from its own --realm, so the engine is
       // already there — skip the picker and keep the realm (the no-launch pickDestination(null)
       // path). No validation fetch either: the engine booted on this realm, and preview/file
       // realms wouldn't pass the worlds-server about probe anyway.
