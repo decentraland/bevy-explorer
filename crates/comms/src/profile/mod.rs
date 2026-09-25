@@ -1190,9 +1190,11 @@ mod tests {
 
     #[test]
     fn evicts_only_stale_idle_entries() {
-        let mut cache = ProfileCache::default();
-        let entry = cache.touch(Address::from_low_u64_be(1));
-        let now = entry.last_access.unwrap();
+        let now = web_time::Instant::now();
+        let mut entry = ProfileEntry {
+            last_access: Some(now),
+            ..Default::default()
+        };
 
         assert!(!entry.evictable(now + PROFILE_EVICT_AFTER / 2));
         assert!(entry.evictable(now + PROFILE_EVICT_AFTER));
@@ -1203,7 +1205,7 @@ mod tests {
 
     #[test]
     fn touch_refreshes_access() {
-        let address = Address::from_low_u64_be(1);
+        let address = Address::ZERO;
         let mut cache = ProfileCache::default();
         cache.touch(address).last_access = None;
         let now = web_time::Instant::now();
