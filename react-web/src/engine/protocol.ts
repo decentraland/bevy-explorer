@@ -161,6 +161,8 @@ export type PageToScene =
   | CreateCommunityRequest
   | JoinCommunityRequest
   | LeaveCommunityRequest
+  | RequestToJoinCommunityRequest
+  | CancelJoinRequestRequest
   | GetCommunityDetailRequest
   | GetMapRequest
   | TeleportRequest
@@ -626,6 +628,8 @@ export interface Community {
   ownerName: string
   /** 'public' | 'private' — gates the join flow (public = join, private = request). */
   privacy?: string
+  /** Id of the local user's pending request to join (private communities). */
+  pendingRequestId?: string
 }
 
 export interface CommunitiesMessage {
@@ -655,6 +659,28 @@ export interface JoinCommunityRequest {
 export interface LeaveCommunityRequest {
   kind: 'leaveCommunity'
   id: string
+}
+
+/** Ask to join a private community (social-api POST /communities/{id}/requests). */
+export interface RequestToJoinCommunityRequest {
+  kind: 'requestToJoinCommunity'
+  id: string
+}
+
+export interface CancelJoinRequestRequest {
+  kind: 'cancelJoinRequest'
+  id: string
+  requestId: string
+}
+
+export type CommunityAction = 'join' | 'requestToJoin' | 'cancelJoinRequest' | 'leave'
+
+/** A community write the social-api rejected (scene → page), so the UI can say so. */
+export interface CommunityActionFailedMessage {
+  kind: 'communityActionFailed'
+  id: string
+  action: CommunityAction
+  message: string
 }
 
 /** A member of a community (Members tab). */
@@ -1098,6 +1124,7 @@ export type SceneToPage =
   | CatalogPageMessage
   | OutfitsMessage
   | CommunitiesMessage
+  | CommunityActionFailedMessage
   | CommunityDetailMessage
   | MapMessage
   | PlayerPoseMessage

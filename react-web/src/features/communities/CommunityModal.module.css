@@ -84,6 +84,11 @@
   line-height: 1.5;
   color: var(--ink-7);
 }
+.error {
+  margin: 8px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--error-text);
+}
 .headActions {
   flex: none;
   display: flex;

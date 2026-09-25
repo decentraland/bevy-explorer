@@ -23,6 +23,7 @@ import type {
   BindingEntry,
   ChatMessage,
   Community,
+  CommunityAction,
   CommunityDetailMessage,
   Emote,
   Friend,
@@ -51,6 +52,14 @@ import type {
 // an engine-rendered text field (e.g. a scene textinput) holds keyboard focus. Those fields
 // live on the canvas, so document.activeElement can't see them.
 type EngineFocusWindow = Window & { __engineTextFocus?: boolean }
+
+// Unity's wording (CommunityCardController *_ERROR_MESSAGE); the raw HTTP error only goes to the log.
+const COMMUNITY_ERROR: Record<CommunityAction, string> = {
+  join: 'There was an error joining the community. Please try again.',
+  requestToJoin: 'There was an error requesting to join community. Please try again.',
+  cancelJoinRequest: 'There was an error cancelling join request. Please try again.',
+  leave: 'There was an error leaving the community. Please try again.'
+}
 
 // The engine's clock starts at 10:00 and runs at 12× (crates/visuals/src/day_night.rs start_clock).
 // Fallbacks only: the menu reads the live clock with `/time` when it opens.
@@ -110,7 +119,12 @@ export interface CommunitiesState {
   /** Create a community (name + description + Public/Private + discoverable). */
   create: (input: { name: string; description: string; privacy: 'public' | 'private'; discoverable: boolean }) => void
   join: (id: string) => void
+  /** Ask to join a private community. */
+  requestToJoin: (id: string) => void
+  cancelRequest: (id: string, requestId: string) => void
   leave: (id: string) => void
+  /** The last community action the social-api rejected, for that community's modal. */
+  error: { id: string; message: string } | null
   /** Per-community detail (members/posts/places/events) for the open modal. */
   detail: CommunityDetailMessage | null
   /** Request a community's detail (call when its modal opens). */
@@ -575,6 +589,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [communities, setCommunities] = useState<Community[]>([])
   const [communitiesOpen, setCommunitiesOpen] = useState(false)
   const [communityDetail, setCommunityDetail] = useState<CommunityDetailMessage | null>(null)
+  const [communityError, setCommunityError] = useState<{ id: string; message: string } | null>(null)
   const [mapParcel, setMapParcel] = useState({ x: 0, y: 0 })
   const [mapOpen, setMapOpen] = useState(false)
   // Minimap pose: a ref, not state — see MinimapState.pose for why.
@@ -765,6 +780,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'communities':
           setCommunities(msg.communities)
+          break
+        case 'communityActionFailed':
+          setCommunityError({ id: msg.id, message: COMMUNITY_ERROR[msg.action] })
           break
         case 'communityDetail':
           setCommunityDetail(msg)
@@ -1350,9 +1368,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     []
   )
   const joinCommunity = useCallback((id: string) => {
+    setCommunityError(null)
     driverRef.current?.send({ kind: 'joinCommunity', id })
   }, [])
+  const requestToJoinCommunity = useCallback((id: string) => {
+    setCommunityError(null)
+    driverRef.current?.send({ kind: 'requestToJoinCommunity', id })
+  }, [])
+  const cancelJoinRequest = useCallback((id: string, requestId: string) => {
+    setCommunityError(null)
+    driverRef.current?.send({ kind: 'cancelJoinRequest', id, requestId })
+  }, [])
   const leaveCommunity = useCallback((id: string) => {
+    setCommunityError(null)
     driverRef.current?.send({ kind: 'leaveCommunity', id })
   }, [])
   const loadCommunityDetail = useCallback((id: string) => {
@@ -1891,7 +1919,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       outfits: outfits.outfits, outfitSlots: Math.min(10, 5 + outfits.namesForExtraSlots.length),
       saveOutfit, deleteOutfit, equipOutfit
     },
-    communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
+    communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, requestToJoin: requestToJoinCommunity, cancelRequest: cancelJoinRequest, leave: leaveCommunity, error: communityError, detail: communityDetail, loadDetail: loadCommunityDetail },
     map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace },
     minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
     places: { open: placesOpen, toggle: togglePlaces },

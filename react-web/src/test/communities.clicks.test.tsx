@@ -65,7 +65,7 @@ describe('community modal clicks', () => {
   })
 
   function renderModal(c: Community, d: CommunityDetailMessage | null = detail()) {
-    const spies = { onJoin: vi.fn(), onLeave: vi.fn(), onAddFriend: vi.fn(), onOpenChat: vi.fn(), onClose: vi.fn() }
+    const spies = { onJoin: vi.fn(), onRequestToJoin: vi.fn(), onCancelRequest: vi.fn(), onLeave: vi.fn(), onAddFriend: vi.fn(), onOpenChat: vi.fn(), onClose: vi.fn() }
     render(<CommunityModal community={c} detail={d} {...spies} />)
     return spies
   }
