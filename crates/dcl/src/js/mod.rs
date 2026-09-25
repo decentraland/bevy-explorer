@@ -503,6 +503,7 @@ mod scene_log_budget_tests {
         s.put(ctx());
         s.put(crate::CrdtStore::default());
         s.put(FilteredCrdtStore::default());
+        s.put(RendererStore(crate::CrdtStore::default()));
         s.put(AllocatorContext(ctx()));
         s.put(crate::CrdtComponentInterfaces::default());
         s.put(crate::RpcCalls::default());
@@ -604,6 +605,53 @@ mod scene_log_budget_tests {
                 .retained_data_bytes(),
             0,
             "dead entities' custom components must not be retained"
+        );
+    }
+
+    // Scene-initiated deletes reach the renderer mirror only via the scene's census (the
+    // engine->scene census that `update_from` reaps holds engine-initiated deaths only), so
+    // renderer-written values for them must be reaped there.
+    #[test]
+    fn scene_deletes_reap_the_renderer_store() {
+        use crate::interface::{crdt_context::CrdtContext, CrdtType};
+        use dcl_component::{DclReader, SceneComponentId, SceneCrdtTimestamp, SceneEntityId};
+
+        let (sx, _rx) = scene_response_channel();
+        let mut s = crdt_state();
+        s.put(sx);
+
+        let dead = SceneEntityId {
+            id: 600,
+            generation: 0,
+        };
+        let live = SceneEntityId {
+            id: 601,
+            generation: 0,
+        };
+        for entity in [dead, live] {
+            s.borrow_mut::<RendererStore>().0.try_update(
+                SceneComponentId::POINTER_RESULT,
+                CrdtType::LWW_ENT,
+                entity,
+                SceneCrdtTimestamp(1),
+                Some(&mut DclReader::new(&[0u8; 16])),
+            );
+            let ctx = s.borrow_mut::<CrdtContext>();
+            ctx.init(entity);
+            ctx.take_census();
+        }
+        let state = std::rc::Rc::new(std::cell::RefCell::new(s));
+
+        super::engine::crdt_send_to_renderer(state.clone(), &crate::crdt::delete_entity(&dead));
+
+        assert_eq!(
+            state
+                .borrow()
+                .borrow::<RendererStore>()
+                .0
+                .retained_data_bytes(),
+            16,
+            "only the live entity's renderer-written value must be retained"
         );
     }
 
