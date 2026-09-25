@@ -275,7 +275,7 @@ function Hud(): React.JSX.Element {
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
       {session.phase === 'entering' && (
-        <SceneLoadingOverlay scene={session.sceneLoading} travellingTo={session.travellingTo} />
+        <SceneLoadingOverlay scene={session.sceneLoading} progress={session.loadingProgress} travellingTo={session.travellingTo} />
       )}
       {session.phase === 'world' && !session.menuOpen && (
         <>

@@ -58,7 +58,7 @@ describe('in-world realm change', () => {
   })
 
   it('the loader names the destination while travelling', () => {
-    render(<SceneLoadingOverlay scene={{ visible: false, realmConnected: true, title: 'Genesis Plaza', pendingAssets: null }} travellingTo="boedo.dcl.eth" />)
+    render(<SceneLoadingOverlay scene={{ visible: false, realmConnected: true, title: 'Genesis Plaza', pendingAssets: null }} progress={5} travellingTo="boedo.dcl.eth" />)
     expect(screen.getByText(/travelling to boedo\.dcl\.eth/i)).toBeInTheDocument()
     expect(screen.queryByText('Genesis Plaza')).toBeNull()
   })

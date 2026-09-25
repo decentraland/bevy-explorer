@@ -2,7 +2,7 @@
 // Driven by the bridge scene's getSceneLoadingUIStream relay. Layout follows unity-explorer's
 // SceneLoadingScreenView: a top bar with LOADING N% over a progress line, and a tips carousel.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ControlButton } from '../../design'
 import type { SceneLoadingState } from '../../engine/protocol'
 import { keyHintFor, useBindingsSnapshot } from '../../lib/bindingLabels'
@@ -69,21 +69,17 @@ function TipsCarousel(): React.JSX.Element {
 
 export function SceneLoadingOverlay({
   scene,
+  progress,
   travellingTo = null
 }: {
   scene: SceneLoadingState | null
+  /** 0–100 across every loading stage (session.loadingProgress). */
+  progress: number
   /** A HUD travel is waiting on the engine: name the destination, not the scene being left. */
   travellingTo?: string | null
 }): React.JSX.Element {
-  // Track the peak pending-asset count to render a sensible progress bar.
-  const peak = useRef(0)
-  const pending = scene?.pendingAssets ?? null
-  if (pending != null && pending > peak.current) peak.current = pending
-
   const connecting = scene != null && !scene.realmConnected
-  const known = !connecting && pending != null && peak.current > 0
-  const percent = known ? Math.round((1 - pending / peak.current) * 100) : null
-  const status = connecting ? 'RECONNECTING…' : percent != null ? `LOADING ${percent}%` : 'LOADING'
+  const status = connecting ? 'RECONNECTING…' : `LOADING ${progress}%`
 
   return (
     <div className={styles.root}>
@@ -95,10 +91,7 @@ export function SceneLoadingOverlay({
         <span className={styles.status} role="status">{travellingTo != null ? `TRAVELLING TO ${travellingTo}` : status}</span>
       </header>
       <div className={styles.track}>
-        <div
-          className={`${styles.fill}${percent != null ? '' : ' ' + styles.indeterminate}`}
-          style={percent != null ? { width: `${percent}%` } : undefined}
-        />
+        <div className={styles.fill} style={{ width: `${progress}%` }} />
       </div>
       <TipsCarousel />
     </div>

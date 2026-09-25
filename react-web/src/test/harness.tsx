@@ -167,6 +167,7 @@ export function fakeSession(): EngineSession {
     phase: 'world',
     pickDestination: vi.fn(),
     sceneLoading: null,
+    loadingProgress: 0,
     travelError: null,
     dismissTravelError: vi.fn(),
     travellingTo: null,

@@ -16,7 +16,7 @@ afterEach(() => vi.useRealTimers())
 // Unity SceneLoadingScreenView: top bar with LOADING N%, a tips carousel rotating every 10s.
 describe('loading screen', () => {
   it('shows a tip with its illustration and one dot per tip', () => {
-    render(<SceneLoadingOverlay scene={loading()} />)
+    render(<SceneLoadingOverlay scene={loading()} progress={0} />)
     expect(screen.getByRole('heading', { name: LOADING_TIPS[0].title })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: LOADING_TIPS[0].title })).toHaveAttribute('src', LOADING_TIPS[0].image)
     expect(screen.getAllByRole('tab')).toHaveLength(LOADING_TIPS.length)
@@ -24,7 +24,7 @@ describe('loading screen', () => {
 
   it('rotates every 10s and the arrows and dots move between tips', () => {
     vi.useFakeTimers()
-    render(<SceneLoadingOverlay scene={loading()} />)
+    render(<SceneLoadingOverlay scene={loading()} progress={0} />)
     act(() => vi.advanceTimersByTime(TIP_ROTATE_MS))
     expect(screen.getByRole('heading', { name: LOADING_TIPS[1].title })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Previous tip' }))
@@ -37,17 +37,16 @@ describe('loading screen', () => {
 
   it('names the emote key instead of a placeholder', () => {
     const i = LOADING_TIPS.findIndex((t) => t.body.includes('{Emote}'))
-    render(<SceneLoadingOverlay scene={loading()} />)
+    render(<SceneLoadingOverlay scene={loading()} progress={0} />)
     fireEvent.click(screen.getAllByRole('tab')[i])
     expect(screen.queryByText(/\{Emote\}/)).toBeNull()
     expect(screen.getByText('B')).toBeInTheDocument()
   })
 
-  it('reports progress as LOADING N% once assets are counted, and RECONNECTING when the realm drops', () => {
-    const { rerender } = render(<SceneLoadingOverlay scene={loading({ pendingAssets: 10 })} />)
-    rerender(<SceneLoadingOverlay scene={loading({ pendingAssets: 6 })} />)
-    expect(screen.getByText('LOADING 40%')).toBeInTheDocument()
-    rerender(<SceneLoadingOverlay scene={loading({ realmConnected: false })} />)
+  it('shows the session progress, and RECONNECTING when the realm drops', () => {
+    const { rerender } = render(<SceneLoadingOverlay scene={loading({ pendingAssets: 6 })} progress={52} />)
+    expect(screen.getByText('LOADING 52%')).toBeInTheDocument()
+    rerender(<SceneLoadingOverlay scene={loading({ realmConnected: false })} progress={52} />)
     expect(screen.getByText('RECONNECTING…')).toBeInTheDocument()
   })
 })
