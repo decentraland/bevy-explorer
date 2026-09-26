@@ -1136,6 +1136,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         ensure('getWearables')
         ensure('getEmotes') // Backpack's Emotes tab reuses the emotes list.
         ensure('getOutfits') // Backpack's Outfits tab.
+        driverRef.current?.send({ kind: 'getOwnedNames' })
       }),
     [exclusive, ensure]
   )
@@ -2027,7 +2028,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     backpack: {
       list: catalogItems, total: catalogTotal, loading: catalogLoading, query: queryCatalog,
       equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, bodyShape, colors: avatarColors, setColor: setAvatarColor, equip: equipWearables, saveError, retrySave, revertSave, preview: previewWearables,
-      outfits: outfits.outfits, outfitSlots: Math.min(10, 5 + outfits.namesForExtraSlots.length),
+      outfits: outfits.outfits, outfitSlots: ownedNames.length > 0 ? 10 : 5,
       saveOutfit, deleteOutfit, equipOutfit
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, requestToJoin: requestToJoinCommunity, cancelRequest: cancelJoinRequest, leave: leaveCommunity, error: communityError, detail: communityDetail, loadDetail: loadCommunityDetail },
