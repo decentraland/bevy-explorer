@@ -738,6 +738,16 @@ fn create_ui_roots(
                 }
             };
 
+            // restyle an existing root in place rather than spawning a replacement, which
+            // would orphan the old root (the scene's ui nodes stay parented to it until the
+            // next relayout, so it can't simply be despawned either)
+            if let Some(link) = maybe_link {
+                if let Ok(mut root_cmds) = commands.get_entity(link.ui_entity) {
+                    root_cmds.try_insert(root_style);
+                    continue;
+                }
+            }
+
             let window_root = commands
                 .spawn((
                     root_style,
