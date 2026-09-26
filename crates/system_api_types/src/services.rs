@@ -33,6 +33,8 @@ pub enum Service {
     AssetBundleRegistry,
     /// World storage (storage delegation signing)
     Storage,
+    /// Badges service (scene badge awards, delegation signing)
+    Badges,
     /// Ethereum json-rpc websocket
     EthereumRpc,
     /// Social service websocket (friends)
@@ -75,6 +77,7 @@ impl Service {
             Service::AuthPage => ("https", "", "/auth"),
             Service::AssetBundleRegistry => ("https", "asset-bundle-registry", ""),
             Service::Storage => ("https", "storage", ""),
+            Service::Badges => ("https", "badges", ""),
             Service::EthereumRpc => ("wss", "rpc", ""),
             Service::SocialRpc => ("wss", "rpc-social-service-ea", ""),
             Service::Opensea => ("https", "opensea", ""),
@@ -98,6 +101,7 @@ impl Service {
             Service::AuthPage => "auth_page",
             Service::AssetBundleRegistry => "asset_bundle_registry",
             Service::Storage => "storage",
+            Service::Badges => "badges",
             Service::EthereumRpc => "ethereum_rpc",
             Service::SocialRpc => "social_rpc",
             Service::Opensea => "opensea",
@@ -188,6 +192,12 @@ pub struct ServiceOverrides {
     #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub storage: Option<String>,
 
+    /// Badges service; absent = `https://badges.<base>`. https only, like storage, except that a
+    /// loopback override (`http://localhost:<port>`) is signed for so a local badges service can
+    /// be driven from a preview run
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
+    pub badges: Option<String>,
+
     /// Ethereum json-rpc websocket; absent = `wss://rpc.<base>`
     #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub ethereum_rpc: Option<String>,
@@ -227,6 +237,7 @@ impl ServiceOverrides {
             Service::AuthPage => &self.auth_page,
             Service::AssetBundleRegistry => &self.asset_bundle_registry,
             Service::Storage => &self.storage,
+            Service::Badges => &self.badges,
             Service::EthereumRpc => &self.ethereum_rpc,
             Service::SocialRpc => &self.social_rpc,
             Service::Opensea => &self.opensea,

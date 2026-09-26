@@ -8,6 +8,7 @@
 
 use std::{collections::HashMap, str::FromStr};
 
+use alloy_core::primitives::Address;
 use alloy_signer_local::PrivateKeySigner;
 use base64::Engine;
 use bevy::prelude::*;
@@ -16,6 +17,7 @@ use serde::Deserialize;
 use crate::Wallet;
 
 pub const STORAGE_HOSTS: [&str; 2] = ["storage.decentraland.org", "storage.decentraland.zone"];
+pub const BADGES_HOSTS: [&str; 2] = ["badges.decentraland.org", "badges.decentraland.zone"];
 
 #[derive(Deserialize)]
 struct DelegationEnvelope {
@@ -129,6 +131,17 @@ impl StorageDelegation {
     pub fn is_expired(&self, now_millis: i64) -> bool {
         now_millis >= self.expiration
     }
+
+    /// The signed metadata for a badge award: [`Self::meta`] plus `targetAddress`, the player
+    /// the award names. The badges service compares it to the award path's player, so the
+    /// worker only writes it after confirming that player is present in the scene's room —
+    /// scene JS chooses the URL, the engine decides whether the name gets signed.
+    pub fn meta_with_target(&self, target: Address) -> String {
+        let mut meta: serde_json::Value =
+            serde_json::from_str(&self.meta).expect("meta is built by parse() as a json object");
+        meta["targetAddress"] = serde_json::Value::String(format!("{target:#x}"));
+        meta.to_string()
+    }
 }
 
 /// Per-scene world-storage delegations, plus a fallback slot for single-scene
@@ -170,6 +183,71 @@ pub fn is_storage_request(uri: &http::Uri) -> bool {
             .ok()
             .and_then(|storage| https_origin(&storage))
             == Some((host, port))
+}
+
+/// True when a signed fetch to `uri` targets the badges service and may be signed with the
+/// scene's delegation: exact-match badges hosts over https, or the resolved badges service
+/// (host and port). Unlike storage, a *loopback* http override is accepted, so a local badges
+/// service can be driven from a preview run; any other http origin is never signed for.
+pub fn is_badges_request(uri: &http::Uri) -> bool {
+    fn origin(u: &http::Uri) -> Option<(String, String, u16)> {
+        let scheme = u.scheme_str()?.to_owned();
+        let host = u.host()?.to_lowercase();
+        let port = u.port_u16().unwrap_or(if scheme == "https" { 443 } else { 80 });
+        Some((scheme, host, port))
+    }
+    let Some((scheme, host, port)) = origin(uri) else {
+        return false;
+    };
+    if scheme == "https" && BADGES_HOSTS.contains(&host.as_str()) {
+        return true;
+    }
+    let Some((o_scheme, o_host, o_port)) =
+        common::base_domain::service(common::base_domain::Service::Badges)
+            .parse::<http::Uri>()
+            .ok()
+            .and_then(|badges| origin(&badges))
+    else {
+        return false;
+    };
+    if (o_scheme, o_host.as_str(), o_port) != (scheme.clone(), host.as_str(), port) {
+        return false;
+    }
+    scheme == "https" || is_loopback(&host)
+}
+
+fn is_loopback(host: &str) -> bool {
+    host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
+/// The player a badge award names, from the award URL the SDK builds:
+/// `/badges/{badgeId}/awards/{player}`. `None` for any other path, so a delegation is never
+/// attached to a request shape the badges service doesn't expect.
+pub fn award_target(uri: &http::Uri) -> Option<Address> {
+    let mut segments = uri.path().trim_matches('/').split('/');
+    let shape = [segments.next()?, segments.next()?, segments.next()?];
+    let player = segments.next()?;
+    if segments.next().is_some() {
+        return None;
+    }
+    if shape[0] != "badges" || !is_badge_id(shape[1]) || shape[2] != "awards" {
+        return None;
+    }
+    if !player.starts_with("0x") {
+        return None;
+    }
+    player.parse::<Address>().ok()
+}
+
+/// `^bdg_[0-9a-f]{8,32}$`
+fn is_badge_id(id: &str) -> bool {
+    id.strip_prefix("bdg_").is_some_and(|hex| {
+        (8..=32).contains(&hex.len())
+            && hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
 }
 
 #[cfg(test)]
@@ -246,14 +324,117 @@ mod test {
         ));
     }
 
-    // NOTE: latches the process-wide storage override — the only test in this crate that may.
+    #[test]
+    fn badges_host_matching() {
+        assert!(is_badges_request(
+            &"https://badges.decentraland.org/badges/bdg_0123456789abcdef/awards/0x1"
+                .parse()
+                .unwrap()
+        ));
+        assert!(is_badges_request(
+            &"https://badges.decentraland.zone/x".parse().unwrap()
+        ));
+        assert!(!is_badges_request(
+            &"http://badges.decentraland.org/x".parse().unwrap()
+        ));
+        assert!(!is_badges_request(
+            &"https://badges.decentraland.org.evil.com/x".parse().unwrap()
+        ));
+        // storage is not badges and vice versa
+        assert!(!is_badges_request(
+            &"https://storage.decentraland.org/values/x".parse().unwrap()
+        ));
+        assert!(!is_storage_request(
+            &"https://badges.decentraland.org/x".parse().unwrap()
+        ));
+    }
+
+    #[test]
+    fn award_target_parses_only_the_award_shape() {
+        let player: Address = "0x63f9a92d8d61b48a9fff8d58080425a3012d05c8"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            award_target(
+                &"https://badges.decentraland.org/badges/bdg_0123456789abcdef/awards/0x63f9a92d8d61b48a9fff8d58080425a3012d05c8"
+                    .parse()
+                    .unwrap()
+            ),
+            Some(player)
+        );
+        // trailing slash and mixed-case address are fine
+        assert_eq!(
+            award_target(
+                &"https://badges.decentraland.org/badges/bdg_00000001/awards/0x63F9A92D8D61B48A9FFF8D58080425A3012D05C8/"
+                    .parse()
+                    .unwrap()
+            ),
+            Some(player)
+        );
+        for bad in [
+            "https://badges.decentraland.org/badges/bdg_00000001",
+            "https://badges.decentraland.org/badges/bdg_00000001/awards/notanaddress",
+            "https://badges.decentraland.org/badges/bdg_00000001/awards/63f9a92d8d61b48a9fff8d58080425a3012d05c8",
+            "https://badges.decentraland.org/badges/bdg_00000001/awards/0x63f9a92d8d61b48a9fff8d58080425a3012d05c8/extra",
+            "https://badges.decentraland.org/badges//awards/0x63f9a92d8d61b48a9fff8d58080425a3012d05c8",
+            "https://badges.decentraland.org/badges/marathon/awards/0x63f9a92d8d61b48a9fff8d58080425a3012d05c8",
+            "https://badges.decentraland.org/badges/bdg_0000001/awards/0x63f9a92d8d61b48a9fff8d58080425a3012d05c8",
+            "https://badges.decentraland.org/badges/bdg_000000000000000000000000000000000/awards/0x63f9a92d8d61b48a9fff8d58080425a3012d05c8",
+            "https://badges.decentraland.org/badges/bdg_0000000A/awards/0x63f9a92d8d61b48a9fff8d58080425a3012d05c8",
+            "https://badges.decentraland.org/badges/BDG_00000001/awards/0x63f9a92d8d61b48a9fff8d58080425a3012d05c8",
+            "https://badges.decentraland.org/worlds/w/badges/bdg_00000001/awards/0x63f9a92d8d61b48a9fff8d58080425a3012d05c8",
+            "https://badges.decentraland.org/users/0x63f9a92d8d61b48a9fff8d58080425a3012d05c8/badges",
+        ] {
+            assert_eq!(award_target(&bad.parse().unwrap()), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn meta_with_target_adds_the_player_and_keeps_the_scope_fields() {
+        let d = StorageDelegation::parse(&mint("2030-01-01T00:00:00Z"), "https://realm").unwrap();
+        let player: Address = "0x63F9A92D8D61B48A9FFF8D58080425A3012D05C8"
+            .parse()
+            .unwrap();
+        let meta: serde_json::Value = serde_json::from_str(&d.meta_with_target(player)).unwrap();
+        assert_eq!(
+            meta["targetAddress"],
+            "0x63f9a92d8d61b48a9fff8d58080425a3012d05c8"
+        );
+        assert_eq!(meta["signer"], "dcl:authoritative-server");
+        assert_eq!(meta["realmName"], "boedo.dcl.eth");
+        assert_eq!(meta["sceneId"], "bafkreitest");
+        // the plain meta never carries a target
+        assert!(!d.meta.contains("targetAddress"));
+    }
+
+    // NOTE: latches the process-wide service overrides — the only test in this crate that may.
     #[test]
     fn storage_override_matching() {
-        common::base_domain::set_services([(
-            common::base_domain::Service::Storage,
-            "https://storage.example:8443/",
-        )])
+        common::base_domain::set_services([
+            (
+                common::base_domain::Service::Storage,
+                "https://storage.example:8443/",
+            ),
+            (
+                common::base_domain::Service::Badges,
+                "http://localhost:4000/",
+            ),
+        ])
         .unwrap();
+        // a loopback http badges override is signed for (local badges service); the known hosts
+        // stay signed for alongside it; a non-loopback http origin never is
+        assert!(is_badges_request(
+            &"http://localhost:4000/badges/bdg_00000001/awards/0x1".parse().unwrap()
+        ));
+        assert!(!is_badges_request(
+            &"http://localhost:4001/badges/bdg_00000001/awards/0x1".parse().unwrap()
+        ));
+        assert!(is_badges_request(
+            &"https://badges.decentraland.org/x".parse().unwrap()
+        ));
+        assert!(!is_badges_request(
+            &"http://badges.example:4000/x".parse().unwrap()
+        ));
         assert!(is_storage_request(
             &"https://storage.example:8443/values/x".parse().unwrap()
         ));
