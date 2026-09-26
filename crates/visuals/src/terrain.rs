@@ -20,7 +20,6 @@ use bevy::{
     },
 };
 use common::{
-    dynamics::PLAYER_COLLIDER_RADIUS,
     sets::PostUpdateSets,
     structs::{CurrentRealm, EngineMovementControl, PrimaryUser},
     terrain::{
@@ -45,10 +44,6 @@ const EASE_STEPS_PER_SECOND: f32 = 1.0;
 const COLLIDER_SIZE: i32 = 64;
 /// The collider patch recentres on this grid (metres).
 const COLLIDER_RECENTRE: f32 = 16.0;
-/// Lift a player found this far under the surface (arrivals, rising ground). Collision resolution
-/// ignores ground that reaches the capsule's central segment (a radius above the feet), so this
-/// must be less than the radius, but more than a capsule's slope contact sits below the surface.
-const RECOVERY_DEPTH: f32 = PLAYER_COLLIDER_RADIUS * 0.5;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TerrainSet;
@@ -73,9 +68,9 @@ impl Plugin for TerrainPlugin {
                         .in_set(TerrainSet)
                         .before(PostUpdateSets::ColliderUpdate),
                     update_collider.in_set(PostUpdateSets::ColliderUpdate),
-                    recover
-                        .after(PostUpdateSets::ColliderUpdate)
-                        .before(PostUpdateSets::PlayerUpdate),
+                    floor_player
+                        .after(PostUpdateSets::PlayerUpdate)
+                        .before(PostUpdateSets::CameraUpdate),
                 ),
             );
 
@@ -258,6 +253,24 @@ impl TerrainSurface {
     /// Current (eased) height below a Bevy position.
     pub fn height_at(&self, position: Vec3) -> f32 {
         self.height(position.x, -position.z)
+    }
+
+    /// Height of the 1 m triangulated surface the collider and nearby ground use: the height
+    /// function at whole metres, each cell split along Unity's (x0, z0)-(x1, z1) diagonal.
+    pub fn cell_height_at(&self, position: Vec3) -> f32 {
+        let p = Vec2::new(position.x, -position.z);
+        let base = p.floor();
+        let (u, v) = (p.x - base.x, p.y - base.y);
+        let corner = |x: f32, z: f32| self.height(base.x + x, base.y + z);
+        let h00 = corner(0.0, 0.0);
+        let h11 = corner(1.0, 1.0);
+        if u >= v {
+            let h10 = corner(1.0, 0.0);
+            h00 + u * (h10 - h00) + v * (h11 - h10)
+        } else {
+            let h01 = corner(0.0, 1.0);
+            h00 + v * (h01 - h00) + u * (h11 - h01)
+        }
     }
 
     /// True if the parcel will be flat at height 0 once eased: no neighbouring target rises.
@@ -668,10 +681,10 @@ fn update_collider(
     );
 }
 
-/// A downward ground probe cannot find a hill above the avatar; lift arrivals found underneath.
-/// Normal capsule collision owns walking, slopes and jumps once on the surface. Deliberate
-/// penetration (movePlayerTo) is for scene colliders; there are none on an empty parcel.
-fn recover(
+/// Keep the player on or above the terrain of an empty parcel after movement each tick, as
+/// movement already floors at zero. The avatar then rides rising ground up instead of fighting
+/// it through collision; the heightfield collider stays for scene raycasts.
+fn floor_player(
     surface: Res<TerrainSurface>,
     pointers: Res<ScenePointers>,
     control: Res<EngineMovementControl>,
@@ -692,9 +705,9 @@ fn recover(
     {
         return;
     }
-    let height = surface.height_at(position);
-    if height - position.y > RECOVERY_DEPTH {
-        transform.translation.y = height + 0.05;
+    let height = surface.cell_height_at(position);
+    if position.y < height {
+        transform.translation.y = height;
     }
 }
 

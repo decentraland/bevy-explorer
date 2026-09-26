@@ -117,6 +117,22 @@ fn collider_follows_the_height_function_at_grid_points() {
             "{x},{z}: {actual} vs {expected}"
         );
     }
+    // between grid points the player floor matches the collider's triangles
+    for (dx, dz) in [
+        (-20.3, 7.8),
+        (0.25, -0.75),
+        (0.75, -0.25),
+        (12.6, -30.1),
+        (29.9, 29.2),
+    ] {
+        let (x, z) = (centre.x as f32 + dx, centre.y as f32 + dz);
+        let expected = ground_at(&mut data, x, z);
+        let actual = surface.cell_height_at(Vec3::new(x, 0.0, z));
+        assert!(
+            (actual - expected).abs() < 1e-3,
+            "{x},{z}: {actual} vs {expected}"
+        );
+    }
 }
 
 #[test]
