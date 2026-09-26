@@ -4,12 +4,25 @@
     #import bevy_pbr::forward_io::{VertexOutput, FragmentOutput};
     #import bevy_pbr::pbr_fragment::pbr_input_from_vertex_output;
     #import bevy_pbr::pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing};
+    #import bevy_pbr::{mesh_view_bindings::lights, shadows};
+    #import "embedded://shaders/shadow_softening.wgsl"::soften_directional_shadow
 #endif
 #import bevy_pbr::mesh_functions::get_tag;
 #import bevy_pbr::mesh_view_bindings::view;
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_2d
 #import "embedded://shaders/bound_material_effect.wgsl"::discard_dither
+
+#ifndef PREPASS_PIPELINE
+// same softened sun shadows as scene materials (see bound_material.wgsl)
+override fn shadows::fetch_directional_shadow(light_id: u32, frag_position: vec4<f32>, surface_normal: vec3<f32>, view_z: f32) -> f32 {
+    let base = shadows::fetch_directional_shadow(light_id, frag_position, surface_normal, view_z);
+    // far bound of the last cascade = the shadow distance for this light
+    let light = &lights.directional_lights[light_id];
+    let far = (*light).cascades[max((*light).num_cascades, 1u) - 1u].far_bound;
+    return soften_directional_shadow(base, far, view_z);
+}
+#endif
 
 struct ShellTexture {
     subdivisions: u32,
