@@ -616,7 +616,7 @@ fn update_tracker(
         resource_lookup
             .materials
             .values()
-            .filter(|h| materials.get(h.id()).is_some())
+            .filter(|id| materials.contains(**id))
             .count(),
     ));
 

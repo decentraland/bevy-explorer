@@ -1,6 +1,5 @@
 // TODO
 // - gltf collider flags
-// - clean up of cached colliders (when mesh is unloaded?)
 use std::{
     collections::BTreeMap,
     f32::consts::{PI, TAU},
@@ -189,6 +188,7 @@ impl Plugin for GltfDefinitionPlugin {
                 .before(update_gltf),
         );
         app.add_systems(Update, maintain_gltf_name_cache);
+        app.add_systems(Update, prune_resource_lookups);
         app.add_systems(SpawnScene, update_ready_gltfs.after(scene_spawner_system));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
         app.add_systems(
@@ -536,9 +536,58 @@ pub struct CachedMeshData {
 
 #[derive(Component, Default)]
 pub struct SceneResourceLookup {
-    pub materials: HashMap<Handle<StandardMaterial>, Handle<SceneMaterial>>,
+    // weak ids so the lookup doesn't keep gltf materials and their textures alive
+    pub materials: HashMap<AssetId<StandardMaterial>, AssetId<SceneMaterial>>,
     pub meshes_by_hash: HashMap<u64, CachedMeshData>,
     pub mesh_hashes_by_id: HashMap<AssetId<Mesh>, u64>,
+}
+
+fn removed_id<A: Asset>(ev: &AssetEvent<A>) -> Option<AssetId<A>> {
+    match ev {
+        AssetEvent::Removed { id } => Some(*id),
+        _ => None,
+    }
+}
+
+// drop lookup entries as soon as their assets are freed. entries are only inserted for
+// live assets, so the removed event always arrives after the insert
+fn prune_resource_lookups(
+    mut lookups: Query<&mut SceneResourceLookup>,
+    mut mesh_events: EventReader<AssetEvent<Mesh>>,
+    mut base_events: EventReader<AssetEvent<StandardMaterial>>,
+    mut bound_events: EventReader<AssetEvent<SceneMaterial>>,
+) {
+    let meshes: Vec<_> = mesh_events.read().filter_map(removed_id).collect();
+    let bases: Vec<_> = base_events.read().filter_map(removed_id).collect();
+    let bounds: HashSet<_> = bound_events.read().filter_map(removed_id).collect();
+    if meshes.is_empty() && bases.is_empty() && bounds.is_empty() {
+        return;
+    }
+
+    for mut lookup in lookups.iter_mut() {
+        let lookup = &mut *lookup;
+        for id in &meshes {
+            let Some(hash) = lookup.mesh_hashes_by_id.remove(id) else {
+                continue;
+            };
+            // several meshes can share a hash, and the entry may already have been rebuilt
+            // from another mesh after this one was freed
+            if lookup
+                .meshes_by_hash
+                .get(&hash)
+                .is_some_and(|data| data.mesh_id == *id)
+            {
+                lookup.meshes_by_hash.remove(&hash);
+            }
+        }
+        for id in &bases {
+            lookup.materials.remove(id);
+        }
+        if !bounds.is_empty() {
+            // by value: the key may already map to a rebuilt material
+            lookup.materials.retain(|_, bound| !bounds.contains(bound));
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -940,10 +989,12 @@ fn update_ready_gltfs(
                                 format!("Material{ix}")
                             });
 
-                        let h_scene_material = if let Some(h_scene_material) =
-                            resource_lookup.materials.get(&h_material.0)
+                        let h_scene_material = if let Some(h_scene_material) = resource_lookup
+                            .materials
+                            .get(&h_material.0.id())
+                            .and_then(|id| bound_mats.get_strong_handle(*id))
                         {
-                            h_scene_material.clone()
+                            h_scene_material
                         } else {
                             let Some(base) = base_mats.get(h_material) else {
                                 warn!(
@@ -967,7 +1018,7 @@ fn update_ready_gltfs(
                             });
                             resource_lookup
                                 .materials
-                                .insert(h_material.0.clone(), h_scene_material.clone());
+                                .insert(h_material.0.id(), h_scene_material.id());
 
                             *tracker.0.entry("Unique Materials").or_default() += 1;
                             h_scene_material
@@ -1185,11 +1236,7 @@ fn update_ready_gltfs(
                     animation_clips,
                 ));
             }
-            *tracker.0.entry("Live Meshes").or_default() = resource_lookup
-                .meshes_by_hash
-                .iter()
-                .filter(|(_, data)| meshes.get(data.mesh_id).is_some())
-                .count();
+            *tracker.0.entry("Live Meshes").or_default() = resource_lookup.meshes_by_hash.len();
         }
     }
 
@@ -2283,5 +2330,107 @@ fn update_gltf_linked_visibility(
         if let Ok(mut target_vis) = gltf_nodes.get_mut(link.gltf_entity) {
             *target_vis = *vis;
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use bevy::render::mesh::PrimitiveTopology;
+    use scene_material::SceneMaterialExt;
+
+    fn mesh_data(mesh_id: AssetId<Mesh>) -> CachedMeshData {
+        CachedMeshData {
+            mesh_id,
+            is_skinned: true,
+            shape: SharedShape::ball(0.01),
+            maybe_collider: Some(Handle::default()),
+        }
+    }
+
+    fn lookup(app: &App, scene: Entity) -> &SceneResourceLookup {
+        app.world().get::<SceneResourceLookup>(scene).unwrap()
+    }
+
+    #[test]
+    fn prune_resource_lookups_drops_removed_assets() {
+        let mut app = App::new();
+        app.add_event::<AssetEvent<Mesh>>()
+            .add_event::<AssetEvent<StandardMaterial>>()
+            .add_event::<AssetEvent<SceneMaterial>>()
+            .add_systems(Update, prune_resource_lookups);
+
+        // only used to mint distinct ids
+        let mut meshes = Assets::<Mesh>::default();
+        let mut base_mats = Assets::<StandardMaterial>::default();
+        let mut bound_mats = Assets::<SceneMaterial>::default();
+        let mut mesh = || {
+            meshes
+                .add(Mesh::new(
+                    PrimitiveTopology::TriangleList,
+                    RenderAssetUsages::default(),
+                ))
+                .id()
+        };
+        let [canon, dup, other, rebuilt] = [mesh(), mesh(), mesh(), mesh()];
+        let mut material = || {
+            (
+                base_mats.add(StandardMaterial::default()).id(),
+                bound_mats
+                    .add(SceneMaterial::new_unbounded(StandardMaterial::default()))
+                    .id(),
+            )
+        };
+        let [(b1, s1), (b2, s2), (b3, s3)] = [material(), material(), material()];
+
+        let mut initial = SceneResourceLookup::default();
+        // canon and dup share hash 1, canon is the cached one
+        initial.mesh_hashes_by_id.insert(canon, 1);
+        initial.mesh_hashes_by_id.insert(dup, 1);
+        initial.meshes_by_hash.insert(1, mesh_data(canon));
+        initial.mesh_hashes_by_id.insert(other, 2);
+        initial.meshes_by_hash.insert(2, mesh_data(other));
+        initial.materials.insert(b1, s1);
+        initial.materials.insert(b2, s2);
+        initial.materials.insert(b3, s3);
+        let scene = app.world_mut().spawn(initial).id();
+
+        // idle frame leaves everything alone
+        app.update();
+        assert_eq!(lookup(&app, scene).meshes_by_hash.len(), 2);
+        assert_eq!(lookup(&app, scene).mesh_hashes_by_id.len(), 3);
+        assert_eq!(lookup(&app, scene).materials.len(), 3);
+
+        // non-canonical mesh, a base material key, a scene material value, and a
+        // non-removal event that must be ignored
+        app.world_mut().send_event(AssetEvent::Removed { id: dup });
+        app.world_mut().send_event(AssetEvent::Unused { id: other });
+        app.world_mut().send_event(AssetEvent::Removed { id: b1 });
+        app.world_mut().send_event(AssetEvent::Removed { id: s2 });
+        app.update();
+        let l = lookup(&app, scene);
+        assert_eq!(l.mesh_hashes_by_id.len(), 2);
+        assert!(!l.mesh_hashes_by_id.contains_key(&dup));
+        assert_eq!(l.meshes_by_hash.get(&1).map(|d| d.mesh_id), Some(canon));
+        assert_eq!(l.meshes_by_hash.get(&2).map(|d| d.mesh_id), Some(other));
+        assert_eq!(l.materials.len(), 1);
+        assert_eq!(l.materials.get(&b3), Some(&s3));
+
+        // hash 2 was rebuilt from another mesh before the old one's removal was read
+        app.world_mut()
+            .get_mut::<SceneResourceLookup>(scene)
+            .unwrap()
+            .meshes_by_hash
+            .insert(2, mesh_data(rebuilt));
+        app.world_mut()
+            .send_event(AssetEvent::Removed { id: canon });
+        app.world_mut()
+            .send_event(AssetEvent::Removed { id: other });
+        app.update();
+        let l = lookup(&app, scene);
+        assert!(l.mesh_hashes_by_id.is_empty());
+        assert!(!l.meshes_by_hash.contains_key(&1));
+        assert_eq!(l.meshes_by_hash.get(&2).map(|d| d.mesh_id), Some(rebuilt));
+        assert_eq!(l.materials.len(), 1);
     }
 }
