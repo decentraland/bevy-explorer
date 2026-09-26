@@ -20,6 +20,7 @@ use bevy::{
     },
 };
 use common::{
+    dynamics::PLAYER_COLLIDER_RADIUS,
     sets::PostUpdateSets,
     structs::{CurrentRealm, EngineMovementControl, PrimaryUser},
     terrain::{height, texel_value, uv_size, TerrainChange, TerrainTargets, MAX_STEPS, ZERO},
@@ -41,8 +42,10 @@ const EASE_STEPS_PER_SECOND: f32 = 1.0;
 const COLLIDER_SIZE: i32 = 64;
 /// The collider patch recentres on this grid (metres).
 const COLLIDER_RECENTRE: f32 = 16.0;
-/// Lift a player found this far under the surface (arrivals, rising ground).
-const RECOVERY_DEPTH: f32 = 0.35;
+/// Lift a player found this far under the surface (arrivals, rising ground). Collision resolution
+/// ignores ground that reaches the capsule's central segment (a radius above the feet), so this
+/// must be less than the radius, but more than a capsule's slope contact sits below the surface.
+const RECOVERY_DEPTH: f32 = PLAYER_COLLIDER_RADIUS * 0.5;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TerrainSet;
@@ -648,17 +651,15 @@ fn update_collider(
 }
 
 /// A downward ground probe cannot find a hill above the avatar; lift arrivals found underneath.
-/// Normal capsule collision owns walking, slopes and jumps once on the surface.
+/// Normal capsule collision owns walking, slopes and jumps once on the surface. Deliberate
+/// penetration (movePlayerTo) is for scene colliders; there are none on an empty parcel.
 fn recover(
     surface: Res<TerrainSurface>,
     pointers: Res<ScenePointers>,
     control: Res<EngineMovementControl>,
     mut player: Query<&mut Transform, With<PrimaryUser>>,
 ) {
-    if !control.suppress_avatar_physics.is_empty()
-        || !control.suppress_clipping.is_empty()
-        || control.deliberate_penetration
-    {
+    if !control.suppress_avatar_physics.is_empty() || !control.suppress_clipping.is_empty() {
         return;
     }
     let Ok(mut transform) = player.single_mut() else {
