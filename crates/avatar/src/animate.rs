@@ -4,7 +4,10 @@ use std::{
 };
 
 use bevy::{
-    animation::{graph::AnimationMask, RepeatAnimation},
+    animation::{
+        graph::{AnimationMask, AnimationNodeType},
+        RepeatAnimation,
+    },
     ecs::system::SystemParam,
     gltf::Gltf,
     math::Vec3Swizzles,
@@ -1342,6 +1345,91 @@ enum Slot<'a> {
     },
 }
 
+/// Clip nodes an avatar's graph holds per slot kind before a new clip takes over an existing one:
+/// the graph can't drop nodes, and each keeps its clip loaded.
+const MAX_CLIP_NODES: usize = 16;
+
+/// How freely a slot kind's graph node can be handed to another clip.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum NodeUse {
+    /// Not on the player.
+    Idle,
+    /// On the player but only on its way out (a cross-fade's outgoing clip), at this weight.
+    Fading(f32),
+    /// The slot's current clip (playing, or fading in or out); never taken.
+    Pinned,
+}
+
+/// A node `add_or_recycle_clip` took over from an urn.
+#[derive(Debug, PartialEq)]
+struct Recycled {
+    /// the urn the node held, for the caller to forget
+    urn: String,
+    /// the node was still on the player, which the caller must stop
+    was_playing: bool,
+}
+
+/// Put `clip` on a graph node under `mask`: a new node while `nodes` (the slot kind's nodes, by
+/// urn) is under `MAX_CLIP_NODES`, else an existing one, which gets the clip swapped in (dropping
+/// its old one) and is returned with its old urn. An `Idle` node is taken first, else the `Fading`
+/// one with the lowest weight; `Pinned` ones never are. With every node pinned there's no slot and
+/// `None` comes back: the graph never grows past the cap, and the caller retries on a later frame.
+/// Indices stay stable, so no player or transition state needs remapping.
+fn add_or_recycle_clip<'a>(
+    graph: &mut AnimationGraph,
+    clip: Handle<AnimationClip>,
+    mask: AnimationMask,
+    nodes: impl ExactSizeIterator<Item = (&'a str, AnimationNodeIndex)>,
+    node_use: impl Fn(AnimationNodeIndex) -> NodeUse,
+) -> Option<(AnimationNodeIndex, Option<Recycled>)> {
+    if nodes.len() < MAX_CLIP_NODES {
+        return Some((graph.add_clip_with_mask(clip, mask, 1.0, graph.root), None));
+    }
+
+    // the idle node, else the faintest fading one (weight `None` for idle)
+    let mut best: Option<(&str, AnimationNodeIndex, Option<f32>)> = None;
+    for (urn, ix) in nodes {
+        let weight = match node_use(ix) {
+            NodeUse::Idle => {
+                best = Some((urn, ix, None));
+                break;
+            }
+            NodeUse::Fading(weight) => weight,
+            NodeUse::Pinned => continue,
+        };
+        if best.is_none_or(|(_, _, best)| best.is_some_and(|best| weight < best)) {
+            best = Some((urn, ix, Some(weight)));
+        }
+    }
+    let (urn, ix, weight) = best?;
+    let node = graph.get_mut(ix)?;
+    node.node_type = AnimationNodeType::Clip(clip);
+    node.mask = mask;
+    node.weight = 1.0;
+    Some((
+        ix,
+        Some(Recycled {
+            urn: urn.to_owned(),
+            was_playing: weight.is_some(),
+        }),
+    ))
+}
+
+/// How a slot kind's node stands on `player`, `current` being the slot's own clip.
+fn node_use(
+    player: &AnimationPlayer,
+    current: Option<AnimationNodeIndex>,
+    ix: AnimationNodeIndex,
+) -> NodeUse {
+    if current == Some(ix) {
+        return NodeUse::Pinned;
+    }
+    match player.animation(ix) {
+        Some(active) => NodeUse::Fading(active.weight()),
+        None => NodeUse::Idle,
+    }
+}
+
 /// Why a slot didn't play this frame.
 enum Hold {
     /// Clip, prop or sound still loading.
@@ -1352,6 +1440,8 @@ enum Hold {
     Failed,
     /// No animation player.
     NoPlayer,
+    /// Every graph node the slot kind may hold is in use; retried next frame.
+    NoNode,
 }
 
 /// What a slot played this frame.
@@ -1437,7 +1527,27 @@ fn play_slot(
                 None => {
                     debug!("adding clip");
                     let ix = match graph {
-                        Some(graph) => graph.add_clip(clip, 1.0, graph.root),
+                        Some(graph) => {
+                            let main = transitions.as_ref().and_then(|t| t.get_main_animation());
+                            let Some((ix, recycled)) = add_or_recycle_clip(
+                                graph,
+                                clip,
+                                0,
+                                clips.named.iter().map(|(urn, (ix, _))| (urn.as_str(), *ix)),
+                                |ix| node_use(&player, main, ix),
+                            ) else {
+                                return Err(Hold::NoNode);
+                            };
+                            if let Some(recycled) = recycled {
+                                // an outgoing cross-fade clip is cut short; its transition entry
+                                // is dropped when the node is started below
+                                if recycled.was_playing {
+                                    player.stop(ix);
+                                }
+                                clips.named.remove(&recycled.urn);
+                            }
+                            ix
+                        }
                         None => AnimationNodeIndex::new(u32::MAX as usize),
                     };
                     clips.named.insert(playback.urn.to_string(), (ix, 0.0));
@@ -1450,14 +1560,34 @@ fn play_slot(
             };
             (clip_ix, playback.restart || !running)
         }
-        Slot::UpperBody { clips, .. } => {
+        Slot::UpperBody { clips, playing } => {
             let Some(graph) = graph else {
                 return Err(Hold::NoPlayer);
             };
-            let clip_ix = *clips.entry(playback.urn.to_string()).or_insert_with(|| {
-                debug!("adding masked clip {}", playback.urn);
-                graph.add_clip_with_mask(clip, LOWER_BODY_MASK, 1.0, graph.root)
-            });
+            let clip_ix = match clips.get(playback.urn.as_str()) {
+                Some(ix) => *ix,
+                None => {
+                    debug!("adding masked clip {}", playback.urn);
+                    let current = playing.map(|(ix, _)| ix);
+                    let Some((ix, recycled)) = add_or_recycle_clip(
+                        graph,
+                        clip,
+                        LOWER_BODY_MASK,
+                        clips.iter().map(|(urn, ix)| (urn.as_str(), *ix)),
+                        |ix| node_use(&player, current, ix),
+                    ) else {
+                        return Err(Hold::NoNode);
+                    };
+                    if let Some(recycled) = recycled {
+                        if recycled.was_playing {
+                            player.stop(ix);
+                        }
+                        clips.remove(&recycled.urn);
+                    }
+                    clips.insert(playback.urn.to_string(), ix);
+                    ix
+                }
+            };
             (
                 clip_ix,
                 playback.restart || !player.is_playing_animation(clip_ix),
@@ -1968,4 +2098,162 @@ fn play_scene_driven_sounds(
     }
     // Drop tracked state for avatars that no longer have the component.
     last_sounds.retain(|e, _| seen.contains(e));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn clip_of(graph: &AnimationGraph, ix: AnimationNodeIndex) -> AssetId<AnimationClip> {
+        match &graph.get(ix).unwrap().node_type {
+            AnimationNodeType::Clip(clip) => clip.id(),
+            _ => panic!("not a clip node"),
+        }
+    }
+
+    /// Fill a slot kind's nodes through `add_or_recycle_clip`, `node_use` judging each by urn.
+    fn fill(
+        clips: &mut Assets<AnimationClip>,
+        graph: &mut AnimationGraph,
+        nodes: &mut HashMap<String, AnimationNodeIndex>,
+        urn: &str,
+        node_use: impl Fn(&str) -> NodeUse,
+    ) -> Option<(AnimationNodeIndex, Option<Recycled>)> {
+        let clip = clips.add(AnimationClip::default());
+        let by_ix: HashMap<AnimationNodeIndex, String> =
+            nodes.iter().map(|(urn, ix)| (*ix, urn.clone())).collect();
+        let result = add_or_recycle_clip(
+            graph,
+            clip.clone(),
+            LOWER_BODY_MASK,
+            nodes.iter().map(|(urn, ix)| (urn.as_str(), *ix)),
+            |ix| node_use(&by_ix[&ix]),
+        );
+        if let Some((ix, recycled)) = &result {
+            if let Some(recycled) = recycled {
+                assert_eq!(nodes.remove(&recycled.urn), Some(*ix));
+            }
+            nodes.insert(urn.to_owned(), *ix);
+            assert_eq!(clip_of(graph, *ix), clip.id());
+            assert_eq!(graph.get(*ix).unwrap().mask, LOWER_BODY_MASK);
+        }
+        result
+    }
+
+    #[test]
+    fn clip_nodes_are_recycled_past_the_cap() {
+        let mut clips = Assets::<AnimationClip>::default();
+        let mut graph = AnimationGraph::new();
+        let mut nodes: HashMap<String, AnimationNodeIndex> = HashMap::new();
+
+        for i in 0..MAX_CLIP_NODES * 3 {
+            let (_, recycled) = fill(
+                &mut clips,
+                &mut graph,
+                &mut nodes,
+                &format!("emote{i}"),
+                |urn| match urn {
+                    "emote0" => NodeUse::Pinned,
+                    "emote1" => NodeUse::Fading(0.5),
+                    _ => NodeUse::Idle,
+                },
+            )
+            .expect("an idle node is always free");
+            if let Some(recycled) = recycled {
+                // idle nodes go before fading ones
+                assert!(recycled.urn != "emote0" && recycled.urn != "emote1");
+                assert!(!recycled.was_playing);
+            }
+        }
+
+        // root plus the capped clip nodes
+        assert_eq!(graph.nodes().count(), MAX_CLIP_NODES + 1);
+        assert_eq!(nodes.len(), MAX_CLIP_NODES);
+        assert!(nodes.contains_key("emote0") && nodes.contains_key("emote1"));
+    }
+
+    #[test]
+    fn busy_clip_nodes_give_up_the_faintest_fading_one() {
+        let mut clips = Assets::<AnimationClip>::default();
+        let mut graph = AnimationGraph::new();
+        let mut nodes: HashMap<String, AnimationNodeIndex> = HashMap::new();
+        for i in 0..MAX_CLIP_NODES {
+            fill(
+                &mut clips,
+                &mut graph,
+                &mut nodes,
+                &format!("emote{i}"),
+                |_| NodeUse::Pinned,
+            );
+        }
+
+        // every node on the player: the pinned one stays, the faintest fading one goes
+        let weight = |urn: &str| urn[5..].parse::<f32>().unwrap() / 100.0 + 0.2;
+        for i in 0..MAX_CLIP_NODES * 3 {
+            let expect = nodes
+                .keys()
+                .filter(|urn| *urn != "emote3")
+                .min_by(|a, b| weight(a).total_cmp(&weight(b)))
+                .cloned()
+                .unwrap();
+            let (_, recycled) = fill(
+                &mut clips,
+                &mut graph,
+                &mut nodes,
+                &format!("emote{}", MAX_CLIP_NODES + i),
+                |urn| match urn {
+                    "emote3" => NodeUse::Pinned,
+                    urn => NodeUse::Fading(weight(urn)),
+                },
+            )
+            .expect("a fading node can be taken");
+            assert_eq!(
+                recycled,
+                Some(Recycled {
+                    urn: expect,
+                    was_playing: true
+                })
+            );
+            assert_eq!(graph.nodes().count(), MAX_CLIP_NODES + 1);
+            assert_eq!(nodes.len(), MAX_CLIP_NODES);
+        }
+        assert!(nodes.contains_key("emote3"));
+    }
+
+    #[test]
+    fn all_pinned_clip_nodes_leave_no_slot() {
+        let mut clips = Assets::<AnimationClip>::default();
+        let mut graph = AnimationGraph::new();
+        let mut nodes: HashMap<String, AnimationNodeIndex> = HashMap::new();
+        for i in 0..MAX_CLIP_NODES {
+            fill(
+                &mut clips,
+                &mut graph,
+                &mut nodes,
+                &format!("emote{i}"),
+                |_| NodeUse::Pinned,
+            );
+        }
+        let before: Vec<_> = nodes
+            .values()
+            .map(|ix| (*ix, clip_of(&graph, *ix)))
+            .collect();
+
+        for i in 0..MAX_CLIP_NODES * 3 {
+            let result = fill(
+                &mut clips,
+                &mut graph,
+                &mut nodes,
+                &format!("extra{i}"),
+                |_| NodeUse::Pinned,
+            );
+            assert!(result.is_none());
+            assert_eq!(graph.nodes().count(), MAX_CLIP_NODES + 1);
+            assert_eq!(nodes.len(), MAX_CLIP_NODES);
+        }
+        // nothing was touched
+        for (ix, clip) in before {
+            assert_eq!(clip_of(&graph, ix), clip);
+        }
+    }
 }
