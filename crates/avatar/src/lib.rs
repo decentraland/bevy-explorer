@@ -166,6 +166,7 @@ impl Plugin for AvatarPlugin {
 
         app.add_observer(add_attach_points_to_avatar_shape);
         app.add_observer(remove_attach_points_from_avatar_shape);
+        app.add_observer(release_avatar_instances);
     }
 }
 
@@ -905,6 +906,22 @@ pub struct AvatarLoaded {
 }
 #[derive(Component)]
 pub struct AvatarProcessed;
+
+// the instance entities go with the render entity (they are its descendants), but the
+// spawner keeps an entity map per instance until told otherwise
+fn release_avatar_instances(
+    trigger: Trigger<OnReplace, AvatarLoaded>,
+    loaded: Query<&AvatarLoaded>,
+    mut scene_spawner: ResMut<SceneSpawner>,
+) {
+    let Ok(loaded) = loaded.get(trigger.target()) else {
+        return;
+    };
+    scene_spawner.unregister_instance(loaded.body_instance);
+    for instance in loaded.wearable_instances.iter().flatten() {
+        scene_spawner.unregister_instance(*instance);
+    }
+}
 
 // instantiate avatar gltfs
 #[allow(clippy::type_complexity)]
@@ -2045,5 +2062,48 @@ fn remove_attach_points_from_avatar_shape(
             commands.entity(attach_point).try_despawn();
         }
         commands.entity(entity).try_remove::<AttachPoints>();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::scene::{ScenePlugin, SceneSpawner};
+
+    use super::*;
+
+    #[test]
+    fn avatar_instances_are_released_on_despawn() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), ScenePlugin));
+        app.add_observer(release_avatar_instances);
+
+        let mut scene_world = World::new();
+        scene_world.spawn_empty();
+        let h_scene = app
+            .world_mut()
+            .resource_mut::<Assets<Scene>>()
+            .add(Scene::new(scene_world));
+
+        let ent = app.world_mut().spawn_empty().id();
+        let mut scene_spawner = app.world_mut().resource_mut::<SceneSpawner>();
+        let body_instance = scene_spawner.spawn_as_child(h_scene.clone(), ent);
+        let wearable_instance = scene_spawner.spawn_as_child(h_scene, ent);
+        app.world_mut().entity_mut(ent).insert(AvatarLoaded {
+            body_instance,
+            wearable_instances: vec![None, Some(wearable_instance)],
+            skin_materials: Default::default(),
+            hair_materials: Default::default(),
+        });
+        app.update();
+
+        let spawner = app.world().resource::<SceneSpawner>();
+        assert!(spawner.instance_is_ready(body_instance));
+        assert!(spawner.instance_is_ready(wearable_instance));
+
+        app.world_mut().entity_mut(ent).despawn();
+
+        let spawner = app.world().resource::<SceneSpawner>();
+        assert!(!spawner.instance_is_ready(body_instance));
+        assert!(!spawner.instance_is_ready(wearable_instance));
     }
 }
