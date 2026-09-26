@@ -9,7 +9,7 @@ use bevy::{
         mesh::MeshVertexBufferLayoutRef,
         primitives::Aabb,
         render_resource::{
-            AsBindGroup, Face, RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError,
+            AsBindGroup, RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError,
         },
         view::RenderLayers,
     },
@@ -166,14 +166,15 @@ impl Material for ShellTexture {
 
     // The prepass pipeline defaults to no culling while the main pass culls back faces, so shell
     // undersides wrote prepass depth that the main pass never drew over (the clear colour showed
-    // when looking up at shells, e.g. from inside a hill). Cull back faces in both.
+    // when looking up at shells, e.g. from inside a hill). Draw both faces in both passes, so the
+    // inside of a hill shows; the shader dithers shells out in front of the player.
     fn specialize(
         _pipeline: &MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
         _layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        descriptor.primitive.cull_mode = Some(Face::Back);
+        descriptor.primitive.cull_mode = None;
         Ok(())
     }
 }

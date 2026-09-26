@@ -6,8 +6,10 @@
     #import bevy_pbr::pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing};
 #endif
 #import bevy_pbr::mesh_functions::get_tag;
+#import bevy_pbr::mesh_view_bindings::view;
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_2d
+#import "embedded://shaders/bound_material_effect.wgsl"::discard_dither
 
 struct ShellTexture {
     subdivisions: u32,
@@ -40,6 +42,10 @@ fn cell_hash2(cell: vec2<i32>) -> vec2<f32> {
 
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
+    // shells are double sided so the inside of a hill shows; dither them out between the camera
+    // and the player like scene materials
+    discard_dither(in.position.xy, in.world_position.xyz, view.user_value, true);
+
     let tag = get_tag(in.instance_index);
     let layer = tag & 0xFFFF;
     let lod = tag >> 16;
@@ -92,7 +98,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
 #ifdef PREPASS_PIPELINE
 #ifdef NORMAL_PREPASS
-    out.normal = vec4(in.world_normal * 0.5 + vec3(0.5), 1.0);
+    let normal = select(-in.world_normal, in.world_normal, is_front);
+    out.normal = vec4(normal * 0.5 + vec3(0.5), 1.0);
 #endif
 
 #ifdef UNCLIPPED_DEPTH_ORTHO_EMULATION
