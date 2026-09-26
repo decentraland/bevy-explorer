@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { BackpackPage } from '../features/backpack/BackpackPage'
 import type { Wearable } from '../engine/protocol'
-import { fakeProfileState, fakeSession } from './harness'
+import { enterAsGuest, fakeProfileState, fakeSession, renderSession } from './harness'
 
 const MALE = 'urn:decentraland:off-chain:base-avatars:BaseMale'
 const FEMALE = 'urn:decentraland:off-chain:base-avatars:BaseFemale'
@@ -39,5 +39,15 @@ describe('backpack follows Unity', () => {
     fireEvent.click(screen.getByRole('tab', { name: /emotes/i }))
     expect(screen.queryByRole('button', { name: /saved outfits/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /marketplace/i })).toBeNull()
+  })
+
+  it('gives 10 outfit slots to anyone who owns a NAME, else 5', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    act(() => h.session().backpack.toggle())
+    expect(h.driver.sentOf('getOwnedNames')).toHaveLength(1)
+    expect(h.session().backpack.outfitSlots).toBe(5)
+    act(() => h.driver.emit({ kind: 'ownedNames', names: ['mojito'] }))
+    expect(h.session().backpack.outfitSlots).toBe(10)
   })
 })
