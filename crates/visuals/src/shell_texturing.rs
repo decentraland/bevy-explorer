@@ -1,13 +1,16 @@
 use bevy::{
     asset::{embedded_asset, embedded_path, weak_handle},
     ecs::{component::HookContext, spawn::SpawnableList, world::DeferredWorld},
-    pbr::NotShadowCaster,
+    pbr::{MaterialPipeline, MaterialPipelineKey, NotShadowCaster},
     platform::collections::HashMap,
     prelude::*,
     render::{
         mesh::MeshTag,
+        mesh::MeshVertexBufferLayoutRef,
         primitives::Aabb,
-        render_resource::{AsBindGroup, ShaderRef},
+        render_resource::{
+            AsBindGroup, Face, RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError,
+        },
         view::RenderLayers,
     },
     transform::TransformSystem,
@@ -159,6 +162,19 @@ impl Material for ShellTexture {
 
     fn prepass_fragment_shader() -> ShaderRef {
         Self::fragment_shader()
+    }
+
+    // The prepass pipeline defaults to no culling while the main pass culls back faces, so shell
+    // undersides wrote prepass depth that the main pass never drew over (the clear colour showed
+    // when looking up at shells, e.g. from inside a hill). Cull back faces in both.
+    fn specialize(
+        _pipeline: &MaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        descriptor.primitive.cull_mode = Some(Face::Back);
+        Ok(())
     }
 }
 
