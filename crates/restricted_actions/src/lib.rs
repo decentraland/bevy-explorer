@@ -2338,7 +2338,7 @@ fn handle_entity_definition(
     })
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_startup_scenes(
     mut startup_scenes: ResMut<StartupScenes>,
     mut tasks: Local<Vec<(usize, Task<Result<(String, PortableSource), String>>)>>,
@@ -2352,7 +2352,11 @@ pub fn process_startup_scenes(
         )>,
     >,
     mut writer: EventWriter<PreviewCommand>,
+    mut sockets: Local<PreviewSockets>,
 ) {
+    // restart dropped sockets every update: once the lookups are done we return early below
+    sockets.respawn_finished();
+
     if let Some(command) = channel.as_mut().and_then(|(_, rx)| rx.try_recv().ok()) {
         writer.write(command);
         *done = false;
@@ -2393,9 +2397,8 @@ pub fn process_startup_scenes(
                     .get_or_insert_with(tokio::sync::mpsc::unbounded_channel)
                     .0
                     .clone();
-                IoTaskPool::get()
-                    .spawn(handle_preview_socket(scene.source.clone(), sx.clone()))
-                    .detach();
+                // reload commands re-run the lookups, so reuse a live socket
+                sockets.ensure(&scene.source, &sx);
                 scene.hot_reload = Some(sx);
             }
             false
@@ -2412,6 +2415,112 @@ pub fn process_startup_scenes(
 
     if tasks.is_empty() {
         *done = true;
+    }
+}
+
+struct PreviewSocket {
+    sender: tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+    task: Task<Result<(), anyhow::Error>>,
+}
+
+// one preview socket per startup scene source, kept alive across reloads
+#[derive(Default)]
+pub struct PreviewSockets(HashMap<String, PreviewSocket>);
+
+fn spawn_preview_socket(
+    source: &str,
+    sx: &tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+) -> Task<Result<(), anyhow::Error>> {
+    IoTaskPool::get().spawn(handle_preview_socket(source.to_owned(), sx.clone()))
+}
+
+impl PreviewSockets {
+    // track `source` and spawn its socket unless it is already tracked (dropped sockets are
+    // restarted by `respawn_finished`). returns true if spawned
+    fn ensure(
+        &mut self,
+        source: &str,
+        sx: &tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+    ) -> bool {
+        if let Some(socket) = self.0.get_mut(source) {
+            socket.sender = sx.clone();
+            return false;
+        }
+        self.0.insert(
+            source.to_owned(),
+            PreviewSocket {
+                sender: sx.clone(),
+                task: spawn_preview_socket(source, sx),
+            },
+        );
+        true
+    }
+
+    // restart any socket whose task has ended. `handle_preview_socket` backs off before
+    // returning, so this can't spin. returns the number restarted
+    fn respawn_finished(&mut self) -> usize {
+        let mut restarted = 0;
+        for (source, socket) in self.0.iter_mut() {
+            if let Some(result) = socket.task.complete() {
+                if let Err(e) = result {
+                    warn!("preview socket for {source} failed: {e}, restarting");
+                }
+                socket.task = spawn_preview_socket(source, &socket.sender);
+                restarted += 1;
+            }
+        }
+        restarted
+    }
+}
+
+#[cfg(test)]
+mod preview_socket_tests {
+    use super::*;
+    use bevy::tasks::TaskPool;
+
+    fn setup() -> (
+        tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+        tokio::sync::mpsc::UnboundedReceiver<PreviewCommand>,
+    ) {
+        IoTaskPool::get_or_init(TaskPool::new);
+        tokio::sync::mpsc::unbounded_channel()
+    }
+
+    #[test]
+    fn live_preview_socket_is_not_duplicated() {
+        let (sx, _rx) = setup();
+        let mut sockets = PreviewSockets::default();
+
+        // an invalid address fails fast, then the task backs off for 5 secs
+        assert!(sockets.ensure("invalid", &sx));
+        assert!(!sockets.ensure("invalid", &sx));
+        assert!(sockets.ensure("other", &sx));
+        assert_eq!(sockets.0.len(), 2);
+        assert_eq!(sockets.respawn_finished(), 0);
+    }
+
+    // blocks a thread waiting on the task, which wasm can't do (nor call `is_finished`)
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn finished_preview_socket_is_respawned() {
+        let (sx, _rx) = setup();
+        let mut sockets = PreviewSockets::default();
+        assert!(sockets.ensure("invalid", &sx));
+
+        // simulate a dropped connection
+        let socket = sockets.0.get_mut("invalid").unwrap();
+        socket.task = IoTaskPool::get().spawn(async { Err(anyhow::anyhow!("disconnected")) });
+        let start = std::time::Instant::now();
+        while !socket.task.is_finished() {
+            assert!(start.elapsed() < std::time::Duration::from_secs(5));
+            std::thread::yield_now();
+        }
+
+        assert_eq!(sockets.respawn_finished(), 1);
+        // the replacement is live (backing off), so it isn't restarted again
+        assert_eq!(sockets.respawn_finished(), 0);
+        assert!(!sockets.ensure("invalid", &sx));
+        assert_eq!(sockets.0.len(), 1);
     }
 }
 
