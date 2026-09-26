@@ -12,6 +12,7 @@ use common::{
         AppConfig, AvatarDynamicState, CameraOverride, CursorLocks, HeadSync, MoveKind,
         PrimaryCamera, PrimaryUser, PLAYER_CAMERA_FOV,
     },
+    terrain::PlayerTerrainHeight,
     util::ModifyComponentExt,
 };
 use dcl_component::proto_components::sdk::components::common::camera_transition::TransitionMode;
@@ -161,6 +162,7 @@ pub fn update_camera_position(
     mut prev_override: Local<Option<CameraOverride>>,
     mut prev_oow: Local<bool>,
     gt_helper: TransformHelper,
+    terrain_height: Option<Res<PlayerTerrainHeight>>,
 ) {
     let (
         Ok((player_transform, dynamic_state, is_oow, mut head_sync)),
@@ -263,8 +265,10 @@ pub fn update_camera_position(
         let target_translation =
             player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
 
-        if target_translation.y < distance * 0.25 {
-            distance = player_head.y / (0.25 - target_direction.y);
+        // keep above the ground: the empty-parcel terrain under the player, else zero
+        let ground = terrain_height.map_or(0.0, |height| height.0);
+        if target_translation.y - ground < distance * 0.25 {
+            distance = (player_head.y - ground) / (0.25 - target_direction.y);
         }
 
         target_transform.translation =

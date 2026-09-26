@@ -23,7 +23,10 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::PostUpdateSets,
     structs::{CurrentRealm, EngineMovementControl, PrimaryUser},
-    terrain::{height, texel_value, uv_size, TerrainChange, TerrainTargets, MAX_STEPS, ZERO},
+    terrain::{
+        height, texel_value, uv_size, PlayerTerrainHeight, TerrainChange, TerrainTargets,
+        MAX_STEPS, ZERO,
+    },
 };
 use dcl_component::SceneEntityId;
 use ipfs::{ipfs_path::IpfsPath, EntityDefinition};
@@ -57,6 +60,7 @@ impl Plugin for TerrainPlugin {
         embedded_asset!(app, "terrain_vertex.wgsl");
 
         app.init_resource::<TerrainSurface>()
+            .init_resource::<PlayerTerrainHeight>()
             .init_resource::<TerrainTextureWrites>()
             .add_plugins(ExtractResourcePlugin::<TerrainTextureWrites>::default())
             .add_plugins(MaterialPlugin::<TerrainFlatMaterial>::default())
@@ -64,7 +68,7 @@ impl Plugin for TerrainPlugin {
             .add_systems(
                 PostUpdate,
                 (
-                    (sync, ease, update_texture)
+                    (sync, ease, (update_texture, player_height))
                         .chain()
                         .in_set(TerrainSet)
                         .before(PostUpdateSets::ColliderUpdate),
@@ -496,6 +500,20 @@ fn sync(
 
 fn ease(time: Res<Time>, mut surface: ResMut<TerrainSurface>) {
     surface.ease(time.delta_secs());
+}
+
+fn player_height(
+    surface: Res<TerrainSurface>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
+    mut height: ResMut<PlayerTerrainHeight>,
+) {
+    let Ok(player) = player.single() else {
+        return;
+    };
+    let position = player.translation();
+    if position.is_finite() {
+        height.0 = surface.height_at(position);
+    }
 }
 
 /// Texel updates for the step texture, applied in the render world without re-uploading it.

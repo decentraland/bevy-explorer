@@ -4,7 +4,7 @@
 //! coordinates here (negate Bevy Z). Parcels whose occupancy is not yet known count as occupied,
 //! so heights only ever rise as the realm resolves.
 
-use bevy::math::IVec2;
+use bevy::{ecs::resource::Resource, math::IVec2};
 
 pub const STEP_HEIGHT: f32 = 1.8;
 /// Unity's step count is the largest distance in the realm. It is capped here so that a parcel's
@@ -148,6 +148,10 @@ pub fn mountain_noise(x: f32, unity_z: f32) -> f32 {
     }
     height * 3.0
 }
+
+/// Current terrain height under the primary user (0 on scene parcels).
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub struct PlayerTerrainHeight(pub f32);
 
 /// A resolved region of the step grid.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
