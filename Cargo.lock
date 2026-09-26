@@ -13313,6 +13313,7 @@ dependencies = [
  "console 0.1.0",
  "dcl",
  "dcl_component",
+ "ipfs",
  "noise",
  "scene_runner",
  "web-time",

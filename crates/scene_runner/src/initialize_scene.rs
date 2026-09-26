@@ -21,6 +21,7 @@ use common::{
         server_mode, AppConfig, AppError, CurrentRealm, EditorMode, GlobalCrdtStateUpdate,
         IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
     },
+    terrain::{Occupancy, TerrainChange, TerrainTargets},
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::global_crdt::{CrdtContexts, GlobalCrdtState};
@@ -844,6 +845,7 @@ pub struct ScenePointers {
     // the in-range parcels. None = no clipping (normal client behaviour).
     bake_clip: Option<(IVec2, IVec2)>,
     crcs: Vec<Vec<Option<u32>>>,
+    terrain: TerrainTargets,
 }
 
 impl Default for ScenePointers {
@@ -853,6 +855,7 @@ impl Default for ScenePointers {
             realm_bounds: (IVec2::MAX, IVec2::MIN),
             bake_clip: None,
             crcs: Default::default(),
+            terrain: Default::default(),
         }
     }
 }
@@ -889,6 +892,45 @@ impl ScenePointers {
         self.pointers.retain(|_, r| r != &PointerResult::Nothing);
         // exists will be rechecked / replaced when active entities returns
         self.crcs.clear();
+        self.terrain.invalidate();
+    }
+
+    /// Start terrain afresh for a new realm. Worlds get Unity's extra border padding.
+    pub fn reset_terrain(&mut self, world: bool) {
+        self.terrain.reset(world);
+    }
+
+    pub fn terrain(&self) -> &TerrainTargets {
+        &self.terrain
+    }
+
+    /// Resolve terrain step targets for pointers changed since the last call.
+    pub fn resolve_terrain(&mut self) -> Option<TerrainChange> {
+        let Self {
+            pointers,
+            realm_bounds,
+            terrain,
+            ..
+        } = self;
+        let realm_bounds = *realm_bounds;
+        terrain.resolve(
+            |parcel| {
+                if realm_bounds.0.cmpgt(realm_bounds.1).any() {
+                    return Occupancy::Unknown;
+                }
+                if parcel.cmplt(realm_bounds.0).any() || parcel.cmpgt(realm_bounds.1).any() {
+                    return Occupancy::Empty;
+                }
+                match pointers.get(&parcel) {
+                    Some(PointerResult::Exists { .. }) => Occupancy::Occupied,
+                    Some(PointerResult::Nothing) => Occupancy::Empty,
+                    None => Occupancy::Unknown,
+                }
+            },
+            pointers.iter().filter_map(|(parcel, result)| {
+                matches!(result, PointerResult::Exists { .. }).then_some(*parcel)
+            }),
+        )
     }
 
     /// Restrict the effective realm bounds to the intersection with this box.
@@ -925,6 +967,8 @@ impl ScenePointers {
                 self.realm_bounds.1 = new_max;
             }
         }
+        self.terrain
+            .mark(parcel, matches!(result, PointerResult::Exists { .. }));
         self.pointers.insert(parcel, result);
         res
     }
@@ -1131,6 +1175,7 @@ pub fn process_realm_change(
                 PointerResult::Nothing => false,
                 PointerResult::Exists { hash, .. } => realm_scene_ids.contains_key(hash),
             });
+            pointers.terrain.invalidate();
         }
 
         if let Some(ref mut segment_config) = segment_config {
@@ -1199,6 +1244,13 @@ fn load_active_entities(
             }
         }
         pointers.set_realm(bounds_min, bounds_max);
+        pointers.reset_terrain(
+            current_realm
+                .config
+                .scenes_urn
+                .as_ref()
+                .is_some_and(|urns| !urns.is_empty()),
+        );
         for mut context in global_crdt.iter_mut() {
             context.set_bounds(bounds_min, bounds_max);
         }

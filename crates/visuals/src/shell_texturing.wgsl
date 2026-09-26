@@ -9,10 +9,15 @@
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_2d
 
-@group(2) @binding(0) var<uniform> subdivisions: u32;
-@group(2) @binding(1) var<uniform> layers: u32;
-@group(2) @binding(3) var<uniform> root_color: vec4<f32>;
-@group(2) @binding(4) var<uniform> tip_color: vec4<f32>;
+struct ShellTexture {
+    subdivisions: u32,
+    layers: u32,
+    padding: vec2<f32>,
+    root_color: vec4<f32>,
+    tip_color: vec4<f32>,
+}
+
+@group(2) @binding(0) var<uniform> shell: ShellTexture;
 
 // Pre-calculated constant: (0.85 * 0.5) = 0.425
 const SCALED_DIST: f32 = 0.425;
@@ -40,11 +45,11 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let lod = tag >> 16;
 
     let layer_f32 = f32(layer);
-    let layers_f32 = f32(layers);
+    let layers_f32 = f32(shell.layers);
     let factor = layer_f32 / layers_f32;
     let color_factor = factor * color_attenuation(layers_f32);
 
-    let subdivisions_f32 = f32(subdivisions);
+    let subdivisions_f32 = f32(shell.subdivisions);
 
     let wpx = in.world_position.x * subdivisions_f32;
     let wpz = in.world_position.z * subdivisions_f32;
@@ -98,7 +103,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 #ifndef PREPASS_PIPELINE
     var pbr_input = pbr_input_from_vertex_output(in, is_front, true);
     pbr_input.material.reflectance = vec3(0.125);
-    pbr_input.material.base_color = mix(root_color, tip_color, color_factor);
+    pbr_input.material.base_color = mix(shell.root_color, shell.tip_color, color_factor);
 
     out.color = apply_pbr_lighting(pbr_input);
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
