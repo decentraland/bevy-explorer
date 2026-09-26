@@ -384,7 +384,7 @@ export function BackpackPage({
     return eq.every((w) => outfit.wearables.some((u) => u === w.urn || u.startsWith(`${w.urn}:`)))
   }
   const selectedOutfit =
-    section === 'outfits' && outfitSlot !== null
+    tab === 'wearables' && section === 'outfits' && outfitSlot !== null
       ? backpack.outfits.find((o) => o.slot === outfitSlot)?.outfit ?? null
       : null
 
@@ -442,7 +442,7 @@ export function BackpackPage({
           <div className={styles.panelArea}>
           {/* Centre: content panel. */}
           <div className={styles.content}>
-            <div className={styles.contentHead}>
+            {tab === 'wearables' && <div className={styles.contentHead}>
               <div className={styles.sectionTabs}>
                 <button type="button" className={`${styles.sectionTab} ${section === 'categories' ? styles.sectionActive : ''}`.trim()} onClick={() => setSection('categories')}>
                   <GridIcon /> CATEGORIES
@@ -452,7 +452,7 @@ export function BackpackPage({
                 </button>
               </div>
               <button type="button" className={styles.marketplace} onClick={() => window.open(MARKETPLACE_URL, '_blank', 'noopener,noreferrer')}><BagIcon /> MARKETPLACE</button>
-            </div>
+            </div>}
 
             {tab === 'wearables' ? (
               section === 'outfits' ? (
@@ -524,7 +524,7 @@ export function BackpackPage({
                           unequippable={!REQUIRED_CATEGORIES.has(w.category)}
                           categoryIcon={<CategoryIcon category={w.category} size={15} />}
                           onClick={() => select(w)}
-                          onDoubleClick={() => toggleEquip(w)}
+                          onDoubleClick={() => { if (!w.equipped && isCompatible(w, backpack.bodyShape)) toggleEquip(w) }}
                           onEquip={() => toggleEquip(w)}
                         />
                       ))}
@@ -610,7 +610,7 @@ export function BackpackPage({
           {selectedOutfit != null ? (
             <OutfitDetailPanel outfit={selectedOutfit} index={outfitSlot as number} />
           ) : (
-            <DetailPanel item={section === 'outfits' ? null : selected} />
+            <DetailPanel item={tab === 'wearables' && section === 'outfits' ? null : selected} />
           )}
           </div>
         </div>
