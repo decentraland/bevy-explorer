@@ -38,9 +38,6 @@ const PARCEL_GRASS_MATERIAL: Handle<ShellTexture> =
     weak_handle!("18c8dd1e-081d-452a-9c00-327775a239ff");
 
 const GROUND_MESH: Handle<Mesh> = weak_handle!("e2002cd1-4a0b-4944-ad26-97d64d72e5f9");
-// ground shells between the far ones (see `ParcelGrassShellSpawnList::near_mesh`) stop at the
-// parcel grass area
-const GROUND_NEAR_MESH: Handle<Mesh> = weak_handle!("9b7e5d3c-1a2f-4e6b-8d0c-3f5a7e9b1c42");
 const GROUND_MATERIAL: Handle<ShellTexture> = weak_handle!("a7b403bc-917b-424e-878a-9714243bd4ce");
 const GROUND_MATERIAL_FLAT_COLOR: Handle<TerrainFlatMaterial> =
     weak_handle!("3e91f222-a374-4f7f-ba1a-4a239c9734ae");
@@ -236,7 +233,6 @@ fn setup_grass_meshes(mut meshes: ResMut<Assets<Mesh>>) {
         })
     };
     meshes.insert(GROUND_MESH.id(), ground_mesh(segments, GROUND_RINGS));
-    meshes.insert(GROUND_NEAR_MESH.id(), ground_mesh(segments, 0));
 }
 
 /// Cells per parcel side of sloped parcel grass (and the ground under it) at a shell lod.
@@ -363,7 +359,6 @@ fn swap_ground(
                     lod: HIGH_LOD,
                     displacement: GROUND_DISPLACEMENT,
                     mesh: GROUND_MESH.clone(),
-                    near_mesh: GROUND_NEAR_MESH.clone(),
                     material: GROUND_MATERIAL.clone(),
                     extras: (GROUND_RENDERLAYER, ground_aabb()),
                 }))
@@ -486,8 +481,7 @@ fn parcel_grass_lod_inserted(
             shells: layers,
             displacement,
             lod,
-            mesh: mesh.clone(),
-            near_mesh: mesh,
+            mesh,
             material: material.clone(),
             extras: (parcel_grass_aabb(),),
         }),
@@ -652,8 +646,6 @@ struct ParcelGrassShellSpawnList<B: Bundle + Clone> {
     lod: usize,
     displacement: f32,
     mesh: Handle<Mesh>,
-    // mesh for the shells a low lod drops; the ones it keeps give colour variation at distance
-    near_mesh: Handle<Mesh>,
     material: Handle<ShellTexture>,
     extras: B,
 }
@@ -661,14 +653,9 @@ struct ParcelGrassShellSpawnList<B: Bundle + Clone> {
 impl<B: Bundle + Clone> SpawnableList<ChildOf> for ParcelGrassShellSpawnList<B> {
     fn spawn(self, world: &mut World, entity: Entity) {
         for i in (0..self.shells).step_by(self.lod) {
-            let mesh = if (i as usize).is_multiple_of(LOW_LOD) {
-                &self.mesh
-            } else {
-                &self.near_mesh
-            };
             world.spawn((
                 ParcelGrassShell,
-                Mesh3d(mesh.clone()),
+                Mesh3d(self.mesh.clone()),
                 MeshMaterial3d(self.material.clone()),
                 Transform::from_translation(Vec3::new(0., self.displacement * i as f32, 0.)),
                 MeshTag(i + ((self.lod as u32) << 16)),
