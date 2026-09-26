@@ -108,9 +108,27 @@ pub struct Collectibles<T: CollectibleType> {
 }
 
 impl<T: CollectibleType> Collectibles<T> {
+    /// cached collectibles (or their metadata) accessed within the last `RETAIN_TICKS` frames
+    pub fn recently_accessed(&self, frame: u32) -> impl Iterator<Item = &CollectibleUrn<T>> {
+        self.cache
+            .iter()
+            .map(|(urn, (expiry, _))| (urn, expiry))
+            .chain(
+                self.data_cache
+                    .iter()
+                    .map(|(urn, (expiry, _))| (urn, expiry)),
+            )
+            .filter(move |(_, expiry)| **expiry >= frame)
+            .map(|(urn, _)| urn)
+    }
+
+    /// drop cached collectibles (and their metadata) not accessed within `RETAIN_TICKS` frames,
+    /// unless `f` says they are still in use
     pub fn retain(&mut self, frame: u32, f: impl Fn(&CollectibleUrn<T>) -> bool) {
         let count = self.cache.len();
         self.cache
+            .retain(|urn, (expiry, _)| *expiry >= frame || f(urn));
+        self.data_cache
             .retain(|urn, (expiry, _)| *expiry >= frame || f(urn));
         if self.cache.len() != count {
             debug!(
@@ -436,6 +454,32 @@ fn source_urns<T: CollectibleType>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retain_prunes_stale_collectibles_and_their_data() {
+        let stale = EmoteUrn::new("urn:decentraland:off-chain:base-emotes:wave").unwrap();
+        let fresh = EmoteUrn::new("urn:decentraland:off-chain:base-emotes:clap").unwrap();
+        let used = EmoteUrn::new("urn:decentraland:off-chain:base-emotes:dance").unwrap();
+
+        let mut collectibles = Collectibles::<Emote>::default();
+        for (urn, expiry) in [(&stale, 5), (&fresh, 10), (&used, 5)] {
+            collectibles
+                .cache
+                .insert(urn.clone(), (expiry, Handle::default()));
+            collectibles
+                .data_cache
+                .insert(urn.clone(), (expiry, Handle::default()));
+        }
+
+        collectibles.retain(10, |urn| urn == &used);
+
+        for cache in [
+            collectibles.cache.keys().collect::<HashSet<_>>(),
+            collectibles.data_cache.keys().collect::<HashSet<_>>(),
+        ] {
+            assert_eq!(cache, HashSet::from_iter([&fresh, &used]));
+        }
+    }
 
     fn sources<T: CollectibleType>(urn: &str) -> Vec<String> {
         source_urns(&CollectibleUrn::<T>::new(urn).unwrap())

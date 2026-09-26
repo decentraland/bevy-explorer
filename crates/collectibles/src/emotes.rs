@@ -1,12 +1,14 @@
 use anyhow::anyhow;
 use bevy::{
     asset::AssetLoader,
+    diagnostic::FrameCount,
     gltf::Gltf,
     platform::collections::{HashMap, HashSet},
     prelude::*,
 };
 use ipfs::{ipfs_path::ContentPathExt, EntityDefinitionLoader};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use once_cell::sync::Lazy;
 
@@ -14,7 +16,7 @@ use crate::{
     ext::AvatarEmotesExt,
     urn::{CollectibleInstance, CollectibleUrn},
     Collectible, CollectibleData, CollectibleError, CollectibleManager, CollectibleType,
-    CollectiblesTypePlugin,
+    Collectibles, CollectiblesTypePlugin,
 };
 
 pub fn base_bodyshapes() -> Vec<String> {
@@ -32,7 +34,50 @@ impl Plugin for EmoteMetadataPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(CollectiblesTypePlugin::<Emote>::default());
         app.register_asset_loader(EmoteMetaLoader);
+        app.add_systems(Update, retain_emotes);
     }
+}
+
+/// emotes an avatar has equipped, kept cached while the component exists
+#[derive(Component)]
+pub struct UsedEmotes(pub HashSet<EmoteUrn>);
+
+/// how long an emote stays cached after its last use, so one replayed with gaps (a re-triggered
+/// wave, an npc loop with pauses) doesn't reload its gltf and sounds each time
+const EMOTE_GRACE: Duration = Duration::from_secs(60);
+
+fn retain_emotes(
+    used: Query<&UsedEmotes>,
+    mut collectibles: ResMut<Collectibles<Emote>>,
+    frame: Res<FrameCount>,
+    time: Res<Time<Real>>,
+    mut last_used: Local<HashMap<EmoteUrn, Duration>>,
+) {
+    let used = used.iter().flat_map(|used| used.0.iter()).collect();
+    retain_emotes_at(
+        &mut collectibles,
+        &mut last_used,
+        &used,
+        frame.0,
+        time.elapsed(),
+    );
+}
+
+// playing emotes are re-requested every frame (see `play_current_emote`), which marks them used
+fn retain_emotes_at(
+    collectibles: &mut Collectibles<Emote>,
+    last_used: &mut HashMap<EmoteUrn, Duration>,
+    used: &HashSet<&EmoteUrn>,
+    frame: u32,
+    now: Duration,
+) {
+    for urn in collectibles.recently_accessed(frame) {
+        last_used.insert(urn.clone(), now);
+    }
+    last_used.retain(|_, last| now.saturating_sub(*last) < EMOTE_GRACE);
+    collectibles.retain(frame, |urn| {
+        used.contains(urn) || last_used.contains_key(urn)
+    });
 }
 
 pub struct EmotesPlugin;
@@ -616,5 +661,89 @@ impl AssetLoader for EmoteMetaLoader {
                 loops: meta.emote_extended_data.loops,
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ecs::system::RunSystemOnce;
+
+    use super::*;
+
+    fn wave() -> EmoteUrn {
+        EmoteUrn::new("urn:decentraland:off-chain:base-emotes:wave").unwrap()
+    }
+
+    /// a cache holding `urn` (and its data), last accessed so it expires at `expiry`
+    fn cached(urn: &EmoteUrn, expiry: u32) -> Collectibles<Emote> {
+        let mut collectibles = Collectibles::<Emote>::default();
+        collectibles
+            .cache
+            .insert(urn.clone(), (expiry, Handle::default()));
+        collectibles
+            .data_cache
+            .insert(urn.clone(), (expiry, Handle::default()));
+        collectibles
+    }
+
+    fn holds(collectibles: &Collectibles<Emote>, urn: &EmoteUrn) -> bool {
+        let held = collectibles.cache.contains_key(urn);
+        assert_eq!(held, collectibles.data_cache.contains_key(urn));
+        held
+    }
+
+    #[test]
+    fn stale_unequipped_emotes_are_dropped() {
+        let urn = wave();
+        let mut collectibles = cached(&urn, 5);
+
+        retain_emotes_at(
+            &mut collectibles,
+            &mut HashMap::default(),
+            &HashSet::default(),
+            10,
+            Duration::ZERO,
+        );
+
+        assert!(!holds(&collectibles, &urn));
+    }
+
+    #[test]
+    fn equipped_emotes_are_kept_while_unused() {
+        let urn = wave();
+        let mut world = World::new();
+        world.insert_resource(FrameCount(10));
+        world.insert_resource(Time::<Real>::default());
+        world.insert_resource(cached(&urn, 5));
+        let avatar = world
+            .spawn(UsedEmotes(HashSet::from_iter([urn.clone()])))
+            .id();
+
+        world.run_system_once(retain_emotes).unwrap();
+        assert!(holds(world.resource::<Collectibles<Emote>>(), &urn));
+
+        // unequipped (avatar gone) -> dropped
+        world.despawn(avatar);
+        world.run_system_once(retain_emotes).unwrap();
+        assert!(!holds(world.resource::<Collectibles<Emote>>(), &urn));
+    }
+
+    #[test]
+    fn played_emotes_are_kept_for_the_grace_period() {
+        let urn = wave();
+        let mut collectibles = cached(&urn, 5);
+        let mut last_used = HashMap::default();
+        let none = HashSet::default();
+
+        // played up to frame 5
+        retain_emotes_at(&mut collectibles, &mut last_used, &none, 5, Duration::ZERO);
+        // unused since, within the grace period
+        let within = EMOTE_GRACE - Duration::from_secs(1);
+        retain_emotes_at(&mut collectibles, &mut last_used, &none, 100, within);
+        assert!(holds(&collectibles, &urn));
+
+        // past it
+        retain_emotes_at(&mut collectibles, &mut last_used, &none, 200, EMOTE_GRACE);
+        assert!(!holds(&collectibles, &urn));
     }
 }
