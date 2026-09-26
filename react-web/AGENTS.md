@@ -1,12 +1,12 @@
 # react-web — Agent & Contributor Guidelines
 
-This app is the React DOM port of the Decentraland in-world HUD. **The design system
-is not optional — it is the only sanctioned way to build UI here.**
+This app is the React DOM port of the Decentraland in-world HUD. UI here is built from
+the design system: tokens plus the `src/design/` primitives.
 
 Design source of truth: the **Explorer 2.0 Figma**
 (`Design System | Explorer 2.0`, file `CuOxttfA4jZ5I6gyH4YCsc`).
 
-> **⛔ Before you review or merge ANYTHING in `react-web/`, read [`review.md`](./review.md) first.**
+> Before reviewing or merging anything in `react-web/`, read [`review.md`](./review.md).
 > It is the always-on pre-merge source of truth: the test harness (tiers 1 / 1.5 / 2), per-domain
 > expectations, the **§4 world-space (nametags / crosshair) manual checklist**, and the **§5 pre-merge
 > review checklist** — every PR review runs through §5. This `AGENTS.md` defines *how to build*;
@@ -15,16 +15,16 @@ Design source of truth: the **Explorer 2.0 Figma**
 
 ## 1. Always use the design system
 
-- **Tokens are mandatory.** Every color, radius, spacing, shadow, z-index, font size,
-  and motion value MUST come from `src/styles/tokens.css` (`var(--brand)`, `--panel`,
+- **Tokens.** Every color, radius, spacing, shadow, z-index, font size,
+  and motion value comes from `src/styles/tokens.css` (`var(--brand)`, `--panel`,
   `--text`, `--white-10`, `--green`, `--gold`, `--r-*`, `--fs-*`, `--dur-*`, …).
-  **Never hardcode** a brand/status hex or rgba, a radius, or a type size in a
+  Don't hardcode a brand/status hex or rgba, a radius, or a type size in a
   component. The only raw values allowed are layout primitives with no token
   (e.g. a one-off `gap: 4px`) — and even those should prefer a token when one fits.
 
-- **Primitives are mandatory.** Reusable interactive elements and surfaces MUST use the
+- **Primitives.** Reusable interactive elements and surfaces use the
   components in `src/design/` — `Button`, `IconButton`, `ControlButton`, `Panel`,
-  `Icon`. Do **not** write a bespoke `<button>` + CSS for something a primitive already
+  `Icon`, not a bespoke `<button>` + CSS for something a primitive already
   covers (close/back/menu/toggle buttons, nav controls, cards, popovers).
 
 - **If a primitive doesn't exist, CREATE it** in `src/design/` — don't inline custom CSS
