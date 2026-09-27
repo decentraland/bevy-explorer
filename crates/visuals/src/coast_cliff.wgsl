@@ -15,9 +15,10 @@
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     var pbr = pbr_input_from_standard_material(in, is_front);
+    // derivatives must be taken in uniform control flow (WebGPU rejects them in the branch)
+    let p = in.world_position.xz;
+    let footprint = max(length(dpdx(p)), length(dpdy(p)));
     if in.world_position.y < -16.2 {
-        let p = in.world_position.xz;
-        let footprint = max(length(dpdx(p)), length(dpdy(p)));
         let fade = 1.0 - smoothstep(0.27, 0.8, footprint);
         let sand = max(pbr.N.y, 0.0);
         let unity = p * vec2(1.0, -1.0);
