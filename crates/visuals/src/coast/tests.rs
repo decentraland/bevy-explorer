@@ -82,7 +82,7 @@ fn profiles_descend_from_the_ground_to_below_the_sea_on_the_shared_waterline() {
                 assert!(coast_distance(waterline, bounds).abs() < 0.001);
                 assert!(column.iter().all(|point| outside(*point, bounds) <= 41.001));
             }
-            // 4 m chords and corner facets stay within 12 cm of the smooth waterline
+            // 1 m chords and corner facets stay within 12 cm of the smooth waterline
             for pair in columns.windows(2) {
                 let midpoint = (pair[0][5] + pair[1][5]) * 0.5;
                 assert!(coast_distance(midpoint, bounds).abs() < 0.12);
@@ -125,7 +125,7 @@ fn walls_stand_outside_the_crest_with_their_inner_face_on_it() {
     let bounds = bounds(IVec2::new(-3, -1), IVec2::new(4, 6));
     for side in 0..4 {
         for chunk in 0..chunks(bounds, side) {
-            let crest: Vec<_> = columns(bounds, side, chunk)
+            let crest: Vec<_> = wall_columns(bounds, side, chunk)
                 .iter()
                 .map(|column| column[0])
                 .collect();

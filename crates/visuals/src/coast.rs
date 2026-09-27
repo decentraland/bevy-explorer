@@ -31,10 +31,17 @@ pub const SEA_LEVEL: f32 = -19.0;
 const CHUNK: f32 = 64.0;
 /// Cliff chunks within this distance of the camera are built.
 const CLIFF_RANGE: f32 = 768.0;
-/// Facets per half corner; ten per corner keep the waterline chord error under 11 cm.
-const CORNER_STEPS: i32 = 5;
+/// Profile columns along each side are this far apart.
+const COLUMN: f32 = 1.0;
+/// Facets per half corner, matching `COLUMN` at the crest.
+const CORNER_STEPS: i32 = 20;
 /// Rings of the cliff profile, from the crest down to below the sea.
 const RINGS: usize = 7;
+/// Rock rings (the first `ROCK_RINGS` bands of the profile) are split into this many facets.
+const ROCK_RINGS: usize = 3;
+const ROCK_SPLIT: usize = 4;
+/// Walls stand on every this many columns: the crest is smooth, so they stay on it.
+const WALL_EVERY: usize = 4;
 /// The ground's visual offset (shell_texturing), where the cliff crest meets it.
 const GROUND_LEVEL: f32 = -0.05;
 const WALL_HEIGHT: f32 = 50.0;
@@ -301,6 +308,21 @@ fn arc_normal(side: u32, step: i32) -> Vec2 {
     normal * cosine + tangent * sine
 }
 
+/// Value noise in [0, 1] over a 4 m grid of `edge` points, so the rock varies smoothly between
+/// the closely spaced columns.
+fn smooth_random(edge: Vec2, salt: u32) -> f32 {
+    let grid = edge / 4.0;
+    let cell = grid.floor();
+    let fraction = grid - cell;
+    let corner = |dx: f32, dy: f32| {
+        let point = (cell + Vec2::new(dx, dy)).as_ivec2();
+        random((point.x as u32).wrapping_mul(1337) ^ (point.y as u32).wrapping_mul(733) ^ salt)
+    };
+    let low = corner(0.0, 0.0).lerp(corner(1.0, 0.0), fraction.x);
+    let high = corner(0.0, 1.0).lerp(corner(1.0, 1.0), fraction.x);
+    low.lerp(high, fraction.y)
+}
+
 /// Cliff chunks (side, index) within `CLIFF_RANGE` of the camera (bevy position).
 fn near_chunks(bounds: Vec4, camera: Vec3) -> Vec<(u32, i32)> {
     let camera = Vec2::new(camera.x, -camera.z);
@@ -325,7 +347,6 @@ fn near_chunks(bounds: Vec4, camera: Vec3) -> Vec<(u32, i32)> {
 /// Cliff profile going out from `edge` along `outward`: the crest at ground level, fractured rock
 /// with a ledge, a sandy shelf, the waterline and the slope below it.
 fn profile(edge: Vec2, outward: Vec2) -> [Vec3; RINGS] {
-    let seed = (edge.x as i32 as u32).wrapping_mul(1337) ^ (edge.y as i32 as u32).wrapping_mul(733);
     let Vec2 { x: crest, y: shore } = coast_profile(edge);
     let toe = (shore - crest - 18.0) * 0.4;
     let ledge = ((crest - 6.0) / 7.0).clamp(0.0, 1.0);
@@ -349,7 +370,7 @@ fn profile(edge: Vec2, outward: Vec2) -> [Vec3; RINGS] {
     ];
     std::array::from_fn(|ring| {
         // the rock rings are jittered; the crest, shelf edge and waterline follow the profile
-        let noise = random(seed ^ ((ring + 1) as u32).wrapping_mul(971));
+        let noise = smooth_random(edge, ((ring + 1) as u32).wrapping_mul(971));
         let fracture = (1..4).contains(&ring);
         let offset = offsets[ring] + if fracture { (noise - 0.5) * 0.8 } else { 0.0 };
         let drop = match ring {
@@ -362,15 +383,15 @@ fn profile(edge: Vec2, outward: Vec2) -> [Vec3; RINGS] {
     })
 }
 
-/// Profiles along a chunk every 4 m, plus the half corners at either end of the side.
+/// Profiles along a chunk every `COLUMN`, plus the half corners at either end of the side.
 fn columns(bounds: Vec4, side: u32, chunk: i32) -> Vec<[Vec3; RINGS]> {
     let length = side_length(bounds, side);
     let start = chunk as f32 * CHUNK;
     let end = (start + CHUNK).min(length);
-    let mut segments = ((end - start) / 4.0).ceil() as usize;
+    let mut segments = ((end - start) / COLUMN).ceil() as usize;
     // a tiny realm can put both corners in one chunk
     if start == 0.0 && end == length {
-        segments = segments.min(12);
+        segments = segments.min(48);
     }
     let mut columns = Vec::with_capacity(segments + 1 + 2 * CORNER_STEPS as usize);
     if start == 0.0 {
@@ -388,22 +409,48 @@ fn columns(bounds: Vec4, side: u32, chunk: i32) -> Vec<[Vec3; RINGS]> {
     columns
 }
 
+/// A profile with each rock band split into `ROCK_SPLIT` jittered facets. The jitter is seeded by
+/// the crest point, so the columns neighbouring chunks share stay identical.
+fn split_rock(column: &[Vec3; RINGS]) -> Vec<Vec3> {
+    let crest = column[0];
+    let seed = ((crest.x * 8.0) as i32 as u32).wrapping_mul(2654)
+        ^ ((crest.z * 8.0) as i32 as u32).wrapping_mul(1597);
+    let outward = (column[RINGS - 1] - crest).with_y(0.0).normalize_or_zero();
+    let mut points = Vec::with_capacity(RINGS + ROCK_RINGS * (ROCK_SPLIT - 1));
+    for ring in 0..RINGS {
+        points.push(column[ring]);
+        if ring < ROCK_RINGS {
+            for split in 1..ROCK_SPLIT {
+                let key = seed ^ ((ring * ROCK_SPLIT + split) as u32).wrapping_mul(7919);
+                let t = split as f32 / ROCK_SPLIT as f32;
+                points.push(
+                    column[ring].lerp(column[ring + 1], t)
+                        + outward * (random(key) - 0.5) * 0.5
+                        + Vec3::Y * (random(key ^ 0x5bd1) - 0.5) * 0.6,
+                );
+            }
+        }
+    }
+    points
+}
+
 /// Flat-shaded cliff and sand for one chunk, with vertex colours.
 fn cliff_mesh(bounds: Vec4, side: u32, chunk: i32) -> Mesh {
     let columns = columns(bounds, side, chunk);
     let mut positions = Vec::new();
     let mut normals = Vec::new();
     let mut colors = Vec::new();
+    let columns: Vec<_> = columns.iter().map(split_rock).collect();
     for (step, pair) in columns.windows(2).enumerate() {
-        let [previous, next] = [pair[0], pair[1]];
-        for ring in 0..RINGS - 1 {
+        let [previous, next] = [&pair[0], &pair[1]];
+        for ring in 0..previous.len() - 1 {
             let [a, b, c, d] = [
                 previous[ring],
                 next[ring],
                 previous[ring + 1],
                 next[ring + 1],
             ];
-            let color = if ring >= 3 {
+            let color = if ring >= ROCK_RINGS * ROCK_SPLIT {
                 Vec3::new(0.81, 0.65, 0.48)
             } else {
                 let seed = (chunk as u32).wrapping_mul(773)
@@ -437,6 +484,17 @@ fn cliff_mesh(bounds: Vec4, side: u32, chunk: i32) -> Mesh {
     .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
 }
 
+/// Every `WALL_EVERY`th column of a chunk, and its last, where the walls meet.
+fn wall_columns(bounds: Vec4, side: u32, chunk: i32) -> Vec<[Vec3; RINGS]> {
+    let columns = columns(bounds, side, chunk);
+    let last = columns.len() - 1;
+    let mut picked: Vec<_> = columns.iter().step_by(WALL_EVERY).copied().collect();
+    if !last.is_multiple_of(WALL_EVERY) {
+        picked.push(columns[last]);
+    }
+    picked
+}
+
 fn wall_id((side, chunk): (u32, i32), index: u32) -> ColliderId {
     ColliderId::new(
         SceneEntityId::ROOT,
@@ -455,8 +513,7 @@ fn remove_walls(walls: &mut SceneColliderData, cliff: &Cliff) {
 /// `WALL_HEIGHT` high and `WALL_THICKNESS` thick, with its inner face on the crest, like
 /// unity-explorer's border colliders but following the cliff edge.
 fn crest_walls(bounds: Vec4, side: u32, chunk: i32) -> Vec<(Vec3, Vec3, Quat)> {
-    let columns = columns(bounds, side, chunk);
-    columns
+    wall_columns(bounds, side, chunk)
         .windows(2)
         .filter_map(|pair| {
             let [a, b] = [pair[0][0], pair[1][0]].map(|point| point.with_y(0.0));
