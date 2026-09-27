@@ -330,6 +330,11 @@ impl TerrainSurface {
         }
     }
 
+    /// True if the landscape is shown and the parcel is inside the terrain bounds.
+    pub fn contains(&self, parcel: IVec2) -> bool {
+        self.enabled && self.index(parcel).is_some()
+    }
+
     /// True if the parcel will be flat at height 0 once eased: no neighbouring target rises.
     pub fn is_flat(&self, parcel: IVec2) -> bool {
         (-1..=1).all(|y| {
@@ -687,9 +692,18 @@ fn write_texture(
 }
 
 #[derive(Component, Default)]
-struct TerrainCollider {
+pub(crate) struct TerrainCollider {
     /// Bevy x/z of the patch centre in metres.
     centre: Option<IVec2>,
+}
+
+impl TerrainCollider {
+    /// Bevy x/z bounds of the patch in metres.
+    pub(crate) fn patch(&self) -> Option<(Vec2, Vec2)> {
+        let half = Vec2::splat((COLLIDER_SIZE / 2) as f32);
+        self.centre
+            .map(|centre| (centre.as_vec2() - half, centre.as_vec2() + half))
+    }
 }
 
 fn collider_id() -> ColliderId {
@@ -711,7 +725,7 @@ fn collider_heights(surface: &TerrainSurface, centre: IVec2) -> Vec<f32> {
 }
 
 /// Rebuild the player's heightfield patch when it recentres or the heights under it change.
-fn update_collider(
+pub(crate) fn update_collider(
     surface: Res<TerrainSurface>,
     player: Query<&GlobalTransform, With<PrimaryUser>>,
     collider: Single<(&mut TerrainCollider, &mut SceneColliderData)>,

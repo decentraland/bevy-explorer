@@ -353,6 +353,23 @@ impl SceneColliderData {
         self.set_collider(id, collider, None);
     }
 
+    /// Capsule outside any scene (landscape tree trunks) on the physics layer: it blocks the
+    /// avatar and physics raycasts.
+    pub fn set_physics_capsule(&mut self, id: &ColliderId, a: Vec3, b: Vec3, radius: f32) {
+        let collider = ColliderBuilder::capsule_from_endpoints(
+            DVec3::from(a).into(),
+            DVec3::from(b).into(),
+            f64::from(radius),
+        )
+        .collision_groups(InteractionGroups::new(
+            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+            InteractionTestMode::And,
+        ))
+        .build();
+        self.set_collider(id, collider, None);
+    }
+
     pub fn update_collider_transform(
         &mut self,
         id: &ColliderId,
