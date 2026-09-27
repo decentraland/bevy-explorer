@@ -1589,9 +1589,7 @@ fn load_active_entities(
 
         // any remaining requested parcels are empty
         for empty_parcel in requested_parcels {
-            pointers
-                .pointers
-                .insert(empty_parcel, PointerResult::Nothing);
+            pointers.insert(empty_parcel, PointerResult::Nothing);
         }
     }
 }
