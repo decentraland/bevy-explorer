@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
+import type { PreviewFocus } from '../../engine/protocol'
 import type { FatalError } from '../error/fatalError'
 import { createLoadingProgress } from './loadingProgress'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
@@ -123,6 +124,8 @@ export interface BackpackState {
   setColor: (target: AvatarColorTarget, hex: string) => void
   /** Preview a set on the avatar without equipping it (selecting); null reverts to the look. */
   preview: (urns: string[] | null) => void
+  /** Frame part of the preview avatar (follows the selected category). */
+  focus: (focus: PreviewFocus) => void
   /** Saved outfits (Outfits tab), by slot index. */
   outfits: OutfitSlot[]
   /** Number of outfit slots available (5 free + 1 per owned DCL name, capped at 10). */
@@ -1444,6 +1447,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const previewWearables = useCallback((urns: string[] | null) => {
     driverRef.current?.send({ kind: 'previewAvatar', urns })
   }, [])
+  const focusPreview = useCallback((focus: PreviewFocus) => {
+    driverRef.current?.send({ kind: 'previewFocus', focus })
+  }, [])
   const queryCatalog = useCallback((q: CatalogQuery) => {
     catalogReqId.current += 1
     setCatalogLoading(true)
@@ -2027,7 +2033,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
     backpack: {
       list: catalogItems, total: catalogTotal, loading: catalogLoading, query: queryCatalog,
-      equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, bodyShape, colors: avatarColors, setColor: setAvatarColor, equip: equipWearables, saveError, retrySave, revertSave, preview: previewWearables,
+      equipped: equippedWearables, open: backpackOpen, toggle: toggleBackpack, bodyShape, colors: avatarColors, setColor: setAvatarColor, equip: equipWearables, saveError, retrySave, revertSave, preview: previewWearables, focus: focusPreview,
       outfits: outfits.outfits, outfitSlots: ownedNames.length > 0 ? 10 : 5,
       saveOutfit, deleteOutfit, equipOutfit
     },

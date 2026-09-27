@@ -649,6 +649,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       // are unaffected: React draws those from map tiles without the scene's help.
       return
     }
+    if (msg.kind === 'previewFocus') return
     if (msg.kind === 'previewAvatar') {
       // No engine in mock mode — avatar preview has nothing to render.
       return

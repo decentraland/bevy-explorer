@@ -15,10 +15,10 @@
     linear-gradient(90deg, var(--lava-1) 0%, var(--lava-1) 30%, color-mix(in srgb, var(--lava-1) 55%, var(--lava-2)) 65%, var(--lava-2) 100%);
   background-size: 100% 100%, 140% 140%, 100% 100%;
   animation: lava 24s var(--ease-inout) infinite alternate;
-  /* Leave the avatar area (left of the content card, under the header) to the engine. */
+  /* Leave the 960×960 avatar preview frame to the engine; its right part shows through the card. */
   mask:
     linear-gradient(var(--black), var(--black)) 0 0 / 100% 100% no-repeat,
-    linear-gradient(var(--black), var(--black)) 0 68px / calc(50% - 422px) calc(100% - 68px) no-repeat;
+    linear-gradient(var(--black), var(--black)) calc(50% - 700px) calc(50% + 23px) / 960px 960px no-repeat;
   mask-composite: exclude;
   -webkit-mask-composite: xor;
 }
@@ -82,10 +82,10 @@
 }
 .preview {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: calc(50% - 422px);
+  left: -220px;
+  top: -20px;
+  width: 960px;
+  height: 960px;
 }
 .frame {
   position: absolute;

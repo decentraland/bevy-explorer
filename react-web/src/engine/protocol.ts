@@ -155,6 +155,7 @@ export type PageToScene =
   | CommitAvatarRequest
   | RevertAvatarRequest
   | PreviewAvatarRequest
+  | PreviewFocusRequest
   | GetOutfitsRequest
   | SaveOutfitRequest
   | DeleteOutfitRequest
@@ -936,6 +937,13 @@ export interface RevertAvatarRequest {
 export interface PreviewAvatarRequest {
   kind: 'previewAvatar'
   urns: string[] | null
+}
+
+/** Which part of the preview avatar the camera frames (the Backpack's selected category). */
+export type PreviewFocus = 'body' | 'head' | 'top' | 'bottom' | 'shoes'
+export interface PreviewFocusRequest {
+  kind: 'previewFocus'
+  focus: PreviewFocus
 }
 
 /** RGB color, components 0..1 (matches PBAvatarBase / the deployed avatar entity). */

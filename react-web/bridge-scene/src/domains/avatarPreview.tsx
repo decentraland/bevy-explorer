@@ -13,23 +13,34 @@ import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { getPlayer } from '@dcl/sdk/players'
 import type { Entity } from '@dcl/ecs'
 import type { Ctx } from '../bridge'
+import type { PreviewFocus } from '../../../src/engine/protocol'
 import { currentLook } from './avatarDraft'
 
 type Rect = { x: number; y: number; width: number; height: number }
 
 const LAYER = 10
-// Menu purple backdrop (two-tone: lighter top, darker bottom), matched to Unity's vivid
-// magenta→purple menu gradient so the avatar cutout blends with the React panels around it
-// (the avatar column sits on the darker-left side of that radial).
-const BACKDROP_TOP = Color4.create(0.439, 0.086, 0.659, 1)
-const BACKDROP_BOTTOM = Color4.create(0.329, 0.035, 0.541, 1)
-// Gold/orange podium the avatar stands on (Unity's CharacterPreview platform).
+// The Backpack background behind the avatar: the page's left-column purple, top to bottom.
+const BACKDROP_TOP = Color4.create(0.31, 0, 0.565, 1)
+const BACKDROP_BOTTOM = Color4.create(0.345, 0.078, 0.514, 1)
+const BACKDROP_BANDS = Array.from({ length: 24 }, (_, i) => Color4.lerp(BACKDROP_TOP, BACKDROP_BOTTOM, i / 23))
+// Gold/orange podium the avatar stands on.
 const PODIUM_COLOR = Color4.create(0.95, 0.62, 0.18, 1)
 const PODIUM_EMISSIVE = Color4.create(0.85, 0.42, 0.08, 1)
-// Body-shot framing (from the SDK7 backpack): camera in front of the avatar, orthographic.
-// Vertical range tuned so the whole avatar fits head-to-toe with a little margin top and
-// bottom (a tighter range clipped the top of the head / the feet).
-const VERTICAL_RANGE = 5.5
+// Camera framing per focus, for the 960×960 preview frame and the avatar at 2× scale: the visible
+// height (orthographic) and the height it's centred on. Head, top, bottom and shoes zoom by the
+// ratio of the reference field of views (9.5°, 15°, 15°, 11.5° against 26.5° for the whole body).
+const FRAMING: Record<PreviewFocus, { range: number; centerY: number }> = {
+  body: { range: 4.54, centerY: 1.57 },
+  head: { range: 1.6, centerY: 2.97 },
+  top: { range: 2.54, centerY: 2.27 },
+  bottom: { range: 2.54, centerY: 1.17 },
+  shoes: { range: 1.94, centerY: 0.47 }
+}
+const FOCUS_SECONDS = 0.6
+const CAMERA_PITCH = 4
+const CAMERA_DISTANCE = 8
+// The camera is pitched down, so its view centre sits this far below it at the avatar.
+const PITCH_DROP = CAMERA_DISTANCE * Math.tan((CAMERA_PITCH * Math.PI) / 180)
 // Drag-to-rotate sensitivity (from the SDK7 AvatarPreviewElement).
 const ROTATION_FACTOR = -0.5
 
@@ -38,6 +49,10 @@ let avatarEntity: Entity | null = null
 let cameraEntity: Entity | null = null
 let podiumEntity: Entity | null = null
 let lastShapeKey = ''
+let framing = FRAMING.body
+let framingFrom = FRAMING.body
+let framingTo = FRAMING.body
+let framingT = 1
 // Non-persisting preview override (selecting an item in the Backpack): when set, the preview
 // avatar wears these urns instead of the player's actual equipped set. null = no override.
 let previewUrns: string[] | null = null
@@ -105,7 +120,7 @@ function createPreview(): void {
   })
 
   // Gold podium under the avatar (a thin cylinder disc, preview-layer only) — matches
-  // the platform the avatar stands on in Unity's backpack.
+  // the platform the avatar stands on in the reference backpack.
   const podium = engine.addEntity()
   MeshRenderer.setCylinder(podium, 1, 1)
   Material.setPbrMaterial(podium, {
@@ -134,12 +149,12 @@ function createPreview(): void {
     height: res.height,
     layer: LAYER,
     clearColor: Color4.create(0, 0, 0, 0),
-    mode: { $case: 'orthographic', orthographic: { verticalRange: VERTICAL_RANGE } },
+    mode: { $case: 'orthographic', orthographic: { verticalRange: framing.range } },
     volume: 1
   })
   Transform.create(c, {
-    position: Vector3.create(8, 2.0, 0),
-    rotation: Quaternion.fromEulerDegrees(4, 0, 0)
+    position: Vector3.create(8, framing.centerY + PITCH_DROP, 8 - CAMERA_DISTANCE),
+    rotation: Quaternion.fromEulerDegrees(CAMERA_PITCH, 0, 0)
   })
 
   avatarEntity = a
@@ -188,6 +203,27 @@ export function registerAvatarPreview(ctx: Ctx): void {
         cam.height = res.height
       }
     }
+  })
+
+  // The Backpack's selected category: ease the camera to frame that part of the avatar.
+  ctx.on('previewFocus', (msg) => {
+    const to = FRAMING[msg.focus] ?? FRAMING.body
+    if (to === framingTo) return
+    framingFrom = framing
+    framingTo = to
+    framingT = 0
+  })
+  ctx.push((dt) => {
+    if (framingT >= 1 || cameraEntity == null) return
+    framingT = Math.min(1, framingT + dt / FOCUS_SECONDS)
+    const e = framingT * framingT * (3 - 2 * framingT)
+    framing = {
+      range: framingFrom.range + (framingTo.range - framingFrom.range) * e,
+      centerY: framingFrom.centerY + (framingTo.centerY - framingFrom.centerY) * e
+    }
+    const cam = TextureCamera.getMutableOrNull(cameraEntity)
+    if (cam?.mode?.$case === 'orthographic') cam.mode.orthographic.verticalRange = framing.range
+    Transform.getMutable(cameraEntity).position = Vector3.create(8, framing.centerY + PITCH_DROP, 8 - CAMERA_DISTANCE)
   })
 
   // Selecting an item in the Backpack previews it on the avatar without persisting (null reverts).
@@ -241,19 +277,20 @@ export function renderAvatarPreview(): ReactEcs.JSX.Element | null {
         uiTransform={{ positionType: 'absolute', position: { left: r.x, top: r.y }, width: r.width, height: r.height }}
         uiBackground={{ color: BACKDROP_BOTTOM }}
       >
-        {/* Lighter upper band → a soft two-tone gradient behind the avatar. */}
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0 }, width: '100%', height: '55%' }} uiBackground={{ color: BACKDROP_TOP }} />
+        {/* The page's left-column purple, as thin bands so it reads as a smooth gradient. */}
+        {BACKDROP_BANDS.map((color, i) => (
+          <UiEntity
+            key={i}
+            uiTransform={{ positionType: 'absolute', position: { top: `${(i * 100) / BACKDROP_BANDS.length}%` }, width: '100%', height: `${100 / BACKDROP_BANDS.length + 0.5}%` }}
+            uiBackground={{ color }}
+          />
+        ))}
         {/* Avatar — camera resolution matches the rect aspect, so a 1:1 fill never distorts.
             Drag over it to rotate (the engine drag-lock passes through React's transparent cutout). */}
         <UiEntity
           uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }}
           uiBackground={{ videoTexture: { videoPlayerEntity: cameraEntity }, textureMode: 'stretch' }}
           onMouseDragLocked={rotateAvatar}
-        />
-        {/* "Drag avatar to rotate" hint. */}
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { bottom: '4%' }, width: '100%', height: 24, justifyContent: 'center', alignItems: 'center' }}
-          uiText={{ value: '↻  Drag avatar to rotate', fontSize: 14, color: Color4.create(1, 1, 1, 0.85) }}
         />
       </UiEntity>
     </UiEntity>

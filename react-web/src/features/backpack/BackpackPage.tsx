@@ -34,6 +34,7 @@ import outfitsIcon from '../../assets/backpack/icon-outfits.webp'
 import marketplaceIcon from '../../assets/backpack/icon-marketplace.webp'
 import { COLOR_LABEL, COLOR_PRESETS, COLOR_TARGET } from './avatarColors'
 import { isCompatible } from '../../engine/bodyShape'
+import { previewFocusFor } from './previewFocus'
 import { catalystThumbUrl } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
 import { CategoryIcon } from './categoryIcons'
@@ -367,6 +368,12 @@ export function BackpackPage({
       )
   }, [emotes.list, query, collectiblesOnly, sortBy, sortDir])
 
+  // The preview camera follows the selected category; emotes and outfits show the whole avatar.
+  useEffect(() => {
+    if (!backpack.open) return
+    backpack.focus(tab === 'wearables' && section === 'categories' ? previewFocusFor(cat) : 'body')
+  }, [backpack.open, backpack.focus, tab, section, cat])
+
   // Open on the requested tab (the emote wheel's "Customise [E]" requests 'emotes'). Only fires on the
   // open transition / when the request changes, so a manual tab switch while open is preserved.
   useEffect(() => {
@@ -460,11 +467,11 @@ export function BackpackPage({
         </header>
 
         <div className={styles.stage}>
-          {/* The engine draws the avatar preview behind this transparent area. */}
-          <div className={styles.preview}>
-            <EngineViewport region="avatarPreview" report={setEngineViewport} />
-          </div>
           <div className={`${styles.frame} ${styles.fadeIn}`}>
+            {/* The engine draws the avatar preview here, seen through the backdrop's hole. */}
+            <div className={styles.preview}>
+              <EngineViewport region="avatarPreview" report={setEngineViewport} />
+            </div>
           <section className={`${styles.card} ${tab === 'emotes' ? styles.cardEmotes : ''}`.trim()}>
             {tab === 'wearables' && (
               <div className={styles.contentHead}>
