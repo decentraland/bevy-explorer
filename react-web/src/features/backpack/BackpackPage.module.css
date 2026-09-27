@@ -653,6 +653,7 @@
 }
 .outfitFull:hover .outfitHover {
   transform: scale(1);
+  pointer-events: auto;
 }
 .outfitThumbs {
   position: absolute;

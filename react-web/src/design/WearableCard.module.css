@@ -32,6 +32,7 @@
 }
 .card:hover .hoverPanel {
   transform: scale(1);
+  pointer-events: auto;
 }
 .body {
   position: absolute;
