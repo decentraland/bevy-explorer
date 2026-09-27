@@ -2,20 +2,11 @@
 // darker wet margin.
 
 #import "embedded://visuals/coast_profile.wgsl"::coast_distance
+#import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 
-fn surf_hash(cell: vec2<i32>) -> f32 {
-    var h = bitcast<u32>(cell.x) * 1597334677u ^ bitcast<u32>(cell.y) * 3812015801u;
-    h = (h ^ (h >> 16u)) * 2246822519u;
-    h = h ^ (h >> 13u);
-    return f32(h & 16777215u) / 16777216.0;
-}
-
-fn surf_noise(p: vec2<f32>) -> f32 {
-    let cell = vec2<i32>(floor(p));
-    let f = fract(p);
-    let u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(surf_hash(cell), surf_hash(cell + vec2(1, 0)), u.x),
-        mix(surf_hash(cell + vec2(0, 1)), surf_hash(cell + vec2(1)), u.x), u.y);
+// simplex with time as the third axis: evolves in place as well as drifting, with no grid
+fn surf_noise(p: vec2<f32>, time: f32) -> f32 {
+    return simplex_noise_3d(vec3(p.x, time, p.y)) * 0.5 + 0.5;
 }
 
 // x = foam, y = thin wash, z = damp sand, w = distance beyond the waterline.
@@ -28,14 +19,16 @@ fn coast_surf(unity: vec2<f32>, bounds: vec4<f32>, time: f32, footprint: f32) ->
     let edge = clamp(unity, bounds.xy, bounds.zw);
     let phase = time * 0.64 + sin(dot(edge, vec2(0.033, 0.027))) * 0.65;
     let pulse = max(sin(phase), 0.0);
+    // how far the front has surged, so the wash strengthens as the water moves rather than before
+    let surge = pulse * pulse;
     // independent scales, so the foam doesn't break into evenly spaced dashes
-    let broad = surf_noise(unity * 0.32 + time * vec2(0.035, -0.028));
+    let broad = surf_noise(unity * 0.32 + time * vec2(0.035, -0.028), time * 0.15);
     var detail = 0.5;
     if footprint < 0.65 {
-        detail = mix(surf_noise(unity * 1.7 + time * vec2(-0.11, 0.08)),
+        detail = mix(surf_noise(unity * 1.7 + time * vec2(-0.11, 0.08), time * 0.5),
             0.5, smoothstep(0.15, 0.65, footprint));
     }
-    let front = 0.8 - 4.4 * pulse * pulse
+    let front = 0.8 - 4.4 * surge
         + (broad - 0.5) * 1.3 + (detail - 0.5) * 0.35;
     let breakup = mix(smoothstep(0.3, 0.68, broad * 0.45 + detail * 0.55),
         0.4, smoothstep(0.4, 2.0, footprint));
@@ -43,9 +36,12 @@ fn coast_surf(unity: vec2<f32>, bounds: vec4<f32>, time: f32, footprint: f32) ->
     let ribbon = 1.0 - smoothstep(width * 0.15, width, abs(distance - front));
     let trail = smoothstep(front, front + 0.5, distance)
         * (1.0 - smoothstep(front + 0.5, front + 2.0, distance));
-    let foam = clamp(ribbon + trail * 0.35, 0.0, 1.0)
-        * (0.12 + 0.78 * pulse) * breakup;
-    let film = smoothstep(front - 0.3, front + 0.4, distance) * pulse;
+    // time as the third axis, so the foam boils in place rather than sliding; averages to 1
+    let churn = mix(1.0 + simplex_noise_3d(vec3(unity.x * 0.9, time * 0.7, unity.y * 0.9)) * 0.85,
+        1.0, smoothstep(0.25, 1.0, footprint));
+    let foam = clamp(clamp(ribbon + trail * 0.35, 0.0, 1.0)
+        * (0.06 + 0.84 * surge) * breakup * churn, 0.0, 1.0);
+    let film = smoothstep(front - 0.3, front + 0.4, distance) * surge * churn;
     let damp = smoothstep(-6.0, -0.5, distance);
     return vec4(foam, film, damp, distance);
 }
