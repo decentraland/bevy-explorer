@@ -1,0 +1,50 @@
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 14.5px;
+}
+.pages {
+  display: flex;
+  gap: 6px;
+}
+.arrow,
+.page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color var(--dur-tap) linear;
+}
+.arrow {
+  width: 26px;
+  height: 26px;
+  background: var(--pager-idle);
+}
+.arrow:hover {
+  background: var(--slot-edge);
+}
+.arrow:active {
+  background: var(--scrim-20);
+}
+.next > span {
+  transform: scaleX(-1);
+}
+.page {
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  font-size: var(--type-15);
+  font-weight: var(--fw-semibold);
+}
+.page:hover {
+  background: var(--pager-idle);
+}
+.current,
+.current:hover {
+  background: var(--accent);
+}

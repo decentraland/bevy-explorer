@@ -5,7 +5,7 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Chip, ColorPicker, MaskIcon, SearchField, Tabs, WearableCard, rarityTile, type Rarity, type TabItem } from '../../design'
+import { Button, Chip, ColorPicker, MaskIcon, Pager, SearchField, Tabs, WearableCard, rarityTile, type Rarity, type TabItem } from '../../design'
 import allIcon from '../../assets/category-icons/all.png'
 import arrowLeftIcon from '../../assets/backpack/icon-arrow-left.webp'
 import closeIcon from '../../assets/backpack/icon-close.webp'
@@ -53,17 +53,7 @@ function humanize(s: string): string {
   return s.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-const PAGE_BUTTONS = 5
-
-// A sliding window of consecutive page numbers (mirrors bevy-ui-scene's pagination-util): the
-// current page stays centered once past the first half, and the window clamps at both ends so it
-// never runs off. All indices 0-based.
-export function pageWindow(current: number, count: number): number[] {
-  const size = Math.min(PAGE_BUTTONS, count)
-  const half = Math.floor(PAGE_BUTTONS / 2)
-  const start = current > half ? Math.min(current - half, count - size) : 0
-  return Array.from({ length: size }, (_, i) => start + i)
-}
+export { pageWindow } from '../../design'
 
 // The 18 equipable slot categories, ordered like Unity's Backpack prefab (body parts grouped
 // head→body→accessories). NOT included: 'head' — it exists in the schemas only as a hide/replace
@@ -537,26 +527,7 @@ export function BackpackPage({
                       ))}
                     </div>
                   )}
-                  {/* Server-paginated → potentially hundreds of pages: a sliding window of
-                      consecutive page numbers (bevy-ui-scene style). The arrows WRAP — prev on the
-                      first page jumps to the last, next on the last wraps to the first. */}
-                  {pageCount > 1 && (
-                    <div className={styles.pager}>
-                      <button type="button" className={styles.pageArrow} aria-label="Previous page" onClick={() => setPage(safePage === 0 ? pageCount - 1 : safePage - 1)}>‹</button>
-                      {pageWindow(safePage, pageCount).map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          className={`${styles.pageNum} ${p === safePage ? styles.pageNumActive : ''}`.trim()}
-                          aria-current={p === safePage ? 'page' : undefined}
-                          onClick={() => setPage(p)}
-                        >
-                          {p + 1}
-                        </button>
-                      ))}
-                      <button type="button" className={styles.pageArrow} aria-label="Next page" onClick={() => setPage(safePage >= pageCount - 1 ? 0 : safePage + 1)}>›</button>
-                    </div>
-                  )}
+                  <Pager className={styles.pager} page={safePage} count={pageCount} onChange={setPage} />
                 </div>
               </div>
               )
