@@ -2,18 +2,31 @@
 // Driven by the bridge scene's getSceneLoadingUIStream relay. Layout follows unity-explorer's
 // SceneLoadingScreenView: a top bar with LOADING N% over a progress line, and a tips carousel.
 
-import { useEffect, useState } from 'react'
-import { ControlButton } from '../../design'
+import { useEffect, useMemo, useState } from 'react'
 import type { SceneLoadingState } from '../../engine/protocol'
-import { keyHintFor, useBindingsSnapshot } from '../../lib/bindingLabels'
+import { keyHintFor, useBindingsSnapshot, type BindingsSnapshot } from '../../lib/bindingLabels'
+import { launchCount } from '../../lib/launchCount'
 import { bugReportUrl } from '../../lib/bugReport'
 import { flagEnabled, useFeatureFlags } from '../../lib/featureFlags'
 import { MaskIcon } from '../../design'
 import logoIcon from '../../assets/loading/logo-icon.webp'
 import wordmark from '../../assets/loading/wordmark.webp'
 import bugIcon from '../../assets/loading/icon-bug.webp'
-import { LOADING_TIPS, TIP_ROTATE_MS } from './loadingTips'
+import { TIP_ROTATE_MS, tipsFor, type LoadingTip } from './loadingTips'
+import prevTip from '../../assets/loading/prev-tip.webp'
+import nextTip from '../../assets/loading/next-tip.webp'
 import styles from './SceneLoadingOverlay.module.css'
+
+const LAST_TIP_KEY = 'loadingLastTip'
+const FADE_MS = 300
+
+function readLastTip(): number {
+  try {
+    return Number(localStorage.getItem(LAST_TIP_KEY) ?? -1)
+  } catch {
+    return -1
+  }
+}
 
 function TipBody({ body, emoteKey }: { body: string; emoteKey: string }): React.JSX.Element {
   const parts = body.split('{Emote}')
@@ -21,7 +34,7 @@ function TipBody({ body, emoteKey }: { body: string; emoteKey: string }): React.
     <p className={styles.tipBody}>
       {parts.map((p, i) => (
         <span key={i}>
-          {i > 0 && <kbd className={styles.key}>{emoteKey}</kbd>}
+          {i > 0 && <span className={styles.accent}>{emoteKey}</span>}
           {p}
         </span>
       ))}
@@ -29,46 +42,88 @@ function TipBody({ body, emoteKey }: { body: string; emoteKey: string }): React.
   )
 }
 
+function TipAction({ action, snap }: { action: NonNullable<LoadingTip['action']>; snap: BindingsSnapshot }): React.JSX.Element {
+  return (
+    <div className={styles.action}>
+      {action.icon != null && <img className={styles.actionIcon} src={action.icon} alt="" style={{ width: action.iconSize ?? 42, height: action.iconSize ?? 42 }} />}
+      <span className={styles.actionText}>
+        {action.parts.map((part, i) =>
+          typeof part === 'string' ? (
+            <span key={i}>{part}</span>
+          ) : 'icon' in part ? (
+            <img key={i} className={styles.actionInlineIcon} src={part.icon} alt="" />
+          ) : (
+            <span key={i} className={styles.accent}>
+              {(part.binding != null ? keyHintFor(snap, part.binding) : undefined) ?? part.accent}
+            </span>
+          )
+        )}
+      </span>
+    </div>
+  )
+}
+
 function TipsCarousel(): React.JSX.Element {
-  const [index, setIndex] = useState(0)
+  const flags = useFeatureFlags()
+  const tips = useMemo(() => tipsFor(flags, launchCount()), [flags])
+  // Each loading screen picks up after the last tip shown.
+  const [index, setIndex] = useState(() => (readLastTip() + 1) % tips.length)
+  const [shown, setShown] = useState(index)
+  const [epoch, setEpoch] = useState(0)
   const snap = useBindingsSnapshot()
   const emoteKey = keyHintFor(snap, 'Emote') ?? 'B'
-  // Any manual move restarts the rotation clock, like Unity's RotateTipsOverTimeAsync restart.
+  const count = tips.length
+  const current = index % count
+
   useEffect(() => {
-    const t = setTimeout(() => setIndex((i) => (i + 1) % LOADING_TIPS.length), TIP_ROTATE_MS)
+    const t = setInterval(() => setIndex((i) => (i + 1) % count), TIP_ROTATE_MS)
+    return () => clearInterval(t)
+  }, [epoch, count])
+  // Fade the old tip out, then the new one in.
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAST_TIP_KEY, String(current))
+    } catch {}
+    if (current === shown) return
+    const t = setTimeout(() => setShown(current), FADE_MS)
     return () => clearTimeout(t)
-  }, [index])
-  const go = (i: number): void => setIndex((i + LOADING_TIPS.length) % LOADING_TIPS.length)
-  const tip = LOADING_TIPS[index]
+  }, [current, shown])
+
+  const step = (d: number): void => {
+    setIndex((i) => (i + d + count) % count)
+    setEpoch((e) => e + 1)
+  }
+  const tip = tips[shown % count]
 
   return (
     <section className={styles.tips} aria-roledescription="carousel" aria-label="Tips">
-      <ControlButton className={styles.arrow} shape="circle" variant="solid" aria-label="Previous tip" onClick={() => go(index - 1)}>
-        ‹
-      </ControlButton>
-      <div className={styles.tip} key={index}>
-        <img className={styles.tipImage} src={tip.image} alt={tip.title} draggable={false} />
-        <div className={styles.tipText}>
+      <div className={styles.tipsBox}>
+        <div className={`${styles.tip} ${current !== shown ? styles.tipOut : ''}`.trim()} key={tip.key}>
+          <img className={styles.tipImage} src={tip.image} alt={tip.title} draggable={false} />
           <h2 className={styles.tipTitle}>{tip.title}</h2>
           <TipBody body={tip.body} emoteKey={emoteKey} />
-          <div className={styles.dots} role="tablist" aria-label="Choose a tip">
-            {LOADING_TIPS.map((t, i) => (
-              <button
-                key={t.title}
-                type="button"
-                role="tab"
-                aria-label={t.title}
-                aria-selected={i === index}
-                className={`${styles.dot} ${i === index ? styles.dotActive : ''}`.trim()}
-                onClick={() => go(i)}
-              />
-            ))}
-          </div>
+          {tip.action != null && <TipAction action={tip.action} snap={snap} />}
         </div>
       </div>
-      <ControlButton className={styles.arrow} shape="circle" variant="solid" aria-label="Next tip" onClick={() => go(index + 1)}>
-        ›
-      </ControlButton>
+      <div className={styles.dots} role="tablist" aria-label="Choose a tip">
+          {tips.map((t, i) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-label={t.title}
+              aria-selected={i === current}
+              className={`${styles.dot} ${i === current ? styles.dotActive : ''}`.trim()}
+              onClick={() => setIndex(i)}
+            />
+          ))}
+      </div>
+      <button type="button" className={`${styles.arrow} ${styles.arrowPrev}`} aria-label="Previous tip" onClick={() => step(-1)}>
+        <img src={prevTip} alt="" />
+      </button>
+      <button type="button" className={`${styles.arrow} ${styles.arrowNext}`} aria-label="Next tip" onClick={() => step(1)}>
+        <img src={nextTip} alt="" />
+      </button>
     </section>
   )
 }

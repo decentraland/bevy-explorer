@@ -91,6 +91,7 @@
   color: var(--text);
   font-size: var(--type-30);
   font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -138,82 +139,148 @@
   background: var(--tab-hover);
 }
 
-/* Tips carousel: illustration + title/body/dots, arrows at the edges. */
+/* Tips: laid out on a 1920×990 box centred in the area under the progress bar. */
 .tips {
   position: relative;
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2rem;
-  padding: 2rem 1.5rem;
   min-height: 0;
 }
+.tipsBox {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 990px;
+  transform: translate(-50%, -50%);
+}
 .tip {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3rem;
-  animation: fade-in 400ms var(--ease-out) both;
+  position: absolute;
+  inset: 0;
+  transition: opacity 300ms var(--ease-outquad);
+  animation: fade-in 300ms var(--ease-outquad) both;
+}
+.tipOut {
+  opacity: 0;
 }
 .tipImage {
-  width: min(30rem, 55vh);
-  aspect-ratio: 1;
-  flex: none;
-  border-radius: var(--r-panel);
-  object-fit: cover;
-}
-.tipText {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  max-width: 26rem;
+  position: absolute;
+  left: 111px;
+  top: 45px;
+  width: 900px;
+  height: 900px;
+  object-fit: contain;
+  animation: fade-in 250ms linear both;
 }
 .tipTitle {
+  position: absolute;
+  left: 1062px;
+  top: 188px;
+  width: 710px;
+  height: 180px;
   margin: 0;
-  font-size: var(--fs-display);
-  font-weight: 700;
-  line-height: 1.1;
+  display: flex;
+  align-items: flex-end;
+  color: var(--text);
+  font-size: var(--type-96);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.05em;
+  line-height: 1.05;
 }
 .tipBody {
+  position: absolute;
+  left: 1062px;
+  top: 413px;
+  width: 710px;
   margin: 0;
-  font-size: var(--fs-lg);
-  line-height: 1.5;
+  color: var(--text);
+  font-size: var(--type-36);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.05em;
+  line-height: 1.2;
+  white-space: pre-line;
 }
-.key {
-  display: inline-block;
-  min-width: 1.6em;
-  padding: 0 0.35em;
-  margin: 0 0.2em;
-  border: 1px solid var(--ink-45);
-  border-radius: var(--r-control);
-  font: inherit;
-  font-weight: 700;
-  text-align: center;
+.accent {
+  color: var(--loading-key);
 }
+.action {
+  position: absolute;
+  left: 1062px;
+  top: 569px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  height: 78px;
+  padding: 0 34px 0 28px;
+  border: 3px solid var(--loading-pill-edge);
+  border-radius: var(--r-pill);
+  background: var(--scrim-40);
+  color: var(--text);
+  font-size: var(--type-32);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+.actionIcon {
+  flex: none;
+}
+.actionText {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+}
+.actionInlineIcon {
+  width: 42px;
+  height: 42px;
+  margin: 0 0.1em;
+}
+/* Anchored to the bottom, not the centred box. */
 .dots {
+  position: absolute;
+  left: calc(50% + 103px);
+  bottom: 177px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: 17px;
 }
 .dot {
-  width: 0.6rem;
-  height: 0.6rem;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
   border-radius: var(--r-pill);
-  background: var(--white-10);
+  background: var(--ink-45);
   cursor: pointer;
 }
 .dotActive {
-  background: var(--gold);
+  background: var(--loading-key);
+  transform: scale(1.05);
 }
 .arrow {
-  flex: none;
+  position: absolute;
+  top: calc(50% - 35px);
+  width: 70px;
+  height: 70px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--fill-5);
+  opacity: 0.8;
+  cursor: pointer;
 }
-
+.arrow:hover {
+  opacity: 1;
+}
+.arrow img {
+  display: block;
+  width: 70px;
+  height: 70px;
+}
+.arrowPrev {
+  left: 30px;
+}
+.arrowNext {
+  right: 30px;
+}
 
 @keyframes fade-in {
   from {
