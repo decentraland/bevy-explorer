@@ -95,6 +95,13 @@
   height: 942px;
   transform: translate(-50%, -50%);
 }
+.hints {
+  position: absolute;
+  left: 20px;
+  top: 884px;
+  z-index: 3;
+  pointer-events: auto;
+}
 .card {
   position: absolute;
   left: 538px;

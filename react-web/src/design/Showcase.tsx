@@ -8,6 +8,7 @@ import { ColorPicker } from './ColorPicker'
 import { Chip } from './Chip'
 import { Pager } from './Pager'
 import { OptionMenu } from './OptionMenu'
+import { HintsButton, KeyCap } from './HintsButton'
 import { useState } from 'react'
 import { ControlButton } from './ControlButton'
 import { Tooltip } from './Tooltip'
@@ -433,6 +434,12 @@ export function Showcase(): React.JSX.Element {
             { label: 'View', options: [{ id: 'all', label: 'All Items' }, { id: 'col', label: 'Collectibles only' }], value: 'all', onChange: () => undefined }
           ]}
         />
+      </Section>
+
+      <Section title="HintsButton (opens upward)">
+        <div style={{ paddingTop: 120 }}>
+          <HintsButton hints={[{ icon: <KeyCap label="1" />, text: 'Press a number key to pick a slot.' }, { icon: <KeyCap label="E" />, text: 'Press E to open emotes.' }]} />
+        </div>
       </Section>
 
       <Section title="Pager">

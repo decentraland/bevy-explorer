@@ -5,7 +5,7 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Chip, ColorPicker, MaskIcon, OptionMenu, Pager, SearchField, Tabs, WearableCard, rarityPanel, rarityTile, type Rarity, type TabItem } from '../../design'
+import { Button, Chip, ColorPicker, HintsButton, KeyCap, MaskIcon, OptionMenu, Pager, SearchField, Tabs, WearableCard, rarityPanel, rarityTile, type Rarity, type TabItem } from '../../design'
 import allIcon from '../../assets/category-icons/all.png'
 import arrowLeftIcon from '../../assets/backpack/icon-arrow-left.webp'
 import emptySearchArt from '../../assets/backpack/empty-search.webp'
@@ -34,6 +34,7 @@ import outfitsIcon from '../../assets/backpack/icon-outfits.webp'
 import marketplaceIcon from '../../assets/backpack/icon-marketplace.webp'
 import hiddenIcon from '../../assets/backpack/icon-hidden.webp'
 import visibleIcon from '../../assets/backpack/icon-visible.webp'
+import leftClickIcon from '../../assets/backpack/icon-left-click.webp'
 import { COLOR_LABEL, COLOR_PRESETS, COLOR_TARGET } from './avatarColors'
 import { isCompatible } from '../../engine/bodyShape'
 import { hiddenBy } from '../../engine/avatarHides'
@@ -71,6 +72,11 @@ const VIEWS: { id: ViewKey; label: string }[] = [
   { id: 'smart', label: 'Smart Wearables only' }
 ]
 const NO_DESC = 'This wearable does not have a description set.'
+const HINTS = [
+  { icon: <MaskIcon src={leftClickIcon} size={20} />, text: 'Left-click and drag avatar to rotate.' },
+  { icon: <MaskIcon src={leftClickIcon} size={20} />, text: 'Click items x1 to view their info. x2 to equip/unequip.' },
+  { icon: <KeyCap label="1" />, text: 'Hover an emote, then press the numeral key of the slot where you want to equip it.' }
+]
 
 const RARITIES: Rarity[] = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
 const RARITY_RANK: Record<string, number> = Object.fromEntries(RARITIES.map((r, i) => [r, i]))
@@ -375,6 +381,19 @@ export function BackpackPage({
     return m
   }, [backpack.list, backpack.equipped])
 
+  // Hover an emote and press 0-9 to put it in that wheel slot.
+  const [hoveredEmote, setHoveredEmote] = useState<string | null>(null)
+  useEffect(() => {
+    if (!backpack.open || tab !== 'emotes' || hoveredEmote == null) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (!/^[0-9]$/.test(e.key) || e.target instanceof HTMLInputElement) return
+      e.preventDefault()
+      emotes.equip(Number(e.key), hoveredEmote)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [backpack.open, tab, hoveredEmote, emotes])
+
   // Ignores force render so a slot shown anyway keeps its toggle.
   const hiders = useMemo(() => hiddenBy([...equippedByCat.values()], []), [equippedByCat])
 
@@ -531,6 +550,7 @@ export function BackpackPage({
             <div className={styles.preview}>
               <EngineViewport region="avatarPreview" report={setEngineViewport} />
             </div>
+            <HintsButton className={styles.hints} hints={HINTS} />
           <section className={`${styles.card} ${tab === 'emotes' ? styles.cardEmotes : ''}`.trim()}>
             {tab === 'wearables' && (
               <div className={styles.contentHead}>
@@ -706,6 +726,7 @@ export function BackpackPage({
                           onClick={() => setSelected(e)}
                           onDoubleClick={() => { if (e.slot == null) emotes.equip(emoteSlot, e.urn) }}
                           onEquip={() => (e.slot != null ? emotes.equip(e.slot, '') : emotes.equip(emoteSlot, e.urn))}
+                          onHoverChange={(on) => setHoveredEmote((h) => (on ? e.urn : h === e.urn ? null : h))}
                         />
                       ))}
                     </div>

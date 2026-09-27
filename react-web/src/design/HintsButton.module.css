@@ -1,0 +1,65 @@
+.root {
+  position: relative;
+  width: 38px;
+  height: 38px;
+}
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--scrim-40);
+  color: var(--text);
+  cursor: pointer;
+}
+.button:hover,
+.button[aria-expanded='true'] {
+  background: var(--fill-faint);
+}
+.popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 12.5px);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 482px;
+  margin: 0;
+  padding: 24.5px 24px 24.5px 23.5px;
+  list-style: none;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
+  line-height: 19px;
+}
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7.9px;
+}
+.icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 19px;
+}
+.keyCap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--text);
+  border-radius: var(--r-xs);
+  font-size: var(--type-14);
+  line-height: 1;
+}

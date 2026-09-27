@@ -40,6 +40,7 @@ interface WearableCardProps {
   onDoubleClick?: () => void
   /** Hover EQUIP/UNEQUIP click — the explicit equip action (persists). */
   onEquip?: () => void
+  onHoverChange?: (hovered: boolean) => void
 }
 
 export function WearableCard({
@@ -56,7 +57,8 @@ export function WearableCard({
   slotNumber,
   onClick,
   onDoubleClick,
-  onEquip
+  onEquip,
+  onHoverChange
 }: WearableCardProps): React.JSX.Element {
   const [failed, setFailed] = useState(false)
   const action = incompatible && !equipped ? null : equipped ? (unequippable ? 'UNEQUIP' : null) : 'EQUIP'
@@ -70,6 +72,8 @@ export function WearableCard({
       aria-pressed={selected}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onMouseEnter={onHoverChange && (() => onHoverChange(true))}
+      onMouseLeave={onHoverChange && (() => onHoverChange(false))}
     >
       <span className={styles.hoverPanel} aria-hidden="true" />
       <span className={styles.body} style={{ backgroundImage: `url(${rarityTile(rarity)})` }}>
