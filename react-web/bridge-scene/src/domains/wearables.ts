@@ -44,6 +44,7 @@ export type CatalogPageParams = {
   orderBy?: 'date' | 'rarity' | 'name'
   direction?: 'asc' | 'desc'
   collectiblesOnly?: boolean
+  smartOnly?: boolean
 }
 
 // Server-side-paginated owned-wearables fetch (one page). Filters/sort are applied by the catalyst
@@ -57,6 +58,7 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
   // Explicit collection types (matches unity/bevy-ui-scene): collectibles-only drops base wearables.
   const collectionTypes = p.collectiblesOnly ? ['on-chain', 'third-party'] : ['base-wearable', 'on-chain', 'third-party']
   for (const t of collectionTypes) url += `&collectionType=${t}`
+  if (p.smartOnly === true) url += '&isSmartWearable=true'
 
   const data = await getJson<{ elements?: CatalogElement[]; totalAmount?: number }>(url).catch(() => undefined)
   const elements = data?.elements ?? []
@@ -74,7 +76,8 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
       thumbnail: hash != null ? `${baseUrl}/content/contents/${hash}` : undefined,
       count: el.amount,
       equipped: owned.some((w) => w === el.urn || w.startsWith(`${el.urn}:`)),
-      bodyShapes: bodyShapesOf(el.entity?.metadata?.data?.representations)
+      bodyShapes: bodyShapesOf(el.entity?.metadata?.data?.representations),
+      isSmart: el.entity?.content?.some((c) => c.file.endsWith('.js')) === true
     }
   })
   return { items, total: data?.totalAmount ?? items.length }

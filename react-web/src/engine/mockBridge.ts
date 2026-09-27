@@ -125,7 +125,8 @@ const mockWearables: Wearable[] = BASE.map((b, i) => {
     thumbnail: thumb(urn),
     // f_* base items are female-only in the catalyst (the mock avatar is BaseMale).
     bodyShapes: b.name.startsWith('f_') ? ['urn:decentraland:off-chain:base-avatars:BaseFemale'] : undefined,
-    equipped: i % 6 === 0
+    equipped: i % 6 === 0,
+    isSmart: b.name === 'sport_jacket' || b.name === 'Thunder_earring' ? true : undefined
   }
 })
 
@@ -584,6 +585,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       if (msg.category != null && msg.category !== 'all') items = items.filter((w) => w.category === msg.category)
       if (msg.search != null && msg.search !== '') items = items.filter((w) => (w.name ?? '').toLowerCase().includes(msg.search!.toLowerCase()))
       if (msg.collectiblesOnly === true) items = items.filter((w) => (w.rarity ?? 'base') !== 'base')
+      if (msg.smartOnly === true) items = items.filter((w) => w.isSmart === true)
       const dir = msg.direction === 'asc' ? 1 : -1
       if (msg.orderBy === 'name') items.sort((a, b) => dir * (a.name ?? '').localeCompare(b.name ?? ''))
       else if (msg.orderBy === 'rarity') items.sort((a, b) => dir * (RARITIES.indexOf(a.rarity) - RARITIES.indexOf(b.rarity)))

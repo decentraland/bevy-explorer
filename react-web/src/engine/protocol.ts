@@ -855,6 +855,8 @@ export interface Wearable {
   shopUrl?: string
   /** Body shapes the item has a representation for (from the catalog entity). */
   bodyShapes?: string[]
+  /** Ships a scene script (runs while worn). */
+  isSmart?: boolean
 }
 
 /** Currently-equipped wearables, resolved by urn independently of the (paginated) grid so every
@@ -903,6 +905,7 @@ export interface CatalogQueryRequest {
   direction?: 'asc' | 'desc'
   /** Exclude base (off-chain) items → collectibles only. */
   collectiblesOnly?: boolean
+  smartOnly?: boolean
   /** Monotonic per-catalog id echoed in the response; the page ignores out-of-order replies. */
   requestId: number
 }

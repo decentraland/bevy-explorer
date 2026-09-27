@@ -86,6 +86,21 @@
   font-size: var(--type-12);
   font-weight: var(--fw-bold);
 }
+.smart {
+  position: absolute;
+  left: 54px;
+  top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  background: var(--smart-badge);
+  color: var(--text);
+  font-size: var(--type-12);
+  font-weight: var(--fw-semibold);
+}
 .slotNumber {
   position: absolute;
   right: 8px;

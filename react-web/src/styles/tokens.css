@@ -147,6 +147,7 @@
   --outfit-edge: rgba(130, 69, 190, 0.6);
   --glow-pink: rgba(255, 75, 237, 0.2);
   --glow-pink-faint: rgba(255, 75, 237, 0.14);
+  --smart-badge: linear-gradient(90deg, #e82af7 0%, #b229df 100%);
   --cta-flare: linear-gradient(90deg, #ff3156 0%, #ff5757 50%, #ff7d58 100%);
   --scrim-60: rgba(0, 0, 0, 0.4);
   --lava-1: #500090; /* backpack background: left */

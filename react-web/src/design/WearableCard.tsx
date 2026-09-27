@@ -25,6 +25,8 @@ interface WearableCardProps {
   /** Open in the detail panel (no visual ring; exposed as aria-pressed). */
   selected?: boolean
   isNew?: boolean
+  /** Shows the SMART badge. */
+  isSmart?: boolean
   incompatible?: boolean
   /** False for a required category (body shape, eyes…): equipped, it offers no UNEQUIP. */
   unequippable?: boolean
@@ -47,6 +49,7 @@ export function WearableCard({
   equipped = false,
   selected = false,
   isNew = false,
+  isSmart = false,
   incompatible = false,
   unequippable = true,
   categoryIcon,
@@ -78,6 +81,7 @@ export function WearableCard({
           </span>
         )}
         {isNew && <span className={styles.new}>NEW</span>}
+        {isSmart && <span className={styles.smart}>SMART</span>}
         {slotNumber != null && <span className={styles.slotNumber}>{slotNumber}</span>}
         {incompatible && (
           <span className={styles.incompatibleCover}>

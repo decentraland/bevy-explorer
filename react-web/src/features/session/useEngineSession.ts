@@ -94,6 +94,7 @@ export interface CatalogQuery {
   orderBy?: 'date' | 'rarity' | 'name'
   direction?: 'asc' | 'desc'
   collectiblesOnly?: boolean
+  smartOnly?: boolean
 }
 
 export interface BackpackState {

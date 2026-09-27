@@ -61,10 +61,11 @@ const SORTS: { id: SortKey; label: string; orderBy: 'date' | 'rarity' | 'name'; 
   { id: 'nameAZ', label: 'Name A-Z', orderBy: 'name', direction: 'asc' },
   { id: 'nameZA', label: 'Name Z-A', orderBy: 'name', direction: 'desc' }
 ]
-type ViewKey = 'all' | 'collectibles'
+type ViewKey = 'all' | 'collectibles' | 'smart'
 const VIEWS: { id: ViewKey; label: string }[] = [
   { id: 'all', label: 'All Items' },
-  { id: 'collectibles', label: 'Collectibles only' }
+  { id: 'collectibles', label: 'Collectibles only' },
+  { id: 'smart', label: 'Smart Wearables only' }
 ]
 const NO_DESC = 'This wearable does not have a description set.'
 
@@ -310,6 +311,7 @@ export function BackpackPage({
   const sortBy = sort.orderBy
   const sortDir = sort.direction
   const collectiblesOnly = view === 'collectibles'
+  const smartOnly = view === 'smart'
 
   // Fixed body-part slots. With a server-paginated grid we don't hold the full catalog, so the
   // category column is the canonical Unity ordering rather than "categories present in the page".
@@ -333,7 +335,7 @@ export function BackpackPage({
   // Any filter change resets to the first page.
   useEffect(() => {
     setPage(0)
-  }, [cat, searchDebounced, collectiblesOnly, sortBy, sortDir])
+  }, [cat, searchDebounced, collectiblesOnly, smartOnly, sortBy, sortDir])
   // Fetch the current catalog page from the catalyst (wearables tab). Filters/sort are applied
   // server-side; the session drops stale responses via a request id.
   useEffect(() => {
@@ -345,9 +347,10 @@ export function BackpackPage({
       search: searchDebounced || undefined,
       orderBy: sortBy,
       direction: sortDir,
-      collectiblesOnly
+      collectiblesOnly,
+      smartOnly
     })
-  }, [backpack.open, tab, page, cat, searchDebounced, sortBy, sortDir, collectiblesOnly, backpack.query])
+  }, [backpack.open, tab, page, cat, searchDebounced, sortBy, sortDir, collectiblesOnly, smartOnly, backpack.query])
 
   const pageCount = Math.max(1, Math.ceil(backpack.total / PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
@@ -568,6 +571,7 @@ export function BackpackPage({
                           name={w.name}
                           rarity={asRarity(w.rarity)}
                           equipped={w.equipped}
+                          isSmart={w.isSmart}
                           selected={selected != null && 'urn' in selected && selected.urn === w.urn}
                           incompatible={!isCompatible(w, backpack.bodyShape)}
                           unequippable={!REQUIRED_CATEGORIES.has(w.category)}
