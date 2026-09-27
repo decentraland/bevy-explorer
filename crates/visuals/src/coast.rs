@@ -20,16 +20,24 @@ use bevy::{
         render_resource::{AsBindGroup, ShaderRef},
     },
 };
-use common::{sets::PostUpdateSets, structs::PrimaryCamera};
+use common::{
+    sets::PostUpdateSets,
+    structs::{PrimaryCamera, PrimaryUser},
+};
 use dcl_component::SceneEntityId;
-use scene_runner::update_world::mesh_collider::{ColliderId, SceneColliderData};
+use scene_runner::{
+    initialize_scene::PARCEL_SIZE,
+    parcel_to_vec3,
+    update_world::mesh_collider::{ColliderId, SceneColliderData},
+    vec3_to_parcel,
+};
 
 use crate::terrain::{TerrainSet, TerrainSurface, NO_COAST};
 
 pub const SEA_LEVEL: f32 = -19.0;
 /// Cliffs are built in chunks of this length along each side.
 const CHUNK: f32 = 64.0;
-/// Cliff chunks within this distance of the camera are built.
+/// Cliff chunks within this distance of the player's parcel centre are built.
 const CLIFF_RANGE: f32 = 768.0;
 /// Profile columns along each side are this far apart.
 const COLUMN: f32 = 1.0;
@@ -212,6 +220,7 @@ fn update(
     mut state: ResMut<CoastState>,
     assets: Res<CoastAssets>,
     camera: Query<&GlobalTransform, With<PrimaryCamera>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut cliff_materials: ResMut<Assets<CliffMaterial>>,
     mut water_materials: ResMut<Assets<WaterMaterial>>,
@@ -250,7 +259,14 @@ fn update(
         .ok()
         .map(GlobalTransform::translation)
         .filter(|position| position.is_finite());
-    let (Some(bounds), Some(position)) = (bounds, position) else {
+    // chunks follow the player's parcel, so they only change when the player crosses a parcel
+    let parcel = player
+        .single()
+        .ok()
+        .map(GlobalTransform::translation)
+        .filter(|position| position.is_finite())
+        .map(|position| parcel_to_vec3(vec3_to_parcel(position)));
+    let (Some(bounds), Some(position), Some(parcel)) = (bounds, position, parcel) else {
         for (_, mut visibility) in &mut ocean {
             visibility.set_if_neq(Visibility::Hidden);
         }
@@ -270,9 +286,17 @@ fn update(
         visibility.set_if_neq(Visibility::Inherited);
     }
 
-    let mut desired: HashSet<_> = near_chunks(bounds, position).into_iter().collect();
+    let mut desired: HashSet<_> = near_chunks(bounds, parcel, CLIFF_RANGE)
+        .into_iter()
+        .collect();
+    // built chunks are kept for another parcel, so stepping back and forth doesn't rebuild them
+    let keep: HashSet<_> = near_chunks(bounds, parcel, CLIFF_RANGE + PARCEL_SIZE)
+        .into_iter()
+        .collect();
     for (entity, cliff) in &cliffs {
-        if changed || !desired.remove(&cliff.key) {
+        if !changed && keep.contains(&cliff.key) {
+            desired.remove(&cliff.key);
+        } else {
             remove_walls(&mut walls, cliff);
             commands.entity(entity).despawn();
         }
@@ -359,22 +383,22 @@ fn smooth_random(edge: Vec2, salt: u32) -> f32 {
     low.lerp(high, fraction.y)
 }
 
-/// Cliff chunks (side, index) within `CLIFF_RANGE` of the camera (bevy position).
-fn near_chunks(bounds: Vec4, camera: Vec3) -> Vec<(u32, i32)> {
-    let camera = Vec2::new(camera.x, -camera.z);
+/// Cliff chunks (side, index) within `range` of `centre` (bevy position).
+fn near_chunks(bounds: Vec4, centre: Vec3, range: f32) -> Vec<(u32, i32)> {
+    let centre = Vec2::new(centre.x, -centre.z);
     let mut chunks = Vec::new();
     for side in 0..4 {
         let length = side_length(bounds, side);
         let start = edge(bounds, side, 0.0);
         let end = edge(bounds, side, length);
-        let along = (camera - start)
+        let along = (centre - start)
             .dot((end - start).normalize())
             .clamp(0.0, length);
-        if camera.distance(start.lerp(end, along / length)) > CLIFF_RANGE {
+        if centre.distance(start.lerp(end, along / length)) > range {
             continue;
         }
-        let first = ((along - CLIFF_RANGE).max(0.0) / CHUNK).floor() as i32;
-        let last = (((along + CLIFF_RANGE).min(length) / CHUNK).ceil() as i32 - 1).max(first);
+        let first = ((along - range).max(0.0) / CHUNK).floor() as i32;
+        let last = (((along + range).min(length) / CHUNK).ceil() as i32 - 1).max(first);
         chunks.extend((first..=last).map(|chunk| (side, chunk)));
     }
     chunks

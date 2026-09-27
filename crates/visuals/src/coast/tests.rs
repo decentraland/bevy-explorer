@@ -35,7 +35,7 @@ fn chunks(bounds: Vec4, side: u32) -> i32 {
 #[test]
 fn cliffs_face_outward_and_stay_outside_the_ground() {
     let bounds = bounds(IVec2::new(-2, -2), IVec2::new(2, 2));
-    let near = near_chunks(bounds, Vec3::ZERO);
+    let near = near_chunks(bounds, Vec3::ZERO, CLIFF_RANGE);
     assert_eq!(near.len(), 8);
     for (side, chunk) in near {
         let mesh = cliff_mesh(bounds, side, chunk);
@@ -70,8 +70,8 @@ fn cliffs_face_outward_and_stay_outside_the_ground() {
         }
     }
     let huge = Vec4::new(-16000.0, -16000.0, 16000.0, 16000.0);
-    assert!(near_chunks(huge, Vec3::ZERO).is_empty());
-    assert!(near_chunks(huge, Vec3::new(16000.0, 0.0, -16000.0)).len() <= 28);
+    assert!(near_chunks(huge, Vec3::ZERO, CLIFF_RANGE).is_empty());
+    assert!(near_chunks(huge, Vec3::new(16000.0, 0.0, -16000.0), CLIFF_RANGE).len() <= 28);
 }
 
 #[test]
