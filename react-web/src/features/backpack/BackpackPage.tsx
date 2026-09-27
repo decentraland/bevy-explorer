@@ -32,8 +32,11 @@ import arrowDownIcon from '../../assets/backpack/icon-arrow-down.webp'
 import categoriesIcon from '../../assets/backpack/icon-categories.webp'
 import outfitsIcon from '../../assets/backpack/icon-outfits.webp'
 import marketplaceIcon from '../../assets/backpack/icon-marketplace.webp'
+import hiddenIcon from '../../assets/backpack/icon-hidden.webp'
+import visibleIcon from '../../assets/backpack/icon-visible.webp'
 import { COLOR_LABEL, COLOR_PRESETS, COLOR_TARGET } from './avatarColors'
 import { isCompatible } from '../../engine/bodyShape'
+import { hiddenBy } from '../../engine/avatarHides'
 import { previewFocusFor } from './previewFocus'
 import { catalystThumbUrl } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
@@ -86,6 +89,11 @@ function asRarity(r?: string): Rarity {
 function humanize(s: string): string {
   return s.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
+const CATEGORY_NAMES: Record<string, string> = { hands_wear: 'Handwear', body_shape: 'Body shape' }
+function categoryName(c: string): string {
+  const name = CATEGORY_NAMES[c] ?? c.replace(/[_-]+/g, ' ')
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
 
 export { pageWindow } from '../../design'
 
@@ -111,16 +119,25 @@ function CategoryTile({
   index,
   active,
   equipped,
+  hider,
+  forced = false,
   onClick,
-  onUnequip
+  onUnequip,
+  onToggleHide
 }: {
   cat: string
   index: number
   active: boolean
   equipped?: Wearable
+  /** Category of the equipped item that hides this one. */
+  hider?: string
+  /** Shown even though it's hidden. */
+  forced?: boolean
   onClick: () => void
   /** Present only when the slot holds a removable equipped item — renders the hover unequip button. */
   onUnequip?: () => void
+  /** Present when the equipped item here is hidden — renders the show/hide toggle. */
+  onToggleHide?: () => void
 }): React.JSX.Element {
   const [failed, setFailed] = useState(false)
   const filled = equipped != null
@@ -144,7 +161,23 @@ function CategoryTile({
         )}
         <span className={styles.slotHover} aria-hidden="true" />
       </span>
-      <span className={styles.tooltip} role="tooltip">{humanize(cat)}</span>
+      <span className={styles.tooltip} role="tooltip">
+        <span className={styles.tooltipTitle}>{humanize(cat)}</span>
+        {hider != null && <span className={styles.tooltipNote}>Hidden by <b>{categoryName(hider)}</b></span>}
+      </span>
+      {onToggleHide != null && (
+        <span
+          className={styles.hideToggle}
+          role="button"
+          aria-label={forced ? `Hide ${categoryName(cat)}` : `Show ${categoryName(cat)}`}
+          aria-pressed={forced}
+          onClick={(e) => { e.stopPropagation(); onToggleHide() }}
+        >
+          <span className={styles.hideToggleInner} data-forced={forced}>
+            <MaskIcon src={forced ? visibleIcon : hiddenIcon} size={20} />
+          </span>
+        </span>
+      )}
       {onUnequip != null && (
         <span
           className={styles.slotUnequip}
@@ -196,6 +229,22 @@ function DetailPanel({ item }: { item: Wearable | Emote | null }): React.JSX.Ele
         <span className={styles.detailRarity} data-rarity={rarity}>{rarity}</span>
         <div className={styles.detailDescLabel}>DESCRIPTION</div>
         <div className={styles.detailDesc}>{NO_DESC}</div>
+        {'hides' in item && item.hides != null && item.hides.length > 0 && (
+          <>
+            <div className={styles.detailHidesLabel}>
+              <MaskIcon src={hiddenIcon} size={20} />
+              HIDES
+            </div>
+            <div className={styles.detailHides}>
+              {item.hides.map((h) => (
+                <span key={h} className={styles.hideChip}>
+                  <CategoryIcon category={h} size={22} />
+                  {categoryName(h)}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </aside>
   )
@@ -326,6 +375,9 @@ export function BackpackPage({
     return m
   }, [backpack.list, backpack.equipped])
 
+  // Ignores force render so a slot shown anyway keeps its toggle.
+  const hiders = useMemo(() => hiddenBy([...equippedByCat.values()], []), [equippedByCat])
+
   // Debounce the search box before hitting the server.
   const [searchDebounced, setSearchDebounced] = useState('')
   useEffect(() => {
@@ -401,6 +453,10 @@ export function BackpackPage({
 
   // Explicit equip/unequip (the hover pill) — changes the Backpack's look (deployed when it closes),
   // then drops the preview override so the avatar follows the (now updated) look.
+  const toggleForceRender = (c: string): void => {
+    const f = backpack.forceRender
+    backpack.setForceRender(f.includes(c) ? f.filter((x) => x !== c) : [...f, c])
+  }
   const toggleEquip = (w: Wearable): void => {
     if (w.equipped && REQUIRED_CATEGORIES.has(w.category)) return
     const next = w.equipped
@@ -528,6 +584,9 @@ export function BackpackPage({
                         equipped={eq}
                         onClick={() => pick(c)}
                         onUnequip={eq != null && !REQUIRED_CATEGORIES.has(c) ? () => toggleEquip(eq) : undefined}
+                        hider={hiders.get(c)}
+                        forced={backpack.forceRender.includes(c)}
+                        onToggleHide={eq != null && hiders.has(c) ? () => toggleForceRender(c) : undefined}
                       />
                     )
                   })}

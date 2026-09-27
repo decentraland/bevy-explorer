@@ -161,6 +161,7 @@ export type PageToScene =
   | DeleteOutfitRequest
   | EquipOutfitRequest
   | SetAvatarColorRequest
+  | SetForceRenderRequest
   | GetCommunitiesRequest
   | CreateCommunityRequest
   | JoinCommunityRequest
@@ -857,6 +858,8 @@ export interface Wearable {
   bodyShapes?: string[]
   /** Ships a scene script (runs while worn). */
   isSmart?: boolean
+  /** Categories it hides when worn on the current body shape. */
+  hides?: string[]
 }
 
 /** Currently-equipped wearables, resolved by urn independently of the (paginated) grid so every
@@ -870,6 +873,14 @@ export interface WearablesMessage {
   bodyShape?: string
   /** The avatar's colors (engine Color3, 0–1). */
   colors?: { skin?: Color3; hair?: Color3; eyes?: Color3 }
+  /** Categories shown even though an equipped item hides them. */
+  forceRender?: string[]
+}
+
+/** Replace the Backpack look's force-render list (deployed when it closes). */
+export interface SetForceRenderRequest {
+  kind: 'setForceRender'
+  categories: string[]
 }
 
 /** Change one avatar color in the Backpack's look (deployed when it closes). */

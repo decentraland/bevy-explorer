@@ -11,6 +11,7 @@ import type { Ctx } from '../bridge'
 import type { Wearable } from '../../../src/engine/protocol'
 import { currentLook, editLook } from './avatarDraft'
 import { bodyShapesOf, splitBodyShape } from '../../../src/engine/bodyShape'
+import { itemHides, type HideData } from '../../../src/engine/avatarHides'
 
 type CatalogElement = {
   urn: string
@@ -20,7 +21,7 @@ type CatalogElement = {
   amount?: number
   // Per-owned-token data; carries the tokenId we need for the deployable URN.
   individualData?: Array<{ id?: string; tokenId?: string }>
-  entity?: { metadata?: { thumbnail?: string; data?: { representations?: Array<{ bodyShapes?: string[] }> } }; content?: Array<{ file: string; hash: string }> }
+  entity?: { metadata?: { thumbnail?: string; data?: HideData }; content?: Array<{ file: string; hash: string }> }
 }
 
 // item-urn → deployable token urn (see tokenUrnOf), what the equip handler sends. The map
@@ -77,7 +78,8 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
       count: el.amount,
       equipped: owned.some((w) => w === el.urn || w.startsWith(`${el.urn}:`)),
       bodyShapes: bodyShapesOf(el.entity?.metadata?.data?.representations),
-      isSmart: el.entity?.content?.some((c) => c.file.endsWith('.js')) === true
+      isSmart: el.entity?.content?.some((c) => c.file.endsWith('.js')) === true,
+      hides: itemHides(el.category, el.entity?.metadata?.data, look?.bodyShape)
     }
   })
   return { items, total: data?.totalAmount ?? items.length }
@@ -88,6 +90,8 @@ type ResolveOpts = {
    *  WearableCard ignores it — and resolving a legacy (collections-v1) item costs a marketplace-api
    *  round trip the Backpack and outfit equip would pay for nothing. */
   shopUrls?: boolean
+  /** Picks the representation whose hides apply. */
+  bodyShape?: string
 }
 
 // Resolve a set of (possibly token-form) urns into displayable wearables. Resolution is by urn
@@ -115,7 +119,8 @@ export async function resolveWearables(urns: string[], opts: ResolveOpts = {}): 
       category: def?.data?.category ?? 'unknown',
       thumbnail: thumbnailUrl(baseUrl, item),
       equipped: true,
-      shopUrl: shopUrls?.get(item)
+      shopUrl: shopUrls?.get(item),
+      hides: def != null ? itemHides(def.data?.category ?? '', def.data, opts.bodyShape) : undefined
     }
   })
 }
@@ -147,10 +152,19 @@ export async function sendEquipped(ctx: Ctx): Promise<void> {
   const urns = look.bodyShape !== '' ? [look.bodyShape, ...look.wearables] : look.wearables
   ctx.send({
     kind: 'wearables',
-    equipped: await resolveEquippedSet(urns),
+    equipped: await resolveEquippedSet(urns, { bodyShape: look.bodyShape }),
     bodyShape: look.bodyShape || undefined,
+    forceRender: look.forceRender,
     colors: { skin: look.skin ?? undefined, hair: look.hair ?? undefined, eyes: look.eyes ?? undefined }
   })
+}
+
+// Unequipping an item drops its category's force-render override.
+async function forceRenderStillWorn(forceRender: string[], wearables: string[]): Promise<string[]> {
+  if (forceRender.length === 0) return forceRender
+  const defs = await resolveDefsByUrn('wearables', await catalystBase(), wearables.map(itemUrn))
+  const worn = new Set(wearables.map((u) => defs.get(itemUrn(u))?.data?.category))
+  return forceRender.filter((c) => worn.has(c))
 }
 
 export function registerWearables(ctx: Ctx): void {
@@ -158,10 +172,18 @@ export function registerWearables(ctx: Ctx): void {
     // The equipped set carries the body shape, but it's the avatar base, not a wearable.
     const { bodyShape, wearables } = splitBodyShape(msg.urns)
     const tokenUrns = wearables.map((u) => tokenUrnByItem.get(u) ?? u)
-    const newShape = bodyShape != null && bodyShape !== currentLook()?.bodyShape
+    const before = currentLook()
+    const newShape = bodyShape != null && bodyShape !== before?.bodyShape
     editLook(bodyShape != null ? { bodyShape, wearables: tokenUrns } : { wearables: tokenUrns })
+    const forceRender = await forceRenderStillWorn(before?.forceRender ?? [], tokenUrns)
+    if (forceRender.length !== (before?.forceRender.length ?? 0)) editLook({ forceRender })
     // Re-emit with the new shape so the grid re-checks compatibility right away.
-    if (newShape) await sendEquipped(ctx)
+    if (newShape || forceRender.length !== (before?.forceRender.length ?? 0)) await sendEquipped(ctx)
+  })
+
+  ctx.on('setForceRender', async (msg) => {
+    editLook({ forceRender: msg.categories })
+    await sendEquipped(ctx)
   })
 
   ctx.on('setAvatarColor', (msg) => {

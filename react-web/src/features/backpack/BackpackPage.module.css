@@ -243,6 +243,46 @@
 .slot:hover .tooltip {
   opacity: 1;
 }
+.tooltipTitle {
+  display: block;
+}
+.tooltipNote {
+  display: block;
+  font-weight: var(--fw-regular);
+  text-transform: none;
+}
+.tooltipNote b {
+  font-weight: var(--fw-bold);
+}
+.hideToggle {
+  position: absolute;
+  left: 111px;
+  top: 53px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-button);
+  background: var(--hide-overlay);
+}
+.hideToggleInner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  background: var(--surface-light);
+  color: var(--red);
+}
+.hideToggleInner[data-forced='true'] {
+  color: var(--shown);
+}
+.hideToggle:hover .hideToggleInner {
+  background: var(--pearl);
+}
 .slotUnequip {
   position: absolute;
   left: 106.5px;
@@ -551,6 +591,33 @@
   color: var(--text);
   font-size: var(--type-16);
   line-height: 1.3;
+}
+.detailHidesLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16.66px;
+  color: var(--text);
+  font-size: var(--type-15);
+  font-weight: var(--fw-semibold);
+}
+.detailHides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
+.hideChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 3px 8px 0 5px;
+  border-radius: var(--r-sm);
+  background: var(--scrim-20);
+  color: var(--text);
+  font-size: var(--type-12);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
 }
 
 /* Saved Outfits: two rows of five 237×360 slots across the card (the second row is the NAME

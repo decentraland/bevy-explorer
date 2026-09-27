@@ -147,6 +147,8 @@
   --outfit-edge: rgba(130, 69, 190, 0.6);
   --glow-pink: rgba(255, 75, 237, 0.2);
   --glow-pink-faint: rgba(255, 75, 237, 0.14);
+  --hide-overlay: #4e0e78;
+  --shown: #36d41d; /* a hidden item shown anyway */
   --smart-badge: linear-gradient(90deg, #e82af7 0%, #b229df 100%);
   --cta-flare: linear-gradient(90deg, #ff3156 0%, #ff5757 50%, #ff7d58 100%);
   --scrim-60: rgba(0, 0, 0, 0.4);

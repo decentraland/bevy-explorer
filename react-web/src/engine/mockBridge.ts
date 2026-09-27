@@ -126,7 +126,8 @@ const mockWearables: Wearable[] = BASE.map((b, i) => {
     // f_* base items are female-only in the catalyst (the mock avatar is BaseMale).
     bodyShapes: b.name.startsWith('f_') ? ['urn:decentraland:off-chain:base-avatars:BaseFemale'] : undefined,
     equipped: i % 6 === 0,
-    isSmart: b.name === 'sport_jacket' || b.name === 'Thunder_earring' ? true : undefined
+    isSmart: b.name === 'sport_jacket' || b.name === 'Thunder_earring' ? true : undefined,
+    hides: b.name === 'bandana' ? ['hair'] : undefined
   }
 })
 
@@ -154,6 +155,7 @@ const MOCK_COLLECTIBLE_EQUIPPED: Wearable[] = [
   { urn: 'urn:decentraland:matic:collections-v2:0xa42e166edac870aa5351b098ae6458d39ca0fca6:0', name: 'Neon Tiara', rarity: 'legendary', category: 'tiara', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hat'), equipped: true, shopUrl: 'https://decentraland.org/shop/item/0xa42e166edac870aa5351b098ae6458d39ca0fca6/0' },
   { urn: 'urn:decentraland:ethereum:collections-v1:mf_sammichgamer:mf_animehair', name: 'Anime warrior hair', rarity: 'legendary', category: 'hair', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hair_anime_01'), equipped: true, shopUrl: 'https://decentraland.org/shop/item/0x30d3387ff3de2a21bef7032f82d00ff7739e403c/3' }
 ]
+let mockForceRender: string[] = []
 const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED, ...MOCK_COLLECTIBLE_EQUIPPED]
 
 // The 10 wheel-slot base emotes — shared by getEmotes (the wheel) and the passport's Equipped
@@ -573,7 +575,12 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'equipEmote') return // no-op in the mock
     if (msg.kind === 'commitAvatar' || msg.kind === 'revertAvatar') return // no-op in the mock
     if (msg.kind === 'getWearables') {
-      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE, colors: mockColors })
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE, colors: mockColors, forceRender: mockForceRender })
+      return
+    }
+    if (msg.kind === 'setForceRender') {
+      mockForceRender = msg.categories
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE, colors: mockColors, forceRender: mockForceRender })
       return
     }
     if (msg.kind === 'catalogQuery') {
