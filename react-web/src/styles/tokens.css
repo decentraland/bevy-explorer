@@ -140,6 +140,7 @@
   --slot-empty: #582987;
   --slot-edge: #a14bf3;
   --slot-edge-20: rgba(161, 75, 243, 0.2);
+  --skeleton: rgba(138, 65, 212, 0.62);
   --pager-idle: rgba(161, 75, 243, 0.28);
   --unequip-hover: #43404a;
   --outfit-banner: #67279b;

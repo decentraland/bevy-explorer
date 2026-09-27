@@ -8,7 +8,7 @@ import { enterAsGuest, fakeProfileState, fakeSession, renderSession } from './ha
 describe('backpack colors', () => {
   it('shows the hair COLOR button for hair-coloured categories and not for others', () => {
     const s = fakeSession()
-    const backpack = { ...s.backpack, open: true, colors: { skin: '#ddb18f', hair: '#5b310f', eyes: '#20b3f6' }, setColor: vi.fn() }
+    const backpack = { ...s.backpack, open: true, list: [{ urn: 'urn:x', name: 'Some Item', rarity: 'base', category: 'hair', equipped: false }], total: 1, colors: { skin: '#ddb18f', hair: '#5b310f', eyes: '#20b3f6' }, setColor: vi.fn() }
     render(<BackpackPage backpack={backpack} emotes={s.emotes} profile={fakeProfileState()} onNavigate={vi.fn()} setEngineViewport={vi.fn()} />)
     expect(screen.queryByRole('button', { name: 'Hair color' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Facial Hair' }))
@@ -20,7 +20,7 @@ describe('backpack colors', () => {
 
   it('offers skin colour on the body shape category and eye colour on eyes', () => {
     const s = fakeSession()
-    const backpack = { ...s.backpack, open: true, colors: { skin: '#ddb18f', hair: '#5b310f', eyes: '#20b3f6' }, setColor: vi.fn() }
+    const backpack = { ...s.backpack, open: true, list: [{ urn: 'urn:x', name: 'Some Item', rarity: 'base', category: 'hair', equipped: false }], total: 1, colors: { skin: '#ddb18f', hair: '#5b310f', eyes: '#20b3f6' }, setColor: vi.fn() }
     render(<BackpackPage backpack={backpack} emotes={s.emotes} profile={fakeProfileState()} onNavigate={vi.fn()} setEngineViewport={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Body Shape' }))
     expect(screen.getByRole('button', { name: 'Skin color' })).toHaveTextContent('COLOR')

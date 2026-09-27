@@ -8,6 +8,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button, Chip, ColorPicker, MaskIcon, OptionMenu, Pager, SearchField, Tabs, WearableCard, rarityPanel, rarityTile, type Rarity, type TabItem } from '../../design'
 import allIcon from '../../assets/category-icons/all.png'
 import arrowLeftIcon from '../../assets/backpack/icon-arrow-left.webp'
+import emptySearchArt from '../../assets/backpack/empty-search.webp'
+import emptyCategoryArt from '../../assets/backpack/empty-category.webp'
 import closeIcon from '../../assets/backpack/icon-close.webp'
 import wearablesIcon from '../../assets/backpack/icon-wearables.webp'
 import emotesIcon from '../../assets/backpack/icon-emotes.webp'
@@ -54,6 +56,7 @@ const NO_DESC = 'This wearable does not have a description set.'
 const RARITIES: Rarity[] = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
 const RARITY_RANK: Record<string, number> = Object.fromEntries(RARITIES.map((r, i) => [r, i]))
 const SHOP_URL = 'https://decentraland.org/shop?utm_source=client'
+const MARKETPLACE_URL = 'https://decentraland.org/marketplace'
 
 type Section = 'categories' | 'outfits'
 const SECTION_TABS: TabItem<Section>[] = [
@@ -137,6 +140,20 @@ function CategoryTile({
         </span>
       )}
     </button>
+  )
+}
+
+function EmptyResults({ search }: { search: boolean }): React.JSX.Element {
+  return (
+    <div className={styles.emptyState}>
+      <img src={search ? emptySearchArt : emptyCategoryArt} alt="" width={100} height={100} />
+      <p className={styles.emptyText}>
+        {search ? 'You do not have any wearable that meets this category or search criteria.' : 'There are no items in this category.'}
+        <br />
+        If you want you can find the ideal one for you in the{' '}
+        <a className={styles.emptyLink} href={MARKETPLACE_URL} target="_blank" rel="noopener noreferrer">Marketplace</a>.
+      </p>
+    </div>
   )
 }
 
@@ -493,7 +510,7 @@ export function BackpackPage({
                   })}
                 </div>
                 <div className={styles.gridArea}>
-                  <div className={styles.breadcrumb}>
+                  {(backpack.loading || pageItems.length > 0) && <div className={styles.breadcrumb}>
                     <Chip label="All" icon={<MaskIcon src={allIcon} size={32} />} selected={cat === 'all' && query === ''} onClick={() => { pick('all'); setQuery('') }} />
                     {cat !== 'all' && (
                       <>
@@ -515,9 +532,13 @@ export function BackpackPage({
                         onChange={(hex) => backpack.setColor(COLOR_TARGET[cat], hex)}
                       />
                     )}
-                  </div>
-                  {pageItems.length === 0 ? (
-                    <div className={styles.empty}>{backpack.loading ? 'Loading…' : 'No wearables.'}</div>
+                  </div>}
+                  {backpack.loading ? (
+                    <div className={styles.grid} aria-busy="true">
+                      {Array.from({ length: PAGE_SIZE }, (_, i) => <span key={i} className={styles.skeleton} />)}
+                    </div>
+                  ) : pageItems.length === 0 ? (
+                    <EmptyResults search={searchDebounced !== ''} />
                   ) : (
                     <div className={styles.grid}>
                       {pageItems.map((w) => (
@@ -538,7 +559,7 @@ export function BackpackPage({
                       ))}
                     </div>
                   )}
-                  <Pager className={styles.pager} page={safePage} count={pageCount} onChange={setPage} />
+                  {!backpack.loading && pageItems.length > 0 && <Pager className={styles.pager} page={safePage} count={pageCount} onChange={setPage} />}
                 </div>
               </div>
               )
@@ -596,7 +617,7 @@ export function BackpackPage({
               selected wearable/emote. */}
           {selectedOutfit != null ? (
             <OutfitDetailPanel outfit={selectedOutfit} index={outfitSlot as number} />
-          ) : (
+          ) : tab === 'wearables' && section === 'categories' && !backpack.loading && pageItems.length === 0 ? null : (
             <DetailPanel item={tab === 'wearables' && section === 'outfits' ? null : selected} />
           )}
           </section>
