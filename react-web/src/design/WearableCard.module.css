@@ -1,163 +1,175 @@
-/* WearableCard — backpack item tile, matching Figma "NFT Items & Badges → Backpack items".
-   Soft two-tone rarity gradient (light sheen at top → main rarity colour), rounded 16px.
-   States (Figma button variants): Equipped = orange ring, Selected = pink ring,
-   hover reveals an EQUIP (red) / UNEQUIP (dark) pill. NEW + ×count badges. */
+/* A 126×126 tile drawn 3px left of / 6px below its 120px grid cell. Hover scales the whole card
+   and grows a glow panel around it that carries the action button under the tile. */
 .card {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  aspect-ratio: 1;
+  display: block;
+  width: 126px;
+  height: 126px;
+  margin: 6px 0 0 -3px;
   padding: 0;
-  border: 2.5px solid transparent;
-  border-radius: 16px;
+  border: none;
+  background: none;
   cursor: pointer;
-  overflow: hidden;
-  /* Light sheen at top, rarity main through the body, a touch deeper at the bottom. */
-  background: radial-gradient(
-    128% 110% at 50% -12%,
-    var(--rl) 0%,
-    var(--rm) 60%,
-    color-mix(in srgb, var(--rm) 86%, #000) 100%
-  );
-  transition:
-    transform 0.13s var(--ease-spring, ease),
-    border-color var(--dur-fast) ease,
-    box-shadow var(--dur-fast) ease;
+  transition: transform var(--dur-tap) linear;
 }
-/* Unity BackpackItemView hover: scale to 1.1 with a spring (Ease, 0.1s). */
 .card:hover {
-  transform: scale(1.1);
   z-index: 2;
+  transform: scale(1.1);
 }
-
-/* Equipped (worn) → orange ring, like Unity's category highlight. */
-.equipped {
-  border-color: #ff7439;
-  box-shadow:
-    0 0 0 1px rgba(255, 116, 57, 0.55),
-    0 0 14px rgba(255, 116, 57, 0.5);
-}
-/* Selected (open in the detail panel) → pink ring. */
-.selected {
-  border-color: #ff4bed;
-  box-shadow:
-    0 0 0 1px rgba(255, 75, 237, 0.5),
-    0 0 14px rgba(255, 75, 237, 0.45);
-}
-.incompatible {
-  filter: grayscale(0.75) brightness(0.62);
-}
-
-/* Top-left category flap (Unity FlapBackground + CategoryImage): a rounded corner tab
-   carrying the body-part glyph. */
-.flap {
+.hoverPanel {
   position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-bottom-right-radius: 10px;
-  background: rgba(12, 8, 20, 0.55);
-  color: rgba(255, 255, 255, 0.92);
+  left: -9px;
+  top: -9px;
+  width: 144px;
+  height: 186px;
+  border-style: solid;
+  border-width: 26.8px 20px 25px 19.5px;
+  border-image: url('../assets/backpack/hover-bg.webp') 59 44 55 43 fill / 26.8px 20px 25px 19.5px stretch;
+  transform: scale(0);
+  transform-origin: 50% 36%;
+  transition: transform var(--dur-tap) linear;
+  pointer-events: none;
 }
-
-/* Equipped indicator dot (top-right) — hidden on hover, where the UNEQUIP pill takes over. */
-.equippedDot {
+.card:hover .hoverPanel {
+  transform: scale(1);
+}
+.body {
   position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #ff7439;
-  box-shadow: 0 0 0 2px rgba(12, 8, 20, 0.55);
+  inset: 0;
+  border-radius: 12.6px;
+  background-position: top center;
+  background-size: 100% auto;
+  overflow: hidden;
 }
-.card:hover .equippedDot {
-  opacity: 0;
-}
-
 .thumb {
-  width: 88%;
-  height: 88%;
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 124px;
+  height: 124px;
   object-fit: contain;
 }
-.placeholder {
-  width: 52%;
-  height: 52%;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.16);
+.flap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 46px;
+  filter: drop-shadow(0 1px 2px var(--scrim-40));
 }
-
-/* NEW (red, bottom-left) + ×count (dark, bottom-right) badges. */
+.flapTint {
+  position: absolute;
+  inset: 0;
+  background: var(--rm);
+  mask: url('../assets/backpack/corner-flap.webp') center / 100% 100% no-repeat;
+}
+.flapIcon {
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  display: flex;
+  color: var(--text);
+}
 .new {
   position: absolute;
-  left: 7px;
-  bottom: 7px;
-  padding: 2px 7px;
-  border-radius: 7px;
-  background: #ff2d55;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-}
-.count {
-  position: absolute;
-  right: 7px;
-  bottom: 7px;
-  padding: 2px 7px;
-  border-radius: 7px;
-  background: rgba(20, 15, 30, 0.7);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-/* Hover action pill (EQUIP / UNEQUIP) — replaces the badges row on hover. */
-.action {
-  position: absolute;
-  left: 7px;
-  right: 7px;
-  bottom: 7px;
+  left: 5.6px;
+  top: 102.5px;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 26px;
-  border-radius: 9px;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  width: 38px;
+  height: 17px;
+  border-radius: var(--r-xs);
+  background: var(--brand);
+  color: var(--text);
+  font-size: var(--type-12);
+  font-weight: var(--fw-bold);
+}
+.slotNumber {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  color: var(--ink-on-light);
+  font-size: var(--type-14);
+  font-weight: var(--fw-bold);
+}
+.incompatibleCover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 10.9px;
+  background: var(--cover-dark);
+}
+.incompatibleNote {
+  color: var(--text);
+  font-size: var(--type-13);
+  font-weight: var(--fw-semibold);
+  text-align: center;
   opacity: 0;
-  transform: translateY(4px);
+}
+.card:hover .incompatibleNote {
+  opacity: 1;
+}
+.ring {
+  position: absolute;
+  left: -7px;
+  top: -6.5px;
+  width: 140px;
+  height: 138px;
+  background: var(--accent);
+  -webkit-mask-box-image: url('../assets/backpack/equipped-outline.webp') 43 / 19.5px stretch;
+  mask-border: url('../assets/backpack/equipped-outline.webp') 43 / 19.5px stretch;
+  display: none;
+  pointer-events: none;
+}
+.equipped .ring {
+  display: block;
+}
+.card:hover .ring {
+  display: none;
+}
+.action {
+  position: absolute;
+  left: 0;
+  top: 131px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 126px;
+  height: 36px;
+  border-radius: var(--r-button);
+  color: var(--text);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  opacity: 0;
+  transform: scale(0);
+  transform-origin: 50% -80px;
   transition:
-    opacity var(--dur-fast) ease,
-    transform var(--dur-fast) ease;
+    opacity var(--dur-tap) linear,
+    transform var(--dur-tap) linear,
+    background-color var(--dur-tap) linear;
   pointer-events: none;
 }
 .card:hover .action {
   opacity: 1;
-  transform: translateY(0);
+  transform: scale(1);
   pointer-events: auto;
-  cursor: pointer;
 }
 .equip {
-  background: #ff2d55;
+  background: var(--brand);
+}
+.equip:hover {
+  background: color-mix(in srgb, var(--brand) 96%, var(--surface-light-hover));
 }
 .unequip {
-  background: rgba(18, 13, 28, 0.92);
+  background: var(--panel);
 }
-/* Unity's incompatible-with-body-shape hover: explains instead of offering EQUIP. */
-.incompatibleNote {
-  background: var(--scrim);
-  font-size: var(--fs-2xs);
-  letter-spacing: 0;
-  text-align: center;
-  cursor: default;
+.unequip:hover {
+  background: var(--unequip-hover);
+}
+.unequip:active {
+  background: var(--black);
 }

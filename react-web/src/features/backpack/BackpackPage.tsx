@@ -527,10 +527,9 @@ export function BackpackPage({
                           rarity={asRarity(w.rarity)}
                           equipped={w.equipped}
                           selected={selected != null && 'urn' in selected && selected.urn === w.urn}
-                          count={w.count}
                           incompatible={!isCompatible(w, backpack.bodyShape)}
                           unequippable={!REQUIRED_CATEGORIES.has(w.category)}
-                          categoryIcon={<CategoryIcon category={w.category} size={15} />}
+                          categoryIcon={<CategoryIcon category={w.category} size={16} />}
                           onClick={() => select(w)}
                           onDoubleClick={() => { if (!w.equipped && isCompatible(w, backpack.bodyShape)) toggleEquip(w) }}
                           onEquip={() => toggleEquip(w)}
@@ -601,7 +600,6 @@ export function BackpackPage({
                           rarity={asRarity(e.rarity)}
                           equipped={e.slot != null}
                           selected={selected != null && 'urn' in selected && selected.urn === e.urn}
-                          count={e.count}
                           onClick={() => setSelected(e)}
                           onEquip={() => (e.slot != null ? emotes.equip(e.slot, '') : emotes.equip(emoteSlot, e.urn))}
                         />

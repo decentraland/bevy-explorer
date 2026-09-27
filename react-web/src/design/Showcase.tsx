@@ -462,7 +462,7 @@ export function Showcase(): React.JSX.Element {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 84px)', gap: 10 }}>
           {(['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic', 'base'] as Rarity[]).map((r, i) => (
             <div key={r} style={{ width: 84 }}>
-              <WearableCard rarity={r} equipped={i === 4} isNew={i === 1} count={i === 7 ? 2 : undefined} />
+              <WearableCard rarity={r} equipped={i === 4} isNew={i === 1} />
             </div>
           ))}
         </div>
