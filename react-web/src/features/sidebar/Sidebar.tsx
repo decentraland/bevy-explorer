@@ -14,6 +14,23 @@ import type { EngineSession } from '../session/useEngineSession'
 import { useLiveEventCount } from '../events/eventsApi'
 import { useAutoHide } from './useAutoHide'
 import styles from './Sidebar.module.css'
+import notificationsArt from '../../assets/sidebar-rail/notifications.webp'
+import eventsArt from '../../assets/sidebar-rail/events.webp'
+import placesArt from '../../assets/sidebar-rail/places.webp'
+import communitiesArt from '../../assets/sidebar-rail/communities.webp'
+import backpackArt from '../../assets/sidebar-rail/backpack.webp'
+import marketplaceArt from '../../assets/sidebar-rail/marketplace.webp'
+import galleryArt from '../../assets/sidebar-rail/gallery.webp'
+import settingsArt from '../../assets/sidebar-rail/settings.webp'
+import helpArt from '../../assets/sidebar-rail/help.webp'
+import bugArt from '../../assets/sidebar-rail/bug.webp'
+import skyboxArt from '../../assets/sidebar-rail/skybox.webp'
+import emotesArt from '../../assets/sidebar-rail/emotes.webp'
+import friendsArt from '../../assets/sidebar-rail/friends.webp'
+import chatArt from '../../assets/sidebar-rail/chat.webp'
+import voiceOffArt from '../../assets/sidebar-rail/voice-off.webp'
+import voiceHearingArt from '../../assets/sidebar-rail/voice-hearing.webp'
+import voiceSpeakingArt from '../../assets/sidebar-rail/voice-speaking.webp'
 import { bugReportUrl } from '../../lib/bugReport'
 
 // `hotkey` names the engine SystemAction whose live binding renders as the tooltip hint.
@@ -28,7 +45,6 @@ type Item =
   | { kind: 'notifications'; icon: IconName; label: string }
   | { kind: 'backpack'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'communities'; icon: IconName; label: string; hotkey?: string }
-  | { kind: 'map'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'places'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'events'; icon: IconName; label: string }
   | { kind: 'skybox'; icon: IconName; label: string }
@@ -37,12 +53,36 @@ type Item =
   | { kind: 'divider' }
 
 
+// The reference rail's own idle icons, each at the size it draws them.
+const RAIL_ART: Partial<Record<IconName, { src: string; size: number }>> = {
+  'notifications': { src: notificationsArt, size: 30 },
+  'events': { src: eventsArt, size: 32 },
+  'places': { src: placesArt, size: 32 },
+  'communities': { src: communitiesArt, size: 32 },
+  'backpack': { src: backpackArt, size: 28 },
+  'marketplace': { src: marketplaceArt, size: 32 },
+  'gallery': { src: galleryArt, size: 28 },
+  'settings': { src: settingsArt, size: 28 },
+  'help': { src: helpArt, size: 32 },
+  'bug': { src: bugArt, size: 30 },
+  'skybox': { src: skyboxArt, size: 30 },
+  'emotes': { src: emotesArt, size: 32 },
+  'friends': { src: friendsArt, size: 30 },
+  'chat': { src: chatArt, size: 26 },
+  'voice-off': { src: voiceOffArt, size: 34 },
+  'voice-hearing': { src: voiceHearingArt, size: 34 },
+  'voice-speaking': { src: voiceSpeakingArt, size: 34 }
+}
+
+function RailButton(props: React.ComponentProps<typeof IconButton>): React.JSX.Element {
+  return <IconButton art={RAIL_ART[props.icon]} {...props} />
+}
+
 const TOP: Item[] = [
   { kind: 'profile', icon: 'profile', label: 'Profile' },
   { kind: 'notifications', icon: 'notifications', label: 'Notifications' },
   { kind: 'divider' },
   { kind: 'events', icon: 'events', label: 'Events' },
-  { kind: 'map', icon: 'map', label: 'Map', hotkey: 'Map' },
   { kind: 'places', icon: 'places', label: 'Places', hotkey: 'Places' },
   { kind: 'communities', icon: 'communities', label: 'Communities', hotkey: 'Communities' },
   { kind: 'backpack', icon: 'backpack', label: 'Backpack', hotkey: 'Backpack' },
@@ -57,6 +97,7 @@ const TOP: Item[] = [
 const BOTTOM: Item[] = [
   { kind: 'mic', icon: 'mic', label: 'Voice chat' },
   { kind: 'skybox', icon: 'skybox', label: 'Skybox' },
+  { kind: 'divider' },
   { kind: 'emotes', icon: 'emotes', label: 'Emotes', hotkey: 'Emote' },
   { kind: 'divider' },
   { kind: 'friends', icon: 'friends', label: 'Friends', hotkey: 'Friends' },
@@ -68,7 +109,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
   const shortcut = 'hotkey' in item && item.hotkey != null ? keyHintFor(snap, item.hotkey) : undefined
   if (item.kind === 'chat')
     return (
-      <IconButton
+      <RailButton
         key="chat"
         icon={item.icon}
         label={item.label}
@@ -80,7 +121,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'friends')
     return (
-      <IconButton
+      <RailButton
         key="friends"
         icon={item.icon}
         label={item.label}
@@ -92,7 +133,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'settings')
     return (
-      <IconButton
+      <RailButton
         key="settings"
         icon={item.icon}
         label={item.label}
@@ -104,7 +145,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
   if (item.kind === 'profile') {
     const p = session.profile.data
     return (
-      <IconButton
+      <RailButton
         key="profile"
         icon={item.icon}
         avatar={p ? { src: p.picture, name: p.name, color: nameColor(p.address || p.name) } : undefined}
@@ -116,7 +157,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
   }
   if (item.kind === 'backpack')
     return (
-      <IconButton
+      <RailButton
         key="backpack"
         icon={item.icon}
         label={item.label}
@@ -127,7 +168,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'communities')
     return (
-      <IconButton
+      <RailButton
         key="communities"
         icon={item.icon}
         label={item.label}
@@ -136,20 +177,9 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
         onClick={session.communities.toggle}
       />
     )
-  if (item.kind === 'map')
-    return (
-      <IconButton
-        key="map"
-        icon={item.icon}
-        label={item.label}
-        shortcut={shortcut}
-        active={session.map.open}
-        onClick={session.map.toggle}
-      />
-    )
   if (item.kind === 'places')
     return (
-      <IconButton
+      <RailButton
         key="places"
         icon={item.icon}
         label={item.label}
@@ -160,7 +190,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'gallery')
     return (
-      <IconButton
+      <RailButton
         key="gallery"
         icon={item.icon}
         label={item.label}
@@ -171,7 +201,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'notifications')
     return (
-      <IconButton
+      <RailButton
         key="notifications"
         icon={item.icon}
         label={item.label}
@@ -182,7 +212,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'emotes')
     return (
-      <IconButton
+      <RailButton
         key="emotes"
         icon={item.icon}
         label={item.label}
@@ -194,9 +224,10 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
   if (item.kind === 'mic') {
     const voice = !session.mic.available ? 'off' : session.mic.enabled ? 'speaking' : 'hearing'
     return (
-      <IconButton
+      <RailButton
         key="mic"
         icon={`voice-${voice}`}
+        size={34}
         label={item.label}
         data-voice={voice}
         indicator={voice !== 'off'}
@@ -206,10 +237,10 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   }
   if (item.kind === 'skybox')
-    return <IconButton key="skybox" icon={item.icon} label={item.label} active={session.skybox.open} onClick={session.skybox.toggle} />
+    return <RailButton key="skybox" icon={item.icon} label={item.label} active={session.skybox.open} onClick={session.skybox.toggle} />
   if (item.kind === 'events')
     return (
-      <IconButton
+      <RailButton
         key="events"
         icon={item.icon}
         label={item.label}
@@ -221,7 +252,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'link')
     return (
-      <IconButton
+      <RailButton
         key={item.label}
         icon={item.icon}
         label={item.label}
@@ -229,7 +260,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
       />
     )
   return (
-    <IconButton
+    <RailButton
       key={item.action}
       icon={item.icon}
       label={item.label}

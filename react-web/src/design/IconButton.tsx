@@ -5,6 +5,7 @@
 import { Avatar } from './Avatar'
 import { Icon, type IconName } from './icons'
 import { Tooltip } from './Tooltip'
+import { MaskIcon } from './MaskIcon'
 import styles from './IconButton.module.css'
 
 interface IconButtonProps
@@ -24,6 +25,10 @@ interface IconButtonProps
   indicator?: boolean
   /** Render this profile picture in place of the icon. */
   avatar?: { src?: string; name: string; color?: string }
+  /** White-on-transparent art drawn at `size` in place of the icon (takes the icon colour). */
+  art?: { src: string; size: number }
+  /** 34 for the voice button; 32 otherwise. */
+  size?: 32 | 34
 }
 
 export function IconButton({
@@ -34,6 +39,8 @@ export function IconButton({
   label,
   shortcut,
   avatar,
+  art,
+  size = 32,
   indicator = false,
   className = '',
   type = 'button',
@@ -43,12 +50,18 @@ export function IconButton({
     <Tooltip label={label} shortcut={shortcut} side="right">
       <button
         type={type}
-        className={`${styles.btn} ${active ? styles.active : ''} ${className}`.trim()}
+        className={`${styles.btn} ${size === 34 ? styles.large : ''} ${active ? styles.active : ''} ${className}`.trim()}
         aria-label={label}
         aria-pressed={active}
         {...rest}
       >
-        {avatar ? <Avatar src={avatar.src} name={avatar.name} color={avatar.color} size={24} /> : <Icon name={icon} size={24} />}
+        {avatar ? (
+          <Avatar src={avatar.src} name={avatar.name} color={avatar.color} size={30} />
+        ) : art ? (
+          <MaskIcon src={art.src} size={art.size} />
+        ) : (
+          <Icon name={icon} size={24} />
+        )}
         {indicator && <span className={styles.indicator} data-indicator />}
         {badge != null && badge > 0 && (
           <span

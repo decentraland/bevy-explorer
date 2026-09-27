@@ -20,7 +20,7 @@
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0 13px;
+  padding: 4px 0 16px;
   box-sizing: border-box;
 }
 
@@ -48,8 +48,8 @@
 }
 /* Unity's ••• is a slim pill above the profile, smaller than a rail button. */
 .root .configButton {
-  width: 26px;
-  height: 12px;
+  width: 36px;
+  height: 16px;
   min-height: 0;
   padding: 0;
 }

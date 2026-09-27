@@ -15,7 +15,6 @@ describe('sidebar clicks', () => {
   const cases: [string, (s: EngineSession) => () => void][] = [
     ['Profile', (s) => s.profile.toggle],
     ['Notifications', (s) => s.notifications.toggle],
-    ['Map', (s) => s.map.toggle],
     ['Communities', (s) => s.communities.toggle],
     ['Backpack', (s) => s.backpack.toggle],
     ['Gallery', (s) => s.gallery.toggle],
@@ -31,6 +30,15 @@ describe('sidebar clicks', () => {
     render(<Sidebar session={s} />)
     await userEvent.click(screen.getByRole('button', { name }))
     expect(vi.mocked(pick(s))).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists the reference rail, in order (Map lives in the menu, not the rail)', () => {
+    render(<Sidebar session={fakeSession()} />)
+    const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    expect(labels).toEqual([
+      'Sidebar settings', 'Profile', 'Notifications', 'Events', 'Places', 'Communities', 'Backpack', 'Marketplace', 'Gallery', 'Settings',
+      'Help & Support', 'Report a bug', 'Voice chat', 'Skybox', 'Emotes', 'Friends', 'Chat'
+    ])
   })
 
   it('Profile opens the passport (onViewProfile) when provided, not the small panel', async () => {
