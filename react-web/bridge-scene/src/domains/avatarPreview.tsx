@@ -23,21 +23,25 @@ const LAYER = 10
 const BACKDROP_TOP = Color4.create(0.31, 0, 0.565, 1)
 const BACKDROP_BOTTOM = Color4.create(0.345, 0.078, 0.514, 1)
 const BACKDROP_BANDS = Array.from({ length: 24 }, (_, i) => Color4.lerp(BACKDROP_TOP, BACKDROP_BOTTOM, i / 23))
-// Gold/orange podium the avatar stands on.
-const PODIUM_COLOR = Color4.create(0.95, 0.62, 0.18, 1)
-const PODIUM_EMISSIVE = Color4.create(0.85, 0.42, 0.08, 1)
-// Camera framing per focus, for the 960×960 preview frame and the avatar at 2× scale: the visible
-// height (orthographic) and the height it's centred on. Head, top, bottom and shoes zoom by the
-// ratio of the reference field of views (9.5°, 15°, 15°, 11.5° against 26.5° for the whole body).
+// Podium layers (gold top, orange ring, dark base). The preview's ambient light is 5×, so these
+// are about a fifth of the colours they render as.
+const PODIUM_LAYERS = [
+  { color: Color4.create(0.34, 0.2, 0.02, 1), scale: 0.96, y: -0.06, height: 0.12 },
+  { color: Color4.create(0.4, 0.12, 0.02, 1), scale: 1.01, y: -0.1, height: 0.1 },
+  { color: Color4.create(0.07, 0.05, 0.09, 1), scale: 1.05, y: -0.16, height: 0.12 }
+]
+// Camera framing per focus for the 960×960 preview frame (avatar at 2× scale): the visible height
+// (orthographic) and the height it's centred on, measured against the reference: whole body with the
+// feet at 91% of the frame, head zoomed 2.5× with the eyes at 38%.
 const FRAMING: Record<PreviewFocus, { range: number; centerY: number }> = {
-  body: { range: 4.54, centerY: 1.57 },
-  head: { range: 1.6, centerY: 2.97 },
-  top: { range: 2.54, centerY: 2.27 },
-  bottom: { range: 2.54, centerY: 1.17 },
-  shoes: { range: 1.94, centerY: 0.47 }
+  body: { range: 6.25, centerY: 2.54 },
+  head: { range: 2.5, centerY: 3.1 },
+  top: { range: 3.96, centerY: 2.8 },
+  bottom: { range: 3.96, centerY: 1.15 },
+  shoes: { range: 3.03, centerY: 0.35 }
 }
 const FOCUS_SECONDS = 0.6
-const CAMERA_PITCH = 4
+const CAMERA_PITCH = 12
 const CAMERA_DISTANCE = 8
 // The camera is pitched down, so its view centre sits this far below it at the avatar.
 const PITCH_DROP = CAMERA_DISTANCE * Math.tan((CAMERA_PITCH * Math.PI) / 180)
@@ -47,7 +51,7 @@ const ROTATION_FACTOR = -0.5
 let rect: Rect | null = null
 let avatarEntity: Entity | null = null
 let cameraEntity: Entity | null = null
-let podiumEntity: Entity | null = null
+let podiumEntities: Entity[] = []
 let lastShapeKey = ''
 let framing = FRAMING.body
 let framingFrom = FRAMING.body
@@ -119,21 +123,14 @@ function createPreview(): void {
     scale: Vector3.create(2, 2, 2)
   })
 
-  // Gold podium under the avatar (a thin cylinder disc, preview-layer only) — matches
-  // the platform the avatar stands on in the reference backpack.
-  const podium = engine.addEntity()
-  MeshRenderer.setCylinder(podium, 1, 1)
-  Material.setPbrMaterial(podium, {
-    albedoColor: PODIUM_COLOR,
-    emissiveColor: PODIUM_EMISSIVE,
-    emissiveIntensity: 0.5,
-    metallic: 0,
-    roughness: 0.5
-  })
-  CameraLayers.create(podium, { layers: [LAYER] })
-  Transform.create(podium, {
-    position: Vector3.create(8, -0.06, 8),
-    scale: Vector3.create(2.6, 0.12, 2.6)
+  // Podium under the avatar (preview layer only), like the platform in the reference backpack.
+  const podium = PODIUM_LAYERS.map((layer) => {
+    const e = engine.addEntity()
+    MeshRenderer.setCylinder(e, 1, 1)
+    Material.setPbrMaterial(e, { albedoColor: layer.color, metallic: 0, roughness: 0.6 })
+    CameraLayers.create(e, { layers: [LAYER] })
+    Transform.create(e, { position: Vector3.create(8, layer.y, 8), scale: Vector3.create(layer.scale, layer.height, layer.scale) })
+    return e
   })
 
   CameraLayer.create(c, {
@@ -159,7 +156,7 @@ function createPreview(): void {
 
   avatarEntity = a
   cameraEntity = c
-  podiumEntity = podium
+  podiumEntities = podium
   lastShapeKey = ''
   syncShape()
 }
@@ -167,10 +164,10 @@ function createPreview(): void {
 function disposePreview(): void {
   if (avatarEntity != null) engine.removeEntity(avatarEntity)
   if (cameraEntity != null) engine.removeEntity(cameraEntity)
-  if (podiumEntity != null) engine.removeEntity(podiumEntity)
+  podiumEntities.forEach((e) => engine.removeEntity(e))
   avatarEntity = null
   cameraEntity = null
-  podiumEntity = null
+  podiumEntities = []
 }
 
 // Re-read the player's avatar into the shape when it changes (equip via React → setAvatar).
