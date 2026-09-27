@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { SceneLoadingOverlay } from '../features/session/SceneLoadingOverlay'
 import { LOADING_TIPS, TIP_ROTATE_MS } from '../features/session/loadingTips'
+import { resetFeatureFlags } from '../lib/featureFlags'
 
 const loading = (over: Partial<{ realmConnected: boolean; pendingAssets: number | null }> = {}) => ({
   visible: true,
@@ -11,7 +12,10 @@ const loading = (over: Partial<{ realmConnected: boolean; pendingAssets: number 
   ...over
 })
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  resetFeatureFlags()
+})
 
 // Unity SceneLoadingScreenView: top bar with LOADING N%, a tips carousel rotating every 10s.
 describe('loading screen', () => {
@@ -48,5 +52,19 @@ describe('loading screen', () => {
     expect(screen.getByText('LOADING 52%')).toBeInTheDocument()
     rerender(<SceneLoadingOverlay scene={loading({ realmConnected: false })} progress={52} />)
     expect(screen.getByText('RECONNECTING…')).toBeInTheDocument()
+  })
+
+  it('the progress fill starts 67px wide, like the reference bar', () => {
+    render(<SceneLoadingOverlay scene={loading()} progress={0} />)
+    expect(document.querySelector('[class*="fill"]')).toHaveStyle({ width: 'calc(0% + 67px)' })
+  })
+
+  it('shows the bug report button only while its feature flag is on', () => {
+    const { unmount } = render(<SceneLoadingOverlay scene={loading()} progress={0} />)
+    expect(screen.queryByRole('button', { name: 'Report a bug' })).toBeNull()
+    unmount()
+    resetFeatureFlags({ flags: { 'explorer-alfa-bug-report': true }, variants: {} })
+    render(<SceneLoadingOverlay scene={loading()} progress={0} />)
+    expect(screen.getByRole('button', { name: 'Report a bug' })).toBeInTheDocument()
   })
 })

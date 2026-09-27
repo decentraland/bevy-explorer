@@ -14,6 +14,7 @@ import type { EngineSession } from '../session/useEngineSession'
 import { useLiveEventCount } from '../events/eventsApi'
 import { useAutoHide } from './useAutoHide'
 import styles from './Sidebar.module.css'
+import { bugReportUrl } from '../../lib/bugReport'
 
 // `hotkey` names the engine SystemAction whose live binding renders as the tooltip hint.
 type Item =
@@ -35,10 +36,6 @@ type Item =
   | { kind: 'link'; icon: IconName; label: string; url: string | (() => string) }
   | { kind: 'divider' }
 
-function bugReportUrl(): string {
-  const body = `**What happened**\n\n**Steps to reproduce**\n\n**Environment**\n- Browser: ${navigator.userAgent}\n`
-  return `https://github.com/decentraland/bevy-explorer/issues/new?body=${encodeURIComponent(body)}`
-}
 
 const TOP: Item[] = [
   { kind: 'profile', icon: 'profile', label: 'Profile' },

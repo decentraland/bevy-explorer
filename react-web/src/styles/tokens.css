@@ -157,6 +157,14 @@
   --lava-3: #591681; /* bottom */
   --lava-4: #470071; /* deep */
 
+  /* loading screen */
+  --loading-vignette: radial-gradient(ellipse 100% 100% at 50% 50%, #bf00ff 16.7%, #4c0080 66.7%);
+  --loading-glow: rgba(168, 0, 190, 0.5);
+  --loading-track: #242424;
+  --loading-lava: linear-gradient(90deg, #edb602 0%, #edb602 45%, #f68002 75%, #fe6f00 100%);
+  --loading-key: #ffbe47; /* key names in tip actions, the current tip dot */
+  --loading-pill-edge: #ba67f1;
+
   --r-xs: 6px;
   --r-sm: 8px;
   --r-button: 9.6px;
