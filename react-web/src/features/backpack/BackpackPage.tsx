@@ -11,6 +11,19 @@ import arrowLeftIcon from '../../assets/backpack/icon-arrow-left.webp'
 import emptySearchArt from '../../assets/backpack/empty-search.webp'
 import emptyCategoryArt from '../../assets/backpack/empty-category.webp'
 import emotesDeck from '../../assets/backpack/emotes-deck.webp'
+import outfitEmptyArt from '../../assets/backpack/outfit-empty.webp'
+import outfitArt from '../../assets/backpack/outfit-container.webp'
+import addGradient from '../../assets/backpack/add-gradient.webp'
+import nameBannerArt from '../../assets/backpack/outfits-name-banner.webp'
+import deleteIcon from '../../assets/backpack/icon-delete.webp'
+import silhouette1 from '../../assets/backpack/silhouette-1.webp'
+import silhouette2 from '../../assets/backpack/silhouette-2.webp'
+import silhouette3 from '../../assets/backpack/silhouette-3.webp'
+import silhouette4 from '../../assets/backpack/silhouette-4.webp'
+import silhouette5 from '../../assets/backpack/silhouette-5.webp'
+
+const SILHOUETTES = [silhouette1, silhouette2, silhouette3, silhouette4, silhouette5]
+const NAMES_URL = 'https://decentraland.org/marketplace/names/claim'
 import closeIcon from '../../assets/backpack/icon-close.webp'
 import wearablesIcon from '../../assets/backpack/icon-wearables.webp'
 import emotesIcon from '../../assets/backpack/icon-emotes.webp'
@@ -186,66 +199,80 @@ function DetailPanel({ item }: { item: Wearable | Emote | null }): React.JSX.Ele
   )
 }
 
-// One Saved-Outfits slot: an empty "save current look" tile, or a saved outfit showing a
-// composite of its wearable thumbnails with Equip / Delete actions. Clicking a saved slot selects
-// it (shows its wearables in the detail panel) without touching the avatar; Equip or a double-click
-// persists it. A dot marks the outfit that matches the current look (like an equipped wearable).
+// One Saved-Outfits slot: an empty slot (silhouette; the first one invites saving), or a saved
+// outfit with a hover EQUIP button and a delete button. Double-click also equips.
 function OutfitSlotCard({
   index,
   outfit,
-  selected,
+  firstEmpty,
   equipped,
-  onSelect,
   onSave,
   onEquip,
   onDelete
 }: {
   index: number
   outfit: Outfit | null
-  selected: boolean
+  firstEmpty: boolean
   equipped: boolean
-  onSelect: () => void
   onSave: () => void
   onEquip: () => void
   onDelete: () => void
 }): React.JSX.Element {
   if (!outfit) {
     return (
-      <button type="button" className={styles.outfitEmpty} onClick={onSave} title="Save current look">
-        <span className={styles.outfitPlus} aria-hidden="true">+</span>
-        <span className={styles.outfitEmptyLabel}>Save Outfit</span>
+      <button
+        type="button"
+        className={`${styles.outfitSlot} ${styles.outfitEmpty} ${firstEmpty ? styles.outfitFirstEmpty : ''}`.trim()}
+        style={{ backgroundImage: `url(${outfitEmptyArt})` }}
+        onClick={onSave}
+        aria-label={`Save outfit in slot ${index + 1}`}
+      >
+        <span className={styles.outfitSilhouette} style={{ maskImage: `url(${SILHOUETTES[index % 5]})`, WebkitMaskImage: `url(${SILHOUETTES[index % 5]})` }} aria-hidden="true" />
+        <span className={styles.outfitEmptyLabel}>Empty<br />Slot</span>
+        <span className={styles.outfitSave}>
+          <img src={addGradient} alt="" width={52} height={52} />
+          SAVE OUTFIT
+        </span>
       </button>
     )
   }
   return (
-    <div className={`${styles.outfitCard} ${selected ? styles.outfitCardSel : ''} ${equipped ? styles.outfitEquipped : ''}`.trim()}>
-      <button type="button" className={styles.outfitThumbs} onClick={onSelect} onDoubleClick={onEquip} aria-label={`Outfit ${index + 1}`}>
-        {outfit.wearables.slice(0, 4).map((u) => (
+    <div className={`${styles.outfitSlot} ${styles.outfitFull} ${equipped ? styles.outfitEquipped : ''}`.trim()}>
+      <span className={styles.outfitHover} aria-hidden="true" />
+      <button
+        type="button"
+        className={styles.outfitThumbs}
+        style={{ backgroundImage: `url(${outfitArt})` }}
+        onDoubleClick={onEquip}
+        aria-label={`Outfit ${index + 1}`}
+      >
+        {outfit.wearables.slice(0, 6).map((u) => (
           <span key={u} className={styles.outfitThumb}><CatalystImg urn={u} /></span>
         ))}
       </button>
-      {equipped && <span className={styles.outfitDot} aria-hidden="true" />}
-      <div className={styles.outfitActions}>
-        <button type="button" className={styles.outfitEquip} onClick={onEquip}>EQUIP</button>
-        <button type="button" className={styles.outfitDelete} onClick={onDelete} aria-label={`Delete Outfit ${index + 1}`} title="Delete outfit">✕</button>
-      </div>
-      <span className={styles.outfitLabel}>Outfit {index + 1}</span>
+      <span className={styles.outfitRing} aria-hidden="true" />
+      <button type="button" className={styles.outfitDelete} onClick={onDelete} aria-label={`Delete Outfit ${index + 1}`}>
+        <MaskIcon src={deleteIcon} size={24} />
+      </button>
+      <button type="button" className={styles.outfitEquipBtn} onClick={onEquip}>EQUIP</button>
     </div>
   )
 }
 
-// Right-panel detail for a selected saved outfit: all its wearable thumbnails (the composite card
-// shows only the first four).
-function OutfitDetailPanel({ outfit, index }: { outfit: Outfit; index: number }): React.JSX.Element {
+function NameBanner(): React.JSX.Element {
   return (
-    <aside className={styles.detail}>
-      <div className={styles.detailName}>Outfit {index + 1}</div>
-      <div className={styles.outfitDetailGrid}>
-        {outfit.wearables.map((u) => (
-          <span key={u} className={styles.outfitDetailThumb}><CatalystImg urn={u} /></span>
-        ))}
+    <div className={styles.nameBanner}>
+      <div className={styles.nameBannerText}>
+        <h2 className={styles.nameBannerTitle}>Unlock 5 more Outfit slots by getting a NAME!</h2>
+        <p className={styles.nameBannerBody}>
+          NAMEs are unique Decentraland usernames that come with a World, the ability to create Communities, 5 more Outfits slots,
+          and 100 Voting Power in the DAO.
+        </p>
+        <p className={styles.nameBannerBody}>Get your own for the full Decentraland experience!</p>
+        <a className={styles.nameBannerCta} href={NAMES_URL} target="_blank" rel="noopener noreferrer">GET A NAME</a>
       </div>
-    </aside>
+      <img className={styles.nameBannerArt} src={nameBannerArt} alt="" />
+    </div>
   )
 }
 
@@ -267,8 +294,6 @@ export function BackpackPage({
 }): React.JSX.Element | null {
   const [tab, setTab] = useState<BackpackTab>(initialTab)
   const [section, setSection] = useState<Section>('categories')
-  // The saved-outfit slot currently selected (shown in the detail panel; null = none).
-  const [outfitSlot, setOutfitSlot] = useState<number | null>(null)
   const [cat, setCat] = useState('all')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
@@ -353,15 +378,9 @@ export function BackpackPage({
   useEffect(() => {
     if (!backpack.open) {
       setSelected(null)
-      setOutfitSlot(null)
       backpack.preview(null)
     }
   }, [backpack.open, backpack.preview])
-
-  // Leaving the Outfits section clears the selected outfit (and its detail panel).
-  useEffect(() => {
-    if (section !== 'outfits' && outfitSlot !== null) setOutfitSlot(null)
-  }, [section, outfitSlot])
 
   if (!backpack.open) return null
 
@@ -391,13 +410,6 @@ export function BackpackPage({
     setCat((prev) => (prev === c ? 'all' : c))
     setPage(0)
   }
-  // Select a saved outfit — show its wearables in the detail panel. Like selecting a wearable, this
-  // never touches the avatar (the preview keeps showing the current look); equip via EQUIP or a
-  // double-click.
-  const selectOutfit = (slot: number): void => {
-    setOutfitSlot(slot)
-    setSelected(null)
-  }
   // An outfit matches the current look when its wearable set equals the equipped set. The equipped
   // set holds bare item urns; an outfit may carry token/deployed urns, so compare with the same
   // item-urn matcher used for equipping (u === urn or u startsWith `${urn}:`).
@@ -406,11 +418,8 @@ export function BackpackPage({
     if (eq.length === 0 || outfit.wearables.length !== eq.length) return false
     return eq.every((w) => outfit.wearables.some((u) => u === w.urn || u.startsWith(`${w.urn}:`)))
   }
-  const selectedOutfit =
-    tab === 'wearables' && section === 'outfits' && outfitSlot !== null
-      ? backpack.outfits.find((o) => o.slot === outfitSlot)?.outfit ?? null
-      : null
 
+  const inOutfits = tab === 'wearables' && section === 'outfits'
   const p = profile.data
   return (
     <MainMenuShell
@@ -429,7 +438,7 @@ export function BackpackPage({
           <h1 className={styles.title}>Backpack</h1>
           <Tabs variant="section" className={styles.tabs} items={BACKPACK_TABS} value={tab} onChange={(t) => { setTab(t); setSelected(null) }} aria-label="Backpack sections" />
           <div className={styles.filterWrap}>
-            <Button variant="light" className={styles.filterBtn} aria-expanded={showFilter} onClick={() => setShowFilter((s) => !s)}>
+            <Button variant="light" className={styles.filterBtn} aria-expanded={showFilter} disabled={inOutfits} onClick={() => setShowFilter((s) => !s)}>
               <MaskIcon src={filterIcon} size={20} />
               FILTER &amp; SORT
               <MaskIcon src={arrowDownIcon} size={12} />
@@ -445,7 +454,7 @@ export function BackpackPage({
               />
             )}
           </div>
-          <div className={styles.searchWrap}>
+          <div className={`${styles.searchWrap} ${inOutfits ? styles.disabled : ''}`.trim()} aria-disabled={inOutfits}>
             <SearchField variant="light" value={query} onChange={(v) => { setQuery(v); setPage(0) }} placeholder="Search item" />
           </div>
         </header>
@@ -470,27 +479,29 @@ export function BackpackPage({
             {tab === 'wearables' ? (
               section === 'outfits' ? (
                 <div className={styles.outfits}>
-                  <div className={styles.outfitGrid}>
-                    {Array.from({ length: backpack.outfitSlots }, (_, i) => {
-                      const saved = backpack.outfits.find((o) => o.slot === i)?.outfit ?? null
-                      return (
-                        <OutfitSlotCard
-                          key={i}
-                          index={i}
-                          outfit={saved}
-                          selected={outfitSlot === i}
-                          equipped={saved != null && outfitMatchesEquipped(saved)}
-                          onSelect={() => { if (saved) selectOutfit(i) }}
-                          onSave={() => backpack.saveOutfit(i)}
-                          onEquip={() => backpack.equipOutfit(i)}
-                          onDelete={() => {
-                            backpack.deleteOutfit(i)
-                            if (outfitSlot === i) setOutfitSlot(null)
-                          }}
-                        />
-                      )
-                    })}
-                  </div>
+                  {[0, 1].map((row) => (
+                    row === 1 && backpack.outfitSlots <= 5 ? <NameBanner key="banner" /> : (
+                      <div key={row} className={styles.outfitRow}>
+                        {Array.from({ length: 5 }, (_, k) => {
+                          const i = row * 5 + k
+                          const saved = backpack.outfits.find((o) => o.slot === i)?.outfit ?? null
+                          const firstEmpty = saved == null && Array.from({ length: 5 }, (_, n) => row * 5 + n).find((n) => !backpack.outfits.some((o) => o.slot === n)) === i
+                          return (
+                            <OutfitSlotCard
+                              key={i}
+                              index={i}
+                              outfit={saved}
+                              firstEmpty={firstEmpty}
+                              equipped={saved != null && outfitMatchesEquipped(saved)}
+                              onSave={() => backpack.saveOutfit(i)}
+                              onEquip={() => backpack.equipOutfit(i)}
+                              onDelete={() => backpack.deleteOutfit(i)}
+                            />
+                          )
+                        })}
+                      </div>
+                    )
+                  ))}
                 </div>
               ) : (
               <div className={styles.catalog}>
@@ -636,9 +647,7 @@ export function BackpackPage({
 
           {/* Right: selected-item detail — an outfit's wearables in the Outfits section, else the
               selected wearable/emote. */}
-          {selectedOutfit != null ? (
-            <OutfitDetailPanel outfit={selectedOutfit} index={outfitSlot as number} />
-          ) : tab === 'wearables' && section === 'categories' && !backpack.loading && pageItems.length === 0 ? null : (
+          {tab === 'wearables' && section === 'outfits' ? null : tab === 'wearables' && section === 'categories' && !backpack.loading && pageItems.length === 0 ? null : (
             <DetailPanel item={tab === 'wearables' && section === 'outfits' ? null : selected} />
           )}
           </section>

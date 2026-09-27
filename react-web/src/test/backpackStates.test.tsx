@@ -41,3 +41,24 @@ describe('backpack tabs', () => {
     expect(screen.getByText('No item selected')).toBeInTheDocument()
   })
 })
+
+describe('backpack outfits', () => {
+  const renderOutfits = (outfitSlots: number) => {
+    const s = fakeSession()
+    const backpack = { ...s.backpack, open: true, outfitSlots }
+    render(<BackpackPage backpack={backpack} emotes={s.emotes} profile={fakeProfileState()} onNavigate={vi.fn()} setEngineViewport={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: /saved outfits/i }))
+  }
+
+  it('without a NAME, five slots and the NAME banner', () => {
+    renderOutfits(5)
+    expect(screen.getAllByRole('button', { name: /^Save outfit in slot/ })).toHaveLength(5)
+    expect(screen.getByText('Unlock 5 more Outfit slots by getting a NAME!')).toBeInTheDocument()
+  })
+
+  it('with a NAME, ten slots and no banner', () => {
+    renderOutfits(10)
+    expect(screen.getAllByRole('button', { name: /^Save outfit in slot/ })).toHaveLength(10)
+    expect(screen.queryByText('Unlock 5 more Outfit slots by getting a NAME!')).toBeNull()
+  })
+})

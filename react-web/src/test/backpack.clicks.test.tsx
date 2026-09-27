@@ -89,11 +89,11 @@ describe('backpack page clicks', () => {
       outfits: [outfitSlot(0, ['urn:hat', 'urn:shirt']), outfitSlot(1, ['urn:other'])]
     })
     await userEvent.click(screen.getByRole('tab', { name: /saved outfits/i }))
-    // Only slot 0 (Outfit 1) equals the equipped set → exactly one equipped dot.
-    expect(document.querySelectorAll('[class*="outfitDot"]')).toHaveLength(1)
+    // Only slot 0 (Outfit 1) equals the equipped set → exactly one equipped slot.
+    expect(document.querySelectorAll('[class*="outfitEquipped"]')).toHaveLength(1)
   })
 
-  it('outfits: selecting shows the outfit wearables in the detail panel without equipping or previewing', async () => {
+  it('outfits: a single click neither equips nor previews', async () => {
     const backpack = renderBackpack({
       list: [],
       equipped: [],
@@ -101,8 +101,6 @@ describe('backpack page clicks', () => {
     })
     await userEvent.click(screen.getByRole('tab', { name: /saved outfits/i }))
     await userEvent.click(screen.getByRole('button', { name: 'Outfit 1' }))
-    // The detail panel shows every wearable of the outfit (the card composite shows only four).
-    expect(document.querySelectorAll('[class*="outfitDetailGrid"] img')).toHaveLength(3)
     expect(vi.mocked(backpack.equipOutfit)).not.toHaveBeenCalled()
     expect(vi.mocked(backpack.preview)).not.toHaveBeenCalled()
   })

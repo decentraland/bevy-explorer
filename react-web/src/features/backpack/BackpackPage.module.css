@@ -63,6 +63,10 @@
   width: 190px;
   gap: 8px;
 }
+.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
 .searchWrap {
   position: absolute;
   right: 20px;
@@ -546,170 +550,246 @@
   line-height: 1.3;
 }
 
-/* Saved Outfits — a slot grid filling the catalog area. */
+/* Saved Outfits: two rows of five 237×360 slots across the card (the second row is the NAME
+   banner for accounts without a NAME). */
 .outfits {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  padding: 16px;
-}
-.outfitGrid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 148px));
-  grid-auto-rows: max-content;
-  justify-content: center;
-  gap: 16px;
-}
-.outfitCard,
-.outfitEmpty {
-  position: relative;
-  aspect-ratio: 1;
-  border: 1px solid var(--white-10);
-  border-radius: var(--r-card);
-  background-color: var(--fill-2);
-  overflow: hidden;
-}
-/* Empty slot — click to save the current look. */
-.outfitEmpty {
+  position: absolute;
+  left: 28px;
+  top: 109px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 28px;
+  width: 1308px;
+}
+.outfitRow {
+  display: flex;
   justify-content: center;
-  gap: 8px;
-  color: var(--ink-45);
+  gap: 30px;
+  height: 360px;
+}
+.outfitSlot {
+  position: relative;
+  flex: none;
+  width: 237px;
+  height: 360px;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  background-size: 100% 100%;
+  font-family: inherit;
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease;
+  transition: transform var(--dur-tap) linear;
 }
-.outfitEmpty:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+.outfitSilhouette {
+  position: absolute;
+  left: 38.5px;
+  top: 40px;
+  width: 160px;
+  height: 280px;
+  background: var(--scrim-40);
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
 }
-.outfitPlus {
-  font-size: 34px;
-  font-weight: 300;
-  line-height: 1;
+.outfitEmptyLabel,
+.outfitSave {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
 }
 .outfitEmptyLabel {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--ink-50);
+  font-size: var(--type-16);
+  line-height: 19px;
 }
-/* Saved slot — composite of wearable thumbnails + a label, with hover actions. */
-.outfitCard {
-  display: flex;
+.outfitSave {
+  display: none;
   flex-direction: column;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  align-items: center;
+  gap: 14px;
+  color: var(--text);
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
 }
-.outfitCardSel {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+.outfitFirstEmpty,
+.outfitEmpty:hover {
+  border-radius: 30px;
+  outline: 3px solid var(--outfit-edge);
+  outline-offset: -3px;
 }
-/* Matches the current look — mirrors the equipped wearable (accent ring + dot). */
-.outfitEquipped {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+.outfitFirstEmpty .outfitSilhouette,
+.outfitFirstEmpty .outfitEmptyLabel,
+.outfitEmpty:hover .outfitSilhouette,
+.outfitEmpty:hover .outfitEmptyLabel {
+  display: none;
 }
-.outfitDot {
+.outfitFirstEmpty .outfitSave,
+.outfitEmpty:hover .outfitSave {
+  display: flex;
+}
+.outfitFull:hover {
+  z-index: 2;
+  transform: scale(1.02);
+}
+.outfitHover {
   position: absolute;
-  top: 8px;
-  left: 8px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 2px var(--scrim);
+  left: -12px;
+  top: -12px;
+  width: 261px;
+  height: 436px;
+  border-style: solid;
+  border-width: 34.7px 25.9px 32.4px 25.3px;
+  border-image: url('../../assets/backpack/hover-bg.webp') 59 44 55 43 fill / 34.7px 25.9px 32.4px 25.3px stretch;
+  transform: scale(0);
+  transition: transform var(--dur-tap) linear;
+  pointer-events: none;
+}
+.outfitFull:hover .outfitHover {
+  transform: scale(1);
 }
 .outfitThumbs {
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-auto-rows: 1fr;
-  gap: 4px;
-  padding: 10px;
+  align-content: center;
+  gap: 8px;
+  padding: 24px 20px;
   border: none;
-  background: transparent;
+  border-radius: var(--r-slot);
+  background-size: 100% 100%;
   cursor: pointer;
 }
 .outfitThumb {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  height: 88px;
 }
 .outfitThumb img {
-  width: 100%;
-  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
 }
-.outfitActions {
+.outfitRing {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  display: flex;
-  gap: 6px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  left: -7px;
+  top: -7px;
+  width: 251px;
+  height: 374px;
+  background: var(--accent);
+  -webkit-mask-box-image: url('../../assets/backpack/equipped-outline.webp') 43 / 21.5px stretch;
+  mask-border: url('../../assets/backpack/equipped-outline.webp') 43 / 21.5px stretch;
+  display: none;
+  pointer-events: none;
 }
-.outfitCard:hover .outfitActions,
-.outfitCardSel .outfitActions {
-  opacity: 1;
+.outfitEquipped .outfitRing {
+  display: block;
 }
-.outfitEquip {
-  border: none;
-  border-radius: var(--r-pill);
-  padding: 4px 10px;
-  background-color: var(--accent);
-  color: var(--accent-ink);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  cursor: pointer;
+.outfitFull:hover .outfitRing {
+  display: none;
 }
 .outfitDelete {
+  position: absolute;
+  left: 191px;
+  top: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   border: none;
-  border-radius: var(--r-pill);
-  background-color: var(--scrim);
+  border-radius: 9.2px;
+  background: var(--scrim-60);
   color: var(--text);
-  font-size: 11px;
   cursor: pointer;
 }
-.outfitLabel {
-  padding: 6px 10px 10px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  text-align: center;
-  color: var(--ink-6);
+.outfitDelete:hover {
+  background: var(--fill-faint);
 }
-/* Selected-outfit detail: every wearable thumbnail (the card composite shows only four). */
-.outfitDetailGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  width: 100%;
-  margin-top: 4px;
+.outfitEquipBtn {
+  position: absolute;
+  left: 0;
+  top: 365.5px;
+  width: 237px;
+  height: 46px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--brand);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity var(--dur-tap) linear;
 }
-.outfitDetailThumb {
+.outfitFull:hover .outfitEquipBtn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.nameBanner {
+  position: relative;
+  display: flex;
+  height: 360px;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(ellipse 40% 60% at 85% 50%, var(--glow-pink) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 70% at 10% 0%, var(--glow-pink-faint) 0%, transparent 70%),
+    var(--outfit-banner);
+  overflow: hidden;
+}
+.nameBannerText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  width: 560px;
+  padding: 50px 0 0 60px;
+}
+.nameBannerTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--type-30);
+  font-weight: var(--fw-semibold);
+  line-height: 36px;
+}
+.nameBannerBody {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--type-16);
+  line-height: 20px;
+}
+.nameBannerCta {
   display: flex;
   align-items: center;
   justify-content: center;
-  aspect-ratio: 1;
-  border-radius: 12px;
-  background: var(--fill-3);
-  overflow: hidden;
+  width: 300px;
+  height: 47px;
+  margin-top: 16px;
+  border-radius: 10.7px;
+  background: var(--cta-flare);
+  color: var(--text);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+  transition: transform var(--dur-hover) var(--ease-inout);
 }
-.outfitDetailThumb img {
-  width: 86%;
-  height: 86%;
+.nameBannerCta:hover {
+  transform: scale(1.05);
+}
+.nameBannerArt {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 491px;
+  height: 360px;
   object-fit: contain;
 }
 
