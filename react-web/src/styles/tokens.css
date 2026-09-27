@@ -109,23 +109,26 @@
   --dur-mid: 300ms;
   --dur-fade: 600ms;
 
-  /* ---- menu pages (1920×1080 reference canvas) ---- */
+  /* ---- menu pages (1920×1080 reference canvas) ----
+     Alphas here are sRGB equivalents of overlays designed for linear-space blending, which reads
+     lighter: 50% black ≈ 29%, 40% ≈ 22%, 10% white ≈ 26%. */
+  --scrim-head: rgba(0, 0, 0, 0.29);
   --surface-light: var(--text); /* light buttons, fields, popups */
   --surface-light-hover: #f5f5f5;
   --surface-light-press: #c8c8c8;
   --ink-on-light: var(--panel);
   --ink-muted: #716b7c; /* placeholders, idle nav labels */
   --ink-subtle: var(--offline); /* section labels on light surfaces */
-  --ink-50: rgba(255, 255, 255, 0.502);
+  --ink-50: rgba(255, 255, 255, 0.68);
   --row-hover: var(--pearl);
   --row-press: #cfcdd4;
   --black: #000000;
-  --fill-faint: rgba(255, 255, 255, 0.031); /* hover wash on dark buttons */
-  --scrim-40: rgba(0, 0, 0, 0.4);
-  --scrim-20: rgba(0, 0, 0, 0.2);
-  --divider-pink: rgba(247, 85, 255, 0.102);
-  --tab-idle: rgba(255, 255, 255, 0.016);
-  --tab-hover: rgba(255, 255, 255, 0.102);
+  --fill-faint: rgba(255, 255, 255, 0.06); /* hover wash on dark buttons */
+  --scrim-40: rgba(0, 0, 0, 0.22);
+  --scrim-20: rgba(0, 0, 0, 0.1);
+  --divider-pink: rgba(247, 85, 255, 0.25);
+  --tab-idle: rgba(120, 90, 160, 0.14); /* a faint lift on the header */
+  --tab-hover: rgba(255, 255, 255, 0.26);
   --menu-bar: var(--panel);
   --menu-tab-hover: #232226;
   --menu-tab-selected: #393641;
@@ -137,9 +140,10 @@
   --slot-edge-20: rgba(161, 75, 243, 0.2);
   --unequip-hover: #43404a;
   --outfit-banner: #67279b;
-  --backpack-bg-1: #9600c3;
-  --backpack-bg-2: #9b40c2;
-  --backpack-bg-3: #bd57d1;
+  --lava-1: #500090; /* backpack background: left */
+  --lava-2: #8619a8; /* right */
+  --lava-3: #591681; /* bottom */
+  --lava-4: #470071; /* deep */
 
   --r-xs: 6px;
   --r-sm: 8px;

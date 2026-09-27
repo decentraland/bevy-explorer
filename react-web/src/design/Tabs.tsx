@@ -24,7 +24,7 @@ export interface TabsProps<T extends string> {
   items: readonly TabItem<T>[]
   value: T
   onChange: (id: T) => void
-  variant?: 'pill' | 'underline'
+  variant?: 'pill' | 'underline' | 'section' | 'subtab'
   /** Positional overrides only (margins, padding, gap); the look stays the variant's. */
   className?: string
   'aria-label'?: string

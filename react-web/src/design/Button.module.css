@@ -67,3 +67,64 @@
   border-color: var(--text);
   color: var(--text);
 }
+
+/* light: off-white control with dark ink (filter / color buttons on menu pages) */
+.light {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-light);
+  color: var(--ink-on-light);
+  font-size: var(--type-15);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+  transition:
+    background-color var(--dur-tap) linear,
+    transform var(--dur-hover) var(--ease-inout);
+}
+.light:hover:not(:disabled) {
+  background: var(--surface-light-hover);
+  transform: scale(1.04);
+}
+.light:active:not(:disabled) {
+  background: var(--surface-light-press);
+  transform: none;
+  animation: pressBounce 583ms var(--ease-inout);
+}
+
+/* outline: thin white outline on dark (e.g. SHOP) */
+.outline {
+  height: 40px;
+  padding: 0 14px;
+  border: 1.6px solid var(--text);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+}
+.outline:hover:not(:disabled) {
+  background: var(--fill-faint);
+}
+
+@keyframes pressBounce {
+  0% {
+    transform: scale(1.04);
+  }
+  14% {
+    transform: scale(0.9);
+  }
+  23% {
+    transform: scale(0.9);
+  }
+  43% {
+    transform: scale(1.04);
+  }
+  72% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+  }
+}

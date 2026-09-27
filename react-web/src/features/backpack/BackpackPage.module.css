@@ -1,109 +1,107 @@
-/* Backpack — avatar cutout (left) + content panel (categories column + grid) + detail
-   panel (right). Body is the MainMenuShell pass-through hole, so opaque pieces paint
-   their own purple and re-enable pointer events; the avatar column stays transparent. */
-.layout {
-  display: flex;
-  flex-direction: column;
+/* Backpack — laid out on the 1920×1080 menu canvas. The header is pinned to the top; below it a
+   1920×942 frame is centred (the canvas only grows along its longer axis), and every block sits at
+   a fixed position in it. The avatar area on the left is a hole the engine draws the preview into. */
+.page {
+  position: relative;
   height: 100%;
   pointer-events: none;
 }
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--lava-4) 55%, transparent) 0%, transparent 22%),
+    radial-gradient(ellipse 60% 45% at 25% 100%, var(--lava-3) 0%, transparent 100%),
+    linear-gradient(90deg, var(--lava-1) 0%, var(--lava-1) 30%, color-mix(in srgb, var(--lava-1) 55%, var(--lava-2)) 65%, var(--lava-2) 100%);
+  background-size: 100% 100%, 140% 140%, 100% 100%;
+  animation: lava 24s var(--ease-inout) infinite alternate;
+  /* Leave the avatar area (left of the content card, under the header) to the engine. */
+  mask:
+    linear-gradient(var(--black), var(--black)) 0 0 / 100% 100% no-repeat,
+    linear-gradient(var(--black), var(--black)) 0 68px / calc(50% - 422px) calc(100% - 68px) no-repeat;
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+}
+@keyframes lava {
+  from {
+    background-position: 0 0, 0% 100%, 0 0;
+  }
+  to {
+    background-position: 0 0, 100% 80%, 0 0;
+  }
+}
 
-/* Top bar row. */
 .head {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 18px 28px 14px;
-  /* Unity backdrop. `fixed` anchors the radial to the viewport so the head and the panel
-     area below share one continuous gradient across the transparent avatar cutout. */
-  background: var(--menu-bg) fixed;
+  position: relative;
+  z-index: 2;
+  height: 68px;
+  background: var(--scrim-head);
   pointer-events: auto;
 }
 .title {
+  position: absolute;
+  left: 20px;
+  top: 12px;
   margin: 0;
-  font-size: 28px;
-  font-weight: 800;
+  height: 44px;
+  font-size: var(--type-36);
+  font-weight: var(--fw-semibold);
+  line-height: 44px;
   color: var(--text);
 }
-@keyframes pillPop {
-  0% {
-    transform: scale(0.92);
-  }
-  60% {
-    transform: scale(1.08);
-  }
-  100% {
-    transform: scale(1);
-  }
+.tabs {
+  position: absolute;
+  left: 214px;
+  top: 13px;
+}
+.filterWrap {
+  position: absolute;
+  right: 430px;
+  top: 13px;
 }
 .filterBtn {
-  display: flex;
-  align-items: center;
+  width: 190px;
   gap: 8px;
-  margin-left: auto;
-  height: 36px;
-  padding: 0 16px;
-  border: 1px solid var(--white-10);
-  border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.25);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  cursor: pointer;
 }
-.filterBtn:hover {
-  background: var(--white-10);
-}
-.search {
-  width: 240px;
-  height: 36px;
-  padding: 0 14px;
-  border: 1px solid var(--white-10);
-  border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.3);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 14px;
-  outline: none;
-}
-.search::placeholder {
-  color: var(--ink-45);
+.searchWrap {
+  position: absolute;
+  right: 20px;
+  top: 13px;
 }
 
-/* Avatar + content + detail. */
-.main {
-  flex: 1;
-  display: flex;
-  min-height: 0;
+.stage {
+  position: absolute;
+  top: 68px;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 .preview {
-  position: relative;
-  flex: 0 0 29%;
-  min-width: 300px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(50% - 422px);
 }
-
-/* Opaque panel area behind the content + detail (everything except the avatar preview),
-   so the live world doesn't show through the transparent-body cutout. */
-.panelArea {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  background: var(--menu-bg) fixed;
-  pointer-events: auto;
+.frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 942px;
+  transform: translate(-50%, -50%);
 }
-
-/* Content panel (opaque). */
-.content {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
+.card {
+  position: absolute;
+  left: 538px;
+  top: 20px;
+  width: 1364px;
+  height: 902px;
   display: flex;
   flex-direction: column;
-  margin: 16px 0 20px 16px;
-  border-radius: 16px;
-  background: rgba(13, 6, 24, 0.55);
+  padding-right: 380px;
+  border-radius: var(--r-xl);
+  background: var(--scrim-40);
   pointer-events: auto;
 }
 .contentHead {
@@ -443,14 +441,17 @@
   object-fit: contain;
 }
 
-/* Detail panel (right). */
+/* Detail panel (right), inside the card. */
 .detail {
-  flex: 0 0 320px;
+  position: absolute;
+  left: 984px;
+  top: 86px;
+  width: 364px;
+  height: 800px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  margin: 16px 16px 20px 16px;
   padding: 22px 22px;
   border-radius: 16px;
   background: var(--fill-2);
@@ -705,14 +706,6 @@
 }
 
 /* ---- Filter & Sort dropdown ---- */
-.filterWrap {
-  position: relative;
-  margin-left: auto;
-}
-.filterBtnOpen {
-  border-color: var(--brand);
-  background: rgba(0, 0, 0, 0.45);
-}
 .filterPop {
   position: absolute;
   top: calc(100% + 8px);
@@ -777,4 +770,9 @@
   height: 15px;
   accent-color: var(--brand);
   cursor: pointer;
+}
+
+.cardEmotes .detail {
+  top: 16px;
+  height: 870px;
 }

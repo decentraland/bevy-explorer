@@ -5,7 +5,11 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { ColorPicker, Tabs, WearableCard, type Rarity, type TabItem } from '../../design'
+import { Button, ColorPicker, MaskIcon, SearchField, Tabs, WearableCard, type Rarity, type TabItem } from '../../design'
+import wearablesIcon from '../../assets/backpack/icon-wearables.webp'
+import emotesIcon from '../../assets/backpack/icon-emotes.webp'
+import filterIcon from '../../assets/backpack/icon-filter.webp'
+import arrowDownIcon from '../../assets/backpack/icon-arrow-down.webp'
 import { COLOR_LABEL, COLOR_PRESETS, COLOR_TARGET } from './avatarColors'
 import { isCompatible } from '../../engine/bodyShape'
 import { catalystThumbUrl } from '../../lib/identity'
@@ -19,8 +23,8 @@ import styles from './BackpackPage.module.css'
 
 type BackpackTab = 'wearables' | 'emotes'
 const BACKPACK_TABS: TabItem<BackpackTab>[] = [
-  { id: 'wearables', label: 'Wearables' },
-  { id: 'emotes', label: 'Emotes' }
+  { id: 'wearables', label: 'Wearables', icon: <MaskIcon src={wearablesIcon} /> },
+  { id: 'emotes', label: 'Emotes', icon: <MaskIcon src={emotesIcon} /> }
 ]
 
 const PAGE_SIZE = 16
@@ -195,14 +199,6 @@ function OutfitDetailPanel({ outfit, index }: { outfit: Outfit; index: number })
         ))}
       </div>
     </aside>
-  )
-}
-
-function FilterIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
-      <path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
   )
 }
 
@@ -401,15 +397,17 @@ export function BackpackPage({
       onClose={backpack.toggle}
       transparentBody
     >
-      <div className={styles.layout}>
-        {/* Top bar: title + Wearables/Emotes pills (left), Filter & Search (right). */}
-        <div className={styles.head}>
+      <div className={styles.page}>
+        <div className={styles.backdrop} aria-hidden="true" />
+        <header className={styles.head}>
           <h1 className={styles.title}>Backpack</h1>
-          <Tabs items={BACKPACK_TABS} value={tab} onChange={setTab} aria-label="Backpack sections" />
+          <Tabs variant="section" className={styles.tabs} items={BACKPACK_TABS} value={tab} onChange={setTab} aria-label="Backpack sections" />
           <div className={styles.filterWrap}>
-            <button type="button" className={`${styles.filterBtn} ${showFilter ? styles.filterBtnOpen : ''}`.trim()} onClick={() => setShowFilter((s) => !s)}>
-              <FilterIcon /> FILTER &amp; SORT
-            </button>
+            <Button variant="light" className={styles.filterBtn} aria-expanded={showFilter} onClick={() => setShowFilter((s) => !s)}>
+              <MaskIcon src={filterIcon} size={20} />
+              FILTER &amp; SORT
+              <MaskIcon src={arrowDownIcon} size={12} />
+            </Button>
             {showFilter && (
               <div className={styles.filterPop}>
                 <span className={styles.filterLabel}>Sort by</span>
@@ -429,20 +427,18 @@ export function BackpackPage({
               </div>
             )}
           </div>
-          <input className={styles.search} value={query} onChange={(e) => { setQuery(e.target.value); setPage(0) }} placeholder="Search item" />
-        </div>
+          <div className={styles.searchWrap}>
+            <SearchField variant="light" value={query} onChange={(v) => { setQuery(v); setPage(0) }} placeholder="Search item" />
+          </div>
+        </header>
 
-        <div className={styles.main}>
-          {/* Left: live avatar preview (engine renders into this transparent cutout). */}
+        <div className={styles.stage}>
+          {/* The engine draws the avatar preview behind this transparent area. */}
           <div className={styles.preview}>
             <EngineViewport region="avatarPreview" report={setEngineViewport} />
           </div>
-
-          {/* Opaque panel area (content + detail) — covers the world; only the preview
-              column stays transparent so the engine avatar shows through. */}
-          <div className={styles.panelArea}>
-          {/* Centre: content panel. */}
-          <div className={styles.content}>
+          <div className={styles.frame}>
+          <section className={`${styles.card} ${tab === 'emotes' ? styles.cardEmotes : ''}`.trim()}>
             {tab === 'wearables' && <div className={styles.contentHead}>
               <div className={styles.sectionTabs}>
                 <button type="button" className={`${styles.sectionTab} ${section === 'categories' ? styles.sectionActive : ''}`.trim()} onClick={() => setSection('categories')}>
@@ -612,7 +608,6 @@ export function BackpackPage({
                 </div>
               </div>
             )}
-          </div>
 
           {/* Right: selected-item detail — an outfit's wearables in the Outfits section, else the
               selected wearable/emote. */}
@@ -621,6 +616,7 @@ export function BackpackPage({
           ) : (
             <DetailPanel item={tab === 'wearables' && section === 'outfits' ? null : selected} />
           )}
+          </section>
           </div>
         </div>
       </div>
