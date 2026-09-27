@@ -62,3 +62,14 @@ describe('backpack outfits', () => {
     expect(screen.queryByText('Unlock 5 more Outfit slots by getting a NAME!')).toBeNull()
   })
 })
+
+describe('backpack section tabs', () => {
+  it('Categories and Saved Outfits switch back and forth', () => {
+    const s = fakeSession()
+    render(<BackpackPage backpack={{ ...s.backpack, open: true }} emotes={s.emotes} profile={fakeProfileState()} onNavigate={vi.fn()} setEngineViewport={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: /saved outfits/i }))
+    expect(screen.getByRole('tab', { name: /saved outfits/i })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('tab', { name: /categories/i }))
+    expect(screen.getByRole('tab', { name: /categories/i })).toHaveAttribute('aria-selected', 'true')
+  })
+})

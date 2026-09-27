@@ -129,9 +129,12 @@
 }
 
 .catalog {
-  flex: 1;
-  display: flex;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.catalog > * {
+  pointer-events: auto;
 }
 
 /* Category column — two columns of 138×80 slots at fixed spots in the card. */
@@ -866,5 +869,52 @@
   }
   to {
     transform: translateX(126px);
+  }
+}
+
+/* Opening: the header slides down while the content fades in. */
+.headIn {
+  animation: headIn var(--dur-panel) var(--ease-inout);
+}
+@keyframes headIn {
+  from {
+    transform: translateY(-64px);
+  }
+  to {
+    transform: none;
+  }
+}
+.fadeIn {
+  animation: fadeIn var(--dur-panel) var(--ease-inout);
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Categories <-> Saved Outfits: the incoming section slides in by the card width with an
+   overshoot while it fades in. */
+.slideFromLeft,
+.slideFromRight {
+  animation:
+    slideIn var(--dur-slide) var(--ease-spring),
+    fadeIn 280ms var(--ease-outquad);
+}
+.slideFromLeft {
+  --slide-from: -1364px;
+}
+.slideFromRight {
+  --slide-from: 1364px;
+}
+@keyframes slideIn {
+  from {
+    translate: var(--slide-from) 0;
+  }
+  to {
+    translate: 0 0;
   }
 }

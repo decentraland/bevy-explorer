@@ -434,7 +434,7 @@ export function BackpackPage({
     >
       <div className={styles.page}>
         <div className={styles.backdrop} aria-hidden="true" />
-        <header className={styles.head}>
+        <header className={`${styles.head} ${styles.headIn}`}>
           <h1 className={styles.title}>Backpack</h1>
           <Tabs variant="section" className={styles.tabs} items={BACKPACK_TABS} value={tab} onChange={(t) => { setTab(t); setSelected(null) }} aria-label="Backpack sections" />
           <div className={styles.filterWrap}>
@@ -464,7 +464,7 @@ export function BackpackPage({
           <div className={styles.preview}>
             <EngineViewport region="avatarPreview" report={setEngineViewport} />
           </div>
-          <div className={styles.frame}>
+          <div className={`${styles.frame} ${styles.fadeIn}`}>
           <section className={`${styles.card} ${tab === 'emotes' ? styles.cardEmotes : ''}`.trim()}>
             {tab === 'wearables' && (
               <div className={styles.contentHead}>
@@ -478,7 +478,7 @@ export function BackpackPage({
 
             {tab === 'wearables' ? (
               section === 'outfits' ? (
-                <div className={styles.outfits}>
+                <div key="outfits" className={`${styles.outfits} ${styles.slideFromRight}`}>
                   {[0, 1].map((row) => (
                     row === 1 && backpack.outfitSlots <= 5 ? <NameBanner key="banner" /> : (
                       <div key={row} className={styles.outfitRow}>
@@ -504,7 +504,7 @@ export function BackpackPage({
                   ))}
                 </div>
               ) : (
-              <div className={styles.catalog}>
+              <div key="categories" className={`${styles.catalog} ${styles.slideFromLeft}`}>
                 <div className={styles.catColumn}>
                   {SLOT_DIVIDER_Y.map((y) => <span key={y} className={styles.slotDivider} style={{ top: y }} aria-hidden="true" />)}
                   {categories.map((c, i) => {
