@@ -1,5 +1,5 @@
 //! The coast around the terrain, after eordano's procedural landscape (#1342): cliffs dropping from
-//! the ground to a sandy shelf, the sea, and unity-explorer's invisible border walls. Unity places
+//! the ground to a sandy shelf, the sea, and invisible walls along the cliff crest. Unity places
 //! cliff prefabs along the terrain bounds; this builds a rounded, varying cliff instead. The ground
 //! and grass end just past the cliff crest (`beyond_coast` in coast_profile.wgsl).
 //!
@@ -120,6 +120,7 @@ struct Ocean;
 #[derive(Component)]
 struct Cliff {
     key: (u32, i32),
+    walls: u32,
 }
 
 #[derive(Component)]
@@ -197,18 +198,8 @@ fn update(
         if let Some(material) = water_materials.get_mut(&assets.water) {
             material.extension.bounds = uniform;
         }
-        let mut walls = walls.into_inner();
-        for side in 0..4 {
-            let id = ColliderId::new(SceneEntityId::ROOT, Some("coast wall".into()), side);
-            match bounds {
-                Some(bounds) => {
-                    let (centre, half_extents) = wall(bounds, side);
-                    walls.set_wall(&id, centre, half_extents);
-                }
-                None => walls.remove_collider(&id),
-            }
-        }
     }
+    let mut walls = walls.into_inner();
 
     let position = camera
         .single()
@@ -219,7 +210,8 @@ fn update(
         for (_, mut visibility) in &mut ocean {
             visibility.set_if_neq(Visibility::Hidden);
         }
-        for (entity, _) in &cliffs {
+        for (entity, cliff) in &cliffs {
+            remove_walls(&mut walls, cliff);
             commands.entity(entity).despawn();
         }
         return;
@@ -237,13 +229,22 @@ fn update(
     let mut desired: HashSet<_> = near_chunks(bounds, position).into_iter().collect();
     for (entity, cliff) in &cliffs {
         if changed || !desired.remove(&cliff.key) {
+            remove_walls(&mut walls, cliff);
             commands.entity(entity).despawn();
         }
     }
     for (side, chunk) in desired {
+        let crest_walls = crest_walls(bounds, side, chunk);
+        for (index, (centre, half_extents, rotation)) in crest_walls.iter().enumerate() {
+            let id = wall_id((side, chunk), index as u32);
+            walls.set_wall(&id, *centre, *half_extents, *rotation);
+        }
         commands.spawn((
             Name::new("Coast cliff"),
-            Cliff { key: (side, chunk) },
+            Cliff {
+                key: (side, chunk),
+                walls: crest_walls.len() as u32,
+            },
             Mesh3d(meshes.add(cliff_mesh(bounds, side, chunk))),
             MeshMaterial3d(assets.cliff.clone()),
             Transform::default(),
@@ -436,31 +437,46 @@ fn cliff_mesh(bounds: Vec4, side: u32, chunk: i32) -> Mesh {
     .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
 }
 
-/// Centre and half extents (bevy) of unity-explorer's border collider along `side`: 50 m high and
-/// 10 m thick, just outside the bounds.
-fn wall(bounds: Vec4, side: u32) -> (Vec3, Vec3) {
-    let middle = (bounds.xy() + bounds.zw()) * 0.5;
-    let half = WALL_THICKNESS * 0.5;
-    let (centre, half_extents) = match side {
-        0 => (
-            Vec2::new(middle.x, bounds.y - half),
-            Vec2::new(side_length(bounds, 0), WALL_THICKNESS),
-        ),
-        1 => (
-            Vec2::new(bounds.z + half, middle.y),
-            Vec2::new(WALL_THICKNESS, side_length(bounds, 1)),
-        ),
-        2 => (
-            Vec2::new(middle.x, bounds.w + half),
-            Vec2::new(side_length(bounds, 0), WALL_THICKNESS),
-        ),
-        _ => (
-            Vec2::new(bounds.x - half, middle.y),
-            Vec2::new(WALL_THICKNESS, side_length(bounds, 1)),
-        ),
-    };
-    (
-        Vec3::new(centre.x, WALL_HEIGHT * 0.5, -centre.y),
-        Vec3::new(half_extents.x, WALL_HEIGHT, half_extents.y) * 0.5,
+fn wall_id((side, chunk): (u32, i32), index: u32) -> ColliderId {
+    ColliderId::new(
+        SceneEntityId::ROOT,
+        Some(format!("coast wall {side} {chunk}")),
+        index,
     )
+}
+
+fn remove_walls(walls: &mut SceneColliderData, cliff: &Cliff) {
+    for index in 0..cliff.walls {
+        walls.remove_collider(&wall_id(cliff.key, index));
+    }
+}
+
+/// Centre, half extents and rotation (bevy) of one invisible wall per crest segment of a chunk:
+/// `WALL_HEIGHT` high and `WALL_THICKNESS` thick, with its inner face on the crest, like
+/// unity-explorer's border colliders but following the cliff edge.
+fn crest_walls(bounds: Vec4, side: u32, chunk: i32) -> Vec<(Vec3, Vec3, Quat)> {
+    let columns = columns(bounds, side, chunk);
+    columns
+        .windows(2)
+        .filter_map(|pair| {
+            let [a, b] = [pair[0][0], pair[1][0]].map(|point| point.with_y(0.0));
+            let along = (b - a).normalize_or_zero();
+            if along == Vec3::ZERO {
+                return None;
+            }
+            // the chords never turn far between columns, so the waterline marks outward
+            let outward = along.cross(Vec3::Y);
+            let seaward = (pair[0][5] + pair[1][5] - pair[0][0] - pair[1][0]).with_y(0.0);
+            let outward = if outward.dot(seaward) < 0.0 {
+                -outward
+            } else {
+                outward
+            };
+            let rotation = Quat::from_mat3(&Mat3::from_cols(along, Vec3::Y, along.cross(Vec3::Y)));
+            let centre =
+                (a + b) * 0.5 + outward * WALL_THICKNESS * 0.5 + Vec3::Y * WALL_HEIGHT * 0.5;
+            let half_extents = Vec3::new(a.distance(b), WALL_HEIGHT, WALL_THICKNESS) * 0.5;
+            Some((centre, half_extents, rotation))
+        })
+        .collect()
 }

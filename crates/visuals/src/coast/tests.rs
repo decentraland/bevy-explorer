@@ -121,25 +121,32 @@ fn a_single_parcel_world_gets_a_closed_coast() {
 }
 
 #[test]
-fn walls_enclose_the_bounds_from_outside() {
+fn walls_stand_outside_the_crest_with_their_inner_face_on_it() {
     let bounds = bounds(IVec2::new(-3, -1), IVec2::new(4, 6));
     for side in 0..4 {
-        let (centre, half) = wall(bounds, side);
-        assert_eq!(centre.y - half.y, 0.0);
-        assert_eq!(centre.y + half.y, WALL_HEIGHT);
-        let (min, max) = (centre - half, centre + half);
-        // back to unity x/z
-        let (min, max) = (Vec2::new(min.x, -max.z), Vec2::new(max.x, -min.z));
-        match side {
-            0 => assert_eq!((max.y, max.y - min.y), (bounds.y, WALL_THICKNESS)),
-            1 => assert_eq!((min.x, max.x - min.x), (bounds.z, WALL_THICKNESS)),
-            2 => assert_eq!((min.y, max.y - min.y), (bounds.w, WALL_THICKNESS)),
-            _ => assert_eq!((max.x, max.x - min.x), (bounds.x, WALL_THICKNESS)),
-        }
-        if side % 2 == 0 {
-            assert_eq!((min.x, max.x), (bounds.x, bounds.z));
-        } else {
-            assert_eq!((min.y, max.y), (bounds.y, bounds.w));
+        for chunk in 0..chunks(bounds, side) {
+            let crest: Vec<_> = columns(bounds, side, chunk)
+                .iter()
+                .map(|column| column[0])
+                .collect();
+            let walls = crest_walls(bounds, side, chunk);
+            assert_eq!(walls.len(), crest.len() - 1);
+            for ((centre, half, rotation), pair) in walls.iter().zip(crest.windows(2)) {
+                assert_eq!(half.y * 2.0, WALL_HEIGHT);
+                assert_eq!(half.z * 2.0, WALL_THICKNESS);
+                assert!(centre.y - half.y == 0.0);
+                // both crest ends lie on the box's inner face, at its ends
+                for (point, end) in pair.iter().zip([-1.0, 1.0]) {
+                    let local = rotation.inverse() * (point.with_y(centre.y) - *centre);
+                    assert!((local.x - end * half.x).abs() < 0.001, "{local}");
+                    assert!((local.z.abs() - half.z).abs() < 0.001, "{local}");
+                }
+                // and the rest of the wall is further out than the crest
+                assert!(
+                    outside(*centre, bounds)
+                        > outside(pair[0], bounds).min(outside(pair[1], bounds))
+                );
+            }
         }
     }
 }
