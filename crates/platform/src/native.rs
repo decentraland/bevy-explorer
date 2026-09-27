@@ -144,22 +144,22 @@ pub fn default_camera_components() -> impl Bundle {
         Tonemapping::AcesFitted,
         DebandDither::Enabled,
         ColorGrading {
-            // ACES tonemapping with a mild saturation lift; tune live with
+            // ACES tonemapping with slightly deepened midtones; tune live with
             // /tonemap /exposure /gamma /saturation
             global: ColorGradingGlobal {
                 exposure: 0.0,
                 ..Default::default()
             },
             shadows: ColorGradingSection {
-                saturation: 1.3,
+                gamma: 0.9,
                 ..Default::default()
             },
             midtones: ColorGradingSection {
-                saturation: 1.3,
+                gamma: 0.9,
                 ..Default::default()
             },
             highlights: ColorGradingSection {
-                saturation: 1.3,
+                gamma: 0.9,
                 ..Default::default()
             },
         },
