@@ -8,10 +8,9 @@ import { keyHintFor, useBindingsSnapshot, type BindingsSnapshot } from '../../li
 import { launchCount } from '../../lib/launchCount'
 import { bugReportUrl } from '../../lib/bugReport'
 import { flagEnabled, useFeatureFlags } from '../../lib/featureFlags'
-import { MaskIcon } from '../../design'
+import { Icon } from '../../design'
 import logoIcon from '../../assets/loading/logo-icon.webp'
 import wordmark from '../../assets/loading/wordmark.webp'
-import bugIcon from '../../assets/loading/icon-bug.webp'
 import { TIP_ROTATE_MS, tipsFor, type LoadingTip } from './loadingTips'
 import prevTip from '../../assets/loading/prev-tip.webp'
 import nextTip from '../../assets/loading/next-tip.webp'
@@ -45,7 +44,15 @@ function TipBody({ body, emoteKey }: { body: string; emoteKey: string }): React.
 function TipAction({ action, snap }: { action: NonNullable<LoadingTip['action']>; snap: BindingsSnapshot }): React.JSX.Element {
   return (
     <div className={styles.action}>
-      {action.icon != null && <img className={styles.actionIcon} src={action.icon} alt="" style={{ width: action.iconSize ?? 42, height: action.iconSize ?? 42 }} />}
+      {action.icon != null && (
+        <span className={styles.actionIcon}>
+          {typeof action.icon === 'string' ? (
+            <Icon name={action.icon} size={action.iconSize ?? 42} />
+          ) : (
+            <img src={action.icon.src} alt="" width={action.iconSize ?? 42} height={action.iconSize ?? 42} />
+          )}
+        </span>
+      )}
       <span className={styles.actionText}>
         {action.parts.map((part, i) =>
           typeof part === 'string' ? (
@@ -165,7 +172,7 @@ export function SceneLoadingOverlay({
         <TipsCarousel />
         {flagEnabled(flags, 'alfa-bug-report') && (
           <button type="button" className={styles.bug} aria-label="Report a bug" onClick={() => window.open(bugReportUrl(), '_blank', 'noopener')}>
-            <MaskIcon src={bugIcon} size={24} />
+            <Icon name="bug" size={24} />
           </button>
         )}
       </div>

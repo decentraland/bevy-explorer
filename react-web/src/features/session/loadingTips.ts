@@ -2,6 +2,7 @@
 // returning players see (by key); each key's text, art and action pill ship here. Without the
 // flag, the older generic tips show instead.
 
+import type { IconName } from '../../design'
 import { flagPayload, type FeatureFlags } from '../../lib/featureFlags'
 import addFriends from '../../assets/loading-tips/add-friends.webp'
 import earnBadges from '../../assets/loading-tips/earn-badges.webp'
@@ -11,12 +12,7 @@ import makeMove from '../../assets/loading-tips/make-move.webp'
 import sayHi from '../../assets/loading-tips/say-hi.webp'
 import yourPeople from '../../assets/loading-tips/your-people.webp'
 import addFriendIcon from '../../assets/loading/icon-add-friend.webp'
-import calendarIcon from '../../assets/loading/icon-calendar.webp'
-import chatIcon from '../../assets/loading/icon-chat.webp'
-import communitiesIcon from '../../assets/loading/icon-communities.webp'
-import emotesIcon from '../../assets/loading/icon-emotes.webp'
 import favPlaceIcon from '../../assets/loading/icon-fav-place.webp'
-import mapIcon from '../../assets/loading/icon-map.webp'
 import badges from '../../assets/loading-tips/badges.webp'
 import communities from '../../assets/loading-tips/communities.webp'
 import creatorHub from '../../assets/loading-tips/creator-hub.webp'
@@ -36,7 +32,7 @@ export interface LoadingTip {
   title: string
   body: string
   image: string
-  action?: { icon?: string; iconSize?: number; parts: TipActionPart[] }
+  action?: { icon?: IconName | { src: string }; iconSize?: number; parts: TipActionPart[] }
 }
 
 export const TIP_ROTATE_MS = 10_000
@@ -50,42 +46,42 @@ const CATALOG: Record<string, LoadingTip> = {
     title: 'Say Hi!',
     body: 'Open the chatbox and start a conversation\nwith people nearby.',
     image: sayHi,
-    action: { icon: chatIcon, parts: ['Press ', { accent: 'Enter', binding: 'Chat' }, ' to chat'] }
+    action: { icon: 'chat', parts: ['Press ', { accent: 'Enter', binding: 'Chat' }, ' to chat'] }
   },
   live_now: {
     key: 'live_now',
     title: 'Live Now',
     body: 'Find events, games, parties, and meetups happening right now.',
     image: liveNow,
-    action: { icon: calendarIcon, parts: ['Open ', { accent: 'Events' }, ' to see what’s on'] }
+    action: { icon: 'events', parts: ['Open ', { accent: 'Events' }, ' to see what’s on'] }
   },
   add_friends: {
     key: 'add_friends',
     title: 'Add Friends',
     body: 'Met someone cool? Add them so you can find each other again.',
     image: addFriends,
-    action: { icon: addFriendIcon, parts: ['Open profile ', { accent: '→' }, ' Add friend'] }
+    action: { icon: { src: addFriendIcon }, parts: ['Open profile ', { accent: '→' }, ' Add friend'] }
   },
   make_move: {
     key: 'make_move',
     title: 'Make a Move',
     body: 'Emotes let you wave, react, or show off your moves without saying a word.',
     image: makeMove,
-    action: { icon: emotesIcon, parts: ['Press ', { accent: 'B', binding: 'Emote' }, ' to open Emotes Wheel'] }
+    action: { icon: 'emotes', parts: ['Press ', { accent: 'B', binding: 'Emote' }, ' to open Emotes Wheel'] }
   },
   hang_out: {
     key: 'hang_out',
     title: 'Hang Out',
     body: 'Genesis Plaza is where people hang out: by the fire, chatting, or crossing paths. Come by and see who’s around!',
     image: hangOutPlaza,
-    action: { icon: mapIcon, iconSize: 50, parts: ['Open Map ', { accent: '→' }, { icon: favPlaceIcon }, 'Genesis Plaza'] }
+    action: { icon: 'map', iconSize: 50, parts: ['Open Map ', { accent: '→' }, { icon: favPlaceIcon }, 'Genesis Plaza'] }
   },
   your_people: {
     key: 'your_people',
     title: 'Your People',
     body: 'Find events, games, parties, and meetups happening right now.',
     image: yourPeople,
-    action: { icon: communitiesIcon, iconSize: 50, parts: ['Press ', { accent: 'O', binding: 'Communities' }, ' to search communities'] }
+    action: { icon: 'communities', iconSize: 50, parts: ['Press ', { accent: 'O', binding: 'Communities' }, ' to search communities'] }
   },
   earn_badges: {
     key: 'earn_badges',

@@ -222,6 +222,7 @@
   white-space: nowrap;
 }
 .actionIcon {
+  display: flex;
   flex: none;
 }
 .actionText {
