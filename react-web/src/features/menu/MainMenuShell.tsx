@@ -7,6 +7,21 @@ import { DclLogo, Icon, type IconName } from '../../design'
 import { keyHintFor, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { ProfileChip } from './ProfileChip'
 import styles from './MainMenuShell.module.css'
+import onBackpack from '../../assets/menu-on/backpack.webp'
+import onEvents from '../../assets/menu-on/events.webp'
+import onPlaces from '../../assets/menu-on/places.webp'
+import onCommunities from '../../assets/menu-on/communities.webp'
+import onShop from '../../assets/menu-on/shop.webp'
+import onMap from '../../assets/menu-on/map.webp'
+import onSettings from '../../assets/menu-on/settings.webp'
+import onGallery from '../../assets/menu-on/gallery.webp'
+
+// The selected tab's full-colour artwork, and its display size (the map and settings art sit in a
+// larger canvas).
+const SELECTED_ART: Record<string, [string, number]> = {
+  backpack: [onBackpack, 36], events: [onEvents, 36], places: [onPlaces, 36], communities: [onCommunities, 36],
+  shop: [onShop, 36], map: [onMap, 46], settings: [onSettings, 46], gallery: [onGallery, 36]
+}
 
 // How many menu shells are currently mounted. Each full-screen page renders its own shell, so
 // SWITCHING pages unmounts one and mounts another. A shell that mounts while another is already open
@@ -85,9 +100,17 @@ export function MainMenuShell({
                 key={m.label}
                 type="button"
                 className={`${styles.menuItem} ${m.page === active ? styles.menuActive : ''}`.trim()}
+                data-page={m.page}
+                aria-current={m.page === active ? 'page' : undefined}
                 onClick={() => m.page !== active && onNavigate(m.page)}
               >
-                <span className={styles.menuIcon}><Icon name={m.icon} size={24} /></span>
+                <span className={styles.menuIcon}>
+                  {m.page === active && SELECTED_ART[m.page] != null ? (
+                    <img src={SELECTED_ART[m.page][0]} alt="" width={SELECTED_ART[m.page][1]} height={SELECTED_ART[m.page][1]} />
+                  ) : (
+                    <Icon name={m.icon} size={24} />
+                  )}
+                </span>
                 <span className={styles.menuLabel}>
                   {m.label}
                   {shortcut && <span className={styles.menuKey}> [{shortcut}]</span>}
