@@ -386,7 +386,7 @@
   object-fit: contain;
 }
 
-/* Detail panel (right), inside the card. */
+/* Detail panel (right), inside the card: a rarity-coloured 9-slice background. */
 .detail {
   position: absolute;
   left: 984px;
@@ -395,80 +395,79 @@
   height: 800px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 22px 22px;
-  border-radius: 16px;
-  background: var(--fill-2);
   pointer-events: auto;
 }
-.detailEmpty {
-  margin: auto;
-  color: var(--ink-45);
-  font-size: 14px;
+.detail::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-style: solid;
+  border-width: 391px 0 200px;
+  border-image: var(--panel-art) 391 0 200 fill / 391px 0 200px stretch;
 }
-.detailThumb {
+.detailEmpty {
+  align-items: center;
+  justify-content: center;
+}
+.detailEmptyText {
+  color: var(--text);
+  font-size: var(--type-15);
+  font-weight: var(--fw-semibold);
+}
+.detailImage {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 14px;
+  height: 290px;
+  margin-top: 5px;
+  border-radius: var(--r-md) var(--r-md) 0 0;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 35%, var(--rm), rgba(0, 0, 0, 0.35));
 }
-.detailThumb img {
-  width: 86%;
-  height: 86%;
+.detailImage img {
+  width: 80%;
+  height: 80%;
   object-fit: contain;
 }
+.detailInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 0 22px;
+}
 .detailName {
-  margin-top: 4px;
-  font-size: 17px;
-  font-weight: 800;
-  text-align: center;
-  color: var(--text);
-}
-.detailRarity {
-  padding: 4px 14px;
-  background: var(--rm);
-  border-radius: var(--r-pill);
-  color: var(--accent-ink);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.detailMetaRow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  margin-top: 6px;
-}
-.detailMetaLabel {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: var(--ink-45);
-}
-.detailMetaValue {
-  font-size: 13px;
+  gap: 6px;
   color: var(--text);
+  font-size: var(--type-24);
+  font-weight: var(--fw-semibold);
+}
+.detailRarity {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--rm);
+  color: var(--text);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
 }
 .detailDescLabel {
-  align-self: flex-start;
-  margin-top: 8px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: var(--ink-45);
+  margin-top: 12px;
+  color: var(--text);
+  font-size: var(--type-15);
+  font-weight: var(--fw-semibold);
 }
 .detailDesc {
-  align-self: flex-start;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ink-6);
+  color: var(--text);
+  font-size: var(--type-16);
+  line-height: 1.3;
 }
 
 /* Saved Outfits — a slot grid filling the catalog area. */

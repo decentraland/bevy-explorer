@@ -5,7 +5,7 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Chip, ColorPicker, MaskIcon, Pager, SearchField, Tabs, WearableCard, rarityTile, type Rarity, type TabItem } from '../../design'
+import { Button, Chip, ColorPicker, MaskIcon, Pager, SearchField, Tabs, WearableCard, rarityPanel, rarityTile, type Rarity, type TabItem } from '../../design'
 import allIcon from '../../assets/category-icons/all.png'
 import arrowLeftIcon from '../../assets/backpack/icon-arrow-left.webp'
 import closeIcon from '../../assets/backpack/icon-close.webp'
@@ -128,28 +128,27 @@ function CategoryTile({
 function DetailPanel({ item }: { item: Wearable | Emote | null }): React.JSX.Element {
   if (!item) {
     return (
-      <aside className={styles.detail}>
-        <div className={styles.detailEmpty}>No item selected</div>
+      <aside className={`${styles.detail} ${styles.detailEmpty}`} style={{ '--panel-art': `url(${rarityPanel(null)})` } as React.CSSProperties}>
+        <span className={styles.detailEmptyText}>No item selected</span>
       </aside>
     )
   }
   const rarity = item.rarity ?? 'base'
   const category = 'category' in item ? item.category : 'emote'
   return (
-    <aside className={styles.detail}>
-      <div className={styles.detailThumb} data-rarity={rarity}>
+    <aside className={styles.detail} style={{ '--panel-art': `url(${rarityPanel(rarity)})` } as React.CSSProperties}>
+      <div className={styles.detailImage}>
         <CatalystImg src={item.thumbnail} urn={item.urn} />
       </div>
-      <div className={styles.detailName}>{item.name}</div>
-      <div className={styles.detailRarity} data-rarity={rarity}>
-        {humanize(rarity)}
+      <div className={styles.detailInfo}>
+        <div className={styles.detailName}>
+          <CategoryIcon category={category} size={28} />
+          <span>{item.name}</span>
+        </div>
+        <span className={styles.detailRarity} data-rarity={rarity}>{rarity}</span>
+        <div className={styles.detailDescLabel}>DESCRIPTION</div>
+        <div className={styles.detailDesc}>{NO_DESC}</div>
       </div>
-      <div className={styles.detailMetaRow}>
-        <span className={styles.detailMetaLabel}>CATEGORY</span>
-        <span className={styles.detailMetaValue}>{humanize(category)}</span>
-      </div>
-      <div className={styles.detailDescLabel}>DESCRIPTION</div>
-      <div className={styles.detailDesc}>{NO_DESC}</div>
     </aside>
   )
 }
