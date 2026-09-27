@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { ColorPicker } from '../design'
+import { dispatchCancelLayer } from '../lib/cancelLayers'
 import { color3ToHex, hexToColor3, hexToHsv, hsvToHex } from '../lib/color'
 
 describe('color conversions', () => {
@@ -58,6 +59,13 @@ describe('ColorPicker', () => {
     fireEvent.change(brightness, { target: { value: '0' } })
     fireEvent.change(brightness, { target: { value: '1' } })
     expect(hexToHsv(onChange.mock.calls.at(-1)?.[0] as string).h).toBeCloseTo(hexToHsv('#ffbe28').h, 0)
+  })
+
+  it('Cancel closes just the popup', () => {
+    open('#3c210b')
+    act(() => { expect(dispatchCancelLayer()).toBe(true) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(dispatchCancelLayer()).toBe(false)
   })
 
   it('closes on a click outside', () => {

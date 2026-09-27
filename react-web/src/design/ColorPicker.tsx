@@ -2,6 +2,7 @@
 // color that opens a light popup with preset toggles and hue / saturation / brightness bars.
 
 import { useEffect, useRef, useState } from 'react'
+import { registerCancelLayer } from '../lib/cancelLayers'
 import { hexToHsv, hsvToHex, type Hsv } from '../lib/color'
 import styles from './ColorPicker.module.css'
 
@@ -30,15 +31,14 @@ export function ColorPicker({
     const onDown = (e: MouseEvent): void => {
       if (ref.current != null && !ref.current.contains(e.target as Node)) setOpen(false)
     }
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
-    }
     document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  // A cancel layer, so Cancel (Escape or gamepad) closes just the popup, not the Backpack.
+  useEffect(() => {
+    if (!open) return
+    return registerCancelLayer(() => setOpen(false))
   }, [open])
 
   const toggle = (): void => {
