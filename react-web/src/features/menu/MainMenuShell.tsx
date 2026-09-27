@@ -74,7 +74,7 @@ export function MainMenuShell({
     <div className={`${styles.overlay} ${animate ? styles.animateIn : ''} ${transparentBody ? styles.overlayPass : ''}`.trim()}>
       <header className={styles.topbar}>
         <div className={styles.brand}>
-          <DclLogo size={26} />
+          <DclLogo size={27} />
           <span className={styles.brandName}>Decentraland</span>
         </div>
         <nav className={styles.menu}>
@@ -87,7 +87,7 @@ export function MainMenuShell({
                 className={`${styles.menuItem} ${m.page === active ? styles.menuActive : ''}`.trim()}
                 onClick={() => m.page !== active && onNavigate(m.page)}
               >
-                <Icon name={m.icon} size={20} />
+                <span className={styles.menuIcon}><Icon name={m.icon} size={24} /></span>
                 <span className={styles.menuLabel}>
                   {m.label}
                   {shortcut && <span className={styles.menuKey}> [{shortcut}]</span>}
@@ -108,7 +108,7 @@ export function MainMenuShell({
           />
         )}
         <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>
-          ×
+          <span className={styles.closeIcon} aria-hidden="true" />
         </button>
       </header>
       <div className={styles.accent} />

@@ -119,6 +119,8 @@
   --ink-50: rgba(255, 255, 255, 0.502);
   --row-hover: var(--pearl);
   --row-press: #cfcdd4;
+  --black: #000000;
+  --fill-faint: rgba(255, 255, 255, 0.031); /* hover wash on dark buttons */
   --scrim-40: rgba(0, 0, 0, 0.4);
   --scrim-20: rgba(0, 0, 0, 0.2);
   --divider-pink: rgba(247, 85, 255, 0.102);
@@ -128,6 +130,7 @@
   --menu-tab-hover: #232226;
   --menu-tab-selected: #393641;
   --menu-key: #524e5b;
+  --menu-icon: #898989;
   --menu-rainbow: linear-gradient(90deg, #bd38c6 0%, #ff5246 50%, #fda163 100%);
   --slot-empty: #582987;
   --slot-edge: #a14bf3;
