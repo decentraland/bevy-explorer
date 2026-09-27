@@ -10,6 +10,7 @@ import allIcon from '../../assets/category-icons/all.png'
 import arrowLeftIcon from '../../assets/backpack/icon-arrow-left.webp'
 import emptySearchArt from '../../assets/backpack/empty-search.webp'
 import emptyCategoryArt from '../../assets/backpack/empty-category.webp'
+import emotesDeck from '../../assets/backpack/emotes-deck.webp'
 import closeIcon from '../../assets/backpack/icon-close.webp'
 import wearablesIcon from '../../assets/backpack/icon-wearables.webp'
 import emotesIcon from '../../assets/backpack/icon-emotes.webp'
@@ -274,6 +275,7 @@ export function BackpackPage({
   const [selected, setSelected] = useState<Wearable | Emote | null>(null)
   // The emote wheel slot (0–9) an assigned emote will go into; the left list selects it.
   const [emoteSlot, setEmoteSlot] = useState(1)
+  const [emotePage, setEmotePage] = useState(0)
   // Filter & sort (client-side, on the loaded catalog).
   const [showFilter, setShowFilter] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('newest')
@@ -425,7 +427,7 @@ export function BackpackPage({
         <div className={styles.backdrop} aria-hidden="true" />
         <header className={styles.head}>
           <h1 className={styles.title}>Backpack</h1>
-          <Tabs variant="section" className={styles.tabs} items={BACKPACK_TABS} value={tab} onChange={setTab} aria-label="Backpack sections" />
+          <Tabs variant="section" className={styles.tabs} items={BACKPACK_TABS} value={tab} onChange={(t) => { setTab(t); setSelected(null) }} aria-label="Backpack sections" />
           <div className={styles.filterWrap}>
             <Button variant="light" className={styles.filterBtn} aria-expanded={showFilter} onClick={() => setShowFilter((s) => !s)}>
               <MaskIcon src={filterIcon} size={20} />
@@ -565,50 +567,69 @@ export function BackpackPage({
               )
             ) : (
               <div className={styles.catalog}>
-                {/* Emote wheel slots (numbered 1..0). Click to choose which slot the next emote you
-                    pick from the grid will be assigned to. */}
                 <div className={styles.slotList}>
                   {Array.from({ length: 10 }, (_, k) => {
                     const num = (k + 1) % 10
                     const e = emotes.list.find((x) => x.slot === num) ?? null
                     return (
-                      <button
-                        key={num}
-                        type="button"
-                        className={`${styles.emoteSlot} ${emoteSlot === num ? styles.emoteSlotActive : ''}`.trim()}
-                        onClick={() => {
-                          setEmoteSlot(num)
-                          if (e) setSelected(e)
-                        }}
-                      >
-                        <span className={styles.emoteSlotNum}>{num}</span>
-                        <span className={styles.emoteSlotName}>{e?.name ?? 'Empty'}</span>
-                        <span className={styles.emoteSlotThumb} data-rarity={e?.rarity ?? 'base'}>
-                          {e && <CatalystImg urn={e.urn} />}
-                        </span>
-                      </button>
+                      <div key={num} className={styles.emoteRow} style={{ top: k * 81.4 }}>
+                        {k > 0 && <span className={styles.emoteDivider} aria-hidden="true" />}
+                        <button
+                          type="button"
+                          className={`${styles.emoteSlot} ${emoteSlot === num ? styles.emoteSlotActive : ''}`.trim()}
+                          aria-pressed={emoteSlot === num}
+                          onClick={() => {
+                            setEmoteSlot(num)
+                            if (e) setSelected(e)
+                          }}
+                        >
+                          <span className={styles.emoteSlotSelected} aria-hidden="true" />
+                          <span className={styles.emoteSlotNum} style={{ backgroundImage: `url(${emotesDeck})` }}>{num}</span>
+                          <span className={styles.emoteSlotName}>{e?.name ?? 'None'}</span>
+                          <span className={styles.emoteSlotThumb} style={e ? { backgroundImage: `url(${rarityTile(e.rarity)})` } : undefined}>
+                            {e && <CatalystImg urn={e.urn} />}
+                            <span className={styles.emoteSlotHover} aria-hidden="true" />
+                          </span>
+                        </button>
+                        {e && (
+                          <button type="button" className={styles.emoteUnequip} aria-label={`Unequip ${e.name}`} onClick={() => emotes.equip(num, '')}>
+                            <MaskIcon src={closeIcon} size={10} />
+                          </button>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
-                <div className={styles.gridArea}>
+                <div className={`${styles.gridArea} ${styles.gridAreaEmotes}`}>
+                  <div className={styles.breadcrumb}>
+                    <Chip
+                      label={`Emote ${emoteSlot}`}
+                      icon={<span className={styles.chipDeck} style={{ backgroundImage: `url(${emotesDeck})` }}>{emoteSlot}</span>}
+                      selected
+                    />
+                  </div>
                   {emoteItems.length === 0 ? (
                     <div className={styles.empty}>{emotes.list.length === 0 ? 'No emotes.' : 'No matches.'}</div>
                   ) : (
                     <div className={styles.grid}>
-                      {emoteItems.map((e) => (
+                      {emoteItems.slice(emotePage * PAGE_SIZE, (emotePage + 1) * PAGE_SIZE).map((e) => (
                         <WearableCard
                           key={e.urn}
                           thumbnail={e.thumbnail ?? catalystThumbUrl(e.urn)}
                           name={e.name}
                           rarity={asRarity(e.rarity)}
                           equipped={e.slot != null}
+                          slotNumber={e.slot ?? undefined}
                           selected={selected != null && 'urn' in selected && selected.urn === e.urn}
+                          categoryIcon={<MaskIcon src={emotesIcon} size={16} />}
                           onClick={() => setSelected(e)}
+                          onDoubleClick={() => { if (e.slot == null) emotes.equip(emoteSlot, e.urn) }}
                           onEquip={() => (e.slot != null ? emotes.equip(e.slot, '') : emotes.equip(emoteSlot, e.urn))}
                         />
                       ))}
                     </div>
                   )}
+                  <Pager className={styles.pager} page={Math.min(emotePage, Math.max(0, Math.ceil(emoteItems.length / PAGE_SIZE) - 1))} count={Math.ceil(emoteItems.length / PAGE_SIZE)} onChange={setEmotePage} />
                 </div>
               </div>
             )}

@@ -29,3 +29,15 @@ describe('backpack empty and loading states', () => {
     expect(document.querySelectorAll('[aria-busy="true"] > span')).toHaveLength(16)
   })
 })
+
+describe('backpack tabs', () => {
+  it('switching tab clears the selected item', () => {
+    const s = fakeSession()
+    const backpack = { ...s.backpack, open: true, list: [{ urn: 'urn:t', name: 'Blue Shirt', rarity: 'base', category: 'upper_body', equipped: false }], total: 1 }
+    render(<BackpackPage backpack={backpack} emotes={s.emotes} profile={fakeProfileState()} onNavigate={vi.fn()} setEngineViewport={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Blue Shirt' }))
+    expect(screen.queryByText('No item selected')).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: /emotes/i }))
+    expect(screen.getByText('No item selected')).toBeInTheDocument()
+  })
+})
