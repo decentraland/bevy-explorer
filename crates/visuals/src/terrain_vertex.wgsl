@@ -6,27 +6,15 @@
     view_transformations::position_world_to_clip,
 }
 
+#import "embedded://visuals/terrain_params.wgsl"::terrain
+
 #ifdef PREPASS_PIPELINE
     #import bevy_pbr::prepass_io::{Vertex, VertexOutput};
 #else
     #import bevy_pbr::forward_io::{Vertex, VertexOutput};
 #endif
 
-struct TerrainParams {
-    // first parcel of the step texture (x, unity z)
-    min: vec2<i32>,
-    size: vec2<i32>,
-    max_steps: f32,
-    // unity's occupancy texture size, only used to reproduce its uv arithmetic
-    uv_size: f32,
-    // ground and grass resolution follows parcel grass lod around this parcel (x, unity z)
-    player_parcel: vec2<i32>,
-    // the player's position within that parcel, 0 to 1 (x, unity z)
-    player_offset: vec2<f32>,
-}
-
 @group(2) @binding(100) var terrain_steps: texture_2d<f32>;
-@group(2) @binding(101) var<uniform> terrain: TerrainParams;
 
 const STEP_HEIGHT: f32 = 1.8;
 const TEXEL_STEP: f32 = 10.0;

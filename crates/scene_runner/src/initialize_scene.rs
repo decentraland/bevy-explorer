@@ -21,7 +21,7 @@ use common::{
         server_mode, AppConfig, AppError, CurrentRealm, EditorMode, GlobalCrdtStateUpdate,
         IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
     },
-    terrain::{Occupancy, TerrainChange, TerrainTargets},
+    terrain::{Occupancy, TerrainChange, TerrainTargets, BORDER_PADDING},
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::global_crdt::{CrdtContexts, GlobalCrdtState};
@@ -902,6 +902,20 @@ impl ScenePointers {
 
     pub fn terrain(&self) -> &TerrainTargets {
         &self.terrain
+    }
+
+    /// Inclusive parcel bounds of the coast. A World's terrain bounds are known up front from its
+    /// scenes; a city only resolves pointers around the player, so use its map bounds with the
+    /// terrain padding instead (Genesis is occupied out to its map edges, so this matches
+    /// unity-explorer's manifest bounds).
+    pub fn coast_bounds(&self) -> Option<(IVec2, IVec2)> {
+        if self.terrain.is_world() {
+            return self.terrain.bounds();
+        }
+        let (min, max) = self.realm_bounds;
+        min.cmple(max)
+            .all()
+            .then(|| (min - BORDER_PADDING, max + BORDER_PADDING))
     }
 
     /// Resolve terrain step targets for pointers changed since the last call.

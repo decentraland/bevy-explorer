@@ -53,6 +53,9 @@ pub(crate) struct TerrainPlugin;
 impl Plugin for TerrainPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "terrain_vertex.wgsl");
+        embedded_asset!(app, "terrain_params.wgsl");
+        embedded_asset!(app, "terrain_flat.wgsl");
+        embedded_asset!(app, "coast_profile.wgsl");
 
         app.init_resource::<TerrainSurface>()
             .init_resource::<PlayerTerrainHeight>()
@@ -100,11 +103,11 @@ mod decl {
     #![allow(dead_code)]
 
     use bevy::{
-        math::{IVec2, Vec2},
+        math::{IVec2, Vec2, Vec4},
         render::render_resource::ShaderType,
     };
 
-    #[derive(Clone, Copy, Debug, Default, PartialEq, ShaderType)]
+    #[derive(Clone, Copy, Debug, PartialEq, ShaderType)]
     pub struct TerrainParams {
         pub min: IVec2,
         pub size: IVec2,
@@ -114,6 +117,26 @@ mod decl {
         pub player_parcel: IVec2,
         /// the player's position within that parcel, 0 to 1 (x, unity z)
         pub player_offset: Vec2,
+        /// coast bounds in unity x/z metres (min x, min z, max x, max z); the ground ends at the
+        /// cliffs
+        pub coast: Vec4,
+    }
+
+    /// Coast bounds that no point is beyond.
+    pub const NO_COAST: Vec4 = Vec4::new(-1.0e7, -1.0e7, 1.0e7, 1.0e7);
+
+    impl Default for TerrainParams {
+        fn default() -> Self {
+            Self {
+                min: IVec2::ZERO,
+                size: IVec2::ZERO,
+                max_steps: 0.0,
+                uv_size: 0.0,
+                player_parcel: IVec2::ZERO,
+                player_offset: Vec2::ZERO,
+                coast: NO_COAST,
+            }
+        }
     }
 }
 pub use decl::*;
@@ -148,6 +171,20 @@ impl MaterialExtension for TerrainExtension {
     fn prepass_vertex_shader() -> ShaderRef {
         terrain_vertex_shader()
     }
+
+    fn fragment_shader() -> ShaderRef {
+        ShaderRef::Path(
+            format!(
+                "embedded://{}",
+                embedded_path!("terrain_flat.wgsl").display()
+            )
+            .into(),
+        )
+    }
+
+    fn prepass_fragment_shader() -> ShaderRef {
+        Self::fragment_shader()
+    }
 }
 
 /// What changed in the surface this frame.
@@ -180,6 +217,7 @@ pub struct TerrainSurface {
     uv_size: f32,
     player_parcel: IVec2,
     player_offset: Vec2,
+    coast: Vec4,
     changes: SurfaceChanges,
 }
 
@@ -198,6 +236,7 @@ impl Default for TerrainSurface {
             uv_size: 1.0,
             player_parcel: IVec2::ZERO,
             player_offset: Vec2::ZERO,
+            coast: NO_COAST,
             changes: SurfaceChanges::default(),
         }
     }
@@ -213,6 +252,11 @@ fn union(rect: Option<(IVec2, IVec2)>, min: IVec2, max: IVec2) -> Option<(IVec2,
 impl TerrainSurface {
     pub fn changes(&self) -> &SurfaceChanges {
         &self.changes
+    }
+
+    /// Coast bounds in unity x/z metres (min x, min z, max x, max z), if there is a coast.
+    pub fn coast(&self) -> Option<Vec4> {
+        (self.coast != NO_COAST).then_some(self.coast)
     }
 
     fn width(&self) -> i32 {
@@ -237,6 +281,7 @@ impl TerrainSurface {
                 uv_size: self.uv_size,
                 player_parcel: self.player_parcel,
                 player_offset: self.player_offset,
+                coast: self.coast,
             },
             None => TerrainParams {
                 min: IVec2::ZERO,
@@ -245,6 +290,7 @@ impl TerrainSurface {
                 uv_size: 1.0,
                 player_parcel: self.player_parcel,
                 player_offset: self.player_offset,
+                coast: self.coast,
             },
         }
     }
@@ -534,7 +580,19 @@ fn sync(
     } else {
         None
     };
-    surface.apply(pointers.terrain(), change, enabled.unwrap_or(true));
+    let enabled = enabled.unwrap_or(true);
+    surface.apply(pointers.terrain(), change, enabled);
+    let coast = pointers
+        .coast_bounds()
+        .filter(|_| enabled)
+        .map_or(NO_COAST, |(min, max)| {
+            let (min, max) = ((min * 16).as_vec2(), ((max + 1) * 16).as_vec2());
+            Vec4::new(min.x, min.y, max.x, max.y)
+        });
+    if coast != surface.coast {
+        surface.coast = coast;
+        surface.changes.params = true;
+    }
 }
 
 fn ease(time: Res<Time>, mut surface: ResMut<TerrainSurface>) {

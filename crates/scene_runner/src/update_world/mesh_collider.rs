@@ -335,6 +335,21 @@ impl SceneColliderData {
         self.set_collider(id, collider, None);
     }
 
+    /// Invisible box that only blocks avatar movement (unity-explorer's border colliders). It is
+    /// not ground, and not hit by raycasts unless the entity is included in them.
+    pub fn set_wall(&mut self, id: &ColliderId, centre: Vec3, half_extents: Vec3) {
+        let half_extents = half_extents.as_dvec3();
+        let collider = ColliderBuilder::cuboid(half_extents.x, half_extents.y, half_extents.z)
+            .translation(centre.as_dvec3().into())
+            .collision_groups(InteractionGroups::new(
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                InteractionTestMode::And,
+            ))
+            .build();
+        self.set_collider(id, collider, None);
+    }
+
     pub fn update_collider_transform(
         &mut self,
         id: &ColliderId,

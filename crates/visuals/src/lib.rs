@@ -1,4 +1,5 @@
 mod atmosphere_params;
+mod coast;
 mod day_night;
 pub mod env_downsample;
 mod nishita_cloud;
@@ -33,7 +34,8 @@ use console::DoAddConsoleCommand;
 // use env_downsample::{Envmap, EnvmapDownsamplePlugin};
 
 use crate::{
-    day_night::DayNightPlugin, shell_texturing::ShellTexturingPlugin, terrain::TerrainPlugin,
+    coast::CoastPlugin, day_night::DayNightPlugin, shell_texturing::ShellTexturingPlugin,
+    terrain::TerrainPlugin,
 };
 
 pub struct VisualsPlugin {
@@ -57,6 +59,7 @@ impl Plugin for VisualsPlugin {
             .add_plugins(DayNightPlugin)
             .add_plugins(ShellTexturingPlugin)
             .add_plugins(TerrainPlugin)
+            .add_plugins(CoastPlugin)
             .add_systems(Update, apply_global_light)
             .add_systems(Update, update_dof)
             .add_systems(Startup, setup.in_set(SetupSets::Main));
