@@ -34,6 +34,10 @@ const GROUND_NEAR_MIN: i32 = -13;
 const GROUND_NEAR_MAX: i32 = 12;
 // cell size of the ground ring beyond them (terrain.rs RING_CELL)
 const RING_CELL: f32 = 16.0;
+// Beyond the rings at RING_CELL (terrain.rs TERRAIN_RINGS, each doubling the extent) the ground is
+// flat: coarser cells slide over the terrain as the mesh follows the player, so can't follow it
+// without swimming.
+const FLAT_REACH: f32 = f32(-GROUND_NEAR_MIN) * 16.0 * 4.0;
 
 fn modulo289(value: f32) -> f32 {
     return value - floor(value * (1.0 / 289.0)) * 289.0;
@@ -232,11 +236,14 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 #endif
     let xz = world_position.xz;
     let anchor = world_from_local[3].xz;
-    world_position.y += vertex_height(
-        vec2<f32>(xz.x, -xz.y),
-        stitch,
-        vec2<f32>(anchor.x, -anchor.y),
-    );
+    let outer = max(abs(xz.x - anchor.x), abs(xz.y - anchor.y)) >= FLAT_REACH;
+    if !outer {
+        world_position.y += vertex_height(
+            vec2<f32>(xz.x, -xz.y),
+            stitch,
+            vec2<f32>(anchor.x, -anchor.y),
+        );
+    }
 
     out.world_position = world_position;
     out.position = position_world_to_clip(world_position.xyz);
@@ -247,13 +254,13 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.position.z = min(out.position.z, 1.0);
 #endif
 #ifdef NORMAL_PREPASS_OR_DEFERRED_PREPASS
-    out.world_normal = terrain_normal(xz);
+    out.world_normal = select(terrain_normal(xz), vec3<f32>(0.0, 1.0, 0.0), outer);
 #endif
 #ifdef MOTION_VECTOR_PREPASS
     out.previous_world_position = world_position;
 #endif
 #else
-    out.world_normal = terrain_normal(xz);
+    out.world_normal = select(terrain_normal(xz), vec3<f32>(0.0, 1.0, 0.0), outer);
 #endif
 
 #ifdef VERTEX_OUTPUT_INSTANCE_INDEX

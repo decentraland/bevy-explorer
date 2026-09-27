@@ -799,12 +799,17 @@ pub(crate) fn parcel_mesh(segments: u32) -> Mesh {
 /// parcel grass resolution: every parcel that can hold grass (it is dropped beyond 150 parcels²).
 pub(crate) const GROUND_NEAR_MIN: i32 = -13;
 pub(crate) const GROUND_NEAR_MAX: i32 = 12;
-/// Cell size of the first ring around the per-parcel grids; each further ring doubles it.
+/// Cell size of the first rings around the per-parcel grids; each further ring doubles it.
 const RING_CELL: f32 = 16.0;
+/// Rings at `RING_CELL`, which follow the terrain: their cells move with the player in whole cells,
+/// so they sit on the same points. Coarser rings beyond would slide over it, so the ground there is
+/// flat (terrain_vertex.wgsl FLAT_REACH).
+const TERRAIN_RINGS: u32 = 2;
 
 /// Flat ground relative to the player's parcel corner (Unity x/z). Parcels near the player get
 /// `segments(offset)` cells a side, matching the parcel grass over them, so both share vertices.
-/// Beyond, `rings` square rings of doubling cell size each double the extent.
+/// Beyond, `rings` square rings each double the extent, with cells doubling after the first
+/// `TERRAIN_RINGS`.
 pub(crate) fn ground_mesh(segments: impl Fn(IVec2) -> u32, rings: u32) -> Mesh {
     let mut builder = MeshBuilder::new();
     let (min, max) = (GROUND_NEAR_MIN, GROUND_NEAR_MAX);
@@ -836,21 +841,19 @@ pub(crate) fn ground_mesh(segments: impl Fn(IVec2) -> u32, rings: u32) -> Mesh {
     }
     let mut inner = (-min * 16) as f32;
     let mut cell = RING_CELL;
-    for _ in 0..rings {
+    for ring in 0..rings {
         let outer = inner * 2.0;
         let count = (outer * 2.0 / cell) as u32;
+        // the next ring's cell, met on this ring's outer edge
+        let next = if ring + 1 < TERRAIN_RINGS {
+            cell
+        } else {
+            cell * 2.0
+        };
         let stitch = move |x: u32, z: u32| {
             Vec2::new(
-                if z == 0 || z == count {
-                    cell * 2.0
-                } else {
-                    0.0
-                },
-                if x == 0 || x == count {
-                    cell * 2.0
-                } else {
-                    0.0
-                },
+                if z == 0 || z == count { next } else { 0.0 },
+                if x == 0 || x == count { next } else { 0.0 },
             )
         };
         let keep = move |x: u32, z: u32| {
@@ -860,7 +863,7 @@ pub(crate) fn ground_mesh(segments: impl Fn(IVec2) -> u32, rings: u32) -> Mesh {
         };
         builder.grid_cells(Vec2::splat(-outer), cell, count, stitch, keep);
         inner = outer;
-        cell *= 2.0;
+        cell = next;
     }
     builder.build()
 }
