@@ -507,17 +507,15 @@ export function BackpackPage({
                         {humanize(cat)}
                       </span>
                     )}
-                  </div>
-                  {COLOR_TARGET[cat] != null && backpack.colors != null && (
-                    <div className={styles.colorPicker}>
+                    {COLOR_TARGET[cat] != null && backpack.colors != null && (
                       <ColorPicker
                         label={COLOR_LABEL[COLOR_TARGET[cat]]}
                         value={backpack.colors[COLOR_TARGET[cat]]}
                         presets={COLOR_PRESETS[COLOR_TARGET[cat]]}
                         onChange={(hex) => backpack.setColor(COLOR_TARGET[cat], hex)}
                       />
-                    </div>
-                  )}
+                    )}
+                  </div>
                   {pageItems.length === 0 ? (
                     <div className={styles.empty}>{backpack.loading ? 'Loading…' : 'No wearables.'}</div>
                   ) : (

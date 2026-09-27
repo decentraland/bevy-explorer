@@ -6,12 +6,13 @@ import { enterAsGuest, fakeProfileState, fakeSession, renderSession } from './ha
 
 // Audit backpack-emotes-5: no skin/hair/eye color editing.
 describe('backpack colors', () => {
-  it('shows the hair picker for hair-coloured categories and not for others', () => {
+  it('shows the hair COLOR button for hair-coloured categories and not for others', () => {
     const s = fakeSession()
     const backpack = { ...s.backpack, open: true, colors: { skin: '#ddb18f', hair: '#5b310f', eyes: '#20b3f6' }, setColor: vi.fn() }
     render(<BackpackPage backpack={backpack} emotes={s.emotes} profile={fakeProfileState()} onNavigate={vi.fn()} setEngineViewport={vi.fn()} />)
-    expect(screen.queryByRole('group', { name: 'Hair color' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Hair color' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Facial Hair' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Hair color' }))
     expect(screen.getByRole('radio', { name: '#5b310f' })).toBeChecked()
     fireEvent.click(screen.getByRole('radio', { name: '#ffbe28' }))
     expect(backpack.setColor).toHaveBeenCalledWith('hair', '#ffbe28')
@@ -22,9 +23,9 @@ describe('backpack colors', () => {
     const backpack = { ...s.backpack, open: true, colors: { skin: '#ddb18f', hair: '#5b310f', eyes: '#20b3f6' }, setColor: vi.fn() }
     render(<BackpackPage backpack={backpack} emotes={s.emotes} profile={fakeProfileState()} onNavigate={vi.fn()} setEngineViewport={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Body Shape' }))
-    expect(screen.getByRole('group', { name: 'Skin color' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Skin color' })).toHaveTextContent('COLOR')
     fireEvent.click(screen.getByRole('button', { name: 'Eyes' }))
-    expect(screen.getByRole('group', { name: 'Eye color' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Eye color' })).toHaveTextContent('COLOR')
   })
 
   it('edits the look at once and deploys it when the backpack closes', async () => {

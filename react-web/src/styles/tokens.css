@@ -64,10 +64,12 @@
   --r-card: 14px;
   --r-panel: 18px;
   --r-pill: 999px;
+  --r-popup: 12px; /* light buttons and popups */
 
   /* ---- elevation ---- */
   --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.5);
+  --shadow-popup: 0 4px 10px rgba(0, 0, 0, 0.25);
 
   /* ---- stacking order ---- */
   --z-hud: 100; /* in-world chrome: sidebar, chat, minimap */
