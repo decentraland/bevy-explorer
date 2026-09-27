@@ -12,7 +12,11 @@ use dcl_component::{
     component_name_registry::InspectFn, ComponentNameRegistry, SceneComponentId, SceneEntityId,
 };
 use ipfs::IpfsResource;
-use scene_runner::renderer_context::RendererSceneContext;
+use scene_runner::{
+    initialize_scene::SuperUserScene, renderer_context::RendererSceneContext,
+    update_world::material::VideoTextureOutput, ContainerEntity,
+};
+use texture_camera::TextureCamera;
 
 use crate::{
     active_scene::{ActiveInspectionScene, SceneResolver},
@@ -31,6 +35,7 @@ pub fn add_read_commands(app: &mut App) {
     app.add_console_command::<CrdtSnapshotCommand, _>(crdt_snapshot_cmd);
     app.add_console_command::<CrdtInitialCommand, _>(crdt_initial_cmd);
     app.add_console_command::<ScreenshotCommand, _>(screenshot_cmd);
+    app.add_console_command::<TextureCameraScreenshotCommand, _>(texture_camera_screenshot_cmd);
     app.add_console_command::<ComponentNamesCommand, _>(component_names_cmd);
     app.add_console_command::<ComponentDefaultCommand, _>(component_default_cmd);
     app.add_console_command::<ComponentSchemaCommand, _>(component_schema_cmd);
@@ -753,7 +758,10 @@ fn screenshot_cmd(
         commands.spawn(Screenshot::window(window)).observe(
             move |mut trigger: Trigger<ScreenshotCaptured>| {
                 if let Some(tx) = tx.take() {
-                    let _ = tx.send(encode_screenshot_png_base64(std::mem::take(&mut trigger.0)));
+                    let _ = tx.send(encode_screenshot_png_base64(
+                        std::mem::take(&mut trigger.0),
+                        None,
+                    ));
                 }
             },
         );
@@ -761,12 +769,61 @@ fn screenshot_cmd(
     }
 }
 
-/// Encode a captured frame as base64 PNG. Errors (unsupported texture format,
-/// encoder failure) surface as the console command's failure reply.
-fn encode_screenshot_png_base64(image: Image) -> Result<String, String> {
-    let dynamic = image
+// --- /texture_camera_screenshot ---
+
+/// Capture what a system scene's texture camera on `layer` renders, as base64 PNG no larger than
+/// `max_size` on either side. The HUD uses it for saved-outfit thumbnails.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/texture_camera_screenshot")]
+struct TextureCameraScreenshotCommand {
+    layer: u32,
+    max_size: Option<u32>,
+}
+
+fn texture_camera_screenshot_cmd(
+    mut input: ConsoleCommand<TextureCameraScreenshotCommand>,
+    mut commands: Commands,
+    cameras: Query<(&TextureCamera, &ContainerEntity, &VideoTextureOutput)>,
+    system_scenes: Query<(), With<SuperUserScene>>,
+    mut console_responses: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(cmd)) = input.take() {
+        let Some(image) = cameras
+            .iter()
+            .find(|(cam, container, _)| {
+                cam.0.layer == Some(cmd.layer) && system_scenes.contains(container.root)
+            })
+            .map(|(_, _, output)| output.0.clone())
+        else {
+            input.reply_failed(format!("no system texture camera on layer {}", cmd.layer));
+            return;
+        };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut tx = Some(tx);
+        let max_size = cmd.max_size;
+        commands.spawn(Screenshot::image(image)).observe(
+            move |mut trigger: Trigger<ScreenshotCaptured>| {
+                if let Some(tx) = tx.take() {
+                    let _ = tx.send(encode_screenshot_png_base64(
+                        std::mem::take(&mut trigger.0),
+                        max_size,
+                    ));
+                }
+            },
+        );
+        console_responses.push_oneshot(rx, |r| r, input.take_responder());
+    }
+}
+
+/// Encode a captured frame as base64 PNG, scaled down to fit `max_size` if given. Errors
+/// (unsupported texture format, encoder failure) surface as the console command's failure reply.
+fn encode_screenshot_png_base64(image: Image, max_size: Option<u32>) -> Result<String, String> {
+    let mut dynamic = image
         .try_into_dynamic()
         .map_err(|e| format!("screenshot: could not read frame: {e:?}"))?;
+    if let Some(max) = max_size.filter(|m| dynamic.width() > *m || dynamic.height() > *m) {
+        dynamic = dynamic.resize(max, max, image::imageops::FilterType::Triangle);
+    }
     let mut png = Vec::new();
     dynamic
         .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)

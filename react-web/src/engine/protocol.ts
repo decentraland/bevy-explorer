@@ -983,6 +983,8 @@ export interface Outfit {
 export interface OutfitSlot {
   slot: number
   outfit: Outfit
+  /** A picture of the outfit worn (PNG data URL), kept on this device only. */
+  thumbnail?: string
 }
 
 /** The player's saved outfits + owned DCL names that unlock extra slots (beyond the 5 free). */

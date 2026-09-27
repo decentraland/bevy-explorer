@@ -15,6 +15,7 @@ import type { Entity } from '@dcl/ecs'
 import type { Ctx } from '../bridge'
 import type { PreviewFocus } from '../../../src/engine/protocol'
 import { currentLook } from './avatarDraft'
+import { BevyApi } from '../bevy-api'
 
 type Rect = { x: number; y: number; width: number; height: number }
 
@@ -47,6 +48,8 @@ const CAMERA_DISTANCE = 8
 const PITCH_DROP = CAMERA_DISTANCE * Math.tan((CAMERA_PITCH * Math.PI) / 180)
 // Drag-to-rotate sensitivity (from the SDK7 AvatarPreviewElement).
 const ROTATION_FACTOR = -0.5
+const FACING = Quaternion.fromEulerDegrees(0, 180, 0)
+const THUMBNAIL_SIZE = 480
 
 let rect: Rect | null = null
 let avatarEntity: Entity | null = null
@@ -60,6 +63,7 @@ let framingT = 1
 // Non-persisting preview override (selecting an item in the Backpack): when set, the preview
 // avatar wears these urns instead of the player's actual equipped set. null = no override.
 let previewUrns: string[] | null = null
+let frameWaiters: Array<{ frames: number; done: () => void }> = []
 
 // Render-target bounds, physical px. Fit inside the engine's 2048 cap here — a one-axis
 // engine-side clamp would break the aspect.
@@ -119,7 +123,7 @@ function createPreview(): void {
   CameraLayers.create(a, { layers: [LAYER] })
   Transform.create(a, {
     position: Vector3.create(8, 0, 8),
-    rotation: Quaternion.fromEulerDegrees(0, 180, 0),
+    rotation: FACING,
     scale: Vector3.create(2, 2, 2)
   })
 
@@ -210,6 +214,13 @@ export function registerAvatarPreview(ctx: Ctx): void {
     framingTo = to
     framingT = 0
   })
+  ctx.push(() => {
+    const due = frameWaiters.filter((w) => --w.frames <= 0)
+    frameWaiters = frameWaiters.filter((w) => w.frames > 0)
+    due.forEach((w) => {
+      w.done()
+    })
+  })
   ctx.push((dt) => {
     if (framingT >= 1 || cameraEntity == null) return
     framingT = Math.min(1, framingT + dt / FOCUS_SECONDS)
@@ -218,9 +229,7 @@ export function registerAvatarPreview(ctx: Ctx): void {
       range: framingFrom.range + (framingTo.range - framingFrom.range) * e,
       centerY: framingFrom.centerY + (framingTo.centerY - framingFrom.centerY) * e
     }
-    const cam = TextureCamera.getMutableOrNull(cameraEntity)
-    if (cam?.mode?.$case === 'orthographic') cam.mode.orthographic.verticalRange = framing.range
-    Transform.getMutable(cameraEntity).position = Vector3.create(8, framing.centerY + PITCH_DROP, 8 - CAMERA_DISTANCE)
+    applyFraming(framing)
   })
 
   // Selecting an item in the Backpack previews it on the avatar without persisting (null reverts).
@@ -242,6 +251,50 @@ export function registerAvatarPreview(ctx: Ctx): void {
     acc = 0
     syncShape()
   })
+}
+
+export async function waitFrames(frames: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    frameWaiters.push({ frames, done: resolve })
+  })
+}
+
+function applyFraming(f: { range: number; centerY: number }): void {
+  if (cameraEntity == null) return
+  const cam = TextureCamera.getMutableOrNull(cameraEntity)
+  if (cam?.mode?.$case === 'orthographic') cam.mode.orthographic.verticalRange = f.range
+  Transform.getMutable(cameraEntity).position = Vector3.create(8, f.centerY + PITCH_DROP, 8 - CAMERA_DISTANCE)
+}
+
+/** The preview avatar, whole body, facing forward, without the podium, as a PNG data URL — or null
+ *  when the preview isn't open or the engine can't capture. */
+export async function captureAvatarThumbnail(): Promise<string | null> {
+  if (avatarEntity == null || cameraEntity == null || BevyApi.consoleCommand == null) return null
+  const avatar = avatarEntity
+  const rotation = Transform.get(avatar).rotation
+  Transform.getMutable(avatar).rotation = FACING
+  framingT = 1
+  applyFraming(FRAMING.body)
+  const podium = podiumEntities
+  podium.forEach((e) => { Transform.getMutable(e).scale = Vector3.Zero() })
+  try {
+    await waitFrames(3)
+    const png = await BevyApi.consoleCommand('texture_camera_screenshot', [String(LAYER), String(THUMBNAIL_SIZE)])
+    return `data:image/png;base64,${png}`
+  } catch (e) {
+    console.error('[avatarPreview] thumbnail capture failed', e)
+    return null
+  } finally {
+    if (avatarEntity === avatar) {
+      Transform.getMutable(avatar).rotation = rotation
+      if (framingT >= 1) framing = framingTo
+      applyFraming(framing)
+      podium.forEach((e, i) => {
+        const layer = PODIUM_LAYERS[i]
+        Transform.getMutable(e).scale = Vector3.create(layer.scale, layer.height, layer.scale)
+      })
+    }
+  }
 }
 
 function rotateAvatar(): void {

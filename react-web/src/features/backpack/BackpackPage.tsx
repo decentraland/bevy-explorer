@@ -261,6 +261,7 @@ function DetailPanel({ item }: { item: Wearable | Emote | null }): React.JSX.Ele
 function OutfitSlotCard({
   index,
   outfit,
+  thumbnail,
   firstEmpty,
   equipped,
   onSave,
@@ -269,6 +270,7 @@ function OutfitSlotCard({
 }: {
   index: number
   outfit: Outfit | null
+  thumbnail?: string
   firstEmpty: boolean
   equipped: boolean
   onSave: () => void
@@ -303,9 +305,11 @@ function OutfitSlotCard({
         onDoubleClick={onEquip}
         aria-label={`Outfit ${index + 1}`}
       >
-        {outfit.wearables.slice(0, 6).map((u) => (
-          <span key={u} className={styles.outfitThumb}><CatalystImg urn={u} /></span>
-        ))}
+        {thumbnail != null ? (
+          <img className={styles.outfitPicture} src={thumbnail} alt="" />
+        ) : (
+          <span className={styles.outfitNoPicture} style={{ maskImage: `url(${silhouette1})`, WebkitMaskImage: `url(${silhouette1})` }} aria-hidden="true" />
+        )}
       </button>
       <span className={styles.outfitRing} aria-hidden="true" />
       <button type="button" className={styles.outfitDelete} onClick={onDelete} aria-label={`Delete Outfit ${index + 1}`}>
@@ -570,13 +574,15 @@ export function BackpackPage({
                       <div key={row} className={styles.outfitRow}>
                         {Array.from({ length: 5 }, (_, k) => {
                           const i = row * 5 + k
-                          const saved = backpack.outfits.find((o) => o.slot === i)?.outfit ?? null
+                          const slot = backpack.outfits.find((o) => o.slot === i)
+                          const saved = slot?.outfit ?? null
                           const firstEmpty = saved == null && Array.from({ length: 5 }, (_, n) => row * 5 + n).find((n) => !backpack.outfits.some((o) => o.slot === n)) === i
                           return (
                             <OutfitSlotCard
                               key={i}
                               index={i}
                               outfit={saved}
+                              thumbnail={slot?.thumbnail}
                               firstEmpty={firstEmpty}
                               equipped={saved != null && outfitMatchesEquipped(saved)}
                               onSave={() => backpack.saveOutfit(i)}
