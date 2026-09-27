@@ -10,6 +10,9 @@ import wearablesIcon from '../../assets/backpack/icon-wearables.webp'
 import emotesIcon from '../../assets/backpack/icon-emotes.webp'
 import filterIcon from '../../assets/backpack/icon-filter.webp'
 import arrowDownIcon from '../../assets/backpack/icon-arrow-down.webp'
+import categoriesIcon from '../../assets/backpack/icon-categories.webp'
+import outfitsIcon from '../../assets/backpack/icon-outfits.webp'
+import marketplaceIcon from '../../assets/backpack/icon-marketplace.webp'
 import { COLOR_LABEL, COLOR_PRESETS, COLOR_TARGET } from './avatarColors'
 import { isCompatible } from '../../engine/bodyShape'
 import { catalystThumbUrl } from '../../lib/identity'
@@ -32,7 +35,13 @@ const NO_DESC = 'This wearable does not have a description set.'
 
 const RARITIES: Rarity[] = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
 const RARITY_RANK: Record<string, number> = Object.fromEntries(RARITIES.map((r, i) => [r, i]))
-const MARKETPLACE_URL = 'https://decentraland.org/marketplace/'
+const SHOP_URL = 'https://decentraland.org/shop?utm_source=client'
+
+type Section = 'categories' | 'outfits'
+const SECTION_TABS: TabItem<Section>[] = [
+  { id: 'categories', label: 'Categories', icon: <MaskIcon src={categoriesIcon} /> },
+  { id: 'outfits', label: 'Saved Outfits', icon: <MaskIcon src={outfitsIcon} /> }
+]
 function asRarity(r?: string): Rarity {
   const k = (r ?? '').toLowerCase()
   return RARITIES.find((x) => x === k) ?? 'base'
@@ -213,21 +222,6 @@ function GridIcon({ size = 15 }: { size?: number }): React.JSX.Element {
     </svg>
   )
 }
-function BookmarkIcon({ size = 15 }: { size?: number }): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" aria-hidden="true">
-      <path d="M6 4h12v16l-6-4-6 4V4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-    </svg>
-  )
-}
-function BagIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
-      <path d="M6 7h12l-1 13H7L6 7z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-      <path d="M9 7V6a3 3 0 0 1 6 0v1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  )
-}
 
 export function BackpackPage({
   backpack,
@@ -246,7 +240,7 @@ export function BackpackPage({
   initialTab?: 'wearables' | 'emotes'
 }): React.JSX.Element | null {
   const [tab, setTab] = useState<BackpackTab>(initialTab)
-  const [section, setSection] = useState<'categories' | 'outfits'>('categories')
+  const [section, setSection] = useState<Section>('categories')
   // The saved-outfit slot currently selected (shown in the detail panel; null = none).
   const [outfitSlot, setOutfitSlot] = useState<number | null>(null)
   const [cat, setCat] = useState('all')
@@ -439,17 +433,15 @@ export function BackpackPage({
           </div>
           <div className={styles.frame}>
           <section className={`${styles.card} ${tab === 'emotes' ? styles.cardEmotes : ''}`.trim()}>
-            {tab === 'wearables' && <div className={styles.contentHead}>
-              <div className={styles.sectionTabs}>
-                <button type="button" className={`${styles.sectionTab} ${section === 'categories' ? styles.sectionActive : ''}`.trim()} onClick={() => setSection('categories')}>
-                  <GridIcon /> CATEGORIES
-                </button>
-                <button type="button" className={`${styles.sectionTab} ${section === 'outfits' ? styles.sectionActive : ''}`.trim()} onClick={() => setSection('outfits')}>
-                  <BookmarkIcon /> SAVED OUTFITS
-                </button>
+            {tab === 'wearables' && (
+              <div className={styles.contentHead}>
+                <Tabs variant="subtab" className={styles.sectionTabs} items={SECTION_TABS} value={section} onChange={setSection} aria-label="Wearables sections" />
+                <Button variant="outline" className={styles.shop} onClick={() => window.open(SHOP_URL, '_blank', 'noopener,noreferrer')}>
+                  <MaskIcon src={marketplaceIcon} />
+                  SHOP
+                </Button>
               </div>
-              <button type="button" className={styles.marketplace} onClick={() => window.open(MARKETPLACE_URL, '_blank', 'noopener,noreferrer')}><BagIcon /> MARKETPLACE</button>
-            </div>}
+            )}
 
             {tab === 'wearables' ? (
               section === 'outfits' ? (

@@ -105,57 +105,23 @@
   pointer-events: auto;
 }
 .contentHead {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--white-10);
+  position: relative;
+  flex: none;
+  height: 70px;
+  margin-right: -380px;
+  border-bottom: 1px solid var(--divider-pink);
 }
 .sectionTabs {
-  display: flex;
-  gap: 18px;
+  position: absolute;
+  left: 30px;
+  top: 0;
 }
-.sectionTab {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 2px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--ink-6);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
-.sectionTab:hover {
-  color: var(--text);
-}
-.sectionActive {
-  color: var(--text);
-  border-bottom-color: var(--brand);
-}
-.marketplace {
-  display: flex;
-  align-items: center;
+.shop {
+  position: absolute;
+  right: 16px;
+  top: 15px;
+  width: 136px;
   gap: 8px;
-  margin-left: auto;
-  height: 36px;
-  padding: 0 16px;
-  border: 1px solid var(--white-10);
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-}
-.marketplace:hover {
-  background: var(--white-10);
 }
 
 .catalog {

@@ -134,9 +134,9 @@
 }
 .subtab .tab {
   position: relative;
-  gap: 4px;
+  gap: 8px;
   height: 70px;
-  padding: 0;
+  padding: 0 2px;
   color: var(--ink-50);
   font-size: var(--type-16);
   font-weight: var(--fw-semibold);

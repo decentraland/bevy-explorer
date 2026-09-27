@@ -88,7 +88,7 @@ describe('backpack page clicks', () => {
       equipped: [wearable({ urn: 'urn:hat', category: 'hat' }), wearable({ urn: 'urn:shirt', category: 'upper_body' })],
       outfits: [outfitSlot(0, ['urn:hat', 'urn:shirt']), outfitSlot(1, ['urn:other'])]
     })
-    await userEvent.click(screen.getByRole('button', { name: /saved outfits/i }))
+    await userEvent.click(screen.getByRole('tab', { name: /saved outfits/i }))
     // Only slot 0 (Outfit 1) equals the equipped set → exactly one equipped dot.
     expect(document.querySelectorAll('[class*="outfitDot"]')).toHaveLength(1)
   })
@@ -99,7 +99,7 @@ describe('backpack page clicks', () => {
       equipped: [],
       outfits: [outfitSlot(0, ['urn:hat', 'urn:shirt', 'urn:pants'])]
     })
-    await userEvent.click(screen.getByRole('button', { name: /saved outfits/i }))
+    await userEvent.click(screen.getByRole('tab', { name: /saved outfits/i }))
     await userEvent.click(screen.getByRole('button', { name: 'Outfit 1' }))
     // The detail panel shows every wearable of the outfit (the card composite shows only four).
     expect(document.querySelectorAll('[class*="outfitDetailGrid"] img')).toHaveLength(3)
@@ -109,7 +109,7 @@ describe('backpack page clicks', () => {
 
   it('outfits: double-clicking an outfit equips it', async () => {
     const backpack = renderBackpack({ list: [], equipped: [], outfits: [outfitSlot(0, ['urn:hat'])] })
-    await userEvent.click(screen.getByRole('button', { name: /saved outfits/i }))
+    await userEvent.click(screen.getByRole('tab', { name: /saved outfits/i }))
     await userEvent.dblClick(screen.getByRole('button', { name: 'Outfit 1' }))
     expect(vi.mocked(backpack.equipOutfit)).toHaveBeenCalledWith(0)
   })

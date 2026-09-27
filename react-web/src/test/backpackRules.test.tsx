@@ -33,10 +33,10 @@ describe('backpack equip, tab and outfit-slot rules', () => {
 
   it('shows the Categories / Saved Outfits tabs and Shop only on the Wearables tab', () => {
     renderBackpack([])
-    expect(screen.getByRole('button', { name: /saved outfits/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /saved outfits/i })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: /emotes/i }))
-    expect(screen.queryByRole('button', { name: /saved outfits/i })).toBeNull()
-    expect(screen.queryByRole('button', { name: /marketplace/i })).toBeNull()
+    expect(screen.queryByRole('tab', { name: /saved outfits/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'SHOP' })).toBeNull()
   })
 
   it('gives 10 outfit slots to anyone who owns a NAME, else 5', async () => {
