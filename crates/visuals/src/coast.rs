@@ -403,7 +403,7 @@ fn cliff_mesh(bounds: Vec4, side: u32, chunk: i32) -> Mesh {
                 next[ring + 1],
             ];
             let color = if ring >= 3 {
-                Vec3::new(0.78, 0.73, 0.62)
+                Vec3::new(0.81, 0.65, 0.48)
             } else {
                 let seed = (chunk as u32).wrapping_mul(773)
                     ^ step as u32

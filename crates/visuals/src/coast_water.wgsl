@@ -8,6 +8,7 @@
     mesh_view_bindings::globals,
 }
 #import "embedded://visuals/coast_surf.wgsl"::coast_surf
+#import "embedded://visuals/coast_profile.wgsl"::coast_profile
 
 @group(2) @binding(100) var<uniform> land_bounds: vec4<f32>;
 @group(2) @binding(101) var ripples: texture_2d<f32>;
@@ -47,11 +48,29 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     if dot(outside, outside) < 54.0 * 54.0 {
         wash = coast_surf(unity, land_bounds, globals.time, footprint);
     }
+    // tilt to the beach's slope at the waterline, so the water meets the sand's lighting: the
+    // sand drops 1.7 m from coast.rs's shelf ring (ring 4) to the waterline
+    let meet = 1.0 - smoothstep(0.0, 1.5, wash.w);
+    if meet > 0.0 && wash.w > -3.0 {
+        let edge = clamp(unity, land_bounds.xy, land_bounds.zw);
+        let profile = coast_profile(edge);
+        let shelf = profile.x + 7.5 + (profile.y - profile.x - 18.0) * 0.4;
+        let beach = 1.7 / (profile.y - shelf);
+        let o = normalize(unity - edge);
+        let sand_normal = normalize(vec3(o.x * beach, 1.0, -o.y * beach));
+        pbr.N = normalize(mix(pbr.N, sand_normal, meet));
+    }
     let shore = 1.0 - smoothstep(0.0, 18.0, wash.w);
     let foam = wash.x;
     let deep = vec3(0.032, 0.065, 0.15);
     let shallow = vec3(0.09, 0.15, 0.19);
-    pbr.material.base_color = vec4(mix(mix(deep, shallow, shore * 0.75), vec3(0.72, 0.78, 0.78), foam), 1.0);
+    // the sand below the waterline, 4 m down over 6 m in coast.rs, fading with depth; wet sand
+    // seen through water that absorbs the reds
+    let seabed = exp(-max(wash.w, 0.0) * (4.0 / 6.0) / 1.5);
+    let sand = vec3(0.295, 0.233, 0.126);
+    let water = mix(mix(deep, shallow, shore * 0.75), sand, seabed);
+    let film = mix(water, vec3(0.09, 0.15, 0.19), wash.y * 0.35);
+    pbr.material.base_color = vec4(mix(film, vec3(0.72, 0.78, 0.78), foam), 1.0);
     pbr.material.perceptual_roughness = mix(0.28, 0.62, foam);
     var out: FragmentOutput;
     out.color = main_pass_post_lighting_processing(pbr, apply_pbr_lighting(pbr));

@@ -41,7 +41,9 @@ fn coast_surf(unity: vec2<f32>, bounds: vec4<f32>, time: f32, footprint: f32) ->
         1.0, smoothstep(0.25, 1.0, footprint));
     let foam = clamp(clamp(ribbon + trail * 0.35, 0.0, 1.0)
         * (0.06 + 0.84 * surge) * breakup * churn, 0.0, 1.0);
-    let film = smoothstep(front - 0.3, front + 0.4, distance) * surge * churn;
+    // fades out before the wash stops being computed, 5 m out to sea
+    let film = smoothstep(front - 0.3, front + 0.4, distance) * surge * churn
+        * (1.0 - smoothstep(2.0, 5.0, distance));
     let damp = smoothstep(-6.0, -0.5, distance);
     return vec4(foam, film, damp, distance);
 }
