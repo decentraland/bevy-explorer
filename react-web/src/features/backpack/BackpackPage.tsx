@@ -5,7 +5,8 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button, ColorPicker, MaskIcon, SearchField, Tabs, WearableCard, type Rarity, type TabItem } from '../../design'
+import { Button, ColorPicker, MaskIcon, SearchField, Tabs, WearableCard, rarityTile, type Rarity, type TabItem } from '../../design'
+import closeIcon from '../../assets/backpack/icon-close.webp'
 import wearablesIcon from '../../assets/backpack/icon-wearables.webp'
 import emotesIcon from '../../assets/backpack/icon-emotes.webp'
 import filterIcon from '../../assets/backpack/icon-filter.webp'
@@ -69,8 +70,11 @@ export function pageWindow(current: number, count: number): number[] {
 const CATEGORY_ORDER = [
   'body_shape', 'hair', 'eyebrows', 'eyes', 'mouth', 'facial_hair',
   'upper_body', 'hands_wear', 'lower_body', 'feet',
-  'hat', 'eyewear', 'mask', 'tiara', 'top_head', 'earring', 'helmet', 'skin'
+  'hat', 'eyewear', 'earring', 'mask', 'tiara', 'top_head', 'helmet', 'skin'
 ]
+// Slot rows (two per row), with a divider and a 12px gap after the face and body groups.
+const SLOT_ROW_Y = [0, 84, 168, 264, 348, 442, 526, 610, 694]
+const SLOT_DIVIDER_Y = [256.25, 434.25]
 
 // Categories that must always keep something equipped, so neither their slot nor their grid card offers unequip —
 // mirrors Unity's IsUnequippable gate (BackpackGridController: not body_shape/eyes/eyebrows/mouth).
@@ -78,12 +82,14 @@ const REQUIRED_CATEGORIES = new Set(['body_shape', 'eyes', 'eyebrows', 'mouth'])
 
 function CategoryTile({
   cat,
+  index,
   active,
   equipped,
   onClick,
   onUnequip
 }: {
   cat: string
+  index: number
   active: boolean
   equipped?: Wearable
   onClick: () => void
@@ -91,28 +97,36 @@ function CategoryTile({
   onUnequip?: () => void
 }): React.JSX.Element {
   const [failed, setFailed] = useState(false)
+  const filled = equipped != null
   return (
     <button
       type="button"
-      className={`${styles.catTile} ${active ? styles.catActive : ''}`.trim()}
-      title={humanize(cat)}
+      className={`${styles.slot} ${active ? styles.slotActive : ''}`.trim()}
+      style={{ left: index % 2 === 0 ? 0 : 148, top: SLOT_ROW_Y[Math.floor(index / 2)] }}
       aria-label={humanize(cat)}
+      aria-pressed={active}
       onClick={onClick}
     >
-      {equipped?.thumbnail && !failed ? (
-        <img className={styles.catThumb} src={equipped.thumbnail} alt="" onError={() => setFailed(true)} />
-      ) : (
-        <span className={styles.catGlyph}><CategoryIcon category={cat} /></span>
-      )}
+      <span className={styles.slotSelected} aria-hidden="true" />
+      <span className={styles.slotIcon}><CategoryIcon category={cat} size={39} /></span>
+      <span
+        className={`${styles.slotThumb} ${filled ? '' : styles.slotEmpty}`.trim()}
+        style={filled ? { backgroundImage: `url(${rarityTile(equipped.rarity)})` } : undefined}
+      >
+        {filled && equipped.thumbnail && !failed && (
+          <img className={styles.slotImg} src={equipped.thumbnail} alt="" onError={() => setFailed(true)} />
+        )}
+        <span className={styles.slotHover} aria-hidden="true" />
+      </span>
+      <span className={styles.tooltip} role="tooltip">{humanize(cat)}</span>
       {onUnequip != null && (
         <span
-          className={styles.catUnequip}
+          className={styles.slotUnequip}
           role="button"
           aria-label={`Unequip ${humanize(cat)}`}
-          title="Unequip"
           onClick={(e) => { e.stopPropagation(); onUnequip() }}
         >
-          ✕
+          <MaskIcon src={closeIcon} size={10} />
         </span>
       )}
     </button>
@@ -471,12 +485,14 @@ export function BackpackPage({
               ) : (
               <div className={styles.catalog}>
                 <div className={styles.catColumn}>
-                  {categories.map((c) => {
+                  {SLOT_DIVIDER_Y.map((y) => <span key={y} className={styles.slotDivider} style={{ top: y }} aria-hidden="true" />)}
+                  {categories.map((c, i) => {
                     const eq = equippedByCat.get(c)
                     return (
                       <CategoryTile
                         key={c}
                         cat={c}
+                        index={i}
                         active={cat === c}
                         equipped={eq}
                         onClick={() => pick(c)}

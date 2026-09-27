@@ -130,128 +130,149 @@
   min-height: 0;
 }
 
-/* Category column — 2-wide grid of tiles showing the equipped item per body part. */
+/* Category column — two columns of 138×80 slots at fixed spots in the card. */
 .catColumn {
-  flex: none;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  align-content: start;
-  width: 204px;
-  padding: 16px 14px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-.catTile {
-  position: relative;
-  aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--white-10);
-  border-radius: 10px;
-  background-color: var(--fill-2);
-  color: var(--ink-6);
-  cursor: pointer;
-  overflow: hidden;
-  transition: border-color 0.2s ease;
-}
-/* Hover focus highlight (::after) + selected fill (::before) both scale in from 0 with the
-   Unity AvatarSlotView spring (Ease.OutBack, 0.2s) — the colour "paints in" with a bounce. */
-.catTile::before,
-.catTile::after {
-  content: '';
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  transform: scale(0);
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  left: 29px;
+  top: 93px;
+  width: 286px;
+  height: 774px;
+}
+.slotDivider {
+  position: absolute;
+  left: 64px;
+  width: 216px;
+  height: 1px;
+  background: var(--divider-pink);
+}
+.slot {
+  position: absolute;
+  width: 138px;
+  height: 80px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.slotSelected,
+.slotHover {
+  position: absolute;
   pointer-events: none;
+  transform: scale(0);
+  transition: transform var(--dur-pop) var(--ease-spring);
 }
-/* Selected fill — behind the icon (icon turns white on top). */
-.catTile::before {
-  z-index: 0;
-  background-color: var(--accent);
+.slotSelected {
+  inset: 0;
+  border-radius: var(--r-lg);
+  background: var(--accent);
 }
-/* Hover wash — ON TOP so it's visible even over an equipped thumbnail; paints in with the spring. */
-.catTile::after {
-  z-index: 3;
-  background-color: rgba(255, 116, 58, 0.32);
-}
-.catTile:hover:not(.catActive) {
-  border-color: var(--accent);
-  box-shadow:
-    0 0 0 1px var(--accent),
-    0 4px 14px rgba(255, 116, 58, 0.4);
-}
-.catTile:hover:not(.catActive)::after {
+.slotActive .slotSelected {
   transform: scale(1);
 }
-.catActive {
-  border-color: var(--accent);
+.slotIcon {
+  position: absolute;
+  left: 12px;
+  top: 20.5px;
+  display: flex;
 }
-.catActive::before {
-  transform: scale(1);
+.slotThumb {
+  position: absolute;
+  left: 59px;
+  top: 1px;
+  width: 78px;
+  height: 78px;
+  border-radius: var(--r-slot);
+  background-size: cover;
+  background-position: center;
+  box-shadow: inset 0 0 0 2.6px var(--text);
 }
-/* Icon / thumbnail ride above the fill layers. */
-.catThumb,
-.catGlyph {
-  position: relative;
-  z-index: 1;
+.slotEmpty {
+  background: linear-gradient(transparent 50%, var(--slot-edge-20) 50%), var(--slot-empty);
+  box-shadow: inset 0 0 0 2.6px var(--slot-edge);
 }
-.catActive .catGlyph {
-  color: #fff;
-}
-.catTile:hover:not(.catActive) .catGlyph {
-  color: var(--accent);
-}
-.catThumb {
-  width: 88%;
-  height: 88%;
+.slotImg {
+  position: absolute;
+  inset: 5px;
+  width: 68px;
+  height: 68px;
   object-fit: contain;
 }
-.catGlyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-6, rgba(255, 255, 255, 0.7));
-  transition:
-    color 0.3s ease,
-    transform 0.25s ease;
+.slotHover {
+  inset: 0;
+  border-radius: var(--r-slot);
+  box-shadow: inset 0 0 0 2.6px var(--accent);
 }
-/* Hover unequip button on an occupied category slot (top-right), like Unity/bevy-ui-scene. */
-.catUnequip {
+.slot:hover .slotHover {
+  transform: scale(1);
+}
+.tooltip {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  z-index: 4;
+  left: 98px;
+  bottom: calc(100% - 4px);
+  z-index: 3;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-hover) linear;
+}
+.tooltip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  border: 6px solid transparent;
+  border-top-color: var(--panel);
+  transform: translateX(-50%);
+}
+.slot:hover .tooltip {
+  opacity: 1;
+}
+.slotUnequip {
+  position: absolute;
+  left: 106.5px;
+  top: 10px;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--r-pill);
-  background-color: var(--scrim);
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
+  background: var(--panel);
   color: var(--text);
-  font-size: 10px;
-  cursor: pointer;
   opacity: 0;
-  transition: opacity var(--dur-fast) ease;
   pointer-events: none;
+  transition: background-color var(--dur-tap) linear;
 }
-.catTile:hover .catUnequip {
+.slot:hover .slotUnequip {
   opacity: 1;
   pointer-events: auto;
+}
+.slotUnequip:hover {
+  background: var(--unequip-hover);
+}
+.slotUnequip:active {
+  background: var(--black);
 }
 
 /* Grid area. */
 .gridArea {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
+  position: absolute;
+  left: 356px;
+  top: 98px;
+  width: 616px;
+  bottom: 20px;
   display: flex;
   flex-direction: column;
-  padding: 14px 16px 24px;
 }
 .chips {
   display: flex;
