@@ -182,7 +182,6 @@ fn setup(
         Transform::from_xyz(0.0, SEA_LEVEL, 0.0),
         Visibility::Hidden,
         NotShadowCaster,
-        NotShadowReceiver,
     ));
     commands.spawn((
         Name::new("Coast underground"),
