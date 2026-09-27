@@ -44,14 +44,18 @@ pub(crate) struct TreesPlugin;
 impl Plugin for TreesPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "tree_wind.wgsl");
-        app.add_plugins(MaterialPlugin::<TreeMaterial>::default())
-            .add_systems(Startup, setup)
-            .add_systems(
-                PostUpdate,
-                update_trees
-                    .after(TerrainSet)
-                    .before(PostUpdateSets::ColliderUpdate),
-            );
+        embedded_asset!(app, "soft_shadows.wgsl");
+        app.add_plugins((
+            MaterialPlugin::<TreeMaterial>::default(),
+            MaterialPlugin::<SoftShadowMaterial>::default(),
+        ))
+        .add_systems(Startup, setup)
+        .add_systems(
+            PostUpdate,
+            update_trees
+                .after(TerrainSet)
+                .before(PostUpdateSets::ColliderUpdate),
+        );
     }
 }
 
@@ -74,6 +78,33 @@ impl MaterialExtension for TreeWind {
     }
     fn deferred_vertex_shader() -> ShaderRef {
         Self::vertex_shader()
+    }
+    fn fragment_shader() -> ShaderRef {
+        soft_shadows_fragment()
+    }
+}
+
+pub(crate) fn soft_shadows_fragment() -> ShaderRef {
+    ShaderRef::Path(
+        format!(
+            "embedded://{}",
+            embedded_path!("soft_shadows.wgsl").display()
+        )
+        .into(),
+    )
+}
+
+/// Plain `StandardMaterial` with softened sun shadows, for rocks.
+pub(crate) type SoftShadowMaterial = ExtendedMaterial<SoftShadows>;
+
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+pub(crate) struct SoftShadows {}
+
+impl MaterialExtension for SoftShadows {
+    type Base = StandardMaterial;
+
+    fn fragment_shader() -> ShaderRef {
+        soft_shadows_fragment()
     }
 }
 

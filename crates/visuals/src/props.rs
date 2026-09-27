@@ -14,7 +14,7 @@ use crate::{
     terrain::{TerrainSet, TerrainSurface},
     trees::{
         geometry::{random, tree_bounds},
-        TreeAssets,
+        SoftShadowMaterial, SoftShadows, TreeAssets,
     },
 };
 use geometry::{mesh, rock_scale, rock_size, KINDS, ROCKS, ROCK_SCALES};
@@ -53,13 +53,13 @@ struct PropAssets {
     bounds: Vec<Aabb>,
     /// Rock collision shapes by kind and size.
     shapes: Vec<Vec<SharedShape>>,
-    rock: Handle<StandardMaterial>,
+    rock: Handle<SoftShadowMaterial>,
 }
 
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<SoftShadowMaterial>>,
 ) {
     let models: Vec<_> = (0..KINDS).map(mesh).collect();
     let shapes = models[..ROCKS]
@@ -80,9 +80,12 @@ fn setup(
             .collect(),
         meshes: models.into_iter().map(|mesh| meshes.add(mesh)).collect(),
         shapes,
-        rock: materials.add(StandardMaterial {
-            perceptual_roughness: 0.95,
-            ..default()
+        rock: materials.add(SoftShadowMaterial {
+            base: StandardMaterial {
+                perceptual_roughness: 0.95,
+                ..default()
+            },
+            extension: SoftShadows {},
         }),
     });
 }
