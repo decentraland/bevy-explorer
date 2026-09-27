@@ -7,7 +7,7 @@ use bevy::{
     render::{mesh::MeshAabb, primitives::Aabb},
 };
 
-pub(super) const KINDS: usize = 3;
+pub(crate) const KINDS: usize = 3;
 pub(super) const CROWN_RADIUS: f32 = 4.4;
 /// Trunk collider radius, below the widest ring so leaning bark doesn't overhang it much.
 pub(super) const TRUNK_RADIUS: f32 = 0.4;
@@ -15,7 +15,7 @@ pub(super) const TRUNK_RADIUS: f32 = 0.4;
 mod branches;
 
 /// The mesh's bounds, padded by the wind sway.
-pub(super) fn tree_bounds(mesh: &Mesh, wind: f32) -> Aabb {
+pub(crate) fn tree_bounds(mesh: &Mesh, wind: f32) -> Aabb {
     let bounds = mesh.compute_aabb().expect("landscape mesh has positions");
     Aabb::from_min_max(
         (bounds.min() - Vec3A::splat(wind)).into(),
@@ -23,14 +23,14 @@ pub(super) fn tree_bounds(mesh: &Mesh, wind: f32) -> Aabb {
     )
 }
 
-pub(super) fn random(seed: u32) -> f32 {
+pub(crate) fn random(seed: u32) -> f32 {
     let mut x = seed.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);
     x = ((x >> ((x >> 28) + 4)) ^ x).wrapping_mul(277_803_737);
     ((x >> 22) ^ x) as f32 / u32::MAX as f32
 }
 
 #[derive(Default)]
-pub(super) struct Geometry {
+pub(crate) struct Geometry {
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
     colors: Vec<[f32; 4]>,
@@ -40,10 +40,35 @@ pub(super) struct Geometry {
 }
 
 impl Geometry {
-    pub(super) fn crown(&mut self, center: Vec3, size: Vec3, color: Color, seed: u32) {
+    /// Flat-shaded, untextured triangle.
+    pub(crate) fn triangle(&mut self, points: [Vec3; 3], color: LinearRgba) {
+        let normal = (points[1] - points[0])
+            .cross(points[2] - points[0])
+            .normalize();
+        for point in points {
+            self.indices.push(self.positions.len() as u32);
+            self.positions.push(point.to_array());
+            self.normals.push(normal.to_array());
+            self.colors.push(color.to_f32_array());
+            // Opaque strip in the shared atlas. Leaves use the other 7/8ths.
+            self.uv.push([0.997, 0.5]);
+            self.weights.push([(point.y / 10.0).clamp(0.0, 1.0), 0.0]);
+        }
+    }
+
+    /// `sprays` leaf cards of `spray_size` through the crown volume.
+    pub(crate) fn crown(
+        &mut self,
+        center: Vec3,
+        size: Vec3,
+        color: Color,
+        sprays: u32,
+        spray_size: f32,
+        seed: u32,
+    ) {
         // Irregular leaf sprays through a volume, not a solid sphere with a
         // texture on it. One material/atlas and four vertices per spray.
-        for leaf in 0..52 {
+        for leaf in 0..sprays {
             let seed = seed.wrapping_add(leaf * 197);
             let y = random(seed ^ 91) * 2.0 - 1.0;
             let angle = random(seed ^ 523) * std::f32::consts::TAU;
@@ -56,7 +81,8 @@ impl Geometry {
                 (random(seed ^ 811) - 0.5) * 2.5,
                 random(seed ^ 919) * std::f32::consts::TAU,
             );
-            let radius = 0.64 * (0.8 + random(seed ^ 1013) * 0.4) * size.max_element().min(1.0);
+            let radius =
+                spray_size * (0.8 + random(seed ^ 1013) * 0.4) * size.max_element().min(1.0);
             let right = orientation * Vec3::X * radius;
             let up = orientation * Vec3::Y * radius;
             // tilted up so the crown's underside still catches the sun and sky
@@ -86,7 +112,7 @@ impl Geometry {
         }
     }
 
-    pub(super) fn mesh(self) -> Mesh {
+    pub(crate) fn mesh(self) -> Mesh {
         let indices = self
             .indices
             .into_iter()
@@ -99,6 +125,13 @@ impl Geometry {
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, self.uv)
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, self.weights)
             .with_inserted_indices(Indices::U16(indices))
+    }
+
+    /// Without the atlas and wind attributes, for the opaque material.
+    pub(crate) fn rigid_mesh(self) -> Mesh {
+        self.mesh()
+            .with_removed_attribute(Mesh::ATTRIBUTE_UV_0)
+            .with_removed_attribute(Mesh::ATTRIBUTE_UV_1)
     }
 }
 
@@ -134,7 +167,14 @@ fn tree_geometry(kind: usize) -> Geometry {
     let mut stem = trunk_points().to_vec();
     stem.extend([bend.lerp(top, 0.48) + Vec3::new(0.14, 0.0, -0.12), top]);
     geometry.branch_path(&stem, &[0.48, 0.36, 0.29, 0.24, 0.15, 0.07], sides);
-    geometry.crown(top + Vec3::Y * 0.2, crown, color, kind as u32 * 231);
+    geometry.crown(
+        top + Vec3::Y * 0.2,
+        crown,
+        color,
+        52,
+        0.64,
+        kind as u32 * 231,
+    );
     for branch in 0..6 {
         // Stagger the same six branches up the stem instead of building a
         // horizontal six-spoke umbrella. Golden-angle spacing and unequal
@@ -159,6 +199,8 @@ fn tree_geometry(kind: usize) -> Geometry {
             end,
             crown * (0.7 + lift * 0.13 - tier * 0.08),
             color,
+            52,
+            0.64,
             branch * 997 + kind as u32 * 73,
         );
     }

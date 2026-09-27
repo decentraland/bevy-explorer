@@ -1,10 +1,10 @@
 //! Procedural trees on empty parcels. Placement is a per-parcel hash, heights follow the eased
-//! terrain, and trunks get colliders over the ground collider's patch.
+//! terrain, and trunks are solid.
 
 use bevy::{
     asset::{embedded_asset, embedded_path},
     pbr::{ExtendedMaterial, MaterialExtension},
-    platform::collections::{HashMap, HashSet},
+    platform::collections::HashMap,
     prelude::*,
     render::{
         primitives::Aabb,
@@ -12,17 +12,18 @@ use bevy::{
     },
 };
 use common::{sets::PostUpdateSets, structs::PrimaryUser};
-use dcl_component::SceneEntityId;
 use scene_runner::{
     initialize_scene::{PointerResult, ScenePointers},
-    update_world::mesh_collider::{ColliderId, SceneColliderData},
     vec3_to_parcel,
 };
 
-use crate::terrain::{update_collider, TerrainCollider, TerrainSet, TerrainSurface};
+use crate::{
+    solids::Solid,
+    terrain::{TerrainSet, TerrainSurface},
+};
 use geometry::{random, tree_bounds, tree_mesh, trunk_axis, CROWN_RADIUS, KINDS, TRUNK_RADIUS};
 
-mod geometry;
+pub(crate) mod geometry;
 mod leaves;
 #[cfg(test)]
 mod tests;
@@ -47,22 +48,17 @@ impl Plugin for TreesPlugin {
             .add_systems(Startup, setup)
             .add_systems(
                 PostUpdate,
-                (
-                    update_trees
-                        .after(TerrainSet)
-                        .before(PostUpdateSets::ColliderUpdate),
-                    update_colliders
-                        .in_set(PostUpdateSets::ColliderUpdate)
-                        .after(update_collider),
-                ),
+                update_trees
+                    .after(TerrainSet)
+                    .before(PostUpdateSets::ColliderUpdate),
             );
     }
 }
 
-type TreeMaterial = ExtendedMaterial<TreeWind>;
+pub(crate) type TreeMaterial = ExtendedMaterial<TreeWind>;
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
-struct TreeWind {
+pub(crate) struct TreeWind {
     #[uniform(100)]
     settings: Vec4,
 }
@@ -82,10 +78,11 @@ impl MaterialExtension for TreeWind {
 }
 
 #[derive(Resource)]
-struct TreeAssets {
+pub(crate) struct TreeAssets {
     meshes: Vec<Handle<Mesh>>,
     bounds: Vec<Aabb>,
-    material: Handle<TreeMaterial>,
+    /// Also used by bushes.
+    pub(crate) material: Handle<TreeMaterial>,
 }
 
 fn setup(
@@ -255,6 +252,7 @@ fn update_trees(
                 commands.entity(entity).despawn();
             }
         }
+        let (base, top) = trunk_axis();
         for (parcel, tree) in desired {
             if (parcel - centre).length_squared() > SPAWN_RANGE * SPAWN_RANGE {
                 continue;
@@ -266,6 +264,11 @@ fn update_trees(
                 MeshMaterial3d(assets.material.clone()),
                 tree.transform,
                 assets.bounds[tree.kind],
+                Solid::Capsule {
+                    base,
+                    top,
+                    radius: TRUNK_RADIUS,
+                },
             ));
         }
     }
@@ -287,45 +290,4 @@ fn update_trees(
             transform.translation.y = y;
         }
     }
-}
-
-fn trunk_id(parcel: IVec2) -> ColliderId {
-    ColliderId::new(SceneEntityId::ROOT, Some(format!("tree {parcel}")), 0)
-}
-
-/// Trunk colliders for the trees over the ground collider's patch, rebuilt with it.
-fn update_colliders(
-    collider: Single<(Ref<TerrainCollider>, &mut SceneColliderData)>,
-    trees: Query<(&Tree, &Transform)>,
-    moved: Query<(), (With<Tree>, Changed<Transform>)>,
-    mut removed: RemovedComponents<Tree>,
-    mut built: Local<HashSet<IVec2>>,
-) {
-    let (patch, mut data) = collider.into_inner();
-    let removed = removed.read().count() > 0;
-    if !patch.is_changed() && moved.is_empty() && !removed {
-        return;
-    }
-    let Some((min, max)) = patch.patch() else {
-        return;
-    };
-    let (base, top) = trunk_axis();
-    let mut current = HashSet::new();
-    for (tree, transform) in &trees {
-        let position = transform.translation.xz();
-        if position.cmplt(min).any() || position.cmpgt(max).any() {
-            continue;
-        }
-        data.set_physics_capsule(
-            &trunk_id(tree.parcel),
-            transform.transform_point(base),
-            transform.transform_point(top),
-            TRUNK_RADIUS * transform.scale.x,
-        );
-        current.insert(tree.parcel);
-    }
-    for parcel in built.difference(&current) {
-        data.remove_collider(&trunk_id(*parcel));
-    }
-    *built = current;
 }

@@ -7,7 +7,7 @@ impl Geometry {
         self.branch_path(&[from, to], &[radius, tip], sides);
     }
 
-    pub(super) fn branch_path(&mut self, points: &[Vec3], radii: &[f32], sides: usize) {
+    pub(crate) fn branch_path(&mut self, points: &[Vec3], radii: &[f32], sides: usize) {
         assert!(points.len() >= 2 && points.len() == radii.len() && sides >= 3);
         let base = self.positions.len() as u32;
         let stride = (sides + 1) as u32;
