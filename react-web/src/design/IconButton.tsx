@@ -56,7 +56,7 @@ export function IconButton({
         {...rest}
       >
         {avatar ? (
-          <Avatar src={avatar.src} name={avatar.name} color={avatar.color} size={30} />
+          <Avatar src={avatar.src} name={avatar.name} color={avatar.color} size={30} framed />
         ) : art ? (
           <MaskIcon src={art.src} size={art.size} />
         ) : (

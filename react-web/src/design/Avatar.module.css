@@ -19,6 +19,22 @@
   border-radius: var(--r-pill);
   object-fit: cover;
 }
+.framed {
+  border: none;
+}
+.framed .img {
+  inset: 1.65px;
+  width: calc(100% - 3.3px);
+  height: calc(100% - 3.3px);
+}
+.framed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--rail-avatar-ring);
+  border-radius: var(--r-pill);
+  pointer-events: none;
+}
 .dot {
   position: absolute;
   right: 0;

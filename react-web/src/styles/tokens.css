@@ -158,6 +158,11 @@
   --lava-4: #470071; /* deep */
 
   /* loading screen */
+  /* sidebar rail — sRGB equivalents of the reference's linear-space blends */
+  --rail-bg: rgba(0, 0, 0, 0.65);
+  --rail-divider: rgba(255, 255, 255, 0.2);
+  --rail-selected: rgba(255, 255, 255, 0.16);
+  --rail-avatar-ring: rgba(255, 255, 255, 0.47);
   --loading-vignette: radial-gradient(ellipse 100% 100% at 50% 50%, #bf00ff 16.7%, #4c0080 66.7%);
   --loading-glow: rgba(168, 0, 190, 0.5);
   --loading-track: #242424;

@@ -11,7 +11,7 @@
      width + icons track the viewport (Unity CanvasScaler) instead of staying a fixed 46px at
      1x — keeps the rail consistent with the scaled chat/floating panels beside it. */
   height: calc(100% / var(--ui-scale));
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--rail-bg);
   z-index: var(--z-hud);
   transform: scale(var(--ui-scale)) translateZ(0);
   transform-origin: top left;
@@ -35,7 +35,7 @@
 .divider {
   width: 40px;
   height: 0;
-  border-top: 1px solid var(--white-10);
+  border-top: 1px solid var(--rail-divider);
 }
 
 /* Auto-hide (Unity MainUIController): slide the rail off-screen; `translate` composes with the
@@ -50,6 +50,7 @@
 .root .configButton {
   width: 36px;
   height: 16px;
+  background: var(--rail-bg);
   min-height: 0;
   padding: 0;
 }

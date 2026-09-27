@@ -29,7 +29,7 @@
   inset: 0;
   z-index: 0;
   border-radius: inherit;
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--rail-selected);
   transform: scale(0);
   transition:
     transform 0.2s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
@@ -50,7 +50,6 @@
 }
 .active::before {
   transform: scale(1);
-  background-color: rgba(255, 255, 255, 0.13);
 }
 
 /* Ruby notification badge — 18×18, 2px Shadow ring, Inter 600 9px Snow. */
