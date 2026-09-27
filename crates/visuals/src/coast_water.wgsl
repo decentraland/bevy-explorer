@@ -23,23 +23,21 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let swell_space = vec2(dot(p, vec2(0.939693, -0.342020)),
         dot(p, vec2(0.342020, 0.939693)));
     let swell = textureSample(ripples, ripple_sampler,
-        swell_space * vec2(0.0073, 0.0091) + globals.time * vec2(0.0014, -0.0009)).rg * 2.0 - 1.0;
+        swell_space * vec2(0.0073, 0.0091) + globals.time * vec2(0.007, -0.0045)).rg * 2.0 - 1.0;
     let chop_space = vec2(dot(p, vec2(0.529919, 0.848048)),
         dot(p, vec2(-0.848048, 0.529919)));
     let chop = textureSample(ripples, ripple_sampler,
-        chop_space * vec2(0.091, 0.117) + swell * 0.72
-        + globals.time * vec2(-0.009, 0.0065)).rg * 2.0 - 1.0;
+        chop_space * vec2(0.02275, 0.02925) + swell * 0.72
+        + globals.time * vec2(-0.005625, 0.0040625)).rg * 2.0 - 1.0;
     // rotate the sampled slopes back into world x/z
     let swell_slope = vec2(dot(swell, vec2(0.939693, 0.342020)),
         dot(swell, vec2(-0.342020, 0.939693)));
     let chop_slope = vec2(dot(chop, vec2(0.529919, -0.848048)),
         dot(chop, vec2(0.848048, 0.529919)));
     let chop_strength = clamp(0.16 + swell.x * 0.36 + swell.y * 0.22, 0.06, 0.28);
-    let slope = swell_slope * 0.32 + chop_slope * chop_strength;
     let dx = dpdx(p);
     let dy = dpdy(p);
     let footprint = sqrt(max(dot(dx, dx), dot(dy, dy)));
-    pbr.N = normalize(vec3(-slope.x, 1.0, -slope.y));
     let unity = p * vec2(1.0, -1.0);
     let outside = max(max(land_bounds.xy - unity, unity - land_bounds.zw), vec2(0.0));
     // the waterline is at most 35 m out and the shore tint ends 18 m past it, so beyond 54 m
@@ -48,6 +46,11 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     if dot(outside, outside) < 54.0 * 54.0 {
         wash = coast_surf(unity, land_bounds, globals.time, footprint);
     }
+    // the sand below the waterline, 4 m down over 6 m in coast.rs, fading with depth
+    let seabed = exp(-max(wash.w, 0.0) * (4.0 / 6.0) / 1.5);
+    // calm the chop over the shallows, where the sand shows through
+    let slope = swell_slope * 0.32 + chop_slope * chop_strength * (1.0 - seabed);
+    pbr.N = normalize(vec3(-slope.x, 1.0, -slope.y));
     // tilt to the beach's slope at the waterline, so the water meets the sand's lighting: the
     // sand drops 1.7 m from coast.rs's shelf ring (ring 4) to the waterline
     let meet = 1.0 - smoothstep(0.0, 1.5, wash.w);
@@ -64,9 +67,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let foam = wash.x;
     let deep = vec3(0.032, 0.065, 0.15);
     let shallow = vec3(0.09, 0.15, 0.19);
-    // the sand below the waterline, 4 m down over 6 m in coast.rs, fading with depth; wet sand
-    // seen through water that absorbs the reds
-    let seabed = exp(-max(wash.w, 0.0) * (4.0 / 6.0) / 1.5);
+    // wet sand seen through water that absorbs the reds
     let sand = vec3(0.295, 0.233, 0.126);
     let water = mix(mix(deep, shallow, shore * 0.75), sand, seabed);
     let film = mix(water, vec3(0.09, 0.15, 0.19), wash.y * 0.35);
