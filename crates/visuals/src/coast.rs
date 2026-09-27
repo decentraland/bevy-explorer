@@ -44,6 +44,9 @@ const ROCK_SPLIT: usize = 4;
 const WALL_EVERY: usize = 4;
 /// The ground's visual offset (shell_texturing), where the cliff crest meets it.
 const GROUND_LEVEL: f32 = -0.05;
+/// Hidden shadow casters for the land stand just below the ground: the ground doesn't cast
+/// shadows, which would otherwise leave only the ring of cliffs shading the shore.
+const UNDERGROUND: f32 = -0.5;
 const WALL_HEIGHT: f32 = 50.0;
 const WALL_THICKNESS: f32 = 10.0;
 const OCEAN_SIZE: f32 = 32768.0;
@@ -133,16 +136,26 @@ struct Cliff {
 #[derive(Component)]
 struct CoastWalls;
 
+#[derive(Component)]
+struct Underground;
+
+type UndergroundOnly = (With<Underground>, Without<Ocean>);
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut cliffs: ResMut<Assets<CliffMaterial>>,
     mut waters: ResMut<Assets<WaterMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    mut standard: ResMut<Assets<StandardMaterial>>,
 ) {
     let cliff = cliffs.add(ExtendedMaterial {
         base: StandardMaterial {
             perceptual_roughness: 0.95,
+            // the rock faces the sea, so it must cast shadows through its back faces when the
+            // sun is over the land
+            cull_mode: None,
+            double_sided: true,
             ..default()
         },
         extension: CliffExtension { bounds: NO_COAST },
@@ -172,6 +185,19 @@ fn setup(
         NotShadowReceiver,
     ));
     commands.spawn((
+        Name::new("Coast underground"),
+        Underground,
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(1.0, 1.0))),
+        MeshMaterial3d(standard.add(StandardMaterial {
+            base_color: Color::BLACK,
+            unlit: true,
+            ..default()
+        })),
+        Transform::from_xyz(0.0, UNDERGROUND, 0.0),
+        Visibility::Hidden,
+        NotShadowReceiver,
+    ));
+    commands.spawn((
         Name::new("Coast walls"),
         CoastWalls,
         SceneColliderData::default(),
@@ -191,6 +217,7 @@ fn update(
     mut cliff_materials: ResMut<Assets<CliffMaterial>>,
     mut water_materials: ResMut<Assets<WaterMaterial>>,
     mut ocean: Query<(&mut Transform, &mut Visibility), With<Ocean>>,
+    underground: Single<(&mut Transform, &mut Visibility), UndergroundOnly>,
     cliffs: Query<(Entity, &Cliff)>,
     walls: Single<&mut SceneColliderData, With<CoastWalls>>,
 ) {
@@ -204,6 +231,17 @@ fn update(
         }
         if let Some(material) = water_materials.get_mut(&assets.water) {
             material.extension.bounds = uniform;
+        }
+        let (mut transform, mut visibility) = underground.into_inner();
+        match bounds {
+            Some(bounds) => {
+                let centre = (bounds.xy() + bounds.zw()) * 0.5;
+                let size = bounds.zw() - bounds.xy();
+                *transform = Transform::from_xyz(centre.x, UNDERGROUND, -centre.y)
+                    .with_scale(Vec3::new(size.x, 1.0, size.y));
+                *visibility = Visibility::Inherited;
+            }
+            None => *visibility = Visibility::Hidden,
         }
     }
     let mut walls = walls.into_inner();
@@ -255,7 +293,6 @@ fn update(
             Mesh3d(meshes.add(cliff_mesh(bounds, side, chunk))),
             MeshMaterial3d(assets.cliff.clone()),
             Transform::default(),
-            NotShadowCaster,
         ));
     }
 }
@@ -440,6 +477,15 @@ fn cliff_mesh(bounds: Vec4, side: u32, chunk: i32) -> Mesh {
     let mut positions = Vec::new();
     let mut normals = Vec::new();
     let mut colors = Vec::new();
+    // the hidden lid from the bounds out to the crest, meeting the underground plane
+    let lid: Vec<_> = columns
+        .iter()
+        .map(|column| {
+            let crest = column[0].with_y(UNDERGROUND);
+            let unity = Vec2::new(crest.x, -crest.z).clamp(bounds.xy(), bounds.zw());
+            [Vec3::new(unity.x, UNDERGROUND, -unity.y), crest]
+        })
+        .collect();
     let columns: Vec<_> = columns.iter().map(split_rock).collect();
     for (step, pair) in columns.windows(2).enumerate() {
         let [previous, next] = [&pair[0], &pair[1]];
@@ -472,6 +518,28 @@ fn cliff_mesh(bounds: Vec4, side: u32, chunk: i32) -> Mesh {
                     normals.push(normal);
                     colors.push(color);
                 }
+            }
+        }
+    }
+    let black = [0.0, 0.0, 0.0, 1.0];
+    for pair in lid.windows(2) {
+        let [[a, c], [b, d]] = [pair[0], pair[1]];
+        for points in [[a, c, b], [b, c, d]] {
+            let normal = (points[1] - points[0]).cross(points[2] - points[0]);
+            if normal.length_squared() < 1e-6 {
+                continue;
+            }
+            let normal = normal.normalize();
+            // face up, whichever way round the side winds
+            let points = if normal.y < 0.0 {
+                [points[0], points[2], points[1]]
+            } else {
+                points
+            };
+            for point in points {
+                positions.push(point.to_array());
+                normals.push([0.0, 1.0, 0.0]);
+                colors.push(black);
             }
         }
     }

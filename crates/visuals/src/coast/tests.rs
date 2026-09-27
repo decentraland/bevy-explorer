@@ -49,6 +49,12 @@ fn cliffs_face_outward_and_stay_outside_the_ground() {
         for (index, triangle) in points.chunks_exact(3).enumerate() {
             let p = [0, 1, 2].map(|i| Vec3::from_array(triangle[i]));
             let n = Vec3::from_array(normals[index * 3]);
+            if p.iter().all(|point| point.y == UNDERGROUND) {
+                // the hidden lid, from the bounds to the crest, facing up
+                assert_eq!(n, Vec3::Y);
+                assert!((p[1] - p[0]).cross(p[2] - p[0]).y > 0.0);
+                continue;
+            }
             assert!(n.is_finite() && (n.length() - 1.0).abs() < 0.001);
             // counter-clockwise seen from the side the normal faces
             assert!((p[1] - p[0]).cross(p[2] - p[0]).dot(n) > 0.0001);
