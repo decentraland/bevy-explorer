@@ -649,74 +649,10 @@
   color: var(--ink-45);
 }
 
-/* ---- Filter & Sort dropdown ---- */
-.filterPop {
+/* ---- Filter & Sort menu: 55px below the button top, 50px left of it ---- */
+.filterMenu {
   position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
+  left: -50px;
+  top: 55px;
   z-index: 5;
-  width: 224px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  border-radius: var(--r-card);
-  background: #241046;
-  border: 1px solid var(--white-10);
-  box-shadow: var(--shadow-modal);
-  animation: pillPop 0.18s var(--ease-spring, ease);
-}
-.filterLabel {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ink-6);
-}
-.filterRow {
-  display: flex;
-  gap: 6px;
-}
-.filterOpt {
-  flex: 1;
-  height: 30px;
-  border: 1px solid var(--white-10);
-  border-radius: var(--r-control);
-  background: var(--fill-1);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background var(--dur-fast) ease,
-    border-color var(--dur-fast) ease;
-}
-.filterOpt:hover {
-  background: var(--fill-3);
-}
-.filterOptActive,
-.filterOptActive:hover {
-  background: var(--brand);
-  border-color: var(--brand);
-}
-.filterCheck {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 2px;
-  font-size: 13px;
-  color: var(--text);
-  cursor: pointer;
-}
-.filterCheck input {
-  width: 15px;
-  height: 15px;
-  accent-color: var(--brand);
-  cursor: pointer;
-}
-
-.cardEmotes .detail {
-  top: 16px;
-  height: 870px;
 }

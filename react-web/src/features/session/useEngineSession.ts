@@ -90,7 +90,7 @@ export interface CatalogQuery {
   pageSize: number
   category?: string
   search?: string
-  orderBy?: 'rarity' | 'name'
+  orderBy?: 'date' | 'rarity' | 'name'
   direction?: 'asc' | 'desc'
   collectiblesOnly?: boolean
 }

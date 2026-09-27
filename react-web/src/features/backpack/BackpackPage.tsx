@@ -5,7 +5,7 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Chip, ColorPicker, MaskIcon, Pager, SearchField, Tabs, WearableCard, rarityPanel, rarityTile, type Rarity, type TabItem } from '../../design'
+import { Button, Chip, ColorPicker, MaskIcon, OptionMenu, Pager, SearchField, Tabs, WearableCard, rarityPanel, rarityTile, type Rarity, type TabItem } from '../../design'
 import allIcon from '../../assets/category-icons/all.png'
 import arrowLeftIcon from '../../assets/backpack/icon-arrow-left.webp'
 import closeIcon from '../../assets/backpack/icon-close.webp'
@@ -34,6 +34,21 @@ const BACKPACK_TABS: TabItem<BackpackTab>[] = [
 ]
 
 const PAGE_SIZE = 16
+
+type SortKey = 'newest' | 'oldest' | 'rarest' | 'lessRare' | 'nameAZ' | 'nameZA'
+const SORTS: { id: SortKey; label: string; orderBy: 'date' | 'rarity' | 'name'; direction: 'asc' | 'desc' }[] = [
+  { id: 'newest', label: 'Newest', orderBy: 'date', direction: 'desc' },
+  { id: 'oldest', label: 'Oldest', orderBy: 'date', direction: 'asc' },
+  { id: 'rarest', label: 'Rarest', orderBy: 'rarity', direction: 'desc' },
+  { id: 'lessRare', label: 'Less rare', orderBy: 'rarity', direction: 'asc' },
+  { id: 'nameAZ', label: 'Name A-Z', orderBy: 'name', direction: 'asc' },
+  { id: 'nameZA', label: 'Name Z-A', orderBy: 'name', direction: 'desc' }
+]
+type ViewKey = 'all' | 'collectibles'
+const VIEWS: { id: ViewKey; label: string }[] = [
+  { id: 'all', label: 'All Items' },
+  { id: 'collectibles', label: 'Collectibles only' }
+]
 const NO_DESC = 'This wearable does not have a description set.'
 
 const RARITIES: Rarity[] = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
@@ -244,9 +259,12 @@ export function BackpackPage({
   const [emoteSlot, setEmoteSlot] = useState(1)
   // Filter & sort (client-side, on the loaded catalog).
   const [showFilter, setShowFilter] = useState(false)
-  const [sortBy, setSortBy] = useState<'rarity' | 'name'>('rarity')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-  const [collectiblesOnly, setCollectiblesOnly] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('newest')
+  const [view, setView] = useState<ViewKey>('all')
+  const sort = SORTS.find((x) => x.id === sortKey) ?? SORTS[0]
+  const sortBy = sort.orderBy
+  const sortDir = sort.direction
+  const collectiblesOnly = view === 'collectibles'
 
   // Fixed body-part slots. With a server-paginated grid we don't hold the full catalog, so the
   // category column is the canonical Unity ordering rather than "categories present in the page".
@@ -299,7 +317,9 @@ export function BackpackPage({
       .sort((a, b) =>
         sortBy === 'name'
           ? dir * (a.name ?? '').localeCompare(b.name ?? '')
-          : dir * ((RARITY_RANK[a.rarity ?? 'base'] ?? 0) - (RARITY_RANK[b.rarity ?? 'base'] ?? 0))
+          : sortBy === 'rarity'
+            ? dir * ((RARITY_RANK[a.rarity ?? 'base'] ?? 0) - (RARITY_RANK[b.rarity ?? 'base'] ?? 0))
+            : 0
       )
   }, [emotes.list, query, collectiblesOnly, sortBy, sortDir])
 
@@ -396,22 +416,14 @@ export function BackpackPage({
               <MaskIcon src={arrowDownIcon} size={12} />
             </Button>
             {showFilter && (
-              <div className={styles.filterPop}>
-                <span className={styles.filterLabel}>Sort by</span>
-                <div className={styles.filterRow}>
-                  <button type="button" className={`${styles.filterOpt} ${sortBy === 'rarity' ? styles.filterOptActive : ''}`.trim()} onClick={() => setSortBy('rarity')}>Rarity</button>
-                  <button type="button" className={`${styles.filterOpt} ${sortBy === 'name' ? styles.filterOptActive : ''}`.trim()} onClick={() => setSortBy('name')}>Name</button>
-                </div>
-                <span className={styles.filterLabel}>Order</span>
-                <div className={styles.filterRow}>
-                  <button type="button" className={`${styles.filterOpt} ${sortDir === 'desc' ? styles.filterOptActive : ''}`.trim()} onClick={() => setSortDir('desc')}>{sortBy === 'name' ? 'Z – A' : 'Rarest'}</button>
-                  <button type="button" className={`${styles.filterOpt} ${sortDir === 'asc' ? styles.filterOptActive : ''}`.trim()} onClick={() => setSortDir('asc')}>{sortBy === 'name' ? 'A – Z' : 'Common'}</button>
-                </div>
-                <label className={styles.filterCheck}>
-                  <input type="checkbox" checked={collectiblesOnly} onChange={(e) => setCollectiblesOnly(e.target.checked)} />
-                  Collectibles only
-                </label>
-              </div>
+              <OptionMenu
+                className={styles.filterMenu}
+                onClose={() => setShowFilter(false)}
+                sections={[
+                  { label: 'Sort by', options: SORTS, value: sortKey, onChange: (id) => setSortKey(id as SortKey) },
+                  { label: 'View', options: VIEWS, value: view, onChange: (id) => setView(id as ViewKey) }
+                ]}
+              />
             )}
           </div>
           <div className={styles.searchWrap}>

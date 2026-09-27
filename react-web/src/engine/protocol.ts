@@ -898,7 +898,7 @@ export interface CatalogQueryRequest {
   category?: string
   /** Free-text name filter (server-side). */
   search?: string
-  orderBy?: 'rarity' | 'name'
+  orderBy?: 'date' | 'rarity' | 'name'
   direction?: 'asc' | 'desc'
   /** Exclude base (off-chain) items → collectibles only. */
   collectiblesOnly?: boolean

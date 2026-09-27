@@ -587,6 +587,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       const dir = msg.direction === 'asc' ? 1 : -1
       if (msg.orderBy === 'name') items.sort((a, b) => dir * (a.name ?? '').localeCompare(b.name ?? ''))
       else if (msg.orderBy === 'rarity') items.sort((a, b) => dir * (RARITIES.indexOf(a.rarity) - RARITIES.indexOf(b.rarity)))
+      else if (msg.orderBy === 'date' && dir > 0) items.reverse()
       const total = items.length
       const start = msg.page * msg.pageSize
       reply({ kind: 'catalogPage', catalog: 'wearables', items: items.slice(start, start + msg.pageSize), total, requestId: msg.requestId })

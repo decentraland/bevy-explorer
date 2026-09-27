@@ -7,6 +7,7 @@ import { VoiceBars } from './VoiceBars'
 import { ColorPicker } from './ColorPicker'
 import { Chip } from './Chip'
 import { Pager } from './Pager'
+import { OptionMenu } from './OptionMenu'
 import { useState } from 'react'
 import { ControlButton } from './ControlButton'
 import { Tooltip } from './Tooltip'
@@ -422,6 +423,16 @@ export function Showcase(): React.JSX.Element {
           <Chip label="All" onClick={() => undefined} />
           <Chip label="Hair" selected onClick={() => undefined} onClear={() => undefined} />
         </div>
+      </Section>
+
+      <Section title="OptionMenu">
+        <OptionMenu
+          onClose={() => undefined}
+          sections={[
+            { label: 'Sort by', options: [{ id: 'newest', label: 'Newest' }, { id: 'oldest', label: 'Oldest' }], value: 'newest', onChange: () => undefined },
+            { label: 'View', options: [{ id: 'all', label: 'All Items' }, { id: 'col', label: 'Collectibles only' }], value: 'all', onChange: () => undefined }
+          ]}
+        />
       </Section>
 
       <Section title="Pager">
