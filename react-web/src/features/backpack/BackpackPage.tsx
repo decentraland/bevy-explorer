@@ -5,7 +5,9 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button, ColorPicker, MaskIcon, SearchField, Tabs, WearableCard, rarityTile, type Rarity, type TabItem } from '../../design'
+import { Button, Chip, ColorPicker, MaskIcon, SearchField, Tabs, WearableCard, rarityTile, type Rarity, type TabItem } from '../../design'
+import allIcon from '../../assets/category-icons/all.png'
+import arrowLeftIcon from '../../assets/backpack/icon-arrow-left.webp'
 import closeIcon from '../../assets/backpack/icon-close.webp'
 import wearablesIcon from '../../assets/backpack/icon-wearables.webp'
 import emotesIcon from '../../assets/backpack/icon-emotes.webp'
@@ -222,18 +224,6 @@ function OutfitDetailPanel({ outfit, index }: { outfit: Outfit; index: number })
         ))}
       </div>
     </aside>
-  )
-}
-
-// Header icons (replace the tofu unicode glyphs ☰ ⌂ ⬚ that rendered inconsistently across fonts).
-function GridIcon({ size = 15 }: { size?: number }): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" aria-hidden="true">
-      <rect x="4" y="4" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="2" />
-      <rect x="14" y="4" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="2" />
-      <rect x="4" y="14" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="2" />
-      <rect x="14" y="14" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="2" />
-    </svg>
   )
 }
 
@@ -502,14 +492,19 @@ export function BackpackPage({
                   })}
                 </div>
                 <div className={styles.gridArea}>
-                  <div className={styles.chips}>
-                    <button type="button" className={`${styles.chip} ${cat === 'all' ? styles.chipActive : ''}`.trim()} onClick={() => pick('all')}>
-                      <GridIcon size={13} /> ALL
-                    </button>
+                  <div className={styles.breadcrumb}>
+                    <Chip label="All" icon={<MaskIcon src={allIcon} size={32} />} selected={cat === 'all' && query === ''} onClick={() => { pick('all'); setQuery('') }} />
                     {cat !== 'all' && (
-                      <span className={styles.chipSel} style={{ background: 'var(--accent)' }}>
-                        {humanize(cat)}
-                      </span>
+                      <>
+                        <span className={styles.crumbArrow} aria-hidden="true"><MaskIcon src={arrowLeftIcon} size={15} /></span>
+                        <Chip label={humanize(cat)} icon={<CategoryIcon category={cat} size={32} />} selected onClear={() => pick('all')} clearLabel={`Clear ${humanize(cat)}`} />
+                      </>
+                    )}
+                    {query !== '' && (
+                      <>
+                        <span className={styles.crumbArrow} aria-hidden="true"><MaskIcon src={arrowLeftIcon} size={15} /></span>
+                        <Chip label={query} selected onClear={() => setQuery('')} clearLabel="Clear search" />
+                      </>
                     )}
                     {COLOR_TARGET[cat] != null && backpack.colors != null && (
                       <ColorPicker

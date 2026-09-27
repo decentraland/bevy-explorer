@@ -5,6 +5,7 @@ import { Button } from './Button'
 import { IconButton } from './IconButton'
 import { VoiceBars } from './VoiceBars'
 import { ColorPicker } from './ColorPicker'
+import { Chip } from './Chip'
 import { useState } from 'react'
 import { ControlButton } from './ControlButton'
 import { Tooltip } from './Tooltip'
@@ -412,6 +413,14 @@ export function Showcase(): React.JSX.Element {
 
       <Section title="VoiceBars (speaking)">
         <VoiceBars />
+      </Section>
+
+      <Section title="Chip (breadcrumb filter)">
+        <div style={{ ...row, gap: 20 }}>
+          <Chip label="All" selected onClick={() => undefined} />
+          <Chip label="All" onClick={() => undefined} />
+          <Chip label="Hair" selected onClick={() => undefined} onClear={() => undefined} />
+        </div>
       </Section>
 
       <Section title="ColorPicker (avatar colors)">

@@ -38,3 +38,4 @@ export { PopupHost, openPopup, closeTopPopup, hasOpenPopup, subscribePopups, sho
 export * from './Glyphs'
 export { MaskIcon } from './MaskIcon'
 export { rarityTile } from './rarityArt'
+export { Chip } from './Chip'

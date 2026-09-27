@@ -274,39 +274,23 @@
   display: flex;
   flex-direction: column;
 }
-.chips {
+.breadcrumb {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  height: 42px;
+  margin-bottom: 38px;
+}
+.crumbArrow {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 14px;
-  border: none;
-  border-radius: var(--r-pill);
-  background: var(--fill-3);
+  justify-content: center;
+  width: 0;
+  height: 42px;
   color: var(--text);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
 }
-.chipActive {
-  background: var(--white-10);
-}
-.chipSel {
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 14px;
-  border-radius: var(--r-pill);
-  color: var(--accent-ink);
-  font-size: 13px;
-  font-weight: 700;
+.crumbArrow > span {
+  transform: scaleX(-1);
 }
 .grid {
   flex: 1;
