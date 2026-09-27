@@ -335,8 +335,8 @@ impl SceneColliderData {
         self.set_collider(id, collider, None);
     }
 
-    /// Invisible box that only blocks avatar movement (unity-explorer's border colliders). It is
-    /// not ground, and not hit by raycasts unless the entity is included in them.
+    /// Invisible box on the physics layer only (unity-explorer's border colliders): it blocks the
+    /// avatar like a scene wall, and isn't hit by raycasts unless the entity is included in them.
     pub fn set_wall(&mut self, id: &ColliderId, centre: Vec3, half_extents: Vec3, rotation: Quat) {
         let half_extents = half_extents.as_dvec3();
         let collider = ColliderBuilder::cuboid(half_extents.x, half_extents.y, half_extents.z)

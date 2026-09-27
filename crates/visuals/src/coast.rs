@@ -41,7 +41,7 @@ const CHUNK: f32 = 64.0;
 const CLIFF_RANGE: f32 = 768.0;
 /// Profile columns along each side are this far apart.
 const COLUMN: f32 = 1.0;
-/// Facets per half corner, matching `COLUMN` at the crest.
+/// Facets per half corner, no wider than `COLUMN` at the crest.
 const CORNER_STEPS: i32 = 20;
 /// Rings of the cliff profile, from the crest down to below the sea.
 const RINGS: usize = 7;
