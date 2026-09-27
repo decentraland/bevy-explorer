@@ -21,6 +21,8 @@ struct TerrainParams {
     uv_size: f32,
     // ground and grass resolution follows parcel grass lod around this parcel (x, unity z)
     player_parcel: vec2<i32>,
+    // the player's position within that parcel, 0 to 1 (x, unity z)
+    player_offset: vec2<f32>,
 }
 
 @group(2) @binding(100) var terrain_steps: texture_2d<f32>;
@@ -148,9 +150,18 @@ fn terrain_height(xz: vec2<f32>) -> f32 {
     return terrain_height_unity(vec2<f32>(xz.x, -xz.y));
 }
 
+// Detail morph: nearer than this to a border (in parcels) whose crossing gives a parcel a coarser
+// grid, the parcel's vertices blend onto that grid, reaching it at the crossing.
+const MORPH_BAND: f32 = 0.5;
+
 // cell size of a parcel's ground and grass grid: ParcelGrassLod::from_distance for 16 / lod cells
 fn lod_cell(parcel: vec2<i32>) -> f32 {
-    let offset = parcel - terrain.player_parcel;
+    return lod_cell_from(parcel, terrain.player_parcel);
+}
+
+// lod_cell for the player at `player`
+fn lod_cell_from(parcel: vec2<i32>, player: vec2<i32>) -> f32 {
+    let offset = parcel - player;
     if any(offset < vec2<i32>(GROUND_NEAR_MIN)) || any(offset > vec2<i32>(GROUND_NEAR_MAX)) {
         return RING_CELL;
     }
@@ -191,21 +202,117 @@ fn vertex_height(p: vec2<f32>, stitch: vec2<f32>, anchor: vec2<f32>) -> f32 {
     if stitch.y > 0.0 {
         return edge_height(p, false, stitch.y, anchor);
     }
+    return morphed_height(p);
+}
+
+// Height of a parcel grid vertex (unity x/z) with the grids around the player at `player`
+fn parcel_grid_height(p: vec2<f32>, player: vec2<i32>) -> f32 {
     let on_x_edge = fract(p.x / 16.0) == 0.0;
     let on_z_edge = fract(p.y / 16.0) == 0.0;
     if on_x_edge && !on_z_edge {
         let column = i32(p.x / 16.0);
         let row = i32(floor(p.y / 16.0));
-        let cell = max(lod_cell(vec2<i32>(column - 1, row)), lod_cell(vec2<i32>(column, row)));
+        let cell = max(
+            lod_cell_from(vec2<i32>(column - 1, row), player),
+            lod_cell_from(vec2<i32>(column, row), player),
+        );
         return edge_height(p, false, cell, vec2<f32>(0.0));
     }
     if on_z_edge && !on_x_edge {
         let column = i32(floor(p.x / 16.0));
         let row = i32(p.y / 16.0);
-        let cell = max(lod_cell(vec2<i32>(column, row - 1)), lod_cell(vec2<i32>(column, row)));
+        let cell = max(
+            lod_cell_from(vec2<i32>(column, row - 1), player),
+            lod_cell_from(vec2<i32>(column, row), player),
+        );
         return edge_height(p, true, cell, vec2<f32>(0.0));
     }
     return terrain_height_unity(p);
+}
+
+// Surface of a `cell` grid (unity x/z) with the grids around the player at `player`: each cell is
+// split along unity's (x0, z0)-(x1, z1) diagonal, as the meshes are.
+fn grid_surface(p: vec2<f32>, cell: f32, player: vec2<i32>) -> f32 {
+    let base = floor(p / cell) * cell;
+    let uv = (p - base) / cell;
+    let h00 = parcel_grid_height(base, player);
+    let h11 = parcel_grid_height(base + cell, player);
+    if uv.x >= uv.y {
+        let h10 = parcel_grid_height(base + vec2<f32>(cell, 0.0), player);
+        return h00 + uv.x * (h10 - h00) + uv.y * (h11 - h10);
+    }
+    let h01 = parcel_grid_height(base + vec2<f32>(0.0, cell), player);
+    return h00 + uv.y * (h01 - h00) + uv.x * (h11 - h01);
+}
+
+fn nearness(toward: f32) -> f32 {
+    return smoothstep(1.0 - MORPH_BAND, 1.0, toward);
+}
+
+// How far a parcel has morphed toward the grid it gets when the player crosses into a neighbouring
+// parcel, and that parcel: the crossing nearest to happening among those that coarsen its grid.
+struct Morph {
+    weight: f32,
+    player: vec2<i32>,
+}
+
+fn parcel_morph(parcel: vec2<i32>) -> Morph {
+    let cell = lod_cell(parcel);
+    let offset = terrain.player_offset;
+    var morph = Morph(0.0, terrain.player_parcel);
+    var morph_cell = cell;
+    for (var dz = -1; dz <= 1; dz++) {
+        for (var dx = -1; dx <= 1; dx++) {
+            let player = terrain.player_parcel + vec2<i32>(dx, dz);
+            let next = lod_cell_from(parcel, player);
+            if next <= cell {
+                continue;
+            }
+            var weight = 1.0;
+            if dx != 0 {
+                weight = min(weight, nearness(select(1.0 - offset.x, offset.x, dx > 0)));
+            }
+            if dz != 0 {
+                weight = min(weight, nearness(select(1.0 - offset.y, offset.y, dz > 0)));
+            }
+            if weight > morph.weight || (weight > 0.0 && weight == morph.weight && next > morph_cell) {
+                morph = Morph(weight, player);
+                morph_cell = next;
+            }
+        }
+    }
+    return morph;
+}
+
+// Parcel grid height (unity x/z), morphed toward the grid the next crossing brings. A vertex on a
+// parcel edge takes the stronger morph of the parcels either side, so both agree; parcel corners
+// are on every grid.
+fn morphed_height(p: vec2<f32>) -> f32 {
+    let height = parcel_grid_height(p, terrain.player_parcel);
+    let on_x_edge = fract(p.x / 16.0) == 0.0;
+    let on_z_edge = fract(p.y / 16.0) == 0.0;
+    if on_x_edge && on_z_edge {
+        return height;
+    }
+    let parcel = vec2<i32>(floor(p / 16.0));
+    var other = parcel;
+    if on_x_edge {
+        other.x -= 1;
+    } else if on_z_edge {
+        other.y -= 1;
+    }
+    var morph = parcel_morph(parcel);
+    if any(other != parcel) {
+        let other_morph = parcel_morph(other);
+        if other_morph.weight > morph.weight {
+            morph = other_morph;
+        }
+    }
+    if morph.weight <= 0.0 {
+        return height;
+    }
+    let cell = max(lod_cell_from(parcel, morph.player), lod_cell_from(other, morph.player));
+    return mix(height, grid_surface(p, cell, morph.player), morph.weight);
 }
 
 fn terrain_normal(xz: vec2<f32>) -> vec3<f32> {

@@ -99,7 +99,10 @@ mod decl {
     // temporary for ShaderType macro, remove in future
     #![allow(dead_code)]
 
-    use bevy::{math::IVec2, render::render_resource::ShaderType};
+    use bevy::{
+        math::{IVec2, Vec2},
+        render::render_resource::ShaderType,
+    };
 
     #[derive(Clone, Copy, Debug, Default, PartialEq, ShaderType)]
     pub struct TerrainParams {
@@ -109,6 +112,8 @@ mod decl {
         pub uv_size: f32,
         /// ground and grass resolution follows parcel grass lod around this parcel (x, unity z)
         pub player_parcel: IVec2,
+        /// the player's position within that parcel, 0 to 1 (x, unity z)
+        pub player_offset: Vec2,
     }
 }
 pub use decl::*;
@@ -152,6 +157,8 @@ pub struct SurfaceChanges {
     pub relayout: bool,
     /// Shader parameters (bounds, step count) changed.
     pub params: bool,
+    /// Only the player's position within its parcel changed, which the shader's detail morph uses.
+    pub player: bool,
     /// Parcels whose eased value changed.
     pub eased: Option<(IVec2, IVec2)>,
     /// Parcels whose target changed.
@@ -172,6 +179,7 @@ pub struct TerrainSurface {
     max_steps: f32,
     uv_size: f32,
     player_parcel: IVec2,
+    player_offset: Vec2,
     changes: SurfaceChanges,
 }
 
@@ -189,6 +197,7 @@ impl Default for TerrainSurface {
             max_steps: f32::from(MAX_STEPS),
             uv_size: 1.0,
             player_parcel: IVec2::ZERO,
+            player_offset: Vec2::ZERO,
             changes: SurfaceChanges::default(),
         }
     }
@@ -227,6 +236,7 @@ impl TerrainSurface {
                 max_steps: self.max_steps,
                 uv_size: self.uv_size,
                 player_parcel: self.player_parcel,
+                player_offset: self.player_offset,
             },
             None => TerrainParams {
                 min: IVec2::ZERO,
@@ -234,6 +244,7 @@ impl TerrainSurface {
                 max_steps: 0.0,
                 uv_size: 1.0,
                 player_parcel: self.player_parcel,
+                player_offset: self.player_offset,
             },
         }
     }
@@ -493,10 +504,16 @@ fn sync(
 ) {
     surface.changes = SurfaceChanges::default();
     if let Ok(player) = player.single() {
-        let parcel = vec3_to_parcel(player.translation());
+        let translation = player.translation();
+        let parcel = vec3_to_parcel(translation);
         if parcel != surface.player_parcel {
             surface.player_parcel = parcel;
             surface.changes.params = true;
+        }
+        let offset = Vec2::new(translation.x, -translation.z) / 16.0 - parcel.as_vec2();
+        if offset.is_finite() && offset != surface.player_offset {
+            surface.player_offset = offset;
+            surface.changes.player = true;
         }
     }
     let realm_changed = realm.as_ref().is_some_and(|realm| realm.is_changed());

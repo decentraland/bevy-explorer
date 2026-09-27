@@ -320,7 +320,7 @@ fn update_terrain_params(
     mut flat: ResMut<Assets<TerrainFlatMaterial>>,
 ) {
     let changes = surface.changes();
-    if !changes.params && !changes.relayout {
+    if !changes.params && !changes.relayout && !changes.player {
         return;
     }
     // touching the materials also rebinds the step texture after a relayout
