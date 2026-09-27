@@ -456,30 +456,37 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, surface: Res
     ));
 }
 
-/// unity-explorer skips the landscape for a single-scene realm whose scene opts out.
-fn terrain_enabled(realm: &CurrentRealm, definitions: &Assets<EntityDefinition>) -> bool {
+/// unity-explorer skips the landscape for a single-scene realm whose scene opts out. None until
+/// that scene's definition has loaded.
+fn terrain_enabled(realm: &CurrentRealm, definitions: &Assets<EntityDefinition>) -> Option<bool> {
     let Some([urn]) = realm.config.scenes_urn.as_deref() else {
-        return true;
+        return Some(true);
     };
     let Some(hash) = IpfsPath::new_from_urn::<EntityDefinition>(&urn.replace('?', "?=&"))
         .ok()
         .and_then(|path| path.context_free_hash().ok().flatten())
     else {
-        return true;
+        return Some(true);
     };
-    definitions
+    let (_, definition) = definitions
         .iter()
-        .find(|(_, definition)| definition.id == hash)
-        .and_then(|(_, definition)| definition.metadata.as_ref())
-        .and_then(|metadata| metadata.get("landscapeTerrain"))
-        .and_then(|value| value.as_bool())
-        != Some(false)
+        .find(|(_, definition)| definition.id == hash)?;
+    Some(
+        definition
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("landscapeTerrain"))
+            .and_then(|value| value.as_bool())
+            != Some(false),
+    )
 }
 
 fn sync(
     mut pointers: ResMut<ScenePointers>,
     realm: Option<Res<CurrentRealm>>,
     definitions: Option<Res<Assets<EntityDefinition>>>,
+    // the realm's answer, kept once its scene's definition is found: the definition is dropped
+    // when the scene unloads
     mut enabled: Local<Option<bool>>,
     mut surface: ResMut<TerrainSurface>,
     player: Query<&GlobalTransform, With<PrimaryUser>>,
@@ -492,14 +499,16 @@ fn sync(
             surface.changes.params = true;
         }
     }
+    let realm_changed = realm.as_ref().is_some_and(|realm| realm.is_changed());
+    if realm_changed {
+        *enabled = None;
+    }
     if enabled.is_none()
-        || realm.as_ref().is_some_and(|realm| realm.is_changed())
-        || definitions.as_ref().is_some_and(|defs| defs.is_changed())
+        && (realm_changed || definitions.as_ref().is_some_and(|defs| defs.is_changed()))
     {
-        *enabled = Some(match (realm, definitions) {
-            (Some(realm), Some(definitions)) => terrain_enabled(&realm, &definitions),
-            _ => true,
-        });
+        if let (Some(realm), Some(definitions)) = (realm, definitions) {
+            *enabled = terrain_enabled(&realm, &definitions);
+        }
     }
     // only take the pointers mutably when there is work, so scene-layout change detection on
     // `ScenePointers` stays quiet
@@ -508,7 +517,7 @@ fn sync(
     } else {
         None
     };
-    surface.apply(pointers.terrain(), change, enabled.unwrap());
+    surface.apply(pointers.terrain(), change, enabled.unwrap_or(true));
 }
 
 fn ease(time: Res<Time>, mut surface: ResMut<TerrainSurface>) {
