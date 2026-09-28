@@ -56,7 +56,7 @@ fn rock(kind: usize) -> Mesh {
     let stone = Color::srgb(0.59, 0.59, 0.54).to_linear();
     let mut geometry = Geometry::default();
     let indices: Vec<_> = sphere.indices().unwrap().iter().collect();
-    for (i, triangle) in indices.chunks_exact(3).enumerate() {
+    for (i, triangle) in indices.as_chunks::<3>().0.iter().enumerate() {
         let p = [
             points[triangle[0]],
             points[triangle[1]],
