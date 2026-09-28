@@ -70,7 +70,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         let shadow = simplex_noise_2d(p * 0.21 + 31.7) * 0.7;
         let trough = 1.0 - smoothstep(0.0, 0.35, height);
         let dry = pbr.material.base_color.rgb * tint
-            * (0.93 + 0.1 * height + 0.14 * pow(height, 8.0) * glint)
+            * (0.93 + 0.1 * height + 0.14 * pow(max(height, 0.0), 8.0) * glint)
             * (1.0 - 0.08 * trough * shadow);
         let wet = dry * (1.0 - wash.z * 0.32);
         // meet the water's colour and gloss at the waterline, where coast_water.wgsl starts its
