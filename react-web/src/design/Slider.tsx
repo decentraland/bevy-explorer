@@ -11,6 +11,8 @@ interface SliderProps {
   disabled?: boolean
   /** Show ‹ › stepper arrows (DCL settings style). */
   arrows?: boolean
+  /** thick: a 22px track with a pin handle (HUD popovers). */
+  variant?: 'thin' | 'thick'
   'aria-label'?: string
 }
 
@@ -22,6 +24,7 @@ export function Slider({
   onChange,
   disabled = false,
   arrows = false,
+  variant = 'thin',
   'aria-label': ariaLabel
 }: SliderProps): React.JSX.Element {
   const pct = max > min ? ((value - min) / (max - min)) * 100 : 0
@@ -29,7 +32,7 @@ export function Slider({
   const input = (
     <input
       type="range"
-      className={styles.slider}
+      className={`${styles.slider} ${variant === 'thick' ? styles.thick : ''}`.trim()}
       value={value}
       min={min}
       max={max}

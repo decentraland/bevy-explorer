@@ -4,7 +4,7 @@
 // scene's existing menus/popups over the bridge (session.nav) until each is
 // migrated to React.
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ControlButton, IconButton, Panel, Toggle } from '../../design'
 import type { IconName } from '../../design'
 import type { NavAction } from '../../engine/protocol'
@@ -14,6 +14,28 @@ import type { EngineSession } from '../session/useEngineSession'
 import { useLiveEventCount } from '../events/eventsApi'
 import { useAutoHide } from './useAutoHide'
 import styles from './Sidebar.module.css'
+import notificationsArt from '../../assets/sidebar-rail/notifications.webp'
+import eventsArt from '../../assets/sidebar-rail/events.webp'
+import placesArt from '../../assets/sidebar-rail/places.webp'
+import communitiesArt from '../../assets/sidebar-rail/communities.webp'
+import backpackArt from '../../assets/sidebar-rail/backpack.webp'
+import marketplaceArt from '../../assets/sidebar-rail/marketplace.webp'
+import galleryArt from '../../assets/sidebar-rail/gallery.webp'
+import settingsArt from '../../assets/sidebar-rail/settings.webp'
+import helpArt from '../../assets/sidebar-rail/help.webp'
+import bugArt from '../../assets/sidebar-rail/bug.webp'
+import skyboxArt from '../../assets/sidebar-rail/skybox.webp'
+import emotesArt from '../../assets/sidebar-rail/emotes.webp'
+import friendsArt from '../../assets/sidebar-rail/friends.webp'
+import chatArt from '../../assets/sidebar-rail/chat.webp'
+import voiceOffArt from '../../assets/sidebar-rail/voice-off.webp'
+import voiceHearingArt from '../../assets/sidebar-rail/voice-hearing.webp'
+import voiceSpeakingArt from '../../assets/sidebar-rail/voice-speaking.webp'
+import { bugReportUrl } from '../../lib/bugReport'
+import { registerCancelLayer } from '../../lib/cancelLayers'
+import { NearbyVoiceWidget } from '../voice/NearbyVoiceWidget'
+import { useNearbyVoice, type NearbyVoice } from '../voice/useNearbyVoice'
+import { withUtm } from '../../lib/utm'
 
 // `hotkey` names the engine SystemAction whose live binding renders as the tooltip hint.
 type Item =
@@ -27,7 +49,6 @@ type Item =
   | { kind: 'notifications'; icon: IconName; label: string }
   | { kind: 'backpack'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'communities'; icon: IconName; label: string; hotkey?: string }
-  | { kind: 'map'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'places'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'events'; icon: IconName; label: string }
   | { kind: 'skybox'; icon: IconName; label: string }
@@ -35,9 +56,30 @@ type Item =
   | { kind: 'link'; icon: IconName; label: string; url: string | (() => string) }
   | { kind: 'divider' }
 
-function bugReportUrl(): string {
-  const body = `**What happened**\n\n**Steps to reproduce**\n\n**Environment**\n- Browser: ${navigator.userAgent}\n`
-  return `https://github.com/decentraland/bevy-explorer/issues/new?body=${encodeURIComponent(body)}`
+
+// The reference rail's own idle icons, each at the size it draws them.
+const RAIL_ART: Partial<Record<IconName, { src: string; size: number; color?: boolean }>> = {
+  'notifications': { src: notificationsArt, size: 30 },
+  'events': { src: eventsArt, size: 32 },
+  'places': { src: placesArt, size: 32 },
+  'communities': { src: communitiesArt, size: 32 },
+  'backpack': { src: backpackArt, size: 28 },
+  'marketplace': { src: marketplaceArt, size: 32 },
+  'gallery': { src: galleryArt, size: 28 },
+  'settings': { src: settingsArt, size: 28 },
+  'help': { src: helpArt, size: 32 },
+  'bug': { src: bugArt, size: 30 },
+  'skybox': { src: skyboxArt, size: 30 },
+  'emotes': { src: emotesArt, size: 32 },
+  'friends': { src: friendsArt, size: 30 },
+  'chat': { src: chatArt, size: 26 },
+  'voice-off': { src: voiceOffArt, size: 34, color: true },
+  'voice-hearing': { src: voiceHearingArt, size: 34, color: true },
+  'voice-speaking': { src: voiceSpeakingArt, size: 34, color: true }
+}
+
+function RailButton(props: React.ComponentProps<typeof IconButton>): React.JSX.Element {
+  return <IconButton art={RAIL_ART[props.icon]} {...props} />
 }
 
 const TOP: Item[] = [
@@ -45,11 +87,10 @@ const TOP: Item[] = [
   { kind: 'notifications', icon: 'notifications', label: 'Notifications' },
   { kind: 'divider' },
   { kind: 'events', icon: 'events', label: 'Events' },
-  { kind: 'map', icon: 'map', label: 'Map', hotkey: 'Map' },
   { kind: 'places', icon: 'places', label: 'Places', hotkey: 'Places' },
   { kind: 'communities', icon: 'communities', label: 'Communities', hotkey: 'Communities' },
   { kind: 'backpack', icon: 'backpack', label: 'Backpack', hotkey: 'Backpack' },
-  { kind: 'link', icon: 'marketplace', label: 'Marketplace', url: 'https://decentraland.org/shop?utm_source=client' },
+  { kind: 'link', icon: 'marketplace', label: 'Shop', url: () => withUtm('https://decentraland.org/shop') },
   { kind: 'gallery', icon: 'gallery', label: 'Gallery', hotkey: 'Gallery' },
   { kind: 'settings', icon: 'settings', label: 'Settings', hotkey: 'Settings' },
   { kind: 'divider' },
@@ -60,18 +101,21 @@ const TOP: Item[] = [
 const BOTTOM: Item[] = [
   { kind: 'mic', icon: 'mic', label: 'Voice chat' },
   { kind: 'skybox', icon: 'skybox', label: 'Skybox' },
+  { kind: 'divider' },
   { kind: 'emotes', icon: 'emotes', label: 'Emotes', hotkey: 'Emote' },
   { kind: 'divider' },
   { kind: 'friends', icon: 'friends', label: 'Friends', hotkey: 'Friends' },
   { kind: 'chat', icon: 'chat', label: 'Chat', hotkey: 'ChatPanel' }
 ]
 
-function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, onViewProfile?: () => void): React.JSX.Element {
+type VoiceProps = NearbyVoice & { onOpen: (button: HTMLElement) => void }
+
+function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, voice: VoiceProps, onViewProfile?: () => void): React.JSX.Element {
   if (item.kind === 'divider') return <div key={`d${i}`} className={styles.divider} />
   const shortcut = 'hotkey' in item && item.hotkey != null ? keyHintFor(snap, item.hotkey) : undefined
   if (item.kind === 'chat')
     return (
-      <IconButton
+      <RailButton
         key="chat"
         icon={item.icon}
         label={item.label}
@@ -83,7 +127,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'friends')
     return (
-      <IconButton
+      <RailButton
         key="friends"
         icon={item.icon}
         label={item.label}
@@ -95,7 +139,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'settings')
     return (
-      <IconButton
+      <RailButton
         key="settings"
         icon={item.icon}
         label={item.label}
@@ -107,7 +151,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
   if (item.kind === 'profile') {
     const p = session.profile.data
     return (
-      <IconButton
+      <RailButton
         key="profile"
         icon={item.icon}
         avatar={p ? { src: p.picture, name: p.name, color: nameColor(p.address || p.name) } : undefined}
@@ -119,7 +163,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
   }
   if (item.kind === 'backpack')
     return (
-      <IconButton
+      <RailButton
         key="backpack"
         icon={item.icon}
         label={item.label}
@@ -130,7 +174,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'communities')
     return (
-      <IconButton
+      <RailButton
         key="communities"
         icon={item.icon}
         label={item.label}
@@ -139,20 +183,9 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
         onClick={session.communities.toggle}
       />
     )
-  if (item.kind === 'map')
-    return (
-      <IconButton
-        key="map"
-        icon={item.icon}
-        label={item.label}
-        shortcut={shortcut}
-        active={session.map.open}
-        onClick={session.map.toggle}
-      />
-    )
   if (item.kind === 'places')
     return (
-      <IconButton
+      <RailButton
         key="places"
         icon={item.icon}
         label={item.label}
@@ -163,7 +196,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'gallery')
     return (
-      <IconButton
+      <RailButton
         key="gallery"
         icon={item.icon}
         label={item.label}
@@ -174,7 +207,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'notifications')
     return (
-      <IconButton
+      <RailButton
         key="notifications"
         icon={item.icon}
         label={item.label}
@@ -185,7 +218,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'emotes')
     return (
-      <IconButton
+      <RailButton
         key="emotes"
         icon={item.icon}
         label={item.label}
@@ -195,24 +228,32 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
       />
     )
   if (item.kind === 'mic') {
-    const voice = !session.mic.available ? 'off' : session.mic.enabled ? 'speaking' : 'hearing'
+    const state = !voice.hearing ? 'off' : voice.speaking ? 'speaking' : 'hearing'
     return (
-      <IconButton
+      <RailButton
         key="mic"
-        icon={`voice-${voice}`}
-        label={item.label}
-        data-voice={voice}
-        indicator={voice !== 'off'}
-        active={session.mic.enabled}
-        onClick={session.mic.toggle}
-      />
+        icon={`voice-${state}`}
+        size={34}
+        label="Nearby Voice"
+        data-voice={state}
+        indicator={state !== 'off'}
+        onClick={(e) => voice.onOpen(e.currentTarget)}
+      >
+        {state === 'speaking' && (
+          <span className={styles.bars} data-live={voice.talking} aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        )}
+      </RailButton>
     )
   }
   if (item.kind === 'skybox')
-    return <IconButton key="skybox" icon={item.icon} label={item.label} active={session.skybox.open} onClick={session.skybox.toggle} />
+    return <RailButton key="skybox" icon={item.icon} label={item.label} active={session.skybox.open} onClick={session.skybox.toggle} />
   if (item.kind === 'events')
     return (
-      <IconButton
+      <RailButton
         key="events"
         icon={item.icon}
         label={item.label}
@@ -224,7 +265,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     )
   if (item.kind === 'link')
     return (
-      <IconButton
+      <RailButton
         key={item.label}
         icon={item.icon}
         label={item.label}
@@ -232,7 +273,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
       />
     )
   return (
-    <IconButton
+    <RailButton
       key={item.action}
       icon={item.icon}
       label={item.label}
@@ -263,7 +304,25 @@ export function Sidebar({
   const snap = useBindingsSnapshot()
   const liveEvents = useLiveEventCount()
   const [configOpen, setConfigOpen] = useState(false)
-  const autoHide = useAutoHide(configOpen)
+  const [voiceAnchor, setVoiceAnchor] = useState<HTMLElement | null>(null)
+  const autoHide = useAutoHide(configOpen || voiceAnchor != null)
+  const nearby = useNearbyVoice(session)
+  const voice: VoiceProps = { ...nearby, onOpen: (button) => setVoiceAnchor((a) => (a == null ? button : null)) }
+  const closeVoice = useCallback(() => setVoiceAnchor(null), [])
+  // The "..." panel closes on an outside click or Cancel, like the other popovers.
+  useEffect(() => {
+    if (!configOpen) return
+    const close = (): void => setConfigOpen(false)
+    const onDown = (e: MouseEvent): void => {
+      if (!(e.target instanceof Element && e.target.closest('[aria-label="Sidebar settings"]'))) close()
+    }
+    document.addEventListener('mousedown', onDown)
+    const off = registerCancelLayer(close)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      off()
+    }
+  }, [configOpen])
   return (
     <>
       {autoHide.hidden && <div className={styles.reveal} data-testid="sidebar-reveal" onPointerEnter={autoHide.onPointerEnter} />}
@@ -287,10 +346,28 @@ export function Sidebar({
           >
             <DotsGlyph />
           </ControlButton>
-          {TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, onViewProfile))}
+          {TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, onViewProfile))}
         </div>
-        <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, onViewProfile))}</div>
+        <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, onViewProfile))}</div>
       </nav>
+      {voiceAnchor != null && (
+        <NearbyVoiceWidget
+          anchor={voiceAnchor}
+          hearing={nearby.hearing}
+          onHearingChange={(on) => {
+            nearby.setHearing(on)
+            if (!on) closeVoice()
+          }}
+          volume={nearby.volume}
+          onVolumeChange={nearby.setVolume}
+          speaking={nearby.speaking}
+          talking={nearby.talking}
+          micAvailable={nearby.micAvailable}
+          onSpeakToggle={nearby.toggleSpeak}
+          talkKey={keyHintFor(snap, 'Microphone')}
+          onClose={closeVoice}
+        />
+      )}
       {configOpen && (
         <Panel className={styles.config} role="dialog" aria-label="Sidebar settings">
           <span>Auto-hide sidebar</span>

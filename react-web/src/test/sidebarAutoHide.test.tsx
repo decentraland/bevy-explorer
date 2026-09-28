@@ -34,6 +34,18 @@ describe('sidebar auto-hide (Unity SidebarConfigPanel)', () => {
     expect(nav()).toHaveAttribute('data-hidden', 'false')
   })
 
+  it('hides once the panel closes, even though the pointer left the rail while it was open', () => {
+    vi.useFakeTimers()
+    render(<Sidebar session={fakeSession()} />)
+    fireEvent.pointerEnter(nav())
+    fireEvent.click(screen.getByRole('button', { name: 'Sidebar settings' }))
+    fireEvent.pointerLeave(nav())
+    fireEvent.click(screen.getByRole('switch', { name: 'Auto-hide sidebar' }))
+    fireEvent.mouseDown(document.body)
+    act(() => vi.advanceTimersByTime(350))
+    expect(nav()).toHaveAttribute('data-hidden', 'true')
+  })
+
   it('remembers the choice across remounts (the rail unmounts under full-screen pages)', () => {
     const { unmount } = render(<Sidebar session={fakeSession()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Sidebar settings' }))

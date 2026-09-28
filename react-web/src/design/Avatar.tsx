@@ -16,6 +16,8 @@ interface AvatarProps {
   /** Diameter in px (default 32). */
   size?: number
   status?: Status
+  /** The picture inset in its colour disc under a thin ring, as on the sidebar rail. */
+  framed?: boolean
   className?: string
 }
 
@@ -30,6 +32,7 @@ export function Avatar({
   color = 'var(--fill-4)',
   size = 32,
   status,
+  framed = false,
   className = ''
 }: AvatarProps): React.JSX.Element {
   const [failed, setFailed] = useState(false)
@@ -37,7 +40,7 @@ export function Avatar({
   const dot = Math.max(6, Math.round(size * 0.18))
   return (
     <span
-      className={`${styles.root} ${className}`.trim()}
+      className={`${styles.root} ${framed ? styles.framed : ''} ${className}`.trim()}
       style={{ width: size, height: size, background: color, fontSize: Math.round(size * 0.42) }}
     >
       {showImg ? (

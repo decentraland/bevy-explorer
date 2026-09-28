@@ -28,6 +28,7 @@ export function useAutoHide(hold: boolean): AutoHide {
   const [enabled, setEnabledState] = useState(readStored)
   const [hidden, setHidden] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inside = useRef(false)
 
   const schedule = useCallback((next: boolean) => {
     if (timer.current) clearTimeout(timer.current)
@@ -37,6 +38,11 @@ export function useAutoHide(hold: boolean): AutoHide {
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current)
   }, [])
+
+  // A popover closing (or auto-hide turning on) with the pointer already away fires no leave.
+  useEffect(() => {
+    if (enabled && !hold && !inside.current) schedule(true)
+  }, [enabled, hold, schedule])
 
   const setEnabled = useCallback((on: boolean) => {
     setEnabledState(on)
@@ -55,7 +61,13 @@ export function useAutoHide(hold: boolean): AutoHide {
     enabled,
     setEnabled,
     hidden: enabled && hidden && !hold,
-    onPointerEnter: () => enabled && schedule(false),
-    onPointerLeave: () => enabled && !hold && schedule(true)
+    onPointerEnter: () => {
+      inside.current = true
+      if (enabled) schedule(false)
+    },
+    onPointerLeave: () => {
+      inside.current = false
+      if (enabled && !hold) schedule(true)
+    }
   }
 }

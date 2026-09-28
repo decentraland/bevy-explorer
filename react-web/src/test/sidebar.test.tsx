@@ -13,13 +13,13 @@ describe('sidebar parity', () => {
     expect(button.querySelector('span[aria-hidden="true"]')).not.toBeNull()
   })
 
-  it('Marketplace opens the shop with the client utm source, between Backpack and Gallery', async () => {
+  it('Shop opens the shop with the web client utm source, between Backpack and Gallery', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     render(<Sidebar session={fakeSession()} />)
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
-    expect(labels.slice(labels.indexOf('Backpack'), labels.indexOf('Gallery') + 1)).toEqual(['Backpack', 'Marketplace', 'Gallery'])
-    await userEvent.click(screen.getByRole('button', { name: 'Marketplace' }))
-    expect(open).toHaveBeenCalledWith('https://decentraland.org/shop?utm_source=client', '_blank', 'noopener')
+    expect(labels.slice(labels.indexOf('Backpack'), labels.indexOf('Gallery') + 1)).toEqual(['Backpack', 'Shop', 'Gallery'])
+    await userEvent.click(screen.getByRole('button', { name: 'Shop' }))
+    expect(open).toHaveBeenCalledWith('https://decentraland.org/shop?utm_source=bevy-web-client', '_blank', 'noopener')
   })
 
   it('Bug report follows Help and opens a prefilled bevy-explorer issue', async () => {
@@ -34,16 +34,18 @@ describe('sidebar parity', () => {
   })
 
   it.each([
-    [{ available: false, enabled: false }, 'off', false],
-    [{ available: true, enabled: false }, 'hearing', true],
-    [{ available: true, enabled: true }, 'speaking', true]
-  ])('voice button mirrors Unity nearby-voice state for %o', (mic, state, dot) => {
+    [true, false, 'hearing', true],
+    [true, true, 'speaking', true],
+    [false, false, 'off', false]
+  ])('voice button shows the nearby-voice state (hearing %s, mic %s)', (hearing, enabled, state, dot) => {
+    if (!hearing) localStorage.setItem('nearbyVoiceDisabled', 'true')
     const s = fakeSession()
-    s.mic = { ...s.mic, ...mic }
+    s.mic = { ...s.mic, available: true, enabled }
     render(<Sidebar session={s} />)
-    const button = screen.getByRole('button', { name: 'Voice chat' })
+    const button = screen.getByRole('button', { name: 'Nearby Voice' })
     expect(button).toHaveAttribute('data-voice', state)
     expect(button.querySelector('[data-indicator]') != null).toBe(dot)
+    localStorage.clear()
   })
 })
 

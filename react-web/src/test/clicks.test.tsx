@@ -15,12 +15,10 @@ describe('sidebar clicks', () => {
   const cases: [string, (s: EngineSession) => () => void][] = [
     ['Profile', (s) => s.profile.toggle],
     ['Notifications', (s) => s.notifications.toggle],
-    ['Map', (s) => s.map.toggle],
     ['Communities', (s) => s.communities.toggle],
     ['Backpack', (s) => s.backpack.toggle],
     ['Gallery', (s) => s.gallery.toggle],
     ['Settings', (s) => s.settings.toggle],
-    ['Voice chat', (s) => s.mic.toggle],
     ['Emotes', (s) => s.emotes.toggle],
     ['Friends', (s) => s.friends.toggle],
     ['Chat', (s) => s.chat.toggle]
@@ -31,6 +29,33 @@ describe('sidebar clicks', () => {
     render(<Sidebar session={s} />)
     await userEvent.click(screen.getByRole('button', { name }))
     expect(vi.mocked(pick(s))).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists the reference rail, in order (Map lives in the menu, not the rail)', () => {
+    render(<Sidebar session={fakeSession()} />)
+    const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    expect(labels).toEqual([
+      'Sidebar settings', 'Profile', 'Notifications', 'Events', 'Places', 'Communities', 'Backpack', 'Shop', 'Gallery', 'Settings',
+      'Help & Support', 'Report a bug', 'Nearby Voice', 'Skybox', 'Emotes', 'Friends', 'Chat'
+    ])
+  })
+
+  it('the "..." panel closes on an outside click', async () => {
+    render(<Sidebar session={fakeSession()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Sidebar settings' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Auto-hide sidebar' }))
+    expect(screen.getByRole('dialog', { name: 'Sidebar settings' })).toBeInTheDocument()
+    await userEvent.click(document.body)
+    expect(screen.queryByRole('dialog', { name: 'Sidebar settings' })).toBeNull()
+  })
+
+  it('every rail button has a tooltip naming it', () => {
+    render(<Sidebar session={fakeSession()} />)
+    for (const b of screen.getAllByRole('button')) {
+      const label = b.getAttribute('aria-label') ?? ''
+      if (label === 'Sidebar settings') continue
+      expect(b.parentElement?.querySelector('[role="tooltip"]')).toHaveTextContent(label)
+    }
   })
 
   it('Profile opens the passport (onViewProfile) when provided, not the small panel', async () => {

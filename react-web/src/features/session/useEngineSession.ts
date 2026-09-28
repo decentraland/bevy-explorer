@@ -274,6 +274,8 @@ export interface SettingsState {
   open: boolean
   toggle: () => void
   set: (name: string, value: number) => void
+  /** Fetch the settings without opening the page (once per session). */
+  load: () => void
 }
 
 export interface BindingsState {
@@ -1136,6 +1138,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const anyPanelOpen =
     menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen || skyboxOpen
   const toggleFriends = useCallback(() => exclusive(setFriendsOpen), [exclusive])
+  const loadSettings = useCallback(() => ensure('getSettings'), [ensure])
   const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => ensure('getSettings')), [exclusive, ensure])
   const toggleProfile = useCallback(() => exclusive(setProfileOpen, () => ensure('getProfile')), [exclusive, ensure])
   const toggleNotifications = useCallback(() => exclusive(setNotificationsOpen, () => send('getNotifications')), [exclusive, send])
@@ -2013,7 +2016,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       toggle: toggleFriends,
       act: friendAct
     },
-    settings: { list: settings, open: settingsOpen, toggle: toggleSettings, set: settingSet },
+    settings: { list: settings, open: settingsOpen, toggle: toggleSettings, set: settingSet, load: loadSettings },
     bindings: { list: bindings, set: bindingsSet, reset: bindingsReset, capture: captureBinding },
     profile: {
       data: profile,

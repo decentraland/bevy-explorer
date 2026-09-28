@@ -11,16 +11,17 @@
      width + icons track the viewport (Unity CanvasScaler) instead of staying a fixed 46px at
      1x — keeps the rail consistent with the scaled chat/floating panels beside it. */
   height: calc(100% / var(--ui-scale));
-  background: rgba(0, 0, 0, 0.7);
-  z-index: var(--z-hud);
+  background: var(--rail-bg);
+  /* Above the minimap and chat, so the tooltips aren't covered. */
+  z-index: calc(var(--z-hud) + 1);
   transform: scale(var(--ui-scale)) translateZ(0);
   transform-origin: top left;
-  contain: layout paint;
+  contain: layout;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0 13px;
+  padding: 4px 0 16px;
   box-sizing: border-box;
 }
 
@@ -35,7 +36,7 @@
 .divider {
   width: 40px;
   height: 0;
-  border-top: 1px solid var(--white-10);
+  border-top: 1px solid var(--rail-divider);
 }
 
 /* Auto-hide (Unity MainUIController): slide the rail off-screen; `translate` composes with the
@@ -48,8 +49,9 @@
 }
 /* Unity's ••• is a slim pill above the profile, smaller than a rail button. */
 .root .configButton {
-  width: 26px;
-  height: 12px;
+  width: 36px;
+  height: 16px;
+  background: var(--rail-bg);
   min-height: 0;
   padding: 0;
 }
@@ -66,7 +68,7 @@
   position: fixed;
   left: 54px;
   top: 8px;
-  z-index: var(--z-hud);
+  z-index: calc(var(--z-hud) + 1);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -76,4 +78,45 @@
   box-shadow: var(--shadow-panel);
   transform: scale(var(--ui-scale));
   transform-origin: top left;
+}
+
+/* Speaking bars on the voice button: 2px dots while quiet, a ping-pong wave while heard. */
+.bars {
+  position: absolute;
+  left: 20.4px;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 1.54px;
+  height: 10px;
+  transform: translateY(-50%);
+}
+.bars i {
+  width: 2px;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--voice-green);
+  transition: height 100ms linear;
+}
+.bars[data-live='true'] i {
+  animation: bar-edge 300ms ease-in-out infinite alternate;
+}
+.bars[data-live='true'] i:nth-child(2) {
+  animation-name: bar-mid;
+}
+@keyframes bar-edge {
+  from {
+    height: 4px;
+  }
+  to {
+    height: 10px;
+  }
+}
+@keyframes bar-mid {
+  from {
+    height: 10px;
+  }
+  to {
+    height: 4px;
+  }
 }

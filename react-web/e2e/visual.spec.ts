@@ -69,8 +69,12 @@ async function enterWorldReturning(page: Page): Promise<void> {
   await page.waitForSelector('nav[aria-label="Main navigation"]')
 }
 
-const openPanel = (page: Page, label: string): Promise<void> =>
-  page.getByRole('button', { name: label, exact: true }).click()
+// The map isn't on the rail: reach it from another menu page's top bar.
+async function openPanel(page: Page, label: string): Promise<void> {
+  if (label !== 'Map') return await page.getByRole('button', { name: label, exact: true }).click()
+  await page.getByRole('button', { name: 'Places', exact: true }).click()
+  await page.locator('[data-page="map"]').click()
+}
 
 test.describe('visual — mock HUD', () => {
   test.beforeEach(async ({ page }) => {
@@ -322,6 +326,33 @@ test.describe('visual — mock HUD', () => {
     for (let y = box.y + box.height / 2; y <= box.y + box.height + 30; y += 3) await page.mouse.move(x, y)
     const under = await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.textContent ?? '', [x, box.y + box.height + 30])
     expect(under).toMatch(/^(UN)?EQUIP$/)
+  })
+
+  test('sidebar — icons draw at the reference sizes', async ({ page }) => {
+    await enterWorld(page)
+    const iconWidth = (name: string): Promise<number> =>
+      page.getByRole('button', { name, exact: true }).evaluate((b) => (b.querySelector('span[aria-hidden]')?.getBoundingClientRect().width ?? 0) / b.getBoundingClientRect().width * 32)
+    expect(await iconWidth('Notifications')).toBeCloseTo(30, 0)
+    expect(await iconWidth('Backpack')).toBeCloseTo(28, 0)
+    expect(await iconWidth('Help & Support')).toBeCloseTo(32, 0)
+    expect(await iconWidth('Chat')).toBeCloseTo(26, 0)
+  })
+
+  test('sidebar — the minimap covers neither the tooltips nor the "..." panel', async ({ page }) => {
+    await enterWorld(page)
+    // Tooltips ignore the pointer, so compare stacking: the rail must sit above the minimap.
+    const z = await page.evaluate(() => {
+      const zOf = (el: Element | null | undefined): number => Number(el != null ? getComputedStyle(el).zIndex : 0)
+      const minimap = document.querySelector('[aria-label="Minimap zoom"]')?.closest('[class*="root"]')
+      return { rail: zOf(document.querySelector('nav[aria-label="Main navigation"]')), minimap: zOf(minimap) }
+    })
+    expect(z.rail).toBeGreaterThan(z.minimap)
+    await page.getByRole('button', { name: 'Sidebar settings' }).click()
+    const panelOnTop = await page.getByRole('dialog', { name: 'Sidebar settings' }).evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      return el.contains(document.elementFromPoint(r.right - 20, r.top + r.height / 2))
+    })
+    expect(panelOnTop).toBe(true)
   })
 
   test('backpack — emotes', async ({ page }) => {

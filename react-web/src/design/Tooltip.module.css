@@ -71,3 +71,13 @@
 .wrap:hover .bottom {
   transform: translate(-50%, 14px) scale(1);
 }
+
+.rail {
+  border-radius: var(--r-button);
+  box-shadow: none;
+  transition: none;
+}
+.rail.right,
+.wrap:hover .rail.right {
+  transform: translate(18px, -50%);
+}

@@ -157,6 +157,29 @@
   --lava-3: #591681; /* bottom */
   --lava-4: #470071; /* deep */
 
+  /* loading screen */
+  /* sidebar rail — sRGB equivalents of the reference's linear-space blends */
+  --rail-bg: rgba(0, 0, 0, 0.65);
+  --rail-divider: rgba(255, 255, 255, 0.2);
+  --rail-selected: rgba(255, 255, 255, 0.16);
+  --rail-avatar-ring: rgba(255, 255, 255, 0.47);
+  /* compact switches / thick sliders / nearby voice (sRGB equivalents of linear blends) */
+  --switch-off: rgba(255, 255, 255, 0.38);
+  --switch-knob-off: rgba(236, 235, 237, 0.73);
+  --slider-track: rgba(255, 255, 255, 0.19);
+  --voice-divider: rgba(255, 255, 255, 0.14);
+  --voice-fill: rgba(255, 255, 255, 0.19);
+  --voice-fill-hover: #696473;
+  --voice-green: #34ce76;
+  --voice-live: #30cd00;
+  --voice-speaking-fill: rgba(26, 198, 45, 0.2);
+  --loading-vignette: radial-gradient(ellipse 100% 100% at 50% 50%, #bf00ff 16.7%, #4c0080 66.7%);
+  --loading-glow: rgba(168, 0, 190, 0.5);
+  --loading-track: #242424;
+  --loading-lava: linear-gradient(90deg, #edb602 0%, #edb602 45%, #f68002 75%, #fe6f00 100%);
+  --loading-key: #ffbe47; /* key names in tip actions, the current tip dot */
+  --loading-pill-edge: #ba67f1;
+
   --r-xs: 6px;
   --r-sm: 8px;
   --r-button: 9.6px;
@@ -165,6 +188,7 @@
   --r-lg: 16px;
   --r-xl: 24px;
 
+  --type-9: 9px;
   --type-12: 12px;
   --type-13: 13px;
   --type-14: 14px;
@@ -174,7 +198,9 @@
   --type-22: 22px;
   --type-24: 24px;
   --type-30: 30px;
+  --type-32: 32px;
   --type-36: 36px;
+  --type-96: 96px;
   --fw-regular: 400;
   --fw-medium: 500;
   --fw-semibold: 600;

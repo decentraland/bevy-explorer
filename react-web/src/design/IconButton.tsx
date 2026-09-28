@@ -5,6 +5,7 @@
 import { Avatar } from './Avatar'
 import { Icon, type IconName } from './icons'
 import { Tooltip } from './Tooltip'
+import { MaskIcon } from './MaskIcon'
 import styles from './IconButton.module.css'
 
 interface IconButtonProps
@@ -24,6 +25,11 @@ interface IconButtonProps
   indicator?: boolean
   /** Render this profile picture in place of the icon. */
   avatar?: { src?: string; name: string; color?: string }
+  /** Art drawn at `size` in place of the icon: white-on-transparent takes the icon colour, `color`
+   *  art is drawn as-is. */
+  art?: { src: string; size: number; color?: boolean }
+  /** 34 for the voice button; 32 otherwise. */
+  size?: 32 | 34
 }
 
 export function IconButton({
@@ -34,21 +40,33 @@ export function IconButton({
   label,
   shortcut,
   avatar,
+  art,
+  size = 32,
   indicator = false,
   className = '',
   type = 'button',
+  children,
   ...rest
 }: IconButtonProps): React.JSX.Element {
   return (
-    <Tooltip label={label} shortcut={shortcut} side="right">
+    <Tooltip label={label} shortcut={shortcut} side="right" variant="rail">
       <button
         type={type}
-        className={`${styles.btn} ${active ? styles.active : ''} ${className}`.trim()}
+        className={`${styles.btn} ${size === 34 ? styles.large : ''} ${active ? styles.active : ''} ${className}`.trim()}
         aria-label={label}
         aria-pressed={active}
         {...rest}
       >
-        {avatar ? <Avatar src={avatar.src} name={avatar.name} color={avatar.color} size={24} /> : <Icon name={icon} size={24} />}
+        {avatar ? (
+          <Avatar src={avatar.src} name={avatar.name} color={avatar.color} size={30} framed />
+        ) : art?.color === true ? (
+          <img src={art.src} alt="" width={art.size} height={art.size} draggable={false} />
+        ) : art ? (
+          <MaskIcon src={art.src} size={art.size} />
+        ) : (
+          <Icon name={icon} size={24} />
+        )}
+        {children}
         {indicator && <span className={styles.indicator} data-indicator />}
         {badge != null && badge > 0 && (
           <span
