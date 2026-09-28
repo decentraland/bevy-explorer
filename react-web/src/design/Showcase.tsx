@@ -4,6 +4,11 @@
 import { Button } from './Button'
 import { IconButton } from './IconButton'
 import { VoiceBars } from './VoiceBars'
+import { ColorPicker } from './ColorPicker'
+import { Chip } from './Chip'
+import { Pager } from './Pager'
+import { OptionMenu } from './OptionMenu'
+import { HintsButton, KeyCap } from './HintsButton'
 import { useState } from 'react'
 import { ControlButton } from './ControlButton'
 import { Tooltip } from './Tooltip'
@@ -413,6 +418,40 @@ export function Showcase(): React.JSX.Element {
         <VoiceBars />
       </Section>
 
+      <Section title="Chip (breadcrumb filter)">
+        <div style={{ ...row, gap: 20 }}>
+          <Chip label="All" selected onClick={() => undefined} />
+          <Chip label="All" onClick={() => undefined} />
+          <Chip label="Hair" selected onClick={() => undefined} onClear={() => undefined} />
+        </div>
+      </Section>
+
+      <Section title="OptionMenu">
+        <OptionMenu
+          onClose={() => undefined}
+          sections={[
+            { label: 'Sort by', options: [{ id: 'newest', label: 'Newest' }, { id: 'oldest', label: 'Oldest' }], value: 'newest', onChange: () => undefined },
+            { label: 'View', options: [{ id: 'all', label: 'All Items' }, { id: 'col', label: 'Collectibles only' }], value: 'all', onChange: () => undefined }
+          ]}
+        />
+      </Section>
+
+      <Section title="HintsButton (opens upward)">
+        <div style={{ paddingTop: 120 }}>
+          <HintsButton hints={[{ icon: <KeyCap label="1" />, text: 'Press a number key to pick a slot.' }, { icon: <KeyCap label="E" />, text: 'Press E to open emotes.' }]} />
+        </div>
+      </Section>
+
+      <Section title="Pager">
+        <Pager page={2} count={9} onChange={() => undefined} />
+      </Section>
+
+      <Section title="ColorPicker (avatar colors)">
+        <div style={{ maxWidth: 320 }}>
+          <ColorPicker label="Hair color" value="#5b310f" presets={['#1c1c1c', '#3c210b', '#5b310f', '#7b4818', '#985f37', '#8c2014', '#e98234', '#ffbe28', '#fad281', '#d4d4d4']} onChange={() => undefined} />
+        </div>
+      </Section>
+
       <Section title="Panel">
         <Panel style={{ padding: 18, maxWidth: 360 }}>
           <div style={{ fontWeight: 700, marginBottom: 6 }}>Genesis Plaza</div>
@@ -446,7 +485,7 @@ export function Showcase(): React.JSX.Element {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 84px)', gap: 10 }}>
           {(['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic', 'base'] as Rarity[]).map((r, i) => (
             <div key={r} style={{ width: 84 }}>
-              <WearableCard rarity={r} equipped={i === 4} isNew={i === 1} count={i === 7 ? 2 : undefined} />
+              <WearableCard rarity={r} equipped={i === 4} isNew={i === 1} />
             </div>
           ))}
         </div>

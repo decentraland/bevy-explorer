@@ -19,6 +19,7 @@ import {
   type Wearable
 } from './protocol'
 import { applyProfileEdit } from './profileEdit'
+import type { Color3 } from './generated'
 
 // A fully-populated passport for the mock, so the React passport shows every section.
 function richProfile(address: string, name: string, isGuest: boolean): Profile {
@@ -107,6 +108,13 @@ const BASE: { name: string; category: string; label: string }[] = [
   { name: 'pink_gem_earring', category: 'earring', label: 'Pink Gem Earring' },
   { name: 'Thunder_earring', category: 'earring', label: 'Thunder Earring' }
 ]
+// The mock avatar's colors (preset values: skin #ddb18f, hair #5b310f, eyes #20b3f6).
+const mockColors: { skin?: Color3; hair?: Color3; eyes?: Color3 } = {
+  skin: { r: 221 / 255, g: 177 / 255, b: 143 / 255 },
+  hair: { r: 91 / 255, g: 49 / 255, b: 15 / 255 },
+  eyes: { r: 32 / 255, g: 179 / 255, b: 246 / 255 }
+}
+
 const mockWearables: Wearable[] = BASE.map((b, i) => {
   const urn = `urn:decentraland:off-chain:base-avatars:${b.name}`
   return {
@@ -117,7 +125,9 @@ const mockWearables: Wearable[] = BASE.map((b, i) => {
     thumbnail: thumb(urn),
     // f_* base items are female-only in the catalyst (the mock avatar is BaseMale).
     bodyShapes: b.name.startsWith('f_') ? ['urn:decentraland:off-chain:base-avatars:BaseFemale'] : undefined,
-    equipped: i % 6 === 0
+    equipped: i % 6 === 0,
+    isSmart: b.name === 'sport_jacket' || b.name === 'Thunder_earring' ? true : undefined,
+    hides: b.name === 'bandana' ? ['hair'] : undefined
   }
 })
 
@@ -145,6 +155,7 @@ const MOCK_COLLECTIBLE_EQUIPPED: Wearable[] = [
   { urn: 'urn:decentraland:matic:collections-v2:0xa42e166edac870aa5351b098ae6458d39ca0fca6:0', name: 'Neon Tiara', rarity: 'legendary', category: 'tiara', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hat'), equipped: true, shopUrl: 'https://decentraland.org/shop/item/0xa42e166edac870aa5351b098ae6458d39ca0fca6/0' },
   { urn: 'urn:decentraland:ethereum:collections-v1:mf_sammichgamer:mf_animehair', name: 'Anime warrior hair', rarity: 'legendary', category: 'hair', thumbnail: thumb('urn:decentraland:off-chain:base-avatars:hair_anime_01'), equipped: true, shopUrl: 'https://decentraland.org/shop/item/0x30d3387ff3de2a21bef7032f82d00ff7739e403c/3' }
 ]
+let mockForceRender: string[] = []
 const equippedNow = (): Wearable[] => [...mockWearables.filter((w) => w.equipped), ...MOCK_OFF_CATALOG_EQUIPPED, ...MOCK_COLLECTIBLE_EQUIPPED]
 
 // The 10 wheel-slot base emotes — shared by getEmotes (the wheel) and the passport's Equipped
@@ -564,7 +575,12 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'equipEmote') return // no-op in the mock
     if (msg.kind === 'commitAvatar' || msg.kind === 'revertAvatar') return // no-op in the mock
     if (msg.kind === 'getWearables') {
-      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE })
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE, colors: mockColors, forceRender: mockForceRender })
+      return
+    }
+    if (msg.kind === 'setForceRender') {
+      mockForceRender = msg.categories
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE, colors: mockColors, forceRender: mockForceRender })
       return
     }
     if (msg.kind === 'catalogQuery') {
@@ -576,18 +592,25 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       if (msg.category != null && msg.category !== 'all') items = items.filter((w) => w.category === msg.category)
       if (msg.search != null && msg.search !== '') items = items.filter((w) => (w.name ?? '').toLowerCase().includes(msg.search!.toLowerCase()))
       if (msg.collectiblesOnly === true) items = items.filter((w) => (w.rarity ?? 'base') !== 'base')
+      if (msg.smartOnly === true) items = items.filter((w) => w.isSmart === true)
       const dir = msg.direction === 'asc' ? 1 : -1
       if (msg.orderBy === 'name') items.sort((a, b) => dir * (a.name ?? '').localeCompare(b.name ?? ''))
       else if (msg.orderBy === 'rarity') items.sort((a, b) => dir * (RARITIES.indexOf(a.rarity) - RARITIES.indexOf(b.rarity)))
+      else if (msg.orderBy === 'date' && dir > 0) items.reverse()
       const total = items.length
       const start = msg.page * msg.pageSize
       reply({ kind: 'catalogPage', catalog: 'wearables', items: items.slice(start, start + msg.pageSize), total, requestId: msg.requestId })
       return
     }
+    if (msg.kind === 'setAvatarColor') {
+      mockColors[msg.target] = msg.color
+      reply({ kind: 'wearables', equipped: equippedNow(), colors: mockColors })
+      return
+    }
     if (msg.kind === 'equip') {
       const set = new Set(msg.urns)
       for (const w of mockWearables) w.equipped = set.has(w.urn)
-      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE })
+      reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE, colors: mockColors })
       return
     }
     if (msg.kind === 'getOutfits') {
@@ -614,7 +637,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       if (found) {
         const set = new Set(found.outfit.wearables)
         for (const w of mockWearables) w.equipped = set.has(w.urn)
-        reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE })
+        reply({ kind: 'wearables', equipped: equippedNow(), bodyShape: BASE_MALE, colors: mockColors })
       }
       return
     }
@@ -635,6 +658,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       // are unaffected: React draws those from map tiles without the scene's help.
       return
     }
+    if (msg.kind === 'previewFocus') return
     if (msg.kind === 'previewAvatar') {
       // No engine in mock mode — avatar preview has nothing to render.
       return

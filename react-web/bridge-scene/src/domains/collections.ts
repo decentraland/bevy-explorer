@@ -2,6 +2,7 @@
 // address) resolved by item urn, for wearables and emotes alike.
 //   from: GET /lambdas/collections/wearables?wearableId=… and /lambdas/collections/emotes?emoteId=…
 import { getJson } from '../http'
+import type { HideData } from '../../../src/engine/avatarHides'
 
 export type ItemDef = {
   id: string
@@ -9,7 +10,7 @@ export type ItemDef = {
   rarity?: string
   thumbnail?: string
   collectionAddress?: string
-  data?: { category?: string; representations?: Array<{ bodyShapes?: string[] }> }
+  data?: HideData & { category?: string }
 }
 
 export type ItemKind = 'wearables' | 'emotes'

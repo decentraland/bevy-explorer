@@ -10791,6 +10791,7 @@ dependencies = [
  "prost 0.11.9",
  "scene_runner",
  "serde_json",
+ "texture_camera",
  "tokio",
 ]
 

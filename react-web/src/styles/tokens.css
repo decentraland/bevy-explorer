@@ -64,10 +64,12 @@
   --r-card: 14px;
   --r-panel: 18px;
   --r-pill: 999px;
+  --r-popup: 12px; /* light buttons and popups */
 
   /* ---- elevation ---- */
   --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.5);
+  --shadow-popup: 0 4px 10px rgba(0, 0, 0, 0.25);
 
   /* ---- stacking order ---- */
   --z-hud: 100; /* in-world chrome: sidebar, chat, minimap */
@@ -106,6 +108,87 @@
   --dur-fast: 140ms;
   --dur-mid: 300ms;
   --dur-fade: 600ms;
+
+  /* ---- menu pages (1920×1080 reference canvas) ----
+     Alphas here are sRGB equivalents of overlays designed for linear-space blending, which reads
+     lighter: 50% black ≈ 29%, 40% ≈ 22%, 10% white ≈ 26%. */
+  --scrim-head: rgba(0, 0, 0, 0.29);
+  --surface-light: var(--text); /* light buttons, fields, popups */
+  --surface-light-hover: #f5f5f5;
+  --surface-light-press: #c8c8c8;
+  --ink-on-light: var(--panel);
+  --ink-muted: #716b7c; /* placeholders, idle nav labels */
+  --ink-subtle: var(--offline); /* section labels on light surfaces */
+  --ink-50: rgba(255, 255, 255, 0.68);
+  --row-hover: var(--pearl);
+  --row-press: #cfcdd4;
+  --black: #000000;
+  --fill-faint: rgba(255, 255, 255, 0.06); /* hover wash on dark buttons */
+  --scrim-40: rgba(0, 0, 0, 0.22);
+  --scrim-20: rgba(0, 0, 0, 0.1);
+  --divider-pink: rgba(247, 85, 255, 0.25);
+  --tab-idle: rgba(120, 90, 160, 0.14); /* a faint lift on the header */
+  --tab-hover: rgba(255, 255, 255, 0.26);
+  --cover-dark: rgba(22, 21, 24, 0.6); /* incompatible-item cover */
+  --outline-faint: rgba(255, 255, 255, 0.45); /* clear boxes on chips */
+  --menu-bar: var(--panel);
+  --menu-tab-hover: #232226;
+  --menu-tab-selected: #393641;
+  --menu-key: #524e5b;
+  --menu-icon: #898989;
+  --menu-rainbow: linear-gradient(90deg, #bd38c6 0%, #ff5246 50%, #fda163 100%);
+  --slot-empty: #582987;
+  --slot-edge: #a14bf3;
+  --slot-edge-20: rgba(161, 75, 243, 0.2);
+  --skeleton: rgba(138, 65, 212, 0.62);
+  --pager-idle: rgba(161, 75, 243, 0.28);
+  --unequip-hover: #43404a;
+  --outfit-banner: #67279b;
+  --outfit-edge: rgba(130, 69, 190, 0.6);
+  --glow-pink: rgba(255, 75, 237, 0.2);
+  --glow-pink-faint: rgba(255, 75, 237, 0.14);
+  --hide-overlay: #4e0e78;
+  --shown: #36d41d; /* a hidden item shown anyway */
+  --smart-badge: linear-gradient(90deg, #e82af7 0%, #b229df 100%);
+  --cta-flare: linear-gradient(90deg, #ff3156 0%, #ff5757 50%, #ff7d58 100%);
+  --scrim-60: rgba(0, 0, 0, 0.4);
+  --lava-1: #500090; /* backpack background: left */
+  --lava-2: #8619a8; /* right */
+  --lava-3: #591681; /* bottom */
+  --lava-4: #470071; /* deep */
+
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-button: 9.6px;
+  --r-md: var(--r-popup);
+  --r-slot: 15px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+
+  --type-12: 12px;
+  --type-13: 13px;
+  --type-14: 14px;
+  --type-15: 15px;
+  --type-16: 16px;
+  --type-18: 18px;
+  --type-22: 22px;
+  --type-24: 24px;
+  --type-30: 30px;
+  --type-36: 36px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --dur-hover: 83ms;
+  --dur-tap: 100ms;
+  --dur-pop: 200ms;
+  --dur-panel: 333ms;
+  --dur-slide: 400ms;
+  --dur-shimmer: 1000ms;
+  --ease-inout: cubic-bezier(0.333, 0, 0.667, 1); /* flat-tangent keyframe curve */
+  --ease-outquad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-inoutquad: cubic-bezier(0.455, 0.03, 0.515, 0.955);
 
   /* ---- modal (ported from dcl-react-ui) ---- */
   --modal-pad: 30px;

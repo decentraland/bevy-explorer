@@ -1,0 +1,61 @@
+.menu {
+  width: 240px;
+  padding: 10px 10px 16px;
+  border-radius: var(--r-md);
+  background: var(--surface-light);
+  animation: menuFade var(--dur-pop) var(--ease-inoutquad);
+}
+@keyframes menuFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.separator {
+  height: 1px;
+  margin: 8px -10px 6px;
+  background: var(--row-hover);
+}
+.label {
+  padding: 6px 10px 8px;
+  color: var(--ink-subtle);
+  font-size: var(--type-15);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+}
+.option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 220px;
+  height: 36px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 10.4px;
+  background: transparent;
+  color: var(--ink-on-light);
+  font-family: inherit;
+  font-size: var(--type-16);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-tap) linear;
+}
+.option:hover {
+  background: var(--row-hover);
+}
+.option:active {
+  background: var(--row-press);
+}
+.check {
+  position: absolute;
+  left: 197px;
+  color: var(--accent);
+}

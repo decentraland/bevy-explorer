@@ -33,3 +33,49 @@
 .input::placeholder {
   color: var(--ink-45);
 }
+
+.light {
+  gap: 9px;
+  width: 396px;
+  height: 42px;
+  padding: 0 8px 0 11.5px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--surface-light);
+}
+.light:focus-within {
+  border: none;
+}
+.light .icon {
+  width: 19px;
+  height: 18px;
+  color: var(--ink-on-light);
+}
+.light .input {
+  color: var(--ink-on-light);
+  font-size: var(--type-18);
+  font-weight: var(--fw-semibold);
+}
+.light .input::placeholder {
+  color: var(--ink-muted);
+  font-weight: var(--fw-regular);
+}
+.clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.157);
+  cursor: pointer;
+}
+.clearGlyph {
+  width: 10px;
+  height: 10px;
+  background: var(--black);
+  mask: url('../assets/backpack/icon-close.webp') center / contain no-repeat;
+}

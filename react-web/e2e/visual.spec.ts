@@ -311,6 +311,19 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('backpack-wearables.png')
   })
 
+  test('backpack — EQUIP stays reachable when moving from a card down to it', async ({ page }) => {
+    await enterWorld(page)
+    await openPanel(page, 'Backpack')
+    await settle(page)
+    const card = page.locator('[data-rarity][aria-pressed]').first()
+    const box = await card.boundingBox()
+    if (box == null) throw new Error('no card')
+    const x = box.x + box.width / 2
+    for (let y = box.y + box.height / 2; y <= box.y + box.height + 30; y += 3) await page.mouse.move(x, y)
+    const under = await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.textContent ?? '', [x, box.y + box.height + 30])
+    expect(under).toMatch(/^(UN)?EQUIP$/)
+  })
+
   test('backpack — emotes', async ({ page }) => {
     await enterWorld(page)
     await openPanel(page, 'Backpack')
