@@ -271,6 +271,7 @@ impl Plugin for MaterialDefinitionPlugin {
             Update,
             (
                 init_cache,
+                remove_freed_cached_materials,
                 update_materials,
                 update_bias,
                 update_loading_materials,
@@ -280,6 +281,7 @@ impl Plugin for MaterialDefinitionPlugin {
                 // we must run after update_mesh as that inserts a default material if none is present
                 .after(update_mesh),
         );
+        app.init_resource::<CachedMaterialOwners>();
     }
 }
 
@@ -458,8 +460,35 @@ pub struct MeshMaterial3dLoading(Handle<SceneMaterial>);
 #[derive(Component)]
 pub struct ShadowCasterOverride(pub bool);
 
+// material hash -> (material id, shadow caster)
 #[derive(Component, Default)]
-pub struct CachedMaterials(HashMap<u64, (AssetId<SceneMaterial>, MaterialDefinition)>);
+pub struct CachedMaterials(HashMap<u64, (AssetId<SceneMaterial>, bool)>);
+
+// cached material id -> (scene root, material hash), to remove cache entries when materials are freed
+#[derive(Resource, Default)]
+pub struct CachedMaterialOwners(HashMap<AssetId<SceneMaterial>, (Entity, u64)>);
+
+fn remove_freed_cached_materials(
+    mut events: EventReader<AssetEvent<SceneMaterial>>,
+    mut owners: ResMut<CachedMaterialOwners>,
+    mut caches: Query<&mut CachedMaterials>,
+) {
+    for ev in events.read() {
+        let AssetEvent::Removed { id } = ev else {
+            continue;
+        };
+        let Some((root, hash)) = owners.0.remove(id) else {
+            continue;
+        };
+        let Ok(mut cache) = caches.get_mut(root) else {
+            continue;
+        };
+        // the hash may already have been rebuilt with a new material
+        if cache.0.get(&hash).is_some_and(|(cached, _)| cached == id) {
+            cache.0.remove(&hash);
+        }
+    }
+}
 
 fn init_cache(
     q: Query<Entity, (With<RendererSceneContext>, Without<CachedMaterials>)>,
@@ -495,6 +524,7 @@ pub fn update_materials(
     sources: Query<Option<Ref<VideoTextureOutput>>>,
     mut resolver: TextureResolver,
     mut scenes: Query<(&mut RendererSceneContext, &mut CachedMaterials)>,
+    mut owners: ResMut<CachedMaterialOwners>,
     config: Res<AppConfig>,
     mut gltf_resolver: GltfMaterialResolver,
     images: Res<Assets<Image>>,
@@ -510,14 +540,16 @@ pub fn update_materials(
         mat.0.hash(hasher);
         let hash = hasher.finish();
 
-        let cached_data = cache.0.get(&hash).and_then(|(cached_handle, defn)| {
-            materials
-                .get_strong_handle(*cached_handle)
-                .map(|h| (h, defn))
-        });
+        let cached_data = cache
+            .0
+            .get(&hash)
+            .and_then(|(cached_handle, shadow_caster)| {
+                materials
+                    .get_strong_handle(*cached_handle)
+                    .map(|h| (h, *shadow_caster))
+            });
 
-        let uncached_defn;
-        let (material, defn) = match cached_data {
+        let (material, shadow_caster) = match cached_data {
             Some(data) => data,
             None => {
                 let new_base;
@@ -635,12 +667,10 @@ pub fn update_materials(
                 });
 
                 if can_cache {
-                    cache.0.insert(hash, (material.id(), defn));
-                    (material, &cache.0.get(&hash).unwrap().1)
-                } else {
-                    uncached_defn = defn;
-                    (material, &uncached_defn)
+                    cache.0.insert(hash, (material.id(), defn.shadow_caster));
+                    owners.0.insert(material.id(), (container.root, hash));
                 }
+                (material, defn.shadow_caster)
             }
         };
 
@@ -648,7 +678,7 @@ pub fn update_materials(
         commands
             .remove::<RetryMaterial>()
             .try_insert(MeshMaterial3dLoading(material));
-        if shadow_override.map_or(defn.shadow_caster, |shadows| shadows.0) {
+        if shadow_override.map_or(shadow_caster, |shadows| shadows.0) {
             commands.remove::<NotShadowCaster>();
         } else {
             commands.try_insert(NotShadowCaster);
@@ -873,5 +903,86 @@ pub fn dcl_material_from_standard_material(
             emissive_intensity: None,
             direct_intensity: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+    use scene_material::SceneMaterialExt;
+
+    fn material_id(materials: &mut Assets<SceneMaterial>) -> AssetId<SceneMaterial> {
+        materials
+            .add(SceneMaterial::new_unbounded(StandardMaterial::default()))
+            .id()
+    }
+
+    #[test]
+    fn removed_materials_leave_the_cache() {
+        let mut app = App::new();
+        app.add_event::<AssetEvent<SceneMaterial>>()
+            .init_resource::<CachedMaterialOwners>();
+        let mut materials = Assets::<SceneMaterial>::default();
+        let (freed, live, stale, rebuilt) = (
+            material_id(&mut materials),
+            material_id(&mut materials),
+            material_id(&mut materials),
+            material_id(&mut materials),
+        );
+
+        // hash 3 was rebuilt with a new material before the stale one's removal was seen
+        let scene = app
+            .world_mut()
+            .spawn(CachedMaterials(HashMap::from_iter([
+                (1, (freed, true)),
+                (2, (live, false)),
+                (3, (rebuilt, true)),
+            ])))
+            .id();
+        app.world_mut()
+            .resource_mut::<CachedMaterialOwners>()
+            .0
+            .extend([
+                (freed, (scene, 1)),
+                (live, (scene, 2)),
+                (stale, (scene, 3)),
+                (rebuilt, (scene, 3)),
+            ]);
+
+        app.world_mut()
+            .send_event_batch([freed, stale].map(|id| AssetEvent::Removed { id }));
+        app.world_mut()
+            .run_system_once(remove_freed_cached_materials)
+            .unwrap();
+
+        let cache = app.world().get::<CachedMaterials>(scene).unwrap();
+        assert_eq!(cache.0.len(), 2);
+        assert_eq!(cache.0.get(&2), Some(&(live, false)));
+        assert_eq!(cache.0.get(&3), Some(&(rebuilt, true)));
+        let owners = app.world().resource::<CachedMaterialOwners>();
+        assert_eq!(owners.0.len(), 2);
+        assert!(owners.0.contains_key(&live) && owners.0.contains_key(&rebuilt));
+    }
+
+    #[test]
+    fn removed_materials_of_despawned_scenes_leave_the_owners() {
+        let mut app = App::new();
+        app.add_event::<AssetEvent<SceneMaterial>>()
+            .init_resource::<CachedMaterialOwners>();
+        let id = material_id(&mut Assets::<SceneMaterial>::default());
+        let scene = app.world_mut().spawn(CachedMaterials::default()).id();
+        app.world_mut()
+            .resource_mut::<CachedMaterialOwners>()
+            .0
+            .insert(id, (scene, 1));
+        app.world_mut().despawn(scene);
+
+        app.world_mut().send_event(AssetEvent::Removed { id });
+        app.world_mut()
+            .run_system_once(remove_freed_cached_materials)
+            .unwrap();
+
+        assert!(app.world().resource::<CachedMaterialOwners>().0.is_empty());
     }
 }
