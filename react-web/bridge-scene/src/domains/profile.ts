@@ -18,6 +18,7 @@ import type { SetAvatarData } from '../../../src/engine/generated'
 import type { JsonValue } from '../../../src/engine/generated/serde_json/JsonValue'
 import { BevyApi } from '../bevy-api'
 import { relay } from '../system-helpers'
+import { identity } from '../identity'
 import type { Ctx } from '../bridge'
 
 /** A deployed profile as the engine holds it (`common::profile::SerializedProfile`, serde JSON).
@@ -235,6 +236,9 @@ async function fetchPhotos(address: string): Promise<string[] | undefined> {
 type NamesResponse = { elements?: Array<{ name?: string }> }
 
 let ownedNames: string[] | undefined
+identity.onChange(() => {
+  ownedNames = undefined
+})
 async function fetchOwnedNames(address: string): Promise<string[]> {
   if (ownedNames != null) return ownedNames
   const base = await catalystBase()

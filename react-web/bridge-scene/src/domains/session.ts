@@ -3,6 +3,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
 import { relay } from '../system-helpers'
+import { identity } from '../identity'
 import type { Ctx } from '../bridge'
 
 export function registerSession(ctx: Ctx): void {
@@ -64,9 +65,14 @@ export function registerSession(ctx: Ctx): void {
   // Player-spawned signal: one-shot per page, not per scene. The page gates its world-entry
   // fetches on it and never retries, so a page that arrives late is re-told on `hello`.
   let ready = false
+  identity.onChange(() => {
+    ready = false
+  })
   ctx.push(() => {
+    const player = getPlayer()
+    identity.observe(player?.userId ?? null)
     if (ready) return
-    if (getPlayer() != null) {
+    if (player != null) {
       ready = true
       ctx.send({ kind: 'event', name: 'playerReady' })
     }
