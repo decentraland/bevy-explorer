@@ -3,6 +3,7 @@
 // the SDK7 bevy-ui-scene `components/hover-actions`; the bridge just forwards the relevant actions.
 import { PointerEventType, PointerLock, engine } from '@dcl/sdk/ecs'
 import { BevyApi } from '../bevy-api'
+import { relay } from '../system-helpers'
 import type { Ctx } from '../bridge'
 import type { HoverAction } from '../../../src/engine/protocol'
 import type { Info } from '../../../src/engine/generated'
@@ -28,32 +29,28 @@ export function registerPointer(ctx: Ctx): void {
     }
   })
 
-  void (async () => {
-    try {
-      const stream = await BevyApi.getHoverStream()
-      for await (const ev of stream) {
-        if (!ev.entered || ev.targetType === TARGET_UI) {
-          ctx.send({ kind: 'hover', actions: [] })
-          continue
-        }
-        const actions: HoverAction[] = ev.actions
-          .filter((a) => a.eventType === PointerEventType.PET_DOWN && a.eventInfo?.showFeedback !== false)
-          .slice(0, 7)
-          .map((a) => ({
-            button: a.eventInfo?.button ?? 1,
-            text: a.eventInfo?.hoverText ?? 'Interact',
-            enabled: a.enabled,
-            // Only maxCameraDistance configured → the entry is gated by camera distance; otherwise
-            // it's the player-distance rule (maxDistance, its deprecated alias maxPlayerDistance, or
-            // the implicit 10m default — and when both rules are set either one passing suffices).
-            tooFarReason: !a.enabled ? tooFarReason(a.eventInfo) : undefined
-          }))
-        ctx.send({ kind: 'hover', actions })
-      }
-    } catch (e) {
-      console.error('[pointer] hover stream failed', e)
-    } finally {
+  // Cleared on every (re)open: a new stream starts with nothing hovered.
+  const open = async (): Promise<Awaited<ReturnType<typeof BevyApi.getHoverStream>>> => {
+    ctx.send({ kind: 'hover', actions: [] })
+    return await BevyApi.getHoverStream()
+  }
+  relay('hover', open, (ev) => {
+    if (!ev.entered || ev.targetType === TARGET_UI) {
       ctx.send({ kind: 'hover', actions: [] })
+      return
     }
-  })()
+    const actions: HoverAction[] = ev.actions
+      .filter((a) => a.eventType === PointerEventType.PET_DOWN && a.eventInfo?.showFeedback !== false)
+      .slice(0, 7)
+      .map((a) => ({
+        button: a.eventInfo?.button ?? 1,
+        text: a.eventInfo?.hoverText ?? 'Interact',
+        enabled: a.enabled,
+        // Only maxCameraDistance configured → the entry is gated by camera distance; otherwise
+        // it's the player-distance rule (maxDistance, its deprecated alias maxPlayerDistance, or
+        // the implicit 10m default — and when both rules are set either one passing suffices).
+        tooFarReason: !a.enabled ? tooFarReason(a.eventInfo) : undefined
+      }))
+    ctx.send({ kind: 'hover', actions })
+  })
 }

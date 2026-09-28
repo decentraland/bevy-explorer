@@ -17,6 +17,7 @@ import type { SetAvatarData } from '../../../src/engine/generated'
 // Not via the generated barrel: it only re-exports the top-level files, not serde_json/.
 import type { JsonValue } from '../../../src/engine/generated/serde_json/JsonValue'
 import { BevyApi } from '../bevy-api'
+import { relay } from '../system-helpers'
 import type { Ctx } from '../bridge'
 
 /** A deployed profile as the engine holds it (`common::profile::SerializedProfile`, serde JSON).
@@ -351,14 +352,9 @@ export function registerProfile(ctx: Ctx): void {
 
   // The engine tells us when any profile it holds moves to a new version; the page decides what
   // it is still showing and re-reads only that.
-  void (async () => {
-    try {
-      const stream = await BevyApi.getProfileChangedStream()
-      for await (const ev of stream) ctx.send({ kind: 'profileChanged', address: ev.address, version: ev.version })
-    } catch (e) {
-      console.error('[profile] change stream failed', e)
-    }
-  })()
+  relay('profile', async () => await BevyApi.getProfileChangedStream(), (ev) => {
+    ctx.send({ kind: 'profileChanged', address: ev.address, version: ev.version })
+  })
 
   // A user's profile by address: the engine's copy alone for a name and a face (chat lines, the
   // profile card), plus badges + photos + equipped items when the passport asks (`extras`).

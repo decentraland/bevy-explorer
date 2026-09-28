@@ -8,6 +8,7 @@ import { BevyApi } from '../bevy-api'
 import { httpOrUndef, profileKey } from './profile'
 import { setChatBubble } from './nametags'
 import { onSystemAction } from './systemAction'
+import { relay } from '../system-helpers'
 import type { Ctx } from '../bridge'
 import type { NearbyMember } from '../../../src/engine/protocol'
 
@@ -25,19 +26,12 @@ export function registerChat(ctx: Ctx): void {
   })
 
   // Incoming chat stream → React (we're the only consumer now the SDK7 chat UI is gone).
-  void (async () => {
-    try {
-      const stream = await BevyApi.getChatStream()
-      for await (const m of stream) {
-        if (m.message.indexOf('␑') === 0) continue // engine control message
-        ctx.send({ kind: 'chat', chat: { sender: m.sender_address, message: m.message, channel: m.channel } })
-        // Pop the speech bubble under this sender's nametag (world-space, engine-positioned).
-        setChatBubble(m.sender_address, m.message, mentionsMe(m.message))
-      }
-    } catch (e) {
-      console.error('[chat] stream relay failed', e)
-    }
-  })()
+  relay('chat', async () => await BevyApi.getChatStream(), (m) => {
+    if (m.message.indexOf('␑') === 0) return // engine control message
+    ctx.send({ kind: 'chat', chat: { sender: m.sender_address, message: m.message, channel: m.channel } })
+    // Pop the speech bubble under this sender's nametag (world-space, engine-positioned).
+    setChatBubble(m.sender_address, m.message, mentionsMe(m.message))
+  })
 
   // Enter → focus chat, on both native (the engine reads keys off the OS window) and web (winit
   // sees window-level keys): the engine's "Chat" action becomes a dedicated focusChat message.

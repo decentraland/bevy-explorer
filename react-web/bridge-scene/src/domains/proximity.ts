@@ -3,6 +3,7 @@
 // actions to React, which renders the same black-pill chips as the hover prompt anchored on them.
 import { PointerEventType, Transform, UiCanvasInformation, engine } from '@dcl/sdk/ecs'
 import { BevyApi, type HoverEntry, type Vec3 } from '../bevy-api'
+import { relay } from '../system-helpers'
 import type { Ctx } from '../bridge'
 import type { HoverAction, ProximityTip } from '../../../src/engine/protocol'
 import { projectToScreen, createFovTracker, type Quat } from './project'
@@ -19,17 +20,15 @@ export function registerProximity(ctx: Ctx): void {
   const inRange = new Map<number, { pos: Vec3; actions: HoverAction[] }>()
   const fov = createFovTracker()
 
-  void (async () => {
-    try {
-      const stream = await BevyApi.getProximityStream()
-      for await (const ev of stream) {
-        if (ev.entered) inRange.set(ev.entity, { pos: ev.entityPosition, actions: toActions(ev.actions) })
-        else inRange.delete(ev.entity)
-      }
-    } catch (e) {
-      console.error('[proximity] stream failed', e)
-    }
-  })()
+  // A reopened stream reports only new enters and exits, so the old set is dropped first.
+  const open = async (): Promise<Awaited<ReturnType<typeof BevyApi.getProximityStream>>> => {
+    inRange.clear()
+    return await BevyApi.getProximityStream()
+  }
+  relay('proximity', open, (ev) => {
+    if (ev.entered) inRange.set(ev.entity, { pos: ev.entityPosition, actions: toActions(ev.actions) })
+    else inRange.delete(ev.entity)
+  })
 
   // Sent only when a tip appears, goes or moves by a whole pixel, not every frame.
   let lastKey = ''

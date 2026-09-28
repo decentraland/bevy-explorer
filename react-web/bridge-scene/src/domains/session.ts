@@ -2,6 +2,7 @@
 //   from: BevyApi (login + getSceneLoadingUIStream), @dcl/sdk getPlayer (player-ready).
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
+import { relay } from '../system-helpers'
 import type { Ctx } from '../bridge'
 
 export function registerSession(ctx: Ctx): void {
@@ -48,24 +49,17 @@ export function registerSession(ctx: Ctx): void {
   })
 
   // Scene-asset loading stream → React loading screen.
-  void (async () => {
-    try {
-      const stream = await BevyApi.getSceneLoadingUIStream()
-      for await (const s of stream) {
-        ctx.send({
-          kind: 'sceneLoading',
-          state: {
-            visible: s.visible,
-            realmConnected: s.realmConnected,
-            title: s.title ?? '',
-            pendingAssets: s.pendingAssets ?? null
-          }
-        })
+  relay('sceneLoading', async () => await BevyApi.getSceneLoadingUIStream(), (s) => {
+    ctx.send({
+      kind: 'sceneLoading',
+      state: {
+        visible: s.visible,
+        realmConnected: s.realmConnected,
+        title: s.title ?? '',
+        pendingAssets: s.pendingAssets ?? null
       }
-    } catch (e) {
-      console.error('[session] sceneLoading relay failed', e)
-    }
-  })()
+    })
+  })
 
   // Player-spawned signal: one-shot per page, not per scene. The page gates its world-entry
   // fetches on it and never retries, so a page that arrives late is re-told on `hello`.
