@@ -1,7 +1,7 @@
 // Top-level session orchestration: login → entering (scene loading) → world.
 // Owns the driver and exposes the login flow + scene-loading state + phase.
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import { hoverKey, proximityKey } from '../../engine/pointerKeys'
 import type { LoginDriver } from '../../engine/driver'
@@ -1986,6 +1986,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     }
   }
 
+  // Stable slices let memoized surfaces (the minimap) skip HUD re-renders they don't depend on.
+  const mapSlice = useMemo(
+    () => ({ x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace }),
+    [mapParcel, mapOpen, toggleMap, teleport, changeRealm, teleportToPlace]
+  )
+  const minimapSlice = useMemo(
+    () => ({ pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig }),
+    [isWorld, sceneTitle, setMinimapConfig]
+  )
+
   return {
     phase,
     pickDestination,
@@ -2066,8 +2076,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       saveOutfit, deleteOutfit, equipOutfit
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, requestToJoin: requestToJoinCommunity, cancelRequest: cancelJoinRequest, leave: leaveCommunity, error: communityError, detail: communityDetail, loadDetail: loadCommunityDetail },
-    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace },
-    minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
+    map: mapSlice,
+    minimap: minimapSlice,
     places: { open: placesOpen, toggle: togglePlaces },
     events: { open: eventsOpen, toggle: toggleEvents },
     shop: { open: shopOpen, toggle: toggleShop },

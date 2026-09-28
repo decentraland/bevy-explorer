@@ -181,6 +181,16 @@ describe('session domain', () => {
     expect(h.driver.sentOf('getWearables')).toHaveLength(1)
   })
 
+  it('a chat message leaves the minimap and map slices untouched', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    const { minimap, map } = h.session()
+    act(() => h.driver.emit({ kind: 'chat', chat: { sender: '0xabc', message: 'hi', channel: 'Nearby' } }))
+    await waitFor(() => expect(h.session().chat.messages).toHaveLength(1))
+    expect(h.session().minimap).toBe(minimap)
+    expect(h.session().map).toBe(map)
+  })
+
   it('a fetch the bridge failed is asked again on the next open', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h)
