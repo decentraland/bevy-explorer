@@ -30,6 +30,8 @@ export class SurfaceBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error): void {
     console.error(`[${this.props.name}] crashed`, error)
+    // Closed, the user sees nothing; closing panels would only shut the one they have open.
+    if (!this.props.open) return
     this.props.onCrash()
     void showDialog({
       title: `${this.props.name} ran into a problem`,

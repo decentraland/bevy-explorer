@@ -49,6 +49,26 @@ describe('SurfaceBoundary', () => {
   })
 })
 
+describe('SurfaceBoundary while closed', () => {
+  it('a surface that crashes while closed leaves the panel the user has open alone', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onCrash = vi.fn()
+    function Broken(): React.JSX.Element {
+      throw new Error('closed page bug')
+    }
+    render(
+      <>
+        <SurfaceBoundary name="Gallery" open={false} onCrash={onCrash}>
+          <Broken />
+        </SurfaceBoundary>
+        <PopupHost />
+      </>
+    )
+    expect(onCrash).not.toHaveBeenCalled()
+    expect(screen.queryByText('Gallery ran into a problem')).toBeNull()
+  })
+})
+
 describe('popup crash', () => {
   it('closes only the popup that crashed', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
