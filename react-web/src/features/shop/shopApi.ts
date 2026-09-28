@@ -2,6 +2,7 @@
 // wallet transaction, so purchases finish on the web marketplace (as in Unity).
 
 import { BASE_DOMAIN } from '../../lib/baseDomain'
+import { withUtm } from '../../lib/utm'
 
 const CATALOG_API = `https://marketplace-api.${BASE_DOMAIN}/v1/catalog`
 const MARKETPLACE = `https://${BASE_DOMAIN}/marketplace`
@@ -51,5 +52,5 @@ export function shopItemPrice(item: ShopItem): string {
 }
 
 export function marketplaceUrl(item: ShopItem): string {
-  return `${MARKETPLACE}${item.url}?utm_source=client`
+  return withUtm(`${MARKETPLACE}${item.url}`)
 }

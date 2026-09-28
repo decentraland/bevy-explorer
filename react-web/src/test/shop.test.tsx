@@ -44,7 +44,7 @@ describe('shop', () => {
     expect(String(f.mock.calls[0][0])).toContain('category=wearable')
     const card = (await screen.findByText('Neon Tiara')).closest('[data-rarity]') as HTMLElement
     expect(within(card).getByText('2.5 MANA')).toBeInTheDocument()
-    expect(within(card).getByRole('link', { name: 'Buy' })).toHaveAttribute('href', 'https://decentraland.org/marketplace/contracts/0xabc/items/1?utm_source=client')
+    expect(within(card).getByRole('link', { name: 'Buy' })).toHaveAttribute('href', 'https://decentraland.org/marketplace/contracts/0xabc/items/1?utm_source=bevy-web-client')
   })
 
   it('switches to emotes and searches', async () => {

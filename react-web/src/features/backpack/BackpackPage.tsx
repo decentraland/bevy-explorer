@@ -47,6 +47,7 @@ import { MainMenuShell } from '../menu/MainMenuShell'
 import type { Emote, Outfit, Wearable } from '../../engine/protocol'
 import type { BackpackState, EmotesState, ProfileState } from '../session/useEngineSession'
 import styles from './BackpackPage.module.css'
+import { withUtm } from '../../lib/utm'
 
 type BackpackTab = 'wearables' | 'emotes'
 const BACKPACK_TABS: TabItem<BackpackTab>[] = [
@@ -80,7 +81,7 @@ const HINTS = [
 
 const RARITIES: Rarity[] = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
 const RARITY_RANK: Record<string, number> = Object.fromEntries(RARITIES.map((r, i) => [r, i]))
-const SHOP_URL = 'https://decentraland.org/shop?utm_source=client'
+const SHOP_URL = 'https://decentraland.org/shop'
 const MARKETPLACE_URL = 'https://decentraland.org/marketplace'
 
 type Section = 'categories' | 'outfits'
@@ -559,7 +560,7 @@ export function BackpackPage({
             {tab === 'wearables' && (
               <div className={styles.contentHead}>
                 <Tabs variant="subtab" className={styles.sectionTabs} items={SECTION_TABS} value={section} onChange={setSection} aria-label="Wearables sections" />
-                <Button variant="outline" className={styles.shop} onClick={() => window.open(SHOP_URL, '_blank', 'noopener,noreferrer')}>
+                <Button variant="outline" className={styles.shop} onClick={() => window.open(withUtm(SHOP_URL), '_blank', 'noopener,noreferrer')}>
                   <MaskIcon src={marketplaceIcon} />
                   SHOP
                 </Button>

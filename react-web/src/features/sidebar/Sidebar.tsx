@@ -35,6 +35,7 @@ import { bugReportUrl } from '../../lib/bugReport'
 import { registerCancelLayer } from '../../lib/cancelLayers'
 import { NearbyVoiceWidget } from '../voice/NearbyVoiceWidget'
 import { useNearbyVoice, type NearbyVoice } from '../voice/useNearbyVoice'
+import { withUtm } from '../../lib/utm'
 
 // `hotkey` names the engine SystemAction whose live binding renders as the tooltip hint.
 type Item =
@@ -89,7 +90,7 @@ const TOP: Item[] = [
   { kind: 'places', icon: 'places', label: 'Places', hotkey: 'Places' },
   { kind: 'communities', icon: 'communities', label: 'Communities', hotkey: 'Communities' },
   { kind: 'backpack', icon: 'backpack', label: 'Backpack', hotkey: 'Backpack' },
-  { kind: 'link', icon: 'marketplace', label: 'Shop', url: 'https://decentraland.org/shop?utm_source=client' },
+  { kind: 'link', icon: 'marketplace', label: 'Shop', url: () => withUtm('https://decentraland.org/shop') },
   { kind: 'gallery', icon: 'gallery', label: 'Gallery', hotkey: 'Gallery' },
   { kind: 'settings', icon: 'settings', label: 'Settings', hotkey: 'Settings' },
   { kind: 'divider' },

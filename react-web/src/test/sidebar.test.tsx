@@ -13,13 +13,13 @@ describe('sidebar parity', () => {
     expect(button.querySelector('span[aria-hidden="true"]')).not.toBeNull()
   })
 
-  it('Marketplace opens the shop with the client utm source, between Backpack and Gallery', async () => {
+  it('Shop opens the shop with the web client utm source, between Backpack and Gallery', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     render(<Sidebar session={fakeSession()} />)
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
     expect(labels.slice(labels.indexOf('Backpack'), labels.indexOf('Gallery') + 1)).toEqual(['Backpack', 'Shop', 'Gallery'])
     await userEvent.click(screen.getByRole('button', { name: 'Shop' }))
-    expect(open).toHaveBeenCalledWith('https://decentraland.org/shop?utm_source=client', '_blank', 'noopener')
+    expect(open).toHaveBeenCalledWith('https://decentraland.org/shop?utm_source=bevy-web-client', '_blank', 'noopener')
   })
 
   it('Bug report follows Help and opens a prefilled bevy-explorer issue', async () => {
