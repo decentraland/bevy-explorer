@@ -7,6 +7,7 @@
 
 import type { AuthIdentity } from '../features/auth/sso'
 import { BridgeChannel } from './bridgeChannel'
+import type { LoginDriver } from './driver'
 import {
   bridgeChannelName,
   type LoginPreviousResult,
@@ -16,9 +17,16 @@ import {
   type SceneToPage
 } from './protocol'
 
-type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void }
+type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; timer?: ReturnType<typeof setTimeout> }
 
-export class BridgeClient {
+// Local reads/actions only: sign-ins wait on the network or the user's external browser.
+const QUICK_RPC_TIMEOUT_MS: Partial<Record<RpcMethod, number>> = {
+  getPreviousLogin: 10_000,
+  loginCancel: 10_000,
+  logout: 10_000
+}
+
+export class BridgeClient implements LoginDriver {
   private readonly ch: BridgeChannel
   private readonly pending = new Map<string, Pending>()
   private readonly listeners = new Set<(msg: SceneToPage) => void>()
@@ -60,7 +68,12 @@ export class BridgeClient {
   // "Jump in": reuse the existing login. The engine (BevyApi) has no log-in-with-raw-identity
   // surface — only `loginPrevious` — so jump-in maps to that. (`loginIdentity` would hit the
   // bridge scene's default case and throw "unsupported method".)
-  async jumpIn(): Promise<void> {
+  async jumpIn(defaultOnError = false): Promise<void> {
+    // The scene's loginPrevious can't carry the flag; the engine console can.
+    if (defaultOnError) {
+      await this.command('/login_previous --default-on-error')
+      return
+    }
     const r = await this.rpc<LoginPreviousResult>('loginPrevious')
     if (r && r.success === false) throw new Error(r.error || 'Could not reuse your login')
   }
@@ -88,6 +101,10 @@ export class BridgeClient {
 
   dispose(): void {
     this.ch.close()
+    for (const p of this.pending.values()) {
+      clearTimeout(p.timer)
+      p.reject(new Error('bridge closed'))
+    }
     this.pending.clear()
     this.listeners.clear()
   }
@@ -102,7 +119,12 @@ export class BridgeClient {
   private rpc<T>(method: RpcMethod): Promise<T> {
     const id = crypto.randomUUID()
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
+      const limit = QUICK_RPC_TIMEOUT_MS[method]
+      const timer = limit == null ? undefined : setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`bridge rpc ${method} timed out`))
+      }, limit)
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer })
       // The engine's boot shim answers these before any bridge scene exists, so they skip the
       // handshake queue rather than gating the login screen on a scene sign-in does not involve.
       this.ch.sendNow({ kind: 'rpc:req', id, method })
@@ -115,6 +137,7 @@ export class BridgeClient {
       const p = this.pending.get(msg.id)
       if (!p) return
       this.pending.delete(msg.id)
+      clearTimeout(p.timer)
       if (msg.ok) p.resolve(msg.value)
       else p.reject(new Error(msg.error ?? 'bridge rpc failed'))
       return
