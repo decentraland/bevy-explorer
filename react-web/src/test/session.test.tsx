@@ -181,6 +181,17 @@ describe('session domain', () => {
     expect(h.driver.sentOf('getWearables')).toHaveLength(1)
   })
 
+  it('a fetch the bridge failed is asked again on the next open', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().backpack.toggle())
+    act(() => h.session().backpack.toggle())
+    expect(h.driver.sentOf('getWearables')).toHaveLength(1)
+    act(() => h.driver.emit({ kind: 'requestFailed', request: 'getWearables', error: 'catalyst down' }))
+    act(() => h.session().backpack.toggle())
+    expect(h.driver.sentOf('getWearables')).toHaveLength(2)
+  })
+
   it('after a logout, a place picked for the next account waits for that account to spawn', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h)

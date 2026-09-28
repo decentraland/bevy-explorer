@@ -831,6 +831,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'mic':
           setMic({ enabled: msg.enabled, available: msg.available })
           break
+        case 'requestFailed':
+          fetchedRef.current.delete(msg.request)
+          console.error(`[bridge] ${msg.request} failed:`, msg.error)
+          break
         case 'avatarSaveFailed':
           setSaveError(SAVE_FAILED_MESSAGE)
           console.error('[backpack] deploy failed:', msg.message)
