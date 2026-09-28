@@ -17,7 +17,7 @@ pub const ZERO: i8 = -1;
 /// Unity's per-step increment of the occupancy texture when there are at most 25 steps.
 pub const TEXEL_STEP: f32 = 10.0;
 
-const BORDER_PADDING: i32 = 2;
+pub const BORDER_PADDING: i32 = 2;
 const MAX_TEXELS: i64 = 4096 * 4096;
 const FAR: u32 = 1_000_000;
 
@@ -212,6 +212,11 @@ impl TerrainTargets {
             epoch,
             ..Default::default()
         };
+    }
+
+    /// A World (scenes listed up front) rather than a city resolved around the player.
+    pub fn is_world(&self) -> bool {
+        self.world
     }
 
     /// Recompute everything from scratch on the next resolve.
