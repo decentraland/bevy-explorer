@@ -52,6 +52,10 @@ const GROUND_RINGS: u32 = 6;
 const GROUND_MIN_Y: f32 = -5.0;
 const GROUND_MAX_Y: f32 = 25.0;
 
+// the snap grid's phase is only coherent near its anchor and the coherent band is visible, so
+// the anchor sits off to one side of the player rather than under them
+const SNAP_ANCHOR_OFFSET: f32 = 50.0;
+
 const LOW_LOD: usize = 4;
 const MID_LOD: usize = 2;
 const HIGH_LOD: usize = 1;
@@ -126,7 +130,8 @@ pub struct ShellTexture {
     #[uniform(0)]
     layers: u32,
     #[uniform(0)]
-    padding: Vec2,
+    /// xz the snap grid is anchored to
+    snap_anchor: Vec2,
     #[uniform(0)]
     root_color: LinearRgba,
     #[uniform(0)]
@@ -222,6 +227,24 @@ impl Plugin for ShellTexturingPlugin {
         );
         app.add_observer(parcel_grass_lod_inserted);
         app.add_observer(parcel_grass_lod_replaced);
+        app.add_systems(
+            PostUpdate,
+            update_grass_anchor.after(TransformSystem::TransformPropagate),
+        );
+    }
+}
+
+/// keep the shells' snap grid anchored near the player
+fn update_grass_anchor(
+    player: Query<&GlobalTransform, (With<PrimaryUser>, Changed<GlobalTransform>)>,
+    mut materials: ResMut<Assets<ShellTexture>>,
+) {
+    let Ok(player) = player.single() else { return };
+    let anchor = player.translation().xz() + Vec2::splat(SNAP_ANCHOR_OFFSET);
+    for handle in [&PARCEL_GRASS_MATERIAL, &GROUND_MATERIAL] {
+        if let Some(material) = materials.get_mut(handle) {
+            material.snap_anchor = anchor;
+        }
     }
 }
 
@@ -398,7 +421,7 @@ fn update_parcel_grass_material(
         ShellTexture {
             subdivisions: parcel_grass_config.subdivisions,
             layers: parcel_grass_config.layers,
-            padding: Vec2::default(),
+            snap_anchor: Vec2::ZERO,
             root_color: parcel_grass_config.root_color.into(),
             tip_color: parcel_grass_config.tip_color.into(),
             terrain_steps: TERRAIN_TEXTURE,
@@ -410,7 +433,7 @@ fn update_parcel_grass_material(
         ShellTexture {
             subdivisions: parcel_grass_config.subdivisions,
             layers: GROUND_LAYERS,
-            padding: Vec2::default(),
+            snap_anchor: Vec2::ZERO,
             root_color: parcel_grass_config.root_color.into(),
             tip_color: parcel_grass_config.tip_color.into(),
             terrain_steps: TERRAIN_TEXTURE,
