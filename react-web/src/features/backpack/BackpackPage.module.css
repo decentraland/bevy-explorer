@@ -998,15 +998,7 @@
   }
 }
 .fadeIn {
-  animation: fadeIn var(--dur-panel) var(--ease-inout);
-}
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  animation: global(fade-in) var(--dur-panel) var(--ease-inout);
 }
 
 /* Categories <-> Saved Outfits: the incoming section slides in by the card width with an

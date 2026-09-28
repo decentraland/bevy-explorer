@@ -97,15 +97,7 @@
   display: flex;
   /* Heavy black scrim (like --scrim, more opaque) so the lightbox fully covers the grid. */
   background: rgba(0, 0, 0, 0.92);
-  animation: viewerIn var(--dur-fast) ease;
-}
-@keyframes viewerIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  animation: global(fade-in) var(--dur-fast) ease;
 }
 .viewerClose {
   position: absolute;

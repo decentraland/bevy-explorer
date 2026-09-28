@@ -89,7 +89,7 @@
 .light:active:not(:disabled) {
   background: var(--surface-light-press);
   transform: none;
-  animation: pressBounce 583ms var(--ease-inout);
+  animation: global(press-bounce) 583ms var(--ease-inout);
 }
 
 /* outline: thin white outline on dark (e.g. SHOP) */
@@ -108,23 +108,3 @@
   background: var(--fill-2);
 }
 
-@keyframes pressBounce {
-  0% {
-    transform: scale(1.04);
-  }
-  14% {
-    transform: scale(0.9);
-  }
-  23% {
-    transform: scale(0.9);
-  }
-  43% {
-    transform: scale(1.04);
-  }
-  72% {
-    transform: scale(0.95);
-  }
-  100% {
-    transform: scale(1);
-  }
-}

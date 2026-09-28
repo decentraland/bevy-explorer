@@ -157,7 +157,7 @@
   position: absolute;
   inset: 0;
   transition: opacity 300ms var(--ease-outquad);
-  animation: fade-in 300ms var(--ease-outquad) both;
+  animation: global(fade-in) 300ms var(--ease-outquad) both;
 }
 .tipOut {
   opacity: 0;
@@ -169,7 +169,7 @@
   width: 900px;
   height: 900px;
   object-fit: contain;
-  animation: fade-in 250ms linear both;
+  animation: global(fade-in) 250ms linear both;
 }
 .tipTitle {
   position: absolute;
@@ -283,11 +283,3 @@
   right: 30px;
 }
 
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
