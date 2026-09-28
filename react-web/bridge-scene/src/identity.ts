@@ -1,6 +1,6 @@
 // The scene outlives logout, so per-account caches register a reset for when another account logs in.
 
-export interface IdentityHub {
+export type IdentityHub = {
   onChange: (reset: () => void) => void
   /** Feed the current address; resets run when it differs from the last one seen. */
   observe: (address: string | null) => void
