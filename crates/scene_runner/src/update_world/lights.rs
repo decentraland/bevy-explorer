@@ -1,4 +1,4 @@
-use std::f32::consts::{FRAC_PI_2, PI, TAU};
+use std::f32::consts::PI;
 
 use bevy::{
     math::FloatOrd,
@@ -113,6 +113,27 @@ impl From<PbGlobalLight> for GlobalLight {
     }
 }
 
+/// Unity's sunrise and sunset (hours): the sun is overhead halfway between, at 12:37.
+const SUNRISE: f32 = 6.422;
+const SUNSET: f32 = 18.828;
+
+/// Direction the sunlight travels at `hours` past midnight. Like Unity, the sun crosses the sky
+/// at a steady rate in a vertical plane diagonal to the parcel grid, and carries on below the
+/// horizon to the next sunrise.
+fn sun_direction(hours: f32) -> Vec3 {
+    let since_sunrise = (hours - SUNRISE).rem_euclid(24.0);
+    let day = SUNSET - SUNRISE;
+    // from the sunrise horizon: 0 to PI through the day, PI to 2 PI through the night
+    let angle = if since_sunrise < day {
+        since_sunrise / day * PI
+    } else {
+        PI + (since_sunrise - day) / (24.0 - day) * PI
+    };
+    // away from the sun as it rises
+    let morning = Vec3::new(1.0, 0.0, -1.0).normalize();
+    morning * angle.cos() - Vec3::Y * angle.sin()
+}
+
 fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -131,11 +152,10 @@ pub fn update_directional_light(
 ) {
     // normalized day: 0.0 = midnight, 0.5 = noon (matches the light_gradients ramps)
     let day = (time.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
-    let t = (day + 0.75).fract() * TAU;
 
     // gradient colors over the day; sun energy driven by elevation, with a
     // violet "moon" floor so the night stays directional
-    let dir_direction = Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z;
+    let dir_direction = sun_direction(time.elapsed_secs() / 3600.0);
     let elevation = -dir_direction.y;
     let energy = smoothstep(-0.05, 0.3, elevation);
     let dir = super::light_gradients::DIR_LIGHT.sample(day);
@@ -467,6 +487,30 @@ fn manage_shadow_casters(
             }
         } else {
             vis.set_if_neq(Visibility::Hidden);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sun_follows_unitys_path() {
+        let angle = |a: Vec3, b: Vec3| a.angle_between(b).to_degrees();
+        // unity-explorer's sun at noon, from its recorded day cycle (bevy axes)
+        let noon = Vec3::new(0.109_261_24, -0.987_989_84, -0.109_261_2);
+        assert!(angle(sun_direction(12.0), noon) < 0.5);
+        for horizon in [SUNRISE, SUNSET] {
+            assert!(sun_direction(horizon).y.abs() < 1e-5);
+        }
+        assert!(sun_direction((SUNRISE + SUNSET) / 2.0).y < -0.9999);
+        // below the horizon through the night, and continuous round the whole day
+        assert!(sun_direction(0.0).y > 0.0);
+        assert!(angle(sun_direction(0.0), sun_direction(24.0)) < 0.01);
+        for step in 0..2400 {
+            let hours = step as f32 / 100.0;
+            assert!(angle(sun_direction(hours), sun_direction(hours + 0.01)) < 0.3);
         }
     }
 }

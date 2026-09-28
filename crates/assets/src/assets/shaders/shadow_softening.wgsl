@@ -8,16 +8,14 @@
 // overriding the shadow fetch lifts the shadow value toward "lit" inside the
 // single pbr lighting pass, so shadows become partial instead of fully
 // occluding the sun — no second lighting evaluation needed.
-const SHADOW_OPACITY: f32 = 0.5;
+const SHADOW_OPACITY: f32 = 0.65;
 
 // Beyond the furthest shadow cascade bevy returns "fully lit" (shadow = 1.0),
 // which pops hard at the shadow-distance edge. Instead, fade toward a partial-
-// shadow floor. CASCADE_FAR_SHADOW is how far that floor sits from lit toward
-// the in-cascade shadowed value: 0.5 = halfway between a fully-shadowed face
-// and fully lit (scales with SHADOW_OPACITY so it tracks the near-field
-// shadows). CASCADE_FAR_FADE is the fraction of the shadow distance to blend
-// over.
-const CASCADE_FAR_SHADOW: f32 = 0.5;
+// shadow floor. CASCADE_FAR_SHADOW is how dark that floor is, like
+// SHADOW_OPACITY: 0.25 = a quarter of the way from fully lit to black.
+// CASCADE_FAR_FADE is the fraction of the shadow distance to blend over.
+const CASCADE_FAR_SHADOW: f32 = 0.25;
 const CASCADE_FAR_FADE: f32 = 0.3;
 
 // Soften a directional shadow value from `shadows::fetch_directional_shadow`. `far` is the far
@@ -27,9 +25,7 @@ fn soften_directional_shadow(base: f32, far: f32, view_z: f32) -> f32 {
     if far <= 0.0 {
         return softened;
     }
-    // floor halfway between the in-cascade shadowed value (1 - SHADOW_OPACITY)
-    // and fully lit (1.0): 1 - CASCADE_FAR_SHADOW * SHADOW_OPACITY
-    let far_shadow = 1.0 - CASCADE_FAR_SHADOW * SHADOW_OPACITY;
+    let far_shadow = 1.0 - CASCADE_FAR_SHADOW;
     // blend the (softened) shadow toward that floor over the last
     // CASCADE_FAR_FADE of the distance, holding the floor past the edge
     let fade = smoothstep(far * (1.0 - CASCADE_FAR_FADE), far, -view_z);
