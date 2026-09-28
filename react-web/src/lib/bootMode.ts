@@ -21,6 +21,11 @@ export interface BootMode {
   autoLogin: 'guest' | 'scene-owned' | null
 }
 
+/** The HUD is hosted by the native (CEF) client: a native build entered with ?native=1. */
+export function isNativeHud(): boolean {
+  return typeof __NATIVE_HUD__ !== 'undefined' && __NATIVE_HUD__ && new URLSearchParams(location.search).get('native') === '1'
+}
+
 // Computed per call, not a module const, so tests can set location.search before mounting.
 export function bootMode(): BootMode {
   const q = new URLSearchParams(location.search)

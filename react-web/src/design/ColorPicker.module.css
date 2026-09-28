@@ -10,7 +10,7 @@
   height: 40px;
   padding: 5px 8px;
   border: 0;
-  border-radius: var(--r-popup);
+  border-radius: var(--r-md);
   background: var(--text);
   color: var(--panel);
   cursor: pointer;
@@ -44,7 +44,7 @@
   gap: 23px;
   width: 406px;
   padding: 30px 70px 50px;
-  border-radius: var(--r-popup);
+  border-radius: var(--r-md);
   background: var(--text);
   color: var(--panel);
   box-shadow: var(--shadow-popup);

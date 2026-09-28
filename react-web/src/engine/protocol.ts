@@ -467,8 +467,6 @@ export interface Emote {
   name: string
   thumbnail?: string
   rarity?: string
-  /** Owned quantity (×N badge). */
-  count?: number
   /** Marketplace deep link (…/shop/item/<contract>/<itemId>) — set only for on-chain collectibles;
    *  base emotes have no listing. Resolved scene-side (see resolveShopUrls). */
   shopUrl?: string
@@ -849,7 +847,6 @@ export interface Wearable {
   rarity: string
   category: string
   thumbnail?: string
-  count?: number
   equipped: boolean
   /** Marketplace deep link (…/shop/item/<contract>/<itemId>) — set only for on-chain collectibles;
    *  base/off-chain items have no listing. Resolved scene-side (see resolveShopUrls). */

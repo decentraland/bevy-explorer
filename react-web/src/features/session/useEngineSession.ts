@@ -83,9 +83,6 @@ function parseTimeReply(reply: string): { hours: number; speed: number } | null 
 export const SAVE_FAILED_MESSAGE = 'There was an error updating your avatar profile. Please try again.'
 
 /** A server-side catalog page request (backpack grid). Filters/sort are applied by the catalyst. */
-
-// Every color change is a full profile deploy, so a drag only deploys its final value.
-const DEFAULT_COLOR = '#808080'
 export interface CatalogQuery {
   page: number
   pageSize: number
@@ -119,8 +116,8 @@ export interface BackpackState {
   retrySave: () => void
   /** Drop the look and go back to the last one that deployed. */
   revertSave: () => void
-  /** The avatar's skin/hair/eye colors as hex, once the bridge has reported them. */
-  colors?: { skin: string; hair: string; eyes: string }
+  /** The avatar's skin/hair/eye colors as hex; each present once the bridge has reported it. */
+  colors?: { skin?: string; hair?: string; eyes?: string }
   /** Change one color: shown at once, deployed with the look when the Backpack closes. */
   setColor: (target: AvatarColorTarget, hex: string) => void
   /** Preview a set on the avatar without equipping it (selecting); null reverts to the look. */
@@ -640,7 +637,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [bodyShape, setBodyShape] = useState<string | undefined>(undefined)
   const [forceRender, setForceRenderState] = useState<string[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [avatarColors, setAvatarColors] = useState<{ skin: string; hair: string; eyes: string } | undefined>(undefined)
+  const [avatarColors, setAvatarColors] = useState<{ skin?: string; hair?: string; eyes?: string } | undefined>(undefined)
   // Mirror of catalogItems for equipWearables' optimistic equipped-set rebuild (avoids stale closure).
   const catalogItemsRef = useRef<Wearable[]>([])
   useEffect(() => { catalogItemsRef.current = catalogItems }, [catalogItems])
@@ -837,9 +834,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           if (msg.colors) {
             const c = msg.colors
             setAvatarColors((prev) => ({
-              skin: c.skin ? color3ToHex(c.skin) : (prev?.skin ?? DEFAULT_COLOR),
-              hair: c.hair ? color3ToHex(c.hair) : (prev?.hair ?? DEFAULT_COLOR),
-              eyes: c.eyes ? color3ToHex(c.eyes) : (prev?.eyes ?? DEFAULT_COLOR)
+              skin: c.skin ? color3ToHex(c.skin) : prev?.skin,
+              hair: c.hair ? color3ToHex(c.hair) : prev?.hair,
+              eyes: c.eyes ? color3ToHex(c.eyes) : prev?.eyes
             }))
           }
           // The grid page carries its own per-item equipped flags (stamped at fetch, flipped by the
@@ -1451,7 +1448,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     backpackWasOpen.current = backpackOpen
   }, [backpackOpen])
   const setAvatarColor = useCallback((target: AvatarColorTarget, hex: string) => {
-    setAvatarColors((prev) => (prev ? { ...prev, [target]: hex } : prev))
+    setAvatarColors((prev) => ({ ...prev, [target]: hex }))
     driverRef.current?.send({ kind: 'setAvatarColor', target, color: hexToColor3(hex) })
   }, [])
   const previewWearables = useCallback((urns: string[] | null) => {

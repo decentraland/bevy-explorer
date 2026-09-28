@@ -7,6 +7,7 @@ import { installCefNativeBridge } from './lib/cefNativeBridge'
 import { installLocalNetworkFetch } from './lib/localNetworkFetch'
 import { installHudScale } from './lib/hudScale'
 import { countLaunch } from './lib/launchCount'
+import { isNativeHud } from './lib/bootMode'
 import './styles/global.css'
 
 // Before anything fetches: annotate loopback/local-network requests so Chrome's Local Network
@@ -20,7 +21,7 @@ countLaunch()
 // NATIVE (?native=1): bevy renders the 3D world *behind* this transparent webview, so the page must
 // be transparent (in web mode the engine canvas lives in this document at z-0, so the body
 // background is fine).
-if (__NATIVE_HUD__ && new URLSearchParams(location.search).get('native') === '1') {
+if (isNativeHud()) {
   document.documentElement.style.background = 'transparent'
   document.body.style.background = 'transparent'
   // No webview context menu (Back/Reload) on right-click — that gesture is the engine's camera.

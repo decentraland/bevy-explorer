@@ -144,23 +144,38 @@
   pointer-events: auto;
 }
 
-/* Category column — two columns of 138×80 slots at fixed spots in the card. */
+/* Category column — a two-column grid of 138×80 slots, with a divider row after the face group
+   (three rows) and the body group (two rows). */
 .catColumn {
   position: absolute;
   left: 29px;
   top: 93px;
   width: 286px;
   height: 774px;
+  display: grid;
+  grid-template-columns: 138px 138px;
+  grid-template-rows: repeat(3, 80px) 8px repeat(2, 80px) 6px repeat(4, 80px);
+  column-gap: 10px;
+  row-gap: 4px;
 }
-.slotDivider {
-  position: absolute;
-  left: 64px;
+.catColumn::before,
+.catColumn::after {
+  content: '';
+  grid-column: 1 / -1;
+  align-self: center;
   width: 216px;
   height: 1px;
+  margin-left: 64px;
   background: var(--divider-pink);
 }
+.catColumn::before {
+  grid-row: 4;
+}
+.catColumn::after {
+  grid-row: 7;
+}
 .slot {
-  position: absolute;
+  position: relative;
   width: 138px;
   height: 80px;
   padding: 0;
@@ -369,12 +384,15 @@
   position: absolute;
   left: 28px;
   top: 50px;
+  display: flex;
+  flex-direction: column;
+  gap: 5.4px;
   width: 286px;
   height: 809px;
 }
 .emoteRow {
-  position: absolute;
-  left: 0;
+  position: relative;
+  flex: none;
   width: 286px;
   height: 76px;
 }
