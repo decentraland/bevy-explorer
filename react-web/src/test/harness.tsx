@@ -204,6 +204,7 @@ export function fakeSession(): EngineSession {
     setEngineViewport: vi.fn(),
     logout: vi.fn(),
     menuOpen: false,
+    closeAllPanels: vi.fn(),
     login: {
       status: 'sign-in-or-guest',
       account: null,

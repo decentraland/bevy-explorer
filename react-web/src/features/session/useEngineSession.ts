@@ -480,6 +480,7 @@ export interface EngineSession {
   logout: () => void
   /** A full scene menu page is open → the React HUD (sidebar + chat) hides. */
   menuOpen: boolean
+  closeAllPanels: () => void
 }
 
 /** Parse a camera-reel `dateTime` (unix seconds, unix ms, or ISO) to epoch ms for sort/grouping. */
@@ -2087,6 +2088,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setEngineViewport,
     logout,
     menuOpen,
+    closeAllPanels,
     login: {
       status,
       account: prevUserId ?? (stored ? rootAddress(stored.identity) : null),
