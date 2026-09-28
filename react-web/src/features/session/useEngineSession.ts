@@ -1603,6 +1603,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setSubmitted(false) // back to the login screen
     setDestinationPicked(false) // re-show the picker on the next jump-in
     pendingLogin.current = null
+    // The next account starts clean: it fetches its own data and hasn't spawned yet.
+    fetchedRef.current.clear()
+    playerReadyRef.current = false
+    pendingParcel.current = null
   }, [closeAllPanels])
 
   const setEngineViewport = useCallback(
