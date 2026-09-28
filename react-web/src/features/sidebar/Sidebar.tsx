@@ -54,7 +54,7 @@ type Item =
 
 
 // The reference rail's own idle icons, each at the size it draws them.
-const RAIL_ART: Partial<Record<IconName, { src: string; size: number }>> = {
+const RAIL_ART: Partial<Record<IconName, { src: string; size: number; color?: boolean }>> = {
   'notifications': { src: notificationsArt, size: 30 },
   'events': { src: eventsArt, size: 32 },
   'places': { src: placesArt, size: 32 },
@@ -69,9 +69,9 @@ const RAIL_ART: Partial<Record<IconName, { src: string; size: number }>> = {
   'emotes': { src: emotesArt, size: 32 },
   'friends': { src: friendsArt, size: 30 },
   'chat': { src: chatArt, size: 26 },
-  'voice-off': { src: voiceOffArt, size: 34 },
-  'voice-hearing': { src: voiceHearingArt, size: 34 },
-  'voice-speaking': { src: voiceSpeakingArt, size: 34 }
+  'voice-off': { src: voiceOffArt, size: 34, color: true },
+  'voice-hearing': { src: voiceHearingArt, size: 34, color: true },
+  'voice-speaking': { src: voiceSpeakingArt, size: 34, color: true }
 }
 
 function RailButton(props: React.ComponentProps<typeof IconButton>): React.JSX.Element {

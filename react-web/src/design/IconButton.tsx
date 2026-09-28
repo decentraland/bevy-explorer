@@ -25,8 +25,9 @@ interface IconButtonProps
   indicator?: boolean
   /** Render this profile picture in place of the icon. */
   avatar?: { src?: string; name: string; color?: string }
-  /** White-on-transparent art drawn at `size` in place of the icon (takes the icon colour). */
-  art?: { src: string; size: number }
+  /** Art drawn at `size` in place of the icon: white-on-transparent takes the icon colour, `color`
+   *  art is drawn as-is. */
+  art?: { src: string; size: number; color?: boolean }
   /** 34 for the voice button; 32 otherwise. */
   size?: 32 | 34
 }
@@ -57,6 +58,8 @@ export function IconButton({
       >
         {avatar ? (
           <Avatar src={avatar.src} name={avatar.name} color={avatar.color} size={30} framed />
+        ) : art?.color === true ? (
+          <img src={art.src} alt="" width={art.size} height={art.size} draggable={false} />
         ) : art ? (
           <MaskIcon src={art.src} size={art.size} />
         ) : (
