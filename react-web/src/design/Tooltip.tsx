@@ -11,6 +11,8 @@ interface TooltipProps {
   /** Single-key shortcut shown dimmed, e.g. 'L' → "Friends [L]". */
   shortcut?: string
   side?: Side
+  /** rail: the sidebar's tooltip (tighter radius, 34px from the button centre, no fade). */
+  variant?: 'default' | 'rail'
   className?: string
   children: React.ReactNode
 }
@@ -19,13 +21,14 @@ export function Tooltip({
   label,
   shortcut,
   side = 'right',
+  variant = 'default',
   className = '',
   children
 }: TooltipProps): React.JSX.Element {
   return (
     <span className={`${styles.wrap} ${className}`.trim()}>
       {children}
-      <span className={`${styles.tip} ${styles[side]}`} role="tooltip">
+      <span className={`${styles.tip} ${styles[side]} ${variant === 'rail' ? styles.rail : ''}`.trim()} role="tooltip">
         {label}
         {shortcut && <span className={styles.shortcut}>[{shortcut}]</span>}
       </span>

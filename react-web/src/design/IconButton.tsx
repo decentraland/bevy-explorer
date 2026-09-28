@@ -49,7 +49,7 @@ export function IconButton({
   ...rest
 }: IconButtonProps): React.JSX.Element {
   return (
-    <Tooltip label={label} shortcut={shortcut} side="right">
+    <Tooltip label={label} shortcut={shortcut} side="right" variant="rail">
       <button
         type={type}
         className={`${styles.btn} ${size === 34 ? styles.large : ''} ${active ? styles.active : ''} ${className}`.trim()}

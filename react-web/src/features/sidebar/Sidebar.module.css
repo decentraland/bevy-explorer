@@ -12,10 +12,11 @@
      1x — keeps the rail consistent with the scaled chat/floating panels beside it. */
   height: calc(100% / var(--ui-scale));
   background: var(--rail-bg);
-  z-index: var(--z-hud);
+  /* Above the minimap and chat, so the tooltips aren't covered. */
+  z-index: calc(var(--z-hud) + 1);
   transform: scale(var(--ui-scale)) translateZ(0);
   transform-origin: top left;
-  contain: layout paint;
+  contain: layout;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -67,7 +68,7 @@
   position: fixed;
   left: 54px;
   top: 8px;
-  z-index: var(--z-hud);
+  z-index: calc(var(--z-hud) + 1);
   display: flex;
   align-items: center;
   gap: 16px;

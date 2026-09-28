@@ -338,6 +338,23 @@ test.describe('visual — mock HUD', () => {
     expect(await iconWidth('Chat')).toBeCloseTo(26, 0)
   })
 
+  test('sidebar — the minimap covers neither the tooltips nor the "..." panel', async ({ page }) => {
+    await enterWorld(page)
+    // Tooltips ignore the pointer, so compare stacking: the rail must sit above the minimap.
+    const z = await page.evaluate(() => {
+      const zOf = (el: Element | null | undefined): number => Number(el != null ? getComputedStyle(el).zIndex : 0)
+      const minimap = document.querySelector('[aria-label="Minimap zoom"]')?.closest('[class*="root"]')
+      return { rail: zOf(document.querySelector('nav[aria-label="Main navigation"]')), minimap: zOf(minimap) }
+    })
+    expect(z.rail).toBeGreaterThan(z.minimap)
+    await page.getByRole('button', { name: 'Sidebar settings' }).click()
+    const panelOnTop = await page.getByRole('dialog', { name: 'Sidebar settings' }).evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      return el.contains(document.elementFromPoint(r.right - 20, r.top + r.height / 2))
+    })
+    expect(panelOnTop).toBe(true)
+  })
+
   test('backpack — emotes', async ({ page }) => {
     await enterWorld(page)
     await openPanel(page, 'Backpack')

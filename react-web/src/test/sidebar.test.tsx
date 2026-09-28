@@ -17,8 +17,8 @@ describe('sidebar parity', () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     render(<Sidebar session={fakeSession()} />)
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
-    expect(labels.slice(labels.indexOf('Backpack'), labels.indexOf('Gallery') + 1)).toEqual(['Backpack', 'Marketplace', 'Gallery'])
-    await userEvent.click(screen.getByRole('button', { name: 'Marketplace' }))
+    expect(labels.slice(labels.indexOf('Backpack'), labels.indexOf('Gallery') + 1)).toEqual(['Backpack', 'Shop', 'Gallery'])
+    await userEvent.click(screen.getByRole('button', { name: 'Shop' }))
     expect(open).toHaveBeenCalledWith('https://decentraland.org/shop?utm_source=client', '_blank', 'noopener')
   })
 

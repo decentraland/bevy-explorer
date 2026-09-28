@@ -4,7 +4,7 @@
 // scene's existing menus/popups over the bridge (session.nav) until each is
 // migrated to React.
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ControlButton, IconButton, Panel, Toggle } from '../../design'
 import type { IconName } from '../../design'
 import type { NavAction } from '../../engine/protocol'
@@ -32,6 +32,7 @@ import voiceOffArt from '../../assets/sidebar-rail/voice-off.webp'
 import voiceHearingArt from '../../assets/sidebar-rail/voice-hearing.webp'
 import voiceSpeakingArt from '../../assets/sidebar-rail/voice-speaking.webp'
 import { bugReportUrl } from '../../lib/bugReport'
+import { registerCancelLayer } from '../../lib/cancelLayers'
 import { NearbyVoiceWidget } from '../voice/NearbyVoiceWidget'
 import { useNearbyVoice, type NearbyVoice } from '../voice/useNearbyVoice'
 
@@ -88,7 +89,7 @@ const TOP: Item[] = [
   { kind: 'places', icon: 'places', label: 'Places', hotkey: 'Places' },
   { kind: 'communities', icon: 'communities', label: 'Communities', hotkey: 'Communities' },
   { kind: 'backpack', icon: 'backpack', label: 'Backpack', hotkey: 'Backpack' },
-  { kind: 'link', icon: 'marketplace', label: 'Marketplace', url: 'https://decentraland.org/shop?utm_source=client' },
+  { kind: 'link', icon: 'marketplace', label: 'Shop', url: 'https://decentraland.org/shop?utm_source=client' },
   { kind: 'gallery', icon: 'gallery', label: 'Gallery', hotkey: 'Gallery' },
   { kind: 'settings', icon: 'settings', label: 'Settings', hotkey: 'Settings' },
   { kind: 'divider' },
@@ -307,6 +308,20 @@ export function Sidebar({
   const nearby = useNearbyVoice(session)
   const voice: VoiceProps = { ...nearby, onOpen: (button) => setVoiceAnchor((a) => (a == null ? button : null)) }
   const closeVoice = useCallback(() => setVoiceAnchor(null), [])
+  // The "..." panel closes on an outside click or Cancel, like the other popovers.
+  useEffect(() => {
+    if (!configOpen) return
+    const close = (): void => setConfigOpen(false)
+    const onDown = (e: MouseEvent): void => {
+      if (!(e.target instanceof Element && e.target.closest('[aria-label="Sidebar settings"]'))) close()
+    }
+    document.addEventListener('mousedown', onDown)
+    const off = registerCancelLayer(close)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      off()
+    }
+  }, [configOpen])
   return (
     <>
       {autoHide.hidden && <div className={styles.reveal} data-testid="sidebar-reveal" onPointerEnter={autoHide.onPointerEnter} />}
