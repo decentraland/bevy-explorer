@@ -239,7 +239,7 @@ fn clear_stale_instance(
     trigger: Trigger<OnReplace, GltfReady>,
     mut commands: Commands,
     gltf_readys: Query<&GltfReady>,
-    scene_spawner: Res<SceneSpawner>,
+    mut scene_spawner: ResMut<SceneSpawner>,
 ) {
     let entity = trigger.target();
     let Ok(gltf_ready) = gltf_readys.get(entity) else {
@@ -250,6 +250,7 @@ fn clear_stale_instance(
         &mut commands,
         scene_spawner.iter_instance_entities(**gltf_ready),
     );
+    scene_spawner.unregister_instance(**gltf_ready);
 }
 
 fn despawn_instance_non_recursive(commands: &mut Commands, entities: impl Iterator<Item = Entity>) {
@@ -365,6 +366,7 @@ fn update_gltf(
                     &mut commands,
                     scene_spawner.iter_instance_entities(*instance_id),
                 );
+                scene_spawner.unregister_instance(*instance_id);
             }
         }
 
@@ -2283,5 +2285,76 @@ fn update_gltf_linked_visibility(
         if let Ok(mut target_vis) = gltf_nodes.get_mut(link.gltf_entity) {
             *target_vis = *vis;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::scene::{ScenePlugin, SceneSpawner};
+
+    use super::*;
+
+    // an app with the gltf instance observer and a spawned one-entity scene instance
+    // under `parent`
+    fn setup() -> (App, Entity, InstanceId) {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), ScenePlugin));
+        app.add_observer(clear_stale_instance);
+
+        let mut scene_world = World::new();
+        scene_world.spawn_empty();
+        let h_scene = app
+            .world_mut()
+            .resource_mut::<Assets<Scene>>()
+            .add(Scene::new(scene_world));
+
+        let parent = app.world_mut().spawn_empty().id();
+        let instance = app
+            .world_mut()
+            .resource_mut::<SceneSpawner>()
+            .spawn_as_child(h_scene, parent);
+        app.update();
+        assert!(app
+            .world()
+            .resource::<SceneSpawner>()
+            .instance_is_ready(instance));
+
+        (app, parent, instance)
+    }
+
+    #[test]
+    fn ready_instance_is_released_when_replaced() {
+        let (mut app, parent, instance) = setup();
+        let scene_ent = app
+            .world()
+            .resource::<SceneSpawner>()
+            .iter_instance_entities(instance)
+            .next()
+            .unwrap();
+        app.world_mut()
+            .entity_mut(parent)
+            .insert(GltfReady(instance));
+
+        app.world_mut().entity_mut(parent).remove::<GltfReady>();
+
+        assert!(!app
+            .world()
+            .resource::<SceneSpawner>()
+            .instance_is_ready(instance));
+        assert!(app.world().get_entity(scene_ent).is_err());
+        assert!(app.world().get_entity(parent).is_ok());
+    }
+
+    #[test]
+    fn instance_is_released_on_despawn() {
+        let (mut app, parent, instance) = setup();
+
+        app.world_mut().entity_mut(parent).despawn();
+        app.update();
+
+        assert!(!app
+            .world()
+            .resource::<SceneSpawner>()
+            .instance_is_ready(instance));
     }
 }
