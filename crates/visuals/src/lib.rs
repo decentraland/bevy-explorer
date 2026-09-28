@@ -3,8 +3,11 @@ mod coast;
 mod day_night;
 pub mod env_downsample;
 mod nishita_cloud;
+mod props;
 pub mod shell_texturing;
+mod solids;
 pub mod terrain;
+mod trees;
 
 use bevy::{
     core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
@@ -34,8 +37,9 @@ use console::DoAddConsoleCommand;
 // use env_downsample::{Envmap, EnvmapDownsamplePlugin};
 
 use crate::{
-    coast::CoastPlugin, day_night::DayNightPlugin, shell_texturing::ShellTexturingPlugin,
-    terrain::TerrainPlugin,
+    coast::CoastPlugin, day_night::DayNightPlugin, props::PropsPlugin,
+    shell_texturing::ShellTexturingPlugin, solids::SolidsPlugin, terrain::TerrainPlugin,
+    trees::TreesPlugin,
 };
 
 pub struct VisualsPlugin {
@@ -60,6 +64,7 @@ impl Plugin for VisualsPlugin {
             .add_plugins(ShellTexturingPlugin)
             .add_plugins(TerrainPlugin)
             .add_plugins(CoastPlugin)
+            .add_plugins((TreesPlugin, PropsPlugin, SolidsPlugin))
             .add_systems(Update, apply_global_light)
             .add_systems(Update, update_dof)
             .add_systems(Startup, setup.in_set(SetupSets::Main));

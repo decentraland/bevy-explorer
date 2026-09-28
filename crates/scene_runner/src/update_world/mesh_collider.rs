@@ -353,6 +353,44 @@ impl SceneColliderData {
         self.set_collider(id, collider, None);
     }
 
+    /// Capsule outside any scene (landscape tree trunks) on the physics layer: it blocks the
+    /// avatar and physics raycasts.
+    pub fn set_physics_capsule(&mut self, id: &ColliderId, a: Vec3, b: Vec3, radius: f32) {
+        let collider = ColliderBuilder::capsule_from_endpoints(
+            DVec3::from(a).into(),
+            DVec3::from(b).into(),
+            f64::from(radius),
+        );
+        self.set_physics_collider(id, collider);
+    }
+
+    /// Shared shape outside any scene (landscape rocks), placed without scaling, like
+    /// `set_physics_capsule`.
+    pub fn set_physics_shape(
+        &mut self,
+        id: &ColliderId,
+        shape: SharedShape,
+        translation: Vec3,
+        rotation: Quat,
+    ) {
+        let collider = ColliderBuilder::new(shape).position(Isometry::from_parts(
+            Translation::from(Vector::from(DVec3::from(translation))),
+            rotation.as_dquat().into(),
+        ));
+        self.set_physics_collider(id, collider);
+    }
+
+    fn set_physics_collider(&mut self, id: &ColliderId, collider: ColliderBuilder) {
+        let collider = collider
+            .collision_groups(InteractionGroups::new(
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                InteractionTestMode::And,
+            ))
+            .build();
+        self.set_collider(id, collider, None);
+    }
+
     pub fn update_collider_transform(
         &mut self,
         id: &ColliderId,
@@ -982,6 +1020,9 @@ impl SceneColliderData {
 }
 
 pub const GROUND_COLLISION_MASK: u32 = 1 << 31;
+
+/// Collision shapes, e.g. from `mesh_to_parry_shape`, for `set_physics_shape`.
+pub use rapier3d_f64::prelude::SharedShape;
 
 /// Ground colliders outside any scene (the empty-parcel terrain). World raycasts include them.
 #[derive(Component)]
