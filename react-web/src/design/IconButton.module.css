@@ -23,6 +23,14 @@
   width: 34px;
   height: 34px;
 }
+.large .indicator {
+  top: 0.25px;
+  right: 0.25px;
+  width: 5.5px;
+  height: 5.5px;
+  background: var(--voice-live);
+  box-shadow: 0 0 0 2.25px var(--panel);
+}
 .btn::before {
   content: '';
   position: absolute;

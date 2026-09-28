@@ -61,3 +61,27 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   cursor: pointer;
 }
+
+.thick {
+  height: 22px;
+  margin: 0;
+  border-radius: var(--r-xs);
+  background: linear-gradient(to right, var(--brand) var(--pct), var(--slider-track) var(--pct));
+}
+.thick::-webkit-slider-thumb {
+  width: 18px;
+  height: 31px;
+  border-radius: 0;
+  background: var(--row-press);
+  box-shadow: none;
+  -webkit-mask: url('../assets/voice/slider-handle.webp') center / contain no-repeat;
+  mask: url('../assets/voice/slider-handle.webp') center / contain no-repeat;
+  transform: translateY(-1.5px);
+}
+.thick::-moz-range-thumb {
+  width: 18px;
+  height: 31px;
+  border-radius: 0;
+  background: var(--row-press);
+  mask: url('../assets/voice/slider-handle.webp') center / contain no-repeat;
+}

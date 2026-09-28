@@ -78,3 +78,44 @@
   transform: scale(var(--ui-scale));
   transform-origin: top left;
 }
+
+/* Speaking bars on the voice button: 2px dots while quiet, a ping-pong wave while heard. */
+.bars {
+  position: absolute;
+  left: 20.4px;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 1.54px;
+  height: 10px;
+  transform: translateY(-50%);
+}
+.bars i {
+  width: 2px;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--voice-green);
+  transition: height 100ms linear;
+}
+.bars[data-live='true'] i {
+  animation: bar-edge 300ms ease-in-out infinite alternate;
+}
+.bars[data-live='true'] i:nth-child(2) {
+  animation-name: bar-mid;
+}
+@keyframes bar-edge {
+  from {
+    height: 4px;
+  }
+  to {
+    height: 10px;
+  }
+}
+@keyframes bar-mid {
+  from {
+    height: 10px;
+  }
+  to {
+    height: 4px;
+  }
+}

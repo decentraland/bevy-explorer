@@ -163,6 +163,16 @@
   --rail-divider: rgba(255, 255, 255, 0.2);
   --rail-selected: rgba(255, 255, 255, 0.16);
   --rail-avatar-ring: rgba(255, 255, 255, 0.47);
+  /* compact switches / thick sliders / nearby voice (sRGB equivalents of linear blends) */
+  --switch-off: rgba(255, 255, 255, 0.38);
+  --switch-knob-off: rgba(236, 235, 237, 0.73);
+  --slider-track: rgba(255, 255, 255, 0.19);
+  --voice-divider: rgba(255, 255, 255, 0.14);
+  --voice-fill: rgba(255, 255, 255, 0.19);
+  --voice-fill-hover: #696473;
+  --voice-green: #34ce76;
+  --voice-live: #30cd00;
+  --voice-speaking-fill: rgba(26, 198, 45, 0.2);
   --loading-vignette: radial-gradient(ellipse 100% 100% at 50% 50%, #bf00ff 16.7%, #4c0080 66.7%);
   --loading-glow: rgba(168, 0, 190, 0.5);
   --loading-track: #242424;

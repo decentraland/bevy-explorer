@@ -19,7 +19,6 @@ describe('sidebar clicks', () => {
     ['Backpack', (s) => s.backpack.toggle],
     ['Gallery', (s) => s.gallery.toggle],
     ['Settings', (s) => s.settings.toggle],
-    ['Voice chat', (s) => s.mic.toggle],
     ['Emotes', (s) => s.emotes.toggle],
     ['Friends', (s) => s.friends.toggle],
     ['Chat', (s) => s.chat.toggle]
@@ -37,7 +36,7 @@ describe('sidebar clicks', () => {
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
     expect(labels).toEqual([
       'Sidebar settings', 'Profile', 'Notifications', 'Events', 'Places', 'Communities', 'Backpack', 'Marketplace', 'Gallery', 'Settings',
-      'Help & Support', 'Report a bug', 'Voice chat', 'Skybox', 'Emotes', 'Friends', 'Chat'
+      'Help & Support', 'Report a bug', 'Nearby Voice', 'Skybox', 'Emotes', 'Friends', 'Chat'
     ])
   })
 

@@ -4,7 +4,7 @@
 // scene's existing menus/popups over the bridge (session.nav) until each is
 // migrated to React.
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { ControlButton, IconButton, Panel, Toggle } from '../../design'
 import type { IconName } from '../../design'
 import type { NavAction } from '../../engine/protocol'
@@ -32,6 +32,8 @@ import voiceOffArt from '../../assets/sidebar-rail/voice-off.webp'
 import voiceHearingArt from '../../assets/sidebar-rail/voice-hearing.webp'
 import voiceSpeakingArt from '../../assets/sidebar-rail/voice-speaking.webp'
 import { bugReportUrl } from '../../lib/bugReport'
+import { NearbyVoiceWidget } from '../voice/NearbyVoiceWidget'
+import { useNearbyVoice, type NearbyVoice } from '../voice/useNearbyVoice'
 
 // `hotkey` names the engine SystemAction whose live binding renders as the tooltip hint.
 type Item =
@@ -104,7 +106,9 @@ const BOTTOM: Item[] = [
   { kind: 'chat', icon: 'chat', label: 'Chat', hotkey: 'ChatPanel' }
 ]
 
-function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, onViewProfile?: () => void): React.JSX.Element {
+type VoiceProps = NearbyVoice & { onOpen: (button: HTMLElement) => void }
+
+function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, voice: VoiceProps, onViewProfile?: () => void): React.JSX.Element {
   if (item.kind === 'divider') return <div key={`d${i}`} className={styles.divider} />
   const shortcut = 'hotkey' in item && item.hotkey != null ? keyHintFor(snap, item.hotkey) : undefined
   if (item.kind === 'chat')
@@ -222,18 +226,25 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
       />
     )
   if (item.kind === 'mic') {
-    const voice = !session.mic.available ? 'off' : session.mic.enabled ? 'speaking' : 'hearing'
+    const state = !voice.hearing ? 'off' : voice.speaking ? 'speaking' : 'hearing'
     return (
       <RailButton
         key="mic"
-        icon={`voice-${voice}`}
+        icon={`voice-${state}`}
         size={34}
-        label={item.label}
-        data-voice={voice}
-        indicator={voice !== 'off'}
-        active={session.mic.enabled}
-        onClick={session.mic.toggle}
-      />
+        label="Nearby Voice"
+        data-voice={state}
+        indicator={state !== 'off'}
+        onClick={(e) => voice.onOpen(e.currentTarget)}
+      >
+        {state === 'speaking' && (
+          <span className={styles.bars} data-live={voice.talking} aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        )}
+      </RailButton>
     )
   }
   if (item.kind === 'skybox')
@@ -291,7 +302,11 @@ export function Sidebar({
   const snap = useBindingsSnapshot()
   const liveEvents = useLiveEventCount()
   const [configOpen, setConfigOpen] = useState(false)
-  const autoHide = useAutoHide(configOpen)
+  const [voiceAnchor, setVoiceAnchor] = useState<HTMLElement | null>(null)
+  const autoHide = useAutoHide(configOpen || voiceAnchor != null)
+  const nearby = useNearbyVoice(session)
+  const voice: VoiceProps = { ...nearby, onOpen: (button) => setVoiceAnchor((a) => (a == null ? button : null)) }
+  const closeVoice = useCallback(() => setVoiceAnchor(null), [])
   return (
     <>
       {autoHide.hidden && <div className={styles.reveal} data-testid="sidebar-reveal" onPointerEnter={autoHide.onPointerEnter} />}
@@ -315,10 +330,28 @@ export function Sidebar({
           >
             <DotsGlyph />
           </ControlButton>
-          {TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, onViewProfile))}
+          {TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, onViewProfile))}
         </div>
-        <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, onViewProfile))}</div>
+        <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, onViewProfile))}</div>
       </nav>
+      {voiceAnchor != null && (
+        <NearbyVoiceWidget
+          anchor={voiceAnchor}
+          hearing={nearby.hearing}
+          onHearingChange={(on) => {
+            nearby.setHearing(on)
+            if (!on) closeVoice()
+          }}
+          volume={nearby.volume}
+          onVolumeChange={nearby.setVolume}
+          speaking={nearby.speaking}
+          talking={nearby.talking}
+          micAvailable={nearby.micAvailable}
+          onSpeakToggle={nearby.toggleSpeak}
+          talkKey={keyHintFor(snap, 'Microphone')}
+          onClose={closeVoice}
+        />
+      )}
       {configOpen && (
         <Panel className={styles.config} role="dialog" aria-label="Sidebar settings">
           <span>Auto-hide sidebar</span>

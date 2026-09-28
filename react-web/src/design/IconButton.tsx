@@ -45,6 +45,7 @@ export function IconButton({
   indicator = false,
   className = '',
   type = 'button',
+  children,
   ...rest
 }: IconButtonProps): React.JSX.Element {
   return (
@@ -65,6 +66,7 @@ export function IconButton({
         ) : (
           <Icon name={icon} size={24} />
         )}
+        {children}
         {indicator && <span className={styles.indicator} data-indicator />}
         {badge != null && badge > 0 && (
           <span

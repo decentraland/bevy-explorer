@@ -34,16 +34,18 @@ describe('sidebar parity', () => {
   })
 
   it.each([
-    [{ available: false, enabled: false }, 'off', false],
-    [{ available: true, enabled: false }, 'hearing', true],
-    [{ available: true, enabled: true }, 'speaking', true]
-  ])('voice button mirrors Unity nearby-voice state for %o', (mic, state, dot) => {
+    [true, false, 'hearing', true],
+    [true, true, 'speaking', true],
+    [false, false, 'off', false]
+  ])('voice button shows the nearby-voice state (hearing %s, mic %s)', (hearing, enabled, state, dot) => {
+    if (!hearing) localStorage.setItem('nearbyVoiceDisabled', 'true')
     const s = fakeSession()
-    s.mic = { ...s.mic, ...mic }
+    s.mic = { ...s.mic, available: true, enabled }
     render(<Sidebar session={s} />)
-    const button = screen.getByRole('button', { name: 'Voice chat' })
+    const button = screen.getByRole('button', { name: 'Nearby Voice' })
     expect(button).toHaveAttribute('data-voice', state)
     expect(button.querySelector('[data-indicator]') != null).toBe(dot)
+    localStorage.clear()
   })
 })
 
