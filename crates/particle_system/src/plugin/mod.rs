@@ -12,10 +12,10 @@ use std::cmp::Ordering;
 
 use bevy::{platform::collections::HashSet, prelude::*};
 use bevy_hanabi::{
-    AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial, EffectSpawner,
-    ExprHandle, ExprWriter, FlipbookModifier, GlobalAccelModifier, Gradient, HanabiPlugin,
-    MatrixValue, OrientMode, OrientModifier, ParticleEffect, ParticleTextureModifier, ScalarType,
-    SetAttributeModifier, SetPositionCircleModifier, SetPositionSphereModifier,
+    AlphaMode, Attribute, ColorMultiplierOverLifetimeModifier, EffectAsset, EffectMaterial,
+    EffectSpawner, ExprHandle, ExprWriter, FlipbookModifier, GlobalAccelModifier, Gradient,
+    HanabiPlugin, MatrixValue, OrientMode, OrientModifier, ParticleEffect, ParticleTextureModifier,
+    ScalarType, SetAttributeModifier, SetPositionCircleModifier, SetPositionSphereModifier,
     SetVelocitySphereModifier, SizeOverLifetimeModifier, SpawnerSettings, Value,
 };
 use common::{debug_panic, structs::PrimaryUser};
@@ -460,7 +460,7 @@ fn make_particle_system(
         mode: OrientMode::AlongVelocity,
         rotation: None,
     };
-    let render_color_over_time = ColorOverLifetimeModifier::new(Gradient::from_keys([
+    let render_color_over_time = ColorMultiplierOverLifetimeModifier::new(Gradient::from_keys([
         (
             0.,
             color_over_time
