@@ -4,7 +4,7 @@ use common::sets::PostUpdateSets;
 use console::DoAddConsoleCommand;
 use dcl_component::proto_components::sdk::components::ColliderLayer;
 use scene_runner::{
-    update_world::mesh_collider::{SceneColliderData, GROUND_COLLISION_MASK},
+    update_world::mesh_collider::{GlobalGroundCollider, SceneColliderData, GROUND_COLLISION_MASK},
     ContainingScene,
 };
 use texture_camera::CameraLayers;
@@ -352,6 +352,7 @@ fn apply_foot_ik(
     >,
     containing: ContainingScene,
     mut scenes: Query<&mut SceneColliderData>,
+    global_ground: Query<Entity, With<GlobalGroundCollider>>,
     parents: Query<&ChildOf>,
     // ParamSet because TransformHelper's `Query<&Transform>` and our writer
     // `Query<&mut Transform>` conflict on the Transform component.
@@ -408,10 +409,12 @@ fn apply_foot_ik(
         };
         let w_anim = runtime.anim_w;
 
-        // Bound the raycasts to scenes containing *this* avatar's position.
+        // Bound the raycasts to scenes containing *this* avatar's position, plus the ground
+        // outside any scene.
         let scene_ents: Vec<Entity> = containing
             .get_position(avatar_global.translation())
             .into_iter()
+            .chain(global_ground.iter())
             .collect();
 
         let pole_dir = avatar_global.compute_transform().rotation * Vec3::NEG_Z;

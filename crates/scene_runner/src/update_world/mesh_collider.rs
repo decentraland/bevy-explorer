@@ -305,6 +305,36 @@ impl SceneColliderData {
         debug!("set {id:?} collider");
     }
 
+    /// Ground heightfield over a regular grid centred on `centre`. `heights` is row-major with
+    /// rows along +z and columns along +x. Parry splits each cell from (x0, z1) to (x1, z0),
+    /// which is unity-explorer's terrain collider triangulation after the z flip. It is physical
+    /// ground, so scene `CL_PHYSICS` casts hit it as well as the avatar.
+    pub fn set_ground_heightfield(
+        &mut self,
+        id: &ColliderId,
+        rows: usize,
+        cols: usize,
+        heights: &[f32],
+        size: Vec2,
+        centre: Vec3,
+    ) {
+        let heights = rapier3d_f64::na::DMatrix::from_fn(rows, cols, |row, col| {
+            f64::from(heights[row * cols + col])
+        });
+        let collider = ColliderBuilder::heightfield(
+            heights,
+            Vector::new(f64::from(size.x), 1.0, f64::from(size.y)),
+        )
+        .translation(centre.as_dvec3().into())
+        .collision_groups(InteractionGroups::new(
+            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK),
+            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK),
+            InteractionTestMode::And,
+        ))
+        .build();
+        self.set_collider(id, collider, None);
+    }
+
     pub fn update_collider_transform(
         &mut self,
         id: &ColliderId,
@@ -934,6 +964,10 @@ impl SceneColliderData {
 }
 
 pub const GROUND_COLLISION_MASK: u32 = 1 << 31;
+
+/// Ground colliders outside any scene (the empty-parcel terrain). World raycasts include them.
+#[derive(Component)]
+pub struct GlobalGroundCollider;
 
 fn update_scene_collider_data(
     mut commands: Commands,
