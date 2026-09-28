@@ -3,7 +3,7 @@
   max-width: 280px;
   padding: 6px;
   background: var(--panel);
-  border: 1px solid var(--fill-4);
+  border: 1px solid var(--white-10);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-modal);
   color: var(--text);

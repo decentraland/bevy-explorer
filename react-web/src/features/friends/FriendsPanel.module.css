@@ -51,7 +51,7 @@
   width: 6px;
 }
 .body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--white-20);
   border-radius: 3px;
 }
 
@@ -89,7 +89,7 @@
   border-radius: 10px;
 }
 .row:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--fill-2);
 }
 .info {
   display: flex;
@@ -117,7 +117,7 @@
 }
 .tag {
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--ink-45);
 }
 .status {
   font-size: 12px;
@@ -203,5 +203,5 @@
   cursor: pointer;
 }
 .rowBtn:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--fill-2);
 }

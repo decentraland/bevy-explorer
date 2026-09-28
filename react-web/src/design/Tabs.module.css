@@ -36,7 +36,7 @@
   transform: scale(1.06);
 }
 .pill .tab:hover:not(:disabled):not(.active) {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 .pill .active,
 .pill .active:hover {

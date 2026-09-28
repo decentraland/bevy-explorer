@@ -37,8 +37,8 @@
     border-color var(--dur-fast) ease;
 }
 .box.checked {
-  background: #fff;
-  border-color: #fff;
+  background: var(--white);
+  border-color: var(--white);
 }
 
 .label {
@@ -46,5 +46,5 @@
 }
 .label a,
 .label b {
-  color: #fff;
+  color: var(--white);
 }

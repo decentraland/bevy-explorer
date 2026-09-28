@@ -29,7 +29,7 @@ function initialOf(name: string): string {
 export function Avatar({
   src,
   name,
-  color = 'var(--fill-4)',
+  color = 'var(--white-10)',
   size = 32,
   status,
   framed = false,

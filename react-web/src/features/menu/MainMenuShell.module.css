@@ -138,7 +138,7 @@
   mask: url('../../assets/backpack/icon-close.webp') center / contain no-repeat;
 }
 .close:hover {
-  background: var(--fill-faint);
+  background: var(--fill-2);
 }
 .accent {
   position: relative;

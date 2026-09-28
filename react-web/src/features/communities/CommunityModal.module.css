@@ -39,7 +39,7 @@
   justify-content: center;
   font-size: 42px;
   font-weight: 800;
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--scrim);
 }
 .thumb img {
   width: 100%;
@@ -238,7 +238,7 @@
   border: none;
   border-radius: var(--r-pill);
   background: var(--brand);
-  color: #fff;
+  color: var(--white);
   font-family: inherit;
   font-size: 11px;
   font-weight: 800;
@@ -457,8 +457,8 @@
   height: 36px;
   border: none;
   border-radius: 9px;
-  background: rgba(0, 0, 0, 0.4);
-  color: #fff;
+  background: var(--scrim-60);
+  color: var(--white);
   font-size: 20px;
   cursor: pointer;
   transition:
@@ -466,6 +466,6 @@
     transform 0.16s var(--ease-spring, ease);
 }
 .close:hover {
-  background: rgba(0, 0, 0, 0.65);
+  background: var(--rail-bg);
   transform: scale(1.08);
 }

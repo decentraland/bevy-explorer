@@ -9,7 +9,7 @@
   justify-content: space-between;
   gap: 8px;
   background: var(--fill-2);
-  border: 1px solid var(--fill-4);
+  border: 1px solid var(--white-10);
   color: var(--text);
   font-family: var(--font-body);
   font-size: 13px;
@@ -19,7 +19,7 @@
   cursor: pointer;
 }
 .btn:hover {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 .open .btn {
   border-color: var(--brand);
@@ -42,7 +42,7 @@
   padding: 6px;
   list-style: none;
   background: var(--panel);
-  border: 1px solid var(--fill-4);
+  border: 1px solid var(--white-10);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-panel);
   max-height: 240px;

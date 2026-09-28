@@ -29,7 +29,7 @@
 }
 .divider {
   height: 1px;
-  background: var(--voice-divider);
+  background: var(--white-14);
 }
 .row {
   display: flex;
@@ -56,7 +56,7 @@
   margin: 0 16px;
   border: none;
   border-radius: var(--r-md);
-  background: var(--voice-fill);
+  background: var(--white-19);
   color: var(--text);
   font: inherit;
   font-size: var(--type-14);
@@ -72,7 +72,7 @@
 }
 .speakOn,
 .speakOn:hover:not(:disabled) {
-  background: var(--voice-fill);
+  background: var(--white-19);
 }
 .speakLive,
 .speakLive:hover:not(:disabled) {

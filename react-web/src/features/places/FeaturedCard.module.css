@@ -48,7 +48,7 @@
   font-size: 15px;
   font-weight: 600;
   line-height: 1.35;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--ink-95);
 }
 
 .footer {
@@ -77,13 +77,13 @@
   border-radius: 50%;
   border: 1.4px solid rgba(255, 255, 255, 0.3);
   background: linear-gradient(135deg, hsl(var(--hue) 60% 50%), hsl(calc(var(--hue) + 40) 60% 38%));
-  color: #fff;
+  color: var(--white);
   font-size: 9px;
   font-weight: 800;
 }
 .by {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ink-6);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -103,8 +103,8 @@
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--ink-85);
+  background: var(--white-10);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -127,7 +127,7 @@
   height: 36px;
   border-radius: 10px;
   background: var(--brand);
-  color: #fff;
+  color: var(--white);
   font-size: 13px;
   font-weight: 800;
   text-transform: uppercase;

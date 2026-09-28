@@ -41,7 +41,7 @@
   opacity: 1;
 }
 .tabActive {
-  background: var(--fill-4);
+  background: var(--white-10);
   opacity: 1;
 }
 .close {
@@ -84,7 +84,7 @@
   font-family: var(--font-family);
   font-size: 13px;
   color: var(--text);
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--scrim-60);
   outline: none;
 }
 .search:focus {
@@ -104,7 +104,7 @@
   width: 6px;
 }
 .body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--white-20);
   border-radius: 3px;
 }
 

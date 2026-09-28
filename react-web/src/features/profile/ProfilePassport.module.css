@@ -10,7 +10,7 @@
   /* Passport gradient (Figma): purple → indigo → teal. */
   background: linear-gradient(105deg, #5a2a8f 0%, #34308f 45%, #1c6f8e 100%);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--fill-3);
 }
 
 /* --- header --------------------------------------------------------------- */
@@ -31,7 +31,7 @@
   color: #6fe3ff;
 }
 .tag {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-dim);
   font-weight: 600;
 }
 .addrRow {
@@ -42,7 +42,7 @@
 }
 .addr {
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ink-6);
   font-variant-numeric: tabular-nums;
 }
 .copy {
@@ -50,11 +50,11 @@
   border: none;
   padding: 2px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-dim);
   display: inline-flex;
 }
 .copy:hover {
-  color: #fff;
+  color: var(--white);
 }
 /* A small square icon control sitting inline with text (the name's edit pencil). */
 .iconBtn {
@@ -88,13 +88,13 @@
   border-radius: 10px;
   border: none;
   background: rgba(0, 0, 0, 0.45);
-  color: #fff;
+  color: var(--white);
   font-weight: 700;
   font-size: 0.85rem;
   cursor: pointer;
 }
 .headBtn:not(.headBtnInert):hover {
-  background: var(--brand, #ff2d55);
+  background: var(--brand, var(--brand));
 }
 /* A state, not a control: shown as a pill for consistency but nothing happens on click. */
 .headBtnInert {
@@ -105,8 +105,8 @@
   height: 38px;
   border-radius: 10px;
   border: none;
-  background: rgba(0, 0, 0, 0.4);
-  color: #fff;
+  background: var(--scrim-60);
+  color: var(--white);
   font-size: 1.4rem;
   cursor: pointer;
 }
@@ -157,8 +157,8 @@
 
 .card {
   position: relative;
-  background: rgba(0, 0, 0, 0.22);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--scrim-40);
+  border: 1px solid var(--fill-3);
   border-radius: 14px;
   padding: 1.1rem 1.25rem;
 }
@@ -199,7 +199,7 @@
   height: 56px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fill-3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -229,7 +229,7 @@
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--ink-85);
 }
 
 .fields {
@@ -247,11 +247,11 @@
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-dim);
 }
 .fieldValue {
   font-size: 0.9rem;
-  color: #fff;
+  color: var(--white);
 }
 
 .links {
@@ -262,14 +262,14 @@
 .link {
   padding: 0.45rem 0.85rem;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fill-3);
   color: #6fe3ff;
   font-size: 0.85rem;
   font-weight: 600;
   text-decoration: none;
 }
 .link:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--white-14);
 }
 
 .photoGrid {
@@ -287,5 +287,5 @@
 .empty {
   padding: 2rem;
   text-align: center;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-dim);
 }

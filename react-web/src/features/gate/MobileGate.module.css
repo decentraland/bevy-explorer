@@ -107,7 +107,7 @@
   width: 32px;
   border: none;
   border-radius: var(--r-control);
-  background: var(--fill-4);
+  background: var(--white-10);
   color: var(--ink-7);
   cursor: pointer;
   transition: color var(--dur-fast) ease, background var(--dur-fast) ease;

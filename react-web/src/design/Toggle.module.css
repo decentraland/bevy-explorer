@@ -6,7 +6,7 @@
   padding: 3px;
   border: none;
   border-radius: var(--r-pill);
-  background: var(--fill-4);
+  background: var(--white-10);
   cursor: pointer;
   transition: background-color var(--dur-fast) ease;
 }
@@ -22,7 +22,7 @@
   width: 20px;
   height: 20px;
   border-radius: var(--r-pill);
-  background: #fff;
+  background: var(--white);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   transition: transform var(--dur-fast) var(--ease-out);
 }

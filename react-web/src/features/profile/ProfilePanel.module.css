@@ -57,7 +57,7 @@
 }
 .tag {
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--ink-45);
 }
 .addr {
   font-family: var(--font-mono);
@@ -67,7 +67,7 @@
 .guest {
   padding: 3px 10px;
   border-radius: var(--r-pill);
-  background: var(--fill-4);
+  background: var(--white-10);
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-7);
@@ -88,7 +88,7 @@
 .link {
   padding: 6px 12px;
   border-radius: var(--r-pill);
-  background: var(--fill-4);
+  background: var(--white-10);
   color: var(--text);
   font-size: 13px;
   font-weight: 600;

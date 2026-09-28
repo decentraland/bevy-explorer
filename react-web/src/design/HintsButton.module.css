@@ -17,7 +17,7 @@
 }
 .button:hover,
 .button[aria-expanded='true'] {
-  background: var(--fill-faint);
+  background: var(--fill-2);
 }
 .popover {
   position: absolute;

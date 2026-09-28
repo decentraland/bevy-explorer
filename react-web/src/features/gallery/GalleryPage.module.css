@@ -123,7 +123,7 @@
   cursor: pointer;
 }
 .viewerClose:hover {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 
 .stage {
@@ -160,7 +160,7 @@
   transition: background-color var(--dur-fast) ease;
 }
 .nav:hover:not(:disabled) {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 .nav:disabled {
   opacity: 0.25;
@@ -207,7 +207,7 @@
   text-decoration: none;
 }
 .actionLink:hover {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 .deleteBtn {
   color: var(--red);

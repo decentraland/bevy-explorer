@@ -9,7 +9,7 @@
   padding: 4px 9px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--fill-5);
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 12px;
   line-height: 1;
@@ -29,7 +29,7 @@
   margin-left: 2px;
 }
 .dim {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ink-6);
 }
 .engine {
   color: #6fe3ff;
@@ -40,7 +40,7 @@
   color: #4cd964;
 }
 .warn {
-  color: #ffc95b;
+  color: var(--gold);
 }
 .bad {
   color: #ff3b30;

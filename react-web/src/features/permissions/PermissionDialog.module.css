@@ -10,7 +10,7 @@
   width: min(460px, 100%);
   padding: 32px 36px 26px;
   border-radius: var(--r-panel);
-  color: #fff;
+  color: var(--white);
   background: var(--modal-bg);
   box-shadow: var(--shadow-modal);
 }
@@ -21,13 +21,13 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--fill-3);
+  color: var(--white);
 }
 .prompt {
   font-size: var(--fs-md);
   font-weight: 600;
-  color: #fff;
+  color: var(--white);
   line-height: 1.4;
 }
 .scene {
@@ -53,12 +53,12 @@
   border-radius: var(--r-control);
   cursor: pointer;
   font-size: var(--fs-sm);
-  color: #fff;
+  color: var(--white);
   text-align: left;
   transition: background var(--dur-fast) var(--ease-out);
 }
 .option:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--fill-2);
 }
 .radio {
   flex: 0 0 auto;
@@ -71,7 +71,7 @@
   transition: border-color var(--dur-fast) var(--ease-out);
 }
 .option:hover .radio {
-  border-color: rgba(255, 255, 255, 0.7);
+  border-color: var(--ink-7);
 }
 .radioOn {
   border-color: var(--brand);
@@ -97,10 +97,10 @@
 /* Deny: ghost outline tuned for the violet card (the primitive's ghost is greyed for dark panels). */
 .deny {
   border-color: rgba(255, 255, 255, 0.35);
-  color: #fff;
+  color: var(--white);
 }
 .deny:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.6);
-  color: #fff;
+  background: var(--white-10);
+  border-color: var(--ink-6);
+  color: var(--white);
 }

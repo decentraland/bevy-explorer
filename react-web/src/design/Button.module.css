@@ -51,7 +51,7 @@
 }
 
 .secondary {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 .secondary:hover:not(:disabled) {
   background: var(--fill-5);
@@ -63,7 +63,7 @@
   color: var(--ink-85);
 }
 .ghost:hover:not(:disabled) {
-  background: var(--fill-4);
+  background: var(--white-10);
   border-color: var(--text);
   color: var(--text);
 }
@@ -105,7 +105,7 @@
   letter-spacing: 0;
 }
 .outline:hover:not(:disabled) {
-  background: var(--fill-faint);
+  background: var(--fill-2);
 }
 
 @keyframes pressBounce {

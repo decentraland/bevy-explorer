@@ -826,7 +826,7 @@
   cursor: pointer;
 }
 .outfitDelete:hover {
-  background: var(--fill-faint);
+  background: var(--fill-2);
 }
 .outfitEquipBtn {
   position: absolute;
