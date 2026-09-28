@@ -38,6 +38,10 @@ export function registerProximity(ctx: Ctx): void {
     lastKey = key
     ctx.send({ kind: 'proximity', tips })
   }
+  // A reloaded page starts with no tips, so it has to be sent the current set again.
+  ctx.on('hello', () => {
+    lastKey = '\u0000'
+  })
   ctx.push((dt) => {
     fov.tick(dt)
     if (inRange.size === 0) {
