@@ -6,7 +6,13 @@ import { relay } from '../system-helpers'
 import { identity } from '../identity'
 import type { Ctx } from '../bridge'
 
+const SIGN_INS = new Set(['loginPrevious', 'loginNew', 'loginIdentity'])
+
 export function registerSession(ctx: Ctx): void {
+  // Player-spawned signal: one-shot per page, not per scene. The page gates its world-entry
+  // fetches on it and never retries, so a page that arrives late is re-told on `hello`.
+  let ready = false
+
   // Login surface (request/response by method). Most clients log in via the engine's
   // `/login_identity` console command now; this stays for channel-based callers.
   ctx.on('rpc:req', async (msg) => {
@@ -33,6 +39,9 @@ export function registerSession(ctx: Ctx): void {
         case 'logout': BevyApi.logout(); break
         default: throw new Error(`unsupported method ${String(msg.method)}`)
       }
+      // The engine keeps the old identity through a logout, so a completed sign-in is what says the
+      // (possibly same) account is back and must be announced again.
+      if (SIGN_INS.has(msg.method) && (value as { success?: boolean } | undefined)?.success !== false) ready = false
       ctx.send({ kind: 'rpc:res', id: msg.id, ok: true, value })
     } catch (err) {
       ctx.send({ kind: 'rpc:res', id: msg.id, ok: false, error: String(err) })
@@ -62,9 +71,6 @@ export function registerSession(ctx: Ctx): void {
     })
   })
 
-  // Player-spawned signal: one-shot per page, not per scene. The page gates its world-entry
-  // fetches on it and never retries, so a page that arrives late is re-told on `hello`.
-  let ready = false
   identity.onChange(() => {
     ready = false
   })
