@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
+import { hoverKey, proximityKey } from '../../engine/pointerKeys'
 import type { LoginDriver } from '../../engine/driver'
 import type { PreviewFocus } from '../../engine/protocol'
 import type { FatalError } from '../error/fatalError'
@@ -702,16 +703,20 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'sceneLoading':
           setSceneLoading(msg.state)
           break
-        case 'hover':
-          setHover(msg.actions)
+        case 'hover': {
+          const next = msg.actions
+          setHover((prev) => (hoverKey(prev) === hoverKey(next) ? prev : next))
           break
+        }
         case 'cursorLock':
           cursorLockedRef.current = msg.locked
           setCursorLocked(msg.locked)
           break
-        case 'proximity':
-          setProximity(msg.tips)
+        case 'proximity': {
+          const next = msg.tips
+          setProximity((prev) => (proximityKey(prev) === proximityKey(next) ? prev : next))
           break
+        }
         case 'avatarClick': {
           // The card's scrim swallows mouse input, so the engine's raycast freezes and never sends
           // the hover-exit — clear the hover here or its tooltip stays painted beside the card.

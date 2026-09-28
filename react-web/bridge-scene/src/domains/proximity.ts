@@ -6,6 +6,7 @@ import { BevyApi, type HoverEntry, type Vec3 } from '../bevy-api'
 import type { Ctx } from '../bridge'
 import type { HoverAction, ProximityTip } from '../../../src/engine/protocol'
 import { projectToScreen, createFovTracker, type Quat } from './project'
+import { proximityKey } from '../../../src/engine/pointerKeys'
 
 function toActions(entries: HoverEntry[]): HoverAction[] {
   return entries
@@ -30,14 +31,18 @@ export function registerProximity(ctx: Ctx): void {
     }
   })()
 
-  let hadTips = false
+  // Sent only when a tip appears, goes or moves by a whole pixel, not every frame.
+  let lastKey = ''
+  const send = (tips: ProximityTip[]): void => {
+    const key = proximityKey(tips)
+    if (key === lastKey) return
+    lastKey = key
+    ctx.send({ kind: 'proximity', tips })
+  }
   ctx.push((dt) => {
     fov.tick(dt)
     if (inRange.size === 0) {
-      if (hadTips) {
-        hadTips = false
-        ctx.send({ kind: 'proximity', tips: [] })
-      }
+      send([])
       return
     }
     const camT = Transform.getOrNull(engine.CameraEntity)
@@ -49,7 +54,6 @@ export function registerProximity(ctx: Ctx): void {
       const p = projectToScreen(e.pos, camT.position, camT.rotation as Quat, fov.fovY(), canvas.width, canvas.height)
       if (p != null) tips.push({ id, x: p.x, y: p.y, actions: e.actions })
     }
-    hadTips = true
-    ctx.send({ kind: 'proximity', tips })
+    send(tips)
   })
 }
