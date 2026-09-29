@@ -38,10 +38,11 @@ use crate::{
 use common::{
     inputs::InputMap,
     rpc::RpcCall,
+    sets::RealmLifecycle,
     structs::{
-        AppConfig, CursorLocks, GraphicsSettings, PermissionUsed, PreviewMode, PrimaryCamera,
-        PrimaryPlayerRes, SceneGlobalLight, SceneLoadDistance, ServerConfiguration, TimeOfDay,
-        ToolTips,
+        AppConfig, CurrentRealm, CursorLocks, GraphicsSettings, PermissionUsed, PreviewMode,
+        PrimaryCamera, PrimaryPlayerRes, SceneGlobalLight, SceneLoadDistance, ServerConfiguration,
+        TimeOfDay, ToolTips,
     },
 };
 use comms::CommsPlugin;
@@ -180,13 +181,22 @@ fn init_test_app(entity_json: &str) -> App {
         ..Default::default()
     });
 
-    app.world_mut().resource_mut::<ScenePointers>().insert(
-        IVec2::ZERO,
-        PointerResult::Exists {
-            realm: "manual value".to_owned(),
-            hash: entity_json.to_owned(),
-            urn: Some(urn),
-        },
+    // a realm change clears the pointers, so place the scene once the realm is applied
+    let hash = entity_json.to_owned();
+    app.add_systems(
+        PostUpdate,
+        (move |realm: Res<CurrentRealm>, mut pointers: ResMut<ScenePointers>| {
+            if realm.is_changed() && !realm.about_url.is_empty() {
+                pointers.insert(
+                    IVec2::ZERO,
+                    PointerResult::Exists {
+                        hash: hash.clone(),
+                        urn: Some(urn.clone()),
+                    },
+                );
+            }
+        })
+        .after(RealmLifecycle),
     );
 
     // startup system to create camera and fire load event
