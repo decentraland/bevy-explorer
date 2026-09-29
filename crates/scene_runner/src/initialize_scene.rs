@@ -888,9 +888,7 @@ impl ScenePointers {
             None => (min_bound, max_bound),
         };
         self.realm_bounds = (min_bound, max_bound);
-        // clear nothings
-        self.pointers.retain(|_, r| r != &PointerResult::Nothing);
-        // exists will be rechecked / replaced when active entities returns
+        self.pointers.clear();
         self.crcs.clear();
         self.terrain.invalidate();
     }
@@ -1062,11 +1060,7 @@ impl ScenePointers {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone)]
 pub enum PointerResult {
     Nothing,
-    Exists {
-        realm: String,
-        hash: String,
-        urn: Option<String>,
-    },
+    Exists { hash: String, urn: Option<String> },
 }
 
 impl PointerResult {
@@ -1078,13 +1072,6 @@ impl PointerResult {
         match self {
             PointerResult::Nothing => None,
             PointerResult::Exists { hash, urn, .. } => Some((hash.clone(), urn.clone())),
-        }
-    }
-
-    fn realm(&self) -> Option<&str> {
-        match self {
-            PointerResult::Nothing => None,
-            PointerResult::Exists { realm, .. } => Some(realm),
         }
     }
 }
@@ -1125,10 +1112,7 @@ pub fn parcels_in_range(
 pub fn process_realm_change(
     mut commands: Commands,
     current_realm: Res<CurrentRealm>,
-    mut live_scenes: ResMut<LiveScenes>,
-    mut pointers: ResMut<ScenePointers>,
     mut segment_config: Option<ResMut<SegmentConfig>>,
-    scenes: Query<&RendererSceneContext>,
     player: Query<Entity, With<PrimaryUser>>,
 ) {
     if current_realm.is_changed() {
@@ -1145,52 +1129,6 @@ pub fn process_realm_change(
             "realm change `{}` / `{}`! purging scenes",
             current_realm.address, current_realm.about_url
         );
-        let mut realm_scene_urns = HashSet::new();
-        for urn in current_realm
-            .config
-            .scenes_urn
-            .as_ref()
-            .unwrap_or(&Vec::default())
-        {
-            let hacked_urn = urn.replace('?', "?=&");
-            let path = match IpfsPath::new_from_urn::<EntityDefinition>(&hacked_urn) {
-                Ok(path) => path,
-                Err(e) => {
-                    warn!("failed to parse urn: `{}`: {}", urn, e);
-                    continue;
-                }
-            };
-
-            realm_scene_urns.insert((hacked_urn, path));
-        }
-
-        let realm_scene_ids = realm_scene_urns
-            .into_iter()
-            .flat_map(|(urn, path)| match path.context_free_hash() {
-                Ok(Some(hash)) => Some((hash, urn)),
-                otherwise => {
-                    warn!("could not resolve hash from urn: {otherwise:?}");
-                    None
-                }
-            })
-            .collect::<HashMap<_, _>>();
-
-        if !realm_scene_ids.is_empty() {
-            // purge pointers and scenes that are not in the realm list (and not portable)
-            live_scenes.scenes.retain(|hash, entity| {
-                realm_scene_ids.contains_key(hash)
-                    || scenes.get(*entity).is_ok_and(|ctx| ctx.is_portable)
-            });
-            // Explicit-urn realms only request urns that aren't already cached and
-            // do no parcel sweep, so the active-entities reconciliation that clears
-            // stale pointers for active-entities realms never runs. Reconcile here
-            // against the realm's scene list
-            pointers.pointers.retain(|_, pr| match pr {
-                PointerResult::Nothing => false,
-                PointerResult::Exists { hash, .. } => realm_scene_ids.contains_key(hash),
-            });
-            pointers.terrain.invalidate();
-        }
 
         if let Some(ref mut segment_config) = segment_config {
             segment_config.update_realm(current_realm.address.clone());
@@ -1369,12 +1307,8 @@ fn load_active_entities(
                 pointers.max(),
             )
             .into_iter()
-            .filter_map(|(parcel, distance)| match pointers.get(parcel) {
-                Some(PointerResult::Exists { realm, .. }) => {
-                    (realm != current_realm.pointer_realm()).then_some((distance, parcel))
-                }
-                Some(PointerResult::Nothing) => None,
-                _ => Some((distance, parcel)),
+            .filter_map(|(parcel, distance)| {
+                pointers.get(parcel).is_none().then_some((distance, parcel))
             })
             .collect();
             required_parcels.sort_by_key(|(distance, _)| FloatOrd(-distance));
@@ -1413,40 +1347,12 @@ fn load_active_entities(
             // TODO perf might be worth caching available and required
             let available_hashes = pointers
                 .pointers
-                .iter()
-                .flat_map(|(parcel, ptr)| match ptr {
+                .values()
+                .flat_map(|ptr| match ptr {
                     PointerResult::Nothing => None,
-                    PointerResult::Exists { realm, hash, .. } => {
-                        if realm == current_realm.pointer_realm() {
-                            Some((hash, *parcel))
-                        } else {
-                            None
-                        }
-                    }
+                    PointerResult::Exists { hash, .. } => Some(hash.as_str()),
                 })
-                .collect::<HashMap<_, _>>();
-
-            // make sure we still teleport even if we already have the hash (e.g.
-            // returning to a World whose pointers are still cached). `available_hashes`
-            // is keyed by hash but `teleport_on_resolve` is a urn, so match via
-            // `contains` as the resolve path below does, rather than a direct lookup.
-            if let Some(teleport_on_resolve) = teleport_on_resolve.as_ref() {
-                if let Some(parcel) = available_hashes.iter().find_map(|(hash, parcel)| {
-                    teleport_on_resolve
-                        .contains(hash.as_str())
-                        .then_some(*parcel)
-                }) {
-                    if let Some(mut commands) = player
-                        .single()
-                        .ok()
-                        .and_then(|(p, _)| commands.get_entity(p).ok())
-                    {
-                        commands.try_insert(teleport_components(parcel));
-                        debug!("already got the hash -> none");
-                        *teleport_target = RealmInitialLocation::None;
-                    }
-                }
-            }
+                .collect::<HashSet<_>>();
 
             let required_hashes_and_urns = current_realm
                 .config
@@ -1463,7 +1369,7 @@ fn load_active_entities(
                                 .map(|hash| (hash, path, urn))
                         })
                 })
-                .filter(|(hash, ..)| !available_hashes.contains_key(hash))
+                .filter(|(hash, ..)| !available_hashes.contains(hash.as_str()))
                 .collect::<Vec<_>>();
 
             let required_paths = required_hashes_and_urns
@@ -1589,7 +1495,6 @@ fn load_active_entities(
                 if let Some(new_bounds) = pointers.insert(
                     parcel,
                     PointerResult::Exists {
-                        realm: current_realm.pointer_realm().to_owned(),
                         hash: active_entity.id.clone(),
                         urn: urn.clone(),
                     },
@@ -1622,7 +1527,6 @@ pub struct CurrentSceneLoading(pub bool);
 #[expect(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_scene_lifecycle(
     mut commands: Commands,
-    current_realm: Res<CurrentRealm>,
     portables: Res<PortableScenes>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     scene_entities: Query<
@@ -1705,12 +1609,7 @@ pub fn process_scene_lifecycle(
     let mut keep_scene_ids = required_scene_ids.keys().cloned().collect::<HashSet<_>>();
     keep_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
         if *dist >= range.load && *dist <= range.unload {
-            pointers
-                .get(parcel)
-                // immediately unload scenes from other realms, even if they might match
-                // we don't check them until they are in range, so better to just nuke them
-                .filter(|pr| pr.realm() == Some(current_realm.pointer_realm()))
-                .and_then(PointerResult::hash_and_urn)
+            pointers.get(parcel).and_then(PointerResult::hash_and_urn)
         } else {
             None
         }
@@ -2089,7 +1988,6 @@ mod tests {
     }
 
     fn setup_lifecycle(world: &mut World) {
-        world.init_resource::<CurrentRealm>();
         world.init_resource::<PortableScenes>();
         world.init_resource::<LiveScenes>();
         world.init_resource::<Events<LoadSceneEvent>>();
@@ -2107,7 +2005,6 @@ mod tests {
             pointers.insert(
                 parcel,
                 PointerResult::Exists {
-                    realm: String::default(),
                     hash: hash.to_owned(),
                     urn: None,
                 },
