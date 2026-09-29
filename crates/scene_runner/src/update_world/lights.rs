@@ -451,6 +451,9 @@ fn manage_shadow_casters(
         common::structs::ShadowSetting::Off => 0,
         _ => config.graphics.shadow_caster_count,
     };
+    if config.graphics.shadow_distance <= 0. {
+        max_casters = 0;
+    }
     debug!(
         "found {} lights, enabling up to {} with {} casters",
         lights.len(),
