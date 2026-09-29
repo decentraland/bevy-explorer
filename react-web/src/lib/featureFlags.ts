@@ -13,7 +13,6 @@ let pending: Promise<FeatureFlags | null> | null = null
 let loaded: FeatureFlags | null = null
 
 export async function loadFeatureFlags(): Promise<FeatureFlags | null> {
-  if (import.meta.env.MODE === 'test') return loaded
   pending ??= fetch(`https://feature-flags.${BASE_DOMAIN}/explorer.json`)
     .then(async (r) => (r.ok ? ((await r.json()) as FeatureFlags) : null))
     .catch(() => null)
@@ -51,8 +50,8 @@ export function flagPayload(ff: FeatureFlags | null, name: string, variant: stri
   }
 }
 
-/** For tests. */
+/** For tests: serve `value` without fetching. */
 export function resetFeatureFlags(value: FeatureFlags | null = null): void {
   loaded = value
-  pending = value != null ? Promise.resolve(value) : null
+  pending = Promise.resolve(value)
 }

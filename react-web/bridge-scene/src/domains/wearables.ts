@@ -18,7 +18,6 @@ type CatalogElement = {
   name: string
   rarity: string
   category: string
-  amount?: number
   // Per-owned-token data; carries the tokenId we need for the deployable URN.
   individualData?: Array<{ id?: string; tokenId?: string }>
   entity?: { metadata?: { thumbnail?: string; data?: HideData }; content?: Array<{ file: string; hash: string }> }
@@ -75,7 +74,6 @@ export async function fetchWearablesPage(address: string, p: CatalogPageParams):
       rarity: el.rarity,
       category: el.category,
       thumbnail: hash != null ? `${baseUrl}/content/contents/${hash}` : undefined,
-      count: el.amount,
       equipped: owned.some((w) => w === el.urn || w.startsWith(`${el.urn}:`)),
       bodyShapes: bodyShapesOf(el.entity?.metadata?.data?.representations),
       isSmart: el.entity?.content?.some((c) => c.file.endsWith('.js')) === true,

@@ -1,7 +1,8 @@
 // Hex / HSV / engine Color3 (0–1 floats) conversions for the avatar color pickers.
 
+import type { Color3 } from '../engine/generated'
+
 export type Hsv = { h: number; s: number; v: number }
-export type Color3 = { r: number; g: number; b: number }
 
 const hex2 = (n: number): string => Math.round(Math.min(255, Math.max(0, n))).toString(16).padStart(2, '0')
 

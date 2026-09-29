@@ -2,10 +2,15 @@ import '@testing-library/jest-dom/vitest'
 import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import { resetProfileStore } from '../features/session/profileStore'
+import { resetFeatureFlags } from '../lib/featureFlags'
+
+// No remote feature flags in unit tests: a test that needs some sets them with resetFeatureFlags.
+resetFeatureFlags()
 
 afterEach(() => {
   cleanup()
   resetProfileStore()
+  resetFeatureFlags()
 })
 
 // jsdom doesn't implement these; components touch them on mount.

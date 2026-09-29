@@ -30,6 +30,7 @@ import { openWorldVisit } from './components/WorldVisitModal'
 import { openPermissionDialog } from './features/permissions/PermissionDialog'
 import { PopupHost, showDialog } from './design'
 import { SessionProvider } from './features/session/SessionContext'
+import { isNativeHud } from './lib/bootMode'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
@@ -55,7 +56,7 @@ const params = new URLSearchParams(location.search)
 // NATIVE (?native=1): HUD in a CEF offscreen webview over the native bevy engine — a JS shim
 // bridges this app's BroadcastChannel to the engine's native relay (no iframe, no mock).
 const MODE: 'mock' | 'engine' | 'native' =
-  params.get('mock') === '1' ? 'mock' : __NATIVE_HUD__ && params.get('native') === '1' ? 'native' : 'engine'
+  params.get('mock') === '1' ? 'mock' : isNativeHud() ? 'native' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
 // Embedded/debug mode (?hud=0 or ?systemScene= — see lib/bootMode.ts): render ONLY the
 // engine — no React HUD at all (no sidebar, chat, pointer, panels, or the sign-in /

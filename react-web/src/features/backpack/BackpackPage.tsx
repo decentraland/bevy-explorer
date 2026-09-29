@@ -22,8 +22,6 @@ import silhouette3 from '../../assets/backpack/silhouette-3.webp'
 import silhouette4 from '../../assets/backpack/silhouette-4.webp'
 import silhouette5 from '../../assets/backpack/silhouette-5.webp'
 
-const SILHOUETTES = [silhouette1, silhouette2, silhouette3, silhouette4, silhouette5]
-const NAMES_URL = 'https://decentraland.org/marketplace/names/claim'
 import closeIcon from '../../assets/backpack/icon-close.webp'
 import wearablesIcon from '../../assets/backpack/icon-wearables.webp'
 import emotesIcon from '../../assets/backpack/icon-emotes.webp'
@@ -39,15 +37,19 @@ import { COLOR_LABEL, COLOR_PRESETS, COLOR_TARGET } from './avatarColors'
 import { isCompatible } from '../../engine/bodyShape'
 import { hiddenBy } from '../../engine/avatarHides'
 import { previewFocusFor } from './previewFocus'
+import { isEditableTarget } from '../../lib/bindingLabels'
 import { catalystThumbUrl } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
 import { CategoryIcon } from './categoryIcons'
 import { EngineViewport } from '../engine/EngineViewport'
 import { MainMenuShell } from '../menu/MainMenuShell'
-import type { Emote, Outfit, Wearable } from '../../engine/protocol'
+import type { AvatarColorTarget, Emote, Outfit, Wearable } from '../../engine/protocol'
 import type { BackpackState, EmotesState, ProfileState } from '../session/useEngineSession'
 import styles from './BackpackPage.module.css'
 import { withUtm } from '../../lib/utm'
+
+const SILHOUETTES = [silhouette1, silhouette2, silhouette3, silhouette4, silhouette5]
+const NAMES_URL = 'https://decentraland.org/marketplace/names/claim'
 
 type BackpackTab = 'wearables' | 'emotes'
 const BACKPACK_TABS: TabItem<BackpackTab>[] = [
@@ -102,8 +104,6 @@ function categoryName(c: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
-export { pageWindow } from '../../design'
-
 // The 18 equipable slot categories, ordered like Unity's Backpack prefab (body parts grouped
 // head→body→accessories). NOT included: 'head' — it exists in the schemas only as a hide/replace
 // TARGET (wearables can `hides: ["head"]`); nothing is published with category "head", so Unity's
@@ -113,9 +113,6 @@ const CATEGORY_ORDER = [
   'upper_body', 'hands_wear', 'lower_body', 'feet',
   'hat', 'eyewear', 'earring', 'mask', 'tiara', 'top_head', 'helmet', 'skin'
 ]
-// Slot rows (two per row), with a divider and a 12px gap after the face and body groups.
-const SLOT_ROW_Y = [0, 84, 168, 264, 348, 442, 526, 610, 694]
-const SLOT_DIVIDER_Y = [256.25, 434.25]
 
 // Categories that must always keep something equipped, so neither their slot nor their grid card offers unequip —
 // mirrors Unity's IsUnequippable gate (BackpackGridController: not body_shape/eyes/eyebrows/mouth).
@@ -123,7 +120,6 @@ const REQUIRED_CATEGORIES = new Set(['body_shape', 'eyes', 'eyebrows', 'mouth'])
 
 function CategoryTile({
   cat,
-  index,
   active,
   equipped,
   hider,
@@ -133,7 +129,6 @@ function CategoryTile({
   onToggleHide
 }: {
   cat: string
-  index: number
   active: boolean
   equipped?: Wearable
   /** Category of the equipped item that hides this one. */
@@ -152,7 +147,6 @@ function CategoryTile({
     <button
       type="button"
       className={`${styles.slot} ${active ? styles.slotActive : ''}`.trim()}
-      style={{ left: index % 2 === 0 ? 0 : 148, top: SLOT_ROW_Y[Math.floor(index / 2)] }}
       aria-label={humanize(cat)}
       aria-pressed={active}
       onClick={onClick}
@@ -391,7 +385,7 @@ export function BackpackPage({
   useEffect(() => {
     if (!backpack.open || tab !== 'emotes' || hoveredEmote == null) return
     const onKey = (e: KeyboardEvent): void => {
-      if (!/^[0-9]$/.test(e.key) || e.target instanceof HTMLInputElement) return
+      if (!/^[0-9]$/.test(e.key) || isEditableTarget(e.target)) return
       e.preventDefault()
       emotes.equip(Number(e.key), hoveredEmote)
     }
@@ -446,6 +440,8 @@ export function BackpackPage({
             : 0
       )
   }, [emotes.list, query, collectiblesOnly, sortBy, sortDir])
+  const emotePageCount = Math.max(1, Math.ceil(emoteItems.length / PAGE_SIZE))
+  const safeEmotePage = Math.min(emotePage, emotePageCount - 1)
 
   // The preview camera follows the selected category; emotes and outfits show the whole avatar.
   useEffect(() => {
@@ -510,6 +506,9 @@ export function BackpackPage({
   }
 
   const inOutfits = tab === 'wearables' && section === 'outfits'
+  // The COLOR button for categories that edit a colour, once the bridge has reported that colour.
+  const colorTarget: AvatarColorTarget | undefined = COLOR_TARGET[cat]
+  const color = colorTarget != null ? backpack.colors?.[colorTarget] : undefined
   const p = profile.data
   return (
     <MainMenuShell
@@ -599,14 +598,12 @@ export function BackpackPage({
               ) : (
               <div key="categories" className={`${styles.catalog} ${styles.slideFromLeft}`}>
                 <div className={styles.catColumn}>
-                  {SLOT_DIVIDER_Y.map((y) => <span key={y} className={styles.slotDivider} style={{ top: y }} aria-hidden="true" />)}
-                  {categories.map((c, i) => {
+                  {categories.map((c) => {
                     const eq = equippedByCat.get(c)
                     return (
                       <CategoryTile
                         key={c}
                         cat={c}
-                        index={i}
                         active={cat === c}
                         equipped={eq}
                         onClick={() => pick(c)}
@@ -633,12 +630,12 @@ export function BackpackPage({
                         <Chip label={query} selected onClear={() => setQuery('')} clearLabel="Clear search" />
                       </>
                     )}
-                    {COLOR_TARGET[cat] != null && backpack.colors != null && (
+                    {colorTarget != null && color != null && (
                       <ColorPicker
-                        label={COLOR_LABEL[COLOR_TARGET[cat]]}
-                        value={backpack.colors[COLOR_TARGET[cat]]}
-                        presets={COLOR_PRESETS[COLOR_TARGET[cat]]}
-                        onChange={(hex) => backpack.setColor(COLOR_TARGET[cat], hex)}
+                        label={COLOR_LABEL[colorTarget]}
+                        value={color}
+                        presets={COLOR_PRESETS[colorTarget]}
+                        onChange={(hex) => backpack.setColor(colorTarget, hex)}
                       />
                     )}
                   </div>}
@@ -680,7 +677,7 @@ export function BackpackPage({
                     const num = (k + 1) % 10
                     const e = emotes.list.find((x) => x.slot === num) ?? null
                     return (
-                      <div key={num} className={styles.emoteRow} style={{ top: k * 81.4 }}>
+                      <div key={num} className={styles.emoteRow}>
                         {k > 0 && <span className={styles.emoteDivider} aria-hidden="true" />}
                         <button
                           type="button"
@@ -720,7 +717,7 @@ export function BackpackPage({
                     <div className={styles.empty}>{emotes.list.length === 0 ? 'No emotes.' : 'No matches.'}</div>
                   ) : (
                     <div className={styles.grid}>
-                      {emoteItems.slice(emotePage * PAGE_SIZE, (emotePage + 1) * PAGE_SIZE).map((e) => (
+                      {emoteItems.slice(safeEmotePage * PAGE_SIZE, (safeEmotePage + 1) * PAGE_SIZE).map((e) => (
                         <WearableCard
                           key={e.urn}
                           thumbnail={e.thumbnail ?? catalystThumbUrl(e.urn)}
@@ -738,16 +735,13 @@ export function BackpackPage({
                       ))}
                     </div>
                   )}
-                  <Pager className={styles.pager} page={Math.min(emotePage, Math.max(0, Math.ceil(emoteItems.length / PAGE_SIZE) - 1))} count={Math.ceil(emoteItems.length / PAGE_SIZE)} onChange={setEmotePage} />
+                  <Pager className={styles.pager} page={safeEmotePage} count={emotePageCount} onChange={setEmotePage} />
                 </div>
               </div>
             )}
 
-          {/* Right: selected-item detail — an outfit's wearables in the Outfits section, else the
-              selected wearable/emote. */}
-          {tab === 'wearables' && section === 'outfits' ? null : tab === 'wearables' && section === 'categories' && !backpack.loading && pageItems.length === 0 ? null : (
-            <DetailPanel item={tab === 'wearables' && section === 'outfits' ? null : selected} />
-          )}
+          {/* Right: the selected wearable/emote. Not in Saved Outfits, nor beside an empty wearables grid. */}
+          {!inOutfits && !(tab === 'wearables' && !backpack.loading && pageItems.length === 0) && <DetailPanel item={selected} />}
           </section>
           </div>
         </div>

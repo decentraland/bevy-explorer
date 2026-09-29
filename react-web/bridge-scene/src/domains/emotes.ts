@@ -52,7 +52,6 @@ type CatalogElement = {
   urn: string
   name?: string
   rarity?: string
-  amount?: number
   individualData?: Array<{ id?: string; tokenId?: string }>
   entity?: { metadata?: { name?: string; thumbnail?: string; rarity?: string }; content?: Array<{ file: string; hash: string }> }
 }
@@ -183,7 +182,6 @@ export function registerEmotes(ctx: Ctx): void {
       name: el.entity?.metadata?.name ?? el.name ?? baseEmoteName(el.urn),
       rarity: el.rarity ?? el.entity?.metadata?.rarity ?? 'base',
       thumbnail: thumbUrl(base, el),
-      count: el.amount,
       slot: slotByItem.get(itemUrn(el.urn))
     }))
 
