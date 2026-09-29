@@ -73,8 +73,12 @@ pub struct SceneBound {
 
 impl SceneBound {
     pub fn new(bounds: Vec<BoundRegion>, distance: f32) -> Self {
-        let num_bounds = bounds.len() as u32;
-        let bounds: [BoundRegion; 8] = if bounds.len() > 8 {
+        let num_bounds = if bounds.len() > MAX_BOUND_REGIONS {
+            1
+        } else {
+            bounds.len() as u32
+        };
+        let bounds: [BoundRegion; MAX_BOUND_REGIONS] = if bounds.len() > MAX_BOUND_REGIONS {
             warn!("super janky scene shape not supported");
             let overall_min = bounds.iter().fold(IVec2::MAX, |t, b| t.min(b.parcel_min()));
             let overall_max = bounds.iter().fold(IVec2::MIN, |t, b| t.max(b.parcel_max()));
@@ -82,7 +86,7 @@ impl SceneBound {
             [overall_region]
                 .into_iter()
                 .chain(std::iter::repeat(Default::default()))
-                .take(8)
+                .take(MAX_BOUND_REGIONS)
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap()
@@ -90,7 +94,7 @@ impl SceneBound {
             bounds
                 .into_iter()
                 .chain(std::iter::repeat(Default::default()))
-                .take(8)
+                .take(MAX_BOUND_REGIONS)
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap()
@@ -117,6 +121,10 @@ impl SceneBound {
     }
 }
 
+/// max rects per scene bound; must match `array<Bounds,8>` in the bound shaders.
+/// scenes needing more fall back to a single bounding-box region.
+pub const MAX_BOUND_REGIONS: usize = 8;
+
 mod decl {
     // temporary for ShaderType macro, remove in future
     #![allow(dead_code)]
@@ -132,7 +140,7 @@ mod decl {
 
     #[derive(ShaderType, Clone)]
     pub struct SceneBoundData {
-        pub(super) bounds: [BoundRegion; 8],
+        pub(super) bounds: [BoundRegion; super::MAX_BOUND_REGIONS],
         pub distance: f32,
         pub num_bounds: u32,
     }

@@ -3,7 +3,7 @@ use bevy::{
     reflect::TypePath,
     render::render_resource::{AsBindGroup, ShaderRef},
 };
-use scene_material::BoundRegion;
+use scene_material::{BoundRegion, MAX_BOUND_REGIONS};
 
 pub struct MaskMaterialPlugin;
 
@@ -33,7 +33,7 @@ mod decl {
 
     #[derive(ShaderType, Debug, Clone)]
     pub struct MaskData {
-        pub(super) bounds: [scene_material::BoundRegion; 8],
+        pub(super) bounds: [scene_material::BoundRegion; scene_material::MAX_BOUND_REGIONS],
         pub(super) color: Vec4,
         pub(super) distance: f32,
         pub(super) num_bounds: u32,
@@ -63,8 +63,12 @@ impl MaskMaterial {
         bounds: Vec<BoundRegion>,
         distance: f32,
     ) -> Self {
-        let num_bounds = bounds.len() as u32;
-        let bounds: [BoundRegion; 8] = if bounds.len() > 8 {
+        let num_bounds = if bounds.len() > MAX_BOUND_REGIONS {
+            1
+        } else {
+            bounds.len() as u32
+        };
+        let bounds: [BoundRegion; MAX_BOUND_REGIONS] = if bounds.len() > MAX_BOUND_REGIONS {
             warn!("super janky scene shape not supported");
             let overall_min = bounds.iter().fold(IVec2::MAX, |t, b| t.min(b.parcel_min()));
             let overall_max = bounds.iter().fold(IVec2::MIN, |t, b| t.max(b.parcel_max()));
@@ -72,7 +76,7 @@ impl MaskMaterial {
             [overall_region]
                 .into_iter()
                 .chain(std::iter::repeat(Default::default()))
-                .take(8)
+                .take(MAX_BOUND_REGIONS)
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap()
@@ -80,7 +84,7 @@ impl MaskMaterial {
             bounds
                 .into_iter()
                 .chain(std::iter::repeat(Default::default()))
-                .take(8)
+                .take(MAX_BOUND_REGIONS)
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap()
