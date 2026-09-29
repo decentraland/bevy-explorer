@@ -405,26 +405,20 @@ fn update_point_lights(
 pub struct RetryLightTexture;
 
 fn manage_shadow_casters(
-    read_lights: Query<(Entity, &GlobalTransform, &LightEntity, &ChildOf)>,
+    read_lights: Populated<(Entity, &GlobalTransform, &LightEntity, &ChildOf)>,
     mut write_lights: Query<(
         Option<&mut PointLight>,
         Option<&mut SpotLight>,
         &mut Visibility,
     )>,
     parent_visibility: Query<&InheritedVisibility>,
-    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
+    player: Single<(Entity, &GlobalTransform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
     config: Res<AppConfig>,
     mut lights: Local<Vec<(Entity, bool, FloatOrd, bool)>>,
 ) {
-    let Ok((player, player_gt)) = player.single() else {
-        return;
-    };
+    let (player, player_gt) = player.into_inner();
     let player_t = player_gt.translation();
-
-    if read_lights.is_empty() {
-        return;
-    }
 
     let active_scenes = containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS);
 
