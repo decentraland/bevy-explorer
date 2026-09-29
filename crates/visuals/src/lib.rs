@@ -42,6 +42,8 @@ use crate::{
     trees::TreesPlugin,
 };
 
+const MIN_CASCADE: f32 = 0.1;
+
 pub struct VisualsPlugin {
     pub no_fog: bool,
 }
@@ -305,7 +307,7 @@ fn apply_global_light(
                 true,
                 CascadeShadowConfigBuilder {
                     num_cascades: 1,
-                    minimum_distance: 0.1,
+                    minimum_distance: MIN_CASCADE,
                     maximum_distance: setting.graphics.shadow_distance,
                     first_cascade_far_bound: setting.graphics.shadow_distance,
                     overlap_proportion: 0.2,
@@ -316,9 +318,10 @@ fn apply_global_light(
                 true,
                 CascadeShadowConfigBuilder {
                     num_cascades: 4,
-                    minimum_distance: 0.1,
+                    minimum_distance: MIN_CASCADE,
                     maximum_distance: setting.graphics.shadow_distance,
-                    first_cascade_far_bound: setting.graphics.shadow_distance / 15.0,
+                    first_cascade_far_bound: (setting.graphics.shadow_distance / 15.0)
+                        .max(MIN_CASCADE),
                     overlap_proportion: 0.2,
                 }
                 .build(),
