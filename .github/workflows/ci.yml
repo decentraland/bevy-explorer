@@ -486,8 +486,11 @@ jobs:
           echo "PUBLIC_URL=$PUBLIC_URL"
           npm ci --prefix react-web
           npm run build --prefix react-web
+      # Some tests load bridge-scene sources, whose tsconfig extends the scene SDK's.
       - name: react-web unit tests
-        run: npm run test --prefix react-web
+        run: |
+          npm ci --prefix react-web/bridge-scene
+          npm run test --prefix react-web
       # The headless bridge scene the engine loads as its --ui systemScene. The realm (about) is
       # served same-origin with the engine iframe, but the scene CONTENT baseUrl is baked at
       # export — point it at the versioned CDN path so it's version-pinned + immutable and never
@@ -496,7 +499,6 @@ jobs:
         run: |
           export SCENE_BASE_URL="$(node -p "require('../../deploy/web/package.json').homepage || ''")/bridge-scene/static/"
           echo "SCENE_BASE_URL=$SCENE_BASE_URL"
-          npm ci
           npm run bundle
         working-directory: react-web/bridge-scene
       - name: Publish
