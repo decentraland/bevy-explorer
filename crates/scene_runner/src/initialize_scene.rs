@@ -846,6 +846,9 @@ pub struct ScenePointers {
     bake_clip: Option<(IVec2, IVec2)>,
     crcs: Vec<Vec<Option<u32>>>,
     terrain: TerrainTargets,
+    // The realm lists its scenes up front (a World) and they have all resolved, so a parcel none
+    // of them covers is empty rather than unknown; there is no pointer request to answer for it.
+    all_scenes_known: bool,
 }
 
 impl Default for ScenePointers {
@@ -856,6 +859,7 @@ impl Default for ScenePointers {
             bake_clip: None,
             crcs: Default::default(),
             terrain: Default::default(),
+            all_scenes_known: false,
         }
     }
 }
@@ -879,7 +883,18 @@ impl ScenePointers {
         if parcel.cmplt(self.realm_bounds.0).any() || parcel.cmpgt(self.realm_bounds.1).any() {
             return Some(&PointerResult::NOTHING);
         }
-        self.pointers.get(parcel)
+        self.pointers
+            .get(parcel)
+            .or_else(|| self.all_scenes_known.then_some(&PointerResult::NOTHING))
+    }
+
+    /// The realm's listed scenes are placed: parcels none of them covers are empty from now on.
+    pub fn set_all_scenes_known(&mut self) {
+        if !self.all_scenes_known {
+            self.all_scenes_known = true;
+            // the terrain has been reading those parcels as unknown
+            self.terrain.invalidate();
+        }
     }
 
     pub fn set_realm(&mut self, min_bound: IVec2, max_bound: IVec2) {
@@ -888,6 +903,7 @@ impl ScenePointers {
             None => (min_bound, max_bound),
         };
         self.realm_bounds = (min_bound, max_bound);
+        self.all_scenes_known = false;
         self.pointers.clear();
         self.crcs.clear();
         self.terrain.invalidate();
@@ -922,9 +938,10 @@ impl ScenePointers {
             pointers,
             realm_bounds,
             terrain,
+            all_scenes_known,
             ..
         } = self;
-        let realm_bounds = *realm_bounds;
+        let (realm_bounds, all_scenes_known) = (*realm_bounds, *all_scenes_known);
         terrain.resolve(
             |parcel| {
                 if realm_bounds.0.cmpgt(realm_bounds.1).any() {
@@ -936,6 +953,7 @@ impl ScenePointers {
                 match pointers.get(&parcel) {
                     Some(PointerResult::Exists { .. }) => Occupancy::Occupied,
                     Some(PointerResult::Nothing) => Occupancy::Empty,
+                    None if all_scenes_known => Occupancy::Empty,
                     None => Occupancy::Unknown,
                 }
             },
@@ -1285,16 +1303,16 @@ fn load_active_entities(
         }
     };
 
+    let has_scene_urns = !current_realm
+        .config
+        .scenes_urn
+        .as_ref()
+        .is_none_or(Vec::is_empty);
+
     if pointer_request.is_none()
         && !current_realm.address.is_empty()
         && ipfas.active_endpoint().is_some()
     {
-        let has_scene_urns = !current_realm
-            .config
-            .scenes_urn
-            .as_ref()
-            .is_none_or(Vec::is_empty);
-
         let focus_parcel = (focus.translation().xz() * Vec2::new(1.0 / 16.0, -1.0 / 16.0))
             .floor()
             .as_ivec2();
@@ -1509,6 +1527,12 @@ fn load_active_entities(
         // any remaining requested parcels are empty
         for empty_parcel in requested_parcels {
             pointers.insert(empty_parcel, PointerResult::Nothing);
+        }
+
+        // the listed scenes are placed (they are all requested together): every parcel none of
+        // them covers is empty, with no request to answer for it
+        if has_scene_urns {
+            pointers.set_all_scenes_known();
         }
     }
 }
