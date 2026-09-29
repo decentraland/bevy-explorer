@@ -29,15 +29,16 @@ override fn shadows::fetch_directional_shadow(light_id: u32, frag_position: vec4
 struct ShellTexture {
     subdivisions: u32,
     layers: u32,
-    padding: vec2<f32>,
+    // xz the snap grid is anchored to
+    snap_anchor: vec2<f32>,
     root_color: vec4<f32>,
     tip_color: vec4<f32>,
 }
 
 @group(2) @binding(0) var<uniform> shell: ShellTexture;
 
-// Pre-calculated constant: (0.85 * 0.5) = 0.425
-const SCALED_DIST: f32 = 0.425;
+// blade offsets of up to ±0.425 of a cell
+const OFFSET_SCALE: f32 = 0.85;
 
 // PCG2D hash → 2 independent floats in [0, 1].
 // From "Hash Functions for GPU Rendering" (Jarzynski & Olano, 2020).
@@ -57,6 +58,9 @@ fn cell_hash2(cell: vec2<i32>) -> vec2<f32> {
 
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
+    // metres of ground per pixel, taken before any discard so the derivatives stay uniform
+    let footprint = max(fwidth(in.world_position.x), fwidth(in.world_position.z));
+
     // shells are double sided so the inside of a hill shows; dither them out between the camera
     // and the player like scene materials
     discard_dither(in.position.xy, in.world_position.xyz, view.user_value, true);
@@ -75,8 +79,15 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     let subdivisions_f32 = f32(shell.subdivisions);
 
-    let wpx = in.world_position.x * subdivisions_f32;
-    let wpz = in.world_position.z * subdivisions_f32;
+    // snap the position feeding the cells to a pixel-sized grid so the cell lattice can't beat
+    // against the pixel grid into moire. the step varies per pixel, so the grid is only phase
+    // coherent near its anchor; the anchor is kept near the player (see update_grass_anchor)
+    var wp = in.world_position.xz;
+    if footprint > 0.0 {
+        wp = shell.snap_anchor + floor((wp - shell.snap_anchor) / footprint) * footprint;
+    }
+    let wpx = wp.x * subdivisions_f32;
+    let wpz = wp.y * subdivisions_f32;
 
     // Snap to cell grid; integer coords feed the cheap hash.
     let cell = vec2<i32>(i32(round(wpx + 0.5)), i32(round(wpz + 0.5)));
@@ -99,12 +110,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let dx = disp_hash.x - 0.5;
     let dz = disp_hash.y - 0.5;
 
-    let edge_dist = max(abs(dx), abs(dz)) + 0.00001;
-
-    let scale = SCALED_DIST / edge_dist;
-
-    let root_x = wpx + dx * scale;
-    let root_z = wpz + dz * scale;
+    let root_x = wpx + dx * OFFSET_SCALE;
+    let root_z = wpz + dz * OFFSET_SCALE;
 
     let blade_uv = fract(vec2(root_x, root_z)) - vec2(0.5);
     let threshold = mix(0.25, 0.45, 1. - (factor / simplex));
