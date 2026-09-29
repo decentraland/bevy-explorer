@@ -13,12 +13,17 @@ import { resolveDefsByUrn } from './collections'
 import { itemUrn } from './urns'
 import { lookDeploy, sameLook, type AvatarLook } from '../../../src/engine/avatarEquip'
 import { bodyShapesOf, isCompatible } from '../../../src/engine/bodyShape'
+import { identity } from '../identity'
 
 let draft: AvatarLook | null = null
 // The look last known to be on the server: the draft's seed, then each successful deploy. A failed
 // deploy leaves it behind so the next close retries — the engine keeps the change locally but won't
 // redeploy it by itself.
 let deployed: AvatarLook | null = null
+identity.onChange(() => {
+  draft = null
+  deployed = null
+})
 
 function playerLook(): AvatarLook | null {
   const p = getPlayer()

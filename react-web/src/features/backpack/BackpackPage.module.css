@@ -9,12 +9,8 @@
 .backdrop {
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--lava-4) 55%, transparent) 0%, transparent 22%),
-    radial-gradient(ellipse 60% 45% at 25% 100%, var(--lava-3) 0%, transparent 100%),
-    linear-gradient(90deg, var(--lava-1) 0%, var(--lava-1) 30%, color-mix(in srgb, var(--lava-1) 55%, var(--lava-2)) 65%, var(--lava-2) 100%);
-  background-size: 100% 100%, 140% 140%, 100% 100%;
-  animation: lava 24s var(--ease-inout) infinite alternate;
+  overflow: hidden;
+  background: linear-gradient(90deg, var(--lava-1) 0%, var(--lava-1) 30%, color-mix(in srgb, var(--lava-1) 55%, var(--lava-2)) 65%, var(--lava-2) 100%);
   /* Leave the 960×960 avatar preview frame to the engine; its right part shows through the card. */
   mask:
     linear-gradient(var(--black), var(--black)) 0 0 / 100% 100% no-repeat,
@@ -22,12 +18,31 @@
   mask-composite: exclude;
   -webkit-mask-composite: xor;
 }
+/* The drifting glow moves by transform, which the compositor runs without repainting the page. */
+.backdrop::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 140%;
+  height: 140%;
+  background: radial-gradient(ellipse 60% 45% at 25% 100%, var(--lava-3) 0%, transparent 100%);
+  transform: translate(0, -28.571%);
+  animation: lava 24s var(--ease-inout) infinite alternate;
+  will-change: transform;
+}
+.backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--lava-4) 55%, transparent) 0%, transparent 22%);
+}
 @keyframes lava {
   from {
-    background-position: 0 0, 0% 100%, 0 0;
+    transform: translate(0, -28.571%);
   }
   to {
-    background-position: 0 0, 100% 80%, 0 0;
+    transform: translate(-28.571%, -22.857%);
   }
 }
 

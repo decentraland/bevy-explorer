@@ -166,6 +166,57 @@ describe('session domain', () => {
     expect(h.driver.calls).toContain('logout')
   })
 
+  it('the next account after a logout fetches its own data again', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().backpack.toggle())
+    act(() => h.session().backpack.toggle())
+    act(() => h.session().logout())
+    await waitFor(() => expect(h.session().phase).toBe('login'))
+    h.driver.sent.length = 0
+    await enterAsGuest(h, { keepSent: true })
+    expect(h.driver.sentOf('getProfile')).toHaveLength(1)
+    expect(h.driver.sentOf('getNotifications')).toHaveLength(1)
+    act(() => h.session().backpack.toggle())
+    expect(h.driver.sentOf('getWearables')).toHaveLength(1)
+  })
+
+  it('a chat message leaves the minimap and map slices untouched', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    const { minimap, map } = h.session()
+    act(() => h.driver.emit({ kind: 'chat', chat: { sender: '0xabc', message: 'hi', channel: 'Nearby' } }))
+    await waitFor(() => expect(h.session().chat.messages).toHaveLength(1))
+    expect(h.session().minimap).toBe(minimap)
+    expect(h.session().map).toBe(map)
+  })
+
+  it('a fetch the bridge failed is asked again on the next open', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().backpack.toggle())
+    act(() => h.session().backpack.toggle())
+    expect(h.driver.sentOf('getWearables')).toHaveLength(1)
+    act(() => h.driver.emit({ kind: 'requestFailed', request: 'getWearables', error: 'catalyst down' }))
+    act(() => h.session().backpack.toggle())
+    expect(h.driver.sentOf('getWearables')).toHaveLength(2)
+  })
+
+  it('after a logout, a place picked for the next account waits for that account to spawn', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().logout())
+    await waitFor(() => expect(h.session().login.status).not.toBe('loading'))
+    act(() => h.session().login.exploreAsGuest())
+    await waitFor(() => expect(h.session().phase).toBe('picking'))
+    h.driver.sent.length = 0
+    act(() => h.session().pickDestination({ kind: 'parcel', x: 10, y: 20 }))
+    await waitFor(() => expect(h.driver.calls.filter((c) => c === 'loginGuest')).toHaveLength(2))
+    expect(h.driver.sentOf('teleport')).toHaveLength(0)
+    h.driver.emit({ kind: 'event', name: 'playerReady' })
+    await waitFor(() => expect(h.driver.sentOf('teleport')).toEqual([{ kind: 'teleport', x: 10, y: 20 }]))
+  })
+
   it('a runtime crash from the watchdog sets a dismissable fatal; dismiss re-arms the watchdog', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h)

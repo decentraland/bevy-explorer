@@ -13,6 +13,7 @@ import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
 import { readAllPages, type Page } from '../../../src/engine/paging'
 import { currentLook, editLook } from './avatarDraft'
+import { identity } from '../identity'
 
 const SLOT_COUNT = 10 // the emote wheel has 10 slots
 const BASE_EMOTE_PREFIX = 'urn:decentraland:off-chain:base-emotes:'
@@ -84,6 +85,10 @@ const tokenUrnByItem = new Map<string, string>()
 // feeds) per address — re-opening the backpack then costs nothing. Equipped SLOTS are NOT cached;
 // they're recomputed from the Backpack's look on every getEmotes, so assignments stay current.
 let ownedCache: { address: string; elements: CatalogElement[] } | null = null
+identity.onChange(() => {
+  ownedCache = null
+  tokenUrnByItem.clear()
+})
 async function getOwned(base: string, address: string): Promise<CatalogElement[]> {
   if (ownedCache?.address === address) return ownedCache.elements
   const elements = await fetchOwned(base, address)

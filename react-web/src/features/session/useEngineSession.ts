@@ -1,8 +1,9 @@
 // Top-level session orchestration: login → entering (scene loading) → world.
 // Owns the driver and exposes the login flow + scene-loading state + phase.
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
+import { hoverKey, proximityKey } from '../../engine/pointerKeys'
 import type { LoginDriver } from '../../engine/driver'
 import type { PreviewFocus } from '../../engine/protocol'
 import type { FatalError } from '../error/fatalError'
@@ -476,6 +477,7 @@ export interface EngineSession {
   logout: () => void
   /** A full scene menu page is open → the React HUD (sidebar + chat) hides. */
   menuOpen: boolean
+  closeAllPanels: () => void
 }
 
 /** Parse a camera-reel `dateTime` (unix seconds, unix ms, or ISO) to epoch ms for sort/grouping. */
@@ -699,16 +701,20 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'sceneLoading':
           setSceneLoading(msg.state)
           break
-        case 'hover':
-          setHover(msg.actions)
+        case 'hover': {
+          const next = msg.actions
+          setHover((prev) => (hoverKey(prev) === hoverKey(next) ? prev : next))
           break
+        }
         case 'cursorLock':
           cursorLockedRef.current = msg.locked
           setCursorLocked(msg.locked)
           break
-        case 'proximity':
-          setProximity(msg.tips)
+        case 'proximity': {
+          const next = msg.tips
+          setProximity((prev) => (proximityKey(prev) === proximityKey(next) ? prev : next))
           break
+        }
         case 'avatarClick': {
           // The card's scrim swallows mouse input, so the engine's raycast freezes and never sends
           // the hover-exit — clear the hover here or its tooltip stays painted beside the card.
@@ -822,6 +828,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'mic':
           setMic({ enabled: msg.enabled, available: msg.available })
+          break
+        case 'requestFailed':
+          fetchedRef.current.delete(msg.request)
+          console.error(`[bridge] ${msg.request} failed:`, msg.error)
           break
         case 'avatarSaveFailed':
           setSaveError(SAVE_FAILED_MESSAGE)
@@ -1595,6 +1605,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setSubmitted(false) // back to the login screen
     setDestinationPicked(false) // re-show the picker on the next jump-in
     pendingLogin.current = null
+    // The next account starts clean: it fetches its own data and hasn't spawned yet.
+    fetchedRef.current.clear()
+    playerReadyRef.current = false
+    pendingParcel.current = null
   }, [closeAllPanels])
 
   const setEngineViewport = useCallback(
@@ -1969,6 +1983,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     }
   }
 
+  // Stable slices let memoized surfaces (the minimap) skip HUD re-renders they don't depend on.
+  const mapSlice = useMemo(
+    () => ({ x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace }),
+    [mapParcel, mapOpen, toggleMap, teleport, changeRealm, teleportToPlace]
+  )
+  const minimapSlice = useMemo(
+    () => ({ pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig }),
+    [isWorld, sceneTitle, setMinimapConfig]
+  )
+
   return {
     phase,
     pickDestination,
@@ -2049,8 +2073,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       saveOutfit, deleteOutfit, equipOutfit
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, requestToJoin: requestToJoinCommunity, cancelRequest: cancelJoinRequest, leave: leaveCommunity, error: communityError, detail: communityDetail, loadDetail: loadCommunityDetail },
-    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm, teleportToPlace },
-    minimap: { pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig },
+    map: mapSlice,
+    minimap: minimapSlice,
     places: { open: placesOpen, toggle: togglePlaces },
     events: { open: eventsOpen, toggle: toggleEvents },
     shop: { open: shopOpen, toggle: toggleShop },
@@ -2071,6 +2095,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setEngineViewport,
     logout,
     menuOpen,
+    closeAllPanels,
     login: {
       status,
       account: prevUserId ?? (stored ? rootAddress(stored.identity) : null),

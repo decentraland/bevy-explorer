@@ -103,7 +103,7 @@ wasm-pack build --out-dir deploy/web/engine/pkg …   # engine wasm
 npx esbuild engine/sandbox_worker.js --bundle …     # inlines the glue — see note below
 npm i                 # in deploy/web — prebuild.js stamps PUBLIC_URL/homepage
 PUBLIC_URL=<homepage> npm run build                 # in react-web — the HUD → deploy/web
-npm run bundle        # in react-web/bridge-scene — realm → deploy/web/bridge-scene/static
+npm run bundle        # in react-web/bridge-scene — minified production realm → deploy/web/bridge-scene/static
 # then oddish publishes deploy/web → npm + CDN
 ```
 

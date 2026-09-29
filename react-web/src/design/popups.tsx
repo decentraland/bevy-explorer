@@ -1,4 +1,4 @@
-import { useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { Component, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { ModalShell } from './Modal'
 import { Button } from './Button'
 import { useFocusTrap } from '../lib/useFocusTrap'
@@ -154,6 +154,24 @@ function PopupLayer({ node, isTop, locked }: { node: PopupNode; isTop: boolean; 
   )
 }
 
+// A popup that throws closes on its own instead of taking the HUD down with it.
+class PopupBoundary extends Component<{ id: number; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true }
+  }
+
+  componentDidCatch(error: Error): void {
+    console.error('[popup] crashed', error)
+    closeById(this.props.id)
+  }
+
+  render(): ReactNode {
+    return this.state.failed ? null : this.props.children
+  }
+}
+
 /** Mounted once at the HUD root (see App) — the single React subscriber that renders the popup stack.
  *  It has no transformed ancestor, so a popup's own `position: fixed` resolves against the viewport;
  *  no portal is needed (the passport / dialogs already rely on that for their inline scrims). */
@@ -167,7 +185,9 @@ export function PopupHost(): React.JSX.Element {
   return (
     <>
       {snap.map((n, i) => (
-        <PopupLayer key={n.id} node={n} isTop={i === snap.length - 1} locked={locked} />
+        <PopupBoundary key={n.id} id={n.id}>
+          <PopupLayer node={n} isTop={i === snap.length - 1} locked={locked} />
+        </PopupBoundary>
       ))}
     </>
   )

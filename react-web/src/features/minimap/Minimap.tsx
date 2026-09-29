@@ -11,7 +11,7 @@
 // moves all of them. React only re-renders when the tile *set* changes, i.e. on a chunk
 // boundary.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Gear, Minus, Plus } from '../../design'
 import { EngineViewport } from '../engine/EngineViewport'
 import { PARCEL_METERS, atlasPx, chunksInRect, parcelTileFor, type Chunk } from '../map/atlas'
@@ -46,7 +46,7 @@ const ZOOM_TIME = 0.2
  *  markers cluster near the middle rather than filling a map you're only glancing at. */
 const MARKER_RADIUS = 10
 
-export function Minimap({
+export const Minimap = memo(function Minimap({
   minimap,
   map,
   sceneTitle,
@@ -345,4 +345,4 @@ export function Minimap({
       )}
     </div>
   )
-}
+})

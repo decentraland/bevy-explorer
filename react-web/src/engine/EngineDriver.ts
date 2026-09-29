@@ -59,6 +59,10 @@ export class EngineDriver implements LoginDriver {
   }
 
   async logout(): Promise<void> {
+    // The next account spawns anew, so its world handoff must fire again.
+    this.playerReadyFired = false
+    if (this.readyFallbackTimer != null) clearTimeout(this.readyFallbackTimer)
+    this.readyFallbackTimer = null
     await this.rpc.command('/logout')
   }
 

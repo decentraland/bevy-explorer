@@ -44,6 +44,7 @@ import { MobileGate, GateChecking } from './features/gate/MobileGate'
 import { UntrustedLaunchGate } from './features/gate/UntrustedLaunchGate'
 import { untrustedLaunchParams } from './lib/launchGate'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
+import { SurfaceBoundary } from './features/error/SurfaceBoundary'
 import { CrashModal } from './features/error/CrashModal'
 import { openRealmError } from './features/error/RealmErrorModal'
 import { DIALOG_TITLE, isDialogSource } from './features/error/fatalError'
@@ -324,47 +325,73 @@ function Hud(): React.JSX.Element {
             onTeleport={(x, y) => session.map.teleport(x, y)}
             onVisitWorld={(name) => openWorldVisit({ worldName: name, onConfirm: () => session.map.changeRealm(name) })}
           />
-          <FriendsPanel friends={session.friends} />
-          <SettingsPanel settings={session.settings} bindings={session.bindings} profile={session.profile} onNavigate={goToMenuPage} />
-          <ProfilePanel profile={session.profile} />
-          <NotificationsPanel notifications={session.notifications} />
-          <SkyboxMenu skybox={session.skybox} />
-          <EmotesWheel
-            emotes={session.emotes}
-            onCustomise={() => {
-              setBackpackTab('emotes')
-              session.backpack.toggle() // exclusive → closes the wheel, opens the backpack
-            }}
-          />
-          <BackpackPage backpack={session.backpack} emotes={session.emotes} profile={session.profile} onNavigate={goToMenuPage} setEngineViewport={session.setEngineViewport} initialTab={backpackTab} />
-          <CommunitiesPage
-            communities={session.communities}
-            profile={session.profile}
-            onNavigate={goToMenuPage}
-          />
-          <MapPage map={session.map} profile={session.profile} onNavigate={goToMenuPage} />
-          <PlacesPage
-            places={session.places}
-            profile={session.profile}
-            onNavigate={goToMenuPage}
-            onTeleport={(x, y) => session.map.teleportToPlace(x, y)}
-            onVisitWorld={(realm) => session.map.changeRealm(realm)}
-          />
-          <EventsPage
-            events={session.events}
-            profile={session.profile}
-            onNavigate={goToMenuPage}
-            onTeleport={(x, y) => session.map.teleportToPlace(x, y)}
-            onVisitWorld={(realm) => session.map.changeRealm(realm)}
-          />
-          <ShopPage shop={session.shop} profile={session.profile} onNavigate={goToMenuPage} />
-          <GalleryPage
-            gallery={session.gallery}
-            profile={session.profile}
-            onNavigate={goToMenuPage}
-            onTeleport={(x, y) => session.map.teleport(x, y)}
-            onViewProfile={(u) => openPassport(u.address)}
-          />
+          <SurfaceBoundary name="Friends" open={session.friends.open} onCrash={session.closeAllPanels}>
+            <FriendsPanel friends={session.friends} />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Settings" open={session.settings.open} onCrash={session.closeAllPanels}>
+            <SettingsPanel settings={session.settings} bindings={session.bindings} profile={session.profile} onNavigate={goToMenuPage} />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Profile" open={session.profile.open} onCrash={session.closeAllPanels}>
+            <ProfilePanel profile={session.profile} />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Notifications" open={session.notifications.open} onCrash={session.closeAllPanels}>
+            <NotificationsPanel notifications={session.notifications} />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Skybox" open={session.skybox.open} onCrash={session.closeAllPanels}>
+            <SkyboxMenu skybox={session.skybox} />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Emotes" open={session.emotes.open} onCrash={session.closeAllPanels}>
+            <EmotesWheel
+              emotes={session.emotes}
+              onCustomise={() => {
+                setBackpackTab('emotes')
+                session.backpack.toggle() // exclusive → closes the wheel, opens the backpack
+              }}
+            />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Backpack" open={session.backpack.open} onCrash={session.closeAllPanels}>
+            <BackpackPage backpack={session.backpack} emotes={session.emotes} profile={session.profile} onNavigate={goToMenuPage} setEngineViewport={session.setEngineViewport} initialTab={backpackTab} />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Communities" open={session.communities.open} onCrash={session.closeAllPanels}>
+            <CommunitiesPage
+              communities={session.communities}
+              profile={session.profile}
+              onNavigate={goToMenuPage}
+            />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Map" open={session.map.open} onCrash={session.closeAllPanels}>
+            <MapPage map={session.map} profile={session.profile} onNavigate={goToMenuPage} />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Places" open={session.places.open} onCrash={session.closeAllPanels}>
+            <PlacesPage
+              places={session.places}
+              profile={session.profile}
+              onNavigate={goToMenuPage}
+              onTeleport={(x, y) => session.map.teleportToPlace(x, y)}
+              onVisitWorld={(realm) => session.map.changeRealm(realm)}
+            />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Events" open={session.events.open} onCrash={session.closeAllPanels}>
+            <EventsPage
+              events={session.events}
+              profile={session.profile}
+              onNavigate={goToMenuPage}
+              onTeleport={(x, y) => session.map.teleportToPlace(x, y)}
+              onVisitWorld={(realm) => session.map.changeRealm(realm)}
+            />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Shop" open={session.shop.open} onCrash={session.closeAllPanels}>
+            <ShopPage shop={session.shop} profile={session.profile} onNavigate={goToMenuPage} />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Gallery" open={session.gallery.open} onCrash={session.closeAllPanels}>
+            <GalleryPage
+              gallery={session.gallery}
+              profile={session.profile}
+              onNavigate={goToMenuPage}
+              onTeleport={(x, y) => session.map.teleport(x, y)}
+              onViewProfile={(u) => openPassport(u.address)}
+            />
+          </SurfaceBoundary>
         </>
       )}
       {/* Popups (imperative overlay stack) live inside the session provider so popup-mounted surfaces

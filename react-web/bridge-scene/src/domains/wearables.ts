@@ -12,6 +12,7 @@ import type { Wearable } from '../../../src/engine/protocol'
 import { currentLook, editLook } from './avatarDraft'
 import { bodyShapesOf, splitBodyShape } from '../../../src/engine/bodyShape'
 import { itemHides, type HideData } from '../../../src/engine/avatarHides'
+import { identity } from '../identity'
 
 type CatalogElement = {
   urn: string
@@ -27,6 +28,9 @@ type CatalogElement = {
 // accumulates across fetched pages + the equipped set, so any item the user has actually
 // seen/equipped can be equipped.
 const tokenUrnByItem = new Map<string, string>()
+identity.onChange(() => {
+  tokenUrnByItem.clear()
+})
 
 function accumulateTokens(elements: CatalogElement[]): void {
   for (const el of elements) {

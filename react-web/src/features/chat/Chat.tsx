@@ -4,7 +4,7 @@
 //   • open + active (hover/focus): full solid panel — navbar, emoji, members, borders
 // Incoming messages come from the bridge getChatStream relay; sends go via BevyApi.sendChat.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatLine, ChatState } from '../session/useEngineSession'
 import type { NearbyMember } from '../../engine/protocol'
 import { Avatar, ControlButton, DclLogo, VoiceBars } from '../../design'
@@ -144,7 +144,7 @@ export function DaySeparator({ ts }: { ts: number }): React.JSX.Element {
 
 const MSG_STYLES = { url: styles.url, mention: styles.mention, location: styles.location, world: styles.world }
 
-export function ChatBubble({
+export const ChatBubble = memo(function ChatBubble({
   line,
   members = [],
   me,
@@ -201,7 +201,7 @@ export function ChatBubble({
       </div>
     </div>
   )
-}
+})
 
 export function MemberRow({ member, speaking = false }: { member: NearbyMember; speaking?: boolean }): React.JSX.Element {
   const { base, tag } = splitName(memberLabel(member))
@@ -363,9 +363,17 @@ export function Chat({
   }
 
   // Profile viewer: clicking a name/avatar/@mention opens the shared profile card at the click.
-  const openProfile = (user: ChatUser, e: React.MouseEvent): void => {
+  const openProfile = useCallback((user: ChatUser, e: React.MouseEvent): void => {
     openProfileCard(user.address, e.clientX, e.clientY)
-  }
+  }, [])
+  // The HUD passes fresh arrows each render; read them through refs so bubbles stay memoized.
+  const handlers = useRef({ onTeleport, onVisitWorld })
+  useEffect(() => {
+    handlers.current = { onTeleport, onVisitWorld }
+  })
+  const teleport = useCallback((x: number, y: number) => handlers.current.onTeleport?.(x, y), [])
+  const visitWorld = useCallback((name: string) => handlers.current.onVisitWorld?.(name), [])
+  const hasVisitWorld = onVisitWorld != null
   // "Mention" from the viewer drops @name into the draft, ready to send.
   const insertMention = (name: string): void => {
     setDraft((d) => `${d.replace(/\s*$/, '')} @${name} `.trimStart())
@@ -503,8 +511,8 @@ export function Chat({
                   members={chat.members}
                   me={me}
                   onOpenProfile={openProfile}
-                  onLocation={(x, y) => onTeleport?.(x, y)}
-                  onVisitWorld={onVisitWorld}
+                  onLocation={teleport}
+                  onVisitWorld={hasVisitWorld ? visitWorld : undefined}
                 />
               )
             )

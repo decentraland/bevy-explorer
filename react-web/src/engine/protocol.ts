@@ -656,6 +656,13 @@ export interface Community {
   pendingRequestId?: string
 }
 
+/** A page request's handler threw, so its reply never came (scene → page). */
+export interface RequestFailedMessage {
+  kind: 'requestFailed'
+  request: PageToScene['kind']
+  error: string
+}
+
 /** Deploying the Backpack's look was rejected (scene → page). */
 export interface AvatarSaveFailedMessage {
   kind: 'avatarSaveFailed'
@@ -1204,6 +1211,7 @@ export type SceneToPage =
   | CommunityActionFailedMessage
   | TravelResultMessage
   | AvatarSaveFailedMessage
+  | RequestFailedMessage
   | CommunityDetailMessage
   | MapMessage
   | PlayerPoseMessage
