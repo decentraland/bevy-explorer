@@ -13153,6 +13153,7 @@ dependencies = [
 name = "user_input"
 version = "0.1.0"
 dependencies = [
+ "avatar",
  "bevy",
  "bevy_console",
  "clap",
