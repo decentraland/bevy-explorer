@@ -211,7 +211,10 @@ fn process_frame(
     for (ent, frame, scene_ent) in q.iter() {
         if scene_spawner.instance_is_ready(frame.instance) {
             commands.entity(ent).remove::<FrameProcess>();
-            let Ok(bounds) = scenes.get(scene_ent.root).map(|ctx| ctx.bounds.clone()) else {
+            let Ok(bounds) = scenes
+                .get(scene_ent.root)
+                .map(|ctx| ctx.scene_bounds.clone())
+            else {
                 continue;
             };
             for spawned_ent in scene_spawner.iter_instance_entities(frame.instance) {
@@ -241,7 +244,7 @@ fn process_frame(
                         .remove::<MeshMaterial3d<StandardMaterial>>()
                         .try_insert(MeshMaterial3d(new_mats.add(SceneMaterial {
                             base: mat_clone,
-                            extension: SceneBound::new(bounds.clone(), config.graphics.oob),
+                            extension: SceneBound::new(&bounds, config.graphics.oob),
                         })));
                 }
             }
@@ -281,7 +284,10 @@ fn load_nft(
         let h_image = asset_server.load(PathBuf::from(&ipfs_path));
 
         // get bounds
-        let Ok(bounds) = scenes.get(scene_ent.root).map(|ctx| ctx.bounds.clone()) else {
+        let Ok(bounds) = scenes
+            .get(scene_ent.root)
+            .map(|ctx| ctx.scene_bounds.clone())
+        else {
             continue;
         };
 
@@ -299,7 +305,7 @@ fn load_nft(
                         alpha_mode: AlphaMode::Blend,
                         ..Default::default()
                     },
-                    extension: SceneBound::new(bounds, config.graphics.oob),
+                    extension: SceneBound::new(&bounds, config.graphics.oob),
                 })),
                 NftResize(h_image),
             ))

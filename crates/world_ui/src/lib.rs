@@ -20,7 +20,7 @@ use bevy::{
 };
 use boimp::bake::{ImposterBakeMaterialExtension, STANDARD_BAKE_HANDLE};
 use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
-use scene_material::{BoundRegion, MaterialExtPlugin, SceneBound, SceneMaterial};
+use scene_material::{MaterialExtPlugin, SceneBound, SceneBounds, SceneMaterial};
 
 pub struct WorldUiPlugin;
 
@@ -84,7 +84,7 @@ pub struct WorldUi {
     pub valign: f32,
     pub halign: f32,
     pub add_y_pix: f32,
-    pub bounds: Vec<BoundRegion>,
+    pub bounds: SceneBounds,
     pub view: Entity,
     pub ui_node: Entity,
     pub vertex_billboard: bool,
@@ -198,7 +198,7 @@ pub fn add_worldui_materials(
                     alpha_mode: wui.blend_mode,
                     ..Default::default()
                 },
-                extension: SceneBound::new(wui.bounds.clone(), config.graphics.oob),
+                extension: SceneBound::new(&wui.bounds, config.graphics.oob),
             },
             extension: TextQuad {
                 data: material_data,

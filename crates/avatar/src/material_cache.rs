@@ -1,12 +1,12 @@
 use bevy::prelude::*;
-use scene_material::BoundRegion;
+use scene_material::{SceneBounds, SceneBoundsKey};
 
 // cache keys for derived avatar materials. identical avatars should share
 // material assets so they can batch: bindless is disabled, so every material
 // asset is its own bind group and a batch break. keys hash exactly the fields
 // the derived materials are built from, with f32s taken as raw bits.
 
-pub type BoundsBits = Vec<(u32, u32, u32, u32)>;
+pub type BoundsBits = SceneBoundsKey;
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct AvatarMatKey {
@@ -36,11 +36,8 @@ fn linear_bits(color: LinearRgba) -> [u32; 4] {
     color.to_vec4().to_array().map(f32::to_bits)
 }
 
-pub fn bounds_bits(bounds: &[BoundRegion]) -> BoundsBits {
-    bounds
-        .iter()
-        .map(|b| (b.min, b.max, b.height.to_bits(), b.parcel_count))
-        .collect()
+pub fn bounds_bits(bounds: &SceneBounds) -> BoundsBits {
+    bounds.key()
 }
 
 impl AvatarMatKey {
