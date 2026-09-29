@@ -82,8 +82,14 @@ impl AppSetting for ShadowSetting {
                     *cascades = CascadeShadowConfigBuilder {
                         num_cascades: 1,
                         minimum_distance: MIN_CASCADE,
-                        maximum_distance: config.graphics.shadow_distance,
-                        first_cascade_far_bound: config.graphics.shadow_distance,
+                        maximum_distance: config
+                            .graphics
+                            .shadow_distance
+                            .max(MIN_CASCADE + f32::EPSILON),
+                        first_cascade_far_bound: config
+                            .graphics
+                            .shadow_distance
+                            .max(MIN_CASCADE + f32::EPSILON),
                         overlap_proportion: 0.2,
                     }
                     .build()
@@ -93,9 +99,12 @@ impl AppSetting for ShadowSetting {
                     *cascades = CascadeShadowConfigBuilder {
                         num_cascades: 4,
                         minimum_distance: MIN_CASCADE,
-                        maximum_distance: config.graphics.shadow_distance,
+                        maximum_distance: config
+                            .graphics
+                            .shadow_distance
+                            .max(MIN_CASCADE + f32::EPSILON),
                         first_cascade_far_bound: (config.graphics.shadow_distance / 15.0)
-                            .max(MIN_CASCADE),
+                            .max(MIN_CASCADE + f32::EPSILON),
                         overlap_proportion: 0.2,
                     }
                     .build()
