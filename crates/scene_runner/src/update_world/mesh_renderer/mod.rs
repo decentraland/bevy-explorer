@@ -337,13 +337,13 @@ pub fn update_mesh(
             let mat = default_material.entry(scene_ent.root).or_insert_with(|| {
                 let bounds = scenes
                     .get(scene_ent.root)
-                    .map(|c| c.bounds.clone())
+                    .map(|c| c.scene_bounds.clone())
                     .unwrap_or_default();
                 materials.add(SceneMaterial {
                     base: StandardMaterial {
                         ..Default::default()
                     },
-                    extension: SceneBound::new(bounds, config.graphics.oob),
+                    extension: SceneBound::new(&bounds, config.graphics.oob),
                 })
             });
 

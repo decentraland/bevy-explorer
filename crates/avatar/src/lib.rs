@@ -27,7 +27,7 @@ use colliders::AvatarColliderPlugin;
 use console::DoAddConsoleCommand;
 use npc_dynamics::NpcMovementPlugin;
 use scene_material::{
-    BoundRegion, SceneBound, SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+    SceneBound, SceneBounds, SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
     SCENE_MATERIAL_NO_DITHERING_MESH_TAG, SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG,
     SCENE_MATERIAL_TOON_MESH_TAG,
 };
@@ -529,7 +529,7 @@ pub struct AvatarDefinition {
     eyes_color: Color,
     wearables: Vec<Wearable>,
     hides: HashSet<WearableCategory>,
-    bounds: Vec<BoundRegion>,
+    bounds: SceneBounds,
     emote: Option<EmoteCommand>,
     disable_dither: bool,
 }
@@ -808,7 +808,7 @@ fn update_render_avatar(
                         .convert_linear_rgb(),
                     bounds: maybe_scene_ent
                         .and_then(|se| scenes.get(se.root).ok())
-                        .map(|ctx| ctx.bounds.clone())
+                        .map(|ctx| ctx.scene_bounds.clone())
                         .unwrap_or_default(),
                     emote: selection
                         .shape
@@ -1319,7 +1319,7 @@ fn process_avatar(
                                         color,
                                         texture,
                                         mask.clone(),
-                                        def.bounds.clone(),
+                                        &def.bounds,
                                         config.graphics.oob,
                                     )
                                 });
@@ -1351,10 +1351,7 @@ fn process_avatar(
                                         alpha_mode: AlphaMode::Blend,
                                         ..Default::default()
                                     },
-                                    extension: SceneBound::new(
-                                        def.bounds.clone(),
-                                        config.graphics.oob,
-                                    ),
+                                    extension: SceneBound::new(&def.bounds, config.graphics.oob),
                                 });
                             commands.entity(scene_ent).try_insert((
                                 MeshMaterial3d(material),
@@ -1767,7 +1764,7 @@ fn derived_scene_material(
             depth_bias,
             ..mat.clone()
         },
-        extension: SceneBound::new(def.bounds.clone(), oob),
+        extension: SceneBound::new(&def.bounds, oob),
     })
 }
 

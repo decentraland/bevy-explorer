@@ -12,6 +12,7 @@ use bevy::{
     render::{
         primitives::Aabb,
         render_resource::{AsBindGroup, ShaderRef},
+        storage::ShaderStorageBuffer,
     },
 };
 
@@ -37,7 +38,7 @@ use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, EntityDefinition, IpfsAssetServer, RealmInitialLocation,
     SceneIpfsLocation, SceneJsFile,
 };
-use scene_material::BoundRegion;
+use scene_material::{BoundRegion, SceneBounds};
 use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
@@ -261,6 +262,7 @@ pub(crate) fn load_scene_javascript(
     realm: Res<CurrentRealm>,
     frame: Res<FrameCount>,
     preview_mode: Res<PreviewMode>,
+    mut storage_buffers: Option<ResMut<Assets<ShaderStorageBuffer>>>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -410,6 +412,7 @@ pub(crate) fn load_scene_javascript(
         }
 
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?}), storage root: {storage_root}");
+        let scene_bounds = SceneBounds::new(&bounds, storage_buffers.as_deref_mut());
         let mut renderer_context = RendererSceneContext::new(
             scene_id,
             definition.id.clone(),
@@ -420,6 +423,7 @@ pub(crate) fn load_scene_javascript(
             base,
             parcels,
             bounds,
+            scene_bounds,
             meta.spawn_points.clone().unwrap_or_default(),
             root,
             1.0,

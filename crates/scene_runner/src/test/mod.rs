@@ -552,6 +552,7 @@ fn lifecycle_cleans_dead_entities_from_crdt_store() {
         IVec2::ZERO,
         HashSet::from_iter([IVec2::ZERO]),
         vec![],
+        Default::default(),
         vec![],
         Entity::PLACEHOLDER,
         0.0,

@@ -647,7 +647,7 @@ pub fn update_materials(
                 // canvas for base + emissive
                 let ui_uv_transform = base_color_texture.as_ref().and_then(|t| t.uv_transform);
 
-                let bounds = scene.bounds.clone();
+                let bounds = scene.scene_bounds.clone();
 
                 let material = materials.add(SceneMaterial {
                     base: StandardMaterial {
@@ -663,7 +663,7 @@ pub fn update_materials(
                         uv_transform: ui_uv_transform.unwrap_or(defn.material.uv_transform),
                         ..defn.material.clone()
                     },
-                    extension: SceneBound::new(bounds, config.graphics.oob),
+                    extension: SceneBound::new(&bounds, config.graphics.oob),
                 });
 
                 if can_cache {
