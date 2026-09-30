@@ -2,16 +2,20 @@
 //   from: BevyApi.social.* (the engine's authenticated social-service client).
 // No store: we poll the social API directly (~every 1s) and push on change, so the whole
 // friends surface is right here in one file.
+import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi, type FriendStatusData, type FriendRequestData } from '../bevy-api'
 import type { Ctx } from '../bridge'
-import type { Friend, FriendRequest } from '../../../src/engine/protocol'
+import type { BlockedUser, Friend, FriendRequest } from '../../../src/engine/protocol'
+import type { BlockedUserData } from '../../../src/engine/generated'
 
 const toFriend = (f: FriendStatusData): Friend => ({
   address: f.address,
   name: f.name,
   picture: f.profilePictureUrl !== '' ? f.profilePictureUrl : undefined,
   // the engine only emits "online" | "offline" | "away" (generated type widens to string)
-  status: f.status as Friend['status']
+  status: f.status as Friend['status'],
+  claimed: f.hasClaimedName,
+  nameColor: f.nameColor ?? undefined
 })
 const toRequest = (r: FriendRequestData): FriendRequest => ({
   address: r.address,
@@ -19,7 +23,16 @@ const toRequest = (r: FriendRequestData): FriendRequest => ({
   picture: r.profilePictureUrl !== '' ? r.profilePictureUrl : undefined,
   message: r.message ?? undefined,
   id: r.id,
-  createdAt: r.createdAt
+  createdAt: r.createdAt,
+  claimed: r.hasClaimedName,
+  nameColor: r.nameColor ?? undefined
+})
+const toBlocked = (b: BlockedUserData): BlockedUser => ({
+  address: b.address,
+  name: b.name,
+  picture: b.profilePictureUrl !== '' ? b.profilePictureUrl : undefined,
+  claimed: b.hasClaimedName,
+  nameColor: b.nameColor ?? undefined
 })
 
 export function registerFriends(ctx: Ctx): void {
@@ -59,7 +72,8 @@ export function registerFriends(ctx: Ctx): void {
   async function poll(): Promise<void> {
     try {
       if (!(await social.getSocialInitialized())) {
-        push(false, [], [], [], [])
+        const me = getPlayer()
+        push(false, [], [], [], [], [], me != null && !me.isGuest)
         return
       }
       const [online, received, sent] = await Promise.all([
@@ -68,13 +82,18 @@ export function registerFriends(ctx: Ctx): void {
         social.getSentFriendRequests()
       ])
       let blocked: string[] = []
+      let blockedUsers: BlockedUserData[] = []
       try {
-        const status = await social.getBlockingStatus?.()
-        blocked = status?.blockedUsers ?? (await social.getBlockedUsers()).map((b) => b.address)
+        blockedUsers = await social.getBlockedUsers()
+        blocked = blockedUsers.map((b) => b.address)
       } catch {
-        /* keep empty on failure */
+        try {
+          blocked = (await social.getBlockingStatus?.())?.blockedUsers ?? []
+        } catch {
+          /* keep empty on failure */
+        }
       }
-      push(true, online, received, sent, blocked)
+      push(true, online, received, sent, blocked, blockedUsers, false)
     } catch (e) {
       console.error('[friends] poll failed', e)
     }
@@ -85,14 +104,16 @@ export function registerFriends(ctx: Ctx): void {
     online: FriendStatusData[],
     received: FriendRequestData[],
     sent: FriendRequestData[],
-    blocked: string[]
+    blocked: string[],
+    blockedUsers: BlockedUserData[],
+    loading: boolean
   ): void {
     const friends = online.map(toFriend)
     const recv = received.map(toRequest)
     const snt = sent.map(toRequest)
-    const key = `${String(available)}|${friends.map((f) => `${f.address}${f.status}${f.picture ?? ''}`).join(',')}|${recv.map((r) => r.id).join(',')}|${snt.map((r) => r.id).join(',')}|${blocked.join(',')}`
+    const key = `${String(available)}|${String(loading)}|${blockedUsers.map((b) => b.address + b.name + b.profilePictureUrl).join(',')}|${friends.map((f) => `${f.address}${f.status}${f.picture ?? ''}`).join(',')}|${recv.map((r) => r.id).join(',')}|${snt.map((r) => r.id).join(',')}|${blocked.join(',')}`
     if (key === lastKey) return
     lastKey = key
-    ctx.send({ kind: 'friends', available, friends, received: recv, sent: snt, blocked })
+    ctx.send({ kind: 'friends', available, loading, friends, received: recv, sent: snt, blocked, blockedUsers: blockedUsers.map(toBlocked) })
   }
 }

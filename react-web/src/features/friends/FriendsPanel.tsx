@@ -4,9 +4,10 @@
 // relay of the scene social state (BevyApi.social.*), guest-disabled.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Avatar, BlockedUser, Button, ControlButton, Envelope, Kebab, Tabs, Tooltip, hasOpenPopup, type TabItem } from '../../design'
+import { Avatar, BlockedUser, Button, ControlButton, Envelope, Kebab, Spinner, Tabs, Tooltip, hasOpenPopup, type TabItem } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
-import type { Friend, FriendRequest } from '../../engine/protocol'
+import type { BlockedUser as Blocked, Friend, FriendRequest } from '../../engine/protocol'
+import { color3ToHex } from '../../lib/color'
 import type { FriendsState } from '../session/useEngineSession'
 import { type ChatUser } from '../chat/ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
@@ -45,13 +46,25 @@ function Verified(): React.JSX.Element {
   )
 }
 
-function NameLabel({ name, address, message }: { name: string; address: string; message?: boolean }): React.JSX.Element {
-  const { base, tag } = splitName(label(name, address))
+interface Identity {
+  address: string
+  claimed?: boolean
+  nameColor?: { r: number; g: number; b: number }
+}
+
+/** The service's name colour when it sent one, else the colour derived from the address. */
+function colorOf(user: Identity): string {
+  return user.nameColor != null ? color3ToHex(user.nameColor) : nameColor(user.address)
+}
+
+function NameLabel({ name, user, message }: { name: string; user: Identity; message?: boolean }): React.JSX.Element {
+  const { base, tag } = splitName(label(name, user.address))
+  const claimed = user.claimed ?? isClaimed(name)
   return (
-    <span className={styles.name} style={{ color: nameColor(address) }}>
+    <span className={styles.name} style={{ color: colorOf(user) }}>
       {base}
-      {tag && <span className={styles.tag}>{tag}</span>}
-      {isClaimed(name) && <Verified />}
+      {!claimed && tag && <span className={styles.tag}>{tag}</span>}
+      {claimed && <Verified />}
       {message && <Envelope className={styles.envelope} />}
     </span>
   )
@@ -142,9 +155,9 @@ function FriendRow({ friend, onOpen, onMenu }: { friend: Friend; onOpen?: OpenMe
         onMenu(friend.address, r.left, r.bottom)
       }}
     >
-      <Avatar src={picture} name={label(name, friend.address)} color={nameColor(friend.address)} size={40} status={friend.status} dotPosition="top" />
+      <Avatar src={picture} name={label(name, friend.address)} color={colorOf(friend)} size={40} status={friend.status} dotPosition="top" />
       <div className={styles.info}>
-        <NameLabel name={name} address={friend.address} />
+        <NameLabel name={name} user={friend} />
         <span className={styles.status}>{STATUS_LABEL[friend.status]}</span>
       </div>
       <div className={styles.hoverActions}>
@@ -176,9 +189,9 @@ function ReceivedRow({
   const { name, picture } = useRowIdentity(req)
   return (
     <div className={styles.row}>
-      <Avatar src={picture} name={label(name, req.address)} color={nameColor(req.address)} size={40} />
+      <Avatar src={picture} name={label(name, req.address)} color={colorOf(req)} size={40} />
       <div className={styles.info}>
-        <NameLabel name={name} address={req.address} message={Boolean(req.message)} />
+        <NameLabel name={name} user={req} message={Boolean(req.message)} />
       </div>
       <span className={styles.date}>{reqDate(req.createdAt)}</span>
       <div className={styles.actions}>
@@ -198,9 +211,9 @@ function SentRow({ req, onCancel, onMenu }: { req: FriendRequest; onCancel: () =
   const { name, picture } = useRowIdentity(req)
   return (
     <div className={styles.row}>
-      <Avatar src={picture} name={label(name, req.address)} color={nameColor(req.address)} size={40} />
+      <Avatar src={picture} name={label(name, req.address)} color={colorOf(req)} size={40} />
       <div className={styles.info}>
-        <NameLabel name={name} address={req.address} />
+        <NameLabel name={name} user={req} />
       </div>
       <span className={styles.date}>{reqDate(req.createdAt)}</span>
       <div className={styles.actions}>
@@ -208,6 +221,31 @@ function SentRow({ req, onCancel, onMenu }: { req: FriendRequest; onCancel: () =
           Cancel
         </Button>
         <RowMenu address={req.address} onOpen={onMenu} />
+      </div>
+    </div>
+  )
+}
+
+const byName = (a: { name: string }, b: { name: string }): number => {
+  const x = a.name.toLowerCase()
+  const y = b.name.toLowerCase()
+  return x < y ? -1 : x > y ? 1 : 0
+}
+const newestFirst = (a: FriendRequest, b: FriendRequest): number => (b.createdAt ?? 0) - (a.createdAt ?? 0)
+
+function BlockedRow({ user, onUnblock, onMenu }: { user: Blocked; onUnblock: () => void; onMenu: MenuAt }): React.JSX.Element {
+  const { name, picture } = useRowIdentity(user)
+  return (
+    <div className={styles.row}>
+      <Avatar src={picture} name={label(name, user.address)} color={colorOf(user)} size={40} />
+      <div className={styles.info}>
+        <NameLabel name={name} user={user} />
+      </div>
+      <div className={`${styles.actions} ${styles.blockedActions}`}>
+        <Button variant="secondary" size="row" className={styles.unblock} onClick={onUnblock}>
+          Unblock
+        </Button>
+        <RowMenu address={user.address} onOpen={onMenu} />
       </div>
     </div>
   )
@@ -256,11 +294,20 @@ export function FriendsPanel({
   const { online, offline } = useMemo(() => {
     const on: Friend[] = []
     const off: Friend[] = []
-    for (const f of [...friends.list].sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const f of [...friends.list].sort(byName)) {
       ;(f.status === 'offline' ? off : on).push(f)
     }
     return { online: on, offline: off }
   }, [friends.list])
+  const received = useMemo(() => [...friends.received].sort(newestFirst), [friends.received])
+  const sent = useMemo(() => [...friends.sent].sort(newestFirst), [friends.sent])
+  const blocked = useMemo<Blocked[]>(
+    () =>
+      friends.blockedUsers.length > 0
+        ? [...friends.blockedUsers].sort(byName)
+        : friends.blocked.map((address) => ({ address, name: '' })),
+    [friends.blockedUsers, friends.blocked]
+  )
 
   if (!friends.open) return null
 
@@ -281,7 +328,11 @@ export function FriendsPanel({
       </header>
 
       <div className={styles.body}>
-        {!friends.available ? (
+        {friends.loading ? (
+          <div className={styles.placeholder}>
+            <Spinner />
+          </div>
+        ) : !friends.available ? (
           <div className={styles.placeholder}>
             <div className={styles.phTitle}>Friends aren’t available</div>
             <div className={styles.phText}>Sign in with a wallet to add and manage friends.</div>
@@ -311,7 +362,7 @@ export function FriendsPanel({
         ) : tab === 'requests' ? (
           <>
             <Collapsible title="Received" {...fold('received')} count={friends.received.length} emptyLabel="No Requests">
-              {friends.received.map((r) => (
+              {received.map((r) => (
                 <ReceivedRow
                   key={r.id}
                   req={r}
@@ -322,12 +373,12 @@ export function FriendsPanel({
               ))}
             </Collapsible>
             <Collapsible title="Sent" {...fold('sent')} count={friends.sent.length} emptyLabel="No Requests">
-              {friends.sent.map((r) => (
+              {sent.map((r) => (
                 <SentRow key={r.id} req={r} onCancel={() => friends.act('cancel', r.address)} onMenu={menuAt} />
               ))}
             </Collapsible>
           </>
-        ) : friends.blocked.length === 0 ? (
+        ) : blocked.length === 0 ? (
           <div className={styles.placeholder}>
             <BlockedUser size={72} className={styles.phIcon} />
             <div className={styles.phTitle}>No Blocked Accounts</div>
@@ -340,20 +391,7 @@ export function FriendsPanel({
             </div>
           </div>
         ) : (
-          friends.blocked.map((addr) => (
-            <div key={addr} className={styles.row}>
-              <Avatar name={shortAddr(addr)} color={nameColor(addr)} size={40} />
-              <div className={styles.info}>
-                <span className={styles.name}>{shortAddr(addr)}</span>
-              </div>
-              <div className={`${styles.actions} ${styles.blockedActions}`}>
-                <Button variant="secondary" size="row" className={styles.unblock} onClick={() => friends.act('unblock', addr)}>
-                  Unblock
-                </Button>
-                <RowMenu address={addr} onOpen={menuAt} />
-              </div>
-            </div>
-          ))
+          blocked.map((b) => <BlockedRow key={b.address} user={b} onUnblock={() => friends.act('unblock', b.address)} onMenu={menuAt} />)
         )}
       </div>
     </div>

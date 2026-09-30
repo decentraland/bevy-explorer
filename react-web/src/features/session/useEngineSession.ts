@@ -33,6 +33,7 @@ import type {
   CommunityAction,
   CommunityDetailMessage,
   Emote,
+  BlockedUser,
   Friend,
   FriendAction,
   FriendRequest,
@@ -312,6 +313,10 @@ export interface FriendsState {
   received: FriendRequest[]
   sent: FriendRequest[]
   blocked: string[]
+  /** The blocked accounts with their profiles (display); `blocked` stays the address set. */
+  blockedUsers: BlockedUser[]
+  /** Signed in, social service still starting. */
+  loading: boolean
   open: boolean
   toggle: () => void
   /* TODO: split domain data (queries) from commands — act/toggle don't belong in "State".
@@ -611,7 +616,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     received: FriendRequest[]
     sent: FriendRequest[]
     blocked: string[]
-  }>({ available: false, friends: [], received: [], sent: [], blocked: [] })
+    blockedUsers: BlockedUser[]
+    loading: boolean
+  }>({ available: false, friends: [], received: [], sent: [], blocked: [], blockedUsers: [], loading: false })
   const [friendsOpen, setFriendsOpen] = useState(false)
   const [settings, setSettings] = useState<Setting[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -783,7 +790,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             friends: msg.friends,
             received: msg.received,
             sent: msg.sent,
-            blocked: msg.blocked
+            blocked: msg.blocked,
+            blockedUsers: msg.blockedUsers ?? [],
+            loading: msg.loading === true
           })
           seedProfiles([...msg.friends, ...msg.received, ...msg.sent])
           break
@@ -2057,6 +2066,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       received: friendsData.received,
       sent: friendsData.sent,
       blocked: friendsData.blocked,
+      blockedUsers: friendsData.blockedUsers,
+      loading: friendsData.loading,
       open: friendsOpen,
       toggle: toggleFriends,
       act: friendAct
