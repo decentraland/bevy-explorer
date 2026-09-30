@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 
 use anyhow::{anyhow, bail};
 use bevy::{
@@ -9,7 +9,9 @@ use common::{
     structs::{CurrentRealm, PreviewCommand, PreviewMode},
     util::TaskExt,
 };
+use dcl_component::proto_components::sdk::development::WsSceneMessage;
 use platform::IntoClientRequest;
+use prost::Message;
 
 pub struct PreviewPlugin;
 
@@ -49,9 +51,12 @@ fn connect_preview_server(
     }
 
     let mut restart = task.as_ref().is_none();
-    if let Some(Err(err)) = task.as_mut().and_then(|t| t.0.complete()) {
-        warn!("preview socket error: {err}, restarting");
+    if let Some(res) = task.as_mut().and_then(|t| t.0.complete()) {
+        if let Err(err) = res {
+            warn!("preview socket error: {err}, restarting");
+        }
         restart = true;
+        *task = None;
     }
     if restart {
         let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -69,6 +74,18 @@ fn connect_preview_server(
 }
 
 pub async fn handle_preview_socket(
+    server: String,
+    sender: tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+) -> Result<(), anyhow::Error> {
+    let result = preview_socket(server, sender).await;
+    // back off on every exit path, not just a clean disconnect: a preview server with
+    // no ws endpoint fails the upgrade immediately and the caller respawns us as soon
+    // as the task completes, so an early error spins one attempt per frame
+    async_std::task::sleep(Duration::from_secs(5)).await;
+    result
+}
+
+async fn preview_socket(
     server: String,
     sender: tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
 ) -> Result<(), anyhow::Error> {
@@ -92,34 +109,19 @@ pub async fn handle_preview_socket(
     while let Some(msg) = read.next().await {
         let msg = msg?;
         info!("preview server message: {msg}");
+        let data = msg.into_data();
+        let Ok(ws_scene_message) = WsSceneMessage::decode(data.as_slice()) else {
+            debug!("Not a prost message.");
+            continue;
+        };
+        let Some(message) = ws_scene_message.message else {
+            debug!("Empty preview message.");
+            continue;
+        };
 
-        if let Ok(value) = serde_json::Value::from_str(msg.into_text()?.as_str()) {
-            let Some(ty) = value
-                .get("type")
-                .and_then(|v| v.as_str().map(ToOwned::to_owned))
-            else {
-                continue;
-            };
-
-            #[allow(clippy::single_match)] // we will handle more messages in future
-            match ty.as_str() {
-                "SCENE_UPDATE" => {
-                    if let Some(hash) = value
-                        .get("payload")
-                        .and_then(|payload| payload.get("sceneId"))
-                        .and_then(|scene_id| scene_id.as_str().map(ToOwned::to_owned))
-                    {
-                        sender.send(PreviewCommand::ReloadScene { hash })?;
-                    } else {
-                        warn!("malformed scene update");
-                    }
-                }
-                _ => (),
-            }
-        }
+        sender.send(message.into())?;
     }
 
     warn!("preview socket disconnected, waiting 5 secs to attempt reconnect");
-    async_std::task::sleep(Duration::from_secs(5)).await;
     Ok(())
 }

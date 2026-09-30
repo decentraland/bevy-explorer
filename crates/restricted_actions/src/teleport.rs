@@ -4,31 +4,109 @@ use common::{
     structs::{AvatarDynamicState, PermissionType, PrimaryUser},
 };
 use comms::global_crdt::ForeignPlayer;
-use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
-use ipfs::RealmInitialLocation;
+use ipfs::{ChangeRealmEvent, RealmInitialLocation};
+use rand::{seq::SliceRandom, Rng};
 use scene_runner::{
     initialize_scene::{
-        LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
+        LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, SuperUserScene,
+        PARCEL_SIZE,
     },
     permissions::Permission,
-    renderer_context::RendererSceneContext,
-    update_world::mesh_collider::SceneColliderData,
+    renderer_context::{RendererSceneContext, FROZEN_BLOCK},
+    update_world::{gltf_container::GLTF_LOADING, mesh_collider::SceneColliderData},
     OutOfWorld,
 };
 use wallet::Wallet;
+
+// (parcel, realm, response, report a realm change's outcome)
+type TeleportAction = (
+    Option<IVec2>,
+    Option<String>,
+    RpcResultSender<Result<(), String>>,
+    bool,
+);
 
 pub fn teleport_player(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
-    mut perms: Permission<(IVec2, RpcResultSender<Result<(), String>>)>,
+    mut perms: Permission<TeleportAction>,
     mut realm_target: ResMut<RealmInitialLocation>,
+    super_user: Query<(), With<SuperUserScene>>,
 ) {
-    let mut do_teleport = |to: IVec2, response: RpcResultSender<Result<(), String>>| {
+    let mut actions: Vec<TeleportAction> = Vec::new();
+
+    for (scene, to, realm, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::TeleportPlayer {
+            scene,
+            to,
+            realm,
+            response,
+        } => Some((*scene, *to, realm.clone(), response.clone())),
+        _ => None,
+    }) {
+        let parcel = to.map(|to| format!("({},{})", to.x, to.y));
+        let (ty, detail) = match (&realm, parcel) {
+            (Some(realm), Some(parcel)) => {
+                (PermissionType::ChangeRealm, format!("{realm} {parcel}"))
+            }
+            (Some(realm), None) => (PermissionType::ChangeRealm, realm.clone()),
+            (None, Some(parcel)) => (PermissionType::Teleport, parcel),
+            (None, None) => {
+                response.send(Err("teleport needs a parcel or a realm".to_owned()));
+                continue;
+            }
+        };
+        // system requests reply to their requester; a scene is gone once its realm change lands,
+        // so its player is told in the console, unless it is the HUD's own bridge scene
+        let Some(scene) = scene else {
+            actions.push((to, realm, response, false));
+            continue;
+        };
+        let report = !super_user.contains(scene);
+        perms.check(
+            ty,
+            scene,
+            (to, realm, response, report),
+            Some(detail),
+            false,
+        );
+    }
+
+    actions.extend(perms.drain_success(PermissionType::Teleport));
+    actions.extend(perms.drain_success(PermissionType::ChangeRealm));
+
+    for (to, realm, response, report) in actions {
+        if let Some(realm) = realm {
+            // A realm change (a full reconnect, even to the realm we are in — same as changeRealm),
+            // landing on the parcel once it is live, or on the realm's default spawn without one.
+            // The parcel can't be applied now: it would resolve against the parcel grid of the
+            // realm being left.
+            debug!("teleport -> {to:?} in {realm}");
+            *realm_target = match to {
+                Some(to) => RealmInitialLocation::Parcel(to),
+                None => RealmInitialLocation::Base,
+            };
+            // answered once the realm is actually set (or failed, keeping the player where they are)
+            commands.send_event(ChangeRealmEvent {
+                new_realm: realm,
+                content_server_override: None,
+                response,
+                report,
+            });
+            continue;
+        }
+
+        // Neither: already answered above (a system request without a scene is never built that way).
+        let Some(to) = to else {
+            response.send(Err("teleport needs a parcel or a realm".to_owned()));
+            continue;
+        };
+
         let Ok((ent, mut transform, mut dynamic_state)) = player.single_mut() else {
             warn!("player doesn't exist?!");
             response.send(Err("Something went wrong".into()));
-            return;
+            continue;
         };
 
         transform.translation.x = to.x as f32 * 16.0 + 8.0;
@@ -43,39 +121,17 @@ pub fn teleport_player(
 
         response.send(Ok(()));
         info!("teleported to {to}");
-    };
-
-    for (scene, to, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::TeleportPlayer {
-            scene,
-            to,
-            response,
-        } => Some((*scene, *to, response.clone())),
-        _ => None,
-    }) {
-        if let Some(scene) = scene {
-            perms.check(
-                PermissionType::Teleport,
-                scene,
-                (to, response.clone()),
-                Some(format!("({},{})", to.x, to.y)),
-                false,
-            );
-        } else {
-            do_teleport(to, response);
-        }
     }
 
-    for (to, response) in perms.drain_success(PermissionType::Teleport) {
-        do_teleport(to, response);
+    for (_, _, response, _) in perms.drain_fail(PermissionType::Teleport) {
+        response.send(Err("User declined".to_owned()))
     }
-
-    for (_, response) in perms.drain_fail(PermissionType::Teleport) {
+    for (_, _, response, _) in perms.drain_fail(PermissionType::ChangeRealm) {
         response.send(Err("User declined".to_owned()))
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn handle_out_of_world(
     mut commands: Commands,
     mut scenes: Query<
@@ -130,9 +186,27 @@ pub fn handle_out_of_world(
     let (maybe_context, maybe_loadstate, maybe_collider_data) = scenes.get_mut(*scene).unwrap();
 
     if let Some(context) = maybe_context {
-        if !context.broken && (context.tick_number <= 5 || !context.blocked.is_empty()) {
+        // A frozen scene (inspector /freeze_scene, or the editor-mode auto-freeze at tick 3) is as
+        // loaded as it's going to get — it never advances its tick or clears `blocked` to become
+        // "ready" on its own, so don't keep the player out-of-world behind the loading screen. Do
+        // still wait for gltfs though: they keep processing renderer-side while the scene is frozen,
+        // and releasing early would drop the player in before the ground colliders exist.
+        let frozen =
+            context.blocked.contains(FROZEN_BLOCK) && !context.blocked.contains(GLTF_LOADING);
+        // A broken scene (hung past the not-responding timeout, errored, or unreachable) will
+        // never become ready; stop holding the player behind the loading screen and let them
+        // into the world. An inspected scene never gates the player at all: it's a debugging
+        // session, and it may sit at a breakpoint (or paused before its first tick) forever.
+        if !context.broken()
+            && !frozen
+            && !context.inspected
+            && (context.tick_number <= 5 || !context.blocked.is_empty())
+        {
             debug!("scene not ready");
         } else {
+            if context.broken() {
+                debug!("scene broken, returning to world");
+            }
             debug!(
                 "ready, returning to world (set spawn here) tick: {}",
                 context.tick_number
@@ -145,7 +219,7 @@ pub fn handle_out_of_world(
             let base_position =
                 Vec3::new(context.base.x as f32, 0.0, -context.base.y as f32) * PARCEL_SIZE;
 
-            let rng = &mut thread_rng();
+            let rng = &mut rand::thread_rng();
             let mut best_distance = 0.0;
             let mut best_position = Vec3::new(
                 rng.gen_range(0.0..PARCEL_SIZE),

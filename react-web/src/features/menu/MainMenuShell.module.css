@@ -1,0 +1,164 @@
+/* Shared full-screen menu chrome. The overlay is a reference-resolution canvas: it's sized
+   at 100%/scale and scaled back down by --ui-scale (innerHeight/1080), so every fixed-px
+   child scales with the viewport exactly like Unity's CanvasScaler ("Scale With Screen Size",
+   1080 reference). Anchored top-left so the scaled box still fills the viewport.
+   contain isolates paints from the engine's per-frame main-thread work for snappier UI. */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: calc(100% / var(--ui-scale));
+  height: calc(100% / var(--ui-scale));
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(150deg, #1c0d33 0%, #3a1660 55%, #5a2185 100%);
+  font-family: var(--font-family);
+  overflow: hidden;
+  contain: layout paint;
+}
+/* Fresh open fades in; a page switch (which remounts the shell) doesn't. */
+.animateIn {
+  animation: menuIn var(--dur-pop) linear;
+}
+@keyframes menuIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* Transparent-body pages (engine map / avatar preview): the overlay itself becomes a
+   pass-through hole so the scene behind receives map-drag / avatar-rotate events. The
+   top bar re-enables pointer events for its own controls. */
+.overlayPass {
+  background: transparent;
+  pointer-events: none;
+}
+
+.topbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 70px;
+  padding: 0 20px;
+  background: var(--menu-bar);
+  flex: none;
+  pointer-events: auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 27px;
+}
+.brandName {
+  font-size: var(--type-22);
+  font-weight: var(--fw-bold);
+  color: var(--text);
+}
+.menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 auto;
+}
+.menuItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 140px;
+  height: 58px;
+  padding: 2px 0 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    color var(--dur-tap) linear,
+    background-color var(--dur-tap) linear;
+}
+.menuIcon {
+  display: flex;
+  color: var(--menu-icon);
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+}
+.menuItem:hover {
+  background: var(--menu-tab-hover);
+}
+.menuActive,
+.menuActive:hover {
+  color: var(--text);
+  background: var(--menu-tab-selected);
+}
+.menuLabel {
+  height: 20px;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  line-height: 20px;
+  text-transform: uppercase;
+}
+.menuKey {
+  color: var(--menu-key);
+}
+.menuActive .menuIcon {
+  color: var(--text);
+}
+
+.menuActive .menuKey {
+  color: var(--ink-subtle);
+}
+.close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--black);
+  color: var(--text);
+  font-size: var(--type-24);
+  line-height: 1;
+  cursor: pointer;
+}
+.closeIcon {
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  mask: url('../../assets/backpack/icon-close.webp') center / contain no-repeat;
+}
+.close:hover {
+  background: var(--fill-faint);
+}
+.accent {
+  position: relative;
+  z-index: 1;
+  height: 4px;
+  margin-top: -4px;
+  flex: none;
+  background: var(--menu-rainbow);
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 22px clamp(20px, 6vw, 120px);
+  overflow-y: auto;
+}
+/* Engine view fills the body with no chrome; events pass through to the scene. */
+.bodyTransparent {
+  padding: 0;
+  overflow: hidden;
+  pointer-events: none;
+}

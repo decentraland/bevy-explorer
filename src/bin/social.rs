@@ -4,7 +4,8 @@ use bevy_simple_text_input::{
 };
 use common::util::{AsH160, TryPushChildrenEx};
 use social::{
-    DirectChatMessage, FriendshipEventBody, SocialClient, SocialClientHandler, SocialPlugin,
+    runtime::SocialRuntime, DirectChatMessage, FriendshipEventBody, SocialClient,
+    SocialClientHandler, SocialPlugin,
 };
 use tokio::sync::mpsc::unbounded_channel;
 use wallet::{Wallet, WalletPlugin};
@@ -39,11 +40,12 @@ fn setup(
     mut wallet: ResMut<Wallet>,
     seed: Res<WalletSeed>,
     mut client: ResMut<SocialClient>,
+    social_runtime: Res<SocialRuntime>,
 ) {
     match seed.0 {
         Some(seed) => {
             let mut seed_bytes: [u8; 32] = [43; 32];
-            for (to, from) in seed_bytes.iter_mut().zip(seed.to_le_bytes().into_iter()) {
+            for (to, from) in seed_bytes.iter_mut().zip(seed.to_le_bytes()) {
                 *to = from;
             }
             wallet.finalize_as_guest_with_seed(seed_bytes)
@@ -56,9 +58,12 @@ fn setup(
     commands.insert_resource(SocEvents(rx, rx_c));
     client.0 = SocialClientHandler::connect(
         wallet.clone(),
+        &social_runtime,
         move |ev: &FriendshipEventBody| {
             let _ = sx.send(ev.clone());
         },
+        |_address, _status| {},
+        |_address: &str, _is_blocked: bool| {},
         move |ev: DirectChatMessage| {
             let _ = sx_c.send(ev);
         },
@@ -209,25 +214,25 @@ fn update(
                 }
                 "friends" => {
                     reply("friends:".to_owned());
-                    for friend in client.friends.iter() {
-                        reply(format!(" - {friend:#x?}"));
+                    for (address, profile) in client.friends.iter() {
+                        reply(format!(
+                            " - {address:#x?}: {} (claimed: {})",
+                            profile.name, profile.has_claimed_name
+                        ));
                     }
                 }
                 "received" => {
                     reply("received requests:".to_owned());
-                    for (address, message) in client.received_requests.iter() {
+                    for (address, req) in client.received_requests.iter() {
                         reply(format!(
                             " - {address:#x?}: {}",
-                            message
-                                .as_ref()
-                                .map(String::as_str)
-                                .unwrap_or("(no message)")
+                            req.message.as_deref().unwrap_or("(no message)")
                         ));
                     }
                 }
                 "sent" => {
                     reply("sent requests:".to_owned());
-                    for address in client.sent_requests.iter() {
+                    for (address, _req) in client.sent_requests.iter() {
                         reply(format!(" - {address:#x?}",));
                     }
                 }

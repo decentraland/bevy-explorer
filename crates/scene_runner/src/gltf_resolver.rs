@@ -1,12 +1,15 @@
 use anyhow::anyhow;
 use bevy::{
+    asset::RenderAssetTransferPriority,
     ecs::system::SystemParam,
     gltf::{Gltf, GltfLoaderSettings, GltfMesh},
     platform::collections::HashMap,
     prelude::*,
-    render::render_asset::RenderAssetUsages,
 };
+use common::structs::NoRenderApp;
 use ipfs::IpfsAssetServer;
+
+use crate::update_world::gltf_container::scene_gltf_loader_settings;
 
 #[derive(SystemParam)]
 pub struct GltfResolver<'w, 's> {
@@ -14,6 +17,7 @@ pub struct GltfResolver<'w, 's> {
     pending_gltfs: Local<'s, HashMap<String, Handle<Gltf>>>,
     ipfas: IpfsAssetServer<'w, 's>,
     gltfs: Res<'w, Assets<Gltf>>,
+    no_render_app: Option<Res<'w, NoRenderApp>>,
 }
 
 impl GltfResolver<'_, '_> {
@@ -27,18 +31,20 @@ impl GltfResolver<'_, '_> {
         scene_hash: &str,
     ) -> Result<Option<Handle<Gltf>>, anyhow::Error> {
         let lookup = format!("{gltf_src}##{scene_hash}");
+        let no_render_app = self.no_render_app.is_some();
         let h_gltf = self.prev_pending_gltfs.remove(&lookup).unwrap_or_else(|| {
             self.ipfas
                 .load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
                     gltf_src,
                     scene_hash,
-                    |s| {
-                        s.load_cameras = false;
-                        s.load_lights = false;
-                        s.load_meshes = RenderAssetUsages::all();
-                        s.load_materials = RenderAssetUsages::RENDER_WORLD;
-                        s.include_source = true;
-                    },
+                    // same settings as GltfContainer: assets are keyed by path and the
+                    // first load's settings win, so whichever path reaches a file first
+                    // decides for the other. Background priority, as for preloads —
+                    // these meshes are not needed the frame they resolve.
+                    scene_gltf_loader_settings(
+                        RenderAssetTransferPriority::Priority(0),
+                        no_render_app,
+                    ),
                 )
                 .unwrap()
         });

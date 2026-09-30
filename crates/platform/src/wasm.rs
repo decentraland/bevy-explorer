@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use anyhow::anyhow;
 use bevy::log::warn;
@@ -19,7 +22,6 @@ use futures_util::{
 };
 use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
-use wasm_bindgen_futures::spawn_local;
 use ws_stream_wasm::{WsMessage, WsMeta, WsStream};
 pub struct WebSocket {
     _meta: WsMeta,
@@ -93,8 +95,17 @@ pub async fn websocket<R>(request: R) -> Result<WebSocket, anyhow::Error>
 where
     R: IntoClientRequest + Unpin,
 {
-    let url = request.into_client_request()?.uri().to_string();
-    let (_meta, stream) = ws_stream_wasm::WsMeta::connect(&url, None).await?;
+    let request = request.into_client_request()?;
+    let url = request.uri().to_string();
+    let headers = request.headers();
+    let protocol = headers.get("Sec-Websocket-Protocol");
+    let (_meta, stream) = ws_stream_wasm::WsMeta::connect(
+        &url,
+        protocol
+            .as_ref()
+            .map(|protocol| vec![protocol.to_str().unwrap()]),
+    )
+    .await?;
     Ok(WebSocket { _meta, stream })
 }
 
@@ -134,22 +145,25 @@ pub fn write_config_file<T: Serialize + Clone + 'static>(config: &T) {
     use futures_lite::io::AsyncWriteExt;
     let config = config.clone();
 
-    spawn_local(async move {
-        let mut f = match web_fs::File::create("config.json").await {
-            Ok(f) => f,
-            Err(e) => {
-                warn!("couldn't create config file: {e:?}");
-                return;
-            }
-        };
+    // Systems may run on a compute worker; the io pool drives this on the engine worker's event loop.
+    bevy::tasks::IoTaskPool::get()
+        .spawn(async move {
+            let mut f = match web_fs::File::create("config.json").await {
+                Ok(f) => f,
+                Err(e) => {
+                    warn!("couldn't create config file: {e:?}");
+                    return;
+                }
+            };
 
-        if let Err(e) = f
-            .write_all(serde_json::to_string(&config).unwrap().as_bytes())
-            .await
-        {
-            warn!("couldn't write config file: {e:?}");
-        }
-    })
+            if let Err(e) = f
+                .write_all(serde_json::to_string(&config).unwrap().as_bytes())
+                .await
+            {
+                warn!("couldn't write config file: {e:?}");
+            }
+        })
+        .detach();
 }
 
 #[derive(Default)]
@@ -188,36 +202,57 @@ impl<T> AsyncRwLock<T> {
 #[derive(Debug)]
 pub struct NoError;
 
-pub fn platform_pointer_is_locked(_expected: bool) -> bool {
-    web_sys::window()
-        .and_then(|w| w.document())
-        .map(|d| d.pointer_lock_element().is_some())
-        .unwrap_or(false)
+// The engine runs on a worker with no document to ask, so the page reports the browser's
+// pointer-lock state here ([`report_pointer_lock`], exported by the root crate's web.rs and
+// called from engine.js on `pointerlockchange` / `pointerlockerror`); page and engine share the
+// wasm memory, so these two atomics are the whole channel. A request takes effect
+// asynchronously (winit dispatches it to the page, the browser then fires the change event), so
+// the engine marks its request pending and the page's next report settles it.
+static POINTER_LOCKED: AtomicBool = AtomicBool::new(false);
+static POINTER_LOCK_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Page side: the browser's pointer-lock state changed (or a request was refused).
+pub fn report_pointer_lock(locked: bool) {
+    POINTER_LOCKED.store(locked, Ordering::Relaxed);
+    POINTER_LOCK_PENDING.store(false, Ordering::Release);
+}
+
+/// The engine is about to request the pointer lock.
+pub fn platform_pointer_lock_requested() {
+    POINTER_LOCK_PENDING.store(true, Ordering::Relaxed);
+}
+
+/// The browser's pointer-lock state as last reported, or `None` while a request is pending.
+pub fn platform_pointer_is_locked() -> Option<bool> {
+    (!POINTER_LOCK_PENDING.load(Ordering::Acquire)).then(|| POINTER_LOCKED.load(Ordering::Relaxed))
 }
 
 pub fn default_camera_components() -> impl Bundle {
     (
-        Tonemapping::TonyMcMapface,
+        Tonemapping::AcesFitted,
         DebandDither::Enabled,
         ColorGrading {
+            // ACES tonemapping with slightly deepened midtones; tune live with
+            // /tonemap /exposure /gamma /saturation
             global: ColorGradingGlobal {
-                exposure: -0.5,
+                exposure: 0.0,
                 ..Default::default()
             },
             shadows: ColorGradingSection {
-                gamma: 0.75,
+                gamma: 0.9,
                 ..Default::default()
             },
             midtones: ColorGradingSection {
-                gamma: 0.75,
+                gamma: 0.9,
                 ..Default::default()
             },
             highlights: ColorGradingSection {
-                gamma: 0.75,
+                gamma: 0.9,
                 ..Default::default()
             },
         },
         Bloom {
+            // tune live with /bloom
             intensity: 0.15,
             ..Bloom::OLD_SCHOOL
         },
@@ -225,4 +260,59 @@ pub fn default_camera_components() -> impl Bundle {
         DepthPrepass,
         NormalPrepass,
     )
+}
+
+// Persist a scene's composite to the user's real filesystem via the File System Access API. The
+// directory handle is acquired once with a picker and remembered in IndexedDB (keyed by scene id)
+// so later saves skip the prompt. All of that lives in web_save.js; this just binds it. Returns
+// the written path.
+mod web_save {
+    use wasm_bindgen::prelude::*;
+    #[wasm_bindgen(module = "/src/web_save.js")]
+    extern "C" {
+        // `scene_target` is JSON `{root, projectId, parcels, title}` — web_save uses it to locate
+        // and verify the scene's project folder under the granted directory handle.
+        #[wasm_bindgen(catch, js_name = saveSceneFile)]
+        pub async fn save_scene_file(
+            scene_target: &str,
+            rel_path: &str,
+            bytes: &[u8],
+        ) -> Result<JsValue, JsValue>;
+    }
+}
+
+pub async fn save_scene_composite(
+    _scene_hash: String,
+    bytes: Vec<u8>,
+    scene_target: String,
+) -> Result<String, String> {
+    match web_save::save_scene_file(&scene_target, "assets/scene/main.composite", &bytes).await {
+        Ok(v) => Ok(v.as_string().unwrap_or_default()),
+        Err(e) => Err(js_error_message(&e)),
+    }
+}
+
+// Persist a file into the scene's project folder (File System Access API) at `rel_path` relative to
+// the project root — the same handle/folder-match as the composite save, so imported assets land
+// alongside main.composite with no extra prompt after the first save.
+pub async fn write_scene_file(
+    _scene_hash: &str,
+    rel_path: &str,
+    bytes: &[u8],
+    scene_target: &str,
+) -> Result<(), String> {
+    web_save::save_scene_file(scene_target, rel_path, bytes)
+        .await
+        .map(|_| ())
+        .map_err(|e| js_error_message(&e))
+}
+
+fn js_error_message(e: &wasm_bindgen::JsValue) -> String {
+    e.as_string()
+        .or_else(|| {
+            js_sys::Reflect::get(e, &wasm_bindgen::JsValue::from_str("message"))
+                .ok()
+                .and_then(|m| m.as_string())
+        })
+        .unwrap_or_else(|| "save failed".to_string())
 }

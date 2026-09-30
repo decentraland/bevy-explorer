@@ -6,27 +6,27 @@
 }
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 #import "embedded://shaders/bound_material_effect.wgsl"::apply_outline
+#import "embedded://shaders/scene_bounds.wgsl"::{scene_bounds, scene_outside_amount}
 
-struct Bounds {
-    min: u32,
-    max: u32,
-    height: f32,
-    _padding0: u32,
+#ifdef ENVIRONMENT_MAP
+#import bevy_pbr::{ambient, clustered_forward::ClusterableObjectIndexRanges, environment_map, lighting, mesh_view_bindings::lights}
+#import "embedded://shaders/sky_envmap_lookup.wgsl"::{sky_envmap_input, sky_envmap_level}
+
+// the sky envmap, levelled towards the flat ambient light, is the only ambient light
+// (see sky_envmap_lookup.wgsl)
+override fn environment_map::compute_radiances(input: lighting::LayerLightingInput, clusterable_object_index_ranges: ptr<function, ClusterableObjectIndexRanges>, world_position: vec3<f32>, found_diffuse_indirect: bool) -> environment_map::EnvironmentMapRadiances {
+    let upper = sky_envmap_input(input);
+    let radiances = environment_map::compute_radiances(upper, clusterable_object_index_ranges, world_position, found_diffuse_indirect);
+    return sky_envmap_level(radiances, input, upper, lights.ambient_color);
 }
 
-fn unpack_bounds(packed: u32) -> vec2<f32> {
-    let x = i32((packed >> 16) & 0xFFFF);
-    let x_signed = select(x, x - 0x10000, (x & 0x8000) != 0);
-    let y = i32(packed & 0xFFFF);
-    let y_signed = select(y, y - 0x10000, (y & 0x8000) != 0);
-    return vec2<f32>(f32((x_signed) * 16), f32((y_signed) * 16));
+override fn ambient::ambient_light(world_position: vec4<f32>, world_normal: vec3<f32>, V: vec3<f32>, NdotV: f32, diffuse_color: vec3<f32>, specular_color: vec3<f32>, perceptual_roughness: f32, occlusion: vec3<f32>) -> vec3<f32> {
+    return vec3(0.0);
 }
+#endif
 
 struct MaskMaterial {
-    bounds: array<Bounds,8>,
     color: vec4<f32>,
-    distance: f32,
-    num_bounds: u32,
 };
 
 @group(2) @binding(0)
@@ -56,31 +56,11 @@ fn fragment(
 
     let world_position = pbr_input.world_position.xyz;
     // check bounds
-    var outside_amt: f32 = 9999.0;
-    var nearest_region_distance: f32 = 9999.0;
-    var nearest_region_height: f32 = 9999.0;
-    if material.num_bounds > 0 {
-        for (var ix = 0u; ix < material.num_bounds; ix += 1u) {
-            let min_wp = unpack_bounds(material.bounds[ix].min);
-            let max_wp = unpack_bounds(material.bounds[ix].max);
-
-            let outside_xy = abs(clamp(world_position.xz, min_wp, max_wp) - world_position.xz);
-            let distance = max(outside_xy.x, outside_xy.y);
-            if distance < nearest_region_distance {
-                nearest_region_distance = distance;
-                nearest_region_height = material.bounds[ix].height;
-            }
-            outside_amt = min(outside_amt, distance);
-        }
-        let outside_height = max(world_position.y - nearest_region_height, 0.0);
-        outside_amt = max(outside_amt, outside_height);
-    } else {
-        outside_amt = 0.0;
-    }
+    let outside_amt = scene_outside_amount(world_position);
 
     var noise = 0.05;
     if outside_amt > 0.00 {
-        if outside_amt < material.distance {
+        if outside_amt < scene_bounds.distance {
             noise = simplex_noise_3d(world_position * 2.0 + globals.time * vec3(0.2, 0.16, 0.24)) * 0.5 + 0.55;
             if noise < (outside_amt - 0.125) / 2.0 {
                 discard;
@@ -105,6 +85,7 @@ fn fragment(
     out.color = apply_outline(
         in.position,
         out.color, 
+        vec3(1., 0., 0.),
         false,
         sample_index,
     );

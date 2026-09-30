@@ -1,0 +1,497 @@
+/* Map page — atlas fills the body; chips overlay the top, controls float. */
+.wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: -22px clamp(-120px, -6vw, -20px) -22px;
+}
+
+.chips {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px 0 8px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: rgba(10, 8, 14, 0.85);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.chipIcon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex: none;
+}
+.chip:hover {
+  background: rgba(30, 24, 40, 0.9);
+}
+.chipActive {
+  background: var(--brand);
+}
+.searchWrap {
+  position: relative;
+  margin-left: auto;
+  width: 240px;
+}
+.search {
+  width: 100%;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.95);
+  color: #111;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+/* Search results dropdown (places + worlds). */
+.results {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  width: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 14px;
+  background: #16121f;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.result:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.resultImg {
+  width: 56px;
+  height: 44px;
+  flex: none;
+  border-radius: 7px;
+  background: #2a2335 center/cover no-repeat;
+}
+.resultWorldIcon {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  padding: 9px;
+  border-radius: 7px;
+  background: var(--brand);
+  object-fit: contain;
+}
+.resultBody {
+  flex: 1;
+  min-width: 0;
+}
+.resultTitle {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.resultSub {
+  font-size: 12px;
+  color: var(--ink-6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.resultTag {
+  flex: none;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--brand);
+}
+
+/* Atlas viewport. */
+.view {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: #0e0c12;
+  cursor: grab;
+}
+.view:active {
+  cursor: grabbing;
+}
+.atlasWrap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-origin: center;
+}
+.atlas {
+  position: relative;
+  user-select: none;
+  pointer-events: none;
+}
+.atlas img {
+  pointer-events: none;
+  user-select: none;
+}
+.marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 16px solid #ff2d55;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.6));
+}
+
+/* Selected-parcel highlight — lives inside the scaled atlas so it tracks pan/zoom. */
+.selected {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+  border: 1px solid #00d9ff;
+  background: rgba(0, 217, 255, 0.28);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+/* Coordinate badge that follows the selected parcel, rendered in screen space. */
+.coord {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, calc(-100% - 8px));
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  background: rgba(10, 8, 14, 0.9);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Zoom controls. */
+.zoom {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.zoom button {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(10, 8, 14, 0.85);
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.zoom button:hover {
+  background: rgba(30, 24, 40, 0.9);
+}
+
+/* Satellite minimap. */
+.minimap {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--white-10);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.minimapInner {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  overflow: hidden;
+  background: #1a1a1a;
+}
+.minimap img {
+  display: block;
+}
+
+/* Category map pins — screen-space, constant size, tip points at the parcel. */
+.pin {
+  position: absolute;
+  z-index: 2;
+  width: 30px;
+  height: 38px;
+  object-fit: contain;
+  transform: translate(-50%, -100%);
+  cursor: pointer;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+}
+.pin:hover {
+  transform: translate(-50%, -100%) scale(1.12);
+}
+
+/* Category sidebar — list of scenes for the selected category. */
+.sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: 390px;
+  display: flex;
+  flex-direction: column;
+  background: #14101c;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+}
+.sidebarHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 16px 12px;
+}
+.sidebarIcon {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  flex: none;
+}
+.sidebarTitle {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+}
+.sidebarClose {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+}
+.sidebarClose:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.sorts {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+.sort {
+  flex: 1;
+  height: 30px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink-7);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.sort:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.sortActive {
+  background: var(--brand);
+  color: var(--text);
+}
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 16px;
+}
+.listMsg {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-6);
+}
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.card:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.cardImg {
+  width: 84px;
+  height: 64px;
+  flex: none;
+  border-radius: 8px;
+  background: #2a2335 center/cover no-repeat;
+}
+.cardBody {
+  flex: 1;
+  min-width: 0;
+}
+.cardTitle {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cardOwner {
+  font-size: 12px;
+  color: var(--ink-6);
+  margin: 2px 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cardStats {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--ink-7);
+}
+.cardChevron {
+  flex: none;
+  color: var(--brand);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+/* Place detail panel. */
+.place {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 390px;
+  display: flex;
+  flex-direction: column;
+  background: #14101c;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+  overflow-y: auto;
+}
+.placeClose {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--text);
+  font-size: 18px;
+  cursor: pointer;
+}
+.placeImg {
+  height: 180px;
+  background: #2a2335 center/cover no-repeat;
+  flex: none;
+}
+.placeBody {
+  padding: 18px;
+}
+.placeTitle {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+}
+.placeOwner {
+  font-size: 13px;
+  color: var(--ink-6);
+  margin-bottom: 10px;
+}
+.placeStats {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--ink-7);
+  margin-bottom: 14px;
+}
+.jumpBtn {
+  width: 100%;
+  height: 44px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  margin-bottom: 18px;
+}
+.jumpBtn:hover {
+  filter: brightness(1.08);
+}
+.placeMetaRow {
+  display: flex;
+  gap: 36px;
+  margin-bottom: 16px;
+}
+.placeMetaLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--ink-45);
+  margin-bottom: 3px;
+}
+.placeMetaValue {
+  font-size: 14px;
+  color: var(--text);
+}
+.placeDesc {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-7);
+}

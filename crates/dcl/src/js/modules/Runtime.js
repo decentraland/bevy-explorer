@@ -9,6 +9,12 @@ module.exports.getWorldTime = async function (body) {
     return res;
 }
 
+// Vertical FOV of the active camera, in radians. Use with the player camera's
+// transform to project world points to screen space.
+module.exports.getCameraFov = async function () {
+    return await Deno.core.ops.op_camera_fov();
+}
+
 module.exports.readFile = async function (body) {
     const res = await Deno.core.ops.op_read_file(body.fileName)
     return {
@@ -24,7 +30,7 @@ module.exports.getSceneInformation = async function (body) {
 module.exports.getExplorerInformation = async function (body) {
     return {
         agent: 'bevy',
-        platform: 'desktop',
+        platform: Deno.core.ops.op_get_platform(),
         configurations: {}
     }
 }

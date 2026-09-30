@@ -6,7 +6,7 @@ use common::{
     structs::{ActiveDialog, AppConfig, CursorLocks, PrimaryCamera},
 };
 use input_manager::{InputManager, InputPriority};
-use platform::platform_pointer_is_locked;
+use platform::{platform_pointer_is_locked, platform_pointer_lock_requested};
 
 use crate::{
     initialize_scene::SuperUserScene, renderer_context::RendererSceneContext,
@@ -36,7 +36,7 @@ impl Plugin for PointerLockPlugin {
 #[derive(Component)]
 pub struct CumulativePointerDelta {
     pub delta: Vec2,
-    pub since: f32,
+    pub since: f64,
 }
 
 #[derive(Component)]
@@ -51,7 +51,7 @@ impl From<PbPointerLock> for PointerLock {
 #[derive(SystemParam)]
 pub struct CameraInteractionState<'w, 's> {
     input_manager: InputManager<'w, 's>,
-    state: Local<'s, (ClickState, f32)>,
+    state: Local<'s, (ClickState, f64)>,
     time: Res<'w, Time>,
     _p: PhantomData<&'s ()>,
 }
@@ -70,14 +70,14 @@ impl CameraInteractionState<'_, '_> {
         match self.state.0 {
             ClickState::None | ClickState::Released => {
                 if self.input_manager.just_down(action, InputPriority::None) {
-                    *self.state = (ClickState::Held, self.time.elapsed_secs());
+                    *self.state = (ClickState::Held, self.time.elapsed_secs_f64());
                 } else {
                     self.state.0 = ClickState::None;
                 }
             }
             ClickState::Held => {
                 if self.input_manager.just_up(action) {
-                    if self.time.elapsed_secs() - self.state.1 > 0.25 {
+                    if self.time.elapsed_secs_f64() - self.state.1 > 0.25 {
                         self.state.0 = ClickState::Released;
                     } else {
                         self.state.0 = ClickState::Clicked;
@@ -152,7 +152,7 @@ pub fn update_pointer_lock(
     let input_manager = &mb_state.input_manager;
     if state == ClickState::None
         && (input_manager.just_down(SystemAction::Cancel, InputPriority::None)
-            || !platform_pointer_is_locked(true))
+            || platform_pointer_is_locked() == Some(false))
         && *toggle
     {
         // override
@@ -162,6 +162,9 @@ pub fn update_pointer_lock(
 
     if state == ClickState::Clicked {
         *toggle = !*toggle;
+        if *toggle {
+            platform_pointer_lock_requested();
+        }
     }
 
     let mut camera_locked =
@@ -170,6 +173,9 @@ pub fn update_pointer_lock(
     for changed_lock in changed_pointer_locks.iter() {
         info!("lock updated by scene");
         *toggle = changed_lock.0.is_pointer_locked;
+        if *toggle {
+            platform_pointer_lock_requested();
+        }
         camera_locked = *toggle;
     }
 
@@ -219,14 +225,14 @@ pub fn update_pointer_lock(
             world_ray_direction: ray,
         };
 
-        context.update_crdt(
+        context.update_crdt_if_different(
             SceneComponentId::PRIMARY_POINTER_INFO,
             CrdtType::LWW_ENT,
             SceneEntityId::ROOT,
             &pointer_info,
         );
 
-        context.update_crdt(
+        context.update_crdt_if_different(
             SceneComponentId::POINTER_LOCK,
             CrdtType::LWW_ENT,
             SceneEntityId::CAMERA,

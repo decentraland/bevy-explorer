@@ -42,4 +42,5 @@ message PBTextShape {
   optional decentraland.common.Color3 shadow_color = 19;  // drop shadow color (default [1.0, 1.0, 1.0])
   optional decentraland.common.Color3 outline_color = 20; // outline stroke color (default [1.0, 1.0, 1.0])
   optional decentraland.common.Color4 text_color = 21;    // text color (default [1.0, 1.0, 1.0])
+  optional string font_src = 22;    // a font file in the scene, or a Google Fonts family name; `font` is the fallback (default: unset)
 }

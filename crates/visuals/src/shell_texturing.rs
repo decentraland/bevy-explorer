@@ -1,14 +1,19 @@
 use bevy::{
     asset::{embedded_asset, embedded_path, weak_handle},
     ecs::{component::HookContext, spawn::SpawnableList, world::DeferredWorld},
-    pbr::NotShadowCaster,
+    pbr::{MaterialPipeline, MaterialPipelineKey, NotShadowCaster},
     platform::collections::HashMap,
     prelude::*,
     render::{
         mesh::MeshTag,
-        render_resource::{AsBindGroup, ShaderRef},
+        mesh::MeshVertexBufferLayoutRef,
+        primitives::Aabb,
+        render_resource::{
+            AsBindGroup, RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError,
+        },
         view::RenderLayers,
     },
+    transform::TransformSystem,
 };
 use common::{
     sets::SetupSets,
@@ -19,15 +24,37 @@ use scene_runner::{
     vec3_to_parcel,
 };
 
+use crate::terrain::{
+    ground_extent, ground_mesh, ground_origin, parcel_mesh, terrain_vertex_shader,
+    TerrainExtension, TerrainFlatMaterial, TerrainParams, TerrainSet, TerrainSurface,
+    TERRAIN_TEXTURE,
+};
+
 const PARCEL_GRASS_MESH: Handle<Mesh> = weak_handle!("75b4bc5b-7523-4d7c-a42f-d2ddb93ac169");
+// sloped parcels, by lod: 1 m, 2 m and 4 m cells
+const PARCEL_GRASS_GRID_MESHES: [Handle<Mesh>; 3] = [
+    weak_handle!("f39d29df-2e82-4d6f-9e3e-f50b4afdd286"),
+    weak_handle!("0167dc0e-c82a-4d70-adee-9cf284608fbf"),
+    weak_handle!("a3eaded3-7e8b-4146-8166-2bb92b94b4a7"),
+];
 const PARCEL_GRASS_MATERIAL: Handle<ShellTexture> =
     weak_handle!("18c8dd1e-081d-452a-9c00-327775a239ff");
 
+const GROUND_MESH: Handle<Mesh> = weak_handle!("e2002cd1-4a0b-4944-ad26-97d64d72e5f9");
 const GROUND_MATERIAL: Handle<ShellTexture> = weak_handle!("a7b403bc-917b-424e-878a-9714243bd4ce");
-const GROUND_MATERIAL_FLAT_COLOR: Handle<StandardMaterial> =
+const GROUND_MATERIAL_FLAT_COLOR: Handle<TerrainFlatMaterial> =
     weak_handle!("3e91f222-a374-4f7f-ba1a-4a239c9734ae");
 const GROUND_LAYERS: u32 = 5;
 const GROUND_DISPLACEMENT: f32 = 0.01;
+// rings beyond the parcel grass area, out to 13 km, covering the old 1024-parcel ground plane
+const GROUND_RINGS: u32 = 6;
+// terrain rises at most 8 steps of 1.8 m plus ~4.4 m of noise
+const GROUND_MIN_Y: f32 = -5.0;
+const GROUND_MAX_Y: f32 = 25.0;
+
+// the snap grid's phase is only coherent near its anchor and the coherent band is visible, so
+// the anchor sits off to one side of the player rather than under them
+const SNAP_ANCHOR_OFFSET: f32 = 50.0;
 
 const LOW_LOD: usize = 4;
 const MID_LOD: usize = 2;
@@ -75,6 +102,7 @@ impl ParcelGrassLod {
     fn from_distance(player_location: IVec2, parcel: IVec2) -> Self {
         let distance = player_location.distance_squared(parcel);
         // TODO: make this depend of the render distance
+        // mirrored by `lod_cell` in terrain_vertex.wgsl, which stitches the ground and grass
         match distance {
             ..8 => ParcelGrassLod::High,
             8..16 => ParcelGrassLod::Mid,
@@ -86,27 +114,45 @@ impl ParcelGrassLod {
 #[derive(Component)]
 pub struct ParcelGrassShell;
 
+/// Whether the shells were built with the flat quad.
+#[derive(Component, PartialEq, Eq, Clone, Copy)]
+struct ParcelGrassFlat(bool);
+
 /// Huge plane that covers a huge area
 #[derive(Component)]
 struct Ground;
 
 #[derive(Clone, Asset, TypePath, AsBindGroup)]
 pub struct ShellTexture {
+    // one uniform buffer: webgpu allows 12 per stage, shared with the view and mesh bindings
     #[uniform(0)]
     subdivisions: u32,
-    #[uniform(1)]
+    #[uniform(0)]
     layers: u32,
-    #[uniform(2)]
-    padding: Vec2,
-    #[uniform(3)]
+    #[uniform(0)]
+    /// xz the snap grid is anchored to
+    snap_anchor: Vec2,
+    #[uniform(0)]
     root_color: LinearRgba,
-    #[uniform(4)]
+    #[uniform(0)]
     tip_color: LinearRgba,
+    #[texture(100, sample_type = "float", filterable = false, visibility(vertex))]
+    terrain_steps: Handle<Image>,
+    #[uniform(101)]
+    terrain: TerrainParams,
 }
 
 impl Material for ShellTexture {
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Opaque
+    }
+
+    fn vertex_shader() -> ShaderRef {
+        terrain_vertex_shader()
+    }
+
+    fn prepass_vertex_shader() -> ShaderRef {
+        terrain_vertex_shader()
     }
 
     fn fragment_shader() -> ShaderRef {
@@ -121,6 +167,20 @@ impl Material for ShellTexture {
 
     fn prepass_fragment_shader() -> ShaderRef {
         Self::fragment_shader()
+    }
+
+    // The prepass pipeline defaults to no culling while the main pass culls back faces, so shell
+    // undersides wrote prepass depth that the main pass never drew over (the clear colour showed
+    // when looking up at shells, e.g. from inside a hill). Draw both faces in both passes, so the
+    // inside of a hill shows; the shader dithers shells out in front of the player.
+    fn specialize(
+        _pipeline: &MaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        descriptor.primitive.cull_mode = None;
+        Ok(())
     }
 }
 
@@ -140,10 +200,7 @@ impl Plugin for ShellTexturingPlugin {
 
         app.add_systems(
             Startup,
-            (
-                setup_parcel_grass_mesh,
-                spawn_ground.in_set(SetupSets::Main),
-            ),
+            (setup_grass_meshes, spawn_ground.in_set(SetupSets::Main)),
         );
         app.add_systems(OnEnter(ParcelGrassState::Off), swap_ground);
         app.add_systems(OnEnter(ParcelGrassState::On), swap_ground);
@@ -154,6 +211,8 @@ impl Plugin for ShellTexturingPlugin {
                     .run_if(resource_changed::<ParcelGrassConfig>),
                 parcel_grass_config_updated
                     .run_if(resource_changed::<ParcelGrassConfig>.and(shells_need_updating)),
+                (update_terrain_params, refresh_parcel_grass_meshes).after(TerrainSet),
+                follow_player.before(TransformSystem::TransformPropagate),
             ),
         );
         app.add_systems(
@@ -168,6 +227,24 @@ impl Plugin for ShellTexturingPlugin {
         );
         app.add_observer(parcel_grass_lod_inserted);
         app.add_observer(parcel_grass_lod_replaced);
+        app.add_systems(
+            PostUpdate,
+            update_grass_anchor.after(TransformSystem::TransformPropagate),
+        );
+    }
+}
+
+/// keep the shells' snap grid anchored near the player
+fn update_grass_anchor(
+    player: Query<&GlobalTransform, (With<PrimaryUser>, Changed<GlobalTransform>)>,
+    mut materials: ResMut<Assets<ShellTexture>>,
+) {
+    let Ok(player) = player.single() else { return };
+    let anchor = player.translation().xz() + Vec2::splat(SNAP_ANCHOR_OFFSET);
+    for handle in [&PARCEL_GRASS_MATERIAL, &GROUND_MATERIAL] {
+        if let Some(material) = materials.get_mut(handle) {
+            material.snap_anchor = anchor;
+        }
     }
 }
 
@@ -179,31 +256,106 @@ enum ParcelGrassState {
     On,
 }
 
-fn setup_parcel_grass_mesh(mut meshes: ResMut<Assets<Mesh>>) {
-    meshes.insert(
-        PARCEL_GRASS_MESH.id(),
-        Plane3d::new(Vec3::Y, Vec2::splat(8.)).mesh().build(),
-    );
+fn setup_grass_meshes(mut meshes: ResMut<Assets<Mesh>>) {
+    meshes.insert(PARCEL_GRASS_MESH.id(), parcel_mesh(1));
+    for (handle, lod) in PARCEL_GRASS_GRID_MESHES
+        .iter()
+        .zip([HIGH_LOD, MID_LOD, LOW_LOD])
+    {
+        meshes.insert(handle.id(), parcel_mesh(grid_segments(lod)));
+    }
+    // the ground under the parcel grass uses the grass's own lod, relative to the player's parcel
+    let segments = |offset| {
+        grid_segments(match ParcelGrassLod::from_distance(IVec2::ZERO, offset) {
+            ParcelGrassLod::High | ParcelGrassLod::Off => HIGH_LOD,
+            ParcelGrassLod::Mid => MID_LOD,
+            ParcelGrassLod::Low => LOW_LOD,
+        })
+    };
+    meshes.insert(GROUND_MESH.id(), ground_mesh(segments, GROUND_RINGS));
 }
 
-fn spawn_ground(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
+/// Cells per parcel side of sloped parcel grass (and the ground under it) at a shell lod.
+fn grid_segments(lod: usize) -> u32 {
+    16 / lod as u32
+}
+
+fn ground_aabb() -> Aabb {
+    let extent = ground_extent(GROUND_RINGS);
+    Aabb::from_min_max(
+        Vec3::new(-extent, GROUND_MIN_Y, -extent),
+        Vec3::new(extent, GROUND_MAX_Y, extent),
+    )
+}
+
+fn parcel_grass_aabb() -> Aabb {
+    Aabb::from_min_max(
+        Vec3::new(-8., GROUND_MIN_Y, -8.),
+        Vec3::new(8., GROUND_MAX_Y, 8.),
+    )
+}
+
+fn spawn_ground(mut commands: Commands, mut materials: ResMut<Assets<TerrainFlatMaterial>>) {
     commands.spawn((
-        // Ground covers 1024 parcels
-        Transform::from_scale(Vec3::new(1024., 1., 1024.))
-            .with_translation(Vec3::new(0., -0.05, 0.)),
+        Name::new("Ground"),
+        // follows the player's parcel, see `follow_player`
+        Transform::from_translation(Vec3::new(0., -0.05, 0.)),
+        Visibility::Inherited,
+        ground_aabb(),
         Ground,
     ));
     materials.insert(
         GROUND_MATERIAL_FLAT_COLOR.id(),
-        StandardMaterial {
-            base_color: Color::srgb(0.3, 0.45, 0.2),
-            perceptual_roughness: 1.0,
-            metallic: 0.0,
-            depth_bias: -100.0,
-            fog_enabled: false,
-            ..Default::default()
+        TerrainFlatMaterial {
+            base: StandardMaterial {
+                base_color: Color::srgb(0.3, 0.45, 0.2),
+                perceptual_roughness: 1.0,
+                metallic: 0.0,
+                depth_bias: -100.0,
+                fog_enabled: false,
+                ..Default::default()
+            },
+            extension: TerrainExtension::default(),
         },
     );
+}
+
+fn follow_player(
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
+    mut ground: Query<&mut Transform, With<Ground>>,
+) {
+    let (Ok(player), Ok(mut ground)) = (player.single(), ground.single_mut()) else {
+        return;
+    };
+    let translation = player.translation();
+    if !translation.is_finite() {
+        return;
+    }
+    let origin = ground_origin(translation).with_y(ground.translation.y);
+    if ground.translation != origin {
+        ground.translation = origin;
+    }
+}
+
+fn update_terrain_params(
+    surface: Res<TerrainSurface>,
+    mut shells: ResMut<Assets<ShellTexture>>,
+    mut flat: ResMut<Assets<TerrainFlatMaterial>>,
+) {
+    let changes = surface.changes();
+    if !changes.params && !changes.relayout && !changes.player {
+        return;
+    }
+    // touching the materials also rebinds the step texture after a relayout
+    let params = surface.params();
+    for handle in [&PARCEL_GRASS_MATERIAL, &GROUND_MATERIAL] {
+        if let Some(material) = shells.get_mut(handle) {
+            material.terrain = params;
+        }
+    }
+    if let Some(material) = flat.get_mut(&GROUND_MATERIAL_FLAT_COLOR) {
+        material.extension.terrain = params;
+    }
 }
 
 fn state_change(mut commands: Commands, parcel_grass_config: Res<ParcelGrassConfig>) {
@@ -233,7 +385,7 @@ fn swap_ground(
             commands
                 .entity(*ground)
                 .try_insert((
-                    Mesh3d(PARCEL_GRASS_MESH.clone()),
+                    Mesh3d(GROUND_MESH.clone()),
                     MeshMaterial3d(GROUND_MATERIAL_FLAT_COLOR),
                     GROUND_RENDERLAYER.clone(),
                 ))
@@ -246,10 +398,11 @@ fn swap_ground(
                     shells: GROUND_LAYERS,
                     lod: HIGH_LOD,
                     displacement: GROUND_DISPLACEMENT,
+                    mesh: GROUND_MESH.clone(),
                     material: GROUND_MATERIAL.clone(),
-                    extras: (GROUND_RENDERLAYER,),
+                    extras: (GROUND_RENDERLAYER, ground_aabb()),
                 }))
-                .remove::<(Mesh3d, MeshMaterial3d<StandardMaterial>, RenderLayers)>();
+                .remove::<(Mesh3d, MeshMaterial3d<TerrainFlatMaterial>, RenderLayers)>();
         }
     }
 }
@@ -257,6 +410,7 @@ fn swap_ground(
 fn update_parcel_grass_material(
     mut materials: ResMut<Assets<ShellTexture>>,
     parcel_grass_config: Res<ParcelGrassConfig>,
+    surface: Res<TerrainSurface>,
 ) {
     debug!(
         target: "visuals::parcel_grass::update_material",
@@ -267,9 +421,11 @@ fn update_parcel_grass_material(
         ShellTexture {
             subdivisions: parcel_grass_config.subdivisions,
             layers: parcel_grass_config.layers,
-            padding: Vec2::default(),
+            snap_anchor: Vec2::ZERO,
             root_color: parcel_grass_config.root_color.into(),
             tip_color: parcel_grass_config.tip_color.into(),
+            terrain_steps: TERRAIN_TEXTURE,
+            terrain: surface.params(),
         },
     );
     materials.insert(
@@ -277,9 +433,11 @@ fn update_parcel_grass_material(
         ShellTexture {
             subdivisions: parcel_grass_config.subdivisions,
             layers: GROUND_LAYERS,
-            padding: Vec2::default(),
+            snap_anchor: Vec2::ZERO,
             root_color: parcel_grass_config.root_color.into(),
             tip_color: parcel_grass_config.tip_color.into(),
+            terrain_steps: TERRAIN_TEXTURE,
+            terrain: surface.params(),
         },
     );
 }
@@ -313,11 +471,12 @@ fn parcel_grass_config_updated(
 fn parcel_grass_lod_inserted(
     trigger: Trigger<OnInsert, ParcelGrassLod>,
     mut commands: Commands,
-    parcel_grasses: Query<&ParcelGrassLod>,
+    parcel_grasses: Query<(&ParcelGrass, &ParcelGrassLod)>,
     parcel_grass_config: Res<ParcelGrassConfig>,
+    surface: Res<TerrainSurface>,
 ) {
     let entity = trigger.target();
-    let Ok(parcel_grass_lod) = parcel_grasses.get(entity) else {
+    let Ok((parcel_grass, parcel_grass_lod)) = parcel_grasses.get(entity) else {
         unreachable!("Infallible query");
     };
 
@@ -349,15 +508,44 @@ fn parcel_grass_lod_inserted(
         "Rebuilding shells for {entity} with lod {lod}."
     );
 
-    commands
-        .entity(entity)
-        .try_insert(Children::spawn(ParcelGrassShellSpawnList {
+    let flat = surface.is_flat(parcel_grass.parcel);
+    let mesh = if flat {
+        PARCEL_GRASS_MESH.clone()
+    } else {
+        PARCEL_GRASS_GRID_MESHES[lod.trailing_zeros() as usize].clone()
+    };
+
+    commands.entity(entity).try_insert((
+        ParcelGrassFlat(flat),
+        Children::spawn(ParcelGrassShellSpawnList {
             shells: layers,
             displacement,
             lod,
+            mesh,
             material: material.clone(),
-            extras: (),
-        }));
+            extras: (parcel_grass_aabb(),),
+        }),
+    ));
+}
+
+/// Rebuild parcel grass whose terrain became sloped (or flat) with the quad or grid mesh.
+fn refresh_parcel_grass_meshes(
+    mut commands: Commands,
+    surface: Res<TerrainSurface>,
+    parcel_grasses: Query<(Entity, &ParcelGrass, &ParcelGrassFlat), With<ParcelGrassLod>>,
+) {
+    let Some((min, max)) = surface.changes().targets else {
+        return;
+    };
+    for (entity, parcel_grass, flat) in &parcel_grasses {
+        let parcel = parcel_grass.parcel;
+        if parcel.cmplt(min - 1).any() || parcel.cmpgt(max + 1).any() {
+            continue;
+        }
+        if surface.is_flat(parcel) != flat.0 {
+            commands.entity(entity).remove::<ParcelGrassLod>();
+        }
+    }
 }
 
 fn parcel_grass_lod_replaced(trigger: Trigger<OnReplace, ParcelGrassLod>, mut commands: Commands) {
@@ -425,6 +613,7 @@ fn fill_parcel_grass(
                     "Creating parcel grass on parcel {parcel}."
                 );
                 commands.spawn((
+                    Name::new("Parcel Grass"),
                     ParcelGrass { parcel },
                     Transform::from_translation(Vec3::new(
                         16. * parcel.x as f32 + 8.,
@@ -496,6 +685,7 @@ struct ParcelGrassShellSpawnList<B: Bundle + Clone> {
     shells: u32,
     lod: usize,
     displacement: f32,
+    mesh: Handle<Mesh>,
     material: Handle<ShellTexture>,
     extras: B,
 }
@@ -505,7 +695,7 @@ impl<B: Bundle + Clone> SpawnableList<ChildOf> for ParcelGrassShellSpawnList<B> 
         for i in (0..self.shells).step_by(self.lod) {
             world.spawn((
                 ParcelGrassShell,
-                Mesh3d(PARCEL_GRASS_MESH.clone()),
+                Mesh3d(self.mesh.clone()),
                 MeshMaterial3d(self.material.clone()),
                 Transform::from_translation(Vec3::new(0., self.displacement * i as f32, 0.)),
                 MeshTag(i + ((self.lod as u32) << 16)),

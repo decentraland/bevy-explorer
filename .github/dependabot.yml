@@ -1,0 +1,70 @@
+# Keep dependabot cheap: one grouped PR per ecosystem per week (each PR run of the full CI
+# matrix bills ~700 runner-minutes; the heavy jobs are also gated off dependabot in ci.yml).
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    # Only update Cargo.lock within the ranges Cargo.toml already allows. Rust's 0.x
+    # convention makes update-type filters useless (0.15 -> 0.17 classifies as "minor"
+    # but is breaking); cargo's caret semantics encode compatibility correctly, so the
+    # manifest ranges are the policy. Crossing a range boundary is deliberate manual work.
+    versioning-strategy: lockfile-only
+    ignore:
+      # 0.2.5 pulls in `symlink`, which has no wasm32 impl — breaks the web build.
+      # Fixed upstream in tokio-rs/tracing#3568 (unreleased); drop once 0.2.6 ships.
+      - dependency-name: tracing-appender
+        versions: ['0.2.5']
+      # Not a dependency we use — nothing in the codebase references getrandom. The
+      # entry only switches on the `wasm_js` feature for whichever major is in the wasm
+      # graph, to match the getrandom_backend cfg in .cargo/config.toml. That is 0.3
+      # (via ahash); 0.4 reaches us host-only, as a prost-build build-dependency. Any
+      # bump aims the switch at a major the web build never compiles and fails it.
+      # Move this when ahash moves.
+      - dependency-name: getrandom
+    groups:
+      cargo-deps:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /react-web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      react-web-deps:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /react-web/bridge-scene
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    # Exact pins here are deliberate — notably the @dcl/* commit-snapshot SDK builds
+    # (7.x-<run>.commit-<sha>) matched to the engine. lockfile-only means dependabot
+    # can never rewrite a pin: no range, no update room. Ranged dev tooling still
+    # gets in-range lockfile bumps.
+    versioning-strategy: lockfile-only
+    groups:
+      bridge-scene-deps:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /deploy/web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 1
+    groups:
+      deploy-web-deps:
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1
+    groups:
+      actions-deps:
+        patterns: ['*']

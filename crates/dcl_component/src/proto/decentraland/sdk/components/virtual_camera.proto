@@ -10,7 +10,9 @@ option (common.ecs_component_id) = 1076;
 // an 'instant' transition (like using speed/time = 0)
 // * The lookAtEntity defines to which entity the Camera has to look at constantly (independent from 
 // the holding entity transform).
+// * The fov defines the Field of View of the virtual camera
 message PBVirtualCamera {
   optional common.CameraTransition default_transition = 1;
   optional uint32 look_at_entity = 2;
+  optional float fov = 3; // default: 60
 }

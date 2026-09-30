@@ -25,32 +25,37 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
     }
 
     fn decode(&mut self) -> Result<Vec<kira::Frame>, Self::Error> {
+        // kira polls decode() in a tight loop until it gets the frames it wants, so
+        // returning an empty set would busy-spin the decode thread; block until the
+        // next realtime frame arrives instead
+        let Some(mut frame) = self.receiver.blocking_recv() else {
+            return Err(AudioDecoderError::StreamClosed);
+        };
+
         let mut frames = Vec::default();
 
         loop {
-            match self.receiver.try_recv() {
-                Ok(frame) => {
-                    if frame.sample_rate != self.sample_rate {
-                        warn!(
-                            "sample rate changed?! was {}, now {}",
-                            self.sample_rate, frame.sample_rate
-                        );
-                    }
-
-                    if frame.num_channels != 1 {
-                        warn!("frame has {} channels", frame.num_channels);
-                    }
-
-                    for i in 0..frame.samples_per_channel as usize {
-                        let sample = frame.data[i] as f32 / i16::MAX as f32;
-                        frames.push(kira::Frame::new(sample, sample));
-                    }
-                }
-                Err(mpsc::error::TryRecvError::Disconnected) => {
-                    return Err(AudioDecoderError::StreamClosed)
-                }
-                Err(mpsc::error::TryRecvError::Empty) => return Ok(frames),
+            if frame.sample_rate != self.sample_rate {
+                warn!(
+                    "sample rate changed?! was {}, now {}",
+                    self.sample_rate, frame.sample_rate
+                );
             }
+
+            if frame.num_channels != 1 {
+                warn!("frame has {} channels", frame.num_channels);
+            }
+
+            let samples = (frame.samples_per_channel as usize).min(frame.data.len());
+            for i in 0..samples {
+                let sample = frame.data[i] as f32 / i16::MAX as f32;
+                frames.push(kira::Frame::new(sample, sample));
+            }
+
+            frame = match self.receiver.try_recv() {
+                Ok(frame) => frame,
+                _ => return Ok(frames),
+            };
         }
     }
 

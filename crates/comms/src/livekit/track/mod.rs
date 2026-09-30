@@ -8,6 +8,8 @@ use bevy::{
 use common::structs::AudioDecoderError;
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::webrtc::prelude::I420Buffer;
+#[cfg(target_arch = "wasm32")]
+use media::{AVCommand, VideoData};
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -25,11 +27,6 @@ use crate::make_hooks;
 pub struct LivekitTrack {
     track: RemoteTrackPublication,
 }
-
-/// Volume of an audio track
-#[derive(Clone, Copy, Component, Deref)]
-#[component(immutable)]
-pub struct TrackVolume(pub f32);
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Component)]
@@ -123,6 +120,15 @@ struct VideoFrameReceiver {
     receiver: mpsc::Receiver<I420Buffer>,
 }
 
+/// A track's page video element, adopted into the media host; dropping this releases it.
+#[cfg(target_arch = "wasm32")]
+#[derive(Component)]
+struct HtmlMediaEntity {
+    _commands: tokio::sync::mpsc::UnboundedSender<AVCommand>,
+    video: tokio::sync::mpsc::Receiver<VideoData>,
+    image: Handle<Image>,
+}
+
 #[derive(Component)]
 pub struct Audio;
 
@@ -134,6 +140,12 @@ pub struct Microphone;
 
 #[derive(Component)]
 pub struct Camera;
+
+#[derive(Component)]
+pub struct ScreenshareAudio;
+
+#[derive(Component)]
+pub struct ScreenshareVideo;
 
 #[derive(Event)]
 pub struct TrackPublished {

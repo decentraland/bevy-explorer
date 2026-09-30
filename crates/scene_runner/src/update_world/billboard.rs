@@ -6,11 +6,13 @@
 use bevy::math::Vec3Swizzles;
 use bevy::prelude::*;
 
-use common::structs::PrimaryCamera;
+use common::{sets::PostUpdateSets, structs::PrimaryCamera};
 use dcl::interface::ComponentPosition;
-use dcl_component::{proto_components::sdk::components::PbBillboard, SceneComponentId};
+use dcl_component::{
+    proto_components::sdk::components::PbBillboard, SceneComponentId, SceneEntityId,
+};
 
-use crate::update_world::transform_and_parent::PostUpdateSets;
+use crate::{RendererSceneContext, SceneEntity};
 
 use super::AddCrdtInterfaceExt;
 
@@ -30,99 +32,130 @@ impl Plugin for BillboardPlugin {
     }
 }
 
-#[allow(clippy::upper_case_acronyms)]
-#[derive(Component, PartialEq, Eq)]
-pub enum Billboard {
-    None,
-    Y,
-    YX,
-    All,
+// bit flags matching the proto `BillboardMode`: X = pitch to the target, Y = yaw to the
+// target, Z = copy the target's roll. unflagged axes keep the entity's current rotation.
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct BillboardMode(u32);
+
+impl BillboardMode {
+    const X: u32 = 1;
+    const Y: u32 = 2;
+    const Z: u32 = 4;
+    const ALL: u32 = 7;
+
+    fn is_none(&self) -> bool {
+        self.0 == 0
+    }
+
+    fn pitch(&self) -> bool {
+        self.0 & Self::X != 0
+    }
+
+    fn yaw(&self) -> bool {
+        self.0 & Self::Y != 0
+    }
+
+    fn roll(&self) -> bool {
+        self.0 & Self::Z != 0
+    }
 }
 
-impl From<Option<i32>> for Billboard {
+impl From<Option<i32>> for BillboardMode {
     fn from(value: Option<i32>) -> Self {
-        match value {
-            Some(0) => Billboard::None,
-            Some(2) => Billboard::Y,
-            Some(3) => Billboard::YX,
-            _ => Billboard::All,
-        }
+        // unset defaults to BM_ALL
+        Self(value.map_or(Self::ALL, |v| v as u32 & Self::ALL))
     }
+}
+
+#[derive(Component, PartialEq, Eq)]
+pub struct Billboard {
+    pub mode: BillboardMode,
+    // scene entity to face instead of the camera; `None` (unset, or the camera reserved entity)
+    // means face the main camera
+    pub target: Option<SceneEntityId>,
 }
 
 impl From<PbBillboard> for Billboard {
     fn from(value: PbBillboard) -> Self {
-        value.billboard_mode.into()
+        let target = value
+            .target_entity
+            .map(SceneEntityId::from_proto_u32)
+            .filter(|target| *target != SceneEntityId::CAMERA);
+        Billboard {
+            mode: value.billboard_mode.into(),
+            target,
+        }
     }
 }
 
 pub(crate) fn update_billboards(
     global_transforms: Query<&GlobalTransform>,
-    mut q: Query<(&mut Transform, &GlobalTransform, &Billboard, &ChildOf)>,
-    cam: Query<&GlobalTransform, With<PrimaryCamera>>,
+    mut q: Query<(
+        &mut Transform,
+        &GlobalTransform,
+        &Billboard,
+        &ChildOf,
+        &SceneEntity,
+    )>,
+    contexts: Query<&RendererSceneContext>,
+    cam: Query<&Transform, (With<PrimaryCamera>, Without<Billboard>)>,
 ) {
-    let Ok(cam_global_transform) = cam.single() else {
-        // no camera, no billboard
-        return;
-    };
-    let (_, cam_g_rotation, cam_g_translation) =
-        cam_global_transform.to_scale_rotation_translation();
-    let cam_z = cam_g_rotation.to_euler(EulerRot::YXZ).2;
+    // read the camera's local Transform rather than its GlobalTransform: this system runs after
+    // CameraUpdate (which writes the camera's local Transform) but before the frame's transform
+    // propagation, so the camera's GlobalTransform is still a frame stale. the camera is a root
+    // entity, so its GlobalTransform is just its Transform.
+    let cam_global_transform = cam.single().ok().map(|t| GlobalTransform::from(*t));
 
-    for (mut local_transform, global_transform, billboard, parent) in q.iter_mut() {
+    for (mut local_transform, global_transform, billboard, parent, scene_entity) in q.iter_mut() {
+        if billboard.mode.is_none() {
+            continue;
+        }
+
+        // resolve the transform to face: the main camera by default, or the target entity if set.
+        // if the target can't be resolved (missing / deleted), skip so the entity keeps its rotation.
+        let target_global_transform = match billboard.target {
+            None => cam_global_transform,
+            Some(target) => contexts
+                .get(scene_entity.root)
+                .ok()
+                .and_then(|ctx| ctx.bevy_entity(target))
+                .and_then(|entity| global_transforms.get(entity).ok().copied()),
+        };
+        let Some(target_global_transform) = target_global_transform else {
+            continue;
+        };
+        let (_, target_g_rotation, target_g_translation) =
+            target_global_transform.to_scale_rotation_translation();
+
         // get reference frame
         let frame = global_transforms.get(parent.parent()).unwrap();
 
-        match billboard {
-            Billboard::None => (),
-            Billboard::All => {
-                // use global frame of reference
-                let (g_scale, _, g_translation) = global_transform.to_scale_rotation_translation();
-                let cam_direction = cam_g_translation - g_translation;
-                let target_global_rotation = Quat::from_euler(
-                    EulerRot::YXZ,
-                    cam_direction.x.atan2(cam_direction.z),
-                    -cam_direction.y.atan2(cam_direction.xz().length()),
-                    cam_z,
-                );
-                let target_global_transform = Transform {
-                    translation: g_translation,
-                    rotation: target_global_rotation,
-                    scale: g_scale,
-                };
-                let target_local_matrix =
-                    frame.compute_matrix().inverse() * target_global_transform.compute_matrix();
-                let target_transform = Transform::from_matrix(target_local_matrix);
+        // use global frame of reference
+        let (g_scale, g_rotation, g_translation) = global_transform.to_scale_rotation_translation();
 
-                // just update the rotation so that scale and translation don't drift, or change on first frame if GlobalTransform is not yet updated
-                local_transform.rotation = target_transform.rotation;
-            }
-            Billboard::Y | Billboard::YX => {
-                // map camera into local frame
-                // TODO use GlobalTransform::raparented_to
-                let cam_local_matrix =
-                    frame.compute_matrix().inverse() * cam_global_transform.compute_matrix();
-                let (_, _, cam_local_translation) =
-                    cam_local_matrix.to_scale_rotation_translation();
-
-                let cam_direction = cam_local_translation - local_transform.translation;
-                let mut euler_angles = local_transform.rotation.to_euler(EulerRot::YXZ);
-
-                // rotate to face / yaw
-                euler_angles.0 = cam_direction.x.atan2(cam_direction.z);
-
-                if billboard == &Billboard::YX {
-                    // tilt to face / pitch
-                    euler_angles.1 = -cam_direction.y.atan2(cam_direction.xz().length());
-                }
-
-                local_transform.rotation = Quat::from_euler(
-                    EulerRot::YXZ,
-                    euler_angles.0,
-                    euler_angles.1,
-                    euler_angles.2,
-                );
-            }
+        // overwrite only the requested axes
+        let (mut yaw, mut pitch, mut roll) = g_rotation.to_euler(EulerRot::YXZ);
+        let target_direction = target_g_translation - g_translation;
+        if billboard.mode.yaw() {
+            yaw = target_direction.x.atan2(target_direction.z);
         }
+        if billboard.mode.pitch() {
+            pitch = -target_direction.y.atan2(target_direction.xz().length());
+        }
+        if billboard.mode.roll() {
+            roll = target_g_rotation.to_euler(EulerRot::YXZ).2;
+        }
+
+        let target_global_transform = Transform {
+            translation: g_translation,
+            rotation: Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll),
+            scale: g_scale,
+        };
+        let target_local_matrix =
+            frame.compute_matrix().inverse() * target_global_transform.compute_matrix();
+        let target_transform = Transform::from_matrix(target_local_matrix);
+
+        // just update the rotation so that scale and translation don't drift, or change on first frame if GlobalTransform is not yet updated
+        local_transform.rotation = target_transform.rotation;
     }
 }

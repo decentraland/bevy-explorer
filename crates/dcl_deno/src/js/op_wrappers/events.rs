@@ -1,5 +1,5 @@
 use dcl::js::events::Event;
-use deno_core::{op2, OpDecl, OpState};
+use deno_core::{anyhow, op2, OpDecl, OpState};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
@@ -7,7 +7,7 @@ pub fn ops() -> Vec<OpDecl> {
 }
 
 #[op2(fast)]
-fn op_subscribe(state: &mut OpState, #[string] id: &str) {
+fn op_subscribe(state: &mut OpState, #[string] id: &str) -> Result<(), anyhow::Error> {
     dcl::js::events::op_subscribe(state, id)
 }
 

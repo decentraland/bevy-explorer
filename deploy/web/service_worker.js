@@ -1,3 +1,7 @@
+// MUST stay in sync with crates/image_processing/src/processor/wasm_fs.rs: the asset processor
+// reads the raw responses this worker caches and writes the processed bytes back over the same
+// key. (A one-time v2 bump to purge stale local-preview entries broke that pairing — the
+// localhost bypass below already makes stale localhost entries unreadable, so no purge needed.)
 const CACHE_NAME = 'ipfs-path-cache-v1';
 const CUSTOM_HEADER = 'X-IPFS';
 
@@ -71,6 +75,14 @@ async function addCrossOriginIsolationHeaders(request) {
 }
 
 async function cacheFirstStrategy(request) {
+    // DEV: never cache LOCAL preview content. sdk-commands' `start` server hashes mutable files by a
+    // CONSTANT id (the file path), so cache-first would serve the first build of the local bridge scene
+    // forever — every rebuild would be invisible. Always go to network for localhost so scene edits show.
+    const reqUrl = new URL(request.url);
+    if (reqUrl.hostname === 'localhost' || reqUrl.hostname === '127.0.0.1') {
+        return fetch(stripCustomHeader(request));
+    }
+
     //Generate a cache key from the path only
     const cacheKey = getCacheKey(request);
 

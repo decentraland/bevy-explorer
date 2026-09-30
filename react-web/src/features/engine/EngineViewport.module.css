@@ -1,0 +1,8 @@
+/* Transparent cutout — the engine renders here, behind the React DOM. Pointer events
+   pass through so the scene can receive map drag / avatar rotate in this region. */
+.viewport {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  pointer-events: none;
+}

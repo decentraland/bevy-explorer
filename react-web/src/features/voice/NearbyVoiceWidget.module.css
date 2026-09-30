@@ -1,0 +1,95 @@
+/* Laid out on the 1920×1080 canvas and scaled with the HUD; anchored on the button's centre line. */
+.panel {
+  position: fixed;
+  z-index: var(--z-overlay);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 272px;
+  padding: 16px 0;
+  box-sizing: border-box;
+  border-radius: 11px;
+  background: var(--panel);
+  color: var(--text);
+  transform: translateY(-50%) scale(var(--ui-scale));
+  transform-origin: left center;
+  animation: fade-in 300ms linear both;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.title {
+  height: 17px;
+  padding: 0 16px;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  line-height: 17px;
+}
+.divider {
+  height: 1px;
+  background: var(--voice-divider);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 16px;
+}
+.label {
+  flex: 1;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+}
+.slider {
+  flex: 1;
+  display: flex;
+}
+.speak {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  margin: 0 16px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--voice-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+.speak:hover:not(:disabled) {
+  background: var(--voice-fill-hover);
+}
+.speak:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.speakOn,
+.speakOn:hover:not(:disabled) {
+  background: var(--voice-fill);
+}
+.speakLive,
+.speakLive:hover:not(:disabled) {
+  background: var(--voice-speaking-fill);
+  transition: background-color 80ms linear;
+}
+.speakingText {
+  color: var(--voice-green);
+}
+.hint {
+  height: 15px;
+  color: var(--ink-muted);
+  font-size: var(--type-12);
+  line-height: 15px;
+  text-align: center;
+  white-space: nowrap;
+}
+.key {
+  color: var(--offline);
+}

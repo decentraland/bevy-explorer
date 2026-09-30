@@ -22,11 +22,13 @@ use crate::{
     gltf_resolver::GltfMeshResolver,
     update_world::{
         gltf_container::mesh_to_parry_shape, mesh_renderer::truncated_cone::TruncatedCone,
-        transform_and_parent::PostUpdateSets,
     },
     ContainerEntity, PrimaryUser, RendererSceneContext, SceneSets,
 };
-use common::dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS};
+use common::{
+    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
+    sets::PostUpdateSets,
+};
 use console::DoAddConsoleCommand;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -149,8 +151,12 @@ pub fn add_collider_systems<T: ColliderType>(app: &mut App) {
     // clean up colliders from SceneColliderData whenever HasCollider is removed (including entity despawn)
     app.add_observer(on_collider_removed::<T>);
 
-    // show debugs whenever
-    app.add_systems(Update, render_debug_colliders::<T>);
+    // show debugs whenever (skip entirely unless debug is enabled or was just disabled)
+    app.add_systems(
+        Update,
+        render_debug_colliders::<T>
+            .run_if(|debug: Res<DebugColliders>| debug.0 != 0 || debug.is_changed()),
+    );
 }
 
 impl Plugin for MeshColliderPlugin {
@@ -174,7 +180,7 @@ impl Plugin for MeshColliderPlugin {
         add_collider_systems::<CtCollider>(app);
 
         app.init_resource::<DebugColliders>();
-        app.add_console_command::<DebugColliderCommand, _>(debug_colliders);
+        app.add_preview_console_command::<DebugColliderCommand, _>(debug_colliders);
     }
 }
 
@@ -224,7 +230,10 @@ pub struct SceneColliderData {
     disabled: HashSet<ColliderHandle>,
 }
 
-const SCALE_EPSILON: f32 = 0.001;
+// max world-space size change (metres) before we rebuild the scaled shape
+const COLLIDER_RESCALE_SIZE: f32 = 0.01;
+// disable colliders whose largest scaled extent falls below this (metres)
+const COLLIDER_DISABLE_SIZE: f32 = 0.01;
 const RAYCAST_EPSILON: f64 = 0.0001;
 
 pub trait ScaleShapeExt {
@@ -296,6 +305,92 @@ impl SceneColliderData {
         debug!("set {id:?} collider");
     }
 
+    /// Ground heightfield over a regular grid centred on `centre`. `heights` is row-major with
+    /// rows along +z and columns along +x. Parry splits each cell from (x0, z1) to (x1, z0),
+    /// which is unity-explorer's terrain collider triangulation after the z flip. It is physical
+    /// ground, so scene `CL_PHYSICS` casts hit it as well as the avatar.
+    pub fn set_ground_heightfield(
+        &mut self,
+        id: &ColliderId,
+        rows: usize,
+        cols: usize,
+        heights: &[f32],
+        size: Vec2,
+        centre: Vec3,
+    ) {
+        let heights = rapier3d_f64::na::DMatrix::from_fn(rows, cols, |row, col| {
+            f64::from(heights[row * cols + col])
+        });
+        let collider = ColliderBuilder::heightfield(
+            heights,
+            Vector::new(f64::from(size.x), 1.0, f64::from(size.y)),
+        )
+        .translation(centre.as_dvec3().into())
+        .collision_groups(InteractionGroups::new(
+            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK),
+            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK),
+            InteractionTestMode::And,
+        ))
+        .build();
+        self.set_collider(id, collider, None);
+    }
+
+    /// Invisible box on the physics layer only (unity-explorer's border colliders): it blocks the
+    /// avatar like a scene wall, and isn't hit by raycasts unless the entity is included in them.
+    pub fn set_wall(&mut self, id: &ColliderId, centre: Vec3, half_extents: Vec3, rotation: Quat) {
+        let half_extents = half_extents.as_dvec3();
+        let collider = ColliderBuilder::cuboid(half_extents.x, half_extents.y, half_extents.z)
+            .position(Isometry::from_parts(
+                centre.as_dvec3().into(),
+                rotation.as_dquat().into(),
+            ))
+            .collision_groups(InteractionGroups::new(
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                InteractionTestMode::And,
+            ))
+            .build();
+        self.set_collider(id, collider, None);
+    }
+
+    /// Capsule outside any scene (landscape tree trunks) on the physics layer: it blocks the
+    /// avatar and physics raycasts.
+    pub fn set_physics_capsule(&mut self, id: &ColliderId, a: Vec3, b: Vec3, radius: f32) {
+        let collider = ColliderBuilder::capsule_from_endpoints(
+            DVec3::from(a).into(),
+            DVec3::from(b).into(),
+            f64::from(radius),
+        );
+        self.set_physics_collider(id, collider);
+    }
+
+    /// Shared shape outside any scene (landscape rocks), placed without scaling, like
+    /// `set_physics_capsule`.
+    pub fn set_physics_shape(
+        &mut self,
+        id: &ColliderId,
+        shape: SharedShape,
+        translation: Vec3,
+        rotation: Quat,
+    ) {
+        let collider = ColliderBuilder::new(shape).position(Isometry::from_parts(
+            Translation::from(Vector::from(DVec3::from(translation))),
+            rotation.as_dquat().into(),
+        ));
+        self.set_physics_collider(id, collider);
+    }
+
+    fn set_physics_collider(&mut self, id: &ColliderId, collider: ColliderBuilder) {
+        let collider = collider
+            .collision_groups(InteractionGroups::new(
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                InteractionTestMode::And,
+            ))
+            .build();
+        self.set_collider(id, collider, None);
+    }
+
     pub fn update_collider_transform(
         &mut self,
         id: &ColliderId,
@@ -325,16 +420,21 @@ impl SceneColliderData {
                     };
 
                     let mut new_scale = *init_scale;
-                    if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
-                        if req_scale.min_element() < 0.001 {
-                            // disable 0-sized colliders
-                            collider.set_enabled(false);
-                        } else {
-                            collider.set_enabled(true);
+                    if req_scale != *init_scale {
+                        // gate both rescale-tolerance and disable on the final world-space
+                        // size, not the raw scale factor — so large meshes with small
+                        // scales (and vice versa) are handled correctly.
+                        let extents = base_collider.shape().compute_local_aabb().extents();
+                        let extents =
+                            Vec3::new(extents.x as f32, extents.y as f32, extents.z as f32);
+                        let size_change = (extents * (req_scale - *init_scale).abs()).max_element();
+                        if size_change > COLLIDER_RESCALE_SIZE {
+                            let scaled_max = (extents * req_scale.abs()).max_element();
+                            collider.set_enabled(scaled_max >= COLLIDER_DISABLE_SIZE);
+                            new_scale = req_scale;
+                            // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
+                            collider.set_shape(base_collider.shape().scale_ext(req_scale));
                         }
-                        new_scale = req_scale;
-                        // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
-                        collider.set_shape(base_collider.shape().scale_ext(req_scale));
                     }
 
                     let state_mut = self.collider_state.get_mut(id).unwrap();
@@ -794,19 +894,57 @@ impl SceneColliderData {
         (constraint_min, constraint_max)
     }
 
-    pub fn closest_point<F: Fn(&ColliderId) -> bool>(
-        &mut self,
+    /// Project `origin` onto a specific collider's shape and return the
+    /// world-space nearest point, or `None` if the collider isn't registered.
+    pub fn closest_point_to(&self, origin: Vec3, id: &ColliderId) -> Option<Vec3> {
+        let collider = self.get_collider(id)?;
+        let proj =
+            collider
+                .shape()
+                .project_point(collider.position(), &origin.as_dvec3().into(), true);
+        Some(DVec3::from(proj.point).as_vec3())
+    }
+
+    /// Like [`closest_point_to`] but operates across all colliders attached to
+    /// `entity` whose collision groups intersect `collision_mask`, and returns
+    /// the specific [`ColliderId`] that produced the nearest point.
+    pub fn closest_point_to_entity(
+        &self,
         origin: Vec3,
-        filter: F,
-    ) -> Option<Vec3> {
-        self.update_bvh();
+        entity: SceneEntityId,
+        collision_mask: u32,
+    ) -> Option<(Vec3, ColliderId)> {
+        let mask = Group::from_bits_truncate(collision_mask);
+        let groups = InteractionGroups::new(mask, mask, InteractionTestMode::And);
+        let origin_pt = origin.as_dvec3().into();
+        let mut best: Option<(f64, Vec3, ColliderId)> = None;
+        for (cid, handle) in self.scaled_collider.iter() {
+            if cid.entity != entity {
+                continue;
+            }
+            let Some(collider) = self.collider_set.get(*handle) else {
+                continue;
+            };
+            if !collider.collision_groups().test(groups) {
+                continue;
+            }
+            let proj = collider
+                .shape()
+                .project_point(collider.position(), &origin_pt, true);
+            let d2 = (proj.point - origin_pt).norm_squared();
+            if best.as_ref().is_none_or(|(prev_d2, _, _)| d2 < *prev_d2) {
+                best = Some((d2, DVec3::from(proj.point).as_vec3(), cid.clone()));
+            }
+        }
+        best.map(|(_, p, id)| (p, id))
+    }
 
-        let predicate = |h, _: &Collider| self.get_id(h).is_some_and(&filter);
-        let q = QueryFilter::new().predicate(&predicate);
-
-        self.query_pipeline(q)
-            .project_point(&origin.as_dvec3().into(), f64::MAX, true)
-            .map(|(_, point)| DVec3::from(point.point).as_vec3())
+    /// Centre of a collider's axis-aligned bounding box in world space.
+    pub fn collider_aabb_center(&self, id: &ColliderId) -> Option<Vec3> {
+        let collider = self.get_collider(id)?;
+        let aabb = collider.compute_aabb();
+        let c = aabb.center();
+        Some(Vec3::new(c.x as f32, c.y as f32, c.z as f32))
     }
 
     pub fn remove_collider(&mut self, id: &ColliderId) {
@@ -882,6 +1020,13 @@ impl SceneColliderData {
 }
 
 pub const GROUND_COLLISION_MASK: u32 = 1 << 31;
+
+/// Collision shapes, e.g. from `mesh_to_parry_shape`, for `set_physics_shape`.
+pub use rapier3d_f64::prelude::SharedShape;
+
+/// Ground colliders outside any scene (the empty-parcel terrain). World raycasts include them.
+#[derive(Component)]
+pub struct GlobalGroundCollider;
 
 fn update_scene_collider_data(
     mut commands: Commands,
@@ -963,18 +1108,25 @@ fn update_colliders<T: ColliderType>(
                     ..Default::default()
                 }
                 .into();
-                let VertexAttributeValues::Float32x3(positions) =
-                    mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+                let Some(VertexAttributeValues::Float32x3(positions)) =
+                    mesh.attribute(Mesh::ATTRIBUTE_POSITION)
                 else {
-                    panic!()
+                    warn!("cylinder collider mesh has no positions; skipping");
+                    continue;
                 };
-                ColliderBuilder::convex_hull(
+                // scene-set radii can be degenerate (e.g. both zero → collinear points);
+                // parry returns None rather than a hull. Skip instead of panicking the
+                // whole engine (which would take down every co-tenant scene).
+                let Some(builder) = ColliderBuilder::convex_hull(
                     &positions
                         .iter()
                         .map(|p| Point::from([p[0] as f64, p[1] as f64, p[2] as f64]))
                         .collect::<Vec<_>>(),
-                )
-                .unwrap()
+                ) else {
+                    warn!("degenerate cylinder collider (convex hull failed); skipping");
+                    continue;
+                };
+                builder
             }
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.005),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
@@ -987,8 +1139,13 @@ fn update_colliders<T: ColliderType>(
                 else {
                     continue;
                 };
-                let mesh = meshes.get(&h_mesh).unwrap();
-                let shape = mesh_to_parry_shape(mesh);
+                let Some(mesh) = meshes.get(&h_mesh) else {
+                    continue;
+                };
+                let Some(shape) = mesh_to_parry_shape(mesh) else {
+                    warn!("gltf collider mesh has no usable positions; skipping");
+                    continue;
+                };
                 ColliderBuilder::new(shape)
             }
         }

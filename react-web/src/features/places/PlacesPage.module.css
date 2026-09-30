@@ -1,0 +1,81 @@
+/* Places browser body — "What's On" layout: Live Now + Featured highlight sections above the
+   BrowsePage toolbar and panel. Shared by the in-world PlacesPage and the picker. */
+
+/* Live Now / Featured Places highlight sections. */
+.section {
+  margin-bottom: 28px;
+}
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+}
+.liveDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fb3b3b;
+  box-shadow: 0 0 6px rgba(251, 59, 59, 0.7);
+  animation: liveDotPulse 1.5s ease-in-out infinite;
+}
+@keyframes liveDotPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Featured Places — 2-row horizontal carousel of small FeaturedCards with arrow controls. */
+.carousel {
+  position: relative;
+  /* A horizontal scroll container clips overflow on BOTH axes, which would cut off a hovered card's
+     lift + white glow. Pad the track to give it room, then pull the box back with a negative margin
+     so the section spacing stays tight. */
+  margin: -24px 0;
+}
+.track {
+  display: grid;
+  grid-template-rows: repeat(2, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 3 * 18px) / 4); /* 4 cards visible, the rest scroll */
+  gap: 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 24px 14px;
+}
+.track::-webkit-scrollbar {
+  display: none;
+}
+.carouselArrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(20, 8, 30, 0.8);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: background-color var(--dur-fast) ease;
+}
+.carouselArrow:hover {
+  background: var(--brand);
+}
+.carouselPrev {
+  left: -8px;
+}
+.carouselNext {
+  right: -8px;
+}

@@ -1,25 +1,23 @@
 pub mod avatar_movement;
 pub mod camera;
-pub mod player_input;
+pub mod point_at;
 
 use bevy::{app::Propagate, ecs::query::Has, prelude::*, render::view::RenderLayers};
 
 use bevy_console::ConsoleCommand;
 use camera::update_cursor_lock;
 use common::{
-    sets::SceneSets,
+    sets::{PostUpdateSets, SceneSets},
     structs::{
         CursorLocks, EngineMovementControl, PlayerModifiers, PrimaryCamera, PrimaryUser,
         PRIMARY_AVATAR_LIGHT_LAYER_INDEX,
     },
 };
 use console::DoAddConsoleCommand;
-use scene_runner::{
-    update_scene::pointer_lock::update_pointer_lock,
-    update_world::transform_and_parent::PostUpdateSets, OutOfWorld,
-};
+use scene_runner::{update_scene::pointer_lock::update_pointer_lock, OutOfWorld};
 
 use crate::avatar_movement::AvatarMovementPlugin;
+use crate::point_at::PointAtPlugin;
 
 use self::camera::{update_camera, update_camera_position};
 
@@ -30,7 +28,7 @@ pub struct UserInputPlugin;
 
 impl Plugin for UserInputPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(AvatarMovementPlugin);
+        app.add_plugins((AvatarMovementPlugin, PointAtPlugin));
         app.add_systems(
             Update,
             update_camera
@@ -49,9 +47,9 @@ impl Plugin for UserInputPlugin {
         );
         app.init_resource::<EngineMovementControl>()
             .init_resource::<CursorLocks>();
-        app.add_console_command::<NoClipCommand, _>(no_clip);
-        app.add_console_command::<SpeedCommand, _>(speed_cmd);
-        app.add_console_command::<JumpCommand, _>(jump_cmd);
+        app.add_preview_console_command::<NoClipCommand, _>(no_clip);
+        app.add_preview_console_command::<SpeedCommand, _>(speed_cmd);
+        app.add_preview_console_command::<JumpCommand, _>(jump_cmd);
     }
 }
 
@@ -132,8 +130,9 @@ pub(crate) fn no_clip(
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/speed")]
 pub(crate) struct SpeedCommand {
+    walk: f32,
+    jog: f32,
     run: f32,
-    friction: f32,
 }
 
 pub(crate) fn speed_cmd(
@@ -143,10 +142,11 @@ pub(crate) fn speed_cmd(
     if let Some(Ok(command)) = input.take() {
         let mut user = user.single_mut().unwrap();
         user.run_speed = command.run;
-        user.friction = command.friction;
+        user.walk_speed = command.walk;
+        user.jog_speed = command.jog;
         input.reply_ok(format!(
-            "run speed: {}, friction: {}",
-            command.run, command.friction
+            "run speed: {}, jog speed: {}, walk speed: {}",
+            command.run, command.walk, command.jog
         ));
     }
 }
@@ -156,19 +156,17 @@ pub(crate) fn speed_cmd(
 #[command(name = "/jump")]
 pub(crate) struct JumpCommand {
     jump_height: f32,
-    gravity: f32,
-    fall_speed: f32,
+    run_jump_height: f32,
 }
 
 pub(crate) fn jump_cmd(mut input: ConsoleCommand<JumpCommand>, mut user: Query<&mut PrimaryUser>) {
     if let Some(Ok(command)) = input.take() {
         let mut user = user.single_mut().unwrap();
         user.jump_height = command.jump_height;
-        user.gravity = -command.gravity;
-        user.fall_speed = -command.fall_speed;
+        user.run_jump_height = command.run_jump_height;
         input.reply_ok(format!(
-            "jump height: {}, gravity: -{}, max fallspeed: -{}",
-            command.jump_height, command.gravity, command.fall_speed
+            "jump height: {}, running jump height: {}",
+            command.jump_height, command.run_jump_height
         ));
     }
 }

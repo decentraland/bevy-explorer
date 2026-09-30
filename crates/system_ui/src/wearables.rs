@@ -387,6 +387,7 @@ fn set_wearables_content(
                                     settings.category.unwrap_or(&WearableCategory::BODY_SHAPE),
                                 ),
                                 time: 0.5,
+                                fov: None,
                             });
                         };
                     },

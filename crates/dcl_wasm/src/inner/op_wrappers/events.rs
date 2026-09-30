@@ -1,9 +1,9 @@
-use crate::WorkerContext;
+use crate::{WasmError, WorkerContext};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub fn op_subscribe(state: &WorkerContext, id: &str) {
-    dcl::js::events::op_subscribe(&mut *state.state.borrow_mut(), id)
+pub fn op_subscribe(state: &WorkerContext, id: &str) -> Result<(), WasmError> {
+    dcl::js::events::op_subscribe(&mut *state.state.borrow_mut(), id).map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

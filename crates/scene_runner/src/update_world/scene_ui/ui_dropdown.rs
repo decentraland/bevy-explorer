@@ -3,7 +3,7 @@ use common::util::ModifyComponentExt;
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::{
-        sdk::components::{self, PbUiDropdown, PbUiDropdownResult},
+        sdk::components::{PbUiDropdown, PbUiDropdownResult},
         Color4DclToBevy,
     },
     SceneComponentId,
@@ -11,11 +11,13 @@ use dcl_component::{
 use ui_core::{
     combo_box::ComboBox,
     ui_actions::{DataChanged, On},
-    user_font, FontName, FONT_SIZE_SCALE,
+    FONT_SIZE_SCALE,
 };
 
 use crate::{
-    renderer_context::RendererSceneContext, update_world::scene_ui::SceneUiData, SceneEntity,
+    renderer_context::RendererSceneContext,
+    update_world::{fonts::SceneFontServer, scene_ui::SceneUiData},
+    SceneEntity,
 };
 
 use super::UiLink;
@@ -38,6 +40,8 @@ pub fn set_ui_dropdown(
     scene: Query<&SceneUiData>,
     mut removed: RemovedComponents<UiDropdown>,
     links: Query<&UiLink>,
+    mut scene_fonts: SceneFontServer,
+    contexts: Query<&RendererSceneContext>,
 ) {
     for ent in removed.read() {
         if let Ok(link) = links.get(ent) {
@@ -69,11 +73,15 @@ pub fn set_ui_dropdown(
             //     }
         });
 
-        let font_name = match dropdown.0.font() {
-            components::common::Font::FSansSerif => FontName::Sans,
-            components::common::Font::FSerif => FontName::Serif,
-            components::common::Font::FMonospace => FontName::Mono,
+        let Ok(context) = contexts.get(scene_ent.root) else {
+            continue;
         };
+        let family = scene_fonts.family(
+            scene_ent.root,
+            &context.hash,
+            dropdown.0.font(),
+            dropdown.0.font_src.as_deref(),
+        );
         let font_size = dropdown.0.font_size.unwrap_or(10) as f32;
 
         let root = scene_ent.root;
@@ -94,7 +102,7 @@ pub fn set_ui_dropdown(
                 initial_selection,
                 Some((
                     TextFont {
-                        font: user_font(font_name, ui_core::WeightName::Regular),
+                        font: scene_fonts.face(&family, ui_core::WeightName::Regular),
                         font_size: font_size * FONT_SIZE_SCALE,
                         ..Default::default()
                     },
@@ -129,7 +137,7 @@ pub fn set_ui_dropdown(
                             value: combo.selected as i32,
                         },
                     );
-                    context.last_action_event = Some(time.elapsed_secs());
+                    context.last_action_event = Some(time.elapsed_secs_f64());
                 },
             ),
         ));

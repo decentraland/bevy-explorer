@@ -36,7 +36,7 @@ impl Plugin for ChatHistoryPlugin {
 
 #[derive(Component, Default)]
 pub struct ChatHistory {
-    current: VecDeque<(Entity, Entity, f32)>,
+    current: VecDeque<(Entity, Entity, f64)>,
 }
 
 fn setup_chat_history(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>) {
@@ -100,17 +100,13 @@ fn update_chat_history(
     };
 
     // remove expired
-    loop {
-        let Some((bubble, message, exp)) = history.current.front() else {
-            break;
-        };
-
+    while let Some((bubble, message, exp)) = history.current.front() {
         // fade the bubbles
         let Ok(mut node) = node.get_mut(*bubble) else {
             warn!("no");
             break;
         };
-        let mut alpha = (time.elapsed_secs() - 10.0 - *exp).clamp(-1.0, 0.0) * -0.3;
+        let mut alpha = ((time.elapsed_secs_f64() - 10.0 - *exp).clamp(-1.0, 0.0) * -0.3) as f32;
         if history
             .current
             .get(1)
@@ -121,7 +117,7 @@ fn update_chat_history(
         node.0.border_color.set_alpha(alpha * 2.0);
         node.1.color.as_mut().unwrap().set_alpha(alpha);
 
-        if *exp > time.elapsed_secs() - 10.0 {
+        if *exp > time.elapsed_secs_f64() - 10.0 {
             break;
         }
 
@@ -150,27 +146,32 @@ fn update_chat_history(
             FriendshipEventBody::Request(r) => (
                 "you received a friend request",
                 Color::srgb(0.8, 1.0, 1.0),
-                &r.user.as_ref().map(|u| &u.address),
+                r.friend.as_ref().map(|f| &f.address),
             ),
             FriendshipEventBody::Accept(r) => (
                 "your friend request was accepted",
                 Color::srgb(0.8, 1.0, 1.0),
-                &r.user.as_ref().map(|u| &u.address),
+                r.user.as_ref().map(|u| &u.address),
             ),
             FriendshipEventBody::Reject(r) => (
                 "your friend request was rejected",
                 Color::srgb(1.0, 0.8, 0.8),
-                &r.user.as_ref().map(|u| &u.address),
+                r.user.as_ref().map(|u| &u.address),
             ),
             FriendshipEventBody::Delete(r) => (
                 "your friendship is over",
                 Color::srgb(1.0, 0.8, 0.8),
-                &r.user.as_ref().map(|u| &u.address),
+                r.user.as_ref().map(|u| &u.address),
             ),
             FriendshipEventBody::Cancel(r) => (
                 "the friend request was cancelled",
                 Color::srgb(1.0, 0.8, 0.8),
-                &r.user.as_ref().map(|u| &u.address),
+                r.user.as_ref().map(|u| &u.address),
+            ),
+            FriendshipEventBody::Block(r) => (
+                "you were blocked",
+                Color::srgb(1.0, 0.8, 0.8),
+                r.user.as_ref().map(|u| &u.address),
             ),
         };
 
@@ -191,7 +192,7 @@ fn update_chat_history(
         ));
         history
             .current
-            .push_back((bubble, message, time.elapsed_secs()));
+            .push_back((bubble, message, time.elapsed_secs_f64()));
     }
 
     for chat in pending_private_chats.drain(..) {
@@ -212,7 +213,7 @@ fn update_chat_history(
         ));
         history
             .current
-            .push_back((bubble, message, time.elapsed_secs()));
+            .push_back((bubble, message, time.elapsed_secs_f64()));
     }
 
     for chat in pending_nearby_chats.drain(..) {
@@ -255,6 +256,6 @@ fn update_chat_history(
         ));
         history
             .current
-            .push_back((bubble, message, time.elapsed_secs()));
+            .push_back((bubble, message, time.elapsed_secs_f64()));
     }
 }

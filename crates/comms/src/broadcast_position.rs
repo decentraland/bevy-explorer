@@ -1,20 +1,22 @@
-use std::f32::consts::TAU;
-
 use bevy::prelude::*;
 
-use common::structs::{AvatarDynamicState, MoveKind, PrimaryUser};
+use common::structs::{
+    AvatarDynamicState, HeadSync, MoveKind, PointAtSync, PrimaryUser, SceneDrivenAnim,
+};
 use dcl_component::{
     proto_components::kernel::comms::rfc4,
     transform_and_parent::{DclQuat, DclTranslation},
 };
+use wallet::Wallet;
 
 use crate::{
+    broadcast, broadcast_to,
     global_crdt::GlobalCrdtState,
     movement_compressed::{Movement, Temporal},
-    TransportType,
+    BroadcastTarget,
 };
 
-use super::{NetworkMessage, Transport};
+use super::Transport;
 
 pub struct BroadcastPositionPlugin;
 
@@ -26,69 +28,140 @@ impl Plugin for BroadcastPositionPlugin {
 
 const STATIC_FREQ: f64 = 1.0;
 const DYNAMIC_FREQ: f64 = 0.1;
+// Re-send the anim hash pair at least this often so late joiners pick up the active clip.
+const ANIM_URN_KEEPALIVE: f64 = 1.0;
+// A head-yaw or head-pitch change beyond this threshold (in degrees) breaks the
+// STATIC_FREQ idle keepalive and gets the next packet sent at the DYNAMIC_FREQ tick.
+// Smaller deltas are coarsely sampled at 1Hz, which is fine for sub-threshold drift.
+const HEAD_SYNC_EPSILON_DEG: f32 = 10.0;
 
+#[derive(Default)]
+struct LastAnim {
+    // The (scene_hash, content_hash) pair we last broadcast. Tracked as one unit so we
+    // can detect transitions between clips and drive keepalives.
+    hashes: Option<(String, String)>,
+    sent_at: f64,
+    // Latched seek from the scene. The scene publishes `seek` for a single frame;
+    // we hold it here until a broadcast goes out so we don't miss it between the
+    // 10Hz dynamic / 1Hz static broadcast intervals.
+    pending_seek: Option<f32>,
+    // Latched sound content hashes from the scene. Accumulated across frames so
+    // single-frame sound triggers still make it out on the next broadcast; drained
+    // on send.
+    pending_sounds: Vec<String>,
+    // Previous frame's sound list, used to avoid re-latching the same list multiple
+    // times when the scene holds it across frames between broadcasts.
+    last_seen_sounds: Vec<String>,
+    // Monotonic counter stamped onto each outbound SDA so the (unreliable) receiver can
+    // order datagrams and drop reordered/duplicate ones. Carries no timing.
+    sequence: u32,
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn broadcast_position(
-    player: Query<(&GlobalTransform, &AvatarDynamicState), With<PrimaryUser>>,
+    player: Query<
+        (
+            &GlobalTransform,
+            &AvatarDynamicState,
+            Option<&SceneDrivenAnim>,
+            Option<&HeadSync>,
+            Option<&PointAtSync>,
+        ),
+        With<PrimaryUser>,
+    >,
     transports: Query<&Transport>,
     mut last_position: Local<(Vec3, Quat, Vec3)>,
+    mut last_head_sync: Local<HeadSync>,
+    mut last_point_at: Local<PointAtSync>,
     mut last_sent: Local<f64>,
     mut last_index: Local<u32>,
+    mut last_anim: Local<LastAnim>,
     time: Res<Time>,
-    global_crdt: Res<GlobalCrdtState>,
+    contexts: Query<&GlobalCrdtState>,
+    wallet: Res<Wallet>,
 ) {
-    let Ok((player, dynamics)) = player.single() else {
+    // An authoritative server has no avatar to announce — hammurabi's reportPosition is
+    // a no-op. Suppress so clients never see a ghost server player.
+    if common::structs::server_mode() {
+        return;
+    }
+    // client-only system (see above): the single shared context holds the realm bounds
+    let Ok(global_crdt) = contexts.single() else {
         return;
     };
+    let Ok((player, dynamics, scene_anim, head_sync, point_at)) = player.single() else {
+        return;
+    };
+    let head_sync = head_sync.copied().unwrap_or_default();
+    let point_at = point_at.copied().unwrap_or_default();
     let time = time.elapsed_secs_f64();
+
+    // Latch any single-frame seek from the scene so we still send it even if the
+    // broadcast cadence skipped the frame it was published on.
+    if let Some(seek) = scene_anim
+        .and_then(|s| s.active.as_ref())
+        .and_then(|a| a.seek)
+    {
+        last_anim.pending_seek = Some(seek);
+    }
+
+    // Latch new sound triggers from the scene. Scene owns the lifecycle: a new list
+    // (including a one-frame write that clears next frame) gets accumulated once per
+    // transition. Holding the same list across frames doesn't re-latch.
+    let current_sounds: &[String] = scene_anim
+        .and_then(|s| s.active.as_ref())
+        .map(|a| a.sounds.as_slice())
+        .unwrap_or(&[]);
+    if current_sounds != last_anim.last_seen_sounds.as_slice() {
+        last_anim
+            .pending_sounds
+            .extend(current_sounds.iter().cloned());
+        last_anim.last_seen_sounds = current_sounds.to_vec();
+    }
+
     let elapsed = time - *last_sent;
+    // Pending seeks do NOT bypass the 10Hz gate — sending faster than that gets us
+    // shadowbanned. The latch above already holds the most recent seek; it rides out
+    // on the next scheduled broadcast.
     if elapsed < DYNAMIC_FREQ {
         return;
     }
 
     let (_, rotation, translation) = player.to_scale_rotation_translation();
+    // An anim change (e.g. jump → idle on landing) must go out promptly: when the
+    // player comes to rest, velocity/position stop changing, and without this
+    // bypass the transition would wait on the STATIC_FREQ keepalive.
+    let current_hashes = scene_anim
+        .and_then(|s| s.active.as_ref())
+        .map(|a| (a.scene_hash.clone(), a.content_hash.clone()));
+    let anim_changed = current_hashes != last_anim.hashes;
+    // Toggling either enabled flag, or a yaw/pitch delta past the threshold, also
+    // breaks the keepalive — same shape as anim_changed. Sub-threshold drift just
+    // rides the 1Hz keepalive.
+    let head_changed = head_sync.yaw_enabled != last_head_sync.yaw_enabled
+        || head_sync.pitch_enabled != last_head_sync.pitch_enabled
+        || (head_sync.yaw_deg - last_head_sync.yaw_deg).abs() > HEAD_SYNC_EPSILON_DEG
+        || (head_sync.pitch_deg - last_head_sync.pitch_deg).abs() > HEAD_SYNC_EPSILON_DEG;
+    // Point-at toggling or any non-trivial coord change breaks the keepalive.
+    // No degree-style threshold: target coords can move continuously when the
+    // user drags, and the receiver visually integrates whatever it gets.
+    let point_at_changed = point_at.is_pointing != last_point_at.is_pointing
+        || (point_at.is_pointing
+            && (point_at.target_world - last_point_at.target_world).length_squared() > 0.01);
     if elapsed < STATIC_FREQ
         && (translation - last_position.0).length_squared() < 0.01
         && rotation == last_position.1
         && (dynamics.velocity - last_position.2).length_squared() < 0.01
+        && last_anim.pending_seek.is_none()
+        && !anim_changed
+        && !head_changed
+        && !point_at_changed
     {
         return;
     }
 
-    // OLD CLIENT MESSAGES
-    // (bevy uses the old version only if no new ones are received from a particular player,
-    // so it doesn't use them between bevy instances)
     let dcl_position = DclTranslation::from_bevy_translation(translation);
-    let dcl_rotation = DclQuat::from_bevy_quat(rotation);
-    let position_packet = rfc4::Position {
-        index: *last_index,
-        position_x: dcl_position.0[0],
-        position_y: dcl_position.0[1],
-        position_z: dcl_position.0[2],
-        rotation_x: dcl_rotation.0[0],
-        rotation_y: dcl_rotation.0[1],
-        rotation_z: dcl_rotation.0[2],
-        rotation_w: dcl_rotation.0[3],
-    };
 
-    debug!("sending position: {position_packet:?}");
-    let packet = rfc4::Packet {
-        message: Some(rfc4::packet::Message::Position(position_packet)),
-        protocol_version: 100,
-    };
-
-    for transport in transports
-        .iter()
-        .filter(|t| t.transport_type != TransportType::SceneRoom)
-    {
-        if let Err(e) = transport
-            .sender
-            .try_send(NetworkMessage::unreliable(&packet))
-        {
-            warn!("failed to update to transport: {e}");
-        }
-    }
-
-    // NEW CLIENT MESSAGES
     let movement = Movement::new(
         translation,
         dynamics.velocity,
@@ -106,15 +179,126 @@ fn broadcast_position(
 
     let movement_compressed = crate::movement_compressed::MovementCompressed { temporal, movement };
 
+    // Scene-driven animation carrier. The hash pair is sent on transition (new clip, or
+    // an empty `scene_hash` to clear a prior active anim) and re-sent every
+    // ANIM_URN_KEEPALIVE seconds while active so late joiners pick it up. The other
+    // fields ride along whenever an animation is active. `playback_time` is only sent
+    // when the scene explicitly requested a seek this frame. The nested message itself
+    // is only attached to the packet when there's something anim-related to say —
+    // that way a receiver that's not interested (or that never sees us transition out
+    // of an inactive state) costs no bytes.
+    let active_anim = scene_anim.and_then(|s| s.active.as_ref());
+    let keepalive_due = active_anim.is_some() && time - last_anim.sent_at >= ANIM_URN_KEEPALIVE;
+    let (scene_hash, content_hash) = if anim_changed {
+        match &current_hashes {
+            Some((s, c)) => (Some(s.clone()), Some(c.clone())),
+            // Transition active → none: signal clear with an empty scene_hash.
+            None => (Some(String::new()), None),
+        }
+    } else if keepalive_due {
+        current_hashes
+            .as_ref()
+            .map(|(s, c)| (Some(s.clone()), Some(c.clone())))
+            .unwrap_or((None, None))
+    } else {
+        (None, None)
+    };
+    if scene_hash.is_some() {
+        last_anim.sent_at = time;
+    }
+    last_anim.hashes = current_hashes;
+
+    let speed = active_anim.map(|a| a.speed);
+    let transition_seconds = active_anim.map(|a| a.transition_seconds);
+    let r#loop = active_anim.map(|a| a.r#loop);
+    let idle = active_anim.map(|a| a.idle);
+    // Render-only lean, carried so remotes can bank a tilted avatar. Rides along with an
+    // active anim, like speed/loop; receivers compose it on top of the yaw in rotation_y.
+    // Derived from the same composed rotation we extract yaw from above — `apply_rotation`
+    // baked the lean in as `from_euler(YXZ, yaw, pitch, roll)`, so `.1`/`.2` recover it.
+    let (tilt_pitch, tilt_roll) = match active_anim {
+        Some(_) => {
+            let (_, pitch, roll) = rotation.to_euler(bevy::math::EulerRot::YXZ);
+            (Some(pitch.to_degrees()), Some(roll.to_degrees()))
+        }
+        None => (None, None),
+    };
+    // The latch above already mirrors the freshest `seek` seen since the last
+    // broadcast. Only send if there's an active anim to apply it to.
+    let playback_time = active_anim.and(last_anim.pending_seek.take());
+    // Drain pending sounds on every broadcast. Sounds depend on `scene_hash` to
+    // identify their host scene, so only ship them while an anim is active.
+    let sound_content_hashes = if active_anim.is_some() {
+        std::mem::take(&mut last_anim.pending_sounds)
+    } else {
+        last_anim.pending_sounds.clear();
+        Vec::new()
+    };
+
+    // Attach the nested message only when there's anim state to communicate — that is,
+    // when we have an active animation (ride-along, keepalive, or transition-in) or
+    // when we're transitioning out (scene_hash == Some("")). Otherwise leave it None
+    // so the field isn't serialized at all. The monotonic `sequence` is for ordering only;
+    // the receiver derives apply timing from our movement stream's server tick instead.
+    let scene_driven_animation = if active_anim.is_some() || scene_hash.is_some() {
+        last_anim.sequence = last_anim.sequence.wrapping_add(1);
+        Some(
+            dcl_component::proto_components::kernel::comms::rfc4::SceneDrivenAnimation {
+                scene_hash,
+                content_hash,
+                speed,
+                playback_time,
+                transition_seconds,
+                r#loop,
+                sound_content_hashes,
+                origin_address: wallet.address().map(|a| format!("{a:#x}")),
+                idle,
+                tilt_pitch,
+                tilt_roll,
+                sequence: Some(last_anim.sequence),
+            },
+        )
+    } else {
+        None
+    };
+
+    // For cross-client compatibility with the Unity / web clients, infer a jump_count /
+    // glide_state from the active scene-driven animation's src. The movement-scene uses
+    // glb filenames containing "double" (DoubleJump_Base2.glb) or "glide" (glide.glb);
+    // lowercase substring match keeps this resilient to small naming variations. A glide
+    // is only reachable after the air-jump slot has been consumed, so jump_count is also
+    // 2 during a glide — matching what Unity's state machine expects.
+    let anim_src_lower = active_anim.map(|a| a.src.to_lowercase());
+    let is_double_jump = anim_src_lower
+        .as_deref()
+        .is_some_and(|s| s.contains("double"));
+    let is_glide = anim_src_lower
+        .as_deref()
+        .is_some_and(|s| s.contains("glide"));
+    let jump_count = if is_double_jump || is_glide { 2 } else { 0 };
+    let glide_state = if is_glide {
+        rfc4::movement::GlideState::Gliding as i32
+    } else {
+        rfc4::movement::GlideState::PropClosed as i32
+    };
+
     let movement_uncompressed = dcl_component::proto_components::kernel::comms::rfc4::Movement {
         timestamp: time as f32,
         position_x: dcl_position.0[0],
         position_y: dcl_position.0[1],
         position_z: dcl_position.0[2],
-        rotation_y: -movement_compressed.temporal.rotation_f32() * 360.0 / TAU,
-        velocity_x: movement_compressed.movement.velocity().x,
-        velocity_y: movement_compressed.movement.velocity().y,
-        velocity_z: movement_compressed.movement.velocity().z,
+        // Yaw in [0, 360). Pulse quantizes rotation_y over [0, 360] on the delta tier, so a negative
+        // angle clamps to 0 there and freezes remote rotation. Taken raw from the yaw (not the
+        // compressed round-trip) to avoid the extra 6-bit (~5.6°) coarsening; the receiver maps it
+        // back with `from_rotation_y(-rotation_y)`.
+        rotation_y: (-rotation.to_euler(bevy::math::EulerRot::YXZ).0.to_degrees())
+            .rem_euclid(360.0),
+        // Raw velocity — the uncompressed packet carries no quantization, and Pulse re-quantizes
+        // server-side anyway, so the old compressed round-trip only threw away precision (3–5 bits).
+        // z is negated to match the receiver's `-velocity_z` DCL-space flip.
+        velocity_x: dynamics.velocity.x,
+        velocity_y: dynamics.velocity.y,
+        velocity_z: -dynamics.velocity.z,
         movement_blend_value: dynamics.velocity.length_squared(),
         slide_blend_value: 0.0,
         is_grounded: movement_compressed.temporal.grounded(),
@@ -124,6 +308,21 @@ fn broadcast_position(
         is_falling: movement_compressed.temporal.falling(),
         is_stunned: movement_compressed.temporal.stunned(),
         is_emoting: dynamics.move_kind == MoveKind::Emote,
+        jump_count,
+        glide_state,
+        head_ik_yaw_enabled: head_sync.yaw_enabled,
+        head_ik_pitch_enabled: head_sync.pitch_enabled,
+        head_yaw: head_sync.yaw_deg,
+        head_pitch: head_sync.pitch_deg,
+        point_at_x: point_at.target_world.x,
+        point_at_y: point_at.target_world.y,
+        point_at_z: point_at.target_world.z,
+        is_pointing_at: point_at.is_pointing,
+        // Scene-driven animation no longer rides the movement — it goes out as its own packet below.
+        scene_driven_animation: None,
+        // Receive-side only (the Pulse decoder stamps it); never set on the send path, so it stays
+        // out of the serialized packet.
+        position_precision: None,
     };
 
     // let movement_packet = rfc4::MovementCompressed {
@@ -136,29 +335,60 @@ fn broadcast_position(
     //     message: Some(rfc4::packet::Message::MovementCompressed(movement_packet)),
     //     protocol_version: 100,
     // };
-    let uncompressed_packet = rfc4::Packet {
-        message: Some(rfc4::packet::Message::Movement(movement_uncompressed)),
+    debug!("sending movement: {movement_uncompressed:?}");
+
+    // Movement rides each rfc4 packet to exactly its consumer: `Movement` to Pulse alone (its routing
+    // transport bridges it into a `PlayerStateInput`), and `Position` to Archipelago, which clusters
+    // islands from it. Every realm is a Pulse realm, so no byte transport carries avatar state — a
+    // peer that can't be reached over Pulse can't be reached at all.
+    let dcl_rotation = DclQuat::from_bevy_quat(rotation);
+    let position_packet = rfc4::Packet {
+        message: Some(rfc4::packet::Message::Position(rfc4::Position {
+            index: *last_index,
+            position_x: dcl_position.0[0],
+            position_y: dcl_position.0[1],
+            position_z: dcl_position.0[2],
+            rotation_x: dcl_rotation.0[0],
+            rotation_y: dcl_rotation.0[1],
+            rotation_z: dcl_rotation.0[2],
+            rotation_w: dcl_rotation.0[3],
+        })),
         protocol_version: 100,
     };
+    broadcast(
+        transports.iter(),
+        BroadcastTarget::PULSE,
+        true,
+        movement_uncompressed,
+    );
+    broadcast_to(
+        transports.iter(),
+        BroadcastTarget::ARCHIPELAGO,
+        true,
+        &position_packet,
+    );
+    *last_index = last_index.wrapping_add(1);
 
-    debug!("sending uncompressed: {uncompressed_packet:?}");
-
-    for transport in transports.iter() {
-        // if let Err(e) = transport
-        //     .sender
-        //     .try_send(NetworkMessage::unreliable(&packet))
-        // {
-        //     warn!("failed to update to transport: {e}");
-        // }
-        if let Err(e) = transport
-            .sender
-            .try_send(NetworkMessage::unreliable(&uncompressed_packet))
-        {
-            warn!("failed to update to transport: {e}");
-        }
+    // Scene-driven animation rides its own packet (unreliable, like the old movement) to the avatar
+    // renderers — LiveKit and the websocket dev server — only when there's anim state to send. Not
+    // Archipelago (island assignment, no rendering) nor Pulse (no animation conversion). Carries a
+    // monotonic sequence (for ordering); the receiver aligns it to our Pulse positions using its own
+    // last-received movement tick from us.
+    if let Some(anim) = scene_driven_animation {
+        let packet = rfc4::Packet {
+            message: Some(rfc4::packet::Message::SceneDrivenAnimation(anim)),
+            protocol_version: 100,
+        };
+        broadcast_to(
+            transports.iter(),
+            BroadcastTarget::WEBSOCKET | BroadcastTarget::LIVEKIT,
+            true,
+            &packet,
+        );
     }
 
     *last_position = (translation, rotation, dynamics.velocity);
-    *last_index += 1;
+    *last_head_sync = head_sync;
+    *last_point_at = point_at;
     *last_sent = time;
 }

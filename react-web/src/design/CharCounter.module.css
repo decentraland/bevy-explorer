@@ -1,0 +1,10 @@
+.charcounter {
+  margin-top: 6px;
+  text-align: right;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-6);
+}
+.charcounter.over {
+  color: var(--error);
+}

@@ -2,12 +2,31 @@ syntax = "proto3";
 package decentraland.sdk.components;
 
 import "decentraland/sdk/components/common/id.proto";
+import "decentraland/sdk/components/common/avatar_mask.proto";
 option (common.ecs_component_id) = 1088;
 
-// AvatarEmoteCommand is a grow only value set, used to signal the renderer about
-// avatar emotes playback.
+// EmoteState describes the lifecycle state of an emote playback.
+enum EmoteState {
+  // ES_STARTED indicates the emote started playing.
+  // This is the zero value and is used for backward compatibility — entries
+  // written by older explorers (field absent) read as "started".
+  ES_STARTED = 0;
+  // ES_FINISHED indicates a non-looping emote completed naturally.
+  ES_FINISHED = 1;
+  // ES_INTERRUPTED indicates playback was cancelled (movement, teleport,
+  // another emote superseding it, explicit stop, or scene change).
+  ES_INTERRUPTED = 2;
+}
+
+// AvatarEmoteCommand is a grow only value set, written by the explorer to report
+// avatar emote playback to the scene. It is appended to every player entity in the
+// scene (the local player and remote avatars alike).
 message PBAvatarEmoteCommand {
   string emote_urn = 1;
   bool loop = 2;
-  uint32 timestamp = 3;          // monotonic counter
+  uint32 timestamp = 3; // monotonic counter
+  optional decentraland.sdk.components.common.AvatarMask mask = 4;
+  // state describes the lifecycle event for this emote entry.
+  // When absent (older explorers), defaults to ES_STARTED.
+  optional EmoteState state = 5;
 }

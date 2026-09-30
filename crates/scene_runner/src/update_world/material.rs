@@ -245,11 +245,10 @@ impl MaterialDefinition {
         };
 
         let shadow_caster = match &pb_material.material {
-            Some(pb_material::Material::Unlit(unlit)) => unlit.cast_shadows,
-            Some(pb_material::Material::Pbr(pbr)) => pbr.cast_shadows,
-            _ => None,
-        }
-        .unwrap_or(true);
+            Some(pb_material::Material::Unlit(unlit)) => unlit.cast_shadows.unwrap_or(false),
+            Some(pb_material::Material::Pbr(pbr)) => pbr.cast_shadows.unwrap_or(true),
+            None => !base.unlit,
+        };
 
         Self {
             material,
@@ -272,6 +271,7 @@ impl Plugin for MaterialDefinitionPlugin {
             Update,
             (
                 init_cache,
+                remove_freed_cached_materials,
                 update_materials,
                 update_bias,
                 update_loading_materials,
@@ -281,6 +281,7 @@ impl Plugin for MaterialDefinitionPlugin {
                 // we must run after update_mesh as that inserts a default material if none is present
                 .after(update_mesh),
         );
+        app.init_resource::<CachedMaterialOwners>();
     }
 }
 
@@ -316,6 +317,9 @@ pub struct ResolvedTexture {
     pub image: Handle<Image>,
     pub source_entity: Option<Entity>,
     pub camera_target: Option<ResolveCursor>,
+    /// override for the material uv_transform (used to sample a sub-rect of a shared
+    /// ui-canvas atlas); `None` leaves the definition's uv_transform unchanged
+    pub uv_transform: Option<Affine2>,
 }
 
 impl TextureResolver<'_, '_> {
@@ -372,6 +376,7 @@ impl TextureResolver<'_, '_> {
                         .unwrap(),
                     source_entity: None,
                     camera_target: None,
+                    uv_transform: None,
                 })
             }
             texture_union::Tex::AvatarTexture(at) => {
@@ -389,6 +394,7 @@ impl TextureResolver<'_, '_> {
                     image,
                     source_entity: None,
                     camera_target: None,
+                    uv_transform: None,
                 })
             }
             texture_union::Tex::VideoTexture(vt) => {
@@ -405,6 +411,7 @@ impl TextureResolver<'_, '_> {
                         image: vt.0.clone(),
                         source_entity: Some(video_entity),
                         camera_target: None,
+                        uv_transform: None,
                     })
                 } else {
                     debug!("video source entity not ready, retrying ...");
@@ -422,10 +429,18 @@ impl TextureResolver<'_, '_> {
                 match self.uis.get(ui_entity) {
                     Ok(ui_t) => Ok(ResolvedTexture {
                         image: ui_t.image.clone(),
-                        source_entity: Some(ui_t.camera),
+                        // track the canvas entity (which carries UiTextureOutput) so atlas
+                        // slot changes re-resolve the material; the camera carries none
+                        source_entity: Some(ui_entity),
                         camera_target: Some(ResolveCursor {
                             camera: ui_t.camera,
-                            texture_size: ui_t.texture_size.as_vec2(),
+                            texture_size: ui_t.px_size,
+                            px_offset: ui_t.px_offset,
+                        }),
+                        // sample only this canvas's slot within the shared atlas
+                        uv_transform: Some(Affine2 {
+                            matrix2: Mat2::from_diagonal(ui_t.uv_scale),
+                            translation: ui_t.uv_offset,
                         }),
                     }),
                     Err(_) => {
@@ -441,8 +456,39 @@ impl TextureResolver<'_, '_> {
 #[derive(Component)]
 pub struct MeshMaterial3dLoading(Handle<SceneMaterial>);
 
+/// explicit shadow casting (from a gltf node modifier), takes precedence over the material's setting
+#[derive(Component)]
+pub struct ShadowCasterOverride(pub bool);
+
+// material hash -> (material id, shadow caster)
 #[derive(Component, Default)]
-pub struct CachedMaterials(HashMap<u64, (AssetId<SceneMaterial>, MaterialDefinition)>);
+pub struct CachedMaterials(HashMap<u64, (AssetId<SceneMaterial>, bool)>);
+
+// cached material id -> (scene root, material hash), to remove cache entries when materials are freed
+#[derive(Resource, Default)]
+pub struct CachedMaterialOwners(HashMap<AssetId<SceneMaterial>, (Entity, u64)>);
+
+fn remove_freed_cached_materials(
+    mut events: EventReader<AssetEvent<SceneMaterial>>,
+    mut owners: ResMut<CachedMaterialOwners>,
+    mut caches: Query<&mut CachedMaterials>,
+) {
+    for ev in events.read() {
+        let AssetEvent::Removed { id } = ev else {
+            continue;
+        };
+        let Some((root, hash)) = owners.0.remove(id) else {
+            continue;
+        };
+        let Ok(mut cache) = caches.get_mut(root) else {
+            continue;
+        };
+        // the hash may already have been rebuilt with a new material
+        if cache.0.get(&hash).is_some_and(|(cached, _)| cached == id) {
+            cache.0.remove(&hash);
+        }
+    }
+}
 
 fn init_cache(
     q: Query<Entity, (With<RendererSceneContext>, Without<CachedMaterials>)>,
@@ -463,6 +509,7 @@ pub fn update_materials(
             &ContainerEntity,
             Option<&SceneEntity>,
             Option<&BaseMaterial>,
+            Option<&ShadowCasterOverride>,
         ),
         Or<(
             Changed<PbMaterialComponent>,
@@ -472,19 +519,19 @@ pub fn update_materials(
     >,
     mut materials: ResMut<Assets<SceneMaterial>>,
     sourced: Query<(Entity, &MeshMaterial3d<SceneMaterial>, &MaterialSource)>,
-    sources: Query<(
-        Option<Ref<VideoTextureOutput>>,
-        Option<Ref<UiTextureOutput>>,
-    )>,
+    // ui-canvas atlas slot changes are applied to the material in place by
+    // `update_canvas_material_uvs`, so only video sources need to trigger a re-resolve here
+    sources: Query<Option<Ref<VideoTextureOutput>>>,
     mut resolver: TextureResolver,
     mut scenes: Query<(&mut RendererSceneContext, &mut CachedMaterials)>,
+    mut owners: ResMut<CachedMaterialOwners>,
     config: Res<AppConfig>,
     mut gltf_resolver: GltfMaterialResolver,
     images: Res<Assets<Image>>,
 ) {
     gltf_resolver.begin_frame();
 
-    for (ent, mat, container, maybe_scene_ent, base) in new_materials.iter_mut() {
+    for (ent, mat, container, maybe_scene_ent, base, shadow_override) in new_materials.iter_mut() {
         let Ok((mut scene, mut cache)) = scenes.get_mut(container.root) else {
             continue;
         };
@@ -493,14 +540,16 @@ pub fn update_materials(
         mat.0.hash(hasher);
         let hash = hasher.finish();
 
-        let cached_data = cache.0.get(&hash).and_then(|(cached_handle, defn)| {
-            materials
-                .get_strong_handle(*cached_handle)
-                .map(|h| (h, defn))
-        });
+        let cached_data = cache
+            .0
+            .get(&hash)
+            .and_then(|(cached_handle, shadow_caster)| {
+                materials
+                    .get_strong_handle(*cached_handle)
+                    .map(|h| (h, *shadow_caster))
+            });
 
-        let uncached_defn;
-        let (material, defn) = match cached_data {
+        let (material, shadow_caster) = match cached_data {
             Some(data) => data,
             None => {
                 let new_base;
@@ -593,7 +642,12 @@ pub fn update_materials(
                     }
                 }
 
-                let bounds = scene.bounds.clone();
+                // ui-canvas atlas sub-rect transform (from the base-colour texture);
+                // applies to the whole material's uv, fine since nametags sample the same
+                // canvas for base + emissive
+                let ui_uv_transform = base_color_texture.as_ref().and_then(|t| t.uv_transform);
+
+                let bounds = scene.scene_bounds.clone();
 
                 let material = materials.add(SceneMaterial {
                     base: StandardMaterial {
@@ -606,18 +660,17 @@ pub fn update_materials(
                         normal_map_texture: normal_map_texture
                             .map(|t| t.image)
                             .or(base.and_then(|b| b.material.normal_map_texture.clone())),
+                        uv_transform: ui_uv_transform.unwrap_or(defn.material.uv_transform),
                         ..defn.material.clone()
                     },
-                    extension: SceneBound::new(bounds, config.graphics.oob),
+                    extension: SceneBound::new(&bounds, config.graphics.oob),
                 });
 
                 if can_cache {
-                    cache.0.insert(hash, (material.id(), defn));
-                    (material, &cache.0.get(&hash).unwrap().1)
-                } else {
-                    uncached_defn = defn;
-                    (material, &uncached_defn)
+                    cache.0.insert(hash, (material.id(), defn.shadow_caster));
+                    owners.0.insert(material.id(), (container.root, hash));
                 }
+                (material, defn.shadow_caster)
             }
         };
 
@@ -625,7 +678,7 @@ pub fn update_materials(
         commands
             .remove::<RetryMaterial>()
             .try_insert(MeshMaterial3dLoading(material));
-        if defn.shadow_caster {
+        if shadow_override.map_or(shadow_caster, |shadows| shadows.0) {
             commands.remove::<NotShadowCaster>();
         } else {
             commands.try_insert(NotShadowCaster);
@@ -655,10 +708,7 @@ pub fn update_materials(
     for (ent, _touch, source) in sourced.iter() {
         let changed = sources
             .get(source.0)
-            .map(|(maybe_video, maybe_ui)| {
-                maybe_video.is_some_and(|v| v.is_changed())
-                    || maybe_ui.is_some_and(|ui| ui.is_changed())
-            })
+            .map(|maybe_video| maybe_video.is_some_and(|v| v.is_changed()))
             .unwrap_or(true);
 
         if changed {
@@ -827,7 +877,7 @@ pub fn dcl_material_from_standard_material(
         pb_material::Material::Unlit(pb_material::UnlitMaterial {
             texture: base.base_color_texture.as_ref().map(dcl_texture),
             alpha_test,
-            cast_shadows: Some(true),
+            cast_shadows: Some(false),
             diffuse_color: Some(base.base_color.convert_linear_rgba()),
             alpha_texture,
         })
@@ -853,5 +903,86 @@ pub fn dcl_material_from_standard_material(
             emissive_intensity: None,
             direct_intensity: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+    use scene_material::SceneMaterialExt;
+
+    fn material_id(materials: &mut Assets<SceneMaterial>) -> AssetId<SceneMaterial> {
+        materials
+            .add(SceneMaterial::new_unbounded(StandardMaterial::default()))
+            .id()
+    }
+
+    #[test]
+    fn removed_materials_leave_the_cache() {
+        let mut app = App::new();
+        app.add_event::<AssetEvent<SceneMaterial>>()
+            .init_resource::<CachedMaterialOwners>();
+        let mut materials = Assets::<SceneMaterial>::default();
+        let (freed, live, stale, rebuilt) = (
+            material_id(&mut materials),
+            material_id(&mut materials),
+            material_id(&mut materials),
+            material_id(&mut materials),
+        );
+
+        // hash 3 was rebuilt with a new material before the stale one's removal was seen
+        let scene = app
+            .world_mut()
+            .spawn(CachedMaterials(HashMap::from_iter([
+                (1, (freed, true)),
+                (2, (live, false)),
+                (3, (rebuilt, true)),
+            ])))
+            .id();
+        app.world_mut()
+            .resource_mut::<CachedMaterialOwners>()
+            .0
+            .extend([
+                (freed, (scene, 1)),
+                (live, (scene, 2)),
+                (stale, (scene, 3)),
+                (rebuilt, (scene, 3)),
+            ]);
+
+        app.world_mut()
+            .send_event_batch([freed, stale].map(|id| AssetEvent::Removed { id }));
+        app.world_mut()
+            .run_system_once(remove_freed_cached_materials)
+            .unwrap();
+
+        let cache = app.world().get::<CachedMaterials>(scene).unwrap();
+        assert_eq!(cache.0.len(), 2);
+        assert_eq!(cache.0.get(&2), Some(&(live, false)));
+        assert_eq!(cache.0.get(&3), Some(&(rebuilt, true)));
+        let owners = app.world().resource::<CachedMaterialOwners>();
+        assert_eq!(owners.0.len(), 2);
+        assert!(owners.0.contains_key(&live) && owners.0.contains_key(&rebuilt));
+    }
+
+    #[test]
+    fn removed_materials_of_despawned_scenes_leave_the_owners() {
+        let mut app = App::new();
+        app.add_event::<AssetEvent<SceneMaterial>>()
+            .init_resource::<CachedMaterialOwners>();
+        let id = material_id(&mut Assets::<SceneMaterial>::default());
+        let scene = app.world_mut().spawn(CachedMaterials::default()).id();
+        app.world_mut()
+            .resource_mut::<CachedMaterialOwners>()
+            .0
+            .insert(id, (scene, 1));
+        app.world_mut().despawn(scene);
+
+        app.world_mut().send_event(AssetEvent::Removed { id });
+        app.world_mut()
+            .run_system_once(remove_freed_cached_materials)
+            .unwrap();
+
+        assert!(app.world().resource::<CachedMaterialOwners>().0.is_empty());
     }
 }

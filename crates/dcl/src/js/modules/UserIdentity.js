@@ -1,5 +1,5 @@
 module.exports.getUserPublicKey = async function (body) { 
-    const userData = await this.getUserData();
+    const userData = await Deno.core.ops.op_get_user_data();
 
     return { address: userData.publicKey } 
 }

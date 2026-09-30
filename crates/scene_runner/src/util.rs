@@ -13,7 +13,7 @@ use bevy::{
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{
     structs::{PreviewCommand, PrimaryUser},
-    util::TaskExt,
+    util::{JoinRelativeExt, TaskExt},
 };
 use console::DoAddConsoleCommand;
 use futures_lite::AsyncReadExt;
@@ -33,9 +33,9 @@ impl Plugin for SceneUtilPlugin {
     fn build(&self, app: &mut App) {
         let (send, recv) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(ConsoleRelay { send, recv });
-        app.add_console_command::<DebugDumpScene, _>(debug_dump_scene);
+        app.add_preview_console_command::<DebugDumpScene, _>(debug_dump_scene);
         app.add_console_command::<ReloadCommand, _>(reload_command);
-        app.add_console_command::<ClearStoreCommand, _>(clear_store_command);
+        app.add_preview_console_command::<ClearStoreCommand, _>(clear_store_command);
         app.add_systems(Update, (console_relay, handle_preview_command));
     }
 }
@@ -153,7 +153,13 @@ fn debug_dump_scene(
                         return;
                     }
 
-                    let file = dump_folder.join(&content_file);
+                    // the key is the deployer's string and may still carry `..`
+                    let Some(file) = dump_folder.join_relative(&content_file) else {
+                        report(Some(format!(
+                            "{content_file} failed: escapes the dump folder"
+                        )));
+                        return;
+                    };
                     if let Some(parent) = file.parent() {
                         if let Err(e) = std::fs::create_dir_all(parent) {
                             report(Some(format!(
@@ -284,7 +290,18 @@ fn handle_preview_command(
 ) {
     for command in events.read() {
         match command {
-            PreviewCommand::ReloadScene { hash } => {
+            PreviewCommand::ReloadScene { hash }
+            // TODO properly handle model commands
+            | PreviewCommand::ReloadModel {
+                hash: _,
+                src: _,
+                scene_id: hash,
+            }
+            | PreviewCommand::RemoveModel {
+                hash: _,
+                src: _,
+                scene_id: hash,
+            } => {
                 if let Some(ctx) = live_scenes
                     .scenes
                     .get(hash)

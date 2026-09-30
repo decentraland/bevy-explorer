@@ -1,9 +1,9 @@
+use alloy_core::primitives::Address;
 use bevy::{
     platform::{collections::HashMap, sync::Arc},
     prelude::*,
 };
-use common::{structs::AudioDecoderError, util::AsH160};
-use ethers_core::types::H160;
+use common::{debug_panic, structs::AudioDecoderError, util::AsH160};
 use http::Uri;
 use tokio::{
     sync::{mpsc, oneshot},
@@ -22,7 +22,7 @@ use crate::{
     global_crdt::ChannelControl,
     livekit::{
         participant::{
-            HostingParticipants, LivekitParticipant, ParticipantConnected,
+            ActiveSpeakersChanged, HostingParticipants, LivekitParticipant, ParticipantConnected,
             ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
             ParticipantPayload,
         },
@@ -30,7 +30,7 @@ use crate::{
             Connected, Connecting, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting,
         },
         track, ConnectionAvailability, LivekitChannelControl, LivekitNetworkMessage,
-        LivekitRuntime, LivekitTransport,
+        LivekitRuntimeRes, LivekitTransport,
     },
     NetworkMessageRecipient,
 };
@@ -85,7 +85,7 @@ fn initiate_room_connection(
     trigger: Trigger<OnAdd, Connecting>,
     mut commands: Commands,
     livekit_transports: Query<&LivekitTransport>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
     connection_availability: Res<State<ConnectionAvailability>>,
 ) {
     if *connection_availability.get() == ConnectionAvailability::Unavailable {
@@ -106,7 +106,8 @@ fn initiate_room_connection(
     let address = format!(
         "{}://{}{}",
         url.scheme_str().unwrap_or_default(),
-        url.host().unwrap_or_default(),
+        // authority, not host: host() drops an explicit port (breaks e.g. ws://localhost:7880)
+        url.authority().map(|a| a.as_str()).unwrap_or_default(),
         url.path()
     );
     let params: HashMap<_, _, bevy::platform::hash::FixedHasher> =
@@ -125,7 +126,7 @@ fn initiate_room_connection(
 fn poll_connecting_rooms(
     mut commands: Commands,
     livekit_rooms: Populated<(Entity, &mut ConnectingLivekitRoom)>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     for (entity, mut connecting_livekit_room) in livekit_rooms.into_inner() {
         if connecting_livekit_room.is_finished() {
@@ -155,6 +156,7 @@ fn poll_connecting_rooms(
     }
 }
 
+#[allow(clippy::result_large_err)] // RoomError is livekit's, and connect failures are rare
 async fn connect_to_room(
     address: String,
     token: String,
@@ -171,6 +173,12 @@ async fn connect_to_room(
     )
     .await
 }
+
+/// Marker for a room that hit a terminal disconnect (kicked / identity conflict) while
+/// running as an authoritative server: no in-process reconnect is possible (the token is
+/// spent); the supervisor must tear the transport down and re-mint.
+#[derive(Component)]
+pub struct ServerRoomTerminal;
 
 fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mut LivekitRoom)>) {
     for (entity, mut livekit_room) in livekit_rooms {
@@ -199,7 +207,13 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                         reason,
                         DisconnectReason::DuplicateIdentity | DisconnectReason::ParticipantRemoved
                     ) {
-                        commands.set_state(ConnectionAvailability::Unavailable);
+                        if common::structs::server_mode() {
+                            // a server has no "connected in another tab" UX: mark the room
+                            // terminal so the headless supervisor reaps it and re-mints
+                            commands.entity(entity).try_insert(ServerRoomTerminal);
+                        } else {
+                            commands.set_state(ConnectionAvailability::Unavailable);
+                        }
                     }
                 }
                 RoomEvent::ConnectionStateChanged(state) => match state {
@@ -280,6 +294,9 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                         quality,
                     ));
                 }
+                RoomEvent::ActiveSpeakersChanged { speakers } => {
+                    commands.trigger(ActiveSpeakersChanged { speakers });
+                }
                 #[cfg(not(target_arch = "wasm32"))]
                 _ => {
                     debug!("Event: {:?}", room_event);
@@ -312,9 +329,7 @@ fn process_channel_control(
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    error!("Channel control of {} was closed.", livekit_room.name());
-                    commands.send_event(AppExit::from_code(1));
-                    return;
+                    debug_panic!("Channel control of {} was closed.", livekit_room.name());
                 }
             }
         }
@@ -329,13 +344,16 @@ fn process_network_message(
         &mut LivekitNetworkMessage,
         Option<&mut RoomTasks>,
     )>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let mut new_room_tasks = vec![];
     for (entity, room, mut network_message, maybe_room_tasks) in rooms {
         loop {
             match network_message.try_recv() {
                 Ok(outgoing) => {
+                    let Some(payload) = outgoing.message.to_rfc4() else {
+                        continue;
+                    };
                     let destination_identities = match outgoing.recipient {
                         NetworkMessageRecipient::All => Vec::default(),
                         NetworkMessageRecipient::Peer(address) => {
@@ -347,7 +365,7 @@ fn process_network_message(
                     };
 
                     let packet = DataPacket {
-                        payload: outgoing.data,
+                        payload,
                         topic: None,
                         reliable: !outgoing.unreliable,
                         destination_identities,
@@ -360,9 +378,7 @@ fn process_network_message(
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    error!("Network message of {} was closed.", room.name());
-                    commands.send_event(AppExit::from_code(1));
-                    return;
+                    debug_panic!("Network message of {} was closed.", room.name());
                 }
             }
         }
@@ -387,9 +403,7 @@ fn create_local_participant(
 ) {
     let entity = trigger.target();
     let Ok(room) = rooms.get(entity) else {
-        error!("Can't create local participant because {entity} is not a LivekitRoom.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Can't create local participant because {entity} is not a LivekitRoom.");
     };
 
     let local_participant = room.local_participant();
@@ -402,7 +416,7 @@ fn create_local_participant(
 fn disconnect_from_room_on_replace(
     trigger: Trigger<OnReplace, LivekitRoom>,
     livekit_rooms: Query<&LivekitRoom>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     let entity = trigger.target();
     let Ok(livekit_room) = livekit_rooms.get(entity) else {
@@ -420,7 +434,7 @@ fn disconnect_from_room_on_replace(
 
 type SubscribeToAudio = (
     Entity,
-    H160,
+    Address,
     oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 );
 
@@ -437,9 +451,7 @@ fn subscribe_to_voice(
     let (room_entity, address, _) = input;
 
     let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
-        error!("{} is not an well formed room.", room_entity);
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("{} is not an well formed room.", room_entity);
     };
 
     let Some(hosting) = maybe_hosting else {
@@ -488,16 +500,14 @@ fn subscribe_to_voice(
 }
 
 fn unsubscribe_to_voice(
-    In((room_entity, address)): In<(Entity, H160)>,
+    In((room_entity, address)): In<(Entity, Address)>,
     mut commands: Commands,
     rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
     participants: Query<(&LivekitParticipant, &track::Publishing)>,
     tracks: Query<Entity, With<track::Microphone>>,
 ) {
     let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
-        error!("{} is not an well formed room.", room_entity);
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("{} is not an well formed room.", room_entity);
     };
 
     let Some(hosting) = maybe_hosting else {
@@ -540,9 +550,8 @@ fn unsubscribe_to_voice(
 }
 
 fn verify_room_tasks(
-    mut commands: Commands,
     rooms: Query<&mut RoomTasks, With<LivekitRoom>>,
-    livekit_runtime: Res<LivekitRuntime>,
+    livekit_runtime: LivekitRuntimeRes,
 ) {
     for mut room_tasks in rooms {
         let mut i = 0;
@@ -557,9 +566,7 @@ fn verify_room_tasks(
                         error!("Failed to complete room task due to {err}.");
                     }
                     Err(err) => {
-                        error!("Failed to pull RoomTask due to '{err}'.");
-                        commands.send_event(AppExit::from_code(1));
-                        return;
+                        debug_panic!("Failed to pull RoomTask due to '{err}'.");
                     }
                 }
             } else {
@@ -569,7 +576,7 @@ fn verify_room_tasks(
     }
 }
 
-fn close_rooms_on_app_exit(rooms: Query<&LivekitRoom>, livekit_runtime: Res<LivekitRuntime>) {
+fn close_rooms_on_app_exit(rooms: Query<&LivekitRoom>, livekit_runtime: LivekitRuntimeRes) {
     for room in rooms {
         if let Err(err) = livekit_runtime.block_on(room.close()) {
             error!(

@@ -1,11 +1,15 @@
 use bevy::prelude::*;
-use common::structs::AudioSettings;
-use dcl_component::proto_components::kernel::comms::rfc4;
-use kira::{
-    manager::{AudioManager, AudioManagerSettings, DefaultBackend},
-    tween::Tween,
-};
+use common::debug_panic;
 use tokio::{sync::mpsc, task::JoinHandle};
+#[cfg(not(target_arch = "wasm32"))]
+use {
+    crate::livekit::LivekitAudioManager,
+    common::structs::AudioSettings,
+    kira::{
+        manager::{AudioManager, AudioManagerSettings, DefaultBackend},
+        tween::Tween,
+    },
+};
 
 #[cfg(feature = "room_debug")]
 use crate::livekit::room_debug::RoomDebugPlugin;
@@ -14,20 +18,28 @@ use crate::{
     livekit::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
-        track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitAudioManager,
-        LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
-        StartLivekit,
+        track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitChannelControl,
+        LivekitNetworkMessage, LivekitRuntime, LivekitTransport, StartLivekit,
     },
-    profile::CurrentUserProfile,
-    NetworkMessage, Transport, TransportType,
+    Transport, TransportType,
 };
 
 pub struct LivekitPlugin;
 
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
+        #[cfg(not(target_arch = "wasm32"))]
         app.init_resource::<PlayerUpdateTasks>();
+        #[cfg(target_arch = "wasm32")]
+        app.init_non_send_resource::<PlayerUpdateTasks>();
         app.init_state::<ConnectionAvailability>();
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            app.insert_resource(crate::livekit::web::take_event_receiver())
+                .init_resource::<crate::livekit::web::MicrophoneStatus>()
+                .add_systems(PreUpdate, crate::livekit::web::dispatch_page_events);
+        }
 
         app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRuntimePlugin);
@@ -36,11 +48,16 @@ impl Plugin for LivekitPlugin {
         app.add_plugins(LivekitTrackPlugin);
 
         app.add_systems(Update, (start_livekit, verify_player_update_tasks));
-        app.add_systems(Startup, build_kira_audio_manager);
-        app.add_systems(
-            Update,
-            respond_to_audio_settings_change.run_if(resource_exists_and_changed::<AudioSettings>),
-        );
+        // on the web the page plays voice (livekit-client), and the engine worker has no audio output
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            app.add_systems(Startup, build_kira_audio_manager);
+            app.add_systems(
+                Update,
+                respond_to_audio_settings_change
+                    .run_if(resource_exists_and_changed::<AudioSettings>),
+            );
+        }
 
         app.add_event::<StartLivekit>();
 
@@ -49,45 +66,38 @@ impl Plugin for LivekitPlugin {
     }
 }
 
-#[derive(Default, Resource, Deref, DerefMut)]
+/// Holds [`LivekitRuntime`]s, so on the web it is non-send like them (see `runtime.rs`).
+#[derive(Default, Deref, DerefMut)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Resource))]
 pub(super) struct PlayerUpdateTasks(Vec<PlayerUpdateTask>);
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) type PlayerUpdateTasksMut<'w> = ResMut<'w, PlayerUpdateTasks>;
+#[cfg(target_arch = "wasm32")]
+pub(super) type PlayerUpdateTasksMut<'w> = NonSendMut<'w, PlayerUpdateTasks>;
 
 pub(super) struct PlayerUpdateTask {
     pub runtime: LivekitRuntime,
     pub task: JoinHandle<Result<(), mpsc::error::SendError<NetworkUpdate>>>,
 }
 
-fn start_livekit(
-    mut commands: Commands,
-    mut room_events: EventReader<StartLivekit>,
-    current_profile: Res<CurrentUserProfile>,
-) {
+fn start_livekit(mut commands: Commands, mut room_events: EventReader<StartLivekit>) {
     for ev in room_events.read() {
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
         let (control_sender, control_receiver) = tokio::sync::mpsc::channel(128);
 
-        let Some(current_profile) = current_profile.profile.as_ref() else {
-            return;
-        };
-
-        // queue a profile version message
-        let response = rfc4::Packet {
-            message: Some(rfc4::packet::Message::ProfileVersion(
-                rfc4::AnnounceProfileVersion {
-                    profile_version: current_profile.version,
-                },
-            )),
-            protocol_version: 100,
-        };
-        let _ = sender.try_send(NetworkMessage::reliable(&response));
+        // No connect-time profile announce here — `profile::mod` periodically announces the version
+        // over PRIMARY (Pulse + websocket dev server), and the Pulse handshake carries the
+        // connect-time version. Peers reach this transport for guest profile request/response by
+        // picking a profile-capable transport at request time, not off any announcement of ours.
 
         commands.entity(ev.entity).try_insert((
             Transport {
                 transport_type: TransportType::Livekit,
                 sender,
                 control: Some(control_sender),
-                foreign_aliases: Default::default(),
+                context: ev.context,
             },
             LivekitTransport {
                 address: ev.address.to_owned(),
@@ -101,10 +111,7 @@ fn start_livekit(
     }
 }
 
-fn verify_player_update_tasks(
-    mut commands: Commands,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-) {
+fn verify_player_update_tasks(mut player_update_tasks: PlayerUpdateTasksMut) {
     let mut done = vec![];
     for (
         i,
@@ -120,15 +127,11 @@ fn verify_player_update_tasks(
             match res {
                 Ok(res) => {
                     if let Err(err) = res {
-                        error!("Failed to send PlayerUpdate due to {err}.");
-                        commands.send_event(AppExit::from_code(1));
-                        return;
+                        debug_panic!("Failed to send PlayerUpdate due to {err}.");
                     }
                 }
                 Err(err) => {
-                    error!("Failed to pull PlayerUpdateTask due to '{err}'.");
-                    commands.send_event(AppExit::from_code(1));
-                    return;
+                    debug_panic!("Failed to pull PlayerUpdateTask due to '{err}'.");
                 }
             }
         }
@@ -139,6 +142,7 @@ fn verify_player_update_tasks(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn build_kira_audio_manager(mut commands: Commands) {
     match AudioManager::new(AudioManagerSettings::<DefaultBackend>::default()) {
         Ok(manager) => {
@@ -146,12 +150,12 @@ fn build_kira_audio_manager(mut commands: Commands) {
             commands.insert_resource(LivekitAudioManager { manager });
         }
         Err(err) => {
-            error!("Failed to livekit build AudioManager due to '{err}'.");
-            commands.send_event(AppExit::from_code(1));
+            debug_panic!("Failed to livekit build AudioManager due to '{err}'.");
         }
     };
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn respond_to_audio_settings_change(
     mut livekit_audio_manager: ResMut<LivekitAudioManager>,
     audio_settings: Res<AudioSettings>,

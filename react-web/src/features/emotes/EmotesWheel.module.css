@@ -1,0 +1,103 @@
+/* Radial emotes wheel — 10 EmoteSlot cards in a ring; floats over the world, HUD-scaled. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.wheel {
+  position: relative;
+  width: 430px;
+  height: 430px;
+  font-family: var(--font-family);
+  transform: scale(var(--ui-scale));
+}
+
+/* Each slot card positioned at its angle; content stays upright (EmoteSlot rotate). */
+.slotPos {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  transition: transform var(--dur-fast) ease, filter var(--dur-fast) ease;
+}
+.slotHover {
+  transform: translate(-50%, -50%) scale(1.08);
+  filter: brightness(1.05);
+  z-index: 2;
+}
+.slotEmpty {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Centre label — over the hole, shows the hovered emote + hints. */
+.center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 170px;
+  text-align: center;
+  color: var(--text);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
+.hoverName {
+  min-height: 22px;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.customise {
+  margin-bottom: 10px;
+  padding: 4px 12px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-7);
+  cursor: pointer;
+  transition: color var(--dur-fast) ease, background-color var(--dur-fast) ease;
+}
+.customise:hover {
+  color: var(--text);
+  background: var(--white-10);
+}
+.hint {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-6);
+}
+
+.close {
+  position: absolute;
+  right: -36px;
+  top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 3;
+}
+.close:hover {
+  background: rgba(0, 0, 0, 0.8);
+}

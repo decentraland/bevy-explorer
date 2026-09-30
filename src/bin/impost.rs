@@ -1,12 +1,14 @@
 use std::{fs::File, io::Write, sync::OnceLock};
 
+use assets::EmbedAssetsPlugin;
 use comms::{
+    global_crdt::DiscardPlayerUpdates,
     profile::{CurrentUserProfile, ProfileCache, UserProfile},
     CommsPlugin,
 };
 use console::ConsolePlugin;
 
-use dcl_deno::init_runtime;
+use dcl_deno_ipc::init_runtime;
 
 use imposters::{
     render::{RetryImposter, SceneImposter},
@@ -26,9 +28,10 @@ use common::{
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
-        AppConfig, AppError, AvatarDynamicState, CurrentRealm, CursorLocks, GraphicsSettings,
-        IVec2Arg, PermissionUsed, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
-        SceneGlobalLight, SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
+        AppConfig, AppError, AvatarDynamicState, CurrentRealm, CursorLocks, EngineMovementControl,
+        GraphicsSettings, HeadSync, IVec2Arg, PermissionUsed, PointAtSync, PreviewMode,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake,
+        SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
 };
@@ -43,12 +46,12 @@ use scene_runner::{
 use ipfs::{map_realm_name, IpfsIoPlugin};
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
-use user_input::avatar_movement::GroundCollider;
+use user_input::avatar_movement::{AvatarMovementInfo, GroundCollider};
 use wallet::Wallet;
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
-fn main() {
+fn main() -> AppExit {
     let session_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
         web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
@@ -72,7 +75,7 @@ fn main() {
         .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
         .expect("failed to create log file");
 
-    init_runtime();
+    init_runtime().unwrap();
 
     let mut args = pico_args::Arguments::from_env();
     let config_file = platform::project_directories()
@@ -81,26 +84,33 @@ fn main() {
         .join("config.json");
 
     let levels = args.value_from_str("--levels").unwrap_or(5);
-    let range = args
-        .value_from_str("--range")
-        .map(|f: f32| f * 16.0)
-        .unwrap_or(f32::MAX);
+    // `--range` is in parcels (around `--location`). If set, the impost
+    // binary will:
+    //   - clip the realm bounds to `[location - range, location + range]`
+    //     so out-of-range parcels are treated as empty during the bake
+    //   - cap the top-level imposter render distance to `range * 16`
+    //     world units so only the level-N tile(s) covering the in-range
+    //     area get baked
+    // If unset, no clipping and the full realm bakes at maximum distance.
+    let range_parcels: Option<i32> = args.value_from_str("--range").ok();
 
     let base_config: AppConfig = std::fs::read(&config_file)
         .ok()
         .and_then(|f| serde_json::from_slice(&f).ok())
         .unwrap_or_default();
 
+    let location = args
+        .value_from_str::<_, IVec2Arg>("--location")
+        .ok()
+        .map(|va| va.0)
+        .unwrap_or(IVec2::ZERO);
+
     let final_config = AppConfig {
-        server: args
-            .value_from_str("--server")
+        home_realm: args
+            .value_from_str::<_, String>("--server")
             .ok()
-            .unwrap_or(base_config.server),
-        location: args
-            .value_from_str::<_, IVec2Arg>("--location")
-            .ok()
-            .map(|va| va.0)
-            .unwrap_or(IVec2::ZERO),
+            .or(base_config.home_realm),
+        home_location: Some(location),
         graphics: GraphicsSettings {
             vsync: false,
             log_fps: false,
@@ -115,7 +125,9 @@ fn main() {
         scene_unload_extra_distance: 0.0,
         scene_imposter_bake: SceneImposterBake::FullSpeed,
         scene_imposter_distances: std::iter::repeat_n(0.0, levels)
-            .chain(std::iter::once(range))
+            .chain(std::iter::once(
+                range_parcels.map_or(f32::MAX, |r| r as f32 * 16.0),
+            ))
             .collect(),
         scene_log_to_console: args.contains("--scene_log_to_console"),
         ..base_config
@@ -136,7 +148,7 @@ fn main() {
                 .collect::<Vec<_>>()
                 .join(" ")
         );
-        return;
+        return AppExit::from_code(2);
     }
 
     let mut app = App::new();
@@ -178,6 +190,10 @@ fn main() {
                 unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
                 ..Default::default()
             })
+            .set(
+                bevy::gltf::GltfPlugin::default()
+                    .with_uri_resolver(std::sync::Arc::new(ipfs::ipfs_path::resolve_content_uri)),
+            )
             .disable::<WinitPlugin>()
             .set(bevy::log::LogPlugin {
                 filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error".to_string(),
@@ -199,12 +215,14 @@ fn main() {
             })
             .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
                 preview: false,
-                starting_realm: Some(map_realm_name(&final_config.server)),
+                starting_realm: Some(map_realm_name(&final_config.home_realm())),
                 content_server_override,
                 assets_root: Default::default(),
                 num_slots: final_config.max_concurrent_remotes,
             }),
     );
+
+    app.add_plugins(EmbedAssetsPlugin);
 
     app.add_plugins(ScheduleRunnerPlugin::run_loop(
         // Run full speed
@@ -238,7 +256,9 @@ fn main() {
 
     app.add_plugins(UtilsPlugin)
         .add_plugins(UiCorePlugin)
-        .add_plugins(ConsolePlugin { add_egui: true })
+        .add_plugins(ConsolePlugin {
+            add_bevy_console: true,
+        })
         .add_plugins(SceneBoundPlugin)
         .add_plugins(SceneRunnerPlugin)
         .add_plugins(CommsPlugin)
@@ -252,6 +272,17 @@ fn main() {
     app.insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init));
+
+    // If `--range` was specified, clip the realm bounds to a box around
+    // `--location`. set_bake_clip is idempotent over realm reloads.
+    if let Some(range) = range_parcels {
+        let half = IVec2::splat(range);
+        let min = location - half;
+        let max = location + half;
+        app.add_systems(Startup, move |mut pointers: ResMut<ScenePointers>| {
+            pointers.set_bake_clip(min, max);
+        });
+    }
 
     // add required things that don't get initialized by their plugins
     let mut wallet = Wallet::default();
@@ -271,9 +302,15 @@ fn main() {
         .init_resource::<PreviewMode>()
         .init_asset::<Nft>()
         .init_resource::<CursorLocks>()
+        .init_resource::<EngineMovementControl>()
+        .init_resource::<AvatarMovementInfo>()
         .insert_resource(TimeOfDay {
             time: 10.0 * 3600.0,
-        });
+        })
+        // Drop incoming remote-player traffic: in a long bake run this would
+        // otherwise grow the profile cache, churn ForeignPlayer entities, and
+        // drive per-frame iteration cost upward.
+        .insert_resource(DiscardPlayerUpdates(true));
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
@@ -283,21 +320,14 @@ fn main() {
 
     app.add_systems(PreUpdate, check_done);
 
-    app.run();
+    app.run()
 }
 
 #[allow(clippy::type_complexity)]
 fn check_done(
-    q: Query<
-        (),
-        (
-            With<SceneImposter>,
-            Without<RetryImposter>,
-            Without<Children>,
-        ),
-    >,
+    q: Query<&SceneImposter, (Without<RetryImposter>, Without<Children>)>,
     realm: Res<CurrentRealm>,
-    pointers: Res<ScenePointers>,
+    mut pointers: ResMut<ScenePointers>,
     mut counter: Local<usize>,
     config: Res<AppConfig>,
     mut exit: EventWriter<AppExit>,
@@ -310,7 +340,7 @@ fn check_done(
     }
 
     // wait for pointers
-    if pointers.get(config.location).is_none() {
+    if pointers.get(config.home_location()).is_none() {
         *counter = 0;
         return;
     }
@@ -319,8 +349,15 @@ fn check_done(
         return;
     }
 
-    // wait till nothing missing
-    if q.is_empty() {
+    // wait till nothing missing. mirror `pick_imposter_to_bake`'s filter:
+    // level>0 imposters with `crc == Some(0)` are empty regions that the
+    // picker skips, get_spec short-circuits to Ready(None, None) so they
+    // never gain Children, and they'd otherwise pin `q` non-empty forever.
+    let pending = q.iter().any(|imposter| {
+        imposter.level == 0 || pointers.crc(imposter.parcel, imposter.level) != Some(0)
+    });
+
+    if !pending {
         *counter += 1;
         if *counter == 10 {
             info!("all done!");
@@ -354,20 +391,34 @@ fn setup(
     let player_id = commands
         .spawn((
             Transform::from_translation(Vec3::new(
-                8.0 + 16.0 * config.location.x as f32,
+                8.0 + 16.0 * config.home_location().x as f32,
                 8.0,
-                -8.0 + -16.0 * config.location.y as f32,
+                -8.0 + -16.0 * config.home_location().y as f32,
             )),
             Visibility::default(),
             config.player_settings.clone(),
             OutOfWorld,
             AvatarDynamicState::default(),
+            HeadSync::default(),
+            PointAtSync::default(),
             GroundCollider::default(),
         ))
         .id();
 
+    // place the camera near the player so `focus_imposters` selects the
+    // player as the focus point (distance < 100). Without this the camera
+    // sits at origin and, for a non-zero `--location`, the focus falls back
+    // to the ground intersect at (0,0), leaving zero imposters required.
     let camera_id = commands
-        .spawn((Camera3d::default(), PrimaryCamera::default()))
+        .spawn((
+            Camera3d::default(),
+            PrimaryCamera::default(),
+            Transform::from_translation(Vec3::new(
+                8.0 + 16.0 * config.home_location().x as f32,
+                8.0,
+                -8.0 + -16.0 * config.home_location().y as f32,
+            )),
+        ))
         .id();
 
     player_resource.0 = player_id;

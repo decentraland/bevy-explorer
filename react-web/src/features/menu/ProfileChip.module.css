@@ -1,0 +1,160 @@
+.root {
+  position: relative;
+}
+
+/* The chip in the top bar (avatar + name in a pill). */
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 4px 18px 4px 6px;
+  border: 1px solid var(--white-10);
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) ease;
+}
+.chip:hover {
+  background: var(--white-10);
+}
+.chipName {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Dropdown popover. */
+.menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 300px;
+  border-radius: 16px;
+  background: #161618;
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+  z-index: var(--z-modal);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid var(--white-10);
+}
+.name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 20px;
+  font-weight: 800;
+}
+.verified {
+  width: 18px;
+  height: 18px;
+}
+.walletLabel {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-45);
+}
+.wallet {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wallet:hover {
+  color: var(--ink-7);
+}
+.copied {
+  position: absolute;
+  left: 50%;
+  top: -22px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--green);
+  color: #062b00;
+  font-size: 11px;
+  font-weight: 700;
+}
+.viewProfile {
+  width: 100%;
+  margin-top: 14px;
+  height: 44px;
+  border: 1px solid var(--white-20, rgba(255, 255, 255, 0.3));
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) ease;
+}
+.viewProfile:hover {
+  background: var(--white-10);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  border-bottom: 1px solid var(--white-10);
+}
+.action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) ease;
+}
+.action:hover {
+  background: var(--white-10);
+}
+.exit {
+  color: var(--brand);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.footLink {
+  color: var(--ink-45);
+  font-size: 13px;
+  text-decoration: none;
+}
+.footLink:hover {
+  color: var(--ink-7);
+}

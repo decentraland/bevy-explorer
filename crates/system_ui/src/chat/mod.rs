@@ -2,6 +2,7 @@ pub mod conversation_manager;
 pub mod friends;
 pub mod history;
 
+use alloy_core::primitives::Address;
 use bevy::{color::palettes::css, prelude::*};
 
 use bevy_console::{ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
@@ -15,16 +16,15 @@ use common::{
     util::{AsH160, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx},
 };
 use comms::{
-    chat_marker_things,
+    broadcast_to, chat_marker_things,
     global_crdt::{ChatEvent, ForeignPlayer},
     profile::UserProfile,
-    NetworkMessage, Transport,
+    BroadcastTarget, Transport,
 };
 use console::DoAddConsoleCommand;
 use conversation_manager::ConversationManager;
 use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
-use ethers_core::types::Address;
 use history::ChatHistoryPlugin;
 use input_manager::{InputManager, InputPriority};
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
@@ -63,7 +63,7 @@ impl Plugin for ChatPanelPlugin {
             );
             app.add_systems(Update, keyboard_popup);
         }
-        app.add_console_command::<Rechat, _>(debug_chat);
+        app.add_preview_console_command::<Rechat, _>(debug_chat);
         app.add_event::<PrivateChatEntered>();
         app.add_plugins((FriendsPlugin, ChatHistoryPlugin));
     }
@@ -348,7 +348,7 @@ fn append_chat_messages(
     }
 }
 
-fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMessage) -> Entity {
+fn make_log(commands: &mut Commands, log: SceneLogMessage) -> Entity {
     let SceneLogMessage {
         timestamp,
         level,
@@ -372,7 +372,7 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
             FontSize(0.0175),
             Text::new(message),
             TextFont {
-                font: asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
+                font: ui_core::user_font(ui_core::FontName::Sans, ui_core::WeightName::Bold),
                 font_size: 15.0,
                 ..Default::default()
             },
@@ -388,7 +388,6 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
 #[allow(clippy::too_many_arguments)]
 fn display_chat(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
     mut chatbox: Query<(Entity, &mut ChatBox, Option<&Children>)>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
@@ -420,7 +419,7 @@ fn display_chat(
         while let Ok(chat) = rec.try_recv() {
             conversation.add_message(
                 entity,
-                chat.sender.or(Some(Address::zero())),
+                chat.sender.or(Some(Address::ZERO)),
                 if chat.sender.is_none() {
                     Color::srgb(0.7, 0.7, 0.7)
                 } else {
@@ -453,7 +452,6 @@ fn display_chat(
                     if missed > 0 {
                         msgs.push(make_log(
                             &mut commands,
-                            &asset_server,
                             SceneLogMessage {
                                 timestamp: 0.0,
                                 level: SceneLogLevel::SystemError,
@@ -462,14 +460,14 @@ fn display_chat(
                         ));
                     }
                     for message in backlog.into_iter() {
-                        msgs.push(make_log(&mut commands, &asset_server, message));
+                        msgs.push(make_log(&mut commands, message));
                     }
                     commands.entity(entity).replace_children(&msgs);
                 }
 
                 if let Some((_, ref mut rec)) = chatbox.active_log_sink.as_mut() {
                     while let Ok(log) = rec.try_recv() {
-                        let msg = make_log(&mut commands, &asset_server, log);
+                        let msg = make_log(&mut commands, log);
                         commands.entity(entity).add_child(msg);
                     }
                 }
@@ -477,7 +475,7 @@ fn display_chat(
         } else if let Some((_, sink)) = chatbox.active_log_sink.as_mut() {
             let mut msgs = Vec::default();
             while let Ok(message) = sink.try_recv() {
-                msgs.push(make_log(&mut commands, &asset_server, message));
+                msgs.push(make_log(&mut commands, message));
             }
             commands.entity(entity).try_push_children(&msgs);
         }
@@ -549,7 +547,11 @@ fn emit_user_chat(
                 let command = console_config.commands.get(command_name.as_str());
 
                 if command.is_some() {
-                    command_entered.write(ConsoleCommandEntered { command_name, args });
+                    command_entered.write(ConsoleCommandEntered {
+                        command_name,
+                        args,
+                        responder: None,
+                    });
                 } else {
                     debug!(
                         "Command not recognized, recognized commands: `{:?}`",
@@ -590,17 +592,22 @@ pub fn broadcast_nearby_chats(
             "embedded://sounds/ui/widget_chat_message_private_send.wav".to_owned(),
         ));
 
-        for transport in transports.iter() {
-            let _ = transport
-                .sender
-                .try_send(NetworkMessage::reliable(&rfc4::Packet {
-                    message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
-                        message: ev.message.clone(),
-                        timestamp: ev.timestamp,
-                    })),
-                    protocol_version: 100,
-                }));
-        }
+        // Nearby chat targets only the realm's byte transports that actually carry it: the websocket
+        // dev server and LiveKit (incl. the LiveKit scene room, which rides the LIVEKIT bit). It has
+        // no Archipelago use and no Pulse representation, so those are left out rather than queued and
+        // dropped.
+        broadcast_to(
+            transports.iter(),
+            BroadcastTarget::WEBSOCKET | BroadcastTarget::LIVEKIT,
+            false,
+            &rfc4::Packet {
+                message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
+                    message: ev.message.clone(),
+                    timestamp: ev.timestamp,
+                })),
+                protocol_version: 100,
+            },
+        );
     }
 }
 
@@ -633,7 +640,7 @@ pub(crate) fn select_chat_tab(
             for message in backlog.into_iter() {
                 conversation.add_message(
                     entity,
-                    message.sender.or(Some(Address::zero())),
+                    message.sender.or(Some(Address::ZERO)),
                     if message.sender.is_none() {
                         Color::srgb(0.7, 0.7, 0.7)
                     } else {
@@ -675,10 +682,14 @@ fn pipe_chats_to_scene(
             .iter()
             .any(|marker| ce.message.starts_with(*marker))
     }) {
-        let player_address = if chat_event.sender == Entity::PLACEHOLDER {
-            Some(Default::default())
+        // System/console messages (e.g. "Realm set to `...`") have no real player behind
+        // them. Previously these defaulted to the zero address, which the frontend rendered
+        // as a fake "0x0000...0000" sender bubble instead of a system message. Send the
+        // literal "system" sentinel the chat UI's `isSystem()` check recognizes instead.
+        let sender_address = if chat_event.sender == Entity::PLACEHOLDER {
+            "system".to_owned()
         } else {
-            players
+            let player_address = players
                 .get(chat_event.sender)
                 .ok()
                 .map(|fp| fp.address)
@@ -688,17 +699,19 @@ fn pipe_chats_to_scene(
                     } else {
                         None
                     }
-                })
-        };
+                });
 
-        let Some(player_address) = player_address else {
-            warn!("no player for {chat_event:?}");
-            continue;
+            let Some(player_address) = player_address else {
+                warn!("no player for {chat_event:?}");
+                continue;
+            };
+
+            format!("{player_address:#x}")
         };
 
         for sender in senders.iter() {
             let _ = sender.send(ChatMessage {
-                sender_address: format!("{player_address:#x}"),
+                sender_address: sender_address.clone(),
                 message: chat_event.message.clone(),
                 channel: chat_event.channel.clone(),
             });
@@ -738,7 +751,11 @@ fn pipe_chats_from_scene(
             let command = console_config.commands.get(command_name.as_str());
 
             if command.is_some() {
-                command_entered.write(ConsoleCommandEntered { command_name, args });
+                command_entered.write(ConsoleCommandEntered {
+                    command_name,
+                    args,
+                    responder: None,
+                });
             } else {
                 sender.write(ChatEvent {
                     timestamp: time.elapsed_secs_f64(),

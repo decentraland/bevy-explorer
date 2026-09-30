@@ -1,3 +1,5 @@
+use common::sets::SetupSets;
+
 use bevy::{
     color::palettes,
     ecs::relationship::Relationship,
@@ -29,7 +31,7 @@ impl Plugin for RoomDebugPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RoomDebugOverlayDefaultFont>();
 
-        app.add_systems(Startup, setup);
+        app.add_systems(Startup, setup.after(SetupSets::Init));
 
         app.add_observer(room_connected);
         app.add_observer(room_disconnected);
@@ -58,7 +60,7 @@ struct SceneRoomContainer;
 #[derive(Component, Deref)]
 struct RoomRef(Entity);
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands) {
     commands.spawn((
         Node {
             width: Val::Percent(100.),
@@ -86,9 +88,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         ],
     ));
 
-    commands.insert_resource(RoomDebugOverlayDefaultFont(
-        DEFAULT_FONT.with_font(asset_server.load("embedded://fonts/NotoSans-Regular.ttf")),
-    ));
+    commands.insert_resource(RoomDebugOverlayDefaultFont(DEFAULT_FONT.with_font(
+        ui_core::user_font(ui_core::FontName::Sans, ui_core::WeightName::Regular),
+    )));
 }
 
 fn room_connected(

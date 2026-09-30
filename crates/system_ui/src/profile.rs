@@ -111,7 +111,7 @@ pub struct SettingsDialog {
 
 #[derive(Clone)]
 pub enum OnCloseEvent {
-    ChangeRealm(ChangeRealmEvent, RpcCall),
+    ChangeRealm(Box<ChangeRealmEvent>, RpcCall),
     SomethingElse,
 }
 
@@ -236,7 +236,7 @@ pub fn close_settings(
         let send_onclose =
             move |mut cr: EventWriter<ChangeRealmEvent>, mut rpc: EventWriter<RpcCall>| match &ev {
                 Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
-                    cr.write(cr_ev.clone());
+                    cr.write(cr_ev.as_ref().clone());
                     rpc.write(rpc_ev.clone());
                 }
                 Some(OnCloseEvent::SomethingElse) => (),
@@ -281,7 +281,7 @@ pub fn close_settings(
         commands.entity(settings_ent).despawn();
         match &ev {
             Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
-                cr.write(cr_ev.clone());
+                cr.write(cr_ev.as_ref().clone());
                 rpc.write(rpc_ev.clone());
                 commands.send_event(SystemAudio(
                     "embedded://sounds/ui/toggle_enable.wav".to_owned(),
@@ -463,11 +463,22 @@ fn process_profile(
         };
 
         if let Some(base) = &set_avatar.base {
-            profile.content.avatar.body_shape = Some(base.body_shape_urn.clone());
+            // As with the colors below, a base that doesn't carry a body shape must not strip the
+            // profile's — a caller editing only the name has no reason to restate it.
+            if !base.body_shape_urn.is_empty() {
+                profile.content.avatar.body_shape = Some(base.body_shape_urn.clone());
+            }
 
-            profile.content.avatar.hair = base.hair_color.map(AvatarColor::new);
-            profile.content.avatar.eyes = base.eyes_color.map(AvatarColor::new);
-            profile.content.avatar.skin = base.skin_color.map(AvatarColor::new);
+            // a base without colors must not strip them from the profile
+            if let Some(hair) = base.hair_color {
+                profile.content.avatar.hair = Some(AvatarColor::new(hair));
+            }
+            if let Some(eyes) = base.eyes_color {
+                profile.content.avatar.eyes = Some(AvatarColor::new(eyes));
+            }
+            if let Some(skin) = base.skin_color {
+                profile.content.avatar.skin = Some(AvatarColor::new(skin));
+            }
 
             profile.content.name = base.name.clone();
             profile.content.avatar.name = Some(base.name.clone());
@@ -500,7 +511,24 @@ fn process_profile(
         }
 
         if let Some(extras) = &set_avatar.profile_extras {
-            profile.content.extra_fields = extras.clone();
+            // Merged per key, not assigned: `extra_fields` is a catch-all for every profile key we
+            // don't model (and for keys written by other explorers), so a caller that edits one
+            // field must not have to restate the rest to avoid deleting them. An explicit `null`
+            // removes a key — the only way back out, now that omission means "leave alone".
+            for (key, value) in extras {
+                if value.is_null() {
+                    profile.content.extra_fields.remove(key);
+                } else {
+                    profile
+                        .content
+                        .extra_fields
+                        .insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        if let Some(name_color) = set_avatar.name_color {
+            profile.content.name_color = name_color.to_color3();
         }
 
         profile.version += 1;

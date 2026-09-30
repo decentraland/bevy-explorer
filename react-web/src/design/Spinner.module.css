@@ -1,0 +1,20 @@
+.spinner {
+  display: inline-flex;
+  width: var(--sz, 28px);
+  height: var(--sz, 28px);
+}
+.spinner svg {
+  animation: spin 0.9s linear infinite;
+}
+.track {
+  stroke: var(--fill-5);
+}
+.arc {
+  stroke: var(--spinner-arc, var(--brand));
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

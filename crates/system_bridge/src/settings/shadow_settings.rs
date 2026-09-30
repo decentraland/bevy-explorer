@@ -11,6 +11,8 @@ use common::structs::{AppConfig, PrimaryCameraRes, ShadowSetting};
 
 use super::{AppSetting, EnumAppSetting, IntAppSetting};
 
+const MIN_CASCADE: f32 = 0.1;
+
 impl EnumAppSetting for ShadowSetting {
     fn variants() -> Vec<Self> {
         vec![Self::Off, Self::Low, Self::High]
@@ -79,9 +81,15 @@ impl AppSetting for ShadowSetting {
                     light.shadows_enabled = true;
                     *cascades = CascadeShadowConfigBuilder {
                         num_cascades: 1,
-                        minimum_distance: 0.1,
-                        maximum_distance: config.graphics.shadow_distance,
-                        first_cascade_far_bound: config.graphics.shadow_distance,
+                        minimum_distance: MIN_CASCADE,
+                        maximum_distance: config
+                            .graphics
+                            .shadow_distance
+                            .max(MIN_CASCADE + f32::EPSILON),
+                        first_cascade_far_bound: config
+                            .graphics
+                            .shadow_distance
+                            .max(MIN_CASCADE + f32::EPSILON),
                         overlap_proportion: 0.2,
                     }
                     .build()
@@ -90,9 +98,13 @@ impl AppSetting for ShadowSetting {
                     light.shadows_enabled = true;
                     *cascades = CascadeShadowConfigBuilder {
                         num_cascades: 4,
-                        minimum_distance: 0.1,
-                        maximum_distance: config.graphics.shadow_distance,
-                        first_cascade_far_bound: config.graphics.shadow_distance / 15.0,
+                        minimum_distance: MIN_CASCADE,
+                        maximum_distance: config
+                            .graphics
+                            .shadow_distance
+                            .max(MIN_CASCADE + f32::EPSILON),
+                        first_cascade_far_bound: (config.graphics.shadow_distance / 15.0)
+                            .max(MIN_CASCADE + f32::EPSILON),
                         overlap_proportion: 0.2,
                     }
                     .build()
@@ -165,6 +177,51 @@ impl AppSetting for ShadowDistanceSetting {
 
     fn save(&self, config: &mut AppConfig) {
         config.graphics.shadow_distance = self.0 as f32
+    }
+
+    fn category() -> super::SettingCategory {
+        super::SettingCategory::Graphics
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct LightCountSetting(i32);
+
+impl IntAppSetting for LightCountSetting {
+    fn from_int(value: i32) -> Self {
+        Self(value)
+    }
+
+    fn value(&self) -> i32 {
+        self.0
+    }
+
+    fn min() -> i32 {
+        0
+    }
+
+    fn max() -> i32 {
+        128
+    }
+}
+
+impl AppSetting for LightCountSetting {
+    type Param = ();
+
+    fn title() -> String {
+        "Light Count".to_owned()
+    }
+
+    fn description(&self) -> String {
+        "Light Count\n\nMaximum number of scene lights (excluding the global sun light) that will be enabled at once. Each enabled light adds GPU cost even without shadows; reduce this if scenes with many lights cause slowdown. Lights from currently active scenes, and those closest/brightest relative to the player, are enabled first.".to_owned()
+    }
+
+    fn load(config: &AppConfig) -> Self {
+        Self(config.graphics.light_count as i32)
+    }
+
+    fn save(&self, config: &mut AppConfig) {
+        config.graphics.light_count = self.0 as usize
     }
 
     fn category() -> super::SettingCategory {

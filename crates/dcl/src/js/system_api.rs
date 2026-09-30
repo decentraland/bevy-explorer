@@ -1,24 +1,25 @@
 use anyhow::anyhow;
 use bevy::{log::debug, math::Vec4};
 use common::{
-    inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
+    inputs::{Action, BindingsData, HudPanel, InputIdentifier, SystemActionEvent},
+    profile::SerializedProfile,
     rpc::{RpcCall, RpcResultReceiver, RpcResultSender, RpcStreamReceiver, RpcStreamSender},
     structs::{
         MicState, PermissionLevel, PermissionStrings, PermissionType, PermissionUsed,
         PermissionValue,
     },
 };
-use dcl_component::proto_components::{
-    common::Vector2,
-    sdk::components::{PbAvatarBase, PbAvatarEquippedData},
-};
+use dcl_component::proto_components::common::Vector2;
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::SettingInfo, AvatarModifierState, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, SceneLoadingUi, SetAvatarData,
-    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
+    BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
+    FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
+    PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent, ProximityEvent,
+    SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
+    VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -80,7 +81,7 @@ pub async fn op_login_previous(state: Rc<RefCell<impl State>>) -> Result<(), any
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::LoginPrevious(sx))?;
+        .send(SystemApi::LoginPrevious(false, sx))?;
 
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?
@@ -105,7 +106,7 @@ pub fn new_login(state: &mut impl State) -> &mut NewLogin {
         let (sx, result) = RpcResultSender::channel();
         state
             .borrow_mut::<SuperUserScene>()
-            .send(SystemApi::LoginNew(sc, sx))
+            .send(SystemApi::LoginNew(false, sc, sx))
             .unwrap();
 
         login.code = Some(code);
@@ -218,33 +219,23 @@ pub async fn op_kernel_fetch_headers(
             method: method.unwrap_or_else(|| String::from("get")),
             uri,
             meta,
+            scene: None,
             response: sx,
-        });
+        })?;
 
     rx.await?.map_err(|e| anyhow!(e))
 }
 
 pub async fn op_set_avatar(
     state: Rc<RefCell<impl State>>,
-    base: Option<PbAvatarBase>,
-    equip: Option<PbAvatarEquippedData>,
-    has_claimed_name: Option<bool>,
-    profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
+    avatar: SetAvatarData,
 ) -> Result<u32, anyhow::Error> {
     let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::SetAvatar(
-            SetAvatarData {
-                base,
-                equip,
-                has_claimed_name,
-                profile_extras,
-            },
-            sx,
-        ))?;
+        .send(SystemApi::SetAvatar(avatar, sx))?;
 
     rx.await?.map_err(|e| anyhow::anyhow!(e))
 }
@@ -308,6 +299,27 @@ pub async fn op_set_bindings(
         .unwrap();
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub fn op_set_ui_focus(
+    state: Rc<RefCell<impl State>>,
+    ui: bool,
+    text: bool,
+    scroll: bool,
+    covered: bool,
+    menu: Option<HudPanel>,
+) -> Result<(), anyhow::Error> {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetUiFocus {
+            ui,
+            text,
+            scroll,
+            covered,
+            menu,
+        })?;
+    Ok(())
 }
 
 pub async fn op_console_command(
@@ -438,29 +450,65 @@ pub fn op_send_chat(state: Rc<RefCell<impl State>>, message: String, channel: St
         .unwrap();
 }
 
-pub async fn op_get_profile_extras(
+// Native super-user bridge transport (backs a BroadcastChannel polyfill). scene -> page:
+pub fn op_bridge_to_page(state: Rc<RefCell<impl State>>, msg: String) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::BridgeToPage(msg))
+        .unwrap();
+}
+
+// page -> scene: subscribe once, then read repeatedly (mirrors the chat stream).
+pub async fn op_get_bridge_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetBridgeStream(sx))
+        .unwrap();
+    2
+}
+
+pub async fn op_read_bridge_stream(
     state: Rc<RefCell<impl State>>,
-) -> Result<std::collections::HashMap<String, serde_json::Value>, anyhow::Error> {
+    _rid: u32,
+) -> Result<String, anyhow::Error> {
+    // "" means no message (stream closed); Envelopes are JSON objects so never empty.
+    let Some(mut receiver) = state.borrow_mut().try_take::<RpcStreamReceiver<String>>() else {
+        return Ok(String::new());
+    };
+    let res = receiver.recv().await.unwrap_or_default();
+    state.borrow_mut().put(receiver);
+    Ok(res)
+}
+
+/// Any user's full profile (own, nearby, or remote) as the engine holds it, resolved through the
+/// same cache and fetch cascade as nametags and `getPlayerData` — but unlike the latter, not
+/// squeezed into the SDK's `UserData`, so `extra_fields`, `name_color` and emotes survive.
+/// Rejects once the cascade has concluded with nothing.
+pub async fn op_get_user_profile(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<SerializedProfile, anyhow::Error> {
     let (sx, rx) = RpcResultSender::channel();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
-    debug!("[{scene:?}] -> op_get_profile_extras");
+    debug!("[{scene:?}] -> op_get_user_profile {address}");
 
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::GetUserData {
-            user: None, // current user
+            user: Some(address),
             scene,
             response: sx,
-        });
+        })?;
 
-    let profile = rx
-        .await
+    rx.await
         .map_err(|e| anyhow::anyhow!(e))?
-        .map_err(|_| anyhow::anyhow!("Not found"))?;
-
-    Ok(profile.extra_fields)
+        .map_err(|_| anyhow::anyhow!("Not found"))
 }
 
 pub fn op_quit(state: Rc<RefCell<impl State>>) {
@@ -488,11 +536,11 @@ pub async fn op_get_permission_request_stream(state: Rc<RefCell<impl State>>) ->
 pub async fn op_read_permission_request_stream(
     state: Rc<RefCell<impl State>>,
     _rid: u32,
-) -> Result<Option<PermissionRequest>, anyhow::Error> {
+) -> Result<Option<PermissionRequestEvent>, anyhow::Error> {
     debug!("op_read_permission_request_stream");
     let Some(mut receiver) = state
         .borrow_mut()
-        .try_take::<RpcStreamReceiver<PermissionRequest>>()
+        .try_take::<RpcStreamReceiver<PermissionRequestEvent>>()
     else {
         return Ok(None);
     };
@@ -723,6 +771,74 @@ pub async fn op_read_hover_stream(
     res
 }
 
+pub async fn op_get_proximity_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetProximityStream(sx))
+        .unwrap();
+
+    5
+}
+
+pub async fn op_read_proximity_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<ProximityEvent>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<ProximityEvent>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub async fn op_get_profile_changed_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetProfileChangedStream(sx))
+        .unwrap();
+
+    8
+}
+
+pub async fn op_read_profile_changed_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<ProfileChangedEvent>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<ProfileChangedEvent>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
 pub async fn op_get_scene_loading_ui_stream(state: Rc<RefCell<impl State>>) -> u32 {
     let (sx, rx) = RpcStreamSender::channel();
     state.borrow_mut().put(rx);
@@ -768,4 +884,328 @@ pub async fn op_get_avatar_modifiers(
         .send(SystemApi::GetAvatarModifiers(sx))?;
 
     Ok(rx.await?)
+}
+
+// Social / Friends ops
+
+pub async fn op_get_friendship_event_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetFriendshipEventStream(sx))
+        .unwrap();
+
+    5
+}
+
+pub async fn op_read_friendship_event_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<FriendshipEventUpdate>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<FriendshipEventUpdate>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub async fn op_get_friends(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<FriendData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetFriends(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_mutual_friends(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<Vec<FriendData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetMutualFriends(address, sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_sent_friend_requests(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<FriendRequestData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetSentFriendRequests(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_received_friend_requests(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<FriendRequestData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetReceivedFriendRequests(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_social_initialized(
+    state: Rc<RefCell<impl State>>,
+) -> Result<bool, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetSocialInitialized(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_online_friends(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<FriendStatusData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetOnlineFriends(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_friend_connectivity_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetFriendConnectivityStream(sx))
+        .unwrap();
+
+    6
+}
+
+pub async fn op_read_friend_connectivity_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<FriendConnectivityEvent>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<FriendConnectivityEvent>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub async fn op_send_friend_request(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+    message: Option<String>,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SendFriendRequest(address, message, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_accept_friend_request(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::AcceptFriendRequest(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_reject_friend_request(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::RejectFriendRequest(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_cancel_friend_request(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::CancelFriendRequest(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_delete_friend(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::DeleteFriend(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_block_user(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::BlockUser(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_unblock_user(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::UnblockUser(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_blocked_users(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<BlockedUserData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetBlockedUsers(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_blocking_status(
+    state: Rc<RefCell<impl State>>,
+) -> Result<BlockingStatusData, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetBlockingStatus(sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_block_update_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetBlockUpdateStream(sx))
+        .unwrap();
+
+    7
+}
+
+pub async fn op_read_block_update_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<BlockUpdateData>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<BlockUpdateData>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
 }

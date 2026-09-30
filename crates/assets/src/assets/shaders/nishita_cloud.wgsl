@@ -23,6 +23,15 @@ struct Nishita {
     tick: u32,
     sun_color: vec3<f32>,
     dir_light_intensity: f32,
+    night_color: vec3<f32>,
+    moon_position: vec3<f32>,
+    cloud_density_cap: f32,
+    cloud_shadow: f32,
+    cloud_scale: f32,
+    cloud_steps: u32,
+    cloud_lacunarity: f32,
+    cloud_sharpness: f32,
+    cloud_sharp_mid: f32,
 }
 
 const PI: f32 = 3.141592653589793;
@@ -146,17 +155,21 @@ fn noise(x: vec2<f32>) -> f32 {
     return textureSampleLevel(noise_texture, noise_sampler, x / 65536.0, 0.0).r;
 }
 
-const m: mat3x3<f32> = mat3x3<f32>( 0.00,  0.80,  0.60,
-                                   -0.80,  0.36, -0.48,
-                                   -0.60, -0.48,  0.64 ) * 2.345;
+// pure rotation between octaves; the per-octave frequency step (lacunarity) is
+// applied separately so it can be tuned (cloud_lacunarity, default 2.345).
+const m_base: mat3x3<f32> = mat3x3<f32>( 0.00,  0.80,  0.60,
+                                        -0.80,  0.36, -0.48,
+                                        -0.60, -0.48,  0.64 );
 
-fn FBM(p0: vec3<f32>) -> f32 {
-	var p = p0;
+// `m` is the per-octave rotation already scaled by the lacunarity; it is passed
+// in (computed once per pixel in render_cloud) rather than rebuilt every call.
+fn FBM(p0: vec3<f32>, m: mat3x3<f32>) -> f32 {
+	var p = p0 * nishita.cloud_scale;
 
     let speed = 2.0;
 
     p.x += nishita.time * 3.0 * speed;
-	
+
 	var f = 0.3750 * noise(p.xz); p = m*p; p.y -= nishita.time * 20.0 * speed;
 	f += 0.3750   * noise(p.xz); p = m*p; p.y += nishita.time * 10.0 * speed;
 	f += 0.1250   * noise(p.xz); p = m*p; p.x -= nishita.time * 10.0 * speed;
@@ -170,62 +183,91 @@ fn cloudy() -> f32 {
     return (nishita.cloudy - 0.5) * 0.666;
 }
 
-fn density(p: vec3<f32>) -> f32 {
-	let density = clamp(FBM(p) * 0.5 + cloudy(), 0.0, 1.0);
+fn density(p: vec3<f32>, m: mat3x3<f32>) -> f32 {
     let cloud_range = CLOUD_UPPER - CLOUD_LOWER;
     let outside = clamp(abs(clamp(p.y, CLOUD_LOWER + 0.1 * cloud_range, CLOUD_UPPER - 0.1 * cloud_range) - p.y) / (0.1 * cloud_range), 0.0, 1.0);
+    // the vertical envelope is exactly zero outside the shell: skip the six noise octaves there
+    if outside == 1.0 {
+        return 0.0;
+    }
+	let density = clamp(FBM(p, m) * 0.5 + cloudy(), 0.0, 1.0);
     return mix(density, 0.0, outside);
 }
 
-fn lighting(p: vec3<f32>, dir: vec3<f32>, sun: vec3<f32>) -> f32 {
-    let l = density(p + sun * 400.0);
+fn lighting(p: vec3<f32>, dir: vec3<f32>, sun: vec3<f32>, m: mat3x3<f32>) -> f32 {
+    let l = density(p + sun * 400.0, m);
     return clamp(pow(l, 0.25), 0.0, 1.0);
 }
-
-const STEPS: u32 = 20u;
 
 fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     let p_sun = normalize(nishita.sun_position);
     let sun_amount: f32 = max(dot(dir, p_sun), 0.0);
+
+    // per-octave rotation×lacunarity, computed once for all samples this pixel
+    let m = m_base * nishita.cloud_lacunarity;
 
 	var low = ((CLOUD_LOWER-pos.y) / dir.y);
 	let high = ((CLOUD_UPPER-pos.y) / dir.y);
 	    
     var p = pos + dir * low;
 
-    var d = 0.0;
-    let add = dir * ((high - low) / f32(STEPS));
+    let add = dir * ((high - low) / f32(nishita.cloud_steps));
     var shade_sum: vec2<f32> = vec2<f32>(0.0);
 
-    let step_length = length(add);
+    let density_cap = nishita.cloud_density_cap;
+    let base_density = clamp(cloudy(), 0.0, 1.0);
+    let base_light = pow(base_density, 0.25) * base_density;
 
-    let density_cap = 0.8;
-    for (var i = 0u; i < STEPS; i += 1u) {
-        if shade_sum.y >= density_cap {
-            break;
+    // the far mix reaches exactly the base values at 100 km, and the march only moves away from
+    // the origin, so a ray that starts there (or runs along the horizon: dir.y clamped to 0, the
+    // march degenerate) takes the base values for every step without sampling any noise
+    if dir.y == 0.0 || clamp(length(p.xz) / 100000.0, 0.0, 1.0) == 1.0 {
+        if base_density > 0.0 {
+            for (var i = 0u; i < nishita.cloud_steps; i += 1u) {
+                if shade_sum.y >= density_cap {
+                    break;
+                }
+
+                shade_sum += vec2<f32>(base_light, base_density) * (vec2<f32>(1.0) - shade_sum.y);
+            }
         }
+    } else {
+        for (var i = 0u; i < nishita.cloud_steps; i += 1u) {
+            if shade_sum.y >= density_cap {
+                break;
+            }
 
-        let base_density = clamp(cloudy(), 0.0, 1.0);
-        let base_light = pow(base_density, 0.25) * base_density;
+            let sample_density = density(p, m);
+            let sample_light = lighting(p, dir, p_sun, m) * sample_density;
 
-        let sample_density = density(p);
-        let sample_light = lighting(p, dir, p_sun) * sample_density;
+            let density = mix(sample_density, base_density, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
+            let light = mix(sample_light, base_light, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
 
-        let density = mix(sample_density, base_density, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
-        let light = mix(sample_light, base_light, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
-
-        shade_sum += vec2<f32>(light, density) * (vec2<f32>(1.0) - shade_sum.y);
-        p += add;
+            shade_sum += vec2<f32>(light, density) * (vec2<f32>(1.0) - shade_sum.y);
+            p += add;
+        }
     }
 
     shade_sum /= max(shade_sum.y, density_cap);
 
-    let light_cloud_color_indirect = max(vec3(0.05), saturate(nishita.sun_color * 1.5) * min(1.0, nishita.dir_light_intensity / 5000.0));
-    let light_cloud_color_direct = max(vec3(0.05), saturate(nishita.sun_color * 1.5) * min(nishita.dir_light_intensity / 1000.0, 4.0));
+    // contrast curve on the coverage: a logistic centred on cloud_sharp_mid with steepness
+    // cloud_sharpness, renormalised so 0 -> 0 and 1 -> 1. Pulls the faint fringe toward
+    // transparent and the core toward opaque (sharpness 0 = identity)
+    if nishita.cloud_sharpness > 0.0 {
+        let k = nishita.cloud_sharpness;
+        let mid = nishita.cloud_sharp_mid;
+        let s0 = 1.0 / (1.0 + exp(k * mid));
+        let s1 = 1.0 / (1.0 + exp(-k * (1.0 - mid)));
+        let sy = 1.0 / (1.0 + exp(-k * (shade_sum.y - mid)));
+        shade_sum.y = clamp((sy - s0) / (s1 - s0), 0.0, 1.0);
+    }
+
+    let light_cloud_color_indirect = max(vec3(nishita.cloud_shadow), saturate(nishita.sun_color * 1.5) * min(1.0, nishita.dir_light_intensity / 5000.0));
+    let light_cloud_color_direct = max(vec3(nishita.cloud_shadow), saturate(nishita.sun_color * 1.5) * min(nishita.dir_light_intensity / 1000.0, 4.0));
     let light_cloud_color = mix(light_cloud_color_indirect, light_cloud_color_direct, pow(smoothstep(0.8 + (0.1 * shade_sum.y), 1.0, sun_amount), 5.0));
     shade_sum.y = mix(shade_sum.y, sqrt(shade_sum.y), smoothstep(0.9, 1.0, sun_amount));
 
-    let clouds = mix(light_cloud_color, vec3(0.05), pow(shade_sum.x, 3.0));
+    let clouds = mix(light_cloud_color, vec3(nishita.cloud_shadow), pow(shade_sum.x, 3.0));
     let result = mix(sky, min(clouds, vec3<f32>(1.0)), shade_sum.y);
     return clamp(result, vec3<f32>(0.0), vec3<f32>(1.0));
 }
@@ -290,6 +332,16 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     }
 
     var initial_y = normalize(ray).y;
+    // the store below blends fully to black at and under -0.5: nothing to evaluate
+    if initial_y <= -0.5 {
+        textureStore(
+            image,
+            vec2<i32>(invocation_id.xy),
+            i32(invocation_id.z),
+            vec4<f32>(vec3<f32>(0.0), 1.0)
+        );
+        return;
+    }
     if ray.y < 0.0 {
         ray.y = 0.0;
     }
@@ -321,6 +373,10 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
             nishita.mie_direction,
         );
 
+        // flat night-sky colour across the sky, weighted toward the anti-solar
+        // direction: (max(-1, -sun·ray) * 0.25 + 0.75)
+        render_base += nishita.night_color
+            * (max(-1.0, -dot(normalize(nishita.sun_position), ray)) * 0.25 + 0.75);
 
         // // add sun
         let sun_weight = dot(ray, normalize(nishita.sun_position));
@@ -337,8 +393,31 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
         }
     }
 
-    // stars
-    if nishita.dir_light_intensity < 1000.0 {
+    // stars: fade in by how far the sun is below the horizon (not intensity,
+    // which floors at the horizon and would show stars at dusk)
+    let night_amount = smoothstep(0.0, 0.15, -normalize(nishita.sun_position).y);
+
+    // moon: a plain disc (no tint) on its own low orbit, fading in with the
+    // night. A crescent is carved by subtracting a second disc of the same size
+    // offset toward the anti-sun side, so the lit limb faces the sun.
+    let moon_dir = normalize(nishita.moon_position);
+    let moon_dot = dot(ray, moon_dir);
+    let moon_disc = smoothstep(0.99914, 0.99971, moon_dot);
+    // tangent direction on the disc pointing away from the sun
+    let to_sun = normalize(nishita.sun_position);
+    let perp = -to_sun - moon_dir * dot(-to_sun, moon_dir);
+    let away = perp / max(length(perp), 1e-3);
+    // smaller offset -> thinner crescent; bite disc is 5% larger than the moon
+    // disc so it carves a slightly deeper inner terminator
+    let bite_dir = normalize(moon_dir + away * 0.012);
+    let bite = smoothstep(0.99905, 0.99968, dot(ray, bite_dir));
+    let crescent = moon_disc * (1.0 - bite);
+    render_base += vec3<f32>(1.6) * crescent * night_amount;
+    // faint cool halo (full circle)
+    render_base += vec3<f32>(0.5, 0.5, 0.6) * pow(max(moon_dot, 0.0), 250.0) * night_amount * 0.3;
+
+    // rays clamped to y = 0 get a zero horizon factor below: skip the thousand stars
+    if night_amount > 0.0 && ray.y > 0.0 {
         for (var i=0u; i<1000u; i++) {
             let star_world_dir = normalize(
                 vec3<f32>(
@@ -354,10 +433,10 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
             let size = 0.99995 + 0.000025 * pow(fract(hash * 100000.0), 0.25);
             if stardirdot > size {
                 let color = vec3<f32>(0.25 + 0.75 * fract(hash * 1000.0), 0.625 + 0.375 * fract(hash * 1000.0), 1.0);
-                let brightness = smoothstep(0.99995 + 0.000025, 0.99995, size);
+                let brightness = 1.0 - smoothstep(0.99995, 0.99995 + 0.000025, size);
                 render_base += vec3<f32>(
-                    color 
-                    * clamp(1.0 - nishita.dir_light_intensity / 1000.0, 0.0, 1.0)) // sun brightness
+                    color
+                    * night_amount) // fades in below the horizon
                     * brightness // star brightness
                     * pow(smoothstep(size, 1.0, stardirdot), 3.0)  // distance from middle of the star
                     * clamp(ray.y * 10.0, 0.0, 1.0); // distance above horizon
@@ -367,7 +446,7 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
 
     let render = render_cloud(render_base, nishita.ray_origin * 0.0, normalize(ray));
 
-    let store_value = mix(render, vec3(0.0), smoothstep(0.0, -0.5, initial_y));
+    let store_value = mix(render, vec3(0.0), 1.0 - smoothstep(-0.5, 0.0, initial_y));
 
     textureStore(
         image,

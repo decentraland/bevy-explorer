@@ -1,90 +1,179 @@
 #![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-use assets::EmbedAssetsPlugin;
-#[cfg(not(debug_assertions))]
-use build_time::build_time_utc;
+use std::{error::Error, fmt::Display, fs::File, io::Write, path::PathBuf, sync::OnceLock};
 
+use bevy::{log::LogPlugin, prelude::*};
+use clap::Parser;
+use common::structs::AppConfig;
 use dcl_deno_ipc::init_runtime;
-
-use image_processing::ImageProcessingPlugin;
 use mimalloc::MiMalloc;
-use platform::default_camera_components;
+use webgpu_build::{DecentralandApp, DecentralandAppConfig, DecentralandArguments};
+
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
-
-use std::{fs::File, io::Write, sync::OnceLock};
-
-use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
-use imposters::DclImposterPlugin;
-
-use bevy::{
-    app::{Propagate, TaskPoolThreadAssignmentPolicy},
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    prelude::*,
-    render::view::RenderLayers,
-    window::WindowResolution,
-};
-use bevy_console::ConsoleCommand;
-use collectibles::CollectiblesPlugin;
-use common::{
-    inputs::InputMap,
-    sets::SetupSets,
-    structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewMode,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
-        SceneLoadDistance, StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
-    },
-    util::{TryPushChildrenEx, UtilsPlugin},
-};
-use notifications::plugin::NotificationsPlugin;
-use restricted_actions::{process_startup_scenes, RestrictedActionsPlugin};
-use scene_material::SceneBoundPlugin;
-use scene_runner::{
-    automatic_testing::AutomaticTestingPlugin,
-    initialize_scene::{TestingData, PARCEL_SIZE},
-    update_world::NoGltf,
-    OutOfWorld, SceneRunnerPlugin,
-};
-
-use av::AVPlayerPlugin;
-use avatar::AvatarPlugin;
-use comms::CommsPlugin;
-use console::{ConsolePlugin, DoAddConsoleCommand};
-use input_manager::InputManagerPlugin;
-use ipfs::{map_realm_name, IpfsIoPlugin};
-use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
-use scene_inspector::SceneInspectorPlugin;
-use social::SocialPlugin;
-use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
-use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
-use texture_camera::TextureCameraPlugin;
-use tween::TweenPlugin;
-use ui_core::UiCorePlugin;
-use user_input::{avatar_movement::GroundCollider, UserInputPlugin};
-use uuid::Uuid;
-use visuals::VisualsPlugin;
-use wallet::WalletPlugin;
-use world_ui::WorldUiPlugin;
-
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
-pub fn version() -> String {
-    #[cfg(not(debug_assertions))]
-    return format!(
-        "bevy-{}-native-{}{}",
-        std::env::consts::OS,
-        env!("BEVY_EXPLORER_VERSION"),
-        (env!("BEVY_EXPLORER_LOCAL_MODIFICATION") == "true")
-            .then_some(format!("-{}", build_time_utc!("%Y-%m-%d %H:%M")))
-            .unwrap_or_default()
-    );
+fn main() {
+    decentraland_log_file();
+    create_logs_folder();
+    create_log_files();
 
-    #[cfg(debug_assertions)]
-    "debug".to_string()
+    let decentraland_app = DecentralandApp::new(LogPlugin {
+        filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error,symphonia=warn"
+            .to_string(),
+        custom_layer: move |_| {
+            let (non_blocking, guard) = tracing_appender::non_blocking(
+                File::options()
+                    .write(true)
+                    .open(SESSION_LOG.get().unwrap())
+                    .unwrap(),
+            );
+            Box::leak(guard.into());
+            Some(Box::new(
+                bevy::log::tracing_subscriber::fmt::layer()
+                    .with_writer(non_blocking)
+                    .with_ansi(false),
+            ))
+        },
+        ..default()
+    });
+
+    // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
+    // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
+    // bevy_mod_debugdump::print_main_schedule(&mut app);
+    #[cfg(not(feature = "console"))]
+    log_panics::init();
+
+    // args first, so --help and a bad flag answer without spawning the scene runtime
+    let exit_code = match decentraland_app_config() {
+        Ok(decentraland_app_config) => {
+            // initialize v8 runtime from main thread
+            init_runtime().unwrap();
+            decentraland_app.build(decentraland_app_config).run();
+            0
+        }
+        // No need to generate a crash report if the failure is due to an user error
+        Err(UserError(code)) => code,
+    };
+
+    // Graceful exits don't need to have the log sent to the analytics server
+    // so we remove the touch file
+    let _ = std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap()));
+
+    // after the touch file is gone: an early exit would leave it behind and the next run would
+    // report the usage error as a crash
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
 }
 
-fn main() {
+fn decentraland_app_config() -> Result<DecentralandAppConfig, UserError> {
+    let arguments = decentraland_app_arguments()?;
+    let app_config = decentraland_serialized_app_config();
+    let crash_file = decentraland_crash_file();
+
+    Ok(DecentralandAppConfig::new(
+        app_config, arguments, crash_file,
+    ))
+}
+
+fn decentraland_serialized_app_config() -> AppConfig {
+    let config_file = platform::project_directories()
+        .unwrap()
+        .config_dir()
+        .join("config.json");
+    let mut base_config: AppConfig = std::fs::read(&config_file)
+        .ok()
+        .and_then(|f| {
+            info!("config file loaded from {config_file:?}");
+            serde_json::from_slice(&f)
+                .map_err(|e| warn!("failed to parse config.json: {e}"))
+                .ok()
+        })
+        .unwrap_or_else(|| {
+            warn!("config file not found at {config_file:?}, generating default");
+            Default::default()
+        });
+    base_config.reset_outdated_settings();
+
+    base_config
+}
+
+fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
+    let mut args = match DecentralandArguments::try_parse() {
+        Ok(args) => args,
+        // --help, or a bad flag: clap's own message (an error also lands in the session log via
+        // tracing), and no crash report
+        Err(e) => {
+            if e.use_stderr() {
+                error!("{e}");
+            } else {
+                let _ = e.print();
+            }
+            return Err(UserError(e.exit_code()));
+        }
+    };
+
+    webgpu_build::launch::latch(&args.launch).map_err(|e| {
+        error!("{e}");
+        UserError(USAGE_ERROR)
+    })?;
+
+    // An explicit --system-scene (a scene source, or "none" for the engine's builtin ui) opts out of the
+    // react HUD entirely — the given ui scene drives instead (see lib.rs).
+    args.hud = args.client.system_scene.is_none();
+    if args.client.system_scene.is_none() {
+        args.client.system_scene = default_ui_scene();
+    }
+    Ok(args)
+}
+
+/// react HUD builds default to the bundled bridge-scene static export (a file realm, loaded with
+/// no server; `npm run bundle:native` in react-web generates it). Checked against the cwd
+/// (packaged runs) and the compile-time checkout dir (dev `cargo run` from any directory). If
+/// absent there is NO ui scene — the react HUD's built-in fallback relay covers login/chat/loading.
+fn default_ui_scene() -> Option<String> {
+    #[cfg(feature = "react-hud-cef")]
+    {
+        for root in native_hud_roots() {
+            let local = root.join("assets/bridge-scene/BevyExplorerUI");
+            if local.join("about").is_file() {
+                return Some(local.to_string_lossy().into_owned());
+            }
+        }
+        None
+    }
+    #[cfg(not(feature = "react-hud-cef"))]
+    Some(String::from(
+        "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene",
+    ))
+}
+
+#[inline(always)]
+fn data_local_dir() -> PathBuf {
+    let dirs = platform::project_directories().unwrap();
+    dirs.data_local_dir().to_owned()
+}
+
+fn create_logs_folder() {
+    let log_dir = data_local_dir();
+    std::fs::create_dir_all(log_dir).unwrap();
+}
+
+fn create_log_files() {
+    File::create(SESSION_LOG.get().unwrap())
+        .expect("failed to create log file")
+        .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
+        .expect("failed to create log file");
+
+    File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+    println!("log file: {}", SESSION_LOG.get().unwrap());
+}
+
+/// Generate the file name for the log files of current instance
+/// and saves it to [`SESSION_LOG`]
+fn decentraland_log_file() {
+    let log_dir = data_local_dir();
     let session_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
         web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
@@ -92,15 +181,15 @@ fn main() {
             .as_millis() as i64,
     )
     .unwrap();
-    let dirs = platform::project_directories().unwrap();
-    let log_dir = dirs.data_local_dir();
     let session_log = log_dir.join(format!("{}.log", session_time.format("%Y%m%d-%H%M%S")));
     SESSION_LOG
         .set(session_log.to_string_lossy().into_owned())
         .unwrap();
-    std::fs::create_dir_all(log_dir).unwrap();
+}
 
-    let crash_file = std::fs::read_dir(log_dir)
+fn decentraland_crash_file() -> Option<PathBuf> {
+    let log_dir = data_local_dir();
+    std::fs::read_dir(log_dir)
         .unwrap()
         .filter_map(|f| f.ok())
         .find(|f| f.path().extension().map(|oss| oss.to_string_lossy()) == Some("touch".into()))
@@ -109,586 +198,42 @@ fn main() {
                 .parent()
                 .unwrap()
                 .join(f.path().file_stem().unwrap())
-        });
-
-    let mut args = pico_args::Arguments::from_env();
-
-    File::create(SESSION_LOG.get().unwrap())
-        .expect("failed to create log file")
-        .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
-        .expect("failed to create log file");
-
-    File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
-    println!("log file: {}", SESSION_LOG.get().unwrap());
-
-    // initialize v8 runtime from main thread
-    init_runtime().unwrap();
-
-    // warnings before log init must be stored and replayed later
-    let mut infos = Vec::default();
-    let mut warnings = Vec::default();
-    let mut app = App::new();
-
-    let config_file = platform::project_directories()
-        .unwrap()
-        .config_dir()
-        .join("config.json");
-    let base_config: AppConfig = std::fs::read(&config_file)
-        .ok()
-        .and_then(|f| {
-            infos.push(format!("config file loaded from {config_file:?}"));
-            serde_json::from_slice(&f)
-                .map_err(|e| warnings.push(format!("failed to parse config.json: {e}")))
-                .ok()
         })
-        .unwrap_or_else(|| {
-            warnings.push(format!(
-                "config file not found at {config_file:?}, generating default"
-            ));
-            Default::default()
-        });
-
-    let final_config = AppConfig {
-        server: args
-            .value_from_str("--server")
-            .ok()
-            .unwrap_or(base_config.server),
-        location: args
-            .value_from_str::<_, IVec2Arg>("--location")
-            .ok()
-            .map(|va| va.0)
-            .unwrap_or(base_config.location),
-        previous_login: base_config.previous_login,
-        graphics: GraphicsSettings {
-            vsync: args
-                .value_from_str("--vsync")
-                .ok()
-                .unwrap_or(base_config.graphics.vsync),
-            log_fps: args
-                .value_from_str("--log_fps")
-                .ok()
-                .unwrap_or(base_config.graphics.log_fps),
-            fps_target: args
-                .value_from_str::<_, usize>("--fps")
-                .ok()
-                .unwrap_or(base_config.graphics.fps_target),
-            gpu_bytes_per_frame: args
-                .value_from_str::<_, usize>("--gpu_bytes_per_frame")
-                .ok()
-                .unwrap_or(base_config.graphics.gpu_bytes_per_frame),
-            ..base_config.graphics
-        },
-        scene_threads: args
-            .value_from_str("--threads")
-            .ok()
-            .unwrap_or(base_config.scene_threads),
-        scene_load_distance: args
-            .value_from_str("--distance")
-            .ok()
-            .unwrap_or(base_config.scene_load_distance),
-        scene_unload_extra_distance: args
-            .value_from_str("--unload")
-            .ok()
-            .unwrap_or(base_config.scene_unload_extra_distance),
-        scene_imposter_bake: args
-            .value_from_str("--bake")
-            .ok()
-            .map(|bake: String| match bake.to_lowercase().chars().next() {
-                None | Some('f') => SceneImposterBake::FullSpeed,
-                Some('h') => SceneImposterBake::HalfSpeed,
-                Some('q') => SceneImposterBake::QuarterSpeed,
-                Some('o') => SceneImposterBake::Off,
-                _ => panic!(),
-            })
-            .unwrap_or(SceneImposterBake::Off),
-        scene_imposter_distances: args
-            .value_from_str("--impost")
-            .ok()
-            .map(|distances: String| {
-                distances
-                    .split(",")
-                    .map(str::parse::<f32>)
-                    .collect::<Result<Vec<f32>, _>>()
-                    .unwrap()
-            })
-            .unwrap_or(base_config.scene_imposter_distances)
-            .into_iter()
-            .enumerate()
-            .map(|(ix, d)| {
-                let edge_distance = (1 << ix) as f32 * PARCEL_SIZE;
-                let diagonal_distance = (edge_distance * edge_distance * 2.0).sqrt();
-                // println!("[{ix}] -> {}", d.max(diagonal_distance));
-                d.max(diagonal_distance)
-            })
-            .collect(),
-        scene_imposter_multisample: args
-            .value_from_str("--impost_multi")
-            .ok()
-            .unwrap_or(base_config.scene_imposter_multisample),
-        sysinfo_visible: args.contains("--sysinfo"),
-        scene_log_to_console: args.contains("--scene_log_to_console"),
-        ..base_config
-    };
-
-    let content_server_override = args.value_from_str("--content-server").ok();
-
-    let test_scenes = args.value_from_str("--test_scenes").ok();
-    let test_mode = args.contains("--testing") || test_scenes.is_some();
-
-    app.insert_resource(TestingData {
-        inspect_hash: args.value_from_str("--inspect").ok(),
-        test_mode,
-        test_scenes: test_scenes.clone(),
-    });
-
-    let no_avatar = args.contains("--no_avatar");
-    let no_gltf = args.contains("--no_gltf");
-    let no_fog = args.contains("--no_fog");
-
-    let is_preview = args.contains("--preview");
-    let startup_scenes_preview = args.contains("--ui-preview");
-
-    let mut startup_scenes: Vec<StartupScene> = args
-        .value_from_str::<_, String>("--portables")
-        .map(|p| {
-            p.split(";")
-                .map(|scene| StartupScene {
-                    source: scene.to_owned(),
-                    super_user: false,
-                    preview: startup_scenes_preview,
-                    hot_reload: None,
-                    hash: None,
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_else(|_| {
-            vec![StartupScene {
-                source: String::from("basiccontroller.dcl.eth"),
-                super_user: false,
-                preview: startup_scenes_preview,
-                hot_reload: None,
-                hash: None,
-            }]
-        });
-
-    let ui_scene: Option<String> = args
-        .value_from_str("--ui")
-        .ok()
-        .or_else(|| {
-            Some(String::from(
-                "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene",
-            ))
-        })
-        .filter(|scene| scene != "none");
-
-    if let Some(source) = ui_scene {
-        app.insert_resource(NativeUi {
-            login: args.contains("--builtin-login"),
-            emote_wheel: args.contains("--builtin-emotes"),
-            chat: args.contains("--builtin-chat"),
-            permissions: args.contains("--builtin-perms"),
-            profile: args.contains("--builtin-profile"),
-            nametags: args.contains("--builtin-nametags"),
-            tooltips: args.contains("--builtin-tooltips"),
-            loading_scene: args.contains("--builtin-loading-scene-ui"),
-        });
-        startup_scenes.insert(
-            0,
-            StartupScene {
-                source,
-                super_user: true,
-                preview: startup_scenes_preview,
-                hot_reload: None,
-                hash: None,
-            },
-        );
-    } else {
-        app.insert_resource(NativeUi {
-            login: true,
-            emote_wheel: true,
-            chat: true,
-            permissions: true,
-            profile: true,
-            nametags: true,
-            tooltips: true,
-            loading_scene: true,
-        });
-    }
-
-    if !startup_scenes.is_empty() {
-        app.add_systems(Update, process_startup_scenes);
-        infos.push(format!("spawning {} startup scenes", startup_scenes.len()));
-        app.insert_resource(StartupScenes {
-            scenes: startup_scenes,
-        });
-    }
-
-    let remaining = args.finish();
-    if !remaining.is_empty() {
-        println!(
-            "failed to parse args: {}",
-            remaining
-                .iter()
-                .map(|arg| arg.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ")
-        );
-        return;
-    }
-
-    let present_mode = match final_config.graphics.vsync {
-        true => bevy::window::PresentMode::AutoVsync,
-        false => bevy::window::PresentMode::AutoNoVsync,
-    };
-
-    let version_hash = version();
-    let version = format!("{VERSION} ({version_hash})");
-
-    app.insert_resource(Version(version.clone()))
-        .insert_resource(final_config.audio.clone())
-        .add_plugins(
-            DefaultPlugins
-                .set(TaskPoolPlugin {
-                    task_pool_options: TaskPoolOptions {
-                        async_compute: TaskPoolThreadAssignmentPolicy {
-                            min_threads: 2,
-                            max_threads: 8,
-                            percent: 0.25,
-                            on_thread_spawn: None,
-                            on_thread_destroy: None,
-                        },
-                        io: TaskPoolThreadAssignmentPolicy {
-                            min_threads: 8,
-                            max_threads: 8,
-                            percent: 0.25,
-                            on_thread_spawn: None,
-                            on_thread_destroy: None,
-                        },
-                        compute: TaskPoolThreadAssignmentPolicy {
-                            min_threads: 2,
-                            max_threads: 8,
-                            percent: 0.25,
-                            on_thread_spawn: None,
-                            on_thread_destroy: None,
-                        },
-                        ..Default::default()
-                    },
-                })
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "Decentraland Web Explorer".to_owned(),
-                        present_mode,
-                        resolution: WindowResolution::new(1280.0, 720.0),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                })
-                .set(bevy::log::LogPlugin {
-                    filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error".to_string(),
-                    custom_layer: |_| {
-                        let (non_blocking, guard) = tracing_appender::non_blocking(
-                            File::options()
-                                .write(true)
-                                .open(SESSION_LOG.get().unwrap())
-                                .unwrap(),
-                        );
-                        Box::leak(guard.into());
-                        Some(Box::new(
-                            bevy::log::tracing_subscriber::fmt::layer()
-                                .with_writer(non_blocking)
-                                .with_ansi(false),
-                        ))
-                    },
-                    ..default()
-                })
-                .set(bevy::asset::AssetPlugin {
-                    // we manage asset server loads via ipfs module, so we don't need this protection
-                    unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
-                    ..Default::default()
-                })
-                .build()
-                .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
-                    preview: is_preview,
-                    starting_realm: Some(map_realm_name(&final_config.server)),
-                    content_server_override,
-                    assets_root: Default::default(),
-                    num_slots: final_config.max_concurrent_remotes,
-                })
-                .add_before::<IpfsIoPlugin>(NftReaderPlugin),
-        );
-
-    app.add_plugins(EmbedAssetsPlugin);
-
-    if final_config.graphics.log_fps || is_preview {
-        app.add_plugins(FrameTimeDiagnosticsPlugin::default());
-    }
-    if final_config.graphics.log_fps {
-        app.add_plugins(LogDiagnosticsPlugin::default());
-    }
-
-    app.insert_resource(InputMap {
-        inputs: final_config.inputs.0.clone().into_iter().collect(),
-        sensitivities: final_config.inputs.1.clone().into_iter().collect(),
-    });
-
-    // Analytics
-    app.add_plugins(MetricsPlugin);
-    app.insert_resource(SegmentConfig::new(
-        final_config.user_id.clone(),
-        Uuid::new_v4().to_string(),
-        version_hash,
-    ));
-
-    app.insert_resource(PreviewMode {
-        server: is_preview.then_some(map_realm_name(&final_config.server)),
-        is_preview,
-    });
-
-    app.insert_resource(SceneLoadDistance {
-        load: if is_preview {
-            1.0
-        } else {
-            final_config.scene_load_distance
-        },
-        unload: if is_preview {
-            0.0
-        } else {
-            final_config.scene_unload_extra_distance
-        },
-        load_imposter: final_config
-            .scene_imposter_distances
-            .last()
-            .map(|last| {
-                // actual distance we need is last + diagonal of the largest mip size
-                let mip_size =
-                    (1 << (final_config.scene_imposter_distances.len() - 1)) as f32 * 16.0;
-                last + (2.0 * mip_size * mip_size).sqrt()
-            })
-            .unwrap_or(0.0)
-            * if is_preview { 0.0 } else { 1.0 },
-    });
-
-    app.insert_resource(final_config);
-    if no_gltf {
-        app.insert_resource(NoGltf(true));
-    }
-
-    app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
-
-    app.add_plugins(UtilsPlugin)
-        .add_plugins(InputManagerPlugin)
-        .add_plugins(SceneBoundPlugin)
-        .add_plugins(SceneRunnerPlugin)
-        .add_plugins(UserInputPlugin)
-        .add_plugins(UiCorePlugin)
-        .add_plugins(SystemUiPlugin)
-        .add_plugins(ConsolePlugin { add_egui: true })
-        .add_plugins(VisualsPlugin { no_fog })
-        .add_plugins(WalletPlugin)
-        .add_plugins(CommsPlugin)
-        .add_plugins(SocialPlugin)
-        .add_plugins(NftShapePlugin)
-        .add_plugins(TweenPlugin)
-        .add_plugins(CollectiblesPlugin)
-        .add_plugins(WorldUiPlugin)
-        .add_plugins(TextureCameraPlugin)
-        .add_plugins(ImageProcessingPlugin)
-        .add_plugins(NotificationsPlugin)
-        .add_plugins(SystemBridgePlugin { bare: false })
-        .add_plugins(SceneInspectorPlugin);
-
-    if !is_preview {
-        app.add_plugins(DclImposterPlugin {
-            zip_output: None,
-            download: true,
-        });
-    }
-
-    if let Some(crashed) = crash_file {
-        app.add_plugins(CrashReportPlugin {
-            file: crashed.canonicalize().unwrap(),
-        });
-    }
-
-    if !no_avatar {
-        app.add_plugins(AvatarPlugin);
-    }
-
-    if test_scenes.is_some() {
-        app.add_plugins(AutomaticTestingPlugin);
-    }
-
-    app.add_plugins(AVPlayerPlugin)
-        .add_plugins(RestrictedActionsPlugin)
-        .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
-        .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
-        .add_systems(Startup, setup.in_set(SetupSets::Init))
-        .insert_resource(AmbientLight {
-            color: Color::srgb(0.85, 0.85, 1.0),
-            brightness: 575.0,
-            ..Default::default()
-        })
-        // Purple background matching loading_background.png to avoid white flash on startup
-        .insert_resource(ClearColor(Color::srgb(0.6, 0.1, 0.8)));
-
-    app.add_console_command::<ChangeLocationCommand, _>(change_location);
-    app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
-    app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
-    app.add_console_command::<FpsCommand, _>(set_fps);
-
-    info!("Bevy-Explorer version {}", version);
-
-    // replay any logs
-    for info in infos {
-        info!("{}", info);
-    }
-    for warning in warnings {
-        warn!(warning);
-    }
-
-    // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
-    // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
-    // bevy_mod_debugdump::print_main_schedule(&mut app);
-    #[cfg(not(feature = "console"))]
-    log_panics::init();
-
-    app.run();
-
-    let _ = std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap()));
 }
 
-fn setup(
-    mut commands: Commands,
-    mut player_resource: ResMut<PrimaryPlayerRes>,
-    mut cam_resource: ResMut<PrimaryCameraRes>,
-    config: Res<AppConfig>,
-) {
-    info!("main::setup");
-    // create the main player
-    let attach_points = AttachPoints::new(&mut commands);
-    let player_id = commands
-        .spawn((
-            Transform::from_translation(Vec3::new(
-                8.0 + 16.0 * config.location.x as f32,
-                8.0,
-                -8.0 + -16.0 * config.location.y as f32,
-            )),
-            Visibility::default(),
-            config.player_settings.clone(),
-            OutOfWorld,
-            AvatarDynamicState::default(),
-            GroundCollider::default(),
-            Propagate(RenderLayers::default()),
-        ))
-        .try_push_children(&attach_points.entities())
-        .try_insert(attach_points)
-        .id();
+/// A launch that stopped before the app ran, carrying the process exit status: 0 when the user
+/// asked for something and got it (`--help`), [`USAGE_ERROR`] when a flag or a value was refused.
+#[derive(Debug)]
+struct UserError(i32);
 
-    // add a camera
-    let camera_id = commands
-        .spawn((
-            Camera3d::default(),
-            Camera {
-                hdr: true,
-                ..Default::default()
-            },
-            default_camera_components(),
-            Projection::from(PerspectiveProjection {
-                far: 100000.0,
-                ..Default::default()
-            }),
-            PrimaryCamera::default(),
-            GROUND_RENDERLAYER.with(0),
-        ))
-        .id();
+/// clap's exit status for a usage error, so a value this binary refuses reads to a script exactly
+/// like a flag clap refuses.
+const USAGE_ERROR: i32 = 2;
 
-    commands.send_event(NewCameraEvent(camera_id));
-    player_resource.0 = player_id;
-    cam_resource.0 = camera_id;
-}
-
-// TODO move these somewhere better
-/// set location
-#[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/teleport")]
-struct ChangeLocationCommand {
-    #[arg(allow_hyphen_values(true))]
-    x: i32,
-    #[arg(allow_hyphen_values(true))]
-    y: i32,
-}
-
-fn change_location(
-    mut commands: Commands,
-    mut input: ConsoleCommand<ChangeLocationCommand>,
-    mut player: Query<(Entity, &mut Transform), With<PrimaryUser>>,
-) {
-    if let Some(Ok(command)) = input.take() {
-        if let Ok((ent, mut transform)) = player.single_mut() {
-            transform.translation.x = command.x as f32 * 16.0 + 8.0;
-            transform.translation.z = -command.y as f32 * 16.0 - 8.0;
-            if let Ok(mut commands) = commands.get_entity(ent) {
-                commands.try_insert(OutOfWorld);
-            }
-            input.reply_ok(format!("new location: {:?}", (command.x, command.y)));
-            return;
+impl Display for UserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            0 => write!(f, "Nothing to run."),
+            code => write!(f, "Method failed due to user error (exit code {code})."),
         }
-
-        input.reply_failed("failed to set location");
     }
 }
 
-/// set scene load distance (defaults to 75.0m) and additional unload distance (defaults to 25.0m)
-#[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/scene_distance")]
-struct SceneDistanceCommand {
-    distance: Option<f32>,
-    unload: Option<f32>,
-}
+impl Error for UserError {}
 
-fn scene_distance(
-    mut input: ConsoleCommand<SceneDistanceCommand>,
-    mut scene_load_distance: ResMut<SceneLoadDistance>,
-) {
-    if let Some(Ok(command)) = input.take() {
-        let distance = command.distance.unwrap_or(75.0);
-        scene_load_distance.load = distance;
-        if let Some(unload) = command.unload {
-            scene_load_distance.unload = unload;
-        }
-        input.reply_ok(format!(
-            "set scene load distance to +{distance} -{}",
-            scene_load_distance.load + scene_load_distance.unload
-        ));
+// Roots to search for the bundled native HUD files: cwd, the executable's directory (packaged
+// layouts), and the dev checkout (`cargo run` from any directory).
+#[cfg(feature = "react-hud-cef")]
+fn native_hud_roots() -> Vec<std::path::PathBuf> {
+    let mut roots = vec![
+        std::path::PathBuf::from("."),
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+    ];
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+    {
+        roots.push(dir);
     }
-}
-
-// set thread count
-#[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/scene_threads")]
-struct SceneThreadsCommand {
-    threads: Option<usize>,
-}
-
-fn scene_threads(mut input: ConsoleCommand<SceneThreadsCommand>, mut config: ResMut<AppConfig>) {
-    if let Some(Ok(command)) = input.take() {
-        let threads = command.threads.unwrap_or(4);
-        config.scene_threads = threads;
-        input.reply_ok("scene simultaneous thread count set to {threads}");
-    }
-}
-
-// set fps
-#[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/fps")]
-struct FpsCommand {
-    fps: usize,
-}
-
-fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>) {
-    if let Some(Ok(command)) = input.take() {
-        let fps = command.fps;
-        config.graphics.fps_target = fps;
-        input.reply_ok("target frame rate set to {fps}");
-    }
+    roots
 }

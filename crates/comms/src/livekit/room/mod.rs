@@ -1,10 +1,13 @@
 pub(super) mod plugin;
 
+pub use plugin::ServerRoomTerminal;
+
 use bevy::{
     ecs::{component::HookContext, world::DeferredWorld},
     platform::sync::Arc,
     prelude::*,
 };
+use common::debug_panic;
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::{Room, RoomEvent, RoomResult};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -29,9 +32,7 @@ impl Connected {
     pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
         let entity = hook_context.entity;
         let Some(room) = deferred_world.entity(entity).get::<LivekitRoom>() else {
-            error!("Connected room {entity} did not have LivekitRoom.");
-            deferred_world.commands().send_event(AppExit::from_code(1));
-            return;
+            debug_panic!("Connected room {entity} did not have LivekitRoom.");
         };
         debug!("Room {} connected.", room.name());
 
@@ -67,9 +68,7 @@ impl Connecting {
     pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
         let entity = hook_context.entity;
         let Some(transport) = deferred_world.entity(entity).get::<LivekitTransport>() else {
-            error!("Connecting room {entity} did not have LivekitTransport.");
-            deferred_world.commands().send_event(AppExit::from_code(1));
-            return;
+            debug_panic!("Connecting room {entity} did not have LivekitTransport.");
         };
         debug!("Room {} connecting.", transport.address);
 
@@ -101,9 +100,7 @@ impl Reconnecting {
     pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
         let entity = hook_context.entity;
         let Some(room) = deferred_world.entity(entity).get::<LivekitRoom>() else {
-            error!("Reconnecting room {entity} did not have LivekitRoom.");
-            deferred_world.commands().send_event(AppExit::from_code(1));
-            return;
+            debug_panic!("Reconnecting room {entity} did not have LivekitRoom.");
         };
         debug!("Room {} is reconnecting.", room.name());
 
@@ -135,9 +132,7 @@ impl Disconnected {
     pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
         let entity = hook_context.entity;
         let Some(room) = deferred_world.entity(entity).get::<LivekitRoom>() else {
-            error!("Disconnected room {entity} did not have LivekitRoom.");
-            deferred_world.commands().send_event(AppExit::from_code(1));
-            return;
+            debug_panic!("Disconnected room {entity} did not have LivekitRoom.");
         };
         debug!("Room {} is disconnected.", room.name());
 

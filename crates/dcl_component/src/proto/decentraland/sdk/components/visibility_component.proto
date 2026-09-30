@@ -6,4 +6,11 @@ option (common.ecs_component_id) = 1081;
 
 message PBVisibilityComponent {
     optional bool visible = 1; // default=true
+    
+    // Propagation follows certain rules:
+    // - Any own visibility component takes priority
+    // - If no own visibility component, visibility is determined by visibility of the nearest parent with propagate = true
+    // - If no own component and no parent with propagate = true, visibility is "visible"
+    // - Visibility is always updated, whenever hierarchy, parent component or own component changes
+    optional bool propagate_to_children = 2; // default=false
 }

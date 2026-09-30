@@ -52,12 +52,33 @@ cp -a ../../libs "${APP_NAME}.app/Contents/"
 cp -a ../../decentra-bevy "${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
 cp -a ../../LICENSE "${APP_NAME}.app/Contents/MacOS/"
 
+echo "Copy scene runtime worker"
+cp -a ../../target/release/dcl_deno_ipc "${APP_NAME}.app/Contents/MacOS/"
+
+# react HUD (cef): the render-process helper is resolved as `<exe>-cef` next to the main binary,
+# and the framework from Contents/Frameworks (falling back to ~/.local/share/cef in dev).
+if [ -f ../../target/release/decentra-bevy-cef ]; then
+    echo "Copy CEF helper + framework"
+    cp -a ../../target/release/decentra-bevy-cef "${APP_NAME}.app/Contents/MacOS/${APP_NAME}-cef"
+    mkdir -p "${APP_NAME}.app/Contents/Frameworks"
+    cp -a "$HOME/.local/share/cef/Chromium Embedded Framework.framework" "${APP_NAME}.app/Contents/Frameworks/"
+fi
+
 
 for LIBRARY in $APP_NAME.app/Contents/libs/*.dylib; do
     echo "Signing lib $LIBRARY"
     codesign --remove-signature "$LIBRARY"
     codesign --force --verify --verbose --sign "Developer ID Application: $MACOS_DEVELOPER_ID" "$LIBRARY"
 done
+
+# best-effort: the CEF framework and helper must be signed before the app seal. A notarized CEF
+# app formally wants the helper as its own .app bundle with restricted entitlements; this flat
+# helper layout may need revisiting if notarization rejects it.
+if [ -d "${APP_NAME}.app/Contents/Frameworks/Chromium Embedded Framework.framework" ]; then
+    echo "Sign CEF framework + helper"
+    codesign --force --verbose --sign "Developer ID Application: $MACOS_DEVELOPER_ID" "${APP_NAME}.app/Contents/Frameworks/Chromium Embedded Framework.framework"
+    codesign --force --verify --options runtime --verbose --sign "Developer ID Application: $MACOS_DEVELOPER_ID" "${APP_NAME}.app/Contents/MacOS/${APP_NAME}-cef"
+fi
 
 echo "Sign the main binary"
 codesign --entitlements entitlements.plist --deep --force --verify --options runtime --verbose --sign "Developer ID Application: $MACOS_DEVELOPER_ID" "$APP_NAME.app"

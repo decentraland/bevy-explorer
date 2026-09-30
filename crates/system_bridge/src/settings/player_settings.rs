@@ -77,7 +77,7 @@ player_setting!(
     "Maximum running speed in m/s. The time to reach this speed will depend on Ground Friction.\nDefault 10",
     |cfg: &mut PrimaryUser, val: f32| cfg.run_speed = val,
     |cfg: &PrimaryUser| cfg.run_speed,
-    1.0,
+    0.1,
     20.0,
     0.1
 );
@@ -88,51 +88,73 @@ player_setting!(
     "Walking speed in m/s.",
     |cfg: &mut PrimaryUser, val: f32| cfg.walk_speed = val,
     |cfg: &PrimaryUser| cfg.walk_speed,
-    1.0,
+    0.1,
     20.0,
     0.1
 );
 
 player_setting!(
-    FrictionSetting,
-    "Ground Friction",
-    "Traction of the ground. A higher value results in faster starting/stopping, and a lower value simulates a more slippery surface.\nDefault 6",
-    |cfg: &mut PrimaryUser, val: f32| cfg.friction = val,
-    |cfg: &PrimaryUser| cfg.friction,
+    JogSpeedSetting,
+    "Jog Speed",
+    "Jogging speed in m/s.",
+    |cfg: &mut PrimaryUser, val: f32| cfg.jog_speed = val,
+    |cfg: &PrimaryUser| cfg.jog_speed,
     0.1,
-    30.0,
+    20.0,
     0.1
 );
 
-player_setting!(
-    GravitySetting,
-    "Gravity",
-    "Falling force in m/s/s. Higher settings will result in quicker acceleration to terminal velocity, and also make jumps faster (but not higher).\nDefault 20 (9.8 feels very floaty)",
-    |cfg: &mut PrimaryUser, val: f32| cfg.gravity = val,
-    |cfg: &PrimaryUser| cfg.gravity,
-    -1.0,
-    -100.0,
-    -0.1
-);
+// player_setting!(
+//     FrictionSetting,
+//     "Ground Friction",
+//     "Traction of the ground. A higher value results in faster starting/stopping, and a lower value simulates a more slippery surface.\nDefault 6",
+//     |cfg: &mut PrimaryUser, val: f32| cfg.friction = val,
+//     |cfg: &PrimaryUser| cfg.friction,
+//     0.1,
+//     30.0,
+//     0.1
+// );
+
+// player_setting!(
+//     GravitySetting,
+//     "Gravity",
+//     "Falling force in m/s/s. Higher settings will result in quicker acceleration to terminal velocity, and also make jumps faster (but not higher).\nDefault 20 (9.8 feels very floaty)",
+//     |cfg: &mut PrimaryUser, val: f32| cfg.gravity = val,
+//     |cfg: &PrimaryUser| cfg.gravity,
+//     -1.0,
+//     -100.0,
+//     -0.1
+// );
 
 player_setting!(
     JumpSetting,
     "Jump Height",
-    "Maximum height the player can jump, in m. Players can jump onto platforms approximately 0.35m higher than this (due to player's step height).\nDefault 1.25",
+    "Maximum height the player can jump, in m.\nDefault 1.9",
     |cfg: &mut PrimaryUser, val: f32| cfg.jump_height = val,
     |cfg: &PrimaryUser| cfg.jump_height,
-    1.0,
+    0.05,
     20.0,
     0.05
 );
 
 player_setting!(
-    FallSpeedSetting,
-    "Max Fall Speed",
-    "Terminal velocity when falling, in m/s. Higher settings will result in eventually falling faster (if you start high enough).\nDefault 15m/s",
-    |cfg: &mut PrimaryUser, val: f32| cfg.fall_speed = val,
-    |cfg: &PrimaryUser| cfg.fall_speed,
-    -0.1,
-    -100.0,
-    -0.1
+    RunJumpSetting,
+    "Running Jump Height",
+    "Maximum height the player can jump, in m while running.\nDefault 2.95",
+    |cfg: &mut PrimaryUser, val: f32| cfg.run_jump_height = val,
+    |cfg: &PrimaryUser| cfg.run_jump_height,
+    0.05,
+    20.0,
+    0.05
 );
+
+// player_setting!(
+//     FallSpeedSetting,
+//     "Max Fall Speed",
+//     "Terminal velocity when falling, in m/s. Higher settings will result in eventually falling faster (if you start high enough).\nDefault 15m/s",
+//     |cfg: &mut PrimaryUser, val: f32| cfg.fall_speed = val,
+//     |cfg: &PrimaryUser| cfg.fall_speed,
+//     -0.1,
+//     -100.0,
+//     -0.1
+// );

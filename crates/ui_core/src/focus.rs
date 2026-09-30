@@ -90,6 +90,12 @@ fn focus(
     focused_elements: Query<(Entity, &Interaction, Option<&UiActionPriority>, &Focusable)>,
     input_manager: InputManager,
 ) {
+    // just_down can only succeed if the raw binding was just pressed; skip the per-entity
+    // scan entirely otherwise
+    if !input_manager.just_down_any_priority(CommonInputAction::IaPointer) {
+        return;
+    }
+
     for (entity, interaction, maybe_priority, focusable) in focused_elements.iter() {
         if interaction != &Interaction::None
             && input_manager.just_down(

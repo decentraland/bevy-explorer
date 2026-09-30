@@ -15,6 +15,8 @@ pub struct CrdtContext {
     pub title: String,
     pub testing: bool,
     pub preview: bool,
+    #[serde(default)]
+    pub is_server: bool,
     #[serde(skip, default = "default_live_entities")]
     live_entities: LiveTable,
     #[serde(skip)]
@@ -26,7 +28,7 @@ pub struct CrdtContext {
 }
 
 fn default_live_entities() -> LiveTable {
-    vec![(0, false); u16::MAX as usize]
+    vec![(0, false); SceneEntityId::LIVE_TABLE_LEN]
 }
 
 fn default_last_new() -> u16 {
@@ -40,6 +42,7 @@ impl CrdtContext {
         title: String,
         testing: bool,
         preview: bool,
+        is_server: bool,
     ) -> Self {
         Self {
             scene_id,
@@ -47,6 +50,7 @@ impl CrdtContext {
             title,
             testing,
             preview,
+            is_server,
             live_entities: default_live_entities(),
             nascent: Default::default(),
             death_row: Default::default(),
@@ -55,7 +59,7 @@ impl CrdtContext {
     }
 
     fn entity_entry(&self, id: u16) -> &(u16, bool) {
-        // SAFETY: live entities has u16::MAX members
+        // SAFETY: live_entities has LIVE_TABLE_LEN (u16::MAX + 1) entries, so any u16 index is in bounds
         unsafe { self.live_entities.get_unchecked(id as usize) }
     }
 
@@ -120,12 +124,38 @@ impl CrdtContext {
         self.entity_entry(entity.id).0 > entity.generation
     }
 
-    pub fn new_in_range(&mut self, range: &RangeInclusive<u16>) -> Option<SceneEntityId> {
-        let mut next_new = self.last_new.wrapping_add(1);
-        if !range.contains(&self.last_new) {
-            self.last_new = *range.end();
-            next_new = *range.start();
+    // Queue an entity for creation at a caller-specified id (instead of a fresh allocation) — used to
+    // recreate entities at their original ids on a freshly-reloaded scene. Returns false if the id is
+    // already alive at that generation (a collision) or has aged past it (dead). Advances the
+    // fresh-allocation cursor past the id so a later `new_in_range` won't hand the same number out
+    // before the next census marks it alive.
+    pub fn alloc_explicit(&mut self, entity: SceneEntityId) -> bool {
+        if self.is_born(entity) {
+            return false; // already alive at this generation — collision
         }
+        if !self.init(entity) {
+            return false; // dead/aged at this generation
+        }
+        self.last_new = entity.id;
+        true
+    }
+
+    pub fn new_in_range(&mut self, range: &RangeInclusive<u16>) -> Option<SceneEntityId> {
+        if range.is_empty() {
+            return None;
+        }
+        let (start, end) = (*range.start(), *range.end());
+
+        let mut next_new = if range.contains(&self.last_new) {
+            if self.last_new == end {
+                start
+            } else {
+                self.last_new + 1
+            }
+        } else {
+            self.last_new = end;
+            start
+        };
 
         while next_new != self.last_new {
             if !self.entity_entry(next_new).1 {
@@ -134,10 +164,7 @@ impl CrdtContext {
                 self.last_new = next_new;
                 return Some(new_id);
             }
-            next_new += 1;
-            if !range.contains(&self.last_new) {
-                self.last_new = *range.start();
-            }
+            next_new = if next_new == end { start } else { next_new + 1 };
         }
 
         None

@@ -1,6 +1,9 @@
 use bevy::{
-    platform::collections::HashMap, prelude::*, transform::TransformSystem,
-    ui::CameraCursorPosition, window::PrimaryWindow,
+    platform::collections::HashMap,
+    prelude::*,
+    transform::TransformSystem,
+    ui::{CameraCursorPosition, UiSystem},
+    window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::{
@@ -24,7 +27,11 @@ impl Plugin for ScrollablePlugin {
         app.add_systems(Startup, setup)
             .add_systems(
                 PostUpdate,
-                update_scrollables.after(TransformSystem::TransformPropagate),
+                (update_scrollables, resync_scrollbar_transforms)
+                    .after(TransformSystem::TransformPropagate)
+                    // overlap arbitration reads `ComputedNode::stack_index`, which `ui_stack_system`
+                    // (UiSystem::Stack) writes; order after it so we read this frame's value.
+                    .after(UiSystem::Stack),
             )
             .add_event::<ScrollTargetEvent>();
     }
@@ -35,6 +42,33 @@ fn setup(mut dui: ResMut<DuiRegistry>) {
     dui.register_template("vscroll", VerticalScrollTemplate);
     dui.register_template("hscroll", HorizontalScrollTemplate);
     dui.register_template("scroll", TwoWayScrollTemplate);
+}
+
+// Scrollbars/sliders are spawned and positioned in `update_scrollables`, which runs after
+// `TransformSystem::TransformPropagate`. Under the multithreaded executor, bevy 0.16's dirty-tree
+// transform propagation intermittently fails to refresh such a freshly-added child, leaving its
+// `GlobalTransform` stale (parent * identity) even once the local `Transform` is correct.
+//
+// Detect the mismatch (`GlobalTransform` != parent * local) and re-dirty the local `Transform` so
+// propagation retries next frame. Unlike an unconditional re-dirty, this stops once the transform
+// is correct, so it converges to a stable fixed point instead of perpetually re-exposing the bar
+// to the propagation race.
+#[allow(clippy::type_complexity)]
+fn resync_scrollbar_transforms(
+    mut bars: Query<
+        (&ChildOf, &GlobalTransform, &mut Transform),
+        Or<(With<ScrollBar>, With<Slider>)>,
+    >,
+    globals: Query<&GlobalTransform>,
+) {
+    for (child_of, global, mut transform) in bars.iter_mut() {
+        let Ok(parent_global) = globals.get(child_of.parent()) else {
+            continue;
+        };
+        if *global != parent_global.mul_transform(*transform) {
+            transform.set_changed();
+        }
+    }
 }
 
 pub trait SpawnScrollable {
@@ -222,23 +256,28 @@ fn update_scrollables(
         Ref<GlobalTransform>,
         Ref<ComputedNode>,
         &Interaction,
-        Option<&UiTargetCamera>,
+        &ComputedNodeTarget,
     )>,
     mut bars: Query<
         (
             Entity,
             &ScrollBar,
             &mut Node,
+            &mut NodeBounds,
             &Interaction,
             &ComputedNode,
             &GlobalTransform,
-            Option<&UiTargetCamera>,
+            &ComputedNodeTarget,
         ),
         (Without<Scrollable>, Without<Slider>),
     >,
-    mut sliders: Query<(Entity, &mut Slider, &mut Node), (Without<Scrollable>, Without<ScrollBar>)>,
+    mut sliders: Query<
+        (Entity, &mut Slider, &mut Node, &mut NodeBounds),
+        (Without<Scrollable>, Without<ScrollBar>),
+    >,
     mut clicked_slider: Local<Option<Entity>>,
     mut clicked_scrollable: Local<Option<(Entity, Vec2)>>,
+    mut resize_events: EventReader<WindowResized>,
     mut events: EventReader<ScrollTargetEvent>,
     cursors: Query<(Entity, &CameraCursorPosition)>,
     mut input_manager: InputManager,
@@ -250,7 +289,6 @@ fn update_scrollables(
     }
 
     struct ScrollInfo {
-        ui_position: Vec2,
         content: Entity,
         ratio: f32,
         slide_amount: Vec2,
@@ -260,6 +298,7 @@ fn update_scrollables(
         redraw: bool,
         update_slider: Option<UpdateSliderPosition>,
         visible: bool,
+        stack_index: u32,
     }
 
     let mut events = events
@@ -284,11 +323,17 @@ fn update_scrollables(
 
     let bar_width = (window.width().min(window.height()) * 0.02).ceil();
 
+    // the bar thickness and track length are derived from the window size, but bar/slider
+    // geometry is only recomputed when `redraw` fires. A resize on its own doesn't necessarily
+    // change a scrollable's own node/transform, so force a redraw on any window resize, otherwise
+    // the bars keep their pre-resize dimensions (issue #832).
+    let window_resized = resize_events.read().count() > 0;
+
     let window_cursor_position = window.cursor_position().unwrap_or(Vec2::NEG_ONE);
     let manual_cursor_positions: HashMap<_, _> = cursors.iter().collect();
-    let cursor_position = |camera: Option<&UiTargetCamera>| -> Option<Vec2> {
-        if let Some(camera) = camera {
-            if let Some(position) = manual_cursor_positions.get(&camera.0) {
+    let cursor_position = |camera: &ComputedNodeTarget| -> Option<Vec2> {
+        if let Some(camera) = camera.camera() {
+            if let Some(position) = manual_cursor_positions.get(&camera) {
                 return position.0;
             }
         }
@@ -314,7 +359,7 @@ fn update_scrollables(
         ref_transform,
         ref_node,
         interaction,
-        maybe_target_camera,
+        target_camera,
     ) in scrollables.iter_mut()
     {
         let Ok((child_node, mut style, _)) = nodes.get_mut(scroll_content.0) else {
@@ -322,12 +367,11 @@ fn update_scrollables(
             continue;
         };
 
-        let cursor_position = cursor_position(maybe_target_camera);
+        let cursor_position = cursor_position(target_camera);
 
         let child_size = child_node.size() / scale_factor;
         let parent_size = node.size() / scale_factor;
         let ratio = parent_size / child_size;
-        let ui_position = transform.translation().truncate() - parent_size * 0.5;
         let slide_amount = child_size - parent_size;
 
         // calculate based on event
@@ -413,7 +457,8 @@ fn update_scrollables(
         // the reported content-size is rounded, and occasionally repositioning when it changes causes a loop of +/- 1 pixel
         // so we allow 1 pixel tolerance (new content smaller) before redrawing
         let change = scrollable.content_size - child_size;
-        let redraw = ref_transform.is_changed()
+        let redraw = window_resized
+            || ref_transform.is_changed()
             || ref_node.is_changed()
             || change.max_element() > 0.0
             || change.min_element() < -1.0;
@@ -424,12 +469,10 @@ fn update_scrollables(
                 horizontal_scrollers.insert(
                     entity,
                     ScrollInfo {
-                        ui_position,
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.x,
-                        bar_position: ui_position * 0.0
-                            + Vec2::new(bar_width * 1.5, parent_size.y - bar_width - 5.0),
+                        bar_position: Vec2::new(bar_width * 1.5, parent_size.y - bar_width - 5.0),
                         length: parent_size.x - bar_width * 3.0,
                         start,
                         redraw,
@@ -437,6 +480,7 @@ fn update_scrollables(
                             .map(|a| UpdateSliderPosition::Abs(a.x))
                             .or(new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.x))),
                         visible: scrollable.horizontal_bar,
+                        stack_index: node.stack_index(),
                     },
                 );
             }
@@ -450,12 +494,10 @@ fn update_scrollables(
                 vertical_scrollers.insert(
                     entity,
                     ScrollInfo {
-                        ui_position,
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.y,
-                        bar_position: ui_position * 0.0
-                            + Vec2::new(parent_size.x - bar_width - 5.0, bar_width * 1.5),
+                        bar_position: Vec2::new(parent_size.x - bar_width - 5.0, bar_width * 1.5),
                         length: parent_size.y - bar_width * 3.0,
                         start,
                         redraw,
@@ -463,6 +505,7 @@ fn update_scrollables(
                             .map(|a| UpdateSliderPosition::Abs(a.y))
                             .or(new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.y))),
                         visible: scrollable.vertical_bar,
+                        stack_index: node.stack_index(),
                     },
                 );
             }
@@ -473,38 +516,29 @@ fn update_scrollables(
         scrollable.content_size = child_size;
     }
 
-    // make sure we only update a single scrollable
+    // make sure we only update a single scrollable. when the cursor is over overlapping panels
+    // they each register a scroll above, so keep only the frontmost - the one with the highest
+    // `stack_index` (bevy's resolved back-to-front paint order), which is what the user sees on top
+    // and what a click would land on. nested scrollables get distinct indices (child walked after
+    // parent), so this never ties the way the previous geometric corner comparison could.
     for scrollers in [&mut vertical_scrollers, &mut horizontal_scrollers] {
-        let updated_positions = scrollers
+        let Some(frontmost) = scrollers
             .values()
             .filter(|v| v.update_slider.is_some())
-            .map(|s| s.ui_position)
-            .collect::<Vec<_>>();
-        if updated_positions.len() > 1 {
-            let last = updated_positions
-                .into_iter()
-                .reduce(|a, b| {
-                    match a
-                        .y
-                        .partial_cmp(&b.y)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then(a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
-                    {
-                        std::cmp::Ordering::Greater => a,
-                        _ => b,
-                    }
-                })
-                .unwrap_or_default();
-            for scroller in scrollers.values_mut() {
-                if scroller.update_slider.is_some() && scroller.ui_position != last {
-                    scroller.update_slider = None;
-                }
+            .map(|v| v.stack_index)
+            .max()
+        else {
+            continue;
+        };
+        for scroller in scrollers.values_mut() {
+            if scroller.update_slider.is_some() && scroller.stack_index != frontmost {
+                scroller.update_slider = None;
             }
         }
     }
 
     // bars
-    for (entity, bar, mut style, interaction, node, transform, maybe_target_camera) in
+    for (entity, bar, mut style, mut bounds, interaction, node, transform, target_camera) in
         bars.iter_mut()
     {
         let source = if bar.vertical {
@@ -535,9 +569,13 @@ fn update_scrollables(
                 style.width = Val::Px(info.length);
                 style.height = Val::Px(bar_width);
             }
+            // corner/border sizes are derived from bar_width, which tracks the window size; refresh
+            // them too (they were otherwise only set at creation, so a resize left them stale).
+            bounds.corner_size = Val::Px(bar_width * 0.5);
+            bounds.border_size = Val::Px(bar_width * 0.125);
         }
 
-        let Some(cursor_position) = cursor_position(maybe_target_camera) else {
+        let Some(cursor_position) = cursor_position(target_camera) else {
             continue;
         };
 
@@ -567,7 +605,7 @@ fn update_scrollables(
     }
 
     // sliders
-    for (entity, mut slider, mut style) in sliders.iter_mut() {
+    for (entity, mut slider, mut style, mut bounds) in sliders.iter_mut() {
         let source = if slider.vertical {
             &mut vertical_scrollers
         } else {
@@ -617,6 +655,10 @@ fn update_scrollables(
                 style.left = Val::Px(slider_start);
                 style.top = Val::Px(info.bar_position.y);
             }
+            // refresh the bar_width-derived corner/border (otherwise only set at creation, so a
+            // window resize left them stale).
+            bounds.corner_size = Val::Px(bar_width * 0.5);
+            bounds.border_size = Val::Px(bar_width * 0.25);
 
             // re-paginate content
             let mut style = nodes.get_mut(info.content).unwrap().1;

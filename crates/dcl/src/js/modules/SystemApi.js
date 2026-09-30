@@ -114,14 +114,18 @@ module.exports.kernelFetch = async function (body) {
 //   equip?: PBAvatarEquippedData,
 //   hasClaimedName?: bool,
 //   profileExtras?: {field: value}
+//   nameColor: Color3
 // }
 // => deployed version
 module.exports.setAvatar = async function(avatar) {
-    return await Deno.core.ops.op_set_avatar(avatar.base, avatar.equip, avatar.hasClaimedName, avatar.profileExtras)
+    return await Deno.core.ops.op_set_avatar(avatar)
 }
 
-module.exports.getProfileExtras = async function() {
-    return await Deno.core.ops.op_get_profile_extras();
+// any user's full profile (own, nearby or remote), resolved through the engine's profile cache
+// and fetch cascade. Rejects if the address can't be resolved.
+// address: string => SerializedProfile
+module.exports.getUserProfile = async function(address) {
+    return await Deno.core.ops.op_get_user_profile(address);
 }
 
 // get the next key/button pressed by the user, identified as a string
@@ -144,6 +148,23 @@ module.exports.getInputBindings = async function() {
 // }
 module.exports.setInputBindings = async function(bindings) {
     await Deno.core.ops.op_set_bindings(bindings)
+}
+
+// declare HUD focus state
+// arg: {
+//   ui: bool,     // a HUD surface (menu/popup) is active: input is reserved above scenes,
+//                 // but the system-action stream keeps flowing
+//   text: bool,   // a HUD text field has keyboard focus: keys are typing, no actions resolve
+//   scroll: bool, // the cursor is over a scrollable HUD element: the Scroll actions are
+//                 // reserved, so every input bound to them stands down for world consumers
+//                 // while the action stream still resolves Scroll for the HUD to consume
+//   covered: bool, // a full-screen HUD surface (menu page, loading overlay) hides the world:
+//                  // scenes are told they are hidden (EngineInfo.scene_hidden)
+//   menu: string | null, // the open full-screen menu page, by the SystemAction that toggles it
+//                        // ("Map", "Backpack", ...): backs the scene-facing openExplorerUi action
+// }
+module.exports.setUiFocus = async function(focus) {
+    Deno.core.ops.op_set_ui_focus(focus?.ui ?? false, focus?.text ?? false, focus?.scroll ?? false, focus?.covered ?? false, focus?.menu ?? null)
 }
 
 
@@ -173,7 +194,16 @@ module.exports.showUi = async function(args) {
 
   const reply = await Deno.core.ops.op_console_command("show_ui", argsArray)
   const value = reply.split(":").pop()?.trim().toLowerCase();
-  return value === "true";  
+  return value === "true";
+}
+
+// run an arbitrary console command and await its reply via the per-invocation
+// response channel.
+// cmd: string (command name, without the leading slash)
+// args: string[] (positional arguments)
+// returns: the command's reply string on success; rejects with the failure message
+module.exports.consoleCommand = async function(cmd, args) {
+    return await Deno.core.ops.op_console_command(cmd, args ?? [])
 }
 
 // [{
@@ -363,9 +393,198 @@ module.exports.getHoverStream = async function() {
   return streamGenerator();
 }
 
+// get proximity events as a stream
+// type ProximityEvent = {
+//   entered: bool,
+//   entity: number,            // session-stable opaque id; matches enter/leave
+//   entityPosition: Vector3,   // entity transform origin in world space (stable anchor)
+//   actions: HoverAction[],
+// }
+module.exports.getProximityStream = async function() {
+  const rid = await Deno.core.ops.op_get_proximity_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_proximity_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// profile changes (any player the engine holds a profile for, including the local player) as a stream
+// type ProfileChangedEvent = {
+//   address: string,   // lowercase 0x address
+//   version: number,   // the profile version now held; re-read with getUserProfile if yours is older
+// }
+module.exports.getProfileChangedStream = async function() {
+  const rid = await Deno.core.ops.op_get_profile_changed_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_profile_changed_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// Social / Friends
+
+module.exports.social = {
+  // get friendship events as a stream
+  // type FriendshipEventUpdate = {
+  //   type: "request" | "accept" | "reject" | "cancel" | "delete" | "block",
+  //   address: string,
+  //   // only for "request":
+  //   name?: string,
+  //   hasClaimedName?: bool,
+  //   profilePictureUrl?: string,
+  //   nameColor?: { r: number, g: number, b: number },
+  //   createdAt?: number,
+  //   message?: string,
+  //   id?: string,
+  // }
+  getFriendshipEventStream: async function() {
+    const rid = await Deno.core.ops.op_get_friendship_event_stream();
+
+    async function* streamGenerator() {
+      while (true) {
+        const next = await Deno.core.ops.op_read_friendship_event_stream(rid);
+        if (next === null) break;
+        yield next;
+      }
+    }
+
+    return streamGenerator();
+  },
+
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
+  getFriends: async function() {
+      return await Deno.core.ops.op_get_friends();
+  },
+
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
+  getMutualFriends: async function(address) {
+      return await Deno.core.ops.op_get_mutual_friends(address);
+  },
+
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, createdAt: number, message?: string, id: string }[]
+  getSentFriendRequests: async function() {
+      return await Deno.core.ops.op_get_sent_friend_requests();
+  },
+
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, createdAt: number, message?: string, id: string }[]
+  getReceivedFriendRequests: async function() {
+      return await Deno.core.ops.op_get_received_friend_requests();
+  },
+
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, status: "online" | "offline" | "away" }[]
+  getOnlineFriends: async function() {
+      return await Deno.core.ops.op_get_online_friends();
+  },
+
+  // get friend connectivity updates as a stream
+  // type FriendConnectivityEvent = {
+  //   address: string,
+  //   name: string,
+  //   hasClaimedName: bool,
+  //   profilePictureUrl: string,
+  //   nameColor?: { r: number, g: number, b: number },
+  //   status: "online" | "offline" | "away",
+  // }
+  getFriendConnectivityStream: async function() {
+    const rid = await Deno.core.ops.op_get_friend_connectivity_stream();
+
+    async function* streamGenerator() {
+      while (true) {
+        const next = await Deno.core.ops.op_read_friend_connectivity_stream(rid);
+        if (next === null) break;
+        yield next;
+      }
+    }
+
+    return streamGenerator();
+  },
+
+  // returns bool
+  getSocialInitialized: async function() {
+      return await Deno.core.ops.op_get_social_initialized();
+  },
+
+  // address: string, message?: string
+  sendFriendRequest: async function(address, message) {
+      await Deno.core.ops.op_send_friend_request(address, message);
+  },
+
+  // address: string
+  acceptFriendRequest: async function(address) {
+      await Deno.core.ops.op_accept_friend_request(address);
+  },
+
+  // address: string
+  rejectFriendRequest: async function(address) {
+      await Deno.core.ops.op_reject_friend_request(address);
+  },
+
+  // address: string
+  cancelFriendRequest: async function(address) {
+      await Deno.core.ops.op_cancel_friend_request(address);
+  },
+
+  // address: string
+  deleteFriend: async function(address) {
+      await Deno.core.ops.op_delete_friend(address);
+  },
+
+  // address: string
+  blockUser: async function(address) {
+      await Deno.core.ops.op_block_user(address);
+  },
+
+  // address: string
+  unblockUser: async function(address) {
+      await Deno.core.ops.op_unblock_user(address);
+  },
+
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
+  getBlockedUsers: async function() {
+      return await Deno.core.ops.op_get_blocked_users();
+  },
+
+  // returns { blockedUsers: string[], blockedByUsers: string[] } (addresses only)
+  getBlockingStatus: async function() {
+      return await Deno.core.ops.op_get_blocking_status();
+  },
+
+  // get block updates as a stream (someone blocked / unblocked the local user)
+  // type BlockUpdateData = {
+  //   address: string,
+  //   isBlocked: bool,
+  // }
+  getBlockUpdateStream: async function() {
+    const rid = await Deno.core.ops.op_get_block_update_stream();
+
+    async function* streamGenerator() {
+      while (true) {
+        const next = await Deno.core.ops.op_read_block_update_stream(rid);
+        if (next === null) break;
+        yield next;
+      }
+    }
+
+    return streamGenerator();
+  }
+}
+
 // get scene loading UI state as a stream
 // type SceneLoadingUi = {
 //   visible: boolean,
+//   realmConnected: boolean,
 //   title: string,
 //   pendingAssets: number | null,
 // }

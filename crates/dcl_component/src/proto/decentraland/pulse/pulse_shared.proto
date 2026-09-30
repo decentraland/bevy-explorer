@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package decentraland.pulse;
+
+import "decentraland/common/options.proto";
+
+enum PlayerAnimationFlags {
+  NONE = 0;
+  GROUNDED = 1;
+  LONG_JUMP = 2;
+  LONG_FALL = 4;
+  FALLING = 8;
+  STUNNED = 16;
+  HEAD_YAW = 32;
+  HEAD_PITCH = 64;
+  POINTING_AT = 128;
+}
+
+enum GlideState {
+  PROP_CLOSED = 0;
+  OPENING_PROP = 1;
+  GLIDING = 2;
+  CLOSING_PROP = 3;
+}
+
+// Quantized identically to PlayerStateDeltaTier0 so a full state and a stream of deltas land on the same grid.
+message PlayerState {
+  int32 parcel_index = 1;
+
+  // Position inside the parcel (X/Z) and world altitude (Y).
+  uint32 position_x = 2 [(decentraland.common.quantized) = { min: 0, max: 16, bits: 8 }];
+  uint32 position_y = 3 [(decentraland.common.quantized) = { min: 0, max: 200, bits: 13 }];
+  uint32 position_z = 4 [(decentraland.common.quantized) = { min: 0, max: 16, bits: 8 }];
+
+  uint32 velocity_x = 5 [(decentraland.common.quantized_power) = { max: 50, pow: 2, bits: 8 }];
+  uint32 velocity_y = 6 [(decentraland.common.quantized_power) = { max: 50, pow: 2, bits: 8 }];
+  uint32 velocity_z = 7 [(decentraland.common.quantized_power) = { max: 50, pow: 2, bits: 8 }];
+
+  uint32 rotation_y = 8 [(decentraland.common.quantized) = { min: 0, max: 360.0, bits: 7 }];
+
+  uint32 movement_blend = 9 [(decentraland.common.quantized) = { min: 0, max: 3, bits: 5 }];
+  uint32 slide_blend = 10 [(decentraland.common.quantized) = { min: 0, max: 1, bits: 4 }];
+
+  optional uint32 head_yaw = 11 [(decentraland.common.quantized) = { min: 0, max: 360.0, bits: 7 }];
+  optional uint32 head_pitch = 12 [(decentraland.common.quantized) = { min: 0, max: 360.0, bits: 7 }];
+
+  uint32 state_flags = 13;
+  GlideState glide_state = 14;
+
+  int32 jump_count = 15;
+
+  // Absolute world hit position the player is pointing at.
+  // Only meaningful when POINTING_AT is set in `state_flags`.
+  optional uint32 point_at_x = 16 [(decentraland.common.quantized) = { min: -3000.0, max: 3000.0, bits: 17 }];
+  optional uint32 point_at_y = 17 [(decentraland.common.quantized) = { min:     0.0, max:  200.0, bits:  7 }];
+  optional uint32 point_at_z = 18 [(decentraland.common.quantized) = { min: -3000.0, max: 3000.0, bits: 17 }];
+}

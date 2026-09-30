@@ -5,12 +5,13 @@ use bevy::{
     platform::collections::{HashMap, HashSet},
     prelude::*,
 };
-use ipfs::EntityDefinitionLoader;
+use ipfs::{ipfs_path::ContentPathExt, EntityDefinitionLoader};
 use serde::{Deserialize, Serialize};
 
 use once_cell::sync::Lazy;
 
 use crate::{
+    ext::AvatarEmotesExt,
     urn::{CollectibleInstance, CollectibleUrn},
     Collectible, CollectibleData, CollectibleError, CollectibleManager, CollectibleType,
     CollectiblesTypePlugin,
@@ -23,14 +24,24 @@ pub fn base_bodyshapes() -> Vec<String> {
     ]
 }
 
+/// Emote pointer resolution and metadata (`CollectibleManager<Emote>`) alone: what a headless
+/// server needs to report an emote's loop flag. Loads no clip or sound.
+pub struct EmoteMetadataPlugin;
+
+impl Plugin for EmoteMetadataPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(CollectiblesTypePlugin::<Emote>::default());
+        app.register_asset_loader(EmoteMetaLoader);
+    }
+}
+
 pub struct EmotesPlugin;
 
 impl Plugin for EmotesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<BaseEmotes>();
-        app.add_plugins(CollectiblesTypePlugin::<Emote>::default());
+        app.add_plugins(EmoteMetadataPlugin);
         app.register_asset_loader(EmoteLoader);
-        app.register_asset_loader(EmoteMetaLoader);
         app.add_systems(Update, (load_animations,));
     }
 }
@@ -96,38 +107,38 @@ fn load_animations(
     match &mut *state {
         AnimLoadState::Init => {
             *state = AnimLoadState::WaitingForGltfs(vec![
-                asset_server.load("embedded://animations/clap.glb"),
-                asset_server.load("embedded://animations/Dance_Female.glb"),
-                asset_server.load("embedded://animations/Dance_Male.glb"),
-                asset_server.load("embedded://animations/disco_dance.glb"),
-                asset_server.load("embedded://animations/dont_wanna_see.glb"),
-                asset_server.load("embedded://animations/F_FistPump.glb"),
-                asset_server.load("embedded://animations/f_head_explode.glb"),
-                asset_server.load("embedded://animations/F_RobotDance.glb"),
-                asset_server.load("embedded://animations/Hands_Air.glb"),
                 asset_server.load("embedded://animations/idle.glb"),
                 asset_server.load("embedded://animations/jump2.glb"),
-                asset_server.load("embedded://animations/kiss.glb"),
-                asset_server.load("embedded://animations/mchammer-dance.glb"),
-                asset_server.load("embedded://animations/M_FistPump.glb"),
-                asset_server.load("embedded://animations/m_head_explode.glb"),
-                asset_server.load("embedded://animations/M_RobotDance.glb"),
-                asset_server.load("embedded://animations/Raise_Hand.glb"),
+                asset_server.load("embedded://animations/double_jump.glb"),
+                asset_server.load("embedded://animations/glide.glb"),
                 asset_server.load("embedded://animations/run.glb"),
-                asset_server.load("embedded://animations/shrug.glb"),
-                asset_server.load("embedded://animations/tektonik-dance.glb"),
-                asset_server.load("embedded://animations/Throw Money-Emote.glb"),
-                asset_server.load("embedded://animations/tik-tok-dance.glb"),
                 asset_server.load("embedded://animations/walk.glb"),
-                asset_server.load("embedded://animations/Wave_Female.glb"),
-                asset_server.load("embedded://animations/Wave_Male.glb"),
             ]);
         }
         AnimLoadState::WaitingForGltfs(ref mut h_gltfs) => {
             h_gltfs.retain(
                 |h_gltf| match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
                     Some(anims) => {
-                        for (clip_name, h_clip) in anims.clone() {
+                        let anims_owned = anims.clone();
+                        // Snapshot source scene + _Prop clip once per source glb, so each
+                        // synthesized emote can reference the glider (or any future prop) the
+                        // source carries alongside its avatar clip. Cloning handles is cheap.
+                        let (source_prop_clip, source_scenes, source_meshes, source_default_scene) =
+                            gltfs
+                                .get(h_gltf)
+                                .map(|g| {
+                                    (
+                                        g.named_animations
+                                            .iter()
+                                            .find(|(n, _)| n.ends_with("_Prop"))
+                                            .map(|(_, h)| h.clone()),
+                                        g.scenes.clone(),
+                                        g.meshes.clone(),
+                                        g.default_scene.clone(),
+                                    )
+                                })
+                                .unwrap_or_default();
+                        for (clip_name, h_clip) in anims_owned {
                             let Some((
                                 network_name,
                                 friendly_name,
@@ -157,20 +168,22 @@ fn load_animations(
                                 continue;
                             };
 
+                            let mut named_animations =
+                                HashMap::from_iter([("_Avatar".into(), h_clip.clone())]);
+                            if let Some(ref prop) = source_prop_clip {
+                                named_animations.insert("_Prop".into(), prop.clone());
+                            }
                             let new_gltf = Gltf {
-                                named_animations: HashMap::from_iter([(
-                                    "_Avatar".into(),
-                                    h_clip.clone(),
-                                )]),
-                                scenes: Default::default(),
+                                named_animations,
+                                scenes: source_scenes.clone(),
                                 named_scenes: Default::default(),
-                                meshes: Default::default(),
+                                meshes: source_meshes.clone(),
                                 named_meshes: Default::default(),
                                 materials: Default::default(),
                                 named_materials: Default::default(),
                                 nodes: Default::default(),
                                 named_nodes: Default::default(),
-                                default_scene: Default::default(),
+                                default_scene: source_default_scene.clone(),
                                 animations: Default::default(),
                                 source: Default::default(),
                                 skins: Default::default(),
@@ -229,7 +242,7 @@ fn load_animations(
                                         .collect(),
                                     name: friendly_name.to_owned(),
                                     description: Default::default(),
-                                    extra_data: (),
+                                    extra_data: EmoteExtraData { loops: repeat },
                                 },
                                 representations,
                             };
@@ -296,100 +309,6 @@ impl DefaultAnim {
 
 static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(|| {
     HashMap::from_iter([
-        (
-            "wave",
-            DefaultAnim::new("Wave", "Wave_Male", "Wave_Female", false, true),
-        ),
-        (
-            "fistpump",
-            DefaultAnim::new("Fist Pump", "M_FistPump", "F_FistPump", false, true),
-        ),
-        (
-            "robot",
-            DefaultAnim::new("Robot", "M_RobotDance", "F_RobotDance", true, true),
-        ),
-        (
-            "raiseHand",
-            DefaultAnim::new("Raise Hand", "Raise_Hand", "Raise_Hand", false, true),
-        ),
-        (
-            "clap",
-            DefaultAnim::new("Clap", "clap", "clap", false, true),
-        ),
-        (
-            "money",
-            DefaultAnim::new(
-                "Money",
-                "Armature|Throw Money-Emote_v02|BaseLayer",
-                "Armature|Throw Money-Emote_v02|BaseLayer",
-                false,
-                true,
-            ),
-        ),
-        (
-            "kiss",
-            DefaultAnim::new("Kiss", "kiss", "kiss", false, true),
-        ),
-        (
-            "hammer",
-            DefaultAnim::new(
-                "Hammer",
-                "Armature|mchammer-dance_v02|BaseLayer",
-                "Armature|mchammer-dance_v02|BaseLayer",
-                true,
-                true,
-            ),
-        ),
-        (
-            "tik",
-            DefaultAnim::new(
-                "Tik",
-                "Armature|tik-tok-dance_v02|BaseLayer",
-                "Armature|tik-tok-dance_v02|BaseLayer",
-                true,
-                true,
-            ),
-        ),
-        (
-            "tektonik",
-            DefaultAnim::new(
-                "Tektonic",
-                "Armature|tektonik-dance_v01|BaseLayer",
-                "Armature|tektonik-dance_v01|BaseLayer",
-                true,
-                true,
-            ),
-        ),
-        (
-            "dontsee",
-            DefaultAnim::new("Don't See", "dont_wanna_see", "dont_wanna_see", false, true),
-        ),
-        (
-            "handsair",
-            DefaultAnim::new(
-                "Hands Air",
-                "Hands_In_The_Air",
-                "Hands_In_The_Air",
-                true,
-                true,
-            ),
-        ),
-        (
-            "shrug",
-            DefaultAnim::new("Shrug", "shrug", "shrug", false, true),
-        ),
-        (
-            "disco",
-            DefaultAnim::new("Disco", "disco_dance", "disco_dance", true, true),
-        ),
-        (
-            "headexplode",
-            DefaultAnim::new("Head Explode", "explode", "f_head_explode", false, true),
-        ),
-        (
-            "dance",
-            DefaultAnim::new("Dance", "Dance_Male", "Dance_Female", true, true),
-        ),
         // base animations, not emotes
         (
             "idle_male",
@@ -418,6 +337,20 @@ static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(||
                 ),
                 (0.6, &["avatar_footstep_land01", "avatar_footstep_land02"]),
             ]),
+        ),
+        (
+            "double_jump",
+            DefaultAnim::new(
+                "double_jump",
+                "Double_Jump_Base",
+                "Double_Jump_Base",
+                false,
+                false,
+            ),
+        ),
+        (
+            "glide",
+            DefaultAnim::new("glide", "Glide_Avatar", "Glide_Avatar", true, false),
         ),
     ])
 });
@@ -459,8 +392,7 @@ impl Emote {
         let gltf = gltfs.get(self.gltf.id()).ok_or(CollectibleError::Loading)?;
         if let Some(anim) = gltf
             .named_animations
-            .iter()
-            .find(|(name, _)| name.ends_with("_Avatar"))
+            .find_avatar_emote()
             .map(|(_, handle)| handle)
             .cloned()
         {
@@ -493,7 +425,7 @@ impl Emote {
             .ok_or(CollectibleError::Loading)?
             .named_animations
             .iter()
-            .find(|(name, _)| name.ends_with("_Prop"))
+            .find(|(name, _)| name.to_ascii_lowercase().contains("_prop"))
             .map(|(_, handle)| handle)
             .cloned())
     }
@@ -521,12 +453,22 @@ impl Emote {
     }
 }
 
+/// Emote metadata available without loading the clip (`collectible.emote_data`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EmoteExtraData {
+    /// `emoteDataADR74.loop`: the emote loops until stopped.
+    pub loops: bool,
+}
+
 impl CollectibleType for Emote {
     type Meta = EmoteMeta;
-    type ExtraData = ();
+    type ExtraData = EmoteExtraData;
 
-    fn base_collection() -> Option<&'static str> {
-        Some("urn:decentraland:off-chain:base-emotes")
+    fn source_collections() -> &'static [&'static str] {
+        &[
+            "urn:decentraland:off-chain:base-emotes",
+            "urn:decentraland:off-chain:base-scene-emotes",
+        ]
     }
 
     fn extension() -> &'static str {
@@ -564,7 +506,7 @@ impl AssetLoader for EmoteLoader {
             .path()
             .parent()
             .unwrap()
-            .join(&meta.thumbnail)
+            .resolve_content_uri(&meta.thumbnail)
             .to_string_lossy()
             .into_owned();
 
@@ -576,14 +518,22 @@ impl AssetLoader for EmoteLoader {
                     .path()
                     .parent()
                     .unwrap()
-                    .join(&representation.main_file),
+                    .resolve_content_uri(&representation.main_file),
             );
 
             let sound = representation
                 .contents
                 .iter()
                 .find(|f| f.ends_with(".mp3") || f.ends_with(".ogg"))
-                .map(|af| load_context.load(load_context.path().parent().unwrap().join(af)));
+                .map(|af| {
+                    load_context.load(
+                        load_context
+                            .path()
+                            .parent()
+                            .unwrap()
+                            .resolve_content_uri(af),
+                    )
+                });
 
             for body_shape in representation.body_shapes {
                 representations.insert(
@@ -605,7 +555,9 @@ impl AssetLoader for EmoteLoader {
                 name: meta.name,
                 description: meta.description,
                 available_representations: representations.keys().cloned().collect(),
-                extra_data: (),
+                extra_data: EmoteExtraData {
+                    loops: meta.emote_extended_data.loops,
+                },
             },
             representations,
         })
@@ -638,7 +590,7 @@ impl AssetLoader for EmoteMetaLoader {
             .path()
             .parent()
             .unwrap()
-            .join(&meta.thumbnail)
+            .resolve_content_uri(&meta.thumbnail)
             .to_string_lossy()
             .into_owned();
 
@@ -660,7 +612,9 @@ impl AssetLoader for EmoteMetaLoader {
             name: meta.name,
             description: meta.description,
             available_representations,
-            extra_data: (),
+            extra_data: EmoteExtraData {
+                loops: meta.emote_extended_data.loops,
+            },
         })
     }
 }

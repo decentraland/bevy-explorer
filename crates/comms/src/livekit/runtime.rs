@@ -21,7 +21,8 @@ use tokio::{
     task::yield_now,
 };
 
-#[derive(Clone, Resource)]
+#[derive(Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Resource))]
 pub struct LivekitRuntime(
     #[cfg(not(target_arch = "wasm32"))] Arc<Runtime>,
     #[cfg(target_arch = "wasm32")] Arc<LocalRuntime>,
@@ -87,19 +88,21 @@ impl LivekitRuntime {
     }
 }
 
-/// SAFETY: This will be fine while WASM remains single threaded
+/// How systems take the runtime. On the web it is a single-threaded tokio runtime, so it is a
+/// non-send resource: that keeps every system using it on the engine thread, where its tasks run.
+#[cfg(not(target_arch = "wasm32"))]
+pub type LivekitRuntimeRes<'w> = Res<'w, LivekitRuntime>;
 #[cfg(target_arch = "wasm32")]
-unsafe impl Send for LivekitRuntime {}
-
-/// SAFETY: This will be fine while WASM remains single threaded
-#[cfg(target_arch = "wasm32")]
-unsafe impl Sync for LivekitRuntime {}
+pub type LivekitRuntimeRes<'w> = NonSend<'w, LivekitRuntime>;
 
 pub struct LivekitRuntimePlugin;
 
 impl Plugin for LivekitRuntimePlugin {
     fn build(&self, app: &mut App) {
+        #[cfg(not(target_arch = "wasm32"))]
         app.init_resource::<LivekitRuntime>();
+        #[cfg(target_arch = "wasm32")]
+        app.init_non_send_resource::<LivekitRuntime>();
         #[cfg(target_arch = "wasm32")]
         app.add_systems(First, yield_to_runtime);
     }
@@ -109,6 +112,6 @@ impl Plugin for LivekitRuntimePlugin {
 /// it, it will never poll the tasks on wasm, native does not have this issue
 /// as it is multithreaded
 #[cfg(target_arch = "wasm32")]
-fn yield_to_runtime(livekit_runtime: Res<LivekitRuntime>) {
+fn yield_to_runtime(livekit_runtime: LivekitRuntimeRes) {
     livekit_runtime.block_on(yield_now());
 }

@@ -1,0 +1,93 @@
+/* The card reuses the scrimless ModalShell; the gate owns its full-screen layer (like MobileGate's
+   .root — App renders the gate INSTEAD of the app, so no PopupHost is mounted to draw one). Only the
+   parts specific to a security stop-sign live here. */
+
+/* The app isn't rendered behind this gate, so a translucent scrim would sit over a blank page.
+   Paint it opaque — and darker than --menu-bg, because this is a stop sign, not a menu. */
+.layer {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 30%, #3b1063 0%, #240a3d 55%, #14051f 100%);
+}
+
+/* Alert-style centered header — logo + title-scale type, not the shell's compact panel heading. */
+.head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 12px 0;
+  text-align: center;
+}
+.title {
+  margin: 18px 0 0;
+  font-size: var(--fs-title);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--error);
+}
+
+.lead {
+  margin: 0 0 18px;
+  font-size: var(--fs-lg);
+  color: var(--ink-95);
+}
+
+.params {
+  margin: 0 0 18px;
+  font-size: var(--fs-lg);
+  color: var(--ink-95);
+}
+/* The attacker controls this string: break it anywhere so a long one can't push the card wide, and
+   keep it visually distinct from our own copy. */
+.paramValue {
+  font-family: var(--font-mono);
+  color: var(--error-text);
+  overflow-wrap: anywhere;
+}
+.paramDesc {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  font-size: var(--fs-md);
+  color: var(--ink-7);
+}
+
+.advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--fill-1);
+}
+.advancedNote {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--ink-7);
+}
+
+.exit {
+  background: var(--error);
+  color: var(--text);
+}
+.exit:hover {
+  background: #ff4444;
+}
+/* Autofocused, so its ring is on screen from the first paint — the UA default blue fights the
+   palette. */
+.exit:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+/* Understated on purpose — the risky path shouldn't look like the recommended one. */
+.proceed {
+  border: 1px solid var(--error);
+  color: var(--error-text);
+}
+.proceed:hover {
+  background: rgba(255, 36, 36, 0.12);
+}

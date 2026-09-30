@@ -17,6 +17,8 @@ nft = { workspace = true }
 console = { workspace = true }
 
 user_input = { workspace = true }
+input_manager = { workspace = true }
+system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 bevy_dui = { workspace = true }
@@ -24,11 +26,17 @@ bevy_console = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
-ethers-core = { workspace = true }
+alloy-core = { workspace = true }
 urlencoding = { workspace = true }
+url = { workspace = true }
 opener = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 copypwasmta = { workspace = true }
 http = { workspace = true }
 futures-lite = { workspace = true }
+web-time = { workspace = true }
+rand = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }

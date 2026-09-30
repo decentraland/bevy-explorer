@@ -1,5 +1,6 @@
 pub mod base_wearables;
 pub mod emotes;
+pub mod ext;
 pub mod urn;
 pub mod wearables;
 
@@ -50,7 +51,11 @@ impl<T: CollectibleType> Plugin for CollectiblesTypePlugin<T> {
 pub trait CollectibleType: std::fmt::Debug + TypePath + Send + Sync + 'static {
     type Meta: for<'a> Deserialize<'a>;
     type ExtraData: Clone + Send + Sync + 'static;
-    fn base_collection() -> Option<&'static str>;
+    /// The off-chain collections a bare name (`"sittingChair2"`) may come from. A bare name parses
+    /// to a urn under `UNKNOWN_SOURCE_COLLECTION`; the manager requests the name under every
+    /// source collection instead and aliases the unknown-source urn to whichever has it. Lookups
+    /// by the unknown-source urn then work, and `CollectibleManager::source_urn` gives the real one.
+    fn source_collections() -> &'static [&'static str];
     fn extension() -> &'static str;
     fn data_extension() -> &'static str;
 }
@@ -96,6 +101,8 @@ impl<T: CollectibleType> Clone for CollectibleData<T> {
 pub struct Collectibles<T: CollectibleType> {
     pointers: HashMap<CollectibleUrn<T>, PointerResult<T>>,
     pointer_request: HashSet<CollectibleUrn<T>>,
+    /// requested urn -> the `source_collections` urn it resolved to
+    aliases: HashMap<CollectibleUrn<T>, CollectibleUrn<T>>,
     cache: HashMap<CollectibleUrn<T>, (u32, Handle<Collectible<T>>)>,
     data_cache: HashMap<CollectibleUrn<T>, (u32, Handle<CollectibleData<T>>)>,
 }
@@ -121,6 +128,7 @@ impl<T: CollectibleType> Default for Collectibles<T> {
         Self {
             pointers: Default::default(),
             pointer_request: Default::default(),
+            aliases: Default::default(),
             cache: Default::default(),
             data_cache: Default::default(),
         }
@@ -270,6 +278,15 @@ impl<T: CollectibleType> CollectibleManager<'_, '_, T> {
         }
     }
 
+    /// The urn to name a collectible by outside the manager (on the wire): the source-collection
+    /// urn it resolved to, else the bare name it was requested by, else the urn as given.
+    pub fn source_urn<'a>(&'a self, urn: &'a CollectibleUrn<T>) -> &'a str {
+        match self.collectibles.aliases.get(urn) {
+            Some(source) => source.as_str(),
+            None => urn.unknown_source_name().unwrap_or(urn.as_str()),
+        }
+    }
+
     pub fn add_builtin(&mut self, urn: CollectibleUrn<T>, value: Collectible<T>) {
         if let Some(PointerResult::Builtin(h)) = self.collectibles.pointers.get(&urn) {
             let asset = self.assets.get_mut(h).unwrap();
@@ -310,7 +327,7 @@ pub fn request_collectibles<T: CollectibleType>(
                         entity.id.clone(),
                         collection,
                         Some(IpfsModifier {
-                            base_url: Some(base_wearables::CONTENT_URL.to_owned()),
+                            base_url: Some(base_wearables::content_url()),
                         }),
                         entity.metadata.as_ref().map(ToString::to_string),
                     );
@@ -335,9 +352,29 @@ pub fn request_collectibles<T: CollectibleType>(
                 }
 
                 // any urns left in the hashset were requested but not returned
-                for urn in requested_entities {
+                for urn in &requested_entities {
                     debug!("missing {urn}");
-                    collectibles.pointers.insert(urn, PointerResult::Missing);
+                    collectibles
+                        .pointers
+                        .insert(urn.clone(), PointerResult::Missing);
+                }
+
+                // an unknown-source urn is never returned, so it always lands here: resolve it to
+                // whichever source collection has the name
+                for urn in requested_entities {
+                    let found = source_urns::<T>(&urn).find_map(|source| {
+                        match collectibles.pointers.get(&source) {
+                            Some(PointerResult::Hash(hash)) => Some((source, hash.clone())),
+                            _ => None,
+                        }
+                    });
+                    if let Some((source, hash)) = found {
+                        debug!("{urn} -> {source}");
+                        collectibles
+                            .pointers
+                            .insert(urn.clone(), PointerResult::Hash(hash));
+                        collectibles.aliases.insert(urn, source);
+                    }
                 }
             }
             Some(Err(e)) => {
@@ -351,13 +388,24 @@ pub fn request_collectibles<T: CollectibleType>(
     } else {
         let requested = std::mem::take(&mut collectibles.pointer_request);
 
-        let requested = requested
+        let mut requested = requested
             .into_iter()
             .filter(|r| !collectibles.pointers.contains_key(r))
             .collect::<HashSet<_>>();
 
+        // fetch an unknown-source name under every source collection, in the same round trip
+        let sources = requested
+            .iter()
+            .flat_map(source_urns::<T>)
+            .filter(|s| !collectibles.pointers.contains_key(s))
+            .collect::<Vec<_>>();
+        requested.extend(sources);
+
+        // an unknown-source urn stays in the set (to be resolved from the results) but isn't a
+        // pointer any server knows
         let pointers = requested
             .iter()
+            .filter(|urn| urn.unknown_source_name().is_none())
             .map(ToString::to_string)
             .collect::<Vec<_>>();
 
@@ -370,5 +418,55 @@ pub fn request_collectibles<T: CollectibleType>(
                 requested,
             ));
         }
+    }
+}
+
+/// The places an unknown-source name may be found: the name under each of the type's
+/// `source_collections`. A urn under a real collection names exactly one place, so none.
+fn source_urns<T: CollectibleType>(
+    urn: &CollectibleUrn<T>,
+) -> impl Iterator<Item = CollectibleUrn<T>> + '_ {
+    urn.unknown_source_name().into_iter().flat_map(|name| {
+        T::source_collections()
+            .iter()
+            .filter_map(move |collection| CollectibleUrn::new(&format!("{collection}:{name}")).ok())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sources<T: CollectibleType>(urn: &str) -> Vec<String> {
+        source_urns(&CollectibleUrn::<T>::new(urn).unwrap())
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn bare_emote_names_are_tried_under_every_source_collection() {
+        let bare = EmoteUrn::new("sittingChair2").unwrap();
+        assert_eq!(
+            bare.as_str(),
+            "urn:decentraland:off-chain:unknown-source:sittingchair2"
+        );
+        assert_eq!(bare.unknown_source_name(), Some("sittingchair2"));
+        assert_eq!(
+            sources::<Emote>("sittingChair2"),
+            [
+                "urn:decentraland:off-chain:base-emotes:sittingchair2",
+                "urn:decentraland:off-chain:base-scene-emotes:sittingchair2"
+            ]
+        );
+        assert!(EmoteUrn::new("urn:decentraland:off-chain:base-emotes:wave")
+            .unwrap()
+            .unknown_source_name()
+            .is_none());
+        assert!(sources::<Emote>("urn:decentraland:off-chain:base-scene-emotes:punch").is_empty());
+        assert!(sources::<Emote>("urn:decentraland:matic:collections-v2:0xabc:0").is_empty());
+        assert!(sources::<wearables::Wearable>(
+            "urn:decentraland:off-chain:base-avatars:f_eyes_00"
+        )
+        .is_empty());
     }
 }

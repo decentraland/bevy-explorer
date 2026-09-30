@@ -12,7 +12,7 @@ use common::{
     sets::SceneSets,
     structs::{
         CameraOverride, CinematicSettings, PermissionState, PermissionType, PrimaryCamera,
-        PrimaryUser,
+        PrimaryUser, PLAYER_CAMERA_FOV,
     },
 };
 use dcl::interface::ComponentPosition;
@@ -24,6 +24,11 @@ use dcl_component::{
 };
 
 use super::AddCrdtInterfaceExt;
+
+/// bounds for the scene-supplied `PBVirtualCamera.fov`, in degrees. 0 or negative gives a
+/// degenerate projection matrix, 180 or more inverts it, and a non-finite value poisons it.
+const MIN_FOV_DEGREES: f32 = 1.0;
+const MAX_FOV_DEGREES: f32 = 179.0;
 
 pub struct CameraModeAreaPlugin;
 
@@ -252,10 +257,9 @@ pub fn update_camera_mode_area(
                         yaw_range: cinematic_settings.yaw_range,
                         pitch_range: cinematic_settings.pitch_range,
                         roll_range: cinematic_settings.roll_range,
-                        zoom_min: cinematic_settings.zoom_min,
-                        zoom_max: cinematic_settings.zoom_max,
                         look_at_entity: None,
                         transition: None,
+                        fov: PLAYER_CAMERA_FOV,
                     }));
                 }
                 None => {
@@ -269,8 +273,6 @@ pub fn update_camera_mode_area(
                         yaw_range: Some(0.0),
                         pitch_range: Some(0.0),
                         roll_range: Some(0.0),
-                        zoom_min: None,
-                        zoom_max: None,
                         look_at_entity: maybe_virtual
                             .as_ref()
                             .and_then(|v| v.0.look_at_entity)
@@ -280,6 +282,12 @@ pub fn update_camera_mode_area(
                         transition: maybe_virtual
                             .as_ref()
                             .and_then(|v| v.0.default_transition.clone()),
+                        fov: maybe_virtual
+                            .as_ref()
+                            .and_then(|v| v.0.fov)
+                            .filter(|fov| fov.is_finite())
+                            .map(|fov| fov.clamp(MIN_FOV_DEGREES, MAX_FOV_DEGREES).to_radians())
+                            .unwrap_or(PLAYER_CAMERA_FOV),
                     }));
                 }
             }

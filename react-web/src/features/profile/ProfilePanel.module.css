@@ -1,0 +1,106 @@
+/* Profile passport — left-docked, scaled with the HUD. Token-driven. */
+.root {
+  position: fixed;
+  left: 58px;
+  top: 16px;
+  z-index: var(--z-hud);
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 80px));
+  max-height: calc(100vh - 32px);
+  background: rgba(12, 11, 14, 0.95);
+  border-radius: 14px;
+  box-shadow: var(--shadow-panel);
+  font-family: var(--font-family);
+  transform: scale(var(--ui-scale)) translateZ(0);
+  transform-origin: top left;
+  contain: layout paint;
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--white-10);
+  flex: none;
+}
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.closeGlyph {
+  font-size: 20px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 24px 20px 28px;
+  overflow-y: auto;
+}
+.name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: capitalize;
+}
+.tag {
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+}
+.addr {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-45);
+}
+.guest {
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  background: var(--fill-4);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-7);
+}
+.desc {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-7);
+}
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.link {
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  background: var(--fill-4);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.link:hover {
+  background: var(--fill-5);
+}
+
+.empty {
+  padding: 28px 18px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-45);
+}

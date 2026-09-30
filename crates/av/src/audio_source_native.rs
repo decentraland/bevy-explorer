@@ -5,7 +5,7 @@ use bevy::{
 };
 use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
 use common::{
-    structs::{AudioEmitter, AudioSettings, AudioType, PrimaryUser, SystemAudio},
+    structs::{AudioEmitter, AudioSettings, AudioType, OneShotAudio, PrimaryUser, SystemAudio},
     util::VolumePanning,
 };
 use ipfs::IpfsAssetServer;
@@ -17,7 +17,11 @@ impl Plugin for AudioSourcePluginImpl {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PostUpdate,
-            (manage_audio_sources, play_system_audio)
+            (
+                manage_audio_sources,
+                despawn_finished_one_shots,
+                play_system_audio,
+            )
                 .chain()
                 .after(TransformSystem::TransformPropagate),
         );
@@ -175,6 +179,18 @@ fn manage_audio_sources(
     }
 }
 
+// manage_audio_sources removes `Playing` once an instance stops, so one-shot emitters
+// without it (and not waiting on a retry) are done
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn despawn_finished_one_shots(
+    mut commands: Commands,
+    finished: Query<Entity, (With<OneShotAudio>, Without<RetryEmitter>, Without<Playing>)>,
+) {
+    for ent in finished.iter() {
+        commands.entity(ent).despawn();
+    }
+}
+
 fn play_system_audio(
     mut events: EventReader<SystemAudio>,
     audio: Res<bevy_kira_audio::Audio>,
@@ -203,4 +219,42 @@ fn play_system_audio(
         }
         retain
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn despawns_only_finished_one_shot_emitters() {
+        let mut app = App::new();
+        app.add_systems(Update, despawn_finished_one_shots);
+
+        let playing = app
+            .world_mut()
+            .spawn((AudioEmitter::default(), OneShotAudio, Playing))
+            .id();
+        let retrying = app
+            .world_mut()
+            .spawn((AudioEmitter::default(), OneShotAudio, Playing, RetryEmitter))
+            .id();
+        let finished = app
+            .world_mut()
+            .spawn((AudioEmitter::default(), OneShotAudio))
+            .id();
+        let persistent = app.world_mut().spawn(AudioEmitter::default()).id();
+
+        app.update();
+
+        assert!(app.world().get_entity(playing).is_ok());
+        assert!(app.world().get_entity(retrying).is_ok());
+        assert!(app.world().get_entity(finished).is_err());
+        assert!(app.world().get_entity(persistent).is_ok());
+
+        // once the instance stops, manage_audio_sources drops the marker
+        app.world_mut().entity_mut(playing).remove::<Playing>();
+        app.update();
+
+        assert!(app.world().get_entity(playing).is_err());
+    }
 }

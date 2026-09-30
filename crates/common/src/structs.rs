@@ -7,19 +7,23 @@ use std::{
     sync::{atomic::AtomicU32, Arc},
 };
 
+use alloy_core::primitives::Address;
 use bevy::{
     color::palettes,
+    math::DVec3,
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::view::RenderLayers,
+    render::{primitives::Aabb, view::RenderLayers},
 };
-use dcl_component::proto_components::sdk::components::common::CameraTransition;
-use ethers_core::abi::Address;
+use dcl_component::proto_components::sdk::{
+    components::common::CameraTransition,
+    development::{ws_scene_message, UpdateModelType},
+};
 use serde::{Deserialize, Serialize};
-use strum_macros::EnumIter;
+pub use system_api_types::{PermissionLevel, PermissionType, PermissionValue, PointerTargetType};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::inputs::InputMapSerialized;
+use crate::inputs::{Action, InputIdentifier, InputMapSerialized, SystemAction};
 
 #[derive(Resource)]
 pub struct Version(pub String);
@@ -29,13 +33,10 @@ pub struct Version(pub String);
 #[serde(default)]
 pub struct PrimaryUser {
     pub walk_speed: f32,
+    pub jog_speed: f32,
     pub run_speed: f32,
-    pub friction: f32,
-    pub gravity: f32,
     pub jump_height: f32,
-    pub fall_speed: f32,
-    pub control_type: AvatarControl,
-    pub turn_speed: f32,
+    pub run_jump_height: f32,
     pub block_all: bool,
     pub block_run: bool,
     pub block_walk: bool,
@@ -47,13 +48,10 @@ impl Default for PrimaryUser {
     fn default() -> Self {
         Self {
             walk_speed: 2.5,
-            run_speed: 8.0,
-            friction: 6.0,
-            gravity: -10.0,
-            jump_height: 1.25,
-            fall_speed: -15.0,
-            control_type: AvatarControl::Relative,
-            turn_speed: PI,
+            jog_speed: 8.18,
+            run_speed: 11.0,
+            jump_height: 1.9,
+            run_jump_height: 2.95,
             block_all: false,
             block_run: false,
             block_walk: false,
@@ -93,13 +91,10 @@ impl PlayerModifiers {
     pub fn combine(&self, user: &PrimaryUser) -> PrimaryUser {
         PrimaryUser {
             walk_speed: self.walk_speed.unwrap_or(user.walk_speed),
+            jog_speed: self.run_speed.unwrap_or(user.jog_speed),
             run_speed: self.run_speed.unwrap_or(user.run_speed),
-            friction: self.friction.unwrap_or(user.friction),
-            gravity: self.gravity.unwrap_or(user.gravity),
             jump_height: self.jump_height.unwrap_or(user.jump_height),
-            fall_speed: self.fall_speed.unwrap_or(user.fall_speed),
-            control_type: self.control_type.unwrap_or(user.control_type),
-            turn_speed: self.turn_speed.unwrap_or(user.turn_speed),
+            run_jump_height: self.jump_height.unwrap_or(user.run_jump_height),
             block_all: self.block_all || user.block_all,
             block_run: self.block_run || user.block_run,
             block_walk: self.block_walk || user.block_walk,
@@ -166,7 +161,13 @@ impl AttachPoints {
                     Visibility::default(),
                 ))
                 .id(),
-            head: commands.spawn(default_bundle).id(),
+            head: commands
+                .spawn((
+                    default_bundle,
+                    // This Aabb roughly encloses the head
+                    Aabb::from_min_max(Vec3::new(-16., -21., -22.), Vec3::new(16., 21., 22.)),
+                ))
+                .id(),
             neck: commands.spawn(default_bundle).id(),
             spine: commands.spawn(default_bundle).id(),
             spine_1: commands.spawn(default_bundle).id(),
@@ -226,12 +227,191 @@ impl AttachPoints {
     }
 }
 
+/// Which bones an emote drives. Upper body = the `Avatar_Spine` subtree; hips and legs stay with
+/// locomotion so the player keeps walking. Scene-only (`triggerEmote` / `triggerSceneEmote` with
+/// `AvatarMask.AM_UPPER_BODY`); the wheel is always full body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum EmoteMask {
+    #[default]
+    FullBody,
+    UpperBody,
+}
+
+impl EmoteMask {
+    /// The wire enum (rfc4 / Pulse / `AvatarEmoteCommand`): `0`/absent full body, `1` upper body.
+    /// Not the sdk's `AvatarMask`, whose only value `AM_UPPER_BODY` is `0`.
+    pub fn to_wire(self) -> Option<i32> {
+        match self {
+            EmoteMask::FullBody => None,
+            EmoteMask::UpperBody => Some(1),
+        }
+    }
+
+    pub fn from_wire(mask: Option<i32>) -> Self {
+        match mask {
+            Some(1) => EmoteMask::UpperBody,
+            _ => EmoteMask::FullBody,
+        }
+    }
+}
+
 #[derive(Component, Clone, Debug, PartialEq, Default)]
 pub struct EmoteCommand {
     pub urn: String,
     pub timestamp: i64,
     pub r#loop: bool,
+    pub mask: EmoteMask,
 }
+
+/// A transition in an avatar's triggered-emote playback, reported to scenes as an
+/// `AvatarEmoteCommand` entry by `avatar::emote_report`. Raised by `comms` from the wire (in wire
+/// order, so client and server report the same sequence) and by the avatar animator from
+/// playback; the reporter keeps the wire's word for foreign players and playback's for the rest.
+#[derive(Event, Clone, Debug)]
+pub struct EmoteLifecycleEvent {
+    pub avatar: Entity,
+    pub event: EmoteLifecycle,
+    pub source: EmoteLifecycleSource,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EmoteLifecycleSource {
+    Playback,
+    Wire,
+}
+
+/// One emote plays at a time, whatever its slot, so an end names no emote: it ends the last start.
+#[derive(Clone, Debug)]
+pub enum EmoteLifecycle {
+    /// `r#loop` is the flag known at trigger time; the emote's own metadata may still make it loop.
+    /// `mask` is the slot (full body / upper body) it plays in.
+    Started {
+        urn: String,
+        r#loop: bool,
+        mask: EmoteMask,
+    },
+    /// A one-shot ran to its end.
+    Finished,
+    /// Playback was cut short: movement, a scene animation, a stop from the wire.
+    Interrupted,
+}
+
+// Current scene-driven movement animation request for a player avatar. For the
+// primary player, written by the bridge system in `user_input` (after resolving
+// the scene-relative path against the active scene's content map). For foreign
+// players, written by the comms crate when a Movement packet with anim fields
+// arrives. Read by `animate` in the avatar crate uniformly for both.
+#[derive(Component, Default, Clone, Debug, PartialEq)]
+pub struct SceneDrivenAnim {
+    pub active: Option<SceneDrivenAnimationRequest>,
+}
+
+/// Build the render-only avatar tilt (lean) quaternion from pitch/roll in degrees.
+/// Composed as `Y * X * Z`, so `Quat::from_rotation_y(yaw) * avatar_tilt_quat(p, r)`
+/// equals `Quat::from_euler(EulerRot::YXZ, yaw, p_rad, r_rad)` — letting consumers recover
+/// the authoritative yaw with `to_euler(EulerRot::YXZ).0` even when tilt is present.
+pub fn avatar_tilt_quat(pitch_deg: f32, roll_deg: f32) -> bevy::math::Quat {
+    bevy::math::Quat::from_euler(
+        bevy::math::EulerRot::YXZ,
+        0.0,
+        pitch_deg.to_radians(),
+        roll_deg.to_radians(),
+    )
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SceneDrivenAnimationRequest {
+    // scene-relative path (e.g. "assets/walk.glb") — used for feedback to the controlling
+    // scene. Empty for remote requests received over the network.
+    pub src: String,
+    // Pre-built scene-emote URN encoding scene_hash + content_hash. For local requests
+    // this is constructed by user_input; for remote requests it's reassembled from the
+    // hash pair received on the wire.
+    pub urn: String,
+    // The two hashes that compose the URN. Kept alongside `urn` so the broadcaster can
+    // ship them to remotes without repeating the fixed URN preamble on every packet.
+    pub scene_hash: String,
+    pub content_hash: String,
+    pub r#loop: bool,
+    pub speed: f32,
+    pub idle: bool,
+    pub transition_seconds: f32,
+    pub seek: Option<f32>,
+    // Scene-requested avatar-bus sound clips to play this update. Each entry is the
+    // content_hash of a file hosted in the same scene as the animation. The consumer
+    // dedups per-avatar so leaving identical entries across consecutive updates doesn't
+    // re-fire; the scene clears the list on frames it doesn't want sound.
+    pub sounds: Vec<String>,
+}
+
+// Current scene-driven animation playback state, written by `play_current_emote` in
+// the avatar crate and mirrored into `AvatarMovementInfo.active_animation_state` by
+// `broadcast_movement_info` in `user_input`.
+// `playback_time` freezes while a triggerSceneEmote overrides the animation.
+#[derive(Resource, Default)]
+pub struct SceneDrivenAnimationFeedback {
+    pub state: Option<SceneDrivenAnimationFeedbackState>,
+}
+
+/// Marker: present when the app has no render app. Render-only scene plugins are then
+/// skipped — nothing displays their output and none of them feed results back to the
+/// scene, so their components stay in the scene-side filtered store and never cross the
+/// IPC boundary. Insert it before `SceneRunnerPlugin`, which reads it at build time.
+///
+/// Absence is the normal case, so nothing needs to opt in and no default can be wrong.
+///
+/// Narrower than "headless": `impost.rs` disables winit and runs with no primary window,
+/// but keeps `DefaultPlugins` and a camera to bake imposters, so it must NOT insert this.
+/// Doing so would strip every imposter texture with no panic and no test failure.
+///
+/// Also distinct from [`server_mode`]: the headless binary never has a render app, but
+/// is only in server mode when run with --server-mode.
+#[derive(Resource)]
+pub struct NoRenderApp;
+
+static SERVER_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Latch this process as an authoritative scene server: scenes run in server role and
+/// `isServer()` returns true to scene JS. Set by the headless server binary before the
+/// app is built; irreversible by design.
+pub fn set_server_mode() {
+    SERVER_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// True once [`set_server_mode`] has been called.
+pub fn server_mode() -> bool {
+    SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+static MULTI_TENANT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Latch this process as a multi-tenant (orchestrated) scene server: every scene has its
+/// own room's crdt context, registered before the scene is queued. A standalone server
+/// (`--server-mode` without `--orchestrated`) is NOT multi-tenant — its single scene
+/// legitimately rides the shared context. Irreversible like [`set_server_mode`].
+pub fn set_multi_tenant() {
+    MULTI_TENANT.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// True once [`set_multi_tenant`] has been called.
+pub fn multi_tenant() -> bool {
+    MULTI_TENANT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[derive(Debug, Clone)]
+pub struct SceneDrivenAnimationFeedbackState {
+    pub src: String,
+    pub r#loop: bool,
+    pub speed: f32,
+    pub idle: bool,
+    pub playback_time: f32,
+    pub duration: f32,
+    pub loop_count: u32,
+}
+
+/// vertical fov of the player camera, in radians (60 degrees). also the
+/// `PBVirtualCamera.fov` default, per the proto definition.
+pub const PLAYER_CAMERA_FOV: f32 = std::f32::consts::PI / 3.0;
 
 // main camera entity
 #[derive(Component)]
@@ -255,10 +435,10 @@ pub struct CinematicSettings {
     pub yaw_range: Option<f32>,
     pub pitch_range: Option<f32>,
     pub roll_range: Option<f32>,
-    pub zoom_min: Option<f32>,
-    pub zoom_max: Option<f32>,
     pub look_at_entity: Option<Entity>,
     pub transition: Option<CameraTransition>,
+    /// vertical fov, in radians
+    pub fov: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -306,6 +486,31 @@ pub struct PrimaryPlayerRes(pub Entity);
 #[derive(Resource)]
 pub struct PrimaryCameraRes(pub Entity);
 
+/// World-space head gaze angles, in degrees. On the local player, written each frame
+/// from the real camera (and zeroed/disabled when a scene-driven camera is active). On
+/// remote players, written from the incoming rfc4::Movement head-sync fields. The
+/// `*_enabled` flags drive the receive-side IK weight crossfade and gate the broadcast
+/// of valid angles for the local player.
+#[derive(Component, Default, Clone, Copy)]
+pub struct HeadSync {
+    pub yaw_deg: f32,
+    pub pitch_deg: f32,
+    pub yaw_enabled: bool,
+    pub pitch_enabled: bool,
+}
+
+/// World-space point-at state. On the local player, populated when the PointAt
+/// action fires and `WorldPointerTarget` has a hit; cleared when the latch
+/// expires. On remote players, populated from the incoming rfc4::Movement
+/// `point_at_*` / `is_pointing_at` fields. Coordinates are stored in DCL
+/// convention (Z mirrored from bevy world) so the same value flows over the
+/// wire and into the IK apply step without a per-site flip.
+#[derive(Component, Default, Clone, Copy)]
+pub struct PointAtSync {
+    pub target_world: Vec3,
+    pub is_pointing: bool,
+}
+
 // marker for the root ui component (full screen, used for checking pointer/mouse button events are not intercepted by any other ui component)
 #[derive(Component)]
 pub struct UiRoot;
@@ -336,12 +541,22 @@ pub struct PreviousLogin {
     pub auth: Vec<ChainLink>,
 }
 
+pub fn default_home_realm() -> String {
+    crate::base_domain::url(crate::base_domain::Service::RealmProvider, "/main")
+}
 // app configuration
 #[derive(Serialize, Deserialize, Resource, Clone)]
 #[serde(default)]
 pub struct AppConfig {
-    pub server: String,
-    pub location: IVec2,
+    /// The pinned home scene. Written ONLY by SetHomeScene; None = never pinned, so the
+    /// home keeps tracking the base-domain-derived default. A pinned home persists (and
+    /// survives switching base domains) even when it happens to equal some domain's
+    /// default. --realm / --position are startup params (like the web's ?realm= /
+    /// ?position=) and are deliberately never merged in here — the config file is
+    /// rewritten wholesale on any settings change, which would silently persist a
+    /// one-off CLI target as home.
+    pub home_realm: Option<String>,
+    pub home_location: Option<IVec2>,
     pub previous_login: Option<PreviousLogin>,
     pub graphics: GraphicsSettings,
     pub audio: AudioSettings,
@@ -366,20 +581,36 @@ pub struct AppConfig {
     pub realm_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub inputs: InputMapSerialized,
+    pub point_at_marker_visibility: PointAtMarkerVisibility,
+    pub camera_smoothing: CameraSmoothing,
+    // field-level default (0) so configs saved before this field existed read as outdated,
+    // rather than taking the current generation from the container-level default
+    #[serde(default)]
+    pub settings_generation: u32,
+    #[serde(default)]
+    pub inputs_generation: u32,
 }
+
+/// bump to run one-time migrations of the preset-managed settings in existing configs
+/// (see [`AppConfig::reset_outdated_settings`])
+pub const SETTINGS_GENERATION: u32 = 2;
+
+/// bump to run one-time migrations of saved input binding tables
+/// (see [`AppConfig::migrate_inputs`])
+pub const INPUTS_GENERATION: u32 = 1;
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: "https://realm-provider-ea.decentraland.org/main".to_owned(),
-            location: IVec2::new(0, 0),
+            home_realm: None,
+            home_location: None,
             previous_login: None,
             graphics: Default::default(),
             audio: Default::default(),
             cache_bytes: 1024 * 1024 * 1024 * 10, // 10gb
             scene_threads: 4,
-            scene_load_distance: 50.0,
-            scene_unload_extra_distance: 15.0,
+            scene_load_distance: 10.0,
+            scene_unload_extra_distance: 10.0,
             scene_imposter_distances: vec![100.0, 200.0, 400.0, 800.0, 1600.0, 99999.0],
             scene_imposter_multisample: false,
             scene_imposter_multisample_amount: 0.0,
@@ -387,7 +618,7 @@ impl Default for AppConfig {
             parcel_grass_setting: Default::default(),
             sysinfo_visible: false,
             scene_log_to_console: false,
-            max_avatars: 100,
+            max_avatars: 20,
             constrain_scene_ui: false,
             player_settings: Default::default(),
             max_videos: 1,
@@ -397,11 +628,140 @@ impl Default for AppConfig {
             realm_permissions: Default::default(),
             scene_permissions: Default::default(),
             inputs: Default::default(),
+            point_at_marker_visibility: Default::default(),
+            camera_smoothing: Default::default(),
+            settings_generation: SETTINGS_GENERATION,
+            inputs_generation: INPUTS_GENERATION,
         }
     }
 }
 
 impl AppConfig {
+    /// The effective home realm: the pinned value, else the base-domain-derived default.
+    pub fn home_realm(&self) -> String {
+        self.home_realm.clone().unwrap_or_else(default_home_realm)
+    }
+
+    /// The effective home parcel: the pinned value, else 0,0.
+    pub fn home_location(&self) -> IVec2 {
+        self.home_location.unwrap_or(IVec2::ZERO)
+    }
+
+    /// one-time migrations for configs saved with an older generation, keeping everything
+    /// else. gen 1: reinitialize the preset-managed settings to the current defaults.
+    /// gen 2: default bloom dropped High -> Low; move configs still on the old default.
+    pub fn reset_outdated_settings(&mut self) {
+        if self.settings_generation >= SETTINGS_GENERATION {
+            return;
+        }
+        let default = Self::default();
+        if self.settings_generation < 1 {
+            self.reset_preset_settings(&default);
+        }
+        if self.settings_generation < 2 && self.graphics.bloom == BloomSetting::High {
+            self.graphics.bloom = default.graphics.bloom;
+        }
+        self.settings_generation = SETTINGS_GENERATION;
+    }
+
+    fn reset_preset_settings(&mut self, default: &Self) {
+        self.graphics.msaa = default.graphics.msaa;
+        self.graphics.shadow_distance = default.graphics.shadow_distance;
+        self.graphics.shadow_settings = default.graphics.shadow_settings;
+        self.graphics.light_count = default.graphics.light_count;
+        self.graphics.shadow_caster_count = default.graphics.shadow_caster_count;
+        self.graphics.fog = default.graphics.fog;
+        self.graphics.bloom = default.graphics.bloom;
+        self.graphics.dof = default.graphics.dof;
+        self.graphics.ssao = default.graphics.ssao;
+        self.graphics.sky_reflections = default.graphics.sky_reflections;
+        self.graphics.oob = default.graphics.oob;
+        self.scene_load_distance = default.scene_load_distance;
+        self.scene_unload_extra_distance = default.scene_unload_extra_distance;
+        self.scene_imposter_distances = default.scene_imposter_distances.clone();
+        self.scene_imposter_multisample = default.scene_imposter_multisample;
+        self.scene_imposter_multisample_amount = default.scene_imposter_multisample_amount;
+        self.parcel_grass_setting = default.parcel_grass_setting;
+        self.max_avatars = default.max_avatars;
+        self.max_videos = default.max_videos;
+    }
+
+    /// migrate saved input tables: replace bindings still on changed old defaults
+    /// (RollLeft/RollRight KeyT/KeyG freed for ChatPanel/Gallery, quick emotes moved off
+    /// the Action 3-6 digits onto the numpad), and add defaults for any actions the saved
+    /// table doesn't mention
+    pub fn migrate_inputs(&mut self) {
+        if self.inputs_generation < INPUTS_GENERATION {
+            for (action, bindings) in self.inputs.0.iter_mut() {
+                let (old_default, new_default) = match action {
+                    Action::System(SystemAction::RollLeft) => (KeyCode::KeyT, None),
+                    Action::System(SystemAction::RollRight) => (KeyCode::KeyG, None),
+                    Action::System(SystemAction::QuickEmote0) => {
+                        (KeyCode::Digit0, Some(KeyCode::Numpad0))
+                    }
+                    Action::System(SystemAction::QuickEmote1) => {
+                        (KeyCode::Digit1, Some(KeyCode::Numpad1))
+                    }
+                    Action::System(SystemAction::QuickEmote2) => {
+                        (KeyCode::Digit2, Some(KeyCode::Numpad2))
+                    }
+                    Action::System(SystemAction::QuickEmote3) => {
+                        (KeyCode::Digit3, Some(KeyCode::Numpad3))
+                    }
+                    Action::System(SystemAction::QuickEmote4) => {
+                        (KeyCode::Digit4, Some(KeyCode::Numpad4))
+                    }
+                    Action::System(SystemAction::QuickEmote5) => {
+                        (KeyCode::Digit5, Some(KeyCode::Numpad5))
+                    }
+                    Action::System(SystemAction::QuickEmote6) => {
+                        (KeyCode::Digit6, Some(KeyCode::Numpad6))
+                    }
+                    Action::System(SystemAction::QuickEmote7) => {
+                        (KeyCode::Digit7, Some(KeyCode::Numpad7))
+                    }
+                    Action::System(SystemAction::QuickEmote8) => {
+                        (KeyCode::Digit8, Some(KeyCode::Numpad8))
+                    }
+                    Action::System(SystemAction::QuickEmote9) => {
+                        (KeyCode::Digit9, Some(KeyCode::Numpad9))
+                    }
+                    _ => continue,
+                };
+                if *bindings == [InputIdentifier::Key(old_default)] {
+                    *bindings = new_default.map(InputIdentifier::Key).into_iter().collect();
+                }
+            }
+            self.inputs_generation = INPUTS_GENERATION;
+        }
+        // ShowProfile is legacy (see the SystemAction variant): drop saved rows so the dead
+        // action neither lingers in tables nor resurfaces anywhere.
+        self.inputs
+            .0
+            .retain(|(action, _)| *action != Action::System(SystemAction::ShowProfile));
+        for (action, bindings) in InputMapSerialized::default().0 {
+            if !self
+                .inputs
+                .0
+                .iter()
+                .any(|(existing, _)| *existing == action)
+            {
+                self.inputs.0.push((action, bindings));
+            }
+        }
+        // fixed bindings can never be removed — re-add any a saved table has lost.
+        for (action, id) in crate::inputs::FIXED_BINDINGS {
+            match self.inputs.0.iter_mut().find(|(a, _)| *a == action) {
+                Some((_, bindings)) => {
+                    if !bindings.contains(&id) {
+                        bindings.push(id);
+                    }
+                }
+                None => self.inputs.0.push((action, vec![id])),
+            }
+        }
+    }
+
     pub fn get_permission(
         &self,
         ty: PermissionType,
@@ -432,8 +792,9 @@ impl AppConfig {
             | PermissionType::ForceCamera
             | PermissionType::PlayEmote
             | PermissionType::SetLocomotion
-            | PermissionType::HideAvatars
-            | PermissionType::DisableVoice => PermissionValue::Allow,
+            | PermissionType::HideAvatarsNametags
+            | PermissionType::DisableVoice
+            | PermissionType::OpenExplorerUi => PermissionValue::Allow,
             _ => PermissionValue::Ask,
         }
     }
@@ -448,6 +809,7 @@ pub struct GraphicsSettings {
     pub fps_target: usize,
     pub shadow_distance: f32,
     pub shadow_settings: ShadowSetting,
+    pub light_count: usize,
     pub shadow_caster_count: usize,
     pub window: WindowSetting,
     // removed until bevy window resizing bugs are fixed
@@ -456,8 +818,13 @@ pub struct GraphicsSettings {
     pub bloom: BloomSetting,
     pub dof: DofSetting,
     pub ssao: SsaoSetting,
+    pub sky_reflections: SkyReflectionSetting,
     pub oob: f32,
     pub ambient_brightness: i32,
+    /// cel-shade avatars (toon shading) instead of standard PBR
+    pub cel_shading: bool,
+    /// draw the dark edge outline around avatars
+    pub avatar_outline: bool,
     pub gpu_bytes_per_frame: usize,
 }
 
@@ -465,21 +832,29 @@ impl Default for GraphicsSettings {
     fn default() -> Self {
         Self {
             vsync: false,
-            log_fps: true,
-            msaa: AaSetting::FxaaHigh,
+            log_fps: !cfg!(target_arch = "wasm32"),
+            msaa: AaSetting::FxaaLow,
             fps_target: 60,
-            shadow_distance: 200.0,
-            shadow_settings: ShadowSetting::High,
-            shadow_caster_count: 8,
+            shadow_distance: 20.0,
+            shadow_settings: ShadowSetting::Low,
+            light_count: 4,
+            shadow_caster_count: 0,
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
             bloom: BloomSetting::Low,
             dof: DofSetting::High,
             ssao: SsaoSetting::Off,
+            sky_reflections: SkyReflectionSetting::High,
             oob: 2.0,
             ambient_brightness: 50,
-            gpu_bytes_per_frame: 0,
+            cel_shading: true,
+            avatar_outline: true,
+            gpu_bytes_per_frame: if cfg!(target_arch = "wasm32") {
+                10_000_000
+            } else {
+                0
+            },
         }
     }
 }
@@ -547,6 +922,7 @@ pub enum AaSetting {
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WindowSetting {
+    #[cfg(not(target_arch = "wasm32"))]
     Fullscreen,
     Windowed,
     Borderless,
@@ -587,6 +963,15 @@ pub struct DofConfig {
 pub enum SsaoSetting {
     Off,
     Low,
+    High,
+}
+
+/// The sky environment map: the sky's reflections and ambient light.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SkyReflectionSetting {
+    /// one colour per direction: sky, horizon and ground
+    Low,
+    /// filtered reflections of the sky
     High,
 }
 
@@ -717,32 +1102,6 @@ pub struct SceneMeta {
     pub authoritative_multiplayer: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum PermissionValue {
-    Allow,
-    Deny,
-    Ask,
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, EnumIter)]
-pub enum PermissionType {
-    MovePlayer,
-    ForceCamera,
-    PlayEmote,
-    SetLocomotion,
-    HideAvatars,
-    DisableVoice,
-    Teleport,
-    ChangeRealm,
-    SpawnPortable,
-    KillPortables,
-    Web3,
-    CopyToClipboard,
-    Fetch,
-    Websocket,
-    OpenUrl,
-}
-
 pub trait PermissionStrings {
     fn active(&self) -> &str;
     fn passive(&self) -> &str;
@@ -761,7 +1120,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::ForceCamera => "Force Camera",
             PermissionType::PlayEmote => "Play Emote",
             PermissionType::SetLocomotion => "Set Locomotion",
-            PermissionType::HideAvatars => "Hide Avatars",
+            PermissionType::HideAvatarsNametags => {
+                "Hide Avatars and/or Nametags, and/or disables Passports"
+            }
             PermissionType::DisableVoice => "Disable Voice",
             PermissionType::Teleport => "Teleport",
             PermissionType::ChangeRealm => "Change Realm",
@@ -772,6 +1133,7 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "Open Websocket",
             PermissionType::OpenUrl => "Open Url",
             PermissionType::CopyToClipboard => "Copy to Clipboard",
+            PermissionType::OpenExplorerUi => "Open Explorer Menu",
         }
     }
 
@@ -816,7 +1178,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::ForceCamera => "temporarily change the camera view",
             PermissionType::PlayEmote => "make your avatar perform an emote",
             PermissionType::SetLocomotion => "temporarily modify your avatar's locomotion settings",
-            PermissionType::HideAvatars => "temporarily hide player avatars",
+            PermissionType::HideAvatarsNametags => {
+                "temporarily hide player avatars and/or nametags, and/or disables passports"
+            }
             PermissionType::DisableVoice => "temporarily disable voice chat",
             PermissionType::Teleport => "teleport you to a new location",
             PermissionType::ChangeRealm => "move you to a new realm",
@@ -827,6 +1191,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "open a web socket to communicate with a remote server",
             PermissionType::OpenUrl => "open a url in your browser",
             PermissionType::CopyToClipboard => "copy text into the clipboard",
+            PermissionType::OpenExplorerUi => {
+                "open an explorer menu panel (map, backpack, settings, ...)"
+            }
         }
     }
 
@@ -836,7 +1203,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::ForceCamera => "enforcing the camera view",
             PermissionType::PlayEmote => "making your avatar perform an emote",
             PermissionType::SetLocomotion => "enforcing your locomotion settings",
-            PermissionType::HideAvatars => "hiding some avatars",
+            PermissionType::HideAvatarsNametags => {
+                "hiding some avatars and/or nametags, and/or disables passports"
+            }
             PermissionType::DisableVoice => "disabling voice communications",
             PermissionType::Teleport => "teleporting you to a new location",
             PermissionType::ChangeRealm => "teleporting you to a new realm",
@@ -847,15 +1216,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::Websocket => "opening a websocket",
             PermissionType::OpenUrl => "opening a url in your browser",
             PermissionType::CopyToClipboard => "copying text into the clipboard",
+            PermissionType::OpenExplorerUi => "opening an explorer menu panel",
         }
     }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum PermissionLevel {
-    Scene(String),
-    Realm(String),
-    Global,
 }
 
 #[derive(Clone, Serialize, Deserialize, Event)]
@@ -990,6 +1353,22 @@ pub struct EngineMovementControl {
     pub suppress_clipping: HashSet<&'static str>,
     /// Non-empty means avatar physics movement systems are suppressed (e.g. "move_player_to" during interpolation)
     pub suppress_avatar_physics: HashSet<&'static str>,
+    /// Scene-driven `AvatarMovement` is ignored (physics suppressed) until a tick
+    /// initiated strictly after this time (engine dispatch clock, `last_sent` secs)
+    /// is received. Set by `movePlayerTo` when it imposes a facing, so the imposed
+    /// orientation survives until the controller scene reads the new transform and
+    /// echoes it back, rather than being clobbered by an in-flight stale tick.
+    pub accept_movement_after: f64,
+    /// Set by `movePlayerTo` (teleport or interpolation end): the scene deliberately
+    /// placed the player here, possibly inside a collider (sit-on-chair emotes).
+    /// While set, depenetration is not applied in x/z and the sweep ignores colliders
+    /// the player starts inside; movement is only clamped to not go deeper. Cleared
+    /// by `resolve_collisions` once no correction is required.
+    pub deliberate_penetration: bool,
+    /// While `deliberate_penetration` is set: the per-axis depenetration bounds
+    /// (min, max) relative to the current transform, refreshed each frame by
+    /// `resolve_collisions`. `min.axis > 0` means the eject direction is +axis.
+    pub penetration_bounds: (DVec3, DVec3),
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -1000,8 +1379,16 @@ pub enum MoveKind {
     Jog,
     Run,
     Jump,
+    /// In-air second jump. Set on foreign avatars when the incoming rfc4::Movement
+    /// reports jump_count >= 2 and there's no scene-driven animation to take
+    /// precedence; the velocity picker emits the `double_jump` emote for it.
+    DoubleJump,
     Falling,
     LongFalling,
+    /// Gliding state. Set on foreign avatars when rfc4::Movement.glide_state is
+    /// OPENING_PROP or GLIDING and there's no scene-driven animation; the
+    /// velocity picker emits the `glide` emote.
+    Glide,
     Emote,
 }
 
@@ -1009,14 +1396,62 @@ pub enum MoveKind {
 pub struct AvatarDynamicState {
     pub velocity: Vec3,
     pub ground_height: f32,
-    pub jump_time: f32,
+    pub jump_time: f64,
     pub move_kind: MoveKind,
 }
 
 #[derive(Event)]
 pub enum PreviewCommand {
-    ReloadScene { hash: String },
+    ReloadScene {
+        hash: String,
+    },
+    ReloadModel {
+        hash: String,
+        src: String,
+        scene_id: String,
+    },
+    RemoveModel {
+        hash: String,
+        src: String,
+        scene_id: String,
+    },
 }
+
+impl From<ws_scene_message::Message> for PreviewCommand {
+    fn from(value: ws_scene_message::Message) -> Self {
+        match value {
+            ws_scene_message::Message::UpdateScene(update_scene) => Self::ReloadScene {
+                hash: update_scene.scene_id.to_owned(),
+            },
+            ws_scene_message::Message::UpdateModel(update_model) => match update_model.r#type() {
+                UpdateModelType::UmtChange => Self::ReloadModel {
+                    hash: update_model.hash.to_owned(),
+                    src: update_model.src.to_owned(),
+                    scene_id: update_model.scene_id.to_owned(),
+                },
+                UpdateModelType::UmtRemove => Self::RemoveModel {
+                    hash: update_model.hash.to_owned(),
+                    src: update_model.src.to_owned(),
+                    scene_id: update_model.scene_id.to_owned(),
+                },
+            },
+        }
+    }
+}
+
+/// The local player was instantly repositioned — a durationless `move_player_to`, a `teleport_player`,
+/// or a spawn snap — rather than walking there. Comms turns this into a Pulse `TeleportRequest` so peers
+/// snap to the new position instead of interpolating across the gap. `position` is Bevy world space.
+#[derive(Event)]
+pub struct PlayerTeleported {
+    pub position: Vec3,
+}
+
+/// Marks the local player as behind the loading screen — teleported or spawning, with a provisional
+/// position — until the destination scene resolves and they're placed in-world. Lives here (rather
+/// than `scene_runner`) so lower-level crates like `comms` can read it; `scene_runner` re-exports it.
+#[derive(Component)]
+pub struct OutOfWorld;
 
 pub struct StartupScene {
     pub source: String,
@@ -1031,12 +1466,18 @@ pub struct StartupScenes {
     pub scenes: Vec<StartupScene>,
 }
 
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug, PartialEq)]
 pub struct SceneGlobalLight {
     pub source: Option<Entity>,
     pub dir_color: Color,
     pub dir_illuminance: f32,
     pub dir_direction: Vec3,
+    /// the sun as the sky draws it. the same as the directional light by day, but it keeps
+    /// setting below the horizon at night while the light follows the moon
+    pub sun_illuminance: f32,
+    pub sun_direction: Vec3,
+    /// the ambient light the sky env map is levelled towards: white at the ambient brightness
+    /// setting unless a scene overrides it, as a tint and a multiplier
     pub ambient_color: Color,
     pub ambient_brightness: f32,
     pub layers: RenderLayers,
@@ -1053,6 +1494,12 @@ impl TimeOfDay {
         self.time
     }
 }
+
+/// Vertical FOV of the active player camera, in radians. Pushed to scene
+/// workers via the GlobalCrdtState channel — defaulted on the worker side and
+/// updated when the renderer's camera projection changes.
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub struct CameraFov(pub f32);
 
 /// Fixed time defined on `scene.json` `skyboxConfig`
 #[derive(Component)]
@@ -1093,13 +1540,18 @@ impl Default for AudioEmitter {
     }
 }
 
+// despawns the `AudioEmitter` entity once its (non-looping) sound has finished playing
+#[derive(Component, Debug, Default)]
+pub struct OneShotAudio;
+
 #[derive(Clone, Copy)]
 #[repr(i32)]
 pub enum ZOrder {
     Crosshair = -65536,
     // PortableScene -> -65535 <= value <= -1
     // default 0 => appear in world, under scene ui
-    OutOfWorldBackdrop = 1,
+    PointAtMarker = 1,
+    OutOfWorldBackdrop,
     SceneUi,
     SceneUiOverlay,
     SystemSceneUi,
@@ -1119,7 +1571,6 @@ pub enum ZOrder {
     Toast,
     Permission,
     DefaultComboPopup,
-    EguiBlocker,
 }
 
 impl ZOrder {
@@ -1139,11 +1590,26 @@ pub struct MicState {
     pub enabled: bool,
 }
 
-#[derive(Resource, Default)]
+#[derive(Debug, Resource, Default)]
 pub struct PreviewMode {
     pub server: Option<String>,
     pub is_preview: bool,
+    pub preview_parcel: Option<IVec2>,
 }
+
+/// Render out-of-bounds geometry (dithered) instead of culling it. Set at startup
+/// (preview, a loopback realm, or editor mode — never a public realm); read by
+/// scene_material's show-outside-bounds observer.
+#[derive(Debug, Resource, Default)]
+pub struct ShowOutOfBounds(pub bool);
+
+/// True when the explorer is embedded in a scene editor (the explicit `--editor` arg /
+/// `editor` web boot param — the editor host is expected to unfreeze scenes when the
+/// user hits play). Set once at startup; freezes a scene after main() has run once so
+/// the initial state is deterministic. Default false; NOT implied by preview or a
+/// loopback realm — plain previews must free-run.
+#[derive(Debug, Resource, Default)]
+pub struct EditorMode(pub bool);
 
 // resource into which systems can add debug info
 #[derive(Resource, Default, Debug)]
@@ -1155,6 +1621,9 @@ pub struct DebugInfo {
 pub enum GlobalCrdtStateUpdate {
     Crdt(Vec<u8>, dcl_component::Localizer),
     Time(f32),
+    /// Vertical FOV of the active camera, in radians. Pushed when the value
+    /// changes (camera zoom etc.).
+    CameraFov(f32),
 }
 
 // used for responses to scenes which require strict monotonic timestamps
@@ -1170,17 +1639,16 @@ impl<T> Default for MonotonicTimestamp<T> {
 
 impl<T> MonotonicTimestamp<T> {
     pub fn next_timestamp(&self) -> u32 {
-        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
     }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ParcelGrassSetting {
     Off,
-    #[cfg_attr(target_arch = "wasm32", default)]
+    #[default]
     Low,
     Mid,
-    #[cfg_attr(not(target_arch = "wasm32"), default)]
     High,
 }
 
@@ -1251,6 +1719,7 @@ impl Default for ParcelGrassConfig {
 pub struct CurrentRealm {
     pub about_url: String,
     pub address: String,
+    pub connected: bool,
     pub config: ServerConfiguration,
     pub comms: Option<CommsConfig>,
     pub public_url: String,
@@ -1290,4 +1759,137 @@ pub struct Region {
     pub right: i32,
     pub top: i32,
     pub bottom: i32,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PointAtMarkerVisibility {
+    #[default]
+    All,
+    Friends,
+    None,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CameraSmoothing {
+    Raw,
+    #[default]
+    Smoothed,
+    Drunk,
+}
+
+impl CameraSmoothing {
+    /// exponential smoothing rate; `None` means no smoothing
+    pub fn rate(&self) -> Option<f32> {
+        match self {
+            CameraSmoothing::Raw => None,
+            CameraSmoothing::Smoothed => Some(15.0),
+            CameraSmoothing::Drunk => Some(5.0),
+        }
+    }
+}
+
+#[derive(Event)]
+pub struct PointAtMarkerVisibilityChanged;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrate_inputs_updates_old_tables() {
+        // a table saved before Places/Gallery/etc existed, with old roll defaults and
+        // one deliberate user customization
+        let mut config = AppConfig {
+            inputs: InputMapSerialized(
+                vec![
+                    (
+                        Action::System(SystemAction::RollLeft),
+                        vec![InputIdentifier::Key(KeyCode::KeyT)],
+                    ),
+                    (
+                        Action::System(SystemAction::RollRight),
+                        vec![InputIdentifier::Key(KeyCode::KeyR)],
+                    ),
+                    // a fixed binding the user managed to strip (older build)
+                    (Action::System(SystemAction::ScrollUp), vec![]),
+                    // legacy action from an old default table
+                    (
+                        Action::System(SystemAction::ShowProfile),
+                        vec![InputIdentifier::Gamepad(
+                            bevy::input::gamepad::GamepadButton::North,
+                        )],
+                    ),
+                    // quick emote still on its old digit default, and one rebound
+                    (
+                        Action::System(SystemAction::QuickEmote3),
+                        vec![InputIdentifier::Key(KeyCode::Digit3)],
+                    ),
+                    (
+                        Action::System(SystemAction::QuickEmote4),
+                        vec![InputIdentifier::Key(KeyCode::KeyX)],
+                    ),
+                ],
+                Default::default(),
+            ),
+            inputs_generation: 0,
+            ..Default::default()
+        };
+
+        config.migrate_inputs();
+
+        fn get(config: &AppConfig, action: SystemAction) -> Option<Vec<InputIdentifier>> {
+            config
+                .inputs
+                .0
+                .iter()
+                .find(|(a, _)| *a == Action::System(action))
+                .map(|(_, bindings)| bindings.clone())
+        }
+
+        // old default cleared, user customization preserved
+        assert_eq!(get(&config, SystemAction::RollLeft), Some(vec![]));
+        assert_eq!(
+            get(&config, SystemAction::RollRight),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyR)])
+        );
+        // missing actions merged in with their defaults
+        assert_eq!(
+            get(&config, SystemAction::Places),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyZ)])
+        );
+        assert_eq!(config.inputs_generation, INPUTS_GENERATION);
+        // fixed bindings restored: the wheel always scrolls
+        assert_eq!(
+            get(&config, SystemAction::ScrollUp),
+            Some(vec![InputIdentifier::Analog(
+                crate::inputs::AxisIdentifier::MouseWheel,
+                crate::inputs::InputDirection::Up
+            )])
+        );
+        // the legacy ShowProfile row is stripped, not merged back
+        assert_eq!(get(&config, SystemAction::ShowProfile), None);
+        // quick emotes: old digit default remapped to the numpad, a rebind preserved
+        assert_eq!(
+            get(&config, SystemAction::QuickEmote3),
+            Some(vec![InputIdentifier::Key(KeyCode::Numpad3)])
+        );
+        assert_eq!(
+            get(&config, SystemAction::QuickEmote4),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyX)])
+        );
+
+        // re-running after a deliberate rebind back to KeyT doesn't clear it again
+        let roll_left = config
+            .inputs
+            .0
+            .iter_mut()
+            .find(|(a, _)| *a == Action::System(SystemAction::RollLeft))
+            .unwrap();
+        roll_left.1 = vec![InputIdentifier::Key(KeyCode::KeyT)];
+        config.migrate_inputs();
+        assert_eq!(
+            get(&config, SystemAction::RollLeft),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyT)])
+        );
+    }
 }

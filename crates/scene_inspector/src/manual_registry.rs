@@ -3,10 +3,11 @@ use dcl_component::{
     component_name_registry::{derive_component_name, make_proto_closures},
     proto_components::sdk::components::{
         PbAudioEvent, PbAvatarBase, PbAvatarEmoteCommand, PbAvatarEquippedData,
-        PbAvatarMovementInfo, PbCameraMode, PbEngineInfo, PbGltfContainerLoadingState,
-        PbGltfNodeState, PbPlayerIdentityData, PbPointerEventsResult, PbPointerLock,
-        PbPrimaryPointerInfo, PbRaycastResult, PbRealmInfo, PbTriggerAreaResult, PbTweenState,
-        PbUiCanvasInformation, PbUiDropdownResult, PbUiInputResult, PbUiScrollResult, PbVideoEvent,
+        PbAvatarMovementInfo, PbCameraMode, PbEngineInfo, PbExplorerUiEventsResult,
+        PbGltfContainerLoadingState, PbGltfNodeState, PbPlayerIdentityData, PbPointerEventsResult,
+        PbPointerLock, PbPrimaryPointerInfo, PbRaycastResult, PbRealmInfo, PbTriggerAreaResult,
+        PbTweenState, PbUiCanvasInformation, PbUiDropdownResult, PbUiInputResult, PbUiScrollResult,
+        PbVideoEvent,
     },
     ComponentNameRegistry, CrdtType, SceneComponentId,
 };
@@ -18,18 +19,26 @@ pub fn register_engine_components(app: &mut App) {
 
     macro_rules! reg {
         ($pb:ty, $id:expr, $crdt:expr, rw) => {{
-            let (inspect, write) = make_proto_closures::<$pb>();
+            let (inspect, write, default) = make_proto_closures::<$pb>();
             registry.register(
                 derive_component_name::<$pb>(),
                 $id,
                 $crdt,
                 inspect,
                 Some(write),
+                Some(default),
             );
         }};
         ($pb:ty, $id:expr, $crdt:expr, ro) => {{
-            let (inspect, _write) = make_proto_closures::<$pb>();
-            registry.register(derive_component_name::<$pb>(), $id, $crdt, inspect, None);
+            let (inspect, _write, _default) = make_proto_closures::<$pb>();
+            registry.register(
+                derive_component_name::<$pb>(),
+                $id,
+                $crdt,
+                inspect,
+                None,
+                None,
+            );
         }};
     }
 
@@ -124,6 +133,12 @@ pub fn register_engine_components(app: &mut App) {
         ro
     );
     reg!(
+        PbExplorerUiEventsResult,
+        SceneComponentId::EXPLORER_UI_EVENTS_RESULT,
+        CrdtType::GO_ENT,
+        ro
+    );
+    reg!(
         PbPlayerIdentityData,
         SceneComponentId::PLAYER_IDENTITY_DATA,
         CrdtType::LWW_ANY,
@@ -193,11 +208,17 @@ fn register_transform(registry: &mut ComponentNameRegistry) {
         Ok(buf)
     });
 
+    let default = std::sync::Arc::new(|| {
+        serde_json::to_string_pretty(&DclTransformAndParent::default())
+            .map_err(|e| anyhow::anyhow!("{e}"))
+    });
+
     registry.register(
         "Transform".to_string(),
         SceneComponentId::TRANSFORM,
         CrdtType::LWW_ANY,
         inspect,
         Some(write),
+        Some(default),
     );
 }

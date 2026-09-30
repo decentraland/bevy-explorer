@@ -26,4 +26,5 @@ message PBUiText {
   
   optional float outline_width = 7;              // width of the outline (default: 0)
   optional decentraland.common.Color4 outline_color = 8; // RGBA color of the outline (default: opaque black)
+  optional string font_src = 9;                  // a font file in the scene, or a Google Fonts family name; `font` is the fallback (default: unset)
 }

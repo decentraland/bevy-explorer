@@ -2,7 +2,7 @@ use std::{
     io::Cursor,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use bevy::{
@@ -13,6 +13,7 @@ use bevy::{
 use common::structs::IVec2Arg;
 use ipfs::{ipfs_path::IpfsPath, IpfsIo};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use tokio_util::sync::CancellationToken;
 use zip::ZipArchive;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -25,6 +26,13 @@ pub struct ImposterSpec {
     pub scale: f32,
     pub region_min: Vec3,
     pub region_max: Vec3,
+    /// World-space distance the baked texture holds content past the
+    /// parcel-clamped region (the level-0 `bound_tolerance`, carried up the mip
+    /// chain as `max(children)`). Used to expose that overhang when this
+    /// imposter is baked as an ingredient — see `ImposterMesh::from_spec`.
+    /// Defaults to 0 for specs written before this field existed.
+    #[serde(default)]
+    pub overhang: f32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -60,17 +68,10 @@ impl BakedScene {}
 
 fn file_root(cache_path: Option<&Path>, as_ipfs_path: bool, id: &str, level: usize) -> PathBuf {
     let mut path = cache_path.map(ToOwned::to_owned).unwrap_or_default();
-
-    if level == 0 {
-        path.push("imposters");
-        path.push("scenes");
-        path.push(id);
-    } else {
-        path.push("imposters");
-        path.push("realms");
-        path.push(urlencoding::encode(id).into_owned());
-        path.push(format!("{level}"));
-    }
+    path.push("imposters");
+    path.push("realms");
+    path.push(urlencoding::encode(id).into_owned());
+    path.push(format!("{level}"));
 
     if cache_path.is_none() && as_ipfs_path {
         PathBuf::from(&IpfsPath::new_indexdb(path))
@@ -86,11 +87,7 @@ pub(crate) fn spec_path(
     level: usize,
 ) -> PathBuf {
     let mut path = file_root(cache_path, false, id, level);
-    if level == 0 {
-        path.push("spec.json");
-    } else {
-        path.push(format!("{},{}-spec.json", parcel.x, parcel.y));
-    }
+    path.push(format!("{},{}-spec.json", parcel.x, parcel.y));
     path
 }
 
@@ -124,11 +121,7 @@ pub(crate) fn zip_path(
     crc: Option<u32>,
 ) -> PathBuf {
     let mut path = file_root(cache_path, false, id, level);
-    if level == 0 {
-        path.push("scene.zip");
-    } else {
-        path.push(format!("{},{}.{}.zip", parcel.x, parcel.y, crc.unwrap()));
-    }
+    path.push(format!("{},{}.{}.zip", parcel.x, parcel.y, crc.unwrap()));
     path
 }
 
@@ -156,14 +149,23 @@ pub async fn load_imposter(
     level: usize,
     required_crc: Option<u32>,
     download: bool,
+    cancel: CancellationToken,
 ) -> Option<BakedScene> {
+    if required_crc.is_some_and(|crc| crc == 0) {
+        // crc==0 means the area has no scenes, so resolve directly to an empty
+        // spec instead of falling through to remote fetch (which would 404) or
+        // PendingRemote (which would re-trigger the bake every frame).
+        return Some(BakedScene::default());
+    }
+
     // try locally
     if let Some(imposter) = load_imposter_local(&ipfs, &id, parcel, level, required_crc).await {
         return Some(imposter);
     }
 
     if download {
-        if let Err(e) = load_imposter_remote(&ipfs, &id, parcel, level, required_crc).await {
+        if let Err(e) = load_imposter_remote(&ipfs, &id, parcel, level, required_crc, cancel).await
+        {
             warn!("{e}");
             return None;
         }
@@ -173,29 +175,83 @@ pub async fn load_imposter(
     None
 }
 
+const DEFAULT_IMPOSTER_URL_BASE: &str = "https://bevy-imposters.dclregenesislabs.xyz";
+
+static IMPOSTER_URL_BASE: OnceLock<String> = OnceLock::new();
+
+/// Base url of the imposter store to fetch tiles from (`--imposter-source`). The store layout
+/// beneath it (`/imposters/realms/{realm}/{level}/{x},{y}.{crc}.zip`) is fixed, so a custom
+/// store serves every realm exactly like the default one does. Startup only.
+pub fn set_source(url: &str) {
+    let _ = IMPOSTER_URL_BASE.set(url.trim_end_matches('/').to_owned());
+}
+
+fn remote_zip_url(base: &str, id: &str, parcel: IVec2, level: usize, crc: Option<u32>) -> String {
+    let zip_file = zip_path(None, id, parcel, level, crc)
+        .to_string_lossy()
+        .into_owned()
+        .replace("\\", "/")
+        // double url encode
+        .replace("%", "%25");
+    format!("{base}/{zip_file}")
+}
+
 pub async fn load_imposter_remote(
     ipfs: &IpfsIo,
     id: &str,
     parcel: IVec2,
     level: usize,
     crc: Option<u32>,
+    cancel: CancellationToken,
 ) -> Result<(), anyhow::Error> {
     let client = ipfs.client();
-    let zip_file = zip_path(None, id, parcel, level, crc)
-        .to_string_lossy()
-        .into_owned()
-        .replace("\\", "/");
-    let zip_url = format!("https://imposter.kuruk.net/{zip_file}")
-        // double url encode
-        .replace("%", "%25");
+    let base = IMPOSTER_URL_BASE
+        .get()
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_IMPOSTER_URL_BASE);
+    let zip_url = remote_zip_url(base, id, parcel, level, crc);
     debug!("zip_url {zip_url}");
 
+    // Bulk imposter-zip download. No total request timeout: platform::fetch below
+    // bounds the connect+headers phase and the body by an inactivity timeout, so a
+    // slow-but-progressing download isn't killed.
     let request = client.get(&zip_url).build()?;
-    let response = ipfs.async_request(request, client).await?;
-    if response.status() != reqwest::StatusCode::OK {
-        return Ok(());
-    }
-    let bytes = response.bytes().await?;
+    // Race the network fetch + body read against the cancel token. If the
+    // owning `ImposterLoadTask` Component is dropped (entity despawn / out of
+    // range), this future is dropped together with the `select!`, releasing
+    // the IPFS semaphore permit and (on wasm) firing reqwest's `AbortGuard`
+    // to abort the in-flight browser fetch.
+    let bytes = tokio::select! {
+        fetched = async {
+            let fetched = match platform::fetch(
+                ipfs.async_request(request, client),
+                std::time::Duration::from_secs(30),
+                std::time::Duration::from_secs(10),
+            )
+            .await
+            {
+                Ok(fetched) => fetched,
+                // a missing imposter for this area is an expected 404
+                Err(platform::FetchError::Status(_)) => return Ok(None),
+                Err(platform::FetchError::Send(e)) => return Err(e),
+                Err(platform::FetchError::Headers) => {
+                    anyhow::bail!("imposter request timed out awaiting headers")
+                }
+                Err(platform::FetchError::Stalled) => {
+                    anyhow::bail!("imposter download stalled (no data for 10s)")
+                }
+                Err(platform::FetchError::Body(e)) => return Err(anyhow::anyhow!(e)),
+            };
+            Ok::<_, anyhow::Error>(Some(fetched.body))
+        } => match fetched? {
+            Some(bytes) => bytes,
+            None => return Ok(()),
+        },
+        _ = cancel.cancelled() => {
+            debug!("imposter load cancelled: id={id} parcel={parcel} level={level} url={zip_url}");
+            return Ok(());
+        }
+    };
     let mut zip = ZipArchive::new(Cursor::new(bytes))?;
     let root = file_root(ipfs.cache_path(), false, id, level);
     platform_fs::create_dir_all(&root).await?;
@@ -252,4 +308,37 @@ pub async fn load_imposter_local(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_base_builds_the_store_url() {
+        assert_eq!(
+            remote_zip_url(
+                DEFAULT_IMPOSTER_URL_BASE,
+                "https://realm-provider.decentraland.org/main",
+                IVec2::new(-29, 55),
+                3,
+                Some(12345)
+            ),
+            "https://bevy-imposters.dclregenesislabs.xyz/imposters/realms/https%253A%252F%252Frealm-provider.decentraland.org%252Fmain/3/-29,55.12345.zip"
+        );
+    }
+
+    #[test]
+    fn custom_base_keeps_the_realm_keyed_path() {
+        assert_eq!(
+            remote_zip_url(
+                "https://imposters.example.test",
+                "https://my-realm.example.test",
+                IVec2::new(1, -2),
+                0,
+                Some(7)
+            ),
+            "https://imposters.example.test/imposters/realms/https%253A%252F%252Fmy-realm.example.test/0/1,-2.7.zip"
+        );
+    }
 }

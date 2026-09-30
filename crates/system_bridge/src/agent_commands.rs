@@ -10,6 +10,7 @@ impl Plugin for AgentCommandsPlugin {
     fn build(&self, app: &mut App) {
         app.add_console_command::<LoginGuestCommand, _>(login_guest_cmd);
         app.add_console_command::<LoginPreviousCommand, _>(login_previous_cmd);
+        app.add_console_command::<LoginIdentityCommand, _>(login_identity_cmd);
         app.add_console_command::<LogoutCommand, _>(logout_cmd);
         app.add_console_command::<LiveScenesCommand, _>(live_scenes_cmd);
         app.add_console_command::<ChatCommand, _>(chat_cmd);
@@ -38,20 +39,70 @@ fn login_guest_cmd(
 /// Login using previously saved credentials
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/login_previous")]
-struct LoginPreviousCommand;
+struct LoginPreviousCommand {
+    /// if the current profile can't be fetched, continue with (and deploy) a default
+    /// profile — this overwrites the server-side profile
+    #[arg(long)]
+    default_on_error: bool,
+}
 
 fn login_previous_cmd(
     mut input: ConsoleCommand<LoginPreviousCommand>,
     mut events: EventWriter<SystemApi>,
     mut pending: ResMut<PendingConsoleResponses>,
 ) {
-    if let Some(Ok(_)) = input.take() {
+    if let Some(Ok(command)) = input.take() {
         let (sx, rx) = common::rpc::RpcResultSender::<Result<(), String>>::channel();
-        events.write(SystemApi::LoginPrevious(sx));
-        pending.push_receiver(rx, |result| match result {
-            Ok(()) => Ok("logged in with previous credentials".to_string()),
-            Err(e) => Err(e),
-        });
+        events.write(SystemApi::LoginPrevious(command.default_on_error, sx));
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            |result| match result {
+                Ok(()) => Ok("logged in with previous credentials".to_string()),
+                Err(e) => Err(e),
+            },
+            responder,
+        );
+    }
+}
+
+// --- /login_identity ---
+
+/// Login with an AuthIdentity the web page already holds (base64-encoded AuthIdentity JSON).
+/// The web page reads it from localStorage and forwards it; the identity is the same however
+/// the user signed in (wallet, social, OTP, magic), so this is not login-method-specific.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/login_identity")]
+struct LoginIdentityCommand {
+    /// base64(JSON) of the stored AuthIdentity.
+    payload: String,
+    /// if the current profile can't be fetched, continue with (and deploy) a default
+    /// profile — this overwrites the server-side profile
+    #[arg(long)]
+    default_on_error: bool,
+}
+
+fn login_identity_cmd(
+    mut input: ConsoleCommand<LoginIdentityCommand>,
+    mut events: EventWriter<SystemApi>,
+    mut pending: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let (sx, rx) = common::rpc::RpcResultSender::<Result<(), String>>::channel();
+        events.write(SystemApi::LoginWithIdentity(
+            command.payload.clone(),
+            command.default_on_error,
+            sx,
+        ));
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            |result| match result {
+                Ok(()) => Ok("logged in with identity".to_string()),
+                Err(e) => Err(e),
+            },
+            responder,
+        );
     }
 }
 
@@ -82,25 +133,30 @@ fn live_scenes_cmd(
     if let Some(Ok(_)) = input.take() {
         let (response, rx) = common::rpc::RpcResultSender::<Vec<LiveSceneInfo>>::channel();
         events.write(SystemApi::LiveSceneInfo(response));
-        pending.push_receiver(rx, |scenes| {
-            if scenes.is_empty() {
-                Ok("no scenes loaded".to_string())
-            } else {
-                Ok(scenes
-                    .iter()
-                    .map(|s| {
-                        format!(
-                            "{} [{}{}{}]",
-                            s.title,
-                            s.hash,
-                            if s.is_portable { ", portable" } else { "" },
-                            if s.is_broken { ", broken" } else { "" },
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n"))
-            }
-        });
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            |scenes| {
+                if scenes.is_empty() {
+                    Ok("no scenes loaded".to_string())
+                } else {
+                    Ok(scenes
+                        .iter()
+                        .map(|s| {
+                            format!(
+                                "{} [{}{}{}]",
+                                s.title,
+                                s.hash,
+                                if s.is_portable { ", portable" } else { "" },
+                                if s.is_broken { ", broken" } else { "" },
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"))
+                }
+            },
+            responder,
+        );
     }
 }
 

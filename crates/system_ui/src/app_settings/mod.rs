@@ -4,14 +4,15 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiR
 use common::structs::SsaoSetting;
 use common::{
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, PreviewMode, SettingsTab,
-        ShadowSetting, WindowSetting,
+        AaSetting, AppConfig, BloomSetting, CameraSmoothing, DofSetting, FogSetting,
+        PointAtMarkerVisibility, PreviewMode, SettingsTab, ShadowSetting, WindowSetting,
     },
     util::TryPushChildrenEx,
 };
 use system_bridge::settings::{
     cache_size::CacheSizeSetting,
     imposter_settings::ImposterSetting,
+    player_settings::{JogSpeedSetting, RunJumpSetting},
     sensitivity::{
         CameraSensitivitySetting, CameraZoomSensitivitySetting, MovementSensitivitySetting,
         PointerSensitivitySetting, ScrollSensitivitySetting,
@@ -24,17 +25,17 @@ use crate::profile::SettingsDialog;
 
 use system_bridge::settings::{
     ambient_brightness_setting::AmbientSetting,
+    avatar_outline_setting::AvatarOutlineSetting,
+    cel_shading_setting::CelShadingSetting,
     constrain_ui::ConstrainUiSetting,
     frame_rate::FpsTargetSetting,
     load_distance::{LoadDistanceSetting, UnloadDistanceSetting},
     max_avatars::MaxAvatarsSetting,
     max_downloads::MaxDownloadsSetting,
     oob_setting::OobSetting,
-    player_settings::{
-        FallSpeedSetting, FrictionSetting, GravitySetting, JumpSetting, RunSpeedSetting,
-        WalkSpeedSetting,
-    },
+    player_settings::{JumpSetting, RunSpeedSetting, WalkSpeedSetting},
     scene_threads::SceneThreadsSetting,
+    shadow_settings::LightCountSetting,
     shadow_settings::ShadowCasterCountSetting,
     shadow_settings::ShadowDistanceSetting,
     video_threads::VideoThreadsSetting,
@@ -116,6 +117,7 @@ fn set_app_settings_content(
             spawn_int_setting_template::<AmbientSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<ShadowSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<ShadowDistanceSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<LightCountSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<ShadowCasterCountSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<ImposterSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<FogSetting>(&mut commands, &dui, &config),
@@ -124,6 +126,8 @@ fn set_app_settings_content(
             #[cfg(not(target_arch = "wasm32"))]
             spawn_enum_setting_template::<SsaoSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<OobSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<CelShadingSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<AvatarOutlineSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<ConstrainUiSetting>(&mut commands, &dui, &config),
             commands
                 .spawn_template(
@@ -170,12 +174,11 @@ fn set_app_settings_content(
                 )
                 .unwrap()
                 .root,
-            spawn_int_setting_template::<RunSpeedSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<WalkSpeedSetting>(&mut commands, &dui, &config),
-            spawn_int_setting_template::<FrictionSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<JogSpeedSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<RunSpeedSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<JumpSetting>(&mut commands, &dui, &config),
-            spawn_int_setting_template::<GravitySetting>(&mut commands, &dui, &config),
-            spawn_int_setting_template::<FallSpeedSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<RunJumpSetting>(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,
@@ -193,6 +196,8 @@ fn set_app_settings_content(
             spawn_int_setting_template::<ScrollSensitivitySetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<MovementSensitivitySetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<CameraSensitivitySetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<CameraSmoothing>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<PointAtMarkerVisibility>(&mut commands, &dui, &config),
         ]);
 
         commands

@@ -1,0 +1,38 @@
+/* Rides the shared PopupHost scrim like RealmErrorModal; only the two lists are styled here. */
+.lead {
+  margin: 0 0 14px;
+  font-size: var(--fs-md);
+  color: var(--ink-95);
+}
+.ignored {
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* Param names are mono and break anywhere — the link author controls the ignored ones. */
+.ignored li,
+.name {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.ignored li {
+  color: var(--error-text);
+}
+.accepted {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+  font-size: var(--fs-md);
+  color: var(--ink-95);
+}
+.accepted dt {
+  margin-top: 8px;
+}
+.accepted dd {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  color: var(--ink-7);
+}

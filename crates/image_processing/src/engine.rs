@@ -1,16 +1,20 @@
 use bevy::{
-    asset::AssetPath,
+    asset::{AssetLoadFailedEvent, AssetPath},
     diagnostic::FrameCount,
     image::TextureFormatPixelInfo,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
+use bevy_console::ConsoleCommand;
 use common::{structs::DebugInfo, util::TaskExt};
+use console::DoAddConsoleCommand;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 
 #[cfg(target_arch = "wasm32")]
 use crate::CHANNELS;
+#[cfg(not(target_arch = "wasm32"))]
+use common::util::JoinRelativeExt;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -42,6 +46,31 @@ impl Plugin for ImageProcessingPlugin {
         }
 
         app.init_resource::<ImgReprocessStats>();
+        app.init_resource::<DebugProcessingEnabled>();
+        app.add_preview_console_command::<DebugProcessingCommand, _>(toggle_debug_processing);
+    }
+}
+
+#[derive(Resource, Default)]
+struct DebugProcessingEnabled(bool);
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/debug_processing")]
+struct DebugProcessingCommand {
+    on: Option<bool>,
+}
+
+fn toggle_debug_processing(
+    mut input: ConsoleCommand<DebugProcessingCommand>,
+    mut enabled: ResMut<DebugProcessingEnabled>,
+    mut debug: ResMut<DebugInfo>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        enabled.0 = command.on.unwrap_or(!enabled.0);
+        if !enabled.0 {
+            debug.info.remove("processing");
+        }
+        input.reply_ok(format!("image processing debug info: {}", enabled.0));
     }
 }
 
@@ -56,6 +85,7 @@ struct ImgReprocessStats {
     alive: bool,
     total: usize,
     skip_imposter: usize,
+    skip_label: usize,
     skip_unloaded: usize,
     skip_tiny: usize,
     skip_unknown: usize,
@@ -71,6 +101,7 @@ struct ImgReprocessStats {
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn check_assets(
     mut a: EventReader<AssetEvent<Image>>,
+    mut failed_gltfs: EventReader<AssetLoadFailedEvent<Gltf>>,
     images: Res<Assets<Image>>,
     mut w: EventWriter<AssetForProcessing>,
     ipfas: IpfsAssetServer,
@@ -125,13 +156,21 @@ fn check_assets(
                 continue;
             }
 
-            let (ty, asset_path) = if asset_path.to_string().contains("#Texture") {
-                (
+            let (ty, asset_path) = match asset_path.label() {
+                None => (ProcessingAssetType::Image, asset_path.clone_owned()),
+                Some(label) if label.starts_with("Texture") => (
                     ProcessingAssetType::Gltf,
                     asset_path.without_label().clone_owned(),
-                )
-            } else {
-                (ProcessingAssetType::Image, asset_path.clone_owned())
+                ),
+                // labeled image subassets that aren't gltf textures (e.g.
+                // `Mesh{}/Primitive{}/MorphTargets`) are raw data, not compressible
+                // pictures. processing one would fail against the source file's bytes,
+                // and its entry in `paths_processed` would block texture compression
+                // for the whole source file
+                Some(_) => {
+                    stats.skip_label += 1;
+                    continue;
+                }
             };
             let Ok(Some(ipfs_path)) = IpfsPath::new_from_path(asset_path.path()) else {
                 // skip ... ?
@@ -156,6 +195,35 @@ fn check_assets(
         }
     }
 
+    // a gltf that fails to load because it is draco-compressed (the loader
+    // rejects the extension by name, and spec-compliant draco files must list
+    // it in extensionsRequired) is run through the processor once, which
+    // decompresses and persists it. the processor independently verifies the
+    // extension against the actual bytes.
+    for ev in failed_gltfs.read() {
+        if !format!("{}", ev.error).contains("KHR_draco_mesh_compression") {
+            continue;
+        }
+        let asset_path = ev.path.clone();
+        let Ok(Some(ipfs_path)) = IpfsPath::new_from_path(asset_path.path()) else {
+            stats.skip_unknown += 1;
+            continue;
+        };
+
+        if paths_processed.contains(&ipfs_path) {
+            continue;
+        }
+        paths_processed.insert(ipfs_path.clone());
+
+        if let Ok(None) = ipfs_path.context_free_hash() {
+            stats.skip_unhashable += 1;
+            continue;
+        }
+
+        stats.total += 1;
+        assets_to_process.push((ProcessingAssetType::DracoGltf, ipfs_path, asset_path));
+    }
+
     if task.is_none() && !assets_to_process.is_empty() {
         let ipfs = ipfas.ipfs().clone();
         let assets_to_process = std::mem::take(&mut *assets_to_process);
@@ -175,12 +243,11 @@ fn check_assets(
                     };
 
                     if ipfs_path.should_cache(&hash) {
+                        // `hash` comes from the entity json, so it must not steer the path
                         #[cfg(not(target_arch = "wasm32"))]
-                        let cache_path = {
-                            let mut cache_path = std::path::PathBuf::from(&cache_root);
-                            cache_path.push(hash);
-                            cache_path.to_string_lossy().into_owned()
-                        };
+                        let cache_path = std::path::Path::new(&cache_root)
+                            .join_relative(hash)
+                            .map(|p| p.to_string_lossy().into_owned())?;
 
                         #[cfg(target_arch = "wasm32")]
                         let Ok(cache_path) = ipfs_path.to_url(&ctx) else {
@@ -225,6 +292,7 @@ fn pipe_events(
     asset_server: Res<AssetServer>,
     mut stats: ResMut<ImgReprocessStats>,
     mut debug_info: ResMut<DebugInfo>,
+    debug_enabled: Res<DebugProcessingEnabled>,
     gltfs: Res<Assets<Gltf>>,
     std_mats: Res<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
@@ -252,9 +320,30 @@ fn pipe_events(
                 match req.ty {
                     ProcessingAssetType::Gltf => {
                         if let Some(h) = asset_server.get_handle::<Gltf>(&req.base_path) {
-                            processing_gltfs.insert(asset_server.load(req.cache_path), h.id());
+                            // on wasm the cache path is the source url (the processed bytes
+                            // overwrite the service-worker cache entry for that url), so wrap
+                            // it in a url-form IpfsPath to make it loadable
+                            #[cfg(target_arch = "wasm32")]
+                            let cache_path = {
+                                let ext = req
+                                    .base_path
+                                    .path()
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("glb");
+                                std::path::PathBuf::from(&IpfsPath::new_from_url(
+                                    &req.cache_path,
+                                    ext,
+                                ))
+                            };
+                            #[cfg(not(target_arch = "wasm32"))]
+                            let cache_path = req.cache_path;
+                            processing_gltfs.insert(asset_server.load(cache_path), h.id());
                         }
                     }
+                    // the original never loaded, so a plain reload picks up the
+                    // repaired cache bytes (no need for the image-swap below)
+                    ProcessingAssetType::DracoGltf => asset_server.reload(req.base_path),
                     ProcessingAssetType::Image => asset_server.reload(req.base_path),
                 };
             }
@@ -270,7 +359,9 @@ fn pipe_events(
         debug!("max bad: {}", *max_bad);
     }
 
-    debug_info.info.insert("processing", format!("{stats:?}"));
+    if debug_enabled.0 {
+        debug_info.info.insert("processing", format!("{stats:?}"));
+    }
 
     let mut imgs_replaced = 0;
     // gltf reload doesn't work (bevy#18267), so manually overwrite all the images

@@ -8,6 +8,7 @@ use bevy::{
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
+    base_domain::Service,
     rpc::RpcCall,
     structs::{IVec2Arg, SettingsTab, ZOrder},
     util::{ModifyComponentExt, TaskCompat, TaskExt},
@@ -203,11 +204,10 @@ impl DiscoverSettings {
 
     fn request(&mut self) {
         let mut url = if self.worlds {
-            "https://places.decentraland.org/api/worlds/?limit=50"
+            common::base_domain::url(Service::Places, "/api/worlds/?limit=50")
         } else {
-            "https://places.decentraland.org/api/places/?limit=50"
-        }
-        .to_string();
+            common::base_domain::url(Service::Places, "/api/places/?limit=50")
+        };
 
         url = format!("{url}&offset={}", self.data.len());
 
@@ -221,7 +221,11 @@ impl DiscoverSettings {
 
         let client = self.client.clone();
         self.task = Some(IoTaskPool::get().spawn_compat(async move {
-            let response = client.get(url).send().await?;
+            let response = client
+                .get(url)
+                .timeout(std::time::Duration::from_secs(10))
+                .send()
+                .await?;
 
             response
                 .json::<DiscoverPages>()
@@ -429,7 +433,10 @@ impl DiscoverPage {
         Self {
             title: format!("({}, {})", coords.x, coords.y),
             base_position: format!("{},{}", coords.x, coords.y),
-            image: "https://realm-provider.decentraland.org/content/contents/bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y".to_owned(),
+            image: common::base_domain::url(
+                Service::Catalyst,
+                "/content/contents/bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y",
+            ),
             ..Default::default()
         }
     }
@@ -619,11 +626,8 @@ pub fn spawn_discover_popup(
     item: &DiscoverPage,
 ) {
     let url = match &item.world_name {
-        Some(name) => format!(
-            "https://worlds-content-server.decentraland.org/world/{}",
-            name.clone()
-        ),
-        None => "https://realm-provider-ea.decentraland.org/main".to_owned(),
+        Some(name) => common::base_domain::url(Service::WorldsServer, &format!("/world/{name}")),
+        None => common::structs::default_home_realm(),
     };
 
     let Ok(to) = IVec2Arg::from_str(&item.base_position) else {
@@ -634,15 +638,18 @@ pub fn spawn_discover_popup(
         let cr_ev = ChangeRealmEvent {
             new_realm: url.clone(),
             content_server_override: None,
+            response: Default::default(),
+            report: true,
         };
         let rpc_ev = RpcCall::TeleportPlayer {
             scene: None,
-            to: to.0,
+            to: Some(to.0),
+            realm: None,
             response: Default::default(),
         };
 
         if let Ok(mut settings) = settings.single_mut() {
-            settings.on_close = Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev));
+            settings.on_close = Some(OnCloseEvent::ChangeRealm(Box::new(cr_ev), rpc_ev));
         } else {
             warn!("no settings");
         }

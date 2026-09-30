@@ -1,0 +1,19 @@
+/* Day / month / year side by side. Select carries a 160px min-width for standalone use, which
+   three-in-a-row would blow straight through the container — inside this row they share whatever
+   width there is instead, spread across it and weighted by how much text each holds. */
+.row {
+  display: flex;
+  gap: 0.5rem;
+}
+.row > * {
+  min-width: 0;
+}
+.row > *:nth-child(1) {
+  flex: 2;
+}
+.row > *:nth-child(2) {
+  flex: 3;
+}
+.row > *:nth-child(3) {
+  flex: 2;
+}

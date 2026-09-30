@@ -1,0 +1,293 @@
+.root {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-loading);
+  overflow: hidden;
+  /* The vignette is plain CSS so it paints on frame 1: engine_run freezes the main thread right
+     after this mounts, before any image could decode. */
+  background: var(--loading-vignette);
+}
+/* A 1920×1080 reference canvas, scaled to fit and grown along the longer axis. */
+.canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% / var(--ui-scale));
+  height: calc(100% / var(--ui-scale));
+  transform: scale(var(--ui-scale));
+  transform-origin: 0 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Drifting logo pattern, strongest in the centre, then a glow behind the illustration. */
+.pattern {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0.07;
+  mix-blend-mode: luminosity;
+  mask-image: radial-gradient(ellipse 100% 100% at 50% 50%, var(--black) 16.7%, transparent 66.7%);
+}
+.patternX {
+  position: absolute;
+  inset: 0 -650px 0 -650px;
+  animation: drift-x 5.65s linear infinite;
+}
+.patternY {
+  position: absolute;
+  inset: -650px 0 -650px 0;
+  background: url('../../assets/loading/logo-pattern.webp') 0 0 / 650px 650px repeat;
+  animation: drift-y 8.02s linear infinite;
+}
+@keyframes drift-x {
+  to {
+    transform: translateX(650px);
+  }
+}
+@keyframes drift-y {
+  to {
+    transform: translateY(-650px);
+  }
+}
+.glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 962px 903px at 538px 594px, var(--loading-glow), transparent);
+  mix-blend-mode: plus-lighter;
+  pointer-events: none;
+}
+
+.bar {
+  position: relative;
+  flex: none;
+  height: 60px;
+  background: var(--panel);
+}
+.brand {
+  position: absolute;
+  left: 22px;
+  top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.brandIcon {
+  width: 34px;
+  height: 34px;
+}
+.brandWordmark {
+  width: 207.9px;
+  height: 26px;
+}
+.status {
+  position: absolute;
+  right: 28px;
+  top: 10px;
+  min-width: 230px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  color: var(--text);
+  font-size: var(--type-30);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.track {
+  position: relative;
+  flex: none;
+  height: 30px;
+  background: var(--loading-track);
+  overflow: hidden;
+}
+/* The fill is 67px wide even at 0%, and its lava gradient keeps flowing. */
+.fill {
+  height: 100%;
+  max-width: 100%;
+  background: var(--loading-lava);
+  background-size: 250% 100%;
+  animation: lava 6s var(--ease-inout) infinite alternate;
+  transition: width 300ms var(--ease-out);
+}
+@keyframes lava {
+  to {
+    background-position: 100% 0;
+  }
+}
+
+.bug {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 10.9px;
+  background: var(--fill-5);
+  color: var(--ink-7);
+  cursor: pointer;
+}
+.bug:hover {
+  background: var(--tab-hover);
+}
+
+/* Tips: laid out on a 1920×990 box centred in the area under the progress bar. */
+.tips {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.tipsBox {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 990px;
+  transform: translate(-50%, -50%);
+}
+.tip {
+  position: absolute;
+  inset: 0;
+  transition: opacity 300ms var(--ease-outquad);
+  animation: fade-in 300ms var(--ease-outquad) both;
+}
+.tipOut {
+  opacity: 0;
+}
+.tipImage {
+  position: absolute;
+  left: 111px;
+  top: 45px;
+  width: 900px;
+  height: 900px;
+  object-fit: contain;
+  animation: fade-in 250ms linear both;
+}
+.tipTitle {
+  position: absolute;
+  left: 1062px;
+  top: 188px;
+  width: 710px;
+  height: 180px;
+  margin: 0;
+  display: flex;
+  align-items: flex-end;
+  color: var(--text);
+  font-size: var(--type-96);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.05em;
+  line-height: 1.05;
+}
+.tipBody {
+  position: absolute;
+  left: 1062px;
+  top: 413px;
+  width: 710px;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--type-36);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.05em;
+  line-height: 1.2;
+  white-space: pre-line;
+}
+.accent {
+  color: var(--loading-key);
+}
+.action {
+  position: absolute;
+  left: 1062px;
+  top: 569px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  height: 78px;
+  padding: 0 34px 0 28px;
+  border: 3px solid var(--loading-pill-edge);
+  border-radius: var(--r-pill);
+  background: var(--scrim-40);
+  color: var(--text);
+  font-size: var(--type-32);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+.actionIcon {
+  display: flex;
+  flex: none;
+}
+.actionText {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+}
+.actionInlineIcon {
+  width: 42px;
+  height: 42px;
+  margin: 0 0.1em;
+}
+/* Anchored to the bottom, not the centred box. */
+.dots {
+  position: absolute;
+  left: calc(50% + 103px);
+  bottom: 177px;
+  display: flex;
+  gap: 17px;
+}
+.dot {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--ink-45);
+  cursor: pointer;
+}
+.dotActive {
+  background: var(--loading-key);
+  transform: scale(1.05);
+}
+.arrow {
+  position: absolute;
+  top: calc(50% - 35px);
+  width: 70px;
+  height: 70px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--fill-5);
+  opacity: 0.8;
+  cursor: pointer;
+}
+.arrow:hover {
+  opacity: 1;
+}
+.arrow img {
+  display: block;
+  width: 70px;
+  height: 70px;
+}
+.arrowPrev {
+  left: 30px;
+}
+.arrowNext {
+  right: 30px;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

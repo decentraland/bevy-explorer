@@ -1,0 +1,122 @@
+/* Nav rail — Explorer 2.0 spec: 46px wide, rgba(0,0,0,0.7), full height, with a
+   top group (nav/menus) and a bottom group (world tools + social) pinned to the
+   ends. translateZ(0)/contain isolate hover paints from the engine's per-frame
+   work on the shared main thread (same document). */
+.root {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 46px;
+  /* DPI scaling like MainMenuShell: a reference-height box scaled by --ui-scale so the rail
+     width + icons track the viewport (Unity CanvasScaler) instead of staying a fixed 46px at
+     1x — keeps the rail consistent with the scaled chat/floating panels beside it. */
+  height: calc(100% / var(--ui-scale));
+  background: var(--rail-bg);
+  /* Above the minimap and chat, so the tooltips aren't covered. */
+  z-index: calc(var(--z-hud) + 1);
+  transform: scale(var(--ui-scale)) translateZ(0);
+  transform-origin: top left;
+  contain: layout;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0 16px;
+  box-sizing: border-box;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 40px hairline divider — DCL/White10%. */
+.divider {
+  width: 40px;
+  height: 0;
+  border-top: 1px solid var(--rail-divider);
+}
+
+/* Auto-hide (Unity MainUIController): slide the rail off-screen; `translate` composes with the
+   scale transform above. */
+.root {
+  transition: translate 0.2s ease;
+}
+.root[data-hidden='true'] {
+  translate: -100% 0;
+}
+/* Unity's ••• is a slim pill above the profile, smaller than a rail button. */
+.root .configButton {
+  width: 36px;
+  height: 16px;
+  background: var(--rail-bg);
+  min-height: 0;
+  padding: 0;
+}
+/* Invisible strip on the screen edge that brings a hidden rail back. */
+.reveal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: var(--z-hud);
+}
+.config {
+  position: fixed;
+  left: 54px;
+  top: 8px;
+  z-index: calc(var(--z-hud) + 1);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  box-shadow: var(--shadow-panel);
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+}
+
+/* Speaking bars on the voice button: 2px dots while quiet, a ping-pong wave while heard. */
+.bars {
+  position: absolute;
+  left: 20.4px;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 1.54px;
+  height: 10px;
+  transform: translateY(-50%);
+}
+.bars i {
+  width: 2px;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--voice-green);
+  transition: height 100ms linear;
+}
+.bars[data-live='true'] i {
+  animation: bar-edge 300ms ease-in-out infinite alternate;
+}
+.bars[data-live='true'] i:nth-child(2) {
+  animation-name: bar-mid;
+}
+@keyframes bar-edge {
+  from {
+    height: 4px;
+  }
+  to {
+    height: 10px;
+  }
+}
+@keyframes bar-mid {
+  from {
+    height: 10px;
+  }
+  to {
+    height: 4px;
+  }
+}

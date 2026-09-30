@@ -7,19 +7,30 @@ use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 use super::State;
 
-pub async fn op_get_connected_players(state: Rc<RefCell<impl State>>) -> Vec<String> {
+pub async fn op_get_connected_players(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<String>, anyhow::Error> {
     debug!("op_get_connected_players");
     let (sx, rx) = RpcResultSender::channel();
 
-    state
-        .borrow_mut()
-        .borrow_mut::<RpcCalls>()
-        .push(RpcCall::GetConnectedPlayers { response: sx });
+    {
+        let mut state = state.borrow_mut();
+        let scene = state.borrow::<CrdtContext>().scene_id.0;
 
-    rx.await.unwrap_or_default()
+        state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::GetConnectedPlayers {
+                scene,
+                response: sx,
+            })?;
+    }
+
+    Ok(rx.await.unwrap_or_default())
 }
 
-pub async fn op_get_players_in_scene(state: Rc<RefCell<impl State>>) -> Vec<String> {
+pub async fn op_get_players_in_scene(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<String>, anyhow::Error> {
     debug!("op_get_players_in_scene");
 
     let (sx, rx) = RpcResultSender::channel();
@@ -34,8 +45,8 @@ pub async fn op_get_players_in_scene(state: Rc<RefCell<impl State>>) -> Vec<Stri
             .push(RpcCall::GetPlayersInScene {
                 scene,
                 response: sx,
-            });
+            })?;
     }
 
-    rx.await.unwrap_or_default()
+    Ok(rx.await.unwrap_or_default())
 }

@@ -32,13 +32,11 @@ message CinematicSettings {
   uint32 camera_entity = 1;           // Entity that defines the cinematic camera transform.
                                       // Position -> camera's position
                                       // Rotation -> camera's direction
-                                      // scale.z -> zoom level
-                                      // scale.x and scale.y -> unused
+                                      // scale -> unused
   optional bool allow_manual_rotation = 2; // whether the user can move the camera's rotation. default false
   optional float yaw_range = 3;       // how far the camera can rotate around the y-axis / look left/right, in radians. default unrestricted
   optional float pitch_range = 4;     // how far the camera can rotate around the x-axis / look up-down, in radians. default unrestricted
                                       // note: cameras can never look up/down further than Vec3::Y
   optional float roll_range = 5;      // how far the camera can rotate around the z-axis / tilt, in radians. default unrestricted
-  optional float zoom_min = 6;        // minimum zoom level. must be greater than 0. defaults to the input zoom level
-  optional float zoom_max = 7;        // maximum zoom level. must be greater than 0. defaults to the input zoom level
+  reserved 6, 7;                      // zoom_min, zoom_max (removed)
 }

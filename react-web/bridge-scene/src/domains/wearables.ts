@@ -1,0 +1,198 @@
+// Wearables / backpack: equipped wearables (category slots) + equipping, plus the paged owned
+// catalog fetcher used by the generic `catalog` domain.
+//   from: catalyst GET /explorer/:address/wearables (owned catalog, paged),
+//         GET /lambdas/collections/wearables (equipped-by-urn resolve, via ./collections),
+//         the Backpack's look (equipped; ./avatarDraft, which deploys it on close).
+import { catalystBase, getJson } from '../http'
+import { resolveDefsByUrn, thumbnailUrl } from './collections'
+import { resolveShopUrls } from './marketplace'
+import { itemUrn, tokenUrnOf } from './urns'
+import type { Ctx } from '../bridge'
+import type { Wearable } from '../../../src/engine/protocol'
+import { currentLook, editLook } from './avatarDraft'
+import { bodyShapesOf, splitBodyShape } from '../../../src/engine/bodyShape'
+import { itemHides, type HideData } from '../../../src/engine/avatarHides'
+import { identity } from '../identity'
+
+type CatalogElement = {
+  urn: string
+  name: string
+  rarity: string
+  category: string
+  // Per-owned-token data; carries the tokenId we need for the deployable URN.
+  individualData?: Array<{ id?: string; tokenId?: string }>
+  entity?: { metadata?: { thumbnail?: string; data?: HideData }; content?: Array<{ file: string; hash: string }> }
+}
+
+// item-urn → deployable token urn (see tokenUrnOf), what the equip handler sends. The map
+// accumulates across fetched pages + the equipped set, so any item the user has actually
+// seen/equipped can be equipped.
+const tokenUrnByItem = new Map<string, string>()
+identity.onChange(() => {
+  tokenUrnByItem.clear()
+})
+
+function accumulateTokens(elements: CatalogElement[]): void {
+  for (const el of elements) {
+    const full = tokenUrnOf(el)
+    if (full !== el.urn) tokenUrnByItem.set(el.urn, full)
+  }
+}
+
+export type CatalogPageParams = {
+  /** 0-based page. */
+  page: number
+  pageSize: number
+  category?: string
+  search?: string
+  orderBy?: 'date' | 'rarity' | 'name'
+  direction?: 'asc' | 'desc'
+  collectiblesOnly?: boolean
+  smartOnly?: boolean
+}
+
+// Server-side-paginated owned-wearables fetch (one page). Filters/sort are applied by the catalyst
+// so multi-thousand inventories never load at once. `equipped` per item reflects the live avatar.
+export async function fetchWearablesPage(address: string, p: CatalogPageParams): Promise<{ items: Wearable[]; total: number }> {
+  const baseUrl = await catalystBase()
+  let url = `${baseUrl}/explorer/${address}/wearables?pageNum=${p.page + 1}&pageSize=${p.pageSize}&includeEntities=true`
+  if (p.category != null && p.category !== 'all') url += `&category=${p.category}`
+  if (p.search != null && p.search !== '') url += `&name=${encodeURIComponent(p.search)}`
+  if (p.orderBy != null) url += `&orderBy=${p.orderBy}&direction=${p.direction === 'asc' ? 'ASC' : 'DESC'}`
+  // Explicit collection types (matches unity/bevy-ui-scene): collectibles-only drops base wearables.
+  const collectionTypes = p.collectiblesOnly ? ['on-chain', 'third-party'] : ['base-wearable', 'on-chain', 'third-party']
+  for (const t of collectionTypes) url += `&collectionType=${t}`
+  if (p.smartOnly === true) url += '&isSmartWearable=true'
+
+  const data = await getJson<{ elements?: CatalogElement[]; totalAmount?: number }>(url).catch(() => undefined)
+  const elements = data?.elements ?? []
+  accumulateTokens(elements)
+  const look = currentLook()
+  const owned = look != null ? [look.bodyShape, ...look.wearables] : []
+  const items: Wearable[] = elements.map((el) => {
+    const file = el.entity?.metadata?.thumbnail
+    const hash = el.entity?.content?.find((c) => c.file === file)?.hash
+    return {
+      urn: el.urn,
+      name: el.name,
+      rarity: el.rarity,
+      category: el.category,
+      thumbnail: hash != null ? `${baseUrl}/content/contents/${hash}` : undefined,
+      equipped: owned.some((w) => w === el.urn || w.startsWith(`${el.urn}:`)),
+      bodyShapes: bodyShapesOf(el.entity?.metadata?.data?.representations),
+      isSmart: el.entity?.content?.some((c) => c.file.endsWith('.js')) === true,
+      hides: itemHides(el.category, el.entity?.metadata?.data, look?.bodyShape)
+    }
+  })
+  return { items, total: data?.totalAmount ?? items.length }
+}
+
+type ResolveOpts = {
+  /** Opt-in: only the passport's EquippedItemCard renders a SHOP action — the Backpack's
+   *  WearableCard ignores it — and resolving a legacy (collections-v1) item costs a marketplace-api
+   *  round trip the Backpack and outfit equip would pay for nothing. */
+  shopUrls?: boolean
+  /** Picks the representation whose hides apply. */
+  bodyShape?: string
+}
+
+// Resolve a set of (possibly token-form) urns into displayable wearables. Resolution is by urn
+// (catalyst lambdas) and DECOUPLED from the paged grid, so every item resolves regardless of which
+// catalog page is loaded. Pure — no side effects — so it serves ANY address's urns (another user's
+// passport). Mirrors bevy-ui-scene's fetchWearablesData(...)(...wearables) on outfit equip.
+export async function resolveWearables(urns: string[], opts: ResolveOpts = {}): Promise<Wearable[]> {
+  const baseUrl = await catalystBase()
+  const equippedItemUrns = [...new Set(urns.map(itemUrn))]
+  const resolved = await resolveDefsByUrn('wearables', baseUrl, equippedItemUrns)
+  const shopUrls =
+    opts.shopUrls === true
+      ? await resolveShopUrls(equippedItemUrns.map((u) => ({ urn: u, collectionAddress: resolved.get(u)?.collectionAddress })))
+      : undefined
+  return equippedItemUrns.map((item): Wearable => {
+    const def = resolved.get(item)
+    return {
+      urn: item,
+      name: def?.name ?? '',
+      rarity: def?.rarity ?? 'base',
+      // No def (resolve failure or an urn the lambda doesn't know): keep the item under 'unknown'
+      // rather than dropping it — 'unknown' renders in no category slot, but the item stays in the
+      // equipped set, so the next equip round-trip (equipSetWith) still deploys it. Dropping here
+      // silently undressed the avatar whenever the lambdas request failed mid-session.
+      category: def?.data?.category ?? 'unknown',
+      thumbnail: thumbnailUrl(baseUrl, item),
+      equipped: true,
+      shopUrl: shopUrls?.get(item),
+      hides: def != null ? itemHides(def.data?.category ?? '', def.data, opts.bodyShape) : undefined
+    }
+  })
+}
+
+// The LOCAL PLAYER's equipped set: resolveWearables plus item→token indexing so a later equip can
+// deploy them (equip needs it even before any grid page is fetched). Shared by `getWearables` (the
+// live avatar), `equipOutfit` (a saved outfit's wearables) and the passport's own-profile path.
+// Own urns ONLY: tokenUrnByItem is keyed by ITEM urn and is what the equip handler deploys, so
+// another user's tokenId would overwrite ours for a commonly-owned item and the next equip would
+// claim a token we don't own — the catalyst rejects that deploy and the change silently doesn't
+// persist. Anyone else's urns go through resolveWearables.
+export async function resolveEquippedSet(urns: string[], opts: ResolveOpts = {}): Promise<Wearable[]> {
+  for (const u of urns) {
+    const item = itemUrn(u)
+    if (item !== u) tokenUrnByItem.set(item, u)
+  }
+  return await resolveWearables(urns, opts)
+}
+
+// The Backpack's look as the page's equipped set (category slots): the body shape, which fills its own
+// slot, then the wearables. Resolved by urn, DECOUPLED from the paged grid so every equipped item shows
+// regardless of which catalog page it's on.
+export async function sendEquipped(ctx: Ctx): Promise<void> {
+  const look = currentLook()
+  if (look == null) {
+    ctx.send({ kind: 'wearables', equipped: [] })
+    return
+  }
+  const urns = look.bodyShape !== '' ? [look.bodyShape, ...look.wearables] : look.wearables
+  ctx.send({
+    kind: 'wearables',
+    equipped: await resolveEquippedSet(urns, { bodyShape: look.bodyShape }),
+    bodyShape: look.bodyShape || undefined,
+    forceRender: look.forceRender,
+    colors: { skin: look.skin ?? undefined, hair: look.hair ?? undefined, eyes: look.eyes ?? undefined }
+  })
+}
+
+// Unequipping an item drops its category's force-render override.
+async function forceRenderStillWorn(forceRender: string[], wearables: string[]): Promise<string[]> {
+  if (forceRender.length === 0) return forceRender
+  const defs = await resolveDefsByUrn('wearables', await catalystBase(), wearables.map(itemUrn))
+  const worn = new Set(wearables.map((u) => defs.get(itemUrn(u))?.data?.category))
+  return forceRender.filter((c) => worn.has(c))
+}
+
+export function registerWearables(ctx: Ctx): void {
+  ctx.on('equip', async (msg) => {
+    // The equipped set carries the body shape, but it's the avatar base, not a wearable.
+    const { bodyShape, wearables } = splitBodyShape(msg.urns)
+    const tokenUrns = wearables.map((u) => tokenUrnByItem.get(u) ?? u)
+    const before = currentLook()
+    const newShape = bodyShape != null && bodyShape !== before?.bodyShape
+    editLook(bodyShape != null ? { bodyShape, wearables: tokenUrns } : { wearables: tokenUrns })
+    const forceRender = await forceRenderStillWorn(before?.forceRender ?? [], tokenUrns)
+    if (forceRender.length !== (before?.forceRender.length ?? 0)) editLook({ forceRender })
+    // Re-emit with the new shape so the grid re-checks compatibility right away.
+    if (newShape || forceRender.length !== (before?.forceRender.length ?? 0)) await sendEquipped(ctx)
+  })
+
+  ctx.on('setForceRender', async (msg) => {
+    editLook({ forceRender: msg.categories })
+    await sendEquipped(ctx)
+  })
+
+  ctx.on('setAvatarColor', (msg) => {
+    editLook({ [msg.target]: msg.color })
+  })
+
+  ctx.on('getWearables', async () => {
+    await sendEquipped(ctx)
+  })
+}

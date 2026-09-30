@@ -1,3 +1,5 @@
+#[cfg(feature = "ipfs_debug")]
+mod ipfs_debug;
 pub mod ipfs_path;
 
 use std::{
@@ -6,11 +8,13 @@ use std::{
     marker::PhantomData,
     path::{Path, PathBuf},
     sync::{
-        atomic::{self, AtomicU16},
+        atomic::{AtomicU16, AtomicU32, Ordering},
         Arc,
     },
 };
 
+#[cfg(feature = "ipfs_debug")]
+use common::util::ReportErr;
 use futures_io::{AsyncRead, AsyncSeek};
 use web_time::{Duration, Instant};
 
@@ -24,6 +28,9 @@ use bevy::{
         },
         meta::Settings,
         Asset, AssetLoader, LoadState, UntypedAssetId,
+    },
+    diagnostic::{
+        Diagnostic, DiagnosticMeasurement, DiagnosticPath, DiagnosticsStore, RegisterDiagnostic,
     },
     ecs::system::SystemParam,
     platform::collections::HashMap,
@@ -42,8 +49,9 @@ use bevy::asset::io::wasm::HttpWasmAssetReader;
 
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{
+    rpc::{RpcResultReceiver, RpcResultSender},
     sets::RealmLifecycle,
-    structs::{AppConfig, CommsConfig, CurrentRealm, ServerConfiguration},
+    structs::{AppConfig, CommsConfig, CurrentRealm, PreviewMode, ServerConfiguration},
     util::TaskCompat,
 };
 use ipfs_path::IpfsAsset;
@@ -51,12 +59,28 @@ use platform::AsyncRwLock;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use console::DoAddConsoleCommand;
+use console::{DoAddConsoleCommand, PendingConsoleResponses};
 
 #[allow(unused_imports)]
 use platform::ReqwestBuilderExt;
 
-use self::ipfs_path::{normalize_path, IpfsPath, IpfsType};
+#[cfg(feature = "ipfs_debug")]
+use crate::ipfs_debug::{IpfsDebug, IpfsDebugReceiver, IpfsDebugStatus};
+
+use common::util::JoinRelativeExt;
+
+use self::ipfs_path::{content_file_path, IpfsKey, IpfsPath, IpfsType};
+
+const IPFS_IN_FLIGHT_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_IN_FLIGHT");
+static IPFS_IN_FLIGHT: AtomicU32 = AtomicU32::new(0);
+const IPFS_SUCCESS_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_SUCCESS");
+static IPFS_SUCCESS: AtomicU32 = AtomicU32::new(0);
+const IPFS_FAILED_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_FAILED");
+static IPFS_FAILED: AtomicU32 = AtomicU32::new(0);
+const IPFS_CACHED_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_CACHED");
+static IPFS_CACHED: AtomicU32 = AtomicU32::new(0);
+const IPFS_NON_IPFS_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_NON_IPFS");
+static IPFS_NON_IPFS: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TypedIpfsRef {
@@ -124,10 +148,12 @@ impl EntityDefinitionLoader {
             // if the source was an empty vec, we have loaded a pointer with no content, just set default
             return Ok(EntityDefinition::default());
         };
-        let content =
-            ContentMap(HashMap::from_iter(definition_json.content.into_iter().map(
-                |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
-            )));
+        let content = ContentMap::from_content(
+            definition_json
+                .content
+                .into_iter()
+                .map(|ipfs| (ipfs.file, ipfs.hash)),
+        );
         let id = definition_json.id.unwrap_or_else(id_fn);
 
         let definition = EntityDefinition {
@@ -203,8 +229,29 @@ impl AssetLoader for SceneJsLoader {
 pub struct ContentMap(pub HashMap<String, String>);
 
 impl ContentMap {
+    /// Keys are stored lowercase, and put through the same [`content_file_path`] the access side
+    /// applies to a requested file, so the two agree. Anything the access side makes relative
+    /// (`c:/x.png`, `/x.png`) would otherwise be deployable but unreferenceable.
+    fn key(file: &str) -> String {
+        content_file_path(file).to_lowercase()
+    }
+
+    pub fn from_content(content: impl IntoIterator<Item = (String, String)>) -> Self {
+        let mut map = HashMap::<String, String>::default();
+        for (file, hash) in content {
+            let key = Self::key(&file);
+            if let Some(prev) = map.get(&key) {
+                if *prev != hash {
+                    warn!("content map key `{key}` collision: `{prev}` shadowed by `{hash}`");
+                }
+            }
+            map.insert(key, hash);
+        }
+        Self(map)
+    }
+
     pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, str>> {
-        self.0.get(file.to_lowercase().as_str()).map(Into::into)
+        self.0.get(Self::key(file).as_str()).map(Into::into)
     }
 
     pub fn files(&self) -> impl Iterator<Item = &String> {
@@ -216,11 +263,11 @@ impl ContentMap {
     }
 
     pub fn new_single(file: String, hash: String) -> Self {
-        Self(HashMap::from_iter([(file, hash)]))
+        Self::from_content([(file, hash)])
     }
 
     pub fn with(mut self, file: String, hash: String) -> Self {
-        self.0.insert(file.to_lowercase(), hash);
+        self.0.insert(Self::key(&file), hash);
         self
     }
 }
@@ -332,13 +379,27 @@ impl IpfsAssetServer<'_, '_> {
         self.server.load(path)
     }
 
+    // Load a raw content hash that lives inside a scene's collection. Routes
+    // the request through the scene's registered modifier (e.g. a portable's
+    // local content server) so b64-prefixed content hashes resolve to the
+    // scene's origin rather than the realm content URL.
+    pub fn load_scene_content_hash<T: IpfsAsset>(
+        &self,
+        scene_hash: &str,
+        content_hash: &str,
+    ) -> Handle<T> {
+        let ext = T::ext();
+        let path = format!("$ipfs/$scene_content/{scene_hash}/{content_hash}.{ext}");
+        self.server.load(path)
+    }
+
     pub fn active_endpoint(&self) -> Option<String> {
         self.ipfs()
             .realm_config_receiver
             .borrow()
             .as_ref()
-            .and_then(|(_, _, about)| about.content.as_ref())
-            .map(|content| format!("{}/entities/active", &content.public_url))
+            .and_then(|c| c.about.content.as_ref())
+            .map(|content| format!("{}/entities/active", content.public_url))
     }
 
     pub fn ipfs(&self) -> &Arc<IpfsIo> {
@@ -399,6 +460,24 @@ impl Default for ServerAbout {
     }
 }
 
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct ServerScenes {
+    scenes: Vec<ServerScene>,
+    total: usize,
+}
+
+// This replicates the structure of a `scene.json`, maybe extend if needed, but
+// for multi-scene worlds, only `entity_id` is needed
+#[expect(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServerScene {
+    #[serde(rename = "worldName")]
+    world_name: String,
+    deployer: String,
+    #[serde(rename = "entityId")]
+    entity_id: String,
+}
+
 pub struct IpfsIoPlugin {
     pub preview: bool,
     pub assets_root: Option<String>,
@@ -437,12 +516,16 @@ impl Plugin for IpfsIoPlugin {
                 .unwrap_or_else(|_| panic!("failed to write to assets folder {root:?}"));
         }
 
+        #[cfg(feature = "ipfs_debug")]
+        let (debug_overlay_sender, debug_overlay_receiver) = tokio::sync::mpsc::unbounded_channel();
         let ipfs_io = IpfsIo::new(
             self.preview,
             Box::new(default_reader),
             cache_root,
             HashMap::default(),
             self.num_slots,
+            #[cfg(feature = "ipfs_debug")]
+            debug_overlay_sender,
         );
         let ipfs_io = Arc::new(ipfs_io);
         let passthrough = PassThroughReader {
@@ -476,6 +559,18 @@ impl Plugin for IpfsIoPlugin {
         );
 
         app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
+
+        app.register_diagnostic(Diagnostic::new(IPFS_IN_FLIGHT_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_SUCCESS_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_FAILED_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_CACHED_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_NON_IPFS_DIAGNOSTIC_PATH));
+
+        app.add_systems(PostUpdate, ipfs_diagnostics);
+
+        #[cfg(feature = "ipfs_debug")]
+        app.add_plugins(ipfs_debug::IpfsDebugPlugin)
+            .insert_resource(IpfsDebugReceiver(debug_overlay_receiver));
     }
 
     fn finish(&self, app: &mut App) {
@@ -490,7 +585,8 @@ impl Plugin for IpfsIoPlugin {
             let content_server_override = self.content_server_override.clone();
             IoTaskPool::get()
                 .spawn_compat(async move {
-                    ipfs.set_realm(realm, content_server_override).await;
+                    // a failure is published by set_realm itself (no realm to stay in at boot)
+                    let _ = ipfs.set_realm(realm, content_server_override).await;
                 })
                 .detach();
         }
@@ -501,6 +597,8 @@ impl Plugin for IpfsIoPlugin {
 pub enum RealmInitialLocation {
     None,
     Base,
+    /// Land on this parcel of the new realm (a teleport that named its realm).
+    Parcel(IVec2),
 }
 
 /// Switch to a new realm
@@ -515,15 +613,24 @@ fn change_realm_command(
     mut input: ConsoleCommand<ChangeRealmCommand>,
     mut writer: EventWriter<ChangeRealmEvent>,
     mut target: ResMut<RealmInitialLocation>,
+    mut pending: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(command)) = input.take() {
         *target = RealmInitialLocation::Base;
         debug!("change realm command -> base");
+        let (response, rx) = RpcResultSender::channel();
+        let realm = command.new_realm.clone();
         writer.write(ChangeRealmEvent {
             new_realm: command.new_realm,
             content_server_override: command.content_server_override,
+            response,
+            report: false,
         });
-        input.ok();
+        pending.push_receiver(
+            rx,
+            move |result| result.map(|()| format!("Realm set to `{realm}`")),
+            input.take_responder(),
+        );
     }
 }
 
@@ -531,27 +638,59 @@ fn change_realm_command(
 pub struct ChangeRealmEvent {
     pub new_realm: String,
     pub content_server_override: Option<String>,
+    /// Answered once the new realm is set, or with the reason it could not be (the current realm
+    /// is kept in that case).
+    pub response: RpcResultSender<Result<(), String>>,
+    /// Print the outcome to the console (and so the system chat): set when nothing else will tell
+    /// the player, e.g. a scene that is torn down by the change it asked for.
+    pub report: bool,
 }
 
-#[allow(clippy::type_complexity)]
+/// A realm change being attempted, see [`change_realm`].
+pub struct InFlightRealmChange {
+    id: u64,
+    realm: String,
+    report: bool,
+    result: RpcResultReceiver<Result<(), String>>,
+}
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn change_realm(
     mut change_realm_requests: EventReader<ChangeRealmEvent>,
     ipfs: Res<IpfsResource>,
-    mut realm_change: Local<
-        Option<tokio::sync::watch::Receiver<Option<(String, String, ServerAbout)>>>,
-    >,
+    mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<RealmConfig>>>>,
     mut current_realm: ResMut<CurrentRealm>,
     mut print: EventWriter<PrintConsoleLine>,
+    preview_mode: Res<PreviewMode>,
+    mut target: ResMut<RealmInitialLocation>,
+    mut in_flight: Local<Vec<InFlightRealmChange>>,
+    mut issued: Local<u64>,
 ) {
     match *realm_change {
         None => *realm_change = Some(ipfs.realm_config_receiver.clone()),
         Some(ref mut realm_change) => {
             if realm_change.has_changed().unwrap_or_default() {
-                if let Some((about_url, realm, about)) = &*realm_change.borrow_and_update() {
+                if let Some(RealmConfig {
+                    about_url,
+                    address: realm,
+                    about,
+                    connected,
+                }) = &*realm_change.borrow_and_update()
+                {
+                    let mut config = about.configurations.clone().unwrap_or_default();
+                    // An orchestrated engine is on no realm of its own: it hosts scenes from
+                    // several at once, and its `--realm` is only where content is served from.
+                    // Leaving the name set would hand every one of those scenes a realm none of
+                    // them is in — the realm a scene belongs to arrives with it, on `add-scene`.
+                    if common::structs::multi_tenant() {
+                        config.realm_name = None;
+                    }
+
                     *current_realm = CurrentRealm {
                         about_url: about_url.clone(),
                         address: realm.clone(),
-                        config: about.configurations.clone().unwrap_or_default(),
+                        connected: *connected,
+                        config,
                         comms: about.comms.clone(),
                         public_url: about
                             .content
@@ -559,37 +698,82 @@ pub fn change_realm(
                             .map(|c| c.public_url.clone())
                             .unwrap_or_default(),
                     };
-
-                    match about.configurations {
-                        Some(_) => {
-                            print.write(PrintConsoleLine::new(format!("Realm set to `{realm}`")))
-                        }
-                        None => print.write(PrintConsoleLine::new(format!(
-                            "Failed to set realm `{realm}`"
-                        ))),
-                    };
                 }
             }
         }
     }
 
-    if !change_realm_requests.is_empty() {
-        let ipfs = ipfs.clone();
-        let request = change_realm_requests.read().last().unwrap();
+    let latest = *issued;
+    in_flight.retain_mut(|change| {
+        let result = match change.result.poll_once() {
+            Ok(None) => return true,
+            Ok(Some(result)) => result,
+            Err(()) => return false,
+        };
+        // A failed change leaves the player in the current realm, so the landing target it set up
+        // for the new one must not carry over to a later change. Only the latest request owns it.
+        if result.is_err() && change.id == latest {
+            *target = RealmInitialLocation::None;
+        }
+        if change.report {
+            print.write(PrintConsoleLine::new(match result {
+                Ok(()) => format!("Realm set to `{}`", change.realm),
+                Err(e) => format!("Failed to set realm `{}`: {e}", change.realm),
+            }));
+        }
+        false
+    });
 
-        let new_realm = map_realm_name(&request.new_realm);
-        let content_server_override = request.content_server_override.to_owned();
-        IoTaskPool::get()
-            .spawn_compat(async move {
-                ipfs.set_realm(new_realm, content_server_override).await;
-            })
-            .detach();
+    if !change_realm_requests.is_empty() {
+        if preview_mode.is_preview {
+            const DISABLED: &str = "Changing realm is disabled in preview mode.";
+            print.write(PrintConsoleLine {
+                line: DISABLED.to_owned(),
+            });
+            for request in change_realm_requests.read() {
+                request.response.send(Err(DISABLED.to_owned()));
+            }
+        } else {
+            let mut requests = change_realm_requests.read().collect::<Vec<_>>();
+            let request = requests.pop().unwrap();
+            for superseded in requests {
+                superseded
+                    .response
+                    .send(Err("superseded by a later realm change".to_owned()));
+            }
+
+            let ipfs = ipfs.clone();
+            let new_realm = map_realm_name(&request.new_realm);
+            let content_server_override = request.content_server_override.to_owned();
+            let response = request.response.clone();
+            let (sx, rx) = RpcResultSender::channel();
+            *issued += 1;
+            in_flight.push(InFlightRealmChange {
+                id: *issued,
+                realm: request.new_realm.clone(),
+                report: request.report,
+                result: rx,
+            });
+            IoTaskPool::get()
+                .spawn_compat(async move {
+                    let result = ipfs
+                        .set_realm(new_realm, content_server_override)
+                        .await
+                        .map_err(|e| e.to_string());
+                    response.send(result.clone());
+                    sx.send(result);
+                })
+                .detach();
+        }
     }
 }
 
 pub fn map_realm_name(request: &str) -> String {
     if request.ends_with(".dcl.eth") && !request.starts_with("https://") {
-        format!("https://worlds-content-server.decentraland.org/world/{request}")
+        common::base_domain::url(
+            common::base_domain::Service::WorldsServer,
+            &format!("/world/{request}"),
+        )
     } else {
         request.to_owned()
     }
@@ -622,17 +806,34 @@ fn clean_cache(mut exit: EventReader<AppExit>, config: Res<AppConfig>, ipfas: Ip
     }
 }
 
+/// Realm state broadcast over the realm-config watch channel.
+pub struct RealmConfig {
+    pub about_url: String,
+    pub address: String,
+    pub about: ServerAbout,
+    /// whether we actually connected; false when realm resolution failed
+    pub connected: bool,
+}
+
 pub struct IpfsIo {
     is_preview: bool, // determines whether we always retry failed assets immediately
     default_io: Box<dyn ErasedAssetReader>,
     default_fs_path: Option<PathBuf>,
-    realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, String, ServerAbout)>>,
-    realm_config_sender: tokio::sync::watch::Sender<Option<(String, String, ServerAbout)>>,
+    realm_config_receiver: tokio::sync::watch::Receiver<Option<RealmConfig>>,
+    realm_config_sender: tokio::sync::watch::Sender<Option<RealmConfig>>,
     pub context: AsyncRwLock<IpfsContext>,
     request_slots: tokio::sync::Semaphore,
     reqno: AtomicU16,
     static_files: HashMap<&'static str, &'static str>,
+    // Directories `file://` urls may read from. file realms are only minted by
+    // lookup_local_realm from a locally-supplied path (which registers its root here) — but a
+    // `file://` baseUrl can also be smuggled in a urn from a remote realm/portable, and those
+    // must not read local disk.
+    #[cfg(not(target_arch = "wasm32"))]
+    allowed_file_roots: std::sync::RwLock<Vec<PathBuf>>,
     client: reqwest::Client,
+    #[cfg(feature = "ipfs_debug")]
+    debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
 }
 
 impl IpfsIo {
@@ -642,6 +843,9 @@ impl IpfsIo {
         default_fs_path: Option<PathBuf>,
         static_paths: HashMap<&'static str, &'static str>,
         num_slots: usize,
+        #[cfg(feature = "ipfs_debug")] debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<
+            IpfsDebug,
+        >,
     ) -> Self {
         let (sender, receiver) = tokio::sync::watch::channel(None);
 
@@ -658,12 +862,25 @@ impl IpfsIo {
             request_slots: tokio::sync::Semaphore::new(num_slots),
             reqno: default(),
             static_files: static_paths,
+            #[cfg(not(target_arch = "wasm32"))]
+            allowed_file_roots: Default::default(),
             client: reqwest::Client::builder()
                 .connect_timeout(Duration::from_secs(5))
                 .use_native_tls()
                 .user_agent("DCLExplorer/0.1")
                 .build()
                 .unwrap(),
+            #[cfg(feature = "ipfs_debug")]
+            debug_overlay_sender,
+        }
+    }
+
+    /// Allow `file://` reads under `root` (canonical). See `allowed_file_roots`.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn add_allowed_file_root(&self, root: PathBuf) {
+        let mut roots = self.allowed_file_roots.write().unwrap();
+        if !roots.contains(&root) {
+            roots.push(root);
         }
     }
 
@@ -730,16 +947,31 @@ impl IpfsIo {
         }
     }
 
-    pub async fn set_realm(&self, new_realm: String, content_server_override: Option<String>) {
+    /// Switch to `new_realm`. The current realm is only left once the new one has answered, so a
+    /// failure keeps the player where they are; with no current realm (boot) a failure is published
+    /// as a disconnected realm, as before.
+    pub async fn set_realm(
+        &self,
+        new_realm: String,
+        content_server_override: Option<String>,
+    ) -> Result<(), anyhow::Error> {
         let res = self
             .set_realm_inner(new_realm.clone(), content_server_override)
             .await;
-        if let Err(e) = res {
+        if let Err(e) = &res {
             error!("failed to set realm: {e}");
-            self.realm_config_sender
-                .send(Some((new_realm.clone(), new_realm, Default::default())))
-                .expect("channel closed");
+            if self.context.read().await.about.is_none() {
+                self.realm_config_sender
+                    .send(Some(RealmConfig {
+                        about_url: new_realm.clone(),
+                        address: new_realm,
+                        about: Default::default(),
+                        connected: false,
+                    }))
+                    .expect("channel closed");
+            }
         }
+        res
     }
 
     pub fn set_realm_about(&self, about: ServerAbout) {
@@ -747,11 +979,12 @@ impl IpfsIo {
         write.base_url = String::default();
         write.about = Some(about.clone());
         self.realm_config_sender
-            .send(Some((
-                "manual value".to_owned(),
-                "manual value".to_owned(),
+            .send(Some(RealmConfig {
+                about_url: "manual value".to_owned(),
+                address: "manual value".to_owned(),
                 about,
-            )))
+                connected: true,
+            }))
             .expect("channel closed");
     }
 
@@ -772,15 +1005,6 @@ impl IpfsIo {
         new_realm: String,
         content_server_override: Option<String>,
     ) -> Result<(), anyhow::Error> {
-        self.realm_config_sender.send(None).expect("channel closed");
-        let mut write = self.context.write().await;
-        if write.about.is_some() {
-            info!("disconnecting");
-        }
-
-        write.about = None;
-        drop(write);
-
         let mut retries = 0;
         let mut about;
         let mut final_url;
@@ -817,6 +1041,20 @@ impl IpfsIo {
             }
         }
 
+        // The destination answered: only now leave the current realm.
+        self.realm_config_sender.send(None).expect("channel closed");
+        let mut write = self.context.write().await;
+        if write.about.is_some() {
+            info!("disconnecting");
+        }
+
+        write.about = None;
+        drop(write);
+
+        if let Err(e) = self.update_scene_urns(&mut about, &new_realm).await {
+            error!("failed to update scene urns: {e}");
+        }
+
         let mut write = self.context.write().await;
         if let (Some(cs), Some(content)) = (&content_server_override, about.content.as_mut()) {
             content.public_url = format!("{cs}/content/");
@@ -829,7 +1067,12 @@ impl IpfsIo {
         write.about_url = final_url.clone();
         write.about = Some(about.clone());
         self.realm_config_sender
-            .send(Some((final_url, write.base_url.clone(), about)))
+            .send(Some(RealmConfig {
+                about_url: final_url,
+                address: write.base_url.clone(),
+                about,
+                connected: true,
+            }))
             .expect("channel closed");
         Ok(())
     }
@@ -871,6 +1114,54 @@ impl IpfsIo {
         write.entities.insert(hash, entity);
     }
 
+    /// Merge additional path→hash entries into an existing collection (creating it if absent),
+    /// WITHOUT clobbering the collection's other entries — unlike `add_collection`, which replaces.
+    /// Injects imported-asset files into the *current scene's* content map at runtime.
+    pub async fn merge_collection(&self, hash: &str, extra: ContentMap) {
+        let mut write = self.context.write().await;
+        match write.entities.get_mut(hash) {
+            Some(entity) => entity.collection.0.extend(extra.0),
+            None => {
+                write.entities.insert(
+                    hash.to_owned(),
+                    IpfsEntity {
+                        collection: extra,
+                        metadata: None,
+                    },
+                );
+            }
+        }
+    }
+
+    /// True if bytes for `hash` are already in the on-disk content cache.
+    pub fn is_cached(&self, hash: &str) -> bool {
+        self.cache_path()
+            .and_then(|p| p.join_relative(hash))
+            .map(|p| p.exists())
+            .unwrap_or(false)
+    }
+
+    /// Write bytes into the on-disk content cache under `hash` (atomic via .part rename), so a later
+    /// content-file resolution to `hash` is served from cache without a network fetch. No-op if
+    /// there is no cache dir (e.g. wasm).
+    pub async fn cache_bytes(&self, hash: &str, data: &[u8]) -> Result<(), anyhow::Error> {
+        let Some(cache_path) = self.cache_path() else {
+            return Ok(());
+        };
+        // `hash` is supplied by the caller, so it must not steer the write out of the cache dir
+        let (Some(part), Some(final_path)) = (
+            cache_path.join_relative(format!("{hash}.part")),
+            cache_path.join_relative(hash),
+        ) else {
+            anyhow::bail!("refusing to cache under `{hash}`");
+        };
+        let mut f = async_fs::File::create(&part).await?;
+        f.write_all(data).await?;
+        f.sync_all().await?;
+        async_fs::rename(&part, &final_path).await?;
+        Ok(())
+    }
+
     pub fn cache_path(&self) -> Option<&Path> {
         self.default_fs_path.as_deref()
     }
@@ -887,7 +1178,7 @@ impl IpfsIo {
                 .realm_config_receiver
                 .borrow()
                 .as_ref()
-                .and_then(|(_, _, about)| about.content.as_ref())
+                .and_then(|c| c.about.content.as_ref())
                 .map(|content| content.public_url.to_owned()),
         }
         .map(|url| format!("{url}/entities/active"));
@@ -900,29 +1191,41 @@ impl IpfsIo {
                 IoTaskPool::get().spawn_compat(async move {
                     let active_url = active_url.ok_or(anyhow!("not connected"))?;
                     let body = serde_json::to_string(&ActiveEntitiesPointersRequest { pointers })?;
-                    let response = client
-                        .post(active_url)
-                        .header("content-type", "application/json")
-                        .body(body)
-                        .send()
-                        .await?;
-
-                    if response.status() != StatusCode::OK {
-                        return Err(anyhow::anyhow!("status: {}", response.status()));
-                    }
-
-                    let active_entities = response
-                        .json::<ActiveEntitiesResponse>()
-                        .await
-                        .map_err(|e| anyhow::anyhow!(e))?;
+                    // Headers-phase timeout + body inactivity timeout (the total is
+                    // left unbounded, so a large-but-progressing response — e.g. bulk
+                    // scene resolution — isn't killed mid-transfer).
+                    let fetched = platform::fetch(
+                        client
+                            .post(active_url)
+                            .header("content-type", "application/json")
+                            .body(body)
+                            .send(),
+                        Duration::from_secs(30),
+                        Duration::from_secs(10),
+                    )
+                    .await
+                    .map_err(|e| match e {
+                        platform::FetchError::Headers => {
+                            anyhow!("timed out awaiting active-entities headers")
+                        }
+                        platform::FetchError::Send(e) => anyhow!(e),
+                        platform::FetchError::Status(s) => anyhow!("status: {s}"),
+                        platform::FetchError::Stalled => {
+                            anyhow!("active-entities response stalled")
+                        }
+                        platform::FetchError::Body(e) => anyhow!(e),
+                    })?;
+                    let active_entities: ActiveEntitiesResponse =
+                        serde_json::from_slice(&fetched.body).map_err(|e| anyhow!(e))?;
                     let mut res = Vec::default();
                     for entity in active_entities.0 {
                         let id = entity.id.as_ref().unwrap();
                         // cache to file system
 
-                        if let Some(cache_path) = &maybe_cache_path {
-                            let cache_path = cache_path.join(id);
-
+                        // `id` is read straight out of the response body
+                        if let Some(cache_path) =
+                            maybe_cache_path.as_ref().and_then(|p| p.join_relative(id))
+                        {
                             if id.starts_with("b64-") || !cache_path.exists() {
                                 let mut file = async_fs::File::create(&cache_path).await?;
                                 let mut buf = Vec::default();
@@ -937,11 +1240,12 @@ impl IpfsIo {
                             id: entity.id.unwrap(),
                             pointers: entity.pointers,
                             metadata: entity.metadata,
-                            content: ContentMap(HashMap::from_iter(
-                                entity.content.into_iter().map(|ipfs| {
-                                    (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)
-                                }),
-                            )),
+                            content: ContentMap::from_content(
+                                entity
+                                    .content
+                                    .into_iter()
+                                    .map(|ipfs| (ipfs.file, ipfs.hash)),
+                            ),
                         });
                     }
 
@@ -1029,18 +1333,174 @@ impl IpfsIo {
         res
     }
 
+    /// Poll the scene's content server until each of `file_paths` (resolved via the scene
+    /// collection) is fetchable, sharing one `timeout` budget; returns whether all became available.
+    /// Used after writing imported files to wait for the dev server to index them before the
+    /// renderer first tries to load them — otherwise that first load 404s and is never retried. On
+    /// web the successful GETs also warm the service-worker cache for the exact URLs the loader uses.
+    pub async fn await_contents_available(
+        &self,
+        file_paths: &[String],
+        content_hash: &str,
+        timeout: Duration,
+    ) -> bool {
+        let deadline = Instant::now() + timeout;
+        let mut all = true;
+        for file_path in file_paths {
+            let Some(url) = self.content_url(file_path, content_hash) else {
+                all = false;
+                continue;
+            };
+            loop {
+                if let Ok(resp) = self
+                    .client
+                    .get(&url)
+                    .timeout(Duration::from_secs(10))
+                    .send()
+                    .await
+                {
+                    if resp.status().is_success() {
+                        break;
+                    }
+                }
+                if Instant::now() >= deadline {
+                    all = false;
+                    break;
+                }
+                async_std::task::sleep(Duration::from_millis(150)).await;
+            }
+        }
+        all
+    }
+
+    /// For a `dcl start` scene — whose files the dev server addresses by
+    /// `b64-<base64(`{absolutePath}-{machineId}`)>` (see @dcl/sdk-commands `b64HashingFunction`) and
+    /// serves by decoding that back to a path — compute the hash a newly-written file at
+    /// project-relative `rel` (original case) will be served under, so the live content-map merge
+    /// uses the dev server's hash rather than the source CID (which it doesn't know, hence the 404s
+    /// that only a reload fixed). Recovers the project root + machine id from any existing `b64-`
+    /// entry in the scene's collection. Returns None when the scene isn't b64-addressed (native /
+    /// deployed scenes — there the source hash + local cache is used instead).
+    pub async fn local_b64_hash_for(&self, scene_hash: &str, rel: &str) -> Option<String> {
+        use base64::{prelude::BASE64_STANDARD, Engine};
+        let read = self.context.read().await;
+        let collection = &read.entities.get(scene_hash)?.collection;
+        for (key, h) in collection.0.iter() {
+            let Some((project_root, machine_id)) = b64_parts(key, h) else {
+                continue;
+            };
+            let abs = format!("{project_root}/{rel}-{machine_id}");
+            return Some(format!("b64-{}", BASE64_STANDARD.encode(abs.as_bytes())));
+        }
+        None
+    }
+
+    /// The clean absolute project root of a `dcl start` scene, recovered from any existing `b64-`
+    /// collection entry — a file's encoded path has clean directory segments (only the filename
+    /// carries the `-machineId` suffix), so slicing before `/{key}-` yields the real root. None for
+    /// native/deployed scenes (entries aren't in the `b64-<path>-machineId` form). Lets the web save
+    /// locate the project folder under a granted directory handle.
+    pub async fn local_project_root(&self, scene_hash: &str) -> Option<String> {
+        let read = self.context.read().await;
+        let collection = &read.entities.get(scene_hash)?.collection;
+        for (key, h) in collection.0.iter() {
+            if let Some((project_root, _)) = b64_parts(key, h) {
+                return Some(project_root);
+            }
+        }
+        None
+    }
+
+    /// The stored entity metadata (the scene's scene.json) for a scene, if any.
+    pub async fn scene_metadata(&self, scene_hash: &str) -> Option<String> {
+        self.context
+            .read()
+            .await
+            .entities
+            .get(scene_hash)?
+            .metadata
+            .clone()
+    }
+
+    /// The sorted file paths in a scene's content map (the collection keys), or empty if the scene
+    /// isn't loaded. For the editor's content-file pickers; includes imported assets merged into the
+    /// collection. Paths are lowercased (as stored).
+    pub async fn scene_content_files(&self, scene_hash: &str) -> Vec<String> {
+        let read = self.context.read().await;
+        let mut files: Vec<String> = read
+            .entities
+            .get(scene_hash)
+            .map(|e| e.collection.0.keys().cloned().collect())
+            .unwrap_or_default();
+        files.sort();
+        files
+    }
+
+    /// Re-fetch the current scene's entity from its content server and replace the collection. A
+    /// `dcl start` dev server's content map is the *entire* project glob (minus .dclignore), not
+    /// just the referenced files, so this picks up files added to the project *outside* the editor
+    /// without a scene reload. Imported assets (written to disk by `/init_asset`) are naturally
+    /// included. Acts only on local (`dcl start`, b64-addressed) scenes — deployed scenes have an
+    /// immutable content map. Returns true if the collection was refreshed.
+    pub async fn refresh_scene_collection(self: &Arc<Self>, scene_hash: &str) -> bool {
+        // local scenes only; deployed content maps don't change
+        if self.local_project_root(scene_hash).await.is_none() {
+            return false;
+        }
+        // the scene's base parcel pointer, from its stored scene.json
+        let pointer = {
+            let read = self.context.read().await;
+            read.entities
+                .get(scene_hash)
+                .and_then(|e| e.metadata.as_deref())
+                .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
+                .and_then(|j| {
+                    j.get("scene")
+                        .and_then(|s| s.get("base"))
+                        .and_then(|b| b.as_str())
+                        .map(str::to_owned)
+                })
+        };
+        let Some(pointer) = pointer else {
+            return false;
+        };
+        let Ok(defs) = self
+            .active_entities(ActiveEntitiesRequest::Pointers(vec![pointer]), None)
+            .await
+        else {
+            return false;
+        };
+        // exactly one scene at the base parcel; match by id when present, else take the first
+        let Some(def) = defs
+            .iter()
+            .find(|d| d.id == scene_hash)
+            .or_else(|| defs.first())
+        else {
+            return false;
+        };
+        let collection = def.content.clone();
+        let mut write = self.context.write().await;
+        match write.entities.get_mut(scene_hash) {
+            Some(entity) => {
+                entity.collection = collection;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn about_url(&self) -> Option<String> {
         self.realm_config_receiver
             .borrow()
             .as_ref()
-            .map(|(about_url, _, _)| about_url.clone())
+            .map(|c| c.about_url.clone())
     }
 
     pub fn lambda_endpoint(&self) -> Option<String> {
         self.realm_config_receiver
             .borrow()
             .as_ref()
-            .and_then(|(_, _, about)| about.lambdas.as_ref())
+            .and_then(|c| c.about.lambdas.as_ref())
             .map(|l| l.public_url.clone())
     }
 
@@ -1048,16 +1508,68 @@ impl IpfsIo {
         self.realm_config_receiver
             .borrow()
             .as_ref()
-            .and_then(|(_, _, about)| about.content.as_ref())
-            .map(|content| format!("{}/contents/", &content.public_url))
+            .and_then(|c| c.about.content.as_ref())
+            .map(|content| format!("{}/contents/", content.public_url))
     }
 
     pub fn entities_endpoint(&self) -> Option<String> {
         self.realm_config_receiver
             .borrow()
             .as_ref()
-            .and_then(|(_, _, about)| about.content.as_ref())
-            .map(|content| format!("{}/entities/", &content.public_url))
+            .and_then(|c| c.about.content.as_ref())
+            .map(|content| format!("{}/entities/", content.public_url))
+    }
+
+    async fn update_scene_urns(
+        &self,
+        about: &mut ServerAbout,
+        new_realm: &str,
+    ) -> Result<(), anyhow::Error> {
+        let scenes_raw = self
+            .client
+            .get(format!("{new_realm}/scenes"))
+            .send()
+            .await
+            .map_err(|e| anyhow!(e))?;
+        if scenes_raw.status() == StatusCode::NOT_FOUND {
+            return Ok(());
+        } else if scenes_raw.status() != StatusCode::OK {
+            return Err(anyhow!("status: {}", scenes_raw.status()));
+        }
+        let scenes = scenes_raw
+            .json::<ServerScenes>()
+            .await
+            .map_err(|e| anyhow!(e))?;
+
+        if scenes.total > 0 {
+            if let Some(scenes_urn) = about.configurations.as_mut().and_then(|config| {
+                config
+                    .scenes_urn
+                    .as_mut()
+                    .filter(|scenes| !scenes.is_empty())
+            }) {
+                if scenes_urn.len() != scenes.total {
+                    let ipfs_path = IpfsPath::new_from_urn::<EntityDefinition>(&scenes_urn[0])?;
+
+                    *scenes_urn = scenes
+                        .scenes
+                        .into_iter()
+                        .map(|scene| {
+                            format!(
+                                "urn:decentraland:entity:{}{}",
+                                scene.entity_id,
+                                if let Some(base_url) = ipfs_path.get(&IpfsKey::BaseUrl) {
+                                    format!("?=&baseUrl={}", base_url)
+                                } else {
+                                    "".to_owned()
+                                }
+                            )
+                        })
+                        .collect();
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1100,22 +1612,38 @@ impl AssetReader for IpfsIo {
                 }
             };
 
+            let start = web_time::Instant::now();
+            let ipfs_io_read_state = IpfsIoReadState {
+                #[cfg(feature = "ipfs_debug")]
+                sender: &self.debug_overlay_sender,
+                path,
+                #[cfg(feature = "ipfs_debug")]
+                start,
+            };
+
             debug!("request: {:?}", path);
 
-            let maybe_ipfs_path = IpfsPath::new_from_path(path).map_err(wrap_err)?;
+            let maybe_ipfs_path =
+                ipfs_io_read_state.send_failure(IpfsPath::new_from_path(path).map_err(wrap_err))?;
             debug!("ipfs: {maybe_ipfs_path:?}");
             let ipfs_path = match maybe_ipfs_path {
                 Some(ipfs_path) => ipfs_path,
                 // non-ipfs files are loaded as normal
-                None => return self.default_io.read(path).await,
+                None => {
+                    let data = ipfs_io_read_state.send_failure(self.default_io.read(path).await)?;
+                    ipfs_io_read_state.send_non_ipfs(0);
+                    return Ok(data);
+                }
             };
 
             #[cfg(target_arch = "wasm32")]
             if let Some(indexdb_path) = ipfs_path.to_indexdb() {
                 use futures_lite::io::AsyncReadExt;
-                let mut file = web_fs::File::open(indexdb_path).await?;
+                let mut file =
+                    ipfs_io_read_state.send_failure(web_fs::File::open(indexdb_path).await)?;
                 let mut daft_buffer = Vec::default();
-                file.read_to_end(&mut daft_buffer).await?;
+                ipfs_io_read_state.send_failure(file.read_to_end(&mut daft_buffer).await)?;
+                ipfs_io_read_state.send_cached(daft_buffer.len());
                 return Ok(Box::new(VecReader::new(daft_buffer)));
             }
 
@@ -1124,10 +1652,15 @@ impl AssetReader for IpfsIo {
             if let Some(cache_path) = self.cache_path() {
                 if let Some(hash) = &hash {
                     debug!("hash: {}", hash);
-                    if !hash.starts_with("b64") {
-                        if let Ok(mut res) = self.default_io.read(&cache_path.join(hash)).await {
+                    let cached = (!hash.starts_with("b64"))
+                        .then(|| cache_path.join_relative(&**hash))
+                        .flatten();
+                    if let Some(cached) = cached {
+                        if let Ok(mut res) = self.default_io.read(&cached).await {
                             let mut daft_buffer = Vec::default();
-                            res.read_to_end(&mut daft_buffer).await?;
+                            ipfs_io_read_state
+                                .send_failure(res.read_to_end(&mut daft_buffer).await)?;
+                            ipfs_io_read_state.send_cached(daft_buffer.len());
                             return Ok(Box::new(VecReader::new(daft_buffer)));
                         }
                     }
@@ -1141,10 +1674,10 @@ impl AssetReader for IpfsIo {
                     .unwrap_or_else(|| "uncached".to_owned())
             );
 
-            let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
+            let token = self.reqno.fetch_add(1, Ordering::SeqCst);
 
             // wait till connected
-            self.connected().await.map_err(wrap_err)?;
+            ipfs_io_read_state.send_failure(self.connected().await.map_err(wrap_err))?;
 
             let context = self.context.read().await;
             let remote = ipfs_path.to_url(&context).map_err(wrap_err);
@@ -1155,10 +1688,52 @@ impl AssetReader for IpfsIo {
                     .filename()
                     .and_then(|file_path| self.static_files.get(file_path.as_ref()))
                 {
-                    return self.default_io.read(Path::new(static_path)).await;
+                    let data = ipfs_io_read_state
+                        .send_failure(self.default_io.read(Path::new(static_path)).await)?;
+                    ipfs_io_read_state.send_cached(0);
+                    return Ok(data);
                 }
             }
-            let remote = remote?;
+            let remote = ipfs_io_read_state.send_failure(remote)?;
+
+            // file realm: a `file://` baseUrl (local static scene export, e.g. `--system-scene <dir>`)
+            // reads straight from disk — no cache write, no request slot, no retries.
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(local) = remote.strip_prefix("file://") {
+                // url normalization writes windows paths as `file:///C:/...`; the path
+                // component's leading slash isn't part of the disk path, so strip it
+                // when a drive letter follows (unix absolute paths keep theirs)
+                let local = match local.as_bytes() {
+                    [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => &local[1..],
+                    _ => local,
+                };
+                // canonicalize (resolving `..` and symlinks) and require a registered root, so
+                // urn-supplied baseUrls / content hashes can't address arbitrary disk paths
+                let local = std::fs::canonicalize(local)
+                    .ok()
+                    .filter(|canonical| {
+                        self.allowed_file_roots
+                            .read()
+                            .unwrap()
+                            .iter()
+                            .any(|root| canonical.starts_with(root))
+                    })
+                    .ok_or_else(|| {
+                        warn!("refusing file read outside registered file realms: `{remote}`");
+                        AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                            "file realm read `{remote}`: not found or not permitted"
+                        ))))
+                    });
+                let data = ipfs_io_read_state.send_failure(local.and_then(|local| {
+                    std::fs::read(local).map_err(|e| {
+                        AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                            "file realm read `{remote}`: {e}"
+                        ))))
+                    })
+                }))?;
+                ipfs_io_read_state.send_cached(data.len());
+                return Ok(Box::new(VecReader::new(data)));
+            }
 
             let fail_time = context.failed_remotes.get(&remote).cloned();
             drop(context);
@@ -1173,17 +1748,20 @@ impl AssetReader for IpfsIo {
                 {
                     self.context.write().await.failed_remotes.remove(&remote);
                 } else {
-                    return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
-                        format!("(repeat request for failed `{remote}`)"),
+                    return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(Arc::new(
+                        std::io::Error::other(format!("(repeat request for failed `{remote}`)")),
                     ))));
                 }
             }
 
             debug!("[{token:?}]: remote url: `{remote}` awaiting semaphore");
             // get semaphore to limit concurrent requests
-            let _permit = self.request_slots.acquire().await.map_err(|e| {
-                AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
-            })?;
+            let _deferred_in_flight = DeferredDropper::new(&IPFS_IN_FLIGHT);
+            let _permit = ipfs_io_read_state.send_failure(
+                self.request_slots.acquire().await.map_err(|e| {
+                    AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
+                }),
+            )?;
             debug!("[{token:?}]: remote url: `{remote}` proceeding");
 
             let mut attempt = 0;
@@ -1191,10 +1769,7 @@ impl AssetReader for IpfsIo {
             let data = loop {
                 attempt += 1;
 
-                let request = self
-                    .client
-                    .get(&remote)
-                    .timeout(Duration::from_secs(5 + 30 * attempt));
+                let request = self.client.get(&remote);
 
                 // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
                 #[cfg(target_arch = "wasm32")]
@@ -1208,49 +1783,64 @@ impl AssetReader for IpfsIo {
                     request
                 };
 
-                let request = request.build().map_err(|e| {
+                let request = ipfs_io_read_state.send_failure(request.build().map_err(|e| {
                     AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
                         "[{token:?}]: {e}"
                     ))))
-                })?;
+                }))?;
 
-                let response = self.client.execute(request).await;
+                // Headers-phase timeout + body inactivity timeout; the total transfer
+                // time is unbounded, so a slow-but-progressing download is never
+                // killed — only a stall (no chunk for 10s) or a dead connection trips.
+                let fetched = platform::fetch(
+                    self.client.execute(request),
+                    Duration::from_secs(30),
+                    Duration::from_secs(10),
+                )
+                .await;
 
-                debug!("[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}");
+                debug!("[{token:?}]: attempt {attempt}: request: {remote}");
 
-                let response = match response {
-                    Err(e) if e.is_timeout() && attempt <= 3 => {
+                let fetched = match fetched {
+                    Ok(fetched) => fetched,
+                    Err(platform::FetchError::Headers) if attempt <= 3 => {
+                        warn!("[{token:?}] timeout awaiting headers for `{remote}`, retrying");
+                        continue;
+                    }
+                    Err(platform::FetchError::Stalled) if attempt <= 3 => {
+                        warn!("[{token:?}] stalled retrieving `{remote}`, retrying");
+                        continue;
+                    }
+                    Err(platform::FetchError::Send(e)) if e.is_timeout() && attempt <= 3 => {
                         warn!("[{token:?}] timeout requesting `{remote}`, retrying");
                         continue;
                     }
                     Err(e) => {
+                        let detail = match e {
+                            platform::FetchError::Headers => {
+                                "timed out awaiting headers".to_owned()
+                            }
+                            platform::FetchError::Stalled => "stalled (no data for 10s)".to_owned(),
+                            platform::FetchError::Send(e) => format!("server responded `{e}`"),
+                            platform::FetchError::Status(s) => {
+                                format!("server responded with status {s}")
+                            }
+                            platform::FetchError::Body(e) => format!("body stream error: {e}"),
+                        };
                         self.context
                             .write()
                             .await
                             .failed_remotes
                             .insert(remote.clone(), Instant::now());
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
-                            format!("[{token:?}]: server responded `{e}` requesting `{remote}`"),
-                        ))));
+                        return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(
+                            Arc::new(std::io::Error::other(format!(
+                                "[{token:?}] failed to retrieve `{remote}`: {detail}"
+                            ))),
+                        )));
                     }
-                    Ok(response) if !matches!(response.status(), StatusCode::OK) => {
-                        self.context
-                            .write()
-                            .await
-                            .failed_remotes
-                            .insert(remote.clone(), Instant::now());
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
-                            format!(
-                                "[{token:?}]: server responded with status {} requesting `{}`",
-                                response.status(),
-                                remote,
-                            ),
-                        ))));
-                    }
-                    Ok(response) => response,
                 };
 
-                if let Some(cache_control) = response.headers().get("cache-control") {
+                if let Some(cache_control) = fetched.headers.get("cache-control") {
                     if cache_control
                         .to_str()
                         .unwrap_or_default()
@@ -1260,31 +1850,19 @@ impl AssetReader for IpfsIo {
                     }
                 }
 
-                let data = response.bytes().await;
-
-                match data {
-                    Ok(data) => break data,
-                    Err(e) => {
-                        if e.is_timeout() && attempt <= 3 {
-                            warn!("[{token:?}] timeout retrieving `{remote}`, retrying");
-                            continue;
-                        }
-                        self.context
-                            .write()
-                            .await
-                            .failed_remotes
-                            .insert(remote.clone(), Instant::now());
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
-                            format!("[{token:?}] failed to convert to bytes: `{remote}`: {e}"),
-                        ))));
-                    }
-                }
+                break fetched.body;
             };
 
-            if let (Some(hash), Some(cache_path)) = (hash, self.cache_path()) {
+            // `hash` reaches us from the entity json, so it must not steer the cache path
+            let cache_paths = self.cache_path().zip(hash.as_ref()).and_then(|(root, h)| {
+                Some((
+                    root.join_relative(format!("{h}.part"))?,
+                    root.join_relative(&**h)?,
+                ))
+            });
+
+            if let (Some(hash), Some((cache_path, final_path))) = (hash, cache_paths) {
                 if !no_cache && ipfs_path.should_cache(&hash) {
-                    let mut cache_path = PathBuf::from(cache_path);
-                    cache_path.push(format!("{hash}.part"));
                     let cache_path_str = cache_path.to_string_lossy().into_owned();
                     // ignore errors trying to cache
                     match async_fs::File::create(&cache_path).await {
@@ -1297,9 +1875,6 @@ impl AssetReader for IpfsIo {
                             } else if let Err(e) = f.sync_all().await {
                                 warn!("failed to sync cache `{cache_path_str}`: {e}");
                             } else {
-                                let mut final_path = cache_path.clone();
-                                final_path.pop();
-                                final_path.push(hash);
                                 if let Err(e) = async_fs::rename(cache_path, &final_path).await {
                                     warn!("failed to rename cache item `{cache_path_str}`: {e}");
                                 } else {
@@ -1312,6 +1887,7 @@ impl AssetReader for IpfsIo {
             }
 
             debug!("[{token:?}]: completed remote url: `{remote}`");
+            ipfs_io_read_state.send_success(data.len());
             Ok(Box::new(AsyncCursor::new(data)))
         })
         .await
@@ -1407,5 +1983,196 @@ impl AssetReader for PassThroughReader {
         path: &'a Path,
     ) -> impl ConditionalSendFuture<Output = Result<bool, AssetReaderError>> {
         AssetReader::is_directory(&*self.inner, path)
+    }
+}
+
+fn ipfs_diagnostics(mut diagnostics: ResMut<DiagnosticsStore>) {
+    let time = web_time::Instant::now();
+
+    let diagnostics_insert =
+        |diagnostics: &mut DiagnosticsStore, path: &DiagnosticPath, atomic: &AtomicU32| {
+            if let Some(diagnostic) = diagnostics.get_mut(path) {
+                diagnostic.add_measurement(DiagnosticMeasurement {
+                    time,
+                    value: atomic.load(Ordering::Relaxed) as f64,
+                });
+            };
+        };
+
+    diagnostics_insert(
+        &mut diagnostics,
+        &IPFS_IN_FLIGHT_DIAGNOSTIC_PATH,
+        &IPFS_IN_FLIGHT,
+    );
+    diagnostics_insert(
+        &mut diagnostics,
+        &IPFS_SUCCESS_DIAGNOSTIC_PATH,
+        &IPFS_SUCCESS,
+    );
+    diagnostics_insert(&mut diagnostics, &IPFS_FAILED_DIAGNOSTIC_PATH, &IPFS_FAILED);
+    diagnostics_insert(&mut diagnostics, &IPFS_CACHED_DIAGNOSTIC_PATH, &IPFS_CACHED);
+    diagnostics_insert(
+        &mut diagnostics,
+        &IPFS_NON_IPFS_DIAGNOSTIC_PATH,
+        &IPFS_NON_IPFS,
+    );
+}
+
+struct IpfsIoReadState<'a> {
+    #[cfg(feature = "ipfs_debug")]
+    sender: &'a tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
+    path: &'a std::path::Path,
+    #[cfg(feature = "ipfs_debug")]
+    start: web_time::Instant,
+}
+
+impl<'a> IpfsIoReadState<'a> {
+    #[cfg(feature = "ipfs_debug")]
+    fn send(&self, length: usize, status: IpfsDebugStatus) {
+        let duration = web_time::Instant::now() - self.start;
+        self.sender
+            .send(IpfsDebug {
+                path: self.path.to_path_buf(),
+                status,
+                duration,
+                length,
+            })
+            .report();
+    }
+
+    fn send_success(&self, length: usize) {
+        IPFS_SUCCESS.fetch_add(1, Ordering::Relaxed);
+        #[cfg(feature = "ipfs_debug")]
+        self.send(length, IpfsDebugStatus::Success);
+    }
+
+    fn send_cached(&self, length: usize) {
+        IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
+        #[cfg(feature = "ipfs_debug")]
+        self.send(length, IpfsDebugStatus::Cached);
+    }
+
+    fn send_non_ipfs(&self, length: usize) {
+        IPFS_NON_IPFS.fetch_add(1, Ordering::Relaxed);
+        #[cfg(feature = "ipfs_debug")]
+        self.send(length, IpfsDebugStatus::NonIpfs);
+    }
+
+    fn send_failure<T, E>(&self, error: Result<T, E>) -> Result<T, E> {
+        if error.is_err() {
+            IPFS_FAILED.fetch_add(1, Ordering::Relaxed);
+            #[cfg(feature = "ipfs_debug")]
+            self.send(0, IpfsDebugStatus::Failure);
+        }
+        error
+    }
+}
+
+struct DeferredDropper(&'static AtomicU32);
+
+impl DeferredDropper {
+    fn new(atomic: &'static AtomicU32) -> Self {
+        atomic.fetch_add(1, Ordering::SeqCst);
+        Self(atomic)
+    }
+}
+
+impl Drop for DeferredDropper {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Decodes a dev server's `b64-<base64(`{projectRoot}{sep}{key}-{machineId}`)>` content hash for
+/// collection key `key` into its `(projectRoot, machineId)` parts. None for any hash not in that
+/// form — a native or deployed scene's entries are plain CIDs.
+fn b64_parts(key: &str, hash: &str) -> Option<(String, String)> {
+    use base64::{prelude::BASE64_STANDARD, Engine};
+    let b64 = hash.strip_prefix("b64-")?;
+    let decoded = String::from_utf8(BASE64_STANDARD.decode(b64).ok()?).ok()?;
+    let (project_root, machine_id) = b64_split_at_key(&decoded, key)?;
+    Some((project_root.to_owned(), machine_id.to_owned()))
+}
+
+/// Splits a dev server's b64 hash payload — plain `"{projectRoot}{sep}{key}-{machineId}"` or
+/// content-versioned `"{projectRoot}{sep}{key}\0{mtime}-{machineId}"` (sdk-commands embeds the
+/// file's mtime after a NUL byte so the id changes when the file does; paths can't contain NUL,
+/// so the forms are unambiguous) — at its `/{key}` marker into (projectRoot, machineId), both in
+/// their original case and separators. The marker is matched case-insensitively (collection keys
+/// are lowercased while the encoded path keeps its casing) and separator-insensitively (a Windows
+/// dev server encodes backslash paths); both normalizations are byte-for-byte over the ASCII they
+/// rewrite, so an index found in the normalized copy still slices `decoded` itself.
+fn b64_split_at_key<'a>(decoded: &'a str, key: &str) -> Option<(&'a str, &'a str)> {
+    let normalized = decoded.replace('\\', "/").to_lowercase();
+    if let Some(idx) = normalized.rfind(&format!("/{key}\u{0}")) {
+        // mtime is digits only, so the first '-' after the NUL starts the machineId
+        let (_mtime, machine_id) = decoded[idx + key.len() + 2..].split_once('-')?;
+        return Some((&decoded[..idx], machine_id));
+    }
+    let marker = format!("/{key}-");
+    let idx = normalized.rfind(&marker)?;
+    Some((&decoded[..idx], &decoded[idx + marker.len()..]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{b64_split_at_key, ContentMap};
+
+    #[test]
+    fn splits_unix_path() {
+        let decoded = "/Users/bob/scene/models/Tree.glb-my-mac";
+        let split = b64_split_at_key(decoded, "models/tree.glb");
+        assert_eq!(split, Some(("/Users/bob/scene", "my-mac")));
+    }
+
+    #[test]
+    fn splits_windows_path() {
+        let decoded = r"C:\Users\bob\scene\models\Tree.glb-my-pc";
+        let split = b64_split_at_key(decoded, "models/tree.glb");
+        assert_eq!(split, Some((r"C:\Users\bob\scene", "my-pc")));
+    }
+
+    #[test]
+    fn no_split_for_other_key() {
+        assert_eq!(
+            b64_split_at_key(r"C:\Users\bob\scene\models\Tree.glb-pc", "scene.json"),
+            None
+        );
+    }
+
+    #[test]
+    fn splits_content_versioned_path() {
+        let decoded = "/Users/bob/scene/models/Tree.glb\u{0}1786032377138-my-mac";
+        let split = b64_split_at_key(decoded, "models/tree.glb");
+        assert_eq!(split, Some(("/Users/bob/scene", "my-mac")));
+    }
+
+    #[test]
+    fn splits_content_versioned_windows_path() {
+        let decoded = "C:\\Users\\bob\\scene\\models\\Tree.glb\u{0}1786032377138-my-pc";
+        let split = b64_split_at_key(decoded, "models/tree.glb");
+        assert_eq!(split, Some((r"C:\Users\bob\scene", "my-pc")));
+    }
+
+    #[test]
+    fn content_map_keys_match_the_access_side() {
+        let map = ContentMap::from_content([
+            ("c:/Textures/X.png".to_owned(), "hash_drive".to_owned()),
+            ("/a/Y.png".to_owned(), "hash_root".to_owned()),
+            (r"b\Z.png".to_owned(), "hash_bs".to_owned()),
+        ]);
+
+        // the drive/root forms resolved before the access side started forcing srcs relative;
+        // normalizing the keys the same way keeps them referenceable, under either spelling
+        for (src, expected) in [
+            ("c:/Textures/X.png", "hash_drive"),
+            ("Textures/X.png", "hash_drive"),
+            ("/a/Y.png", "hash_root"),
+            ("a/y.png", "hash_root"),
+            (r"b\Z.png", "hash_bs"),
+            ("b/z.png", "hash_bs"),
+        ] {
+            assert_eq!(map.hash(src).as_deref(), Some(expected), "{src}");
+        }
     }
 }

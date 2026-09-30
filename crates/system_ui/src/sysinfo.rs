@@ -1,11 +1,10 @@
 use avatar::mask_material::MaskMaterial;
 use bevy::{
-    diagnostic::FrameCount,
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    diagnostic::{DiagnosticsStore, FrameCount, FrameTimeDiagnosticsPlugin},
     math::Vec3Swizzles,
     platform::{collections::HashSet, hash::FixedHasher},
     prelude::*,
-    render::mesh::Indices,
+    render::mesh::{Indices, MeshTag},
     text::JustifyText,
     ui::FocusPolicy,
 };
@@ -16,21 +15,22 @@ use common::{
     sets::{SceneSets, SetupSets},
     structs::{
         AppConfig, CurrentRealm, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser,
-        SettingsTab, ShowSettingsEvent, StartupScenes, Version, ZOrder,
+        SettingsTab, ShowSettingsEvent, StartupScenes, UiRoot, Version, ZOrder,
     },
     util::{ModifyComponentExt, TryPushChildrenEx},
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
-use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE};
+use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_MESH_TAGS};
 use scene_runner::{
     initialize_scene::{SceneLoading, TestingData, PARCEL_SIZE},
+    parcel_to_vec3,
     renderer_context::RendererSceneContext,
     update_world::{
         gltf_container::{GltfLoadingCount, SceneResourceLookup},
         ComponentTracker, TrackComponents,
     },
-    ContainerEntity, ContainingScene, Toaster,
+    vec3_to_parcel, ContainerEntity, ContainingScene, Toaster,
 };
 use ui_core::{
     bound_node::BoundedImageMaterial,
@@ -72,7 +72,7 @@ impl Plugin for SysInfoPanelPlugin {
         app.add_console_command::<SysinfoCommand, _>(set_sysinfo);
 
         app.add_systems(First, (entity_count, display_tracked_components));
-        app.add_console_command::<TrackComponentCommand, _>(set_track_components);
+        app.add_preview_console_command::<TrackComponentCommand, _>(set_track_components);
     }
 }
 
@@ -235,7 +235,7 @@ fn update_scene_load_state(
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     debug_info: Res<DebugInfo>,
 ) {
-    let tick = (time.elapsed_secs() * 10.0) as u32;
+    let tick = (time.elapsed_secs_f64() * 10.0) as u32;
     if tick == *last_update {
         return;
     }
@@ -257,14 +257,21 @@ fn update_scene_load_state(
         let mut ix = 0;
         let children = q_children.get(sysinfo).unwrap();
         let mut set_child = |value: String| {
-            if value.is_empty() {
-                style.get_mut(children[ix]).unwrap().display = Display::None;
+            // avoid touching Node/Text when unchanged - any write triggers relayout
+            let display = if value.is_empty() {
+                Display::None
             } else {
-                style.get_mut(children[ix]).unwrap().display = Display::Flex;
+                Display::Flex
+            };
+            let mut style = style.get_mut(children[ix]).unwrap();
+            if style.display != display {
+                style.display = display;
             }
             let container = q_children.get(children[ix]).unwrap();
             let mut text = text.get_mut(container[1]).unwrap();
-            text.0 = value;
+            if text.0 != value {
+                text.0 = value;
+            }
             ix += 1;
         };
 
@@ -272,7 +279,7 @@ fn update_scene_load_state(
             if loading_scenes.get(scene).is_ok() {
                 "Loading"
             } else if let Ok(scene) = running_scenes.get(scene) {
-                if scene.broken {
+                if scene.broken() {
                     "Broken"
                 } else if !scene.blocked.is_empty() {
                     "Blocked"
@@ -287,15 +294,15 @@ fn update_scene_load_state(
         let loading = loading_scenes.iter().count();
         let running = running_scenes
             .iter()
-            .filter(|context| !context.broken && context.blocked.is_empty())
+            .filter(|context| !context.broken() && context.blocked.is_empty())
             .count();
         let blocked = running_scenes
             .iter()
-            .filter(|context| !context.broken && !context.blocked.is_empty())
+            .filter(|context| !context.broken() && !context.blocked.is_empty())
             .count();
         let broken = running_scenes
             .iter()
-            .filter(|context| context.broken)
+            .filter(|context| context.broken())
             .count();
         let transports = transports.iter().count();
         let players = players.iter().count() + 1;
@@ -438,26 +445,40 @@ fn setup_minimap(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_minimap(
     q: Query<&DuiEntities, With<Minimap>>,
     mut maps: Query<&mut MapTexture>,
-    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     scenes: Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
     mut text: Query<&mut Text>,
     preview: Res<PreviewMode>,
+    root: Query<&Node, With<UiRoot>>,
 ) {
-    let Ok((player, gt)) = player.single() else {
+    // skip the scene lookup / string churn while the native hud is hidden (ui-scene
+    // mode); preview-server minimaps live outside the root so they always update
+    if preview.server.is_none()
+        && !root
+            .single()
+            .is_ok_and(|node| node.display == Display::Flex)
+    {
+        return;
+    }
+
+    let Ok(gt) = player.single() else {
         return;
     };
 
     let player_translation = (gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE;
     let map_center = player_translation - Vec2::Y;
+    let parcel = preview
+        .preview_parcel
+        .unwrap_or_else(|| player_translation.floor().as_ivec2());
 
     let scene = containing_scene
-        .get_parcel_oow(player)
+        .get_parcel_position(parcel_to_vec3(parcel))
         .and_then(|scene| scenes.get(scene).ok());
-    let parcel = player_translation.floor().as_ivec2();
     let title = scene
         .map(|(context, _)| context.title.clone())
         .unwrap_or("???".to_owned());
@@ -469,7 +490,7 @@ fn update_minimap(
     let sdk = scene.map(|(context, _)| context.sdk_version).unwrap_or("");
     let state = scene
         .map(|(context, gltf_count)| {
-            if context.broken {
+            if context.broken() {
                 "Broken".to_owned()
             } else if !context.blocked.is_empty() {
                 format!("Loading [{}]", gltf_count.map(|c| c.0).unwrap_or_default())
@@ -481,15 +502,22 @@ fn update_minimap(
 
     if let Ok(components) = q.single() {
         if let Ok(mut map) = maps.get_mut(components.named("map-node")) {
-            map.center = map_center;
+            if map.center != map_center {
+                map.center = map_center;
+            }
         }
 
         if let Ok(mut text) = text.get_mut(components.named("title")) {
-            text.0 = title;
+            if text.0 != title {
+                text.0 = title;
+            }
         }
 
         if let Ok(mut text) = text.get_mut(components.named("position")) {
-            text.0 = format!("({},{})   {sdk}   {state}", parcel.x, parcel.y);
+            let position = format!("({},{})   {sdk}   {state}", parcel.x, parcel.y);
+            if text.0 != position {
+                text.0 = position;
+            }
         }
     }
 }
@@ -500,7 +528,7 @@ fn update_tracker(
     mut q: Query<(Ref<Tracker>, &DuiEntities)>,
     stats: Query<&SceneResourceLookup>,
     f: Res<FrameCount>,
-    player: Query<Entity, With<PrimaryUser>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     dui: Res<DuiRegistry>,
     mesh_handles: Query<(&Mesh3d, &ContainerEntity, &Visibility)>,
@@ -514,6 +542,7 @@ fn update_tracker(
     materials: Res<Assets<SceneMaterial>>,
     diagnostics: Res<DiagnosticsStore>,
     images: Res<Assets<Image>>,
+    preview: Res<PreviewMode>,
 ) {
     let Ok((tracker, entities)) = q.single_mut() else {
         return;
@@ -535,7 +564,10 @@ fn update_tracker(
         return;
     };
 
-    let scenes = containing_scene.get_parcel(player);
+    let parcel = preview
+        .preview_parcel
+        .unwrap_or_else(|| vec3_to_parcel(player.translation()));
+    let scenes = containing_scene.get_parcel_position(parcel_to_vec3(parcel));
     let Some(scene) = scenes.iter().next() else {
         return;
     };
@@ -677,7 +709,10 @@ fn update_map_visibilty(
         };
         *init = true;
         // todo this is really bad
-        if realm.about_url.ends_with("decentraland.org/main/about") {
+        if realm
+            .about_url
+            .ends_with(&format!("{}/main/about", common::base_domain::get()))
+        {
             style.display = Display::Flex;
         } else {
             style.display = Display::None;
@@ -692,13 +727,12 @@ fn entity_count(
     meshes: Res<Assets<Mesh>>,
     textures: Res<Assets<Image>>,
     ui_nodes: Query<(), With<ComputedNode>>,
-    scene_mats: Query<&MeshMaterial3d<SceneMaterial>>,
+    scene_mats: Query<&MeshTag, With<MeshMaterial3d<SceneMaterial>>>,
     std_mats: Query<(), With<MeshMaterial3d<StandardMaterial>>>,
     mask_mats: Query<(), With<MeshMaterial3d<MaskMaterial>>>,
     uv_mats: Query<(), With<MaterialNode<StretchUvMaterial>>>,
     bound_mats: Query<(), With<MaterialNode<BoundedImageMaterial>>>,
     textshape_mats: Query<(), With<MeshMaterial3d<TextShapeMaterial>>>,
-    mats: Res<Assets<SceneMaterial>>,
 ) {
     if f.0.is_multiple_of(100) {
         let entities = q.iter().count();
@@ -709,11 +743,7 @@ fn entity_count(
 
         let outlined = scene_mats
             .iter()
-            .filter(|m| {
-                mats.get(m.id())
-                    .map(|m| (m.extension.data.flags & SCENE_MATERIAL_OUTLINE) != 0)
-                    .unwrap_or(false)
-            })
+            .filter(|m| m.0 & SCENE_MATERIAL_OUTLINE_MESH_TAGS != 0)
             .count();
         let scene_mats = scene_mats.iter().count();
         let std_mats = std_mats.iter().count();

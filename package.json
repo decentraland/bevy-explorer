@@ -1,0 +1,8 @@
+{
+  "name": "bevy-explorer-scripts",
+  "private": true,
+  "description": "Repo-root convenience scripts (this is a cargo project; no JS deps here).",
+  "scripts": {
+    "bundle:scene": "npm --prefix react-web/bridge-scene run bundle"
+  }
+}

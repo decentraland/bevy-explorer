@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 
 use bevy::{
     ecs::{query::QueryData, system::BoxedSystem},
-    platform::collections::{HashMap, HashSet},
+    platform::collections::HashSet,
     prelude::*,
     ui::UiSystem,
     window::PrimaryWindow,
@@ -355,25 +355,34 @@ fn gather_actions<M: ActionMarker>(
     }
 }
 
-pub fn run_actions<M: ActionMarker>(world: &mut World) {
-    let active_list: HashMap<usize, bool> = world
-        .query::<(&ActionIndex<M>, M::Component)>()
-        .iter(world)
-        .map(|(action, param)| (action.0, M::activate(param)))
-        .collect();
+type ActionQuery<M> = QueryState<(&'static ActionIndex<M>, <M as ActionMarker>::Component)>;
+
+fn run_actions<M: ActionMarker>(world: &mut World, mut query: Local<Option<ActionQuery<M>>>) {
+    if world.resource::<UiActions<M>>().0.is_empty() {
+        return;
+    }
+
+    // cache the query state; rebuilding it every frame re-matches all archetypes
+    let query = query.get_or_insert_with(|| world.query());
+    let mut active_list: Vec<Option<bool>> = vec![None; world.resource::<UiActions<M>>().0.len()];
+    for (action, param) in query.iter(world) {
+        if let Some(slot) = active_list.get_mut(action.0) {
+            *slot = Some(M::activate(param));
+        }
+    }
 
     let mut removed: HashSet<usize> = HashSet::default();
     world.resource_scope(|world: &mut World, mut ui_actions: Mut<UiActions<M>>| {
         let mut index = 0;
 
         ui_actions.0.retain_mut(|action| {
-            let Some(active) = active_list.get(&index) else {
+            let Some(active) = active_list.get(index).copied().flatten() else {
                 removed.insert(index);
                 index += 1;
                 return false;
             };
 
-            if *active && !action.run_already {
+            if active && !action.run_already {
                 if !action.initialized {
                     action.system.initialize(world);
                     action.initialized = true;
@@ -383,7 +392,7 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
                 action.system.apply_deferred(world);
                 world.resource_mut::<UiCaller>().0 = Entity::PLACEHOLDER;
             }
-            action.run_already = *active && !M::repeat_activate();
+            action.run_already = active && !M::repeat_activate();
 
             index += 1;
             true

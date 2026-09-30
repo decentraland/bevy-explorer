@@ -18,6 +18,12 @@ message Packet {
     PlayerEmote player_emote = 9;
     SceneEmote scene_emote = 10;
     MovementCompressed movement_compressed = 12;
+    LookAtPosition look_at_position = 13;
+    Reaction reaction = 14;
+    ChatReaction chat_reaction = 15;
+    // bevy-private: scene-driven animation, decoupled from movement (which now rides Pulse).
+    // Other clients (Unity, web) don't understand it and drop the unknown oneof field.
+    SceneDrivenAnimation scene_driven_animation = 10001;
   }
   uint32 protocol_version = 11;
 }
@@ -57,20 +63,122 @@ message Movement {
   bool is_falling = 14;
 
   bool is_stunned = 15;
-  
+
   float rotation_y = 16;
   bool is_emoting = 18;
+
+  // Number of jumps in the current air period (0 grounded, 1 after ground jump,
+  // 2 after an in-air / double jump). Matches field 24 in the Unity client's
+  // rfc4::Movement so receivers can drive a distinct double-jump animation
+  // when no scene-driven animation is supplied.
+  int32 jump_count = 24;
+  // Whether the sender is currently gliding, and the transition state of the
+  // glider prop. Matches field 23 in the Unity client's rfc4::Movement.
+  GlideState glide_state = 23;
+
+  enum GlideState {
+    PROP_CLOSED = 0;
+    OPENING_PROP = 1;
+    GLIDING = 2;
+    CLOSING_PROP = 3;
+  }
+
+  // point-at (world-space target the avatar is pointing its arm at)
+  float point_at_x = 25;
+  float point_at_y = 26;
+  float point_at_z = 27;
+  bool is_pointing_at = 28;
+
+  // head-sync (enabled flags + world-space yaw and pitch angles, in degrees,
+  // derived from the camera forward direction on the sender)
+  bool head_ik_yaw_enabled = 19;
+  bool head_ik_pitch_enabled = 20;
+  float head_yaw = 21;
+  float head_pitch = 22;
+
+  // Scene-driven movement animation (bevy-explorer local extension). Wrapped in a nested
+  // message at a high private tag so that other clients (Unity, web) can't accidentally
+  // populate these fields by reusing the same tag numbers at the Movement level — an
+  // unrelated payload at tag 10000 will fail to decode as SceneDrivenAnimation and prost
+  // drops the whole field, instead of handing us a plausible-looking string we'd try to
+  // resolve as a GLB hash.
+  optional SceneDrivenAnimation scene_driven_animation = 10000;
+
+  // Per-axis position quantization half-step ("box radius"), a bevy-explorer local extension.
+  // Filled ONLY by the Pulse receiver, where position arrives quantized: it tells the
+  // foreign-avatar interpolator the ± box the true position lies within, so it dead-reckons inside
+  // that box rather than snapping to the quantized centre. Never set on the send path (so never
+  // serialised); absent from precise sources (LiveKit, full-state snapshots), where absence means
+  // "exact". Wrapped in a nested message at a high private tag for the same collision-avoidance
+  // reason as scene_driven_animation.
+  optional PositionPrecision position_precision = 10001;
+}
+
+// Carrier for Movement.position_precision — per-axis ± half-step box around the quantized position.
+message PositionPrecision {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+// Nested carrier for scene-driven movement animation state. All fields are optional so
+// that between transitions only ride-along fields (speed, loop, seek) need to be sent;
+// the hash pair is sent on transition or every ~1s as a keepalive for joiners. An empty
+// `scene_hash` clears a previously active animation.
+message SceneDrivenAnimation {
+  optional string scene_hash = 1;
+  optional string content_hash = 2;
+  optional float speed = 3;
+  optional float playback_time = 4;
+  optional float transition_seconds = 5;
+  optional bool loop = 6;
+  // Scene-requested avatar-bus sound triggers accumulated since the last broadcast. Each
+  // entry is the content_hash of an audio clip hosted in the same scene as the active
+  // animation (scene_hash — latched or re-asserted via keepalive — identifies the scene).
+  // Receivers play each hash once on receipt. Fire-and-forget; no stop mechanism.
+  repeated string sound_content_hashes = 7;
+  // Hex-encoded wallet address of the sender, e.g. "0x6f39…". Defence against buggy
+  // remotes that parse-then-re-emit this whole sub-message byte-for-byte (observed in
+  // the wild). Receivers drop the anim when this is set and doesn't match the packet
+  // sender's address. Absent on packets from old senders — in that case we accept,
+  // since those clients predate the mirror-class bug we're defending against.
+  optional string origin_address = 8;
+  // Mirrors `MovementAnimation.idle` from the local proto. Receivers need this to gate
+  // foot-IK on remote avatars (foot-IK is only applied while idle). Sent every broadcast
+  // that carries an active anim, the same as `speed` / `loop`; defaults to false when
+  // absent (older senders predating the field).
+  optional bool idle = 9;
+  // Render-only avatar lean (degrees) carried for remote avatars, mirroring
+  // `PBAvatarMovement.tilt_pitch` / `tilt_roll`. Composed on top of the yaw in
+  // `Movement.rotation_y` (pitch about local X, roll about local Z); does not affect the
+  // remote's physics or the yaw other clients read. Absent/0 from senders without tilt.
+  optional float tilt_pitch = 10;
+  optional float tilt_roll = 11;
+  // Monotonic per-sender sequence counter. Carries no timing — the receiver uses it only to
+  // order SDA datagrams and drop reordered/duplicate ones (LiveKit is unreliable). The receiver
+  // schedules each accepted SDA against the sender's own last-received movement server tick, so
+  // anim and position — which ride different transports — apply on a shared clock without the
+  // sender's send-time leg polluting the alignment. Absent on the legacy nested usage; only the
+  // top-level `Packet.scene_driven_animation` carries it.
+  optional uint32 sequence = 12;
 }
 
 message MovementCompressed {
-  int32 temporal_data = 1; // bit-compressed: timestamp + animations 
-  int64 movement_data = 2; // bit-compressed: position + velocity 
+  int32 temporal_data = 1; // bit-compressed: timestamp + animations
+  int64 movement_data = 2; // bit-compressed: position + velocity
+  int32 head_sync_data = 3; // bit-compressed: enabled flags + yaw + pitch
+  int32 point_at_data = 4; // bit-compressed: flag + point coordinates
+
+  // Mirror of Movement.scene_driven_animation — see that field for semantics and the
+  // collision-avoidance rationale behind the high nested tag.
+  optional SceneDrivenAnimation scene_driven_animation = 10000;
 }
 
 message PlayerEmote {
   uint32 incremental_id = 1;
   string urn = 2;
   float timestamp = 3;
+  optional bool is_stopping = 4; // true means the emote has been stopped in the sender's client
 }
 
 message SceneEmote {
@@ -117,4 +225,26 @@ message Voice {
   enum VoiceCodec {
     VC_OPUS = 0;
   }
+}
+
+// Message sent to force an avatar to look at a position
+message LookAtPosition {
+  float timestamp = 1;
+  // world position
+  float position_x = 2;
+  float position_y = 3;
+  float position_z = 4;
+  string target_avatar_wallet_address = 5;
+}
+
+message Reaction {
+  int32 emoji_index = 1;
+  float timestamp = 2;
+  int32 count = 3;
+}
+
+message ChatReaction {
+  int32 emoji_index = 1;
+  string message_id = 2;
+  string address = 3;
 }

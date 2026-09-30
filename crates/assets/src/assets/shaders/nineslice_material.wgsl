@@ -14,7 +14,7 @@ struct SliceData {
 fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     var uv = in.uv;
     let image_size = vec2<f32>(textureDimensions(image_texture));
-    let border_size = vec2<f32>(slice_data.bounds.x + slice_data.bounds.z, slice_data.bounds.y + slice_data.bounds.z);
+    let border_size = vec2<f32>(slice_data.bounds.x + slice_data.bounds.z, slice_data.bounds.y + slice_data.bounds.w);
     let position = in.uv * slice_data.surface.xy;
 
     if slice_data.surface.x > image_size.x {

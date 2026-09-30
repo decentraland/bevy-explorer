@@ -1,0 +1,16 @@
+[package]
+name = "harness-util"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wallet = { workspace = true }
+dcl_component = { workspace = true }
+livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "decentraland-webrtc", features = [
+  "native-tls",
+] }
+livekit-api = { git = "https://github.com/robtfm/client-sdk-rust", branch = "decentraland-webrtc" }
+prost = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
+pico-args = "0.5.0"
+anyhow = { workspace = true }

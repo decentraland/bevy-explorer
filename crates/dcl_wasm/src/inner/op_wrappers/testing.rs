@@ -7,15 +7,17 @@ pub fn op_testing_enabled(op_state: &WorkerContext) -> bool {
 }
 
 #[wasm_bindgen]
-pub fn op_log_test_plan(state: &WorkerContext, body: JsValue) {
+pub fn op_log_test_plan(state: &WorkerContext, body: JsValue) -> Result<(), WasmError> {
     serde_parse!(body);
-    dcl::js::testing::op_log_test_plan(&mut *state.state.borrow_mut(), body);
+    dcl::js::testing::op_log_test_plan(&mut *state.state.borrow_mut(), body)
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
-pub fn op_log_test_result(state: &WorkerContext, body: JsValue) {
+pub fn op_log_test_result(state: &WorkerContext, body: JsValue) -> Result<(), WasmError> {
     serde_parse!(body);
-    dcl::js::testing::op_log_test_result(&mut *state.state.borrow_mut(), body);
+    dcl::js::testing::op_log_test_result(&mut *state.state.borrow_mut(), body)
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

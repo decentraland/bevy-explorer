@@ -25,13 +25,13 @@ fn op_testing_enabled(op_state: &mut OpState) -> bool {
 }
 
 #[op2]
-fn op_log_test_plan(state: &mut OpState, #[serde] body: SceneTestPlan) {
-    dcl::js::testing::op_log_test_plan(state, body);
+fn op_log_test_plan(state: &mut OpState, #[serde] body: SceneTestPlan) -> Result<(), AnyError> {
+    dcl::js::testing::op_log_test_plan(state, body)
 }
 
 #[op2]
-fn op_log_test_result(state: &mut OpState, #[serde] body: SceneTestResult) {
-    dcl::js::testing::op_log_test_result(state, body);
+fn op_log_test_result(state: &mut OpState, #[serde] body: SceneTestResult) -> Result<(), AnyError> {
+    dcl::js::testing::op_log_test_result(state, body)
 }
 
 #[op2]

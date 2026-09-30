@@ -50,7 +50,7 @@ pub fn update_tooltip(
         !content.is_empty()
             && match key {
                 TooltipSource::Label(_) => true,
-                TooltipSource::Entity(e) => commands.get_entity(*e).is_err(),
+                TooltipSource::Entity(e) => commands.get_entity(*e).is_ok(),
             }
     });
 

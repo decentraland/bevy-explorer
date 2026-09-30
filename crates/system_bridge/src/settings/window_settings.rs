@@ -13,11 +13,17 @@ use super::{AppSetting, EnumAppSetting};
 
 impl EnumAppSetting for WindowSetting {
     fn variants() -> Vec<Self> {
-        vec![Self::Windowed, Self::Fullscreen, Self::Borderless]
+        vec![
+            Self::Windowed,
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Fullscreen,
+            Self::Borderless,
+        ]
     }
 
     fn name(&self) -> String {
         match self {
+            #[cfg(not(target_arch = "wasm32"))]
             WindowSetting::Fullscreen => "Fullscreen",
             WindowSetting::Windowed => "Window",
             WindowSetting::Borderless => "Borderless Fullscreen",
@@ -36,6 +42,7 @@ impl AppSetting for WindowSetting {
     fn description(&self) -> String {
         format!("Window mode.\n\n{}", 
             match self {
+                #[cfg(not(target_arch = "wasm32"))]
                 WindowSetting::Fullscreen => "Fullscreen: Native fullscreen mode.",
                 WindowSetting::Windowed => "Windowed: Not fullscreen.",
                 WindowSetting::Borderless => "Borderless Fullscreen: Use a fullscreen window at native resultion, changing resolution will have no effect.",
@@ -58,6 +65,7 @@ impl AppSetting for WindowSetting {
     fn apply(&self, mut window: SystemParamItem<Self::Param>, _: Commands, _: &HashSet<Entity>) {
         let mut window = window.single_mut().unwrap();
         window.mode = match self {
+            #[cfg(not(target_arch = "wasm32"))]
             WindowSetting::Fullscreen => bevy::window::WindowMode::Fullscreen(
                 MonitorSelection::Current,
                 VideoModeSelection::Current,

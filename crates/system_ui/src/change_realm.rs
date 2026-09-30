@@ -76,7 +76,8 @@ fn change_realm_dialog(
     // let target_url = format!("{endpoint}/explore/realms");
 
     // hard coded since the other doesn't list main
-    let target_url = "https://realm-provider.decentraland.org/realms";
+    let target_url =
+        common::base_domain::url(common::base_domain::Service::RealmProvider, "/realms");
 
     let client = ipfas.ipfs().client();
     let task: Task<Result<Vec<ServerDesc>, anyhow::Error>> =
@@ -146,6 +147,8 @@ fn update_server_list(
                                         e.write(ChangeRealmEvent {
                                             new_realm: server.url.clone(),
                                             content_server_override: None,
+                                            response: Default::default(),
+                                            report: true,
                                         });
                                         commands.entity(root_id).despawn();
                                     }),

@@ -1,4 +1,4 @@
-// --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
+// --realm https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --position 1,1
 
 #[cfg(not(target_arch = "wasm32"))]
 mod kira_bridge;
@@ -19,13 +19,15 @@ use bevy::prelude::*;
 use kira::manager::AudioManager;
 use tokio::sync::mpsc;
 
-pub use crate::livekit::runtime::LivekitRuntime;
+pub use crate::livekit::runtime::{LivekitRuntime, LivekitRuntimeRes};
 use crate::{ChannelControl, NetworkMessage};
 
 #[derive(Event)]
 pub struct StartLivekit {
     pub entity: Entity,
     pub address: String,
+    /// crdt context this room's transport feeds
+    pub context: Entity,
 }
 
 #[derive(Component)]

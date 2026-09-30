@@ -1,4 +1,4 @@
-use std::f32::consts::{FRAC_PI_4, PI};
+use std::f32::consts::PI;
 
 use bevy::{
     prelude::*,
@@ -6,9 +6,14 @@ use bevy::{
     window::{CursorGrabMode, PrimaryWindow},
 };
 
+use avatar::animate::{is_emoting, ActiveEmote, MaskedEmote};
 use common::{
     inputs::{Action, SystemAction, CAMERA_SET, CAMERA_ZOOM, POINTER_SET},
-    structs::{AvatarDynamicState, CameraOverride, CursorLocks, PrimaryCamera, PrimaryUser},
+    structs::{
+        AppConfig, AvatarDynamicState, CameraOverride, CursorLocks, HeadSync, MoveKind,
+        PrimaryCamera, PrimaryUser, PLAYER_CAMERA_FOV,
+    },
+    terrain::PlayerTerrainHeight,
     util::ModifyComponentExt,
 };
 use dcl_component::proto_components::sdk::components::common::camera_transition::TransitionMode;
@@ -23,8 +28,6 @@ pub struct CinematicInitialData {
     base_yaw: f32,
     base_pitch: f32,
     base_roll: f32,
-    base_distance: f32,
-    cinematic_transform: GlobalTransform,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -34,7 +37,8 @@ pub fn update_camera(
     locks: Res<CursorLocks>,
     mut cinematic_data: Local<Option<CinematicInitialData>>,
     input_manager: InputManager,
-    gt_helper: TransformHelper,
+    config: Res<AppConfig>,
+    mut smoothed_delta: Local<Vec2>,
 ) {
     let dt = time.delta_secs();
 
@@ -55,65 +59,42 @@ pub fn update_camera(
     let mut yaw_range = None;
     let mut pitch_range = None;
     let mut roll_range = None;
-    let mut zoom_range = None;
 
     // record/reset cinematic start state
     if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.clone() {
-        let Ok(origin) = gt_helper.compute_global_transform(cine.origin) else {
-            warn!("failed to get gt");
-            return;
-        };
+        if cinematic_data.is_none() {
+            *cinematic_data = Some(CinematicInitialData {
+                base_yaw: options.yaw,
+                base_pitch: options.pitch,
+                base_roll: options.roll,
+            });
 
-        let (scale, _, _) = origin.to_scale_rotation_translation();
-        let cinematic_distance = scale.z;
-
-        match cinematic_data.as_mut() {
-            None => {
-                *cinematic_data = Some(CinematicInitialData {
-                    base_yaw: options.yaw,
-                    base_pitch: options.pitch,
-                    base_roll: options.roll,
-                    base_distance: options.distance,
-                    cinematic_transform: origin,
-                });
-
-                options.distance = cinematic_distance;
-                options.yaw = 0.0;
-                options.pitch = 0.0;
-                options.roll = 0.0;
-            }
-            Some(ref mut existing) => {
-                if existing.cinematic_transform != origin {
-                    // reset for updated transform
-                    let (scale, _, _) =
-                        existing.cinematic_transform.to_scale_rotation_translation();
-                    let prev_distance = scale.z;
-                    options.distance = cinematic_distance + options.distance - prev_distance;
-                    existing.cinematic_transform = origin;
-                }
-            }
+            options.yaw = 0.0;
+            options.pitch = 0.0;
+            options.roll = 0.0;
         }
 
         allow_cam_move = cine.allow_manual_rotation;
         yaw_range = cine.yaw_range.map(|r| -r..r);
         pitch_range = cine.pitch_range.map(|r| -r..r);
         roll_range = cine.roll_range.map(|r| -r..r);
-        zoom_range = Some(
-            cine.zoom_min.unwrap_or(scale.z).clamp(0.3, 100.0)
-                ..cine.zoom_max.unwrap_or(scale.z).clamp(0.3, 100.0),
-        );
     } else if let Some(initial) = cinematic_data.take() {
-        (options.yaw, options.pitch, options.roll, options.distance) = (
-            initial.base_yaw,
-            initial.base_pitch,
-            initial.base_roll,
-            initial.base_distance,
-        );
+        (options.yaw, options.pitch, options.roll) =
+            (initial.base_yaw, initial.base_pitch, initial.base_roll);
     }
+    let in_cinematic = cinematic_data.is_some();
 
     let mut mouse_delta = input_manager.get_analog(CAMERA_SET, InputPriority::Scene) * 10.0;
     if locks.0.contains("camera") {
         mouse_delta += input_manager.get_analog(POINTER_SET, InputPriority::Scroll);
+    }
+    match config.camera_smoothing.rate() {
+        Some(rate) => {
+            let factor = 1.0 - (-dt * rate).exp();
+            mouse_delta = factor * mouse_delta + (1.0 - factor) * *smoothed_delta;
+            *smoothed_delta = mouse_delta;
+        }
+        None => *smoothed_delta = mouse_delta,
     }
 
     if allow_cam_move {
@@ -135,6 +116,10 @@ pub fn update_camera(
         options.pitch = (options.pitch - mouse_delta.y * options.sensitivity / 1000.0)
             .clamp(-PI / 2.1, PI / 2.1);
         options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
+    }
+
+    // `distance` is the third-person follow distance; a cinematic camera has its own fov
+    if !in_cinematic {
         let zoom = input_manager
             .get_analog(CAMERA_ZOOM, InputPriority::Scene)
             .y;
@@ -154,9 +139,6 @@ pub fn update_camera(
     if let Some(yaw_range) = yaw_range {
         options.yaw = options.yaw.clamp(yaw_range.start, yaw_range.end);
     }
-    if let Some(zoom_range) = zoom_range {
-        options.distance = options.distance.clamp(zoom_range.start, zoom_range.end);
-    }
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -169,23 +151,57 @@ pub fn update_camera_position(
         &mut Projection,
         Option<&mut SystemTween>,
     )>,
-    player: Query<
-        (&Transform, &AvatarDynamicState, Has<OutOfWorld>),
+    mut player: Query<
+        (
+            &Transform,
+            &AvatarDynamicState,
+            Has<OutOfWorld>,
+            &mut HeadSync,
+            Option<(&ActiveEmote, &MaskedEmote)>,
+        ),
         (With<PrimaryUser>, Without<PrimaryCamera>),
     >,
     mut prev_override: Local<Option<CameraOverride>>,
     mut prev_oow: Local<bool>,
     gt_helper: TransformHelper,
+    terrain_height: Option<Res<PlayerTerrainHeight>>,
 ) {
     let (
-        Ok((player_transform, dynamic_state, is_oow)),
+        Ok((player_transform, dynamic_state, is_oow, mut head_sync, emotes)),
         Ok((camera_ent, camera_transform, options, mut projection, maybe_tween)),
-    ) = (player.single(), camera.single_mut())
+    ) = (player.single_mut(), camera.single_mut())
     else {
         return;
     };
 
+    // Capture head-sync angles only when the real camera drives rotation (not OOW, not
+    // a scene-driven cinematic). We additionally gate on the avatar being idle and not
+    // emoting (in either slot — an upper-body emote keeps the idle move kind) so head
+    // gaze doesn't broadcast through movement/jump/emote — matches unity's HeadIK gate.
+    // In first-person the head is rigidly attached to the camera, so additional yaw IK
+    // would over-rotate the neck — pitch is still meaningful (head tilts up/down).
+    let real_camera =
+        !is_oow && !matches!(options.scene_override, Some(CameraOverride::Cinematic(_)));
+    let idle = dynamic_state.move_kind == MoveKind::Idle
+        && !emotes.is_some_and(|(active, masked)| is_emoting(active, masked));
+    let head_active = real_camera && idle;
+    let first_person = options.distance < 0.05;
+    head_sync.yaw_enabled = head_active && !first_person;
+    head_sync.pitch_enabled = head_active;
+    if head_active {
+        // DCL world is left-handed (Z+ forward) while bevy is right-handed
+        // (-Z forward). The Y-up rotation handedness flips going across, so
+        // a yaw of θ in bevy maps to -θ on the wire. With this, looking N is
+        // 0°, E is 90°, S is 180°, W is 270° — matching unity senders.
+        // Pitch is also handedness-flipped on the wire (looking up positive
+        // in DCL = negative bevy pitch). HeadSync holds the wire value, and
+        // the IK reader applies the same negation to render back in bevy.
+        head_sync.yaw_deg = -options.yaw.to_degrees();
+        head_sync.pitch_deg = -options.pitch.to_degrees();
+    }
+
     let mut target_transform = *camera_transform;
+    let mut target_fov = PLAYER_CAMERA_FOV;
     let mut target_transition = TransitionMode::Time(TRANSITION_TIME);
 
     if is_oow {
@@ -207,10 +223,7 @@ pub fn update_camera_position(
             .and_then(|e| gt_helper.compute_global_transform(e).ok())
         {
             Transform::IDENTITY
-                .looking_at(
-                    look_at_transform.translation() - camera_transform.translation,
-                    Vec3::Y,
-                )
+                .looking_at(look_at_transform.translation() - translation, Vec3::Y)
                 .rotation
         } else {
             let yaw = cine
@@ -218,23 +231,16 @@ pub fn update_camera_position(
                 .map(|r| options.yaw.clamp(-r, r))
                 .unwrap_or(options.yaw);
             let pitch = cine
-                .yaw_range
+                .pitch_range
                 .map(|r| options.pitch.clamp(-r, r))
                 .unwrap_or(options.pitch);
             let roll = cine
-                .yaw_range
+                .roll_range
                 .map(|r| options.roll.clamp(-r, r))
                 .unwrap_or(options.roll);
             rotation * Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll)
         };
-        let target_fov = FRAC_PI_4 * 1.25 / options.distance;
-        let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
-        else {
-            panic!();
-        };
-        if *fov != target_fov {
-            *fov = target_fov;
-        }
+        target_fov = cine.fov;
         if let Some(transition) = cine
             .transition
             .as_ref()
@@ -245,14 +251,6 @@ pub fn update_camera_position(
 
         commands.entity(camera_ent).try_insert(ViewUserValue(0.0));
     } else {
-        let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
-        if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
-        {
-            if *fov != target_fov {
-                *fov = target_fov;
-            }
-        };
-
         let mut distance = match options.scene_override {
             Some(CameraOverride::Distance(d)) => d,
             _ => options.distance,
@@ -271,8 +269,10 @@ pub fn update_camera_position(
         let target_translation =
             player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
 
-        if target_translation.y < distance * 0.25 {
-            distance = player_head.y / (0.25 - target_direction.y);
+        // keep above the ground: the empty-parcel terrain under the player, else zero
+        let ground = terrain_height.map_or(0.0, |height| height.0);
+        if target_translation.y - ground < distance * 0.25 {
+            distance = (player_head.y - ground) / (0.25 - target_direction.y);
         }
 
         target_transform.translation =
@@ -282,6 +282,9 @@ pub fn update_camera_position(
             .entity(camera_ent)
             .try_insert(ViewUserValue(distance));
     }
+
+    // the camera never carries scale; scenes may set arbitrary scale on virtual camera entities
+    target_transform.scale = Vec3::ONE;
 
     let changed = (prev_override.is_some() != options.scene_override.is_some())
         || prev_override
@@ -308,20 +311,31 @@ pub fn update_camera_position(
         commands.entity(camera_ent).try_insert(SystemTween {
             target: target_transform,
             time,
+            fov: Some(target_fov),
         });
     } else if let Some(mut tween) = maybe_tween {
-        if target_transform != tween.bypass_change_detection().target {
+        let tween = tween.bypass_change_detection();
+        if target_transform != tween.target {
             debug!(
                 "tween changed to {:?} to {:?}",
                 camera_transform, target_transform
             );
-            tween.bypass_change_detection().target = target_transform;
+            tween.target = target_transform;
+        }
+        if tween.fov != Some(target_fov) {
+            tween.fov = Some(target_fov);
         }
     } else {
         commands
             .entity(camera_ent)
             .modify_component(move |t: &mut Transform| *t = target_transform);
         // *camera_transform = target_transform;
+        if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
+        {
+            if *fov != target_fov {
+                *fov = target_fov;
+            }
+        }
     }
 }
 

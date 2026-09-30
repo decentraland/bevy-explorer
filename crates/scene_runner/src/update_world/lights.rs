@@ -1,4 +1,4 @@
-use std::f32::consts::{FRAC_PI_2, PI, TAU};
+use std::f32::consts::PI;
 
 use bevy::{
     math::FloatOrd,
@@ -113,6 +113,69 @@ impl From<PbGlobalLight> for GlobalLight {
     }
 }
 
+/// Unity's sunrise and sunset (hours): the sun is overhead halfway between, at 12:37.
+const SUNRISE: f32 = 6.422;
+const SUNSET: f32 = 18.828;
+
+/// Direction the sunlight travels at `hours` past midnight. Like Unity, the sun crosses the sky
+/// at a steady rate in a vertical plane diagonal to the parcel grid, and carries on below the
+/// horizon to the next sunrise.
+fn sun_direction(hours: f32) -> Vec3 {
+    let since_sunrise = (hours - SUNRISE).rem_euclid(24.0);
+    let day = SUNSET - SUNRISE;
+    // from the sunrise horizon: 0 to PI through the day, PI to 2 PI through the night
+    let angle = if since_sunrise < day {
+        since_sunrise / day * PI
+    } else {
+        PI + (since_sunrise - day) / (24.0 - day) * PI
+    };
+    // away from the sun as it rises
+    let morning = Vec3::new(1.0, 0.0, -1.0).normalize();
+    morning * angle.cos() - Vec3::Y * angle.sin()
+}
+
+/// Direction the moonlight travels at `hours` past midnight. This is unity-explorer's night
+/// light: a great circle high in the south, travelled faster before midnight than after.
+/// Outside Unity's 21:00 to 04:00 night it carries on along the same circle.
+pub fn moon_direction(hours: f32) -> Vec3 {
+    // the moon at midnight, and the direction it travels (bevy axes)
+    const MIDNIGHT: Vec3 = Vec3::new(-0.374_61, 0.446_99, 0.812_32);
+    const TRAVEL: Vec3 = Vec3::new(-0.775_33, 0.329_44, -0.538_83);
+    // degrees per hour before and after midnight
+    const EVENING_RATE: f32 = 8.592;
+    const MORNING_RATE: f32 = 5.295;
+    let since_midnight = (hours + 12.0).rem_euclid(24.0) - 12.0;
+    let rate = if since_midnight < 0.0 {
+        EVENING_RATE
+    } else {
+        MORNING_RATE
+    };
+    let (sin, cos) = (since_midnight * rate).to_radians().sin_cos();
+    -(MIDNIGHT * cos + TRAVEL * sin)
+}
+
+/// The sunlight's colour (sRGB) at `elevation`, the sine of the sun's elevation: a cubic per
+/// channel from a red horizon through a warm 12 degrees to white at noon, flat there.
+fn sun_color(elevation: f32) -> Vec3 {
+    const HORIZON: Vec3 = Vec3::new(1.0, 0.38, 0.40);
+    const E1: Vec3 = Vec3::new(0.0, 0.8804, 1.0065);
+    const E2: Vec3 = Vec3::new(0.0, -0.1079, -0.5370);
+    const E3: Vec3 = Vec3::new(0.0, -0.2216, 0.0225);
+    let e = elevation.max(0.0);
+    HORIZON + E1 * e + E2 * e * e + E3 * e * e * e
+}
+
+/// The sunlight's colour at noon, where [`sun_color`] peaks (sRGB).
+pub const SUN_COLOR_NOON: Vec3 = Vec3::new(1.0, 0.931, 0.892);
+
+/// The moonlight's colour (sRGB): a violet tint, so the scene stays directional after dark.
+const MOON_COLOR: Vec3 = Vec3::new(0.514, 0.388, 1.0);
+
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 pub fn update_directional_light(
     lights: Query<(
         &RendererSceneContext,
@@ -124,15 +187,31 @@ pub fn update_directional_light(
     player: Query<Entity, With<PrimaryUser>>,
     time: Res<TimeOfDay>,
 ) {
-    // default 2-hourly cycle
-    let t = (time.elapsed_secs() / (60.0 * 60.0 * 24.0) + 0.75).fract() * TAU;
+    // colour and energy driven by the sun's elevation
+    let hours = time.elapsed_secs() / 3600.0;
+    let sun_direction = sun_direction(hours);
+    let elevation = -sun_direction.y;
+    let energy = smoothstep(-0.05, 0.3, elevation);
+    let dir = MOON_COLOR.lerp(sun_color(elevation), smoothstep(-0.05, 0.05, elevation));
+
+    // the sun lights while it is up and the moon once it has set, never dimmer than the moon's
+    // 1500 lux
+    let dir_illuminance = 1500.0 + smoothstep(0.0, 0.3, elevation) * 5500.0;
+    let dir_direction = if elevation > 0.0 {
+        sun_direction
+    } else {
+        moon_direction(hours)
+    };
 
     *global_light = SceneGlobalLight {
         source: None,
-        dir_color: Color::srgb(1.0, 1.0, 0.7),
-        dir_illuminance: (t - 0.2).sin().max((t + 0.2).sin()).max(0.0).powf(2.0) * 10_000.0,
-        dir_direction: Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z,
-        ambient_color: Color::srgb(0.85, 0.85, 1.0),
+        dir_color: Color::srgb(dir.x, dir.y, dir.z),
+        dir_illuminance,
+        dir_direction,
+        // sun energy peaks at ~0.7 * full scale; the floor keeps the night sky lit
+        sun_illuminance: (energy * 0.7 * 10_000.0).max(1500.0),
+        sun_direction,
+        ambient_color: Color::WHITE,
         ambient_brightness: 1.0,
         layers: RenderLayers::default(),
     };
@@ -154,12 +233,14 @@ pub fn update_directional_light(
                     Some(0.0)
                 } {
                     global_light.dir_illuminance = ill;
+                    global_light.sun_illuminance = ill;
                 }
             }
 
             if let Some(global) = maybe_global {
                 if let Some(dir) = global.direction {
                     global_light.dir_direction = dir;
+                    global_light.sun_direction = dir;
                 }
                 if let Some(color) = global.ambient_color {
                     global_light.ambient_color = color;
@@ -214,6 +295,9 @@ pub fn update_directional_light(
 #[derive(Component)]
 pub struct LightEntity {
     pub scene: Entity,
+    pub enabled: bool,
+    pub shadows_enabled: bool,
+    pub range: f32,
 }
 
 fn update_point_lights(
@@ -241,15 +325,38 @@ fn update_point_lights(
                 .find(|child| child_lights.get(*child).is_ok())
         });
 
+        let range = light.range.unwrap_or(-1.0);
+        let range = if range < 0.0 {
+            light.intensity.unwrap_or(16000.0).powf(0.25)
+        } else {
+            range.min(light.intensity.unwrap_or(16000.0).powf(0.25))
+        };
+
         let mut light_cmds = match previous_light_entity {
-            Some(prev) => commands.entity(prev),
+            Some(prev) => {
+                let mut cmds = commands.entity(prev);
+                cmds.insert((
+                    LightEntity {
+                        scene: container.root,
+                        enabled: light.enabled,
+                        shadows_enabled: light.shadow.unwrap_or(false),
+                        range,
+                    },
+                    Visibility::Hidden,
+                ));
+                cmds
+            }
             None => {
                 let mut cmds = commands.spawn((
                     LightEntity {
                         scene: container.root,
+                        enabled: light.enabled,
+                        shadows_enabled: light.shadow.unwrap_or(false),
+                        range,
                     },
                     // light hidden avatars too
                     RenderLayers::default().union(&PRIMARY_AVATAR_LIGHT_LAYER),
+                    Visibility::Hidden,
                 ));
                 let light_id = cmds.id();
                 cmds.commands()
@@ -281,17 +388,7 @@ fn update_point_lights(
             None
         };
 
-        let lumens = if light.enabled {
-            light.intensity.unwrap_or(16000.0) * 4.0 * PI
-        } else {
-            0.0
-        };
-        let range = light.range.unwrap_or(-1.0);
-        let range = if range < 0.0 {
-            light.intensity.unwrap_or(16000.0).powf(0.25)
-        } else {
-            range
-        };
+        let lumens = light.intensity.unwrap_or(16000.0) * 4.0 * PI;
         match light.spotlight_angles {
             Some(angles) => {
                 light_cmds.try_insert(SpotLight {
@@ -351,77 +448,127 @@ fn update_point_lights(
 pub struct RetryLightTexture;
 
 fn manage_shadow_casters(
-    mut q: Query<
-        (
-            Entity,
-            &GlobalTransform,
-            &LightEntity,
-            Option<&mut PointLight>,
-            Option<&mut SpotLight>,
-            &LightSource,
-        ),
-        Or<(With<PointLight>, With<SpotLight>)>,
-    >,
-    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
+    read_lights: Populated<(Entity, &GlobalTransform, &LightEntity, &ChildOf)>,
+    mut write_lights: Query<(
+        Option<&mut PointLight>,
+        Option<&mut SpotLight>,
+        &mut Visibility,
+    )>,
+    parent_visibility: Query<&InheritedVisibility>,
+    player: Single<(Entity, &GlobalTransform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
     config: Res<AppConfig>,
     mut lights: Local<Vec<(Entity, bool, FloatOrd, bool)>>,
 ) {
-    let Ok((player, player_gt)) = player.single() else {
-        return;
-    };
+    let (player, player_gt) = player.into_inner();
     let player_t = player_gt.translation();
 
     let active_scenes = containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS);
 
     // collect lights
-    lights.extend(
-        q.iter()
-            .map(|(entity, gt, container, maybe_p, maybe_s, _)| {
-                (
-                    entity,
-                    active_scenes.contains(&container.scene),
-                    FloatOrd(gt.translation().distance_squared(player_t)),
-                    maybe_p
-                        .map(|p| p.shadows_enabled)
-                        .unwrap_or_else(|| maybe_s.unwrap().shadows_enabled),
-                )
-            }),
-    );
+    lights.extend(read_lights.iter().map(|(entity, gt, light, parent)| {
+        let enabled = light.enabled
+            && parent_visibility
+                .get(parent.parent())
+                .is_ok_and(|pv| pv.get());
+        let importance = if enabled {
+            let distance = (gt.translation() - player_t).length();
+            let importance = light.range / distance;
+            FloatOrd(importance)
+        } else {
+            FloatOrd(0.0)
+        };
+
+        (
+            entity,
+            active_scenes.contains(&light.scene),
+            importance,
+            light.shadows_enabled,
+        )
+    }));
     // sort by scene-active and distance
-    lights.sort_by_key(|(_, scene_active, distance, _)| (*scene_active, *distance));
+    lights.sort_by_key(|(_, scene_active, importance, _)| (*scene_active, *importance));
     // enable up to limit
-    let max_casters = match config.graphics.shadow_settings {
+    let mut max_enabled = config.graphics.light_count;
+    let mut max_casters = match config.graphics.shadow_settings {
         common::structs::ShadowSetting::Off => 0,
         _ => config.graphics.shadow_caster_count,
     };
+    if config.graphics.shadow_distance <= 0. {
+        max_casters = 0;
+    }
     debug!(
-        "found {} lights, enabling up to {}",
+        "found {} lights, enabling up to {} with {} casters",
         lights.len(),
+        max_enabled,
         max_casters
     );
-    let mut iter = lights.drain(..);
-    for (light, _, _, enabled) in iter.by_ref().take(max_casters) {
-        if !enabled {
-            let (_, _, _, maybe_p, maybe_s, _) = q.get_mut(light).unwrap();
+    // only write (and trigger change detection) when the target value differs
+    for (light, _, importance, shadows_enabled) in lights.drain(..).rev() {
+        let (maybe_p, maybe_s, mut vis) = write_lights.get_mut(light).unwrap();
+
+        if importance.0 != 0.0 && max_enabled > 0 {
+            vis.set_if_neq(Visibility::Visible);
+            max_enabled -= 1;
+
+            let cast = shadows_enabled && max_casters > 0;
+            if cast {
+                max_casters -= 1;
+            }
             if let Some(mut p) = maybe_p {
-                p.shadows_enabled = true;
+                if p.shadows_enabled != cast {
+                    p.shadows_enabled = cast;
+                }
             }
             if let Some(mut s) = maybe_s {
-                s.shadows_enabled = true;
+                if s.shadows_enabled != cast {
+                    s.shadows_enabled = cast;
+                }
             }
+        } else {
+            vis.set_if_neq(Visibility::Hidden);
         }
     }
-    // disable over limit
-    for (light, _, _, enabled) in iter {
-        if enabled {
-            let (_, _, _, maybe_p, maybe_s, _) = q.get_mut(light).unwrap();
-            if let Some(mut p) = maybe_p {
-                p.shadows_enabled = false;
-            }
-            if let Some(mut s) = maybe_s {
-                s.shadows_enabled = false;
-            }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sun_follows_unitys_path() {
+        let angle = |a: Vec3, b: Vec3| a.angle_between(b).to_degrees();
+        // unity-explorer's sun at noon, from its recorded day cycle (bevy axes)
+        let noon = Vec3::new(0.109_261_24, -0.987_989_84, -0.109_261_2);
+        assert!(angle(sun_direction(12.0), noon) < 0.5);
+        for horizon in [SUNRISE, SUNSET] {
+            assert!(sun_direction(horizon).y.abs() < 1e-5);
+        }
+        assert!(sun_direction((SUNRISE + SUNSET) / 2.0).y < -0.9999);
+        // below the horizon through the night, and continuous round the whole day
+        assert!(sun_direction(0.0).y > 0.0);
+        assert!(angle(sun_direction(0.0), sun_direction(24.0)) < 0.01);
+        for step in 0..2400 {
+            let hours = step as f32 / 100.0;
+            assert!(angle(sun_direction(hours), sun_direction(hours + 0.01)) < 0.3);
+        }
+    }
+
+    #[test]
+    fn moon_follows_unitys_path() {
+        let angle = |a: Vec3, b: Vec3| a.angle_between(b).to_degrees();
+        // unity-explorer's night light, from its recorded day cycle (bevy axes, light travel)
+        for (hours, unity) in [
+            (21.0, Vec3::new(0.000_2, -0.259_3, -0.965_8)),
+            (0.0, Vec3::new(0.379_8, -0.438_4, -0.814_6)),
+            (4.0, Vec3::new(0.629_4, -0.535_8, -0.562_8)),
+        ] {
+            assert!(angle(moon_direction(hours), unity) < 1.0);
+        }
+        // above the horizon from sunset to sunrise
+        for step in 0..=100 {
+            let hours = SUNSET + (24.0 - SUNSET + SUNRISE) * step as f32 / 100.0;
+            assert!(moon_direction(hours).y < 0.0);
         }
     }
 }

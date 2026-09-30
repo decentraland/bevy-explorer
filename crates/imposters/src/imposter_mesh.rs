@@ -35,9 +35,53 @@ impl ImposterMesh {
         let effective_min = (parcel_min - spec_mid) / spec_size;
         let effective_max = (parcel_max - spec_mid) / spec_size;
 
+        // When baking this imposter as an ingredient for a coarser parent mip,
+        // push the *outer* faces (those facing away from the sibling children,
+        // derived from this tile's position in the parent 2x2) out past the
+        // parcel-clamped spec region so the baked overhang renders. The push is
+        // the fixed world-space `spec.overhang` (the level-0 content lean-over,
+        // a few metres, constant across mip levels) expressed in the cube's
+        // normalised space per-axis — so it does not balloon with the imposter's
+        // footprint. The *inner* faces stay clamped so adjacent children don't
+        // double-blend their overlapping transparent edges. For normal display
+        // the overhang is 0 and the cube is the parcel-clamped spec region.
+        let overhang = if target.as_ingredient {
+            spec.overhang
+        } else {
+            0.0
+        };
+        let push_x = overhang / spec_size.x.max(1e-4);
+        let push_z = overhang / spec_size.y.max(1e-4);
+        let push_y = overhang / (spec.region_max.y - spec.region_min.y).max(1e-4);
+        // Offset within the parent 2x2 (0 = min side, 1 = max side) per axis.
+        // World x grows with parcel.x; world z is parcel.y negated, so parcel.y
+        // offset 0 sits on the +z (max) side.
+        let off_x = (target.parcel.x >> target.level) & 1;
+        let off_y = (target.parcel.y >> target.level) & 1;
+        let min_x = if off_x == 0 {
+            -0.5 - push_x
+        } else {
+            effective_min.x.max(-0.5)
+        };
+        let max_x = if off_x == 1 {
+            0.5 + push_x
+        } else {
+            effective_max.x.min(0.5)
+        };
+        let min_z = if off_y == 1 {
+            -0.5 - push_z
+        } else {
+            effective_min.y.max(-0.5)
+        };
+        let max_z = if off_y == 0 {
+            0.5 + push_z
+        } else {
+            effective_max.y.min(0.5)
+        };
+
         let builder = Self {
-            min: Vec3::new(effective_min.x.max(-0.5), -0.5, effective_min.y.max(-0.5)),
-            max: Vec3::new(effective_max.x.min(0.5), 0.5, effective_max.y.min(0.5)),
+            min: Vec3::new(min_x, -0.5 - push_y, min_z),
+            max: Vec3::new(max_x, 0.5 + push_y, max_z),
             with_bake_attributes: target.as_ingredient,
         };
 

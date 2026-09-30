@@ -1,0 +1,1033 @@
+/* Backpack — laid out on the 1920×1080 menu canvas. The header is pinned to the top; below it a
+   1920×942 frame is centred (the canvas only grows along its longer axis), and every block sits at
+   a fixed position in it. The avatar area on the left is a hole the engine draws the preview into. */
+.page {
+  position: relative;
+  height: 100%;
+  pointer-events: none;
+}
+.backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(90deg, var(--lava-1) 0%, var(--lava-1) 30%, color-mix(in srgb, var(--lava-1) 55%, var(--lava-2)) 65%, var(--lava-2) 100%);
+  /* Leave the 960×960 avatar preview frame to the engine; its right part shows through the card. */
+  mask:
+    linear-gradient(var(--black), var(--black)) 0 0 / 100% 100% no-repeat,
+    linear-gradient(var(--black), var(--black)) calc(50% - 700px) calc(50% + 23px) / 960px 960px no-repeat;
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+}
+/* The drifting glow moves by transform, which the compositor runs without repainting the page. */
+.backdrop::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 140%;
+  height: 140%;
+  background: radial-gradient(ellipse 60% 45% at 25% 100%, var(--lava-3) 0%, transparent 100%);
+  transform: translate(0, -28.571%);
+  animation: lava 24s var(--ease-inout) infinite alternate;
+  will-change: transform;
+}
+.backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--lava-4) 55%, transparent) 0%, transparent 22%);
+}
+@keyframes lava {
+  from {
+    transform: translate(0, -28.571%);
+  }
+  to {
+    transform: translate(-28.571%, -22.857%);
+  }
+}
+
+.head {
+  position: relative;
+  z-index: 2;
+  height: 68px;
+  background: var(--scrim-head);
+  pointer-events: auto;
+}
+.title {
+  position: absolute;
+  left: 20px;
+  top: 12px;
+  margin: 0;
+  height: 44px;
+  font-size: var(--type-36);
+  font-weight: var(--fw-semibold);
+  line-height: 44px;
+  color: var(--text);
+}
+.tabs {
+  position: absolute;
+  left: 214px;
+  top: 13px;
+}
+.filterWrap {
+  position: absolute;
+  right: 430px;
+  top: 13px;
+}
+.filterBtn {
+  width: 190px;
+  gap: 8px;
+}
+.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.searchWrap {
+  position: absolute;
+  right: 20px;
+  top: 13px;
+}
+
+.stage {
+  position: absolute;
+  top: 68px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+.preview {
+  position: absolute;
+  left: -220px;
+  top: -20px;
+  width: 960px;
+  height: 960px;
+}
+.frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 942px;
+  transform: translate(-50%, -50%);
+}
+.hints {
+  position: absolute;
+  left: 20px;
+  top: 884px;
+  z-index: 3;
+  pointer-events: auto;
+}
+.card {
+  position: absolute;
+  left: 538px;
+  top: 20px;
+  width: 1364px;
+  height: 902px;
+  display: flex;
+  flex-direction: column;
+  padding-right: 380px;
+  border-radius: var(--r-xl);
+  background: var(--scrim-40);
+  pointer-events: auto;
+}
+.contentHead {
+  position: relative;
+  flex: none;
+  height: 70px;
+  margin-right: -380px;
+  border-bottom: 1px solid var(--divider-pink);
+}
+.sectionTabs {
+  position: absolute;
+  left: 30px;
+  top: 0;
+}
+.shop {
+  position: absolute;
+  right: 16px;
+  top: 15px;
+  width: 136px;
+  gap: 8px;
+}
+
+.catalog {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.catalog > * {
+  pointer-events: auto;
+}
+
+/* Category column — a two-column grid of 138×80 slots, with a divider row after the face group
+   (three rows) and the body group (two rows). */
+.catColumn {
+  position: absolute;
+  left: 29px;
+  top: 93px;
+  width: 286px;
+  height: 774px;
+  display: grid;
+  grid-template-columns: 138px 138px;
+  grid-template-rows: repeat(3, 80px) 8px repeat(2, 80px) 6px repeat(4, 80px);
+  column-gap: 10px;
+  row-gap: 4px;
+}
+.catColumn::before,
+.catColumn::after {
+  content: '';
+  grid-column: 1 / -1;
+  align-self: center;
+  width: 216px;
+  height: 1px;
+  margin-left: 64px;
+  background: var(--divider-pink);
+}
+.catColumn::before {
+  grid-row: 4;
+}
+.catColumn::after {
+  grid-row: 7;
+}
+.slot {
+  position: relative;
+  width: 138px;
+  height: 80px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.slotSelected,
+.slotHover {
+  position: absolute;
+  pointer-events: none;
+  transform: scale(0);
+  transition: transform var(--dur-pop) var(--ease-spring);
+}
+.slotSelected {
+  inset: 0;
+  border-radius: var(--r-lg);
+  background: var(--accent);
+}
+.slotActive .slotSelected {
+  transform: scale(1);
+}
+.slotIcon {
+  position: absolute;
+  left: 12px;
+  top: 20.5px;
+  display: flex;
+}
+.slotThumb {
+  position: absolute;
+  left: 59px;
+  top: 1px;
+  width: 78px;
+  height: 78px;
+  border-radius: var(--r-slot);
+  background-size: cover;
+  background-position: center;
+  box-shadow: inset 0 0 0 2.6px var(--text);
+}
+.slotEmpty {
+  background: linear-gradient(transparent 50%, var(--slot-edge-20) 50%), var(--slot-empty);
+  box-shadow: inset 0 0 0 2.6px var(--slot-edge);
+}
+.slotImg {
+  position: absolute;
+  inset: 5px;
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
+}
+.slotHover {
+  inset: 0;
+  border-radius: var(--r-slot);
+  box-shadow: inset 0 0 0 2.6px var(--accent);
+}
+.slot:hover .slotHover {
+  transform: scale(1);
+}
+.tooltip {
+  position: absolute;
+  left: 98px;
+  bottom: calc(100% - 4px);
+  z-index: 3;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-hover) linear;
+}
+.tooltip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  border: 6px solid transparent;
+  border-top-color: var(--panel);
+  transform: translateX(-50%);
+}
+.slot:hover .tooltip {
+  opacity: 1;
+}
+.tooltipTitle {
+  display: block;
+}
+.tooltipNote {
+  display: block;
+  font-weight: var(--fw-regular);
+  text-transform: none;
+}
+.tooltipNote b {
+  font-weight: var(--fw-bold);
+}
+.hideToggle {
+  position: absolute;
+  left: 111px;
+  top: 53px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-button);
+  background: var(--hide-overlay);
+}
+.hideToggleInner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  background: var(--surface-light);
+  color: var(--red);
+}
+.hideToggleInner[data-forced='true'] {
+  color: var(--shown);
+}
+.hideToggle:hover .hideToggleInner {
+  background: var(--pearl);
+}
+.slotUnequip {
+  position: absolute;
+  left: 106.5px;
+  top: 10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
+  background: var(--panel);
+  color: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  transition: background-color var(--dur-tap) linear;
+}
+.slot:hover .slotUnequip {
+  opacity: 1;
+  pointer-events: auto;
+}
+.slotUnequip:hover {
+  background: var(--unequip-hover);
+}
+.slotUnequip:active {
+  background: var(--black);
+}
+
+/* Grid area. */
+.gridArea {
+  position: absolute;
+  left: 356px;
+  top: 98px;
+  width: 616px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+}
+.breadcrumb {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  height: 42px;
+  margin-bottom: 38px;
+}
+.crumbArrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  height: 42px;
+  color: var(--text);
+}
+.crumbArrow > span {
+  transform: scaleX(-1);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 120px);
+  grid-auto-rows: 120px;
+  gap: 34px 30px;
+  align-content: start;
+  width: 570px;
+  height: 582px;
+  margin-left: 4px;
+}
+.pager {
+  position: absolute;
+  left: 4px;
+  top: 714px;
+  width: 570px;
+  justify-content: center;
+}
+
+/* Emotes tab: the ten wheel slots (left) and the emote grid with its slot chip. */
+.slotList {
+  position: absolute;
+  left: 28px;
+  top: 50px;
+  display: flex;
+  flex-direction: column;
+  gap: 5.4px;
+  width: 286px;
+  height: 809px;
+}
+.emoteRow {
+  position: relative;
+  flex: none;
+  width: 286px;
+  height: 76px;
+}
+.emoteDivider {
+  position: absolute;
+  left: 60px;
+  top: -2.7px;
+  width: 226px;
+  height: 1px;
+  background: var(--divider-pink);
+}
+.emoteSlot {
+  position: relative;
+  width: 286px;
+  height: 76px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.emoteSlotSelected,
+.emoteSlotHover {
+  position: absolute;
+  pointer-events: none;
+  transform: scale(0);
+  transition: transform var(--dur-pop) var(--ease-spring);
+}
+.emoteSlotSelected {
+  inset: 0;
+  border-radius: var(--r-slot);
+  background: var(--accent);
+}
+.emoteSlotActive .emoteSlotSelected {
+  transform: scale(1);
+}
+.emoteSlotNum {
+  position: absolute;
+  left: 6px;
+  top: 13.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 49px;
+  height: 49px;
+  background-size: contain;
+  font-size: var(--type-22);
+  font-weight: var(--fw-semibold);
+}
+.emoteSlotName {
+  position: absolute;
+  left: 65px;
+  top: 27px;
+  width: 136px;
+  overflow: hidden;
+  font-size: var(--type-18);
+  font-weight: var(--fw-semibold);
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.emoteSlotThumb {
+  position: absolute;
+  left: 211.4px;
+  top: 3px;
+  width: 70px;
+  height: 70px;
+  border-radius: var(--r-lg);
+  background-color: var(--slot-empty);
+  background-size: cover;
+  box-shadow: inset 0 0 0 2.6px var(--text);
+}
+.emoteSlotThumb img {
+  position: absolute;
+  inset: 5px;
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+.emoteSlotHover {
+  inset: -4px;
+  border-radius: var(--r-slot);
+  box-shadow: inset 0 0 0 2.6px var(--accent);
+}
+.emoteSlot:hover .emoteSlotHover {
+  transform: scale(1);
+}
+.emoteUnequip {
+  position: absolute;
+  left: 253.4px;
+  top: 11.2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-xs);
+  background: var(--panel);
+  color: var(--text);
+  opacity: 0;
+  cursor: pointer;
+  transition: background-color var(--dur-tap) linear;
+}
+.emoteRow:hover .emoteUnequip {
+  opacity: 1;
+}
+.emoteUnequip:hover {
+  background: var(--unequip-hover);
+}
+.gridAreaEmotes {
+  left: 357px;
+  top: 53px;
+}
+.gridAreaEmotes .breadcrumb {
+  margin-bottom: 9px;
+}
+.gridAreaEmotes .grid {
+  margin-left: -1.5px;
+}
+.gridAreaEmotes .pager {
+  top: 753px;
+}
+.chipDeck {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background-size: contain;
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
+}
+
+/* Detail panel (right), inside the card: a rarity-coloured 9-slice background. */
+.detail {
+  position: absolute;
+  left: 984px;
+  top: 86px;
+  width: 364px;
+  height: 800px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+}
+.cardEmotes .detail {
+  top: 16px;
+  height: 870px;
+}
+.detail::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-style: solid;
+  border-width: 391px 0 200px;
+  border-image: var(--panel-art) 391 0 200 fill / 391px 0 200px stretch;
+}
+.detailEmpty {
+  align-items: center;
+  justify-content: center;
+}
+.detailEmptyText {
+  color: var(--text);
+  font-size: var(--type-15);
+  font-weight: var(--fw-semibold);
+}
+.detailImage {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 290px;
+  margin-top: 5px;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  overflow: hidden;
+}
+.detailImage img {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+}
+.detailInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 0 22px;
+}
+.detailName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: var(--type-24);
+  font-weight: var(--fw-semibold);
+}
+.detailRarity {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--rm);
+  color: var(--text);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+}
+.detailDescLabel {
+  margin-top: 12px;
+  color: var(--text);
+  font-size: var(--type-15);
+  font-weight: var(--fw-semibold);
+}
+.detailDesc {
+  color: var(--text);
+  font-size: var(--type-16);
+  line-height: 1.3;
+}
+.detailHidesLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16.66px;
+  color: var(--text);
+  font-size: var(--type-15);
+  font-weight: var(--fw-semibold);
+}
+.detailHides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
+.hideChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 3px 8px 0 5px;
+  border-radius: var(--r-sm);
+  background: var(--scrim-20);
+  color: var(--text);
+  font-size: var(--type-12);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+}
+
+/* Saved Outfits: two rows of five 237×360 slots across the card (the second row is the NAME
+   banner for accounts without a NAME). */
+.outfits {
+  position: absolute;
+  left: 28px;
+  top: 109px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  width: 1308px;
+}
+.outfitRow {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  height: 360px;
+}
+.outfitSlot {
+  position: relative;
+  flex: none;
+  width: 237px;
+  height: 360px;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  background-size: 100% 100%;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform var(--dur-tap) linear;
+}
+.outfitSilhouette {
+  position: absolute;
+  left: 38.5px;
+  top: 40px;
+  width: 160px;
+  height: 280px;
+  background: var(--scrim-40);
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+}
+.outfitEmptyLabel,
+.outfitSave {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+}
+.outfitEmptyLabel {
+  color: var(--ink-50);
+  font-size: var(--type-16);
+  line-height: 19px;
+}
+.outfitSave {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--text);
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
+}
+.outfitFirstEmpty,
+.outfitEmpty:hover {
+  border-radius: 30px;
+  outline: 3px solid var(--outfit-edge);
+  outline-offset: -3px;
+}
+.outfitFirstEmpty .outfitSilhouette,
+.outfitFirstEmpty .outfitEmptyLabel,
+.outfitEmpty:hover .outfitSilhouette,
+.outfitEmpty:hover .outfitEmptyLabel {
+  display: none;
+}
+.outfitFirstEmpty .outfitSave,
+.outfitEmpty:hover .outfitSave {
+  display: flex;
+}
+.outfitFull:hover {
+  z-index: 2;
+  transform: scale(1.02);
+}
+.outfitHover {
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  width: 261px;
+  height: 436px;
+  border-style: solid;
+  border-width: 34.7px 25.9px 32.4px 25.3px;
+  border-image: url('../../assets/backpack/hover-bg.webp') 59 44 55 43 fill / 34.7px 25.9px 32.4px 25.3px stretch;
+  transform: scale(0);
+  transition: transform var(--dur-tap) linear;
+  pointer-events: none;
+}
+.outfitFull:hover .outfitHover {
+  transform: scale(1);
+  pointer-events: auto;
+}
+.outfitThumbs {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: none;
+  border-radius: var(--r-slot);
+  background-size: 100% 100%;
+  cursor: pointer;
+}
+/* The square picture overflows the card by 80px on every side, so the avatar fills its height. */
+.outfitPicture {
+  position: absolute;
+  left: -80px;
+  top: -80px;
+  width: 397px;
+  height: 520px;
+  object-fit: contain;
+}
+.outfitNoPicture {
+  position: absolute;
+  left: 38.5px;
+  top: 40px;
+  width: 160px;
+  height: 280px;
+  background: var(--scrim-40);
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+}
+.outfitRing {
+  position: absolute;
+  left: -7px;
+  top: -7px;
+  width: 251px;
+  height: 374px;
+  background: var(--accent);
+  -webkit-mask-box-image: url('../../assets/backpack/equipped-outline.webp') 43 / 21.5px stretch;
+  mask-border: url('../../assets/backpack/equipped-outline.webp') 43 / 21.5px stretch;
+  display: none;
+  pointer-events: none;
+}
+.outfitEquipped .outfitRing {
+  display: block;
+}
+.outfitFull:hover .outfitRing {
+  display: none;
+}
+.outfitDelete {
+  position: absolute;
+  left: 191px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 9.2px;
+  background: var(--scrim-60);
+  color: var(--text);
+  cursor: pointer;
+}
+.outfitDelete:hover {
+  background: var(--fill-faint);
+}
+.outfitEquipBtn {
+  position: absolute;
+  left: 0;
+  top: 365.5px;
+  width: 237px;
+  height: 46px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--brand);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity var(--dur-tap) linear;
+}
+.outfitFull:hover .outfitEquipBtn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.nameBanner {
+  position: relative;
+  display: flex;
+  height: 360px;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(ellipse 40% 60% at 85% 50%, var(--glow-pink) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 70% at 10% 0%, var(--glow-pink-faint) 0%, transparent 70%),
+    var(--outfit-banner);
+  overflow: hidden;
+}
+.nameBannerText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  width: 560px;
+  padding: 50px 0 0 60px;
+}
+.nameBannerTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--type-30);
+  font-weight: var(--fw-semibold);
+  line-height: 36px;
+}
+.nameBannerBody {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--type-16);
+  line-height: 20px;
+}
+.nameBannerCta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 300px;
+  height: 47px;
+  margin-top: 16px;
+  border-radius: 10.7px;
+  background: var(--cta-flare);
+  color: var(--text);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+  transition: transform var(--dur-hover) var(--ease-inout);
+}
+.nameBannerCta:hover {
+  transform: scale(1.05);
+}
+.nameBannerArt {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 491px;
+  height: 360px;
+  object-fit: contain;
+}
+
+.empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-45);
+}
+
+/* ---- Filter & Sort menu: 55px below the button top, 50px left of it ---- */
+.filterMenu {
+  position: absolute;
+  left: -50px;
+  top: 55px;
+  z-index: 5;
+}
+
+/* Empty results: centred over the grid and detail area. */
+.emptyState {
+  position: absolute;
+  left: 0;
+  top: 265px;
+  width: 1008px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.emptyText {
+  width: 644px;
+  margin: 30px 0 0;
+  color: var(--text);
+  font-size: var(--type-18);
+  font-weight: var(--fw-semibold);
+  line-height: 21px;
+  text-align: center;
+}
+.emptyLink {
+  color: var(--brand);
+  text-decoration: none;
+}
+.emptyLink:hover {
+  text-decoration: underline;
+}
+
+/* Loading: one skeleton tile per slot on the page, with a sweeping shimmer. */
+.skeleton {
+  position: relative;
+  display: block;
+  width: 126px;
+  height: 126px;
+  margin: 6px 0 0 -3px;
+  border-radius: var(--r-md);
+  background: var(--skeleton);
+  overflow: hidden;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 126px;
+  background: url('../../assets/backpack/gradient-loading.webp') center / 100% 100% no-repeat;
+  animation: shimmer var(--dur-shimmer) linear infinite;
+}
+@keyframes shimmer {
+  from {
+    transform: translateX(-126px);
+  }
+  to {
+    transform: translateX(126px);
+  }
+}
+
+/* Opening: the header slides down while the content fades in. */
+.headIn {
+  animation: headIn var(--dur-panel) var(--ease-inout);
+}
+@keyframes headIn {
+  from {
+    transform: translateY(-64px);
+  }
+  to {
+    transform: none;
+  }
+}
+.fadeIn {
+  animation: fadeIn var(--dur-panel) var(--ease-inout);
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Categories <-> Saved Outfits: the incoming section slides in by the card width with an
+   overshoot while it fades in. */
+.slideFromLeft,
+.slideFromRight {
+  animation:
+    slideIn var(--dur-slide) var(--ease-spring),
+    fadeIn 280ms var(--ease-outquad);
+}
+.slideFromLeft {
+  --slide-from: -1364px;
+}
+.slideFromRight {
+  --slide-from: 1364px;
+}
+@keyframes slideIn {
+  from {
+    translate: var(--slide-from) 0;
+  }
+  to {
+    translate: 0 0;
+  }
+}

@@ -10,7 +10,24 @@
 #endif
 
 #import boimp::shared::unpack_pbrinput;
-#import boimp::bindings::sample_tile_material;
+#import boimp::bindings::{sample_tile_material, UVSample};
+
+#ifdef ENVIRONMENT_MAP
+#import bevy_pbr::{ambient, clustered_forward::ClusterableObjectIndexRanges, environment_map, lighting, mesh_view_bindings::lights}
+#import "embedded://shaders/sky_envmap_lookup.wgsl"::{sky_envmap_input, sky_envmap_level}
+
+// the sky envmap, levelled towards the flat ambient light, is the only ambient light
+// (see sky_envmap_lookup.wgsl)
+override fn environment_map::compute_radiances(input: lighting::LayerLightingInput, clusterable_object_index_ranges: ptr<function, ClusterableObjectIndexRanges>, world_position: vec3<f32>, found_diffuse_indirect: bool) -> environment_map::EnvironmentMapRadiances {
+    let upper = sky_envmap_input(input);
+    let radiances = environment_map::compute_radiances(upper, clusterable_object_index_ranges, world_position, found_diffuse_indirect);
+    return sky_envmap_level(radiances, input, upper, lights.ambient_color);
+}
+
+override fn ambient::ambient_light(world_position: vec4<f32>, world_normal: vec3<f32>, V: vec3<f32>, NdotV: f32, diffuse_color: vec3<f32>, specular_color: vec3<f32>, perceptual_roughness: f32, occlusion: vec3<f32>) -> vec3<f32> {
+    return vec3(0.0);
+}
+#endif
 
 @group(2) @binding(100)
 var<uniform> offset: f32;
@@ -45,7 +62,12 @@ fn fragment(in: VertexOut) -> FragmentOutput {
         in.inverse_rotation_2c,
     );
 
-    var props = sample_tile_material(vec4<f32>(clamp(in.uv, vec2(0.0001), vec2(17.0/18.0 - 0.0001)), vec2<f32>(0.0)), vec2(0u,0u), vec2(offset, offset));
+    // Floor is a flat plane — no parallax, so initial_depth=0 and dduddv=0.
+    var sample: UVSample;
+    sample.initial_uv = clamp(in.uv, vec2(0.0001), vec2(71.0/72.0 - 0.0001));
+    sample.initial_depth = 0.0;
+    sample.dduddv = vec2<f32>(0.0);
+    var props = sample_tile_material(sample, vec2(0u,0u), vec2(offset, offset));
 
     if props.rgba.a == 0.0 {
         // hacky - we are using opaque to ensure imposters render above the floor

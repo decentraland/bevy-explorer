@@ -9,14 +9,22 @@ edition = "2021"
 social = ["dep:dcl-rpc"]
 
 [dependencies]
-bevy = { workspace = true }
+bevy_color = { workspace = true }
+bevy_ecs = { workspace = true }
+bevy_math = { workspace = true }
+bevy_transform = { workspace = true }
 prost = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 dcl-rpc = { workspace = true, optional = true }
 async-trait = { workspace = true }
+ts-rs = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.11.8"
-dcl-rpc = { workspace = true, optional = true }
+# Host-only: build.rs reflects over the proto descriptor to generate the component
+# schema JSON (with the hand-authored semantic overlay). NOT a runtime/wasm dependency.
+prost-reflect = { workspace = true }
+serde_json = { workspace = true }
+dcl-rpc = { workspace = true, optional = true, features = ["codegen"] }

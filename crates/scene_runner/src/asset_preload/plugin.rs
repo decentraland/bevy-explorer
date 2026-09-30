@@ -2,12 +2,17 @@ use std::path::PathBuf;
 
 use bevy::{
     asset::{
-        io::AssetReaderError, AssetLoadError, LoadedUntypedAsset, RecursiveDependencyLoadState,
+        io::AssetReaderError, AssetLoadError, RecursiveDependencyLoadState,
+        RenderAssetTransferPriority,
     },
     ecs::relationship::Relationship,
+    gltf::{Gltf, GltfLoaderSettings},
     prelude::*,
 };
-use common::structs::MonotonicTimestamp;
+use common::{
+    debug_panic,
+    structs::{MonotonicTimestamp, NoRenderApp},
+};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
@@ -18,8 +23,10 @@ use dcl_component::{
 use ipfs::ipfs_path::{IpfsPath, IpfsType};
 
 use crate::{
-    asset_preload::AssetLoad, renderer_context::RendererSceneContext,
-    update_world::AddCrdtInterfaceExt, ContainerEntity,
+    asset_preload::AssetLoad,
+    renderer_context::RendererSceneContext,
+    update_world::{gltf_container::scene_gltf_loader_settings, AddCrdtInterfaceExt},
+    ContainerEntity,
 };
 
 pub struct AssetPreloadPlugin;
@@ -51,7 +58,7 @@ struct Preloader(Vec<Entity>);
 #[derive(Component)]
 struct PreloadedAsset {
     file_path: String,
-    handle: Handle<LoadedUntypedAsset>,
+    handle: UntypedHandle,
 }
 
 #[derive(Component)]
@@ -64,26 +71,15 @@ fn asset_load_on_insert(
     mut renderer_scene_contexts: Query<&mut RendererSceneContext>,
     asset_server: Res<AssetServer>,
     timestamp: Res<MonotonicTimestamp<PbAssetLoadLoadingState>>,
+    no_render_app: Option<Res<NoRenderApp>>,
 ) {
     let entity = trigger.target();
 
     let Ok((asset_load, maybe_container_entity)) = asset_loads.get(entity) else {
-        #[cfg(debug_assertions)]
-        unreachable!("AssetLoad must be available to its observers.");
-        #[cfg(not(debug_assertions))]
-        {
-            error!("AssetLoad must be available to its observers.");
-            return;
-        }
+        debug_panic!("AssetLoad must be available to its observers.");
     };
     let Some(container_entity) = maybe_container_entity else {
-        #[cfg(debug_assertions)]
-        panic!("AssetLoad entity did not have ContainerEntity.");
-        #[cfg(not(debug_assertions))]
-        {
-            error!("AssetLoad entity did not have ContainerEntity.");
-            return;
-        }
+        debug_panic!("AssetLoad entity did not have ContainerEntity.");
     };
     debug!(
         "Entity {} on {} requested assets {:?}.",
@@ -92,13 +88,7 @@ fn asset_load_on_insert(
 
     let Ok(mut renderer_scene_context) = renderer_scene_contexts.get_mut(container_entity.root)
     else {
-        #[cfg(debug_assertions)]
-        panic!("Root of AssetLoad does not contain RendererSceneContext.");
-        #[cfg(not(debug_assertions))]
-        {
-            error!("Root of AssetLoad does not contain RendererSceneContext.");
-            return;
-        }
+        debug_panic!("Root of AssetLoad does not contain RendererSceneContext.");
     };
 
     for file_path in &asset_load.assets {
@@ -106,8 +96,26 @@ fn asset_load_on_insert(
             renderer_scene_context.hash.to_owned(),
             file_path.to_owned(),
         ));
-        let handle: Handle<LoadedUntypedAsset> =
-            asset_server.load_untyped(PathBuf::from(&ipfs_path));
+        // gltfs must load with the same settings as gltf containers: assets are keyed by
+        // path and the first load's settings win, so preloading with default settings
+        // would strip `include_source` (and the render asset usages) from any
+        // GltfContainer sharing the file
+        let lower_file_path = file_path.to_lowercase();
+        let handle = if lower_file_path.ends_with(".glb") || lower_file_path.ends_with(".gltf") {
+            asset_server
+                .load_with_settings::<Gltf, GltfLoaderSettings>(
+                    PathBuf::from(&ipfs_path),
+                    scene_gltf_loader_settings(
+                        RenderAssetTransferPriority::Priority(0),
+                        no_render_app.is_some(),
+                    ),
+                )
+                .untyped()
+        } else {
+            asset_server
+                .load_untyped(PathBuf::from(&ipfs_path))
+                .untyped()
+        };
 
         commands.spawn((
             PreloadedAsset {
@@ -140,22 +148,10 @@ fn asset_load_on_replace(
     let entity = trigger.target();
 
     let Ok((asset_load, maybe_container_entity)) = asset_loads.get(entity) else {
-        #[cfg(debug_assertions)]
-        unreachable!("AssetLoad must be available to its observers.");
-        #[cfg(not(debug_assertions))]
-        {
-            error!("AssetLoad must be available to its observers.");
-            return;
-        }
+        debug_panic!("AssetLoad must be available to its observers.");
     };
     let Some(container_entity) = maybe_container_entity else {
-        #[cfg(debug_assertions)]
-        panic!("AssetLoad entity did not have ContainerEntity.");
-        #[cfg(not(debug_assertions))]
-        {
-            error!("AssetLoad entity did not have ContainerEntity.");
-            return;
-        }
+        debug_panic!("AssetLoad entity did not have ContainerEntity.");
     };
     debug!(
         "Entity {} on {} no longer requires assets {:?}.",
@@ -184,23 +180,11 @@ fn verify_preload_state(
 ) {
     for (entity, preloaded_asset, preloaded_asset_of) in preloaded_assets.into_inner() {
         let Ok(container_entity) = asset_loads.get(preloaded_asset_of.get()) else {
-            #[cfg(debug_assertions)]
-            panic!("Could not get the AssetLoad of a PreloadedAsset.");
-            #[cfg(not(debug_assertions))]
-            {
-                error!("Could not get the AssetLoad of a PreloadedAsset.");
-                continue;
-            }
+            debug_panic!("Could not get the AssetLoad of a PreloadedAsset.");
         };
         let Ok(mut renderer_scene_context) = renderer_scene_contexts.get_mut(container_entity.root)
         else {
-            #[cfg(debug_assertions)]
-            panic!("Root of AssetLoad does not contain RendererSceneContext.");
-            #[cfg(not(debug_assertions))]
-            {
-                error!("Root of AssetLoad does not contain RendererSceneContext.");
-                continue;
-            }
+            debug_panic!("Root of AssetLoad does not contain RendererSceneContext.");
         };
 
         match asset_server.get_recursive_dependency_load_state(preloaded_asset.handle.id()) {
@@ -250,13 +234,7 @@ fn verify_preload_state(
                 commands.entity(entity).despawn();
             }
             None => {
-                #[cfg(debug_assertions)]
-                panic!("Preload asset handle not found in asset server.");
-                #[cfg(not(debug_assertions))]
-                {
-                    error!("Preload asset handle not found in asset server.");
-                    continue;
-                }
+                debug_panic!("Preload asset handle not found in asset server.");
             }
         }
     }

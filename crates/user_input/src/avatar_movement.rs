@@ -1,11 +1,18 @@
-use core::f32;
 use std::f32::consts::TAU;
 
-use bevy::{diagnostic::FrameCount, math::DVec3, platform::collections::HashMap, prelude::*};
+use bevy::{
+    diagnostic::FrameCount,
+    math::DVec3,
+    platform::collections::{HashMap, HashSet},
+    prelude::*,
+};
 use common::{
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
-    sets::SceneSets,
-    structs::{AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes, PrimaryUser},
+    sets::{PostUpdateSets, SceneSets},
+    structs::{
+        avatar_tilt_quat, AppConfig, AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes,
+        PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
+    },
 };
 use comms::global_crdt::GlobalCrdtState;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -13,10 +20,16 @@ use dcl_component::{
     proto_components::{
         common::Vector3,
         sdk::components::{
-            ColliderLayer, PbAvatarLocomotionSettings, PbAvatarMovement, PbAvatarMovementInfo,
+            AvatarAnimationState, ColliderLayer, MovementAnimation, PbAvatarLocomotionSettings,
+            PbAvatarMovement, PbAvatarMovementInfo, PbPhysicsCombinedForce,
+            PbPhysicsCombinedImpulse,
         },
     },
     SceneComponentId, SceneEntityId,
+};
+use ipfs::{
+    ipfs_path::{IpfsPath, IpfsType},
+    IpfsAssetServer,
 };
 
 use scene_runner::{
@@ -26,10 +39,9 @@ use scene_runner::{
         mesh_collider::{
             ColliderId, PreviousColliderTransform, SceneColliderData, GROUND_COLLISION_MASK,
         },
-        transform_and_parent::PostUpdateSets,
         AddCrdtInterfaceExt,
     },
-    ContainingScene, SceneEntity,
+    ContainingScene, SceneEntity, SceneUpdates,
 };
 
 pub struct AvatarMovementPlugin;
@@ -44,8 +56,18 @@ impl Plugin for AvatarMovementPlugin {
             SceneComponentId::AVATAR_LOCOMOTION_SETTINGS,
             ComponentPosition::EntityOnly,
         );
+        app.add_crdt_lww_component::<PbPhysicsCombinedImpulse, PhysicsCombinedImpulse>(
+            SceneComponentId::PHYSICS_COMBINED_IMPULSE,
+            ComponentPosition::EntityOnly,
+        );
+        app.add_crdt_lww_component::<PbPhysicsCombinedForce, PhysicsCombinedForce>(
+            SceneComponentId::PHYSICS_COMBINED_FORCE,
+            ComponentPosition::EntityOnly,
+        );
 
         app.init_resource::<AvatarMovementInfo>();
+        app.init_resource::<CentralCollisions>();
+        app.init_resource::<SceneDrivenAnimationFeedback>();
 
         app.add_systems(Update, broadcast_movement_info.in_set(SceneSets::Init));
 
@@ -55,6 +77,12 @@ impl Plugin for AvatarMovementPlugin {
                 ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
                 ActivePlayerComponent::<AvatarLocomotionSettings>::pick_by_priority,
                 ActivePlayerComponent::<InputModifier>::pick_by_priority,
+                update_priority_scene.after(
+                    ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
+                ),
+                update_scene_driven_animation.after(
+                    ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
+                ),
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -62,8 +90,10 @@ impl Plugin for AvatarMovementPlugin {
         app.add_systems(
             PostUpdate,
             (
+                apply_rotation,
                 apply_ground_collider_movement,
                 resolve_collisions,
+                apply_impulses,
                 apply_movement,
                 record_ground_collider,
             )
@@ -73,13 +103,123 @@ impl Plugin for AvatarMovementPlugin {
     }
 }
 
-#[derive(Component, Clone, Copy, Debug)]
+fn update_priority_scene(
+    player: Query<&ActivePlayerComponent<AvatarMovement>, With<PrimaryUser>>,
+    mut updates: ResMut<SceneUpdates>,
+) {
+    let scene = player
+        .single()
+        .ok()
+        .map(|active| active.scene())
+        .filter(|&e| e != Entity::PLACEHOLDER);
+
+    match scene {
+        Some(scene) => {
+            updates.priority_scenes.insert("movement_controller", scene);
+        }
+        None => {
+            updates.priority_scenes.remove("movement_controller");
+        }
+    }
+}
+
+// Resolves the active scene's `MovementAnimation.src` against the scene content map
+// (path -> content hash) and writes a ready-to-play request onto the primary player's
+// `SceneDrivenAnim` component for the avatar animation system to consume.
+fn update_scene_driven_animation(
+    mut commands: Commands,
+    player: Query<(Entity, &ActivePlayerComponent<AvatarMovement>), With<PrimaryUser>>,
+    scenes: Query<&RendererSceneContext>,
+    ipfas: IpfsAssetServer,
+    mut logged_failures: Local<HashSet<String>>,
+) {
+    let Ok((primary, active)) = player.single() else {
+        return;
+    };
+    let request = (|| {
+        let anim = active.component.animation.as_ref()?;
+        let scene_ent = active.scene();
+        if scene_ent == Entity::PLACEHOLDER {
+            return None;
+        }
+        let ctx = scenes.get(scene_ent).ok()?;
+        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+            ctx.hash.clone(),
+            anim.src.to_lowercase(),
+        ));
+        let ipfs_ctx = ipfas.ipfs().context.blocking_read();
+        let Some(content_hash) = ipfs_path.hash(&ipfs_ctx) else {
+            if logged_failures.insert(anim.src.clone()) {
+                warn!(
+                    "scene-driven movement animation path not found in scene content map: {}",
+                    anim.src
+                );
+            }
+            return None;
+        };
+
+        // Resolve each scene-relative audio path to a content hash against the same
+        // scene content map. Drop (and warn once per src) any path that doesn't resolve.
+        let sounds = anim
+            .sounds
+            .iter()
+            .filter_map(|sound_src| {
+                let sound_path = IpfsPath::new(IpfsType::new_content_file(
+                    ctx.hash.clone(),
+                    sound_src.to_lowercase(),
+                ));
+                match sound_path.hash(&ipfs_ctx) {
+                    Some(h) => Some(h),
+                    None => {
+                        if logged_failures.insert(sound_src.clone()) {
+                            warn!(
+                                "scene-driven movement sound path not found in scene content map: {sound_src}"
+                            );
+                        }
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        // The `-false` suffix is a fixed part of the scene-emote URN format here;
+        // loop behavior is carried separately in SceneDrivenAnimationRequest.r#loop.
+        let urn = format!(
+            "urn:decentraland:off-chain:scene-emote:{}-{}-false",
+            ctx.hash, content_hash
+        );
+        Some(SceneDrivenAnimationRequest {
+            src: anim.src.clone(),
+            urn,
+            scene_hash: ctx.hash.clone(),
+            content_hash,
+            r#loop: anim.r#loop,
+            speed: anim.speed,
+            idle: anim.idle,
+            transition_seconds: anim.transition_seconds.unwrap_or(0.2),
+            seek: anim.playback_time,
+            sounds,
+        })
+    })();
+
+    commands
+        .entity(primary)
+        .try_insert(SceneDrivenAnim { active: request });
+}
+
+#[derive(Component, Clone, Debug)]
 pub struct AvatarMovement {
     pub velocity: Vec3,
     pub orientation: f32,
     pub ground_direction: Vec3,
     /// set for one frame when a walk_target ends: true = reached target, false = failed
     pub walk_success: Option<bool>,
+    /// scene-driven movement animation request; if absent, engine falls back to velocity-based selection
+    pub animation: Option<MovementAnimation>,
+    /// render-only lean (degrees) composed on top of `orientation`; does not affect physics
+    /// or the yaw broadcast to other clients. 0 = upright.
+    pub tilt_pitch: f32,
+    pub tilt_roll: f32,
 }
 
 impl Default for AvatarMovement {
@@ -89,16 +229,35 @@ impl Default for AvatarMovement {
             orientation: 0.0,
             ground_direction: Vec3::NEG_Y,
             walk_success: None,
+            animation: None,
+            tilt_pitch: 0.0,
+            tilt_roll: 0.0,
         }
     }
 }
 
-#[derive(Default, Component, Clone, Debug)]
-pub struct AvatarLocomotionSettings(pub Option<PbAvatarLocomotionSettings>);
+#[derive(Component, Clone, Debug)]
+pub struct AvatarLocomotionSettings(PbAvatarLocomotionSettings);
 
 impl From<PbAvatarLocomotionSettings> for AvatarLocomotionSettings {
     fn from(value: PbAvatarLocomotionSettings) -> Self {
-        Self(Some(value))
+        Self(value)
+    }
+}
+
+impl FromConfig for AvatarLocomotionSettings {
+    fn from_config(config: &AppConfig) -> Self {
+        Self(PbAvatarLocomotionSettings {
+            walk_speed: Some(config.player_settings.walk_speed),
+            jog_speed: Some(config.player_settings.jog_speed),
+            run_speed: Some(config.player_settings.run_speed),
+            jump_height: Some(config.player_settings.jump_height),
+            run_jump_height: Some(config.player_settings.run_jump_height),
+            hard_landing_cooldown: Some(0.0),
+            double_jump_height: None,
+            gliding_speed: None,
+            gliding_falling_speed: None,
+        })
     }
 }
 
@@ -114,6 +273,9 @@ impl From<PbAvatarMovement> for AvatarMovement {
                 .map(Vec3::normalize_or_zero)
                 .unwrap_or(Vec3::NEG_Y),
             walk_success: value.walk_success,
+            animation: value.animation,
+            tilt_pitch: value.tilt_pitch.unwrap_or_default(),
+            tilt_roll: value.tilt_roll.unwrap_or_default(),
         }
     }
 }
@@ -128,27 +290,67 @@ pub struct ActivePlayerComponent<C: Component> {
     scene_last_update: u32,
     scene_start_tick: u32,
     scene_is_portable: bool,
+    /// Engine dispatch time (`RendererSceneContext::last_sent`) of the scene tick
+    /// that produced `component`. Used to reject AvatarMovement that was initiated
+    /// before a `movePlayerTo`-imposed facing (and so read a stale transform).
+    initiated_at: f64,
     pub component: C,
 }
 
-impl<C: Component + Default> Default for ActivePlayerComponent<C> {
-    fn default() -> Self {
+impl<C: Component> ActivePlayerComponent<C> {
+    pub fn scene(&self) -> Entity {
+        self.scene
+    }
+}
+
+impl<C: Component + FromConfig> FromConfig for ActivePlayerComponent<C> {
+    fn from_config(config: &AppConfig) -> Self {
         Self {
             scene: Entity::PLACEHOLDER,
             entity: Entity::PLACEHOLDER,
             scene_last_update: 0,
             scene_start_tick: 0,
             scene_is_portable: true,
-            component: C::default(),
+            initiated_at: 0.0,
+            component: C::from_config(config),
         }
+    }
+}
+
+pub trait FromConfig {
+    fn from_config(config: &AppConfig) -> Self;
+}
+
+impl<T: Default> FromConfig for T {
+    fn from_config(_: &AppConfig) -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Component)]
+pub struct PhysicsCombinedForce(pub PbPhysicsCombinedForce);
+
+impl From<PbPhysicsCombinedForce> for PhysicsCombinedForce {
+    fn from(value: PbPhysicsCombinedForce) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Component)]
+pub struct PhysicsCombinedImpulse(pub PbPhysicsCombinedImpulse);
+
+impl From<PbPhysicsCombinedImpulse> for PhysicsCombinedImpulse {
+    fn from(value: PbPhysicsCombinedImpulse) -> Self {
+        Self(value)
     }
 }
 
 #[derive(Resource, Default)]
 pub struct AvatarMovementInfo(pub PbAvatarMovementInfo);
 
-impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
+impl<C: Component + Clone + FromConfig> ActivePlayerComponent<C> {
     // pick from available of any write-time, based on priority
+    #[allow(clippy::too_many_arguments)]
     fn pick_by_priority(
         mut commands: Commands,
         q: Query<(Entity, Ref<C>, &SceneEntity)>,
@@ -157,13 +359,14 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
         containing_scenes: ContainingScene,
         mut player: Query<&mut ActivePlayerComponent<C>, With<PrimaryUser>>,
         player_res: Res<PrimaryPlayerRes>,
+        config: Res<AppConfig>,
     ) {
         let containing_scenes = containing_scenes.get(player_res.0);
 
         let Ok(mut current_choice) = player.single_mut() else {
             commands
                 .entity(player_res.0)
-                .try_insert(ActivePlayerComponent::<C>::default());
+                .try_insert(ActivePlayerComponent::<C>::from_config(&config));
             return;
         };
 
@@ -174,7 +377,7 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
                 .any(|e| e == current_choice.entity);
 
         if !current_choice_valid {
-            *current_choice = Default::default();
+            *current_choice = FromConfig::from_config(&config);
         }
 
         // find best choice: parcel first, then portables by most-recently spawned
@@ -206,6 +409,7 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
                 scene_last_update: ctx.last_update_frame,
                 scene_start_tick: ctx.start_tick,
                 scene_is_portable: ctx.is_portable,
+                initiated_at: ctx.last_sent,
                 component: update.clone(),
             };
 
@@ -222,13 +426,14 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
         containing_scenes: ContainingScene,
         mut player: Query<&mut ActivePlayerComponent<C>, With<PrimaryUser>>,
         player_res: Res<PrimaryPlayerRes>,
+        config: Res<AppConfig>,
     ) {
         let containing_scenes = containing_scenes.get(player_res.0);
 
         let Ok(mut current_choice) = player.single_mut() else {
             commands
                 .entity(player_res.0)
-                .try_insert(ActivePlayerComponent::<C>::default());
+                .try_insert(ActivePlayerComponent::<C>::from_config(&config));
             return;
         };
 
@@ -239,7 +444,7 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
                 .is_ok_and(|ctx| ctx.last_update_frame == current_choice.scene_last_update);
 
         if !current_choice_valid {
-            *current_choice = Default::default();
+            *current_choice = FromConfig::from_config(&config);
         }
 
         // find best choice: parcel first, then portables by most-recently spawned
@@ -266,11 +471,80 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
                 scene_last_update: ctx.last_update_frame,
                 scene_start_tick: ctx.start_tick,
                 scene_is_portable: ctx.is_portable,
+                initiated_at: ctx.last_sent,
                 component: update.clone(),
             };
 
             debug!("{} chose {}", std::any::type_name::<C>(), ctx.title);
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn apply_impulses(
+    impulses: Query<(&PhysicsCombinedImpulse, &SceneEntity), Changed<PhysicsCombinedImpulse>>,
+    forces: Query<(Ref<PhysicsCombinedForce>, &SceneEntity)>,
+    player: Res<PrimaryPlayerRes>,
+    containing_scenes: ContainingScene,
+    mut info: ResMut<AvatarMovementInfo>,
+    time: Res<Time>,
+) {
+    let containing_scenes = containing_scenes.get(player.0);
+
+    for (impulse, entity) in impulses {
+        if !containing_scenes.contains(&entity.root) {
+            continue;
+        }
+
+        info.0.external_velocity = Some(
+            info.0.external_velocity.unwrap_or_default() + impulse.0.vector.unwrap_or_default(),
+        );
+    }
+
+    for (force, entity) in forces {
+        if !containing_scenes.contains(&entity.root) {
+            continue;
+        }
+
+        info.0.external_velocity = Some(
+            info.0.external_velocity.unwrap_or_default()
+                + force.0.vector.unwrap_or_default() * time.delta_secs(),
+        );
+    }
+}
+
+// Whether scene-driven movement should be suppressed this frame: either an explicit
+// suppression is held (e.g. movePlayerTo interpolation), OR the active AvatarMovement
+// was initiated before the most recent movePlayerTo-imposed facing — such a tick read a
+// pre-teleport transform, so applying its orientation would clobber the imposed facing.
+// Strict `>` (here as `<=` to suppress) treats a same-frame dispatch as stale, since
+// `last_sent` is captured before the restricted-action runs and shares the frame's timestamp.
+fn movement_suppressed(
+    movement_control: &EngineMovementControl,
+    movement: &ActivePlayerComponent<AvatarMovement>,
+) -> bool {
+    !movement_control.suppress_avatar_physics.is_empty()
+        || movement.initiated_at <= movement_control.accept_movement_after
+}
+
+// Movement pipeline step 1 (see the PBAvatarMovement proto comment): set the avatar
+// orientation from the scene-driven movement info. Kept separate from velocity
+// application (`apply_movement`) and ordered ahead of `apply_ground_collider_movement`
+// so a rotating ground platform's rotation delta composes onto this orientation rather
+// than being overwritten by it.
+pub fn apply_rotation(
+    mut player: Query<(&mut Transform, &ActivePlayerComponent<AvatarMovement>), With<PrimaryUser>>,
+    movement_control: Res<EngineMovementControl>,
+) {
+    let Ok((mut transform, movement)) = player.single_mut() else {
+        return;
+    };
+
+    if !movement_suppressed(&movement_control, movement) {
+        // Yaw is authoritative (broadcast to other clients, used by physics); tilt is a
+        // render-only lean composed on top. `to_euler(YXZ).0` still recovers the yaw.
+        transform.rotation = Quat::from_rotation_y(movement.component.orientation / 360.0 * TAU)
+            * avatar_tilt_quat(movement.component.tilt_pitch, movement.component.tilt_roll);
     }
 }
 
@@ -288,6 +562,7 @@ pub fn apply_movement(
     mut info: ResMut<AvatarMovementInfo>,
     mut jumping: Local<bool>,
     movement_control: Res<EngineMovementControl>,
+    central: Res<CentralCollisions>,
 ) {
     let Ok((mut transform, mut dynamic_state, movement)) = player.single_mut() else {
         return;
@@ -295,10 +570,9 @@ pub fn apply_movement(
 
     info.0.step_time = time_res.delta_secs();
 
-    let suppress = !movement_control.suppress_avatar_physics.is_empty();
-    if !suppress {
-        transform.rotation = Quat::from_rotation_y(movement.component.orientation / 360.0 * TAU);
-    }
+    // Orientation was already set this frame by `apply_rotation` (pipeline step 1);
+    // here we only apply velocity. The same suppression gate still governs velocity.
+    let suppress = movement_suppressed(&movement_control, movement);
 
     if suppress || movement.component.velocity == Vec3::ZERO {
         dynamic_state.velocity = Vec3::ZERO;
@@ -317,17 +591,7 @@ pub fn apply_movement(
         return;
     };
 
-    let disabled = scenes
-        .iter_mut()
-        .flat_map(|(scene, mut collider_data)| {
-            let results = collider_data.avatar_central_collisions(transform.translation.as_dvec3());
-            if results.is_empty() {
-                None
-            } else {
-                Some((scene, results))
-            }
-        })
-        .collect::<HashMap<_, _>>();
+    let disabled = &central.0;
 
     if !disabled.is_empty() {
         warn!("move disabling {} colliders", disabled.len());
@@ -337,6 +601,16 @@ pub fn apply_movement(
     let mut time = time_res.delta_secs_f64();
     let mut velocity = movement.component.velocity.as_dvec3();
     let mut steps = 0;
+
+    // deliberately penetrating (placed here by movePlayerTo): don't move deeper into
+    // whatever we're inside, but otherwise let the scene walk us out
+    if movement_control.deliberate_penetration {
+        let (eject_min, eject_max) = movement_control.penetration_bounds;
+        let floor = eject_min.cmpgt(DVec3::ZERO);
+        let cap = eject_max.cmplt(DVec3::ZERO);
+        velocity = DVec3::select(floor, velocity.max(DVec3::ZERO), velocity);
+        velocity = DVec3::select(cap, velocity.min(DVec3::ZERO), velocity);
+    }
 
     while steps < 60 && time > 1e-10 {
         steps += 1;
@@ -349,7 +623,7 @@ pub fn apply_movement(
                     velocity,
                     step_time,
                     ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-                    false,
+                    movement_control.deliberate_penetration,
                     false,
                     disabled
                         .get(&e)
@@ -387,7 +661,7 @@ pub fn apply_movement(
     dynamic_state.velocity = velocity;
     if movement.component.velocity.y > 10.0 {
         if !*jumping {
-            dynamic_state.jump_time = time_res.elapsed_secs();
+            dynamic_state.jump_time = time_res.elapsed_secs_f64();
             *jumping = true;
         }
     } else {
@@ -453,8 +727,8 @@ fn apply_ground_collider_movement(
     ground_transforms: Query<(&GlobalTransform, &PreviousColliderTransform)>,
     mut player: Query<(&mut Transform, &GroundCollider), With<PrimaryUser>>,
     frame: Res<FrameCount>,
-    mut info: ResMut<AvatarMovementInfo>,
-    time: Res<Time>,
+    // mut info: ResMut<AvatarMovementInfo>,
+    // time: Res<Time>,
     movement_control: Res<EngineMovementControl>,
 ) {
     if !movement_control.suppress_avatar_physics.is_empty() {
@@ -498,18 +772,7 @@ fn apply_ground_collider_movement(
         );
 
         if (new_translation - transform.translation).length() < 5.0 {
-            let add_external_velocity =
-                (new_translation - transform.translation) / time.delta_secs();
-            let existing_external_velocity = info
-                .0
-                .external_velocity
-                .as_ref()
-                .map(Vector3::world_vec_to_vec3)
-                .unwrap_or_default();
-            info.0.external_velocity = Some(Vector3::world_vec_from_vec3(
-                &(existing_external_velocity + add_external_velocity),
-            ));
-
+            // don't add ground collider movement to external_velocity, else we bounce/slide off everything
             transform.translation = new_translation;
         } else {
             debug!("skipped");
@@ -517,12 +780,27 @@ fn apply_ground_collider_movement(
     }
 }
 
+// below this required correction a deliberate penetration is considered resolved
+const DELIBERATE_PENETRATION_CLEAR: f64 = 1e-3;
+// consecutive resolved frames before the flag clears: a gltf reload (e.g. a scene
+// changing a chair's collision mask when the player sits) drops its colliders for a
+// frame before the replacements are registered
+const DELIBERATE_PENETRATION_CLEAR_FRAMES: u32 = 2;
+
+// (scene entity -> collider ids) intersecting the avatar's central segment, at the
+// post-depenetration position. Computed once in `resolve_collisions`; `apply_movement`
+// excludes them from the sweep since they can't be resolved by pushing out.
+#[derive(Resource, Default)]
+pub struct CentralCollisions(HashMap<Entity, HashSet<ColliderId>>);
+
 fn resolve_collisions(
-    mut player: Query<&mut Transform, With<PrimaryUser>>,
-    mut scenes: Query<&mut SceneColliderData>,
+    mut player: Query<(&mut Transform, &ActivePlayerComponent<AvatarMovement>), With<PrimaryUser>>,
+    mut scenes: Query<(Entity, &mut SceneColliderData)>,
     mut info: ResMut<AvatarMovementInfo>,
     time: Res<Time>,
-    movement_control: Res<EngineMovementControl>,
+    mut movement_control: ResMut<EngineMovementControl>,
+    mut central: ResMut<CentralCollisions>,
+    mut resolved_frames: Local<u32>,
 ) {
     if !movement_control.suppress_clipping.is_empty()
         || !movement_control.suppress_avatar_physics.is_empty()
@@ -530,7 +808,7 @@ fn resolve_collisions(
         return;
     }
 
-    let Ok(mut transform) = player.single_mut() else {
+    let Ok((mut transform, movement)) = player.single_mut() else {
         return;
     };
 
@@ -544,7 +822,7 @@ fn resolve_collisions(
     {
         prev = current_offset;
 
-        for mut collider_data in scenes.iter_mut() {
+        for (_, mut collider_data) in scenes.iter_mut() {
             // Note: collisions that intersect the avatar central segment are automatically excluded here
             let (scene_min, scene_max) =
                 collider_data.avatar_constraints(transform.translation.as_dvec3() + current_offset);
@@ -582,21 +860,62 @@ fn resolve_collisions(
         );
     }
 
-    let current_offset = current_offset.as_vec3();
+    let resolved = current_offset.length() < DELIBERATE_PENETRATION_CLEAR;
 
-    if current_offset != Vec3::ZERO {
-        let add_external_velocity = current_offset / time.delta_secs();
-        let existing_external_velocity = info
-            .0
-            .external_velocity
-            .as_ref()
-            .map(Vector3::world_vec_to_vec3)
-            .unwrap_or_default();
-        info.0.external_velocity = Some(Vector3::world_vec_from_vec3(
-            &(existing_external_velocity + add_external_velocity),
-        ));
+    if movement_control.deliberate_penetration {
+        movement_control.penetration_bounds = (constraint_min, constraint_max);
+        // vertical only, and only once the scene starts moving us: a floor sink
+        // self-heals on the first step, a chair seat pops us up when we stand
+        let v = movement.component.velocity;
+        let moving = v.x != 0.0 || v.z != 0.0 || v.y > 0.0;
+        if moving {
+            transform.translation.y += current_offset.y as f32;
+        }
+        debug!(
+            "deliberate penetration: offset {current_offset:.4} moving {moving} bounds ({constraint_min:.4}, {constraint_max:.4})"
+        );
+    } else {
+        let current_offset = current_offset.as_vec3();
 
-        transform.translation += current_offset;
+        if current_offset != Vec3::ZERO {
+            let add_external_velocity = current_offset / time.delta_secs();
+            let existing_external_velocity = info
+                .0
+                .external_velocity
+                .as_ref()
+                .map(Vector3::world_vec_to_vec3)
+                .unwrap_or_default();
+            info.0.external_velocity = Some(Vector3::world_vec_from_vec3(
+                &(existing_external_velocity + add_external_velocity),
+            ));
+            debug!("depenetration external velocity {add_external_velocity:.4}");
+
+            transform.translation += current_offset;
+        }
+    }
+
+    central.0 = scenes
+        .iter_mut()
+        .flat_map(|(scene, mut collider_data)| {
+            let results = collider_data.avatar_central_collisions(transform.translation.as_dvec3());
+            if results.is_empty() {
+                None
+            } else {
+                Some((scene, results))
+            }
+        })
+        .collect();
+
+    // the solve ignores colliders that intersect the central segment, so a deeply
+    // embedded collider looks resolved until we start walking out of it
+    if movement_control.deliberate_penetration && resolved && central.0.is_empty() {
+        *resolved_frames += 1;
+        if *resolved_frames >= DELIBERATE_PENETRATION_CLEAR_FRAMES {
+            debug!("deliberate penetration cleared");
+            movement_control.deliberate_penetration = false;
+        }
+    } else {
+        *resolved_frames = 0;
     }
 }
 
@@ -610,22 +929,34 @@ fn broadcast_movement_info(
         ),
         With<PrimaryUser>,
     >,
-    mut global_crdt: ResMut<GlobalCrdtState>,
+    feedback: Res<SceneDrivenAnimationFeedback>,
+    mut contexts: Query<&mut GlobalCrdtState>,
     time: Res<Time>,
 ) {
     let (maybe_locomotion, maybe_modifier) = active_components.single().unwrap_or_default();
 
-    info.0.active_avatar_locomotion_settings = maybe_locomotion.and_then(|l| l.component.0.clone());
+    info.0.active_avatar_locomotion_settings = maybe_locomotion.map(|l| l.component.0.clone());
     info.0.active_input_modifier = maybe_modifier.and_then(|l| l.component.0.clone());
+    info.0.active_animation_state = feedback.state.as_ref().map(|s| AvatarAnimationState {
+        src: s.src.clone(),
+        r#loop: s.r#loop,
+        speed: s.speed,
+        idle: s.idle,
+        playback_time: s.playback_time,
+        duration: s.duration,
+        loop_count: s.loop_count,
+    });
 
     debug!("broadcast {:?}", info.0);
 
-    global_crdt.update_crdt(
-        SceneComponentId::AVATAR_MOVEMENT_INFO,
-        CrdtType::LWW_ANY,
-        SceneEntityId::PLAYER,
-        &info.0,
-    );
+    for mut global_crdt in contexts.iter_mut() {
+        global_crdt.update_crdt(
+            SceneComponentId::AVATAR_MOVEMENT_INFO,
+            CrdtType::LWW_ANY,
+            SceneEntityId::PLAYER,
+            &info.0,
+        );
+    }
     info.0 = PbAvatarMovementInfo {
         step_time: time.delta_secs(),
         previous_step_time: info.0.step_time,
@@ -636,5 +967,6 @@ fn broadcast_movement_info(
         active_input_modifier: None,
         walk_target: None,
         walk_threshold: None,
+        active_animation_state: None,
     }
 }

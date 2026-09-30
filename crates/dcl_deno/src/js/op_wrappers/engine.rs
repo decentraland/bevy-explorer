@@ -4,7 +4,16 @@ use std::{cell::RefCell, rc::Rc};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![op_crdt_send_to_renderer(), op_crdt_recv_from_renderer()]
+    vec![
+        op_crdt_send_to_renderer(),
+        op_crdt_recv_from_renderer(),
+        op_is_server(),
+    ]
+}
+
+#[op2(fast)]
+fn op_is_server(op_state: Rc<RefCell<OpState>>) -> bool {
+    dcl::js::engine::op_is_server(op_state)
 }
 
 #[op2(fast)]

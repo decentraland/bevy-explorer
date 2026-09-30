@@ -1,0 +1,77 @@
+.dropdown {
+  position: relative;
+  width: 100%;
+}
+.btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--fill-2);
+  border: 1px solid var(--fill-4);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: var(--r-control);
+  cursor: pointer;
+}
+.btn:hover {
+  background: var(--fill-4);
+}
+.open .btn {
+  border-color: var(--brand);
+}
+.caret {
+  color: rgba(255, 255, 255, 0.5);
+  transition: transform 0.12s ease;
+}
+.open .caret {
+  transform: rotate(180deg);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: var(--z-overlay);
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--fill-4);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-panel);
+  max-height: 240px;
+  overflow: auto;
+}
+.opt {
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-85);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.opt:hover {
+  background: var(--fill-3);
+  color: var(--text);
+}
+.optActive {
+  color: var(--text);
+}
+.optActive::after {
+  content: '';
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}

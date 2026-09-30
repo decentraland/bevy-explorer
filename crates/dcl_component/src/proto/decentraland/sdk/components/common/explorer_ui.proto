@@ -1,0 +1,14 @@
+syntax = "proto3";
+package decentraland.sdk.components.common;
+
+// Identifies which fullscreen explorer panel OpenExplorerUi targets.
+// EU_SETTINGS holds 0 so an unset `ui` field defaults to the least-intrusive panel.
+enum ExplorerUi {
+  EU_SETTINGS = 0;
+  EU_MAP = 1;
+  EU_BACKPACK = 2;
+  EU_CAMERA_REEL = 3;
+  EU_COMMUNITIES = 4;
+  EU_PLACES = 5;
+  EU_EVENTS = 6;
+}

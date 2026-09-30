@@ -12,39 +12,43 @@ use bevy::{
     render::{
         primitives::Aabb,
         render_resource::{AsBindGroup, ShaderRef},
+        storage::ShaderStorageBuffer,
     },
 };
 
 use common::{
     sets::RealmLifecycle,
     structs::{
-        AppConfig, AppError, CurrentRealm, GlobalCrdtStateUpdate, IVec2Arg, PreviewMode,
-        SceneLoadDistance, SceneMeta, SceneTime,
+        server_mode, AppConfig, AppError, CurrentRealm, EditorMode, GlobalCrdtStateUpdate,
+        IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
     },
+    terrain::{Occupancy, TerrainChange, TerrainTargets, BORDER_PADDING},
     util::{TaskExt, TryPushChildrenEx},
 };
-use comms::global_crdt::GlobalCrdtState;
+use comms::global_crdt::{CrdtContexts, GlobalCrdtState};
 use dcl::{
-    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore, CrdtType},
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
-    proto_components::sdk::components::{PbMainCamera, PbRealmInfo},
-    transform_and_parent::DclTransformAndParent,
+    proto_components::sdk::components::{PbMainCamera, PbRealmInfo, PbVisibilityComponent},
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, EntityDefinition, IpfsAssetServer, RealmInitialLocation,
     SceneIpfsLocation, SceneJsFile,
 };
-use scene_material::BoundRegion;
+use scene_material::{BoundRegion, SceneBounds};
 use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
-    bounds_calc::scene_regions, renderer_context::RendererSceneContext,
-    update_world::ComponentTracker, vec3_to_parcel, ContainerEntity, DeletedSceneEntities,
-    OutOfWorld, SceneEntity, SceneThreadHandle,
+    bounds_calc::scene_regions,
+    parcel_to_vec3,
+    renderer_context::{RendererSceneContext, SceneState, FROZEN_BLOCK},
+    update_world::{visibility::VisibilityComponent, ComponentTracker},
+    vec3_to_parcel, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
+    SceneThreadHandle,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -82,6 +86,7 @@ pub struct SceneLifecyclePlugin;
 impl Plugin for SceneLifecyclePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CurrentImposterScene>();
+        app.init_resource::<CurrentSceneLoading>();
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
         app.init_resource::<PortableScenes>();
@@ -119,15 +124,16 @@ impl Plugin for SceneLifecyclePlugin {
 #[derive(Component, Debug)]
 pub enum SceneLoading {
     SceneSpawned,
-    SceneEntity {
-        realm: String,
-    },
+    SceneEntity,
     MainCrdt {
         crdt: Option<Handle<SerializedCrdtStore>>,
     },
     Javascript {
         global_updates: Option<tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>>,
         scene_origin: Vec3,
+        // the context the receiver was subscribed to, so the ipc stream tag can never
+        // disagree with the stream it labels
+        crdt_context: Entity,
     },
     Failed,
 }
@@ -173,9 +179,7 @@ pub(crate) fn load_scene_entity(
         };
 
         commands.try_insert((
-            SceneLoading::SceneEntity {
-                realm: event.realm.clone(),
-            },
+            SceneLoading::SceneEntity,
             SceneEntityDefinitionHandle(h_scene),
         ));
 
@@ -193,7 +197,7 @@ pub(crate) fn load_scene_json(
 ) {
     for (entity, mut state, h_scene) in loading_scenes
         .iter_mut()
-        .filter(|(_, state, _)| matches!(**state, SceneLoading::SceneEntity { .. }))
+        .filter(|(_, state, _)| matches!(**state, SceneLoading::SceneEntity))
     {
         let mut fail = |msg: &str| {
             warn!("{entity:?} failed to initialize scene: {msg}");
@@ -215,8 +219,11 @@ pub(crate) fn load_scene_json(
 
         if definition.id.is_empty() {
             // there was nothing at this pointer
-            // stop loading but don't despawn
-            commands.entity(entity).remove::<SceneLoading>();
+            // stop loading but don't despawn. mark as failed rather than removing the load
+            // state, so the lifecycle still tracks (and eventually despawns) the entity
+            // instead of orphaning it and spawning a replacement
+            debug!("{entity:?} scene entity definition is empty");
+            *state = SceneLoading::Failed;
             continue;
         }
 
@@ -248,11 +255,14 @@ pub(crate) fn load_scene_javascript(
     main_crdts: Res<Assets<SerializedCrdtStore>>,
     ipfas: IpfsAssetServer,
     crdt_component_interfaces: Res<CrdtExtractors>,
-    mut scene_updates: ResMut<SceneUpdates>,
-    global_scene: Res<GlobalCrdtState>,
+    scene_updates: Res<SceneUpdates>,
+    crdt_contexts: Res<CrdtContexts>,
+    global_scenes: Query<&GlobalCrdtState>,
     portable_scenes: Res<PortableScenes>,
     realm: Res<CurrentRealm>,
     frame: Res<FrameCount>,
+    preview_mode: Res<PreviewMode>,
+    mut storage_buffers: Option<ResMut<Assets<ShaderStorageBuffer>>>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -290,32 +300,39 @@ pub(crate) fn load_scene_javascript(
             continue;
         };
 
-        let portable = portable_scenes.0.get(&definition.id);
+        let portable = portable_scenes.get(&definition.id);
 
-        let (base_x, base_y) = meta.scene.base.split_once(',').unwrap();
-        let base_x = base_x.parse::<i32>().unwrap();
-        let base_y = base_y.parse::<i32>().unwrap();
-        let base = IVec2::new(base_x, base_y);
+        let Some(base) = meta
+            .scene
+            .base
+            .split_once(',')
+            .and_then(|(x, y)| Some(IVec2::new(x.parse().ok()?, y.parse().ok()?)))
+        else {
+            fail("malformed base coordinate in scene.json");
+            continue;
+        };
 
         // populate pointers
         let mut extent_min = IVec2::MAX;
         let mut extent_max = IVec2::MIN;
-        let parcels: HashSet<_> = meta
+        let parcels: Option<HashSet<_>> = meta
             .scene
             .parcels
             .iter()
             .map(|pointer| {
-                let (x, y) = pointer.split_once(',').unwrap();
-                let x = x.parse::<i32>().unwrap();
-                let y = y.parse::<i32>().unwrap();
-                let parcel = IVec2::new(x, y);
+                let (x, y) = pointer.split_once(',')?;
+                let parcel = IVec2::new(x.parse().ok()?, y.parse().ok()?);
 
                 extent_min = extent_min.min(parcel);
                 extent_max = extent_max.max(parcel);
 
-                parcel
+                Some(parcel)
             })
             .collect();
+        let Some(parcels) = parcels else {
+            fail("malformed parcel coordinate in scene.json");
+            continue;
+        };
 
         let bounds = if portable.is_some() {
             Vec::default()
@@ -352,6 +369,8 @@ pub(crate) fn load_scene_javascript(
                 }
             }
         } else {
+            // deliberately not base_domain-derived: renderer-artifacts is only deployed
+            // on decentraland.org (no zone or custom-domain equivalents)
             ipfas.load_url_uncached(
                 "https://renderer-artifacts.decentraland.org/sdk6-adaption-layer/main/index.min.js",
             )
@@ -393,6 +412,7 @@ pub(crate) fn load_scene_javascript(
         }
 
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?}), storage root: {storage_root}");
+        let scene_bounds = SceneBounds::new(&bounds, storage_buffers.as_deref_mut());
         let mut renderer_context = RendererSceneContext::new(
             scene_id,
             definition.id.clone(),
@@ -403,6 +423,7 @@ pub(crate) fn load_scene_javascript(
             base,
             parcels,
             bounds,
+            scene_bounds,
             meta.spawn_points.clone().unwrap_or_default(),
             root,
             1.0,
@@ -412,25 +433,17 @@ pub(crate) fn load_scene_javascript(
             meta.authoritative_multiplayer.unwrap_or_default(),
         );
 
-        scene_updates.scene_ids.insert(scene_id, root);
-
-        // start from the global shared crdt state, with position data localized for this scene
+        // start from this scene's crdt context (its own room's on a multi-tenant server,
+        // the shared context otherwise), with position data localized for this scene.
         // Scene origin in DCL proto-space (z-forward, matching proto Vector3 coordinates)
         let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
+        let crdt_context = crdt_contexts.for_scene_hash(&definition.id);
+        let Ok(global_scene) = global_scenes.get(crdt_context) else {
+            // context spawned this frame and not yet flushed — retry next frame
+            debug!("{root:?} waiting for crdt context");
+            continue;
+        };
         let (mut initial_crdt, global_updates) = global_scene.subscribe(scene_origin);
-
-        // set the world origin (for parents of world-space entities, using world-space coords as local coords)
-        let mut buf = Vec::new();
-        DclWriter::new(&mut buf).write(&DclTransformAndParent::from_bevy_transform_and_parent(
-            &Transform::from_translation(Vec3::new(-initial_position.x, 0.0, initial_position.y)),
-            SceneEntityId::ROOT,
-        ));
-        initial_crdt.force_update(
-            SceneComponentId::TRANSFORM,
-            CrdtType::LWW_ANY,
-            SceneEntityId::WORLD_ORIGIN,
-            Some(&mut DclReader::new(&buf)),
-        );
 
         // set initial realm info
         let base_url = realm
@@ -444,13 +457,18 @@ pub(crate) fn load_scene_javascript(
             comms_adapter: realm
                 .comms
                 .as_ref()
-                .and_then(|comms| comms.adapter.clone())
+                .and_then(|comms| {
+                    comms
+                        .adapter
+                        .clone()
+                        .or_else(|| comms.fixed_adapter.clone())
+                })
                 .unwrap_or("offline".to_owned()),
-            is_preview: false,
+            is_preview: preview_mode.is_preview,
             room: None,
             is_connected_scene_room: None,
         };
-        buf.clear();
+        let mut buf = Vec::new();
         DclWriter::new(&mut buf).write(&realm_info);
         initial_crdt.force_update(
             SceneComponentId::REALM_INFO,
@@ -460,24 +478,35 @@ pub(crate) fn load_scene_javascript(
         );
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
-            // add main.crdt
+            // Read main.crdt once into its own store (custom components included). `initial_crdt`
+            // is seeded with global state (player AvatarMovementInfo, other avatars, etc.) from
+            // `global_scene.subscribe`, so we keep main.crdt separate to get a clean baseline.
             let mut context = CrdtContext::new(
                 scene_id,
                 renderer_context.hash.clone(),
                 renderer_context.title.clone(),
                 false,
                 false,
-            );
-            let mut stream = DclReader::new(&serialized_crdt);
-            initial_crdt.process_message_stream(
-                &mut context,
-                &crdt_component_interfaces,
-                &mut stream,
                 false,
             );
+            let mut main_crdt = CrdtStore::default();
+            main_crdt.process_message_stream(
+                &mut context,
+                &crdt_component_interfaces,
+                &mut DclReader::new(&serialized_crdt),
+                false,
+                None,
+                None,
+            );
 
-            // send initial updates into renderer
+            // The clean authored baseline = only main.crdt; the inspector diffs against this on
+            // save, so it must not contain any of the global state above.
+            renderer_context.initial_crdt = Some(main_crdt.clone());
+
+            // Layer main.crdt onto the global-seeded store (merge_newer marks the updates), then
+            // send the initial state into the renderer.
             let census = context.take_census();
+            initial_crdt.merge_newer(main_crdt);
             initial_crdt.clean_up(&census.died);
             let updates = initial_crdt.clone().take_updates();
 
@@ -519,6 +548,11 @@ pub(crate) fn load_scene_javascript(
                 -1000.0,
                 -initial_position.y,
             )),
+            // Garantees that there is always a parent with `propagate_to_children = true`
+            VisibilityComponent(PbVisibilityComponent {
+                visible: Some(true),
+                propagate_to_children: Some(true),
+            }),
             Visibility::default(),
             renderer_context,
             ComponentTracker::default(),
@@ -540,6 +574,7 @@ pub(crate) fn load_scene_javascript(
             SceneLoading::Javascript {
                 global_updates: Some(global_updates),
                 scene_origin,
+                crdt_context,
             },
         ));
     }
@@ -609,6 +644,9 @@ pub(crate) fn initialize_scene(
     testing_data: Res<TestingData>,
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
+    time: Res<Time>,
+    editor_mode: Res<EditorMode>,
+    portable_scenes: Res<PortableScenes>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
@@ -639,11 +677,12 @@ pub(crate) fn initialize_scene(
 
         let thread_sx = scene_updates.sender.clone();
 
-        let (global_updates, scene_origin) = match *state {
+        let (global_updates, scene_origin, crdt_context) = match *state {
             SceneLoading::Javascript {
                 ref mut global_updates,
                 scene_origin,
-            } => (global_updates.take().unwrap(), scene_origin),
+                crdt_context,
+            } => (global_updates.take().unwrap(), scene_origin, crdt_context),
             _ => panic!("bad state"),
         };
 
@@ -665,11 +704,13 @@ pub(crate) fn initialize_scene(
             context.title.clone(),
             testing_data.test_mode,
             preview_mode.is_preview,
+            server_mode(),
         );
 
-        let main_sx = spawn_scene(
+        let (main_sx, kill_guard) = spawn_scene(
             context.crdt_store.clone(),
             scene_context,
+            crdt_context.to_bits(),
             js_file.clone(),
             crdt_component_interfaces,
             thread_sx,
@@ -680,13 +721,38 @@ pub(crate) fn initialize_scene(
             scene_origin,
         );
 
-        // mark context as in flight so we wait for initial RPC requests
-        context.in_flight = true;
         context.inspected = inspected;
+        // set last_sent so the scene doesn't get extreme starvation priority
+        // when it first becomes eligible after initialization completes
+        context.last_sent = time.elapsed_secs_f64();
+        // spawn in flight so we wait for initial RPC requests
+        context.state = SceneState::Live {
+            handle: SceneThreadHandle {
+                sender: main_sx,
+                kill_guard,
+            },
+            in_flight: true,
+        };
 
-        commands
-            .entity(root)
-            .try_insert((SceneThreadHandle { sender: main_sx },));
+        // In the editor a project scene must not silently run a racy number of
+        // frames before the user hits play. Auto-freeze after main() has run once
+        // (its entities / one-shot setup appear) but before the scene free-runs, so
+        // the initial state is deterministic. refreeze fires when tick_number
+        // reaches the target after a scene update; the first two updates are the
+        // engine handshake (init + onStart/composite instancing, no scene frame),
+        // and the third is the first real scene update that runs main() + one system
+        // pass — so 3 lands on "main ran, one frame". Super scenes (the editor
+        // agent) and startup portables (the default controller — parent_scene is
+        // None) are exempt: they aren't the scene being edited and must keep
+        // ticking. Portables spawned BY a scene still freeze with it.
+        let startup_portable = context.is_portable
+            && portable_scenes
+                .get(&context.hash)
+                .is_some_and(|source| source.parent_scene.is_none());
+        if editor_mode.0 && super_user.is_none() && !startup_portable {
+            context.refreeze_at_tick = Some(3);
+        }
+
         commands.entity(root).remove::<SceneLoading>();
     }
 }
@@ -705,7 +771,71 @@ pub struct PortableSource {
 }
 
 #[derive(Resource, Default)]
-pub struct PortableScenes(pub HashMap<String, PortableSource>);
+pub struct PortableScenes {
+    by_hash: HashMap<String, PortableSource>,
+    by_parent: HashMap<String, HashSet<String>>,
+}
+
+impl PortableScenes {
+    pub fn get(&self, hash: &str) -> Option<&PortableSource> {
+        self.by_hash.get(hash)
+    }
+
+    pub fn contains_key(&self, hash: &str) -> bool {
+        self.by_hash.contains_key(hash)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &PortableSource)> {
+        self.by_hash.iter()
+    }
+
+    /// portables spawned by the given scene hash
+    pub fn by_parent<'a>(
+        &'a self,
+        parent: &str,
+    ) -> impl Iterator<Item = (&'a String, &'a PortableSource)> {
+        self.by_parent
+            .get(parent)
+            .into_iter()
+            .flat_map(|hashes| hashes.iter())
+            .filter_map(|h| self.by_hash.get_key_value(h))
+    }
+
+    pub fn insert(&mut self, hash: String, source: PortableSource) -> Option<PortableSource> {
+        let prev = self.by_hash.insert(hash.clone(), source);
+        if let Some(prev_parent) = prev.as_ref().and_then(|p| p.parent_scene.as_ref()) {
+            if let Some(set) = self.by_parent.get_mut(prev_parent) {
+                set.remove(&hash);
+                if set.is_empty() {
+                    self.by_parent.remove(prev_parent);
+                }
+            }
+        }
+        if let Some(parent) = self.by_hash.get(&hash).and_then(|s| s.parent_scene.clone()) {
+            self.by_parent.entry(parent).or_default().insert(hash);
+        }
+        prev
+    }
+
+    pub fn remove(&mut self, hash: &str) -> Option<PortableSource> {
+        let source = self.by_hash.remove(hash)?;
+        if let Some(parent) = &source.parent_scene {
+            if let Some(set) = self.by_parent.get_mut(parent) {
+                set.remove(hash);
+                if set.is_empty() {
+                    self.by_parent.remove(parent);
+                }
+            }
+        }
+        Some(source)
+    }
+
+    pub fn extend<I: IntoIterator<Item = (String, PortableSource)>>(&mut self, iter: I) {
+        for (hash, source) in iter {
+            self.insert(hash, source);
+        }
+    }
+}
 
 pub const PARCEL_SIZE: f32 = 16.0;
 
@@ -713,7 +843,16 @@ pub const PARCEL_SIZE: f32 = 16.0;
 pub struct ScenePointers {
     pointers: HashMap<IVec2, PointerResult>,
     realm_bounds: (IVec2, IVec2),
+    // Pre-clip applied to `set_realm`'s argument. Set by the impost binary's
+    // `--range` for fast iteration: parcels outside this box are treated as
+    // empty for reads/crc, while still letting the bake generate mips from
+    // the in-range parcels. None = no clipping (normal client behaviour).
+    bake_clip: Option<(IVec2, IVec2)>,
     crcs: Vec<Vec<Option<u32>>>,
+    terrain: TerrainTargets,
+    // The realm lists its scenes up front (a World) and they have all resolved, so a parcel none
+    // of them covers is empty rather than unknown; there is no pointer request to answer for it.
+    all_scenes_known: bool,
 }
 
 impl Default for ScenePointers {
@@ -721,7 +860,10 @@ impl Default for ScenePointers {
         Self {
             pointers: Default::default(),
             realm_bounds: (IVec2::MAX, IVec2::MIN),
+            bake_clip: None,
             crcs: Default::default(),
+            terrain: Default::default(),
+            all_scenes_known: false,
         }
     }
 }
@@ -737,21 +879,117 @@ impl ScenePointers {
     }
 
     pub fn get(&self, parcel: impl Borrow<IVec2>) -> Option<&PointerResult> {
+        if self.realm_bounds.0.cmpgt(self.realm_bounds.1).any() {
+            // Invalid realm or still being loaded
+            return None;
+        }
         let parcel: &IVec2 = parcel.borrow();
         if parcel.cmplt(self.realm_bounds.0).any() || parcel.cmpgt(self.realm_bounds.1).any() {
             return Some(&PointerResult::NOTHING);
         }
-        self.pointers.get(parcel)
+        self.pointers
+            .get(parcel)
+            .or_else(|| self.all_scenes_known.then_some(&PointerResult::NOTHING))
+    }
+
+    /// The realm's listed scenes are placed: parcels none of them covers are empty from now on.
+    pub fn set_all_scenes_known(&mut self) {
+        if !self.all_scenes_known {
+            self.all_scenes_known = true;
+            // the terrain has been reading those parcels as unknown
+            self.terrain.invalidate();
+        }
     }
 
     pub fn set_realm(&mut self, min_bound: IVec2, max_bound: IVec2) {
+        let (min_bound, max_bound) = match self.bake_clip {
+            Some((clip_min, clip_max)) => (min_bound.max(clip_min), max_bound.min(clip_max)),
+            None => (min_bound, max_bound),
+        };
         self.realm_bounds = (min_bound, max_bound);
-        // clear nothings
-        self.pointers.retain(|_, r| r != &PointerResult::Nothing);
-        // exists will be rechecked / replaced when active entities returns
+        self.all_scenes_known = false;
+        self.pointers.clear();
         self.crcs.clear();
+        self.terrain.invalidate();
+    }
+
+    /// Start terrain afresh for a new realm. Worlds get Unity's extra border padding.
+    pub fn reset_terrain(&mut self, world: bool) {
+        self.terrain.reset(world);
+    }
+
+    pub fn terrain(&self) -> &TerrainTargets {
+        &self.terrain
+    }
+
+    /// Inclusive parcel bounds of the coast. A World's terrain bounds are known up front from its
+    /// scenes; a city only resolves pointers around the player, so use its map bounds with the
+    /// terrain padding instead (Genesis is occupied out to its map edges, so this matches
+    /// unity-explorer's manifest bounds).
+    pub fn coast_bounds(&self) -> Option<(IVec2, IVec2)> {
+        if self.terrain.is_world() {
+            return self.terrain.bounds();
+        }
+        let (min, max) = self.realm_bounds;
+        min.cmple(max)
+            .all()
+            .then(|| (min - BORDER_PADDING, max + BORDER_PADDING))
+    }
+
+    /// Resolve terrain step targets for pointers changed since the last call.
+    pub fn resolve_terrain(&mut self) -> Option<TerrainChange> {
+        let Self {
+            pointers,
+            realm_bounds,
+            terrain,
+            all_scenes_known,
+            ..
+        } = self;
+        let (realm_bounds, all_scenes_known) = (*realm_bounds, *all_scenes_known);
+        terrain.resolve(
+            |parcel| {
+                if realm_bounds.0.cmpgt(realm_bounds.1).any() {
+                    return Occupancy::Unknown;
+                }
+                if parcel.cmplt(realm_bounds.0).any() || parcel.cmpgt(realm_bounds.1).any() {
+                    return Occupancy::Empty;
+                }
+                match pointers.get(&parcel) {
+                    Some(PointerResult::Exists { .. }) => Occupancy::Occupied,
+                    Some(PointerResult::Nothing) => Occupancy::Empty,
+                    None if all_scenes_known => Occupancy::Empty,
+                    None => Occupancy::Unknown,
+                }
+            },
+            pointers.iter().filter_map(|(parcel, result)| {
+                matches!(result, PointerResult::Exists { .. }).then_some(*parcel)
+            }),
+        )
+    }
+
+    /// Restrict the effective realm bounds to the intersection with this box.
+    /// Used by the impost binary's `--range` for fast iteration; safe to call
+    /// either before or after `set_realm` (a current realm is re-clipped).
+    pub fn set_bake_clip(&mut self, min: IVec2, max: IVec2) {
+        self.bake_clip = Some((min, max));
+        if self.realm_bounds.0.cmple(self.realm_bounds.1).all() {
+            // re-apply current realm so the intersection takes effect
+            let (rmin, rmax) = self.realm_bounds;
+            self.set_realm(rmin, rmax);
+        }
     }
     pub fn insert(&mut self, parcel: IVec2, result: PointerResult) -> Option<(IVec2, IVec2)> {
+        // Respect bake_clip: parcels outside the clip aren't stored at all.
+        // Storing them (as Nothing) would inflate `pointers.len()` past
+        // `expected_count` (which is computed over the clipped realm_bounds)
+        // and break `is_full`. `get()` already returns Nothing for parcels
+        // outside realm_bounds, so nobody needs the entry.
+        if let Some((clip_min, clip_max)) = self.bake_clip {
+            if parcel.cmplt(clip_min).any() || parcel.cmpgt(clip_max).any() {
+                return None;
+            }
+        }
+
         let mut res = None;
         if !matches!(result, PointerResult::Nothing) {
             let new_min = self.realm_bounds.0.min(parcel);
@@ -763,6 +1001,8 @@ impl ScenePointers {
                 self.realm_bounds.1 = new_max;
             }
         }
+        self.terrain
+            .mark(parcel, matches!(result, PointerResult::Exists { .. }));
         self.pointers.insert(parcel, result);
         res
     }
@@ -827,15 +1067,11 @@ impl ScenePointers {
             .into_iter()
             .enumerate()
         {
-            if let Some(sub_crc) = self.crc(
+            let sub_crc = self.crc(
                 (level_parcel << level as u32) + (offset << (level - 1) as u32),
                 level - 1,
-            ) {
-                calc ^= sub_crc.rotate_right(ix as u32);
-            } else {
-                // println!("failed {level}");
-                return None;
-            }
+            )?;
+            calc ^= sub_crc.rotate_right(ix as u32);
         }
         // println!("success {level}");
         self.crcs[level][index] = Some(calc);
@@ -846,11 +1082,7 @@ impl ScenePointers {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone)]
 pub enum PointerResult {
     Nothing,
-    Exists {
-        realm: String,
-        hash: String,
-        urn: Option<String>,
-    },
+    Exists { hash: String, urn: Option<String> },
 }
 
 impl PointerResult {
@@ -862,13 +1094,6 @@ impl PointerResult {
         match self {
             PointerResult::Nothing => None,
             PointerResult::Exists { hash, urn, .. } => Some((hash.clone(), urn.clone())),
-        }
-    }
-
-    fn realm(&self) -> Option<&str> {
-        match self {
-            PointerResult::Nothing => None,
-            PointerResult::Exists { realm, .. } => Some(realm),
         }
     }
 }
@@ -909,9 +1134,7 @@ pub fn parcels_in_range(
 pub fn process_realm_change(
     mut commands: Commands,
     current_realm: Res<CurrentRealm>,
-    mut live_scenes: ResMut<LiveScenes>,
     mut segment_config: Option<ResMut<SegmentConfig>>,
-    scenes: Query<&RendererSceneContext>,
     player: Query<Entity, With<PrimaryUser>>,
 ) {
     if current_realm.is_changed() {
@@ -928,47 +1151,6 @@ pub fn process_realm_change(
             "realm change `{}` / `{}`! purging scenes",
             current_realm.address, current_realm.about_url
         );
-        let mut realm_scene_urns = HashSet::new();
-        for urn in current_realm
-            .config
-            .scenes_urn
-            .as_ref()
-            .unwrap_or(&Vec::default())
-        {
-            let hacked_urn = urn.replace('?', "?=&");
-            let path = match IpfsPath::new_from_urn::<EntityDefinition>(&hacked_urn) {
-                Ok(path) => path,
-                Err(e) => {
-                    warn!("failed to parse urn: `{}`: {}", urn, e);
-                    continue;
-                }
-            };
-
-            realm_scene_urns.insert((hacked_urn, path));
-        }
-
-        let realm_scene_ids = realm_scene_urns
-            .into_iter()
-            .flat_map(|(urn, path)| match path.context_free_hash() {
-                Ok(Some(hash)) => Some((hash, urn)),
-                otherwise => {
-                    warn!("could not resolve hash from urn: {otherwise:?}");
-                    None
-                }
-            })
-            .collect::<HashMap<_, _>>();
-
-        // pointers.0.retain(|_, pr| match pr {
-        //     PointerResult::Nothing{ .. } => false,
-        //     PointerResult::Exists{ hash, .. } => realm_scene_ids.contains_key(hash),
-        // });
-        if !realm_scene_ids.is_empty() {
-            // purge pointers and scenes that are not in the realm list (and not portable)
-            live_scenes.scenes.retain(|hash, entity| {
-                realm_scene_ids.contains_key(hash)
-                    || scenes.get(*entity).is_ok_and(|ctx| ctx.is_portable)
-            });
-        }
 
         if let Some(ref mut segment_config) = segment_config {
             segment_config.update_realm(current_realm.address.clone());
@@ -984,7 +1166,7 @@ fn load_active_entities(
     mut pointers: ResMut<ScenePointers>,
     mut pointer_request: Local<Option<(HashSet<IVec2>, HashMap<String, String>, ActiveEntityTask)>>,
     ipfas: IpfsAssetServer,
-    mut global_crdt: ResMut<GlobalCrdtState>,
+    mut global_crdt: Query<&mut GlobalCrdtState>,
     mut consecutive_fetch_fail_count: Local<usize>,
     mut commands: Commands,
     mut fetch_count: Local<usize>,
@@ -1036,7 +1218,30 @@ fn load_active_entities(
             }
         }
         pointers.set_realm(bounds_min, bounds_max);
-        global_crdt.set_bounds(bounds_min, bounds_max);
+        pointers.reset_terrain(
+            current_realm
+                .config
+                .scenes_urn
+                .as_ref()
+                .is_some_and(|urns| !urns.is_empty()),
+        );
+        for mut context in global_crdt.iter_mut() {
+            context.set_bounds(bounds_min, bounds_max);
+        }
+
+        // A teleport that named this realm: land on its parcel now that the realm is live. The
+        // out-of-world sweep holds the player until the parcel resolves against the new realm.
+        if let RealmInitialLocation::Parcel(parcel) = *teleport_target {
+            if !current_realm.about_url.is_empty() {
+                if let Ok((player_entity, _)) = player.single() {
+                    if let Ok(mut commands) = commands.get_entity(player_entity) {
+                        commands.try_insert(teleport_components(parcel));
+                        debug!("change to realm with target parcel -> none ({parcel})");
+                        *teleport_target = RealmInitialLocation::None;
+                    }
+                }
+            }
+        }
 
         if !current_realm.about_url.is_empty() && *teleport_target == RealmInitialLocation::Base {
             let has_scene_urns = !current_realm
@@ -1080,7 +1285,7 @@ fn load_active_entities(
     };
 
     let teleport_on_resolve = match *teleport_target {
-        RealmInitialLocation::None => {
+        RealmInitialLocation::None | RealmInitialLocation::Parcel(_) => {
             *pending_teleport = false;
             None
         }
@@ -1102,16 +1307,16 @@ fn load_active_entities(
         }
     };
 
+    let has_scene_urns = !current_realm
+        .config
+        .scenes_urn
+        .as_ref()
+        .is_none_or(Vec::is_empty);
+
     if pointer_request.is_none()
         && !current_realm.address.is_empty()
         && ipfas.active_endpoint().is_some()
     {
-        let has_scene_urns = !current_realm
-            .config
-            .scenes_urn
-            .as_ref()
-            .is_none_or(Vec::is_empty);
-
         let focus_parcel = (focus.translation().xz() * Vec2::new(1.0 / 16.0, -1.0 / 16.0))
             .floor()
             .as_ivec2();
@@ -1124,12 +1329,8 @@ fn load_active_entities(
                 pointers.max(),
             )
             .into_iter()
-            .filter_map(|(parcel, distance)| match pointers.get(parcel) {
-                Some(PointerResult::Exists { realm, .. }) => {
-                    (realm != &current_realm.address).then_some((distance, parcel))
-                }
-                Some(PointerResult::Nothing) => None,
-                _ => Some((distance, parcel)),
+            .filter_map(|(parcel, distance)| {
+                pointers.get(parcel).is_none().then_some((distance, parcel))
             })
             .collect();
             required_parcels.sort_by_key(|(distance, _)| FloatOrd(-distance));
@@ -1168,33 +1369,12 @@ fn load_active_entities(
             // TODO perf might be worth caching available and required
             let available_hashes = pointers
                 .pointers
-                .iter()
-                .flat_map(|(parcel, ptr)| match ptr {
+                .values()
+                .flat_map(|ptr| match ptr {
                     PointerResult::Nothing => None,
-                    PointerResult::Exists { realm, hash, .. } => {
-                        if realm == &current_realm.address {
-                            Some((hash, *parcel))
-                        } else {
-                            None
-                        }
-                    }
+                    PointerResult::Exists { hash, .. } => Some(hash.as_str()),
                 })
-                .collect::<HashMap<_, _>>();
-
-            // make sure we still teleport even if we already have the hash
-            if let Some(teleport_on_resolve) = teleport_on_resolve.as_ref() {
-                if let Some(parcel) = available_hashes.get(teleport_on_resolve) {
-                    if let Some(mut commands) = player
-                        .single()
-                        .ok()
-                        .and_then(|(p, _)| commands.get_entity(p).ok())
-                    {
-                        commands.try_insert(teleport_components(*parcel));
-                        debug!("already got the hash -> none");
-                        *teleport_target = RealmInitialLocation::None;
-                    }
-                }
-            }
+                .collect::<HashSet<_>>();
 
             let required_hashes_and_urns = current_realm
                 .config
@@ -1211,7 +1391,7 @@ fn load_active_entities(
                                 .map(|hash| (hash, path, urn))
                         })
                 })
-                .filter(|(hash, ..)| !available_hashes.contains_key(hash))
+                .filter(|(hash, ..)| !available_hashes.contains(hash.as_str()))
                 .collect::<Vec<_>>();
 
             let required_paths = required_hashes_and_urns
@@ -1244,12 +1424,20 @@ fn load_active_entities(
         let retrieved_parcels = match task_result {
             Ok(res) => {
                 *consecutive_fetch_fail_count = 0;
-                *fetch_count = (*fetch_count * 2).min(3200);
+                *fetch_count = (*fetch_count * 2).min(1000);
                 res
             }
             Err(e) => {
-                warn!("failed to retrieve active scenes, will retry");
+                warn!(
+                    "failed to retrieve active scenes ({} parcels), will retry",
+                    requested_parcels.len()
+                );
                 warn!("error: {e:?}");
+                // re-append the failed batch to the fetch end of the stored list so it is
+                // retried with the reduced fetch_count
+                stored_parcels
+                    .1
+                    .extend(requested_parcels.into_iter().map(|parcel| (0.0, parcel)));
                 *fetch_count = (*fetch_count / 2).max(100);
                 if *fetch_count == 100 {
                     *consecutive_fetch_fail_count += 1;
@@ -1302,7 +1490,7 @@ fn load_active_entities(
                 .parcels
                 .iter()
                 .filter_map(|pointer| {
-                    let (x, y) = pointer.split_once(',').unwrap();
+                    let (x, y) = pointer.split_once(',')?;
                     let x = x.parse::<i32>().ok()?;
                     let y = y.parse::<i32>().ok()?;
                     Some(IVec2::new(x, y))
@@ -1329,21 +1517,26 @@ fn load_active_entities(
                 if let Some(new_bounds) = pointers.insert(
                     parcel,
                     PointerResult::Exists {
-                        realm: current_realm.address.clone(),
                         hash: active_entity.id.clone(),
                         urn: urn.clone(),
                     },
                 ) {
-                    global_crdt.set_bounds(new_bounds.0, new_bounds.1);
+                    for mut context in global_crdt.iter_mut() {
+                        context.set_bounds(new_bounds.0, new_bounds.1);
+                    }
                 }
             }
         }
 
         // any remaining requested parcels are empty
         for empty_parcel in requested_parcels {
-            pointers
-                .pointers
-                .insert(empty_parcel, PointerResult::Nothing);
+            pointers.insert(empty_parcel, PointerResult::Nothing);
+        }
+
+        // the listed scenes are placed (they are all requested together): every parcel none of
+        // them covers is empty, with no request to answer for it
+        if has_scene_urns {
+            pointers.set_all_scenes_known();
         }
     }
 }
@@ -1351,14 +1544,27 @@ fn load_active_entities(
 #[derive(Resource, Default)]
 pub struct CurrentImposterScene(pub Option<(PointerResult, bool)>);
 
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+// true while a high-priority scene is still loading (not yet spawned, or within
+// its first few ticks): either the scene the player is standing in, or a system
+// (super-user) scene such as the UI. Imposter loading defers while this is set
+// so it doesn't contend with those scenes' asset loads. The current-scene part
+// mirrors the lifecycle's own deferral of all other scenes.
+#[derive(Resource, Default)]
+pub struct CurrentSceneLoading(pub bool);
+
+#[expect(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_scene_lifecycle(
     mut commands: Commands,
-    current_realm: Res<CurrentRealm>,
     portables: Res<PortableScenes>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     scene_entities: Query<
-        (Entity, &SceneHash, Option<&RendererSceneContext>),
+        (
+            Entity,
+            &SceneHash,
+            Option<&RendererSceneContext>,
+            Option<&SceneLoading>,
+            Has<SuperUserScene>,
+        ),
         Or<(With<SceneLoading>, With<RendererSceneContext>)>,
     >,
     range: Res<SceneLoadDistance>,
@@ -1366,6 +1572,8 @@ pub fn process_scene_lifecycle(
     mut spawn: EventWriter<LoadSceneEvent>,
     pointers: Res<ScenePointers>,
     imposter_scene: Res<CurrentImposterScene>,
+    preview_mode: Res<PreviewMode>,
+    mut current_scene_loading_res: ResMut<CurrentSceneLoading>,
 ) {
     let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::new();
 
@@ -1374,13 +1582,33 @@ pub fn process_scene_lifecycle(
         return;
     };
 
-    let current_scene = parcels_in_range(focus, 0.0, pointers.min(), pointers.max())
+    let mut pointers_iter = pointers.pointers.iter();
+    let head = pointers_iter.next();
+    let maybe_unique_scene = head.and_then(|(head_parcel, head_pointer)| {
+        if pointers_iter.any(|(_cur_parcel, cur_pointer)| cur_pointer != head_pointer) {
+            None
+        } else {
+            Some(*head_parcel)
+        }
+    });
+    let focus = if let Some(unique_scene) = maybe_unique_scene {
+        let focus_vec3 = parcel_to_vec3(unique_scene);
+        Transform::from_translation(focus_vec3).into()
+    } else {
+        preview_mode
+            .preview_parcel
+            .as_ref()
+            .map(|p| GlobalTransform::from(Transform::from_translation(parcel_to_vec3(*p))))
+            .unwrap_or(*focus)
+    };
+
+    let current_scene = parcels_in_range(&focus, 0.0, pointers.min(), pointers.max())
         .first()
         .and_then(|(p, _)| pointers.get(p))
         .and_then(PointerResult::hash_and_urn);
 
     let pir = parcels_in_range(
-        focus,
+        &focus,
         range.load + range.unload,
         pointers.min(),
         pointers.max(),
@@ -1398,10 +1626,15 @@ pub fn process_scene_lifecycle(
             .map(|(h, u)| ((h, u), false)),
     );
 
-    // add any portables to requirements
+    // add any portables to requirements. Portables are exempt from the
+    // current-scene deferral below (see `retain`) so they load immediately
+    // instead of queueing behind the spawn-point parcel scene at startup.
+    let portable_ids: HashSet<(String, Option<String>)> = portables
+        .iter()
+        .map(|(hash, source)| (hash.clone(), Some(source.pid.clone())))
+        .collect();
     required_scene_ids.extend(
         portables
-            .0
             .iter()
             .map(|(hash, source)| ((hash.clone(), Some(source.pid.clone())), source.super_user)),
     );
@@ -1419,12 +1652,7 @@ pub fn process_scene_lifecycle(
     let mut keep_scene_ids = required_scene_ids.keys().cloned().collect::<HashSet<_>>();
     keep_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
         if *dist >= range.load && *dist <= range.unload {
-            pointers
-                .get(parcel)
-                // immediately unload scenes from other realms, even if they might match
-                // we don't check them until they are in range, so better to just nuke them
-                .filter(|pr| pr.realm() == Some(&current_realm.address))
-                .and_then(PointerResult::hash_and_urn)
+            pointers.get(parcel).and_then(PointerResult::hash_and_urn)
         } else {
             None
         }
@@ -1446,10 +1674,11 @@ pub fn process_scene_lifecycle(
 
     // despawn any no-longer required entities
     let mut current_scene_loading = false;
-    for (entity, scene_hash, maybe_ctx) in &scene_entities {
+    let mut system_scene_loading = false;
+    for (entity, scene_hash, maybe_ctx, maybe_loading, is_super) in &scene_entities {
         match keep_entities.get(&entity) {
             Some((hash, _)) => {
-                existing_ids.insert(<&String>::clone(hash));
+                existing_ids.insert(*hash);
             }
             None => {
                 if let Ok(mut commands) = commands.get_entity(entity) {
@@ -1460,13 +1689,29 @@ pub fn process_scene_lifecycle(
             }
         }
 
+        // a failed load is terminal: the entity is kept (so the scene isn't respawned while
+        // in range) but it will never get further, so it must not defer other scenes. a
+        // frozen scene never advances its tick, so it's as loaded as it's going to get;
+        // without the exemption a scene frozen before tick 7 defers other scenes (and
+        // imposters) forever
+        let failed = matches!(maybe_loading, Some(SceneLoading::Failed));
+        let still_loading = !failed
+            && maybe_ctx.is_none_or(|ctx| {
+                ctx.tick_number <= 6 && !ctx.broken() && !ctx.blocked.contains(FROZEN_BLOCK)
+            });
+
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {
-            if &scene_hash.0 == current_hash
-                && maybe_ctx.is_none_or(|ctx| ctx.tick_number <= 6 && !ctx.broken)
-            {
+            if &scene_hash.0 == current_hash && still_loading {
                 current_scene_loading = true;
             }
+        }
+
+        // system/super-user scenes (e.g. the UI scene) are highest priority and
+        // exempt from the deferral below; track their load so imposters wait on
+        // them too, otherwise nothing blocks while the system scene loads.
+        if is_super && still_loading {
+            system_scene_loading = true;
         }
     }
     drop(keep_entities);
@@ -1475,14 +1720,23 @@ pub fn process_scene_lifecycle(
         live_scenes.scenes.remove(removed_hash);
     }
 
+    let mut defer_to_current_scene = false;
     if let Some(current_scene) = current_scene {
         if required_scene_ids.contains_key(&current_scene)
             && (!existing_ids.contains(&current_scene.0) || current_scene_loading)
         {
+            defer_to_current_scene = true;
             // if the current scene is not even spawned, spawn only that scene
-            required_scene_ids.retain(|scene, super_user| *super_user || (scene == &current_scene));
+            // (plus super-user scenes and portables, which are exempt).
+            required_scene_ids.retain(|scene, super_user| {
+                *super_user || scene == &current_scene || portable_ids.contains(scene)
+            });
         }
     }
+    // publish for imposter loading: defer while the current scene is loading
+    // (same condition the lifecycle uses above) or while a system scene is
+    // still loading (it's exempt from the deferral but still highest priority)
+    current_scene_loading_res.0 = defer_to_current_scene || system_scene_loading;
 
     if live_scenes.block_new_scenes {
         return;
@@ -1504,7 +1758,6 @@ pub fn process_scene_lifecycle(
             .scenes
             .insert(required_scene_hash.clone(), entity);
         spawn.write(LoadSceneEvent {
-            realm: current_realm.address.clone(),
             entity: Some(entity),
             location: match maybe_urn {
                 Some(urn) => SceneIpfsLocation::Urn(urn.to_owned()),
@@ -1565,7 +1818,11 @@ fn animate_ready_scene(
             continue;
         }
 
-        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
+        // A scene parked below the world (y = -1000) is raised once it's ready: past tick 5, broken,
+        // or paused by the inspector. Without the frozen case, a scene frozen before tick 5 has its
+        // (already-spawned) main.crdt content stuck underground and looks empty until unfrozen.
+        let frozen = ctx.blocked.contains(FROZEN_BLOCK);
+        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken() || frozen) {
             if transform.translation.y == -1000.0 {
                 for child in children.map(|c| c.iter()).unwrap_or_default() {
                     if loading_quads.get(child).is_ok() {
@@ -1749,7 +2006,7 @@ pub fn handle_live_scene_info(
                 .map(|v| dcl_component::proto_components::common::Vector2::from(v.as_vec2()))
                 .collect(),
             is_portable: ctx.is_portable,
-            is_broken: ctx.broken,
+            is_broken: ctx.broken(),
             is_blocked: !ctx.blocked.is_empty(),
             is_super: maybe_super.is_some(),
             sdk_version: ctx.sdk_version.to_string(),
@@ -1758,5 +2015,199 @@ pub fn handle_live_scene_info(
 
     for sender in senders {
         sender.send(scene_info.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ecs::system::RunSystemOnce;
+
+    use super::*;
+
+    fn lifecycle_world() -> World {
+        let mut world = World::new();
+        setup_lifecycle(&mut world);
+        world
+    }
+
+    fn setup_lifecycle(world: &mut World) {
+        world.init_resource::<PortableScenes>();
+        world.init_resource::<LiveScenes>();
+        world.init_resource::<Events<LoadSceneEvent>>();
+        world.init_resource::<CurrentImposterScene>();
+        world.init_resource::<PreviewMode>();
+        world.init_resource::<CurrentSceneLoading>();
+        world.insert_resource(SceneLoadDistance {
+            load: 20.0,
+            unload: 10.0,
+            load_imposter: 0.0,
+        });
+
+        let mut pointers = ScenePointers::default();
+        for (parcel, hash) in [(IVec2::ZERO, "current"), (IVec2::X, "neighbour")] {
+            pointers.insert(
+                parcel,
+                PointerResult::Exists {
+                    hash: hash.to_owned(),
+                    urn: None,
+                },
+            );
+        }
+        world.insert_resource(pointers);
+
+        // stand in the middle of parcel (0,0)
+        world.spawn((
+            PrimaryUser::default(),
+            GlobalTransform::from_translation(Vec3::new(8.0, 0.0, -8.0)),
+        ));
+    }
+
+    fn spawned_hashes(world: &World) -> Vec<String> {
+        // `Events::update` never runs here, so this holds every event written so far
+        world
+            .resource::<Events<LoadSceneEvent>>()
+            .iter_current_update_events()
+            .map(|ev| match &ev.location {
+                SceneIpfsLocation::Hash(hash) => hash.clone(),
+                SceneIpfsLocation::Urn(urn) => urn.clone(),
+            })
+            .collect()
+    }
+
+    fn spawn_current_scene(world: &mut World, state: SceneLoading) -> Entity {
+        let current = world.spawn((SceneHash("current".to_owned()), state)).id();
+        world
+            .resource_mut::<LiveScenes>()
+            .scenes
+            .insert("current".to_owned(), current);
+        current
+    }
+
+    #[test]
+    fn failed_current_scene_does_not_defer_other_scenes() {
+        let mut world = lifecycle_world();
+        let current = spawn_current_scene(&mut world, SceneLoading::Failed);
+
+        world.run_system_once(process_scene_lifecycle).unwrap();
+
+        assert!(
+            !world.resource::<CurrentSceneLoading>().0,
+            "a failed current scene must not count as loading"
+        );
+        // the failed entity is kept and tracked, so it isn't respawned
+        assert!(world.get_entity(current).is_ok());
+        assert_eq!(
+            world.resource::<LiveScenes>().scenes.get("current"),
+            Some(&current)
+        );
+        // and the neighbouring scene is no longer deferred behind it
+        assert_eq!(spawned_hashes(&world), vec!["neighbour".to_owned()]);
+    }
+
+    #[test]
+    fn loading_current_scene_defers_other_scenes() {
+        let mut world = lifecycle_world();
+        spawn_current_scene(&mut world, SceneLoading::SceneEntity);
+
+        world.run_system_once(process_scene_lifecycle).unwrap();
+
+        assert!(world.resource::<CurrentSceneLoading>().0);
+        assert!(spawned_hashes(&world).is_empty());
+    }
+
+    #[test]
+    fn empty_definition_is_kept_without_deferring_and_despawned_out_of_range() {
+        use std::path::Path;
+
+        use bevy::asset::io::{
+            memory::{Dir, MemoryAssetReader},
+            AssetSourceBuilder,
+        };
+        use ipfs::{EntityDefinitionLoader, IpfsIo, IpfsResource};
+
+        // an active-entities response with nothing at the pointer
+        let dir = Dir::default();
+        dir.insert_asset_text(Path::new("empty.entity_definition"), "[]");
+
+        let mut app = App::new();
+        app.register_asset_source(
+            "mem",
+            AssetSourceBuilder::default()
+                .with_reader(move || Box::new(MemoryAssetReader { root: dir.clone() })),
+        );
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<EntityDefinition>()
+            .init_asset_loader::<EntityDefinitionLoader>()
+            .insert_resource(IpfsResource {
+                inner: std::sync::Arc::new(IpfsIo::new(
+                    false,
+                    Box::new(MemoryAssetReader {
+                        root: Dir::default(),
+                    }),
+                    None,
+                    Default::default(),
+                    1,
+                    tokio::sync::mpsc::unbounded_channel().0,
+                )),
+            })
+            .add_systems(Update, (load_scene_json, process_scene_lifecycle).chain());
+        setup_lifecycle(app.world_mut());
+
+        let h_definition = app
+            .world()
+            .resource::<AssetServer>()
+            .load::<EntityDefinition>("mem://empty.entity_definition");
+        let current = app
+            .world_mut()
+            .spawn((
+                SceneHash("current".to_owned()),
+                SceneLoading::SceneEntity,
+                SceneEntityDefinitionHandle(h_definition),
+            ))
+            .id();
+        app.world_mut()
+            .resource_mut::<LiveScenes>()
+            .scenes
+            .insert("current".to_owned(), current);
+
+        let mut failed = false;
+        for _ in 0..1000 {
+            app.update();
+            if matches!(
+                app.world().get::<SceneLoading>(current),
+                Some(SceneLoading::Failed)
+            ) {
+                failed = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(failed, "empty definition should mark the scene as failed");
+
+        // the next lifecycle pass sees the failed load as terminal
+        app.update();
+        assert!(!app.world().resource::<CurrentSceneLoading>().0);
+        assert_eq!(
+            app.world().resource::<LiveScenes>().scenes.get("current"),
+            Some(&current)
+        );
+        assert!(app.world().get_entity(current).is_ok());
+        // the current scene is never respawned, and no longer defers its neighbour
+        assert_eq!(spawned_hashes(app.world()), vec!["neighbour".to_owned()]);
+
+        // leave the range
+        let mut users = app
+            .world_mut()
+            .query_filtered::<&mut GlobalTransform, With<PrimaryUser>>();
+        *users.single_mut(app.world_mut()).unwrap() =
+            GlobalTransform::from_translation(Vec3::new(1000.0, 0.0, -1000.0));
+        app.update();
+
+        assert!(app.world().get_entity(current).is_err());
+        assert!(!app
+            .world()
+            .resource::<LiveScenes>()
+            .scenes
+            .contains_key("current"));
     }
 }

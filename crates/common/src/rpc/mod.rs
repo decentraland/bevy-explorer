@@ -1,9 +1,14 @@
 mod result_sender;
 mod stream_sender;
+#[cfg(test)]
+mod tests;
 
-use crate::{profile::SerializedProfile, structs::PermissionType};
+use crate::{
+    profile::SerializedProfile,
+    structs::{EmoteMask, PermissionType},
+};
+use alloy_core::primitives::Address;
 use bevy::{platform::collections::HashMap, prelude::*};
-use ethers_core::types::H160;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use tokio_util::sync::CancellationToken;
@@ -41,7 +46,9 @@ pub(crate) fn ipc_router(
         let ctx = ctx.as_mut().unwrap();
 
         let token = CancellationToken::new();
-        ctx.ipc_channel_registry.insert(id, token.clone());
+        if ctx.ipc_channel_registry.insert(id, token.clone()).is_some() {
+            warn!("ipc channel {id} deserialized twice; the first remote's close will cut off the second");
+        }
         (ctx.ipc_router.clone(), token)
     })
 }
@@ -110,6 +117,19 @@ pub struct RPCSendableMessage {
 
 pub type RpcEventSender = RpcStreamSender<String>;
 
+/// `decentraland.kernel.apis.OpenExplorerUiResult` (restricted_actions.proto; the kernel api
+/// protos are not compiled, so the wire values are mirrored here).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(i32)]
+pub enum OpenExplorerUiResult {
+    Unspecified = 0,
+    Opened = 1,
+    WasAlreadyOpen = 2,
+    RejectedNotCurrentScene = 3,
+    RejectedFeatureDisabled = 4,
+    RejectedNoUserGesture = 5,
+}
+
 #[derive(Event, Debug, Clone, Serialize, Deserialize)]
 pub enum RpcCall {
     ChangeRealm {
@@ -128,6 +148,7 @@ pub enum RpcCall {
         to: Vec3,
         looking_at: Option<Vec3>,
         duration: Option<f32>,
+        camera_rotation: Option<Quat>,
         response: Option<RpcResultSender<bool>>,
     },
     WalkPlayer {
@@ -139,7 +160,10 @@ pub enum RpcCall {
     },
     TeleportPlayer {
         scene: Option<Entity>,
-        to: IVec2,
+        /// The parcel to land on; `None` (with a realm) is the realm's default spawn.
+        to: Option<IVec2>,
+        /// The realm `to` belongs to: a realm change (a full reconnect, as for `ChangeRealm`) happens first.
+        realm: Option<String>,
         response: RpcResultSender<Result<(), String>>,
     },
     MoveCamera {
@@ -165,6 +189,8 @@ pub enum RpcCall {
         response: RpcResultSender<Result<SerializedProfile, ()>>,
     },
     GetConnectedPlayers {
+        /// calling scene — scopes the answer to its own room in partitioned mode
+        scene: Entity,
         response: RpcResultSender<Vec<String>>,
     },
     GetPlayersInScene {
@@ -176,10 +202,18 @@ pub enum RpcCall {
         urn: String,
         response: RpcResultSender<Result<(), String>>,
     },
+    OpenExplorerUi {
+        scene: Entity,
+        /// raw `decentraland.sdk.components.common.ExplorerUi` value
+        ui: i32,
+        response: RpcResultSender<OpenExplorerUiResult>,
+    },
     SubscribePlayerConnected {
+        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribePlayerDisconnected {
+        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribePlayerEnteredScene {
@@ -209,7 +243,7 @@ pub enum RpcCall {
     SendMessageBus {
         scene: Entity,
         data: Vec<u8>,
-        recipient: Option<H160>,
+        recipient: Option<Address>,
     },
     SubscribeMessageBus {
         hash: String,
@@ -250,6 +284,10 @@ pub enum RpcCall {
         scene: Entity,
         urn: String,
         r#loop: bool,
+        mask: EmoteMask,
+    },
+    StopEmote {
+        scene: Entity,
     },
     UiFocus {
         scene: Entity,
@@ -265,6 +303,9 @@ pub enum RpcCall {
         method: String,
         uri: String,
         meta: Option<String>,
+        /// scene hash of the requesting scene, when the request originates from scene JS —
+        /// selects a per-scene storage delegation in server mode
+        scene: Option<String>,
         response: RpcResultSender<Result<Vec<(String, String)>, String>>,
     },
     ReadFile {

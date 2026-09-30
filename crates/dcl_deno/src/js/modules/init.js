@@ -3,6 +3,41 @@
 // required for async ops (engine.sendMessage is declared as async)
 // Deno.core.initializeAsyncOps();
 
+// Private handle on the runtime internals, captured before they are removed from the
+// global object (see `sealRealm` below). `require` is the only thing that keeps a
+// reference, and it hands it out only to `~system/*` modules -- never to scene code.
+const denoRef = Deno;
+
+// The scene bundle is untrusted code that runs in THIS realm, so every global reachable
+// here is reachable from it -- including the raw ops table, which is the whole API surface
+// with none of the checks the `~system/*` wrappers apply. Drop the routes to it just
+// before the scene is evaluated (not at load time: the deno ext modules read these during
+// their own module evaluation, which happens first).
+//
+// `~system/*` modules still need the ops table, so `require` passes `denoRef` in as the
+// `Deno` parameter of their wrapper function. They are unchanged and see `Deno` as before;
+// the scene gets `undefined` for that parameter and no global to fall back to.
+//
+// AUTHORITATIVE SERVER ONLY. That is where scenes are multi-tenant and the host has
+// credentials and a network position worth reaching, so the reward for a deployed scene
+// escaping into the ops table is real. The desktop client runs on the user's own machine
+// and keeps today's behaviour, so a scene that reaches `Deno` there is not a regression
+// against a working preview.
+function isAuthoritativeServer() {
+    return !!(denoRef.core.ops.op_is_server && denoRef.core.ops.op_is_server());
+}
+
+let realmSealed = false;
+function sealRealm() {
+    if (realmSealed) {
+        return;
+    }
+    realmSealed = true;
+    delete globalThis.Deno;        // Deno.core.ops
+    delete globalThis.__bootstrap; // { core, internals, primordials } -- same ops table
+    delete globalThis.__infra;
+}
+
 // load a cjs/node-style module
 // TODO: consider using deno.land/std/node's `createRequire` directly.
 // Deno's node polyfill doesn't work without the full deno runtime, and i
@@ -11,14 +46,23 @@
 // this is a very simplified version of the deno_std/node `createRequire` implementation.
 function require(moduleName) {
     // dynamically load the module source
-    var source = Deno.core.ops.op_require(moduleName);
+    var source = denoRef.core.ops.op_require(moduleName);
 
     // create a wrapper for the imported script
     source = source.replace(/^#!.*?\n/, "");
-    const head = "(function (exports, require, module, __filename, __dirname) { (function (exports, require, module, __filename, __dirname) {";
-    const foot = "\n}).call(this, exports, require, module, __filename, __dirname); })";
+    const head = "(function (exports, require, module, __filename, __dirname, Deno) { (function (exports, require, module, __filename, __dirname, Deno) {";
+    const foot = "\n}).call(this, exports, require, module, __filename, __dirname, Deno); })";
     source = `${head}${source}${foot}`;
-    const [wrapped, err] = Deno.core.evalContext(source, "file://${moduleName}");
+
+    // the scene bundle is the untrusted one; everything else here is ours. Hiding the
+    // internals from it is authoritative-server only -- on the client the scene keeps
+    // seeing exactly what it sees today, global and wrapper parameter alike.
+    const hideInternals = moduleName === "~scene.js" && isAuthoritativeServer();
+    if (hideInternals) {
+        sealRealm();
+    }
+
+    const [wrapped, err] = denoRef.core.evalContext(source, "file://${moduleName}");
     if (err) {
         throw err.thrown;
     }
@@ -35,7 +79,8 @@ function require(moduleName) {
         require,                    // require
         module,                     // module
         moduleName.substring(1),    // __filename
-        moduleName.substring(0,1)   // __dirname
+        moduleName.substring(0, 1), // __dirname
+        hideInternals ? undefined : denoRef // Deno
     );
 
     return module.exports;
@@ -91,16 +136,16 @@ function logValue(value, seen) {
 
 const console = {
     trace: function (...args) {
-        Deno.core.ops.op_log("TRACE " + customLog(...args))
+        denoRef.core.ops.op_log("TRACE " + customLog(...args))
     },
     log: function (...args) {
-        Deno.core.ops.op_log("LOG " + customLog(...args))
+        denoRef.core.ops.op_log("LOG " + customLog(...args))
     },
     error: function (...args) {
-        Deno.core.ops.op_error("ERROR " + customLog(...args))
+        denoRef.core.ops.op_error("ERROR " + customLog(...args))
     },
     warn: function (...args) {
-        Deno.core.ops.op_log("WARN " + customLog(...args))
+        denoRef.core.ops.op_log("WARN " + customLog(...args))
     },
 }
 
@@ -109,13 +154,21 @@ globalThis.setImmediate = (fn) => Promise.resolve().then(fn)
 
 globalThis.require = require;
 globalThis.console = console;
+globalThis.self = {};
 
 // this does NOT seem like the nicest way to do re-exports but i can't figure out how to do it otherwise
 import { Request } from "ext:deno_fetch/23_request.js"
 globalThis.Request = Request;
 
 import * as fetch from "ext:deno_fetch/26_fetch.js";
-globalThis.fetch = fetch.fetch;
+// On the authoritative server a 3xx is never auto-followed (see `build_scene_client` in
+// fetch/mod.rs): the scene gets the redirect response back and re-issues the request itself,
+// so every hop is one it chose and one the per-request checks see. Decided per call -- the
+// scene context is not in place while this module is evaluated.
+globalThis.fetch = (input, init) =>
+    isAuthoritativeServer()
+        ? fetch.fetch(input, { ...init, redirect: "manual" })
+        : fetch.fetch(input, init);
 
 import * as timers from "ext:deno_web/02_timers.js";
 globalThis.setTimeout = timers.setTimeout;
@@ -127,12 +180,15 @@ globalThis.WebSocket = websocket.WebSocket;
 
 import * as _10 from "ext:deno_websocket/02_websocketstream.js";
 
+import * as textEncoding from "ext:deno_web/08_text_encoding.js";
+globalThis.TextEncoder = textEncoding.TextEncoder;
+globalThis.TextDecoder = textEncoding.TextDecoder;
+
 // we need to ensure all modules are evaluated, else deno complains in debug mode
 import * as _0 from "ext:deno_url/01_urlpattern.js"
 import * as _1 from "ext:deno_web/02_structured_clone.js"
 import * as _2 from "ext:deno_web/04_global_interfaces.js"
 import * as _3 from "ext:deno_web/05_base64.js"
-import * as _4 from "ext:deno_web/08_text_encoding.js"
 import * as _5 from "ext:deno_web/10_filereader.js"
 import * as _6 from "ext:deno_web/13_message_port.js"
 import * as _7 from "ext:deno_web/14_compression.js"
@@ -145,7 +201,42 @@ globalThis.localStorage = webstorage.localStorage();
 import * as performance from "ext:deno_web/15_performance.js"
 globalThis.performance = performance.performance;
 
-Deno.core.setUnhandledPromiseRejectionHandler((promise, reason) => {
+// Native super-user bridge transport. The web super-user scene gets a real BroadcastChannel from the
+// browser; native deno has none, so expose one backed by host ops (op_bridge_to_page + the page->scene
+// stream). Defined unconditionally (the ops aren't attached to Deno.core.ops yet at this esm-entry
+// load time); each method guards on the op existing, so it's a live channel only in super-user scenes
+// (where the ops are registered) and inert elsewhere. Lets the bridge-scene run unchanged on native.
+globalThis.BroadcastChannel = class BroadcastChannel {
+    constructor(name) {
+        this.name = name;
+        this.onmessage = null;
+        this._closed = false;
+        const self = this;
+        if (denoRef.core.ops.op_get_bridge_stream) {
+            denoRef.core.ops.op_get_bridge_stream().then(function (rid) {
+                (async function () {
+                    while (!self._closed) {
+                        const s = await denoRef.core.ops.op_read_bridge_stream(rid);
+                        if (!s) break; // "" => stream closed
+                        if (self.onmessage) {
+                            try { self.onmessage({ data: JSON.parse(s) }); } catch (e) {}
+                        }
+                    }
+                })();
+            });
+        }
+    }
+    postMessage(msg) {
+        if (denoRef.core.ops.op_bridge_to_page) {
+            try { denoRef.core.ops.op_bridge_to_page(JSON.stringify(msg)); } catch (e) {}
+        }
+    }
+    addEventListener(type, fn) { if (type === 'message') this.onmessage = fn; }
+    removeEventListener() {}
+    close() { this._closed = true; }
+};
+
+denoRef.core.setUnhandledPromiseRejectionHandler((promise, reason) => {
     console.error('Unhandled promise rejection: ', reason)
     return true;
 })

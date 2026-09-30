@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package decentraland.common;
+
+import "google/protobuf/descriptor.proto";
+
+// Options for quantizing a float value stored as a uint32 field.
+// The float is clamped to [min, max] and uniformly quantized to N bits;
+// protobuf encodes the resulting uint32 as a varint on the wire.
+// The generator emits a float {Name}Quantized accessor in the partial class.
+message QuantizedFloatOptions {
+  float  min  = 1;
+  float  max  = 2;
+  uint32 bits = 3;
+}
+
+// Options for quantizing a signed float with a power-law curve, stored as a uint32 field.
+// The value is split into an (bits-1)-bit linear unorm magnitude `u in [0, 1]` plus a sign,
+// and reconstructed as `value = sign * max * u^pow`. Because `u = 0` maps to exactly `0`, zero is
+// representable (unlike the linear quantizer, whose codes straddle zero), and `pow > 1` concentrates
+// resolution near zero — useful for fields like velocity that need fine detail at low magnitudes and
+// only coarse detail near the extremes. The range is symmetric ([-max, max]); there is no `min`.
+// The encoded layout puts the magnitude in the high bits and the sign in the LSB
+// (`(magnitude << 1) | sign`), so the varint cost tracks magnitude, not direction: a small `|value|`
+// of either sign stays in one varint byte. Zero canonicalizes to `0`, so proto3 omits a stopped field.
+// The generator emits a float {Name}Quantized accessor, same as the linear option.
+message QuantizedPowerFloatOptions {
+  float  max  = 1;
+  float  pow  = 2;
+  uint32 bits = 3;
+}
+
+// Options for bit-packing an integer field into fewer than 32 bits.
+message BitPackedOptions {
+  uint32 bits = 1;
+}
+
+extend google.protobuf.FieldOptions {
+  // Apply to uint32 fields to enable quantized float encoding.
+  // Example: uint32 dx = 1 [(decentraland.common.quantized) = { min: -100.0, max: 100.0, bits: 16 }];
+  QuantizedFloatOptions quantized  = 50001;
+
+  // Apply to uint32 fields to pack into fewer bits.
+  // Example: uint32 entity_id = 4 [(decentraland.common.bit_packed) = { bits: 20 }];
+  BitPackedOptions      bit_packed = 50002;
+
+  // Apply to uint32 fields to enable power-law quantized float encoding (sign + magnitude curve).
+  // A field carries either `quantized` or `quantized_power`, not both.
+  // Example: uint32 velocity_x = 9 [(decentraland.common.quantized_power) = { max: 50.0, pow: 2.0, bits: 8 }];
+  QuantizedPowerFloatOptions quantized_power = 50003;
+}

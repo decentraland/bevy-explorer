@@ -17,7 +17,7 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
     ContainingScene, Toaster,
 };
-use system_bridge::{NativeUi, PermanentPermissionItem, SystemApi};
+use system_bridge::{NativeUi, PermanentPermissionItem, PermissionRequestEvent, SystemApi};
 use tokio::sync::oneshot::error::TryRecvError;
 use ui_core::{
     button::DuiButton,
@@ -340,10 +340,10 @@ pub fn handle_scene_permissions(
     mut manager: ResMut<PermissionManager>,
     mut config: ResMut<AppConfig>,
     mut system_events: EventReader<SystemApi>,
-    mut requests_streams: Local<Vec<RpcStreamSender<system_bridge::PermissionRequest>>>,
+    mut requests_streams: Local<Vec<RpcStreamSender<PermissionRequestEvent>>>,
     mut used_streams: Local<Vec<RpcStreamSender<PermissionUsed>>>,
-    // corresponds to the items in the manager deque
-    mut permission_ids: Local<Vec<usize>>,
+    // corresponds to the items in the manager deque (None = never streamed)
+    mut permission_ids: Local<Vec<Option<usize>>>,
     mut inc: Local<usize>,
     scenes: Query<&RendererSceneContext>,
     current_realm: Res<CurrentRealm>,
@@ -359,16 +359,20 @@ pub fn handle_scene_permissions(
             SystemApi::GetPermissionRequestStream(stream) => {
                 // send any current outstanding requests when a new stream is attached
                 for (handle, req) in permission_ids.iter().zip(manager.pending.iter()) {
-                    let Ok(hash) = scenes.get(req.scene).map(|ctx| &ctx.hash) else {
+                    let (Some(handle), Ok(hash)) =
+                        (handle, scenes.get(req.scene).map(|ctx| &ctx.hash))
+                    else {
                         continue;
                     };
 
-                    let _ = stream.send(system_bridge::PermissionRequest {
-                        ty: req.ty,
-                        additional: req.additional.clone(),
-                        scene: hash.clone(),
-                        id: *handle,
-                    });
+                    let _ = stream.send(PermissionRequestEvent::Request(
+                        system_bridge::PermissionRequest {
+                            ty: req.ty,
+                            additional: req.additional.clone(),
+                            scene: hash.clone(),
+                            id: *handle,
+                        },
+                    ));
                 }
 
                 requests_streams.push(stream.clone())
@@ -378,7 +382,7 @@ pub fn handle_scene_permissions(
                 let Some((index, _)) = permission_ids
                     .iter()
                     .enumerate()
-                    .find(|(_, id)| **id == result.id)
+                    .find(|(_, id)| **id == Some(result.id))
                 else {
                     warn!("permission request with id {} not found", result.id);
                     continue;
@@ -454,6 +458,7 @@ pub fn handle_scene_permissions(
 
         let Ok(hash) = scenes.get(req.scene).map(|ctx| &ctx.hash) else {
             resolved.insert(i, false);
+            permission_ids.push(None);
             continue;
         };
 
@@ -470,19 +475,23 @@ pub fn handle_scene_permissions(
             PermissionValue::Ask => true,
         };
 
-        let next_id = *inc;
-        if needs_request {
+        let next_id = needs_request.then(|| {
+            let next_id = *inc;
             *inc += 1;
 
             for req_stream in requests_streams.iter() {
-                let _ = req_stream.send(system_bridge::PermissionRequest {
-                    ty: req.ty,
-                    additional: req.additional.clone(),
-                    scene: hash.clone(),
-                    id: next_id,
-                });
+                let _ = req_stream.send(PermissionRequestEvent::Request(
+                    system_bridge::PermissionRequest {
+                        ty: req.ty,
+                        additional: req.additional.clone(),
+                        scene: hash.clone(),
+                        id: next_id,
+                    },
+                ));
             }
-        }
+
+            next_id
+        });
 
         permission_ids.push(next_id);
     }
@@ -498,11 +507,17 @@ pub fn handle_scene_permissions(
     requests_streams.retain(|s| !s.is_closed());
     used_streams.retain(|s| !s.is_closed());
 
-    // send out resolved items
+    // send out resolved items, and tell the streams any request they were shown is no longer open
     for (index, result) in resolved.iter().rev() {
-        permission_ids.remove(*index);
+        let id = permission_ids.remove(*index);
         let perm = manager.pending.remove(*index).unwrap();
         perm.sender.send(*result);
+
+        if let Some(id) = id {
+            for req_stream in requests_streams.iter() {
+                let _ = req_stream.send(PermissionRequestEvent::Cancelled { id });
+            }
+        }
     }
 
     // send out uses
