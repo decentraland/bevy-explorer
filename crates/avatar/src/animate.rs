@@ -4,7 +4,10 @@ use std::{
 };
 
 use bevy::{
-    animation::{graph::AnimationMask, RepeatAnimation},
+    animation::{
+        graph::{AnimationMask, AnimationNodeType},
+        RepeatAnimation,
+    },
     ecs::system::SystemParam,
     gltf::Gltf,
     math::Vec3Swizzles,
@@ -101,8 +104,9 @@ fn masked_weight(share: f32) -> f32 {
 #[derive(Component, Default)]
 pub struct MaskedEmote {
     request: Option<MaskedRequest>,
-    /// Clip nodes by urn, added to the avatar graph with the lower body masked out.
-    clips: HashMap<String, AnimationNodeIndex>,
+    /// Clip nodes by urn, added to the avatar graph with the lower body masked out, and when each
+    /// was last played (see `clip_node`).
+    clips: HashMap<String, (AnimationNodeIndex, f32)>,
     /// The node being driven (playing, or fading out after the request ended) and its fade
     /// fraction, the share of the upper body it gets.
     playing: Option<(AnimationNodeIndex, f32)>,
@@ -1341,10 +1345,63 @@ enum Slot<'a> {
     /// clip still fading out.
     UpperBody {
         /// the overlay's graph nodes, by urn
-        clips: &'a mut HashMap<String, AnimationNodeIndex>,
+        clips: &'a mut HashMap<String, (AnimationNodeIndex, f32)>,
         /// the overlay clip running and its share
         playing: &'a mut Option<(AnimationNodeIndex, f32)>,
     },
+}
+
+/// Clip nodes an avatar's graph holds per slot kind before a new clip replaces one: the graph
+/// can't drop nodes, and each keeps its clip loaded.
+const MAX_CLIP_NODES: usize = 16;
+
+/// `urn`'s clip node in the avatar graph, stamped as played at `now`. A new urn gets `clip` under
+/// `mask` on a new node or, at `MAX_CLIP_NODES`, on the least recently played node that's off the
+/// player. `None` if the graph isn't loaded.
+#[allow(clippy::too_many_arguments)]
+fn clip_node(
+    nodes: &mut HashMap<String, (AnimationNodeIndex, f32)>,
+    urn: &str,
+    now: f32,
+    player: &AnimationPlayer,
+    graphs: &mut Assets<AnimationGraph>,
+    graph: &AnimationGraphHandle,
+    clip: Handle<AnimationClip>,
+    mask: AnimationMask,
+) -> Option<AnimationNodeIndex> {
+    // look up by &str first — the entry api would allocate a String per call
+    if let Some((ix, played)) = nodes.get_mut(urn) {
+        *played = now;
+        return Some(*ix);
+    }
+
+    // only mutate the graph when it changes: `get_mut` re-threads it
+    let graph = graphs.get_mut(graph)?;
+    let stale = if nodes.len() < MAX_CLIP_NODES {
+        None
+    } else {
+        nodes
+            .iter()
+            .filter(|(_, (ix, _))| player.animation(*ix).is_none())
+            .min_by(|(_, (_, a)), (_, (_, b))| a.total_cmp(b))
+            .map(|(urn, (ix, _))| (urn.clone(), *ix))
+    };
+    let ix = match stale {
+        Some((stale_urn, ix)) => {
+            debug!("replacing clip {stale_urn} with {urn}");
+            nodes.remove(&stale_urn);
+            let node = graph.get_mut(ix)?;
+            node.node_type = AnimationNodeType::Clip(clip);
+            node.mask = mask;
+            ix
+        }
+        None => {
+            debug!("adding clip {urn}");
+            graph.add_clip_with_mask(clip, mask, 1.0, graph.root)
+        }
+    };
+    nodes.insert(urn.to_owned(), (ix, now));
+    Some(ix)
 }
 
 /// Why a slot didn't play this frame.
@@ -1432,23 +1489,25 @@ fn play_slot(
     let Ok((mut player, transitions, clips, graph)) = players.get_mut(player_ent) else {
         return Err(Hold::NoPlayer);
     };
-    let graph = graph.and_then(|graph| params.graphs.get_mut(graph));
+    let now = params.time.elapsed_secs();
     let (clip_ix, restart) = match &mut slot {
         Slot::FullBody { .. } => {
             let mut clips = clips.unwrap();
-            // look up by &str first — the entry api would allocate a String per call
-            let clip_ix = match clips.named.get(playback.urn.as_str()) {
-                Some((ix, _)) => *ix,
-                None => {
-                    debug!("adding clip");
-                    let ix = match graph {
-                        Some(graph) => graph.add_clip(clip, 1.0, graph.root),
-                        None => AnimationNodeIndex::new(u32::MAX as usize),
-                    };
-                    clips.named.insert(playback.urn.to_string(), (ix, 0.0));
-                    ix
-                }
-            };
+            // the avatar's `Clips` durations (unused here) hold when each node was last played
+            let clip_ix = graph
+                .and_then(|graph| {
+                    clip_node(
+                        &mut clips.named,
+                        playback.urn.as_str(),
+                        now,
+                        &player,
+                        &mut params.graphs,
+                        graph,
+                        clip,
+                        0,
+                    )
+                })
+                .unwrap_or(AnimationNodeIndex::new(u32::MAX as usize));
             let running = match &transitions {
                 Some(transitions) => transitions.get_main_animation() == Some(clip_ix),
                 None => player.is_playing_animation(clip_ix),
@@ -1456,13 +1515,20 @@ fn play_slot(
             (clip_ix, playback.restart || !running)
         }
         Slot::UpperBody { clips, .. } => {
-            let Some(graph) = graph else {
+            let Some(clip_ix) = graph.and_then(|graph| {
+                clip_node(
+                    clips,
+                    playback.urn.as_str(),
+                    now,
+                    &player,
+                    &mut params.graphs,
+                    graph,
+                    clip,
+                    LOWER_BODY_MASK,
+                )
+            }) else {
                 return Err(Hold::NoPlayer);
             };
-            let clip_ix = *clips.entry(playback.urn.to_string()).or_insert_with(|| {
-                debug!("adding masked clip {}", playback.urn);
-                graph.add_clip_with_mask(clip, LOWER_BODY_MASK, 1.0, graph.root)
-            });
             (
                 clip_ix,
                 playback.restart || !player.is_playing_animation(clip_ix),
