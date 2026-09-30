@@ -23,12 +23,13 @@ use bevy::{
 use cache_size::CacheSizeSetting;
 use cel_shading_setting::CelShadingSetting;
 #[cfg(not(target_arch = "wasm32"))]
-use common::structs::{SkyReflectionSetting, SsaoSetting};
+use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
         AaSetting, AppConfig, BloomSetting, CameraSmoothing, DofSetting, FogSetting,
-        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting, WindowSetting,
+        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting,
+        SkyReflectionSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
