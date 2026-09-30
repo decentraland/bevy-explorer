@@ -1460,6 +1460,10 @@ pub struct SceneGlobalLight {
     pub dir_color: Color,
     pub dir_illuminance: f32,
     pub dir_direction: Vec3,
+    /// the sun as the sky draws it. the same as the directional light by day, but it keeps
+    /// setting below the horizon at night while the light follows the moon
+    pub sun_illuminance: f32,
+    pub sun_direction: Vec3,
     pub ambient_color: Color,
     pub ambient_brightness: f32,
     pub layers: RenderLayers,
