@@ -226,7 +226,10 @@ const defaultBindings = (): BindingEntry[] => [
   [{ System: 'PointerDown' }, ['GamepadRight Down']],
   [{ System: 'PointerLeft' }, ['GamepadRight Left']],
   [{ System: 'PointerRight' }, ['GamepadRight Right']],
-  ...Array.from({ length: 10 }, (_, slot): BindingEntry => [{ System: `QuickEmote${slot}` }, [`Numpad${slot}`]]),
+  ...Array.from({ length: 10 }, (_, slot): BindingEntry => [
+    { System: `QuickEmote${slot}` },
+    [`Numpad${slot}`, `Digit${slot}`]
+  ]),
   [{ System: 'Places' }, ['KeyZ']],
   [{ System: 'Communities' }, ['KeyO']],
   [{ System: 'Backpack' }, ['KeyI']],

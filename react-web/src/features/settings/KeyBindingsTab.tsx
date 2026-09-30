@@ -205,13 +205,25 @@ const isScrollAction = (a: ActionWire): boolean => 'System' in a && a.System.sta
 const isFixedBinding = (action: ActionWire, input: InputIdentifierWire): boolean =>
   isScrollAction(action) && input.startsWith('MouseWheel ')
 
+// Quick emotes only play while the emote wheel is open, and the open wheel mutes scene
+// input, so a quick emote sharing a key with a scene action is intentional — e.g. the digit
+// defaults deliberately overlap Action 3-6.
+const isQuickEmoteAction = (a: ActionWire): boolean => 'System' in a && a.System.startsWith('QuickEmote')
+const isSceneAction = (a: ActionWire): boolean => 'Scene' in a
+
+/** Action pairs whose shared inputs are intentional (see above), so never flagged as conflicts. */
+const sharedByDesign = (a: ActionWire, b: ActionWire): boolean =>
+  isScrollAction(a) ||
+  isScrollAction(b) ||
+  (isQuickEmoteAction(a) && isSceneAction(b)) ||
+  (isSceneAction(a) && isQuickEmoteAction(b))
+
 /** Friendly names of OTHER listed actions also bound to `input` (the duplicate warning). */
 function conflictsFor(table: BindingEntry[], action: ActionWire, input: InputIdentifierWire): string[] {
-  if (isScrollAction(action)) return []
   return ALL_LISTED.filter(
     ([a]) =>
-      !isScrollAction(a) &&
       !sameAction(a, action) &&
+      !sharedByDesign(a, action) &&
       (table.find(([b]) => sameAction(a, b))?.[1] ?? []).includes(input)
   ).map(([, label]) => label)
 }

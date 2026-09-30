@@ -597,7 +597,27 @@ pub const SETTINGS_GENERATION: u32 = 2;
 
 /// bump to run one-time migrations of saved input binding tables
 /// (see [`AppConfig::migrate_inputs`])
-pub const INPUTS_GENERATION: u32 = 1;
+pub const INPUTS_GENERATION: u32 = 2;
+
+/// (top-row digit, numpad) keys for a quick emote action
+fn quick_emote_keys(action: &Action) -> Option<(KeyCode, KeyCode)> {
+    let Action::System(action) = action else {
+        return None;
+    };
+    Some(match action {
+        SystemAction::QuickEmote0 => (KeyCode::Digit0, KeyCode::Numpad0),
+        SystemAction::QuickEmote1 => (KeyCode::Digit1, KeyCode::Numpad1),
+        SystemAction::QuickEmote2 => (KeyCode::Digit2, KeyCode::Numpad2),
+        SystemAction::QuickEmote3 => (KeyCode::Digit3, KeyCode::Numpad3),
+        SystemAction::QuickEmote4 => (KeyCode::Digit4, KeyCode::Numpad4),
+        SystemAction::QuickEmote5 => (KeyCode::Digit5, KeyCode::Numpad5),
+        SystemAction::QuickEmote6 => (KeyCode::Digit6, KeyCode::Numpad6),
+        SystemAction::QuickEmote7 => (KeyCode::Digit7, KeyCode::Numpad7),
+        SystemAction::QuickEmote8 => (KeyCode::Digit8, KeyCode::Numpad8),
+        SystemAction::QuickEmote9 => (KeyCode::Digit9, KeyCode::Numpad9),
+        _ => return None,
+    })
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -688,52 +708,36 @@ impl AppConfig {
 
     /// migrate saved input tables: replace bindings still on changed old defaults
     /// (RollLeft/RollRight KeyT/KeyG freed for ChatPanel/Gallery, quick emotes moved off
-    /// the Action 3-6 digits onto the numpad), and add defaults for any actions the saved
-    /// table doesn't mention
+    /// the Action 3-6 digits onto the numpad, then given the digits back alongside it),
+    /// and add defaults for any actions the saved table doesn't mention
     pub fn migrate_inputs(&mut self) {
-        if self.inputs_generation < INPUTS_GENERATION {
+        if self.inputs_generation < 1 {
             for (action, bindings) in self.inputs.0.iter_mut() {
                 let (old_default, new_default) = match action {
                     Action::System(SystemAction::RollLeft) => (KeyCode::KeyT, None),
                     Action::System(SystemAction::RollRight) => (KeyCode::KeyG, None),
-                    Action::System(SystemAction::QuickEmote0) => {
-                        (KeyCode::Digit0, Some(KeyCode::Numpad0))
-                    }
-                    Action::System(SystemAction::QuickEmote1) => {
-                        (KeyCode::Digit1, Some(KeyCode::Numpad1))
-                    }
-                    Action::System(SystemAction::QuickEmote2) => {
-                        (KeyCode::Digit2, Some(KeyCode::Numpad2))
-                    }
-                    Action::System(SystemAction::QuickEmote3) => {
-                        (KeyCode::Digit3, Some(KeyCode::Numpad3))
-                    }
-                    Action::System(SystemAction::QuickEmote4) => {
-                        (KeyCode::Digit4, Some(KeyCode::Numpad4))
-                    }
-                    Action::System(SystemAction::QuickEmote5) => {
-                        (KeyCode::Digit5, Some(KeyCode::Numpad5))
-                    }
-                    Action::System(SystemAction::QuickEmote6) => {
-                        (KeyCode::Digit6, Some(KeyCode::Numpad6))
-                    }
-                    Action::System(SystemAction::QuickEmote7) => {
-                        (KeyCode::Digit7, Some(KeyCode::Numpad7))
-                    }
-                    Action::System(SystemAction::QuickEmote8) => {
-                        (KeyCode::Digit8, Some(KeyCode::Numpad8))
-                    }
-                    Action::System(SystemAction::QuickEmote9) => {
-                        (KeyCode::Digit9, Some(KeyCode::Numpad9))
-                    }
-                    _ => continue,
+                    _ => match quick_emote_keys(action) {
+                        Some((digit, numpad)) => (digit, Some(numpad)),
+                        None => continue,
+                    },
                 };
                 if *bindings == [InputIdentifier::Key(old_default)] {
                     *bindings = new_default.map(InputIdentifier::Key).into_iter().collect();
                 }
             }
-            self.inputs_generation = INPUTS_GENERATION;
         }
+        if self.inputs_generation < 2 {
+            // the HUD only plays a quick emote while the wheel is open, which mutes scenes,
+            // so the digits can be shared with the Action 3-6 keys
+            for (action, bindings) in self.inputs.0.iter_mut() {
+                if let Some((digit, numpad)) = quick_emote_keys(action) {
+                    if *bindings == [InputIdentifier::Key(numpad)] {
+                        bindings.push(InputIdentifier::Key(digit));
+                    }
+                }
+            }
+        }
+        self.inputs_generation = INPUTS_GENERATION;
         // ShowProfile is legacy (see the SystemAction variant): drop saved rows so the dead
         // action neither lingers in tables nor resurfaces anywhere.
         self.inputs
@@ -1868,10 +1872,14 @@ mod tests {
         );
         // the legacy ShowProfile row is stripped, not merged back
         assert_eq!(get(&config, SystemAction::ShowProfile), None);
-        // quick emotes: old digit default remapped to the numpad, a rebind preserved
+        // quick emotes: old digit default remapped to the numpad (plus the digit), a
+        // rebind preserved
         assert_eq!(
             get(&config, SystemAction::QuickEmote3),
-            Some(vec![InputIdentifier::Key(KeyCode::Numpad3)])
+            Some(vec![
+                InputIdentifier::Key(KeyCode::Numpad3),
+                InputIdentifier::Key(KeyCode::Digit3)
+            ])
         );
         assert_eq!(
             get(&config, SystemAction::QuickEmote4),
@@ -1891,5 +1899,50 @@ mod tests {
             get(&config, SystemAction::RollLeft),
             Some(vec![InputIdentifier::Key(KeyCode::KeyT)])
         );
+    }
+
+    #[test]
+    fn migrate_inputs_adds_quick_emote_digits() {
+        // a generation-1 table: quick emotes on the numpad-only default, one rebound
+        let mut config = AppConfig {
+            inputs: InputMapSerialized(
+                vec![
+                    (
+                        Action::System(SystemAction::QuickEmote5),
+                        vec![InputIdentifier::Key(KeyCode::Numpad5)],
+                    ),
+                    (
+                        Action::System(SystemAction::QuickEmote6),
+                        vec![InputIdentifier::Key(KeyCode::KeyX)],
+                    ),
+                ],
+                Default::default(),
+            ),
+            inputs_generation: 1,
+            ..Default::default()
+        };
+
+        config.migrate_inputs();
+
+        let get = |action| {
+            config
+                .inputs
+                .0
+                .iter()
+                .find(|(a, _)| *a == Action::System(action))
+                .map(|(_, bindings)| bindings.clone())
+        };
+        assert_eq!(
+            get(SystemAction::QuickEmote5),
+            Some(vec![
+                InputIdentifier::Key(KeyCode::Numpad5),
+                InputIdentifier::Key(KeyCode::Digit5)
+            ])
+        );
+        assert_eq!(
+            get(SystemAction::QuickEmote6),
+            Some(vec![InputIdentifier::Key(KeyCode::KeyX)])
+        );
+        assert_eq!(config.inputs_generation, INPUTS_GENERATION);
     }
 }
