@@ -198,6 +198,8 @@ export function applyCapture(
 // Scroll is a context action (only consumed over scrollable UI), so sharing its inputs with
 // other actions is intentional — e.g. the wheel defaults deliberately overlap camera zoom.
 const isScrollAction = (a: ActionWire): boolean => 'System' in a && a.System.startsWith('Scroll')
+// Quick emotes are too (only while the emote wheel is open), so their digits may overlap Action 3-6.
+const isContextAction = (a: ActionWire): boolean => isScrollAction(a) || ('System' in a && a.System.startsWith('QuickEmote'))
 
 /** The wheel's scroll role is FIXED (engine-enforced): HUD and scene scrollables use native
  *  wheel scrolling, which can't follow rebinds, so MouseWheel entries on Scroll rows can be
@@ -207,10 +209,10 @@ const isFixedBinding = (action: ActionWire, input: InputIdentifierWire): boolean
 
 /** Friendly names of OTHER listed actions also bound to `input` (the duplicate warning). */
 function conflictsFor(table: BindingEntry[], action: ActionWire, input: InputIdentifierWire): string[] {
-  if (isScrollAction(action)) return []
+  if (isContextAction(action)) return []
   return ALL_LISTED.filter(
     ([a]) =>
-      !isScrollAction(a) &&
+      !isContextAction(a) &&
       !sameAction(a, action) &&
       (table.find(([b]) => sameAction(a, b))?.[1] ?? []).includes(input)
   ).map(([, label]) => label)
