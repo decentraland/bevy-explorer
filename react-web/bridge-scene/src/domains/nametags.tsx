@@ -30,20 +30,7 @@ import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
 import type { Entity } from '@dcl/ecs'
 import { isSpeaking } from './voice'
 import { fetchProfile } from './profile'
-
-// UserNameColors.json — the 23-colour palette, indexed by FNV-1a(address) % 23. Kept in lockstep
-// with the engine's name_color.rs so the in-world colour matches the point-at marker tint.
-const PALETTE: ReadonlyArray<readonly [number, number, number]> = [
-  [0.67138505, 0.38714847, 0.9433962], [0.8324557, 0.6273585, 1], [0.8716914, 0.3820755, 1],
-  [1, 0.2028302, 0.9783837], [1, 0.3537736, 0.92354745], [1, 0.5235849, 0.79682314],
-  [1, 0.7019608, 0.9433204], [1, 0.28773582, 0.30953965], [1, 0.4292453, 0.46791336],
-  [1, 0.6367924, 0.66624165], [1, 0.5053185, 0.08018869], [1, 0.65705246, 0],
-  [1, 0.8548728, 0], [1, 0.9431928, 0.6084906], [0.51564926, 0.8679245, 0],
-  [0.6194137, 0.9607843, 0.121568605], [0.858401, 1, 0.5613208], [0, 1, 0.7287984],
-  [0.5330188, 1, 0.9353978], [0.60784316, 0.8391339, 1], [0.60784316, 0.6527446, 1],
-  [0.48584908, 0.7057166, 1], [0.2783019, 0.7820757, 1]
-]
-const NAME_COLORS: readonly Color4[] = PALETTE.map(([r, g, b]) => Color4.create(r, g, b, 1))
+import { userNameColor } from '../../../src/engine/nameColor'
 
 // unity-explorer colours (CommonStyles.uss): solid pill + border, white-40% wallet id.
 const PILL_BG = Color4.create(22 / 255, 21 / 255, 24 / 255, 1) // --dcl-color-shadow #161518
@@ -159,34 +146,19 @@ function truncateMessage(s: string, max: number): string {
   return (sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/\s+$/, '') + '…'
 }
 
-// 64-bit FNV-1a over the lowercase hex address — matches the engine + scene `simpleHash` exactly.
-function fnv1a64(str: string): bigint {
-  let hash = 2166136261n
-  for (let i = 0; i < str.length; i++) {
-    hash ^= BigInt(str.charCodeAt(i))
-    hash = (hash * 16777619n) & 0xffffffffffffffffn
-  }
-  return hash
-}
-// Name colour, matching the engine's UserProfile::name_color() resolution so the pill agrees with the
-// in-world point-at marker: a profile-set CUSTOM colour wins (claimed names only), else the address-
-// hashed palette. (We keep colouring unclaimed names by hash rather than greying them, per the
-// reference mobile nametags.) Custom colours come from the engine's profile (resolveClaimed) and the
-// hash is memoised — tagElement re-evaluates per texture render.
-const customColorCache = new Map<string, Color4>()
+// The reference name colour (a hue from the display name), shared with the HUD. Memoised: the tag
+// re-evaluates every texture render.
 const colorCache = new Map<string, Color4>()
-function nameColor(userId: string): Color4 {
-  const custom = customColorCache.get(userId)
-  if (custom != null) return custom
-  const key = userId.toLowerCase()
+function nameColor(userId: string, name: string, claimed: boolean): Color4 {
+  const key = `${userId}|${name}|${String(claimed)}`
   const hit = colorCache.get(key)
   if (hit != null) return hit
-  const c = NAME_COLORS[Number(fnv1a64(key) % BigInt(NAME_COLORS.length))]
+  const c = Color4.fromHexString(`${userNameColor(name, userId, claimed)}ff`)
   colorCache.set(key, c)
   return c
 }
 
-// hasClaimedName + custom name colour from the engine's profile (async, cached per NAME: a rename is
+// hasClaimedName from the engine's profile (async, cached per NAME: a rename is
 // exactly what claims or drops a unique name, and the engine's copy of the profile is already the
 // renamed one by the time the tag sees the new name); fall back to the name-suffix heuristic until
 // it resolves so the badge / discriminator don't flicker on first sight.
@@ -199,10 +171,6 @@ function resolveClaimed(userId: string, name: string): void {
     .then((av) => {
       const claimed = av?.hasClaimedName ?? !name.includes('#')
       claimedCache.set(userId, { name, claimed })
-      // The profile can set a custom name colour — engine logic applies it for claimed names only.
-      const nc = av?.nameColor
-      if (claimed && nc != null) customColorCache.set(userId, Color4.create(nc.r, nc.g, nc.b, 1))
-      else customColorCache.delete(userId)
     })
     // Settle on the heuristic rather than leave the entry empty: Tag asks every frame, so an
     // unresolvable profile would otherwise be re-requested every frame.
@@ -250,7 +218,7 @@ function tagElement(userId: string): () => ReactEcs.JSX.Element | null {
           uiBackground={{ color: PILL_BG }}
         >
           <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center' }}>
-            <UiEntity uiText={{ value, fontSize: FONT, color: nameColor(userId), textAlign: 'middle-center' }} />
+            <UiEntity uiText={{ value, fontSize: FONT, color: nameColor(userId, name, isClaimed), textAlign: 'middle-center' }} />
             {isClaimed && (
               <UiEntity
                 uiTransform={{ width: BADGE, height: BADGE, margin: { left: GAP } }}

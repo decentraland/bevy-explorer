@@ -2,6 +2,9 @@
 // the chat, members, and friends UIs so the rarity-colored naming is consistent.
 
 import { serviceUrl } from './baseDomain'
+import { userNameColor } from '../engine/nameColor'
+
+export { userNameColor }
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{6,}$/
 
@@ -47,25 +50,6 @@ function hash(s: string): number {
 
 export function nameColor(seed: string): string {
   return RARITY[hash(seed) % RARITY.length]
-}
-
-/** The reference client's name colour: an FNV-1a hue of the display name (letters and digits only,
- *  plus #last4 of the address when unclaimed) at 75% saturation, full value. */
-export function userNameColor(name: string, address: string, claimed: boolean): string {
-  const base = [...splitName(name).base].filter((c) => /[\p{L}\p{N}]/u.test(c)).join('')
-  if (base === '') return '#ffffff'
-  const display = claimed || address.length <= 4 ? base : `${base}#${address.slice(-4)}`
-  let h = 2166136261
-  for (let i = 0; i < display.length; i++) {
-    h ^= display.charCodeAt(i)
-    h = Math.imul(h, 16777619) >>> 0
-  }
-  const hue = h / 4294967295
-  const i = Math.floor(hue * 6)
-  const f = hue * 6 - i
-  const [p, q, t] = [0.25, 1 - f * 0.75, 1 - (1 - f) * 0.75]
-  const rgb = [[1, t, p], [q, 1, p], [p, 1, t], [p, q, 1], [t, p, 1], [1, p, q]][i % 6]
-  return `#${rgb.map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('')}`
 }
 
 /** A claimed name has no #suffix and isn't a raw address. */
