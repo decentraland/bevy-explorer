@@ -104,7 +104,7 @@
 .row:hover,
 .row:focus-within,
 .rowMenuOpen {
-  background: var(--row-hover);
+  background: var(--list-row-hover);
 }
 .info {
   position: relative;

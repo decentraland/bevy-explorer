@@ -28,7 +28,7 @@
   --divider-strong: rgba(255, 255, 255, 0.2); /* list section hairlines (friends) */
   --panel-translucent: rgba(0, 0, 0, 0.72); /* see-through side panel over the world */
   --panel-head: rgba(0, 0, 0, 0.55); /* header band layered on --panel-translucent */
-  --row-hover: rgba(255, 255, 255, 0.15); /* list row hover over --panel-translucent */
+  --list-row-hover: rgba(255, 255, 255, 0.15); /* list row hover over --panel-translucent */
   --row-action: rgba(255, 255, 255, 0.14); /* compact secondary action on a hovered row */
   --row-action-hover: rgba(255, 255, 255, 0.24);
   --row-menu-hover: rgba(255, 255, 255, 0.2);
