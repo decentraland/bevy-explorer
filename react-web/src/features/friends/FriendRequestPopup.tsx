@@ -3,7 +3,7 @@
 // friends service accepted the action, then close by themselves.
 import { useEffect, useRef, useState } from 'react'
 import { Avatar, Button, ModalShell, Spinner, TextArea, openPopup } from '../../design'
-import { nameColor, splitName } from '../../lib/identity'
+import { splitName, userColor } from '../../lib/identity'
 import { useSession } from '../session/SessionContext'
 import { onFriendEvent } from './friendEvents'
 import styles from './FriendRequestPopup.module.css'
@@ -34,7 +34,7 @@ function Mutuals({ address }: { address: string }): React.JSX.Element | null {
   return (
     <div className={styles.mutuals}>
       {list.slice(0, 3).map((m) => (
-        <Avatar key={m.address} src={m.picture} name={m.name} color={nameColor(m.address)} size={24} className={styles.mutualFace} />
+        <Avatar key={m.address} src={m.picture} name={m.name} color={userColor(m.address, m.name)} size={24} className={styles.mutualFace} />
       ))}
       <span>{list.length} Mutual</span>
     </div>
@@ -45,8 +45,8 @@ function Who({ user }: { user: RequestUser }): React.JSX.Element {
   const { base, tag } = splitName(user.name)
   return (
     <div className={styles.who}>
-      <Avatar src={user.picture} name={base} color={nameColor(user.address)} size={72} />
-      <span className={styles.name} style={{ color: nameColor(user.address) }}>
+      <Avatar src={user.picture} name={base} color={userColor(user.address, user.name)} size={72} />
+      <span className={styles.name} style={{ color: userColor(user.address, user.name) }}>
         {base}
         {tag && <span className={styles.tag}>{tag}</span>}
       </span>
@@ -110,8 +110,8 @@ function FriendRequestPopup({ mode, user, onClose }: { mode: RequestMode; user: 
     return (
       <ModalShell onClose={onClose} title={`You And ${base} Are Now Friends!`} centeredTitle>
         <div className={styles.pair}>
-          <Avatar src={me?.picture} name={me?.name ?? ''} color={nameColor(me?.address ?? '')} size={72} />
-          <Avatar src={user.picture} name={base} color={nameColor(user.address)} size={72} />
+          <Avatar src={me?.picture} name={me?.name ?? ''} color={userColor(me?.address ?? '', me?.name ?? '', me?.hasClaimedName)} size={72} />
+          <Avatar src={user.picture} name={base} color={userColor(user.address, user.name)} size={72} />
         </div>
       </ModalShell>
     )

@@ -6,7 +6,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Avatar } from '../../design'
-import { nameColor, shortAddr, splitName } from '../../lib/identity'
+import { shortAddr, splitName, userColor } from '../../lib/identity'
 import type { Relationship } from '../../lib/relationship'
 import styles from './ProfileCard.module.css'
 
@@ -151,7 +151,7 @@ export function ProfileCardPresentation({
   }, [x, y, above, relationship])
   const isMe = !!me?.address && !!user.address && me.address.toLowerCase() === user.address.toLowerCase()
   const { base, tag } = splitName(user.name)
-  const color = nameColor(user.address || user.name)
+  const color = userColor(user.address, user.name)
 
   const copy = (text: string, which: 'name' | 'address'): void => {
     navigator.clipboard?.writeText(text).then(

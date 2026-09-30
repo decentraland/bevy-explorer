@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Avatar, BlockedUser, Button, ControlButton, Envelope, Kebab, Spinner, Tabs, Tooltip, hasOpenPopup, type TabItem } from '../../design'
-import { shortAddr, splitName, userNameColor } from '../../lib/identity'
+import { shortAddr, splitName, userColor } from '../../lib/identity'
 import type { BlockedUser as Blocked, Friend, FriendRequest } from '../../engine/protocol'
 import type { FriendsState } from '../session/useEngineSession'
 import type { MenuContext } from '../chat/ProfileCardPresentation'
@@ -57,7 +57,7 @@ interface Identity {
 /** The reference's name-derived colour. It ignores the user's chosen colour (behind a flag that is off
  *  there), so we do too. */
 function colorOf(user: Identity & { name: string }): string {
-  return userNameColor(user.name, user.address, user.claimed ?? isClaimed(user.name))
+  return userColor(user.address, user.name, user.claimed)
 }
 
 function NameLabel({ name, user, message }: { name: string; user: Identity; message?: boolean }): React.JSX.Element {

@@ -9,7 +9,7 @@ import { ControlButton, IconButton, Panel, Toggle } from '../../design'
 import type { IconName } from '../../design'
 import type { NavAction } from '../../engine/protocol'
 import { keyHintFor, useBindingsSnapshot, type BindingsSnapshot } from '../../lib/bindingLabels'
-import { nameColor } from '../../lib/identity'
+import { userColor } from '../../lib/identity'
 import type { EngineSession } from '../session/useEngineSession'
 import { useLiveEventCount } from '../events/eventsApi'
 import { useAutoHide } from './useAutoHide'
@@ -156,7 +156,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
       <RailButton
         key="profile"
         icon={item.icon}
-        avatar={p ? { src: p.picture, name: p.name, color: nameColor(p.address || p.name) } : undefined}
+        avatar={p ? { src: p.picture, name: p.name, color: userColor(p.address, p.name, p.hasClaimedName) } : undefined}
         label={item.label}
         active={session.profile.open}
         onClick={onViewProfile ?? session.profile.toggle}

@@ -68,6 +68,16 @@ export function userNameColor(name: string, address: string, claimed: boolean): 
   return `#${rgb.map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('')}`
 }
 
+/** A claimed name has no #suffix and isn't a raw address. */
+export function looksClaimed(name: string): boolean {
+  return name.trim().length > 0 && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
+}
+
+/** The colour a person's name and avatar are drawn in, everywhere in the HUD. */
+export function userColor(address: string, name: string, claimed?: boolean): string {
+  return userNameColor(name, address, claimed ?? looksClaimed(name))
+}
+
 export function shortAddr(s: string): string {
   return ADDRESS_RE.test(s) ? `${s.slice(0, 6)}…${s.slice(-4)}` : s
 }

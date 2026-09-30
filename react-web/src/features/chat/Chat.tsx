@@ -16,17 +16,12 @@ import { openProfileCard } from '../profileCard/ProfileCard'
 import { peekProfile, useProfile } from '../session/profileStore'
 import { isCancelKey } from '../../lib/bindingLabels'
 import { hudInsetRef } from '../../lib/hudInset'
+import { userColor } from '../../lib/identity'
 import styles from './Chat.module.css'
 
 const MAX_LEN = 500
 const ADDRESS_RE = /^0x[0-9a-fA-F]{6,}$/
 
-// DCL rarity name colors — gives each sender a stable, on-brand color.
-const RARITY = [
-  '#73d3d3', '#acf8f8', '#ff8362', '#ff4bed', '#caff73', '#a14bf3',
-  '#e8b9ff', '#fea217', '#81e1ff', '#ff7439', '#ffa25a', '#ffc95b',
-  '#a0abff', '#c640cd'
-]
 const SYSTEM_COLOR = '#61d04f'
 
 function isSystem(sender: string): boolean {
@@ -52,15 +47,9 @@ function splitName(label: string): { base: string; tag: string } {
   return i >= 0 ? { base: label.slice(0, i), tag: label.slice(i) } : { base: label, tag: '' }
 }
 
-function hash(s: string): number {
-  let h = 0
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
-  return h
-}
-
-function senderColor(sender: string): string {
+function senderColor(sender: string, name: string): string {
   if (isSystem(sender)) return SYSTEM_COLOR
-  return RARITY[hash(sender) % RARITY.length]
+  return userColor(sender, name)
 }
 
 function formatTime(ts: number): string {
@@ -168,7 +157,7 @@ export const ChatBubble = memo(function ChatBubble({
   const known = useProfile(line.sender)
   const name = known?.name != null && known.name !== '' ? known.name : displaySender(line.sender)
   const picture = known?.picture
-  const color = senderColor(line.sender)
+  const color = senderColor(line.sender, name)
   const { base, tag } = splitName(name)
   const sender: ChatUser = { address: line.sender, name, picture }
   const highlight = mentionsMe(line.message, me ?? null, buildNameIndex(members))
@@ -206,7 +195,7 @@ export const ChatBubble = memo(function ChatBubble({
 
 export function MemberRow({ member, speaking = false }: { member: NearbyMember; speaking?: boolean }): React.JSX.Element {
   const { base, tag } = splitName(memberLabel(member))
-  const color = senderColor(member.address)
+  const color = senderColor(member.address, memberLabel(member))
   return (
     <div className={styles.memberRow}>
       <Avatar src={member.picture} name={base} color={color} size={40} status="online" />
@@ -538,7 +527,7 @@ export function Chat({
                   className={`${styles.suggestItem} ${i === 0 ? styles.suggestActive : ''}`.trim()}
                   onClick={() => applyMention(m)}
                 >
-                  <Avatar src={m.picture} name={m.name} color={senderColor(m.address)} size={20} />
+                  <Avatar src={m.picture} name={m.name} color={senderColor(m.address, m.name)} size={20} />
                   <span className={styles.suggestName}>{m.name || shortAddr(m.address)}</span>
                 </button>
               </li>

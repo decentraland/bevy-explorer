@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Avatar, Button, EquippedItemCard, Icon, Pencil, Tabs, Tooltip, showConfirm, type EquippedItemCardProps, type TabItem } from '../../design'
 import { CategoryIcon } from '../backpack/categoryIcons'
-import { catalystThumbUrl, nameColor, shortAddr, splitName } from '../../lib/identity'
+import { catalystThumbUrl, shortAddr, splitName, userColor } from '../../lib/identity'
 import type { Badge, Emote, Profile, ProfileEdit, Wearable } from '../../engine/protocol'
 import { PROFILE_FIELDS } from './profileFields'
 import { ProfileEditForm } from './ProfileEditForm'
@@ -279,7 +279,7 @@ export function ProfilePassport({
             {profile.bodyImage ? (
               <img className={styles.avatarImg} src={profile.bodyImage} alt={base} />
             ) : (
-              <Avatar src={profile.picture} name={base} color={nameColor(profile.address || profile.name)} size={180} status="online" />
+              <Avatar src={profile.picture} name={base} color={userColor(profile.address, profile.name, profile.hasClaimedName)} size={180} status="online" />
             )}
           </div>
 
