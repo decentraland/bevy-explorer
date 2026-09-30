@@ -7,7 +7,7 @@ import { fakeSession } from './harness'
 // the wiring); this covers what the header actually renders, including the empty-parcel case.
 function renderMinimap(sceneTitle: string): void {
   const session = fakeSession()
-  render(<Minimap minimap={session.minimap} map={session.map} sceneTitle={sceneTitle} setEngineViewport={vi.fn()} />)
+  render(<Minimap playerPosition={session.playerPosition} minimap={session.minimap} map={session.map} sceneTitle={sceneTitle} setEngineViewport={vi.fn()} />)
 }
 
 beforeEach(() => localStorage.clear())

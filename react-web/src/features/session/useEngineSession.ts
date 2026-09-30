@@ -456,6 +456,7 @@ export interface EngineSession {
   emotes: EmotesState
   backpack: BackpackState
   communities: CommunitiesState
+  playerPosition: PlayerPose,
   map: MapState
   minimap: MinimapState
   places: PlacesState
@@ -653,6 +654,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [mapOpen, setMapOpen] = useState(false)
   // Minimap pose: a ref, not state — see MinimapState.pose for why.
   const poseRef = useRef<PlayerPose>({ x: 0, z: 0, yaw: 0, camYaw: 0 })
+  const [poseState, setPoseState] = useState<PlayerPose>({ x: 0, z: 0, yaw: 0, camYaw: 0 })
   const [isWorld, setIsWorld] = useState(false)
   const [sceneTitle, setSceneTitle] = useState('')
   const [placesOpen, setPlacesOpen] = useState(false)
@@ -887,6 +889,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           // Mutate the ref instead of setState: this arrives ~20/s and the minimap reads
           // it from a RAF loop, so it must not drive React renders.
           poseRef.current = { x: msg.x, z: msg.z, yaw: msg.yaw, camYaw: msg.camYaw }
+          setPoseState({ x: msg.x, z: msg.z, yaw: msg.yaw, camYaw: msg.camYaw })
           break
         case 'consoleReply':
           // Command feedback: a local "DCL System" line, never broadcast (same shape as pushSystemMessage).
@@ -2073,6 +2076,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       saveOutfit, deleteOutfit, equipOutfit
     },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, requestToJoin: requestToJoinCommunity, cancelRequest: cancelJoinRequest, leave: leaveCommunity, error: communityError, detail: communityDetail, loadDetail: loadCommunityDetail },
+    playerPosition: poseState,
     map: mapSlice,
     minimap: minimapSlice,
     places: { open: placesOpen, toggle: togglePlaces },

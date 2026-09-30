@@ -34,7 +34,7 @@ import {
   saveZoom
 } from './minimapPrefs'
 import { MinimapSettings } from './MinimapSettings'
-import type { MapState, MinimapState } from '../session/useEngineSession'
+import type { MapState, MinimapState, PlayerPose } from '../session/useEngineSession'
 import type { MinimapStyle } from '../../engine/protocol'
 import styles from './Minimap.module.css'
 
@@ -47,11 +47,13 @@ const ZOOM_TIME = 0.2
 const MARKER_RADIUS = 10
 
 export const Minimap = memo(function Minimap({
+  playerPosition,
   minimap,
   map,
   sceneTitle,
   setEngineViewport
 }: {
+  playerPosition: PlayerPose,
   minimap: MinimapState
   map: MapState
   sceneTitle: string
@@ -124,12 +126,19 @@ export const Minimap = memo(function Minimap({
   }, [minimap.isWorld, places, parcel.x, parcel.y, markerCategories])
 
   useEffect(() => {
+    // Boundary crossings — cheap to test, rare to fire.
+    const p = { x: Math.floor(playerPosition.x / PARCEL_METERS), y: Math.floor(playerPosition.z / PARCEL_METERS) }
+    if (p !== parcel) {
+      setParcel(p)
+    }
+  }, [playerPosition])
+
+  useEffect(() => {
     const surface = surfaceRef.current
     if (surface == null || !open) return
     let raf = 0
     let lastChunkKey = ''
     let lastTileUrl = ''
-    let lastParcelKey = ''
     const tick = (): void => {
       raf = requestAnimationFrame(tick)
       const p = pose.current
@@ -146,14 +155,6 @@ export const Minimap = memo(function Minimap({
       surface.style.setProperty('--map-yaw', String(mapYaw))
       surface.style.setProperty('--map-arrow', String(p.yaw + mapYaw))
 
-      // Boundary crossings — cheap to test, rare to fire.
-      const px = Math.floor(p.x / PARCEL_METERS)
-      const py = Math.floor(p.z / PARCEL_METERS)
-      const parcelKey = `${px},${py}`
-      if (parcelKey !== lastParcelKey) {
-        lastParcelKey = parcelKey
-        setParcel({ x: px, y: py })
-      }
       if (effectiveStyle === 'satellite') {
         // Cull to the circle's *rotated* extent — its bounding box is the circumscribed
         // square, so use the radius in every direction or chunks pop in while turning.

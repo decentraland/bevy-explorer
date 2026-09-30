@@ -304,6 +304,7 @@ function Hud(): React.JSX.Element {
           {!pageOpen && <Sidebar session={session} onViewProfile={viewMyProfile} />}
           {!pageOpen && (
             <Minimap
+              playerPosition={session.playerPosition}
               minimap={session.minimap}
               map={session.map}
               sceneTitle={session.minimap.sceneTitle}
