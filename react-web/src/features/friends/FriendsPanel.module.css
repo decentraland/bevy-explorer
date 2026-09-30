@@ -39,19 +39,10 @@
   flex: 1;
   overflow-y: auto;
   padding: 0 0 8px;
-}
-/* Hollow pill handle, no track. A web scrollbar can't float over the rows, so it stays narrow. */
-.body::-webkit-scrollbar {
-  width: 10px;
-}
-.body::-webkit-scrollbar-track {
-  background: transparent;
-  margin: 9px 0;
-}
-.body::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 5px;
-  box-shadow: inset 0 0 0 1px var(--ink-95);
+  /* The standard property, like chat: a ::-webkit-scrollbar is painted on the main thread, which
+     the engine keeps busy, so scrolling lagged behind engine frames. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--divider-strong) transparent;
 }
 
 /* Collapsible section header. */
