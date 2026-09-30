@@ -74,6 +74,9 @@
 .row:hover {
   background: rgba(255, 255, 255, 0.05);
 }
+.clickable {
+  cursor: pointer;
+}
 .unread {
   background: rgba(255, 45, 85, 0.06);
 }

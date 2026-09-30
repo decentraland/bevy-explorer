@@ -341,7 +341,7 @@ function Hud(): React.JSX.Element {
             <ProfilePanel profile={session.profile} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Notifications" open={session.notifications.open} onCrash={session.closeAllPanels}>
-            <NotificationsPanel notifications={session.notifications} />
+            <NotificationsPanel notifications={session.notifications} friends={session.friends} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Skybox" open={session.skybox.open} onCrash={session.closeAllPanels}>
             <SkyboxMenu skybox={session.skybox} />
