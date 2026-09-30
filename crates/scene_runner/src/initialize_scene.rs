@@ -6,7 +6,7 @@ use bevy::{
     diagnostic::FrameCount,
     math::{FloatOrd, Vec3Swizzles},
     pbr::NotShadowCaster,
-    platform::collections::{HashMap, HashSet},
+    platform::collections::{hash_map::Entry, HashMap, HashSet},
     prelude::*,
     reflect::TypePath,
     render::{
@@ -1581,11 +1581,27 @@ pub fn process_scene_lifecycle(
     let Ok(focus) = focus.single() else {
         return;
     };
-    let focus = preview_mode
-        .preview_parcel
-        .as_ref()
-        .map(|p| GlobalTransform::from(Transform::from_translation(parcel_to_vec3(*p))))
-        .unwrap_or(*focus);
+
+    let unique_scenes = pointers.pointers.iter().fold(
+        HashMap::with_capacity(pointers.pointers.len()),
+        |mut hm, cur| {
+            if let Entry::Vacant(vacancy) = hm.entry(cur.1) {
+                vacancy.insert(*cur.0);
+            }
+            hm
+        },
+    );
+    let focus = if unique_scenes.len() == 1 {
+        let focus_parcel = unique_scenes.values().next().unwrap();
+        let focus_vec3 = parcel_to_vec3(*focus_parcel);
+        Transform::from_translation(focus_vec3).into()
+    } else {
+        preview_mode
+            .preview_parcel
+            .as_ref()
+            .map(|p| GlobalTransform::from(Transform::from_translation(parcel_to_vec3(*p))))
+            .unwrap_or(*focus)
+    };
 
     let current_scene = parcels_in_range(&focus, 0.0, pointers.min(), pointers.max())
         .first()
