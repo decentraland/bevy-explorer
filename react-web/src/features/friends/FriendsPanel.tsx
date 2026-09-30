@@ -5,9 +5,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Avatar, BlockedUser, Button, ControlButton, Envelope, Kebab, Spinner, Tabs, Tooltip, hasOpenPopup, type TabItem } from '../../design'
-import { nameColor, shortAddr, splitName } from '../../lib/identity'
+import { shortAddr, splitName, userNameColor } from '../../lib/identity'
 import type { BlockedUser as Blocked, Friend, FriendRequest } from '../../engine/protocol'
-import { color3ToHex } from '../../lib/color'
 import type { FriendsState } from '../session/useEngineSession'
 import type { MenuContext } from '../chat/ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
@@ -55,16 +54,17 @@ interface Identity {
   nameColor?: { r: number; g: number; b: number }
 }
 
-/** The service's name colour when it sent one, else the colour derived from the address. */
-function colorOf(user: Identity): string {
-  return user.nameColor != null ? color3ToHex(user.nameColor) : nameColor(user.address)
+/** The reference's name-derived colour. It ignores the user's chosen colour (behind a flag that is off
+ *  there), so we do too. */
+function colorOf(user: Identity & { name: string }): string {
+  return userNameColor(user.name, user.address, user.claimed ?? isClaimed(user.name))
 }
 
 function NameLabel({ name, user, message }: { name: string; user: Identity; message?: boolean }): React.JSX.Element {
   const { base, tag } = splitName(label(name, user.address))
   const claimed = user.claimed ?? isClaimed(name)
   return (
-    <span className={styles.name} style={{ color: colorOf(user) }}>
+    <span className={styles.name} style={{ color: colorOf({ ...user, name }) }}>
       {base}
       {!claimed && tag && <span className={styles.tag}>{tag}</span>}
       {claimed && <Verified />}
