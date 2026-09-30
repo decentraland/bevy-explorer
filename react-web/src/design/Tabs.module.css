@@ -101,6 +101,39 @@
   font-weight: 700;
 }
 
+/* ---- fill: equal-width tabs across the strip, all labels white, inset thick underline ---- */
+.fill {
+  gap: 0;
+  border-bottom: 0;
+  height: 100%;
+}
+.fill .tab {
+  flex: 1 1 0;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0;
+  color: var(--text);
+  font-size: var(--type-13);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+}
+.fill .tab::after {
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 3px;
+}
+.fill .tab:not(.active):hover:not(:disabled)::after {
+  transform: scaleX(1);
+  background: var(--fill-4);
+}
+.fill .badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+}
+
 /* ---- section: large icon pills (menu page sections, e.g. Wearables / Emotes) ---- */
 .section {
   gap: 14px;

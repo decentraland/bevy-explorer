@@ -4,7 +4,7 @@
 // relay of the scene social state (BevyApi.social.*), guest-disabled.
 
 import { useMemo, useState } from 'react'
-import { Avatar, Button, ControlButton, Tabs, type TabItem } from '../../design'
+import { Avatar, BlockedUser, Button, ControlButton, Envelope, Kebab, Tabs, Tooltip, type TabItem } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Friend, FriendRequest } from '../../engine/protocol'
 import type { FriendsState } from '../session/useEngineSession'
@@ -16,6 +16,7 @@ import styles from './FriendsPanel.module.css'
 
 type Tab = 'friends' | 'requests' | 'blocked'
 type OpenMenu = (user: ChatUser, e: React.MouseEvent) => void
+type MenuAt = (address: string, x: number, y: number) => void
 
 function label(name: string, address: string): string {
   return name.trim() ? name : shortAddr(address)
@@ -44,21 +45,42 @@ function Verified(): React.JSX.Element {
   )
 }
 
-function NameLabel({ name, address }: { name: string; address: string }): React.JSX.Element {
+function NameLabel({ name, address, message }: { name: string; address: string; message?: boolean }): React.JSX.Element {
   const { base, tag } = splitName(label(name, address))
   return (
     <span className={styles.name} style={{ color: nameColor(address) }}>
       {base}
-      {isClaimed(name) && <Verified />}
       {tag && <span className={styles.tag}>{tag}</span>}
+      {isClaimed(name) && <Verified />}
+      {message && <Envelope className={styles.envelope} />}
     </span>
+  )
+}
+
+/** The row's ⋮ button: opens the user menu anchored under it. */
+function RowMenu({ address, onOpen }: { address: string; onOpen: (address: string, x: number, y: number) => void }): React.JSX.Element {
+  return (
+    <Tooltip label="Menu" side="top" variant="rail">
+      <button
+        type="button"
+        className={styles.menuBtn}
+        aria-label="More options"
+        onClick={(e) => {
+          e.stopPropagation()
+          const r = e.currentTarget.getBoundingClientRect()
+          onOpen(address, r.left, r.bottom)
+        }}
+      >
+        <Kebab vertical size={20} r={2} />
+      </button>
+    </Tooltip>
   )
 }
 
 function Chevron({ open }: { open: boolean }): React.JSX.Element {
   return (
-    <svg className={`${styles.chev} ${open ? styles.chevOpen : ''}`.trim()} viewBox="0 0 12 12" aria-hidden="true">
-      <path d="M2.5 7.5L6 4l3.5 3.5" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <svg className={open ? styles.chev : `${styles.chev} ${styles.chevClosed}`} viewBox="0 0 12 7" aria-hidden="true">
+      <path d="M1 6L6 1l5 5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -66,20 +88,22 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
 function Collapsible({
   title,
   count,
+  emptyLabel,
   children
 }: {
   title: string
   count: number
+  emptyLabel: string
   children: React.ReactNode
 }): React.JSX.Element {
   const [open, setOpen] = useState(true)
   return (
     <>
-      <button type="button" className={styles.sectionHead} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className={styles.sectionHead} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <Chevron open={open} />
         {title} ({count})
       </button>
-      {open && children}
+      {open && (count === 0 ? <div className={styles.empty}>{emptyLabel}</div> : children)}
     </>
   )
 }
@@ -94,7 +118,7 @@ function useRowIdentity(user: { address: string; name: string; picture?: string 
   return { name: known?.name ?? user.name, picture: known?.picture ?? user.picture }
 }
 
-function FriendRow({ friend, onOpen }: { friend: Friend; onOpen?: OpenMenu }): React.JSX.Element {
+function FriendRow({ friend, onOpen, onMenu }: { friend: Friend; onOpen?: OpenMenu; onMenu: MenuAt }): React.JSX.Element {
   const { name, picture } = useRowIdentity(friend)
   const user: ChatUser = { address: friend.address, name, picture }
   const open = (e: React.MouseEvent): void => {
@@ -102,65 +126,85 @@ function FriendRow({ friend, onOpen }: { friend: Friend; onOpen?: OpenMenu }): R
     onOpen?.(user, e)
   }
   return (
-    <button type="button" className={`${styles.row} ${styles.rowBtn}`} onClick={open} onContextMenu={open}>
-      <Avatar src={picture} name={label(name, friend.address)} color={nameColor(friend.address)} size={40} status={friend.status} />
+    <div
+      role="button"
+      tabIndex={0}
+      className={`${styles.row} ${styles.rowBtn}`}
+      onClick={open}
+      onContextMenu={open}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        const r = e.currentTarget.getBoundingClientRect()
+        onMenu(friend.address, r.left, r.bottom)
+      }}
+    >
+      <Avatar src={picture} name={label(name, friend.address)} color={nameColor(friend.address)} size={40} status={friend.status} dotPosition="top" />
       <div className={styles.info}>
         <NameLabel name={name} address={friend.address} />
-        <span className={`${styles.status} ${styles[friend.status]}`}>{STATUS_LABEL[friend.status]}</span>
+        <span className={styles.status}>{STATUS_LABEL[friend.status]}</span>
       </div>
-    </button>
+      <div className={styles.hoverActions}>
+        <RowMenu address={friend.address} onOpen={onMenu} />
+      </div>
+    </div>
   )
 }
 
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+
 function reqDate(ts?: number): string {
   if (!ts) return ''
-  return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' }).toUpperCase()
+  const d = new Date(ts)
+  return `${MONTHS[d.getMonth()]} ${String(d.getDate()).padStart(2, '0')}`
 }
 
 function ReceivedRow({
   req,
   onAccept,
-  onReject
+  onReject,
+  onMenu
 }: {
   req: FriendRequest
   onAccept: () => void
   onReject: () => void
+  onMenu: MenuAt
 }): React.JSX.Element {
   const { name, picture } = useRowIdentity(req)
   return (
     <div className={styles.row}>
       <Avatar src={picture} name={label(name, req.address)} color={nameColor(req.address)} size={40} />
       <div className={styles.info}>
-        <NameLabel name={name} address={req.address} />
-        {req.message && <span className={styles.sub}>{req.message}</span>}
+        <NameLabel name={name} address={req.address} message={Boolean(req.message)} />
       </div>
       <span className={styles.date}>{reqDate(req.createdAt)}</span>
       <div className={styles.actions}>
-        <Button variant="secondary" size="sm" onClick={onReject}>
+        <Button variant="secondary" size="row" onClick={onReject}>
           Delete
         </Button>
-        <Button variant="primary" size="sm" onClick={onAccept}>
+        <Button variant="primary" size="row" onClick={onAccept}>
           Accept
         </Button>
+        <RowMenu address={req.address} onOpen={onMenu} />
       </div>
     </div>
   )
 }
 
-function SentRow({ req, onCancel }: { req: FriendRequest; onCancel: () => void }): React.JSX.Element {
+function SentRow({ req, onCancel, onMenu }: { req: FriendRequest; onCancel: () => void; onMenu: MenuAt }): React.JSX.Element {
   const { name, picture } = useRowIdentity(req)
   return (
     <div className={styles.row}>
       <Avatar src={picture} name={label(name, req.address)} color={nameColor(req.address)} size={40} />
       <div className={styles.info}>
         <NameLabel name={name} address={req.address} />
-        <span className={styles.sub}>Request sent</span>
       </div>
       <span className={styles.date}>{reqDate(req.createdAt)}</span>
       <div className={styles.actions}>
-        <Button variant="secondary" size="sm" onClick={onCancel}>
+        <Button variant="secondary" size="row" onClick={onCancel}>
           Cancel
         </Button>
+        <RowMenu address={req.address} onOpen={onMenu} />
       </div>
     </div>
   )
@@ -174,6 +218,7 @@ export function FriendsPanel({
   const [tab, setTab] = useState<Tab>('friends')
   // Row click opens the shared profile card at the click (same card the chat + world open).
   const openMenu: OpenMenu = (user, e) => openProfileCard(user.address, e.clientX, e.clientY)
+  const menuAt: MenuAt = (address, x, y) => openProfileCard(address, x, y)
 
   const { online, offline } = useMemo(() => {
     const on: Friend[] = []
@@ -196,8 +241,8 @@ export function FriendsPanel({
   return (
     <div ref={hudInsetRef} className={styles.root}>
       <header className={styles.head}>
-        <Tabs variant="underline" className={styles.tabs} items={TABS} value={tab} onChange={setTab} aria-label="Friends sections" />
-        <ControlButton variant="solid" className={styles.closeGlyph} aria-label="Close friends" onClick={friends.toggle}>
+        <Tabs variant="underline" fill className={styles.tabs} items={TABS} value={tab} onChange={setTab} aria-label="Friends sections" />
+        <ControlButton variant="solid" size="lg" className={styles.closeGlyph} aria-label="Close friends" onClick={friends.toggle}>
           ×
         </ControlButton>
       </header>
@@ -210,56 +255,55 @@ export function FriendsPanel({
           </div>
         ) : tab === 'friends' ? (
           friends.list.length === 0 ? (
-            <div className={styles.empty}>No friends yet.</div>
+            <div className={styles.placeholder}>
+              <div className={styles.phTitle}>Time To Make Some Friends!</div>
+              <div className={styles.phText}>
+                View someone’s Profile or click on their name in the Chat to see the <b>‘Add Friend’</b> option.
+              </div>
+            </div>
           ) : (
             <>
-              <Collapsible title="Online" count={online.length}>
+              <Collapsible title="Online" count={online.length} emptyLabel="No Friends">
                 {online.map((f) => (
-                  <FriendRow key={f.address} friend={f} onOpen={openMenu} />
+                  <FriendRow key={f.address} friend={f} onOpen={openMenu} onMenu={menuAt} />
                 ))}
               </Collapsible>
-              <Collapsible title="Offline" count={offline.length}>
+              <Collapsible title="Offline" count={offline.length} emptyLabel="No Friends">
                 {offline.map((f) => (
-                  <FriendRow key={f.address} friend={f} onOpen={openMenu} />
+                  <FriendRow key={f.address} friend={f} onOpen={openMenu} onMenu={menuAt} />
                 ))}
               </Collapsible>
             </>
           )
         ) : tab === 'requests' ? (
           <>
-            <Collapsible title="Received" count={friends.received.length}>
-              {friends.received.length === 0 ? (
-                <div className={styles.empty}>No Requests</div>
-              ) : (
-                friends.received.map((r) => (
-                  <ReceivedRow
-                    key={r.id}
-                    req={r}
-                    onAccept={() => friends.act('accept', r.address)}
-                    onReject={() => friends.act('reject', r.address)}
-                  />
-                ))
-              )}
+            <Collapsible title="Received" count={friends.received.length} emptyLabel="No Requests">
+              {friends.received.map((r) => (
+                <ReceivedRow
+                  key={r.id}
+                  req={r}
+                  onAccept={() => friends.act('accept', r.address)}
+                  onReject={() => friends.act('reject', r.address)}
+                  onMenu={menuAt}
+                />
+              ))}
             </Collapsible>
-            <Collapsible title="Sent" count={friends.sent.length}>
-              {friends.sent.length === 0 ? (
-                <div className={styles.empty}>No Requests</div>
-              ) : (
-                friends.sent.map((r) => (
-                  <SentRow key={r.id} req={r} onCancel={() => friends.act('cancel', r.address)} />
-                ))
-              )}
+            <Collapsible title="Sent" count={friends.sent.length} emptyLabel="No Requests">
+              {friends.sent.map((r) => (
+                <SentRow key={r.id} req={r} onCancel={() => friends.act('cancel', r.address)} onMenu={menuAt} />
+              ))}
             </Collapsible>
           </>
         ) : friends.blocked.length === 0 ? (
           <div className={styles.placeholder}>
-            <div className={styles.phIcon} aria-hidden="true">
-              ⊘
-            </div>
+            <BlockedUser size={72} className={styles.phIcon} />
             <div className={styles.phTitle}>No Blocked Accounts</div>
             <div className={styles.phText}>
-              If you block someone, you won’t see each other in-world or exchange messages, and their
-              name and messages are hidden in public chats.
+              If you block someone, you will not be able to see each other in-world or exchange messages. You will also not see each other’s names or messages
+              in public chats.
+            </div>
+            <div className={styles.phHint}>
+              The option to block an account is available in the <Kebab size={16} /> menu on their Profile or when you click on their name in the Chat.
             </div>
           </div>
         ) : (
@@ -269,10 +313,11 @@ export function FriendsPanel({
               <div className={styles.info}>
                 <span className={styles.name}>{shortAddr(addr)}</span>
               </div>
-              <div className={styles.actions}>
-                <Button variant="secondary" size="sm" onClick={() => friends.act('unblock', addr)}>
+              <div className={`${styles.actions} ${styles.blockedActions}`}>
+                <Button variant="secondary" size="row" className={styles.unblock} onClick={() => friends.act('unblock', addr)}>
                   Unblock
                 </Button>
+                <RowMenu address={addr} onOpen={menuAt} />
               </div>
             </div>
           ))

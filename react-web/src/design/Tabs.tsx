@@ -25,6 +25,8 @@ export interface TabsProps<T extends string> {
   value: T
   onChange: (id: T) => void
   variant?: 'pill' | 'underline' | 'section' | 'subtab'
+  /** Equal-width tabs filling the strip, labels centred (the friends panel header). */
+  fill?: boolean
   /** Positional overrides only (margins, padding, gap); the look stays the variant's. */
   className?: string
   'aria-label'?: string
@@ -37,6 +39,7 @@ export function Tabs<T extends string>({
   value,
   onChange,
   variant = 'pill',
+  fill = false,
   className,
   'aria-label': ariaLabel
 }: TabsProps<T>): React.JSX.Element {
@@ -66,7 +69,7 @@ export function Tabs<T extends string>({
   }
 
   return (
-    <div className={`${styles.tabs} ${styles[variant]} ${className ?? ''}`.trim()} role="tablist" aria-label={ariaLabel} onKeyDown={onKeyDown}>
+    <div className={`${styles.tabs} ${styles[variant]} ${fill ? styles.fill : ''} ${className ?? ''}`.trim()} role="tablist" aria-label={ariaLabel} onKeyDown={onKeyDown}>
       {items.map((it, i) => {
         const active = it.id === value
         return (

@@ -43,8 +43,13 @@
   border: 2px solid var(--panel);
   box-sizing: content-box;
 }
+.dotTop {
+  top: 0;
+  right: 2px;
+  bottom: auto;
+}
 .online {
-  background: var(--green);
+  background: var(--online);
 }
 .away {
   background: var(--away);

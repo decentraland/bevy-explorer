@@ -324,12 +324,32 @@ export function Kebab({
   size = 18,
   className,
   r = 2,
-}: GlyphProps & { r?: number }): React.JSX.Element {
+  vertical = false,
+}: GlyphProps & { r?: number; vertical?: boolean }): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true" className={className}>
-      <circle cx="5" cy="12" r={r} />
-      <circle cx="12" cy="12" r={r} />
-      <circle cx="19" cy="12" r={r} />
+      {[5, 12, 19].map((c) => (vertical ? <circle key={c} cx="12" cy={c} r={r} /> : <circle key={c} cx={c} cy="12" r={r} />))}
+    </svg>
+  )
+}
+
+export function BlockedUser({ size = 72, className }: GlyphProps): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 72 72" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true" className={className}>
+      <rect x="6" y="6" width="60" height="60" rx="14" />
+      <circle cx="31" cy="28" r="8" />
+      <path d="M17 52c1.5-8 7.5-12 14-12 3 0 5.6.8 7.8 2.3" strokeLinecap="round" />
+      <circle cx="48" cy="48" r="9" />
+      <path d="M41.6 54.4l12.8-12.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function Envelope({ size = 16, className }: GlyphProps): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true" className={className}>
+      <rect x="2" y="3.5" width="12" height="9" rx="1.5" />
+      <path d="M2.5 4.5L8 8.5l5.5-4" strokeLinejoin="round" />
     </svg>
   )
 }

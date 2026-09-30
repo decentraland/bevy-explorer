@@ -10,8 +10,8 @@
   flex-direction: column;
   padding: 1.25rem 0.75rem 0.75rem;
   border-radius: var(--r-card);
-  background: var(--panel, #18141a);
-  border: 1px solid var(--white-10, rgba(255, 255, 255, 0.08));
+  background: var(--panel);
+  border: 1px solid var(--menu-rim);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
   pointer-events: auto;
 }
@@ -125,9 +125,9 @@
 }
 
 .divider {
-  height: 1px;
-  margin: 0.35rem 0;
-  background: var(--white-10, rgba(255, 255, 255, 0.08));
+  height: 20px;
+  margin: 0 -0.75rem;
+  background: linear-gradient(transparent 9.5px, var(--divider-strong) 9.5px, var(--divider-strong) 10.5px, transparent 10.5px);
 }
 
 .verified {

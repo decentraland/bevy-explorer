@@ -1,19 +1,16 @@
 /* Friends panel — Explorer 2.0. Left-docked next to the rail, fixed height, scaled
    with the HUD. Tabs (ruby underline) · collapsible sections · hover actions. */
-/* Friends docks exactly like the chat panel: same bottom-left anchor, width and
-   height, scaled from the bottom-left so it sits where the chat would. */
 .root {
   position: fixed;
-  left: 58px;
-  bottom: 16px;
+  left: 56px;
+  bottom: 10px;
   z-index: var(--z-hud);
   display: flex;
   flex-direction: column;
-  width: min(340px, calc(100vw - 80px));
-  height: min(578px, calc(100vh - 32px));
-  background: rgba(12, 11, 14, 0.95);
-  border-radius: 14px;
-  box-shadow: var(--shadow-panel);
+  width: min(400px, calc(100vw - 80px));
+  height: min(680px, calc(100vh - 20px));
+  background: var(--panel-translucent);
+  border-radius: var(--r-md);
   font-family: var(--font-family);
   transform: scale(var(--ui-scale)) translateZ(0);
   transform-origin: bottom left;
@@ -25,85 +22,104 @@
 .head {
   display: flex;
   align-items: center;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--white-10);
+  height: 46px;
+  padding: 0 8px 0 0;
+  background: var(--panel-head);
   flex: none;
 }
-/* The strip shares its row with the close button, so the header owns the hairline; the panel
-   is narrow, so the gap comes in from the variant's 28px. */
 .tabs {
-  flex: 1;
-  gap: 16px;
-  border-bottom: 0;
+  flex: 0 0 360px;
 }
 .closeGlyph {
   margin-left: auto;
-  font-size: 20px;
+  font-size: var(--type-18);
 }
 
 .body {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 6px 8px;
-  scrollbar-width: thin;
+  padding: 0 0 8px;
 }
+/* Hollow pill handle, no track. A web scrollbar can't float over the rows, so it stays narrow. */
 .body::-webkit-scrollbar {
-  width: 6px;
+  width: 10px;
+}
+.body::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 9px 0;
 }
 .body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
+  background: transparent;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--ink-95);
 }
 
 /* Collapsible section header. */
 .sectionHead {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 15px;
   width: 100%;
-  padding: 12px 10px 6px;
+  height: 32px;
+  padding: 0 0 0 28px;
+  box-sizing: border-box;
   border: none;
+  border-top: 1px solid var(--divider-strong);
+  border-bottom: 1px solid var(--divider-strong);
   background: transparent;
-  color: var(--ink-7);
+  color: var(--text);
   font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: var(--type-13);
+  font-weight: var(--fw-semibold);
   text-transform: uppercase;
   cursor: pointer;
+  transition: background-color 100ms ease;
+}
+.sectionHead:hover {
+  background: var(--divider-strong);
 }
 .chev {
   width: 12px;
-  height: 12px;
-  transition: transform var(--dur-fast) ease;
+  height: 7px;
+  flex: none;
+  color: var(--text);
+  transition: transform 300ms ease;
 }
-.chevOpen {
-  transform: rotate(180deg);
+.chevClosed {
+  transform: scaleY(-1);
 }
 
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 7px 10px;
-  border-radius: 10px;
+  height: 50px;
+  margin: 3px 9px 0;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border-radius: var(--r-md);
+  transition: background-color 100ms linear;
 }
-.row:hover {
-  background: rgba(255, 255, 255, 0.06);
+.row:hover,
+.row:focus-within {
+  background: var(--row-hover);
 }
 .info {
+  position: relative;
+  top: -1.5px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
 .name {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 14px;
-  font-weight: 600;
+  gap: 1px;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
   line-height: 17px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -114,49 +130,96 @@
   height: 14px;
   flex: none;
 }
+.envelope {
+  flex: none;
+  margin-left: 4px;
+  color: var(--text-dim);
+}
 .tag {
-  font-weight: 400;
-  color: rgba(255, 255, 255, 0.45);
+  font-weight: var(--fw-regular);
+  color: var(--text-dim);
 }
 .status {
-  font-size: 12px;
+  font-size: var(--type-12);
   line-height: 15px;
-  color: var(--ink-6);
-}
-.status.online {
-  color: var(--green);
-}
-.sub {
-  font-size: 12px;
-  line-height: 15px;
-  color: var(--ink-6);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-dim);
 }
 
 /* Request date shows by default; row hover swaps to the action buttons. */
 .date {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink-45);
+  flex: none;
+  width: 55px;
+  margin-left: auto;
+  margin-right: -5.5px;
+  text-align: left;
+  font-size: var(--type-12);
+  font-weight: var(--fw-regular);
+  color: var(--ink-85);
 }
-.actions {
+.actions,
+.hoverActions {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
   display: none;
   align-items: center;
+  gap: 6px;
+}
+.actions > .menuBtn {
+  margin-left: -1px;
+}
+.hoverActions {
+  right: 13px;
+  gap: 16px;
+}
+.blockedActions {
   gap: 8px;
 }
-.row:hover .date {
-  display: none;
+.unblock {
+  min-width: 74px;
+  font-size: var(--type-12);
+  font-weight: var(--fw-regular);
 }
-.row:hover .actions {
+.row:hover .date,
+.row:focus-within .date {
+  visibility: hidden;
+}
+.row:hover .actions,
+.row:hover .hoverActions,
+.row:focus-within .actions,
+.row:focus-within .hoverActions {
   display: flex;
+}
+.menuBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 100ms linear;
+}
+.menuBtn:hover {
+  background: var(--row-menu-hover);
+}
+.menuBtn:active {
+  background: var(--fill-3);
 }
 
 .empty {
-  padding: 14px 10px;
-  font-size: 13px;
-  color: var(--ink-45);
+  display: flex;
+  align-items: center;
+  height: 42px;
+  margin: 3px 9px 0;
+  padding-left: 19px;
+  font-size: var(--type-14);
+  color: var(--text-dim);
 }
 
 /* Tab placeholders (guest / no blocked). */
@@ -164,43 +227,42 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  height: 100%;
   text-align: center;
-  gap: 10px;
-  padding: 48px 28px;
+  padding: 0 25px;
+  box-sizing: border-box;
 }
 .phIcon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 72px;
-  height: 72px;
-  border: 2px solid var(--ink-45);
-  border-radius: 18px;
-  font-size: 34px;
-  color: var(--ink-7);
+  margin-bottom: 22px;
+  color: var(--text);
 }
 .phTitle {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--type-18);
+  font-weight: var(--fw-semibold);
   color: var(--text);
 }
 .phText {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ink-45);
-  max-width: 280px;
+  max-width: 350px;
+  margin-top: 9px;
+  font-size: var(--type-16);
+  line-height: 19px;
+  color: var(--text-dim);
+}
+.phHint {
+  max-width: 282px;
+  margin-top: 16px;
+  font-size: var(--type-14);
+  line-height: 17px;
+  color: var(--text-dim);
+}
+.phHint svg {
+  display: inline;
+  vertical-align: middle;
 }
 
-/* A friend row that opens the profile menu — reset the <button> chrome. */
+/* A friend row that opens the profile menu. */
 .rowBtn {
-  width: 100%;
-  border: none;
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
   cursor: pointer;
-}
-.rowBtn:hover {
-  background: rgba(255, 255, 255, 0.06);
+  outline: none;
 }

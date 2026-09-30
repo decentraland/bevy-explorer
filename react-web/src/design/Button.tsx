@@ -4,7 +4,7 @@
 import styles from './Button.module.css'
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'light' | 'outline'
-type Size = 'sm' | 'md' | 'lg'
+type Size = 'sm' | 'md' | 'lg' | 'row'
 
 interface Common {
   variant?: Variant
