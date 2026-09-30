@@ -134,6 +134,43 @@ fn sun_direction(hours: f32) -> Vec3 {
     morning * angle.cos() - Vec3::Y * angle.sin()
 }
 
+/// Direction the moonlight travels at `hours` past midnight. This is unity-explorer's night
+/// light: a great circle high in the south, travelled faster before midnight than after.
+/// Outside Unity's 21:00 to 04:00 night it carries on along the same circle.
+pub fn moon_direction(hours: f32) -> Vec3 {
+    // the moon at midnight, and the direction it travels (bevy axes)
+    const MIDNIGHT: Vec3 = Vec3::new(-0.374_61, 0.446_99, 0.812_32);
+    const TRAVEL: Vec3 = Vec3::new(-0.775_33, 0.329_44, -0.538_83);
+    // degrees per hour before and after midnight
+    const EVENING_RATE: f32 = 8.592;
+    const MORNING_RATE: f32 = 5.295;
+    let since_midnight = (hours + 12.0).rem_euclid(24.0) - 12.0;
+    let rate = if since_midnight < 0.0 {
+        EVENING_RATE
+    } else {
+        MORNING_RATE
+    };
+    let (sin, cos) = (since_midnight * rate).to_radians().sin_cos();
+    -(MIDNIGHT * cos + TRAVEL * sin)
+}
+
+/// The sunlight's colour (sRGB) at `elevation`, the sine of the sun's elevation: a cubic per
+/// channel from a red horizon through a warm 12 degrees to white at noon, flat there.
+fn sun_color(elevation: f32) -> Vec3 {
+    const HORIZON: Vec3 = Vec3::new(1.0, 0.38, 0.40);
+    const E1: Vec3 = Vec3::new(0.0, 0.8804, 1.0065);
+    const E2: Vec3 = Vec3::new(0.0, -0.1079, -0.5370);
+    const E3: Vec3 = Vec3::new(0.0, -0.2216, 0.0225);
+    let e = elevation.max(0.0);
+    HORIZON + E1 * e + E2 * e * e + E3 * e * e * e
+}
+
+/// The sunlight's colour at noon, where [`sun_color`] peaks (sRGB).
+pub const SUN_COLOR_NOON: Vec3 = Vec3::new(1.0, 0.931, 0.892);
+
+/// The moonlight's colour (sRGB): a violet tint, so the scene stays directional after dark.
+const MOON_COLOR: Vec3 = Vec3::new(0.514, 0.388, 1.0);
+
 fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -150,28 +187,32 @@ pub fn update_directional_light(
     player: Query<Entity, With<PrimaryUser>>,
     time: Res<TimeOfDay>,
 ) {
-    // normalized day: 0.0 = midnight, 0.5 = noon (matches the light_gradients ramps)
-    let day = (time.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
-
-    // gradient colors over the day; sun energy driven by elevation, with a
-    // violet "moon" floor so the night stays directional
-    let dir_direction = sun_direction(time.elapsed_secs() / 3600.0);
-    let elevation = -dir_direction.y;
+    // colour and energy driven by the sun's elevation
+    let hours = time.elapsed_secs() / 3600.0;
+    let sun_direction = sun_direction(hours);
+    let elevation = -sun_direction.y;
     let energy = smoothstep(-0.05, 0.3, elevation);
-    let dir = super::light_gradients::DIR_LIGHT.sample(day);
-    let amb = super::light_gradients::AMBIENT.sample(day);
+    let dir = MOON_COLOR.lerp(sun_color(elevation), smoothstep(-0.05, 0.05, elevation));
+
+    // the sun lights while it is up and the moon once it has set, never dimmer than the moon's
+    // 1500 lux
+    let dir_illuminance = 1500.0 + smoothstep(0.0, 0.3, elevation) * 5500.0;
+    let dir_direction = if elevation > 0.0 {
+        sun_direction
+    } else {
+        moon_direction(hours)
+    };
 
     *global_light = SceneGlobalLight {
         source: None,
         dir_color: Color::srgb(dir.x, dir.y, dir.z),
-        // sun energy peaks at ~0.7 * full scale; floor keeps a violet "moon" at night
-        dir_illuminance: (energy * 0.7 * 10_000.0).max(1500.0),
+        dir_illuminance,
         dir_direction,
-        ambient_color: Color::srgb(amb.x, amb.y, amb.z),
-        // stronger ambient fill when the sun is low, but kept modest at night
-        // (midnight ≈ 2.1, ~70% of a full ambient-dominant fill) so the moon
-        // stays directional and the night doesn't wash out
-        ambient_brightness: 1.0 + (1.0 - energy) * 1.1,
+        // sun energy peaks at ~0.7 * full scale; the floor keeps the night sky lit
+        sun_illuminance: (energy * 0.7 * 10_000.0).max(1500.0),
+        sun_direction,
+        ambient_color: Color::WHITE,
+        ambient_brightness: 1.0,
         layers: RenderLayers::default(),
     };
 
@@ -192,12 +233,14 @@ pub fn update_directional_light(
                     Some(0.0)
                 } {
                     global_light.dir_illuminance = ill;
+                    global_light.sun_illuminance = ill;
                 }
             }
 
             if let Some(global) = maybe_global {
                 if let Some(dir) = global.direction {
                     global_light.dir_direction = dir;
+                    global_light.sun_direction = dir;
                 }
                 if let Some(color) = global.ambient_color {
                     global_light.ambient_color = color;
@@ -508,6 +551,24 @@ mod tests {
         for step in 0..2400 {
             let hours = step as f32 / 100.0;
             assert!(angle(sun_direction(hours), sun_direction(hours + 0.01)) < 0.3);
+        }
+    }
+
+    #[test]
+    fn moon_follows_unitys_path() {
+        let angle = |a: Vec3, b: Vec3| a.angle_between(b).to_degrees();
+        // unity-explorer's night light, from its recorded day cycle (bevy axes, light travel)
+        for (hours, unity) in [
+            (21.0, Vec3::new(0.000_2, -0.259_3, -0.965_8)),
+            (0.0, Vec3::new(0.379_8, -0.438_4, -0.814_6)),
+            (4.0, Vec3::new(0.629_4, -0.535_8, -0.562_8)),
+        ] {
+            assert!(angle(moon_direction(hours), unity) < 1.0);
+        }
+        // above the horizon from sunset to sunrise
+        for step in 0..=100 {
+            let hours = SUNSET + (24.0 - SUNSET + SUNRISE) * step as f32 / 100.0;
+            assert!(moon_direction(hours).y < 0.0);
         }
     }
 }

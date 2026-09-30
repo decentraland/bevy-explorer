@@ -674,6 +674,7 @@ impl AppConfig {
         self.graphics.bloom = default.graphics.bloom;
         self.graphics.dof = default.graphics.dof;
         self.graphics.ssao = default.graphics.ssao;
+        self.graphics.sky_reflections = default.graphics.sky_reflections;
         self.graphics.oob = default.graphics.oob;
         self.scene_load_distance = default.scene_load_distance;
         self.scene_unload_extra_distance = default.scene_unload_extra_distance;
@@ -817,6 +818,7 @@ pub struct GraphicsSettings {
     pub bloom: BloomSetting,
     pub dof: DofSetting,
     pub ssao: SsaoSetting,
+    pub sky_reflections: SkyReflectionSetting,
     pub oob: f32,
     pub ambient_brightness: i32,
     /// cel-shade avatars (toon shading) instead of standard PBR
@@ -843,6 +845,7 @@ impl Default for GraphicsSettings {
             bloom: BloomSetting::Low,
             dof: DofSetting::High,
             ssao: SsaoSetting::Off,
+            sky_reflections: SkyReflectionSetting::High,
             oob: 2.0,
             ambient_brightness: 50,
             cel_shading: true,
@@ -960,6 +963,15 @@ pub struct DofConfig {
 pub enum SsaoSetting {
     Off,
     Low,
+    High,
+}
+
+/// The sky environment map: the sky's reflections and ambient light.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SkyReflectionSetting {
+    /// one colour per direction: sky, horizon and ground
+    Low,
+    /// filtered reflections of the sky
     High,
 }
 
@@ -1460,6 +1472,12 @@ pub struct SceneGlobalLight {
     pub dir_color: Color,
     pub dir_illuminance: f32,
     pub dir_direction: Vec3,
+    /// the sun as the sky draws it. the same as the directional light by day, but it keeps
+    /// setting below the horizon at night while the light follows the moon
+    pub sun_illuminance: f32,
+    pub sun_direction: Vec3,
+    /// the ambient light the sky env map is levelled towards: white at the ambient brightness
+    /// setting unless a scene overrides it, as a tint and a multiplier
     pub ambient_color: Color,
     pub ambient_brightness: f32,
     pub layers: RenderLayers,

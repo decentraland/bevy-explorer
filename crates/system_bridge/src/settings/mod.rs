@@ -28,7 +28,8 @@ use common::{
     sets::SceneSets,
     structs::{
         AaSetting, AppConfig, BloomSetting, CameraSmoothing, DofSetting, FogSetting,
-        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting, WindowSetting,
+        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting,
+        SkyReflectionSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -68,6 +69,7 @@ pub mod point_at_marker_visibility;
 pub mod scene_threads;
 pub mod sensitivity;
 pub mod shadow_settings;
+pub mod sky_reflection_setting;
 pub mod ssao_setting;
 pub mod video_threads;
 pub mod volume_settings;
@@ -149,6 +151,7 @@ impl Plugin for SettingBridgePlugin {
         add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule, &config);
         #[cfg(not(target_arch = "wasm32"))]
         add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<SkyReflectionSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<CelShadingSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<AvatarOutlineSetting>(app, &mut settings, &mut schedule, &config);
