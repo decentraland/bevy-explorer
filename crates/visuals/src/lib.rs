@@ -34,7 +34,7 @@ use common::{
     },
 };
 use console::DoAddConsoleCommand;
-use scene_runner::update_world::lights::moon_direction;
+use scene_runner::update_world::lights::{moon_direction, SUN_COLOR_NOON};
 
 use crate::{
     coast::CoastPlugin,
@@ -210,13 +210,15 @@ fn apply_global_light(
 
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
 
-    // physically-simulated sky: rayleigh (hue) and mie (haze) are baked day-cycle
-    // curves keyed by time of day; the sun sets naturally (no floor), and a flat
-    // night colour (added in-shader) provides the night sky.
-    let day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
+    // physically-simulated sky: the rayleigh coefficient (hue) follows the light colour, so a
+    // scene's light colour changes the sky; the mie coefficient (haze) rises with the sun; the
+    // sun sets naturally (no floor), and a flat night colour (added in-shader) provides the
+    // night sky
+    let sun_elevation = -next_light.sun_direction.y;
+    let light_ratio = next_light.dir_color.to_srgba().to_vec3() / SUN_COLOR_NOON;
     atmosphere.sun_position = -next_light.sun_direction;
-    atmosphere.rayleigh_coefficient = atmosphere_params::RAYLEIGH.sample(day);
-    atmosphere.mie_coefficient = atmosphere_params::MIE.sample(day);
+    atmosphere.rayleigh_coefficient = atmosphere_params::RAYLEIGH_NOON * light_ratio.powf(3.0);
+    atmosphere.mie_coefficient = atmosphere_params::mie(sun_elevation);
     atmosphere.night_color = atmosphere_params::NIGHT_SKY;
     // the moon is drawn where the night light comes from
     atmosphere.moon_position = -moon_direction(time_of_day.elapsed_secs() / 3600.0);

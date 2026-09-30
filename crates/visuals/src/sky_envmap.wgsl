@@ -3,6 +3,8 @@
 // GGX-prefiltered specular cube (one perceptual roughness per mip) and a
 // cosine-convolved irradiance cube for `EnvironmentMapLight`.
 
+#import "embedded://shaders/sky_envmap_ground.wgsl"::sky_envmap_ground_tint
+
 const PI: f32 = 3.141592653589793;
 
 #ifdef DOWNSAMPLE
@@ -91,9 +93,10 @@ fn sample_sky(dir: vec3<f32>, lod: f32) -> vec3<f32> {
 }
 
 // first downsample, from the sky cube: box-filter each output texel's block of sky texels (one
-// bilinear tap per 2x2), taking below-horizon texels from their mirror image above. the sky fades
-// to black below the horizon; the mirror stands in for light coming back up off the ground, so
-// the filter lobes and irradiance hemispheres that cross the horizon see sky on both sides.
+// bilinear tap per 2x2), taking below-horizon texels from their mirror image above, tinted
+// towards the ground. the sky fades to black below the horizon; the mirror stands in for light
+// coming back up off the ground, so the filter lobes and irradiance hemispheres that cross the
+// horizon see sky on both sides.
 @compute
 @workgroup_size(8, 8, 1)
 fn downsample_sky(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -113,7 +116,8 @@ fn downsample_sky(@builtin(global_invocation_id) id: vec3<u32>) {
             let uv = origin + vec2<f32>(f32(x), f32(y)) * 2.0 * texel;
             let dir = cube_texel_dir(uv, id.z);
             let mirrored = vec3<f32>(dir.x, abs(dir.y), dir.z);
-            sum += textureSampleLevel(source_cube, source_sampler, mirrored, 0.0).rgb;
+            let tint = select(vec3<f32>(1.0), sky_envmap_ground_tint(dir), dir.y < 0.0);
+            sum += textureSampleLevel(source_cube, source_sampler, mirrored, 0.0).rgb * tint;
         }
     }
     textureStore(output_texture, id.xy, id.z, vec4<f32>(sum / f32(taps * taps), 1.0));

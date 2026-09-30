@@ -3,10 +3,8 @@
 // level the result with sky_envmap_level, and overrides ambient::ambient_light to return nothing.
 //
 // Only the upper hemisphere of the maps is generated. Directions below the horizon read their
-// mirror image above it, standing in for the sky reflected back up off the ground. Reflections
-// lose shininess towards the ground: full shininess (1 - perceptual roughness) from
-// FULL_SHININESS_ELEVATION up, blending linearly with the angle to GROUND_SHININESS times it
-// straight down.
+// mirror image above it, standing in for the sky reflected back up off the ground, tinted towards
+// the ground and, for reflections, blurred: see sky_envmap_ground.wgsl for the curve.
 //
 // The envmap is the only ambient light, levelled towards a target: the flat ambient light, which
 // the overrides zero out and pass in here instead.
@@ -22,6 +20,7 @@
 // declared there, and only the override can call bevy's original compute_radiances.
 
 #import bevy_pbr::{environment_map, lighting}
+#import "embedded://shaders/sky_envmap_ground.wgsl"::{sky_envmap_ground_shininess, sky_envmap_ground_tint}
 
 // the input to sample the envmap with in place of `input`. bevy samples along R exactly at zero
 // roughness, so R is set to where it would have sampled, mirrored up
@@ -36,12 +35,13 @@ fn sky_envmap_input(input: lighting::LayerLightingInput) -> lighting::LayerLight
     );
 }
 
-// `radiances` as sampled with `input` from sky_envmap_input; `ambient` is the lights uniform's
-// ambient_color
-fn sky_envmap_level(radiances: environment_map::EnvironmentMapRadiances, input: lighting::LayerLightingInput, ambient: vec4<f32>) -> environment_map::EnvironmentMapRadiances {
+// `radiances` as sampled with `upper` (from sky_envmap_input) in place of `input`; `ambient` is
+// the lights uniform's ambient_color
+fn sky_envmap_level(radiances: environment_map::EnvironmentMapRadiances, input: lighting::LayerLightingInput, upper: lighting::LayerLightingInput, ambient: vec4<f32>) -> environment_map::EnvironmentMapRadiances {
+    let direction = environment_map::radiance_sample_direction(input.N, input.R, input.roughness);
     return environment_map::EnvironmentMapRadiances(
-        sky_envmap_ambient(radiances.irradiance, ambient, 1.0),
-        sky_envmap_ambient(radiances.radiance, ambient, input.perceptual_roughness),
+        sky_envmap_ambient(radiances.irradiance * sky_envmap_ground_tint(input.N), ambient, 1.0),
+        sky_envmap_ambient(radiances.radiance * sky_envmap_ground_tint(direction), ambient, upper.perceptual_roughness),
     );
 }
 
@@ -49,15 +49,8 @@ fn sky_envmap_upper(direction: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(direction.x, abs(direction.y), direction.z);
 }
 
-const FULL_SHININESS_ELEVATION: f32 = 0.34906585; // 20 degrees
-const GROUND_SHININESS: f32 = 0.33;
-const HALF_PI: f32 = 1.5707963;
-
 fn sky_envmap_perceptual_roughness(direction: vec3<f32>, perceptual_roughness: f32) -> f32 {
-    let elevation = asin(clamp(direction.y * inverseSqrt(dot(direction, direction)), -1.0, 1.0));
-    let toward_ground = saturate((FULL_SHININESS_ELEVATION - elevation) / (FULL_SHININESS_ELEVATION + HALF_PI));
-    let shininess = (1.0 - perceptual_roughness) * mix(1.0, GROUND_SHININESS, toward_ground);
-    return 1.0 - shininess;
+    return 1.0 - (1.0 - perceptual_roughness) * sky_envmap_ground_shininess(direction);
 }
 
 const FLOOR_HUE_WEIGHT: f32 = 0.5;
