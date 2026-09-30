@@ -450,6 +450,11 @@ fn playing<'a>(active: &'a ActiveEmote, masked: &'a MaskedEmote) -> Option<&'a E
         .map(|request| &request.playback)
 }
 
+/// Whether the avatar is playing an emote in either slot (head gaze yields to it).
+pub fn is_emoting(active: &ActiveEmote, masked: &MaskedEmote) -> bool {
+    playing(active, masked).is_some()
+}
+
 /// What tells one played emote from another: a re-trigger of the same urn is a new emote.
 fn identity(playback: &EmotePlayback) -> (&EmoteUrn, EmoteMask, i64) {
     (&playback.urn, playback.mask, playback.generation)

@@ -6,6 +6,7 @@ use bevy::{
     window::{CursorGrabMode, PrimaryWindow},
 };
 
+use avatar::animate::{is_emoting, ActiveEmote, MaskedEmote};
 use common::{
     inputs::{Action, SystemAction, CAMERA_SET, CAMERA_ZOOM, POINTER_SET},
     structs::{
@@ -156,6 +157,7 @@ pub fn update_camera_position(
             &AvatarDynamicState,
             Has<OutOfWorld>,
             &mut HeadSync,
+            Option<(&ActiveEmote, &MaskedEmote)>,
         ),
         (With<PrimaryUser>, Without<PrimaryCamera>),
     >,
@@ -165,7 +167,7 @@ pub fn update_camera_position(
     terrain_height: Option<Res<PlayerTerrainHeight>>,
 ) {
     let (
-        Ok((player_transform, dynamic_state, is_oow, mut head_sync)),
+        Ok((player_transform, dynamic_state, is_oow, mut head_sync, emotes)),
         Ok((camera_ent, camera_transform, options, mut projection, maybe_tween)),
     ) = (player.single_mut(), camera.single_mut())
     else {
@@ -173,13 +175,15 @@ pub fn update_camera_position(
     };
 
     // Capture head-sync angles only when the real camera drives rotation (not OOW, not
-    // a scene-driven cinematic). We additionally gate on the avatar being idle so head
+    // a scene-driven cinematic). We additionally gate on the avatar being idle and not
+    // emoting (in either slot — an upper-body emote keeps the idle move kind) so head
     // gaze doesn't broadcast through movement/jump/emote — matches unity's HeadIK gate.
     // In first-person the head is rigidly attached to the camera, so additional yaw IK
     // would over-rotate the neck — pitch is still meaningful (head tilts up/down).
     let real_camera =
         !is_oow && !matches!(options.scene_override, Some(CameraOverride::Cinematic(_)));
-    let idle = dynamic_state.move_kind == MoveKind::Idle;
+    let idle = dynamic_state.move_kind == MoveKind::Idle
+        && !emotes.is_some_and(|(active, masked)| is_emoting(active, masked));
     let head_active = real_camera && idle;
     let first_person = options.distance < 0.05;
     head_sync.yaw_enabled = head_active && !first_person;
