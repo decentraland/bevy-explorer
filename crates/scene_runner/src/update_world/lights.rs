@@ -187,16 +187,12 @@ pub fn update_directional_light(
     player: Query<Entity, With<PrimaryUser>>,
     time: Res<TimeOfDay>,
 ) {
-    // normalized day: 0.0 = midnight, 0.5 = noon (matches the light_gradients ramps)
-    let day = (time.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
-
-    // colour and energy driven by the sun's elevation; the ambient gradient by time of day
+    // colour and energy driven by the sun's elevation
     let hours = time.elapsed_secs() / 3600.0;
     let sun_direction = sun_direction(hours);
     let elevation = -sun_direction.y;
     let energy = smoothstep(-0.05, 0.3, elevation);
     let dir = MOON_COLOR.lerp(sun_color(elevation), smoothstep(-0.05, 0.05, elevation));
-    let amb = super::light_gradients::AMBIENT.sample(day);
 
     // the sun lights while it is up and the moon once it has set, never dimmer than the moon's
     // 1500 lux
@@ -215,11 +211,8 @@ pub fn update_directional_light(
         // sun energy peaks at ~0.7 * full scale; the floor keeps the night sky lit
         sun_illuminance: (energy * 0.7 * 10_000.0).max(1500.0),
         sun_direction,
-        ambient_color: Color::srgb(amb.x, amb.y, amb.z),
-        // stronger ambient fill when the sun is low, but kept modest at night
-        // (midnight ≈ 2.1, ~70% of a full ambient-dominant fill) so the moon
-        // stays directional and the night doesn't wash out
-        ambient_brightness: 1.0 + (1.0 - energy) * 1.1,
+        ambient_color: Color::WHITE,
+        ambient_brightness: 1.0,
         layers: RenderLayers::default(),
     };
 

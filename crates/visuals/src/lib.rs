@@ -360,16 +360,17 @@ fn apply_global_light(
                 .max(scene_distance.load_imposter * 0.333)
                 + maybe_primary.map_or(0.0, |camera| camera.distance * 5.0);
 
-            // fog hue follows the (scene-overridable) ambient light rather than a
-            // fixed gradient, so a scene's global light tints the fog too. Overall
-            // brightness tracks the sky; an extra dir-intensity pull drops night
-            // fog toward the dark horizon colour (the authored night fog is darker
-            // than a plain ambient tint).
+            // fog hue follows the (scene-overridable) sunlight, so a scene's global
+            // light tints the fog too, with a stronger fill when the sun is low
+            // (midnight ≈ 2.1x) so the night doesn't go black. Overall brightness
+            // tracks the sky; an extra dir-intensity pull drops night fog toward
+            // the dark horizon colour (the authored night fog is darker than a
+            // plain tint).
+            let sun_energy = ((-next_light.sun_direction.y + 0.05) / 0.35).clamp(0.0, 1.0);
+            let sun_energy = sun_energy * sun_energy * (3.0 - 2.0 * sun_energy);
+            let fill = 0.8 * (1.0 + (1.0 - sun_energy) * 1.1);
             let night_pull = (next_light.sun_illuminance / 7000.0).clamp(0.35, 1.0);
-            let base_color = next_light.ambient_color.to_srgba()
-                * next_light.ambient_brightness
-                * 0.5
-                * skybox_brightness
+            let base_color = next_light.dir_color.to_srgba() * fill * 0.5 * skybox_brightness
                 / 2000.0
                 * night_pull;
             let base_color = Color::from(base_color).with_alpha(1.0);
@@ -393,15 +394,20 @@ fn apply_global_light(
     }
 
     // the sky envmap is the only ambient light. the pbr shaders zero the flat ambient where an
-    // envmap is bound and level the envmap towards it instead: a constant from the setting, the
-    // envmap already following the time of day. the compression rides in the alpha, negated
-    // (see sky_envmap_lookup.wgsl); the uniform holds alpha * brightness. the brightness is kept
-    // above zero so the compression survives a zero setting, levelling the envmap to ~nothing
+    // envmap is bound and level the envmap towards it instead: the setting's brightness, scaled
+    // and tinted by a scene's ambient override, the envmap already following the time of day.
+    // the compression rides in the alpha, negated (see sky_envmap_lookup.wgsl); the uniform
+    // holds alpha * brightness. the brightness is kept above zero so the compression survives a
+    // zero setting, levelling the envmap to ~nothing
     const MIN_AMBIENT_BRIGHTNESS: f32 = 0.01;
-    ambient.brightness =
-        (setting.graphics.ambient_brightness as f32 * 20.0 * envmap_settings.floor)
-            .max(MIN_AMBIENT_BRIGHTNESS);
-    ambient.color = Color::WHITE.with_alpha(-envmap_settings.compression / ambient.brightness);
+    ambient.brightness = (setting.graphics.ambient_brightness as f32
+        * 20.0
+        * envmap_settings.floor
+        * next_light.ambient_brightness)
+        .max(MIN_AMBIENT_BRIGHTNESS);
+    ambient.color = next_light
+        .ambient_color
+        .with_alpha(-envmap_settings.compression / ambient.brightness);
 
     if prev.1.source == scene_global_light.source {
         prev.0 += time.delta_secs()

@@ -1464,6 +1464,8 @@ pub struct SceneGlobalLight {
     /// setting below the horizon at night while the light follows the moon
     pub sun_illuminance: f32,
     pub sun_direction: Vec3,
+    /// the ambient light the sky env map is levelled towards: white at the ambient brightness
+    /// setting unless a scene overrides it, as a tint and a multiplier
     pub ambient_color: Color,
     pub ambient_brightness: f32,
     pub layers: RenderLayers,
