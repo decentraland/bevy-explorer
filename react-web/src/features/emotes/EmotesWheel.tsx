@@ -2,7 +2,7 @@
 // its silhouette + number stay upright). Centre shows the hovered emote + hints. Click a
 // card to play it. Built from the Figma-matched EmoteSlot (node 10386-4701).
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { catalystThumbUrl } from '../../lib/identity'
 import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { EmoteSlot } from './EmoteSlot'
@@ -22,6 +22,26 @@ export function EmotesWheel({
   onCustomise?: () => void
 }): React.JSX.Element | null {
   const [hover, setHover] = useState<number | null>(null)
+  // One play per opening: boot.js re-sends an off-canvas key to the canvas, so it can reach us twice.
+  const played = useRef(false)
+  useEffect(() => {
+    if (emotes.open) played.current = false
+  }, [emotes.open])
+
+  // The engine binds quick emotes to the numpad (the top row is the scenes' action keys), so the
+  // wheel takes the top-row digits itself while it's open.
+  useWindowKeyDown(
+    (e) => {
+      const digit = /^Digit(\d)$/.exec(e.code)
+      if (digit == null || played.current) return
+      const emote = emotes.list.find((em) => em.slot === Number(digit[1]))
+      if (emote == null) return
+      e.preventDefault()
+      played.current = true
+      emotes.play(emote.urn)
+    },
+    { capture: false, enabled: emotes.open }
+  )
 
   // While the wheel is open, E (the on-screen "[E]" shortcut) opens the backpack's Emotes tab.
   useWindowKeyDown(
