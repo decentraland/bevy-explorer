@@ -5,6 +5,9 @@
 //! Only the upper hemisphere of the maps is generated. The pbr shaders' lookups
 //! (`sky_envmap_lookup.wgsl`) mirror downward directions up, and level the result
 //! towards the `AmbientLight`, which they use in place of the flat ambient.
+//!
+//! At the low sky reflections setting the maps are one texel per face instead:
+//! the sky, the horizon and the ground as three colours, straight from the sky.
 
 use bevy::{
     asset::{load_internal_asset, weak_handle},
@@ -37,6 +40,7 @@ use bevy_atmosphere::{
     prelude::AtmosphereCamera,
 };
 use bevy_console::ConsoleCommand;
+use common::structs::{AppConfig, SkyReflectionSetting};
 use console::DoAddConsoleCommand;
 
 const SKY_ENVMAP_SHADER_HANDLE: Handle<Shader> =
@@ -47,6 +51,8 @@ const SPECULAR_MIPS: u32 = 8;
 const SPECULAR_SAMPLES: u32 = 32;
 const DIFFUSE_SIZE: u32 = 32;
 const DIFFUSE_SAMPLES: u32 = 128;
+// the low setting: one texel per face, straight from the (unfiltered) sky
+const TRILIGHT_SAMPLES: u32 = 256;
 // mip of the downsampled sky the irradiance pass integrates over
 const DIFFUSE_SOURCE_LOD: f32 = 2.0;
 const WORKGROUP_SIZE: u32 = 8;
@@ -55,11 +61,23 @@ const GENERATED_FACES: u32 = 5;
 
 pub struct SkyEnvmapPlugin;
 
-/// The generated cubemaps, in the skybox's own units.
+/// The generated cubemaps, in the skybox's own units: the filtered maps, and the one-texel maps
+/// of the low setting.
 #[derive(Resource, Clone, ExtractResource)]
 pub struct SkyEnvmap {
     pub diffuse: Handle<Image>,
     pub specular: Handle<Image>,
+    pub trilight_diffuse: Handle<Image>,
+    pub trilight_specular: Handle<Image>,
+}
+
+impl SkyEnvmap {
+    fn maps(&self, setting: SkyReflectionSetting) -> (&Handle<Image>, &Handle<Image>) {
+        match setting {
+            SkyReflectionSetting::Low => (&self.trilight_diffuse, &self.trilight_specular),
+            SkyReflectionSetting::High => (&self.diffuse, &self.specular),
+        }
+    }
 }
 
 #[derive(Resource, Clone, Copy, ExtractResource)]
@@ -74,6 +92,8 @@ pub struct SkyEnvmapSettings {
     /// how far envmap light above the floor is compressed towards it, in log space (0 = not at
     /// all, 1 = down to the floor). carried with the floor
     pub compression: f32,
+    /// which maps to generate, from the config
+    pub quality: SkyReflectionSetting,
 }
 
 impl Default for SkyEnvmapSettings {
@@ -83,6 +103,7 @@ impl Default for SkyEnvmapSettings {
             specular: 1.0,
             floor: 0.5,
             compression: 0.8,
+            quality: SkyReflectionSetting::High,
         }
     }
 }
@@ -103,14 +124,21 @@ impl Plugin for SkyEnvmapPlugin {
             SPECULAR_MIPS,
         ));
         let diffuse = images.add(cube_image("sky diffuse envmap", DIFFUSE_SIZE, 1));
+        let trilight_diffuse = images.add(cube_image("sky trilight diffuse envmap", 1, 1));
+        let trilight_specular = images.add(cube_image("sky trilight specular envmap", 1, 1));
 
-        app.insert_resource(SkyEnvmap { diffuse, specular })
-            .init_resource::<SkyEnvmapSettings>()
-            .add_plugins((
-                ExtractResourcePlugin::<SkyEnvmap>::default(),
-                ExtractResourcePlugin::<SkyEnvmapSettings>::default(),
-            ))
-            .add_systems(Update, attach_sky_envmap);
+        app.insert_resource(SkyEnvmap {
+            diffuse,
+            specular,
+            trilight_diffuse,
+            trilight_specular,
+        })
+        .init_resource::<SkyEnvmapSettings>()
+        .add_plugins((
+            ExtractResourcePlugin::<SkyEnvmap>::default(),
+            ExtractResourcePlugin::<SkyEnvmapSettings>::default(),
+        ))
+        .add_systems(Update, attach_sky_envmap);
 
         app.add_console_command::<EnvmapConsoleCommand, _>(envmap_console_command);
     }
@@ -161,11 +189,18 @@ fn cube_image(label: &'static str, size: u32, mips: u32) -> Image {
 fn attach_sky_envmap(
     mut commands: Commands,
     envmap: Res<SkyEnvmap>,
+    config: Res<AppConfig>,
+    mut settings: ResMut<SkyEnvmapSettings>,
     mut cameras: Query<
         (Entity, Option<&Exposure>, Option<&mut EnvironmentMapLight>),
         With<AtmosphereCamera>,
     >,
 ) {
+    let quality = config.graphics.sky_reflections;
+    if settings.quality != quality {
+        settings.quality = quality;
+    }
+    let (diffuse, specular) = envmap.maps(quality);
     for (camera, exposure, light) in cameras.iter_mut() {
         let intensity = 1.0 / exposure.copied().unwrap_or_default().exposure();
         match light {
@@ -173,11 +208,15 @@ fn attach_sky_envmap(
                 if light.intensity != intensity {
                     light.intensity = intensity;
                 }
+                if light.diffuse_map != *diffuse {
+                    light.diffuse_map = diffuse.clone();
+                    light.specular_map = specular.clone();
+                }
             }
             None => {
                 commands.entity(camera).try_insert(EnvironmentMapLight {
-                    diffuse_map: envmap.diffuse.clone(),
-                    specular_map: envmap.specular.clone(),
+                    diffuse_map: diffuse.clone(),
+                    specular_map: specular.clone(),
                     intensity,
                     ..default()
                 });
@@ -249,6 +288,7 @@ struct SkyEnvmapPipelines {
     downsample: CachedComputePipelineId,
     specular: CachedComputePipelineId,
     irradiance: CachedComputePipelineId,
+    trilight: CachedComputePipelineId,
 }
 
 impl FromWorld for SkyEnvmapPipelines {
@@ -293,17 +333,16 @@ impl FromWorld for SkyEnvmapPipelines {
         });
 
         let pipeline_cache = world.resource::<PipelineCache>();
-        let pipeline = |label: &'static str, layout: &BindGroupLayout, entry: &'static str| {
+        let pipeline = |label: &'static str,
+                        layout: &BindGroupLayout,
+                        entry: &'static str,
+                        shader_defs: &[&str]| {
             pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
                 label: Some(label.into()),
                 layout: vec![layout.clone()],
                 push_constant_ranges: Vec::new(),
                 shader: SKY_ENVMAP_SHADER_HANDLE,
-                shader_defs: if entry == "downsample" {
-                    vec!["DOWNSAMPLE".into()]
-                } else {
-                    vec![]
-                },
+                shader_defs: shader_defs.iter().map(|def| (*def).into()).collect(),
                 entry_point: entry.into(),
                 zero_initialize_workgroup_memory: false,
             })
@@ -314,10 +353,23 @@ impl FromWorld for SkyEnvmapPipelines {
                 "sky envmap downsample sky",
                 &filter_layout,
                 "downsample_sky",
+                &[],
             ),
-            downsample: pipeline("sky envmap downsample", &downsample_layout, "downsample"),
-            specular: pipeline("sky envmap specular", &filter_layout, "specular"),
-            irradiance: pipeline("sky envmap irradiance", &filter_layout, "irradiance"),
+            downsample: pipeline(
+                "sky envmap downsample",
+                &downsample_layout,
+                "downsample",
+                &["DOWNSAMPLE"],
+            ),
+            specular: pipeline("sky envmap specular", &filter_layout, "specular", &[]),
+            irradiance: pipeline("sky envmap irradiance", &filter_layout, "irradiance", &[]),
+            // the irradiance pass again, reading the sky itself
+            trilight: pipeline(
+                "sky envmap trilight",
+                &filter_layout,
+                "irradiance",
+                &["RAW_SKY"],
+            ),
             downsample_layout,
             filter_layout,
             sampler,
@@ -331,22 +383,25 @@ impl FromWorld for SkyEnvmapPipelines {
 /// when the scales change.
 #[derive(Resource)]
 struct SkyEnvmapResources {
-    /// the sky, specular and diffuse textures the bind groups were built for
-    textures: [TextureId; 3],
+    /// the sky and output textures the bind groups were built for
+    textures: [TextureId; 5],
     downsample_sky: (BindGroup, u32),
     downsample: Vec<BindGroup>,
     specular: Vec<(BindGroup, u32)>,
     irradiance: (BindGroup, u32),
+    /// the low setting's diffuse and specular maps
+    trilight: [(BindGroup, u32); 2],
     _intermediate: Texture,
     uniforms: DynamicUniformBuffer<Constants>,
 }
 
-/// Pushes the constants for every filter pass: one per specular mip, then the irradiance pass.
-/// The order (and so the offsets) is the same every time, so rewriting keeps bind groups valid.
+/// Pushes the constants for every filter pass: one per specular mip, the irradiance pass, then
+/// the two trilight passes. The order (and so the offsets) is the same every time, so rewriting
+/// keeps bind groups valid.
 fn push_constants(
     uniforms: &mut DynamicUniformBuffer<Constants>,
     settings: &SkyEnvmapSettings,
-) -> (Vec<u32>, u32) {
+) -> (Vec<u32>, u32, [u32; 2]) {
     uniforms.clear();
     let specular = (0..SPECULAR_MIPS)
         .map(|mip| {
@@ -364,7 +419,15 @@ fn push_constants(
         sample_count: DIFFUSE_SAMPLES,
         source_lod: DIFFUSE_SOURCE_LOD,
     });
-    (specular, irradiance)
+    let trilight = [settings.diffuse, settings.specular].map(|intensity| {
+        uniforms.push(&Constants {
+            intensity,
+            roughness: 0.0,
+            sample_count: TRILIGHT_SAMPLES,
+            source_lod: 0.0,
+        })
+    });
+    (specular, irradiance, trilight)
 }
 
 fn array_view(texture: &Texture, mip: u32) -> TextureView {
@@ -392,14 +455,30 @@ fn prepare_sky_envmap(
     device: Res<RenderDevice>,
     queue: Res<RenderQueue>,
 ) {
-    let (Some(source), Some(specular), Some(diffuse)) = (
+    let (
+        Some(source),
+        Some(specular),
+        Some(diffuse),
+        Some(trilight_diffuse),
+        Some(trilight_specular),
+    ) = (
         gpu_images.get(&atmosphere_image.handle),
         gpu_images.get(&envmap.specular),
         gpu_images.get(&envmap.diffuse),
-    ) else {
+        gpu_images.get(&envmap.trilight_diffuse),
+        gpu_images.get(&envmap.trilight_specular),
+    )
+    else {
         return;
     };
-    let textures = [source, specular, diffuse].map(|image| image.texture.id());
+    let textures = [
+        source,
+        specular,
+        diffuse,
+        trilight_diffuse,
+        trilight_specular,
+    ]
+    .map(|image| image.texture.id());
     if let Some(mut existing) = existing {
         if existing.textures == textures {
             if settings.is_changed() {
@@ -431,7 +510,8 @@ fn prepare_sky_envmap(
     });
 
     let mut uniforms = DynamicUniformBuffer::<Constants>::default();
-    let (specular_offsets, irradiance_offset) = push_constants(&mut uniforms, &settings);
+    let (specular_offsets, irradiance_offset, trilight_offsets) =
+        push_constants(&mut uniforms, &settings);
     uniforms.write_buffer(&device, &queue);
     let uniform_binding = uniforms.binding().unwrap();
 
@@ -487,6 +567,18 @@ fn prepare_sky_envmap(
         &array_view(&diffuse.texture, 0),
         irradiance_offset,
     );
+    let trilight = [
+        filter_bind_group(
+            &source.texture_view,
+            &array_view(&trilight_diffuse.texture, 0),
+            trilight_offsets[0],
+        ),
+        filter_bind_group(
+            &source.texture_view,
+            &array_view(&trilight_specular.texture, 0),
+            trilight_offsets[1],
+        ),
+    ];
 
     commands.insert_resource(SkyEnvmapResources {
         textures,
@@ -494,6 +586,7 @@ fn prepare_sky_envmap(
         downsample,
         specular,
         irradiance,
+        trilight,
         _intermediate: intermediate,
         uniforms,
     });
@@ -517,12 +610,21 @@ impl render_graph::Node for SkyEnvmapNode {
         };
         let pipelines = world.resource::<SkyEnvmapPipelines>();
         let pipeline_cache = world.resource::<PipelineCache>();
-        let (Some(downsample_sky), Some(downsample), Some(specular), Some(irradiance)) = (
+        let quality = world.resource::<SkyEnvmapSettings>().quality;
+        let (
+            Some(downsample_sky),
+            Some(downsample),
+            Some(specular),
+            Some(irradiance),
+            Some(trilight),
+        ) = (
             pipeline_cache.get_compute_pipeline(pipelines.downsample_sky),
             pipeline_cache.get_compute_pipeline(pipelines.downsample),
             pipeline_cache.get_compute_pipeline(pipelines.specular),
             pipeline_cache.get_compute_pipeline(pipelines.irradiance),
-        ) else {
+            pipeline_cache.get_compute_pipeline(pipelines.trilight),
+        )
+        else {
             return Ok(());
         };
 
@@ -534,6 +636,15 @@ impl render_graph::Node for SkyEnvmapNode {
                     timestamp_writes: None,
                 });
         let groups = |size: u32| size.div_ceil(WORKGROUP_SIZE);
+
+        if quality == SkyReflectionSetting::Low {
+            pass.set_pipeline(trilight);
+            for (bind_group, offset) in &resources.trilight {
+                pass.set_bind_group(0, bind_group, &[*offset]);
+                pass.dispatch_workgroups(1, 1, GENERATED_FACES);
+            }
+            return Ok(());
+        }
 
         pass.set_pipeline(downsample_sky);
         let (bind_group, offset) = &resources.downsample_sky;

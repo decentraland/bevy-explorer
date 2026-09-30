@@ -26,6 +26,7 @@ const PRESET_VALUES: Record<string, [number | string, number | string, number | 
   Fog: ['Atmospheric', 'Atmospheric', 'Atmospheric'],
   Bloom: ['Low', 'Low', 'Low'],
   'Depth of Field': ['High', 'High', 'High'],
+  'Sky Reflections': ['High', 'High', 'High'],
   'Out-of-bounds Effect': ['On', 'On', 'On'],
   'Scene Load Distance': [10, 25, 100],
   'Scene Unload Distance': [10, 15, 20],

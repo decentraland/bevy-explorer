@@ -89,7 +89,13 @@ fn below_generated_half(row: u32, size: u32, face: u32) -> bool {
 }
 
 fn sample_sky(dir: vec3<f32>, lod: f32) -> vec3<f32> {
+#ifdef RAW_SKY
+    // the sky itself rather than the mirrored, tinted downsample: mirror and tint here
+    let tint = select(vec3<f32>(1.0), sky_envmap_ground_tint(dir), dir.y < 0.0);
+    return textureSampleLevel(source_cube, source_sampler, vec3<f32>(dir.x, abs(dir.y), dir.z), 0.0).rgb * tint;
+#else
     return textureSampleLevel(source_cube, source_sampler, dir, lod).rgb;
+#endif
 }
 
 // first downsample, from the sky cube: box-filter each output texel's block of sky texels (one
