@@ -16,6 +16,8 @@ export interface TabItem<T extends string = string> {
   iconAfter?: React.ReactNode
   /** Count pill after the label; hidden when 0/undefined. */
   badge?: number
+  /** Above this the pill reads "+max". */
+  badgeMax?: number
   /** Shown but not selectable — e.g. a static heading standing in the strip. */
   disabled?: boolean
 }
@@ -87,7 +89,7 @@ export function Tabs<T extends string>({
             {it.icon}
             {it.label}
             {it.iconAfter}
-            {it.badge ? <span className={styles.badge}>{it.badge}</span> : null}
+            {it.badge ? <span className={styles.badge}>{it.badgeMax != null && it.badge > it.badgeMax ? `+${it.badgeMax}` : it.badge}</span> : null}
           </button>
         )
       })}

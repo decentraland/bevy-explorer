@@ -134,6 +134,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
         label={item.label}
         shortcut={shortcut}
         badge={session.friends.received.length}
+        badgeMax={9}
         active={session.friends.open}
         onClick={session.friends.toggle}
       />

@@ -15,6 +15,8 @@ interface IconButtonProps
   active?: boolean
   /** Notification count badge (hidden when 0/undefined). */
   badge?: number
+  /** Above this the badge reads "+max" (default 99 → "99+"). */
+  badgeMax?: number
   /** Badge tone — Ruby (default) or Lavender (e.g. Hangouts). */
   badgeTone?: 'ruby' | 'lavender'
   /** Tooltip label shown on hover. */
@@ -36,6 +38,7 @@ export function IconButton({
   icon,
   active = false,
   badge,
+  badgeMax,
   badgeTone = 'ruby',
   label,
   shortcut,
@@ -72,7 +75,7 @@ export function IconButton({
           <span
             className={`${styles.badge} ${badgeTone === 'lavender' ? styles.badgeLavender : ''}`.trim()}
           >
-            {badge > 99 ? '99+' : badge}
+            {badgeMax != null ? (badge > badgeMax ? `+${badgeMax}` : badge) : badge > 99 ? '99+' : badge}
           </span>
         )}
       </button>

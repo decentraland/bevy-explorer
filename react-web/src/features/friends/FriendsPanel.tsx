@@ -3,8 +3,8 @@
 // actions; blocked shows an empty placeholder. Data + actions come from the bridge
 // relay of the scene social state (BevyApi.social.*), guest-disabled.
 
-import { useMemo, useState } from 'react'
-import { Avatar, BlockedUser, Button, ControlButton, Envelope, Kebab, Tabs, Tooltip, type TabItem } from '../../design'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Avatar, BlockedUser, Button, ControlButton, Envelope, Kebab, Tabs, Tooltip, hasOpenPopup, type TabItem } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Friend, FriendRequest } from '../../engine/protocol'
 import type { FriendsState } from '../session/useEngineSession'
@@ -89,17 +89,20 @@ function Collapsible({
   title,
   count,
   emptyLabel,
+  open,
+  onToggle,
   children
 }: {
   title: string
   count: number
   emptyLabel: string
+  open: boolean
+  onToggle: () => void
   children: React.ReactNode
 }): React.JSX.Element {
-  const [open, setOpen] = useState(true)
   return (
     <>
-      <button type="button" className={styles.sectionHead} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className={styles.sectionHead} aria-expanded={open} onClick={onToggle}>
         <Chevron open={open} />
         {title} ({count})
       </button>
@@ -216,6 +219,36 @@ export function FriendsPanel({
   friends: FriendsState
 }): React.JSX.Element | null {
   const [tab, setTab] = useState<Tab>('friends')
+  // Kept above the closed early-return so folded sections stay folded across reopen.
+  const [folded, setFolded] = useState<Record<string, boolean>>({})
+  const fold = (id: string) => ({ open: !folded[id], onToggle: () => setFolded((f) => ({ ...f, [id]: !f[id] })) })
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const setRoot = useCallback((el: HTMLDivElement | null) => {
+    rootRef.current = el
+    const cleanup = hudInsetRef(el)
+    return () => {
+      rootRef.current = null
+      cleanup?.()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (friends.open) setTab('friends')
+  }, [friends.open])
+
+  // Clicking anywhere outside (except the rail's own toggle and popups opened from here) closes it.
+  const toggle = friends.toggle
+  useEffect(() => {
+    if (!friends.open) return
+    const onDown = (e: PointerEvent): void => {
+      const t = e.target as Node | null
+      if (t == null || rootRef.current?.contains(t) || hasOpenPopup()) return
+      if (t instanceof Element && t.closest('nav[aria-label="Main navigation"]')) return
+      toggle()
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [friends.open, toggle])
   // Row click opens the shared profile card at the click (same card the chat + world open).
   const openMenu: OpenMenu = (user, e) => openProfileCard(user.address, e.clientX, e.clientY)
   const menuAt: MenuAt = (address, x, y) => openProfileCard(address, x, y)
@@ -234,12 +267,12 @@ export function FriendsPanel({
   const requestCount = friends.received.length
   const TABS: TabItem<Tab>[] = [
     { id: 'friends', label: 'Friends' },
-    { id: 'requests', label: 'Requests', badge: requestCount },
+    { id: 'requests', label: 'Requests', badge: requestCount, badgeMax: 9 },
     { id: 'blocked', label: 'Blocked' }
   ]
 
   return (
-    <div ref={hudInsetRef} className={styles.root}>
+    <div ref={setRoot} className={styles.root}>
       <header className={styles.head}>
         <Tabs variant="underline" fill className={styles.tabs} items={TABS} value={tab} onChange={setTab} aria-label="Friends sections" />
         <ControlButton variant="solid" size="lg" className={styles.closeGlyph} aria-label="Close friends" onClick={friends.toggle}>
@@ -263,12 +296,12 @@ export function FriendsPanel({
             </div>
           ) : (
             <>
-              <Collapsible title="Online" count={online.length} emptyLabel="No Friends">
+              <Collapsible title="Online" {...fold('online')} count={online.length} emptyLabel="No Friends">
                 {online.map((f) => (
                   <FriendRow key={f.address} friend={f} onOpen={openMenu} onMenu={menuAt} />
                 ))}
               </Collapsible>
-              <Collapsible title="Offline" count={offline.length} emptyLabel="No Friends">
+              <Collapsible title="Offline" {...fold('offline')} count={offline.length} emptyLabel="No Friends">
                 {offline.map((f) => (
                   <FriendRow key={f.address} friend={f} onOpen={openMenu} onMenu={menuAt} />
                 ))}
@@ -277,7 +310,7 @@ export function FriendsPanel({
           )
         ) : tab === 'requests' ? (
           <>
-            <Collapsible title="Received" count={friends.received.length} emptyLabel="No Requests">
+            <Collapsible title="Received" {...fold('received')} count={friends.received.length} emptyLabel="No Requests">
               {friends.received.map((r) => (
                 <ReceivedRow
                   key={r.id}
@@ -288,7 +321,7 @@ export function FriendsPanel({
                 />
               ))}
             </Collapsible>
-            <Collapsible title="Sent" count={friends.sent.length} emptyLabel="No Requests">
+            <Collapsible title="Sent" {...fold('sent')} count={friends.sent.length} emptyLabel="No Requests">
               {friends.sent.map((r) => (
                 <SentRow key={r.id} req={r} onCancel={() => friends.act('cancel', r.address)} onMenu={menuAt} />
               ))}
