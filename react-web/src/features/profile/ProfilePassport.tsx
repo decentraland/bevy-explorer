@@ -111,18 +111,25 @@ export function ProfilePassport({
   isSelf = false,
   editing,
   onAddFriend,
+  onUnfriend,
+  onCancelRequest,
+  onAcceptRequest,
+  onUnblock,
   onClose,
   onDirtyChange
 }: {
   profile: Profile
-  /** Relationship of the local user to this profile — drives the header CTA. Hides it entirely for
-   *  'incoming' (they requested us — showing ADD FRIEND would fire a duplicate request) and 'blocked'. */
+  /** Relationship of the local user to this profile — drives the header friendship button. */
   relationship?: Relationship
   /** Your own passport — hides the friend action (you can't friend yourself). */
   isSelf?: boolean
   /** Own-profile edit mode. Only offered when this is your passport. */
   editing?: PassportEditing
   onAddFriend?: (address: string) => void
+  onUnfriend?: (address: string) => void
+  onCancelRequest?: (address: string) => void
+  onAcceptRequest?: (address: string) => void
+  onUnblock?: (address: string) => void
   onClose: () => void
   /** Announce unsaved edits, so the popup layer can refuse to close on a stray backdrop click. */
   onDirtyChange?: (dirty: boolean) => void
@@ -174,10 +181,6 @@ export function ProfilePassport({
     if (wasSaving.current && !editing.saving && editing.error == null) setEditMode(false)
     wasSaving.current = editing.saving
   }, [editing])
-  // Optimistic: flip to "Requested" the instant Add Friend is clicked (the sent-list
-  // poll catches up a beat later), so the button isn't a no-op visually.
-  const [justRequested, setJustRequested] = useState(false)
-  const pending = relationship === 'requested' || justRequested
   // (Escape is handled centrally by the popup stack — see popups.tsx.)
   const { base, tag } = splitName(profile.name)
   const claimed = profile.hasClaimedName
@@ -221,24 +224,26 @@ export function ProfilePassport({
             )}
           </div>
           <div className={styles.headActions}>
-            {!isSelf && relationship !== 'incoming' && relationship !== 'blocked' &&
+            {!isSelf &&
               (relationship === 'friend' ? (
-                <button type="button" className={`${styles.headBtn} ${styles.headBtnInert}`} disabled>
-                  FRIEND
+                <button type="button" className={`${styles.headBtn} ${styles.headBtnSwap}`} onClick={() => onUnfriend?.(profile.address)}>
+                  <span className={styles.idle}>FRIEND</span>
+                  <span className={styles.hover}>REMOVE FRIEND</span>
                 </button>
-              ) : pending ? (
-                <button type="button" className={`${styles.headBtn} ${styles.headBtnInert}`} disabled>
-                  REQUESTED
+              ) : relationship === 'requested' ? (
+                <button type="button" className={styles.headBtn} onClick={() => onCancelRequest?.(profile.address)}>
+                  CANCEL REQUEST
+                </button>
+              ) : relationship === 'incoming' ? (
+                <button type="button" className={styles.headBtn} onClick={() => onAcceptRequest?.(profile.address)}>
+                  ACCEPT FRIEND
+                </button>
+              ) : relationship === 'blocked' ? (
+                <button type="button" className={styles.headBtn} onClick={() => onUnblock?.(profile.address)}>
+                  UNBLOCK
                 </button>
               ) : (
-                <button
-                  type="button"
-                  className={styles.headBtn}
-                  onClick={() => {
-                    onAddFriend?.(profile.address)
-                    setJustRequested(true)
-                  }}
-                >
+                <button type="button" className={styles.headBtn} onClick={() => onAddFriend?.(profile.address)}>
                   ADD FRIEND
                 </button>
               ))}

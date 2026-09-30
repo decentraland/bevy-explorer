@@ -102,7 +102,8 @@
   transition: background-color 100ms linear;
 }
 .row:hover,
-.row:focus-within {
+.row:focus-within,
+.rowMenuOpen {
   background: var(--row-hover);
 }
 .info {
@@ -182,13 +183,16 @@
   font-weight: var(--fw-regular);
 }
 .row:hover .date,
-.row:focus-within .date {
+.row:focus-within .date,
+.rowMenuOpen .date {
   visibility: hidden;
 }
 .row:hover .actions,
 .row:hover .hoverActions,
 .row:focus-within .actions,
-.row:focus-within .hoverActions {
+.row:focus-within .hoverActions,
+.rowMenuOpen .actions,
+.rowMenuOpen .hoverActions {
   display: flex;
 }
 .menuBtn {
@@ -261,8 +265,17 @@
   vertical-align: middle;
 }
 
-/* A friend row that opens the profile menu. */
+/* A row that opens its target (passport / request); the avatar opens the user menu. */
 .rowBtn {
   cursor: pointer;
   outline: none;
+}
+.avatarBtn {
+  display: flex;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: none;
+  cursor: pointer;
 }

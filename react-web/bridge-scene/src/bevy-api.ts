@@ -10,6 +10,7 @@ import type {
   BlockingStatusData,
   ChatMessage,
   VoiceMessage,
+  FriendData,
   FriendRequestData,
   FriendStatusData,
   HoverAction,
@@ -25,7 +26,7 @@ import type {
 } from '../../src/engine/generated'
 
 // --- raw social-service shapes (BevyApi.social.*), generated from the Rust structs ---
-export type { FriendStatusData, FriendRequestData }
+export type { FriendData, FriendStatusData, FriendRequestData }
 export type BlockingStatus = BlockingStatusData
 
 // Per-player modifiers from AvatarModifierArea (privacy zones etc), only for players carrying one —
@@ -36,6 +37,10 @@ export type { AvatarModifierState }
 export type SocialApi = {
   getSocialInitialized: () => Promise<boolean>
   getOnlineFriends: () => Promise<FriendStatusData[]>
+  getMutualFriends: (address: string) => Promise<FriendData[]>
+  getFriendshipEventStream: () => Promise<AsyncIterable<unknown>>
+  getFriendConnectivityStream: () => Promise<AsyncIterable<unknown>>
+  getBlockUpdateStream: () => Promise<AsyncIterable<unknown>>
   getReceivedFriendRequests: () => Promise<FriendRequestData[]>
   getSentFriendRequests: () => Promise<FriendRequestData[]>
   getBlockingStatus?: () => Promise<BlockingStatus>

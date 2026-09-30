@@ -10,6 +10,9 @@ import { relationshipOf } from '../../lib/relationship'
 import { openNameEdit } from './NameEditModal'
 import { ProfilePassport } from './ProfilePassport'
 import type { Profile } from '../../engine/protocol'
+import { splitName } from '../../lib/identity'
+import { confirmUnblock, confirmUnfriend } from '../friends/friendDialogs'
+import { openFriendRequest } from '../friends/FriendRequestPopup'
 
 export function Passport({
   userId,
@@ -35,6 +38,7 @@ export function Passport({
     (isSelf && session.profile.data
       ? session.profile.data
       : { address: userId, name: userId, hasClaimedName: false, isGuest: false })
+  const friendUser = { address: userId, name: profile.name, picture: profile.picture }
 
   // Only your own passport can be edited, so the claimed-name list is only worth fetching there.
   useEffect(() => {
@@ -58,7 +62,11 @@ export function Passport({
           : undefined
       }
       relationship={relationshipOf(session.friends, userId)}
-      onAddFriend={(address) => session.friends.act('request', address)}
+      onAddFriend={() => openFriendRequest('send', friendUser)}
+      onUnfriend={() => void confirmUnfriend(friendUser).then((ok) => ok && session.friends.act('delete', userId))}
+      onCancelRequest={() => session.friends.act('cancel', userId)}
+      onAcceptRequest={() => openFriendRequest('accept', friendUser)}
+      onUnblock={() => void confirmUnblock(splitName(friendUser.name).base).then((ok) => ok && session.friends.act('unblock', userId))}
       onClose={onClose}
     />
   )

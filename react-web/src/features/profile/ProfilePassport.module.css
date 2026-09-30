@@ -93,12 +93,16 @@
   font-size: 0.85rem;
   cursor: pointer;
 }
-.headBtn:not(.headBtnInert):hover {
+.headBtn:hover {
   background: var(--brand, #ff2d55);
 }
-/* A state, not a control: shown as a pill for consistency but nothing happens on click. */
-.headBtnInert {
-  cursor: default;
+/* FRIEND reads as a state until hovered, when it offers REMOVE FRIEND. */
+.headBtnSwap .hover,
+.headBtnSwap:hover .idle {
+  display: none;
+}
+.headBtnSwap:hover .hover {
+  display: inline;
 }
 .close {
   width: 38px;

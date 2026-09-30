@@ -535,7 +535,22 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     }
 
     if (msg.kind === 'navAction') return // no scene menus in the mock
-    if (msg.kind === 'friendAction') return // social actions are no-ops in the mock
+    if (msg.kind === 'friendAction') {
+      // No social service in the mock: acknowledge so the page's flows (toasts, popups) run.
+      reply({ kind: 'friendActionDone', op: msg.op, address: msg.address })
+      return
+    }
+    if (msg.kind === 'getMutualFriends') {
+      reply({
+        kind: 'mutualFriends',
+        address: msg.address,
+        friends: [
+          { address: '0x5854cce95d5e25817b41f4c41f06b695a83bc495', name: 'Mojito' },
+          { address: '0x6723dcb07f3ca735223cd1c0acfa62dd994a1bb4', name: 'Sharknado' }
+        ]
+      })
+      return
+    }
     if (msg.kind === 'getSettings') {
       reply({ kind: 'settings', settings: mockSettings })
       return

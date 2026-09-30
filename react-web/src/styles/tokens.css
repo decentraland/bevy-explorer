@@ -35,6 +35,8 @@
   --brand-strong: #f02148; /* compact primary hover */
   --brand-pressed: #e41e43;
   --menu-rim: #302d36; /* user menu popover rim */
+  --danger-strong: #ff0000; /* destructive hover outline (remove friend / cancel request) */
+  --black-40: rgba(0, 0, 0, 0.4);
 
   /* status */
   --online: #57df41;

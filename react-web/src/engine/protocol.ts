@@ -132,6 +132,7 @@ export type PageToScene =
   | ConsoleCommandRequest
   | NavActionRequest
   | FriendActionRequest
+  | GetMutualFriendsRequest
   | GetSettingsRequest
   | SetSettingRequest
   | GetBindingsRequest
@@ -322,6 +323,33 @@ export type FriendAction = 'request' | 'accept' | 'reject' | 'cancel' | 'delete'
 export interface FriendActionRequest {
   kind: 'friendAction'
   op: FriendAction
+  address: string
+  /** Intro text sent with a friend request (≤140 chars). */
+  message?: string
+}
+
+/** The social service accepted a friend action (scene → page). */
+export interface FriendActionDoneMessage {
+  kind: 'friendActionDone'
+  op: FriendAction
+  address: string
+}
+
+/** Mutual friends with `address` (page → scene), answered by MutualFriendsMessage. */
+export interface GetMutualFriendsRequest {
+  kind: 'getMutualFriends'
+  address: string
+}
+
+export interface MutualFriendsMessage {
+  kind: 'mutualFriends'
+  address: string
+  friends: { address: string; name: string; picture?: string }[]
+}
+
+/** A friend came online after startup (scene → page), for the "is online" toast. */
+export interface FriendOnlineMessage {
+  kind: 'friendOnline'
   address: string
 }
 
@@ -1233,6 +1261,9 @@ export type SceneToPage =
   | MenuVisibilityMessage
   | FriendsMessage
   | FriendActionFailedMessage
+  | FriendActionDoneMessage
+  | MutualFriendsMessage
+  | FriendOnlineMessage
   | SettingsMessage
   | BindingsMessage
   | InputCapturedMessage

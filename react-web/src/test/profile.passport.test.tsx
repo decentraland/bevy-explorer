@@ -27,38 +27,17 @@ describe('profile passport', () => {
     expect(screen.getByRole('link', { name: /x account/i })).toHaveAttribute('href', 'https://x.com/kurd')
   })
 
-  it('ADD FRIEND when not a friend; FRIEND (disabled) when already', async () => {
-    const onAddFriend = vi.fn()
-    const { rerender } = render(<ProfilePassport profile={profile} onAddFriend={onAddFriend} onClose={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'ADD FRIEND' }))
-    expect(onAddFriend).toHaveBeenCalledWith(profile.address)
-
-    rerender(<ProfilePassport profile={profile} relationship="friend" onAddFriend={onAddFriend} onClose={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'FRIEND' })).toBeDisabled()
-  })
-
-  it('Add Friend requests, then flips to REQUESTED (optimistic feedback)', async () => {
-    const onAddFriend = vi.fn()
-    render(<ProfilePassport profile={profile} onAddFriend={onAddFriend} onClose={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'ADD FRIEND' }))
-    expect(onAddFriend).toHaveBeenCalledWith(profile.address)
-    expect(screen.getByRole('button', { name: 'REQUESTED' })).toBeDisabled()
-  })
-
-  it('shows REQUESTED (not Add Friend) when a request is already pending', () => {
-    render(<ProfilePassport profile={profile} relationship="requested" onClose={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'REQUESTED' })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'ADD FRIEND' })).toBeNull()
-  })
-
-  it('hides the friend action for an incoming request (would duplicate-request otherwise)', () => {
-    render(<ProfilePassport profile={profile} relationship="incoming" onClose={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: /FRIEND/i })).toBeNull()
-  })
-
-  it('hides the friend action for a blocked user', () => {
-    render(<ProfilePassport profile={profile} relationship="blocked" onClose={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: /FRIEND/i })).toBeNull()
+  it.each([
+    ['none', 'ADD FRIEND', 'onAddFriend'],
+    ['friend', 'FRIEND', 'onUnfriend'],
+    ['requested', 'CANCEL REQUEST', 'onCancelRequest'],
+    ['incoming', 'ACCEPT FRIEND', 'onAcceptRequest'],
+    ['blocked', 'UNBLOCK', 'onUnblock']
+  ] as const)('the friendship button for %s reads %s and calls %s', async (relationship, label, handler) => {
+    const fn = vi.fn()
+    render(<ProfilePassport profile={profile} relationship={relationship} {...{ [handler]: fn }} onClose={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}`) }))
+    expect(fn).toHaveBeenCalledWith(profile.address)
   })
 
   it('hides the friend action on your own passport (isSelf)', () => {
