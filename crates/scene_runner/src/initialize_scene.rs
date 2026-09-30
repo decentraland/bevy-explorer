@@ -1581,11 +1581,26 @@ pub fn process_scene_lifecycle(
     let Ok(focus) = focus.single() else {
         return;
     };
-    let focus = preview_mode
-        .preview_parcel
-        .as_ref()
-        .map(|p| GlobalTransform::from(Transform::from_translation(parcel_to_vec3(*p))))
-        .unwrap_or(*focus);
+
+    let mut pointers_iter = pointers.pointers.iter();
+    let head = pointers_iter.next();
+    let maybe_unique_scene = head.and_then(|(head_parcel, head_pointer)| {
+        if pointers_iter.any(|(_cur_parcel, cur_pointer)| cur_pointer != head_pointer) {
+            None
+        } else {
+            Some(*head_parcel)
+        }
+    });
+    let focus = if let Some(unique_scene) = maybe_unique_scene {
+        let focus_vec3 = parcel_to_vec3(unique_scene);
+        Transform::from_translation(focus_vec3).into()
+    } else {
+        preview_mode
+            .preview_parcel
+            .as_ref()
+            .map(|p| GlobalTransform::from(Transform::from_translation(parcel_to_vec3(*p))))
+            .unwrap_or(*focus)
+    };
 
     let current_scene = parcels_in_range(&focus, 0.0, pointers.min(), pointers.max())
         .first()
