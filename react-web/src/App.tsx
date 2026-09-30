@@ -28,7 +28,7 @@ import { Pointer } from './features/pointer/Pointer'
 import { openPassport } from './features/profile/Passport'
 import { openWorldVisit } from './components/WorldVisitModal'
 import { openPermissionDialog } from './features/permissions/PermissionDialog'
-import { PopupHost, showDialog } from './design'
+import { PopupHost, ToastHost, showDialog } from './design'
 import { SessionProvider } from './features/session/SessionContext'
 import { isNativeHud } from './lib/bootMode'
 import { FpsMeter } from './features/debug/FpsMeter'
@@ -288,6 +288,7 @@ function Hud(): React.JSX.Element {
       <SessionProvider value={session}>
         {rpc && <EngineHost rpc={rpc} />}
         <PopupHost />
+        <ToastHost />
         {/* After PopupHost: the crash surface sits above the popup layer. */}
         {crash && <CrashModal error={crash} onReload={session.reload} onDismiss={crash.source === 'runtime' ? session.dismissFatal : undefined} />}
       </SessionProvider>
@@ -402,6 +403,7 @@ function Hud(): React.JSX.Element {
       {/* Popups (imperative overlay stack) live inside the session provider so popup-mounted surfaces
           — the world <ProfileCard> — can read useSession(). */}
       <PopupHost />
+      <ToastHost />
       {/* Crash surface (boot panic / runtime crash / react render crash) — last, so it renders above
           the popup layer. A world-not-found is not a crash and opens as a popup instead (see above). */}
       {crash && <CrashModal error={crash} onReload={session.reload} onDismiss={crash.source === 'runtime' ? session.dismissFatal : undefined} />}
