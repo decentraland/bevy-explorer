@@ -22,7 +22,7 @@
   padding: 32px;
   background: var(--modal-scrim);
   backdrop-filter: blur(2px);
-  animation: fadeIn 0.2s ease;
+  animation: global(fade-in) 0.2s ease;
 }
 .pop {
   display: flex;
@@ -30,23 +30,7 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  animation: popIn 0.2s var(--ease-spring);
-}
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes popIn {
-  from {
-    transform: scale(0.96);
-  }
-  to {
-    transform: scale(1);
-  }
+  animation: global(pop-in) 0.2s var(--ease-spring);
 }
 
 /* Alert-style centered header — title-scale type instead of the shell's compact panel heading. */

@@ -11,7 +11,7 @@
   padding: 1.25rem 0.75rem 0.75rem;
   border-radius: var(--r-card);
   background: var(--panel, #18141a);
-  border: 1px solid var(--white-10, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--white-10, var(--fill-3));
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
   pointer-events: auto;
 }
@@ -23,7 +23,7 @@
   align-items: center;
   gap: 0.35rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid var(--white-10, rgba(255, 255, 255, 0.08));
+  border-bottom: 1px solid var(--white-10, var(--fill-3));
 }
 
 .copyRow {
@@ -35,10 +35,10 @@
   padding: 0.1rem 0.3rem;
   border-radius: var(--r-control);
   cursor: pointer;
-  color: var(--text-dim, rgba(255, 255, 255, 0.55));
+  color: var(--text-dim, var(--text-dim));
 }
 .copyRow:hover {
-  background: var(--white-10, rgba(255, 255, 255, 0.06));
+  background: var(--white-10, var(--fill-2));
 }
 
 .name {
@@ -107,7 +107,7 @@
   background: none;
   border: none;
   border-radius: var(--r-control);
-  color: var(--text, #fff);
+  color: var(--text, var(--white));
   font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
@@ -121,13 +121,13 @@
 }
 
 .danger {
-  color: var(--brand, #ff2d55);
+  color: var(--brand, var(--brand));
 }
 
 .divider {
   height: 1px;
   margin: 0.35rem 0;
-  background: var(--white-10, rgba(255, 255, 255, 0.08));
+  background: var(--white-10, var(--fill-3));
 }
 
 .verified {

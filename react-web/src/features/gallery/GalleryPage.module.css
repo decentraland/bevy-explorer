@@ -97,15 +97,7 @@
   display: flex;
   /* Heavy black scrim (like --scrim, more opaque) so the lightbox fully covers the grid. */
   background: rgba(0, 0, 0, 0.92);
-  animation: viewerIn var(--dur-fast) ease;
-}
-@keyframes viewerIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  animation: global(fade-in) var(--dur-fast) ease;
 }
 .viewerClose {
   position: absolute;
@@ -123,7 +115,7 @@
   cursor: pointer;
 }
 .viewerClose:hover {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 
 .stage {
@@ -160,7 +152,7 @@
   transition: background-color var(--dur-fast) ease;
 }
 .nav:hover:not(:disabled) {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 .nav:disabled {
   opacity: 0.25;
@@ -207,7 +199,7 @@
   text-decoration: none;
 }
 .actionLink:hover {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 .deleteBtn {
   color: var(--red);

@@ -8,7 +8,7 @@
   padding: 34px 40px 26px;
   border-radius: var(--r-panel);
   overflow: hidden;
-  color: #fff;
+  color: var(--white);
   background: var(--modal-bg);
   box-shadow: var(--shadow-modal);
 }
@@ -62,8 +62,8 @@
   width: 80px;
   height: 80px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.08) center/cover no-repeat;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--fill-3) center/cover no-repeat;
+  border: 1px solid var(--white-14);
   color: rgba(255, 255, 255, 0.4);
 }
 .pfpEdit {
@@ -79,7 +79,7 @@
   cursor: pointer;
   background: #2a0a45;
   border: 2px solid rgba(255, 255, 255, 0.35);
-  color: #fff;
+  color: var(--white);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 .pfpEdit:hover {
@@ -90,7 +90,7 @@
 .input {
   width: 100%;
   box-sizing: border-box;
-  background: #fff;
+  background: var(--white);
   border: 1px solid transparent;
   border-radius: var(--r-control);
   color: #1a1a1a;
@@ -114,7 +114,7 @@
 }
 .primary {
   background: var(--brand);
-  color: #fff;
+  color: var(--white);
   border: none;
   cursor: pointer;
   font-family: inherit;
@@ -133,7 +133,7 @@
 }
 .ghost {
   background: transparent;
-  color: #fff;
+  color: var(--white);
   border: 1px solid rgba(255, 255, 255, 0.35);
   cursor: pointer;
   font-family: inherit;
@@ -144,7 +144,7 @@
   border-radius: var(--r-pill);
 }
 .ghost:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--white-10);
 }
 .cancel,
 .create {
@@ -162,7 +162,7 @@
 .gate {
   width: min(440px, 100%);
   border-radius: var(--r-panel);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--white-10);
   background: var(--modal-bg);
   box-shadow: var(--shadow-modal);
   padding: 32px 28px;

@@ -36,7 +36,7 @@
   transform: scale(1.06);
 }
 .pill .tab:hover:not(:disabled):not(.active) {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 .pill .active,
 .pill .active:hover {
@@ -120,7 +120,7 @@
   transform: scale(1.04);
 }
 .section .tab:active:not(:disabled) {
-  animation: pressBounce 583ms var(--ease-inout);
+  animation: global(press-bounce) 583ms var(--ease-inout);
 }
 .section .active,
 .section .active:hover {
@@ -162,23 +162,3 @@
   background: var(--brand);
 }
 
-@keyframes pressBounce {
-  0% {
-    transform: scale(1.04);
-  }
-  14% {
-    transform: scale(0.9);
-  }
-  23% {
-    transform: scale(0.9);
-  }
-  43% {
-    transform: scale(1.04);
-  }
-  72% {
-    transform: scale(0.95);
-  }
-  100% {
-    transform: scale(1);
-  }
-}

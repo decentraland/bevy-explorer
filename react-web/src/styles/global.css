@@ -20,3 +20,41 @@ body {
   color: var(--color-text);
   background: var(--color-bg);
 }
+
+/* Shared animations — CSS modules reference them as global(name). */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pop-in {
+  from {
+    transform: scale(0.96);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+@keyframes press-bounce {
+  0% {
+    transform: scale(1.04);
+  }
+  14% {
+    transform: scale(0.9);
+  }
+  23% {
+    transform: scale(0.9);
+  }
+  43% {
+    transform: scale(1.04);
+  }
+  72% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+  }
+}

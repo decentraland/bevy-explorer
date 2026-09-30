@@ -28,7 +28,7 @@
   cursor: pointer;
 }
 .reset:hover {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 
 .card {

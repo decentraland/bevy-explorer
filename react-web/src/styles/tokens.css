@@ -12,6 +12,7 @@
   --accent: #ff743a; /* category / selected orange */
   --accent-ink: #1a1206; /* dark text/icon on an --accent (orange) fill */
   --text: #fcfcfc;
+  --white: #ffffff;
   --gold: #ffc95b;
   --purple: #982de2;
 
@@ -25,6 +26,7 @@
   --lavender: #c640cd; /* DCL/Lavender — secondary badge */
   --red: #ff0000; /* DCL/Red — blocked */
   --white-10: rgba(255, 255, 255, 0.1); /* DCL/White10% — dividers */
+  --white-19: rgba(255, 255, 255, 0.19);
 
   /* status */
   --online: var(--green);
@@ -38,9 +40,7 @@
   --fill-1: rgba(255, 255, 255, 0.04);
   --fill-2: rgba(255, 255, 255, 0.06);
   --fill-3: rgba(255, 255, 255, 0.08);
-  --fill-4: rgba(255, 255, 255, 0.1);
   --fill-5: rgba(255, 255, 255, 0.12);
-  --line: rgba(255, 255, 255, 0.08);
   --ink-95: rgba(255, 255, 255, 0.95);
   --ink-85: rgba(255, 255, 255, 0.85);
   --ink-7: rgba(255, 255, 255, 0.7);
@@ -122,14 +122,12 @@
   --row-hover: var(--pearl);
   --row-press: #cfcdd4;
   --black: #000000;
-  --fill-faint: rgba(255, 255, 255, 0.06); /* hover wash on dark buttons */
   --scrim-40: rgba(0, 0, 0, 0.22);
   --scrim-20: rgba(0, 0, 0, 0.1);
   --divider-pink: rgba(247, 85, 255, 0.25);
   --tab-idle: rgba(120, 90, 160, 0.14); /* a faint lift on the header */
   --tab-hover: rgba(255, 255, 255, 0.26);
   --cover-dark: rgba(22, 21, 24, 0.6); /* incompatible-item cover */
-  --outline-faint: rgba(255, 255, 255, 0.45); /* clear boxes on chips */
   --menu-bar: var(--panel);
   --menu-tab-hover: #232226;
   --menu-tab-selected: #393641;
@@ -159,18 +157,15 @@
   /* loading screen */
   /* sidebar rail — sRGB equivalents of the reference's linear-space blends */
   --rail-bg: rgba(0, 0, 0, 0.65);
-  --rail-divider: rgba(255, 255, 255, 0.2);
-  --rail-selected: rgba(255, 255, 255, 0.16);
+  --white-20: rgba(255, 255, 255, 0.2);
+  --white-16: rgba(255, 255, 255, 0.16);
   --rail-avatar-ring: rgba(255, 255, 255, 0.47);
   /* compact switches / thick sliders / nearby voice (sRGB equivalents of linear blends) */
   --switch-off: rgba(255, 255, 255, 0.38);
   --switch-knob-off: rgba(236, 235, 237, 0.73);
-  --slider-track: rgba(255, 255, 255, 0.19);
-  --voice-divider: rgba(255, 255, 255, 0.14);
-  --voice-fill: rgba(255, 255, 255, 0.19);
+  --white-14: rgba(255, 255, 255, 0.14);
   --voice-fill-hover: #696473;
   --voice-green: #34ce76;
-  --voice-live: #30cd00;
   --voice-speaking-fill: rgba(26, 198, 45, 0.2);
   --loading-vignette: radial-gradient(ellipse 100% 100% at 50% 50%, #bf00ff 16.7%, #4c0080 66.7%);
   --loading-glow: rgba(168, 0, 190, 0.5);

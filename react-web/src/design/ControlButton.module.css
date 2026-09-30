@@ -56,7 +56,7 @@
 }
 
 .solid {
-  background: #000;
+  background: var(--black);
 }
 .solid:hover:not(:disabled),
 .solid.active {

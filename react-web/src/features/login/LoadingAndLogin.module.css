@@ -8,7 +8,7 @@
   font-family: var(--font-family);
   /* Shared Unity magenta→purple backdrop (also used by the full-screen menu pages). */
   background: var(--menu-bg);
-  animation: fade-in var(--dur-fade) var(--ease-out) both;
+  animation: global(fade-in) var(--dur-fade) var(--ease-out) both;
 }
 .root.leaving {
   animation: fade-out 400ms var(--ease-out) both;
@@ -193,7 +193,7 @@
   z-index: 2;
   padding: 16px clamp(2.5rem, 10.5vw, 11rem);
   pointer-events: none;
-  animation: fade-in var(--dur-fade) var(--ease-out) both;
+  animation: global(fade-in) var(--dur-fade) var(--ease-out) both;
 }
 .bootLabel {
   margin-bottom: 7px;
@@ -300,14 +300,6 @@
   50% {
     opacity: 1;
     transform: scaleX(1.06);
-  }
-}
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
 @keyframes fade-out {

@@ -121,10 +121,10 @@
   border-radius: 8px;
 }
 .hueTrack {
-  background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff);
+  background: linear-gradient(90deg, var(--red), #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff);
 }
 .satTrack {
-  background: linear-gradient(90deg, #000000, var(--hue));
+  background: linear-gradient(90deg, var(--black), var(--hue));
 }
 .valTrack {
   background: linear-gradient(90deg, #2b2b2b, #dcdcdc);

@@ -39,7 +39,7 @@
   height: 24px;
   margin-right: -2px;
   padding: 0;
-  border: 1.5px solid var(--outline-faint);
+  border: 1.5px solid var(--ink-45);
   border-radius: var(--r-sm);
   background: none;
   color: var(--text);

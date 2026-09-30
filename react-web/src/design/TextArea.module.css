@@ -32,7 +32,7 @@
 
 .dark {
   background: var(--fill-2);
-  border: 1px solid var(--fill-4);
+  border: 1px solid var(--white-10);
   color: var(--text);
 }
 

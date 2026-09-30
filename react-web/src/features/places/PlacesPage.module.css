@@ -12,7 +12,7 @@
   margin: 0 0 14px;
   font-size: 20px;
   font-weight: 700;
-  color: #fff;
+  color: var(--white);
 }
 .liveDot {
   width: 10px;
@@ -65,9 +65,9 @@
   border: none;
   border-radius: 50%;
   background: rgba(20, 8, 30, 0.8);
-  color: #fff;
+  color: var(--white);
   cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 16px var(--scrim-60);
   transition: background-color var(--dur-fast) ease;
 }
 .carouselArrow:hover {

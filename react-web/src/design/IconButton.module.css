@@ -1,5 +1,5 @@
 /* Sidebar control — matches the Explorer 2.0 spec: 32×32 hit area, 8px radius,
-   right-side tooltip on #161518 (Shadow), Ruby notification badge. */
+   right-side tooltip on var(--panel) (Shadow), Ruby notification badge. */
 .btn {
   position: relative;
   display: flex;
@@ -28,7 +28,7 @@
   right: 0.25px;
   width: 5.5px;
   height: 5.5px;
-  background: var(--voice-live);
+  background: var(--green);
   box-shadow: 0 0 0 2.25px var(--panel);
 }
 .btn::before {
@@ -37,7 +37,7 @@
   inset: 0;
   z-index: 0;
   border-radius: inherit;
-  background-color: var(--rail-selected);
+  background-color: var(--white-16);
   transform: scale(0);
   transition:
     transform 0.2s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),

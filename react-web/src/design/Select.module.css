@@ -22,7 +22,7 @@
   transition: background-color var(--dur-fast) ease;
 }
 .field:hover:not(:disabled) {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 .field:disabled {
   opacity: 0.45;
@@ -30,16 +30,16 @@
 }
 /* Light variant — white field with dark text (Settings menu). */
 .light {
-  background: #fcfcfc;
+  background: var(--text);
   border-color: transparent;
-  color: #161518;
+  color: var(--panel);
   font-weight: 600;
 }
 .light:hover:not(:disabled) {
-  background: #fff;
+  background: var(--white);
 }
 .light .chev {
-  color: #161518;
+  color: var(--panel);
 }
 .value {
   overflow: hidden;

@@ -234,7 +234,7 @@
 }
 
 .roundButton:hover:not(:disabled) {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 
 .roundButton:disabled {

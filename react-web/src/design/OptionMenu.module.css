@@ -3,15 +3,7 @@
   padding: 10px 10px 16px;
   border-radius: var(--r-md);
   background: var(--surface-light);
-  animation: menuFade var(--dur-pop) var(--ease-inoutquad);
-}
-@keyframes menuFade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  animation: global(fade-in) var(--dur-pop) var(--ease-inoutquad);
 }
 .section {
   display: flex;

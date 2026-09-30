@@ -60,7 +60,7 @@
   justify-content: center;
   width: 34px;
   height: 34px;
-  border: 1px solid var(--fill-4);
+  border: 1px solid var(--white-10);
   border-radius: var(--r-control);
   background: var(--fill-2);
   color: var(--text-dim);

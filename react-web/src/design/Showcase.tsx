@@ -190,7 +190,7 @@ export function Showcase(): React.JSX.Element {
         <div style={row}>
           {RADII.map((r) => (
             <div key={r.name} style={{ textAlign: 'center' }}>
-              <div style={{ width: 72, height: 72, background: 'var(--fill-4)', borderRadius: `var(${r.token})`, border: '1px solid var(--white-10)' }} />
+              <div style={{ width: 72, height: 72, background: 'var(--white-10)', borderRadius: `var(${r.token})`, border: '1px solid var(--white-10)' }} />
               <div style={{ fontSize: 11, marginTop: 6 }}>{r.name}</div>
               <div style={{ fontSize: 11, color: 'var(--ink-45)', fontFamily: 'var(--font-mono)' }}>{r.token}</div>
             </div>
@@ -261,10 +261,10 @@ export function Showcase(): React.JSX.Element {
       <Section title="Tooltip (hover the chips)">
         <div style={{ ...row, gap: 16 }}>
           <Tooltip label="Friends" shortcut="L">
-            <span style={{ padding: '8px 14px', borderRadius: 10, background: 'var(--fill-4)' }}>right</span>
+            <span style={{ padding: '8px 14px', borderRadius: 10, background: 'var(--white-10)' }}>right</span>
           </Tooltip>
           <Tooltip label="Settings" shortcut="P" side="top">
-            <span style={{ padding: '8px 14px', borderRadius: 10, background: 'var(--fill-4)' }}>top</span>
+            <span style={{ padding: '8px 14px', borderRadius: 10, background: 'var(--white-10)' }}>top</span>
           </Tooltip>
         </div>
       </Section>
@@ -383,7 +383,7 @@ export function Showcase(): React.JSX.Element {
                         width: 100,
                         padding: '8px 10px',
                         borderRadius: 10,
-                        background: 'var(--fill-4)',
+                        background: 'var(--white-10)',
                         border: sel ? '1px solid var(--brand)' : '1px solid var(--white-10)',
                         transform: `scale(${s})`,
                         transformOrigin: 'top left',

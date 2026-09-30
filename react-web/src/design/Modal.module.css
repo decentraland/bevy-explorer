@@ -8,7 +8,7 @@
   max-height: calc(100% - 40px);
   overflow-y: auto;
   background: var(--modal-bg);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--white-10);
   outline: none;
   border-radius: var(--r-panel);
   padding: 28px;

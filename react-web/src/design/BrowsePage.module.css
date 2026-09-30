@@ -29,7 +29,7 @@
 /* Purple grid panel (decentraland-ui2 GridPanel). */
 .panel {
   background: rgba(179, 47, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--fill-3);
   border-radius: 24px;
   padding: 24px;
 }

@@ -76,7 +76,7 @@
   min-width: 30px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--fill-4);
+  border: 1px solid var(--white-10);
   border-radius: 6px;
   background: var(--fill-3);
   color: var(--text);
@@ -88,7 +88,7 @@
   transition: background-color var(--dur-fast) ease;
 }
 .chip:hover {
-  background: var(--fill-4);
+  background: var(--white-10);
 }
 /* A fixed binding (the wheel's scroll role): displayed but not clickable or removable. */
 .chipFixed {
@@ -110,7 +110,7 @@
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: var(--fill-4);
+  background: var(--white-10);
   color: var(--text);
   font-size: 10px;
   line-height: 14px;
@@ -128,7 +128,7 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px dashed var(--fill-4);
+  border: 1px dashed var(--white-10);
   border-radius: 6px;
   background: none;
   color: var(--ink-7);

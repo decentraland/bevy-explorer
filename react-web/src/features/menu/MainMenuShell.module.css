@@ -21,15 +21,7 @@
 }
 /* Fresh open fades in; a page switch (which remounts the shell) doesn't. */
 .animateIn {
-  animation: menuIn var(--dur-pop) linear;
-}
-@keyframes menuIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  animation: global(fade-in) var(--dur-pop) linear;
 }
 /* Transparent-body pages (engine map / avatar preview): the overlay itself becomes a
    pass-through hole so the scene behind receives map-drag / avatar-rotate events. The
@@ -138,7 +130,7 @@
   mask: url('../../assets/backpack/icon-close.webp') center / contain no-repeat;
 }
 .close:hover {
-  background: var(--fill-faint);
+  background: var(--fill-2);
 }
 .accent {
   position: relative;

@@ -11,7 +11,7 @@
   padding: 4px 18px 4px 6px;
   border: 1px solid var(--white-10);
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--fill-1);
   color: var(--text);
   font-family: inherit;
   cursor: pointer;
