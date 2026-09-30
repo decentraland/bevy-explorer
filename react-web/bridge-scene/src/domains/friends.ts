@@ -38,6 +38,7 @@ export function registerFriends(ctx: Ctx): void {
                   : social.unblockUser(a)
     run.catch((e: unknown) => {
       console.error('[friends] action failed', e)
+      ctx.send({ kind: 'friendActionFailed', op: msg.op, address: a, error: String(e) })
     })
   })
 

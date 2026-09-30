@@ -12,7 +12,7 @@ import { createLoadingProgress } from './loadingProgress'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { checkRealm, realmCheckMessage } from '../../lib/realmCheck'
 import { color3ToHex, hexToColor3 } from '../../lib/color'
-import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
+import { closeTopPopup, hasOpenPopup, showDialog, subscribePopups } from '../../design'
 import { bootMode } from '../../lib/bootMode'
 import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { dispatchCancelLayer } from '../../lib/cancelLayers'
@@ -493,6 +493,16 @@ export function photoTime(dateTime: string): number {
   return Number.isNaN(t) ? 0 : t
 }
 
+const FRIEND_ACTION_FAILED: Record<FriendAction, string> = {
+  request: 'Couldn’t send the friend request',
+  accept: 'Couldn’t accept the friend request',
+  reject: 'Couldn’t decline the friend request',
+  cancel: 'Couldn’t cancel the friend request',
+  delete: 'Couldn’t remove the friend',
+  block: 'Couldn’t block the user',
+  unblock: 'Couldn’t unblock the user'
+}
+
 export function useEngineSession(createDriver: () => LoginDriver): EngineSession {
   const driverRef = useRef<LoginDriver | null>(null)
   const [status, setStatus] = useState<LoginStatus>('loading')
@@ -759,6 +769,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         }
         case 'menuVisibility':
           setMenuOpen(msg.open)
+          break
+        case 'friendActionFailed':
+          void showDialog({
+            title: FRIEND_ACTION_FAILED[msg.op],
+            body: 'The friends service rejected it. Please try again in a moment.',
+            actions: [{ id: 'ok', label: 'OK' }]
+          })
           break
         case 'friends':
           setFriendsData({

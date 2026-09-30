@@ -307,6 +307,14 @@ export interface FriendActionRequest {
   address: string
 }
 
+/** The social service rejected a friend action (scene → page). */
+export interface FriendActionFailedMessage {
+  kind: 'friendActionFailed'
+  op: FriendAction
+  address: string
+  error: string
+}
+
 /** Mirrors the engine's ExplorerSetting (BevyApi.getSettings). A setting is a
  *  Select when it has namedVariants, otherwise a numeric Slider; a 2-variant or
  *  0..1 setting renders as a Toggle. */
@@ -1206,6 +1214,7 @@ export type SceneToPage =
   | MembersMessage
   | MenuVisibilityMessage
   | FriendsMessage
+  | FriendActionFailedMessage
   | SettingsMessage
   | BindingsMessage
   | InputCapturedMessage
