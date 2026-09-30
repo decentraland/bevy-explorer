@@ -53,6 +53,7 @@ export function registerFriends(ctx: Ctx): void {
     run.then(
       () => {
         ctx.send({ kind: 'friendActionDone', op: msg.op, address: a })
+        if (msg.op === 'block' || msg.op === 'unblock') blockedStale = true
         acc = 1 // refresh on the next frame instead of waiting for the poll
       },
       (e: unknown) => {
@@ -80,9 +81,15 @@ export function registerFriends(ctx: Ctx): void {
   }
   relay('friendship', async () => await social.getFriendshipEventStream(), refresh)
   relay('friendConnectivity', async () => await social.getFriendConnectivityStream(), refresh)
-  relay('blockUpdates', async () => await social.getBlockUpdateStream(), refresh)
+  relay('blockUpdates', async () => await social.getBlockUpdateStream(), () => {
+    blockedStale = true
+    refresh()
+  })
   let busy = false
   let lastKey = ''
+  let blockedStale = true
+  let blocked: string[] = []
+  let blockedUsers: BlockedUserData[] = []
   ctx.push((dt) => {
     elapsed += dt
     acc += dt
@@ -106,16 +113,15 @@ export function registerFriends(ctx: Ctx): void {
         social.getReceivedFriendRequests(),
         social.getSentFriendRequests()
       ])
-      let blocked: string[] = []
-      let blockedUsers: BlockedUserData[] = []
-      try {
-        blockedUsers = await social.getBlockedUsers()
-        blocked = blockedUsers.map((b) => b.address)
-      } catch {
+      // The blocked list is a network call to the social service (the rest is the engine's
+      // in-memory copy), so it's fetched only when it can have changed, not on every poll.
+      if (blockedStale) {
+        blockedStale = false
         try {
-          blocked = (await social.getBlockingStatus?.())?.blockedUsers ?? []
+          blockedUsers = await social.getBlockedUsers()
+          blocked = blockedUsers.map((b) => b.address)
         } catch {
-          /* keep empty on failure */
+          blockedStale = true
         }
       }
       push(true, online, received, sent, blocked, blockedUsers, false)
