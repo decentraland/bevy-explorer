@@ -30,6 +30,8 @@ struct Nishita {
     cloud_scale: f32,
     cloud_steps: u32,
     cloud_lacunarity: f32,
+    cloud_sharpness: f32,
+    cloud_sharp_mid: f32,
 }
 
 const PI: f32 = 3.141592653589793;
@@ -247,6 +249,18 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     }
 
     shade_sum /= max(shade_sum.y, density_cap);
+
+    // contrast curve on the coverage: a logistic centred on cloud_sharp_mid with steepness
+    // cloud_sharpness, renormalised so 0 -> 0 and 1 -> 1. Pulls the faint fringe toward
+    // transparent and the core toward opaque (sharpness 0 = identity)
+    if nishita.cloud_sharpness > 0.0 {
+        let k = nishita.cloud_sharpness;
+        let mid = nishita.cloud_sharp_mid;
+        let s0 = 1.0 / (1.0 + exp(k * mid));
+        let s1 = 1.0 / (1.0 + exp(-k * (1.0 - mid)));
+        let sy = 1.0 / (1.0 + exp(-k * (shade_sum.y - mid)));
+        shade_sum.y = clamp((sy - s0) / (s1 - s0), 0.0, 1.0);
+    }
 
     let light_cloud_color_indirect = max(vec3(nishita.cloud_shadow), saturate(nishita.sun_color * 1.5) * min(1.0, nishita.dir_light_intensity / 5000.0));
     let light_cloud_color_direct = max(vec3(nishita.cloud_shadow), saturate(nishita.sun_color * 1.5) * min(nishita.dir_light_intensity / 1000.0, 4.0));

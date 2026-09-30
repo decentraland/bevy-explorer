@@ -58,13 +58,15 @@ impl Plugin for VisualsPlugin {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .init_resource::<SceneGlobalLight>()
             .insert_resource(CloudCover {
-                cover: 0.35,
-                speed: 30.0,
+                cover: 0.375,
+                speed: 5.0,
                 density_cap: 0.8,
                 shadow: 0.05,
                 scale: 1.5,
                 steps: 44,
                 lacunarity: 2.0,
+                sharpness: 50.0,
+                sharp_mid: 0.1,
             })
             .add_plugins(WireframePlugin::default())
             .add_plugins(DayNightPlugin)
@@ -99,6 +101,7 @@ impl Plugin for VisualsPlugin {
         app.add_console_command::<CloudLacunarityConsoleCommand, _>(
             cloud_lacunarity_console_command,
         );
+        app.add_console_command::<CloudSharpConsoleCommand, _>(cloud_sharp_console_command);
         app.add_console_command::<TonemapConsoleCommand, _>(tonemap_console_command);
         app.add_console_command::<ExposureConsoleCommand, _>(exposure_console_command);
         app.add_console_command::<GammaConsoleCommand, _>(gamma_console_command);
@@ -247,6 +250,8 @@ fn apply_global_light(
     atmosphere.cloud_scale = cloud.scale;
     atmosphere.cloud_steps = cloud.steps;
     atmosphere.cloud_lacunarity = cloud.lacunarity;
+    atmosphere.cloud_sharpness = cloud.sharpness;
+    atmosphere.cloud_sharp_mid = cloud.sharp_mid;
 
     // skip the light/fog/ambient writes (which trigger change detection and re-extraction)
     // when the light has settled and nothing else affecting them has changed
@@ -530,6 +535,8 @@ fn update_dof(
     dof.focal_distance = current_distance;
 }
 
+/// cloud cover 0..1 (0 = clear, 1 = overcast; 0.35 is the default look) and
+/// drift speed.
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/cloud")]
 struct CloudConsoleCommand {
@@ -551,6 +558,10 @@ pub struct CloudCover {
     pub steps: u32,
     /// per-octave frequency step of the cloud noise (default 2.345).
     pub lacunarity: f32,
+    /// steepness of the logistic contrast curve on cloud coverage (0 = off).
+    pub sharpness: f32,
+    /// coverage value the contrast curve is centred on.
+    pub sharp_mid: f32,
 }
 
 fn cloud_console_command(
@@ -558,7 +569,9 @@ fn cloud_console_command(
     mut cloud: ResMut<CloudCover>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        cloud.cover = command.cover;
+        // the shader's cover goes from no cloud at ~0.2 to solid at ~0.7 with the
+        // default sharpening; map the user's 0..1 onto that
+        cloud.cover = 0.2 + command.cover * 0.5;
 
         if let Some(speed) = command.speed {
             cloud.speed = speed;
@@ -654,6 +667,31 @@ fn cloud_lacunarity_console_command(
     if let Some(Ok(command)) = input.take() {
         cloud.lacunarity = command.lacunarity;
         input.reply_ok(format!("cloud lacunarity {}", command.lacunarity));
+    }
+}
+
+/// contrast curve on cloud coverage: logistic steepness (0 = off, default 50)
+/// and the coverage it is centred on (default 0.1).
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudsharp")]
+struct CloudSharpConsoleCommand {
+    sharpness: f32,
+    mid: Option<f32>,
+}
+
+fn cloud_sharp_console_command(
+    mut input: ConsoleCommand<CloudSharpConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.sharpness = command.sharpness;
+        if let Some(mid) = command.mid {
+            cloud.sharp_mid = mid;
+        }
+        input.reply_ok(format!(
+            "cloud sharpness {}, mid {}",
+            cloud.sharpness, cloud.sharp_mid
+        ));
     }
 }
 
