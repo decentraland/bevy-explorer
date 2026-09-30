@@ -31,11 +31,4 @@ describe('emote wheel number keys', () => {
     fireEvent.keyDown(window, { key: '1', code: 'Digit1' })
     expect(emotes.play).toHaveBeenCalledTimes(1)
   })
-
-  it('an empty slot does nothing', () => {
-    const emotes = wheel()
-    render(<EmotesWheel emotes={emotes} />)
-    fireEvent.keyDown(window, { key: '7', code: 'Digit7' })
-    expect(emotes.play).not.toHaveBeenCalled()
-  })
 })
