@@ -183,28 +183,39 @@ pub fn image_processor_main() -> Result<(), JsValue> {
 pub async fn engine_init() -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
 
-    let mut file = match web_fs::File::open("config.json").await {
-        Ok(f) => f,
-        Err(e) => {
-            warn!("no config found: {e:?}");
-            return Ok("No Config".into());
-        }
+    let Some(buf) = read_config_file().await else {
+        return Ok("No Config".into());
     };
-    let mut buf = String::new();
-    if let Err(e) = file.read_to_string(&mut buf).await {
-        warn!("failed to read config.json: {e:?}");
-        return Ok("failed to read".into());
-    }
 
-    let Ok(mut config) = serde_json::from_str::<AppConfig>(&buf) else {
-        warn!("failed to deserialize app config, using default");
-        return Ok("failed to deserialize".into());
-    };
+    let mut config = AppConfig::from_json(buf.as_bytes());
     config.reset_outdated_settings();
 
     let _ = INIT_DATA.set(config);
 
     Ok("Config loaded".into())
+}
+
+async fn read_config_file() -> Option<String> {
+    for _ in 0..crate::CONFIG_READ_ATTEMPTS {
+        let read = async {
+            let mut file = web_fs::File::open("config.json").await?;
+            let mut buf = String::new();
+            file.read_to_string(&mut buf).await?;
+            Ok::<_, std::io::Error>(buf)
+        };
+        match read.await {
+            Ok(buf) => return Some(buf),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                warn!("no config found");
+                return None;
+            }
+            Err(e) => {
+                warn!("failed to read config.json: {e:?}");
+                async_std::task::sleep(crate::CONFIG_READ_RETRY_PAUSE).await;
+            }
+        }
+    }
+    None
 }
 
 /// The persisted home scene — the pinned realm (null = none pinned: the HUD substitutes its own

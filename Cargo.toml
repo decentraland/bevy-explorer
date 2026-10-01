@@ -414,6 +414,7 @@ wasm-bindgen-futures = { workspace = true }
 web-sys = { workspace = true }
 once_cell = { workspace = true }
 web-fs = { workspace = true }
+async-std = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.11.8"
