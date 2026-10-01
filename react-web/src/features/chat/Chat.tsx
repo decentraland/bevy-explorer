@@ -15,6 +15,7 @@ import { type ChatUser } from './ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { peekProfile, useProfile } from '../session/profileStore'
 import { isCancelKey } from '../../lib/bindingLabels'
+import { hudInsetRef } from '../../lib/hudInset'
 import styles from './Chat.module.css'
 
 const MAX_LEN = 500
@@ -466,6 +467,7 @@ export function Chat({
 
   return (
     <div
+      ref={hudInsetRef}
       className={`${styles.root} ${open ? styles.open : ''} ${active ? styles.active : ''}`.trim()}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

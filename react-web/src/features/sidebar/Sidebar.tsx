@@ -13,6 +13,7 @@ import { nameColor } from '../../lib/identity'
 import type { EngineSession } from '../session/useEngineSession'
 import { useLiveEventCount } from '../events/eventsApi'
 import { useAutoHide } from './useAutoHide'
+import { hudInsetRef } from '../../lib/hudInset'
 import styles from './Sidebar.module.css'
 import notificationsArt from '../../assets/sidebar-rail/notifications.webp'
 import eventsArt from '../../assets/sidebar-rail/events.webp'
@@ -327,6 +328,7 @@ export function Sidebar({
     <>
       {autoHide.hidden && <div className={styles.reveal} data-testid="sidebar-reveal" onPointerEnter={autoHide.onPointerEnter} />}
       <nav
+        ref={hudInsetRef}
         className={styles.root}
         aria-label="Main navigation"
         data-hidden={autoHide.hidden}

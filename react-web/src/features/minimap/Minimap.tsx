@@ -36,6 +36,7 @@ import {
 import { MinimapSettings } from './MinimapSettings'
 import type { MapState, MinimapState } from '../session/useEngineSession'
 import type { MinimapStyle } from '../../engine/protocol'
+import { hudInsetRef } from '../../lib/hudInset'
 import styles from './Minimap.module.css'
 
 /** Diameter of the circle, before --ui-scale. Roughly the 0.25×viewport-height the SDK7 HUD used. */
@@ -241,7 +242,7 @@ export const Minimap = memo(function Minimap({
   }, [effectiveStyle, chunks, parcelTile])
 
   return (
-    <div className={styles.root}>
+    <div ref={hudInsetRef} className={styles.root}>
       <div className={styles.header}>
         {/* No scene deployed on this parcel — say so, rather than implying the lookup failed
             (bevy-ui-scene's widget said "empty scene" for the same case). */}

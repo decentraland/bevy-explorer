@@ -6,6 +6,7 @@ import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type St
 import { hoverKey, proximityKey } from '../../engine/pointerKeys'
 import type { LoginDriver } from '../../engine/driver'
 import type { PreviewFocus } from '../../engine/protocol'
+import type { InteractableArea } from '../../lib/hudInset'
 import type { FatalError } from '../error/fatalError'
 import { createLoadingProgress } from './loadingProgress'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
@@ -473,6 +474,8 @@ export interface EngineSession {
     rect: { x: number; y: number; width: number; height: number } | null,
     dpr?: number
   ) => void
+  /** Report the screen area the persistent HUD occupies (see lib/hudInset.ts). */
+  setInteractableArea: (area: InteractableArea) => void
   /** Sign out → back to the login screen. */
   logout: () => void
   /** A full scene menu page is open → the React HUD (sidebar + chat) hides. */
@@ -1618,6 +1621,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     []
   )
 
+  const setInteractableArea = useCallback((area: InteractableArea) => {
+    driverRef.current?.send({ kind: 'interactableArea', ...area })
+  }, [])
+
   // Show the loader BEFORE starting login. The engine's WASM/GPU init runs heavily on the shared
   // main thread and freezes whatever's on screen; starting it while the login screen is still up
   // hangs the login UI (the frozen "Jump in" button). So flip to the loader and let it paint (two
@@ -2093,6 +2100,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     mic: { enabled: mic.enabled, available: mic.available, toggle: toggleMic },
     nav,
     setEngineViewport,
+    setInteractableArea,
     logout,
     menuOpen,
     closeAllPanels,

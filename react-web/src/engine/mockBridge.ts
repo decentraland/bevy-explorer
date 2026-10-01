@@ -654,6 +654,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       // No engine in mock mode — nothing to render into the cutout.
       return
     }
+    if (msg.kind === 'interactableArea') return
     if (msg.kind === 'minimapConfig') {
       // No engine in mock mode — the Camera style has nothing to render. The DOM styles
       // are unaffected: React draws those from map tiles without the scene's help.
