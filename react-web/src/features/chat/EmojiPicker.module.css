@@ -39,6 +39,7 @@
 }
 
 .body {
+  position: relative;
   flex: 1;
   margin-top: 10px;
   overflow-y: auto;
@@ -47,10 +48,6 @@
   mask-image: linear-gradient(transparent, #000 20px, #000 calc(100% - 20px), transparent);
 }
 
-.section {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 600px;
-}
 
 .sectionHeader {
   display: flex;
@@ -62,10 +59,18 @@
   color: var(--emoji-header);
 }
 
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5px;
+  padding: 2px 0;
+}
 .grid {
   display: grid;
   grid-template-columns: repeat(8, 36px);
   gap: 1.5px;
+}
+.body > .grid {
   padding: 2px 0;
 }
 .emoji {
