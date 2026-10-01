@@ -15,7 +15,7 @@ const SHADOW_OPACITY: f32 = 0.65;
 // shadow floor. CASCADE_FAR_SHADOW is how dark that floor is, like
 // SHADOW_OPACITY: 0.25 = a quarter of the way from fully lit to black.
 // CASCADE_FAR_FADE is the fraction of the shadow distance to blend over.
-const CASCADE_FAR_SHADOW: f32 = 0.25;
+const CASCADE_FAR_SHADOW: f32 = 0.35;
 const CASCADE_FAR_FADE: f32 = 0.3;
 
 // Soften a directional shadow value from `shadows::fetch_directional_shadow`. `far` is the far
