@@ -50,6 +50,7 @@ fn notification_pushed(
     mut push_notifications: EventReader<PushNotification>,
 ) {
     for push_notification in push_notifications.read() {
+        debug!("New push notification received");
         commands.spawn((
             Notification {
                 title: push_notification.title.clone(),
