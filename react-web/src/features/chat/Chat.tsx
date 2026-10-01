@@ -114,9 +114,12 @@ export const ChatBubble = memo(function ChatBubble({
   me,
   onOpenProfile,
   onLocation,
-  onVisitWorld
+  onVisitWorld,
+  arrive = false
 }: {
   line: ChatLine
+  /** A live message (not history): fades in on mount. */
+  arrive?: boolean
   members?: NearbyMember[]
   me?: { address?: string; name?: string } | null
   /** Open the profile viewer for a user, anchored at the click. */
@@ -164,7 +167,7 @@ export const ChatBubble = memo(function ChatBubble({
   )
 
   return (
-    <div className={`${styles.entry} ${own ? styles.own : ''}`.trim()}>
+    <div className={`${styles.entry} ${own ? styles.own : ''} ${arrive ? styles.arrive : ''}`.trim()}>
       {clickable ? (
         <button type="button" className={styles.avatarBtn} aria-label={`View ${base}`} onClick={openSender} onContextMenu={openSender}>
           {avatar}
@@ -284,6 +287,7 @@ export function Chat({
   const [focused, setFocused] = useState(false)
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [mentionSug, setMentionSug] = useState<NearbyMember[]>([])
+  const [dim, setDim] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -291,6 +295,23 @@ export function Chat({
   // "active" = the user is interacting → show the full solid panel + chrome.
   const active = open && (hovered || focused || picker)
   const bare = !active // collapsed or idle-open → borderless translucent input only
+
+  // Lines already in the log when the list mounts are history; only later ones fade in.
+  const lastId = chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].id : -Infinity
+  const liveFrom = useRef(lastId + 1)
+  useEffect(() => {
+    if (open) liveFrom.current = lastId + 1
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  // Idle and unhovered, the messages dim after 10s; a new message or any interaction restores them.
+  const IDLE_DIM_MS = 10_000
+  useEffect(() => {
+    setDim(false)
+    if (!open || active) return
+    const t = setTimeout(() => setDim(true), IDLE_DIM_MS)
+    return () => clearTimeout(t)
+  }, [open, active, lastId])
 
   const rows = useMemo(() => {
     const out: ({ kind: 'day'; ts: number; id: string } | { kind: 'msg'; line: ChatLine })[] = []
@@ -329,10 +350,13 @@ export function Chat({
     el.addEventListener('scroll', onScroll)
     return () => el.removeEventListener('scroll', onScroll)
   }, [open])
+  const lastSender = chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].sender : ''
+  const lastIsOwn = me?.address != null && lastSender.toLowerCase() === me.address.toLowerCase()
   useEffect(() => {
     if (!open) return
     const el = listRef.current
-    if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight
+    if (el && (nearBottomRef.current || lastIsOwn)) el.scrollTop = el.scrollHeight
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.messages, open])
 
   // Opening chat (sidebar icon, a queued mention, or Enter) focuses the input so it comes up in
@@ -431,20 +455,20 @@ export function Chat({
       else if (suggestions.length > 0) applyEmoji(suggestions[0].emoji)
       else send()
     } else if (isCancelKey(e)) {
-      if (mentionQuery != null) {
-        setMentionQuery(null)
-        setMentionSug([])
-      } else if (scQuery != null) {
-        setScQuery(null)
-        setSuggestions([])
-      } else if (picker) setPicker(false)
-      // Nothing to dismiss first → blur back to the world (DCL convention: Escape leaves chat).
-      // Opening chat already released camera-look (web: requestFocusChat exits pointer lock; native:
-      // the bridge frees the cursor), so there's nothing to restore — and the browser won't re-lock
-      // without a fresh gesture anyway. Just blur; re-engage camera-look with a click, same as leaving
-      // any panel. Enter refocuses chat from anywhere (the engine's Chat action → focusChat).
-      else inputRef.current?.blur()
+      setMentionQuery(null)
+      setMentionSug([])
+      setScQuery(null)
+      setSuggestions([])
+      setPicker(false)
+      inputRef.current?.blur()
     }
+  }
+
+  // A click anywhere in the panel that isn't a control focuses the input — unless it selected text to copy.
+  const focusFromPanel = (e: React.MouseEvent): void => {
+    if (!open || (e.target as HTMLElement).closest('button, a, input, [role="button"]')) return
+    if (window.getSelection()?.toString()) return
+    inputRef.current?.focus()
   }
 
   const toggleEmoji = (): void => {
@@ -459,7 +483,8 @@ export function Chat({
   return (
     <div
       ref={hudInsetRef}
-      className={`${styles.root} ${open ? styles.open : ''} ${active ? styles.active : ''}`.trim()}
+      className={`${styles.root} ${open ? styles.open : ''} ${active ? styles.active : ''} ${focused ? styles.focused : ''}`.trim()}
+      onClick={focusFromPanel}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -490,7 +515,7 @@ export function Chat({
       )}
 
       {open && (
-        <div ref={listRef} className={styles.messages}>
+        <div ref={listRef} className={`${styles.messages} ${dim ? styles.dim : ''}`.trim()}>
           {rows.length === 0 ? (
             <div className={styles.empty}>No messages yet</div>
           ) : (
@@ -501,6 +526,7 @@ export function Chat({
                 <ChatBubble
                   key={r.line.id}
                   line={r.line}
+                  arrive={r.line.id >= liveFrom.current}
                   members={chat.members}
                   me={me}
                   onOpenProfile={openProfile}

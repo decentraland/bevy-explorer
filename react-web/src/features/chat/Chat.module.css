@@ -26,11 +26,18 @@
   position: absolute;
   inset: 46px 0 0;
   border-radius: 0 0 var(--r-md) var(--r-md);
-  background: transparent;
+  background: var(--chat-focus);
+  opacity: 0;
   pointer-events: none;
+  transition: opacity var(--chat-dur-chrome) var(--ease-outquad);
 }
 .active::before {
-  background: var(--chat-focus);
+  opacity: 1;
+}
+/* Focusing shows the chrome at once; hovering in and every way out fade it. */
+.focused::before,
+.focused .nav {
+  transition: none;
 }
 
 /* Title bar. */
@@ -45,8 +52,17 @@
   border-radius: var(--r-md) var(--r-md) 0 0;
   flex: none;
 }
+.nav {
+  transition:
+    opacity var(--chat-dur-chrome) var(--ease-outquad),
+    visibility 0s;
+}
 .open:not(.active) .nav {
+  opacity: 0;
   visibility: hidden;
+  transition:
+    opacity var(--chat-dur-chrome) var(--ease-outquad),
+    visibility 0s var(--chat-dur-chrome);
 }
 .navLeft {
   display: flex;
@@ -100,6 +116,24 @@
 }
 .active .messages {
   scrollbar-color: var(--text) transparent;
+}
+.dim {
+  opacity: 0.4;
+  transition: opacity var(--chat-dur-idle) var(--ease-outquad);
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+  }
+}
+.arrive {
+  animation: arrive var(--chat-dur-arrive) var(--ease-outquad);
+}
+@media (prefers-reduced-motion: reduce) {
+  .arrive {
+    animation: none;
+  }
 }
 .messages > :first-child {
   margin-top: auto;
