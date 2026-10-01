@@ -390,7 +390,7 @@ export function Chat({
   const NEAR_BOTTOM_PX = 80
   const nearBottomRef = useRef(true)
   // Messages from others that landed while scrolled up: counted on the scroll-to-bottom button,
-  // and the first of them gets the NEW separator until the chat closes.
+  // and the first of them gets the NEW separator until they've been read and you leave the chat.
   const [unread, setUnread] = useState(0)
   const [newFrom, setNewFrom] = useState<number | null>(null)
   const shownUnread = useRef(0)
@@ -412,6 +412,9 @@ export function Chat({
     setNewFrom(null)
     nearBottomRef.current = true
   }, [open])
+  useEffect(() => {
+    if (!active && unread === 0) setNewFrom(null)
+  }, [active, unread])
   const lastSender = chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].sender : ''
   const lastIsOwn = me?.address != null && lastSender.toLowerCase() === me.address.toLowerCase()
   useEffect(() => {
@@ -421,6 +424,10 @@ export function Chat({
     const el = listRef.current
     if (el && (nearBottomRef.current || lastIsOwn)) {
       el.scrollTop = el.scrollHeight
+      if (lastIsOwn) {
+        setUnread(0)
+        setNewFrom(null)
+      }
       return
     }
     const mine = me?.address?.toLowerCase()
