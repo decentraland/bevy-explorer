@@ -288,7 +288,11 @@ function seedMockSso(o: MockOptions): void {
   }
 }
 
+let running: (() => void) | null = null
+
+// Idempotent: StrictMode runs the HUD's useMemo twice, and a second bridge would answer every message again.
 export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
+  if (running) return running
   const o = { ...DEFAULTS, ...opts }
   seedMockSso(o)
   // Stateful so markNotificationsRead persists across reopens (like the real service).
@@ -930,11 +934,13 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     }
   }
 
-  return () => {
+  running = () => {
+    running = null
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
     window.removeEventListener('pointerdown', onPointerDown, true)
     if (poseTimer != null) clearInterval(poseTimer)
     ch.close()
   }
+  return running
 }
