@@ -589,6 +589,10 @@ pub struct AppConfig {
     pub settings_generation: u32,
     #[serde(default)]
     pub inputs_generation: u32,
+    /// set when the user_id was minted here rather than loaded, so startup saves the config to
+    /// keep it. never serialized; the field-level default keeps loaded configs false
+    #[serde(skip, default)]
+    pub is_fresh_user_id: bool,
 }
 
 /// bump to run one-time migrations of the preset-managed settings in existing configs
@@ -632,11 +636,35 @@ impl Default for AppConfig {
             camera_smoothing: Default::default(),
             settings_generation: SETTINGS_GENERATION,
             inputs_generation: INPUTS_GENERATION,
+            is_fresh_user_id: true,
         }
     }
 }
 
 impl AppConfig {
+    /// Parse a saved config. One that fails to parse (e.g. written by a newer build) falls back
+    /// to the default, keeping its user_id when that can still be read, in which case the file
+    /// is left alone rather than overwritten at startup.
+    pub fn from_json(json: &[u8]) -> Self {
+        #[derive(Deserialize)]
+        struct UserIdOnly {
+            user_id: String,
+        }
+
+        match serde_json::from_slice(json) {
+            Ok(config) => config,
+            Err(e) => {
+                warn!("failed to parse config.json: {e}");
+                let mut config = Self::default();
+                if let Ok(UserIdOnly { user_id }) = serde_json::from_slice(json) {
+                    config.user_id = user_id;
+                    config.is_fresh_user_id = false;
+                }
+                config
+            }
+        }
+    }
+
     /// The effective home realm: the pinned value, else the base-domain-derived default.
     pub fn home_realm(&self) -> String {
         self.home_realm.clone().unwrap_or_else(default_home_realm)

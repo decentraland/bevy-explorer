@@ -7,7 +7,10 @@ use clap::Parser;
 use common::structs::AppConfig;
 use dcl_deno_ipc::init_runtime;
 use mimalloc::MiMalloc;
-use webgpu_build::{DecentralandApp, DecentralandAppConfig, DecentralandArguments};
+use webgpu_build::{
+    DecentralandApp, DecentralandAppConfig, DecentralandArguments, CONFIG_READ_ATTEMPTS,
+    CONFIG_READ_RETRY_PAUSE,
+};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -82,21 +85,32 @@ fn decentraland_serialized_app_config() -> AppConfig {
         .unwrap()
         .config_dir()
         .join("config.json");
-    let mut base_config: AppConfig = std::fs::read(&config_file)
-        .ok()
-        .and_then(|f| {
+    let mut base_config = read_config_file(&config_file)
+        .map(|f| {
             info!("config file loaded from {config_file:?}");
-            serde_json::from_slice(&f)
-                .map_err(|e| warn!("failed to parse config.json: {e}"))
-                .ok()
+            AppConfig::from_json(&f)
         })
         .unwrap_or_else(|| {
-            warn!("config file not found at {config_file:?}, generating default");
+            warn!("config file not read from {config_file:?}, generating default");
             Default::default()
         });
     base_config.reset_outdated_settings();
 
     base_config
+}
+
+fn read_config_file(config_file: &std::path::Path) -> Option<Vec<u8>> {
+    for _ in 0..CONFIG_READ_ATTEMPTS {
+        match std::fs::read(config_file) {
+            Ok(f) => return Some(f),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(e) => {
+                warn!("failed to read config.json: {e}");
+                std::thread::sleep(CONFIG_READ_RETRY_PAUSE);
+            }
+        }
+    }
+    None
 }
 
 fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {

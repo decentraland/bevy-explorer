@@ -100,6 +100,11 @@ pub const DISTRIBUTION: &str = "desktop";
 #[cfg(target_arch = "wasm32")]
 pub const DISTRIBUTION: &str = "web";
 
+/// reads of an existing config.json that fail (e.g. a lock briefly held by another instance) are
+/// retried this many times, this far apart, before the config is treated as missing
+pub const CONFIG_READ_ATTEMPTS: u32 = 3;
+pub const CONFIG_READ_RETRY_PAUSE: std::time::Duration = std::time::Duration::from_millis(100);
+
 pub mod launch;
 
 pub struct DecentralandApp(App);
@@ -615,6 +620,7 @@ impl DecentralandApp {
         // Systems
         app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
         app.add_systems(Startup, setup.in_set(SetupSets::Init));
+        app.add_systems(Startup, save_fresh_user_id);
 
         // Commands
         app.add_console_command::<ChangeLocationCommand, _>(change_location);
@@ -625,6 +631,12 @@ impl DecentralandApp {
         app.add_console_command::<FpsCommand, _>(set_fps);
 
         app
+    }
+}
+
+fn save_fresh_user_id(config: Res<AppConfig>) {
+    if config.is_fresh_user_id {
+        platform::write_config_file(&*config);
     }
 }
 
