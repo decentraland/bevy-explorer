@@ -14,7 +14,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Gear, Minus, Plus } from '../../design'
 import { EngineViewport } from '../engine/EngineViewport'
-import { PARCEL_METERS, atlasPx, chunksInRect, parcelTileFor, type Chunk } from '../map/atlas'
+import { PARCEL_METERS, atlasPx, chunksInRect, isGenesisSatelliteView, parcelTileFor, type Chunk } from '../map/atlas'
 import { pinForCategories } from '../map/mapArt'
 import { BASE_PX_PER_PARCEL, ParcelTiles, SatelliteTiles } from './MinimapTiles'
 import { loadMinimapPlaces, placesNear, type MinimapPlace } from './minimapPlaces'
@@ -58,9 +58,9 @@ export const Minimap = memo(function Minimap({
   sceneTitle: string
   setEngineViewport: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
 }): React.JSX.Element {
-  // Only Genesis City advertises a satellite map, so this is what tells it from a World or a
+  // Only Genesis City advertises this satellite map, so it is what tells it from a World or a
   // local scene.
-  const inGenesis = minimap.satelliteView !== null
+  const inGenesis = isGenesisSatelliteView(minimap.satelliteView)
   const [open, setOpen] = useState(() => loadOpen(inGenesis))
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [style, setStyle] = useState<MinimapStyle>(loadStyle)

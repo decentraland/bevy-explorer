@@ -26,7 +26,7 @@ import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { formatConsoleReply, parseChatCommand } from '../chat/chatCommands'
-import { PARCEL_METERS } from '../map/atlas'
+import { PARCEL_METERS, isGenesisSatelliteView } from '../map/atlas'
 import type {
   AvatarColorTarget,
   AppNotification,
@@ -196,9 +196,9 @@ export interface MinimapState {
    *  animates it from a RAF loop, and routing 20 updates/s through React state would
    *  re-render the whole HUD tree for a transform the DOM can apply directly. */
   pose: { current: PlayerPose }
-  /** The satellite map the realm advertises. Only Genesis City has one; null anywhere else
-   *  (Worlds, local scenes), where the minimap forces the engine-rendered Camera style and
-   *  hides the style picker. */
+  /** The satellite map the realm advertises, null when it has none. Only Genesis City
+   *  advertises GENESIS_SATELLITE_VIEW; anywhere else (Worlds, local scenes) the minimap forces
+   *  the engine-rendered Camera style and hides the style picker. */
   satelliteView: SatelliteView | null
   /** Title of the scene the player is standing in, for the header. Empty on an undeployed
    *  parcel (the header falls back to "Empty parcel"). Updates as the player crosses into
@@ -1282,7 +1282,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const teleportToPlace = useCallback(
     (x: number, y: number) => {
-      if (!satelliteView) travel({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
+      if (!isGenesisSatelliteView(satelliteView)) travel({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
       else driverRef.current?.send({ kind: 'teleport', x, y })
     },
     [satelliteView, travel]

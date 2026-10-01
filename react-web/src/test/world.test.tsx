@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { act } from '@testing-library/react'
 import { renderSession, enterAsGuest } from './harness'
 import { DEFAULT_REALM } from '../lib/baseDomain'
+import { GENESIS_SATELLITE_VIEW } from '../features/map/atlas'
 
 // DOMAIN: world — map state (parcel), teleport, microphone toggle/state.
 describe('world domain', () => {
@@ -32,7 +33,7 @@ describe('world domain', () => {
   it('teleporting to a place carries the Genesis realm only from outside Genesis', async () => {
     const h = renderSession()
     await enterAsGuest(h)
-    act(() => h.driver.emit({ kind: 'realmInfo', realm: 'main', satelliteView: { version: 'v1', baseUrl: 'https://genesis.city/map/latest', suffixUrl: '.jpg', topLeftOffset: { x: -2, y: -6 } } }))
+    act(() => h.driver.emit({ kind: 'realmInfo', realm: 'main', satelliteView: GENESIS_SATELLITE_VIEW }))
     act(() => h.session().map.teleportToPlace(5, -3))
     expect(h.driver.last('teleport')).toEqual({ kind: 'teleport', x: 5, y: -3 })
     act(() => h.driver.emit({ kind: 'realmInfo', realm: 'boedo.dcl.eth', satelliteView: null }))

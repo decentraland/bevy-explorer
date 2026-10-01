@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { DiscoverPlace } from '../features/places/placesApi'
+import { GENESIS_SATELLITE_VIEW, isGenesisSatelliteView } from '../features/map/atlas'
 import {
   ALL_MARKER_CATEGORIES,
   DEFAULT_VISIBLE_METERS,
@@ -69,6 +70,16 @@ describe('minimap prefs — open state per realm type', () => {
     localStorage.setItem('dcl-minimap-open-world', '1')
     expect(loadOpen(true)).toBe(true)
     expect(loadOpen(false)).toBe(false)
+  })
+})
+
+describe('genesis satellite view', () => {
+  it('matches only the exact map Genesis City advertises', () => {
+    expect(isGenesisSatelliteView(GENESIS_SATELLITE_VIEW)).toBe(true)
+    expect(isGenesisSatelliteView({ ...GENESIS_SATELLITE_VIEW, topLeftOffset: { x: -2, y: -6 } })).toBe(true)
+    expect(isGenesisSatelliteView(null)).toBe(false)
+    expect(isGenesisSatelliteView({ ...GENESIS_SATELLITE_VIEW, baseUrl: 'https://example.com/map' })).toBe(false)
+    expect(isGenesisSatelliteView({ ...GENESIS_SATELLITE_VIEW, topLeftOffset: { x: 0, y: 0 } })).toBe(false)
   })
 })
 

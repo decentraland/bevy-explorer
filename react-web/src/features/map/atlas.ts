@@ -11,6 +11,7 @@
 // world z increase in the same direction, while screen y grows downward — hence the flip in
 // `atlasPx`. "Atlas px" is the untransformed tile-grid space, before any pan/zoom/rotation.
 
+import type { SatelliteView } from '../../engine/generated'
 import { serviceUrl } from '../../lib/baseDomain'
 
 export const PARCEL_METERS = 16
@@ -18,6 +19,27 @@ export const PARCEL_METERS = 16
 // ---- satellite atlas -------------------------------------------------------
 
 export const TILE_BASE_URL = 'https://media.githubusercontent.com/media/genesis-city/parcels/new-client-images/maps/lod-0/3/'
+// The satellite map Genesis City realms advertise (`configurations.map.satelliteView` in their
+// `/about`). The tiles above are that map, so a realm is only treated as Genesis City — DOM map
+// styles, place markers — when what it advertises is exactly this.
+export const GENESIS_SATELLITE_VIEW: SatelliteView = {
+  version: 'v1',
+  baseUrl: 'https://genesis.city/map/latest',
+  suffixUrl: '.jpg',
+  topLeftOffset: { x: -2, y: -6 }
+}
+
+export function isGenesisSatelliteView(view: SatelliteView | null): boolean {
+  return (
+    view !== null &&
+    view.version === GENESIS_SATELLITE_VIEW.version &&
+    view.baseUrl === GENESIS_SATELLITE_VIEW.baseUrl &&
+    view.suffixUrl === GENESIS_SATELLITE_VIEW.suffixUrl &&
+    view.topLeftOffset.x === GENESIS_SATELLITE_VIEW.topLeftOffset.x &&
+    view.topLeftOffset.y === GENESIS_SATELLITE_VIEW.topLeftOffset.y
+  )
+}
+
 export const GRID = 8 // 8×8 satellite chunks
 export const PARCELS_PER_TILE = 40 // one chunk spans 40 parcels
 export const SPAN = GRID * PARCELS_PER_TILE // 320 parcels across
