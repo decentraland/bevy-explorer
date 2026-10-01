@@ -10,12 +10,13 @@ import type { NearbyMember } from '../../engine/protocol'
 import { Avatar, ControlButton, DclLogo, MaskIcon, VerifiedBadge, VoiceBars } from '../../design'
 import { EmojiPicker } from './EmojiPicker'
 import { searchByShortcode, type Emoji } from './emojiData'
-import { MessageText, mentionsMe, buildNameIndex } from './chatText'
+import { MessageText, mentionsMe } from './chatText'
 import { type ChatUser } from './ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { knownUserColor, peekProfile, useProfile } from '../session/profileStore'
 import { isCancelKey } from '../../lib/bindingLabels'
 import { hudInsetRef } from '../../lib/hudInset'
+import { mentionName } from '../../engine/mention'
 import playersIcon from '../../assets/chat/players.png'
 import closeIcon from '../../assets/chat/close-thin.png'
 import newTag from '../../assets/chat/new-tag.png'
@@ -41,7 +42,8 @@ function displaySender(sender: string): string {
 }
 
 function memberLabel(m: NearbyMember): string {
-  return m.name.trim() ? m.name : shortAddr(m.address)
+  if (!m.name.trim()) return shortAddr(m.address)
+  return m.claimed === false && !m.name.includes('#') ? `${m.name}#${m.address.slice(-4)}` : m.name
 }
 
 /** Split "Name#a1b2" into the colored base and a dimmer #tag. */
@@ -145,7 +147,7 @@ export const ChatBubble = memo(function ChatBubble({
   /** A live message (not history): fades in on mount. */
   arrive?: boolean
   members?: NearbyMember[]
-  me?: { address?: string; name?: string } | null
+  me?: { address?: string; name?: string; hasClaimedName?: boolean } | null
   /** Open the profile viewer for a user, anchored at the click. */
   onOpenProfile?: (user: ChatUser, e: React.MouseEvent) => void
   /** A location link (x,y) in the message was clicked → teleport. */
@@ -164,7 +166,7 @@ export const ChatBubble = memo(function ChatBubble({
   const { base, tag } = splitName(name)
   const claimed = system || known?.hasClaimedName === true
   const sender: ChatUser = { address: line.sender, name, picture }
-  const highlight = !own && mentionsMe(line.message, me ?? null, buildNameIndex(members))
+  const highlight = !own && mentionsMe(line.message, me ?? null)
   const clickable = !own && !system && onOpenProfile != null
 
   const openSender = (e: React.MouseEvent): void => {
@@ -224,7 +226,7 @@ export const ChatBubble = memo(function ChatBubble({
 function MemberName({ member }: { member: NearbyMember }): React.JSX.Element {
   const known = useProfile(member.address)
   const { base, tag } = splitName(memberLabel(member))
-  const claimed = known?.hasClaimedName === true
+  const claimed = member.claimed ?? known?.hasClaimedName === true
   return (
     <span className={styles.memberName} style={{ color: senderColor(member.address, memberLabel(member)) }}>
       {base}
@@ -303,7 +305,7 @@ export function Chat({
   chat: ChatState
   hidden?: boolean
   /** The local player (for @-me highlight + hiding self-actions in the viewer). */
-  me?: { address?: string; name?: string } | null
+  me?: { address?: string; name?: string; hasClaimedName?: boolean } | null
   /** A location link (x,y) in a message was clicked. */
   onTeleport?: (x: number, y: number) => void
   /** A world name (e.g. boedo.dcl.eth) in a message was clicked → prompt to jump there. */
@@ -494,7 +496,7 @@ export function Chat({
     if (s.kind === 'emoji') replaceRange(s.start, s.end, s.items[i].emoji)
     else {
       const m = s.items[i]
-      replaceRange(s.start, s.end, `@${m.name.trim() ? m.name.split('#')[0] : m.address} `)
+      replaceRange(s.start, s.end, `@${mentionName(m.name, m.address, m.claimed)} `)
     }
   }
   const insertAtCaret = (glyph: string): void => {

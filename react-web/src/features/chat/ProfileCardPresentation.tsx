@@ -6,7 +6,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Avatar, VerifiedBadge } from '../../design'
-import { shortAddr, splitName, userColor } from '../../lib/identity'
+import { mentionName, shortAddr, splitName, userColor } from '../../lib/identity'
+import { peekProfile } from '../session/profileStore'
 import type { Relationship } from '../../lib/relationship'
 import styles from './ProfileCard.module.css'
 
@@ -249,7 +250,7 @@ export function ProfileCardPresentation({
           ) : (
             <>
               {showMention && (
-                <button type="button" className={styles.row} onClick={() => { onMention?.(base); onClose() }}>
+                <button type="button" className={styles.row} onClick={() => { onMention?.(mentionName(user.name, user.address, peekProfile(user.address)?.hasClaimedName)); onClose() }}>
                   <MentionIcon />
                   <span>Mention</span>
                 </button>

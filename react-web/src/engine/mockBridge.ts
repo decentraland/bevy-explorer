@@ -62,7 +62,7 @@ const MOCK_NEARBY = [
   { address: '0x5854cce95d5e25817b41f4c41f06b695a83bc495', name: 'Mojito', picture: 'https://profile-images.decentraland.org/entities/bafkreid5btlh76opew65hxu6dtkdo6ybqhymdof6vrrmjy2p5a74oy4huq/face.png' },
   { address: '0x6723dcb07f3ca735223cd1c0acfa62dd994a1bb4', name: 'Sharknado', picture: 'https://profile-images.decentraland.org/entities/bafkreie5bpho47gnh3jrfxoezwc4pxffup4cmmhmdxsmpf3oslopxb4enm/face.png' },
   { address: '0x1e105bb213754519903788022b962fe2b9c4b263', name: 'Pravus', picture: 'https://profile-images.decentraland.org/entities/bafkreig4xay5oxgbf75hwkjefx5hgdcdvm6a4tnpiisltslxf4jtajkbyq/face.png' },
-  { address: '0x9f8c2a1b4d6e7f0a3b5c8d9e1f2a4b6c8d0e1f23', name: 'Johnny' },
+  { address: '0x9f8c2a1b4d6e7f0a3b5c8d9e1f2a4b6c8d0e1f23', name: 'Johnny', claimed: false },
   { address: '0x3a1b2c4d5e6f7081920a3b4c5d6e7f8091a2b3c4', name: 'Clara' },
   { address: '0x77a0b1c2d3e4f5061728394a5b6c7d8e9f001122', name: 'SpottyGoat' },
   { address: '0xc0ffee254729296a45a3885639ac7e10f9d54979', name: '' }

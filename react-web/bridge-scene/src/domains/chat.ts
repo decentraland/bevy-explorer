@@ -11,12 +11,16 @@ import { onSystemAction } from './systemAction'
 import { relay } from '../system-helpers'
 import type { Ctx } from '../bridge'
 import type { NearbyMember } from '../../../src/engine/protocol'
+import { mentionName, mentionsName } from '../../../src/engine/mention'
 
-// Does a message @-mention the local player (so their bubble border highlights)? Matches `@<name>`
-// against the local player's base name (case-insensitive) — the same heuristic the React chat uses.
+// The local player's claimed-name flag, from the engine's profile (unknown until it loads).
+let selfClaimed: boolean | undefined
+// Does a message @-mention the local player (so their bubble border highlights)? Exactly their
+// mention name, the same rule the HUD uses: an unclaimed Name is only @Name#1a2b.
 function mentionsMe(message: string): boolean {
-  const me = getPlayer()?.name?.split('#')[0]?.toLowerCase()
-  return me != null && me !== '' && message.toLowerCase().includes(`@${me}`)
+  const me = getPlayer()
+  if (me?.name == null || me.name === '' || me.userId == null) return false
+  return mentionsName(message, mentionName(me.name, me.userId, selfClaimed))
 }
 
 export function registerChat(ctx: Ctx): void {
@@ -63,12 +67,21 @@ export function registerChat(ctx: Ctx): void {
   // for their nametag: one RPC per address, answered once the engine has resolved it. An address
   // it couldn't resolve is dropped, so the next tick asks again.
   const faces = new Map<string, string | undefined>()
+  const claimed = new Map<string, boolean>()
+  let selfAsked = false
   let acc = 3
   let lastKey = ''
   ctx.push((dt) => {
     acc += dt
     if (acc < 3) return
     acc = 0
+    const self = getPlayer()?.userId
+    if (!selfAsked && self != null) {
+      selfAsked = true
+      getPlayerData({ userId: self })
+        .then((res) => (selfClaimed = (res.data as { hasClaimedName?: boolean } | undefined)?.hasClaimedName === true))
+        .catch(() => (selfAsked = false))
+    }
     const members: NearbyMember[] = []
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) {
       const address = data.address
@@ -76,16 +89,20 @@ export function registerChat(ctx: Ctx): void {
       if (!faces.has(key)) {
         faces.set(key, undefined)
         getPlayerData({ userId: address })
-          .then((res) => faces.set(key, httpOrUndef(res.data?.avatar?.snapshots?.face256)))
+          .then((res) => {
+            faces.set(key, httpOrUndef(res.data?.avatar?.snapshots?.face256))
+            claimed.set(key, (res.data as { hasClaimedName?: boolean } | undefined)?.hasClaimedName === true)
+          })
           .catch(() => faces.delete(key))
       }
       members.push({
         address,
         name: getPlayer({ userId: address })?.name ?? '',
-        picture: faces.get(key)
+        picture: faces.get(key),
+        claimed: claimed.get(key)
       })
     }
-    const key = members.map((m) => `${m.address}:${m.picture ?? ''}`).sort().join(',')
+    const key = members.map((m) => `${m.address}:${m.picture ?? ''}:${String(m.claimed)}`).sort().join(',')
     if (key === lastKey) return
     lastKey = key
     ctx.send({ kind: 'members', members })

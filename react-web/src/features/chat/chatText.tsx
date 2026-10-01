@@ -3,6 +3,7 @@
 // (clickable → profile viewer; highlighted when they mention you). Parsing is a pure
 // function so it's unit-testable; <MessageText> renders the tokens with handlers.
 
+import { mentionName, mentionsName } from '../../engine/mention'
 import type { NearbyMember } from '../../engine/protocol'
 
 export type Token =
@@ -43,31 +44,28 @@ export function parseMessage(text: string): Token[] {
   return tokens
 }
 
-/** Lowercased name (and name#tag) → address, from the nearby roster. */
+/** Lowercased mention name (Name, or Name#1a2b when unclaimed) → address, from the nearby roster. */
 export function buildNameIndex(members: NearbyMember[]): Map<string, string> {
   const idx = new Map<string, string>()
   for (const m of members) {
-    if (m.name.trim()) {
-      idx.set(m.name.toLowerCase(), m.address)
-      idx.set(m.name.split('#')[0].toLowerCase(), m.address)
-    }
+    if (!m.name.trim()) continue
+    const mention = mentionName(m.name, m.address, m.claimed).toLowerCase()
+    idx.set(mention, m.address)
+    // A bare @Name still resolves to an unclaimed Name#1a2b when it's the only one nearby.
+    const base = mention.split('#')[0]
+    if (!idx.has(base)) idx.set(base, m.address)
   }
   return idx
 }
 
 function resolveMention(t: Extract<Token, { type: 'mention' }>, index: Map<string, string>): string | undefined {
-  return index.get(`${t.name}#${t.tag}`.toLowerCase()) ?? index.get(t.name.toLowerCase())
+  return t.tag ? index.get(`${t.name}#${t.tag}`.toLowerCase()) : index.get(t.name.toLowerCase())
 }
 
-/** Does this message @-mention me (by resolved address or by my bare name)? */
-export function mentionsMe(text: string, me: { address?: string; name?: string } | null, index: Map<string, string>): boolean {
-  if (!me) return false
-  const myName = me.name?.split('#')[0].toLowerCase()
-  return parseMessage(text).some((t) => {
-    if (t.type !== 'mention') return false
-    const addr = resolveMention(t, index)
-    return (addr && me.address && addr.toLowerCase() === me.address.toLowerCase()) || (!!myName && t.name.toLowerCase() === myName)
-  })
+/** Does this message @-mention me? Exactly my mention name, so a different Name#ffff doesn't count. */
+export function mentionsMe(text: string, me: { address?: string; name?: string; hasClaimedName?: boolean } | null): boolean {
+  if (!me?.name || !me.address) return false
+  return mentionsName(text, mentionName(me.name, me.address, me.hasClaimedName))
 }
 
 export function MessageText({
