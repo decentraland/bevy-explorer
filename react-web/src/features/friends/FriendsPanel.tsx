@@ -11,6 +11,7 @@ import type { FriendsState } from '../session/useEngineSession'
 import { type ChatUser } from '../chat/ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { useProfile } from '../session/profileStore'
+import { hudInsetRef } from '../../lib/hudInset'
 import styles from './FriendsPanel.module.css'
 
 type Tab = 'friends' | 'requests' | 'blocked'
@@ -193,7 +194,7 @@ export function FriendsPanel({
   ]
 
   return (
-    <div className={styles.root}>
+    <div ref={hudInsetRef} className={styles.root}>
       <header className={styles.head}>
         <Tabs variant="underline" className={styles.tabs} items={TABS} value={tab} onChange={setTab} aria-label="Friends sections" />
         <ControlButton variant="solid" className={styles.closeGlyph} aria-label="Close friends" onClick={friends.toggle}>

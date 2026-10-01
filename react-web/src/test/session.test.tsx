@@ -144,6 +144,13 @@ describe('session domain', () => {
     expect(h.driver.last('engineViewport')).toEqual({ kind: 'engineViewport', region: 'map', rect })
   })
 
+  it('setInteractableArea posts the HUD inset', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().setInteractableArea({ left: 398, top: 0, right: 0, bottom: 0 }))
+    expect(h.driver.last('interactableArea')).toEqual({ kind: 'interactableArea', left: 398, top: 0, right: 0, bottom: 0 })
+  })
+
   it('scene-loading / menu / chat-visibility streams update state', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h)

@@ -37,6 +37,7 @@ import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
 import { openTravelError } from './features/session/TravelError'
 import { useEngineSession } from './features/session/useEngineSession'
 import { useWindowKeyDown } from './lib/useWindowKeyDown'
+import { useHudInsetReport } from './lib/hudInset'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
 import { hasUsableGpu } from './lib/gpu'
@@ -274,6 +275,10 @@ function Hud(): React.JSX.Element {
   // A full-screen MainMenuShell page is open (covers the whole HUD).
   const pageOpen =
     session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.shop.open || session.gallery.open
+
+  // Tell the engine how much of the screen the persistent HUD occupies. A full-screen page is
+  // transient, so the last in-world value stands while one is open.
+  useHudInsetReport(session.setInteractableArea, session.phase === 'world' && !session.menuOpen && !pageOpen)
 
   // Embedded mode: mount only the engine (+ the error surfaces so a crash isn't silently blank).
   // No sidebar / chat / pointer / panels / sign-in UI. PopupHost renders nothing while the stack is

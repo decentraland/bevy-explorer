@@ -111,6 +111,9 @@ export type BevyApiInterface = {
    *  that toggles it ('Map', 'Backpack', ...), else null (backs the scene-facing openExplorerUi
    *  action: its WAS_ALREADY_OPEN verdict and the page's opened/closed events). */
   setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean; covered: boolean; menu: string | null }) => Promise<void>
+  /** Insets (px from each window edge) of the area the HUD leaves free; scenes read it from
+   *  UiCanvasInformation.interactable_area. */
+  setInteractableArea: (area: { left: number; top: number; right: number; bottom: number }) => void
   sendChat: (message: string, channel: string) => void
   getChatStream: () => Promise<AsyncIterable<ChatStreamMessage>>
   getVoiceStream: () => Promise<AsyncIterable<VoiceMessage>>

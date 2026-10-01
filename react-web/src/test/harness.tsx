@@ -202,6 +202,7 @@ export function fakeSession(): EngineSession {
     mic: { enabled: false, available: true, toggle: vi.fn() },
     nav: vi.fn(),
     setEngineViewport: vi.fn(),
+    setInteractableArea: vi.fn(),
     logout: vi.fn(),
     menuOpen: false,
     closeAllPanels: vi.fn(),

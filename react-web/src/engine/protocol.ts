@@ -175,6 +175,7 @@ export type PageToScene =
   | MinimapConfigRequest
   | PermissionResolveRequest
   | EngineViewportRequest
+  | InteractableAreaMessage
   | GetGalleryRequest
   | GetGalleryPhotoRequest
   | DeleteGalleryPhotoRequest
@@ -638,6 +639,19 @@ export interface EngineViewportRequest {
    *  what turns it into the physical pixels the scene should actually render — without it a
    *  render target has to assume the worst display and oversample everywhere else. */
   dpr?: number
+}
+
+/**
+ * The screen area the persistent HUD (nav rail, minimap, chat or friends panel) occupies, as insets from each
+ * window edge in CSS pixels. The engine publishes it to scenes as
+ * UiCanvasInformation.interactable_area. Sent whenever the measured layout changes.
+ */
+export interface InteractableAreaMessage {
+  kind: 'interactableArea'
+  left: number
+  top: number
+  right: number
+  bottom: number
 }
 
 /** A community (from the scene's fetchCommunities). */
