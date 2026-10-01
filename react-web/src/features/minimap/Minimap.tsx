@@ -34,7 +34,7 @@ import {
   saveZoom
 } from './minimapPrefs'
 import { MinimapSettings } from './MinimapSettings'
-import type { MapState, MinimapState, PlayerPose } from '../session/useEngineSession'
+import type { MapState, MinimapState } from '../session/useEngineSession'
 import type { MinimapStyle } from '../../engine/protocol'
 import styles from './Minimap.module.css'
 
@@ -47,13 +47,11 @@ const ZOOM_TIME = 0.2
 const MARKER_RADIUS = 10
 
 export const Minimap = memo(function Minimap({
-  playerPosition,
   minimap,
   map,
   sceneTitle,
   setEngineViewport
 }: {
-  playerPosition: PlayerPose,
   minimap: MinimapState
   map: MapState
   sceneTitle: string
@@ -69,7 +67,6 @@ export const Minimap = memo(function Minimap({
   // Tiles + coords re-render only on a boundary, not per pose sample.
   const [chunks, setChunks] = useState<Chunk[]>([])
   const [parcelTile, setParcelTile] = useState(() => parcelTileFor(0, 0))
-  const [parcel, setParcel] = useState({ x: 0, y: 0 })
 
   const surfaceRef = useRef<HTMLDivElement>(null)
   // Wraps the gear AND its menu: the trigger has to count as "inside", or its own click would
@@ -120,18 +117,10 @@ export const Minimap = memo(function Minimap({
     // is exactly where Genesis City has places. Without this you get Genesis markers on a map
     // they have nothing to do with. Kept in state rather than cleared so coming back doesn't refetch.
     if (minimap.isWorld) return []
-    return placesNear(places, parcel.x, parcel.y, MARKER_RADIUS).filter((p) =>
+    return placesNear(places, map.x, map.y, MARKER_RADIUS).filter((p) =>
       p.categories.some((c) => markerCategories.includes(c))
     )
-  }, [minimap.isWorld, places, parcel.x, parcel.y, markerCategories])
-
-  useEffect(() => {
-    // Boundary crossings — cheap to test, rare to fire.
-    const p = { x: Math.floor(playerPosition.x / PARCEL_METERS), y: Math.floor(playerPosition.z / PARCEL_METERS) }
-    if (p !== parcel) {
-      setParcel(p)
-    }
-  }, [playerPosition])
+  }, [minimap.isWorld, places, map.x, map.y, markerCategories])
 
   useEffect(() => {
     const surface = surfaceRef.current
@@ -248,7 +237,7 @@ export const Minimap = memo(function Minimap({
             (bevy-ui-scene's widget said "empty scene" for the same case). */}
         <span className={styles.title}>{sceneTitle || 'Empty parcel'}</span>
         <span className={styles.coords}>
-          {parcel.x},{parcel.y}
+          {map.x},{map.y}
         </span>
         <button
           type="button"
