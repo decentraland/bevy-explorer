@@ -39,7 +39,6 @@ describe('loading screen', () => {
     expect(screen.getAllByRole('tab').map((t) => t.getAttribute('aria-label'))).toEqual(['Hang Out', 'Your People', 'Earn Badges', 'Live Now'])
   })
 
-
   it('starts after the tip the last loading screen ended on', () => {
     localStorage.setItem('loadingLastTip', '1')
     render(<SceneLoadingOverlay scene={loading()} progress={0} />)
@@ -82,5 +81,4 @@ describe('loading screen', () => {
     render(<SceneLoadingOverlay scene={loading()} progress={0} />)
     expect(document.querySelector('[class*="fill"]')).toHaveStyle({ width: 'calc(0% + 67px)' })
   })
-
 })
