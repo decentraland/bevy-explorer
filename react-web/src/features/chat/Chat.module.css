@@ -112,7 +112,7 @@
   padding: 8px 3px;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
-  mask-image: linear-gradient(transparent, #000 30px, #000 calc(100% - 30px), transparent);
+  mask-image: linear-gradient(transparent, #000 30px);
 }
 .active .messages {
   scrollbar-color: var(--text) transparent;
