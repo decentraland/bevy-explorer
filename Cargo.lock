@@ -5797,16 +5797,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "037711b3d59c33004d3856fbdc83b99d4ff37a24768fa1be9ce3538a1cde4393"
 
 [[package]]
-name = "futures-timer"
-version = "3.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af43fadb8a98512d547e37b4e92e0ced13e205c061b87b4623eff01d918d6968"
-dependencies = [
- "gloo-timers 0.4.0",
- "send_wrapper",
-]
-
-[[package]]
 name = "futures-util"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8909,7 +8899,7 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 [[package]]
 name = "opener"
 version = "0.8.2"
-source = "git+https://github.com/robtfm/opener#462051236eb3882332930b1ecf0319e3505ae0a8"
+source = "git+https://github.com/robtfm/opener#973658fe4501ad9d9b4338e4fe192036277ba0fb"
 dependencies = [
  "bstr",
  "normpath",
@@ -9370,11 +9360,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-compat",
+ "async-std",
  "async-tungstenite",
  "bevy",
  "directories",
  "futures-lite",
- "futures-timer",
  "futures-util",
  "js-sys",
  "reqwest 0.12.28",
@@ -9383,10 +9373,12 @@ dependencies = [
  "spin",
  "tokio",
  "tungstenite 0.21.0",
+ "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-fs",
  "web-sys",
+ "winreg",
  "ws_stream_wasm",
 ]
 
@@ -13368,6 +13360,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "uuid",
  "web-time",
 ]
 
