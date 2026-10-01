@@ -162,7 +162,7 @@ export const ChatBubble = memo(function ChatBubble({
   const picture = known?.picture
   const color = senderColor(line.sender, name)
   const { base, tag } = splitName(name)
-  const claimed = system || (known?.hasClaimedName ?? (tag === '' && !ADDRESS_RE.test(name)))
+  const claimed = system || known?.hasClaimedName === true
   const sender: ChatUser = { address: line.sender, name, picture }
   const highlight = !own && mentionsMe(line.message, me ?? null, buildNameIndex(members))
   const clickable = !own && !system && onOpenProfile != null
