@@ -7,7 +7,6 @@ import type { SceneLoadingState } from '../../engine/protocol'
 import { keyHintFor, useBindingsSnapshot, type BindingsSnapshot } from '../../lib/bindingLabels'
 import { launchCount } from '../../lib/launchCount'
 import { bugReportUrl } from '../../lib/bugReport'
-import { flagEnabled, useFeatureFlags } from '../../lib/featureFlags'
 import { Icon } from '../../design'
 import logoIcon from '../../assets/loading/logo-icon.webp'
 import wordmark from '../../assets/loading/wordmark.webp'
@@ -71,8 +70,7 @@ function TipAction({ action, snap }: { action: NonNullable<LoadingTip['action']>
 }
 
 function TipsCarousel(): React.JSX.Element {
-  const flags = useFeatureFlags()
-  const tips = useMemo(() => tipsFor(flags, launchCount()), [flags])
+  const tips = useMemo(() => tipsFor(launchCount()), [])
   // Each loading screen picks up after the last tip shown.
   const [index, setIndex] = useState(() => (readLastTip() + 1) % tips.length)
   const [shown, setShown] = useState(index)
@@ -148,7 +146,6 @@ export function SceneLoadingOverlay({
 }): React.JSX.Element {
   const connecting = scene != null && !scene.realmConnected
   const status = connecting ? 'RECONNECTING…' : `LOADING ${progress}%`
-  const flags = useFeatureFlags()
 
   return (
     <div className={styles.root}>
@@ -170,11 +167,9 @@ export function SceneLoadingOverlay({
           <div className={styles.fill} style={{ width: `calc(${progress}% + 67px)` }} />
         </div>
         <TipsCarousel />
-        {flagEnabled(flags, 'alfa-bug-report') && (
-          <button type="button" className={styles.bug} aria-label="Report a bug" onClick={() => window.open(bugReportUrl(), '_blank', 'noopener')}>
-            <Icon name="bug" size={24} />
-          </button>
-        )}
+        <button type="button" className={styles.bug} aria-label="Report a bug" onClick={() => window.open(bugReportUrl(), '_blank', 'noopener')}>
+          <Icon name="bug" size={24} />
+        </button>
       </div>
     </div>
   )
