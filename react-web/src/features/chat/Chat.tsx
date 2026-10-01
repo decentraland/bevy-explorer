@@ -224,7 +224,7 @@ export const ChatBubble = memo(function ChatBubble({
 function MemberName({ member }: { member: NearbyMember }): React.JSX.Element {
   const known = useProfile(member.address)
   const { base, tag } = splitName(memberLabel(member))
-  const claimed = known?.hasClaimedName ?? (tag === '' && member.name.trim() !== '')
+  const claimed = known?.hasClaimedName === true
   return (
     <span className={styles.memberName} style={{ color: senderColor(member.address, memberLabel(member)) }}>
       {base}
@@ -514,6 +514,7 @@ export function Chat({
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
     e.stopPropagation() // keep movement keys out of the engine while typing
+    if (e.nativeEvent.isComposing) return
     if (sug && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       e.preventDefault()
       const n = sug.items.length
@@ -620,21 +621,16 @@ export function Chat({
         </div>
       )}
 
-      {open && (
-        <button
-          type="button"
-          className={`${styles.toBottom} ${active && unread > 0 ? styles.toBottomShown : active ? styles.toBottomLeaving : ''}`.trim()}
-          aria-label={`${unread} new messages`}
-          tabIndex={active && unread > 0 ? 0 : -1}
-          onClick={scrollToBottom}
-        >
-          {shownUnread.current > 9 ? '+9' : shownUnread.current}
-        </button>
-      )}
 
       {active && picker && (
         <div ref={pickerRef} className={styles.pickerWrap}>
-          <EmojiPicker onPick={insertAtCaret} />
+          <EmojiPicker
+            onPick={insertAtCaret}
+            onClose={() => {
+              setPicker(false)
+              inputRef.current?.focus()
+            }}
+          />
         </div>
       )}
 
@@ -679,6 +675,17 @@ export function Chat({
           send()
         }}
       >
+        {open && (
+          <button
+            type="button"
+            className={`${styles.toBottom} ${active && unread > 0 ? styles.toBottomShown : active ? styles.toBottomLeaving : ''}`.trim()}
+            aria-label={`${unread} new messages`}
+            tabIndex={active && unread > 0 ? 0 : -1}
+            onClick={scrollToBottom}
+          >
+            {shownUnread.current > 9 ? '+9' : shownUnread.current}
+          </button>
+        )}
         <textarea
           ref={inputRef}
           rows={1}

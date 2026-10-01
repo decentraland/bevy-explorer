@@ -12,6 +12,7 @@ import placesIcon from '../../assets/chat/emoji-categories/places.png'
 import objectsIcon from '../../assets/chat/emoji-categories/objects.png'
 import symbolsIcon from '../../assets/chat/emoji-categories/symbols.png'
 import flagIcon from '../../assets/chat/emoji-categories/flag.png'
+import { isCancelKey } from '../../lib/bindingLabels'
 import styles from './EmojiPicker.module.css'
 
 // Toggle order differs from the scroll order: smileys + people share one, activities comes before places.
@@ -38,7 +39,7 @@ function Grid({ emojis, onPick }: { emojis: Emoji[]; onPick: (e: Emoji) => void 
   )
 }
 
-export function EmojiPicker({ onPick }: { onPick: (glyph: string) => void }): React.JSX.Element {
+export function EmojiPicker({ onPick, onClose }: { onPick: (glyph: string) => void; onClose?: () => void }): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [section, setSection] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -74,7 +75,11 @@ export function EmojiPicker({ onPick }: { onPick: (glyph: string) => void }): Re
   }
 
   return (
-    <div className={styles.root} role="dialog" aria-label="Emoji picker" onKeyDown={(e) => e.stopPropagation()}>
+    <div className={styles.root} role="dialog" aria-label="Emoji picker" onKeyDown={(e) => {
+        e.stopPropagation()
+        if (isCancelKey(e)) onClose?.()
+      }}
+    >
       <div className={styles.tabs}>
         {TOGGLES.map((t) => (
           <button

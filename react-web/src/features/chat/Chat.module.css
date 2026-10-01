@@ -17,7 +17,7 @@
 }
 
 .open {
-  height: clamp(300px, calc(100vh / var(--ui-scale) - 342px), 738px);
+  height: 689px; /* 738 less the 49px voice-chat bar shown above it */
 }
 
 /* The messages column below the title bar, tinted only while hovered/focused. */
@@ -286,7 +286,7 @@
 .toBottom {
   position: absolute;
   right: 10px;
-  bottom: 56px;
+  bottom: calc(100% + 10px);
   width: 29px;
   height: 37px;
   padding: 0 0 11px;
