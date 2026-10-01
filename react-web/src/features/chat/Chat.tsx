@@ -16,7 +16,7 @@ import { openProfileCard } from '../profileCard/ProfileCard'
 import { knownUserColor, peekProfile, useProfile } from '../session/profileStore'
 import { isCancelKey } from '../../lib/bindingLabels'
 import { hudInsetRef } from '../../lib/hudInset'
-import { mentionName } from '../../engine/mention'
+import { displayName, mentionName } from '../../engine/mention'
 import playersIcon from '../../assets/chat/players.png'
 import closeIcon from '../../assets/chat/close-thin.png'
 import newTag from '../../assets/chat/new-tag.png'
@@ -42,8 +42,7 @@ function displaySender(sender: string): string {
 }
 
 function memberLabel(m: NearbyMember): string {
-  if (!m.name.trim()) return shortAddr(m.address)
-  return m.claimed === false && !m.name.includes('#') ? `${m.name}#${m.address.slice(-4)}` : m.name
+  return m.name.trim() ? displayName(m.name, m.address, m.claimed) : shortAddr(m.address)
 }
 
 /** Split "Name#a1b2" into the colored base and a dimmer #tag. */
@@ -160,7 +159,7 @@ export const ChatBubble = memo(function ChatBubble({
   const known = useProfile(line.sender)
   const system = isSystem(line.sender)
   const own = !system && me?.address != null && me.address.toLowerCase() === line.sender.toLowerCase()
-  const name = known?.name != null && known.name !== '' ? known.name : displaySender(line.sender)
+  const name = known?.name != null && known.name !== '' ? displayName(known.name, line.sender, known.hasClaimedName) : displaySender(line.sender)
   const picture = known?.picture
   const color = senderColor(line.sender, name)
   const { base, tag } = splitName(name)

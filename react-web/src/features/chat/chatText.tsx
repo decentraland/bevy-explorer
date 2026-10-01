@@ -3,7 +3,7 @@
 // (clickable → profile viewer; highlighted when they mention you). Parsing is a pure
 // function so it's unit-testable; <MessageText> renders the tokens with handlers.
 
-import { mentionName, mentionsName } from '../../engine/mention'
+import { MENTION_PATTERN, mentionName, mentionsName } from '../../engine/mention'
 import type { NearbyMember } from '../../engine/protocol'
 
 export type Token =
@@ -15,10 +15,11 @@ export type Token =
 
 // URL → world name → location (x,y) → @mention, scanned in one pass to keep original order.
 // Worlds are ENS names (e.g. boedo.dcl.eth) → clickable "jump to realm". Coords require both
-// signs/commas so we don't linkify every number; mentions allow an optional #tag suffix
-// (Name#a1b2) like the engine's claimed-name disambiguation.
-const TOKEN_RE =
-  /(?<url>https?:\/\/[^\s<>"']+)|(?<world>[a-z0-9][\w-]*\.(?:dcl\.)?eth\b)|(?<loc>-?\d{1,3}\s*,\s*-?\d{1,3})|(?<mention>@[\w-]+(?:#[\w]+)?)/gi
+// signs/commas so we don't linkify every number; mentions use the shared MENTION_PATTERN.
+const TOKEN_RE = new RegExp(
+  String.raw`(?<url>https?:\/\/[^\s<>"']+)|(?<world>[a-z0-9][\w-]*\.(?:dcl\.)?eth\b)|(?<loc>-?\d{1,3}\s*,\s*-?\d{1,3})|` + MENTION_PATTERN,
+  'gi'
+)
 
 export function parseMessage(text: string): Token[] {
   const tokens: Token[] = []
@@ -35,8 +36,8 @@ export function parseMessage(text: string): Token[] {
       const [x, y] = g.loc.split(',').map((s) => parseInt(s.trim(), 10))
       tokens.push({ type: 'location', value: g.loc, x, y })
     } else if (g.mention) {
-      const [name, tag] = g.mention.slice(1).split('#')
-      tokens.push({ type: 'mention', value: g.mention, name, tag })
+      const [name, tag] = g.mention.split('#')
+      tokens.push({ type: 'mention', value: `@${g.mention}`, name, tag })
     }
     last = i + m[0].length
   }

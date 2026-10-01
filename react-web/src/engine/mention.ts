@@ -12,11 +12,21 @@ export function mentionName(name: string, address: string, claimed?: boolean): s
   return (claimed ?? looksClaimed(name)) || address.length < 4 ? base : `${base}#${address.slice(-4)}`
 }
 
-const MENTION_RE = /(?<=^|\s)@([A-Za-z0-9]{1,15}(?:#[A-Za-z0-9]{4})?)(?=\s|!|\?|\.|,|$)/g
+/** A written @mention: on its own word, up to 15 letters/digits, an optional 4-char #tag, then a
+ *  space, end or punctuation. Its `mention` group is the name after "@". The chat's link parser
+ *  embeds this same pattern, so what renders as a mention is exactly what counts as one. */
+export const MENTION_PATTERN = String.raw`(?<=^|\s)@(?<mention>[A-Za-z0-9]{1,15}(?:#[A-Za-z0-9]{4})?)(?=\s|!|\?|\.|,|$)`
+const MENTION_RE = new RegExp(MENTION_PATTERN, 'g')
 
 /** Does the message @-mention exactly this mention name (case-insensitive)? */
 export function mentionsName(message: string, mention: string): boolean {
   const want = mention.toLowerCase()
-  for (const m of message.matchAll(MENTION_RE)) if (m[1].toLowerCase() === want) return true
+  for (const m of message.matchAll(MENTION_RE)) if (m.groups?.mention.toLowerCase() === want) return true
   return false
+}
+
+/** A name as shown: an unclaimed name carries its wallet tag (Name#1a2b), added when the
+ *  profile stored it bare. */
+export function displayName(name: string, address: string, claimed: boolean | undefined): string {
+  return claimed === false && !name.includes('#') && address.length >= 4 ? `${name}#${address.slice(-4)}` : name
 }
