@@ -76,6 +76,7 @@ export function registerFriends(ctx: Ctx): void {
   // streams trigger an immediate refresh; the poll stays as the fallback.
   let acc = 1
   let elapsed = 0
+  let availableSince: number | null = null
   const refresh = (): void => {
     acc = 1
   }
@@ -104,6 +105,11 @@ export function registerFriends(ctx: Ctx): void {
   async function poll(): Promise<void> {
     try {
       if (!(await social.getSocialInitialized())) {
+        // Presence restarts with the connection: everyone reads offline until connectivity events
+        // arrive, so forget the old statuses and restart the grace period when it comes back.
+        lastStatus.clear()
+        availableSince = null
+        blockedStale = true
         const me = getPlayer()
         push(false, [], [], [], [], [], me != null && !me.isGuest)
         return
@@ -141,10 +147,12 @@ export function registerFriends(ctx: Ctx): void {
     loading: boolean
   ): void {
     const friends = online.map(toFriend)
-    // "X is online" only for real transitions, and not for everyone already online at startup.
+    // "X is online" only for real transitions, not for everyone already online when the service starts.
+    if (available) availableSince ??= elapsed
+    const settled = availableSince != null && elapsed - availableSince > 5
     for (const f of friends) {
       const was = lastStatus.get(f.address)
-      if (elapsed > 5 && was != null && was === 'offline' && f.status === 'online') ctx.send({ kind: 'friendOnline', address: f.address })
+      if (settled && was === 'offline' && f.status === 'online') ctx.send({ kind: 'friendOnline', address: f.address })
       lastStatus.set(f.address, f.status)
     }
     const recv = received.map(toRequest)
