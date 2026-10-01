@@ -396,6 +396,7 @@ export function Chat({
   const shownUnread = useRef(0)
   if (unread > 0) shownUnread.current = unread
   const seenId = useRef(lastId)
+  const heightBefore = useRef(0)
   useEffect(() => {
     const el = listRef.current
     if (!el) return
@@ -422,8 +423,14 @@ export function Chat({
     seenId.current = lastId
     if (!open) return
     const el = listRef.current
-    if (el && (nearBottomRef.current || lastIsOwn)) {
+    // Judge "was at the bottom" against the height before these lines arrived: the list can grow
+    // without a scroll event, which would leave nearBottomRef stale.
+    const before = heightBefore.current
+    if (el) heightBefore.current = el.scrollHeight
+    const wasAtBottom = el != null && (nearBottomRef.current || before - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX)
+    if (el && (wasAtBottom || lastIsOwn)) {
       el.scrollTop = el.scrollHeight
+      nearBottomRef.current = true
       if (lastIsOwn) {
         setUnread(0)
         setNewFrom(null)
