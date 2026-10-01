@@ -575,7 +575,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
-  const [messages, setMessages] = useState<ChatLine[]>([])
+  const [messages, setMessages] = useState<ChatLine[]>(() => [
+    { sender: '', message: 'Type /help for available commands.', channel: 'Nearby', id: -1, ts: Date.now() }
+  ])
   const [members, setMembers] = useState<NearbyMember[]>([])
   const [speaking, setSpeaking] = useState<ReadonlySet<string>>(() => new Set())
   // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —

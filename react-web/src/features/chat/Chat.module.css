@@ -1,178 +1,227 @@
-/* Chat — Explorer 2.0 design. Collapsed: just a floating input bar (focusing it
-   opens the panel). Open: a solid dark panel with navbar + bubbles + input.
-   translateZ/contain isolate paints from the engine's per-frame main-thread work. */
+/* Chat — layout in 1080p canvas px, scaled by --ui-scale from the bottom-left.
+   Minimized: the input only. Open: title bar + messages column + input, with the column
+   tinted always and darkened while hovered/focused. translateZ/contain isolate paints from
+   the engine's per-frame main-thread work. */
 .root {
   position: fixed;
-  left: 58px;
-  bottom: 16px;
+  left: 56px;
+  bottom: 5px;
   z-index: var(--z-hud);
   display: flex;
   flex-direction: column;
-  /* Figma frame is 400px but ~44px of that is the conversations rail we don't
-     render, so the content panel is ~340px. */
-  width: min(340px, calc(100vw - 80px));
+  width: 356px;
   font-family: var(--font-family);
-  /* Scale the HUD to match the engine/Unity resolution-scaled UI. Anchored at the
-     bottom-left so it stays put. */
   transform: scale(var(--ui-scale)) translateZ(0);
   transform-origin: bottom left;
   contain: layout paint;
-  border-radius: 14px;
-  transition: background-color var(--dur-fast) ease;
 }
 
 .open {
-  max-height: min(70vh, 680px);
+  height: clamp(300px, calc(100vh / var(--ui-scale) - 342px), 738px);
 }
 
-/* Active (hover/focus): solid translucent panel at a FIXED height (like the Unity
-   explorer) — consistent regardless of message count and when toggling Members.
-   Collapsed & idle-open stay transparent so the bubbles float over the world. */
-.active {
-  /* Figma "Chat" frame height = 578px, always (capped so it never exceeds a short
-     viewport). */
-  height: min(578px, calc(100vh - 32px));
-  /* Chat panel is translucent glass per Figma (rgba(19,19,19,0.4)); bubbles stay
-     solid so messages read. The Members overlay is opaque (set separately). */
-  background: rgba(19, 19, 19, 0.42);
-  box-shadow: var(--shadow-panel);
+/* The messages column below the title bar, tinted only while hovered/focused. */
+.open::before {
+  content: '';
+  position: absolute;
+  inset: 46px 0 0;
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  background: transparent;
+  pointer-events: none;
 }
-.active .messages {
-  max-height: none;
+.active::before {
+  background: var(--chat-focus);
 }
 
-/* NavBar — channel title + nearby count + close. */
+/* Title bar. */
 .nav {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 46px;
-  padding: 0 8px 0 14px;
-  /* Header is more solid than the translucent message area (Figma navbar 0.7). */
-  background: rgba(0, 0, 0, 0.7);
-  border-radius: 14px 14px 0 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0 8px 0 9px;
+  background: var(--chat-head);
+  border-radius: var(--r-md) var(--r-md) 0 0;
   flex: none;
+}
+.open:not(.active) .nav {
+  visibility: hidden;
 }
 .navLeft {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 6px;
   min-width: 0;
 }
-/* DCL sunset channel logo for the Nearby channel. */
 .channelIcon {
   flex: none;
-  width: 26px;
-  height: 26px;
 }
 .navTitle {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 18px;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  line-height: 20px;
   color: var(--text);
-  text-transform: capitalize;
+  white-space: nowrap;
 }
 .navRight {
   display: flex;
   align-items: center;
+  gap: 6px;
+}
+.membersBtn {
+  height: 32px;
   gap: 4px;
+  padding: 7px 8px 7px 6px;
+  font-size: var(--type-13);
 }
-
-/* Larger glyphs for ControlButton text children (× and ‹). */
-.glyph {
-  font-size: 20px;
-}
-.glyphLg {
-  font-size: 24px;
+.navDivider {
+  width: 1px;
+  height: 30px;
+  background: var(--chat-divider);
 }
 
 /* Messages — newest pinned to the bottom. Using margin-top:auto on the first row (not
    justify-content:flex-end, which clips overflowed messages above and breaks scrolling)
    keeps few messages bottom-aligned while staying fully scrollable when they overflow. */
 .messages {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   flex: 1;
-  max-height: min(50vh, 460px);
+  min-height: 0;
   overflow-y: auto;
-  padding: 12px 10px;
+  margin: 5px 5px 0;
+  padding: 8px 3px;
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  mask-image: linear-gradient(transparent, #000 30px, #000 calc(100% - 30px), transparent);
+}
+.active .messages {
+  scrollbar-color: var(--text) transparent;
 }
 .messages > :first-child {
   margin-top: auto;
 }
-.messages::-webkit-scrollbar {
-  width: 6px;
-}
-.messages::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
-}
 
 .empty {
   color: var(--ink-45);
-  font-size: 14px;
+  font-size: var(--type-14);
   padding: 4px 6px;
 }
 
-/* Day separator pill. */
+/* Date divider: a 34px row with a 20px pill. */
 .dayRow {
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 2px 0;
+  height: 30px;
+  flex: none;
 }
 .dayPill {
-  padding: 4px 10px;
-  border-radius: 100px;
-  background: rgba(0, 0, 0, 0.55);
-  font-size: 12px;
-  line-height: 15px;
-  color: var(--text);
-  text-transform: capitalize;
+  height: 20px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+  border-radius: var(--r-button);
+  background: var(--chat-day);
+  font-size: var(--type-12);
+  line-height: 12px;
+  color: #fff;
 }
 
-/* Message entry: avatar + bubble. */
+/* Entry: avatar + bubble, bottom-aligned; own entries mirror to the right. */
 .entry {
   display: flex;
   align-items: flex-end;
-  gap: 4px;
+  gap: 3px;
+  padding-left: 1px;
+  flex: none;
 }
+.own {
+  flex-direction: row-reverse;
+  gap: 2px;
+  padding: 0 12px 0 0;
+}
+.avatar {
+  --avatar-ring: var(--chat-avatar-ring);
+}
+.systemAvatar {
+  flex: none;
+}
+
+/* Bubble: 18px left inset, 16 above the name, 12 below the time, capped at 246px. The
+   spacer keeps 20px of room on the right for short lines and gives it up before the text
+   wraps, so long lines wrap at 210. */
 .bubble {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  max-width: 246px;
+  padding: 16px 18px 12px;
+  border-radius: var(--r-md);
+  background: var(--chat-bubble);
+}
+.content {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-width: 238px;
-  /* Figma: padding 10px 18px 10px 14px, radius 12, bg rgba(0,0,0,0.7). */
-  padding: 10px 18px 10px 14px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.7);
+  min-width: 0;
+}
+.spacer {
+  width: 20px;
+  min-width: 0;
+  flex: 0 1000 auto;
 }
 .name {
-  font-size: 14px;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  max-width: 100%;
+  height: 17px;
+  margin-bottom: 5px;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
   line-height: 17px;
+  white-space: nowrap;
 }
 .tag {
-  font-weight: 400;
-  color: rgba(255, 255, 255, 0.5);
+  font-weight: var(--fw-regular);
+  color: var(--ink-73);
+}
+.badge {
+  margin-left: 1px;
 }
 .text {
-  /* Figma: Inter SemiBold 600, 14px, line-height 17px, DCL/White. */
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
   line-height: 17px;
-  color: var(--text);
-  word-break: break-word;
-  /* Preserve newlines so multi-line system messages (/help, /commands) read as a list; normal
-     single-line messages are unaffected. */
+  color: #fff;
+  overflow-wrap: anywhere;
+  /* Preserve newlines so multi-line system messages (/help, /commands) read as a list. */
   white-space: pre-wrap;
 }
 .time {
+  margin-top: 6px;
   font-size: 10px;
   line-height: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ink-58);
+}
+
+/* A message that @-mentions you: purple bubble inside a 3px ruby→purple rim. */
+.mentionMe {
+  background: var(--chat-mention);
+}
+.mentionMe::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 3px;
+  border-radius: inherit;
+  background: var(--chat-mention-rim);
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
 }
 
 /* Emoji picker popover + autocomplete both float just above the input. */
@@ -234,188 +283,177 @@
   color: var(--ink-45);
 }
 
-/* Input row — emoji button + character ring sit inside the field on the right. */
+/* Input row: 46 tall, the field 40 tall sitting 1px above the bottom, controls inside it. */
 .inputRow {
   position: relative;
   display: flex;
-  align-items: center;
-  padding: 8px;
+  align-items: flex-end;
+  min-height: 46px;
+  padding: 0 5px 6px;
+  box-sizing: border-box;
   flex: none;
 }
 .input {
   flex: 1;
+  min-width: 0;
   appearance: none;
   height: 40px;
-  border: 1.5px solid transparent;
-  border-radius: 12px;
-  padding: 0 72px 0 14px;
+  border: none;
+  border-radius: var(--r-md);
+  padding: 0 76px 0 14px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
   line-height: 17px;
   color: var(--text);
-  background: rgba(0, 0, 0, 0.5);
+  caret-color: var(--text);
+  background: var(--chat-input);
   outline: none;
-  transition: border-color var(--dur-fast) var(--ease-out);
 }
 .input:focus {
-  border-color: rgba(255, 255, 255, 0.7);
+  background: var(--chat-input-focus);
+  box-shadow: inset 0 0 0 2px #fff;
 }
 .input::placeholder {
-  color: rgba(255, 255, 255, 0.7);
-}
-/* Collapsed / idle-open: borderless translucent bar, no emoji or ring. */
-.inputBare {
-  padding-right: 14px;
+  color: var(--ink-66);
 }
 
 .ring {
   position: absolute;
-  right: 46px;
-  top: 50%;
-  transform: translateY(-50%);
+  right: 48px;
+  bottom: 15px;
   pointer-events: none;
 }
 
-/* Position the (design-system) emoji ControlButton inside the input field. */
 .emojiBtn {
   position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  right: 15px;
+  bottom: 15px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  background: url('../../assets/chat/emoji-idle.png') center / contain no-repeat;
+}
+.emojiBtn:hover {
+  background-image: url('../../assets/chat/emoji-hover.png');
+}
+.emojiOn,
+.emojiOn:hover {
+  background-image: url('../../assets/chat/emoji-selected.png');
 }
 
-/* Members overlay — covers the panel with its own header + scroll list (#13). */
+/* Members view: covers the panel with its own title bar and list. */
 .membersPanel {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
-  background: rgba(12, 11, 14, 0.97);
 }
 .membersHeader {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 52px;
-  padding: 0 8px 0 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  flex: none;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 8px 0 7px;
+  background: var(--chat-members-head);
 }
-.back {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text);
-  font-size: 24px;
-  line-height: 1;
-  cursor: pointer;
-}
-.back:hover {
-  background: var(--white-10);
-}
-.membersTitle {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
+.backIcon {
+  width: 7px;
 }
 .membersCount {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink-7);
+  gap: 4px;
+  font-size: var(--type-14);
+  line-height: 20px;
+  color: var(--text);
 }
-.personIcon {
-  color: var(--green);
-  font-size: 10px;
+.countNum {
+  font-size: var(--type-13);
+  font-weight: var(--fw-semibold);
+  color: #fff;
+}
+.close {
+  margin-left: auto;
 }
 .membersList {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   overflow-y: auto;
-  padding: 6px;
+  padding: 8px;
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  background: var(--chat-members);
   scrollbar-width: thin;
-}
-.membersList::-webkit-scrollbar {
-  width: 6px;
-}
-.membersList::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
 }
 .memberRow {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 7px 10px;
-  border-radius: 10px;
+  gap: 10px;
+  height: 50px;
+  padding: 0 10px;
+  border-radius: var(--r-md);
+  flex: none;
 }
 .memberRow:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--chat-hover);
 }
 .memberInfo {
   display: flex;
   flex-direction: column;
-  gap: 1px;
   min-width: 0;
 }
 .memberName {
-  font-size: 14px;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
   line-height: 17px;
-  text-transform: capitalize;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+.memberTag {
+  font-weight: var(--fw-regular);
+  color: var(--ink-58);
 }
 .memberStatus {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--type-12);
   line-height: 15px;
-  color: var(--ink-6);
+  color: var(--ink-58);
 }
 
-/* The sender name + avatar are now buttons (click → profile viewer). */
-.name {
+/* The sender name + avatar are buttons on other people's messages (click → profile). */
+button.name {
   background: none;
   border: none;
   padding: 0;
-  margin: 0;
   cursor: pointer;
   font-family: inherit;
-  color: inherit;
   text-align: left;
 }
-.name:hover {
+button.name:hover {
   text-decoration: underline;
 }
 .avatarBtn {
-  background: none;
-  border: none;
+  display: inline-flex;
+  flex: none;
   padding: 0;
   margin: 0;
+  border: none;
+  background: none;
+}
+button.avatarBtn {
   cursor: pointer;
-  display: inline-flex;
-  pointer-events: auto;
 }
 
-/* In-message links: URLs, location coords, and @mentions (ported from the SDK7 chat). */
+/* In-message links: URLs, coordinates, worlds and @mentions. */
 .url {
-  color: #00b1fe;
-  font-weight: 700;
+  color: var(--chat-link);
   text-decoration: none;
-}
-.url:hover {
-  text-decoration: underline;
 }
 .location,
 .mention,
@@ -424,18 +462,12 @@
   border: none;
   padding: 0;
   cursor: pointer;
-  color: #00b1fe;
+  color: var(--chat-link);
   font: inherit;
-  font-weight: 700;
 }
+.url:hover,
 .location:hover,
 .mention:hover,
 .world:hover {
   text-decoration: underline;
-}
-
-/* A message that @-mentions you gets a subtle highlight (like the engine chat). */
-.mentionMe {
-  background: rgba(0, 177, 254, 0.12);
-  border-radius: 8px;
 }

@@ -67,3 +67,20 @@
 .solid.active {
   background: var(--white-10);
 }
+
+.dark {
+  background: var(--black);
+}
+.faint {
+  background: transparent;
+}
+.dark:hover:not(:disabled),
+.dark.active,
+.faint:hover:not(:disabled),
+.faint.active {
+  background: var(--chat-hover);
+}
+.dark:active:not(:disabled),
+.faint:active:not(:disabled) {
+  background: var(--chat-pressed);
+}

@@ -29,8 +29,9 @@ describe('chat domain', () => {
     await enterAsGuest(h)
     h.driver.emit({ kind: 'chat', chat: { sender: '0xabc', message: 'gm', channel: 'Nearby' } })
     const msgs = h.session().chat.messages
-    expect(msgs).toHaveLength(1)
-    expect(msgs[0]).toMatchObject({ sender: '0xabc', message: 'gm', channel: 'Nearby' })
+    expect(msgs).toHaveLength(2)
+    expect(msgs[0]).toMatchObject({ sender: '', message: 'Type /help for available commands.' })
+    expect(msgs[1]).toMatchObject({ sender: '0xabc', message: 'gm', channel: 'Nearby' })
   })
 
   it('members stream updates the nearby roster', async () => {

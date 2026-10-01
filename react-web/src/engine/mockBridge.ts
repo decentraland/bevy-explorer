@@ -487,7 +487,8 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     const samples = [
       ['0x5854cce95d5e25817b41f4c41f06b695a83bc495', 'gm everyone 👋'],
       ['0x6723dcb07f3ca735223cd1c0acfa62dd994a1bb4', 'anyone going to the event?'],
-      ['0x1e105bb213754519903788022b962fe2b9c4b263', 'this plaza looks great']
+      ['0x1e105bb213754519903788022b962fe2b9c4b263', 'this plaza looks great'],
+      ['0x6723dcb07f3ca735223cd1c0acfa62dd994a1bb4', '@Mojito meet me at 10,10']
     ]
     samples.forEach(([sender, message], i) =>
       setTimeout(
@@ -530,7 +531,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
 
     if (msg.kind === 'sendChat') {
       // Echo the local player's message back (the engine would broadcast it).
-      reply({ kind: 'chat', chat: { sender: 'You', message: msg.message, channel: msg.channel } })
+      reply({ kind: 'chat', chat: { sender: o.userId, message: msg.message, channel: msg.channel } })
       return
     }
 

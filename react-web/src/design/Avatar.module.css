@@ -31,7 +31,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  border: 1px solid var(--rail-avatar-ring);
+  border: 1px solid var(--avatar-ring, var(--rail-avatar-ring));
   border-radius: var(--r-pill);
   pointer-events: none;
 }

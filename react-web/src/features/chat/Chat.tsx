@@ -7,7 +7,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatLine, ChatState } from '../session/useEngineSession'
 import type { NearbyMember } from '../../engine/protocol'
-import { Avatar, ControlButton, DclLogo, VoiceBars } from '../../design'
+import { Avatar, ControlButton, DclLogo, MaskIcon, VerifiedBadge, VoiceBars } from '../../design'
 import { EmojiPicker } from './EmojiPicker'
 import { searchByShortcode, SHORTCODE_RE, type Emoji } from './emojiData'
 import { MessageText, mentionsMe, buildNameIndex } from './chatText'
@@ -16,12 +16,15 @@ import { openProfileCard } from '../profileCard/ProfileCard'
 import { knownUserColor, peekProfile, useProfile } from '../session/profileStore'
 import { isCancelKey } from '../../lib/bindingLabels'
 import { hudInsetRef } from '../../lib/hudInset'
+import playersIcon from '../../assets/chat/players.png'
+import closeIcon from '../../assets/chat/close-thin.png'
+import arrowLeftIcon from '../../assets/chat/arrow-left.png'
 import styles from './Chat.module.css'
 
 const MAX_LEN = 500
 const ADDRESS_RE = /^0x[0-9a-fA-F]{6,}$/
 
-const SYSTEM_COLOR = '#61d04f'
+const SYSTEM_COLOR = 'var(--chat-system)'
 
 function isSystem(sender: string): boolean {
   return !sender || sender.toLowerCase() === 'system'
@@ -52,7 +55,7 @@ function senderColor(sender: string, name: string): string {
 }
 
 function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
 }
 
 function dayKey(ts: number): string {
@@ -61,63 +64,35 @@ function dayKey(ts: number): string {
 }
 
 function formatDay(ts: number): string {
-  if (dayKey(ts) === dayKey(Date.now())) return 'Today'
-  return new Date(ts).toLocaleDateString([], {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short'
-  })
-}
-
-function PersonIcon(): React.JSX.Element {
-  return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="5" r="2.6" stroke="currentColor" strokeWidth="1.4" />
-      <path
-        d="M3.2 13c0-2.4 2.1-3.8 4.8-3.8s4.8 1.4 4.8 3.8"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-function Smiley(): React.JSX.Element {
-  return (
-    <svg width="20" height="20" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-      <circle cx="11" cy="11" r="10" stroke="currentColor" strokeWidth="2" />
-      <circle cx="7.6" cy="9" r="1.15" fill="currentColor" />
-      <circle cx="14.4" cy="9" r="1.15" fill="currentColor" />
-      <path
-        d="M7 13.4c1 1.6 2.5 2.4 4 2.4s3-.8 4-2.4"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
+  const key = dayKey(ts)
+  const now = Date.now()
+  if (key === dayKey(now)) return 'Today'
+  if (key === dayKey(now - 86_400_000)) return 'Yesterday'
+  const d = new Date(ts)
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' })
+  const month = d.toLocaleDateString('en-US', { month: 'short' })
+  const year = d.getFullYear() === new Date(now).getFullYear() ? '' : `, ${d.getFullYear()}`
+  return `${weekday}, ${d.getDate()} ${month}${year}`
 }
 
 function CharRing({ len }: { len: number }): React.JSX.Element {
   const pct = Math.min(1, len / MAX_LEN)
-  const r = 8
+  const r = 9
   const circ = 2 * Math.PI * r
-  const color = pct >= 0.9 ? 'var(--brand)' : pct >= 0.7 ? 'var(--gold)' : 'var(--green)'
+  const color = pct >= 0.8 ? 'var(--brand)' : pct >= 0.5 ? 'var(--counter-half)' : 'var(--green)'
   return (
-    <svg className={styles.ring} width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx="10" cy="10" r={r} fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="2" />
+    <svg className={styles.ring} width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+      <circle cx="11" cy="11" r={r} fill="none" stroke="var(--ink-66)" strokeWidth="2" />
       <circle
-        cx="10"
-        cy="10"
+        cx="11"
+        cy="11"
         r={r}
         fill="none"
         stroke={color}
         strokeWidth="2"
-        strokeLinecap="round"
         strokeDasharray={circ}
         strokeDashoffset={circ * (1 - pct)}
-        transform="rotate(-90 10 10)"
+        transform="rotate(-90 11 11)"
       />
     </svg>
   )
@@ -154,54 +129,84 @@ export const ChatBubble = memo(function ChatBubble({
   // Resolved from the profile store for as long as the line is on screen: a sender who has since
   // left keeps their name and face, and a name change reaches every line they sent.
   const known = useProfile(line.sender)
+  const system = isSystem(line.sender)
+  const own = !system && me?.address != null && me.address.toLowerCase() === line.sender.toLowerCase()
   const name = known?.name != null && known.name !== '' ? known.name : displaySender(line.sender)
   const picture = known?.picture
   const color = senderColor(line.sender, name)
   const { base, tag } = splitName(name)
+  const claimed = system || (known?.hasClaimedName ?? (tag === '' && !ADDRESS_RE.test(name)))
   const sender: ChatUser = { address: line.sender, name, picture }
-  const highlight = mentionsMe(line.message, me ?? null, buildNameIndex(members))
+  const highlight = !own && mentionsMe(line.message, me ?? null, buildNameIndex(members))
+  const clickable = !own && !system && onOpenProfile != null
 
-  // Open the profile menu — on left-click OR right-click (suppress the browser menu).
   const openSender = (e: React.MouseEvent): void => {
     if (e.type === 'contextmenu') e.preventDefault()
     onOpenProfile?.(sender, e)
   }
-  // Clicking an @mention opens that user's profile.
   const onMention = (address: string, mname: string, e: React.MouseEvent): void => {
     if (e.type === 'contextmenu') e.preventDefault()
     const m = peekProfile(address)
     onOpenProfile?.({ address, name: m?.name ?? `@${mname}`, picture: m?.picture }, e)
   }
 
+  const avatar = system ? (
+    <DclLogo size={28} className={styles.systemAvatar} />
+  ) : (
+    <Avatar src={picture} name={name} color={color} size={28} framed className={styles.avatar} />
+  )
+  const nameRow = (
+    <>
+      {base}
+      {!claimed && tag && <span className={styles.tag}>{tag}</span>}
+      {claimed && <VerifiedBadge size={14} className={styles.badge} />}
+    </>
+  )
+
   return (
-    <div className={`${styles.entry} ${highlight ? styles.mentionMe : ''}`.trim()}>
-      <button type="button" className={styles.avatarBtn} aria-label={`View ${base}`} onClick={openSender} onContextMenu={openSender}>
-        <Avatar src={picture} name={name} color={color} size={28} />
-      </button>
-      <div className={styles.bubble}>
-        <button type="button" className={styles.name} style={{ color }} onClick={openSender} onContextMenu={openSender}>
-          {base}
-          {tag && <span className={styles.tag}>{tag}</span>}
+    <div className={`${styles.entry} ${own ? styles.own : ''}`.trim()}>
+      {clickable ? (
+        <button type="button" className={styles.avatarBtn} aria-label={`View ${base}`} onClick={openSender} onContextMenu={openSender}>
+          {avatar}
         </button>
-        <span className={styles.text}>
-          <MessageText text={line.message} members={members} styles={MSG_STYLES} onMention={onMention} onLocation={(x, y) => onLocation?.(x, y)} onWorld={onVisitWorld} />
-        </span>
-        <span className={styles.time}>{formatTime(line.ts)}</span>
+      ) : (
+        <span className={styles.avatarBtn}>{avatar}</span>
+      )}
+      <div className={`${styles.bubble} ${highlight ? styles.mentionMe : ''}`.trim()}>
+        <div className={styles.content}>
+          {clickable ? (
+            <button type="button" className={styles.name} style={{ color }} onClick={openSender} onContextMenu={openSender}>
+              {nameRow}
+            </button>
+          ) : (
+            <span className={styles.name} style={{ color }}>
+              {nameRow}
+            </span>
+          )}
+          <span className={styles.text}>
+            <MessageText text={line.message} members={members} styles={MSG_STYLES} onMention={onMention} onLocation={(x, y) => onLocation?.(x, y)} onWorld={onVisitWorld} />
+          </span>
+          <span className={styles.time}>{formatTime(line.ts)}</span>
+        </div>
+        <span className={styles.spacer} aria-hidden="true" />
       </div>
     </div>
   )
 })
 
 export function MemberRow({ member, speaking = false }: { member: NearbyMember; speaking?: boolean }): React.JSX.Element {
+  const known = useProfile(member.address)
   const { base, tag } = splitName(memberLabel(member))
   const color = senderColor(member.address, memberLabel(member))
+  const claimed = known?.hasClaimedName ?? (tag === '' && member.name.trim() !== '')
   return (
     <div className={styles.memberRow}>
-      <Avatar src={member.picture} name={base} color={color} size={40} status="online" />
+      <Avatar src={member.picture} name={base} color={color} size={40} framed status="online" dotPosition="top" />
       <div className={styles.memberInfo}>
         <span className={styles.memberName} style={{ color }}>
           {base}
-          {tag && <span className={styles.tag}>{tag}</span>}
+          {!claimed && tag && <span className={styles.memberTag}>{tag}</span>}
+          {claimed && <VerifiedBadge size={14} className={styles.badge} />}
         </span>
         <span className={styles.memberStatus}>
           {speaking ? (
@@ -230,19 +235,17 @@ function MembersOverlay({
 }): React.JSX.Element {
   return (
     <div className={styles.membersPanel}>
-      <header className={styles.membersHeader}>
-        <ControlButton variant="ghost" className={styles.glyphLg} aria-label="Back" onClick={onBack}>
-          ‹
+      <header className={`${styles.nav} ${styles.membersHeader}`}>
+        <ControlButton variant="dark" aria-label="Back" onClick={onBack}>
+          <MaskIcon src={arrowLeftIcon} size={12} className={styles.backIcon} />
         </ControlButton>
-        <span className={styles.membersTitle}>Nearby</span>
+        <span className={styles.navTitle}>Nearby&nbsp; -</span>
         <span className={styles.membersCount}>
-          <span className={styles.personIcon} aria-hidden="true">
-            ●
-          </span>
-          {members.length} Online
+          <MaskIcon src={playersIcon} size={16} />
+          <span className={styles.countNum}>{members.length}</span> Online
         </span>
-        <ControlButton variant="solid" className={styles.glyph} aria-label="Close chat" onClick={onClose}>
-          ×
+        <ControlButton variant="dark" className={styles.close} aria-label="Close chat" onClick={onClose}>
+          <MaskIcon src={closeIcon} size={10} />
         </ControlButton>
       </header>
       <div className={styles.membersList}>
@@ -460,27 +463,27 @@ export function Chat({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {open && active && (
+      {open && (
         <header className={styles.nav}>
           <div className={styles.navLeft}>
-            <DclLogo size={26} className={styles.channelIcon} />
+            <DclLogo size={28} className={styles.channelIcon} />
             <span className={styles.navTitle}>Nearby</span>
           </div>
           <div className={styles.navRight}>
-            {chat.members.length > 0 && (
-              <ControlButton
-                variant="ghost"
-                shape="pill"
-                active={showMembers}
-                aria-label={`${chat.members.length} nearby`}
-                onClick={() => setShowMembers((s) => !s)}
-              >
-                <PersonIcon />
-                {chat.members.length}
-              </ControlButton>
-            )}
-            <ControlButton variant="solid" className={styles.glyph} aria-label="Close chat" onClick={chat.toggle}>
-              ×
+            <ControlButton
+              variant="faint"
+              shape="pill"
+              className={styles.membersBtn}
+              active={showMembers}
+              aria-label={`${chat.members.length} nearby`}
+              onClick={() => setShowMembers((s) => !s)}
+            >
+              <MaskIcon src={playersIcon} size={18} />
+              {chat.members.length}
+            </ControlButton>
+            <span className={styles.navDivider} aria-hidden="true" />
+            <ControlButton variant="dark" aria-label="Close chat" onClick={chat.toggle}>
+              <MaskIcon src={closeIcon} size={10} />
             </ControlButton>
           </div>
         </header>
@@ -567,7 +570,7 @@ export function Chat({
       >
         <input
           ref={inputRef}
-          className={`${styles.input} ${bare ? styles.inputBare : ''}`.trim()}
+          className={styles.input}
           value={draft}
           onChange={(e) => updateDraft(e.target.value)}
           onFocus={() => {
@@ -575,22 +578,20 @@ export function Chat({
             openIfClosed()
           }}
           onBlur={() => setFocused(false)}
-          placeholder={focused ? 'Message Nearby' : 'Press Enter to chat'}
+          placeholder={focused ? 'Write a message' : 'Press Enter to chat'}
           maxLength={MAX_LEN}
           onKeyDown={onKeyDown}
         />
-        {!bare && draft.length > 0 && <CharRing len={draft.length} />}
+        {focused && draft.length > 0 && <CharRing len={draft.length} />}
         {!bare && (
-          <ControlButton
-            variant="ghost"
-            size="sm"
-            active={picker}
-            className={styles.emojiBtn}
+          <button
+            type="button"
+            className={`${styles.emojiBtn} ${picker ? styles.emojiOn : ''}`.trim()}
             aria-label="Emoji"
+            aria-pressed={picker}
+            onMouseDown={(e) => e.preventDefault()}
             onClick={toggleEmoji}
-          >
-            <Smiley />
-          </ControlButton>
+          />
         )}
       </form>
 

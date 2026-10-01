@@ -275,6 +275,8 @@ export function Showcase(): React.JSX.Element {
         <div style={row}>
           <ControlButton aria-label="ghost square">✕</ControlButton>
           <ControlButton variant="solid" aria-label="solid square">✕</ControlButton>
+          <ControlButton variant="dark" aria-label="dark square">✕</ControlButton>
+          <ControlButton variant="faint" aria-label="faint square">✕</ControlButton>
           <ControlButton shape="circle" aria-label="circle">＋</ControlButton>
           <ControlButton shape="pill">＋ Pill</ControlButton>
           <ControlButton active aria-label="active">✓</ControlButton>

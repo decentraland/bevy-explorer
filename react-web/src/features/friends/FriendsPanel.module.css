@@ -117,11 +117,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.verified {
-  width: 14px;
-  height: 14px;
-  flex: none;
-}
 .envelope {
   flex: none;
   margin-left: 4px;
