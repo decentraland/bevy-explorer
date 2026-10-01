@@ -12,7 +12,7 @@ use system_bridge::{
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
     FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
     PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent, ProximityEvent,
-    SceneLoadingUi, SetAvatarData, VoiceMessage,
+    SatelliteView, SceneLoadingUi, SetAvatarData, VoiceMessage,
 };
 
 // list of op declarations
@@ -41,6 +41,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_live_scene_info(),
             op_get_home_scene(),
             op_set_home_scene(),
+            op_get_satellite_view(),
             op_get_system_action_stream(),
             op_read_system_action_stream(),
             op_get_chat_stream(),
@@ -249,6 +250,14 @@ pub async fn op_live_scene_info(
 #[serde]
 pub async fn op_get_home_scene(state: Rc<RefCell<OpState>>) -> Result<HomeScene, anyhow::Error> {
     dcl::js::system_api::op_get_home_scene(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_satellite_view(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Option<SatelliteView>, anyhow::Error> {
+    dcl::js::system_api::op_get_satellite_view(state).await
 }
 
 #[op2]

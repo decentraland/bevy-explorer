@@ -86,6 +86,18 @@ pub struct HomeScene {
     pub parcel: Vector2,
 }
 
+/// The satellite map tiles a realm advertises in its `/about` (`configurations.map.satelliteView`).
+/// Only Genesis City realms carry one.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ts_rs::TS)]
+#[serde(rename_all = "camelCase", default)]
+#[ts(export)]
+pub struct SatelliteView {
+    pub version: String,
+    pub base_url: String,
+    pub suffix_url: String,
+    pub top_left_offset: Vector2,
+}
+
 #[derive(Clone, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct ChatMessage {

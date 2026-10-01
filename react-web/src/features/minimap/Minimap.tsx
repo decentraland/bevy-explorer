@@ -14,7 +14,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Gear, Minus, Plus } from '../../design'
 import { EngineViewport } from '../engine/EngineViewport'
-import { PARCEL_METERS, atlasPx, chunksInRect, parcelTileFor, type Chunk } from '../map/atlas'
+import { PARCEL_METERS, atlasPx, chunksInRect, isGenesisSatelliteView, parcelTileFor, type Chunk } from '../map/atlas'
 import { pinForCategories } from '../map/mapArt'
 import { BASE_PX_PER_PARCEL, ParcelTiles, SatelliteTiles } from './MinimapTiles'
 import { loadMinimapPlaces, placesNear, type MinimapPlace } from './minimapPlaces'
@@ -58,7 +58,10 @@ export const Minimap = memo(function Minimap({
   sceneTitle: string
   setEngineViewport: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
 }): React.JSX.Element {
-  const [open, setOpen] = useState(() => loadOpen(minimap.isWorld))
+  // Only Genesis City advertises this satellite map, so it is what tells it from a World or a
+  // local scene.
+  const inGenesis = isGenesisSatelliteView(minimap.satelliteView)
+  const [open, setOpen] = useState(() => loadOpen(inGenesis))
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [style, setStyle] = useState<MinimapStyle>(loadStyle)
   const [rotation, setRotation] = useState(loadRotation)
@@ -77,15 +80,15 @@ export const Minimap = memo(function Minimap({
   // during the ease, without a render per frame.
   const zoomRef = useRef(visibleMeters)
 
-  // In a World there are no satellite/parcel tiles, so only the engine-rendered style can show
-  // anything. Matches the SDK7 HUD's forceImposters.
-  const effectiveStyle: MinimapStyle = minimap.isWorld ? 'imposters' : style
+  // Outside Genesis City (a World, a local scene) there are no satellite/parcel tiles, so only
+  // the engine-rendered style can show anything. Matches the SDK7 HUD's forceImposters.
+  const effectiveStyle: MinimapStyle = inGenesis ? style : 'imposters'
 
-  // Crossing between Genesis City and a World swaps to that realm type's own open/closed
+  // Crossing between Genesis City and anywhere else swaps to that realm type's own open/closed
   // preference, so a World opens collapsed without discarding a manual collapse in Genesis.
   useEffect(() => {
-    setOpen(loadOpen(minimap.isWorld))
-  }, [minimap.isWorld])
+    setOpen(loadOpen(inGenesis))
+  }, [inGenesis])
 
   const { pose, setConfig } = minimap
 
@@ -97,7 +100,7 @@ export const Minimap = memo(function Minimap({
 
   // Place markers. A World's scenes aren't on the Genesis City grid, so there is nothing to mark.
   useEffect(() => {
-    if (minimap.isWorld || markerCategories.length === 0) return
+    if (!inGenesis || markerCategories.length === 0) return
     let alive = true
     loadMinimapPlaces()
       .then((p) => {
@@ -110,18 +113,18 @@ export const Minimap = memo(function Minimap({
     return () => {
       alive = false
     }
-  }, [minimap.isWorld, markerCategories.length])
+  }, [inGenesis, markerCategories.length])
 
   const nearby = useMemo(() => {
     // Guard here as well as on the fetch: places loaded in Genesis City stay in state when you
     // travel to a World, and a World's coordinates are local — they sit near the origin, which
     // is exactly where Genesis City has places. Without this you get Genesis markers on a map
     // they have nothing to do with. Kept in state rather than cleared so coming back doesn't refetch.
-    if (minimap.isWorld) return []
+    if (!inGenesis) return []
     return placesNear(places, map.x, map.y, MARKER_RADIUS).filter((p) =>
       p.categories.some((c) => markerCategories.includes(c))
     )
-  }, [minimap.isWorld, places, map.x, map.y, markerCategories])
+  }, [inGenesis, places, map.x, map.y, markerCategories])
 
   useEffect(() => {
     const surface = surfaceRef.current
@@ -206,8 +209,8 @@ export const Minimap = memo(function Minimap({
   // Every preference persists the moment it changes — the menu has no confirm step.
   const toggleOpen = useCallback(() => {
     setOpen(!open)
-    saveOpen(minimap.isWorld, !open)
-  }, [open, minimap.isWorld])
+    saveOpen(inGenesis, !open)
+  }, [open, inGenesis])
   const pickStyle = useCallback((s: MinimapStyle) => {
     setStyle(s)
     saveStyle(s)
@@ -326,7 +329,7 @@ export const Minimap = memo(function Minimap({
                 onRotation={pickRotation}
                 style={style}
                 onStyle={pickStyle}
-                hideStyle={minimap.isWorld}
+                hideStyle={!inGenesis}
                 markers={markerCategories}
                 onMarkers={pickMarkers}
               />

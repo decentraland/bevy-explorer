@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { DiscoverPlace } from '../features/places/placesApi'
+import { GENESIS_SATELLITE_VIEW, isGenesisSatelliteView } from '../features/map/atlas'
 import {
   ALL_MARKER_CATEGORIES,
   DEFAULT_VISIBLE_METERS,
@@ -51,24 +52,33 @@ describe('minimap prefs — defaults and validation', () => {
 
 describe('minimap prefs — open state per realm type', () => {
   it('defaults open in Genesis City and closed in a World', () => {
-    expect(loadOpen(false)).toBe(true)
-    expect(loadOpen(true)).toBe(false)
+    expect(loadOpen(true)).toBe(true)
+    expect(loadOpen(false)).toBe(false)
   })
 
   it('keeps the two realm types independent', () => {
-    saveOpen(false, false)
-    expect(loadOpen(false)).toBe(false)
+    saveOpen(true, false)
     expect(loadOpen(true)).toBe(false)
-    saveOpen(true, true)
-    expect(loadOpen(true)).toBe(true)
     expect(loadOpen(false)).toBe(false)
+    saveOpen(false, true)
+    expect(loadOpen(false)).toBe(true)
+    expect(loadOpen(true)).toBe(false)
   })
 
   it('falls back to the default on a hand-edited value', () => {
     localStorage.setItem('dcl-minimap-open', 'maybe')
     localStorage.setItem('dcl-minimap-open-world', '1')
-    expect(loadOpen(false)).toBe(true)
-    expect(loadOpen(true)).toBe(false)
+    expect(loadOpen(true)).toBe(true)
+    expect(loadOpen(false)).toBe(false)
+  })
+})
+
+describe('genesis satellite view', () => {
+  it('matches on the url of the map Genesis City advertises', () => {
+    expect(isGenesisSatelliteView(GENESIS_SATELLITE_VIEW)).toBe(true)
+    expect(isGenesisSatelliteView({ ...GENESIS_SATELLITE_VIEW, topLeftOffset: { x: 0, y: 0 } })).toBe(true)
+    expect(isGenesisSatelliteView(null)).toBe(false)
+    expect(isGenesisSatelliteView({ ...GENESIS_SATELLITE_VIEW, baseUrl: 'https://example.com/map' })).toBe(false)
   })
 })
 

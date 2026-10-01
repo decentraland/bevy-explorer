@@ -14,7 +14,7 @@ use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, ConsoleResponder
 use common::{
     inputs::{BindingsData, HudPanel, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
-    structs::{AppConfig, MicState, PermissionUsed},
+    structs::{AppConfig, CurrentRealm, MicState, PermissionUsed},
 };
 use serde::{Deserialize, Serialize};
 use settings::SettingBridgePlugin;
@@ -29,7 +29,15 @@ impl Plugin for SystemBridgePlugin {
         app.add_event::<SystemApi>();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
-        app.add_systems(Update, (post_events, handle_home_scene, handle_exit));
+        app.add_systems(
+            Update,
+            (
+                post_events,
+                handle_home_scene,
+                handle_satellite_view,
+                handle_exit,
+            ),
+        );
 
         if self.bare {
             return;
@@ -96,6 +104,7 @@ pub enum SystemApi {
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),
     SetHomeScene(HomeScene),
+    GetSatelliteView(RpcResultSender<Option<SatelliteView>>),
     GetSystemActionStream(RpcStreamSender<SystemActionEvent>),
     GetChatStream(RpcStreamSender<ChatMessage>),
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
@@ -192,6 +201,20 @@ pub fn post_events(
                 "Command not recognized: `{cmd}`. Recognized commands: {:?}",
                 console_config.commands.keys().collect::<Vec<_>>()
             )));
+        }
+    }
+}
+
+fn handle_satellite_view(mut ev: EventReader<SystemApi>, realm: Res<CurrentRealm>) {
+    for ev in ev.read() {
+        if let SystemApi::GetSatelliteView(rpc_result_sender) = ev {
+            rpc_result_sender.send(
+                realm
+                    .config
+                    .map
+                    .as_ref()
+                    .and_then(|map| map.satellite_view.clone()),
+            );
         }
     }
 }

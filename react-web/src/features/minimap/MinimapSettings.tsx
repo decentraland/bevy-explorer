@@ -48,7 +48,7 @@ export function MinimapSettings({
   onRotation: (r: MinimapRotation) => void
   style: MinimapStyle
   onStyle: (s: MinimapStyle) => void
-  /** True in a World, where only the Camera style can render anything. */
+  /** True outside Genesis City, where only the Camera style can render anything. */
   hideStyle: boolean
   markers: string[]
   onMarkers: (categories: string[]) => void

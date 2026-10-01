@@ -100,17 +100,18 @@ export function saveMarkers(categories: string[]): void {
   write(MARKERS_KEY, JSON.stringify(categories))
 }
 
-/** Whether the map circle is expanded. Kept per realm type: Genesis City defaults open, a
- *  World defaults closed — Unity shows no map in a World, so scenes built against it expect
- *  that corner of the screen to be free. Each chevron click writes only the bit for the
- *  realm the player is in, so collapsing in one never changes the other. */
-export function loadOpen(isWorld: boolean): boolean {
-  const v = read(isWorld ? WORLD_OPEN_KEY : OPEN_KEY)
+/** Whether the map circle is expanded. Kept per realm type: Genesis City defaults open,
+ *  anywhere else (a World, a local scene) defaults closed — Unity shows no map in a World, so
+ *  scenes built against it expect that corner of the screen to be free. Each chevron click
+ *  writes only the bit for the realm the player is in, so collapsing in one never changes the
+ *  other. */
+export function loadOpen(inGenesis: boolean): boolean {
+  const v = read(inGenesis ? OPEN_KEY : WORLD_OPEN_KEY)
   if (v === 'true') return true
   if (v === 'false') return false
-  return !isWorld
+  return inGenesis
 }
 
-export function saveOpen(isWorld: boolean, open: boolean): void {
-  write(isWorld ? WORLD_OPEN_KEY : OPEN_KEY, String(open))
+export function saveOpen(inGenesis: boolean, open: boolean): void {
+  write(inGenesis ? OPEN_KEY : WORLD_OPEN_KEY, String(open))
 }

@@ -18,8 +18,8 @@ use system_bridge::{
     BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
     FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
     PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent, ProximityEvent,
-    SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
-    VoiceMessage,
+    SatelliteView, SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission,
+    SystemApi, VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -361,6 +361,20 @@ pub async fn op_get_home_scene(state: Rc<RefCell<impl State>>) -> Result<HomeSce
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::GetHomeScene(sx))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_satellite_view(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Option<SatelliteView>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetSatelliteView(sx))
         .unwrap();
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
