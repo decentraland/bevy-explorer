@@ -139,6 +139,7 @@ function toProfile(av: SerializedProfile | undefined, address: string, isGuest: 
     picture: httpOrUndef(snaps?.face256),
     bodyImage: httpOrUndef(snaps?.body),
     hasClaimedName: claimed,
+    nameColor: claimed ? av?.nameColor : undefined,
     isGuest,
     version: av?.version,
     description: av?.description != null && av.description !== '' ? av.description : undefined,

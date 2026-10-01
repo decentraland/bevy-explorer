@@ -156,7 +156,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
       <RailButton
         key="profile"
         icon={item.icon}
-        avatar={p ? { src: p.picture, name: p.name, color: userColor(p.address, p.name, p.hasClaimedName) } : undefined}
+        avatar={p ? { src: p.picture, name: p.name, color: userColor(p.address, p.name, p.hasClaimedName, p.nameColor) } : undefined}
         label={item.label}
         active={session.profile.open}
         onClick={onViewProfile ?? session.profile.toggle}

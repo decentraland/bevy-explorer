@@ -29,7 +29,7 @@ export function ProfileCard({
 }): React.JSX.Element {
   const session = useSession()
   const known = useProfile(userId)
-  const user: ChatUser = { address: userId, name: known?.name ?? userId, picture: known?.picture }
+  const user: ChatUser = { address: userId, name: known?.name ?? userId, picture: known?.picture, claimed: known?.hasClaimedName, nameColor: known?.nameColor }
   const act = session.friends.act
   return (
     <ProfileCardPresentation

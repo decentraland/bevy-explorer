@@ -16,6 +16,8 @@ export interface ChatUser {
   address: string
   name: string
   picture?: string
+  claimed?: boolean
+  nameColor?: { r: number; g: number; b: number }
 }
 
 function Verified(): React.JSX.Element {
@@ -151,7 +153,7 @@ export function ProfileCardPresentation({
   }, [x, y, above, relationship])
   const isMe = !!me?.address && !!user.address && me.address.toLowerCase() === user.address.toLowerCase()
   const { base, tag } = splitName(user.name)
-  const color = userColor(user.address, user.name)
+  const color = userColor(user.address, user.name, user.claimed, user.nameColor)
 
   const copy = (text: string, which: 'name' | 'address'): void => {
     navigator.clipboard?.writeText(text).then(

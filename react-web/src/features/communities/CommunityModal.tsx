@@ -5,7 +5,8 @@
 
 import { useEffect, useState } from 'react'
 import { Avatar, Button, Tabs, openPopup, type TabItem } from '../../design'
-import { nameColor, userColor } from '../../lib/identity'
+import { nameColor } from '../../lib/identity'
+import { knownUserColor } from '../session/profileStore'
 import { useSession } from '../session/SessionContext'
 import type {
   Community,
@@ -109,7 +110,7 @@ function Verified(): React.JSX.Element {
 function PostRow({ post }: { post: CommunityPost }): React.JSX.Element {
   return (
     <div className={styles.post}>
-      <Avatar src={post.authorPicture} name={post.author} color={userColor(post.authorAddress, post.author)} size={36} />
+      <Avatar src={post.authorPicture} name={post.author} color={knownUserColor(post.authorAddress, post.author)} size={36} />
       <div className={styles.postBody}>
         <div className={styles.postHead}>
           <span className={styles.postAuthor}>{post.author}</span>
@@ -126,9 +127,9 @@ function MemberRow({ member, requested, onAdd }: { member: CommunityMember; requ
   const label = roleLabel(member.role)
   return (
     <div className={styles.member}>
-      <Avatar src={member.picture} name={member.name} color={userColor(member.address, member.name)} size={40} status="online" />
+      <Avatar src={member.picture} name={member.name} color={knownUserColor(member.address, member.name)} size={40} status="online" />
       <div className={styles.memberInfo}>
-        <span className={styles.memberName} style={{ color: userColor(member.address, member.name) }}>
+        <span className={styles.memberName} style={{ color: knownUserColor(member.address, member.name) }}>
           {member.name}
           {member.hasClaimedName && <Verified />}
         </span>

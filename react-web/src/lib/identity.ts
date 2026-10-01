@@ -2,7 +2,7 @@
 // the chat, members, and friends UIs so the rarity-colored naming is consistent.
 
 import { serviceUrl } from './baseDomain'
-import { userNameColor } from '../engine/nameColor'
+import { resolveNameColor, userNameColor, type Rgb } from '../engine/nameColor'
 
 export { userNameColor }
 
@@ -58,8 +58,8 @@ export function looksClaimed(name: string): boolean {
 }
 
 /** The colour a person's name and avatar are drawn in, everywhere in the HUD. */
-export function userColor(address: string, name: string, claimed?: boolean): string {
-  return userNameColor(name, address, claimed ?? looksClaimed(name))
+export function userColor(address: string, name: string, claimed?: boolean, custom?: Rgb | null): string {
+  return resolveNameColor(name, address, claimed ?? looksClaimed(name), custom)
 }
 
 export function shortAddr(s: string): string {

@@ -11,7 +11,7 @@ export function ProfilePanel({ profile }: { profile: ProfileState }): React.JSX.
   const p = profile.data
   const labelName = p ? (p.name.trim() ? p.name : shortAddr(p.address)) : ''
   const { base, tag } = splitName(labelName)
-  const color = p ? userColor(p.address, p.name, p.hasClaimedName) : 'var(--fill-4)'
+  const color = p ? userColor(p.address, p.name, p.hasClaimedName, p.nameColor) : 'var(--fill-4)'
 
   return (
     <div className={styles.root}>

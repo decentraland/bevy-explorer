@@ -13,10 +13,9 @@ import { searchByShortcode, SHORTCODE_RE, type Emoji } from './emojiData'
 import { MessageText, mentionsMe, buildNameIndex } from './chatText'
 import { type ChatUser } from './ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
-import { peekProfile, useProfile } from '../session/profileStore'
+import { knownUserColor, peekProfile, useProfile } from '../session/profileStore'
 import { isCancelKey } from '../../lib/bindingLabels'
 import { hudInsetRef } from '../../lib/hudInset'
-import { userColor } from '../../lib/identity'
 import styles from './Chat.module.css'
 
 const MAX_LEN = 500
@@ -49,7 +48,7 @@ function splitName(label: string): { base: string; tag: string } {
 
 function senderColor(sender: string, name: string): string {
   if (isSystem(sender)) return SYSTEM_COLOR
-  return userColor(sender, name)
+  return knownUserColor(sender, name)
 }
 
 function formatTime(ts: number): string {

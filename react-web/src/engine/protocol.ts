@@ -403,6 +403,8 @@ export interface Profile {
   name: string
   picture?: string
   hasClaimedName: boolean
+  /** The chosen name colour (claimed names only), 0–1 channels. */
+  nameColor?: { r: number; g: number; b: number }
   isGuest: boolean
   /** The deployed profile's version, when this came from the engine; compared against
    *  `profileChanged` to tell a stale copy from a current one. */

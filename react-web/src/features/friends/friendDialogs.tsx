@@ -2,7 +2,7 @@
 // reference client.
 import { Avatar, showConfirm } from '../../design'
 import { BASE_DOMAIN } from '../../lib/baseDomain'
-import { userColor } from '../../lib/identity'
+import { knownUserColor } from '../session/profileStore'
 import styles from './FriendRequestPopup.module.css'
 
 export interface DialogUser {
@@ -16,7 +16,7 @@ export function confirmUnfriend(user: DialogUser): Promise<boolean> {
     title: `Are you sure you want to unfriend ${user.name}?`,
     body: (
       <div className={styles.centerAvatar}>
-        <Avatar src={user.picture} name={user.name} color={userColor(user.address, user.name)} size={72} />
+        <Avatar src={user.picture} name={user.name} color={knownUserColor(user.address, user.name)} size={72} />
       </div>
     ),
     confirmLabel: 'Unfriend'

@@ -146,10 +146,13 @@ function truncateMessage(s: string, max: number): string {
   return (sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/\s+$/, '') + '…'
 }
 
-// The reference name colour (a hue from the display name), shared with the HUD. Memoised: the tag
-// re-evaluates every texture render.
+// A claimed name's chosen colour (from the engine's profile, matching the point-at marker) wins; else
+// the name-derived hue shared with the HUD. Memoised: the tag re-evaluates every texture render.
+const customColorCache = new Map<string, Color4>()
 const colorCache = new Map<string, Color4>()
 function nameColor(userId: string, name: string, claimed: boolean): Color4 {
+  const custom = customColorCache.get(userId)
+  if (claimed && custom != null) return custom
   const key = `${userId}|${name}|${String(claimed)}`
   const hit = colorCache.get(key)
   if (hit != null) return hit
@@ -158,7 +161,7 @@ function nameColor(userId: string, name: string, claimed: boolean): Color4 {
   return c
 }
 
-// hasClaimedName from the engine's profile (async, cached per NAME: a rename is
+// hasClaimedName + custom name colour from the engine's profile (async, cached per NAME: a rename is
 // exactly what claims or drops a unique name, and the engine's copy of the profile is already the
 // renamed one by the time the tag sees the new name); fall back to the name-suffix heuristic until
 // it resolves so the badge / discriminator don't flicker on first sight.
@@ -171,6 +174,9 @@ function resolveClaimed(userId: string, name: string): void {
     .then((av) => {
       const claimed = av?.hasClaimedName ?? !name.includes('#')
       claimedCache.set(userId, { name, claimed })
+      const nc = av?.nameColor
+      if (claimed && nc != null) customColorCache.set(userId, Color4.create(nc.r, nc.g, nc.b, 1))
+      else customColorCache.delete(userId)
     })
     // Settle on the heuristic rather than leave the entry empty: Tag asks every frame, so an
     // unresolvable profile would otherwise be re-requested every frame.

@@ -279,7 +279,7 @@ export function ProfilePassport({
             {profile.bodyImage ? (
               <img className={styles.avatarImg} src={profile.bodyImage} alt={base} />
             ) : (
-              <Avatar src={profile.picture} name={base} color={userColor(profile.address, profile.name, profile.hasClaimedName)} size={180} status="online" />
+              <Avatar src={profile.picture} name={base} color={userColor(profile.address, profile.name, profile.hasClaimedName, profile.nameColor)} size={180} status="online" />
             )}
           </div>
 

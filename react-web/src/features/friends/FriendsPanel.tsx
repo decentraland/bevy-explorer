@@ -54,10 +54,8 @@ interface Identity {
   nameColor?: { r: number; g: number; b: number }
 }
 
-/** The reference's name-derived colour. It ignores the user's chosen colour (behind a flag that is off
- *  there), so we do too. */
 function colorOf(user: Identity & { name: string }): string {
-  return userColor(user.address, user.name, user.claimed)
+  return userColor(user.address, user.name, user.claimed, user.nameColor)
 }
 
 function NameLabel({ name, user, message }: { name: string; user: Identity; message?: boolean }): React.JSX.Element {

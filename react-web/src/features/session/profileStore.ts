@@ -11,6 +11,7 @@
 // `profileChanged` stream); an entry someone is still showing is re-read, the rest are dropped.
 import { useCallback, useSyncExternalStore } from 'react'
 import type { Profile } from '../../engine/protocol'
+import { userColor } from '../../lib/identity'
 
 /** Addresses are matched lowercased: the same wallet reaches the page in either case. */
 export const profileKey = (address: string): string => address.toLowerCase()
@@ -21,6 +22,8 @@ export interface ProfileSeed {
   address: string
   name: string
   picture?: string
+  claimed?: boolean
+  nameColor?: { r: number; g: number; b: number }
 }
 
 interface Entry {
@@ -127,6 +130,9 @@ const looksClaimed = (name: string): boolean => !name.includes('#') && !/^0x[0-9
 
 /** Identity a list already carries. Never overwrites the engine's copy; keeps an entry warm while
  *  the list keeps vouching for it (a nearby player stays resolvable until well after they leave). */
+const sameRgb = (a?: { r: number; g: number; b: number }, b?: { r: number; g: number; b: number }): boolean =>
+  a === b || (a != null && b != null && a.r === b.r && a.g === b.g && a.b === b.b)
+
 export function seedProfiles(seeds: readonly ProfileSeed[]): void {
   const now = Date.now()
   for (const seed of seeds) {
@@ -137,8 +143,10 @@ export function seedProfiles(seeds: readonly ProfileSeed[]): void {
     if (e.full) continue
     const prev = e.profile
     const picture = seed.picture ?? prev?.picture
-    if (prev != null && prev.name === seed.name && prev.picture === picture) continue
-    e.profile = { address: seed.address, name: seed.name, picture, hasClaimedName: looksClaimed(seed.name), isGuest: prev?.isGuest ?? false }
+    const claimed = seed.claimed ?? looksClaimed(seed.name)
+    const nameColor = seed.nameColor ?? prev?.nameColor
+    if (prev != null && prev.name === seed.name && prev.picture === picture && prev.hasClaimedName === claimed && sameRgb(prev.nameColor, nameColor)) continue
+    e.profile = { address: seed.address, name: seed.name, picture, hasClaimedName: claimed, nameColor, isGuest: prev?.isGuest ?? false }
     notify(key)
   }
   sweep(now)
@@ -215,4 +223,10 @@ export function resetProfileStore(): void {
   listeners.clear()
   request = () => {}
   lastSweep = 0
+}
+
+/** A person's name colour from what the store knows of them (chosen colour, claimed name). */
+export function knownUserColor(address: string, name: string): string {
+  const p = peekProfile(address)
+  return userColor(address, p?.name ?? name, p?.hasClaimedName, p?.nameColor)
 }

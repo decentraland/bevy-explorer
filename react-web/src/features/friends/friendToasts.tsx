@@ -1,7 +1,7 @@
 import { Avatar, showToast } from '../../design'
 import type { FriendAction } from '../../engine/protocol'
-import { shortAddr, splitName, userColor } from '../../lib/identity'
-import { peekProfile } from '../session/profileStore'
+import { shortAddr, splitName } from '../../lib/identity'
+import { knownUserColor, peekProfile } from '../session/profileStore'
 
 const VERB: Record<FriendAction, string> = {
   request: 'sending a friend request to',
@@ -43,8 +43,8 @@ export function toastFriendOnline(address: string): void {
   const name = nameOf(address)
   showToast(
     <>
-      <b style={{ color: userColor(address, p?.name ?? name) }}>{name}</b> Is Online
+      <b style={{ color: knownUserColor(address, name) }}>{name}</b> Is Online
     </>,
-    { icon: <Avatar src={p?.picture} name={name} color={userColor(address, p?.name ?? name)} size={28} /> }
+    { icon: <Avatar src={p?.picture} name={name} color={knownUserColor(address, name)} size={28} /> }
   )
 }

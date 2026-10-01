@@ -18,3 +18,18 @@ export function userNameColor(name: string, address: string, claimed: boolean): 
   const rgb = [[1, t, p], [q, 1, p], [p, 1, t], [p, q, 1], [t, p, 1], [1, p, q]][i % 6]
   return `#${rgb.map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('')}`
 }
+
+export interface Rgb {
+  r: number
+  g: number
+  b: number
+}
+
+/** A claimed name's chosen colour wins; otherwise the name-derived hue. */
+export function resolveNameColor(name: string, address: string, claimed: boolean, custom?: Rgb | null): string {
+  if (claimed && custom != null) {
+    const hex = (v: number): string => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')
+    return `#${hex(custom.r)}${hex(custom.g)}${hex(custom.b)}`
+  }
+  return userNameColor(name, address, claimed)
+}
