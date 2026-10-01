@@ -410,10 +410,15 @@
   flex: 1;
   min-width: 0;
   appearance: none;
-  height: 40px;
+  display: block;
+  min-height: 40px;
+  max-height: 120px;
+  field-sizing: content;
+  resize: none;
   border: none;
   border-radius: var(--r-md);
-  padding: 0 76px 0 14px;
+  padding: 11px 76px 12px 14px;
+  box-sizing: border-box;
   font-family: inherit;
   font-size: var(--type-14);
   font-weight: var(--fw-semibold);
@@ -422,6 +427,8 @@
   caret-color: var(--text);
   background: var(--chat-input);
   outline: none;
+  overflow-wrap: anywhere;
+  scrollbar-width: none;
 }
 .input:focus {
   background: var(--chat-input-focus);

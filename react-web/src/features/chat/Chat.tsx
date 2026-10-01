@@ -317,7 +317,7 @@ export function Chat({
   const [focused, setFocused] = useState(false)
   const [dim, setDim] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
 
   const open = chat.open
@@ -545,7 +545,7 @@ export function Chat({
 
   // A click anywhere in the panel that isn't a control focuses the input — unless it selected text to copy.
   const focusFromPanel = (e: React.MouseEvent): void => {
-    if (!open || (e.target as HTMLElement).closest('button, a, input, [role="button"], [role="dialog"]')) return
+    if (!open || (e.target as HTMLElement).closest('button, a, input, textarea, [role="button"], [role="dialog"]')) return
     if (window.getSelection()?.toString()) return
     inputRef.current?.focus()
   }
@@ -679,8 +679,9 @@ export function Chat({
           send()
         }}
       >
-        <input
+        <textarea
           ref={inputRef}
+          rows={1}
           className={styles.input}
           value={draft}
           onChange={(e) => updateDraft(e.target.value, e.target.selectionStart ?? e.target.value.length)}
