@@ -21,7 +21,7 @@ export const PARCEL_METERS = 16
 export const TILE_BASE_URL = 'https://media.githubusercontent.com/media/genesis-city/parcels/new-client-images/maps/lod-0/3/'
 // The satellite map Genesis City realms advertise (`configurations.map.satelliteView` in their
 // `/about`). The tiles above are that map, so a realm is only treated as Genesis City — DOM map
-// styles, place markers — when what it advertises is exactly this.
+// styles, place markers — when it advertises this map's url.
 export const GENESIS_SATELLITE_VIEW: SatelliteView = {
   version: 'v1',
   baseUrl: 'https://genesis.city/map/latest',
@@ -30,14 +30,7 @@ export const GENESIS_SATELLITE_VIEW: SatelliteView = {
 }
 
 export function isGenesisSatelliteView(view: SatelliteView | null): boolean {
-  return (
-    view !== null &&
-    view.version === GENESIS_SATELLITE_VIEW.version &&
-    view.baseUrl === GENESIS_SATELLITE_VIEW.baseUrl &&
-    view.suffixUrl === GENESIS_SATELLITE_VIEW.suffixUrl &&
-    view.topLeftOffset.x === GENESIS_SATELLITE_VIEW.topLeftOffset.x &&
-    view.topLeftOffset.y === GENESIS_SATELLITE_VIEW.topLeftOffset.y
-  )
+  return view !== null && view.baseUrl === GENESIS_SATELLITE_VIEW.baseUrl
 }
 
 export const GRID = 8 // 8×8 satellite chunks

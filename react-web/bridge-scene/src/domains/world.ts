@@ -161,6 +161,10 @@ export function registerWorld(ctx: Ctx): void {
   // style and drops its Genesis City markers. Poll ~2s, push on change.
   let realmAcc = 2
   let lastRealm = ''
+  // A page that reloads or starts late missed the last push, and the realm won't change to resend it.
+  ctx.on('hello', () => {
+    lastRealm = ''
+  })
   ctx.push((dt) => {
     realmAcc += dt
     if (realmAcc < 2) return

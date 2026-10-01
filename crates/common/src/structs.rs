@@ -20,6 +20,7 @@ use dcl_component::proto_components::sdk::{
     development::{ws_scene_message, UpdateModelType},
 };
 use serde::{Deserialize, Serialize};
+use system_api_types::SatelliteView;
 pub use system_api_types::{PermissionLevel, PermissionType, PermissionValue, PointerTargetType};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
@@ -1777,8 +1778,17 @@ pub struct ServerConfiguration {
 #[serde(rename_all = "camelCase")]
 pub struct MapData {
     pub minimap_enabled: Option<bool>,
-    pub satellite_view: Option<system_api_types::SatelliteView>,
+    #[serde(default, deserialize_with = "lenient_satellite_view")]
+    pub satellite_view: Option<SatelliteView>,
     pub sizes: Vec<Region>,
+}
+
+// A malformed satellite view is treated as absent rather than failing the whole `/about`.
+fn lenient_satellite_view<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<SatelliteView>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -1920,5 +1930,22 @@ mod tests {
             get(&config, SystemAction::RollLeft),
             Some(vec![InputIdentifier::Key(KeyCode::KeyT)])
         );
+    }
+
+    #[test]
+    fn malformed_satellite_view_is_absent() {
+        let parse = |map: &str| serde_json::from_str::<MapData>(map).unwrap().satellite_view;
+
+        let genesis = parse(
+            r#"{"minimapEnabled":true,"sizes":[],"satelliteView":{"version":"v1","baseUrl":"https://genesis.city/map/latest","suffixUrl":".jpg","topLeftOffset":{"x":-2,"y":-6}}}"#,
+        )
+        .unwrap();
+        assert_eq!(genesis.base_url, "https://genesis.city/map/latest");
+        assert_eq!(genesis.top_left_offset.y, -6.0);
+
+        assert!(parse(r#"{"minimapEnabled":false,"sizes":[]}"#).is_none());
+        assert!(parse(r#"{"sizes":[],"satelliteView":{"topLeftOffset":null}}"#).is_none());
+        assert!(parse(r#"{"sizes":[],"satelliteView":{"topLeftOffset":{"x":1}}}"#).is_none());
+        assert!(parse(r#"{"sizes":[],"satelliteView":{"version":1}}"#).is_none());
     }
 }
