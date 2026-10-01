@@ -327,63 +327,73 @@
   transition: opacity 0.5s var(--ease-outquad) 1s;
 }
 
-/* Emoji picker popover + autocomplete both float just above the input. */
-.pickerWrap,
-.suggest {
+/* Emoji panel: 5px above the input field's top-left. */
+.pickerWrap {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 60px;
+  left: 4px;
+  bottom: 51px;
+  z-index: 1;
 }
 
+/* Autocomplete: 340 wide, 4px above the input, growing upward; 7 emoji or 5 people rows before it scrolls. */
 .suggest {
+  position: absolute;
+  left: 5px;
+  bottom: 50px;
+  z-index: 1;
+  width: 340px;
+  border-radius: var(--r-md);
   background: var(--panel);
-  border: 1px solid var(--white-10);
-  border-radius: 12px;
-  box-shadow: var(--shadow-panel);
   overflow: hidden;
 }
 .suggestList {
   margin: 0;
-  padding: 4px;
+  padding: 8px 7px;
   list-style: none;
-  max-height: 220px;
   overflow-y: auto;
   scrollbar-width: thin;
+}
+.suggestEmoji .suggestList {
+  max-height: calc(7 * 34px + 16px);
+}
+.suggestPeople .suggestList {
+  max-height: calc(5 * 40px + 16px);
 }
 .suggestItem {
   display: flex;
   align-items: center;
-  gap: 10px;
   width: 100%;
-  padding: 7px 10px;
   border: none;
-  border-radius: 8px;
   background: transparent;
-  color: var(--ink-7);
+  color: #fff;
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--type-14);
   text-align: left;
   cursor: pointer;
 }
+.suggestEmoji .suggestItem {
+  gap: 11px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: var(--r-button);
+}
+.suggestPeople .suggestItem {
+  gap: 8px;
+  height: 40px;
+  padding: 0 4px;
+  border-radius: var(--r-md);
+}
 .suggestItem:hover,
 .suggestActive {
-  background: var(--white-10);
-  color: var(--text);
+  background: var(--emoji-hover);
 }
 .suggestGlyph {
+  width: 20px;
   font-size: 20px;
   line-height: 1;
 }
-.suggestName {
-  opacity: 0.85;
-}
-.noResults {
-  padding: 18px;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-45);
+.suggestPeople .suggestName {
+  font-weight: var(--fw-semibold);
 }
 
 /* Input row: 46 tall, the field 40 tall sitting 1px above the bottom, controls inside it. */

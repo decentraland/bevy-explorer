@@ -249,6 +249,10 @@
   --chat-divider: rgba(255, 255, 255, 0.2);
   --chat-avatar-ring: rgba(255, 255, 255, 0.48);
   --counter-half: #ffbc5b;
+  --emoji-tab: #a09ba8;
+  --emoji-header: #cfcdd4;
+  --emoji-hover: #43404a;
+  --emoji-search: #d6d6d6;
   --ink-58: rgba(255, 255, 255, 0.58); /* timestamps, member status */
   --ink-66: rgba(255, 255, 255, 0.66); /* placeholder, counter track */
   --ink-73: rgba(255, 255, 255, 0.73); /* #tag after a name */

@@ -9,7 +9,7 @@ import type { ChatLine, ChatState } from '../session/useEngineSession'
 import type { NearbyMember } from '../../engine/protocol'
 import { Avatar, ControlButton, DclLogo, MaskIcon, VerifiedBadge, VoiceBars } from '../../design'
 import { EmojiPicker } from './EmojiPicker'
-import { searchByShortcode, SHORTCODE_RE, type Emoji } from './emojiData'
+import { searchByShortcode, type Emoji } from './emojiData'
 import { MessageText, mentionsMe, buildNameIndex } from './chatText'
 import { type ChatUser } from './ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
@@ -53,6 +53,21 @@ function splitName(label: string): { base: string; tag: string } {
 function senderColor(sender: string, name: string): string {
   if (isSystem(sender)) return SYSTEM_COLOR
   return knownUserColor(sender, name)
+}
+
+type Suggestions =
+  | { kind: 'emoji'; items: Emoji[]; start: number; end: number; sel: number }
+  | { kind: 'mention'; items: NearbyMember[]; start: number; end: number; sel: number }
+
+/** The ":emoji" or "@name" word ending at the caret, if any. */
+export function tokenAtCaret(value: string, caret: number): { kind: 'emoji' | 'mention'; query: string; start: number } | null {
+  const before = value.slice(0, caret)
+  const m = before.match(/(?:^|\s)([@:])(\S*)$/)
+  if (!m) return null
+  const query = m[2]
+  const start = caret - query.length - 1
+  if (m[1] === ':') return /^[\w+-]{2,}$/.test(query) && !/https?$/i.test(before.slice(0, start)) ? { kind: 'emoji', query, start } : null
+  return /^[A-Za-z0-9]{1,15}$/.test(query) ? { kind: 'mention', query, start } : null
 }
 
 function formatTime(ts: number): string {
@@ -206,20 +221,27 @@ export const ChatBubble = memo(function ChatBubble({
   )
 })
 
-export function MemberRow({ member, speaking = false }: { member: NearbyMember; speaking?: boolean }): React.JSX.Element {
+function MemberName({ member }: { member: NearbyMember }): React.JSX.Element {
   const known = useProfile(member.address)
   const { base, tag } = splitName(memberLabel(member))
-  const color = senderColor(member.address, memberLabel(member))
   const claimed = known?.hasClaimedName ?? (tag === '' && member.name.trim() !== '')
+  return (
+    <span className={styles.memberName} style={{ color: senderColor(member.address, memberLabel(member)) }}>
+      {base}
+      {!claimed && tag && <span className={styles.memberTag}>{tag}</span>}
+      {claimed && <VerifiedBadge size={14} className={styles.badge} />}
+    </span>
+  )
+}
+
+export function MemberRow({ member, speaking = false }: { member: NearbyMember; speaking?: boolean }): React.JSX.Element {
+  const { base } = splitName(memberLabel(member))
+  const color = senderColor(member.address, memberLabel(member))
   return (
     <div className={styles.memberRow}>
       <Avatar src={member.picture} name={base} color={color} size={40} framed status="online" dotPosition="top" />
       <div className={styles.memberInfo}>
-        <span className={styles.memberName} style={{ color }}>
-          {base}
-          {!claimed && tag && <span className={styles.memberTag}>{tag}</span>}
-          {claimed && <VerifiedBadge size={14} className={styles.badge} />}
-        </span>
+        <MemberName member={member} />
         <span className={styles.memberStatus}>
           {speaking ? (
             <>
@@ -290,15 +312,13 @@ export function Chat({
   const [draft, setDraft] = useState('')
   const [picker, setPicker] = useState(false)
   const [showMembers, setShowMembers] = useState(false)
-  const [suggestions, setSuggestions] = useState<Emoji[]>([])
-  const [scQuery, setScQuery] = useState<string | null>(null)
+  const [sug, setSug] = useState<Suggestions | null>(null)
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
-  const [mentionSug, setMentionSug] = useState<NearbyMember[]>([])
   const [dim, setDim] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const pickerRef = useRef<HTMLDivElement>(null)
 
   const open = chat.open
   // "active" = the user is interacting → show the full solid panel + chrome.
@@ -440,69 +460,92 @@ export function Chat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.pendingMention])
 
-  const MENTION_RE = /@([\w-]*)$/
-  const updateDraft = (value: string): void => {
+  // Suggestions follow the word at the caret: ":sm" (2+ chars) lists emoji, "@a" (1+) nearby people.
+  const suggestAt = (value: string, caret: number): void => {
+    const word = tokenAtCaret(value, caret)
+    if (word == null) return setSug(null)
+    if (word.kind === 'emoji') {
+      const items = searchByShortcode(word.query, 50)
+      if (items.length > 0) return setSug({ kind: 'emoji', items, start: word.start, end: caret, sel: 0 })
+      return setSug(null)
+    }
+    const q = word.query.toLowerCase()
+    const items = chat.members.filter((m) => memberLabel(m).toLowerCase().includes(q))
+    setSug(items.length > 0 ? { kind: 'mention', items, start: word.start, end: caret, sel: 0 } : null)
+  }
+  const updateDraft = (value: string, caret: number): void => {
     setDraft(value)
-    const m = value.match(SHORTCODE_RE)
-    setScQuery(m ? m[1] : null)
-    setSuggestions(m ? searchByShortcode(m[1]) : [])
-    // @mention autocomplete from the nearby roster (trailing @partial).
-    const mm = value.match(MENTION_RE)
-    setMentionQuery(mm ? mm[1] : null)
-    const q = (mm?.[1] ?? '').toLowerCase()
-    setMentionSug(
-      mm ? chat.members.filter((p) => (p.name || p.address).toLowerCase().includes(q)).slice(0, 6) : []
-    )
+    suggestAt(value, caret)
   }
 
-  const applyMention = (member: NearbyMember): void => {
-    const label = member.name.trim() ? member.name.split('#')[0] : member.address
-    setDraft((d) => d.replace(MENTION_RE, `@${label} `))
-    setMentionSug([])
-    setMentionQuery(null)
-    inputRef.current?.focus()
-  }
-
-  const applyEmoji = (glyph: string): void => {
-    setDraft((d) => {
-      const m = d.match(SHORTCODE_RE)
-      return (m ? d.slice(0, m.index) : d) + glyph
+  const replaceRange = (start: number, end: number, text: string): void => {
+    const next = (draft.slice(0, start) + text + draft.slice(end)).slice(0, MAX_LEN)
+    const caret = Math.min(start + text.length, next.length)
+    setDraft(next)
+    setSug(null)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(caret, caret)
     })
-    setSuggestions([])
-    setScQuery(null)
-    inputRef.current?.focus()
+  }
+  const accept = (s: Suggestions, i: number): void => {
+    if (s.kind === 'emoji') replaceRange(s.start, s.end, s.items[i].emoji)
+    else {
+      const m = s.items[i]
+      replaceRange(s.start, s.end, `@${m.name.trim() ? m.name.split('#')[0] : m.address} `)
+    }
+  }
+  const insertAtCaret = (glyph: string): void => {
+    const el = inputRef.current
+    const start = el?.selectionStart ?? draft.length
+    const end = el?.selectionEnd ?? draft.length
+    replaceRange(start, end, glyph)
   }
 
   const send = (): void => {
     if (!draft.trim()) return
     chat.send(draft)
     setDraft('')
-    setSuggestions([])
-    setScQuery(null)
-    setMentionSug([])
-    setMentionQuery(null)
+    setSug(null)
+    setPicker(false)
   }
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
     e.stopPropagation() // keep movement keys out of the engine while typing
-    if (e.key === 'Enter') {
+    if (sug && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       e.preventDefault()
-      if (mentionSug.length > 0) applyMention(mentionSug[0])
-      else if (suggestions.length > 0) applyEmoji(suggestions[0].emoji)
-      else send()
+      const n = sug.items.length
+      setSug({ ...sug, sel: (sug.sel + (e.key === 'ArrowDown' ? 1 : n - 1)) % n })
+    } else if (sug && (e.key === 'Enter' || e.key === 'Tab')) {
+      e.preventDefault()
+      accept(sug, sug.sel)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      send()
     } else if (isCancelKey(e)) {
-      setMentionQuery(null)
-      setMentionSug([])
-      setScQuery(null)
-      setSuggestions([])
+      setSug(null)
       setPicker(false)
       inputRef.current?.blur()
     }
   }
 
+  // The emoji panel closes on a press outside it (the emoji button toggles it itself).
+  useEffect(() => {
+    if (!picker) return
+    const onDown = (e: PointerEvent): void => {
+      const t = e.target as HTMLElement
+      if (pickerRef.current?.contains(t) || t.closest('[aria-label="Emoji"]')) return
+      setPicker(false)
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [picker])
+
   // A click anywhere in the panel that isn't a control focuses the input — unless it selected text to copy.
   const focusFromPanel = (e: React.MouseEvent): void => {
-    if (!open || (e.target as HTMLElement).closest('button, a, input, [role="button"]')) return
+    if (!open || (e.target as HTMLElement).closest('button, a, input, [role="button"], [role="dialog"]')) return
     if (window.getSelection()?.toString()) return
     inputRef.current?.focus()
   }
@@ -590,50 +633,42 @@ export function Chat({
       )}
 
       {active && picker && (
-        <div className={styles.pickerWrap}>
-          <EmojiPicker onPick={applyEmoji} onClose={() => setPicker(false)} />
+        <div ref={pickerRef} className={styles.pickerWrap}>
+          <EmojiPicker onPick={insertAtCaret} />
         </div>
       )}
 
-      {active && mentionQuery != null && mentionSug.length > 0 && (
-        <div className={styles.suggest}>
-          <ul className={styles.suggestList}>
-            {mentionSug.map((m, i) => (
-              <li key={m.address}>
-                <button
-                  type="button"
-                  className={`${styles.suggestItem} ${i === 0 ? styles.suggestActive : ''}`.trim()}
-                  onClick={() => applyMention(m)}
-                >
-                  <Avatar src={m.picture} name={m.name} color={senderColor(m.address, m.name)} size={20} />
-                  <span className={styles.suggestName}>{m.name || shortAddr(m.address)}</span>
-                </button>
-              </li>
-            ))}
+      {active && sug && (
+        <div className={`${styles.suggest} ${sug.kind === 'emoji' ? styles.suggestEmoji : styles.suggestPeople}`}>
+          <ul className={styles.suggestList} role="listbox">
+            {sug.kind === 'emoji'
+              ? sug.items.map((e, i) => (
+                  <li key={e.code} role="option" aria-selected={i === sug.sel}>
+                    <button
+                      type="button"
+                      className={`${styles.suggestItem} ${i === sug.sel ? styles.suggestActive : ''}`.trim()}
+                      onMouseDown={(ev) => ev.preventDefault()}
+                      onClick={() => accept(sug, i)}
+                    >
+                      <span className={styles.suggestGlyph}>{e.emoji}</span>
+                      <span className={styles.suggestName}>{e.expression}</span>
+                    </button>
+                  </li>
+                ))
+              : sug.items.map((m, i) => (
+                  <li key={m.address} role="option" aria-selected={i === sug.sel}>
+                    <button
+                      type="button"
+                      className={`${styles.suggestItem} ${i === sug.sel ? styles.suggestActive : ''}`.trim()}
+                      onMouseDown={(ev) => ev.preventDefault()}
+                      onClick={() => accept(sug, i)}
+                    >
+                      <Avatar src={m.picture} name={m.name} color={senderColor(m.address, m.name)} size={32} framed className={styles.avatar} />
+                      <MemberName member={m} />
+                    </button>
+                  </li>
+                ))}
           </ul>
-        </div>
-      )}
-
-      {active && scQuery != null && (
-        <div className={styles.suggest}>
-          {suggestions.length === 0 ? (
-            <div className={styles.noResults}>No results</div>
-          ) : (
-            <ul className={styles.suggestList}>
-              {suggestions.map((e, i) => (
-                <li key={e.code}>
-                  <button
-                    type="button"
-                    className={`${styles.suggestItem} ${i === 0 ? styles.suggestActive : ''}`.trim()}
-                    onClick={() => applyEmoji(e.emoji)}
-                  >
-                    <span className={styles.suggestGlyph}>{e.emoji}</span>
-                    <span className={styles.suggestName}>{e.expression}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       )}
 
@@ -648,7 +683,11 @@ export function Chat({
           ref={inputRef}
           className={styles.input}
           value={draft}
-          onChange={(e) => updateDraft(e.target.value)}
+          onChange={(e) => updateDraft(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+          onSelect={(e) => {
+            const el = e.currentTarget
+            if (el.selectionStart === el.selectionEnd && sug?.end !== el.selectionStart) suggestAt(el.value, el.selectionStart ?? el.value.length)
+          }}
           onFocus={() => {
             setFocused(true)
             openIfClosed()
