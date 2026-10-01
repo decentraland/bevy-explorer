@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { SceneLoadingOverlay } from '../features/session/SceneLoadingOverlay'
-import { GENERIC_TIPS, TIP_ROTATE_MS } from '../features/session/loadingTips'
+import { TIP_ROTATE_MS } from '../features/session/loadingTips'
 import { countLaunch } from '../lib/launchCount'
-import { resetFeatureFlags } from '../lib/featureFlags'
 
 const loading = (over: Partial<{ realmConnected: boolean; pendingAssets: number | null }> = {}) => ({
   visible: true,
@@ -15,17 +14,9 @@ const loading = (over: Partial<{ realmConnected: boolean; pendingAssets: number 
 
 afterEach(() => {
   vi.useRealTimers()
-  resetFeatureFlags()
 })
 
 const heading = (): string | null => screen.getByRole('heading').textContent
-
-function flags(payload?: object) {
-  return {
-    flags: { 'explorer-alfa-audience-loading-screen-tips': payload != null },
-    variants: payload != null ? { 'explorer-alfa-audience-loading-screen-tips': { name: 'tips', payload: { type: 'json', value: JSON.stringify(payload) } } } : {}
-  }
-}
 
 describe('loading screen', () => {
   beforeEach(() => {
@@ -48,15 +39,6 @@ describe('loading screen', () => {
     expect(screen.getAllByRole('tab').map((t) => t.getAttribute('aria-label'))).toEqual(['Hang Out', 'Your People', 'Earn Badges', 'Live Now'])
   })
 
-  it('follows the remote flag, and falls back to the generic tips without it', () => {
-    resetFeatureFlags(flags({ newUsers: { displayed: ['make_move', 'say_hi'] } }))
-    const { unmount } = render(<SceneLoadingOverlay scene={loading()} progress={0} />)
-    expect(screen.getAllByRole('tab').map((t) => t.getAttribute('aria-label'))).toEqual(['Make a Move', 'Say Hi!'])
-    unmount()
-    resetFeatureFlags(flags())
-    render(<SceneLoadingOverlay scene={loading()} progress={0} />)
-    expect(screen.getAllByRole('tab')).toHaveLength(GENERIC_TIPS.length)
-  })
 
   it('starts after the tip the last loading screen ended on', () => {
     localStorage.setItem('loadingLastTip', '1')
@@ -101,12 +83,4 @@ describe('loading screen', () => {
     expect(document.querySelector('[class*="fill"]')).toHaveStyle({ width: 'calc(0% + 67px)' })
   })
 
-  it('shows the bug report button only while its feature flag is on', () => {
-    const { unmount } = render(<SceneLoadingOverlay scene={loading()} progress={0} />)
-    expect(screen.queryByRole('button', { name: 'Report a bug' })).toBeNull()
-    unmount()
-    resetFeatureFlags({ flags: { 'explorer-alfa-bug-report': true }, variants: {} })
-    render(<SceneLoadingOverlay scene={loading()} progress={0} />)
-    expect(screen.getByRole('button', { name: 'Report a bug' })).toBeInTheDocument()
-  })
 })

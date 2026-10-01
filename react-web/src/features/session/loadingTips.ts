@@ -3,7 +3,6 @@
 // flag, the older generic tips show instead.
 
 import type { IconName } from '../../design'
-import { flagPayload, type FeatureFlags } from '../../lib/featureFlags'
 import addFriends from '../../assets/loading-tips/add-friends.webp'
 import earnBadges from '../../assets/loading-tips/earn-badges.webp'
 import hangOutPlaza from '../../assets/loading-tips/hang-out-plaza.webp'
@@ -93,12 +92,13 @@ const CATALOG: Record<string, LoadingTip> = {
 }
 
 // The flag's live payload, used until the flags arrive so the first loading screen doesn't wait.
-const DEFAULT_AUDIENCES = {
+type Audiences = { newUsers?: { displayed?: string[] }; returningUsers?: { displayed?: string[] } }
+
+// Which tips new and returning players see (the reference's audience-loading-screen-tips rollout).
+const AUDIENCES: Audiences = {
   newUsers: { displayed: ['say_hi', 'live_now', 'add_friends', 'make_move'] },
   returningUsers: { displayed: ['take_shot', 'hang_out', 'your_people', 'earn_badges', 'live_now'] }
 }
-
-type Audiences = { newUsers?: { displayed?: string[] }; returningUsers?: { displayed?: string[] } }
 
 // `{Emote}` renders the live binding.
 export const GENERIC_TIPS: LoadingTip[] = [
@@ -120,11 +120,9 @@ export const GENERIC_TIPS: LoadingTip[] = [
   { key: 'hang_out_generic', title: 'Hang Out', body: "Genesis Plaza is the place people tend to hang—around the fire pit, in conversation, crossing paths, feeding pigeons. Come by and see who's around!", image: hangOut }
 ]
 
-/** The tips to show: the flag's list for new or returning players, or the generic set when the
- *  flags loaded without it. Before the flags load, the flag's last known lists. */
-export function tipsFor(flags: FeatureFlags | null, launches: number): LoadingTip[] {
-  const audiences = flags == null ? DEFAULT_AUDIENCES : (flagPayload(flags, 'alfa-audience-loading-screen-tips', 'tips') as Audiences | undefined)
-  const keys = (launches >= RETURNING_AFTER_LAUNCHES ? audiences?.returningUsers : audiences?.newUsers)?.displayed ?? []
+/** The tips to show for new or returning players, or the generic set if none of theirs exist. */
+export function tipsFor(launches: number): LoadingTip[] {
+  const keys = (launches >= RETURNING_AFTER_LAUNCHES ? AUDIENCES.returningUsers : AUDIENCES.newUsers)?.displayed ?? []
   const tips = keys.map((k) => CATALOG[k]).filter((t): t is LoadingTip => t != null)
   return tips.length > 0 ? tips : GENERIC_TIPS
 }
