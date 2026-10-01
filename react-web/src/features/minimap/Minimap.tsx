@@ -68,7 +68,6 @@ export const Minimap = memo(function Minimap({
   // Tiles + coords re-render only on a boundary, not per pose sample.
   const [chunks, setChunks] = useState<Chunk[]>([])
   const [parcelTile, setParcelTile] = useState(() => parcelTileFor(0, 0))
-  const [parcel, setParcel] = useState({ x: 0, y: 0 })
 
   const surfaceRef = useRef<HTMLDivElement>(null)
   // Wraps the gear AND its menu: the trigger has to count as "inside", or its own click would
@@ -119,10 +118,10 @@ export const Minimap = memo(function Minimap({
     // is exactly where Genesis City has places. Without this you get Genesis markers on a map
     // they have nothing to do with. Kept in state rather than cleared so coming back doesn't refetch.
     if (minimap.isWorld) return []
-    return placesNear(places, parcel.x, parcel.y, MARKER_RADIUS).filter((p) =>
+    return placesNear(places, map.x, map.y, MARKER_RADIUS).filter((p) =>
       p.categories.some((c) => markerCategories.includes(c))
     )
-  }, [minimap.isWorld, places, parcel.x, parcel.y, markerCategories])
+  }, [minimap.isWorld, places, map.x, map.y, markerCategories])
 
   useEffect(() => {
     const surface = surfaceRef.current
@@ -130,7 +129,6 @@ export const Minimap = memo(function Minimap({
     let raf = 0
     let lastChunkKey = ''
     let lastTileUrl = ''
-    let lastParcelKey = ''
     const tick = (): void => {
       raf = requestAnimationFrame(tick)
       const p = pose.current
@@ -147,14 +145,6 @@ export const Minimap = memo(function Minimap({
       surface.style.setProperty('--map-yaw', String(mapYaw))
       surface.style.setProperty('--map-arrow', String(p.yaw + mapYaw))
 
-      // Boundary crossings — cheap to test, rare to fire.
-      const px = Math.floor(p.x / PARCEL_METERS)
-      const py = Math.floor(p.z / PARCEL_METERS)
-      const parcelKey = `${px},${py}`
-      if (parcelKey !== lastParcelKey) {
-        lastParcelKey = parcelKey
-        setParcel({ x: px, y: py })
-      }
       if (effectiveStyle === 'satellite') {
         // Cull to the circle's *rotated* extent — its bounding box is the circumscribed
         // square, so use the radius in every direction or chunks pop in while turning.
@@ -248,7 +238,7 @@ export const Minimap = memo(function Minimap({
             (bevy-ui-scene's widget said "empty scene" for the same case). */}
         <span className={styles.title}>{sceneTitle || 'Empty parcel'}</span>
         <span className={styles.coords}>
-          {parcel.x},{parcel.y}
+          {map.x},{map.y}
         </span>
         <button
           type="button"

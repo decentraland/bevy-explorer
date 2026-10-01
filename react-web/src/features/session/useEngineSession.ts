@@ -25,6 +25,7 @@ import { useWindowKeyDown } from '../../lib/useWindowKeyDown'
 import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { formatConsoleReply, parseChatCommand } from '../chat/chatCommands'
+import { PARCEL_METERS } from '../map/atlas'
 import type {
   AvatarColorTarget,
   AppNotification,
@@ -929,11 +930,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'mapState':
           setMapParcel({ x: msg.x, y: msg.y })
           break
-        case 'playerPose':
+        case 'playerPose': {
           // Mutate the ref instead of setState: this arrives ~20/s and the minimap reads
           // it from a RAF loop, so it must not drive React renders.
           poseRef.current = { x: msg.x, z: msg.z, yaw: msg.yaw, camYaw: msg.camYaw }
+          // The parcel is state, but only changes on a boundary crossing: returning `prev`
+          // unchanged makes React skip the render.
+          const px = Math.floor(msg.x / PARCEL_METERS)
+          const py = Math.floor(msg.z / PARCEL_METERS)
+          setMapParcel((prev) => (prev.x === px && prev.y === py ? prev : { x: px, y: py }))
           break
+        }
         case 'consoleReply':
           // Command feedback: a local "DCL System" line, never broadcast (same shape as pushSystemMessage).
           setMessages((prev) =>
