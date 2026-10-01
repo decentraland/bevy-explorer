@@ -258,6 +258,75 @@
   pointer-events: none;
 }
 
+/* NEW separator above the first message that arrived while scrolled up. */
+.newRow {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  height: 12px;
+  margin: 4px 0;
+  flex: none;
+}
+.newRow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 30px;
+  top: 50%;
+  height: 1px;
+  background: var(--chat-new);
+}
+.newTag {
+  position: relative;
+  height: 12px;
+}
+
+/* Scroll-to-bottom: a black drop with a white rim and the unread count, right above the input.
+   It appears at once, and after reaching the bottom it waits 1s, then fades over 0.5s. */
+.toBottom {
+  position: absolute;
+  right: 10px;
+  bottom: 56px;
+  width: 29px;
+  height: 37px;
+  padding: 0 0 11px;
+  border: none;
+  background: none;
+  color: #fff;
+  font-family: inherit;
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  isolation: isolate;
+}
+.toBottom::before,
+.toBottom::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  mask: center / 100% 100% no-repeat;
+}
+.toBottom::before {
+  inset: 0;
+  background: var(--black);
+  mask-image: url('../../assets/chat/scroll-bottom-solid.png');
+}
+.toBottom::after {
+  inset: -2px;
+  background: #fff;
+  mask-image: url('../../assets/chat/scroll-bottom-outline.png');
+}
+.toBottomShown {
+  opacity: 1;
+  pointer-events: auto;
+}
+.toBottomLeaving {
+  transition: opacity 0.5s var(--ease-outquad) 1s;
+}
+
 /* Emoji picker popover + autocomplete both float just above the input. */
 .pickerWrap,
 .suggest {

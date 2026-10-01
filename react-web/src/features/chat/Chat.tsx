@@ -4,7 +4,7 @@
 //   • open + active (hover/focus): full solid panel — navbar, emoji, members, borders
 // Incoming messages come from the bridge getChatStream relay; sends go via BevyApi.sendChat.
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatLine, ChatState } from '../session/useEngineSession'
 import type { NearbyMember } from '../../engine/protocol'
 import { Avatar, ControlButton, DclLogo, MaskIcon, VerifiedBadge, VoiceBars } from '../../design'
@@ -18,6 +18,7 @@ import { isCancelKey } from '../../lib/bindingLabels'
 import { hudInsetRef } from '../../lib/hudInset'
 import playersIcon from '../../assets/chat/players.png'
 import closeIcon from '../../assets/chat/close-thin.png'
+import newTag from '../../assets/chat/new-tag.png'
 import arrowLeftIcon from '../../assets/chat/arrow-left.png'
 import styles from './Chat.module.css'
 
@@ -102,6 +103,14 @@ export function DaySeparator({ ts }: { ts: number }): React.JSX.Element {
   return (
     <div className={styles.dayRow}>
       <span className={styles.dayPill}>{formatDay(ts)}</span>
+    </div>
+  )
+}
+
+function NewSeparator(): React.JSX.Element {
+  return (
+    <div className={styles.newRow} role="separator" aria-label="New messages">
+      <img className={styles.newTag} src={newTag} alt="" />
     </div>
   )
 }
@@ -341,23 +350,50 @@ export function Chat({
   // burst, not the cumulative jump the batch itself causes.
   const NEAR_BOTTOM_PX = 80
   const nearBottomRef = useRef(true)
+  // Messages from others that landed while scrolled up: counted on the scroll-to-bottom button,
+  // and the first of them gets the NEW separator until the chat closes.
+  const [unread, setUnread] = useState(0)
+  const [newFrom, setNewFrom] = useState<number | null>(null)
+  const shownUnread = useRef(0)
+  if (unread > 0) shownUnread.current = unread
+  const seenId = useRef(lastId)
   useEffect(() => {
     const el = listRef.current
     if (!el) return
     const onScroll = (): void => {
       nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
+      if (nearBottomRef.current) setUnread(0)
     }
     el.addEventListener('scroll', onScroll)
     return () => el.removeEventListener('scroll', onScroll)
   }, [open])
+  useEffect(() => {
+    if (open) return
+    setUnread(0)
+    setNewFrom(null)
+    nearBottomRef.current = true
+  }, [open])
   const lastSender = chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].sender : ''
   const lastIsOwn = me?.address != null && lastSender.toLowerCase() === me.address.toLowerCase()
   useEffect(() => {
+    const fresh = chat.messages.filter((l) => l.id > seenId.current)
+    seenId.current = lastId
     if (!open) return
     const el = listRef.current
-    if (el && (nearBottomRef.current || lastIsOwn)) el.scrollTop = el.scrollHeight
+    if (el && (nearBottomRef.current || lastIsOwn)) {
+      el.scrollTop = el.scrollHeight
+      return
+    }
+    const mine = me?.address?.toLowerCase()
+    const others = fresh.filter((l) => l.sender.toLowerCase() !== mine)
+    if (others.length === 0) return
+    setUnread((n) => n + others.length)
+    setNewFrom((id) => id ?? others[0].id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.messages, open])
+  const scrollToBottom = (): void => {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
+  }
 
   // Opening chat (sidebar icon, a queued mention, or Enter) focuses the input so it comes up in
   // the active/focused state, ready to type — matches Unity's "click chat → start typing". Also
@@ -523,20 +559,34 @@ export function Chat({
               r.kind === 'day' ? (
                 <DaySeparator key={r.id} ts={r.ts} />
               ) : (
-                <ChatBubble
-                  key={r.line.id}
-                  line={r.line}
-                  arrive={r.line.id >= liveFrom.current}
-                  members={chat.members}
-                  me={me}
-                  onOpenProfile={openProfile}
-                  onLocation={teleport}
-                  onVisitWorld={hasVisitWorld ? visitWorld : undefined}
-                />
+                <Fragment key={r.line.id}>
+                  {r.line.id === newFrom && <NewSeparator />}
+                  <ChatBubble
+                    line={r.line}
+                    arrive={r.line.id >= liveFrom.current}
+                    members={chat.members}
+                    me={me}
+                    onOpenProfile={openProfile}
+                    onLocation={teleport}
+                    onVisitWorld={hasVisitWorld ? visitWorld : undefined}
+                  />
+                </Fragment>
               )
             )
           )}
         </div>
+      )}
+
+      {open && (
+        <button
+          type="button"
+          className={`${styles.toBottom} ${active && unread > 0 ? styles.toBottomShown : active ? styles.toBottomLeaving : ''}`.trim()}
+          aria-label={`${unread} new messages`}
+          tabIndex={active && unread > 0 ? 0 : -1}
+          onClick={scrollToBottom}
+        >
+          {shownUnread.current > 9 ? '+9' : shownUnread.current}
+        </button>
       )}
 
       {active && picker && (
