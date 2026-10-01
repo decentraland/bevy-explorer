@@ -148,7 +148,7 @@ export const ChatBubble = memo(function ChatBubble({
   members?: NearbyMember[]
   me?: { address?: string; name?: string; hasClaimedName?: boolean } | null
   /** Open the profile viewer for a user, anchored at the click. */
-  onOpenProfile?: (user: ChatUser, e: React.MouseEvent) => void
+  onOpenProfile?: (user: ChatUser, x: number, y: number) => void
   /** A location link (x,y) in the message was clicked → teleport. */
   onLocation?: (x: number, y: number) => void
   /** A world name (e.g. boedo.dcl.eth) in the message was clicked → prompt to jump there. */
@@ -170,12 +170,12 @@ export const ChatBubble = memo(function ChatBubble({
 
   const openSender = (e: React.MouseEvent): void => {
     if (e.type === 'contextmenu') e.preventDefault()
-    onOpenProfile?.(sender, e)
+    onOpenProfile?.(sender, e.clientX, e.clientY)
   }
   const onMention = (address: string, mname: string, e: React.MouseEvent): void => {
     if (e.type === 'contextmenu') e.preventDefault()
     const m = peekProfile(address)
-    onOpenProfile?.({ address, name: m?.name ?? `@${mname}`, picture: m?.picture }, e)
+    onOpenProfile?.({ address, name: m?.name ?? `@${mname}`, picture: m?.picture }, e.clientX, e.clientY)
   }
 
   const avatar = system ? (
@@ -243,16 +243,24 @@ export function MemberRow({
   member: NearbyMember
   speaking?: boolean
   /** Open this person's profile card at the click. */
-  onOpen?: (user: ChatUser, e: React.MouseEvent) => void
+  onOpen?: (user: ChatUser, x: number, y: number) => void
 }): React.JSX.Element {
   const { base } = splitName(memberLabel(member))
   const color = senderColor(member.address, memberLabel(member))
+  const user: ChatUser = { address: member.address, name: memberLabel(member), picture: member.picture }
   const open = (e: React.MouseEvent): void => {
     if (e.type === 'contextmenu') e.preventDefault()
-    onOpen?.({ address: member.address, name: memberLabel(member), picture: member.picture }, e)
+    onOpen?.(user, e.clientX, e.clientY)
+  }
+  // Enter / Space open the card beside the row, as a click would.
+  const openFromKey = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    const r = e.currentTarget.getBoundingClientRect()
+    onOpen?.(user, r.right, r.top)
   }
   return (
-    <div className={styles.memberRow} role="button" tabIndex={0} aria-label={`View ${base}`} onClick={open} onContextMenu={open}>
+    <div className={styles.memberRow} role="button" tabIndex={0} aria-label={`View ${base}`} onClick={open} onContextMenu={open} onKeyDown={openFromKey}>
       <Avatar src={member.picture} name={base} color={color} size={40} framed status="online" dotPosition="top" />
       <div className={styles.memberInfo}>
         <MemberName member={member} />
@@ -279,7 +287,7 @@ function MembersOverlay({
 }: {
   members: NearbyMember[]
   speaking: ReadonlySet<string>
-  onOpen: (user: ChatUser, e: React.MouseEvent) => void
+  onOpen: (user: ChatUser, x: number, y: number) => void
   onBack: () => void
   onClose: () => void
 }): React.JSX.Element {
@@ -392,8 +400,11 @@ export function Chat({
   // and the first of them gets the NEW separator until they've been read and you leave the chat.
   const [unread, setUnread] = useState(0)
   const [newFrom, setNewFrom] = useState<number | null>(null)
-  const shownUnread = useRef(0)
-  if (unread > 0) shownUnread.current = unread
+  // The count stays on the button while it fades out after reaching the bottom.
+  const [shownUnread, setShownUnread] = useState(0)
+  useEffect(() => {
+    if (unread > 0) setShownUnread(unread)
+  }, [unread])
   const seenId = useRef(lastId)
   const heightBefore = useRef(0)
   useEffect(() => {
@@ -467,9 +478,9 @@ export function Chat({
   }
 
   // Profile viewer: clicking a name/avatar/@mention opens the shared profile card at the click.
-  const openProfile = useCallback((user: ChatUser, e: React.MouseEvent): void => {
+  const openProfile = useCallback((user: ChatUser, x: number, y: number): void => {
     setCardOpen(true)
-    openProfileCard(user.address, e.clientX, e.clientY, { onClose: () => setCardOpen(false) })
+    openProfileCard(user.address, x, y, { onClose: () => setCardOpen(false) })
   }, [])
   // The HUD passes fresh arrows each render; read them through refs so bubbles stay memoized.
   const handlers = useRef({ onTeleport, onVisitWorld })
@@ -512,7 +523,7 @@ export function Chat({
   }
 
   const replaceRange = (start: number, end: number, text: string): void => {
-    const next = (draft.slice(0, start) + text + draft.slice(end)).slice(0, MAX_LEN)
+    const next = [...(draft.slice(0, start) + text + draft.slice(end))].slice(0, MAX_LEN).join('')
     const caret = Math.min(start + text.length, next.length)
     setDraft(next)
     setSug(null)
@@ -629,31 +640,26 @@ export function Chat({
 
       {open && (
         <div ref={listRef} className={`${styles.messages} ${dim ? styles.dim : ''}`.trim()}>
-          {rows.length === 0 ? (
-            <div className={styles.empty}>No messages yet</div>
-          ) : (
-            rows.map((r) =>
-              r.kind === 'day' ? (
-                <DaySeparator key={r.id} ts={r.ts} />
-              ) : (
-                <Fragment key={r.line.id}>
-                  {r.line.id === newFrom && <NewSeparator />}
-                  <ChatBubble
-                    line={r.line}
-                    arrive={r.line.id >= liveFrom.current}
-                    members={chat.members}
-                    me={me}
-                    onOpenProfile={openProfile}
-                    onLocation={teleport}
-                    onVisitWorld={hasVisitWorld ? visitWorld : undefined}
-                  />
-                </Fragment>
-              )
+          {rows.map((r) =>
+            r.kind === 'day' ? (
+              <DaySeparator key={r.id} ts={r.ts} />
+            ) : (
+              <Fragment key={r.line.id}>
+                {r.line.id === newFrom && <NewSeparator />}
+                <ChatBubble
+                  line={r.line}
+                  arrive={r.line.id >= liveFrom.current}
+                  members={chat.members}
+                  me={me}
+                  onOpenProfile={openProfile}
+                  onLocation={teleport}
+                  onVisitWorld={hasVisitWorld ? visitWorld : undefined}
+                />
+              </Fragment>
             )
           )}
         </div>
       )}
-
 
       {active && picker && (
         <div ref={pickerRef} className={styles.pickerWrap}>
@@ -713,10 +719,11 @@ export function Chat({
             type="button"
             className={`${styles.toBottom} ${active && unread > 0 ? styles.toBottomShown : active ? styles.toBottomLeaving : ''}`.trim()}
             aria-label={`${unread} new messages`}
+            aria-hidden={!(active && unread > 0)}
             tabIndex={active && unread > 0 ? 0 : -1}
             onClick={scrollToBottom}
           >
-            {shownUnread.current > 9 ? '+9' : shownUnread.current}
+            {shownUnread > 9 ? '+9' : shownUnread}
           </button>
         )}
         <textarea
