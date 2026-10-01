@@ -92,13 +92,17 @@ pub async fn await_signin(request_id: &str, timeout: Duration) -> Result<String,
 /// A sign-in link on the command line, i.e. the OS launched us as the scheme handler for a login
 /// in progress.
 pub fn signin_link_arg() -> Option<String> {
-    std::env::args().skip(1).find(|arg| {
-        query(arg).is_some_and(|pairs| {
-            pairs
-                .iter()
-                .any(|(key, value)| key == "signin" && !value.is_empty())
+    // args_os: a non-utf8 argument is left for clap to report, not a panic here
+    std::env::args_os()
+        .skip(1)
+        .filter_map(|arg| arg.into_string().ok())
+        .find(|arg| {
+            query(arg).is_some_and(|pairs| {
+                pairs
+                    .iter()
+                    .any(|(key, value)| key == "signin" && !value.is_empty())
+            })
         })
-    })
 }
 
 /// Write `url` to the bridge file the way the launcher does, in one step so a poller never
