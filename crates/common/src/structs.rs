@@ -1777,6 +1777,7 @@ pub struct ServerConfiguration {
 #[serde(rename_all = "camelCase")]
 pub struct MapData {
     pub minimap_enabled: Option<bool>,
+    pub satellite_view: Option<system_api_types::SatelliteView>,
     pub sizes: Vec<Region>,
 }
 

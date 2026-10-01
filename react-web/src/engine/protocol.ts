@@ -7,7 +7,7 @@
 // Domain types mirror scene/src/bevy-api/interface.ts so the bridge scene can
 // forward SystemApi results verbatim.
 
-import type { Color3, SceneLoadingUi } from './generated'
+import type { Color3, SatelliteView, SceneLoadingUi } from './generated'
 
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
@@ -575,13 +575,13 @@ export interface PlayerPoseMessage {
   camYaw: number
 }
 
-/** Which realm we're in. `isWorld` distinguishes a World (worlds-content-server, or a
- *  `.eth` name) from Genesis City: Worlds have no satellite/parcel tiles, so the minimap
- *  forces the engine-rendered Camera style there. Pushed on change. */
+/** Which realm we're in. `satelliteView` is the satellite map the realm advertises in its
+ *  `/about` — only Genesis City does, so anywhere else (Worlds, local scenes) it is null and
+ *  the minimap forces the engine-rendered Camera style. Pushed on change. */
 export interface RealmInfoMessage {
   kind: 'realmInfo'
   realm: string
-  isWorld: boolean
+  satelliteView: SatelliteView | null
 }
 
 /** Title of the scene the player is standing in, for the minimap header. Resolved by parcel

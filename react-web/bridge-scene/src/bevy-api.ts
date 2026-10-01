@@ -19,6 +19,7 @@ import type {
   PermissionRequestEvent,
   ProfileChangedEvent,
   ProximityEvent,
+  SatelliteView,
   SceneLoadingUi,
   SetAvatarData,
   SetSinglePermission,
@@ -141,6 +142,9 @@ export type BevyApiInterface = {
    *  scene to reload — `/reload` uses `parcels`/`isSuper` to target the scene the player stands in,
    *  never the bridge. */
   liveSceneInfo: () => Promise<LiveSceneInfo[]>
+  /** The current realm's satellite map tiles (`configurations.map.satelliteView` in its
+   *  `/about`), null or undefined when it advertises none — only Genesis City realms do. */
+  getSatelliteView: () => Promise<SatelliteView | null | undefined>
   setAvatar: (data: SetAvatarData) => Promise<unknown>
   /** Any user's full deployed profile as the engine holds it (own, nearby and remote players,
    *  guests included), resolved through its profile cache and fetch cascade. Rejects once the

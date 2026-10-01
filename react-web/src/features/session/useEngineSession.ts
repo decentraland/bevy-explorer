@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import { hoverKey, proximityKey } from '../../engine/pointerKeys'
 import type { LoginDriver } from '../../engine/driver'
+import type { SatelliteView } from '../../engine/generated'
 import type { PreviewFocus } from '../../engine/protocol'
 import type { InteractableArea } from '../../lib/hudInset'
 import type { FatalError } from '../error/fatalError'
@@ -172,7 +173,7 @@ export interface MapState {
   open: boolean
   toggle: () => void
   teleport: (x: number, y: number) => void
-  /** Teleport to a Genesis City place: from inside a World the parcel carries the Genesis realm,
+  /** Teleport to a Genesis City place: from outside Genesis the parcel carries the Genesis realm,
    *  so the engine changes realm first. In Genesis already it is a plain teleport — a realm-carrying
    *  teleport is a full realm reconnect, like changeRealm, even to the realm the player is in. */
   teleportToPlace: (x: number, y: number) => void
@@ -195,9 +196,10 @@ export interface MinimapState {
    *  animates it from a RAF loop, and routing 20 updates/s through React state would
    *  re-render the whole HUD tree for a transform the DOM can apply directly. */
   pose: { current: PlayerPose }
-  /** True in a World. Worlds have no satellite/parcel tiles, so the minimap forces the
-   *  engine-rendered Camera style and hides the style picker. */
-  isWorld: boolean
+  /** The satellite map the realm advertises. Only Genesis City has one; null anywhere else
+   *  (Worlds, local scenes), where the minimap forces the engine-rendered Camera style and
+   *  hides the style picker. */
+  satelliteView: SatelliteView | null
   /** Title of the scene the player is standing in, for the header. Empty on an undeployed
    *  parcel (the header falls back to "Empty parcel"). Updates as the player crosses into
    *  another scene — unlike the entry overlay's title, which never does. */
@@ -680,7 +682,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [mapOpen, setMapOpen] = useState(false)
   // Minimap pose: a ref, not state — see MinimapState.pose for why.
   const poseRef = useRef<PlayerPose>({ x: 0, z: 0, yaw: 0, camYaw: 0 })
-  const [isWorld, setIsWorld] = useState(false)
+  const [satelliteView, setSatelliteView] = useState<SatelliteView | null>(null)
   const [sceneTitle, setSceneTitle] = useState('')
   const [placesOpen, setPlacesOpen] = useState(false)
   const [eventsOpen, setEventsOpen] = useState(false)
@@ -951,7 +953,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           )
           break
         case 'realmInfo':
-          setIsWorld(msg.isWorld)
+          setSatelliteView(msg.satelliteView)
           break
         case 'travelResult':
           if (msg.travelId !== travelSeq.current) break
@@ -1280,10 +1282,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const teleportToPlace = useCallback(
     (x: number, y: number) => {
-      if (isWorld) travel({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
+      if (!satelliteView) travel({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
       else driverRef.current?.send({ kind: 'teleport', x, y })
     },
-    [isWorld, travel]
+    [satelliteView, travel]
   )
   const setMinimapConfig = useCallback(
     (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => {
@@ -2050,8 +2052,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     [mapParcel, mapOpen, toggleMap, teleport, changeRealm, teleportToPlace]
   )
   const minimapSlice = useMemo(
-    () => ({ pose: poseRef, isWorld, sceneTitle, setConfig: setMinimapConfig }),
-    [isWorld, sceneTitle, setMinimapConfig]
+    () => ({ pose: poseRef, satelliteView, sceneTitle, setConfig: setMinimapConfig }),
+    [satelliteView, sceneTitle, setMinimapConfig]
   )
 
   return {

@@ -237,6 +237,18 @@ module.exports.setHomeScene = async function(args) {
     await Deno.core.ops.op_set_home_scene(args.realm, args.parcel)
 }
 
+// the current realm's `configurations.map.satelliteView`; null (native) or undefined (wasm)
+// when it has none
+// {
+//   version: string,
+//   baseUrl: string,
+//   suffixUrl: string,
+//   topLeftOffset: Vector2,
+// }
+module.exports.getSatelliteView = async function() {
+    return await Deno.core.ops.op_get_satellite_view()
+}
+
 // get system actions as a stream
 // type SystemAction = {
 //   action: string,

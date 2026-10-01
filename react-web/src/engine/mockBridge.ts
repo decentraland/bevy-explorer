@@ -413,7 +413,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     // No engine in mock mode, so no real pose stream: walk a slow circle near Genesis
     // Plaza at the same ~20/s cadence the real bridge uses, so the minimap has something
     // to follow, centre on, and rotate with. Genesis City, so the DOM tile styles apply.
-    reply({ kind: 'realmInfo', realm: 'https://realm-provider.decentraland.org/main', isWorld: false })
+    reply({ kind: 'realmInfo', realm: 'https://realm-provider.decentraland.org/main', satelliteView: { version: 'v1', baseUrl: 'https://genesis.city/map/latest', suffixUrl: '.jpg', topLeftOffset: { x: -2, y: -6 } } })
     // The real bridge resolves this per parcel from the live scene list; the mock circles
     // inside one scene, so a single push is the whole story.
     reply({ kind: 'sceneInfo', title: 'Genesis Plaza' })

@@ -51,24 +51,24 @@ describe('minimap prefs — defaults and validation', () => {
 
 describe('minimap prefs — open state per realm type', () => {
   it('defaults open in Genesis City and closed in a World', () => {
-    expect(loadOpen(false)).toBe(true)
-    expect(loadOpen(true)).toBe(false)
+    expect(loadOpen(true)).toBe(true)
+    expect(loadOpen(false)).toBe(false)
   })
 
   it('keeps the two realm types independent', () => {
-    saveOpen(false, false)
-    expect(loadOpen(false)).toBe(false)
+    saveOpen(true, false)
     expect(loadOpen(true)).toBe(false)
-    saveOpen(true, true)
-    expect(loadOpen(true)).toBe(true)
     expect(loadOpen(false)).toBe(false)
+    saveOpen(false, true)
+    expect(loadOpen(false)).toBe(true)
+    expect(loadOpen(true)).toBe(false)
   })
 
   it('falls back to the default on a hand-edited value', () => {
     localStorage.setItem('dcl-minimap-open', 'maybe')
     localStorage.setItem('dcl-minimap-open-world', '1')
-    expect(loadOpen(false)).toBe(true)
-    expect(loadOpen(true)).toBe(false)
+    expect(loadOpen(true)).toBe(true)
+    expect(loadOpen(false)).toBe(false)
   })
 })
 

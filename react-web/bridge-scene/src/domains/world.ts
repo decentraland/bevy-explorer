@@ -26,17 +26,6 @@ const POSE_EPSILON_DEG = 0.5
 const SCENE_POLL_INTERVAL = 0.3
 const SCENE_LOOKUP_ATTEMPTS = 3
 
-// A realm is a World (rather than Genesis City) when it's served by a worlds content server
-// or named like `foo.dcl.eth`. Worlds have no map tiles, so the minimap falls back to the
-// engine-rendered Camera style there and drops its Genesis City markers.
-//
-// The two checks are not redundant — they come from different fields, and either one alone
-// misses cases: a world reached by name (`?realm=welcomeguides.dcl.eth`) need not carry the
-// content server in its base url. Same pair bevy-ui-scene's realm-change check used.
-function realmIsWorld(baseUrl: string, realmName: string): boolean {
-  return baseUrl.includes('worlds-content-server') || realmName.endsWith('.eth')
-}
-
 // Echo a "DCL System" line into the React chat (empty sender → system member). Used to relay
 // slash-command feedback (/commands output, /reload status) that isn't broadcast to other players.
 function pushSystem(ctx: Ctx, message: string): void {
@@ -167,27 +156,30 @@ export function registerWorld(ctx: Ctx): void {
   let pendingParcel = ''
   let attempts = 0
 
-  // Realm kind → the minimap (Worlds have no map tiles). Poll ~2s, push on change.
+  // Realm → the minimap, with the satellite map it advertises: only Genesis City has one, so
+  // anywhere else (a World, a local scene) the minimap falls back to the engine-rendered Camera
+  // style and drops its Genesis City markers. Poll ~2s, push on change.
   let realmAcc = 2
   let lastRealm = ''
   ctx.push((dt) => {
     realmAcc += dt
     if (realmAcc < 2) return
     realmAcc = 0
-    getRealm({})
-      .then(({ realmInfo }) => {
+    Promise.all([getRealm({}), BevyApi.getSatelliteView()])
+      .then(([{ realmInfo }, satelliteViewOrNone]) => {
+        // "None" is null from the native runtime but undefined from the wasm one.
+        const satelliteView = satelliteViewOrNone ?? null
         const baseUrl = realmInfo?.baseUrl ?? ''
         const realmName = realmInfo?.realmName ?? ''
-        // Key on both, so a change in either field re-publishes.
-        const key = `${baseUrl}|${realmName}`
+        // Key on all three, so a change in any of them re-publishes.
+        const key = `${baseUrl}|${realmName}|${JSON.stringify(satelliteView)}`
         if (key === lastRealm) return
         lastRealm = key
-        const isWorld = realmIsWorld(baseUrl, realmName)
         // Only on change, so this is a handful of lines per session. Worth it: when the
         // minimap misreads a World the symptom (Genesis City markers on a world map) gives no
-        // hint which of the two fields didn't match.
-        console.log(`[world] realm baseUrl=${baseUrl} name=${realmName} isWorld=${String(isWorld)}`)
-        ctx.send({ kind: 'realmInfo', realm: realmName || baseUrl, isWorld })
+        // hint what the realm advertised.
+        console.log(`[world] realm baseUrl=${baseUrl} name=${realmName} satelliteView=${JSON.stringify(satelliteView)}`)
+        ctx.send({ kind: 'realmInfo', realm: realmName || baseUrl, satelliteView })
         // Every scene is replaced, but the player can land on the parcel they were already on
         // (a World spawns at 0,0), so the parcel guard alone would keep the old title forever.
         publishedParcel = ''

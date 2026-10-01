@@ -175,6 +175,11 @@ pub async fn op_get_home_scene(state: &WorkerContext) -> Result<JsValue, WasmErr
 }
 
 #[wasm_bindgen]
+pub async fn op_get_satellite_view(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_satellite_view(state.rc()).await)
+}
+
+#[wasm_bindgen]
 pub fn op_set_home_scene(state: &WorkerContext, realm: String, parcel: JsValue) {
     serde_parse!(parcel);
     dcl::js::system_api::op_set_home_scene(state.rc(), realm, parcel);
