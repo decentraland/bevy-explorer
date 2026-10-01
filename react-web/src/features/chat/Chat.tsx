@@ -226,7 +226,7 @@ export const ChatBubble = memo(function ChatBubble({
 function MemberName({ member }: { member: NearbyMember }): React.JSX.Element {
   const known = useProfile(member.address)
   const { base, tag } = splitName(memberLabel(member))
-  const claimed = member.claimed ?? known?.hasClaimedName === true
+  const claimed = member.name.trim() !== '' && (member.claimed ?? known?.hasClaimedName === true)
   return (
     <span className={styles.memberName} style={{ color: senderColor(member.address, memberLabel(member)) }}>
       {base}
@@ -236,11 +236,24 @@ function MemberName({ member }: { member: NearbyMember }): React.JSX.Element {
   )
 }
 
-export function MemberRow({ member, speaking = false }: { member: NearbyMember; speaking?: boolean }): React.JSX.Element {
+export function MemberRow({
+  member,
+  speaking = false,
+  onOpen
+}: {
+  member: NearbyMember
+  speaking?: boolean
+  /** Open this person's profile card at the click. */
+  onOpen?: (user: ChatUser, e: React.MouseEvent) => void
+}): React.JSX.Element {
   const { base } = splitName(memberLabel(member))
   const color = senderColor(member.address, memberLabel(member))
+  const open = (e: React.MouseEvent): void => {
+    if (e.type === 'contextmenu') e.preventDefault()
+    onOpen?.({ address: member.address, name: memberLabel(member), picture: member.picture }, e)
+  }
   return (
-    <div className={styles.memberRow}>
+    <div className={styles.memberRow} role="button" tabIndex={0} aria-label={`View ${base}`} onClick={open} onContextMenu={open}>
       <Avatar src={member.picture} name={base} color={color} size={40} framed status="online" dotPosition="top" />
       <div className={styles.memberInfo}>
         <MemberName member={member} />
@@ -261,11 +274,13 @@ export function MemberRow({ member, speaking = false }: { member: NearbyMember; 
 function MembersOverlay({
   members,
   speaking,
+  onOpen,
   onBack,
   onClose
 }: {
   members: NearbyMember[]
   speaking: ReadonlySet<string>
+  onOpen: (user: ChatUser, e: React.MouseEvent) => void
   onBack: () => void
   onClose: () => void
 }): React.JSX.Element {
@@ -288,7 +303,7 @@ function MembersOverlay({
         {members.length === 0 ? (
           <div className={styles.empty}>No one nearby</div>
         ) : (
-          members.map((m) => <MemberRow key={m.address} member={m} speaking={speaking.has(m.address.toLowerCase())} />)
+          members.map((m) => <MemberRow key={m.address} member={m} speaking={speaking.has(m.address.toLowerCase())} onOpen={onOpen} />)
         )}
       </div>
     </div>
@@ -324,7 +339,9 @@ export function Chat({
 
   const open = chat.open
   // "active" = the user is interacting → show the full solid panel + chrome.
-  const active = open && (hovered || focused || picker)
+  // A profile card opened from the chat keeps it active, so the view under the card stays put.
+  const [cardOpen, setCardOpen] = useState(false)
+  const active = open && (hovered || focused || picker || cardOpen)
   const bare = !active // collapsed or idle-open → borderless translucent input only
 
   // Lines already in the log when the list mounts are history; only later ones fade in.
@@ -438,7 +455,8 @@ export function Chat({
 
   // Profile viewer: clicking a name/avatar/@mention opens the shared profile card at the click.
   const openProfile = useCallback((user: ChatUser, e: React.MouseEvent): void => {
-    openProfileCard(user.address, e.clientX, e.clientY)
+    setCardOpen(true)
+    openProfileCard(user.address, e.clientX, e.clientY, { onClose: () => setCardOpen(false) })
   }, [])
   // The HUD passes fresh arrows each render; read them through refs so bubbles stay memoized.
   const handlers = useRef({ onTeleport, onVisitWorld })
@@ -565,7 +583,7 @@ export function Chat({
   return (
     <div
       ref={hudInsetRef}
-      className={`${styles.root} ${open ? styles.open : ''} ${active ? styles.active : ''} ${focused ? styles.focused : ''}`.trim()}
+      className={`${styles.root} ${open ? styles.open : ''} ${active ? styles.active : ''} ${focused ? styles.focused : ''} ${active && showMembers ? styles.membersOpen : ''}`.trim()}
       onClick={focusFromPanel}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -724,6 +742,7 @@ export function Chat({
         <MembersOverlay
           members={chat.members}
           speaking={chat.speaking}
+          onOpen={openProfile}
           onBack={() => setShowMembers(false)}
           onClose={() => {
             setShowMembers(false)

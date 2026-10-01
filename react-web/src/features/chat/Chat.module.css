@@ -464,7 +464,14 @@
   background-image: url('../../assets/chat/emoji-selected.png');
 }
 
-/* Members view: covers the panel with its own title bar and list. */
+/* Members view: covers the panel with its own title bar and list; the feed and input hide under it. */
+.membersOpen > .nav,
+.membersOpen .messages,
+.membersOpen .inputRow,
+.membersOpen .suggest,
+.membersOpen .pickerWrap {
+  visibility: hidden;
+}
 .membersPanel {
   position: absolute;
   inset: 0;
@@ -515,6 +522,9 @@
   padding: 0 10px;
   border-radius: var(--r-md);
   flex: none;
+}
+.memberRow {
+  cursor: pointer;
 }
 .memberRow:hover {
   background: var(--chat-hover);
