@@ -15,6 +15,7 @@ import { confirmUnblock } from './friendDialogs'
 import { openFriendRequest } from './FriendRequestPopup'
 import { useProfile } from '../session/profileStore'
 import { hudInsetRef } from '../../lib/hudInset'
+import { looksClaimed } from '../../engine/mention'
 import styles from './FriendsPanel.module.css'
 
 type Tab = 'friends' | 'requests' | 'blocked'
@@ -25,10 +26,6 @@ function label(name: string, address: string): string {
   return name.trim() ? name : shortAddr(address)
 }
 
-/** Claimed names (no #suffix, not a raw address) get the verified check. */
-function isClaimed(name: string): boolean {
-  return name.trim().length > 0 && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
-}
 
 
 interface Identity {
@@ -43,7 +40,7 @@ function colorOf(user: Identity & { name: string }): string {
 
 function NameLabel({ name, user, message }: { name: string; user: Identity; message?: boolean }): React.JSX.Element {
   const { base, tag } = splitName(label(name, user.address))
-  const claimed = user.claimed ?? isClaimed(name)
+  const claimed = user.claimed ?? looksClaimed(name)
   return (
     <span className={styles.name} style={{ color: colorOf({ ...user, name }) }}>
       {base}

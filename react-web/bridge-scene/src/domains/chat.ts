@@ -68,19 +68,21 @@ export function registerChat(ctx: Ctx): void {
   // it couldn't resolve is dropped, so the next tick asks again.
   const faces = new Map<string, string | undefined>()
   const claimed = new Map<string, boolean>()
-  let selfAsked = false
+  // Re-asked when the player's name changes, so claiming a name mid-session is picked up.
+  let selfAskedFor: string | null = null
   let acc = 3
   let lastKey = ''
   ctx.push((dt) => {
     acc += dt
     if (acc < 3) return
     acc = 0
-    const self = getPlayer()?.userId
-    if (!selfAsked && self != null) {
-      selfAsked = true
-      getPlayerData({ userId: self })
+    const me = getPlayer()
+    const selfKey = me?.userId != null ? `${me.userId}|${me.name}` : null
+    if (selfKey != null && selfKey !== selfAskedFor && me?.userId != null) {
+      selfAskedFor = selfKey
+      getPlayerData({ userId: me.userId })
         .then((res) => (selfClaimed = (res.data as { hasClaimedName?: boolean } | undefined)?.hasClaimedName === true))
-        .catch(() => (selfAsked = false))
+        .catch(() => (selfAskedFor = null))
     }
     const members: NearbyMember[] = []
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) {
@@ -93,7 +95,10 @@ export function registerChat(ctx: Ctx): void {
             faces.set(key, httpOrUndef(res.data?.avatar?.snapshots?.face256))
             claimed.set(key, (res.data as { hasClaimedName?: boolean } | undefined)?.hasClaimedName === true)
           })
-          .catch(() => faces.delete(key))
+          .catch(() => {
+            faces.delete(key)
+            claimed.delete(key)
+          })
       }
       members.push({
         address,
@@ -102,6 +107,10 @@ export function registerChat(ctx: Ctx): void {
         claimed: claimed.get(key)
       })
     }
+    // Forget players who left, so the caches don't grow for the whole session.
+    const present = new Set(members.map((m) => profileKey(m.address)))
+    for (const k of faces.keys()) if (!present.has(k)) faces.delete(k)
+    for (const k of claimed.keys()) if (!present.has(k)) claimed.delete(k)
     const key = members.map((m) => `${m.address}:${m.picture ?? ''}:${String(m.claimed)}`).sort().join(',')
     if (key === lastKey) return
     lastKey = key

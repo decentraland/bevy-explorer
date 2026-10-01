@@ -6,7 +6,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Avatar, VerifiedBadge } from '../../design'
-import { mentionName, shortAddr, splitName, userColor } from '../../lib/identity'
+import { shortAddr, splitName, userColor } from '../../lib/identity'
+import { looksClaimed, mentionName } from '../../engine/mention'
 import { peekProfile } from '../session/profileStore'
 import type { Relationship } from '../../lib/relationship'
 import styles from './ProfileCard.module.css'
@@ -66,9 +67,6 @@ function BlockIcon(): React.JSX.Element {
   )
 }
 
-function isClaimed(name: string): boolean {
-  return !!name && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
-}
 
 export type MenuContext = 'default' | 'friend' | 'request' | 'blocked'
 
@@ -222,7 +220,7 @@ export function ProfileCardPresentation({
             {base}
             {tag && <span className={styles.tag}>{tag}</span>}
           </span>
-          {isClaimed(user.name) && <VerifiedBadge size={16} />}
+          {looksClaimed(user.name) && <VerifiedBadge size={16} />}
           <CopyIcon />
         </button>
         {user.address && (

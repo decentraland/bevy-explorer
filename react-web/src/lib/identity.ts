@@ -68,6 +68,3 @@ export function splitName(label: string): { base: string; tag: string } {
   const i = label.indexOf('#')
   return i >= 0 ? { base: label.slice(0, i), tag: label.slice(i) } : { base: label, tag: '' }
 }
-
-
-export { looksClaimed, mentionName } from '../engine/mention'
