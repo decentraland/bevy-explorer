@@ -1,0 +1,57 @@
+.who {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.name {
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
+}
+.tag {
+  font-weight: var(--fw-regular);
+  color: var(--text-dim);
+}
+.mutuals {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: var(--type-12);
+  color: var(--text-dim);
+}
+.mutualFace + .mutualFace {
+  margin-left: -8px;
+}
+.message {
+  width: 100%;
+}
+.date {
+  text-align: center;
+  font-size: var(--type-12);
+  color: var(--ink-85);
+  margin-bottom: 8px;
+}
+.quote {
+  margin: 0;
+  font-size: var(--type-14);
+  color: var(--ink-85);
+  overflow-wrap: anywhere;
+}
+.warn {
+  margin: 8px 0 0;
+  font-size: var(--type-12);
+  color: var(--brand);
+  text-align: center;
+}
+.pair {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+.centerAvatar {
+  display: flex;
+  justify-content: center;
+}

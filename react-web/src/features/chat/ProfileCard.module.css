@@ -10,8 +10,8 @@
   flex-direction: column;
   padding: 1.25rem 0.75rem 0.75rem;
   border-radius: var(--r-card);
-  background: var(--panel, #18141a);
-  border: 1px solid var(--white-10, rgba(255, 255, 255, 0.08));
+  background: var(--panel);
+  border: 1px solid var(--menu-rim);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
   pointer-events: auto;
 }
@@ -22,8 +22,6 @@
   flex-direction: column;
   align-items: center;
   gap: 0.35rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--white-10, rgba(255, 255, 255, 0.08));
 }
 
 .copyRow {
@@ -60,36 +58,49 @@
 
 /* --- add friend CTA (design-system <Button>) ------------------------------- */
 /* Layout-only hook: the CTA fills the card width. */
-.ctaFull {
-  display: flex;
-  margin: 0.85rem 0.25rem 0.4rem;
-}
-/* Confirmation state after firing a friend request — non-interactive stand-in
-   for the pill Button it replaces. */
-.ctaSent {
+.cta {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0.85rem 0.25rem 0.4rem;
-  padding: 10px;
-  border-radius: var(--r-pill);
-  background: var(--fill-3);
-  color: var(--ink-7);
-  font-weight: 700;
-  font-size: var(--fs-sm);
-  letter-spacing: 0.02em;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  margin-top: 12px;
+  border: 1px solid transparent;
+  border-radius: var(--r-button);
+  font-family: inherit;
+  font-size: var(--type-13);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease;
 }
-
-/* Accept + Reject pair for an incoming friend request — design-system <Button>s. */
-.ctaRow {
-  display: flex;
-  gap: 0.5rem;
-  margin: 0.85rem 0.25rem 0.4rem;
+.ctaPrimary {
+  background: var(--brand);
 }
-/* Layout-only hook: each button fills its half regardless of label width. */
-.ctaHalf {
-  flex: 1 1 0;
-  min-width: 0;
+.ctaPrimary:hover {
+  background: var(--brand-strong);
+}
+.ctaFriend {
+  background: var(--black);
+}
+.ctaSent {
+  background: var(--black-40);
+  border-color: var(--ink-7);
+}
+.ctaFriend:hover,
+.ctaSent:hover {
+  border-color: var(--danger-strong);
+}
+.ctaHover,
+.cta:hover .ctaIdle {
+  display: none;
+}
+.cta:hover .ctaHover {
+  display: inline;
 }
 
 /* --- action list ---------------------------------------------------------- */
@@ -125,9 +136,9 @@
 }
 
 .divider {
-  height: 1px;
-  margin: 0.35rem 0;
-  background: var(--white-10, rgba(255, 255, 255, 0.08));
+  height: 20px;
+  margin: 0 -0.75rem;
+  background: linear-gradient(transparent 9.5px, var(--divider-strong) 9.5px, var(--divider-strong) 10.5px, transparent 10.5px);
 }
 
 .verified {

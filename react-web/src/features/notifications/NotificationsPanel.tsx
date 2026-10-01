@@ -5,7 +5,10 @@
 
 import { ControlButton } from '../../design'
 import type { AppNotification } from '../../engine/protocol'
-import type { NotificationsState } from '../session/useEngineSession'
+import type { FriendsState, NotificationsState } from '../session/useEngineSession'
+import { relationshipOf } from '../../lib/relationship'
+import { openPassport } from '../profile/Passport'
+import { openFriendRequest } from '../friends/FriendRequestPopup'
 import styles from './NotificationsPanel.module.css'
 
 function humanize(s: string): string {
@@ -92,10 +95,34 @@ function summarize(n: AppNotification): { title: string; body?: string; image?: 
   return { title: humanize(n.type), body: str(m, 'description', 'message', 'name'), image }
 }
 
-function NotificationRow({ n }: { n: AppNotification }): React.JSX.Element {
+/** Where a friendship notification leads: an existing friend opens the friends panel, a pending
+ *  request its popup, anything else the sender's passport. */
+function friendshipTarget(n: AppNotification, friends?: FriendsState): (() => void) | undefined {
+  if (!FRIENDSHIP_BODY[n.type]) return undefined
+  const address = nested(n.metadata, 'sender', 'address')
+  if (address == null) return undefined
+  if (n.type === 'social_service_friendship_request' && friends) {
+    const rel = relationshipOf(friends, address)
+    if (rel === 'friend') return () => { if (!friends.open) friends.toggle() }
+    if (rel === 'incoming') {
+      const req = friends.received.find((r) => r.address.toLowerCase() === address.toLowerCase())
+      return () => openFriendRequest('received', { address, name: req?.name ?? nested(n.metadata, 'sender', 'name') ?? '', picture: req?.picture, message: req?.message, createdAt: req?.createdAt })
+    }
+  }
+  return () => openPassport(address)
+}
+
+function NotificationRow({ n, friends }: { n: AppNotification; friends?: FriendsState }): React.JSX.Element {
   const { title, body, image } = summarize(n)
+  const onOpen = friendshipTarget(n, friends)
   return (
-    <div className={`${styles.row} ${n.read ? '' : styles.unread}`.trim()}>
+    <div
+      className={`${styles.row} ${n.read ? '' : styles.unread} ${onOpen ? styles.clickable : ''}`.trim()}
+      role={onOpen ? 'button' : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      onClick={onOpen}
+      onKeyDown={onOpen ? (e) => { if (e.key === 'Enter') onOpen() } : undefined}
+    >
       <div className={styles.thumb}>
         {image ? <img className={styles.img} src={image} alt="" /> : <span className={styles.dot} />}
       </div>
@@ -110,9 +137,12 @@ function NotificationRow({ n }: { n: AppNotification }): React.JSX.Element {
 }
 
 export function NotificationsPanel({
-  notifications
+  notifications,
+  friends
 }: {
   notifications: NotificationsState
+  /** Makes friendship notifications open the request, the friends panel or the passport. */
+  friends?: FriendsState
 }): React.JSX.Element | null {
   if (!notifications.open) return null
   return (
@@ -132,7 +162,7 @@ export function NotificationsPanel({
         {notifications.list.length === 0 ? (
           <div className={styles.empty}>You’re all caught up.</div>
         ) : (
-          notifications.list.map((n) => <NotificationRow key={n.id} n={n} />)
+          notifications.list.map((n) => <NotificationRow key={n.id} n={n} friends={friends} />)
         )}
       </div>
     </div>

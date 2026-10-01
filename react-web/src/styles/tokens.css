@@ -25,9 +25,21 @@
   --lavender: #c640cd; /* DCL/Lavender — secondary badge */
   --red: #ff0000; /* DCL/Red — blocked */
   --white-10: rgba(255, 255, 255, 0.1); /* DCL/White10% — dividers */
+  --divider-strong: rgba(255, 255, 255, 0.2); /* list section hairlines (friends) */
+  --panel-translucent: rgba(0, 0, 0, 0.72); /* see-through side panel over the world */
+  --panel-head: rgba(0, 0, 0, 0.55); /* header band layered on --panel-translucent */
+  --list-row-hover: rgba(255, 255, 255, 0.15); /* list row hover over --panel-translucent */
+  --row-action: rgba(255, 255, 255, 0.14); /* compact secondary action on a hovered row */
+  --row-action-hover: rgba(255, 255, 255, 0.24);
+  --row-menu-hover: rgba(255, 255, 255, 0.2);
+  --brand-strong: #f02148; /* compact primary hover */
+  --brand-pressed: #e41e43;
+  --menu-rim: #302d36; /* user menu popover rim */
+  --danger-strong: #ff0000; /* destructive hover outline (remove friend / cancel request) */
+  --black-40: rgba(0, 0, 0, 0.4);
 
   /* status */
-  --online: var(--green);
+  --online: #57df41;
   --away: #ffa25a;
   --offline: #a09ba8;
   --error: #ff2424;
@@ -188,6 +200,7 @@
   --r-xl: 24px;
 
   --type-9: 9px;
+  --type-11: 11px;
   --type-12: 12px;
   --type-13: 13px;
   --type-14: 14px;

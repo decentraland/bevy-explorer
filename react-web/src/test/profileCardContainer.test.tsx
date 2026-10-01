@@ -3,14 +3,16 @@ import { render, screen, act, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ProfileCard, openProfileCard } from '../features/profileCard/ProfileCard'
 import { openPassport } from '../features/profile/Passport'
+import { openFriendRequest } from '../features/friends/FriendRequestPopup'
 import { SessionProvider } from '../features/session/SessionContext'
 import { fakeSession } from './harness'
 import { seedProfiles } from '../features/session/profileStore'
 import { PopupHost, resetPopups } from '../design'
 import type { EngineSession } from '../features/session/useEngineSession'
 
-// View Passport opens the passport popup; stub it so we can assert the trigger.
+// View Profile opens the passport popup, Add Friend the request popup; stub both to assert the trigger.
 vi.mock('../features/profile/Passport', () => ({ openPassport: vi.fn() }))
+vi.mock('../features/friends/FriendRequestPopup', () => ({ openFriendRequest: vi.fn() }))
 
 // COMPONENT: the smart <ProfileCard userId> resolves name/picture from the profile store and the
 // relationship from the session, and renders the presentational card; openProfileCard mounts it as a popup.
@@ -36,9 +38,8 @@ describe('ProfileCard container — resolution', () => {
     })
     expect(screen.getByText('Alice')).toBeTruthy()
     expect(document.querySelector('img')?.getAttribute('src')).toBe('alice.png')
-    // incoming relationship → Accept / Reject CTA
-    expect(screen.getByText(/accept/i)).toBeTruthy()
-    expect(screen.getByText(/reject/i)).toBeTruthy()
+    // incoming relationship → Accept Friend
+    expect(screen.getByRole('button', { name: 'Accept Friend' })).toBeTruthy()
   })
 
   it('resolves an address however the store learned it — here from a friends-list seed', () => {
@@ -64,10 +65,10 @@ describe('ProfileCard container — action wiring', () => {
     seedProfiles([{ address: '0xabc', name: 'Alice' }]) // relationship none → ADD FRIEND
   }
 
-  it('ADD FRIEND fires the session friend action', async () => {
-    const s = renderWithSession(card('0xabc'), asAlice)
-    await userEvent.click(screen.getByRole('button', { name: /ADD FRIEND/i }))
-    expect(s.friends.act).toHaveBeenCalledWith('request', '0xabc')
+  it('Add Friend opens the send-request popup for the user', async () => {
+    renderWithSession(card('0xabc'), asAlice)
+    await userEvent.click(screen.getByRole('button', { name: /Add Friend/i }))
+    expect(openFriendRequest).toHaveBeenCalledWith('send', expect.objectContaining({ address: '0xabc' }))
   })
 
   it('Mention fires session.chat.mention', async () => {
@@ -76,9 +77,9 @@ describe('ProfileCard container — action wiring', () => {
     expect(s.chat.mention).toHaveBeenCalledWith('Alice')
   })
 
-  it('View Passport opens the passport popup for the user', async () => {
+  it('View Profile opens the passport popup for the user', async () => {
     renderWithSession(card('0xabc'), asAlice)
-    await userEvent.click(screen.getByRole('button', { name: /View Passport/i }))
+    await userEvent.click(screen.getByRole('button', { name: /View Profile/i }))
     expect(openPassport).toHaveBeenCalledWith('0xabc')
   })
 
@@ -91,8 +92,9 @@ describe('ProfileCard container — action wiring', () => {
       asAlice
     )
     await userEvent.click(screen.getByRole('button', { name: 'Block' }))
-    const confirm = screen.getByText('Block Alice?').closest('[role="dialog"]') as HTMLElement
-    await userEvent.click(within(confirm).getByRole('button', { name: 'Block' }))
+    const confirm = screen.getByText('Are you sure you want to block Alice?').closest('[role="dialog"]') as HTMLElement
+    await userEvent.click(within(confirm).getByRole('button', { name: 'BLOCK' }))
+    await vi.waitFor(() => expect(s.friends.act).toHaveBeenCalled())
     expect(s.friends.act).toHaveBeenCalledWith('block', '0xabc')
   })
 })

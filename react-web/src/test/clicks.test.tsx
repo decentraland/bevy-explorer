@@ -7,6 +7,10 @@ import { FriendsPanel } from '../features/friends/FriendsPanel'
 import { EmotesWheel } from '../features/emotes/EmotesWheel'
 import type { EngineSession, FriendsState } from '../features/session/useEngineSession'
 import { fakeSession } from './harness'
+import { openFriendRequest } from '../features/friends/FriendRequestPopup'
+
+vi.mock('../features/friends/FriendRequestPopup', () => ({ openFriendRequest: vi.fn() }))
+vi.mock('../features/friends/friendDialogs', () => ({ confirmUnblock: vi.fn(async () => true) }))
 
 // CLICK coverage: render the real components and assert each click invokes the
 // session method. Tier 1 proves every method posts the right wire message, so
@@ -110,7 +114,7 @@ describe('friends panel action clicks', () => {
     const friends = renderPanel({ received: [{ address: '0xr', name: 'R', id: 'r1' }] })
     await userEvent.click(screen.getByRole('tab', { name: /Requests/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Accept' }))
-    expect(vi.mocked(friends.act)).toHaveBeenCalledWith('accept', '0xr')
+    expect(vi.mocked(openFriendRequest)).toHaveBeenCalledWith('accept', expect.objectContaining({ address: '0xr' }))
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
     expect(vi.mocked(friends.act)).toHaveBeenCalledWith('reject', '0xr')
   })
@@ -126,7 +130,7 @@ describe('friends panel action clicks', () => {
     const friends = renderPanel({ blocked: ['0xb'] })
     await userEvent.click(screen.getByRole('tab', { name: /Blocked/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Unblock' }))
-    expect(vi.mocked(friends.act)).toHaveBeenCalledWith('unblock', '0xb')
+    await vi.waitFor(() => expect(vi.mocked(friends.act)).toHaveBeenCalledWith('unblock', '0xb'))
   })
 })
 

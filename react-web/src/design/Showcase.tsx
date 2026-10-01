@@ -207,6 +207,8 @@ export function Showcase(): React.JSX.Element {
         </div>
         <div style={{ ...row, marginTop: 12 }}>
           <Button size="sm">Small</Button>
+          <Button size="row">Row</Button>
+          <Button size="row" variant="secondary">Row</Button>
           <Button size="md">Medium</Button>
           <Button size="lg">Large</Button>
         </div>
@@ -277,6 +279,7 @@ export function Showcase(): React.JSX.Element {
           <ControlButton shape="pill">＋ Pill</ControlButton>
           <ControlButton active aria-label="active">✓</ControlButton>
           <ControlButton size="sm" aria-label="small">✕</ControlButton>
+          <ControlButton size="lg" aria-label="large">✕</ControlButton>
         </div>
       </Section>
 

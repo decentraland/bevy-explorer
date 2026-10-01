@@ -41,6 +41,16 @@
   font-size: var(--fs-md);
   padding: 13px 30px;
 }
+/* compact action inside a list row (friend requests, blocked users) */
+.row {
+  height: 30px;
+  min-width: 60px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--type-11);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+}
 
 /* variants */
 .primary {
@@ -127,4 +137,20 @@
   100% {
     transform: scale(1);
   }
+}
+
+.row.secondary {
+  background: var(--row-action);
+}
+.row.secondary:hover:not(:disabled) {
+  background: var(--row-action-hover);
+}
+.row.primary:hover:not(:disabled) {
+  background: var(--brand-strong);
+}
+.row.primary:active:not(:disabled) {
+  background: var(--brand-pressed);
+}
+.row:active:not(:disabled) {
+  transform: none;
 }

@@ -81,3 +81,7 @@
 .wrap:hover .rail.right {
   transform: translate(18px, -50%);
 }
+.rail.top,
+.wrap:hover .rail.top {
+  transform: translate(-50%, -4px);
+}

@@ -3,7 +3,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Avatar } from '../../design'
-import { nameColor, shortAddr } from '../../lib/identity'
+import { shortAddr } from '../../lib/identity'
+import { knownUserColor } from '../session/profileStore'
 import styles from './ProfileChip.module.css'
 
 function Verified(): React.JSX.Element {
@@ -92,7 +93,7 @@ export function ProfileChip({
     )
   }
 
-  const color = nameColor(address ?? name)
+  const color = knownUserColor(address ?? '', name)
   return (
     <div className={styles.root} ref={ref}>
       <button type="button" className={styles.chip} onClick={() => setOpen((o) => !o)}>

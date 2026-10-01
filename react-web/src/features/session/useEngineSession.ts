@@ -13,6 +13,8 @@ import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { checkRealm, realmCheckMessage } from '../../lib/realmCheck'
 import { color3ToHex, hexToColor3 } from '../../lib/color'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
+import { emitFriendEvent } from '../friends/friendEvents'
+import { toastFriendOnline, toastFriendResult } from '../friends/friendToasts'
 import { bootMode } from '../../lib/bootMode'
 import { isCancelKey, isEditableTarget, setBindingsSnapshot, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { dispatchCancelLayer } from '../../lib/cancelLayers'
@@ -33,6 +35,7 @@ import type {
   CommunityAction,
   CommunityDetailMessage,
   Emote,
+  BlockedUser,
   Friend,
   FriendAction,
   FriendRequest,
@@ -312,12 +315,27 @@ export interface FriendsState {
   received: FriendRequest[]
   sent: FriendRequest[]
   blocked: string[]
+  /** The blocked accounts with their profiles (display); `blocked` stays the address set. */
+  blockedUsers: BlockedUser[]
+  /** Signed in, social service still starting. */
+  loading: boolean
   open: boolean
   toggle: () => void
   /* TODO: split domain data (queries) from commands — act/toggle don't belong in "State".
    Expose commands as an imperative service/context (like the popup service), not prop-drilled. (#18) */
   /** accept/reject/cancel/delete/block/unblock a user (guest-disabled in-engine). */
-  act: (op: FriendAction, address: string) => void
+  act: (op: FriendAction, address: string, message?: string) => void
+  /** In-flight actions as `op:address` (lowercase). */
+  pending: ReadonlySet<string>
+  /** Mutual friends by lowercase address, filled by loadMutuals. */
+  mutuals: Record<string, MutualFriend[]>
+  loadMutuals: (address: string) => void
+}
+
+export interface MutualFriend {
+  address: string
+  name: string
+  picture?: string
 }
 
 export interface PermissionsState {
@@ -601,8 +619,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     received: FriendRequest[]
     sent: FriendRequest[]
     blocked: string[]
-  }>({ available: false, friends: [], received: [], sent: [], blocked: [] })
+    blockedUsers: BlockedUser[]
+    loading: boolean
+  }>({ available: false, friends: [], received: [], sent: [], blocked: [], blockedUsers: [], loading: false })
   const [friendsOpen, setFriendsOpen] = useState(false)
+  // In-flight friend actions as `op:address`, so their buttons disable until the service answers.
+  const [friendPending, setFriendPending] = useState<ReadonlySet<string>>(new Set())
+  const [mutualFriends, setMutualFriends] = useState<Record<string, MutualFriend[]>>({})
   const [settings, setSettings] = useState<Setting[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   // The binding table lives in the bindingLabels external store (leaf components — menu bar,
@@ -760,13 +783,33 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'menuVisibility':
           setMenuOpen(msg.open)
           break
+        case 'friendActionDone':
+        case 'friendActionFailed': {
+          const ok = msg.kind === 'friendActionDone'
+          setFriendPending((prev) => {
+            const next = new Set(prev)
+            next.delete(`${msg.op}:${msg.address.toLowerCase()}`)
+            return next
+          })
+          emitFriendEvent({ op: msg.op, address: msg.address, ok })
+          toastFriendResult(msg.op, msg.address, ok)
+          break
+        }
+        case 'mutualFriends':
+          setMutualFriends((prev) => ({ ...prev, [msg.address.toLowerCase()]: msg.friends }))
+          break
+        case 'friendOnline':
+          toastFriendOnline(msg.address)
+          break
         case 'friends':
           setFriendsData({
             available: msg.available,
             friends: msg.friends,
             received: msg.received,
             sent: msg.sent,
-            blocked: msg.blocked
+            blocked: msg.blocked,
+            blockedUsers: msg.blockedUsers ?? [],
+            loading: msg.loading === true
           })
           seedProfiles([...msg.friends, ...msg.received, ...msg.sent])
           break
@@ -1566,8 +1609,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     [profile, ownedNames]
   )
   const dismissProfileSaveError = useCallback(() => setProfileSaveError(null), [])
-  const friendAct = useCallback((op: FriendAction, address: string) => {
-    driverRef.current?.send({ kind: 'friendAction', op, address })
+  const friendAct = useCallback((op: FriendAction, address: string, message?: string) => {
+    setFriendPending((prev) => new Set(prev).add(`${op}:${address.toLowerCase()}`))
+    driverRef.current?.send({ kind: 'friendAction', op, address, message })
+  }, [])
+  const loadMutualFriends = useCallback((address: string) => {
+    driverRef.current?.send({ kind: 'getMutualFriends', address })
   }, [])
   const settingSet = useCallback((name: string, value: number) => {
     driverRef.current?.send({ kind: 'setSetting', name, value })
@@ -2040,9 +2087,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       received: friendsData.received,
       sent: friendsData.sent,
       blocked: friendsData.blocked,
+      blockedUsers: friendsData.blockedUsers,
+      loading: friendsData.loading,
       open: friendsOpen,
       toggle: toggleFriends,
-      act: friendAct
+      act: friendAct,
+      pending: friendPending,
+      mutuals: mutualFriends,
+      loadMutuals: loadMutualFriends
     },
     settings: { list: settings, open: settingsOpen, toggle: toggleSettings, set: settingSet, load: loadSettings },
     bindings: { list: bindings, set: bindingsSet, reset: bindingsReset, capture: captureBinding },

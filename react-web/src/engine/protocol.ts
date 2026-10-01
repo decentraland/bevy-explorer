@@ -132,6 +132,7 @@ export type PageToScene =
   | ConsoleCommandRequest
   | NavActionRequest
   | FriendActionRequest
+  | GetMutualFriendsRequest
   | GetSettingsRequest
   | SetSettingRequest
   | GetBindingsRequest
@@ -274,6 +275,19 @@ export interface Friend {
   name: string
   picture?: string
   status: FriendStatus
+  /** From the social service: a claimed name shows the verified badge instead of a #tag. */
+  claimed?: boolean
+  /** The user's chosen name colour (0..1 channels). */
+  nameColor?: { r: number; g: number; b: number }
+}
+
+/** A blocked account with the profile the social service resolved for it. */
+export interface BlockedUser {
+  address: string
+  name: string
+  picture?: string
+  claimed?: boolean
+  nameColor?: { r: number; g: number; b: number }
 }
 
 /** Mirrors the scene's FriendRequestData. */
@@ -281,6 +295,8 @@ export interface FriendRequest {
   address: string
   name: string
   picture?: string
+  claimed?: boolean
+  nameColor?: { r: number; g: number; b: number }
   message?: string
   id: string
   createdAt?: number
@@ -296,6 +312,9 @@ export interface FriendsMessage {
   sent: FriendRequest[]
   /** Blocked addresses (names/avatars not resolved here). */
   blocked: string[]
+  blockedUsers?: BlockedUser[]
+  /** Signed in but the social service hasn't initialised yet (vs a guest, who never gets it). */
+  loading?: boolean
 }
 
 /** Friends social action (page → scene → BevyApi.social.*). Guest-disabled. */
@@ -305,6 +324,41 @@ export interface FriendActionRequest {
   kind: 'friendAction'
   op: FriendAction
   address: string
+  /** Intro text sent with a friend request (≤140 chars). */
+  message?: string
+}
+
+/** The social service accepted a friend action (scene → page). */
+export interface FriendActionDoneMessage {
+  kind: 'friendActionDone'
+  op: FriendAction
+  address: string
+}
+
+/** Mutual friends with `address` (page → scene), answered by MutualFriendsMessage. */
+export interface GetMutualFriendsRequest {
+  kind: 'getMutualFriends'
+  address: string
+}
+
+export interface MutualFriendsMessage {
+  kind: 'mutualFriends'
+  address: string
+  friends: { address: string; name: string; picture?: string }[]
+}
+
+/** A friend came online after startup (scene → page), for the "is online" toast. */
+export interface FriendOnlineMessage {
+  kind: 'friendOnline'
+  address: string
+}
+
+/** The social service rejected a friend action (scene → page). */
+export interface FriendActionFailedMessage {
+  kind: 'friendActionFailed'
+  op: FriendAction
+  address: string
+  error: string
 }
 
 /** Mirrors the engine's ExplorerSetting (BevyApi.getSettings). A setting is a
@@ -349,6 +403,8 @@ export interface Profile {
   name: string
   picture?: string
   hasClaimedName: boolean
+  /** The chosen name colour (claimed names only), 0–1 channels. */
+  nameColor?: { r: number; g: number; b: number }
   isGuest: boolean
   /** The deployed profile's version, when this came from the engine; compared against
    *  `profileChanged` to tell a stale copy from a current one. */
@@ -1206,6 +1262,10 @@ export type SceneToPage =
   | MembersMessage
   | MenuVisibilityMessage
   | FriendsMessage
+  | FriendActionFailedMessage
+  | FriendActionDoneMessage
+  | MutualFriendsMessage
+  | FriendOnlineMessage
   | SettingsMessage
   | BindingsMessage
   | InputCapturedMessage

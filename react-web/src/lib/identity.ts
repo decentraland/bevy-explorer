@@ -2,6 +2,9 @@
 // the chat, members, and friends UIs so the rarity-colored naming is consistent.
 
 import { serviceUrl } from './baseDomain'
+import { resolveNameColor, userNameColor, type Rgb } from '../engine/nameColor'
+
+export { userNameColor }
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{6,}$/
 
@@ -47,6 +50,16 @@ function hash(s: string): number {
 
 export function nameColor(seed: string): string {
   return RARITY[hash(seed) % RARITY.length]
+}
+
+/** A claimed name has no #suffix and isn't a raw address. */
+export function looksClaimed(name: string): boolean {
+  return name.trim().length > 0 && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
+}
+
+/** The colour a person's name and avatar are drawn in, everywhere in the HUD. */
+export function userColor(address: string, name: string, claimed?: boolean, custom?: Rgb | null): string {
+  return resolveNameColor(name, address, claimed ?? looksClaimed(name), custom)
 }
 
 export function shortAddr(s: string): string {

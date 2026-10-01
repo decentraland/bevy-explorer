@@ -28,9 +28,14 @@
   width: 30px;
   height: 30px;
 }
+.lg {
+  width: 32px;
+  height: 32px;
+}
 /* pill grows to fit a label/value, keeping the size's height */
 .pill.sm,
-.pill.md {
+.pill.md,
+.pill.lg {
   width: auto;
   padding: 0 10px;
 }
