@@ -33,11 +33,19 @@ pub fn handler() -> Handler {
 }
 
 /// The desktop file for this binary. Inside an AppImage `current_exe()` is the transient FUSE
-/// mount: the runtime exports the real path, and the bundled libraries are found by rpath. A dev
-/// build (or the tarball, run with `LD_LIBRARY_PATH=.`) finds libcef through LD_LIBRARY_PATH,
-/// which the browser's environment lacks, so it is baked in with absolute entries.
+/// mount: the runtime exports the real path, and the bundled libraries are found by rpath. The
+/// runtime's variables are inherited by everything it starts, so they only count when we are
+/// actually running from its mount. A dev build (or the tarball, run with `LD_LIBRARY_PATH=.`)
+/// finds libcef through LD_LIBRARY_PATH, which the browser's environment lacks, so it is baked in
+/// with absolute entries.
 pub fn registration() -> Result<String, anyhow::Error> {
-    let (exe, env) = match std::env::var_os("APPIMAGE") {
+    let exe = std::env::current_exe()?;
+    let appimage = std::env::var_os("APPIMAGE").filter(|_| {
+        std::env::var_os("APPDIR")
+            .and_then(|dir| std::fs::canonicalize(dir).ok())
+            .is_some_and(|dir| exe.starts_with(dir))
+    });
+    let (exe, env) = match appimage {
         Some(path) => (PathBuf::from(path), String::new()),
         None => {
             let env = match std::env::var_os("LD_LIBRARY_PATH") {
@@ -47,7 +55,7 @@ pub fn registration() -> Result<String, anyhow::Error> {
                 }
                 None => String::new(),
             };
-            (std::env::current_exe()?, env)
+            (exe, env)
         }
     };
     Ok(format!(
