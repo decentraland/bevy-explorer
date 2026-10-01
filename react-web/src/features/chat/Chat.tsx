@@ -99,7 +99,7 @@ function CharRing({ len }: { len: number }): React.JSX.Element {
   const color = pct >= 0.8 ? 'var(--brand)' : pct >= 0.5 ? 'var(--counter-half)' : 'var(--green)'
   return (
     <svg className={styles.ring} width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
-      <circle cx="11" cy="11" r={r} fill="none" stroke="var(--ink-66)" strokeWidth="2" />
+      <circle cx="11" cy="11" r={r} fill="none" stroke="var(--ink-65)" strokeWidth="2" />
       <circle
         cx="11"
         cy="11"
