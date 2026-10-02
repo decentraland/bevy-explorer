@@ -43,16 +43,9 @@ describe('chat chrome clicks', () => {
 describe('emoji picker', () => {
   it('picking an emoji calls onPick with the glyph', async () => {
     const onPick = vi.fn()
-    render(<EmojiPicker onPick={onPick} onClose={vi.fn()} />)
+    render(<EmojiPicker onPick={onPick} />)
     const first = EMOJI_GROUPS[0].emojis[0]
     await userEvent.click(screen.getAllByTitle(first.expression)[0])
     expect(onPick).toHaveBeenCalledWith(first.emoji)
-  })
-
-  it('close button fires onClose', async () => {
-    const onClose = vi.fn()
-    render(<EmojiPicker onPick={vi.fn()} onClose={onClose} />)
-    await userEvent.click(screen.getByTitle('Close'))
-    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

@@ -5,8 +5,10 @@
 // View Passport · Mention · Block/Unblock.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Avatar } from '../../design'
+import { Avatar, VerifiedBadge } from '../../design'
 import { shortAddr, splitName, userColor } from '../../lib/identity'
+import { looksClaimed, mentionName } from '../../engine/mention'
+import { peekProfile } from '../session/profileStore'
 import type { Relationship } from '../../lib/relationship'
 import styles from './ProfileCard.module.css'
 
@@ -20,20 +22,6 @@ export interface ChatUser {
   nameColor?: { r: number; g: number; b: number }
 }
 
-function Verified(): React.JSX.Element {
-  return (
-    <svg className={styles.verified} viewBox="0 0 16 16" aria-label="verified">
-      <defs>
-        <linearGradient id="pmv" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ff2d55" />
-          <stop offset="1" stopColor="#c640cd" />
-        </linearGradient>
-      </defs>
-      <path d="M8 1l1.7 1.2 2.1-.2 1 1.8 1.9.9-.5 2 .9 1.9-1.6 1.4.1 2.1-2 .6-1.1 1.8-2-.7-2 .7-1.1-1.8-2-.6.1-2.1L1.6 8.6l.9-1.9-.5-2 1.9-.9 1-1.8 2.1.2z" fill="url(#pmv)" />
-      <path d="M5.5 8l1.7 1.7L10.8 6" stroke="#fff" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
 function CopyIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
@@ -79,9 +67,6 @@ function BlockIcon(): React.JSX.Element {
   )
 }
 
-function isClaimed(name: string): boolean {
-  return !!name && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
-}
 
 export type MenuContext = 'default' | 'friend' | 'request' | 'blocked'
 
@@ -235,7 +220,7 @@ export function ProfileCardPresentation({
             {base}
             {tag && <span className={styles.tag}>{tag}</span>}
           </span>
-          {isClaimed(user.name) && <Verified />}
+          {looksClaimed(user.name) && <VerifiedBadge size={16} />}
           <CopyIcon />
         </button>
         {user.address && (
@@ -263,7 +248,7 @@ export function ProfileCardPresentation({
           ) : (
             <>
               {showMention && (
-                <button type="button" className={styles.row} onClick={() => { onMention?.(base); onClose() }}>
+                <button type="button" className={styles.row} onClick={() => { onMention?.(mentionName(user.name, user.address, peekProfile(user.address)?.hasClaimedName)); onClose() }}>
                   <MentionIcon />
                   <span>Mention</span>
                 </button>
