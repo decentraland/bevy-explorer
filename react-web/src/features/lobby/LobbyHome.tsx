@@ -8,7 +8,7 @@ import logo from '../../assets/lobby/logo.png'
 import mouseLeft from '../../assets/lobby/mouse-left.png'
 import notificationsIcon from '../../assets/lobby/notifications.png'
 import { Avatar, Close, HeaderButton, MaskIcon, Rail } from '../../design'
-import { FLOOR, backdropRect, floorShadeGradient } from '../../engine/lobbyStage'
+import { BACKDROP_EDGE_FADE, FLOOR, backdropRect, floorShadeGradient } from '../../engine/lobbyStage'
 import { userColor } from '../../lib/identity'
 import { EngineViewport } from '../engine/EngineViewport'
 import { useStoredProfile } from '../login/useStoredProfile'
@@ -71,6 +71,10 @@ function StandInStage({ hidden, body }: { hidden: boolean; body?: string }): Rea
   return (
     <div ref={ref} className={`${styles.standIn} ${hidden ? styles.standInHidden : ''}`.trim()} style={{ background: FLOOR_COLOR }} aria-hidden="true">
       <img className={styles.standInBackdrop} src={backdrop} alt="" style={rect} />
+      <div
+        className={styles.standInEdge}
+        style={{ top: rect.top + rect.height - BACKDROP_EDGE_FADE, height: BACKDROP_EDGE_FADE, background: `linear-gradient(to bottom, transparent, ${FLOOR_COLOR})` }}
+      />
       <div className={styles.standInShade} style={{ background: FLOOR_SHADE }} />
       <img className={styles.standInVignette} src={vignette} alt="" />
       {body && <img className={styles.standInAvatar} src={body} alt="" draggable={false} />}

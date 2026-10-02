@@ -63,7 +63,7 @@ each domain. Config: `playwright.visual.config.ts` (headless, 1600×900, `maxDif
 - **Animations disabled** at capture time; **fixed viewport + `deviceScaleFactor: 1`**.
 
 **Domains covered** (one baseline each, in `e2e/visual.spec.ts-snapshots/`):
-`showcase` · `login-fresh` · `login-welcome` · `mobile-gate` · `browser-gate` · `gpu-gate` ·
+`showcase` · `login-fresh` · `login-welcome` · `lobby` · `mobile-gate` · `browser-gate` · `gpu-gate` ·
 `engine-error` · `realm-error` · `world-hud` · `profile-card` · `passport` · `hover-tooltips` ·
 `permission-dialog` · `community-modal` · `community-create-modal` ·
 `panel-friends` · `panel-settings` · `panel-settings-keybindings` · `panel-profile` ·
@@ -142,6 +142,11 @@ these by hand (or have an agent drive the Chrome extension against a live world)
       hidden in first person.
 - [ ] **Crosshair** shows when the camera is locked (mouse hidden) and hides when the cursor is free.
 - [ ] **Hover / proximity prompts** ("Press E…") show on interactables and sit on the right entity.
+- [ ] **Lobby stage** (`bridge-scene/src/domains/avatarPreview.tsx`, lobby region): after sign-in the
+      page's stand-in (backdrop + snapshot) crossfades to the engine stage with the live avatar centred;
+      Customize opens the Backpack modal with the avatar through its hole and hands the stage back on
+      close; Jump In loads the world (the hold is released) and a failed trip returns to the lobby.
+      The `lobby` baseline only shows the stand-in (mock has no engine).
 
 ---
 

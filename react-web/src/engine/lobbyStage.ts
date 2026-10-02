@@ -14,6 +14,9 @@ export function backdropRect(width: number, height: number): { left: number; top
   return { left: (width - w) / 2, top: height * BACKDROP_TOP, width: w, height: h }
 }
 
+/** How far above the backdrop's bottom edge it fades into the floor, so the edge never shows. */
+export const BACKDROP_EDGE_FADE = 48
+
 /** The floor's colour (0–255) and how much it covers the backdrop, by screen height. */
 export const FLOOR = { r: 37, g: 5, b: 3 }
 export const FLOOR_SHADE_STOPS: ReadonlyArray<readonly [number, number]> = [

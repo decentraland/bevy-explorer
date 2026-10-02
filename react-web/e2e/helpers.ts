@@ -142,8 +142,10 @@ export async function enterAsGuest(page: Page): Promise<void> {
   await installBridgeSpy(page)
   await page.goto(APP_URL)
   await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click({ timeout: 90000 })
-  // Entry now goes through the destination picker — skip to home (default spawn → Genesis Plaza on a fresh profile).
-  await page.getByRole('button', { name: /SKIP TO HOME/i }).click({ timeout: 60000 })
+  // Entry goes through the lobby: its landing card's JUMP IN goes home (Genesis Plaza on a fresh
+  // profile), enabled once sign-in has finished.
+  await page.getByRole('heading', { name: /Welcome/ }).waitFor({ timeout: 120000 })
+  await page.getByRole('button', { name: /^jump in$/i }).first().click({ timeout: 120000 })
   // World-ready: the React sidebar nav mounts once phase === 'world'.
   await page.waitForSelector('nav[aria-label="Main navigation"]', { timeout: 360000 })
 }

@@ -32,6 +32,11 @@
   position: absolute;
   object-fit: fill;
 }
+.standInEdge {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
 .standInShade,
 .standInVignette {
   position: absolute;
