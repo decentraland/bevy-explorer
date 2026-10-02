@@ -2,6 +2,19 @@
 const CACHE_NAME = 'ipfs-path-cache-v2';
 const CUSTOM_HEADER = 'X-IPFS';
 
+// The scene editor's preview realm (PREVIEW_REALM.md): urls under <scope>preview/ are answered
+// from this cache alone. Scenes can't write it: the sandbox worker deletes `caches`.
+const PREVIEW_CACHE_NAME = 'dcl-editor-preview-v1';
+const PREVIEW_ROOT = new URL('preview/', self.registration.scope).href;
+let previewRealm = null;
+try {
+    importScripts('preview_realm.js');
+    previewRealm = self.dclPreviewRealm;
+} catch (e) {
+    // keep the worker installable: the page needs its COEP rewrite and X-IPFS cache regardless
+    console.warn('[IPFS Cache Service Worker]: preview realm unavailable', e);
+}
+
 self.addEventListener('install', (event) => {
     // Force the waiting service worker to become the active service worker.
     self.skipWaiting();
@@ -11,7 +24,7 @@ self.addEventListener('activate', (event) => {
     console.log('[IPFS Cache Service Worker]: Active');
     
     // An array of cache names that are "allowed" to exist.
-    const cacheWhitelist = [CACHE_NAME];
+    const cacheWhitelist = [CACHE_NAME, PREVIEW_CACHE_NAME];
 
     event.waitUntil(
         // Get all the cache keys (names) that exist.
@@ -36,6 +49,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const request = event.request;
 
+    if (request.url.startsWith(PREVIEW_ROOT)) {
+        event.respondWith(servePreviewRealm(request));
+        return;
+    }
+
     // Check if the request has our custom header.
     if (request.headers.has(CUSTOM_HEADER)) {
         // If it does, use our caching strategy.
@@ -48,6 +66,23 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(addCrossOriginIsolationHeaders(request));
     }
 });
+
+async function servePreviewRealm(request) {
+    if (!previewRealm) {
+        return new Response(null, {
+            status: 503,
+            headers: {
+                'Content-Type': 'application/octet-stream',
+                'X-Content-Type-Options': 'nosniff',
+                'Content-Security-Policy': 'sandbox',
+                'Cross-Origin-Resource-Policy': 'same-origin',
+                'Cache-Control': 'no-store',
+            },
+        });
+    }
+    const cache = await caches.open(PREVIEW_CACHE_NAME);
+    return previewRealm.handle(request, PREVIEW_ROOT, cache);
+}
 
 /**
  * Fetches a request and adds Cross-Origin-Isolation headers to enable SharedArrayBuffer.

@@ -78,6 +78,7 @@ explorer URL (e.g. `decentraland.zone/bevy-web`, assets on the versioned CDN pat
 | `engine/` | engine boot module + workers + `pkg/` (wasm) — no page | `wasm-pack` (CI) |
 | `bridge-scene/static/` | the exported bridge-scene realm | `npm run bundle` (CI) |
 | `service_worker.js` | shared root-scope SW: rewrites COEP → `credentialless` | tracked |
+| `preview_realm.js` | the SW's preview realm for the scene editor (`PREVIEW_REALM.md`), loaded with `importScripts` | tracked |
 
 **URL rules (learned the hard way):**
 - The page is served at a **no-trailing-slash entry** (`/bevy-web`) while assets live on the
@@ -134,6 +135,9 @@ Two tiers cover every domain's bridge API and the clicks that drive them:
   scene, enters as a guest, drives the player with **bevy console commands**
   (`move_player_to`, `teleport`) and real clicks, and asserts each API call round-trips
   over a BroadcastChannel spy. Needs a real GPU (WebGPU, headed) — see `e2e/README.md`.
+- **Preview-realm gate (`playwright.gate.config.ts`).** A scene built in the page by the scene
+  editor's web-build, served from the service worker's preview realm and hot-reloaded in the real
+  engine. Needs a dcl-editor checkout — see `e2e/README.md`.
 
 ```bash
 npm test            # tier 1 (fast, deterministic)
