@@ -261,7 +261,8 @@ window.__setShaderCompiling = (on) => {
 const forwardKeyToEngine = (e) => {
   const canvas = document.getElementById('mygame-canvas')
   if (!canvas || e.target === canvas) return
-  const t = e.target
+  // the composed path: a field inside a shadow root (the scene editor's UI) is retargeted to its host
+  const t = e.composedPath()[0] ?? e.target
   if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
   if (e.code === 'Tab') return
   canvas.dispatchEvent(new KeyboardEvent(e.type, e))
