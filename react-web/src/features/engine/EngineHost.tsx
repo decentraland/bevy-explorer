@@ -15,10 +15,16 @@ import { SYSTEM_SCENE } from '../../lib/systemScene'
 import { launchOptionsFromUrl, type LaunchOptions } from '../../lib/webParams'
 
 // Engine media libs the wasm expects as globals (LivekitClient, Hls) — loaded from CDNs like the
-// old boot page did.
+// old boot page did. Pinned with integrity hashes: they run beside the stored sign-in key.
 const CDN_LIBS = [
-  'https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js',
-  'https://cdn.jsdelivr.net/npm/hls.js@1'
+  {
+    src: 'https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js',
+    integrity: 'sha384-MveBYLjjZe2VXnKzvBbPfyh5MEbiqNDeta9nzIGbtqnXmC+CwX/mLE5+M9PDIcPy'
+  },
+  {
+    src: 'https://cdn.jsdelivr.net/npm/hls.js@1.7.3/dist/hls.min.js',
+    integrity: 'sha384-cciJ0zi8d1uMKC2zJd7jvPY4HQt7W4ByUI/FlMkltvBi31aW61rcpVBhpmW8/NwX'
+  }
 ]
 
 let injected = false
@@ -47,9 +53,10 @@ function injectEngine(): void {
     systemScene: bootMode().systemScene ?? SYSTEM_SCENE
   }
 
-  for (const src of CDN_LIBS) {
+  for (const lib of CDN_LIBS) {
     const s = document.createElement('script')
-    s.src = src
+    s.src = lib.src
+    s.integrity = lib.integrity
     s.crossOrigin = 'anonymous'
     document.head.appendChild(s)
   }
