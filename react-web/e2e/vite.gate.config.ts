@@ -57,6 +57,9 @@ function homeRealm(): Plugin {
                   realmName: 'gate-home'
                 },
                 content: { healthy: true, publicUrl: contents },
+                // answers 404, "no profile": a wallet can log in here and its default profile
+                // is deployed to this realm's content url, which is nowhere
+                lambdas: { healthy: true, publicUrl: `http://${req.headers.host}${HOME}lambdas` },
                 comms: { healthy: true, protocol: 'v3', fixedAdapter: 'offline:offline' }
               })
             : HOME_CONTENT[path.slice(`${HOME}contents/`.length)]
