@@ -1,5 +1,5 @@
 /* Lobby on the 1920×1080 reference canvas (same DPI scaling as the places picker). Transparent:
-   the engine paints the backdrop and the avatar behind it. */
+   the engine paints the stage and the avatar behind it. Positions are the reference layout's. */
 .root {
   position: fixed;
   top: 0;
@@ -10,43 +10,190 @@
   transform-origin: top left;
   z-index: var(--z-loading);
   font-family: var(--font-family);
-  color: var(--text);
+  color: var(--white);
+}
+.stage {
+  position: absolute;
+  inset: 0;
   pointer-events: none;
 }
-.root > * {
-  pointer-events: auto;
+.avatarHit {
+  position: absolute;
+  left: 740px;
+  top: 190px;
+  width: 440px;
+  height: 820px;
+  cursor: pointer;
 }
+.tooltip {
+  position: fixed;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--lobby-tooltip);
+  font-size: var(--type-16);
+  font-weight: 600;
+  text-transform: uppercase;
+  transform: translate(100px, -50%);
+  pointer-events: none;
+}
+
 .header {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 100px;
+}
+.logo {
+  position: absolute;
+  left: 50px;
+  top: 32.5px;
+  width: 256px;
+  height: 35px;
+}
+.headerRight {
+  position: absolute;
+  top: 0;
+  right: 50px;
+  height: 100px;
   display: flex;
   align-items: center;
-  padding: 0 50px;
+  gap: 10px;
 }
-.avatar {
-  position: absolute;
-  left: 50%;
-  top: 60px;
-  width: 960px;
-  height: 960px;
-  transform: translateX(-50%);
-  pointer-events: none;
+.headerButton {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--lobby-header-btn);
+  box-shadow: inset 0 0 0 2px var(--lobby-header-ring);
+  color: var(--white);
+  cursor: pointer;
 }
+.headerButton:hover,
+.profileWidget:hover {
+  background: var(--lobby-header-btn-hover);
+}
+.profileWidget {
+  display: flex;
+  align-items: center;
+  width: 163px;
+  height: 46px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 23px;
+  background: var(--lobby-header-btn);
+  box-shadow: inset 0 0 0 2px var(--lobby-header-ring);
+}
+.profileName {
+  flex: 1;
+  text-align: center;
+  color: var(--ink-85);
+  font-size: var(--type-18);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sectionTitle {
+  margin: 0;
+  height: 30px;
+  font-size: var(--type-24);
+  font-weight: 700;
+  line-height: 30px;
+}
+
 .quickJump {
   position: absolute;
-  top: 180px;
   left: 50px;
+  top: 180px;
   width: 520px;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 10px;
 }
 .welcome {
   margin: 0;
   font-size: var(--type-24);
   font-weight: 700;
+  line-height: 28.7px;
+}
+
+.friends {
+  position: absolute;
+  left: 50px;
+  top: calc(50% + 25.8px);
+  width: 524px;
+  height: 180px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.friendsHead {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  height: 30px;
+}
+.friendsCount {
+  font-size: var(--type-12);
+  color: var(--lobby-ink-dim);
+}
+
+.events {
+  position: absolute;
+  right: 50px;
+  top: 180px;
+  width: 358px;
+  height: 462px;
+  padding-top: 38px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.eventsTitle {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.liveEvents {
+  height: 230px;
+}
+.upcomingEvents {
+  height: 160px;
+}
+
+.jumpBack {
+  position: absolute;
+  left: 50px;
+  bottom: 29px;
+  width: 864px;
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.jumpBackRow {
+  display: flex;
+  gap: 8px;
+  height: 165px;
+}
+
+.recommended {
+  position: absolute;
+  right: 50px;
+  bottom: 13.3px;
+  width: 864px;
+  height: 216px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }

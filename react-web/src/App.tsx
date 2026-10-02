@@ -302,7 +302,7 @@ function Hud(): React.JSX.Element {
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
       {session.phase === 'lobby' && (
-        <LobbyHome name={session.profile.data?.name ?? null} onPick={session.pickDestination} setEngineViewport={session.setEngineViewport} />
+        <LobbyHome onPick={session.pickDestination} setEngineViewport={session.setEngineViewport} />
       )}
       {session.phase === 'entering' && (
         <SceneLoadingOverlay scene={session.sceneLoading} progress={session.loadingProgress} travellingTo={session.travellingTo} />
