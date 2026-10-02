@@ -64,6 +64,7 @@ function translate(argv) {
     '--asset-bundle-registry': true,
     '--auth-api': true,
     '--auth-page': true,
+    '--badges': true,
     '--catalyst': true,
     '--comms-gatekeeper': true,
     '--ethereum-rpc': true,
