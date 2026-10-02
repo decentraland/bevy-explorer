@@ -15,7 +15,7 @@ import type { Entity } from '@dcl/ecs'
 import type { Ctx } from '../bridge'
 import type { PreviewFocus } from '../../../src/engine/protocol'
 import { currentLook } from './avatarDraft'
-import { FLOOR, FLOOR_SHADE_STOPS, backdropRect, floorShadeAt } from '../../../src/engine/lobbyStage'
+import { BACKDROP_EDGE_FADE, FLOOR, FLOOR_SHADE_STOPS, backdropRect, floorShadeAt } from '../../../src/engine/lobbyStage'
 import { BevyApi } from '../bevy-api'
 
 type Rect = { x: number; y: number; width: number; height: number }
@@ -68,6 +68,13 @@ const LOBBY_SHADOW = Color4.create(0, 0, 0, 0.65)
 // and how long to wait for the look at all.
 const LOBBY_SETTLE_FRAMES = 45
 const LOBBY_LOOK_FRAMES = 600
+
+// The backdrop's bottom edge fading into the floor, as abutting bands offset from that edge.
+const EDGE_FADE = Array.from({ length: BACKDROP_EDGE_FADE / LOBBY_SHADE_BAND_PX }, (_, i) => ({
+  top: i * LOBBY_SHADE_BAND_PX,
+  height: LOBBY_SHADE_BAND_PX,
+  color: Color4.create(FLOOR.r / 255, FLOOR.g / 255, FLOOR.b / 255, (i + 0.5) / (BACKDROP_EDGE_FADE / LOBBY_SHADE_BAND_PX))
+}))
 
 // The floor shade as abutting whole-pixel bands, rebuilt only when the screen height changes.
 let shadeBands: { height: number; bands: Array<{ top: number; height: number; color: Color4 }> } = { height: -1, bands: [] }
@@ -407,6 +414,13 @@ function renderLobbyStage(r: Rect, camera: Entity): ReactEcs.JSX.Element {
         uiTransform={{ positionType: 'absolute', position: { left: backdrop.left, top: backdrop.top }, width: backdrop.width, height: backdrop.height }}
         uiBackground={{ texture: { src: LOBBY_BACKDROP }, textureMode: 'stretch' }}
       />
+      {EDGE_FADE.map((band) => (
+        <UiEntity
+          key={`edge${band.top}`}
+          uiTransform={{ positionType: 'absolute', position: { left: 0, top: backdrop.top + backdrop.height - BACKDROP_EDGE_FADE + band.top }, width: '100%', height: band.height }}
+          uiBackground={{ color: band.color }}
+        />
+      ))}
       {floorShade(Math.round(r.height)).map((band) => (
         <UiEntity
           key={band.top}
