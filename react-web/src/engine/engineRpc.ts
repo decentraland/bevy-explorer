@@ -5,10 +5,13 @@
 // this document (EngineHost "Approach A", no iframe), so the target is just `window`;
 // which window to point at is kept behind here so callers don't care.
 
+/** Options the host decides for one launch (delivery `host` in the web param table, never a link's). */
+export type LaunchHostOptions = { holdWorld?: boolean }
+
 type EngineWindow = Window & {
   engine_console_command?: (line: string) => Promise<string>
   __bevyReadyToLaunch?: boolean
-  __bevyLaunch?: (realm?: string, position?: string) => void
+  __bevyLaunch?: (realm?: string, position?: string, host?: LaunchHostOptions) => void
   __bevyHomeScene?: () => { realm: string | null; parcel: string } | null
   __bevyLoadProgress?: number
   __bevyLoadStep?: string | null
@@ -57,8 +60,8 @@ export class EngineRpc {
   }
 
   /** Boot the bevy app at a realm/position (only valid in manualParams mode, after readyToLaunch). */
-  launch(realm?: string, position?: string): void {
-    this.win?.__bevyLaunch?.(realm, position)
+  launch(realm?: string, position?: string, host?: LaunchHostOptions): void {
+    this.win?.__bevyLaunch?.(realm, position, host)
   }
 
   /** The engine's persisted home scene: the pinned realm (null = none pinned; the caller uses

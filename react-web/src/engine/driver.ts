@@ -1,4 +1,5 @@
 import type { AuthIdentity } from '../features/auth/sso'
+import type { LaunchHostOptions } from './engineRpc'
 import type { PageToScene, SceneToPage } from './protocol'
 
 // The session surface the UI depends on. Two implementations:
@@ -60,7 +61,7 @@ export interface LoginDriver {
   /** Boot the engine at a chosen realm/position (deferred-start: nothing loads until the user picks
    *  a destination). A parcel passes `position` "x,y"; a world passes `realm`; skip passes the
    *  home scene. Optional — the mock has no engine to launch. */
-  launch?(realm?: string, position?: string): void
+  launch?(realm?: string, position?: string, host?: LaunchHostOptions): void
   /** The engine's persisted home scene — the Skip target. Available pre-launch; null until the
    *  engine module is up. Optional — the mock has no engine (and native skips keep the engine's
    *  own start realm, which already IS home). */

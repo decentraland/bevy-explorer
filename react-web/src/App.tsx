@@ -21,6 +21,7 @@ import { PlacesPage } from './features/places/PlacesPage'
 import { EventsPage } from './features/events/EventsPage'
 import { ShopPage } from './features/shop/ShopPage'
 import { PlacesPicker } from './features/places/PlacesPicker'
+import { LobbyHome } from './features/lobby/LobbyHome'
 import { GalleryPage } from './features/gallery/GalleryPage'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Minimap } from './features/minimap/Minimap'
@@ -300,6 +301,9 @@ function Hud(): React.JSX.Element {
       {rpc && <EngineHost rpc={rpc} />}
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
+      {session.phase === 'lobby' && (
+        <LobbyHome name={session.profile.data?.name ?? null} onPick={session.pickDestination} setEngineViewport={session.setEngineViewport} />
+      )}
       {session.phase === 'entering' && (
         <SceneLoadingOverlay scene={session.sceneLoading} progress={session.loadingProgress} travellingTo={session.travellingTo} />
       )}

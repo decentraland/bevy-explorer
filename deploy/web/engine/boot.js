@@ -10,7 +10,8 @@
 //                            realm/position, forwarded verbatim by __bevyLaunch
 //   provided by this module:
 //     __bevyLoadProgress / __bevyLoadStep  — weighted boot progress for the login bar
-//     __bevyReadyToLaunch / __bevyLaunch(realm?, position?) — deferred engine_run
+//     __bevyReadyToLaunch / __bevyLaunch(realm?, position?, host?) — deferred engine_run; `host`
+//                            carries the host's own options (e.g. holdWorld) for this launch
 //     __bevyPanic — readable Rust panic text (the JS throw is a generic "unreachable" trap)
 //     __engineHeartbeat / reportEngineError / __rearmCrashWatchdog — crash watchdog plumbing
 //     __engineTextFocus — true while an engine-rendered text field holds keyboard focus (the
@@ -348,7 +349,7 @@ initEngine()
     window.setLoadingStepCompleted('gpu')
     // Deferred launch: the host calls this once the user picks a destination — avoiding a wasted
     // default-realm load. One engine per page (see start()'s __bevyStarted guard).
-    window.__bevyLaunch = (realm, position) => start({ ...config, realm, position })
+    window.__bevyLaunch = (realm, position, host) => start({ ...config, ...host, realm, position })
     // The persisted home scene ({ realm (null = none pinned), parcel: "x,y" }), valid once
     // engine_init has loaded the config — the host's places picker targets it from "Skip to
     // Home" before launching.

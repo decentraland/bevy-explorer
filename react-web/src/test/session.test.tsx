@@ -58,9 +58,8 @@ describe('session domain', () => {
     const h = renderSession({ userId: '0xabc' })
     await waitFor(() => expect(h.session().login.status).toBe('reuse-login-or-new'))
     act(() => h.session().login.jumpIn())
-    // Jump in shows the picker; the login is deferred until a destination is chosen.
-    await waitFor(() => expect(h.session().phase).toBe('picking'))
-    act(() => h.session().pickDestination(null))
+    // Jump in signs in and shows the lobby.
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
     await waitFor(() => expect(h.driver.calls).toContain('jumpIn'))
   })
 
@@ -215,7 +214,7 @@ describe('session domain', () => {
     act(() => h.session().logout())
     await waitFor(() => expect(h.session().login.status).not.toBe('loading'))
     act(() => h.session().login.exploreAsGuest())
-    await waitFor(() => expect(h.session().phase).toBe('picking'))
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
     h.driver.sent.length = 0
     act(() => h.session().pickDestination({ kind: 'parcel', x: 10, y: 20 }))
     await waitFor(() => expect(h.driver.calls.filter((c) => c === 'loginGuest')).toHaveLength(2))
@@ -247,8 +246,8 @@ describe('session domain', () => {
     const h = renderSession({ userId: null }, driver)
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
     act(() => h.session().login.exploreAsGuest())
-    await waitFor(() => expect(h.session().phase).toBe('picking'))
-    act(() => h.session().pickDestination(null))
+    // The lobby launches the engine (holding the world back) right away.
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
     // launch() threw → the sync catch reads the stashed panic and raises it as fatal 'launch'.
     await waitFor(() =>
       expect(h.session().fatalError).toEqual({
@@ -264,8 +263,7 @@ describe('session domain', () => {
     const h = renderSession({ userId: null }, driver)
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
     act(() => h.session().login.exploreAsGuest())
-    await waitFor(() => expect(h.session().phase).toBe('picking'))
-    act(() => h.session().pickDestination(null))
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
     // launch() returned normally, so the boot-panic poll (250ms) must catch the stashed panic and raise
     // it as fatal 'launch' — not the dismissable 'runtime' crash the heartbeat watchdog would mislabel.
     await waitFor(
@@ -313,8 +311,8 @@ describe('embedded auto-boot (?guest=1 / ?systemScene=)', () => {
     window.history.replaceState(null, '', '/?guest=1')
     const h = renderSession({ userId: null })
     // No exploreAsGuest() call in the test — the flag alone drives it. With no
-    // URL destination it lands on the picker (a positioned embed skips that too).
-    await waitFor(() => expect(h.session().phase).toBe('picking'))
+    // URL destination it lands in the lobby (a positioned embed skips that too).
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
   })
 
   it('with a ?position, drives a guest straight into the world', async () => {
