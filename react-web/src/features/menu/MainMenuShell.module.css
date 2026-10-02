@@ -61,6 +61,12 @@
   font-weight: var(--fw-bold);
   color: var(--text);
 }
+/* off the flow, so the tabs stay centred */
+.lobby {
+  position: absolute;
+  left: 265px;
+  top: 12px;
+}
 .menu {
   display: flex;
   align-items: center;

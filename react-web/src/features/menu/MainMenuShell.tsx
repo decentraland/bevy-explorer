@@ -3,7 +3,7 @@
 // the top bar is identical and consistent. Pages pass their content as children.
 
 import { useEffect, useState } from 'react'
-import { DclLogo, Icon, type IconName } from '../../design'
+import { Button, DclLogo, Icon, type IconName } from '../../design'
 import { keyHintFor, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { ProfileChip } from './ProfileChip'
 import styles from './MainMenuShell.module.css'
@@ -42,7 +42,6 @@ export interface MenuItem {
 // The menu pages we support (others hidden). Matches the Figma nav bar
 // (icon + LABEL [shortcut]). Every item is now a React page.
 export const MENU_ITEMS: MenuItem[] = [
-  { label: 'Lobby', icon: 'lobby', page: 'lobby' },
   { label: 'Communities', icon: 'communities', hotkey: 'Communities', page: 'communities' },
   { label: 'Places', icon: 'places', hotkey: 'Places', page: 'places' },
   { label: 'Events', icon: 'events', page: 'events' },
@@ -93,6 +92,10 @@ export function MainMenuShell({
           <DclLogo size={27} />
           <span className={styles.brandName}>Decentraland</span>
         </div>
+        <Button variant="accent" size="header" className={styles.lobby} onClick={() => onNavigate('lobby')}>
+          <Icon name="lobby" size={24} />
+          Lobby
+        </Button>
         <nav className={styles.menu}>
           {MENU_ITEMS.map((m) => {
             const shortcut = m.hotkey != null ? keyHintFor(bindingsSnap, m.hotkey) : undefined
