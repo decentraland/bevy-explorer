@@ -10,7 +10,7 @@ use platform::{platform_pointer_is_locked, platform_pointer_lock_requested};
 
 use crate::{
     initialize_scene::SuperUserScene, renderer_context::RendererSceneContext,
-    update_world::AddCrdtInterfaceExt, InteractableArea, SceneSets,
+    update_world::AddCrdtInterfaceExt, HudFocus, InteractableArea, SceneSets,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -108,7 +108,9 @@ pub fn update_pointer_lock(
     mut mb_state: CameraInteractionState,
     active_dialog: Option<Res<ActiveDialog>>,
     mut toggle: Local<bool>,
+    mut dialog_was_open: Local<bool>,
     interactable_area: Res<InteractableArea>,
+    hud_focus: Res<HudFocus>,
 ) {
     let Ok(window) = window.single() else {
         return;
@@ -147,12 +149,16 @@ pub fn update_pointer_lock(
     };
     *prev_coords = (constrained_coordinates, unconstrained_coordinates);
 
+    // a dialog or HUD surface frees the cursor while it is up, and the toggle is kept so the lock
+    // comes back after. while it is up the toggle can be cleared but not set
+    let dialog_open = active_dialog.is_some_and(|ad| ad.in_use()) || hud_focus.0;
+
     // Handle mouse input
     let mut state = mb_state.update(Action::System(SystemAction::CameraLock));
     let input_manager = &mb_state.input_manager;
     if state == ClickState::None
         && (input_manager.just_down(SystemAction::Cancel, InputPriority::None)
-            || platform_pointer_is_locked() == Some(false))
+            || (!dialog_open && platform_pointer_is_locked() == Some(false)))
         && *toggle
     {
         // override
@@ -161,16 +167,26 @@ pub fn update_pointer_lock(
     }
 
     if state == ClickState::Clicked {
-        *toggle = !*toggle;
+        *toggle = !*toggle && !dialog_open;
         if *toggle {
             platform_pointer_lock_requested();
         }
     }
 
-    let mut camera_locked =
-        active_dialog.is_none_or(|ad| !ad.in_use()) && (state == ClickState::Held || *toggle);
+    if *dialog_was_open && !dialog_open && *toggle {
+        platform_pointer_lock_requested();
+    }
+    *dialog_was_open = dialog_open;
+
+    let mut camera_locked = !dialog_open && (state == ClickState::Held || *toggle);
 
     for changed_lock in changed_pointer_locks.iter() {
+        if dialog_open {
+            if !changed_lock.0.is_pointer_locked {
+                *toggle = false;
+            }
+            continue;
+        }
         info!("lock updated by scene");
         *toggle = changed_lock.0.is_pointer_locked;
         if *toggle {

@@ -213,13 +213,10 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     there, the engine owns the OS cursor grab and releases it on the `Chat` action.) **(b) the related bug — web part SHIPPED (`fix/03-backpack`):**
     full-screen menus (settings/map/backpack/communities/places/gallery) opened via their **hotkey while
     camera-look is active** used to render over a still-locked cursor (only profile-card + chat freed it).
-    Now a single rule in `useEngineSession` releases the lock whenever any full-screen menu opens (a
-    `useEffect` on `menuPageOpen` → `document.exitPointerLock()`), replacing the per-trigger frees on web.
-    **Remaining — native:** `exitPointerLock` is a web no-op, so on native (CEF, engine owns the OS cursor
-    grab) a menu open does **not** yet free the cursor; if that proves needed, relay a bridge write
-    `PointerLock.isPointerLocked = false` on `CameraEntity` on menu open, the way `chat.ts` /
-    `avatarPointer.ts` already do for their surfaces. Kept Medium: chat + click-to-open panels + web
-    menus work today; only native menu-open cursor release is open.
+    Now the engine owns it on web and native alike: while the HUD reports an active surface
+    (`uiFocus.ui` — any panel, menu page or popup) `update_pointer_lock` frees the cursor, ignores scene
+    `PointerLock` writes, and re-takes the lock when the surface closes. Only chat (`uiFocus.text`, not
+    `ui`) still frees the cursor itself (`chat.ts` + `requestFocusChat`).
 20. `[feature]` **Chat links: confirm popup before teleporting and before opening a URL** — *parity with
     `bevy-ui-scene`, safety*. The **parsing** has parity: `chatText.tsx`'s `TOKEN_RE` linkifies the same
     four kinds as the old `LINK_TYPE` (`components/chat/chat-message/ChatMessage.tsx:43`) — url, world,

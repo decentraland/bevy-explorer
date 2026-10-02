@@ -47,10 +47,10 @@ export function registerChat(ctx: Ctx): void {
 
   // Release the engine's camera-look on NATIVE when Enter opens chat: writing isPointerLocked=false on
   // CameraEntity frees the engine's OS cursor grab so the mouse stops driving the camera while you type
-  // (mirrors the profile-card free-cursor). On web this write isn't reached — the engine never sees
-  // Enter there — so the release is page-side (requestFocusChat calls document.exitPointerLock). Must
-  // run in a frame system, NOT the async callback above: an async component write doesn't flush to the
-  // engine (the same reason nametag chat bubbles defer their writes).
+  // (chat focus is `uiFocus.text`, not `ui`, so the engine doesn't free it itself). On web this write
+  // isn't reached — the engine never sees Enter there — so the release is page-side (requestFocusChat
+  // calls document.exitPointerLock). Must run in a frame system, NOT the async callback above: an async
+  // component write doesn't flush to the engine (the same reason nametag chat bubbles defer their writes).
   ctx.push(() => {
     if (!freeCursorPending) return
     freeCursorPending = false

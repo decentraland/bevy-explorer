@@ -249,6 +249,10 @@ pub struct InteractableArea(pub Option<Vec4>);
 #[derive(Default, Resource)]
 pub struct HudFullscreen(pub bool);
 
+/// A HUD surface (panel, popup, prompt) is active (`SystemApi::SetUiFocus.ui`).
+#[derive(Default, Resource)]
+pub struct HudFocus(pub bool);
+
 /// Frame-global inputs to `PBEngineInfo`. The world is hidden from the user while the engine's
 /// loading backdrop (player `OutOfWorld`) or a full-screen HUD surface covers it.
 #[derive(SystemParam)]
@@ -285,6 +289,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
         app.init_resource::<HudFullscreen>();
+        app.init_resource::<HudFocus>();
         // shared by pointer results, trigger areas and the avatar crate — owned here so
         // trigger areas keep working when the pointer-result systems are skipped
         app.init_resource::<update_scene::pointer_results::AvatarColliders>();
@@ -1352,11 +1357,15 @@ fn set_ui_constraints(
     mut events: EventReader<SystemApi>,
     mut interactable_area: ResMut<InteractableArea>,
     mut hud_fullscreen: ResMut<HudFullscreen>,
+    mut hud_focus: ResMut<HudFocus>,
 ) {
     for ev in events.read() {
         match ev {
             SystemApi::SetInteractableArea(area) => interactable_area.0 = Some(*area),
-            SystemApi::SetUiFocus { covered, .. } => hud_fullscreen.0 = *covered,
+            SystemApi::SetUiFocus { ui, covered, .. } => {
+                hud_fullscreen.0 = *covered;
+                hud_focus.0 = *ui;
+            }
             _ => (),
         }
     }
