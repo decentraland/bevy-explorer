@@ -56,10 +56,10 @@ const THUMBNAIL_SIZE = 480
 const LOBBY_BASE = Color4.create(15 / 255, 13 / 255, 23 / 255, 1)
 const LOBBY_BACKDROP = 'images/lobby-background.jpg'
 const LOBBY_BACKDROP_ASPECT = 1595 / 986
-// Where the backdrop meets the floor (fraction of the screen from the bottom), and how much of
-// the image sits below that line.
-const LOBBY_BLEND_HEIGHT = 0.445
-const LOBBY_IMAGE_BELOW_BLEND = 0.461
+// The backdrop's height and top as fractions of the screen height (the stage camera's vertical
+// field of view is fixed), measured against the reference stage; kept in step with the page's stand-in.
+const LOBBY_BACKDROP_HEIGHT = 1.033
+const LOBBY_BACKDROP_TOP = -0.17
 const LOBBY_TARGET_Y = 0.8
 const LOBBY_CAMERA_RISE = 1
 const LOBBY_CAMERA_DISTANCE = 6
@@ -376,10 +376,9 @@ function rotateAvatar(): void {
 }
 
 function renderLobbyStage(r: Rect, camera: Entity): ReactEcs.JSX.Element {
-  // Cover-fit the backdrop, placed so its blend line sits where the stage floor meets it.
-  const width = Math.max(r.width, r.height * LOBBY_BACKDROP_ASPECT)
-  const height = width / LOBBY_BACKDROP_ASPECT
-  const top = (1 - LOBBY_BLEND_HEIGHT) * r.height + LOBBY_IMAGE_BELOW_BLEND * height - height
+  const height = Math.max(r.height * LOBBY_BACKDROP_HEIGHT, r.width / LOBBY_BACKDROP_ASPECT)
+  const width = height * LOBBY_BACKDROP_ASPECT
+  const top = r.height * LOBBY_BACKDROP_TOP
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { left: r.x, top: r.y }, width: r.width, height: r.height, overflow: 'hidden' }}

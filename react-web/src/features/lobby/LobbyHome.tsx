@@ -39,10 +39,12 @@ function useLoad<T>(load: () => Promise<T>, fallback: T): { data: T; loading: bo
 }
 
 const GENESIS = { x: 0, y: 0 }
-// The backdrop's geometry, shared with the bridge's stage so the stand-in lines up with it.
+// The backdrop's geometry, shared with the bridge's stage so the stand-in lines up with it: the
+// stage camera's vertical field of view is fixed, so it scales with the screen height (measured
+// against the reference stage at 1920×1200).
 const BACKDROP_ASPECT = 1595 / 986
-const BLEND_HEIGHT = 0.445
-const IMAGE_BELOW_BLEND = 0.461
+const BACKDROP_HEIGHT = 1.033
+const BACKDROP_TOP = -0.17
 
 // Until the engine has drawn the stage, the page paints the same backdrop and the account's
 // snapshot, so the lobby never shows an empty or half-loaded centre.
@@ -56,9 +58,9 @@ function StandInStage({ hidden, body }: { hidden: boolean; body?: string }): Rea
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const width = Math.max(size.w, size.h * BACKDROP_ASPECT)
-  const height = width / BACKDROP_ASPECT
-  const top = (1 - BLEND_HEIGHT) * size.h + IMAGE_BELOW_BLEND * height - height
+  const height = Math.max(size.h * BACKDROP_HEIGHT, size.w / BACKDROP_ASPECT)
+  const width = height * BACKDROP_ASPECT
+  const top = size.h * BACKDROP_TOP
   return (
     <div ref={ref} className={`${styles.standIn} ${hidden ? styles.standInHidden : ''}`.trim()} aria-hidden="true">
       <img className={styles.standInBackdrop} src={backdrop} alt="" style={{ width, height, top, left: (size.w - width) / 2 }} />
