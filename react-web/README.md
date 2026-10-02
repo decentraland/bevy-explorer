@@ -72,21 +72,31 @@ lobby returns to the lobby so another destination can be chosen.
 a fake bridge, no engine. Add `&previousLogin=1` for the returning-user flow.
 
 **Scene editor (dev)** — the editor is an external package (the `dcl-editor` repo's
-`packages/web/dist`); this app only hosts it, and only for `?editor` on localhost (or an allowed
-deployment with a released package — `src/features/editorHost/config.ts`). Without the param
-nothing is loaded.
+`packages/web/dist`); this app only hosts it, and only on localhost (or an allowed deployment with
+a released package — `src/features/editorHost/config.ts`). Where it is available the sidebar rail
+and the menu top bar get a **Create** button; nothing of the editor is requested until it is
+clicked, or until the player is in-world on a url with `?editor` (`?editor=<projectId>` also names
+the project to open). In mock and native mode there is no editor.
 
 ```bash
 WEB_EDITOR_DIR=<dcl-editor checkout, packages/web built> npm run dev
-# then open http://localhost:5173/?editor
+# then click Create in the rail, or open http://localhost:5173/?editor
 ```
 
-Vite serves `$WEB_EDITOR_DIR/packages/web/dist` same-origin under `/editor/`. Once the player is
-in-world the page sets `window.__dclEditorHost` (`src/features/editorHost/host.ts` — the contract)
-and loads `/editor/editor.js`, which mounts into the host's container. The package must hold
-`editor.js`, `web-build/` and `scene/` (the editor scene's static realm: `scene/about` listing it
-in `scenesUrn`, with an absolute url — export the scene for the port you serve on:
+Vite serves `$WEB_EDITOR_DIR/packages/web/dist` same-origin under `/editor/`. Opening the editor
+first adds the page's own host script (`src/features/editorHost/host/`, built as a separate file
+next to the HUD's assets so neither the host nor its signing code is in the HUD bundle), which sets
+`window.__dclEditorHost` (`host/host.ts` — the contract, v1) and loads `/editor/editor.js`; that
+mounts into the host's container. After the editor's Exit, Create mounts it again. The package
+must hold `editor.js`, `web-build/` and `scene/` (the editor scene's static realm: `scene/about`
+listing it in `scenesUrn`, with an absolute url — export the scene for the port you serve on:
 `npm run export-static -w @dcl-editor/scene -- --editor-base http://localhost:5173/editor/`).
+
+The host signs for the editor with the signed-in wallet's stored identity, which the editor never
+sees: `signedFetch` only for urls under the project storage service, `signDeployment` only after
+the page's own confirmation dialog. A guest gets `not-signed-in`. On localhost the services are
+`http://localhost:8787` (projects) and the production Worlds content server; `?editor-projects=<url>`
+and `?editor-worlds=<url>` point them elsewhere, on localhost only.
 
 ## Deploy (production)
 
@@ -159,8 +169,11 @@ Two tiers cover every domain's bridge API and the clicks that drive them:
   over a BroadcastChannel spy. Needs a real GPU (WebGPU, headed) — see `e2e/README.md`.
 - **Scene editor gates (`playwright.gate.config.ts`).** `preview-realm`: a scene built in the page
   by the scene editor's web-build, served from the service worker's preview realm and hot-reloaded
-  in the real engine. `editor`: the editor package opened with `?editor`, creating, editing, playing
-  and leaving a starter scene. Both need a dcl-editor checkout — see `e2e/README.md`.
+  in the real engine. `editor`: the editor package opened from the Create button, creating, editing,
+  playing and leaving a starter scene, and opened again from the menu. `sync`: one wallet on two
+  devices against the editor's project storage service. `publish`: a scene published to a local
+  Worlds server and entered by the engine. `npm`: an imported scene that needs an npm package.
+  All need a dcl-editor checkout — see `e2e/README.md`.
 
 ```bash
 npm test            # tier 1 (fast, deterministic)

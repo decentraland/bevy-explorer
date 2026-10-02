@@ -4,13 +4,14 @@
 // scene's existing menus/popups over the bridge (session.nav) until each is
 // migrated to React.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useContext, useEffect, useState } from 'react'
 import { ControlButton, IconButton, Panel, Toggle } from '../../design'
 import type { IconName } from '../../design'
 import type { NavAction } from '../../engine/protocol'
 import { keyHintFor, useBindingsSnapshot, type BindingsSnapshot } from '../../lib/bindingLabels'
 import { userColor } from '../../lib/identity'
 import type { EngineSession } from '../session/useEngineSession'
+import { EditorEntryContext, type EditorEntry } from '../editorHost/entry'
 import { useLiveEventCount } from '../events/eventsApi'
 import { useAutoHide } from './useAutoHide'
 import { hudInsetRef } from '../../lib/hudInset'
@@ -54,6 +55,7 @@ type Item =
   | { kind: 'events'; icon: IconName; label: string }
   | { kind: 'skybox'; icon: IconName; label: string }
   | { kind: 'gallery'; icon: IconName; label: string; hotkey?: string }
+  | { kind: 'create'; icon: IconName; label: string }
   | { kind: 'link'; icon: IconName; label: string; url: string | (() => string) }
   | { kind: 'divider' }
 
@@ -94,6 +96,7 @@ const TOP: Item[] = [
   { kind: 'link', icon: 'marketplace', label: 'Shop', url: () => withUtm('https://decentraland.org/shop') },
   { kind: 'gallery', icon: 'gallery', label: 'Gallery', hotkey: 'Gallery' },
   { kind: 'settings', icon: 'settings', label: 'Settings', hotkey: 'Settings' },
+  { kind: 'create', icon: 'create', label: 'Create' },
   { kind: 'divider' },
   { kind: 'link', icon: 'help', label: 'Help & Support', url: 'https://decentraland.org/help/' },
   { kind: 'link', icon: 'bug', label: 'Report a bug', url: bugReportUrl }
@@ -111,7 +114,7 @@ const BOTTOM: Item[] = [
 
 type VoiceProps = NearbyVoice & { onOpen: (button: HTMLElement) => void }
 
-function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, voice: VoiceProps, onViewProfile?: () => void): React.JSX.Element {
+function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, voice: VoiceProps, create: EditorEntry | null, onViewProfile?: () => void): React.JSX.Element | null {
   if (item.kind === 'divider') return <div key={`d${i}`} className={styles.divider} />
   const shortcut = 'hotkey' in item && item.hotkey != null ? keyHintFor(snap, item.hotkey) : undefined
   if (item.kind === 'chat')
@@ -251,6 +254,9 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
       </RailButton>
     )
   }
+  // only where the scene editor is available
+  if (item.kind === 'create')
+    return create && <RailButton key="create" icon={item.icon} label={item.label} active={create.loading} onClick={create.open} />
   if (item.kind === 'skybox')
     return <RailButton key="skybox" icon={item.icon} label={item.label} active={session.skybox.open} onClick={session.skybox.toggle} />
   if (item.kind === 'events')
@@ -305,6 +311,7 @@ export function Sidebar({
 }): React.JSX.Element {
   const snap = useBindingsSnapshot()
   const liveEvents = useLiveEventCount()
+  const create = useContext(EditorEntryContext)
   const [configOpen, setConfigOpen] = useState(false)
   const [voiceAnchor, setVoiceAnchor] = useState<HTMLElement | null>(null)
   const autoHide = useAutoHide(configOpen || voiceAnchor != null)
@@ -349,9 +356,9 @@ export function Sidebar({
           >
             <DotsGlyph />
           </ControlButton>
-          {TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, onViewProfile))}
+          {TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, create, onViewProfile))}
         </div>
-        <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, onViewProfile))}</div>
+        <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, create, onViewProfile))}</div>
       </nav>
       {voiceAnchor != null && (
         <NearbyVoiceWidget

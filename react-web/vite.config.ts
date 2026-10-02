@@ -161,6 +161,9 @@ export default defineConfig(({ command, mode }) => ({
   // PUBLIC_URL for an absolute CDN base; otherwise './' (relative → works from any path, e.g. a
   // local `serve deploy/web`). Dev keeps '/'.
   base: command === 'build' ? (process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/` : './') : '/',
+  // The editor host script's own deps: it is outside the page's import graph, so they would be
+  // found when it first loads, and a late find reloads the page.
+  optimizeDeps: { include: ['@noble/secp256k1', '@noble/hashes/sha3'] },
   plugins: [
     react(),
     bridgeScenePreview(),

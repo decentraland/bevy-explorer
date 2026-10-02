@@ -20,5 +20,6 @@
   },
   "include": ["src", "vite.config.ts"],
   // Loads bridge domains that need the scene SDK's ~system types; the bridge build checks those.
-  "exclude": ["src/test/bridgeSession.test.ts"]
+  // The signing test loads @dcl/crypto out of the bridge scene's tree, installed after this check.
+  "exclude": ["src/test/bridgeSession.test.ts", "src/test/editorHostSigning.test.tsx"]
 }

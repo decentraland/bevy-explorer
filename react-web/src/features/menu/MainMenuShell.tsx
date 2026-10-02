@@ -2,9 +2,10 @@
 // body). Every full-screen menu page (Settings, Backpack, …) renders inside this so
 // the top bar is identical and consistent. Pages pass their content as children.
 
-import { useEffect, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { Button, DclLogo, Icon, type IconName } from '../../design'
 import { keyHintFor, useBindingsSnapshot } from '../../lib/bindingLabels'
+import { EditorEntryContext } from '../editorHost/entry'
 import { ProfileChip } from './ProfileChip'
 import styles from './MainMenuShell.module.css'
 import onBackpack from '../../assets/menu-on/backpack.webp'
@@ -52,6 +53,10 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: 'Settings', icon: 'settings', hotkey: 'Settings', page: 'settings' }
 ]
 
+// The scene editor: not a page, it closes the menu and takes the screen. Listed only where the
+// editor is available.
+const CREATE_ITEM: MenuItem = { label: 'Create', icon: 'create', page: 'create' }
+
 export function MainMenuShell({
   active,
   profileName,
@@ -78,6 +83,8 @@ export function MainMenuShell({
   // Animate the entrance only on a fresh open (no other shell mounted), not on page switches.
   const [animate] = useState(() => openShells === 0)
   const bindingsSnap = useBindingsSnapshot()
+  const create = useContext(EditorEntryContext)
+  const items = create == null ? MENU_ITEMS : [...MENU_ITEMS, CREATE_ITEM]
   useEffect(() => {
     openShells++
     return () => {
@@ -97,7 +104,7 @@ export function MainMenuShell({
           Lobby
         </Button>
         <nav className={styles.menu}>
-          {MENU_ITEMS.map((m) => {
+          {items.map((m) => {
             const shortcut = m.hotkey != null ? keyHintFor(bindingsSnap, m.hotkey) : undefined
             return (
               <button
@@ -106,7 +113,12 @@ export function MainMenuShell({
                 className={`${styles.menuItem} ${m.page === active ? styles.menuActive : ''}`.trim()}
                 data-page={m.page}
                 aria-current={m.page === active ? 'page' : undefined}
-                onClick={() => m.page !== active && onNavigate(m.page)}
+                onClick={() => {
+                  if (m === CREATE_ITEM) {
+                    onClose()
+                    create?.open()
+                  } else if (m.page !== active) onNavigate(m.page)
+                }}
               >
                 <span className={styles.menuIcon}>
                   {m.page === active && SELECTED_ART[m.page] != null ? (
