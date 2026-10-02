@@ -3,7 +3,6 @@ import jumpInSolid from '../../assets/lobby/jump-in-solid.png'
 import live from '../../assets/lobby/live.png'
 import location from '../../assets/lobby/location.png'
 import players from '../../assets/lobby/players.png'
-import time from '../../assets/lobby/time.png'
 import { Avatar, MaskIcon, VerifiedBadge } from '../../design'
 import type { DclEvent } from '../events/eventsApi'
 import type { Friend } from '../../engine/protocol'
@@ -117,22 +116,32 @@ export function LiveEventCard({ event, onJumpIn }: { event: DclEvent; onJumpIn: 
   )
 }
 
-export function UpcomingEventCard({ event, startsIn }: { event: DclEvent; startsIn: string }): React.JSX.Element {
+/** A place with people in it right now: the compact card, with its player count. */
+export function LivePlaceCard({
+  title,
+  creator,
+  image,
+  count,
+  onJumpIn
+}: {
+  title: string
+  creator: string | null
+  image: string | null
+  count: number
+  onJumpIn: () => void
+}): React.JSX.Element {
   return (
-    <div className={styles.upcoming}>
+    <div className={styles.upcoming} role="button" tabIndex={0} onClick={onJumpIn} onKeyDown={(e) => e.key === 'Enter' && onJumpIn()}>
       <div className={styles.upcomingText}>
-        <div className={styles.upcomingName}>{event.name}</div>
-        {event.user_name && (
-          <div className={styles.upcomingHost}>
-            By {event.user_name}
-          </div>
-        )}
+        <div className={styles.upcomingName}>{title}</div>
+        {creator && <div className={styles.upcomingHost}>{creator}</div>}
         <span className={styles.upcomingWhen}>
-          <MaskIcon src={time} size={20} />
-          {startsIn}
+          <span className={styles.onlineDot} />
+          <MaskIcon src={players} size={16} />
+          {count} online
         </span>
       </div>
-      <div className={styles.upcomingThumb}>{event.image && <img src={event.image} alt="" />}</div>
+      <div className={styles.upcomingThumb}>{image && <img src={image} alt="" />}</div>
     </div>
   )
 }

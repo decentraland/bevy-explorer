@@ -16,8 +16,8 @@ import { placeCreator, placePlayers, placeTeleport, type DiscoverPlace } from '.
 import { openPassport } from '../profile/Passport'
 import { useSession } from '../session/SessionContext'
 import type { Destination } from '../session/useEngineSession'
-import { FriendCard, LandingCard, LiveEventCard, PlaceCard, UpcomingEventCard } from './LobbyCards'
-import { fetchHighlighted, fetchLobbyEvents, fetchPlaceAt, fetchRecents, startsIn, type LobbyEvents } from './lobbyApi'
+import { FriendCard, LandingCard, LiveEventCard, LivePlaceCard, PlaceCard } from './LobbyCards'
+import { fetchHighlighted, fetchLivePlaces, fetchLobbyEvents, fetchPlaceAt, fetchRecents, type LobbyEvents } from './lobbyApi'
 import styles from './LobbyHome.module.css'
 
 type Rect = { x: number; y: number; width: number; height: number }
@@ -66,7 +66,7 @@ function StandInStage({ hidden, body }: { hidden: boolean; body?: string }): Rea
     </div>
   )
 }
-const NO_EVENTS: LobbyEvents = { live: [], upcoming: [] }
+const NO_EVENTS: LobbyEvents = { live: [] }
 
 export function LobbyHome({
   onPick,
@@ -82,6 +82,7 @@ export function LobbyHome({
   const recents = useLoad(fetchRecents, [] as DiscoverPlace[])
   const recommended = useLoad(fetchHighlighted, [] as DiscoverPlace[])
   const events = useLoad(() => fetchLobbyEvents(), NO_EVENTS)
+  const livePlaces = useLoad(fetchLivePlaces, [] as DiscoverPlace[])
   const online = session.friends.list
     .filter((f) => f.status !== 'offline')
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
@@ -147,9 +148,12 @@ export function LobbyHome({
         </section>
       )}
 
-      {(events.data.live.length > 0 || events.data.upcoming.length > 0) && (
+      {(events.data.live.length > 0 || livePlaces.data.length > 0) && (
         <section className={styles.events}>
-          <h2 className={`${styles.sectionTitle} ${styles.eventsTitle}`}>Events</h2>
+          <h2 className={`${styles.sectionTitle} ${styles.eventsTitle}`}>
+            <span className={styles.liveDot} />
+            Live Now
+          </h2>
           {events.data.live.length > 0 && (
             <div className={styles.liveEvents}>
               <Rail perPage={1} gap={8}>
@@ -160,11 +164,11 @@ export function LobbyHome({
               </Rail>
             </div>
           )}
-          {events.data.upcoming.length > 0 && (
+          {livePlaces.data.length > 0 && (
             <div className={styles.upcomingEvents}>
               <Rail perPage={1} gap={12}>
-                {events.data.upcoming.map((e) => (
-                  <UpcomingEventCard key={e.id} event={e} startsIn={startsIn(e.start_at)} />
+                {livePlaces.data.map((p) => (
+                  <LivePlaceCard key={p.id} title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} onJumpIn={() => pickPlace(p)} />
                 ))}
               </Rail>
             </div>
