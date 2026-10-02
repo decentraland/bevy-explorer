@@ -10,6 +10,8 @@ import notificationsIcon from '../../assets/lobby/notifications.png'
 import { Avatar, Close, HeaderButton, MaskIcon, Rail } from '../../design'
 import { BACKDROP_EDGE_FADE, FLOOR, backdropRect, floorShadeGradient } from '../../engine/lobbyStage'
 import { userColor } from '../../lib/identity'
+import { clip } from '../backpack/BackpackModal'
+import { holeMask } from '../../lib/holeMask'
 import { EngineViewport } from '../engine/EngineViewport'
 import { useStoredProfile } from '../login/useStoredProfile'
 import { eventDestination } from '../events/eventsApi'
@@ -44,12 +46,7 @@ function useLoad<T>(load: () => Promise<T>, fallback: T): { data: T; loading: bo
 // The Backpack's preview runs past its modal's edge; only the part inside the modal is a hole.
 function clipToModal(rect: Rect | null): Rect | null {
   const frame = document.querySelector('[role="dialog"][aria-label="Backpack"]')?.getBoundingClientRect()
-  if (rect == null || frame == null) return rect
-  const x = Math.max(rect.x, frame.left)
-  const y = Math.max(rect.y, frame.top)
-  const width = Math.min(rect.x + rect.width, frame.right) - x
-  const height = Math.min(rect.y + rect.height, frame.bottom) - y
-  return width > 0 && height > 0 ? { x, y, width, height } : null
+  return rect == null || frame == null ? rect : clip(rect, frame)
 }
 
 const FLOOR_COLOR = `rgb(${FLOOR.r}, ${FLOOR.g}, ${FLOOR.b})`
@@ -120,17 +117,8 @@ export function LobbyHome({
   // Backpack's avatar, which is behind it.
   const hole = session.backpack.open ? clipToModal(session.avatarPreviewRect) : null
   const scale = rootRef.current != null ? rootRef.current.getBoundingClientRect().width / rootRef.current.offsetWidth || 1 : 1
-  const backpackHole: React.CSSProperties | undefined =
-    hole == null
-      ? undefined
-      : {
-          maskImage: 'linear-gradient(#000, #000), linear-gradient(#000, #000)',
-          maskSize: `100% 100%, ${hole.width / scale}px ${hole.height / scale}px`,
-          maskPosition: `0 0, ${hole.x / scale}px ${hole.y / scale}px`,
-          maskRepeat: 'no-repeat',
-          maskComposite: 'exclude',
-          WebkitMaskComposite: 'xor'
-        }
+  const backpackHole =
+    hole == null ? undefined : holeMask({ x: hole.x / scale, y: hole.y / scale, width: hole.width / scale, height: hole.height / scale })
 
   // The page is scaled to its 1920×1080 canvas, so pointer coordinates are converted into it.
   const trackTooltip = (e: React.MouseEvent): void => {
