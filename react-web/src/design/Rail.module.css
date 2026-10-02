@@ -21,9 +21,10 @@
   inset: 0 -40px 16px;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 150ms var(--ease-outcubic);
+  transition: opacity var(--dur-fast) var(--ease-outcubic);
 }
-.rail:hover .arrows {
+.rail:hover .arrows,
+.rail:focus-within .arrows {
   opacity: 1;
 }
 .arrow {
@@ -36,8 +37,8 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 10px;
-  background: var(--lobby-arrow);
+  border-radius: var(--r-control);
+  background: var(--rail-arrow);
   color: var(--white);
   cursor: pointer;
   pointer-events: auto;
@@ -50,10 +51,15 @@
   right: 20px;
 }
 .arrow:hover {
-  background: var(--lobby-arrow-hover);
+  background: var(--rail-arrow-hover);
+}
+.arrow:focus-visible,
+.dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .arrow:active {
-  background: var(--lobby-arrow-pressed);
+  background: var(--rail-arrow-pressed);
 }
 .arrowIcon {
   width: 15px;
@@ -74,12 +80,12 @@
   height: 8px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
-  background: var(--lobby-dot);
+  border-radius: var(--r-pill);
+  background: var(--rail-dot);
   cursor: pointer;
-  transition: width 200ms var(--ease-outcubic);
+  transition: width var(--dur-pop) var(--ease-outcubic);
 }
 .dotActive {
   width: 24px;
-  background: var(--lobby-dot-active);
+  background: var(--rail-dot-active);
 }

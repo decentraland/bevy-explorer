@@ -30,7 +30,6 @@ function isClaimed(name: string): boolean {
   return name.trim().length > 0 && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
 }
 
-
 interface Identity {
   address: string
   claimed?: boolean

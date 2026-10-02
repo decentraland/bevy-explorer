@@ -52,6 +52,24 @@
   letter-spacing: 0;
 }
 
+/* the JUMP IN on a place card: a fixed-height label + icon */
+.card {
+  height: 40px;
+  padding: 0 16px 0 20px;
+  border-radius: var(--r-md);
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+}
+.cardSm {
+  width: 100%;
+  height: 32px;
+  border-radius: var(--r-md);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+}
+
 /* variants */
 .primary {
   background: var(--brand);
