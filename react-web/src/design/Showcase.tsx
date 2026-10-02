@@ -50,7 +50,8 @@ const NAV: { icon: IconName; label: string }[] = [
   { icon: 'friends', label: 'Friends' },
   { icon: 'chat', label: 'Chat' },
   { icon: 'emotes', label: 'Emotes' },
-  { icon: 'help', label: 'Help' }
+  { icon: 'help', label: 'Help' },
+  { icon: 'create', label: 'Create' }
 ]
 
 // DCL named palette (Explorer 2.0). token = CSS var when one exists.

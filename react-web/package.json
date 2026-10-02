@@ -18,6 +18,8 @@
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
+    "@noble/hashes": "^1.4.0",
+    "@noble/secp256k1": "^1.7.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

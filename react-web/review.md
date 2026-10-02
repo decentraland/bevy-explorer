@@ -203,7 +203,7 @@ from HUD-side key matching. The rules:
   `anyPanelOpen`, dialogs via the popup stack (`openPopup`), full-screen input freezes via
   `inputLock`. If the engine can't see that your surface is active, scenes keep receiving
   input behind it.
-- **The scene editor stands the HUD down through `session.editor.setMode`** (`?editor`,
+- **The scene editor stands the HUD down through `session.editor.setMode`** (Create or `?editor`,
   `src/features/editorHost`): in `edit` the dispatcher acts on `Cancel` only and App unmounts the
   sidebar, minimap, chat and pointer; `play` adds the reticle and the emote wheel. Not through
   `inputLock`: that declares `ui` focus, which would take the viewport's input from the editor's
