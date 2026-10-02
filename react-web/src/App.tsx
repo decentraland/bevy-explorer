@@ -53,6 +53,9 @@ import { openRealmError } from './features/error/RealmErrorModal'
 import { DIALOG_TITLE, isDialogSource } from './features/error/fatalError'
 import { openEntryParamsDialog } from './features/gate/EntryParamsDialog'
 import { unrecognisedEntryParams } from './lib/entryParams'
+import { PAGE_DIR } from './lib/publicUrl'
+import { editorSource } from './features/editorHost/config'
+import { useEditorHost } from './features/editorHost/useEditorHost'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
@@ -95,8 +98,10 @@ const GATE_REASON = gateReason()
 // front-end doesn't recognise get an interstitial before anything boots — captured at module
 // scope, from the ENTRY url, so a later history.replaceState can't retire the warning.
 const UNTRUSTED_PARAMS = untrustedLaunchParams({ native: MODE === 'native' })
+// The scene editor package to load (?editor on an allowed host), from the ENTRY url; null = none.
+const EDITOR_SOURCE = MODE === 'native' ? null : editorSource(location.search, location.hostname, PAGE_DIR)
 // Entry-url params nothing reads (lib/entryParams.ts) — told to the user once the HUD is up.
-const UNRECOGNISED_PARAMS = unrecognisedEntryParams(params)
+const UNRECOGNISED_PARAMS = unrecognisedEntryParams(params, EDITOR_SOURCE != null ? ['editor'] : [])
 
 export function App(): React.JSX.Element {
   const showFps = useFpsToggle()
@@ -183,6 +188,7 @@ function Hud(): React.JSX.Element {
   }, [])
 
   const session = useEngineSession(createDriver)
+  useEditorHost(EDITOR_SOURCE, session)
 
   // A link with params the Explorer doesn't know gets an ordinary dialog listing what was ignored
   // and what it accepts — informational, nothing is frozen behind it.
@@ -279,6 +285,11 @@ function Hud(): React.JSX.Element {
     else if (page === 'signout') session.logout()
   }
 
+  // The scene editor owns the screen: no chrome in 'edit', only the reticle and prompts in 'play',
+  // and no loading overlay in either (a scene reloads on every edit).
+  const editorMode = session.editor.mode
+  const editing = editorMode !== 'off'
+
   // A full-screen MainMenuShell page is open (covers the whole HUD).
   const pageOpen =
     session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.shop.open || session.gallery.open || session.lobbyPage.open
@@ -318,7 +329,7 @@ function Hud(): React.JSX.Element {
           </SurfaceBoundary>
         </>
       )}
-      {session.phase === 'entering' && (
+      {session.phase === 'entering' && !editing && (
         <SceneLoadingOverlay scene={session.sceneLoading} progress={session.loadingProgress} travellingTo={session.travellingTo} />
       )}
       {session.phase === 'world' && !session.menuOpen && (
@@ -328,8 +339,8 @@ function Hud(): React.JSX.Element {
           )}
           {/* The full-screen menu pages own the whole screen; hide the rail + chat so
               they don't show through (the map page's body is transparent). */}
-          {!pageOpen && <Sidebar session={session} onViewProfile={viewMyProfile} />}
-          {!pageOpen && (
+          {!pageOpen && !editing && <Sidebar session={session} onViewProfile={viewMyProfile} />}
+          {!pageOpen && !editing && (
             <Minimap
               minimap={session.minimap}
               map={session.map}
@@ -338,20 +349,22 @@ function Hud(): React.JSX.Element {
             />
           )}
           {/* Reticle (when pointer-locked) + world-hover prompt — hidden under a full-screen page. */}
-          {!pageOpen && (
+          {!pageOpen && editorMode !== 'edit' && (
             <Pointer
               hover={session.hover}
               locked={session.cursorLocked}
               proximity={session.proximity}
             />
           )}
-          <Chat
-            chat={session.chat}
-            hidden={session.friends.open || pageOpen}
-            me={session.profile.data}
-            onTeleport={(x, y) => session.map.teleport(x, y)}
-            onVisitWorld={(name) => openWorldVisit({ worldName: name, onConfirm: () => session.map.changeRealm(name) })}
-          />
+          {!editing && (
+            <Chat
+              chat={session.chat}
+              hidden={session.friends.open || pageOpen}
+              me={session.profile.data}
+              onTeleport={(x, y) => session.map.teleport(x, y)}
+              onVisitWorld={(name) => openWorldVisit({ worldName: name, onConfirm: () => session.map.changeRealm(name) })}
+            />
+          )}
           <SurfaceBoundary name="Friends" open={session.friends.open} onCrash={session.closeAllPanels}>
             <FriendsPanel friends={session.friends} />
           </SurfaceBoundary>

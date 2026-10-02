@@ -71,6 +71,23 @@ lobby returns to the lobby so another destination can be chosen.
 **Mock mode** — `http://localhost:5173/?mock=1`: full UI (login + scene-loading) on
 a fake bridge, no engine. Add `&previousLogin=1` for the returning-user flow.
 
+**Scene editor (dev)** — the editor is an external package (the `dcl-editor` repo's
+`packages/web/dist`); this app only hosts it, and only for `?editor` on localhost (or an allowed
+deployment with a released package — `src/features/editorHost/config.ts`). Without the param
+nothing is loaded.
+
+```bash
+WEB_EDITOR_DIR=<dcl-editor checkout, packages/web built> npm run dev
+# then open http://localhost:5173/?editor
+```
+
+Vite serves `$WEB_EDITOR_DIR/packages/web/dist` same-origin under `/editor/`. Once the player is
+in-world the page sets `window.__dclEditorHost` (`src/features/editorHost/host.ts` — the contract)
+and loads `/editor/editor.js`, which mounts into the host's container. The package must hold
+`editor.js`, `web-build/` and `scene/` (the editor scene's static realm: `scene/about` listing it
+in `scenesUrn`, with an absolute url — export the scene for the port you serve on:
+`npm run export-static -w @dcl-editor/scene -- --editor-base http://localhost:5173/editor/`).
+
 ## Deploy (production)
 
 Everything ships in the one `@dcl-regenesislabs/bevy-explorer-web` package (the `deploy/web`
@@ -140,9 +157,10 @@ Two tiers cover every domain's bridge API and the clicks that drive them:
   scene, enters as a guest, drives the player with **bevy console commands**
   (`move_player_to`, `teleport`) and real clicks, and asserts each API call round-trips
   over a BroadcastChannel spy. Needs a real GPU (WebGPU, headed) — see `e2e/README.md`.
-- **Preview-realm gate (`playwright.gate.config.ts`).** A scene built in the page by the scene
-  editor's web-build, served from the service worker's preview realm and hot-reloaded in the real
-  engine. Needs a dcl-editor checkout — see `e2e/README.md`.
+- **Scene editor gates (`playwright.gate.config.ts`).** `preview-realm`: a scene built in the page
+  by the scene editor's web-build, served from the service worker's preview realm and hot-reloaded
+  in the real engine. `editor`: the editor package opened with `?editor`, creating, editing, playing
+  and leaving a starter scene. Both need a dcl-editor checkout — see `e2e/README.md`.
 
 ```bash
 npm test            # tier 1 (fast, deterministic)
