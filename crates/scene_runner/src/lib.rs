@@ -242,7 +242,7 @@ pub struct SceneLoopSchedule {
 }
 
 // left px, top px, right px, bottom px
-#[derive(Default, Resource)]
+#[derive(Default, Resource, PartialEq)]
 pub struct InteractableArea(pub Option<Vec4>);
 
 /// A full-screen HUD surface covers the world (`SystemApi::SetUiFocus.covered`).
@@ -1355,7 +1355,11 @@ fn set_ui_constraints(
 ) {
     for ev in events.read() {
         match ev {
-            SystemApi::SetInteractableArea(area) => interactable_area.0 = Some(*area),
+            SystemApi::SetInteractableArea(area) => {
+                // only flag a change when the area actually differs, as scene ui roots are
+                // restyled on change
+                interactable_area.set_if_neq(InteractableArea(Some(*area)));
+            }
             SystemApi::SetUiFocus { covered, .. } => hud_fullscreen.0 = *covered,
             _ => (),
         }
@@ -1390,5 +1394,50 @@ fn push_camera_fov_to_crdt(
             global_crdt_state.update_camera_fov(p.fov);
         }
         *last_pushed = Some((p.fov, now));
+    }
+}
+
+#[cfg(test)]
+mod ui_constraints_tests {
+    use super::*;
+
+    #[derive(Resource, Default)]
+    struct AreaChanged(bool);
+
+    fn record_area_changed(area: Res<InteractableArea>, mut changed: ResMut<AreaChanged>) {
+        changed.0 = area.is_changed();
+    }
+
+    #[test]
+    fn repeated_interactable_area_is_not_a_change() {
+        let mut app = App::new();
+        app.add_event::<SystemApi>()
+            .init_resource::<InteractableArea>()
+            .init_resource::<HudFullscreen>()
+            .init_resource::<AreaChanged>()
+            .add_systems(Update, (set_ui_constraints, record_area_changed).chain());
+        // flush the initial insert
+        app.update();
+
+        let area = Vec4::new(1.0, 2.0, 3.0, 4.0);
+        app.world_mut()
+            .send_event(SystemApi::SetInteractableArea(area));
+        app.update();
+        assert!(app.world().resource::<AreaChanged>().0);
+        assert_eq!(app.world().resource::<InteractableArea>().0, Some(area));
+
+        // the same area again must not flag a change
+        app.world_mut()
+            .send_event(SystemApi::SetInteractableArea(area));
+        app.update();
+        assert!(!app.world().resource::<AreaChanged>().0);
+
+        // a different area does
+        let area = Vec4::new(5.0, 6.0, 7.0, 8.0);
+        app.world_mut()
+            .send_event(SystemApi::SetInteractableArea(area));
+        app.update();
+        assert!(app.world().resource::<AreaChanged>().0);
+        assert_eq!(app.world().resource::<InteractableArea>().0, Some(area));
     }
 }
