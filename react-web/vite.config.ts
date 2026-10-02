@@ -77,7 +77,7 @@ const MIME: Record<string, string> = {
 // the COOP/COEP headers WebGPU + wasm threads require. Used to host the engine
 // bundle (../deploy/web) and the built bridge scene in a same-origin iframe —
 // no npm download needed.
-function serveStatic(prefix: string, dirFromConfig: string): Plugin {
+export function serveStatic(prefix: string, dirFromConfig: string): Plugin {
   const root = fileURLToPath(new URL(dirFromConfig, import.meta.url))
   return {
     name: `serve-static:${prefix}`,
@@ -160,6 +160,8 @@ export default defineConfig(({ command, mode }) => ({
     // that header the requests need a CORS preflight, which the peer catalysts reject — no
     // scenes, no avatars. (serveStatic handles a single file fine: rel resolves to the root.)
     serveStatic('/service_worker.js', '../deploy/web/service_worker.js'),
+    // importScripts'd by the service worker (the editor's preview realm), so it sits beside it.
+    serveStatic('/preview_realm.js', '../deploy/web/preview_realm.js'),
     // Our headless super-user bridge scene (exported deployable). Pointed at by
     // the engine's systemScene so it loads as the trusted --system-scene scene.
     serveStatic('/bridge-scene/static/', './bridge-scene/static')
