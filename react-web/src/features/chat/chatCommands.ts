@@ -46,8 +46,9 @@ export const HELP_TEXT = [
  *  the engine registers them: the scene-inspector/editor set serves other HUDs (the editor and
  *  component-inspector system scenes) through the same console op and dumps whole-scene JSON;
  *  lock/unlock_preview and show_ui are preview-scene tooling; the login/logout/chat set are
- *  agent-harness commands that would desync this HUD's own session state; clear/exit are a
- *  console no-op and a native quit. */
+ *  agent-harness commands that would desync this HUD's own session state; spawn/kill start and
+ *  stop portable scenes, and `/spawn <url> true` starts one with super-user rights; clear/exit
+ *  are a console no-op and a native quit. */
 export const HUD_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
   // scene inspector — read
   'set_scene',
@@ -88,6 +89,9 @@ export const HUD_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
   'login_identity',
   'logout',
   'chat',
+  // portable scenes (a spawn can be privileged)
+  'spawn',
+  'kill',
   // console no-op / native quit
   'clear',
   'exit',
