@@ -479,7 +479,7 @@ pub(crate) fn load_scene_javascript(
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
             // Read main.crdt once into its own store (custom components included). `initial_crdt`
-            // is seeded with global state (player AvatarMovementInfo, other avatars, etc.) from
+            // is seeded with global state (other avatars, etc.) from
             // `global_scene.subscribe`, so we keep main.crdt separate to get a clean baseline.
             let mut context = CrdtContext::new(
                 scene_id,

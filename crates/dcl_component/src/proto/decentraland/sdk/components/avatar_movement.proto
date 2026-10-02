@@ -59,4 +59,5 @@ message MovementAnimation {
 //       repeat continue with residual velocity and residual time
 // 7: provide AvatarMovementInfo values
 //      actual velocity = (final - P3+N) / timestep
-//      external_velocity = (P3+N - P1) / timestep
+//      external_velocity = sum of scene impulses + scene forces * timestep + push out of moving colliders / timestep
+//      (movement of the "ground" platform changes the position directly and is not reported here)
