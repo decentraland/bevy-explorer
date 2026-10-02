@@ -5,6 +5,7 @@
 (() => {
     const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
     const LOCAL_HASH_PREFIX = 'b64-';
+    const PARCEL = /^-?\d+,-?\d+$/;
 
     const JSON_TYPE = 'application/json';
     const BYTES_TYPE = 'application/octet-stream';
@@ -75,15 +76,38 @@
         };
     }
 
-    async function activeEntities(request, entity) {
+    // The catalyst of the deployment this page is on, as the engine composes it (`peer.<base>`).
+    function catalystContent(realm) {
+        const { hostname } = new URL(realm);
+        const zone = hostname === 'decentraland.zone' || hostname.endsWith('.decentraland.zone');
+        return `https://peer.decentraland.${zone ? 'zone' : 'org'}/content`;
+    }
+
+    // Parcels are the project's. Everything else the engine asks its realm for (wearables and
+    // emotes, by urn) is a catalyst's to answer: without them the avatar has no body.
+    async function activeEntities(request, realm, entity) {
         let pointers;
         try {
             ({ pointers } = await request.json());
         } catch {
             pointers = null;
         }
-        const wanted = Array.isArray(pointers) && pointers.some((p) => entity.pointers.includes(p));
-        return wanted ? [entity] : [];
+        if (!Array.isArray(pointers)) return json([]);
+        const local = pointers.some((p) => entity.pointers.includes(p)) ? [entity] : [];
+        const remote = pointers.filter((p) => typeof p === 'string' && !PARCEL.test(p));
+        if (remote.length === 0) return json(local);
+        try {
+            const res = await fetch(catalystContent(realm) + '/entities/active', {
+                method: 'POST',
+                headers: { 'Content-Type': JSON_TYPE },
+                body: JSON.stringify({ pointers: remote }),
+            });
+            const found = res.ok ? await res.json() : null;
+            // an error, not an empty list: the engine asks again instead of calling them missing
+            return Array.isArray(found) ? json(local.concat(found)) : respond(null, 502, BYTES_TYPE);
+        } catch {
+            return respond(null, 502, BYTES_TYPE);
+        }
     }
 
     async function contents(store, realm, entity, hash) {
@@ -94,8 +118,8 @@
         return stored ? respond(stored.body, 200, BYTES_TYPE) : notFound();
     }
 
-    // `store` is the preview Cache (anything with `match(url)`). Always answers: a url under
-    // `previewRoot` never reaches the network.
+    // `store` is the preview Cache (anything with `match(url)`). Always answers, and from the
+    // store alone, but for the pointers a catalyst owns (activeEntities).
     async function handle(request, previewRoot, store) {
         const target = parse(request.url, previewRoot);
         if (!target) return notFound();
@@ -104,7 +128,7 @@
 
         const { realm, path } = target;
         if (request.method === 'POST') {
-            return path === 'content/entities/active' ? json(await activeEntities(request, entity)) : notFound();
+            return path === 'content/entities/active' ? activeEntities(request, realm, entity) : notFound();
         }
         if (request.method !== 'GET') return notFound();
         if (path === 'about') return json(about(realm, entity));

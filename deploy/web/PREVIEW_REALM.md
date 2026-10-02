@@ -8,8 +8,9 @@ worker (`preview_realm.js`) only reads it.
 
 - `<PAGE_DIR>` is the directory the service worker is registered at (its scope).
 - A realm lives at `<PAGE_DIR>preview/<projectId>/`, `projectId` matching `/^[a-z0-9][a-z0-9-]{0,63}$/`.
-- Every request under `<PAGE_DIR>preview/` is answered by the worker and never reaches the network
-  or `ipfs-path-cache-v1`. Anything it does not hold is a 404.
+- Every request under `<PAGE_DIR>preview/` is answered by the worker and never reaches
+  `ipfs-path-cache-v1`. Anything it does not hold is a 404. One thing is not the project's to
+  hold: the pointers that are not parcels (see Routes).
 
 ## Store
 
@@ -61,11 +62,20 @@ its scene room and presence partition on it.
 | Request | Answer |
 |---|---|
 | `GET <realm>about` | realm description, below |
-| `POST <realm>content/entities/active`, body `{ "pointers": [...] }` | `[entity]` when a requested pointer is one of the entity's, else `[]` |
+| `POST <realm>content/entities/active`, body `{ "pointers": [...] }` | `[entity]` when a requested pointer is one of the entity's, else `[]`; plus what a catalyst answers for the pointers that are not parcels |
 | `GET <realm>content/contents/<entity id>` | the entity JSON (the engine loads the scene entity this way) |
 | `GET <realm>content/contents/<hash>` | the stored bytes, 404 when missing |
 | `GET <realm>scene.json` | `entity.metadata` (asked for by the engine's presence service on a local realm) |
 | anything else, incl. `GET <realm>scenes` | 404 |
+
+The engine resolves wearables and emotes through its realm's `entities/active` too, by urn. Those
+pointers (anything not shaped `x,y`) are forwarded to `https://peer.decentraland.org/content/entities/active`
+(`peer.decentraland.zone` when the page is on decentraland.zone) and the answer is merged in, so the
+avatar has a body on a preview realm. The files of those entities never pass through the realm: the
+engine loads them from its own catalyst. If the catalyst cannot be reached the answer is a 502, which
+the engine retries; an empty list would mark the wearables missing for good. A page launched with
+another `?baseDomain=` or `?catalyst=` still gets this default catalyst: the worker does not see
+the page's params.
 
 If `preview_realm.js` failed to load, the worker still installs and answers every preview URL 503.
 
@@ -125,7 +135,9 @@ parcels it already resolved), so a change to the scene's parcels needs a new lau
 
 ## Security
 
-- Routes read only keys under their own realm prefix, only from `dcl-editor-preview-v1`.
+- Routes read only keys under their own realm prefix, only from `dcl-editor-preview-v1`. The one
+  request the worker makes is the `entities/active` forward: a fixed catalyst url, the non-parcel
+  pointers and nothing else.
 - Scene code cannot write the store: `engine/sandbox_worker.js` deletes `caches` (and `indexedDB`,
   `navigator.storage`) from the scene worker before any scene code runs, and the service worker
   itself never writes this cache. At most a scene can read preview URLs with `fetch`.
