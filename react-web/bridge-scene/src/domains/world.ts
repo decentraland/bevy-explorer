@@ -222,7 +222,7 @@ export function registerWorld(ctx: Ctx): void {
         // stale name can survive after stepping onto an undeployed parcel.
         if (current == null && attempts < SCENE_LOOKUP_ATTEMPTS) return
         publishedParcel = key
-        ctx.send({ kind: 'sceneInfo', title: current?.title ?? '' })
+        ctx.send({ kind: 'sceneInfo', title: current?.title ?? '', parcel: { x: px, y: py } })
       })
     )
   )
