@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use bevy::{
-    app::NonSendMarker, ecs::entity::EntityHashMap, prelude::*, time::common_conditions::on_timer,
-};
+use bevy::{ecs::entity::EntityHashMap, prelude::*, time::common_conditions::on_timer};
 use web_sys::{NotificationOptions, NotificationPermission};
 
 use crate::{plugin::NotificationsState, Notification, PushNotification};
@@ -87,7 +85,7 @@ fn build_native_notification(
             continue;
         };
 
-        debug!("Built web notification", notification);
+        debug!("Built web notification");
         commands.entity(entity).insert(NativeNotification);
         native_notifications.insert(entity, notification);
     }
@@ -100,7 +98,7 @@ fn notification_removed(
     let entity = trigger.target();
 
     if let Some(notification) = notifications.remove(&entity) {
-        debug!("Notification finished", notification);
+        debug!("Notification finished");
         notification.close();
     }
 }
