@@ -88,12 +88,31 @@ evidence, printed at the end of the run.
 
 ```bash
 # a dcl-editor checkout, after `npm run build -w @dcl-editor/web-build`
-WEB_EDITOR_DIR=/path/to/dcl-editor npx playwright test --config playwright.gate.config.ts
+WEB_EDITOR_DIR=/path/to/dcl-editor npx playwright test --config playwright.gate.config.ts preview-realm
 ```
 
 It starts its own Vite server on :5230 (`e2e/vite.gate.config.ts`: the app's config plus the
 web-build files under `/web-build/`) and the bridge scene on :8100 (reused if already running).
 `npm run test:e2e` skips it.
+
+## Editor gate (real engine, same config)
+
+`editor.gate.spec.ts` opens the app with `?editor` as a guest and drives the scene editor package
+with real clicks: a scene from the Example starter (stored, built and published in the browser),
+the editor's own scene attached to it, an entity and a code edit that rebuild and reload it by id,
+Play, Stop, and Exit back to the HUD. Its six steps pass or fail one by one; the run prints them.
+
+```bash
+# in the dcl-editor checkout: the editor scene's `about` holds an absolute url, so export it for the gate's port
+npm run export-static -w @dcl-editor/scene -- --editor-base http://localhost:5230/editor/
+npm run build -w @dcl-editor/web
+# here
+WEB_EDITOR_DIR=/path/to/dcl-editor npx playwright test --config playwright.gate.config.ts editor
+```
+
+`GATE_SHOTS=<dir>` keeps a screenshot of each screen. The player starts in a one-scene realm the
+gate's Vite server answers at `/gate-home` (nothing is fetched from a catalyst). Give the config a
+name (`editor` or `preview-realm`): with none it runs both gates.
 
 See **`../review.md`** for the full harness overview, per-domain expectations, the world-space
 agent checklist, and the pre-merge review checklist.
