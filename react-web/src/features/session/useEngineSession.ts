@@ -444,6 +444,8 @@ export interface EngineSession {
   phase: SessionPhase
   /** The engine has drawn the lobby stage and avatar, so the page's stand-in can fade out. */
   lobbyStageReady: boolean
+  /** The lobby reopened in-world from the menu. */
+  lobbyPage: { open: boolean; toggle: () => void; travel: (dest: Destination) => void }
   /** Post-jump-in Places picker: choose where to spawn (or null to skip → Genesis Plaza). */
   pickDestination: (dest: Destination) => void
   login: LoginFlow
@@ -700,6 +702,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [satelliteView, setSatelliteView] = useState<SatelliteView | null>(null)
   const [sceneTitle, setSceneTitle] = useState('')
   const [placesOpen, setPlacesOpen] = useState(false)
+  // The lobby reopened in-world: over the running world, under the panels it opens.
+  const [lobbyOpen, setLobbyOpen] = useState(false)
   const [eventsOpen, setEventsOpen] = useState(false)
   const [shopOpen, setShopOpen] = useState(false)
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([])
@@ -1208,7 +1212,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
-    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || shopOpen || galleryOpen
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || shopOpen || galleryOpen || lobbyOpen
   // What takes the screen from the chat, for requestFocusChat: the main menu, the emote wheel, and
   // the two modals App renders above everything (permission prompt, fatal error).
   chatCoveredRef.current =
@@ -1220,6 +1224,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // gamepad alike. No DOM cancel handling here; see the pre-world fallback further down.
   const anyPanelOpen =
     menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen || skyboxOpen
+  // Everything that can sit over the in-world lobby: Cancel closes these before the lobby.
+  const anyPanelOpenExceptLobby =
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || shopOpen || galleryOpen ||
+    friendsOpen || profileOpen || notificationsOpen || emotesOpen || skyboxOpen
   const toggleFriends = useCallback(() => exclusive(setFriendsOpen), [exclusive])
   const loadSettings = useCallback(() => ensure('getSettings'), [ensure])
   const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => ensure('getSettings')), [exclusive, ensure])
@@ -1307,6 +1315,34 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       else driverRef.current?.send({ kind: 'teleport', x, y })
     },
     [satelliteView, travel]
+  )
+  // The in-world lobby: open it over the world (closing other pages), and travel from it the
+  // way any in-world pick does — a runtime realm change or teleport, then close.
+  const toggleLobby = useCallback(() => {
+    setLobbyOpen((open) => {
+      if (!open) {
+        setChatOpen(false)
+        panelSetters.forEach((set) => set(false))
+      }
+      return !open
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const travelFromLobbyInWorld = useCallback(
+    (dest: Destination) => {
+      if (dest == null) {
+        const home = driverRef.current?.homeScene?.()
+        const [x, y] = (home?.parcel ?? '0,0').split(',').map(Number)
+        travel({ kind: 'teleport', realm: home?.realm ?? DEFAULT_REALM, x, y })
+      } else if (dest.kind === 'parcel') teleportToPlace(dest.x, dest.y)
+      else {
+        const [x, y] = (dest.position ?? '').split(',').map(Number)
+        if (Number.isFinite(x) && Number.isFinite(y)) travel({ kind: 'teleport', realm: dest.realm, x, y })
+        else travel({ kind: 'changeRealm', realm: dest.realm })
+      }
+      setLobbyOpen(false)
+    },
+    [teleportToPlace, travel]
   )
   const setMinimapConfig = useCallback(
     (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => {
@@ -2125,7 +2161,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // cancelLayers), else any open panels. One layer per press.
     if (action === 'Cancel') {
       if (hasOpenPopup()) closeTopPopup()
-      else if (!dispatchCancelLayer()) panelSetters.forEach((set) => set(false))
+      else if (dispatchCancelLayer()) return
+      // the lobby sits under the panels it opens: close those first, then the lobby
+      else if (anyPanelOpenExceptLobby) panelSetters.forEach((set) => set(false))
+      else setLobbyOpen(false)
       return
     }
     if (hasOpenPopup()) return
@@ -2169,6 +2208,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   return {
     phase,
     lobbyStageReady,
+    lobbyPage: { open: lobbyOpen, toggle: toggleLobby, travel: travelFromLobbyInWorld },
     pickDestination,
     sceneLoading,
     loadingProgress,

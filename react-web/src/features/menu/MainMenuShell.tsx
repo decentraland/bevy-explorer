@@ -42,6 +42,7 @@ export interface MenuItem {
 // The menu pages we support (others hidden). Matches the Figma nav bar
 // (icon + LABEL [shortcut]). Every item is now a React page.
 export const MENU_ITEMS: MenuItem[] = [
+  { label: 'Lobby', icon: 'lobby', page: 'lobby' },
   { label: 'Communities', icon: 'communities', hotkey: 'Communities', page: 'communities' },
   { label: 'Places', icon: 'places', hotkey: 'Places', page: 'places' },
   { label: 'Events', icon: 'events', page: 'events' },

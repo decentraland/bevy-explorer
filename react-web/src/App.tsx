@@ -259,7 +259,8 @@ function Hud(): React.JSX.Element {
   // Top-nav navigation between the full-screen menu pages (Settings/Backpack/Map)
   // and the Communities panel. Each toggle is mutually exclusive.
   const goToMenuPage = (page: string): void => {
-    if (page === 'settings') session.settings.toggle()
+    if (page === 'lobby') session.lobbyPage.toggle()
+    else if (page === 'settings') session.settings.toggle()
     else if (page === 'backpack') session.backpack.toggle()
     else if (page === 'communities') session.communities.toggle()
     else if (page === 'map') session.map.toggle()
@@ -275,7 +276,7 @@ function Hud(): React.JSX.Element {
 
   // A full-screen MainMenuShell page is open (covers the whole HUD).
   const pageOpen =
-    session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.shop.open || session.gallery.open
+    session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.shop.open || session.gallery.open || session.lobbyPage.open
 
   // Tell the engine how much of the screen the persistent HUD occupies. A full-screen page is
   // transient, so the last in-world value stands while one is open.
@@ -320,6 +321,9 @@ function Hud(): React.JSX.Element {
       )}
       {session.phase === 'world' && !session.menuOpen && (
         <>
+          {session.lobbyPage.open && (
+            <LobbyHome onPick={session.lobbyPage.travel} onClose={session.lobbyPage.toggle} setEngineViewport={session.setEngineViewport} />
+          )}
           {/* The full-screen menu pages own the whole screen; hide the rail + chat so
               they don't show through (the map page's body is transparent). */}
           {!pageOpen && <Sidebar session={session} onViewProfile={viewMyProfile} />}
