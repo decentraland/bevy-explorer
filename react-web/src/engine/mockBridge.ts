@@ -698,6 +698,11 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'permissionResolve') return // no engine to apply the decision in the mock
+    if (msg.kind === 'editorScene') {
+      // no engine to spawn a scene in: answered so the editor's UI can still be tried in the mock
+      reply({ kind: 'editorSceneResult', id: msg.id, ok: true })
+      return
+    }
     if (msg.kind === 'getCommunities') {
       reply({ kind: 'communities', communities: mockCommunities })
       return

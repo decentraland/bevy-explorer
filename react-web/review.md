@@ -203,6 +203,11 @@ from HUD-side key matching. The rules:
   `anyPanelOpen`, dialogs via the popup stack (`openPopup`), full-screen input freezes via
   `inputLock`. If the engine can't see that your surface is active, scenes keep receiving
   input behind it.
+- **The scene editor stands the HUD down through `session.editor.setMode`** (`?editor`,
+  `src/features/editorHost`): in `edit` the dispatcher acts on `Cancel` only and App unmounts the
+  sidebar, minimap, chat and pointer; `play` adds the reticle and the emote wheel. Not through
+  `inputLock`: that declares `ui` focus, which would take the viewport's input from the editor's
+  own scene. A new hotkey or persistent surface must respect the mode (`hudActsOn`).
 - **Scrollable HUD content** just needs real `overflow: auto` — hover detection, the
   engine-side reservation and gamepad scrolling all key off that.
 - Key **labels** come from `bindingLabels` (`keyHintFor`/`labelForInput`), never hardcoded

@@ -175,6 +175,7 @@ export type PageToScene =
   | ChangeRealmRequest
   | MinimapConfigRequest
   | PermissionResolveRequest
+  | EditorSceneRequest
   | EngineViewportRequest
   | InteractableAreaMessage
   | GetGalleryRequest
@@ -640,6 +641,25 @@ export interface TravelResultMessage {
   realm: string
   ok: boolean
   message?: string
+}
+
+/** Spawn or kill the scene editor's own super-user scene (page → scene). `source` is the realm
+ *  url the editor package serves it from and `hash` its entity id: the permissions it needs are
+ *  granted to that scene alone, and cleared again on a kill. */
+export interface EditorSceneRequest {
+  kind: 'editorScene'
+  id: number
+  action: 'spawn' | 'kill'
+  source: string
+  hash: string
+}
+
+/** How an `editorScene` request ended (scene → page). A spawn answers once the scene is live. */
+export interface EditorSceneResultMessage {
+  kind: 'editorSceneResult'
+  id: number
+  ok: boolean
+  error?: string
 }
 
 /** A scene's pending permission prompt relayed from the engine (e.g. it wants to move you
@@ -1295,6 +1315,7 @@ export type SceneToPage =
   | GalleryPhotoMessage
   | PermissionRequestMessage
   | PermissionWithdrawnMessage
+  | EditorSceneResultMessage
 
 // ---- envelope --------------------------------------------------------------
 

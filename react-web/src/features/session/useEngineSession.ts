@@ -27,6 +27,7 @@ import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { formatConsoleReply, parseChatCommand } from '../chat/chatCommands'
 import { PARCEL_METERS, isGenesisSatelliteView } from '../map/atlas'
+import { hudActsOn, type EditorHudMode } from '../editorHost/hudMode'
 import type {
   AvatarColorTarget,
   AppNotification,
@@ -438,6 +439,17 @@ export interface LoginFlow {
   useDifferentAccount: () => void
 }
 
+/** The scene editor's handle on the session (features/editorHost). */
+export interface EditorHostState {
+  /** 'edit' takes the HUD chrome and its hotkeys away, 'play' leaves a player's minimum. */
+  mode: EditorHudMode
+  setMode: (mode: EditorHudMode) => void
+  /** A realm change that reports how it ended; with a parcel, lands on it. */
+  travel: (realm: string, parcel?: { x: number; y: number }) => Promise<void>
+  /** Spawn or kill the editor's own scene through the bridge (see EditorSceneRequest). */
+  scene: (action: 'spawn' | 'kill', source: string, hash: string) => Promise<void>
+}
+
 export interface EngineSession {
   phase: SessionPhase
   /** Post-jump-in Places picker: choose where to spawn (or null to skip → Genesis Plaza). */
@@ -486,6 +498,7 @@ export interface EngineSession {
   gallery: GalleryState
   /** Scene permission prompts (e.g. ChangeRealm) awaiting an Allow/Deny. */
   permissions: PermissionsState
+  editor: EditorHostState
   mic: { enabled: boolean; available: boolean; toggle: () => void }
   /** Trigger a sidebar nav action in the scene (open menu/popup, emotes, mic). */
   nav: (action: NavAction) => void
@@ -569,6 +582,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const travelSeq = useRef(0)
   const [travellingTo, setTravellingTo] = useState<string | null>(null)
   const [travelError, setTravelError] = useState<string | null>(null)
+  const [editorMode, setEditorModeState] = useState<EditorHudMode>('off')
+  // What the editor host is waiting on: a travel by its travelId, a scene request by its id.
+  const editorPending = useRef(new Map<string, { resolve: () => void; reject: (e: Error) => void }>())
+  const editorSceneSeq = useRef(0)
+  const settleEditor = useCallback((key: string, ok: boolean, error?: string): boolean => {
+    const waiter = editorPending.current.get(key)
+    if (waiter == null) return false
+    editorPending.current.delete(key)
+    if (ok) waiter.resolve()
+    else waiter.reject(new Error(error ?? 'unknown error'))
+    return true
+  }, [])
   const [playerReady, setPlayerReady] = useState(false)
   // Ref twin of playerReady: the destination pick runs in a callback that would close over a
   // stale value of the state.
@@ -955,10 +980,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'realmInfo':
           setSatelliteView(msg.satelliteView)
           break
-        case 'travelResult':
+        case 'travelResult': {
+          const awaited = settleEditor(`travel:${msg.travelId}`, msg.ok, msg.message)
           if (msg.travelId !== travelSeq.current) break
           setTravellingTo(null)
-          if (!msg.ok) setTravelError(`Couldn't travel to "${msg.realm}": ${msg.message ?? 'unknown error'}`)
+          // the editor host tells its own failures
+          if (!msg.ok && !awaited) setTravelError(`Couldn't travel to "${msg.realm}": ${msg.message ?? 'unknown error'}`)
+          break
+        }
+        case 'editorSceneResult':
+          settleEditor(`scene:${msg.id}`, msg.ok, msg.error)
           break
         case 'sceneInfo':
           setSceneTitle(msg.title)
@@ -1076,10 +1107,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // A realm change from the HUD: the loader shows from the request until the engine reports the
   // outcome (it validates the destination before leaving the current realm).
-  const travel = useCallback((msg: ChangeRealmRequest | (TeleportRequest & { realm: string })) => {
+  const travel = useCallback((msg: ChangeRealmRequest | (TeleportRequest & { realm: string })): number => {
     const travelId = ++travelSeq.current
     setTravellingTo(msg.realm)
     driverRef.current?.send({ ...msg, travelId })
+    return travelId
   }, [])
   const changeRealm = useCallback((realm: string) => travel({ kind: 'changeRealm', realm }), [travel])
   const dismissTravelError = useCallback(() => setTravelError(null), [])
@@ -1185,7 +1217,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // What takes the screen from the chat, for requestFocusChat: the main menu, the emote wheel, and
   // the two modals App renders above everything (permission prompt, fatal error).
   chatCoveredRef.current =
-    menuPageOpen || emotesOpen || permissionQueue.length > 0 || fatalError != null
+    menuPageOpen || emotesOpen || permissionQueue.length > 0 || fatalError != null || editorMode !== 'off'
 
   // In-world, cancel is an ENGINE action: the cancel key flows to the engine like any other
   // input, resolves to 'Cancel', and comes back on the action stream — the dispatcher below
@@ -1648,6 +1680,33 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'navAction', action })
   }, [closeAllPanels])
 
+  const setEditorMode = useCallback((mode: EditorHudMode) => {
+    if (mode !== 'off') panelSetters.forEach((set) => set(false))
+    setEditorModeState(mode)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const editorTravel = useCallback(
+    (realm: string, parcel?: { x: number; y: number }) =>
+      new Promise<void>((resolve, reject) => {
+        const id = travel(parcel ? { kind: 'teleport', realm, ...parcel } : { kind: 'changeRealm', realm })
+        editorPending.current.set(`travel:${id}`, { resolve, reject })
+      }),
+    [travel]
+  )
+  const editorScene = useCallback(
+    (action: 'spawn' | 'kill', source: string, hash: string) =>
+      new Promise<void>((resolve, reject) => {
+        const id = ++editorSceneSeq.current
+        editorPending.current.set(`scene:${id}`, { resolve, reject })
+        driverRef.current?.send({ kind: 'editorScene', id, action, source, hash })
+      }),
+    []
+  )
+  const editorSlice = useMemo(
+    () => ({ mode: editorMode, setMode: setEditorMode, travel: editorTravel, scene: editorScene }),
+    [editorMode, setEditorMode, editorTravel, editorScene]
+  )
+
   const logout = useCallback(() => {
     driverRef.current?.logout().catch((e: Error) => console.error('[session] logout failed', e))
     clearStoredLogins() // drop the same-domain SSO identity for this origin
@@ -2003,6 +2062,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!pressed || phase !== 'world' || isInputLocked()) return
     if (isEditableTarget(document.activeElement)) return
     if ((window as EngineFocusWindow).__engineTextFocus) return
+    if (!hudActsOn(editorMode, action)) return
     // 'Cancel' is the one action handled even with a popup open: the engine resolved the
     // cancel key or gamepad button, and this is the single layered close — topmost popup
     // first, else the topmost registered leaf layer (lightbox, open dropdown — see
@@ -2152,6 +2212,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       remove: removeGalleryPhoto
     },
     permissions: { pending: permissionQueue, resolve: resolvePermission },
+    editor: editorSlice,
     mic: { enabled: mic.enabled, available: mic.available, toggle: toggleMic },
     nav,
     setEngineViewport,

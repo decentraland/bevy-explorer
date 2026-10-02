@@ -45,6 +45,30 @@ describe('system-action menu shortcuts', () => {
     expect(h.session().chat.open).toBe(true)
   })
 
+  it("stands down for the scene editor: no page hotkeys or Enter-to-chat in 'edit', the emote wheel in 'play'", async () => {
+    const h = await world()
+    h.driver.emit(action('Map'))
+    act(() => h.session().editor.setMode('edit'))
+    expect(h.session().map.open).toBe(false)
+    h.driver.emit(action('Places'))
+    h.driver.emit(action('Emote'))
+    expect(h.session().places.open).toBe(false)
+    expect(h.session().emotes.open).toBe(false)
+    const focusTick = h.session().chat.focusTick
+    h.driver.emit({ kind: 'focusChat' })
+    expect(h.session().chat.focusTick).toBe(focusTick)
+
+    act(() => h.session().editor.setMode('play'))
+    h.driver.emit(action('Places'))
+    h.driver.emit(action('Emote'))
+    expect(h.session().places.open).toBe(false)
+    expect(h.session().emotes.open).toBe(true)
+
+    act(() => h.session().editor.setMode('off'))
+    h.driver.emit(action('Places'))
+    expect(h.session().places.open).toBe(true)
+  })
+
   it('ignores release edges', async () => {
     const h = await world()
     h.driver.emit(action('Places', false))

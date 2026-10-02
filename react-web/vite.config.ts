@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { createReadStream, statSync } from 'node:fs'
+import { createReadStream, existsSync, statSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -111,6 +111,17 @@ export function serveStatic(prefix: string, dirFromConfig: string): Plugin {
   }
 }
 
+// Dev-only: the scene editor package (a dcl-editor checkout's packages/web/dist, named by
+// WEB_EDITOR_DIR) served same-origin under /editor/, where `?editor` loads it from on localhost
+// (src/features/editorHost). Without the variable nothing is mounted.
+function editorPackage(): Plugin[] {
+  const checkout = process.env.WEB_EDITOR_DIR
+  if (!checkout) return []
+  const dist = join(checkout, 'packages/web/dist')
+  if (!existsSync(join(dist, 'editor.js'))) console.warn(`[editor] ${dist}/editor.js is missing: build the editor's web package`)
+  return [serveStatic('/editor/', dist)]
+}
+
 // Apply the cross-origin-isolation headers the engine needs to every response EXCEPT the
 // proxied auth dapp (/auth). The auth site is a normal web page that signs in with popups /
 // OAuth redirects, which `Cross-Origin-Opener-Policy: same-origin` would break — and it does
@@ -156,7 +167,8 @@ export default defineConfig(({ command, mode }) => ({
     serveStatic('/preview_realm.js', '../deploy/web/preview_realm.js'),
     // Our headless super-user bridge scene (exported deployable). Pointed at by
     // the engine's systemScene so it loads as the trusted --system-scene scene.
-    serveStatic('/bridge-scene/static/', './bridge-scene/static')
+    serveStatic('/bridge-scene/static/', './bridge-scene/static'),
+    ...editorPackage()
   ],
   build: {
     // The app IS the production page: build straight into the npm-published deploy/web tree,

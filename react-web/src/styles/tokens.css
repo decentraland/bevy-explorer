@@ -84,6 +84,7 @@
 
   /* ---- stacking order ---- */
   --z-hud: 100; /* in-world chrome: sidebar, chat, minimap */
+  --z-editor: 200; /* the scene editor's container: over the in-world chrome, under modals */
   --z-panel: 50;
   --z-overlay: 60;
   --z-modal: 1000;
