@@ -7,6 +7,8 @@ import { VoiceBars } from './VoiceBars'
 import { ColorPicker } from './ColorPicker'
 import { Chip } from './Chip'
 import { Pager } from './Pager'
+import { Rail } from './Rail'
+import { VerifiedBadge } from './VerifiedBadge'
 import { OptionMenu } from './OptionMenu'
 import { HintsButton, KeyCap } from './HintsButton'
 import { useState } from 'react'
@@ -445,6 +447,20 @@ export function Showcase(): React.JSX.Element {
         </div>
       </Section>
 
+      <Section title="Rail">
+        <div style={{ width: 600 }}>
+          <Rail perPage={3} gap={8}>
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} style={{ width: 194, height: 120, borderRadius: 'var(--lobby-card-radius)', background: 'var(--lobby-card)', display: 'grid', placeItems: 'center' }}>
+                Card {i + 1}
+              </div>
+            ))}
+          </Rail>
+        </div>
+      </Section>
+      <Section title="VerifiedBadge">
+        <VerifiedBadge />
+      </Section>
       <Section title="Pager">
         <Pager page={2} count={9} onChange={() => undefined} />
       </Section>
