@@ -43,6 +43,7 @@ import { CatalystImg } from '../../components/CatalystImg'
 import { CategoryIcon } from './categoryIcons'
 import { EngineViewport } from '../engine/EngineViewport'
 import { MainMenuShell } from '../menu/MainMenuShell'
+import { BackpackModal } from './BackpackModal'
 import type { AvatarColorTarget, Emote, Outfit, Wearable } from '../../engine/protocol'
 import type { BackpackState, EmotesState, ProfileState } from '../session/useEngineSession'
 import styles from './BackpackPage.module.css'
@@ -337,6 +338,7 @@ export function BackpackPage({
   emotes,
   profile,
   onNavigate,
+  modal = false,
   setEngineViewport,
   initialTab = 'wearables'
 }: {
@@ -344,6 +346,8 @@ export function BackpackPage({
   emotes: EmotesState
   profile: ProfileState
   onNavigate: (page: string) => void
+  /** Over the lobby: a modal with its own close and no menu bar. */
+  modal?: boolean
   setEngineViewport: (region: 'map' | 'avatarPreview' | 'lobby', rect: { x: number; y: number; width: number; height: number } | null) => void
   /** Which tab to open on (e.g. the emote wheel's "Customise [E]" opens 'emotes'). */
   initialTab?: 'wearables' | 'emotes'
@@ -510,18 +514,25 @@ export function BackpackPage({
   const colorTarget: AvatarColorTarget | undefined = COLOR_TARGET[cat]
   const color = colorTarget != null ? backpack.colors?.[colorTarget] : undefined
   const p = profile.data
-  return (
-    <MainMenuShell
-      active="backpack"
-      profileName={p?.name}
-      profilePicture={p?.picture}
-      profileAddress={p?.address}
-      profileClaimed={p?.hasClaimedName}
-      onNavigate={onNavigate}
-      onClose={backpack.toggle}
-      transparentBody
-    >
-      <div className={styles.page}>
+  const shell = (body: React.ReactNode): React.JSX.Element =>
+    modal ? (
+      <BackpackModal onClose={backpack.toggle}>{body}</BackpackModal>
+    ) : (
+      <MainMenuShell
+        active="backpack"
+        profileName={p?.name}
+        profilePicture={p?.picture}
+        profileAddress={p?.address}
+        profileClaimed={p?.hasClaimedName}
+        onNavigate={onNavigate}
+        onClose={backpack.toggle}
+        transparentBody
+      >
+        {body}
+      </MainMenuShell>
+    )
+  return shell(
+      <div className={`${styles.page} ${modal ? styles.inModal : ''}`.trim()}>
         <div className={styles.backdrop} aria-hidden="true" />
         <header className={`${styles.head} ${styles.headIn}`}>
           <h1 className={styles.title}>Backpack</h1>
@@ -746,6 +757,5 @@ export function BackpackPage({
           </div>
         </div>
       </div>
-    </MainMenuShell>
   )
 }

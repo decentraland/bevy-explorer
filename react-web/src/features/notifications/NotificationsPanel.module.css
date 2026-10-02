@@ -19,7 +19,8 @@
 }
 
 /* the lobby's dropdown: 420×621 under the bell, its right edge on the bell's */
-.topRight {
+.lobby,
+.lobbyInWorld {
   left: auto;
   right: calc(223px * var(--ui-scale));
   top: calc(80px * var(--ui-scale));
@@ -27,6 +28,9 @@
   width: 420px;
   height: 621px;
   transform-origin: top right;
+}
+.lobbyInWorld {
+  right: calc(273px * var(--ui-scale));
 }
 
 .head {

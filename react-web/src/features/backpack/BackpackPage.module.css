@@ -46,6 +46,13 @@
   }
 }
 
+/* in the lobby's modal the close button takes the header's right edge */
+.inModal .searchWrap {
+  right: 76px;
+}
+.inModal .filterWrap {
+  right: 486px;
+}
 .head {
   position: relative;
   z-index: 2;

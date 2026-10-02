@@ -1,9 +1,9 @@
-/* Lobby cards, sized to the reference lobby at 1920×1080. */
+/* Lobby cards, at the parity sizes on the 1920×1080 canvas. */
 .thumb {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: var(--lobby-card-radius);
+  border-radius: var(--r-lg);
   background: var(--lobby-card);
 }
 .thumb img {
@@ -11,7 +11,7 @@
   height: 100%;
   object-fit: cover;
   display: block;
-  animation: imgIn 300ms linear;
+  animation: imgIn var(--dur-mid) linear;
 }
 @keyframes imgIn {
   from {
@@ -42,11 +42,11 @@
   gap: 4px;
   height: 28px;
   padding: 4px 6px;
-  border-radius: 8.6px;
+  border-radius: var(--r-sm);
   background: var(--lobby-pill);
   color: var(--lobby-ink);
   font-size: var(--type-14);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   box-sizing: border-box;
 }
 .onlineDot {
@@ -59,35 +59,8 @@
   padding: 4px 8px 4px 6px;
   background: var(--lobby-live);
   font-size: var(--type-12);
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   text-transform: uppercase;
-}
-
-.jumpIn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 16px 0 20px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--brand);
-  color: var(--white);
-  font: 600 var(--type-16) var(--font-family);
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: filter 100ms linear;
-}
-.jumpIn:hover {
-  filter: brightness(0.906);
-}
-.jumpIn:active {
-  filter: brightness(0.784);
-}
-.jumpIn:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 /* Landing hero 520×300, and the live event card 358×214 (same text layout). */
@@ -96,13 +69,27 @@
   position: relative;
   width: 520px;
   height: 300px;
-  border-radius: var(--lobby-card-radius);
+  border-radius: var(--r-lg);
   color: var(--white);
 }
 .liveEvent {
+  display: block;
   width: 358px;
   height: 214px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
+}
+.liveEvent:disabled {
+  cursor: default;
+}
+.liveEvent:focus-visible,
+.friend:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .landingTitle {
   position: absolute;
@@ -111,7 +98,7 @@
   bottom: 42px;
   height: 30px;
   font-size: var(--type-22);
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   letter-spacing: var(--lobby-title-tracking);
   line-height: 30px;
   white-space: nowrap;
@@ -138,16 +125,13 @@
   right: 16px;
   bottom: 16px;
 }
-.landingJump .jumpIn {
-  width: 153px;
-}
 
 /* Place card 280×165: the header shrinks 110→86 on hover as JUMP IN replaces the creator. */
 .place {
   position: relative;
   width: 280px;
   height: 165px;
-  border-radius: var(--lobby-card-radius);
+  border-radius: var(--r-lg);
   background: var(--lobby-card);
   color: var(--white);
   overflow: hidden;
@@ -159,18 +143,20 @@
   position: absolute;
   inset: 0 0 auto;
   height: 110px;
-  transition: height 300ms var(--ease-outquad);
+  transition: height var(--dur-mid) var(--ease-outquad);
 }
 .placeFooter {
   position: absolute;
   inset: auto 0 0;
   height: 55px;
-  transition: height 300ms var(--ease-outquad);
+  transition: height var(--dur-mid) var(--ease-outquad);
 }
-.place:hover .placeHeader {
+.place:hover .placeHeader,
+.place:focus-within .placeHeader {
   height: 86px;
 }
-.place:hover .placeFooter {
+.place:hover .placeFooter,
+.place:focus-within .placeFooter {
   height: 79px;
 }
 .placeTitle {
@@ -180,7 +166,7 @@
   right: 10px;
   height: 20px;
   font-size: var(--type-14);
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   letter-spacing: var(--lobby-title-tracking);
   line-height: 20px;
   white-space: nowrap;
@@ -199,26 +185,22 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: opacity 300ms var(--ease-outquad);
+  transition: opacity var(--dur-mid) var(--ease-outquad);
 }
 .placeJump {
   position: absolute;
   left: 8px;
   right: 8px;
   bottom: 8px;
-  height: 32px;
   opacity: 0;
-  transition: opacity 300ms var(--ease-outquad);
+  transition: opacity var(--dur-mid) var(--ease-outquad);
 }
-.placeJump .jumpIn {
-  width: 100%;
-  height: 32px;
-  font-size: var(--type-14);
-}
-.place:hover .placeCreator {
+.place:hover .placeCreator,
+.place:focus-within .placeCreator {
   opacity: 0;
 }
-.place:hover .placeJump {
+.place:hover .placeJump,
+.place:focus-within .placeJump {
   opacity: 1;
 }
 
@@ -230,10 +212,12 @@
   align-items: center;
   width: 124px;
   height: 132px;
-  padding-top: 10px;
+  padding: 10px 0 0;
   box-sizing: border-box;
-  border-radius: var(--lobby-card-radius);
+  border: 0;
+  border-radius: var(--r-lg);
   background: var(--lobby-card);
+  font: inherit;
   cursor: pointer;
 }
 .friendName {
@@ -244,11 +228,18 @@
   max-width: 112px;
   height: 20px;
   font-size: var(--type-12);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   line-height: 20px;
+}
+.friendName span {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.verified {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 .friendWhere {
   position: absolute;
@@ -267,38 +258,4 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.friendJoin {
-  position: absolute;
-  left: 16px;
-  bottom: 8px;
-  width: 92px;
-  height: 24px;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--brand);
-  color: var(--white);
-  font: 600 var(--type-11) var(--font-family);
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.friend:hover .friendJoin {
-  display: inline-flex;
-}
-.friend:hover:has(.friendJoin) .friendWhere {
-  visibility: hidden;
-}
-.friendName span {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.verified {
-  width: 14px;
-  height: 14px;
-  flex: none;
 }

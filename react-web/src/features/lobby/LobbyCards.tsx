@@ -1,9 +1,8 @@
 import jumpIn from '../../assets/lobby/jump-in.png'
-import jumpInSolid from '../../assets/lobby/jump-in-solid.png'
 import live from '../../assets/lobby/live.png'
 import location from '../../assets/lobby/location.png'
 import players from '../../assets/lobby/players.png'
-import { Avatar, MaskIcon, VerifiedBadge } from '../../design'
+import { Avatar, Button, MaskIcon, VerifiedBadge } from '../../design'
 import type { DclEvent } from '../events/eventsApi'
 import type { Friend } from '../../engine/protocol'
 import styles from './LobbyCards.module.css'
@@ -18,20 +17,12 @@ function OnlineCounter({ count }: { count: number }): React.JSX.Element {
   )
 }
 
-function JumpInButton({ onClick, label = 'Jump in', disabled }: { onClick: () => void; label?: string; disabled?: boolean }): React.JSX.Element {
+function JumpIn({ size, disabled, onClick }: { size: 'card' | 'cardSm'; disabled?: boolean; onClick: () => void }): React.JSX.Element {
   return (
-    <button
-      type="button"
-      className={styles.jumpIn}
-      disabled={disabled}
-      onClick={(e) => {
-        e.stopPropagation()
-        onClick()
-      }}
-    >
-      <span>{label}</span>
+    <Button size={size} disabled={disabled} onClick={onClick}>
+      Jump in
       <MaskIcon src={jumpIn} size={24} />
-    </button>
+    </Button>
   )
 }
 
@@ -41,6 +32,7 @@ export function LandingCard({
   image,
   count,
   loading,
+  disabled,
   onJumpIn
 }: {
   title: string
@@ -48,6 +40,7 @@ export function LandingCard({
   image: string | null
   count: number | null
   loading: boolean
+  disabled: boolean
   onJumpIn: () => void
 }): React.JSX.Element {
   return (
@@ -61,7 +54,7 @@ export function LandingCard({
       <div className={styles.landingTitle}>{title}</div>
       {creator && <div className={styles.landingCreator}>{creator}</div>}
       <div className={styles.landingJump}>
-        <JumpInButton onClick={onJumpIn} disabled={loading} />
+        <JumpIn size="card" disabled={loading || disabled} onClick={onJumpIn} />
       </div>
     </div>
   )
@@ -73,6 +66,7 @@ export function PlaceCard({
   image,
   count,
   wide = false,
+  disabled,
   onJumpIn
 }: {
   title: string
@@ -81,6 +75,7 @@ export function PlaceCard({
   count: number
   /** Fill its column (the Live Now rail) instead of the rails' 280px. */
   wide?: boolean
+  disabled: boolean
   onJumpIn: () => void
 }): React.JSX.Element {
   return (
@@ -95,16 +90,25 @@ export function PlaceCard({
         <div className={styles.placeTitle}>{title}</div>
         {creator && <div className={styles.placeCreator}>{creator}</div>}
         <div className={styles.placeJump}>
-          <JumpInButton onClick={onJumpIn} />
+          <JumpIn size="cardSm" disabled={disabled} onClick={onJumpIn} />
         </div>
       </div>
     </div>
   )
 }
 
-export function LiveEventCard({ event, people, onJumpIn }: { event: DclEvent; people: number; onJumpIn: () => void }): React.JSX.Element {
+export function LiveEventCard({
+  event,
+  people,
+  onJumpIn
+}: {
+  event: DclEvent
+  people: number
+  /** null when the event has no place to go to. */
+  onJumpIn: (() => void) | null
+}): React.JSX.Element {
   return (
-    <div className={styles.liveEvent} role="button" tabIndex={0} onClick={onJumpIn} onKeyDown={(e) => e.key === 'Enter' && onJumpIn()}>
+    <button type="button" className={styles.liveEvent} disabled={onJumpIn == null} onClick={onJumpIn ?? undefined}>
       <div className={styles.thumb}>{event.image && <img src={event.image} alt="" />}</div>
       <div className={styles.badges}>
         <span className={styles.liveBadge}>
@@ -115,47 +119,22 @@ export function LiveEventCard({ event, people, onJumpIn }: { event: DclEvent; pe
       </div>
       <div className={styles.landingTitle}>{event.name}</div>
       {event.user_name && <div className={styles.landingCreator}>By {event.user_name}</div>}
-    </div>
+    </button>
   )
 }
 
-export function FriendCard({
-  friend,
-  color,
-  where,
-  onOpen,
-  onJoin
-}: {
-  friend: Friend
-  color: string
-  where: string
-  onOpen: () => void
-  onJoin: (() => void) | null
-}): React.JSX.Element {
+export function FriendCard({ friend, color, where, onOpen }: { friend: Friend; color: string; where: string; onOpen: () => void }): React.JSX.Element {
   return (
-    <div className={styles.friend} role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === 'Enter' && onOpen()}>
+    <button type="button" className={styles.friend} onClick={onOpen}>
       <Avatar src={friend.picture} name={friend.name} color={color} framed size={44} status={friend.status === 'away' ? 'away' : 'online'} />
-      <div className={styles.friendName} style={{ color }}>
+      <span className={styles.friendName} style={{ color }}>
         <span>{friend.name}</span>
         {friend.claimed && <VerifiedBadge className={styles.verified} />}
-      </div>
-      <div className={styles.friendWhere}>
+      </span>
+      <span className={styles.friendWhere}>
         <MaskIcon src={location} size={12} />
         <span>{where}</span>
-      </div>
-      {onJoin && (
-        <button
-          type="button"
-          className={styles.friendJoin}
-          onClick={(e) => {
-            e.stopPropagation()
-            onJoin()
-          }}
-        >
-          Join
-          <MaskIcon src={jumpInSolid} size={14} />
-        </button>
-      )}
-    </div>
+      </span>
+    </button>
   )
 }

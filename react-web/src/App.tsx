@@ -259,6 +259,8 @@ function Hud(): React.JSX.Element {
   // Top-nav navigation between the full-screen menu pages (Settings/Backpack/Map)
   // and the Communities panel. Each toggle is mutually exclusive.
   const goToMenuPage = (page: string): void => {
+    // the startup lobby mounts only the Backpack; other pages wait for the world
+    if (session.phase === 'lobby' && page !== 'backpack' && page !== 'signout') return
     if (page === 'lobby') session.lobbyPage.toggle()
     else if (page === 'settings') session.settings.toggle()
     else if (page === 'backpack') session.backpack.toggle()
@@ -306,13 +308,13 @@ function Hud(): React.JSX.Element {
         <>
           <LobbyHome onPick={session.pickDestination} setEngineViewport={session.setEngineViewport} />
           <SurfaceBoundary name="Profile" open={session.profile.open} onCrash={session.closeAllPanels}>
-            <ProfilePanel profile={session.profile} anchor="topRight" />
+            <ProfilePanel profile={session.profile} anchor="lobby" />
           </SurfaceBoundary>
           <SurfaceBoundary name="Notifications" open={session.notifications.open} onCrash={session.closeAllPanels}>
-            <NotificationsPanel notifications={session.notifications} friends={session.friends} anchor="topRight" />
+            <NotificationsPanel notifications={session.notifications} friends={session.friends} anchor="lobby" />
           </SurfaceBoundary>
           <SurfaceBoundary name="Backpack" open={session.backpack.open} onCrash={session.closeAllPanels}>
-            <BackpackPage backpack={session.backpack} emotes={session.emotes} profile={session.profile} onNavigate={goToMenuPage} setEngineViewport={session.setEngineViewport} initialTab={backpackTab} />
+            <BackpackPage backpack={session.backpack} emotes={session.emotes} profile={session.profile} onNavigate={goToMenuPage} setEngineViewport={session.setEngineViewport} initialTab={backpackTab} modal />
           </SurfaceBoundary>
         </>
       )}
@@ -357,10 +359,10 @@ function Hud(): React.JSX.Element {
             <SettingsPanel settings={session.settings} bindings={session.bindings} profile={session.profile} onNavigate={goToMenuPage} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Profile" open={session.profile.open} onCrash={session.closeAllPanels}>
-            <ProfilePanel profile={session.profile} />
+            <ProfilePanel profile={session.profile} anchor={session.lobbyPage.open ? 'lobbyInWorld' : 'rail'} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Notifications" open={session.notifications.open} onCrash={session.closeAllPanels}>
-            <NotificationsPanel notifications={session.notifications} friends={session.friends} />
+            <NotificationsPanel notifications={session.notifications} friends={session.friends} anchor={session.lobbyPage.open ? 'lobbyInWorld' : 'rail'} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Skybox" open={session.skybox.open} onCrash={session.closeAllPanels}>
             <SkyboxMenu skybox={session.skybox} />
@@ -375,7 +377,7 @@ function Hud(): React.JSX.Element {
             />
           </SurfaceBoundary>
           <SurfaceBoundary name="Backpack" open={session.backpack.open} onCrash={session.closeAllPanels}>
-            <BackpackPage backpack={session.backpack} emotes={session.emotes} profile={session.profile} onNavigate={goToMenuPage} setEngineViewport={session.setEngineViewport} initialTab={backpackTab} />
+            <BackpackPage backpack={session.backpack} emotes={session.emotes} profile={session.profile} onNavigate={goToMenuPage} setEngineViewport={session.setEngineViewport} initialTab={backpackTab} modal={session.lobbyPage.open} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Communities" open={session.communities.open} onCrash={session.closeAllPanels}>
             <CommunitiesPage

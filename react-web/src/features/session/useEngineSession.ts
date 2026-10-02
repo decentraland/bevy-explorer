@@ -446,6 +446,10 @@ export interface EngineSession {
   lobbyStageReady: boolean
   /** The lobby reopened in-world from the menu. */
   lobbyPage: { open: boolean; toggle: () => void; travel: (dest: Destination) => void }
+  /** The Backpack avatar preview's on-screen rect (CSS px), while it is open. */
+  avatarPreviewRect: { x: number; y: number; width: number; height: number } | null
+  /** The persisted home destination the lobby's landing card shows (null before the engine knows). */
+  homeScene: () => { realm: string | null; parcel: string } | null
   /** Post-jump-in Places picker: choose where to spawn (or null to skip → Genesis Plaza). */
   pickDestination: (dest: Destination) => void
   login: LoginFlow
@@ -1333,6 +1337,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!closing) setLobbyStageReady(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyOpen, anyPanelOpenExceptLobby])
+  const homeScene = useCallback(() => driverRef.current?.homeScene?.() ?? null, [])
   // Opening the Backpack or the lobby rebuilds the stage, so the page's stand-in shows again.
   useEffect(() => {
     if (backpackOpen) setLobbyStageReady(false)
@@ -1791,8 +1796,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     pendingParcel.current = null
   }, [closeAllPanels])
 
+  // Where the Backpack's avatar shows through, so the lobby under its modal can open the same hole.
+  const [avatarPreviewRect, setAvatarPreviewRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const setEngineViewport = useCallback(
     (region: 'map' | 'avatarPreview' | 'lobby', rect: { x: number; y: number; width: number; height: number } | null, dpr?: number) => {
+      if (region === 'avatarPreview') setAvatarPreviewRect(rect)
       driverRef.current?.send({ kind: 'engineViewport', region, rect, dpr })
     },
     []
@@ -2203,6 +2211,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     phase,
     lobbyStageReady,
     lobbyPage: { open: lobbyOpen, toggle: toggleLobby, travel: travelFromLobbyInWorld },
+    homeScene,
+    avatarPreviewRect,
     pickDestination,
     sceneLoading,
     loadingProgress,

@@ -1,0 +1,28 @@
+/* The page's 1920×1012 body, scaled into a centred frame like the parity modal (~1600px wide). */
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+}
+.dim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+}
+.frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 1012px;
+  transform: translate(-50%, -50%) scale(calc(var(--ui-scale) * 0.84));
+  border-radius: var(--r-xl);
+  overflow: hidden;
+  font-family: var(--font-family);
+}
+.close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 3;
+}
