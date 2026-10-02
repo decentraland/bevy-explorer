@@ -8,13 +8,14 @@
 // The preview wears the Backpack's look (./avatarDraft), which equipping edits, so equipping in the
 // Backpack reflects here before anything is deployed. Mounted via ReactEcsRenderer in index.ts.
 import ReactEcs, { UiEntity } from '@dcl/react-ecs'
-import { AvatarShape, CameraLayer, CameraLayers, Material, MeshRenderer, PrimaryPointerInfo, TextureCamera, Transform, engine } from '@dcl/sdk/ecs'
+import { AvatarShape, CameraLayer, CameraLayers, Material, MaterialTransparencyMode, MeshRenderer, PrimaryPointerInfo, TextureCamera, Transform, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { getPlayer } from '@dcl/sdk/players'
 import type { Entity } from '@dcl/ecs'
 import type { Ctx } from '../bridge'
 import type { PreviewFocus } from '../../../src/engine/protocol'
 import { currentLook } from './avatarDraft'
+import { FLOOR, FLOOR_SHADE_STOPS, backdropRect, floorShadeAt } from '../../../src/engine/lobbyStage'
 import { BevyApi } from '../bevy-api'
 
 type Rect = { x: number; y: number; width: number; height: number }
@@ -51,35 +52,37 @@ const ROTATION_FACTOR = -0.5
 const FACING = Quaternion.fromEulerDegrees(0, 180, 0)
 const THUMBNAIL_SIZE = 480
 
-// The lobby stage: the avatar full-screen over the stage backdrop, framed like the desktop lobby
-// (camera 1 m above a target 0.8 m over the feet, 6 m back, 26.2° vertical FOV).
-// The stage floor darkening toward the camera, measured against the reference stage: shade alpha
-// by screen height (kept in step with the page's --lobby-floor-shade).
-const LOBBY_FLOOR = { r: 37 / 255, g: 5 / 255, b: 3 / 255 }
-const LOBBY_BASE = Color4.create(LOBBY_FLOOR.r, LOBBY_FLOOR.g, LOBBY_FLOOR.b, 1)
-const LOBBY_SHADE_STOPS: Array<[number, number]> = [[0.54, 0], [0.62, 0.23], [0.71, 0.61], [0.8, 0.73], [0.9, 0.85], [1, 1]]
-const LOBBY_SHADE_BANDS = 46
-const LOBBY_SHADE = Array.from({ length: LOBBY_SHADE_BANDS }, (_, i) => {
-  const y = 0.54 + ((1 - 0.54) * (i + 0.5)) / LOBBY_SHADE_BANDS
-  const k = LOBBY_SHADE_STOPS.findIndex(([at]) => at >= y)
-  const [y0, a0] = LOBBY_SHADE_STOPS.at(k - 1) ?? [0, 0]
-  const [y1, a1] = LOBBY_SHADE_STOPS.at(k) ?? [1, 1]
-  const alpha = a0 + ((a1 - a0) * (y - y0)) / (y1 - y0)
-  return Color4.create(LOBBY_FLOOR.r, LOBBY_FLOOR.g, LOBBY_FLOOR.b, alpha)
-})
+// The lobby stage: the avatar full-screen over the stage backdrop, camera 1 m above a target
+// 0.8 m over the feet, 6 m back, 26.2° vertical field of view.
+const LOBBY_BASE = Color4.create(FLOOR.r / 255, FLOOR.g / 255, FLOOR.b / 255, 1)
 const LOBBY_BACKDROP = 'images/lobby-background.jpg'
-// The stage's vignette, fitted to the reference capture; the page's stand-in stretches the same image.
 const LOBBY_VIGNETTE = 'images/lobby-vignette.png'
-const LOBBY_BACKDROP_ASPECT = 1595 / 986
-// The backdrop's height and top as fractions of the screen height (the stage camera's vertical
-// field of view is fixed), measured against the reference stage; kept in step with the page's stand-in.
-const LOBBY_BACKDROP_HEIGHT = 1.033
-const LOBBY_BACKDROP_TOP = -0.17
+const LOBBY_SHADE_FROM = FLOOR_SHADE_STOPS[0][0]
+const LOBBY_SHADE_BAND_PX = 4
 const LOBBY_TARGET_Y = 0.8
 const LOBBY_CAMERA_RISE = 1
 const LOBBY_CAMERA_DISTANCE = 6
 const LOBBY_FOV = (26.2 * Math.PI) / 180
 const LOBBY_SHADOW = Color4.create(0, 0, 0, 0.65)
+// Frames to let the stage and the avatar's first look settle before the page drops its stand-in,
+// and how long to wait for the look at all.
+const LOBBY_SETTLE_FRAMES = 45
+const LOBBY_LOOK_FRAMES = 600
+
+// The floor shade as abutting whole-pixel bands, rebuilt only when the screen height changes.
+let shadeBands: { height: number; bands: Array<{ top: number; height: number; color: Color4 }> } = { height: -1, bands: [] }
+function floorShade(height: number): Array<{ top: number; height: number; color: Color4 }> {
+  if (shadeBands.height === height) return shadeBands.bands
+  const from = Math.floor(height * LOBBY_SHADE_FROM)
+  const bands = []
+  for (let top = from; top < height; top += LOBBY_SHADE_BAND_PX) {
+    const h = Math.min(LOBBY_SHADE_BAND_PX, height - top)
+    const alpha = floorShadeAt((top + h / 2) / height)
+    bands.push({ top, height: h, color: Color4.create(FLOOR.r / 255, FLOOR.g / 255, FLOOR.b / 255, alpha) })
+  }
+  shadeBands = { height, bands }
+  return bands
+}
 
 type Stage = 'backpack' | 'lobby'
 let stage: Stage = 'backpack'
@@ -211,24 +214,22 @@ function createPreview(): void {
   syncShape()
 }
 
-// Frames to let the stage and the avatar's first look settle before the page drops its stand-in.
-const LOBBY_SETTLE_FRAMES = 45
-
-function lobbyShown(): boolean {
-  return stage === 'lobby' && avatarEntity != null
-}
+// Bumped whenever a stage is built, so an announcement for a stage since rebuilt never fires.
+let stageGeneration = 0
 
 async function announceLobbyStage(ctx: Ctx): Promise<void> {
+  const generation = ++stageGeneration
+  const current = (): boolean => generation === stageGeneration && stage === 'lobby' && avatarEntity != null
   // the avatar renders nothing until the player's look (and so its body shape) has arrived
-  while (lobbyShown() && !currentLook()?.bodyShape) await waitFrames(5)
+  for (let waited = 0; current() && !currentLook()?.bodyShape && waited < LOBBY_LOOK_FRAMES; waited += 5) await waitFrames(5)
   await waitFrames(LOBBY_SETTLE_FRAMES)
-  if (lobbyShown()) ctx.send({ kind: 'lobbyStageReady' })
+  if (current()) ctx.send({ kind: 'lobbyStageReady' })
 }
 
 function lobbyShadow(): Entity {
   const e = engine.addEntity()
   MeshRenderer.setCylinder(e, 1, 1)
-  Material.setBasicMaterial(e, { diffuseColor: LOBBY_SHADOW })
+  Material.setPbrMaterial(e, { albedoColor: LOBBY_SHADOW, metallic: 0, roughness: 1, transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND })
   CameraLayers.create(e, { layers: [LAYER] })
   Transform.create(e, { position: Vector3.create(8, -0.005, 8), scale: Vector3.create(0.7, 0.01, 0.7) })
   return e
@@ -263,6 +264,8 @@ export function registerAvatarPreview(ctx: Ctx): void {
     if (nextStage !== stage) {
       disposePreview()
       stage = nextStage
+      framing = framingFrom = framingTo = FRAMING.body
+      framingT = 1
     }
     rect = msg.rect
     dpr = msg.dpr ?? 1
@@ -290,6 +293,7 @@ export function registerAvatarPreview(ctx: Ctx): void {
 
   // The Backpack's selected category: ease the camera to frame that part of the avatar.
   ctx.on('previewFocus', (msg) => {
+    if (stage !== 'backpack') return
     const to = FRAMING[msg.focus] ?? FRAMING.body
     if (to === framingTo) return
     framingFrom = framing
@@ -304,7 +308,7 @@ export function registerAvatarPreview(ctx: Ctx): void {
     })
   })
   ctx.push((dt) => {
-    if (framingT >= 1 || cameraEntity == null) return
+    if (framingT >= 1 || cameraEntity == null || stage !== 'backpack') return
     framingT = Math.min(1, framingT + dt / FOCUS_SECONDS)
     const e = framingT * framingT * (3 - 2 * framingT)
     framing = {
@@ -342,7 +346,7 @@ export async function waitFrames(frames: number): Promise<void> {
 }
 
 function applyFraming(f: { range: number; centerY: number }): void {
-  if (cameraEntity == null) return
+  if (cameraEntity == null || stage !== 'backpack') return
   const cam = TextureCamera.getMutableOrNull(cameraEntity)
   if (cam?.mode?.$case === 'orthographic') cam.mode.orthographic.verticalRange = f.range
   Transform.getMutable(cameraEntity).position = Vector3.create(8, f.centerY + PITCH_DROP, 8 - CAMERA_DISTANCE)
@@ -393,28 +397,21 @@ function rotateAvatar(): void {
 }
 
 function renderLobbyStage(r: Rect, camera: Entity): ReactEcs.JSX.Element {
-  const height = Math.max(r.height * LOBBY_BACKDROP_HEIGHT, r.width / LOBBY_BACKDROP_ASPECT)
-  const width = height * LOBBY_BACKDROP_ASPECT
-  const top = r.height * LOBBY_BACKDROP_TOP
+  const backdrop = backdropRect(r.width, r.height)
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { left: r.x, top: r.y }, width: r.width, height: r.height, overflow: 'hidden' }}
       uiBackground={{ color: LOBBY_BASE }}
     >
       <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { left: (r.width - width) / 2, top }, width, height }}
+        uiTransform={{ positionType: 'absolute', position: { left: backdrop.left, top: backdrop.top }, width: backdrop.width, height: backdrop.height }}
         uiBackground={{ texture: { src: LOBBY_BACKDROP }, textureMode: 'stretch' }}
       />
-      {LOBBY_SHADE.map((color, i) => (
+      {floorShade(Math.round(r.height)).map((band) => (
         <UiEntity
-          key={i}
-          uiTransform={{
-            positionType: 'absolute',
-            position: { left: 0, top: `${(54 + (46 * i) / LOBBY_SHADE_BANDS).toFixed(3)}%` },
-            width: '100%',
-            height: `${(46 / LOBBY_SHADE_BANDS + 0.2).toFixed(3)}%`
-          }}
-          uiBackground={{ color }}
+          key={band.top}
+          uiTransform={{ positionType: 'absolute', position: { left: 0, top: band.top }, width: '100%', height: band.height }}
+          uiBackground={{ color: band.color }}
         />
       ))}
       <UiEntity
