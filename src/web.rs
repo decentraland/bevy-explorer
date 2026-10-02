@@ -10,7 +10,9 @@ use bevy::{
 use bevy_console::ConsoleConfiguration;
 use common::{
     rpc::RpcResultSender,
-    structs::{AppConfig, CurrentRealm, EditorMode, PreviewMode, PrimaryUser, StartupScenes, WorldHold},
+    structs::{
+        AppConfig, CurrentRealm, EditorMode, PreviewMode, PrimaryUser, StartupScenes, WorldHold,
+    },
 };
 use dcl_wasm::init_runtime;
 use futures_lite::io::AsyncReadExt;

@@ -1483,8 +1483,8 @@ pub struct PlayerTeleported {
 pub struct OutOfWorld;
 
 /// Holds the world back for a lobby shown before it: the realm is resolved (so sign-in, profiles
-/// and wearables work) and system scenes run, but no realm scenes, imposters or realm comms load.
-/// Released by the first requested realm change that succeeds.
+/// and wearables work) and system scenes run, but no realm scenes or realm comms load. Released
+/// by the first successful realm change request.
 #[derive(Resource)]
 pub struct WorldHold;
 
