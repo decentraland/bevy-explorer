@@ -16,7 +16,7 @@ import { placeCreator, placePlayers, placeTeleport, type DiscoverPlace } from '.
 import { openPassport } from '../profile/Passport'
 import { useSession } from '../session/SessionContext'
 import type { Destination } from '../session/useEngineSession'
-import { FriendCard, LandingCard, LiveEventCard, LivePlaceCard, PlaceCard } from './LobbyCards'
+import { FriendCard, LandingCard, LiveEventCard, PlaceCard } from './LobbyCards'
 import { eventPeople, fetchHighlighted, fetchLivePlaces, fetchLobbyEvents, fetchPlaceAt, fetchRecents, type LobbyEvents } from './lobbyApi'
 import styles from './LobbyHome.module.css'
 
@@ -64,6 +64,7 @@ function StandInStage({ hidden, body }: { hidden: boolean; body?: string }): Rea
   return (
     <div ref={ref} className={`${styles.standIn} ${hidden ? styles.standInHidden : ''}`.trim()} aria-hidden="true">
       <img className={styles.standInBackdrop} src={backdrop} alt="" style={{ width, height, top, left: (size.w - width) / 2 }} />
+      <div className={styles.standInShade} />
       {body && <img className={styles.standInAvatar} src={body} alt="" draggable={false} />}
     </div>
   )
@@ -178,10 +179,10 @@ export function LobbyHome({
             </div>
           )}
           {busyPlaces.length > 0 && (
-            <div className={styles.upcomingEvents}>
+            <div className={styles.livePlaces}>
               <Rail perPage={1} gap={12}>
                 {busyPlaces.map((p) => (
-                  <LivePlaceCard key={p.id} title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} onJumpIn={() => pickPlace(p)} />
+                  <PlaceCard key={p.id} wide title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} onJumpIn={() => pickPlace(p)} />
                 ))}
               </Rail>
             </div>

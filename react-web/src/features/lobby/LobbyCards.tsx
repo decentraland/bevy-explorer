@@ -72,16 +72,19 @@ export function PlaceCard({
   creator,
   image,
   count,
+  wide = false,
   onJumpIn
 }: {
   title: string
   creator: string | null
   image: string | null
   count: number
+  /** Fill its column (the Live Now rail) instead of the rails' 280px. */
+  wide?: boolean
   onJumpIn: () => void
 }): React.JSX.Element {
   return (
-    <div className={styles.place}>
+    <div className={`${styles.place} ${wide ? styles.placeWide : ''}`.trim()}>
       <div className={styles.placeHeader}>
         <div className={styles.thumb}>{image && <img src={image} alt="" />}</div>
         <div className={styles.badges}>
@@ -112,36 +115,6 @@ export function LiveEventCard({ event, people, onJumpIn }: { event: DclEvent; pe
       </div>
       <div className={styles.landingTitle}>{event.name}</div>
       {event.user_name && <div className={styles.landingCreator}>By {event.user_name}</div>}
-    </div>
-  )
-}
-
-/** A place with people in it right now: the compact card, with its player count. */
-export function LivePlaceCard({
-  title,
-  creator,
-  image,
-  count,
-  onJumpIn
-}: {
-  title: string
-  creator: string | null
-  image: string | null
-  count: number
-  onJumpIn: () => void
-}): React.JSX.Element {
-  return (
-    <div className={styles.upcoming} role="button" tabIndex={0} onClick={onJumpIn} onKeyDown={(e) => e.key === 'Enter' && onJumpIn()}>
-      <div className={styles.upcomingText}>
-        <div className={styles.upcomingName}>{title}</div>
-        {creator && <div className={styles.upcomingHost}>{creator}</div>}
-        <span className={styles.upcomingWhen}>
-          <span className={styles.onlineDot} />
-          <MaskIcon src={players} size={16} />
-          {count} online
-        </span>
-      </div>
-      <div className={styles.upcomingThumb}>{image && <img src={image} alt="" />}</div>
     </div>
   )
 }

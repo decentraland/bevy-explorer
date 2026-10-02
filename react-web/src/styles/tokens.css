@@ -218,6 +218,10 @@
   /* Lobby. Opaque values as authored; translucent ones are provisional until measured on screen
      (the reference composites in linear space, so its alphas don't map 1:1 to CSS). */
   --lobby-bg: rgb(15, 13, 23);
+  /* The stage floor darkening toward the camera, measured against the reference stage (shade
+     alpha by screen height: 0 at 54%, .23 at 62%, .61 at 71%, .73 at 79%, ~1 at the bottom). */
+  --lobby-floor: rgb(37, 5, 3);
+  --lobby-floor-shade: linear-gradient(to bottom, rgba(37, 5, 3, 0) 54%, rgba(37, 5, 3, 0.23) 62%, rgba(37, 5, 3, 0.61) 71%, rgba(37, 5, 3, 0.73) 80%, rgba(37, 5, 3, 0.85) 90%, rgb(37, 5, 3) 100%);
   --lobby-card: rgba(20, 20, 26, 0.9); /* provisional */
   --lobby-card-radius: 16px;
   --lobby-pill: rgb(22, 21, 24);
