@@ -18,6 +18,14 @@
   overflow: hidden;
 }
 
+/* the lobby's dropdown, under the profile button */
+.topRight {
+  left: auto;
+  right: calc(50px * var(--ui-scale));
+  top: calc(80px * var(--ui-scale));
+  transform-origin: top right;
+}
+
 .head {
   display: flex;
   align-items: center;

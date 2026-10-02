@@ -243,6 +243,8 @@ export function registerAvatarPreview(ctx: Ctx): void {
   ctx.on('engineViewport', (msg) => {
     if (msg.region !== 'avatarPreview' && msg.region !== 'lobby') return
     const nextStage: Stage = msg.region === 'lobby' ? 'lobby' : 'backpack'
+    // a region closing after another took over (lobby → Backpack) must not dispose the new one
+    if (msg.rect == null && nextStage !== stage) return
     if (nextStage !== stage) {
       disposePreview()
       stage = nextStage

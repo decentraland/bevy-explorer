@@ -8,9 +8,13 @@
   height: calc(100% / var(--ui-scale));
   transform: scale(var(--ui-scale));
   transform-origin: top left;
-  z-index: var(--z-loading);
+  /* under the panels the lobby opens (profile, notifications, backpack) */
+  z-index: var(--z-panel);
   font-family: var(--font-family);
   color: var(--white);
+}
+.covered {
+  visibility: hidden;
 }
 .stage {
   position: absolute;
@@ -42,6 +46,9 @@
 }
 .avatarHit {
   position: absolute;
+  padding: 0;
+  border: 0;
+  background: none;
   left: 740px;
   top: 190px;
   width: 440px;
@@ -105,6 +112,10 @@
 }
 .profileWidget {
   display: flex;
+  border: 0;
+  color: var(--white);
+  font: inherit;
+  cursor: pointer;
   align-items: center;
   width: 163px;
   height: 46px;

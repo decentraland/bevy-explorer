@@ -33,16 +33,23 @@ export async function fetchWorld(name: string): Promise<DiscoverPlace | null> {
   return data[0] ?? null
 }
 
+export type LiveEvent = DclEvent & { connected_addresses?: string[] }
+
+/** People in a live event right now. */
+export function eventPeople(e: LiveEvent): number {
+  return e.connected_addresses?.length ?? 0
+}
+
 export interface LobbyEvents {
-  live: DclEvent[]
+  live: LiveEvent[]
 }
 
 export async function fetchLobbyEvents(signal?: AbortSignal): Promise<LobbyEvents> {
   const res = await fetch(`${EVENTS_API}?with_connected_users=true`, { signal })
   if (!res.ok) throw new Error(`Events service returned ${res.status}`)
-  const body = (await res.json()) as { ok?: boolean; data?: DclEvent[] }
+  const body = (await res.json()) as { ok?: boolean; data?: LiveEvent[] }
   if (body.ok === false || !Array.isArray(body.data)) throw new Error('Events service returned an unexpected response')
-  return { live: body.data.filter((e) => e.live) }
+  return { live: body.data.filter((e) => e.live).sort((a, b) => eventPeople(b) - eventPeople(a)) }
 }
 
 export const LIVE_PLACES_MAX = 10

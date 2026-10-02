@@ -99,7 +99,7 @@ export function PlaceCard({
   )
 }
 
-export function LiveEventCard({ event, onJumpIn }: { event: DclEvent; onJumpIn: () => void }): React.JSX.Element {
+export function LiveEventCard({ event, people, onJumpIn }: { event: DclEvent; people: number; onJumpIn: () => void }): React.JSX.Element {
   return (
     <div className={styles.liveEvent} role="button" tabIndex={0} onClick={onJumpIn} onKeyDown={(e) => e.key === 'Enter' && onJumpIn()}>
       <div className={styles.thumb}>{event.image && <img src={event.image} alt="" />}</div>
@@ -108,7 +108,7 @@ export function LiveEventCard({ event, onJumpIn }: { event: DclEvent; onJumpIn: 
           <MaskIcon src={live} size={16} />
           Live
         </span>
-        <OnlineCounter count={event.total_attendees ?? 0} />
+        <OnlineCounter count={people} />
       </div>
       <div className={styles.landingTitle}>{event.name}</div>
       {event.user_name && <div className={styles.landingCreator}>By {event.user_name}</div>}

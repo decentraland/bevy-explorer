@@ -18,6 +18,17 @@
   overflow: hidden;
 }
 
+/* the lobby's dropdown: 420×621 under the bell, its right edge on the bell's */
+.topRight {
+  left: auto;
+  right: calc(223px * var(--ui-scale));
+  top: calc(80px * var(--ui-scale));
+  bottom: auto;
+  width: 420px;
+  height: 621px;
+  transform-origin: top right;
+}
+
 .head {
   display: flex;
   align-items: center;

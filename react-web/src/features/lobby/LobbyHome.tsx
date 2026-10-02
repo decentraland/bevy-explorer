@@ -17,7 +17,7 @@ import { openPassport } from '../profile/Passport'
 import { useSession } from '../session/SessionContext'
 import type { Destination } from '../session/useEngineSession'
 import { FriendCard, LandingCard, LiveEventCard, LivePlaceCard, PlaceCard } from './LobbyCards'
-import { fetchHighlighted, fetchLivePlaces, fetchLobbyEvents, fetchPlaceAt, fetchRecents, type LobbyEvents } from './lobbyApi'
+import { eventPeople, fetchHighlighted, fetchLivePlaces, fetchLobbyEvents, fetchPlaceAt, fetchRecents, type LobbyEvents } from './lobbyApi'
 import styles from './LobbyHome.module.css'
 
 type Rect = { x: number; y: number; width: number; height: number }
@@ -90,16 +90,27 @@ export function LobbyHome({
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null)
   const pickPlace = (p: DiscoverPlace): void => onPick(placeTeleport(p))
+  // The landing card already offers its place; the rails don't repeat it.
+  const notLanding = (list: DiscoverPlace[]): DiscoverPlace[] => list.filter((p) => p.id !== landing.data?.id)
+  const recentPlaces = notLanding(recents.data)
+  const recommendedPlaces = notLanding(recommended.data)
+  const busyPlaces = notLanding(livePlaces.data)
 
   return (
-    <div className={styles.root}>
-      <div className={styles.stage}>
-        <EngineViewport region="lobby" report={setEngineViewport} />
-      </div>
+    // hidden under the Backpack: it shows the engine's avatar through a hole the lobby would cover
+    <div className={`${styles.root} ${session.backpack.open ? styles.covered : ''}`.trim()}>
+      {/* the Backpack takes the avatar preview while it's open; the stage comes back after */}
+      <div className={styles.stage}>{!session.backpack.open && <EngineViewport region="lobby" report={setEngineViewport} />}</div>
       <StandInStage hidden={session.lobbyStageReady} body={stored.body} />
 
-      <div
+      <button
+        type="button"
         className={styles.avatarHit}
+        aria-label="Customize"
+        onClick={() => {
+          setTooltip(null)
+          session.backpack.toggle()
+        }}
         onMouseMove={(e) => setTooltip({ x: e.clientX, y: e.clientY })}
         onMouseLeave={() => setTooltip(null)}
       />
@@ -107,13 +118,13 @@ export function LobbyHome({
       <header className={styles.header}>
         <img className={styles.logo} src={logo} alt="Decentraland" />
         <div className={styles.headerRight}>
-          <button type="button" className={styles.headerButton} aria-label="Notifications">
+          <button type="button" className={styles.headerButton} aria-label="Notifications" onClick={session.notifications.toggle}>
             <MaskIcon src={notificationsIcon} size={22} />
           </button>
-          <div className={styles.profileWidget}>
+          <button type="button" className={styles.profileWidget} onClick={session.profile.toggle}>
             <Avatar src={profile?.picture} name={profile?.name ?? ''} size={40} framed />
             <span className={styles.profileName}>{profile?.name ?? ''}</span>
-          </div>
+          </button>
         </div>
       </header>
 
@@ -150,7 +161,7 @@ export function LobbyHome({
         </section>
       )}
 
-      {(events.data.live.length > 0 || livePlaces.data.length > 0) && (
+      {(events.data.live.length > 0 || busyPlaces.length > 0) && (
         <section className={styles.events}>
           <h2 className={`${styles.sectionTitle} ${styles.eventsTitle}`}>
             <span className={styles.liveDot} />
@@ -161,15 +172,15 @@ export function LobbyHome({
               <Rail perPage={1} gap={8}>
                 {events.data.live.map((e) => {
                   const dest = eventDestination(e)
-                  return <LiveEventCard key={e.id} event={e} onJumpIn={() => dest && onPick(dest.kind === 'world' ? { kind: 'world', realm: dest.realm } : dest)} />
+                  return <LiveEventCard key={e.id} event={e} people={eventPeople(e)} onJumpIn={() => dest && onPick(dest.kind === 'world' ? { kind: 'world', realm: dest.realm } : dest)} />
                 })}
               </Rail>
             </div>
           )}
-          {livePlaces.data.length > 0 && (
+          {busyPlaces.length > 0 && (
             <div className={styles.upcomingEvents}>
               <Rail perPage={1} gap={12}>
-                {livePlaces.data.map((p) => (
+                {busyPlaces.map((p) => (
                   <LivePlaceCard key={p.id} title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} onJumpIn={() => pickPlace(p)} />
                 ))}
               </Rail>
@@ -178,22 +189,22 @@ export function LobbyHome({
         </section>
       )}
 
-      {recents.data.length > 0 && (
+      {recentPlaces.length > 0 && (
         <section className={styles.jumpBack}>
           <h2 className={styles.sectionTitle}>Jump Back In</h2>
           <div className={styles.jumpBackRow}>
-            {recents.data.map((p) => (
+            {recentPlaces.map((p) => (
               <PlaceCard key={p.id} title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} onJumpIn={() => pickPlace(p)} />
             ))}
           </div>
         </section>
       )}
 
-      {recommended.data.length > 0 && (
+      {recommendedPlaces.length > 0 && (
         <section className={styles.recommended}>
           <h2 className={styles.sectionTitle}>Recommended Places</h2>
           <Rail perPage={3} gap={8}>
-            {recommended.data.map((p) => (
+            {recommendedPlaces.map((p) => (
               <PlaceCard key={p.id} title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} onJumpIn={() => pickPlace(p)} />
             ))}
           </Rail>
