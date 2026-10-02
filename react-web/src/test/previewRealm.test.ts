@@ -1,6 +1,6 @@
 // The editor's preview realm as the service worker answers it (deploy/web/PREVIEW_REALM.md):
 // what the engine fetches from a realm, served from the preview cache alone.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import '../../../deploy/web/preview_realm.js'
 
 interface PreviewStore {
@@ -68,9 +68,23 @@ describe('preview realm', () => {
     expect((await get(`${REALM}/about`)).status).toBe(200)
   })
 
-  it('returns the scene for any of its pointers and nothing for the rest', async () => {
+  it('returns the scene for any of its pointers, nothing for other parcels, and asks a catalyst for the rest', async () => {
+    const eyes = { id: 'bafkreieyes', pointers: ['urn:decentraland:off-chain:base-avatars:eyes_00'] }
+    const catalyst = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify([eyes])))
     expect(await (await active(['9,9', '5,-2'])).json()).toEqual([entity])
-    expect(await (await active(['9,9', 'urn:decentraland:off-chain:base-avatars:eyes_00'])).json()).toEqual([])
+    expect(await (await active(['9,9'])).json()).toEqual([])
+    expect(catalyst).not.toHaveBeenCalled()
+
+    // the engine resolves the avatar's wearables through its realm
+    expect(await (await active(['5,-2', eyes.pointers[0]])).json()).toEqual([entity, eyes])
+    const [url, init] = catalyst.mock.lastCall!
+    expect(url).toBe('https://peer.decentraland.org/content/entities/active')
+    expect(JSON.parse(init!.body as string)).toEqual({ pointers: eyes.pointers })
+
+    // unreachable: an error the engine retries, not "no such wearable"
+    catalyst.mockRejectedValue(new Error('offline'))
+    expect((await active(eyes.pointers)).status).toBe(502)
+    catalyst.mockRestore()
   })
 
   it('serves stored bytes and the entity by id as inert downloads', async () => {
