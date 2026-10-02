@@ -171,7 +171,7 @@ function createPreview(): void {
     scale: lobby ? Vector3.One() : Vector3.create(2, 2, 2)
   })
 
-  // Podium under the avatar (preview layer only), like the platform in the reference backpack;
+  // Podium under the avatar (preview layer only), the parity backpack's platform;
   // the lobby stands it on a soft blob shadow instead.
   const podium = lobby ? [lobbyShadow()] : PODIUM_LAYERS.map((layer) => {
     const e = engine.addEntity()
