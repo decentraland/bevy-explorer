@@ -593,6 +593,8 @@ export interface RealmInfoMessage {
 export interface SceneInfoMessage {
   kind: 'sceneInfo'
   title: string
+  /** The parcel the title was resolved for. */
+  parcel?: { x: number; y: number }
 }
 
 /** Minimap style/zoom/rotation (page → scene). The scene only runs the Camera-style

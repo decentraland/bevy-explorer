@@ -6,6 +6,7 @@ import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type St
 import { hoverKey, proximityKey } from '../../engine/pointerKeys'
 import type { LoginDriver } from '../../engine/driver'
 import type { LaunchHostOptions } from '../../engine/engineRpc'
+import { recordVisit } from '../lobby/lobbyApi'
 import type { SatelliteView } from '../../engine/generated'
 import type { PreviewFocus } from '../../engine/protocol'
 import type { InteractableArea } from '../../lib/hudInset'
@@ -556,6 +557,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   lobbyRef.current = lobby
   // The engine launches once per page (boot.js), so after that a destination is a runtime travel.
   const launchedRef = useRef(false)
+  // The realm the player is in, as the bridge names it — for recording visited places.
+  const realmRef = useRef('')
+  const visitedTitle = useRef('')
   // Deferred login: the login call captured on Jump in, run only once the user picks a destination
   // (so the engine is launched straight at that destination instead of loading Genesis Plaza first).
   const pendingLogin = useRef<((driver: LoginDriver) => Promise<unknown>) | null>(null)
@@ -963,6 +967,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           )
           break
         case 'realmInfo':
+          realmRef.current = msg.realm
           setSatelliteView(msg.satelliteView)
           break
         case 'travelResult':
@@ -976,6 +981,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'sceneInfo':
           setSceneTitle(msg.title)
+          if (msg.title !== '' && msg.title !== visitedTitle.current && msg.parcel != null) {
+            visitedTitle.current = msg.title
+            recordVisit(realmRef.current, msg.parcel).catch(() => undefined)
+          }
           break
         case 'gallery':
           setGalleryPhotos([...msg.photos].sort((a, b) => photoTime(b.dateTime) - photoTime(a.dateTime)))
