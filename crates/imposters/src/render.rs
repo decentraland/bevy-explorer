@@ -18,7 +18,7 @@ use bevy::{
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{
     sets::SceneSets,
-    structs::{AppConfig, CurrentRealm, DebugInfo, PrimaryCamera, PrimaryUser},
+    structs::{AppConfig, CurrentRealm, DebugInfo, PrimaryCamera, PrimaryUser, WorldHold},
     util::{TaskCompat, TaskExt, TryPushChildrenEx},
 };
 use ipfs::IpfsAssetServer;
@@ -66,7 +66,7 @@ impl Plugin for DclImposterRenderPlugin {
             Update,
             (
                 focus_imposters,
-                spawn_imposters,
+                spawn_imposters.run_if(not(resource_exists::<WorldHold>)),
                 load_imposters,
                 debug_write_imposters.run_if(|e: Res<DebugImpostersEnabled>| e.0),
             )

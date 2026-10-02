@@ -23,7 +23,7 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use common::{
-    structs::{CurrentRealm, EmoteMask, MicState},
+    structs::{CurrentRealm, EmoteMask, MicState, WorldHold},
     util::{TaskCompat, TaskExt},
 };
 use http::{StatusCode, Uri};
@@ -111,7 +111,13 @@ impl Plugin for CommsPlugin {
         // inserted; the driver (native ENet thread / wasm no-op) is selected at compile time.
         app.add_plugins(pulse::plugin::PulsePlugin);
 
-        app.add_systems(Update, (process_realm_change, connect_scene_room));
+        app.add_systems(
+            Update,
+            (
+                process_realm_change.run_if(not(resource_exists::<WorldHold>)),
+                connect_scene_room,
+            ),
+        );
 
         #[cfg(feature = "transport_debug")]
         app.add_plugins(transport_debug::TransportDebugPlugin);

@@ -51,7 +51,7 @@ use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{
     rpc::{RpcResultReceiver, RpcResultSender},
     sets::RealmLifecycle,
-    structs::{AppConfig, CommsConfig, CurrentRealm, PreviewMode, ServerConfiguration},
+    structs::{AppConfig, CommsConfig, CurrentRealm, PreviewMode, ServerConfiguration, WorldHold},
     util::TaskCompat,
 };
 use ipfs_path::IpfsAsset;
@@ -665,6 +665,8 @@ pub fn change_realm(
     mut target: ResMut<RealmInitialLocation>,
     mut in_flight: Local<Vec<InFlightRealmChange>>,
     mut issued: Local<u64>,
+    world_hold: Option<Res<WorldHold>>,
+    mut commands: Commands,
 ) {
     match *realm_change {
         None => *realm_change = Some(ipfs.realm_config_receiver.clone()),
@@ -714,6 +716,10 @@ pub fn change_realm(
         // for the new one must not carry over to a later change. Only the latest request owns it.
         if result.is_err() && change.id == latest {
             *target = RealmInitialLocation::None;
+        }
+        // the boot realm never lands here, so a lobby holds until it asks to enter a realm
+        if result.is_ok() && world_hold.is_some() {
+            commands.remove_resource::<WorldHold>();
         }
         if change.report {
             print.write(PrintConsoleLine::new(match result {
