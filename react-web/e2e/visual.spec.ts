@@ -86,7 +86,7 @@ async function enterWorld(page: Page): Promise<void> {
  *  is what the name editor's picker and tabs need in order to appear. */
 async function enterWorldReturning(page: Page): Promise<void> {
   await page.goto('/?mock=1&previousLogin=1')
-  await page.getByRole('button', { name: /JUMP INTO DECENTRALAND/i }).click()
+  // a stored session goes straight to the lobby
   await jumpInFromLobby(page)
   await page.waitForSelector('nav[aria-label="Main navigation"]')
 }
@@ -116,18 +116,11 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('login-fresh.png')
   })
 
-  test('login — welcome back', async ({ page }) => {
-    await page.goto('/?mock=1&previousLogin=1')
-    await settle(page)
-    await expect(page).toHaveScreenshot('login-welcome.png')
-  })
-
   // Mobile gate — the download-the-app page shown on mobile (forced with ?gate=1; desktop UA → both
   // store buttons). Returns before the HUD, so no ?mock needed.
   test('lobby', async ({ page }) => {
     await stubLobbyData(page)
     await page.goto('/?mock=1&previousLogin=1')
-    await page.getByRole('button', { name: /JUMP INTO DECENTRALAND/i }).click()
     await page.getByRole('heading', { name: /Welcome/ }).waitFor()
     await settle(page)
     await expect(page).toHaveScreenshot('lobby.png')

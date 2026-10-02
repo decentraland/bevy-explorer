@@ -1850,6 +1850,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Reuse the existing login. The driver picks the path its backend supports (console
   // `/login_identity` for the engine, `loginPrevious` over the bridge).
   const jumpIn = useCallback(() => submitLogin((d) => d.jumpIn()), [submitLogin])
+  // A stored session goes straight to the lobby, once per page: the lobby's profile menu is where
+  // to sign out or switch accounts.
+  const autoEntered = useRef(false)
+  useEffect(() => {
+    if (status !== 'reuse-login-or-new' || submitted || !engineReady || autoEntered.current) return
+    autoEntered.current = true
+    jumpIn()
+  }, [status, submitted, engineReady, jumpIn])
   // The engine tags profile-fetch login failures (vs bad credentials etc.) with this marker —
   // mirrors PROFILE_FETCH_FAILED in system_bridge. Only then do we offer the destructive reset.
   const profileFetchFailed = error != null && error.includes('profile fetch failed')

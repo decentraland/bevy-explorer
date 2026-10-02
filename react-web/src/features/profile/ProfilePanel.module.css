@@ -18,18 +18,6 @@
   overflow: hidden;
 }
 
-/* the lobby's dropdown, under the profile button */
-.lobby,
-.lobbyInWorld {
-  left: auto;
-  right: calc(50px * var(--ui-scale));
-  top: calc(80px * var(--ui-scale));
-  transform-origin: top right;
-}
-.lobbyInWorld {
-  right: calc(100px * var(--ui-scale));
-}
-
 .head {
   display: flex;
   align-items: center;

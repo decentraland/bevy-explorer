@@ -63,7 +63,7 @@ each domain. Config: `playwright.visual.config.ts` (headless, 1600×900, `maxDif
 - **Animations disabled** at capture time; **fixed viewport + `deviceScaleFactor: 1`**.
 
 **Domains covered** (one baseline each, in `e2e/visual.spec.ts-snapshots/`):
-`showcase` · `login-fresh` · `login-welcome` · `lobby` · `mobile-gate` · `browser-gate` · `gpu-gate` ·
+`showcase` · `login-fresh` · `lobby` · `mobile-gate` · `browser-gate` · `gpu-gate` ·
 `engine-error` · `realm-error` · `world-hud` · `profile-card` · `passport` · `hover-tooltips` ·
 `permission-dialog` · `community-modal` · `community-create-modal` ·
 `panel-friends` · `panel-settings` · `panel-settings-keybindings` · `panel-profile` ·
