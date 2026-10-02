@@ -25,7 +25,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--lobby-bg);
+  background: var(--lobby-floor);
   pointer-events: none;
   transition: opacity 500ms linear;
 }
@@ -35,6 +35,11 @@
 .standInBackdrop {
   position: absolute;
   object-fit: fill;
+}
+.standInShade {
+  position: absolute;
+  inset: 0;
+  background: var(--lobby-floor-shade);
 }
 /* The snapshot stands where the engine draws the avatar: centred, feet at ~83% of the height. */
 .standInAvatar {
@@ -210,8 +215,8 @@
 .liveEvents {
   height: 230px;
 }
-.upcomingEvents {
-  height: 160px;
+.livePlaces {
+  height: 181px;
 }
 
 .jumpBack {

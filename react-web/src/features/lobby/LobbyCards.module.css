@@ -152,6 +152,9 @@
   color: var(--white);
   overflow: hidden;
 }
+.placeWide {
+  width: 358px;
+}
 .placeHeader {
   position: absolute;
   inset: 0 0 auto;
@@ -217,71 +220,6 @@
 }
 .place:hover .placeJump {
   opacity: 1;
-}
-
-/* Upcoming event 358×135: text left, thumbnail right. */
-.upcoming {
-  position: relative;
-  display: flex;
-  width: 358px;
-  height: 135px;
-  border-radius: var(--lobby-card-radius);
-  background: var(--lobby-card);
-  overflow: hidden;
-  color: var(--lobby-ink);
-}
-.upcomingText {
-  flex: 1;
-  position: relative;
-}
-.upcomingName {
-  position: absolute;
-  top: 30px;
-  left: 18px;
-  width: 170px;
-  font-size: var(--type-15);
-  font-weight: 600;
-  line-height: 20px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.upcomingHost {
-  position: absolute;
-  top: 50px;
-  left: 18px;
-  width: 170px;
-  font-size: var(--type-13);
-  color: var(--ink-50);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.upcomingWhen {
-  position: absolute;
-  top: 80px;
-  left: 18px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 6px 0 3px;
-  border-radius: 6px;
-  background: var(--lobby-chip);
-  font-size: var(--type-16);
-  font-weight: 600;
-}
-.upcomingThumb {
-  width: 135px;
-  height: 135px;
-  flex: none;
-  overflow: hidden;
-  border-radius: var(--lobby-card-radius);
-}
-.upcomingThumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 /* Friend card 124×132. */

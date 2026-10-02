@@ -53,7 +53,20 @@ const THUMBNAIL_SIZE = 480
 
 // The lobby stage: the avatar full-screen over the stage backdrop, framed like the desktop lobby
 // (camera 1 m above a target 0.8 m over the feet, 6 m back, 26.2° vertical FOV).
-const LOBBY_BASE = Color4.create(15 / 255, 13 / 255, 23 / 255, 1)
+// The stage floor darkening toward the camera, measured against the reference stage: shade alpha
+// by screen height (kept in step with the page's --lobby-floor-shade).
+const LOBBY_FLOOR = { r: 37 / 255, g: 5 / 255, b: 3 / 255 }
+const LOBBY_BASE = Color4.create(LOBBY_FLOOR.r, LOBBY_FLOOR.g, LOBBY_FLOOR.b, 1)
+const LOBBY_SHADE_STOPS: Array<[number, number]> = [[0.54, 0], [0.62, 0.23], [0.71, 0.61], [0.8, 0.73], [0.9, 0.85], [1, 1]]
+const LOBBY_SHADE_BANDS = 46
+const LOBBY_SHADE = Array.from({ length: LOBBY_SHADE_BANDS }, (_, i) => {
+  const y = 0.54 + ((1 - 0.54) * (i + 0.5)) / LOBBY_SHADE_BANDS
+  const k = LOBBY_SHADE_STOPS.findIndex(([at]) => at >= y)
+  const [y0, a0] = LOBBY_SHADE_STOPS.at(k - 1) ?? [0, 0]
+  const [y1, a1] = LOBBY_SHADE_STOPS.at(k) ?? [1, 1]
+  const alpha = a0 + ((a1 - a0) * (y - y0)) / (y1 - y0)
+  return Color4.create(LOBBY_FLOOR.r, LOBBY_FLOOR.g, LOBBY_FLOOR.b, alpha)
+})
 const LOBBY_BACKDROP = 'images/lobby-background.jpg'
 const LOBBY_BACKDROP_ASPECT = 1595 / 986
 // The backdrop's height and top as fractions of the screen height (the stage camera's vertical
@@ -390,6 +403,18 @@ function renderLobbyStage(r: Rect, camera: Entity): ReactEcs.JSX.Element {
         uiTransform={{ positionType: 'absolute', position: { left: (r.width - width) / 2, top }, width, height }}
         uiBackground={{ texture: { src: LOBBY_BACKDROP }, textureMode: 'stretch' }}
       />
+      {LOBBY_SHADE.map((color, i) => (
+        <UiEntity
+          key={i}
+          uiTransform={{
+            positionType: 'absolute',
+            position: { left: 0, top: `${(54 + (46 * i) / LOBBY_SHADE_BANDS).toFixed(3)}%` },
+            width: '100%',
+            height: `${(46 / LOBBY_SHADE_BANDS + 0.2).toFixed(3)}%`
+          }}
+          uiBackground={{ color }}
+        />
+      ))}
       <UiEntity
         uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }}
         uiBackground={{ videoTexture: { videoPlayerEntity: camera }, textureMode: 'stretch' }}
