@@ -166,6 +166,7 @@ export function fakeSession(): EngineSession {
   return {
     phase: 'world',
     lobbyStageReady: false,
+    lobbyPage: { open: false, toggle: vi.fn(), travel: vi.fn() },
     pickDestination: vi.fn(),
     sceneLoading: null,
     loadingProgress: 0,

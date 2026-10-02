@@ -68,6 +68,8 @@ const LOBBY_SHADE = Array.from({ length: LOBBY_SHADE_BANDS }, (_, i) => {
   return Color4.create(LOBBY_FLOOR.r, LOBBY_FLOOR.g, LOBBY_FLOOR.b, alpha)
 })
 const LOBBY_BACKDROP = 'images/lobby-background.jpg'
+// The stage's vignette, fitted to the reference capture; the page's stand-in stretches the same image.
+const LOBBY_VIGNETTE = 'images/lobby-vignette.png'
 const LOBBY_BACKDROP_ASPECT = 1595 / 986
 // The backdrop's height and top as fractions of the screen height (the stage camera's vertical
 // field of view is fixed), measured against the reference stage; kept in step with the page's stand-in.
@@ -415,6 +417,10 @@ function renderLobbyStage(r: Rect, camera: Entity): ReactEcs.JSX.Element {
           uiBackground={{ color }}
         />
       ))}
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }}
+        uiBackground={{ texture: { src: LOBBY_VIGNETTE }, textureMode: 'stretch' }}
+      />
       <UiEntity
         uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }}
         uiBackground={{ videoTexture: { videoPlayerEntity: camera }, textureMode: 'stretch' }}

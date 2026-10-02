@@ -4,10 +4,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import backdrop from '../../assets/lobby/background.jpg'
+import vignette from '../../assets/lobby/vignette.png'
 import logo from '../../assets/lobby/logo.png'
 import mouseLeft from '../../assets/lobby/mouse-left.png'
 import notificationsIcon from '../../assets/lobby/notifications.png'
-import { Avatar, MaskIcon, Rail } from '../../design'
+import { Avatar, Close, MaskIcon, Rail } from '../../design'
 import { userColor } from '../../lib/identity'
 import { EngineViewport } from '../engine/EngineViewport'
 import { useStoredProfile } from '../login/useStoredProfile'
@@ -65,6 +66,7 @@ function StandInStage({ hidden, body }: { hidden: boolean; body?: string }): Rea
     <div ref={ref} className={`${styles.standIn} ${hidden ? styles.standInHidden : ''}`.trim()} aria-hidden="true">
       <img className={styles.standInBackdrop} src={backdrop} alt="" style={{ width, height, top, left: (size.w - width) / 2 }} />
       <div className={styles.standInShade} />
+      <img className={styles.standInVignette} src={vignette} alt="" />
       {body && <img className={styles.standInAvatar} src={body} alt="" draggable={false} />}
     </div>
   )
@@ -73,9 +75,12 @@ const NO_EVENTS: LobbyEvents = { live: [] }
 
 export function LobbyHome({
   onPick,
+  onClose,
   setEngineViewport
 }: {
   onPick: (dest: Destination) => void
+  /** In-world only: the lobby can be closed back to the world (at startup Jump In is the way out). */
+  onClose?: () => void
   setEngineViewport: (region: 'map' | 'avatarPreview' | 'lobby', rect: Rect | null, dpr?: number) => void
 }): React.JSX.Element {
   const session = useSession()
@@ -126,6 +131,11 @@ export function LobbyHome({
             <Avatar src={profile?.picture} name={profile?.name ?? ''} size={40} framed />
             <span className={styles.profileName}>{profile?.name ?? ''}</span>
           </button>
+          {onClose && (
+            <button type="button" className={styles.headerButton} aria-label="Close" onClick={onClose}>
+              <Close size={12} />
+            </button>
+          )}
         </div>
       </header>
 
