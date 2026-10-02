@@ -14,7 +14,6 @@ use common::{
         PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
     },
 };
-use comms::global_crdt::GlobalCrdtState;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
@@ -25,7 +24,7 @@ use dcl_component::{
             PbPhysicsCombinedImpulse,
         },
     },
-    SceneComponentId, SceneEntityId,
+    DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
@@ -33,6 +32,7 @@ use ipfs::{
 };
 
 use scene_runner::{
+    initialize_scene::PARCEL_SIZE,
     renderer_context::RendererSceneContext,
     update_world::{
         avatar_modifier_area::InputModifier,
@@ -66,6 +66,8 @@ impl Plugin for AvatarMovementPlugin {
         );
 
         app.init_resource::<AvatarMovementInfo>();
+        app.register_required_components::<RendererSceneContext, MovementPeriod>();
+        app.init_resource::<CollisionPush>();
         app.init_resource::<CentralCollisions>();
         app.init_resource::<SceneDrivenAnimationFeedback>();
 
@@ -83,6 +85,7 @@ impl Plugin for AvatarMovementPlugin {
                 update_scene_driven_animation.after(
                     ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
                 ),
+                start_movement_periods,
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -96,6 +99,7 @@ impl Plugin for AvatarMovementPlugin {
                 apply_impulses,
                 apply_movement,
                 record_ground_collider,
+                accumulate_movement_periods,
             )
                 .chain()
                 .in_set(PostUpdateSets::PlayerUpdate),
@@ -347,6 +351,29 @@ impl From<PbPhysicsCombinedImpulse> for PhysicsCombinedImpulse {
 
 #[derive(Resource, Default)]
 pub struct AvatarMovementInfo(pub PbAvatarMovementInfo);
+
+// What was applied to the player since a scene was last sent an update. A scene can miss
+// engine frames (its reply lands after the frame's scene-loop deadline), so each scene is
+// told about the whole period since it last looked rather than the last frame only.
+#[derive(Component, Default)]
+struct MovementPeriod {
+    time: f64,
+    // requested and actual velocity are the latest frame's, not a total: scenes use them to
+    // tell whether their own output is what was applied
+    requested_velocity: Option<Vector3>,
+    actual_velocity: Option<Vector3>,
+    external_velocity: Option<Vector3>,
+    // how far collision resolution pushed the player, and over how much time. Reported as the
+    // mean push velocity, not a total: the engine holds a scene's velocity over the frames the
+    // scene misses, so a collider pushing at a steady speed pushes again each frame and a total
+    // would report a multiple of that speed
+    collision_push: Vec3,
+    collision_push_time: f64,
+}
+
+// How far this frame's collision resolution pushed the player out of colliders.
+#[derive(Resource, Default)]
+struct CollisionPush(Vec3);
 
 impl<C: Component + Clone + FromConfig> ActivePlayerComponent<C> {
     // pick from available of any write-time, based on priority
@@ -796,7 +823,7 @@ pub struct CentralCollisions(HashMap<Entity, HashSet<ColliderId>>);
 fn resolve_collisions(
     mut player: Query<(&mut Transform, &ActivePlayerComponent<AvatarMovement>), With<PrimaryUser>>,
     mut scenes: Query<(Entity, &mut SceneColliderData)>,
-    mut info: ResMut<AvatarMovementInfo>,
+    mut push: ResMut<CollisionPush>,
     time: Res<Time>,
     mut movement_control: ResMut<EngineMovementControl>,
     mut central: ResMut<CentralCollisions>,
@@ -878,17 +905,11 @@ fn resolve_collisions(
         let current_offset = current_offset.as_vec3();
 
         if current_offset != Vec3::ZERO {
-            let add_external_velocity = current_offset / time.delta_secs();
-            let existing_external_velocity = info
-                .0
-                .external_velocity
-                .as_ref()
-                .map(Vector3::world_vec_to_vec3)
-                .unwrap_or_default();
-            info.0.external_velocity = Some(Vector3::world_vec_from_vec3(
-                &(existing_external_velocity + add_external_velocity),
-            ));
-            debug!("depenetration external velocity {add_external_velocity:.4}");
+            push.0 = current_offset;
+            debug!(
+                "depenetration external velocity {:.4}",
+                current_offset / time.delta_secs()
+            );
 
             transform.translation += current_offset;
         }
@@ -930,8 +951,9 @@ fn broadcast_movement_info(
         With<PrimaryUser>,
     >,
     feedback: Res<SceneDrivenAnimationFeedback>,
-    mut contexts: Query<&mut GlobalCrdtState>,
+    mut scenes: Query<(&mut RendererSceneContext, &MovementPeriod)>,
     time: Res<Time>,
+    mut buf: Local<Vec<u8>>,
 ) {
     let (maybe_locomotion, maybe_modifier) = active_components.single().unwrap_or_default();
 
@@ -947,19 +969,41 @@ fn broadcast_movement_info(
         loop_count: s.loop_count,
     });
 
+    // the velocity a scene writes this tick is applied over this frame's delta
+    info.0.step_time = time.delta_secs();
+
     debug!("broadcast {:?}", info.0);
 
-    for mut global_crdt in contexts.iter_mut() {
-        global_crdt.update_crdt(
+    for (mut context, period) in scenes.iter_mut() {
+        let mut scene_info = info.0.clone();
+        scene_info.previous_step_time = period.time as f32;
+        scene_info.requested_velocity = period.requested_velocity;
+        scene_info.actual_velocity = period.actual_velocity;
+        scene_info.external_velocity = if period.collision_push_time > 0.0 {
+            let push = period.collision_push / period.collision_push_time as f32;
+            Some(period.external_velocity.unwrap_or_default() + Vector3::world_vec_from_vec3(&push))
+        } else {
+            period.external_velocity
+        };
+        // walk_target is a world-space position, scenes read it relative to their origin
+        if let Some(target) = scene_info.walk_target.as_mut() {
+            target.x -= context.base.x as f32 * PARCEL_SIZE;
+            target.z -= context.base.y as f32 * PARCEL_SIZE;
+        }
+
+        buf.clear();
+        DclWriter::new(&mut buf).write(&scene_info);
+        context.crdt_store.force_update(
             SceneComponentId::AVATAR_MOVEMENT_INFO,
             CrdtType::LWW_ANY,
             SceneEntityId::PLAYER,
-            &info.0,
+            Some(&mut DclReader::new(&buf)),
         );
     }
+
     info.0 = PbAvatarMovementInfo {
         step_time: time.delta_secs(),
-        previous_step_time: info.0.step_time,
+        previous_step_time: 0.0,
         requested_velocity: None,
         actual_velocity: None,
         external_velocity: None,
@@ -968,5 +1012,42 @@ fn broadcast_movement_info(
         walk_target: None,
         walk_threshold: None,
         active_animation_state: None,
+    }
+}
+
+// A scene that was sent an update this frame has seen everything applied so far, so its
+// period starts again.
+fn start_movement_periods(
+    mut scenes: Query<(&RendererSceneContext, &mut MovementPeriod)>,
+    time: Res<Time>,
+) {
+    let now = time.elapsed_secs_f64();
+    for (context, mut period) in scenes.iter_mut() {
+        if context.last_sent == now {
+            *period = default();
+        }
+    }
+}
+
+fn accumulate_movement_periods(
+    mut periods: Query<&mut MovementPeriod>,
+    info: Res<AvatarMovementInfo>,
+    mut push: ResMut<CollisionPush>,
+    time: Res<Time>,
+) {
+    let dt = time.delta_secs_f64();
+    let push = std::mem::take(&mut push.0);
+    for mut period in periods.iter_mut() {
+        period.time += dt;
+        period.requested_velocity = info.0.requested_velocity;
+        period.actual_velocity = info.0.actual_velocity;
+        if let Some(external) = info.0.external_velocity.as_ref() {
+            period.external_velocity =
+                Some(period.external_velocity.unwrap_or_default() + *external);
+        }
+        if push != Vec3::ZERO {
+            period.collision_push += push;
+            period.collision_push_time += dt;
+        }
     }
 }

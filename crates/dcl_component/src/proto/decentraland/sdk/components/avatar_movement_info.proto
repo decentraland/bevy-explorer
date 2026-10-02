@@ -10,11 +10,13 @@ import "decentraland/sdk/components/input_modifier.proto";
 option (common.ecs_component_id) = 1500;
 
 message PBAvatarMovementInfo {
-  float step_time = 1;                                      // the length of time the current step velocity will apply for
-  float previous_step_time = 2;                             // the length of time the previous step velocity applied for
-  decentraland.common.Vector3 requested_velocity = 3;       // the velocity requested for the previous frame
-  decentraland.common.Vector3 actual_velocity = 4;          // the resulting velocity taking collisions into account
-  decentraland.common.Vector3 external_velocity = 5;        // the velocity imparted by movement of the "ground" platform or pushing from other moving colliders
+  // The engine reports this per scene. A scene does not always tick every engine frame, so some
+  // fields cover the whole period since this scene's previous tick and others only the latest frame.
+  float step_time = 1;                                      // the current engine frame's delta: how long a velocity written this tick is applied for this frame. The engine keeps applying it each later frame until the scene's next response arrives
+  float previous_step_time = 2;                             // total time movement was applied for since this scene's previous tick; spans several frames if the scene missed some. Use this to integrate rate-based state
+  decentraland.common.Vector3 requested_velocity = 3;       // the velocity applied in the latest frame, from whichever scene controls movement; absent if none was applied
+  decentraland.common.Vector3 actual_velocity = 4;          // the resulting velocity in the latest frame, taking collisions into account; absent if none was applied. Not a mean over the period
+  decentraland.common.Vector3 external_velocity = 5;        // the velocity imparted by scene impulses (PhysicsCombinedImpulse), forces (PhysicsCombinedForce, as force * frame time) summed since this scene's previous tick, plus the mean velocity of pushing from other moving colliders over the frames in that period that had any. The engine only reports it: the scene controlling movement is expected to add it to the velocity it writes
   decentraland.sdk.components.PBAvatarLocomotionSettings active_avatar_locomotion_settings = 6;
   decentraland.sdk.components.PBInputModifier active_input_modifier = 7;
   optional decentraland.common.Vector3 walk_target = 8;    // if set, the movement scene should walk the player to this scene-relative position
