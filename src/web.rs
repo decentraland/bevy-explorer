@@ -10,7 +10,7 @@ use bevy::{
 use bevy_console::ConsoleConfiguration;
 use common::{
     rpc::RpcResultSender,
-    structs::{AppConfig, CurrentRealm, EditorMode, PreviewMode, PrimaryUser, StartupScenes},
+    structs::{AppConfig, CurrentRealm, EditorMode, PreviewMode, PrimaryUser, StartupScenes, WorldHold},
 };
 use dcl_wasm::init_runtime;
 use futures_lite::io::AsyncReadExt;
@@ -541,8 +541,14 @@ fn update_url_params(
     preview: Res<PreviewMode>,
     editor: Res<EditorMode>,
     mut prev: Local<Option<EngineRunOptions>>,
+    world_hold: Option<Res<WorldHold>>,
     _js: NonSend<JsThread>,
 ) {
+    // held, the player has no destination yet: writing its placeholder parcel would make a
+    // reload or a sign-in redirect deep-link past the lobby
+    if world_hold.is_some() {
+        return;
+    }
     let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
     let position = Some(format!("{},{}", parcel.x, parcel.y));
     let Some(server) = current_realm.about_url.strip_suffix("/about") else {
@@ -584,6 +590,8 @@ fn update_url_params(
             // the default set is omitted so the canonical url stays clean (the page doesn't know it)
             portables: portables.filter(|p| p != system_api_types::web_params::DEFAULT_PORTABLES),
             editor: editor.0,
+            // the host's call for this load, never a link's
+            hold_world: false,
             ..launched.client
         },
     };
