@@ -11,13 +11,16 @@ interface ProfileResponse {
 export function useStoredProfile(address?: string): { name?: string; body?: string } {
   const [data, setData] = useState<{ name?: string; body?: string }>({})
   useEffect(() => {
-    if (address == null || address === '') {
+    if (address == null || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
       setData({})
       return
     }
     let cancelled = false
     fetch(`${serviceUrl('catalyst')}/lambdas/profiles/${address}`)
-      .then((r) => r.json() as Promise<ProfileResponse>)
+      .then((r) => {
+        if (!r.ok) throw new Error(`profile fetch failed: ${r.status}`)
+        return r.json() as Promise<ProfileResponse>
+      })
       .then((j) => {
         const a = j.avatars?.[0]
         if (!cancelled) setData({ name: a?.name, body: a?.avatar?.snapshots?.body })

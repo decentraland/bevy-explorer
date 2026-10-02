@@ -222,7 +222,16 @@ export function registerWorld(ctx: Ctx): void {
         // stale name can survive after stepping onto an undeployed parcel.
         if (current == null && attempts < SCENE_LOOKUP_ATTEMPTS) return
         publishedParcel = key
-        ctx.send({ kind: 'sceneInfo', title: current?.title ?? '', parcel: { x: px, y: py } })
+        // read with the scene, so a visit is never paired with the realm the player just left
+        const [{ realmInfo }, satelliteView] = await Promise.all([getRealm({}), BevyApi.getSatelliteView()]).catch(() => [{ realmInfo: undefined }, null] as const)
+        ctx.send({
+          kind: 'sceneInfo',
+          title: current?.title ?? '',
+          parcel: { x: px, y: py },
+          realm: realmInfo?.realmName ?? '',
+          genesis: satelliteView != null,
+          preview: realmInfo?.isPreview ?? false
+        })
       })
     )
   )

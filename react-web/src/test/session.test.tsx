@@ -11,8 +11,10 @@ afterEach(resetPopups)
 // Records launch() so tests can assert the realm/position the engine was booted with.
 class LaunchRecordingDriver extends FakeDriver {
   launches: Array<[string?, string?]> = []
-  launch(realm?: string, position?: string): void {
+  hosts: Array<{ holdWorld?: boolean } | undefined> = []
+  launch(realm?: string, position?: string, host?: { holdWorld?: boolean }): void {
     this.launches.push([realm, position])
+    this.hosts.push(host)
   }
 }
 
@@ -52,6 +54,33 @@ describe('session domain', () => {
     await enterAsGuest(h, { keepSent: true })
     expect(h.driver.sentOf('getProfile')).toHaveLength(1)
     expect(h.driver.sentOf('getNotifications')).toHaveLength(1)
+  })
+
+  it('the lobby launches holding the world, and a failed trip from it comes back to the lobby', async () => {
+    const driver = new LaunchRecordingDriver()
+    const h = renderSession({ userId: null }, driver)
+    await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
+    act(() => h.session().login.exploreAsGuest())
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
+    await waitFor(() => expect(driver.hosts).toEqual([{ holdWorld: true }]))
+    await waitFor(() => expect(h.session().login.busy).toBe(false))
+
+    act(() => h.session().pickDestination({ kind: 'parcel', x: 10, y: 20 }))
+    const first = driver.sentOf('teleport')[0] as { realm?: string; x: number; y: number; travelId: number }
+    expect(first).toMatchObject({ x: 10, y: 20 })
+    expect(first.realm).toBeTruthy()
+    expect(h.session().phase).toBe('entering')
+    act(() => driver.emit({ kind: 'travelResult', travelId: first.travelId, ok: false, realm: first.realm ?? '', message: 'unreachable' }))
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
+    expect(h.session().travelError).not.toBeNull()
+
+    act(() => h.session().pickDestination(null))
+    const second = driver.sentOf('teleport')[1] as { realm?: string; travelId: number }
+    act(() => driver.emit({ kind: 'travelResult', travelId: second.travelId, ok: true, realm: second.realm ?? '' }))
+    act(() => driver.emit({ kind: 'event', name: 'playerReady' }))
+    act(() => driver.emit({ kind: 'sceneLoading', state: { visible: false, realmConnected: true, title: '', pendingAssets: null } }))
+    await waitFor(() => expect(h.session().phase).toBe('world'))
+    expect(driver.launches).toHaveLength(1)
   })
 
   it('jump-in reuses the stored login', async () => {
@@ -215,9 +244,10 @@ describe('session domain', () => {
     await waitFor(() => expect(h.session().login.status).not.toBe('loading'))
     act(() => h.session().login.exploreAsGuest())
     await waitFor(() => expect(h.session().phase).toBe('lobby'))
+    await waitFor(() => expect(h.driver.calls.filter((c) => c === 'loginGuest')).toHaveLength(2))
+    await waitFor(() => expect(h.session().login.busy).toBe(false))
     h.driver.sent.length = 0
     act(() => h.session().pickDestination({ kind: 'parcel', x: 10, y: 20 }))
-    await waitFor(() => expect(h.driver.calls.filter((c) => c === 'loginGuest')).toHaveLength(2))
     expect(h.driver.sentOf('teleport')).toHaveLength(0)
     h.driver.emit({ kind: 'event', name: 'playerReady' })
     await waitFor(() => expect(h.driver.sentOf('teleport')).toEqual([{ kind: 'teleport', x: 10, y: 20 }]))
@@ -246,7 +276,7 @@ describe('session domain', () => {
     const h = renderSession({ userId: null }, driver)
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
     act(() => h.session().login.exploreAsGuest())
-    // The lobby launches the engine (holding the world back) right away.
+    // Jump In launches the engine (holding the world back) behind the lobby.
     await waitFor(() => expect(h.session().phase).toBe('lobby'))
     // launch() threw → the sync catch reads the stashed panic and raises it as fatal 'launch'.
     await waitFor(() =>

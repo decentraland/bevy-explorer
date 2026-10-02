@@ -127,6 +127,8 @@ export async function enterAsGuest(h: Harness, opts: { keepSent?: boolean } = {}
   // Jump in signs in and shows the lobby; getPreviousLogin is the first call, the login the second.
   await waitFor(() => expect(h.session().phase).toBe('lobby'))
   await waitFor(() => expect(h.driver.calls.length).toBeGreaterThan(1))
+  // the lobby takes picks once sign-in has finished
+  await waitFor(() => expect(h.session().login.busy).toBe(false))
   // Jump in from the lobby (null = home).
   act(() => h.session().pickDestination(null))
   await waitFor(() => expect(h.session().phase).toBe('entering'))
