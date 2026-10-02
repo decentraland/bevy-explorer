@@ -1,8 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// The preview-realm gate (e2e/preview-realm.gate.spec.ts): a scene built in the browser, served
-// by the service worker's preview realm and hot-reloaded in the REAL engine. Headed, like tier 2.
-//   WEB_EDITOR_DIR=<dcl-editor checkout, web-build built> npx playwright test --config playwright.gate.config.ts
+// The scene editor's gates, in the REAL engine (headed, like tier 2); e2e/README.md has the setup.
+//   preview-realm: a scene built in the browser, served by the service worker and hot-reloaded
+//   editor:        the editor package opened with ?editor: create, edit, Play, Stop, Exit
+//   WEB_EDITOR_DIR=<dcl-editor checkout> npx playwright test --config playwright.gate.config.ts <preview-realm|editor>
 const PORT = Number(process.env.GATE_PORT ?? 5230)
 
 export default defineConfig({
