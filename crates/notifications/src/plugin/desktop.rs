@@ -1,4 +1,7 @@
 use bevy::prelude::*;
+#[cfg(target_os = "windows")]
+use notify_rust::windows::NotificationHandle;
+#[cfg(unix)]
 use notify_rust::NotificationHandle;
 
 use crate::{plugin::NotificationsState, Notification};
