@@ -8,6 +8,7 @@ import { ColorPicker } from './ColorPicker'
 import { Chip } from './Chip'
 import { Pager } from './Pager'
 import { Rail } from './Rail'
+import { HeaderButton } from './HeaderButton'
 import { VerifiedBadge } from './VerifiedBadge'
 import { OptionMenu } from './OptionMenu'
 import { HintsButton, KeyCap } from './HintsButton'
@@ -19,7 +20,7 @@ import { Slider } from './Slider'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
 import { Tabs } from './Tabs'
-import { Bag, People, Pin } from './Glyphs'
+import { Bag, Close, People, Pin } from './Glyphs'
 import { TextArea } from './TextArea'
 import { DateField } from './DateField'
 import { Panel } from './Panel'
@@ -458,6 +459,20 @@ export function Showcase(): React.JSX.Element {
               </div>
             ))}
           </Rail>
+        </div>
+      </Section>
+      <Section title="HeaderButton">
+        <HeaderButton aria-label="Close">
+          <Close size={12} />
+        </HeaderButton>
+        <HeaderButton shape="pill" style={{ width: 163 }}>
+          Profile
+        </HeaderButton>
+      </Section>
+      <Section title="Button (card sizes)">
+        <Button size="card">Jump in</Button>
+        <div style={{ width: 264 }}>
+          <Button size="cardSm">Jump in</Button>
         </div>
       </Section>
       <Section title="VerifiedBadge">

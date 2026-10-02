@@ -2,8 +2,8 @@
 // single page) and prev/next arrows that fade in while the section is hovered.
 
 import { Children, useCallback, useEffect, useRef, useState } from 'react'
-import arrowLeft from '../assets/lobby/arrow-left.png'
-import arrowRight from '../assets/lobby/arrow-right.png'
+import arrowLeft from '../assets/rail/arrow-left.png'
+import arrowRight from '../assets/rail/arrow-right.png'
 import { MaskIcon } from './MaskIcon'
 import styles from './Rail.module.css'
 
@@ -69,13 +69,12 @@ export function Rail({
               <MaskIcon src={arrowRight} size={15} className={styles.arrowIcon} />
             </button>
           </div>
-          <div className={styles.dots} role="tablist">
+          <div className={styles.dots}>
             {Array.from({ length: pages }, (_, i) => (
               <button
                 key={i}
                 type="button"
-                role="tab"
-                aria-selected={i === page}
+                aria-current={i === page ? 'true' : undefined}
                 aria-label={`Page ${i + 1}`}
                 className={`${styles.dot} ${i === page ? styles.dotActive : ''}`.trim()}
                 onClick={() => goTo(i)}
