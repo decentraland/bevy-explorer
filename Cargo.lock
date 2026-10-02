@@ -11605,6 +11605,7 @@ dependencies = [
  "dcl_component",
  "futures-util",
  "http 1.5.0",
+ "notifications",
  "platform",
  "serde",
  "serde_json",
