@@ -1,0 +1,366 @@
+/* Lobby cards, sized to the reference lobby at 1920×1080. */
+.thumb {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--lobby-card-radius);
+  background: var(--lobby-card);
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  animation: imgIn 300ms linear;
+}
+@keyframes imgIn {
+  from {
+    opacity: 0;
+  }
+}
+.skeleton {
+  background: var(--lobby-skeleton) 0 0 / 200% 100%;
+  animation: shimmer var(--dur-shimmer) linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.badges {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+  height: 28px;
+}
+.counter,
+.liveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 4px 6px;
+  border-radius: 8.6px;
+  background: var(--lobby-pill);
+  color: var(--lobby-ink);
+  font-size: var(--type-14);
+  font-weight: 600;
+  box-sizing: border-box;
+}
+.onlineDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lobby-online);
+}
+.liveBadge {
+  padding: 4px 8px 4px 6px;
+  background: var(--lobby-live);
+  font-size: var(--type-12);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.jumpIn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px 0 20px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--brand);
+  color: var(--white);
+  font: 600 var(--type-16) var(--font-family);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter 100ms linear;
+}
+.jumpIn:hover {
+  filter: brightness(0.906);
+}
+.jumpIn:active {
+  filter: brightness(0.784);
+}
+.jumpIn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Landing hero 520×300, and the live event card 358×214 (same text layout). */
+.landing,
+.liveEvent {
+  position: relative;
+  width: 520px;
+  height: 300px;
+  border-radius: var(--lobby-card-radius);
+  color: var(--white);
+}
+.liveEvent {
+  width: 358px;
+  height: 214px;
+  cursor: pointer;
+}
+.landingTitle {
+  position: absolute;
+  left: 16px;
+  right: 174px;
+  bottom: 42px;
+  height: 30px;
+  font-size: var(--type-22);
+  font-weight: 700;
+  letter-spacing: var(--lobby-title-tracking);
+  line-height: 30px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.liveEvent .landingTitle {
+  right: 16px;
+}
+.landingCreator {
+  position: absolute;
+  left: 16px;
+  right: 174px;
+  bottom: 16px;
+  height: 22px;
+  font-size: var(--type-14);
+  line-height: 22px;
+  color: var(--lobby-ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.landingJump {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+}
+.landingJump .jumpIn {
+  width: 153px;
+}
+
+/* Place card 280×165: the header shrinks 110→86 on hover as JUMP IN replaces the creator. */
+.place {
+  position: relative;
+  width: 280px;
+  height: 165px;
+  border-radius: var(--lobby-card-radius);
+  background: var(--lobby-card);
+  color: var(--white);
+  overflow: hidden;
+}
+.placeHeader {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 110px;
+  transition: height 300ms var(--ease-outquad);
+}
+.placeFooter {
+  position: absolute;
+  inset: auto 0 0;
+  height: 55px;
+  transition: height 300ms var(--ease-outquad);
+}
+.place:hover .placeHeader {
+  height: 86px;
+}
+.place:hover .placeFooter {
+  height: 79px;
+}
+.placeTitle {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  right: 10px;
+  height: 20px;
+  font-size: var(--type-14);
+  font-weight: 700;
+  letter-spacing: var(--lobby-title-tracking);
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.placeCreator {
+  position: absolute;
+  top: 30px;
+  left: 10px;
+  right: 10px;
+  height: 16px;
+  font-size: var(--type-11);
+  line-height: 16px;
+  color: var(--lobby-ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 300ms var(--ease-outquad);
+}
+.placeJump {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  height: 32px;
+  opacity: 0;
+  transition: opacity 300ms var(--ease-outquad);
+}
+.placeJump .jumpIn {
+  width: 100%;
+  height: 32px;
+  font-size: var(--type-14);
+}
+.place:hover .placeCreator {
+  opacity: 0;
+}
+.place:hover .placeJump {
+  opacity: 1;
+}
+
+/* Upcoming event 358×135: text left, thumbnail right. */
+.upcoming {
+  position: relative;
+  display: flex;
+  width: 358px;
+  height: 135px;
+  border-radius: var(--lobby-card-radius);
+  background: var(--lobby-card);
+  overflow: hidden;
+  color: var(--lobby-ink);
+}
+.upcomingText {
+  flex: 1;
+  position: relative;
+}
+.upcomingName {
+  position: absolute;
+  top: 30px;
+  left: 18px;
+  width: 170px;
+  font-size: var(--type-15);
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.upcomingHost {
+  position: absolute;
+  top: 50px;
+  left: 18px;
+  width: 170px;
+  font-size: var(--type-13);
+  color: var(--ink-50);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.upcomingWhen {
+  position: absolute;
+  top: 80px;
+  left: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 6px 0 3px;
+  border-radius: 6px;
+  background: var(--lobby-chip);
+  font-size: var(--type-16);
+  font-weight: 600;
+}
+.upcomingThumb {
+  width: 135px;
+  height: 135px;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--lobby-card-radius);
+}
+.upcomingThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Friend card 124×132. */
+.friend {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 124px;
+  height: 132px;
+  padding-top: 10px;
+  box-sizing: border-box;
+  border-radius: var(--lobby-card-radius);
+  background: var(--lobby-card);
+  cursor: pointer;
+}
+.friendName {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+  max-width: 112px;
+  height: 20px;
+  font-size: var(--type-12);
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.friendWhere {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 10px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--lobby-ink-dim);
+  font-size: var(--type-11);
+}
+.friendWhere span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.friendJoin {
+  position: absolute;
+  left: 16px;
+  bottom: 8px;
+  width: 92px;
+  height: 24px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--brand);
+  color: var(--white);
+  font: 600 var(--type-11) var(--font-family);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.friend:hover .friendJoin {
+  display: inline-flex;
+}
+.friend:hover:has(.friendJoin) .friendWhere {
+  visibility: hidden;
+}
+.friendName span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.verified {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}

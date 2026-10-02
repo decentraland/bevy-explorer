@@ -344,7 +344,7 @@ export function BackpackPage({
   emotes: EmotesState
   profile: ProfileState
   onNavigate: (page: string) => void
-  setEngineViewport: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
+  setEngineViewport: (region: 'map' | 'avatarPreview' | 'lobby', rect: { x: number; y: number; width: number; height: number } | null) => void
   /** Which tab to open on (e.g. the emote wheel's "Customise [E]" opens 'emotes'). */
   initialTab?: 'wearables' | 'emotes'
 }): React.JSX.Element | null {

@@ -213,6 +213,32 @@
   --type-30: 30px;
   --type-32: 32px;
   --type-36: 36px;
+  --type-20: 20px;
+
+  /* Lobby. Opaque values as authored; translucent ones are provisional until measured on screen
+     (the reference composites in linear space, so its alphas don't map 1:1 to CSS). */
+  --lobby-bg: rgb(15, 13, 23);
+  --lobby-card: rgba(20, 20, 26, 0.9); /* provisional */
+  --lobby-card-radius: 16px;
+  --lobby-pill: rgb(22, 21, 24);
+  --lobby-online: rgb(48, 205, 0);
+  --lobby-live: rgb(255, 0, 0);
+  --lobby-ink: rgb(252, 252, 252);
+  --lobby-ink-dim: rgb(191, 191, 199);
+  --lobby-header-btn: var(--black);
+  --lobby-header-btn-hover: rgb(31, 31, 31);
+  --lobby-dot: rgba(255, 255, 255, 0.4); /* provisional */
+  --lobby-dot-active: rgb(255, 51, 153);
+  --lobby-arrow: rgba(28, 28, 33, 0.9); /* provisional */
+  --lobby-arrow-hover: rgb(56, 56, 66);
+  --lobby-arrow-pressed: rgb(13, 13, 15);
+  --lobby-chip: rgba(255, 255, 255, 0.03); /* provisional */
+  --lobby-tooltip: rgba(0, 0, 0, 0.95); /* provisional */
+  --lobby-header-ring: rgba(255, 255, 255, 0.18); /* measured: rgb(46,46,46) over black */
+  /* the reference sets these titles semibold + a bold flag, which widens them ~11% */
+  --lobby-title-tracking: 0.068em;
+  --lobby-skeleton: linear-gradient(90deg, rgba(143, 66, 219, 0.35), rgba(143, 66, 219, 0.7), rgba(143, 66, 219, 0.35));
+  --ease-outcubic: cubic-bezier(0.215, 0.61, 0.355, 1);
   --type-96: 96px;
   --fw-regular: 400;
   --fw-medium: 500;

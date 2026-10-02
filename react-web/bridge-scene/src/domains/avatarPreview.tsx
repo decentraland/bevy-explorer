@@ -51,6 +51,24 @@ const ROTATION_FACTOR = -0.5
 const FACING = Quaternion.fromEulerDegrees(0, 180, 0)
 const THUMBNAIL_SIZE = 480
 
+// The lobby stage: the avatar full-screen over the stage backdrop, framed like the desktop lobby
+// (camera 1 m above a target 0.8 m over the feet, 6 m back, 26.2° vertical FOV).
+const LOBBY_BASE = Color4.create(15 / 255, 13 / 255, 23 / 255, 1)
+const LOBBY_BACKDROP = 'images/lobby-background.jpg'
+const LOBBY_BACKDROP_ASPECT = 1595 / 986
+// Where the backdrop meets the floor (fraction of the screen from the bottom), and how much of
+// the image sits below that line.
+const LOBBY_BLEND_HEIGHT = 0.445
+const LOBBY_IMAGE_BELOW_BLEND = 0.461
+const LOBBY_TARGET_Y = 0.8
+const LOBBY_CAMERA_RISE = 1
+const LOBBY_CAMERA_DISTANCE = 6
+const LOBBY_FOV = (26.2 * Math.PI) / 180
+const LOBBY_SHADOW = Color4.create(0, 0, 0, 0.65)
+
+type Stage = 'backpack' | 'lobby'
+let stage: Stage = 'backpack'
+
 let rect: Rect | null = null
 let avatarEntity: Entity | null = null
 let cameraEntity: Entity | null = null
@@ -119,16 +137,18 @@ function createPreview(): void {
   const a = engine.addEntity()
   const c = engine.addEntity()
 
+  const lobby = stage === 'lobby'
   AvatarShape.create(a, { ...avatarShape(), name: undefined, talking: false })
   CameraLayers.create(a, { layers: [LAYER] })
   Transform.create(a, {
     position: Vector3.create(8, 0, 8),
     rotation: FACING,
-    scale: Vector3.create(2, 2, 2)
+    scale: lobby ? Vector3.One() : Vector3.create(2, 2, 2)
   })
 
-  // Podium under the avatar (preview layer only), like the platform in the reference backpack.
-  const podium = PODIUM_LAYERS.map((layer) => {
+  // Podium under the avatar (preview layer only), like the platform in the reference backpack;
+  // the lobby stands it on a soft blob shadow instead.
+  const podium = lobby ? [lobbyShadow()] : PODIUM_LAYERS.map((layer) => {
     const e = engine.addEntity()
     MeshRenderer.setCylinder(e, 1, 1)
     Material.setPbrMaterial(e, { albedoColor: layer.color, metallic: 0, roughness: 0.6 })
@@ -139,30 +159,50 @@ function createPreview(): void {
 
   CameraLayer.create(c, {
     layer: LAYER,
-    directionalLight: false,
+    // the lobby stage has a key light; the Backpack is lit flat
+    directionalLight: lobby,
     showAvatars: false,
     showSkybox: false,
     showFog: false,
-    ambientBrightnessOverride: 5
+    ambientBrightnessOverride: lobby ? 2 : 5
   })
   TextureCamera.create(c, {
     width: res.width,
     height: res.height,
     layer: LAYER,
     clearColor: Color4.create(0, 0, 0, 0),
-    mode: { $case: 'orthographic', orthographic: { verticalRange: framing.range } },
+    mode: lobby
+      ? { $case: 'perspective', perspective: { fieldOfView: LOBBY_FOV } }
+      : { $case: 'orthographic', orthographic: { verticalRange: framing.range } },
     volume: 1
   })
-  Transform.create(c, {
-    position: Vector3.create(8, framing.centerY + PITCH_DROP, 8 - CAMERA_DISTANCE),
-    rotation: Quaternion.fromEulerDegrees(CAMERA_PITCH, 0, 0)
-  })
+  Transform.create(
+    c,
+    lobby
+      ? {
+          position: Vector3.create(8, LOBBY_TARGET_Y + LOBBY_CAMERA_RISE, 8 - LOBBY_CAMERA_DISTANCE),
+          rotation: Quaternion.fromEulerDegrees((Math.atan2(LOBBY_CAMERA_RISE, LOBBY_CAMERA_DISTANCE) * 180) / Math.PI, 0, 0)
+        }
+      : {
+          position: Vector3.create(8, framing.centerY + PITCH_DROP, 8 - CAMERA_DISTANCE),
+          rotation: Quaternion.fromEulerDegrees(CAMERA_PITCH, 0, 0)
+        }
+  )
 
   avatarEntity = a
   cameraEntity = c
   podiumEntities = podium
   lastShapeKey = ''
   syncShape()
+}
+
+function lobbyShadow(): Entity {
+  const e = engine.addEntity()
+  MeshRenderer.setCylinder(e, 1, 1)
+  Material.setBasicMaterial(e, { diffuseColor: LOBBY_SHADOW })
+  CameraLayers.create(e, { layers: [LAYER] })
+  Transform.create(e, { position: Vector3.create(8, -0.005, 8), scale: Vector3.create(0.7, 0.01, 0.7) })
+  return e
 }
 
 function disposePreview(): void {
@@ -187,7 +227,12 @@ function syncShape(): void {
 
 export function registerAvatarPreview(ctx: Ctx): void {
   ctx.on('engineViewport', (msg) => {
-    if (msg.region !== 'avatarPreview') return
+    if (msg.region !== 'avatarPreview' && msg.region !== 'lobby') return
+    const nextStage: Stage = msg.region === 'lobby' ? 'lobby' : 'backpack'
+    if (nextStage !== stage) {
+      disposePreview()
+      stage = nextStage
+    }
     rect = msg.rect
     dpr = msg.dpr ?? 1
     if (rect == null) {
@@ -310,9 +355,32 @@ function rotateAvatar(): void {
   )
 }
 
+function renderLobbyStage(r: Rect, camera: Entity): ReactEcs.JSX.Element {
+  // Cover-fit the backdrop, placed so its blend line sits where the stage floor meets it.
+  const width = Math.max(r.width, r.height * LOBBY_BACKDROP_ASPECT)
+  const height = width / LOBBY_BACKDROP_ASPECT
+  const top = (1 - LOBBY_BLEND_HEIGHT) * r.height + LOBBY_IMAGE_BELOW_BLEND * height - height
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { left: r.x, top: r.y }, width: r.width, height: r.height, overflow: 'hidden' }}
+      uiBackground={{ color: LOBBY_BASE }}
+    >
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { left: (r.width - width) / 2, top }, width, height }}
+        uiBackground={{ texture: { src: LOBBY_BACKDROP }, textureMode: 'stretch' }}
+      />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }}
+        uiBackground={{ videoTexture: { videoPlayerEntity: camera }, textureMode: 'stretch' }}
+      />
+    </UiEntity>
+  )
+}
+
 export function renderAvatarPreview(): ReactEcs.JSX.Element | null {
   if (rect == null || cameraEntity == null) return null
   const r = rect
+  if (stage === 'lobby') return renderLobbyStage(r, cameraEntity)
   return (
     // Full-screen opaque base: the live world can never show through React's transparent
     // avatar cutout, even if the reported rect and the cutout don't line up to the pixel.

@@ -492,7 +492,7 @@ export interface EngineSession {
   nav: (action: NavAction) => void
   /** Report (or clear) the screen rect where the scene should render an engine view. */
   setEngineViewport: (
-    region: 'map' | 'avatarPreview',
+    region: 'map' | 'avatarPreview' | 'lobby',
     rect: { x: number; y: number; width: number; height: number } | null,
     dpr?: number
   ) => void
@@ -1728,7 +1728,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [closeAllPanels])
 
   const setEngineViewport = useCallback(
-    (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null, dpr?: number) => {
+    (region: 'map' | 'avatarPreview' | 'lobby', rect: { x: number; y: number; width: number; height: number } | null, dpr?: number) => {
       driverRef.current?.send({ kind: 'engineViewport', region, rect, dpr })
     },
     []
