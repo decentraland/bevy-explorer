@@ -102,8 +102,9 @@ pub struct ClientOptions {
     #[arg(long, help_heading = HOST)]
     pub editor: bool,
 
-    /// Load no realm scenes and join no realm comms until the first realm change (a teleport
-    /// naming a realm). For a lobby shown before entering the world. Set by the host page.
+    /// Load no realm scenes and join no realm comms (Pulse still connects) until the first
+    /// successful realm change request. For a lobby shown before entering the world. Set by the
+    /// host page.
     #[arg(long, help_heading = HOST)]
     pub hold_world: bool,
 

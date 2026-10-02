@@ -90,7 +90,8 @@ pub fn apply_client(
 
     app.insert_resource(EditorMode(*editor));
 
-    if *hold_world {
+    // preview mode refuses realm changes, so nothing could ever release the hold
+    if *hold_world && !launch.preview {
         app.insert_resource(WorldHold);
     }
 
