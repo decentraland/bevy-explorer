@@ -92,12 +92,18 @@ export function LoadingAndLogin({ flow }: { flow: LoginFlow }): React.JSX.Elemen
   const reuse = flow.status === 'reuse-login-or-new'
   const profile = useStoredProfile(reuse && flow.account != null ? flow.account : undefined)
 
+  // The logo splash covers everything until there is somewhere to go: a stored session heads
+  // straight to the lobby, so it never flashes the sign-in screen (unless signing in failed).
+  const splash = flow.status === 'loading' || (reuse && flow.error == null)
   return (
     <div className={styles.root}>
-      {flow.status === 'loading' ? (
-        <div className={styles.loading}>
-          <div className={styles.spinnerLogo} />
-        </div>
+      {splash ? (
+        <>
+          <div className={styles.loading}>
+            <div className={styles.spinnerLogo} />
+          </div>
+          <BootProgress flow={flow} />
+        </>
       ) : (
         <>
           <div className={styles.watermark} />
