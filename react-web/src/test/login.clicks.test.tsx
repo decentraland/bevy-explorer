@@ -19,8 +19,11 @@ describe('login screen clicks', () => {
     expect(vi.mocked(f.exploreAsGuest)).toHaveBeenCalledTimes(1)
   })
 
-  it('reuse-login-or-new: JUMP IN / USE A DIFFERENT ACCOUNT', async () => {
-    const f = flow({ status: 'reuse-login-or-new', account: '0xabc' })
+  it('reuse-login-or-new: the splash covers the way to the lobby; after a failed sign-in, JUMP IN / USE A DIFFERENT ACCOUNT', async () => {
+    const { unmount } = render(<LoadingAndLogin flow={flow({ status: 'reuse-login-or-new', account: '0xabc' })} />)
+    expect(screen.queryByRole('button', { name: /JUMP INTO DECENTRALAND/i })).toBeNull()
+    unmount()
+    const f = flow({ status: 'reuse-login-or-new', account: '0xabc', error: 'Login failed' })
     render(<LoadingAndLogin flow={f} />)
     await userEvent.click(screen.getByRole('button', { name: /JUMP INTO DECENTRALAND/i }))
     expect(vi.mocked(f.jumpIn)).toHaveBeenCalledTimes(1)
