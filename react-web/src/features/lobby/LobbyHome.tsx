@@ -1,6 +1,5 @@
-// The lobby: shown after sign-in, before entering the world. The engine is up and signed in but
-// holds the world back, so the stage and the avatar (drawn by the engine behind this transparent
-// page) and the bridge work; picking a destination releases it.
+// The lobby: shown after sign-in, before entering the world (and reopened from the menu in-world).
+// The stage and the avatar are drawn by the engine behind this transparent page.
 
 import { useEffect, useRef, useState } from 'react'
 import backdrop from '../../assets/lobby/background.jpg'
@@ -8,7 +7,8 @@ import vignette from '../../assets/lobby/vignette.png'
 import logo from '../../assets/lobby/logo.png'
 import mouseLeft from '../../assets/lobby/mouse-left.png'
 import notificationsIcon from '../../assets/lobby/notifications.png'
-import { Avatar, Close, MaskIcon, Rail } from '../../design'
+import { Avatar, Close, HeaderButton, MaskIcon, Rail } from '../../design'
+import { FLOOR, backdropRect, floorShadeGradient } from '../../engine/lobbyStage'
 import { userColor } from '../../lib/identity'
 import { EngineViewport } from '../engine/EngineViewport'
 import { useStoredProfile } from '../login/useStoredProfile'
@@ -18,34 +18,42 @@ import { openPassport } from '../profile/Passport'
 import { useSession } from '../session/SessionContext'
 import type { Destination } from '../session/useEngineSession'
 import { FriendCard, LandingCard, LiveEventCard, PlaceCard } from './LobbyCards'
-import { eventPeople, fetchHighlighted, fetchLivePlaces, fetchLobbyEvents, fetchPlaceAt, fetchRecents, type LobbyEvents } from './lobbyApi'
+import { eventPeople, fetchHighlighted, fetchHomePlace, fetchLiveEvents, fetchLivePlaces, fetchRecents, type LiveEvent } from './lobbyApi'
 import styles from './LobbyHome.module.css'
 
 type Rect = { x: number; y: number; width: number; height: number }
 
+// Loads once on mount; a failed fetch shows its section empty (hidden), as on parity.
 function useLoad<T>(load: () => Promise<T>, fallback: T): { data: T; loading: boolean } {
   const [state, setState] = useState<{ data: T; loading: boolean }>({ data: fallback, loading: true })
+  const loadRef = useRef(load)
+  const fallbackRef = useRef(fallback)
   useEffect(() => {
     let live = true
-    load()
+    loadRef
+      .current()
       .then((data) => live && setState({ data, loading: false }))
-      // the reference treats every lobby fetch error as empty
-      .catch(() => live && setState({ data: fallback, loading: false }))
+      .catch(() => live && setState({ data: fallbackRef.current, loading: false }))
     return () => {
       live = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return state
 }
 
-const GENESIS = { x: 0, y: 0 }
-// The backdrop's geometry, shared with the bridge's stage so the stand-in lines up with it: the
-// stage camera's vertical field of view is fixed, so it scales with the screen height (measured
-// against the reference stage at 1920×1200).
-const BACKDROP_ASPECT = 1595 / 986
-const BACKDROP_HEIGHT = 1.033
-const BACKDROP_TOP = -0.17
+// The Backpack's preview runs past its modal's edge; only the part inside the modal is a hole.
+function clipToModal(rect: Rect | null): Rect | null {
+  const frame = document.querySelector('[role="dialog"][aria-label="Backpack"]')?.getBoundingClientRect()
+  if (rect == null || frame == null) return rect
+  const x = Math.max(rect.x, frame.left)
+  const y = Math.max(rect.y, frame.top)
+  const width = Math.min(rect.x + rect.width, frame.right) - x
+  const height = Math.min(rect.y + rect.height, frame.bottom) - y
+  return width > 0 && height > 0 ? { x, y, width, height } : null
+}
+
+const FLOOR_COLOR = `rgb(${FLOOR.r}, ${FLOOR.g}, ${FLOOR.b})`
+const FLOOR_SHADE = floorShadeGradient()
 
 // Until the engine has drawn the stage, the page paints the same backdrop and the account's
 // snapshot, so the lobby never shows an empty or half-loaded centre.
@@ -59,19 +67,16 @@ function StandInStage({ hidden, body }: { hidden: boolean; body?: string }): Rea
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const height = Math.max(size.h * BACKDROP_HEIGHT, size.w / BACKDROP_ASPECT)
-  const width = height * BACKDROP_ASPECT
-  const top = size.h * BACKDROP_TOP
+  const rect = backdropRect(size.w, size.h)
   return (
-    <div ref={ref} className={`${styles.standIn} ${hidden ? styles.standInHidden : ''}`.trim()} aria-hidden="true">
-      <img className={styles.standInBackdrop} src={backdrop} alt="" style={{ width, height, top, left: (size.w - width) / 2 }} />
-      <div className={styles.standInShade} />
+    <div ref={ref} className={`${styles.standIn} ${hidden ? styles.standInHidden : ''}`.trim()} style={{ background: FLOOR_COLOR }} aria-hidden="true">
+      <img className={styles.standInBackdrop} src={backdrop} alt="" style={rect} />
+      <div className={styles.standInShade} style={{ background: FLOOR_SHADE }} />
       <img className={styles.standInVignette} src={vignette} alt="" />
       {body && <img className={styles.standInAvatar} src={body} alt="" draggable={false} />}
     </div>
   )
 }
-const NO_EVENTS: LobbyEvents = { live: [] }
 
 export function LobbyHome({
   onPick,
@@ -86,28 +91,57 @@ export function LobbyHome({
   const session = useSession()
   const profile = session.profile.data
   const stored = useStoredProfile(session.login.account ?? undefined)
-  const landing = useLoad(() => fetchPlaceAt(GENESIS.x, GENESIS.y), null as DiscoverPlace | null)
+  const [home] = useState(() => session.homeScene() ?? { realm: null, parcel: '0,0' })
+  const landing = useLoad(() => fetchHomePlace(home), null as DiscoverPlace | null)
   const recents = useLoad(fetchRecents, [] as DiscoverPlace[])
   const recommended = useLoad(fetchHighlighted, [] as DiscoverPlace[])
-  const events = useLoad(() => fetchLobbyEvents(), NO_EVENTS)
+  const liveEvents = useLoad(fetchLiveEvents, [] as LiveEvent[])
   const livePlaces = useLoad(fetchLivePlaces, [] as DiscoverPlace[])
   const online = session.friends.list
     .filter((f) => f.status !== 'offline')
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  const rootRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null)
+  // a pick releases the held world, so none until sign-in has finished
+  const waiting = session.login.busy
   const pickPlace = (p: DiscoverPlace): void => onPick(placeTeleport(p))
   // The landing card already offers its place; the rails don't repeat it.
   const notLanding = (list: DiscoverPlace[]): DiscoverPlace[] => list.filter((p) => p.id !== landing.data?.id)
   const recentPlaces = notLanding(recents.data)
   const recommendedPlaces = notLanding(recommended.data)
   const busyPlaces = notLanding(livePlaces.data)
+  const landingTitle = landing.data?.title ?? (landing.loading ? '' : home.realm ?? (home.parcel === '0,0' ? 'Genesis Plaza' : home.parcel))
+
+  // Under the Backpack modal the lobby shows, but with a hole where the engine draws the
+  // Backpack's avatar, which is behind it.
+  const hole = session.backpack.open ? clipToModal(session.avatarPreviewRect) : null
+  const scale = rootRef.current != null ? rootRef.current.getBoundingClientRect().width / rootRef.current.offsetWidth || 1 : 1
+  const backpackHole: React.CSSProperties | undefined =
+    hole == null
+      ? undefined
+      : {
+          maskImage: 'linear-gradient(#000, #000), linear-gradient(#000, #000)',
+          maskSize: `100% 100%, ${hole.width / scale}px ${hole.height / scale}px`,
+          maskPosition: `0 0, ${hole.x / scale}px ${hole.y / scale}px`,
+          maskRepeat: 'no-repeat',
+          maskComposite: 'exclude',
+          WebkitMaskComposite: 'xor'
+        }
+
+  // The page is scaled to its 1920×1080 canvas, so pointer coordinates are converted into it.
+  const trackTooltip = (e: React.MouseEvent): void => {
+    const root = rootRef.current
+    if (root == null) return
+    const box = root.getBoundingClientRect()
+    const scale = box.width / root.offsetWidth || 1
+    setTooltip({ x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale })
+  }
 
   return (
-    // hidden under the Backpack: it shows the engine's avatar through a hole the lobby would cover
-    <div className={`${styles.root} ${session.backpack.open ? styles.covered : ''}`.trim()}>
-      {/* the Backpack takes the avatar preview while it's open; the stage comes back after */}
+    <div ref={rootRef} className={styles.root} style={backpackHole}>
+      {/* the Backpack modal takes the avatar preview while it's open; the stage comes back after */}
       <div className={styles.stage}>{!session.backpack.open && <EngineViewport region="lobby" report={setEngineViewport} />}</div>
-      <StandInStage hidden={session.lobbyStageReady} body={stored.body} />
+      <StandInStage hidden={session.lobbyStageReady && !session.backpack.open} body={stored.body} />
 
       <button
         type="button"
@@ -117,24 +151,24 @@ export function LobbyHome({
           setTooltip(null)
           session.backpack.toggle()
         }}
-        onMouseMove={(e) => setTooltip({ x: e.clientX, y: e.clientY })}
+        onMouseMove={trackTooltip}
         onMouseLeave={() => setTooltip(null)}
       />
 
       <header className={styles.header}>
         <img className={styles.logo} src={logo} alt="Decentraland" />
         <div className={styles.headerRight}>
-          <button type="button" className={styles.headerButton} aria-label="Notifications" onClick={session.notifications.toggle}>
+          <HeaderButton aria-label="Notifications" onClick={session.notifications.toggle}>
             <MaskIcon src={notificationsIcon} size={22} />
-          </button>
-          <button type="button" className={styles.profileWidget} onClick={session.profile.toggle}>
+          </HeaderButton>
+          <HeaderButton shape="pill" className={styles.profileWidget} onClick={session.profile.toggle}>
             <Avatar src={profile?.picture} name={profile?.name ?? ''} size={40} framed />
             <span className={styles.profileName}>{profile?.name ?? ''}</span>
-          </button>
+          </HeaderButton>
           {onClose && (
-            <button type="button" className={styles.headerButton} aria-label="Close" onClick={onClose}>
+            <HeaderButton aria-label="Close" onClick={onClose}>
               <Close size={12} />
-            </button>
+            </HeaderButton>
           )}
         </div>
       </header>
@@ -142,11 +176,12 @@ export function LobbyHome({
       <section className={styles.quickJump}>
         <h1 className={styles.welcome}>{profile?.name ? `Welcome ${profile.name}!` : 'Welcome!'}</h1>
         <LandingCard
-          title={landing.data?.title ?? (landing.loading ? '' : 'Genesis Plaza')}
+          title={landingTitle}
           creator={landing.data ? placeCreator(landing.data) : null}
           image={landing.data?.image ?? null}
           count={landing.data ? placePlayers(landing.data) : null}
           loading={landing.loading}
+          disabled={waiting}
           onJumpIn={() => onPick(null)}
         />
       </section>
@@ -165,25 +200,25 @@ export function LobbyHome({
                 color={userColor(f.address, f.name, f.claimed, f.nameColor)}
                 where={f.status === 'away' ? 'Away' : 'Online'}
                 onOpen={() => openPassport(f.address)}
-                onJoin={null}
               />
             ))}
           </Rail>
         </section>
       )}
 
-      {(events.data.live.length > 0 || busyPlaces.length > 0) && (
-        <section className={styles.events}>
-          <h2 className={`${styles.sectionTitle} ${styles.eventsTitle}`}>
+      {(liveEvents.data.length > 0 || busyPlaces.length > 0) && (
+        <section className={styles.live}>
+          <h2 className={`${styles.sectionTitle} ${styles.liveTitle}`}>
             <span className={styles.liveDot} />
             Live Now
           </h2>
-          {events.data.live.length > 0 && (
+          {liveEvents.data.length > 0 && (
             <div className={styles.liveEvents}>
               <Rail perPage={1} gap={8}>
-                {events.data.live.map((e) => {
+                {liveEvents.data.map((e) => {
                   const dest = eventDestination(e)
-                  return <LiveEventCard key={e.id} event={e} people={eventPeople(e)} onJumpIn={() => dest && onPick(dest.kind === 'world' ? { kind: 'world', realm: dest.realm } : dest)} />
+                  const go = dest == null || waiting ? null : () => onPick(dest.kind === 'world' ? { kind: 'world', realm: dest.realm } : dest)
+                  return <LiveEventCard key={e.id} event={e} people={eventPeople(e)} onJumpIn={go} />
                 })}
               </Rail>
             </div>
@@ -192,7 +227,7 @@ export function LobbyHome({
             <div className={styles.livePlaces}>
               <Rail perPage={1} gap={12}>
                 {busyPlaces.map((p) => (
-                  <PlaceCard key={p.id} wide title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} onJumpIn={() => pickPlace(p)} />
+                  <PlaceCard key={p.id} wide title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} disabled={waiting} onJumpIn={() => pickPlace(p)} />
                 ))}
               </Rail>
             </div>
@@ -205,7 +240,7 @@ export function LobbyHome({
           <h2 className={styles.sectionTitle}>Jump Back In</h2>
           <div className={styles.jumpBackRow}>
             {recentPlaces.map((p) => (
-              <PlaceCard key={p.id} title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} onJumpIn={() => pickPlace(p)} />
+              <PlaceCard key={p.id} title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} disabled={waiting} onJumpIn={() => pickPlace(p)} />
             ))}
           </div>
         </section>
@@ -216,7 +251,7 @@ export function LobbyHome({
           <h2 className={styles.sectionTitle}>Recommended Places</h2>
           <Rail perPage={3} gap={8}>
             {recommendedPlaces.map((p) => (
-              <PlaceCard key={p.id} title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} onJumpIn={() => pickPlace(p)} />
+              <PlaceCard key={p.id} title={p.title} creator={placeCreator(p)} image={p.image} count={placePlayers(p)} disabled={waiting} onJumpIn={() => pickPlace(p)} />
             ))}
           </Rail>
         </section>

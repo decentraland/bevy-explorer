@@ -58,7 +58,6 @@ function ArrowIcon(): React.JSX.Element {
   )
 }
 
-
 // The previous account's avatar: a static full-body snapshot on a CSS gold podium. (The live 3D
 // avatar can't render pre-login — the engine has no spawned avatar yet — so we use the snapshot.)
 function LoginAvatar({ body }: { body: string }): React.JSX.Element | null {

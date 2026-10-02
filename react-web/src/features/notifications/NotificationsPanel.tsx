@@ -142,14 +142,14 @@ export function NotificationsPanel({
   anchor = 'rail'
 }: {
   notifications: NotificationsState
-  /** Docked by the sidebar in-world; dropped under the lobby's bell. */
-  anchor?: 'rail' | 'topRight'
+  /** Docked by the sidebar in-world; dropped under the lobby's bell (left of a Close in-world). */
+  anchor?: 'rail' | 'lobby' | 'lobbyInWorld'
   /** Makes friendship notifications open the request, the friends panel or the passport. */
   friends?: FriendsState
 }): React.JSX.Element | null {
   if (!notifications.open) return null
   return (
-    <div className={`${styles.root} ${anchor === 'topRight' ? styles.topRight : ''}`.trim()}>
+    <div className={`${styles.root} ${anchor === 'rail' ? '' : styles[anchor]}`.trim()}>
       <header className={styles.head}>
         <span className={styles.heading}>Notifications</span>
         {notifications.unread > 0 && (

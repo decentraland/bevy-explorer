@@ -11,8 +11,8 @@ export function ProfilePanel({
   anchor = 'rail'
 }: {
   profile: ProfileState
-  /** Docked by the sidebar in-world; dropped under the lobby's profile button. */
-  anchor?: 'rail' | 'topRight'
+  /** Docked by the sidebar in-world; dropped under the lobby's profile button (left of a Close in-world). */
+  anchor?: 'rail' | 'lobby' | 'lobbyInWorld'
 }): React.JSX.Element | null {
   if (!profile.open) return null
   const p = profile.data
@@ -21,7 +21,7 @@ export function ProfilePanel({
   const color = p ? userColor(p.address, p.name, p.hasClaimedName, p.nameColor) : 'var(--fill-4)'
 
   return (
-    <div className={`${styles.root} ${anchor === 'topRight' ? styles.topRight : ''}`.trim()}>
+    <div className={`${styles.root} ${anchor === 'rail' ? '' : styles[anchor]}`.trim()}>
       <header className={styles.head}>
         <span className={styles.title}>Profile</span>
         <ControlButton variant="solid" className={styles.closeGlyph} aria-label="Close profile" onClick={profile.toggle}>
