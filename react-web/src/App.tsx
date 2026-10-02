@@ -307,9 +307,6 @@ function Hud(): React.JSX.Element {
       {session.phase === 'lobby' && (
         <>
           <LobbyHome onPick={session.pickDestination} setEngineViewport={session.setEngineViewport} />
-          <SurfaceBoundary name="Profile" open={session.profile.open} onCrash={session.closeAllPanels}>
-            <ProfilePanel profile={session.profile} anchor="lobby" />
-          </SurfaceBoundary>
           <SurfaceBoundary name="Notifications" open={session.notifications.open} onCrash={session.closeAllPanels}>
             <NotificationsPanel notifications={session.notifications} friends={session.friends} anchor="lobby" />
           </SurfaceBoundary>
@@ -359,7 +356,7 @@ function Hud(): React.JSX.Element {
             <SettingsPanel settings={session.settings} bindings={session.bindings} profile={session.profile} onNavigate={goToMenuPage} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Profile" open={session.profile.open} onCrash={session.closeAllPanels}>
-            <ProfilePanel profile={session.profile} anchor={session.lobbyPage.open ? 'lobbyInWorld' : 'rail'} />
+            <ProfilePanel profile={session.profile} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Notifications" open={session.notifications.open} onCrash={session.closeAllPanels}>
             <NotificationsPanel notifications={session.notifications} friends={session.friends} anchor={session.lobbyPage.open ? 'lobbyInWorld' : 'rail'} />

@@ -103,20 +103,6 @@
   align-items: center;
   gap: 10px;
 }
-.profileWidget {
-  width: 163px;
-}
-.profileName {
-  flex: 1;
-  text-align: center;
-  color: var(--ink-85);
-  font-size: var(--type-18);
-  font-weight: var(--fw-semibold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .sectionTitle {
   margin: 0;
   height: 30px;

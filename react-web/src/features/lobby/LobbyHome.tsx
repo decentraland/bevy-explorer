@@ -7,7 +7,8 @@ import vignette from '../../assets/lobby/vignette.png'
 import logo from '../../assets/lobby/logo.png'
 import mouseLeft from '../../assets/lobby/mouse-left.png'
 import notificationsIcon from '../../assets/lobby/notifications.png'
-import { Avatar, Close, HeaderButton, MaskIcon, Rail } from '../../design'
+import { Close, HeaderButton, MaskIcon, Rail } from '../../design'
+import { ProfileChip } from '../menu/ProfileChip'
 import { BACKDROP_EDGE_FADE, FLOOR, backdropRect, floorShadeGradient } from '../../engine/lobbyStage'
 import { userColor } from '../../lib/identity'
 import { clip } from '../backpack/BackpackModal'
@@ -153,10 +154,15 @@ export function LobbyHome({
           <HeaderButton aria-label="Notifications" onClick={session.notifications.toggle}>
             <MaskIcon src={notificationsIcon} size={22} />
           </HeaderButton>
-          <HeaderButton shape="pill" className={styles.profileWidget} onClick={session.profile.toggle}>
-            <Avatar src={profile?.picture} name={profile?.name ?? ''} size={40} framed />
-            <span className={styles.profileName}>{profile?.name ?? ''}</span>
-          </HeaderButton>
+          <ProfileChip
+            variant="lobby"
+            name={profile?.name ?? ''}
+            picture={profile?.picture}
+            address={profile?.address}
+            claimed={profile?.hasClaimedName}
+            onViewProfile={() => profile && openPassport(profile.address)}
+            onSignOut={session.logout}
+          />
           {onClose && (
             <HeaderButton aria-label="Close" onClick={onClose}>
               <Close size={12} />
