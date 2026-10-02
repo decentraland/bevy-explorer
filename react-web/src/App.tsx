@@ -302,7 +302,18 @@ function Hud(): React.JSX.Element {
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
       {session.phase === 'lobby' && (
-        <LobbyHome onPick={session.pickDestination} setEngineViewport={session.setEngineViewport} />
+        <>
+          <LobbyHome onPick={session.pickDestination} setEngineViewport={session.setEngineViewport} />
+          <SurfaceBoundary name="Profile" open={session.profile.open} onCrash={session.closeAllPanels}>
+            <ProfilePanel profile={session.profile} anchor="topRight" />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Notifications" open={session.notifications.open} onCrash={session.closeAllPanels}>
+            <NotificationsPanel notifications={session.notifications} friends={session.friends} anchor="topRight" />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Backpack" open={session.backpack.open} onCrash={session.closeAllPanels}>
+            <BackpackPage backpack={session.backpack} emotes={session.emotes} profile={session.profile} onNavigate={goToMenuPage} setEngineViewport={session.setEngineViewport} initialTab={backpackTab} />
+          </SurfaceBoundary>
+        </>
       )}
       {session.phase === 'entering' && (
         <SceneLoadingOverlay scene={session.sceneLoading} progress={session.loadingProgress} travellingTo={session.travellingTo} />

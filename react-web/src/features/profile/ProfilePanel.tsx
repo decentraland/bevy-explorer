@@ -6,7 +6,14 @@ import { shortAddr, splitName, userColor } from '../../lib/identity'
 import type { ProfileState } from '../session/useEngineSession'
 import styles from './ProfilePanel.module.css'
 
-export function ProfilePanel({ profile }: { profile: ProfileState }): React.JSX.Element | null {
+export function ProfilePanel({
+  profile,
+  anchor = 'rail'
+}: {
+  profile: ProfileState
+  /** Docked by the sidebar in-world; dropped under the lobby's profile button. */
+  anchor?: 'rail' | 'topRight'
+}): React.JSX.Element | null {
   if (!profile.open) return null
   const p = profile.data
   const labelName = p ? (p.name.trim() ? p.name : shortAddr(p.address)) : ''
@@ -14,7 +21,7 @@ export function ProfilePanel({ profile }: { profile: ProfileState }): React.JSX.
   const color = p ? userColor(p.address, p.name, p.hasClaimedName, p.nameColor) : 'var(--fill-4)'
 
   return (
-    <div className={styles.root}>
+    <div className={`${styles.root} ${anchor === 'topRight' ? styles.topRight : ''}`.trim()}>
       <header className={styles.head}>
         <span className={styles.title}>Profile</span>
         <ControlButton variant="solid" className={styles.closeGlyph} aria-label="Close profile" onClick={profile.toggle}>
