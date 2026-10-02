@@ -588,6 +588,11 @@ export interface RealmInfoMessage {
  *  from the live scene list and pushed when the parcel changes — NOT the same as the
  *  `sceneLoading` title, which describes the entry overlay and goes stale the moment you
  *  walk into the next scene. Empty when the parcel has no deployed scene. */
+/** The lobby stage and its avatar have been drawn (scene → page), so the page's stand-in can go. */
+export interface LobbyStageReadyMessage {
+  kind: 'lobbyStageReady'
+}
+
 export interface SceneInfoMessage {
   kind: 'sceneInfo'
   title: string
@@ -1293,6 +1298,7 @@ export type SceneToPage =
   | PlayerPoseMessage
   | RealmInfoMessage
   | SceneInfoMessage
+  | LobbyStageReadyMessage
   | GalleryMessage
   | GalleryPhotoMessage
   | PermissionRequestMessage

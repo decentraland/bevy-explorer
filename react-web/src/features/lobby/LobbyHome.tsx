@@ -2,13 +2,15 @@
 // holds the world back, so the stage and the avatar (drawn by the engine behind this transparent
 // page) and the bridge work; picking a destination releases it.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import backdrop from '../../assets/lobby/background.jpg'
 import logo from '../../assets/lobby/logo.png'
 import mouseLeft from '../../assets/lobby/mouse-left.png'
 import notificationsIcon from '../../assets/lobby/notifications.png'
 import { Avatar, MaskIcon, Rail } from '../../design'
 import { userColor } from '../../lib/identity'
 import { EngineViewport } from '../engine/EngineViewport'
+import { useStoredProfile } from '../login/useStoredProfile'
 import { eventDestination } from '../events/eventsApi'
 import { placeCreator, placePlayers, placeTeleport, type DiscoverPlace } from '../places/placesApi'
 import { openPassport } from '../profile/Passport'
@@ -37,6 +39,33 @@ function useLoad<T>(load: () => Promise<T>, fallback: T): { data: T; loading: bo
 }
 
 const GENESIS = { x: 0, y: 0 }
+// The backdrop's geometry, shared with the bridge's stage so the stand-in lines up with it.
+const BACKDROP_ASPECT = 1595 / 986
+const BLEND_HEIGHT = 0.445
+const IMAGE_BELOW_BLEND = 0.461
+
+// Until the engine has drawn the stage, the page paints the same backdrop and the account's
+// snapshot, so the lobby never shows an empty or half-loaded centre.
+function StandInStage({ hidden, body }: { hidden: boolean; body?: string }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ w: 1920, h: 1080 })
+  useEffect(() => {
+    const el = ref.current
+    if (el == null) return
+    const ro = new ResizeObserver(() => setSize({ w: el.offsetWidth, h: el.offsetHeight }))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const width = Math.max(size.w, size.h * BACKDROP_ASPECT)
+  const height = width / BACKDROP_ASPECT
+  const top = (1 - BLEND_HEIGHT) * size.h + IMAGE_BELOW_BLEND * height - height
+  return (
+    <div ref={ref} className={`${styles.standIn} ${hidden ? styles.standInHidden : ''}`.trim()} aria-hidden="true">
+      <img className={styles.standInBackdrop} src={backdrop} alt="" style={{ width, height, top, left: (size.w - width) / 2 }} />
+      {body && <img className={styles.standInAvatar} src={body} alt="" draggable={false} />}
+    </div>
+  )
+}
 const NO_EVENTS: LobbyEvents = { live: [], upcoming: [] }
 
 export function LobbyHome({
@@ -48,6 +77,7 @@ export function LobbyHome({
 }): React.JSX.Element {
   const session = useSession()
   const profile = session.profile.data
+  const stored = useStoredProfile(session.login.account ?? undefined)
   const landing = useLoad(() => fetchPlaceAt(GENESIS.x, GENESIS.y), null as DiscoverPlace | null)
   const recents = useLoad(fetchRecents, [] as DiscoverPlace[])
   const recommended = useLoad(fetchHighlighted, [] as DiscoverPlace[])
@@ -63,6 +93,7 @@ export function LobbyHome({
       <div className={styles.stage}>
         <EngineViewport region="lobby" report={setEngineViewport} />
       </div>
+      <StandInStage hidden={session.lobbyStageReady} body={stored.body} />
 
       <div
         className={styles.avatarHit}

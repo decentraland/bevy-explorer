@@ -196,6 +196,20 @@ function createPreview(): void {
   syncShape()
 }
 
+// Frames to let the stage and the avatar's first look settle before the page drops its stand-in.
+const LOBBY_SETTLE_FRAMES = 45
+
+function lobbyShown(): boolean {
+  return stage === 'lobby' && avatarEntity != null
+}
+
+async function announceLobbyStage(ctx: Ctx): Promise<void> {
+  // the avatar renders nothing until the player's look (and so its body shape) has arrived
+  while (lobbyShown() && !currentLook()?.bodyShape) await waitFrames(5)
+  await waitFrames(LOBBY_SETTLE_FRAMES)
+  if (lobbyShown()) ctx.send({ kind: 'lobbyStageReady' })
+}
+
 function lobbyShadow(): Entity {
   const e = engine.addEntity()
   MeshRenderer.setCylinder(e, 1, 1)
@@ -239,8 +253,14 @@ export function registerAvatarPreview(ctx: Ctx): void {
       disposePreview()
       return
     }
-    if (avatarEntity == null) createPreview()
-    else if (cameraEntity != null) {
+    if (avatarEntity == null) {
+      createPreview()
+      if (stage === 'lobby') {
+        announceLobbyStage(ctx).catch((e) => {
+          console.error('[avatarPreview] lobby stage', e)
+        })
+      }
+    } else if (cameraEntity != null) {
       // Window resized → re-size the render target to the hole, not just re-aspect it.
       const res = camRes(rect)
       const cam = TextureCamera.getMutableOrNull(cameraEntity)

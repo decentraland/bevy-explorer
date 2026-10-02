@@ -442,6 +442,8 @@ export interface LoginFlow {
 
 export interface EngineSession {
   phase: SessionPhase
+  /** The engine has drawn the lobby stage and avatar, so the page's stand-in can fade out. */
+  lobbyStageReady: boolean
   /** Post-jump-in Places picker: choose where to spawn (or null to skip → Genesis Plaza). */
   pickDestination: (dest: Destination) => void
   login: LoginFlow
@@ -554,6 +556,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // running (native, mock). Ends once a destination lands; a failed one returns here.
   const [lobby, setLobby] = useState(false)
   const lobbyRef = useRef(false)
+  const [lobbyStageReady, setLobbyStageReady] = useState(false)
   lobbyRef.current = lobby
   // The engine launches once per page (boot.js), so after that a destination is a runtime travel.
   const launchedRef = useRef(false)
@@ -976,6 +979,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             if (msg.ok) setLobby(false)
             else setDestinationPicked(false)
           }
+          break
+        case 'lobbyStageReady':
+          setLobbyStageReady(true)
           break
         case 'sceneInfo':
           setSceneTitle(msg.title)
@@ -1762,6 +1768,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // Otherwise the lobby: launch now holding the world back, so signing in, the avatar and
       // friends work but no scene loads until a destination is picked (which releases it).
       setLobby(true)
+      setLobbyStageReady(false)
       setBusy(true)
       let ran = false
       const run = (): void => {
@@ -1779,6 +1786,25 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     [busy, engineReady, launchEngine, runPendingLogin]
   )
+
+  // Launching for the lobby holds the world back and so loads nothing extra: start it while the
+  // sign-in screen is up, so Jump In only has to sign in. Not for a ?position/?realm link, which
+  // launches straight at its destination.
+  useEffect(() => {
+    const driver = driverRef.current
+    if (submitted || !engineReady || status === 'loading' || driver?.launch == null) return
+    if (launchedRef.current || urlDestination.current != null) return
+    let ran = false
+    const run = (): void => {
+      if (ran || driverRef.current == null || launchedRef.current) return
+      ran = true
+      const home = driver.homeScene?.()
+      launchEngine(driver, home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0', { holdWorld: true })
+    }
+    requestAnimationFrame(() => requestAnimationFrame(run))
+    const t = setTimeout(run, 60)
+    return () => clearTimeout(t)
+  }, [submitted, engineReady, status, launchEngine])
 
   const exploreAsGuest = useCallback(() => submitLogin((d) => d.loginGuest()), [submitLogin])
   // Reuse the existing login. The driver picks the path its backend supports (console
@@ -2142,6 +2168,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   return {
     phase,
+    lobbyStageReady,
     pickDestination,
     sceneLoading,
     loadingProgress,

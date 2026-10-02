@@ -17,6 +17,29 @@
   inset: 0;
   pointer-events: none;
 }
+.standIn {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--lobby-bg);
+  pointer-events: none;
+  transition: opacity 500ms linear;
+}
+.standInHidden {
+  opacity: 0;
+}
+.standInBackdrop {
+  position: absolute;
+  object-fit: fill;
+}
+/* The snapshot stands where the engine draws the avatar: centred, feet at ~83% of the height. */
+.standInAvatar {
+  position: absolute;
+  left: 50%;
+  bottom: 17%;
+  height: 66%;
+  transform: translateX(-50%);
+}
 .avatarHit {
   position: absolute;
   left: 740px;
