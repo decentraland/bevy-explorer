@@ -77,5 +77,23 @@ npm run test:visual            # check
 npm run test:visual:update     # refresh baselines (then eyeball the PNGs before committing)
 ```
 
+## Preview-realm gate (real engine, own config)
+
+`preview-realm.gate.spec.ts` builds the starter scene **in the page** with the scene editor's
+`@dcl-editor/web-build`, publishes it to the service worker's preview realm
+(`../../deploy/web/PREVIEW_REALM.md`), boots the engine into that realm, then edits the source,
+rebuilds, and sends `/reload <entityId>`. It passes when the engine reads the entity again and the
+scene logs the new version marker. No server holds the scene; the worker's own request log is the
+evidence, printed at the end of the run.
+
+```bash
+# a dcl-editor checkout, after `npm run build -w @dcl-editor/web-build`
+WEB_EDITOR_DIR=/path/to/dcl-editor npx playwright test --config playwright.gate.config.ts
+```
+
+It starts its own Vite server on :5230 (`e2e/vite.gate.config.ts`: the app's config plus the
+web-build files under `/web-build/`) and the bridge scene on :8100 (reused if already running).
+`npm run test:e2e` skips it.
+
 See **`../review.md`** for the full harness overview, per-domain expectations, the world-space
 agent checklist, and the pre-merge review checklist.
