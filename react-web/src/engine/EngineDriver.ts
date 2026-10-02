@@ -105,7 +105,7 @@ export class EngineDriver implements LoginDriver {
 
   engineReady(): boolean {
     // Ready-to-launch (WASM compiled + GPU warm), not console-ready — the console only comes up after
-    // launch (which we defer until the user picks a destination).
+    // launch.
     return this.rpc.readyToLaunch()
   }
 

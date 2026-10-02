@@ -596,8 +596,12 @@ export interface LobbyStageReadyMessage {
 export interface SceneInfoMessage {
   kind: 'sceneInfo'
   title: string
-  /** The parcel the title was resolved for. */
+  /** The parcel the title was resolved for, and the realm it is in. */
   parcel?: { x: number; y: number }
+  realm?: string
+  /** Genesis City (it advertises the satellite map); anything else is a World or a local realm. */
+  genesis?: boolean
+  preview?: boolean
 }
 
 /** Minimap style/zoom/rotation (page → scene). The scene only runs the Camera-style

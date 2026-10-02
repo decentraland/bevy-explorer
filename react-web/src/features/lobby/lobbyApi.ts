@@ -87,9 +87,9 @@ export function rememberPlace(id: string): void {
   }
 }
 
-/** Record the place the player is standing in: a World by its name, Genesis City by parcel. */
-export async function recordVisit(realm: string, parcel: { x: number; y: number }): Promise<void> {
-  const place = realm.endsWith('.dcl.eth') ? await fetchWorld(realm) : await fetchPlaceAt(parcel.x, parcel.y)
+/** Record the place the player is standing in: Genesis City by parcel, a World by its name. */
+export async function recordVisit(visit: { realm: string; genesis: boolean; parcel: { x: number; y: number } }): Promise<void> {
+  const place = visit.genesis ? await fetchPlaceAt(visit.parcel.x, visit.parcel.y) : await fetchWorld(visit.realm)
   if (place != null) rememberPlace(place.id)
 }
 

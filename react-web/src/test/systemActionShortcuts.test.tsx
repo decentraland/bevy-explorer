@@ -148,6 +148,19 @@ describe('system-action menu shortcuts', () => {
     expect(screen.queryByText('realm error')).toBeNull()
   })
 
+  it('Cancel closes what the in-world lobby opened before the lobby itself', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().lobbyPage.toggle())
+    act(() => h.session().profile.toggle())
+    expect(h.session().lobbyPage.open).toBe(true)
+    act(() => h.driver.emit(action('Cancel')))
+    expect(h.session().profile.open).toBe(false)
+    expect(h.session().lobbyPage.open).toBe(true)
+    act(() => h.driver.emit(action('Cancel')))
+    expect(h.session().lobbyPage.open).toBe(false)
+  })
+
   it('declares the lobby and the loading overlay as covered until the world is revealed', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h, { keepSent: true })
