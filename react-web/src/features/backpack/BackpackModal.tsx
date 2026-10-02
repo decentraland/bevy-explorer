@@ -28,11 +28,15 @@ export function BackpackModal({ onClose, children }: { onClose: () => void; chil
 
 type Rect = { x: number; y: number; width: number; height: number }
 
-/** The part of `rect` inside the modal frame (both in screen CSS px), or null. */
+// The layers under the modal open their hole a little wider than the page's own, so its
+// anti-aliased edge blends into the engine's backdrop rather than the dark layers beneath.
+const HOLE_BLEED = 2
+
+/** The part of `rect` inside the modal frame (both in screen CSS px), widened by the bleed, or null. */
 export function clip(rect: Rect, frame: DOMRect): Rect | null {
-  const x = Math.max(rect.x, frame.left)
-  const y = Math.max(rect.y, frame.top)
-  const width = Math.min(rect.x + rect.width, frame.right) - x
-  const height = Math.min(rect.y + rect.height, frame.bottom) - y
+  const x = Math.max(rect.x - HOLE_BLEED, frame.left)
+  const y = Math.max(rect.y - HOLE_BLEED, frame.top)
+  const width = Math.min(rect.x + rect.width + HOLE_BLEED, frame.right) - x
+  const height = Math.min(rect.y + rect.height + HOLE_BLEED, frame.bottom) - y
   return width > 0 && height > 0 ? { x, y, width, height } : null
 }
