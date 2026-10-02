@@ -7,7 +7,7 @@
 
 import { getStoredLogin, rootAddress, type AuthIdentity } from '../features/auth/sso'
 import type { LoginDriver } from './driver'
-import type { EngineRpc } from './engineRpc'
+import type { EngineRpc, LaunchHostOptions } from './engineRpc'
 import { BridgeChannel } from './bridgeChannel'
 import { bridgeChannelName, type PageToScene, type SceneToPage } from './protocol'
 
@@ -129,8 +129,8 @@ export class EngineDriver implements LoginDriver {
     this.rpc.rearmCrashWatchdog()
   }
 
-  launch(realm?: string, position?: string): void {
-    this.rpc.launch(realm, position)
+  launch(realm?: string, position?: string, host?: LaunchHostOptions): void {
+    this.rpc.launch(realm, position, host)
   }
 
   homeScene(): { realm: string | null; parcel: string } | null {
