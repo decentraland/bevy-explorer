@@ -1,0 +1,239 @@
+//! In-engine authoritative server: with [`LocalSceneServer`] on, every authoritative scene gets a
+//! second copy of itself in server role (isServer() true, its own crdt context) joined to the
+//! client copy over the loopback scene room (`comms::loopback`). The copy only forwards
+//! logic components across the scene boundary, so it never builds anything renderable.
+
+use bevy::{platform::collections::HashMap, prelude::*};
+use bevy_console::ConsoleCommand;
+use common::structs::{server_mode, LocalSceneServer};
+use comms::{
+    global_crdt::{GlobalCrdtState, SceneCrdtContext},
+    loopback::{spawn_server_end, LocalSceneServer as LocalServerRoom, LocalSceneServers},
+};
+use console::DoAddConsoleCommand;
+use dcl::interface::CrdtComponentInterfaces;
+use dcl_component::SceneComponentId;
+
+use crate::{
+    initialize_scene::{SceneEntityDefinitionHandle, SceneHash, SceneLoading},
+    renderer_context::RendererSceneContext,
+    update_world::{gltf_container::GltfDefinition, CrdtExtractors},
+    ContainerEntity, SceneSets,
+};
+
+/// Marks a scene root as the server copy of `client`.
+#[derive(Component)]
+pub struct ServerRole {
+    pub client: Entity,
+}
+
+/// What a server copy forwards to the engine: its logic-side state. Everything else (meshes,
+/// materials, gltf, ui, audio, video, avatars, ...) stays in the scene's own store.
+const SERVER_COMPONENTS: [SceneComponentId; 3] = [
+    SceneComponentId::TRANSFORM,
+    SceneComponentId::TWEEN,
+    SceneComponentId::RAYCAST,
+];
+
+pub fn scene_interfaces(extractors: &CrdtExtractors, server: bool) -> CrdtComponentInterfaces {
+    CrdtComponentInterfaces(HashMap::from_iter(
+        extractors
+            .0
+            .iter()
+            .filter(|(id, _)| !server || SERVER_COMPONENTS.contains(id))
+            .map(|(id, interface)| (*id, interface.crdt_type())),
+    ))
+}
+
+pub struct ServerRolePlugin;
+
+impl Plugin for ServerRolePlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<LocalSceneServer>().add_systems(
+            Update,
+            (reap_server_copies, spawn_server_copies)
+                .chain()
+                .in_set(SceneSets::PostInit),
+        );
+        app.add_console_command::<SceneRenderStatsCommand, _>(scene_render_stats);
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn spawn_server_copies(
+    mut commands: Commands,
+    enabled: Res<LocalSceneServer>,
+    clients: Query<
+        (Entity, &RendererSceneContext, &SceneEntityDefinitionHandle),
+        (Added<RendererSceneContext>, Without<ServerRole>),
+    >,
+    mut servers: ResMut<LocalSceneServers>,
+) {
+    if !enabled.0 || server_mode() {
+        return;
+    }
+    for (client, ctx, definition) in &clients {
+        if !ctx.authoritative_multiplayer || servers.0.contains_key(&ctx.hash) {
+            continue;
+        }
+        let context = commands
+            .spawn(GlobalCrdtState::new(Some(ctx.hash.clone())).without_players())
+            .id();
+        let server_end = spawn_server_end(&mut commands, &ctx.hash, context);
+        let root = commands
+            .spawn((
+                SceneHash(ctx.hash.clone()),
+                SceneLoading::SceneEntity,
+                SceneEntityDefinitionHandle(definition.0.clone()),
+                ServerRole { client },
+                SceneCrdtContext(context),
+            ))
+            .id();
+        info!(
+            "starting the local server copy of {} ({}) as {root:?}",
+            ctx.title, ctx.hash
+        );
+        servers.0.insert(
+            ctx.hash.clone(),
+            LocalServerRoom {
+                context,
+                server_end,
+            },
+        );
+    }
+}
+
+fn reap_server_copies(
+    mut commands: Commands,
+    copies: Query<(Entity, &ServerRole, &SceneHash)>,
+    clients: Query<(), Or<(With<RendererSceneContext>, With<SceneLoading>)>>,
+    mut servers: ResMut<LocalSceneServers>,
+) {
+    for (root, role, hash) in &copies {
+        if clients.contains(role.client) {
+            continue;
+        }
+        info!("stopping the local server copy of {}", hash.0);
+        commands.entity(root).despawn();
+        if let Some(room) = servers.0.remove(&hash.0) {
+            commands.entity(room.server_end).try_despawn();
+            commands.entity(room.context).try_despawn();
+        }
+    }
+}
+
+/// Per-scene renderable counts (entities, gltf containers, meshes) and world asset totals
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/scene_render_stats")]
+struct SceneRenderStatsCommand;
+
+#[allow(clippy::too_many_arguments)]
+fn scene_render_stats(
+    mut input: ConsoleCommand<SceneRenderStatsCommand>,
+    scenes: Query<(Entity, &RendererSceneContext, Has<ServerRole>)>,
+    containers: Query<&ContainerEntity>,
+    gltfs: Query<&ContainerEntity, With<GltfDefinition>>,
+    meshes: Query<Entity, With<Mesh3d>>,
+    parents: Query<&ChildOf>,
+    mesh_assets: Res<Assets<Mesh>>,
+    images: Res<Assets<Image>>,
+    gltf_assets: Res<Assets<bevy::gltf::Gltf>>,
+) {
+    if input.take().is_none() {
+        return;
+    }
+    let mut counts: HashMap<Entity, [usize; 3]> = HashMap::new();
+    for container in &containers {
+        counts.entry(container.root).or_default()[0] += 1;
+    }
+    for container in &gltfs {
+        counts.entry(container.root).or_default()[1] += 1;
+    }
+    for mesh in &meshes {
+        let mut entity = mesh;
+        while !scenes.contains(entity) {
+            let Ok(parent) = parents.get(entity) else {
+                break;
+            };
+            entity = parent.parent();
+        }
+        if scenes.contains(entity) {
+            counts.entry(entity).or_default()[2] += 1;
+        }
+    }
+    let mut lines = scenes
+        .iter()
+        .map(|(root, ctx, server)| {
+            let [entities, gltf, mesh] = counts.get(&root).copied().unwrap_or_default();
+            format!(
+                "{} [{}] role={} entities={entities} gltf_containers={gltf} meshes={mesh}",
+                ctx.title,
+                ctx.hash,
+                if server { "server" } else { "client" },
+            )
+        })
+        .collect::<Vec<_>>();
+    lines.push(format!(
+        "world: mesh3d={} mesh_assets={} images={} gltf_assets={}",
+        meshes.iter().count(),
+        mesh_assets.len(),
+        images.len(),
+        gltf_assets.len()
+    ));
+    input.reply_ok(lines.join("\n"));
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::{ecs::system::RunSystemOnce, platform::collections::HashSet};
+    use dcl::SceneId;
+
+    use super::*;
+
+    fn client_scene(world: &mut World, hash: &str, authoritative: bool) -> Entity {
+        world
+            .spawn((
+                RendererSceneContext::new(
+                    SceneId::DUMMY,
+                    hash.to_owned(),
+                    "storage_root".to_owned(),
+                    false,
+                    0,
+                    "title".to_owned(),
+                    IVec2::ZERO,
+                    HashSet::from_iter([IVec2::ZERO]),
+                    vec![],
+                    Default::default(),
+                    vec![],
+                    Entity::PLACEHOLDER,
+                    0.,
+                    false,
+                    "sdk7",
+                    false,
+                    authoritative,
+                ),
+                SceneEntityDefinitionHandle(Handle::default()),
+            ))
+            .id()
+    }
+
+    #[test]
+    fn only_authoritative_scenes_get_a_server_copy() {
+        let mut world = World::new();
+        world.insert_resource(LocalSceneServer(true));
+        world.init_resource::<LocalSceneServers>();
+        let authoritative = client_scene(&mut world, "auth", true);
+        client_scene(&mut world, "plain", false);
+
+        world.run_system_once(spawn_server_copies).unwrap();
+
+        let copies = world
+            .query::<&ServerRole>()
+            .iter(&world)
+            .map(|role| role.client)
+            .collect::<Vec<_>>();
+        assert_eq!(copies, vec![authoritative]);
+        let rooms = world.resource::<LocalSceneServers>();
+        assert!(rooms.0.contains_key("auth") && !rooms.0.contains_key("plain"));
+    }
+}

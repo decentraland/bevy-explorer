@@ -247,10 +247,12 @@ pub enum RpcCall {
     },
     SubscribeMessageBus {
         hash: String,
+        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribeBinaryBus {
         hash: String,
+        scene: Entity,
         sender: RpcStreamSender<(String, Vec<u8>)>,
     },
     TestPlan {

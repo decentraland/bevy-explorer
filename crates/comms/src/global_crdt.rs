@@ -270,6 +270,9 @@ pub struct GlobalCrdtState {
     pub(crate) realm_bounds: (IVec2, IVec2),
     // per-component localizer registry (populated as components are first sent)
     localizers: HashMap<SceneComponentId, Localizer>,
+    /// false for an in-engine server copy's room: its peers are the local player, who must
+    /// not get a second (rendered) avatar, so only their scene bus traffic is taken
+    materialize_players: bool,
 }
 
 impl GlobalCrdtState {
@@ -286,9 +289,21 @@ impl GlobalCrdtState {
             lookup: Default::default(),
             realm_bounds: (IVec2::MAX, IVec2::MIN),
             localizers: Default::default(),
+            materialize_players: true,
         }
     }
+
+    /// A room context whose peers are never materialized as `ForeignPlayer`s.
+    pub fn without_players(mut self) -> Self {
+        self.materialize_players = false;
+        self
+    }
 }
+
+/// The crdt context a scene root reads and is subscribed to, so per-scene routing never has
+/// to infer it from the hash (two scene copies may share one).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct SceneCrdtContext(pub Entity);
 
 /// Resolves the network-update sender of the crdt context a given transport feeds —
 /// the only route by which transport-scoped systems may inject player updates.
@@ -721,6 +736,16 @@ fn apply_foreign_movement(
     });
 }
 
+/// Scene bus subscriptions by (crdt context, scene hash): a server copy shares its client
+/// copy's hash, and each must only hear its own room.
+#[derive(Default)]
+pub struct BusSubscribers {
+    strings: HashMap<(Entity, String), RpcEventSender>,
+    binaries: HashMap<(Entity, String), BinaryBusSender>,
+}
+
+type BinaryBusSender = RpcStreamSender<(String, Vec<u8>)>;
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_transport_updates(
     mut commands: Commands,
@@ -732,28 +757,47 @@ pub fn process_transport_updates(
     mut anim_events: EventWriter<PlayerSceneAnimEvent>,
     mut emote_events: EventWriter<EmoteLifecycleEvent>,
     mut chat_events: EventWriter<ChatEvent>,
-    mut string_senders: Local<HashMap<String, RpcEventSender>>,
-    mut binary_senders: Local<HashMap<String, RpcStreamSender<(String, Vec<u8>)>>>,
+    mut bus: Local<BusSubscribers>,
     mut subscribers: EventReader<RpcCall>,
+    (scene_contexts, crdt_contexts): (Query<&SceneCrdtContext>, Res<CrdtContexts>),
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
     mut remote_anim: Local<RemoteAnimState>,
     discard_player_updates: Res<DiscardPlayerUpdates>,
 ) {
     // gather any event receivers
+    let context_of = |scene: Entity, hash: &str| {
+        scene_contexts
+            .get(scene)
+            .map(|c| c.0)
+            .ok()
+            .or_else(|| crdt_contexts.try_for_scene_hash(hash))
+    };
     for ev in subscribers.read() {
         match ev {
-            RpcCall::SubscribeMessageBus { sender, hash } => {
-                string_senders.insert(hash.clone(), sender.clone());
+            RpcCall::SubscribeMessageBus {
+                sender,
+                hash,
+                scene,
+            } => {
+                if let Some(context) = context_of(*scene, hash) {
+                    bus.strings.insert((context, hash.clone()), sender.clone());
+                }
             }
-            RpcCall::SubscribeBinaryBus { sender, hash } => {
-                binary_senders.insert(hash.clone(), sender.clone());
+            RpcCall::SubscribeBinaryBus {
+                sender,
+                hash,
+                scene,
+            } => {
+                if let Some(context) = context_of(*scene, hash) {
+                    bus.binaries.insert((context, hash.clone()), sender.clone());
+                }
             }
             _ => (),
         }
     }
-    string_senders.retain(|_, s| !s.is_closed());
-    binary_senders.retain(|_, s| !s.is_closed());
+    bus.strings.retain(|_, s| !s.is_closed());
+    bus.binaries.retain(|_, s| !s.is_closed());
 
     // forget per-player state for despawned players (cheap unless a map outgrew the live set)
     let live_players = players.iter().len();
@@ -774,6 +818,19 @@ pub fn process_transport_updates(
             match network_update {
                 NetworkUpdate::Player(update) => {
                     if discard_player_updates.0 {
+                        continue;
+                    }
+                    if !state.materialize_players {
+                        if let PlayerMessage::PlayerData(Message::Scene(scene)) = update.message {
+                            if state.room.as_ref() == Some(&scene.scene_id) {
+                                process_messagebus(
+                                    scene,
+                                    format!("{:#x}", update.address),
+                                    context_entity,
+                                    &mut bus,
+                                );
+                            }
+                        }
                         continue;
                     }
                     // create/update timestamp/transport_id on the foreign player
@@ -931,12 +988,7 @@ pub fn process_transport_updates(
                                     continue;
                                 }
                             }
-                            process_messagebus(
-                                scene,
-                                address,
-                                &mut string_senders,
-                                &mut binary_senders,
-                            );
+                            process_messagebus(scene, address, context_entity, &mut bus);
                         }
                         PlayerMessage::PlayerData(Message::Voice(_)) => (),
                         PlayerMessage::Movement {
@@ -1066,12 +1118,7 @@ pub fn process_transport_updates(
                                 }
                             }
 
-                            process_messagebus(
-                                scene,
-                                update.address,
-                                &mut string_senders,
-                                &mut binary_senders,
-                            );
+                            process_messagebus(scene, update.address, context_entity, &mut bus);
                         }
                         // a server resolving a guest profile asks the guest directly — the
                         // only source there is. The request handler reads the requested
@@ -1214,8 +1261,8 @@ fn resolve_remote_anim(
 fn process_messagebus(
     mut scene: rfc4::Scene,
     address: String,
-    string_senders: &mut HashMap<String, RpcStreamSender<String>>,
-    binary_senders: &mut HashMap<String, RpcStreamSender<(String, Vec<u8>)>>,
+    context: Entity,
+    bus: &mut BusSubscribers,
 ) {
     if scene.data.is_empty() {
         warn!("empty scene message");
@@ -1241,7 +1288,7 @@ fn process_messagebus(
 
     match comms_type {
         CommsMessageType::String => {
-            if let Some(sender) = string_senders.get(&scene.scene_id) {
+            if let Some(sender) = bus.strings.get(&(context, scene.scene_id)) {
                 let _ = sender.send(
                     json!({
                         "message": String::from_utf8(scene.data).unwrap_or_default(),
@@ -1252,7 +1299,7 @@ fn process_messagebus(
             }
         }
         CommsMessageType::Binary => {
-            if let Some(sender) = binary_senders.get(&scene.scene_id) {
+            if let Some(sender) = bus.binaries.get(&(context, scene.scene_id)) {
                 let _ = sender.send((address, scene.data));
             }
         }

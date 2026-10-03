@@ -30,7 +30,7 @@ use common::{
     util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
-    global_crdt::{CrdtContexts, ForeignPlayer},
+    global_crdt::{CrdtContexts, ForeignPlayer, SceneCrdtContext},
     preview::handle_preview_socket,
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
     NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
@@ -52,6 +52,7 @@ use scene_runner::{
     },
     permissions::Permission,
     renderer_context::RendererSceneContext,
+    server_role::ServerRole,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
     ContainingScene, OutOfWorld, SceneEntity,
 };
@@ -1205,7 +1206,7 @@ fn get_user_data(
     mut pending_remote_requests: Local<
         Vec<(Address, RpcResultSender<Result<SerializedProfile, ()>>)>,
     >,
-    mut scenes: Query<&mut RendererSceneContext>,
+    mut scenes: Query<(&mut RendererSceneContext, Option<&SceneCrdtContext>)>,
     mut profile_manager: ProfileManager,
     contexts: Res<CrdtContexts>,
 ) {
@@ -1222,7 +1223,7 @@ fn get_user_data(
             None => match profile.profile.as_ref() {
                 Some(profile) => response.send(Ok(profile.content.clone())),
                 None => {
-                    if let Ok(mut ctx) = scenes.get_mut(*scene) {
+                    if let Ok((mut ctx, _)) = scenes.get_mut(*scene) {
                         // Force parcel scenes to wait until user data is available
                         // (existing scenes rely on getUserData resolving before they
                         // proceed). Portables/global scenes must NOT be frozen this
@@ -1246,7 +1247,9 @@ fn get_user_data(
                 // mutable RendererSceneContext query
                 let scene_context = scenes
                     .get(*scene)
-                    .map(|ctx| contexts.for_scene_hash(&ctx.hash))
+                    .map(|(ctx, own)| {
+                        own.map_or_else(|| contexts.for_scene_hash(&ctx.hash), |c| c.0)
+                    })
                     .unwrap_or_else(|_| contexts.shared());
                 if let Some((_, profile)) = others.iter().find(|(fp, _)| {
                     fp.context == scene_context && *address == format!("{:#x}", fp.address)
@@ -1279,7 +1282,7 @@ fn get_user_data(
         if let Some(profile) = profile.profile.as_ref() {
             for (scene, sender) in pending_primary_requests.drain(..) {
                 info!("replying on cloned response");
-                if let Ok(mut ctx) = scenes.get_mut(scene) {
+                if let Ok((mut ctx, _)) = scenes.get_mut(scene) {
                     ctx.blocked.remove("get_user_data");
                 }
                 sender.send(Ok(profile.content.clone()));
@@ -1309,14 +1312,21 @@ fn get_user_data(
 #[derive(SystemParam)]
 struct ScenePresence<'w, 's> {
     contexts: Res<'w, CrdtContexts>,
-    scenes: Query<'w, 's, &'static RendererSceneContext>,
+    scenes: Query<
+        'w,
+        's,
+        (
+            &'static RendererSceneContext,
+            Option<&'static SceneCrdtContext>,
+        ),
+    >,
 }
 
 impl ScenePresence<'_, '_> {
     fn context_of(&self, scene: Entity) -> Entity {
         self.scenes
             .get(scene)
-            .map(|ctx| self.contexts.for_scene_hash(&ctx.hash))
+            .map(|(ctx, own)| own.map_or_else(|| self.contexts.for_scene_hash(&ctx.hash), |c| c.0))
             .unwrap_or_else(|_| self.contexts.shared())
     }
 }
@@ -1484,7 +1494,7 @@ fn event_player_moved_scene(
     players: Query<(Entity, Option<&ForeignPlayer>), Or<(With<PrimaryUser>, With<ForeignPlayer>)>>,
     me: Res<Wallet>,
     containing_scene: ContainingScene,
-    scenes: Query<(Entity, &RendererSceneContext)>,
+    scenes: Query<(Entity, &RendererSceneContext, Option<&SceneCrdtContext>)>,
     contexts: Res<CrdtContexts>,
     mut events: EventReader<RpcCall>,
 ) {
@@ -1508,8 +1518,8 @@ fn event_player_moved_scene(
     let shared = contexts.shared();
     let scene_of_context: HashMap<Entity, Entity> = scenes
         .iter()
-        .filter_map(|(scene_ent, ctx)| {
-            let context = contexts.for_scene_hash(&ctx.hash);
+        .filter_map(|(scene_ent, ctx, own)| {
+            let context = own.map_or_else(|| contexts.for_scene_hash(&ctx.hash), |c| c.0);
             (context != shared).then_some((context, scene_ent))
         })
         .collect();
@@ -1613,7 +1623,8 @@ fn event_scene_ready(
 fn send_scene_messages(
     mut events: EventReader<RpcCall>,
     transports: Query<(&Transport, Option<&SceneRoom>)>,
-    scenes: Query<&RendererSceneContext>,
+    scenes: Query<(&RendererSceneContext, Has<ServerRole>)>,
+    presence: ScenePresence,
 ) {
     for (scene, data, recipient) in events.read().filter_map(|c| match c {
         RpcCall::SendMessageBus {
@@ -1623,10 +1634,12 @@ fn send_scene_messages(
         } => Some((scene, data, recipient)),
         _ => None,
     }) {
-        let Ok(ctx) = scenes.get(*scene) else {
+        let Ok((ctx, server_role)) = scenes.get(*scene) else {
             continue;
         };
         let hash = &ctx.hash;
+        let is_server = server_mode() || server_role;
+        let scene_context = presence.context_of(*scene);
 
         debug!(
             "messagebus sent from scene {}: {:?} (auth = {})",
@@ -1647,19 +1660,21 @@ fn send_scene_messages(
         // A client routes authoritative-scene traffic to the auth server. WE are the
         // auth server, so keep the scene's intended recipient (targeted peer or broadcast)
         // — otherwise the server would address messages to itself and clients never receive them.
-        if ctx.authoritative_multiplayer && !server_mode() {
+        if ctx.authoritative_multiplayer && !is_server {
             recipient = NetworkMessageRecipient::AuthServer;
         }
 
         for (transport, scene_room) in transports.iter() {
-            // Client (prod) path unchanged: send to any scene room. When serving, also
+            // A client sends to any scene room it holds (it holds one). When serving, also
             // require the room to belong to this scene so N scenes in one engine don't
-            // cross-talk (a server may hold several scene rooms; a client holds one).
-            let send = if server_mode() {
-                scene_room.is_some_and(|r| &r.0 == hash)
-            } else {
-                scene_room.is_some()
-            };
+            // cross-talk. Either way only rooms feeding the scene's own context, so a client
+            // copy and its in-engine server copy never write into each other's half.
+            let send = transport.context == scene_context
+                && if is_server {
+                    scene_room.is_some_and(|r| &r.0 == hash)
+                } else {
+                    scene_room.is_some()
+                };
             if send {
                 let _ = transport
                     .sender

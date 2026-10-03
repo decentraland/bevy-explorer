@@ -18,7 +18,7 @@ use common::{
 };
 use wallet::Wallet;
 
-use crate::{global_crdt::GlobalCrdtState, AdapterManager, Transport, TransportType};
+use crate::{AdapterManager, Transport, TransportType};
 
 use super::NetworkMessage;
 
@@ -92,15 +92,12 @@ pub struct ArchipelagoConnection(Task<(Receiver<NetworkMessage>, anyhow::Error)>
 pub fn start_archipelago(
     mut commands: Commands,
     mut archi_events: EventReader<StartArchipelago>,
-    contexts: Query<Entity, With<GlobalCrdtState>>,
+    contexts: Res<crate::global_crdt::CrdtContexts>,
 ) {
     if let Some(ev) = archi_events.read().last() {
         // archipelago is realm comms, primary-player driven: client-only (headless sets
-        // DisableRealmComms), so the single shared context is its feed. Checked after
-        // draining events so a failed lookup can't leave the reader cursor behind.
-        let Ok(context) = contexts.single() else {
-            return;
-        };
+        // DisableRealmComms), so the shared context is its feed
+        let context = contexts.shared();
         info!("starting archipelago protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
 
@@ -126,7 +123,7 @@ fn manage_islands(
     mut manager: AdapterManager,
     mut channel: ResMut<IslandChannel>,
     mut current_island: Local<HashMap<Entity, Entity>>,
-    contexts: Query<Entity, With<GlobalCrdtState>>,
+    contexts: Res<crate::global_crdt::CrdtContexts>,
     current_realm: Res<CurrentRealm>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut events: EventReader<RpcCall>,
@@ -148,12 +145,8 @@ fn manage_islands(
     }
 
     if let Some(island) = latest {
-        // client-only (see start_archipelago): islands feed the single shared context.
-        // Checked before despawning the previous island so a failed lookup can't leave
-        // no island transport at all.
-        let Ok(context) = contexts.single() else {
-            return;
-        };
+        // client-only (see start_archipelago): islands feed the shared context
+        let context = contexts.shared();
         if let Some(entity) = current_island.remove(&island.owner) {
             commands.entity(entity).despawn();
         }

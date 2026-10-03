@@ -107,7 +107,11 @@ pub fn op_subscribe(state: &mut impl State, id: &str) -> Result<(), anyhow::Erro
         let (sender, rx) = RpcEventSender::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::SubscribeMessageBus { sender, hash })?;
+            .push(RpcCall::SubscribeMessageBus {
+                sender,
+                hash,
+                scene,
+            })?;
         state.put(EventReceiver::<MessageBus> {
             inner: rx,
             _p: Default::default(),
