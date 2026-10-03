@@ -30,11 +30,17 @@ async function waitLive(hash: string): Promise<void> {
 }
 
 export function registerEditor(ctx: Ctx): void {
+  // The page announces its directory in its first hello, before any editor scene exists; a later
+  // one could come from a privileged scene on the same channel.
+  let pageDir: string | null = null
+  ctx.on('hello', (msg) => {
+    if (pageDir == null && typeof msg.pageDir === 'string') pageDir = msg.pageDir
+  })
   ctx.on('editorScene', async (msg) => {
     try {
       const run = BevyApi.consoleCommand
       if (run == null) throw new Error('the engine console is not available')
-      if (!ENTITY_ID.test(msg.hash) || !msg.source.endsWith(`/editor-scene/${msg.hash}`)) throw new Error('not the editor scene')
+      if (pageDir == null || !ENTITY_ID.test(msg.hash) || msg.source !== `${pageDir}editor-scene/${msg.hash}`) throw new Error('not the editor scene')
       if (msg.action === 'spawn') {
         setPermissions(msg.hash, 'Allow')
         try {
