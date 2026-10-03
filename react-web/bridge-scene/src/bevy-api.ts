@@ -15,6 +15,7 @@ import type {
   FriendStatusData,
   HoverAction,
   HoverEvent,
+  HomeScene,
   LiveSceneInfo,
   PermissionRequestEvent,
   ProfileChangedEvent,
@@ -97,6 +98,7 @@ export type SetPermanentPermissionBody = {
 }
 
 export type BevyApiInterface = {
+  getHomeScene: () => Promise<HomeScene>
   getSettings: () => Promise<Setting[]>
   setSetting: (name: string, value: number) => Promise<void>
   /** Full binding table: [Action, InputIdentifier[]] pairs, e.g. [{System:'Map'}, ['KeyM','Tab']].

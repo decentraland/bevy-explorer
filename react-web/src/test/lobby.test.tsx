@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BackpackModal } from '../features/backpack/BackpackModal'
 import modalStyles from '../features/backpack/BackpackModal.module.css'
 import { LobbyHome } from '../features/lobby/LobbyHome'
+import { fetchHomePlace } from '../features/lobby/lobbyApi'
 import { SessionProvider } from '../features/session/SessionContext'
 import { fakeSession } from './harness'
 
@@ -38,6 +39,23 @@ describe('lobby controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Customize' }))
     expect(session.backpack.toggle).toHaveBeenCalledOnce()
     await waitFor(() => expect(screen.getByRole('button', { name: /jump in/i })).toBeInTheDocument())
+  })
+
+  it('loads the landing card when the native home arrives after mount', async () => {
+    const session = fakeSession()
+    const view = (): React.JSX.Element => (
+      <SessionProvider value={session}>
+        <LobbyHome onPick={session.pickDestination} setEngineViewport={session.setEngineViewport} />
+      </SessionProvider>
+    )
+    const { rerender } = render(view())
+    expect(screen.getByRole('button', { name: /jump in/i })).toBeDisabled()
+    expect(fetchHomePlace).not.toHaveBeenCalled()
+    session.homeScene = () => ({ realm: 'my-home.dcl.eth', parcel: '12,-7' })
+    rerender(view())
+    await waitFor(() => expect(fetchHomePlace).toHaveBeenCalledWith({ realm: 'my-home.dcl.eth', parcel: '12,-7' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /jump in/i })).toBeEnabled())
+    expect(screen.getByText('my-home.dcl.eth')).toBeInTheDocument()
   })
 
   it('leaves the avatar cutout outside both overlay hit regions and keeps Close clickable', async () => {

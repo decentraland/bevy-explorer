@@ -7,7 +7,7 @@
 // Domain types mirror scene/src/bevy-api/interface.ts so the bridge scene can
 // forward SystemApi results verbatim.
 
-import type { Color3, SatelliteView, SceneLoadingUi } from './generated'
+import type { Color3, HomeScene, SatelliteView, SceneLoadingUi } from './generated'
 
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
@@ -171,6 +171,7 @@ export type PageToScene =
   | CancelJoinRequestRequest
   | GetCommunityDetailRequest
   | GetMapRequest
+  | GetHomeSceneRequest
   | TeleportRequest
   | ChangeRealmRequest
   | MinimapConfigRequest
@@ -563,6 +564,14 @@ export interface MapMessage {
 
 export interface GetMapRequest {
   kind: 'getMap'
+}
+
+export interface GetHomeSceneRequest {
+  kind: 'getHomeScene'
+}
+
+export interface HomeSceneMessage extends HomeScene {
+  kind: 'homeScene'
 }
 
 /** The local player's live pose, streamed for the minimap. Position is in world metres
@@ -1301,6 +1310,7 @@ export type SceneToPage =
   | RequestFailedMessage
   | CommunityDetailMessage
   | MapMessage
+  | HomeSceneMessage
   | PlayerPoseMessage
   | RealmInfoMessage
   | SceneInfoMessage

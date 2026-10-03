@@ -712,6 +712,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [placesOpen, setPlacesOpen] = useState(false)
   // The lobby reopened in-world: over the running world, under the panels it opens.
   const [lobbyOpen, setLobbyOpen] = useState(false)
+  const [home, setHome] = useState<{ realm: string | null; parcel: string } | null>(null)
   const [eventsOpen, setEventsOpen] = useState(false)
   const [shopOpen, setShopOpen] = useState(false)
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([])
@@ -981,6 +982,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'realmInfo':
           setSatelliteView(msg.satelliteView)
+          break
+        case 'homeScene':
+          setHome({ realm: msg.realm === DEFAULT_REALM ? null : msg.realm, parcel: `${msg.parcel.x},${msg.parcel.y}` })
           break
         case 'travelResult':
           if (msg.travelId !== travelSeq.current) break
@@ -1342,7 +1346,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!closing) setLobbyStageReady(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyOpen, anyPanelOpenExceptLobby])
-  const homeScene = useCallback(() => driverRef.current?.homeScene?.() ?? null, [])
+  const homeScene = useCallback(() => driverRef.current?.homeScene?.() ?? home, [home])
+  useEffect(() => {
+    if ((!lobby && !lobbyOpen) || driverRef.current?.homeScene != null) return
+    setHome(null)
+    driverRef.current?.send({ kind: 'getHomeScene' })
+  }, [lobby, lobbyOpen])
   // Opening the Backpack or the lobby rebuilds the stage, so the page's stand-in shows again.
   useEffect(() => {
     if (backpackOpen) setLobbyStageReady(false)
@@ -1350,9 +1359,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const travelFromLobbyInWorld = useCallback(
     (dest: Destination) => {
       if (dest == null) {
-        const home = driverRef.current?.homeScene?.()
-        const [x, y] = (home?.parcel ?? '0,0').split(',').map(Number)
-        travel({ kind: 'teleport', realm: home?.realm ?? DEFAULT_REALM, x, y })
+        const home = homeScene()
+        if (home == null) return
+        const [x, y] = home.parcel.split(',').map(Number)
+        travel({ kind: 'teleport', realm: home.realm ?? DEFAULT_REALM, x, y })
       } else if (dest.kind === 'parcel') teleportToPlace(dest.x, dest.y)
       else {
         const [x, y] = (dest.position ?? '').split(',').map(Number)
@@ -1361,7 +1371,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       }
       setLobbyOpen(false)
     },
-    [teleportToPlace, travel]
+    [homeScene, teleportToPlace, travel]
   )
   const setMinimapConfig = useCallback(
     (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => {

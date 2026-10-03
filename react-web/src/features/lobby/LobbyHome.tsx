@@ -1,7 +1,7 @@
 // The lobby: shown after sign-in, before entering the world (and reopened from the menu in-world).
 // The stage and the avatar are drawn by the engine behind this transparent page.
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import backdrop from '../../assets/lobby/background.jpg'
 import vignette from '../../assets/lobby/vignette.png'
 import logo from '../../assets/lobby/logo.png'
@@ -26,21 +26,20 @@ import styles from './LobbyHome.module.css'
 
 type Rect = { x: number; y: number; width: number; height: number }
 
-// Loads once on mount; a failed fetch shows its section empty (hidden), as on parity.
+// A failed fetch shows its section empty (hidden), as on parity.
 function useLoad<T>(load: () => Promise<T>, fallback: T): { data: T; loading: boolean } {
   const [state, setState] = useState<{ data: T; loading: boolean }>({ data: fallback, loading: true })
-  const loadRef = useRef(load)
   const fallbackRef = useRef(fallback)
   useEffect(() => {
     let live = true
-    loadRef
-      .current()
+    setState({ data: fallbackRef.current, loading: true })
+    load()
       .then((data) => live && setState({ data, loading: false }))
       .catch(() => live && setState({ data: fallbackRef.current, loading: false }))
     return () => {
       live = false
     }
-  }, [])
+  }, [load])
   return state
 }
 
@@ -93,8 +92,14 @@ export function LobbyHome({
   const session = useSession()
   const profile = session.profile.data
   const stored = useStoredProfile(session.login.account ?? undefined)
-  const [home] = useState(() => session.homeScene() ?? { realm: null, parcel: '0,0' })
-  const landing = useLoad(() => fetchHomePlace(home), null as DiscoverPlace | null)
+  const home = session.homeScene()
+  const homeRealm = home?.realm ?? null
+  const homeParcel = home?.parcel
+  const loadHome = useCallback(
+    () => homeParcel == null ? Promise.resolve(null) : fetchHomePlace({ realm: homeRealm, parcel: homeParcel }),
+    [homeRealm, homeParcel]
+  )
+  const landing = useLoad(loadHome, null as DiscoverPlace | null)
   const recents = useLoad(fetchRecents, [] as DiscoverPlace[])
   const recommended = useLoad(fetchHighlighted, [] as DiscoverPlace[])
   const liveEvents = useLoad(fetchLiveEvents, [] as LiveEvent[])
@@ -112,7 +117,7 @@ export function LobbyHome({
   const recentPlaces = notLanding(recents.data)
   const recommendedPlaces = notLanding(recommended.data)
   const busyPlaces = notLanding(livePlaces.data)
-  const landingTitle = landing.data?.title ?? (landing.loading ? '' : home.realm ?? (home.parcel === '0,0' ? 'Genesis Plaza' : home.parcel))
+  const landingTitle = landing.data?.title ?? (landing.loading || home == null ? '' : home.realm ?? (home.parcel === '0,0' ? 'Genesis Plaza' : home.parcel))
 
   // Under the Backpack modal the lobby shows, but with a hole where the engine draws the
   // Backpack's avatar, which is behind it.
@@ -179,7 +184,7 @@ export function LobbyHome({
           creator={landing.data ? placeCreator(landing.data) : null}
           image={landing.data?.image ?? null}
           count={landing.data ? placePlayers(landing.data) : null}
-          loading={landing.loading}
+          loading={landing.loading || home == null}
           disabled={waiting}
           onJumpIn={() => onPick(null)}
         />
