@@ -140,6 +140,7 @@ export function LobbyHome({
         type="button"
         className={styles.avatarHit}
         aria-label="Customize"
+        disabled={!session.playerReady}
         onClick={() => {
           setTooltip(null)
           session.backpack.toggle()

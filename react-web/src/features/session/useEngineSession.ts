@@ -442,6 +442,7 @@ export interface LoginFlow {
 
 export interface EngineSession {
   phase: SessionPhase
+  playerReady: boolean
   /** The engine has drawn the lobby stage and avatar, so the page's stand-in can fade out. */
   lobbyStageReady: boolean
   /** The lobby reopened in-world from the menu. */
@@ -1246,13 +1247,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const toggleNotifications = useCallback(() => exclusive(setNotificationsOpen, () => send('getNotifications')), [exclusive, send])
   const toggleEmotes = useCallback(() => exclusive(setEmotesOpen, () => ensure('getEmotes')), [exclusive, ensure])
   const toggleBackpack = useCallback(
-    () =>
+    () => {
+      if (!playerReadyRef.current) return
       exclusive(setBackpackOpen, () => {
         ensure('getWearables')
         ensure('getEmotes') // Backpack's Emotes tab reuses the emotes list.
         ensure('getOutfits') // Backpack's Outfits tab.
         driverRef.current?.send({ kind: 'getOwnedNames' })
-      }),
+      })
+    },
     [exclusive, ensure]
   )
   const toggleCommunities = useCallback(() => exclusive(setCommunitiesOpen, () => ensure('getCommunities')), [exclusive, ensure])
@@ -2219,6 +2222,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   return {
     phase,
+    playerReady,
     lobbyStageReady,
     lobbyPage: { open: lobbyOpen, toggle: toggleLobby, travel: travelFromLobbyInWorld },
     homeScene,
