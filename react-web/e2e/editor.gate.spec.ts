@@ -10,7 +10,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { BRIDGE, ENTRY, HOME, HOME_REALM, NAV, PROJECTS, SCENES, UI, editorBase, keepOffProduction, previewId } from './gate'
+import { SERVERS, ENTRY, HOME, HOME_REALM, NAV, PROJECTS, SCENES, UI, editorBase, keepOffProduction, previewId } from './gate'
 import { cmd, position } from './helpers'
 
 type Point = { x: number; y: number; z: number }
@@ -339,7 +339,7 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
 
   await step('1 the sidebar Create button opens the Create page, the editor lists the scenes there, and nothing of it loads before the click', async () => {
     // a first visit: the page reloads itself once its service worker is active, then boots the engine
-    await page.goto(`${ENTRY}?guest=1&realm=${encodeURIComponent(homeRealm)}&position=0,0&${BRIDGE}`, { waitUntil: 'commit' })
+    await page.goto(`${ENTRY}?guest=1&realm=${encodeURIComponent(homeRealm)}&position=0,0&${SERVERS}`, { waitUntil: 'commit' })
     await expect.poll(() => seen(/GATE_HOME up/), { timeout: 420_000, message: 'the home scene runs' }).toBe(true)
     const create = nav.getByRole('button', { name: 'Create' })
     await create.waitFor({ timeout: 120_000 })
@@ -647,7 +647,7 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
 
   await step('8 ?editor=<project> opens that scene directly once in-world, with no list in between', async () => {
     const at = Date.now()
-    await page.goto(`${ENTRY}?guest=1&editor=${PROJECT_ID}&realm=${encodeURIComponent(homeRealm)}&position=0,0&${BRIDGE}`, { waitUntil: 'commit' })
+    await page.goto(`${ENTRY}?guest=1&editor=${PROJECT_ID}&realm=${encodeURIComponent(homeRealm)}&position=0,0&${SERVERS}`, { waitUntil: 'commit' })
     await expect.poll(() => seen(/GATE_HOME up/, at), { timeout: 420_000, message: 'the home scene runs' }).toBe(true)
     await expect.poll(() => spawns(at), { timeout: 180_000, message: 'the engine runs the project scene' }).toContain(entityId)
     await ui.locator('.eui-toolbar').waitFor({ timeout: 120_000 })
@@ -675,7 +675,7 @@ test('?editor=<project> this browser does not have opens the Create page once in
   const lines: string[] = []
   page.on('console', (message) => lines.push(message.text()))
   const homeRealm = `${testInfo.project.use.baseURL!}${HOME_REALM}`
-  await page.goto(`${ENTRY}?guest=1&editor=${PROJECT_ID}&realm=${encodeURIComponent(homeRealm)}&position=0,0&${BRIDGE}`, { waitUntil: 'commit' })
+  await page.goto(`${ENTRY}?guest=1&editor=${PROJECT_ID}&realm=${encodeURIComponent(homeRealm)}&position=0,0&${SERVERS}`, { waitUntil: 'commit' })
   await expect.poll(() => lines.some((line) => /GATE_HOME up/.test(line)), { timeout: 420_000, message: 'the home scene runs' }).toBe(true)
   const scenes = page.locator(SCENES)
   await scenes.getByText(`“${PROJECT_ID}” is not on this device or on your account.`, { exact: false }).waitFor({ timeout: 120_000 })
