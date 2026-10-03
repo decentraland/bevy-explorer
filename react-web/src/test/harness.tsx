@@ -167,6 +167,7 @@ export const fakeProfileState = (over: Partial<ProfileState> = {}): ProfileState
 export function fakeSession(): EngineSession {
   return {
     phase: 'world',
+    playerReady: true,
     lobbyStageReady: false,
     lobbyPage: { open: false, toggle: vi.fn(), travel: vi.fn() },
     homeScene: () => null,
