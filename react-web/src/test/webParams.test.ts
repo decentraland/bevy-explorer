@@ -6,6 +6,7 @@ import { SERVICES, WEB_PARAMS } from '../engine/generated'
 import { launchOptionsFromUrl, webParam } from '../lib/webParams'
 import { loopbackHostOptions, untrustedLaunchParams } from '../lib/launchGate'
 import { normaliseServiceUrl } from '../lib/baseDomain'
+import { unrecognisedEntryParams } from '../lib/entryParams'
 
 describe('launchOptionsFromUrl', () => {
   it('reads every launch param, flags by presence, strings verbatim, absent = undefined', () => {
@@ -153,5 +154,8 @@ describe('loopbackHostOptions', () => {
     expect(loopbackHostOptions(link, 'decentraland.org')).toEqual({})
     expect(loopbackHostOptions(link, 'localhost.evil.com')).toEqual({})
     expect(loopbackHostOptions(new URLSearchParams(''), 'localhost')).toEqual({})
+    // and the notice about ignored params says so only where it really is ignored
+    expect(unrecognisedEntryParams(link, [], 'localhost')).toEqual([])
+    expect(unrecognisedEntryParams(link, [], 'decentraland.org')).toEqual(['localSceneServer'])
   })
 })

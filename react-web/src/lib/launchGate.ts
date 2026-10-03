@@ -85,7 +85,7 @@ for (const name of Object.keys(GATES)) webParam(name)
 // `host` params an embedding page sets (the editor host passes them in __bevyBootConfig). A page
 // on the developer's own machine is its own embedding host, so there the entry url may set them;
 // anywhere else a link carrying one is ignored.
-const LOOPBACK_HOST_PARAMS = ['localSceneServer']
+export const LOOPBACK_HOST_PARAMS = ['localSceneServer']
 for (const name of LOOPBACK_HOST_PARAMS) webParam(name)
 
 /** The `host` flags this page takes from its entry url: only when served from loopback. */
