@@ -21,7 +21,7 @@ use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{
     base_wearables,
     wearables::{UsedWearables, Wearable, WearableCategory, WearableModel, WearableUrn},
-    CollectibleError, CollectibleManager, Emote, EmoteUrn,
+    CollectibleError, CollectibleManager, Emote, EmoteUrn, UsedEmotes,
 };
 use colliders::AvatarColliderPlugin;
 use console::DoAddConsoleCommand;
@@ -748,6 +748,15 @@ fn update_render_avatar(
 
         urns.insert(body_urn.clone());
 
+        let emote_urns = selection
+            .shape
+            .0
+            .emotes
+            .iter()
+            .filter(|e| !e.is_empty())
+            .flat_map(|e| EmoteUrn::new(e).ok())
+            .collect();
+
         debug!("avatar definition loaded: {wearables:?}");
         commands.entity(entity).try_with_children(|commands| {
             commands.spawn((
@@ -868,6 +877,7 @@ fn update_render_avatar(
                     disable_dither: selection.disable_dither,
                 },
                 UsedWearables(urns),
+                UsedEmotes(emote_urns),
             ));
         });
 
