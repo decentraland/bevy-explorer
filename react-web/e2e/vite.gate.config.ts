@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { defineConfig, mergeConfig, type Plugin } from 'vite'
 import base, { serveStatic } from '../vite.config.ts'
+import { GATE_PORTS } from './ports.ts'
 
 const dist = join(process.env.WEB_EDITOR_DIR ?? '', 'packages/web-build/dist')
 if (!existsSync(join(dist, 'index.js'))) {
@@ -76,8 +77,8 @@ function homeRealm(): Plugin {
 
 export default defineConfig((env) =>
   mergeConfig(base(env), {
-    // its own dep cache: this server can run next to the everyday dev server
-    cacheDir: '.vite/gate',
+    // its own dep cache, per page port: this server can run next to the everyday dev server and another gate run
+    cacheDir: `.vite/gate-${GATE_PORTS.page}`,
     plugins: [serveStatic('/web-build/', dist), homeRealm()]
   })
 )

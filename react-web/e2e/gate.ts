@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { expect, type BrowserContext, type Locator, type Page, type TestInfo } from '@playwright/test'
 import { Authenticator, type AuthIdentity } from '../bridge-scene/node_modules/@dcl/crypto/dist/index.js'
 import { createUnsafeIdentity } from '../bridge-scene/node_modules/@dcl/crypto/dist/crypto.js'
+import { GATE_PORTS } from './ports'
 
 export const HOME_REALM = '/gate-home'
 export const HOME_UP = /GATE_HOME up/
@@ -15,15 +16,19 @@ export const UI = '#dcl-editor-host > #editor-ui-host'
 export const HOME = '#dcl-editor-home'
 /** The editor's home (a shadow root inside the Create page's body). */
 export const SCENES = `${HOME} #editor-ui-host`
-/** The page's bridge scene: the one playwright.gate.config.ts starts. A production build bundles its own. */
-export const BRIDGE = process.env.GATE_ENTRY ? '' : `bridgePort=${process.env.GATE_BRIDGE_PORT ?? 8110}`
 /** The page's entry path: the dev server's root, or `GATE_ENTRY` (a production layout's no-slash entry). */
 export const ENTRY = process.env.GATE_ENTRY ?? '/'
 /** Where the page loads the editor package from: its own /editor/, or `GATE_EDITOR_BASE` (a CDN). */
 export const editorBase = (origin: string): string => process.env.GATE_EDITOR_BASE ?? `${origin}/editor/`
 /** playwright.gate.config.ts starts both. */
-export const PROJECTS = 'http://localhost:8787'
-export const WORLDS = 'http://localhost:8799'
+export const PROJECTS = `http://localhost:${GATE_PORTS.service}`
+export const WORLDS = `http://localhost:${GATE_PORTS.worlds}`
+/** Points the page at the gate's own servers: its bridge scene (a production build bundles its
+ *  own) and its project service. */
+export const SERVERS = [
+  ...(process.env.GATE_ENTRY ? [] : [`bridgePort=${GATE_PORTS.bridge}`]),
+  `editor-projects=${encodeURIComponent(PROJECTS)}`
+].join('&')
 export const EDITOR_METADATA = { intent: 'dcl:editor:projects', signer: 'dcl:editor' }
 
 export interface EditorHost {
@@ -139,7 +144,7 @@ export function watch(page: Page, testInfo: TestInfo, name: string): Device {
 export async function enterWorld(device: Device, search: string, up: RegExp = HOME_UP): Promise<void> {
   const { page } = device
   // a first visit: the page reloads itself once its service worker is active, then boots the engine
-  await page.goto(`/?${search}&${BRIDGE}`, { waitUntil: 'commit' })
+  await page.goto(`/?${search}&${SERVERS}`, { waitUntil: 'commit' })
   const jump = page.getByRole('button', { name: /JUMP INTO DECENTRALAND/ })
   await expect(async () => {
     if (!device.seen(up) && (await jump.isVisible()) && (await jump.isEnabled())) await jump.click({ timeout: 2000 }).catch(() => {})

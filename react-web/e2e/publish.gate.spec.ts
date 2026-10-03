@@ -1,5 +1,5 @@
 // The publish gate: signed in, a scene made in the editor is published to a Worlds content server
-// (a local stand-in on :8799, named with `?editor-worlds=`). The page's own dialog asks before
+// (a local stand-in on the gate's Worlds port, named with `?editor-worlds=`). The page's own dialog asks before
 // anything is signed; declining publishes nothing; confirming deploys an entity the server checks
 // (id, hashes, auth chain), and a visitor's REAL engine then enters that world and runs it.
 // Run: see playwright.gate.config.ts.

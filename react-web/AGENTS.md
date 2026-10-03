@@ -66,7 +66,14 @@ or it'll render too big on most displays:
 - jsdom tests can't catch scaling/positioning (no layout). Verify floating UI **visually
   in `?mock=1`** (full HUD, no engine) before claiming it works.
 
-## 5. Checks
+## 5. Running the gates
+
+Agents that run gates in parallel must each use their own port set (`GATE_PORT`,
+`GATE_BRIDGE_PORT`, `GATE_SERVICE_PORT`, `GATE_WORLDS_PORT`; `e2e/README.md` "Running gates side by
+side"), never the defaults while another run may be up, and never a port another session's dev
+server holds.
+
+## 6. Checks
 
 - `npm run typecheck` must pass.
 - No new hardcoded brand/status colors, radii, or type sizes — grep your diff for raw

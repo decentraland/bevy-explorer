@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto'
 import { appendFileSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test'
-import { BRIDGE } from './gate'
+import { SERVERS } from './gate'
 import { cmd } from './helpers'
 
 // what the editor previews a project under: a random id, never its name
@@ -191,7 +191,7 @@ test('a scene built in the browser runs from the preview realm and hot-reloads',
   // 2. The real engine, launched straight into the preview realm.
   const base = (JSON.parse(sceneFiles(1)['scene.json']) as { scene: { base: string } }).scene.base
   const launchedAt = Date.now()
-  await page.goto(`/?guest=1&realm=${encodeURIComponent(realm)}&position=${base}&preview&${BRIDGE}`)
+  await page.goto(`/?guest=1&realm=${encodeURIComponent(realm)}&position=${base}&preview&${SERVERS}`)
   await expect.poll(() => sawMarker(1), { timeout: 420_000, message: 'the scene logs its v1 marker' }).toBe(true)
   const v1At = markers.find((m) => m.version === 1)!.t
   // not part of the gate: whether the HUD reaches the world on this realm

@@ -1,5 +1,5 @@
 // The sync gate: one wallet on two devices (two browser contexts, each its own storage and its
-// own REAL engine) against the editor's project storage service on :8787. A scene made on the
+// own REAL engine) against the editor's project storage service (`GATE_SERVICE_PORT`). A scene made on the
 // first device is listed, downloaded, built and run on the second; an edit there reaches the
 // first; an edit on both is a conflict that loses neither version. A second test asks the same
 // live service for what it must refuse. Run: see playwright.gate.config.ts.
