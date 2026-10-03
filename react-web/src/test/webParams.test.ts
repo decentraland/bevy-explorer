@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { SERVICES, WEB_PARAMS } from '../engine/generated'
 import { launchOptionsFromUrl, webParam } from '../lib/webParams'
-import { untrustedLaunchParams } from '../lib/launchGate'
+import { loopbackHostOptions, untrustedLaunchParams } from '../lib/launchGate'
 import { normaliseServiceUrl } from '../lib/baseDomain'
 
 describe('launchOptionsFromUrl', () => {
@@ -141,5 +141,17 @@ describe('untrustedLaunchParams', () => {
     } finally {
       window.history.replaceState(null, '', '/')
     }
+  })
+})
+
+describe('loopbackHostOptions', () => {
+  it('takes localSceneServer from a link only on a loopback host; elsewhere the link is ignored', () => {
+    const link = new URLSearchParams('localSceneServer&realm=https://example.com')
+    expect(launchOptionsFromUrl(link).localSceneServer).toBeUndefined()
+    expect(loopbackHostOptions(link, 'localhost')).toEqual({ localSceneServer: true })
+    expect(loopbackHostOptions(link, '127.0.0.1')).toEqual({ localSceneServer: true })
+    expect(loopbackHostOptions(link, 'decentraland.org')).toEqual({})
+    expect(loopbackHostOptions(link, 'localhost.evil.com')).toEqual({})
+    expect(loopbackHostOptions(new URLSearchParams(''), 'localhost')).toEqual({})
   })
 })
