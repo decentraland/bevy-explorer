@@ -202,11 +202,11 @@ Two tiers cover every domain's bridge API and the clicks that drive them:
   over a BroadcastChannel spy. Needs a real GPU (WebGPU, headed) — see `e2e/README.md`.
 - **Scene editor gates (`playwright.gate.config.ts`).** `preview-realm`: a scene built in the page
   by the scene editor's web-build, served from the service worker's preview realm and hot-reloaded
-  in the real engine. `editor`: the editor package opened from the Create button, creating, editing,
-  playing and leaving a starter scene, and opened again from the menu. `sync`: one wallet on two
-  devices against the editor's project storage service. `publish`: a scene published to a local
-  Worlds server and entered by the engine. `npm`: an imported scene that needs an npm package.
-  All need a dcl-editor checkout — see `e2e/README.md`.
+  in the real engine. `editor`: what the page owes the editor package — Create loads nothing until
+  clicked, a scene is previewed under a random id, the editor's privileged scene attaches, a code
+  save reloads only that scene, Play and Stop never restart the HUD scene, and leaving gives the HUD
+  back. The editor's own flows (sync, publish, npm) are tested in its repo. Both need a dcl-editor
+  checkout — see `e2e/README.md`.
 
 ```bash
 npm test            # tier 1 (fast, deterministic)

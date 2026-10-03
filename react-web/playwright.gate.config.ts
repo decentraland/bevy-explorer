@@ -3,14 +3,12 @@ import { GATE_PORTS } from './e2e/ports'
 
 // The scene editor's gates, in the REAL engine (headed, like tier 2); e2e/README.md has the setup.
 //   preview-realm: a scene built in the browser, served by the service worker and hot-reloaded
-//   editor:        the editor package opened from Create: create, edit, Play, Stop, Exit, back in
-//   sync:          one wallet on two devices against the project storage service, and what it refuses
-//   publish:       a scene published to a local Worlds server, then entered by the engine
-//   npm:           an imported scene whose code needs a package from npm
+//   editor:        what the page owes the editor package: Create, preview, its privileged scene,
+//                  reload by id, Play/Stop without restarting the HUD scene, leaving
 //   WEB_EDITOR_DIR=<dcl-editor checkout> npx playwright test --config playwright.gate.config.ts [name]
 // every port comes from e2e/ports.ts; a bridge scene of its own, off the everyday dev :8100, that
 // the specs pass as ?bridgePort (e2e/gate.ts)
-const { page: PORT, bridge: BRIDGE_PORT, service: SERVICE_PORT, worlds: WORLDS_PORT } = GATE_PORTS
+const { page: PORT, bridge: BRIDGE_PORT, service: SERVICE_PORT } = GATE_PORTS
 const EDITOR = JSON.stringify(process.env.WEB_EDITOR_DIR ?? '')
 // starts empty on every run; per port set, so a run beside it in this checkout keeps its own
 const PROJECTS_DATA = `.vite/gate-projects-${SERVICE_PORT}`
@@ -61,13 +59,6 @@ export default defineConfig({
       // the editor's project storage service (services.projects on a loopback page)
       command: `rm -rf ${PROJECTS_DATA} && node ${EDITOR}/packages/service/dev-server.ts --port ${SERVICE_PORT} --data ${PROJECTS_DATA} --origin http://localhost:${PORT}`,
       url: `http://127.0.0.1:${SERVICE_PORT}/health`,
-      reuseExistingServer: false,
-      timeout: 60_000
-    },
-    {
-      // a Worlds content server in memory; `gate.eth` goes to the first wallet that deploys to it
-      command: `node ${EDITOR}/packages/web/validate/fake-worlds-server.mjs --port ${WORLDS_PORT} --claim gate.eth`,
-      url: `http://127.0.0.1:${WORLDS_PORT}/status`,
       reuseExistingServer: false,
       timeout: 60_000
     }

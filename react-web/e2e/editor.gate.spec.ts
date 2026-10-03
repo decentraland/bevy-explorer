@@ -1,28 +1,19 @@
-// The editor gate: the sidebar's Create button opens the HUD's Create page, where the scene editor
-// package (a dcl-editor checkout's packages/web/dist, served under /editor/) lists the scenes; a
-// scene is created from its starter, built and published in the browser, docked, given a box that
-// a real pointer drags by its gizmo, edited, played and stopped in the REAL engine. Back to scenes
-// is the Create page again, the menu's Create item opens it too, Back to Decentraland gives the HUD
-// back, and `?editor=<project>` opens the scene directly. Nothing serves the scene but the service
-// worker, and a guest's editor asks the project service for nothing. Each numbered step passes or
-// fails on its own. Run: see playwright.gate.config.ts.
+// The editor gate: what this page owes the scene editor package (a dcl-editor checkout's
+// packages/web/dist, served under /editor/), in the REAL engine. Create loads nothing until it is
+// clicked; a new scene is previewed from the service worker under a random id; the editor's scene
+// spawns privileged next to the HUD's; a code save reloads only that scene, by id; Play and Stop
+// never restart the HUD scene; leaving gives the HUD, realm and clock back; `?editor=<project>`
+// opens the scene directly. The editor's own UI is tested in its repo. Run: see playwright.gate.config.ts.
 
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test, type Locator, type Page } from '@playwright/test'
-import { SERVERS, ENTRY, HOME, HOME_REALM, NAV, PROJECTS, SCENES, UI, editorBase, keepOffProduction, previewId } from './gate'
-import { cmd, position } from './helpers'
-
-type Point = { x: number; y: number; z: number }
+import { expect, test, type Page } from '@playwright/test'
+import { SERVERS, ENTRY, HOME, HOME_REALM, NAV, PROJECTS, SCENES, UI, editorBase, keepOffProduction } from './gate'
 
 const PROJECT_NAME = 'Gate scene'
 // a new scene's id carries a random tail: step 2 reads it back from the store
 let PROJECT_ID = 'gate-scene'
 const MARKER = /GATE_MARKER v(\d+)/
-const ENTITY_NAME = 'Gate entity'
-const COMPOSITE = 'assets/scene/main.composite'
-const CREATE_INTRO = 'Build scenes right here. Open one to walk into it and start building.'
-const BOX = 'Box'
 
 interface Host {
   version: number
@@ -112,155 +103,7 @@ const manifest = (page: Page): Promise<Manifest | null> =>
     return stored == null ? null : ((await stored.json()) as Manifest)
   })
 
-type Arrow = { at: { x: number; y: number }; dir: { x: number; y: number }; pixels: number }
-
-// The red patches that appear in the viewport (between the editor's panels) when the Move tool's
-// gizmo is drawn, against the Select tool's view, biggest first.
-const redPatches = (page: Page, pngs: [string, string], from: { x: number; y: number }, to: { x: number; y: number }): Promise<Arrow[]> =>
-  page.evaluate(
-    async ({ pngs, from, to }) => {
-      const pixels = async (png: string): Promise<{ data: Uint8ClampedArray; width: number; scale: number }> => {
-        const image = new Image()
-        image.src = `data:image/png;base64,${png}`
-        await image.decode()
-        const canvas = document.createElement('canvas')
-        canvas.width = image.width
-        canvas.height = image.height
-        const context = canvas.getContext('2d')!
-        context.drawImage(image, 0, 0)
-        return { data: context.getImageData(0, 0, image.width, image.height).data, width: image.width, scale: image.width / innerWidth }
-      }
-      const [a, b] = [await pixels(pngs[0]), await pixels(pngs[1])]
-      // not the avatar's orange
-      const red = (d: Uint8ClampedArray, i: number): boolean => d[i] > 150 && d[i] - d[i + 1] > 60 && d[i] - d[i + 2] > 60 && Math.abs(d[i + 1] - d[i + 2]) < 50
-      const CELL = 6
-      const cells = new Map<string, [number, number][]>()
-      for (let y = Math.round(from.y * b.scale); y < Math.round(to.y * b.scale); y++) {
-        for (let x = Math.round(from.x * b.scale); x < Math.round(to.x * b.scale); x++) {
-          const i = (y * b.width + x) * 4
-          const change = Math.abs(a.data[i] - b.data[i]) + Math.abs(a.data[i + 1] - b.data[i + 1]) + Math.abs(a.data[i + 2] - b.data[i + 2])
-          if (change < 90 || !red(b.data, i) || red(a.data, i)) continue
-          const [px, py] = [x / b.scale, y / b.scale]
-          const key = `${Math.floor(px / CELL)},${Math.floor(py / CELL)}`
-          cells.set(key, [...(cells.get(key) ?? []), [px, py]])
-        }
-      }
-      const patches: Arrow[] = []
-      const seen = new Set<string>()
-      for (const start of cells.keys()) {
-        if (seen.has(start)) continue
-        const points: [number, number][] = []
-        const queue = [start]
-        seen.add(start)
-        while (queue.length > 0) {
-          const key = queue.pop()!
-          points.push(...cells.get(key)!)
-          const [cx, cy] = key.split(',').map(Number)
-          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
-            const next = `${cx + dx},${cy + dy}`
-            if (cells.has(next) && !seen.has(next)) {
-              seen.add(next)
-              queue.push(next)
-            }
-          }
-        }
-        if (points.length < 15) continue
-        const mx = points.reduce((t, [x]) => t + x, 0) / points.length
-        const my = points.reduce((t, [, y]) => t + y, 0) / points.length
-        let [sxx, syy, sxy] = [0, 0, 0]
-        for (const [x, y] of points) {
-          sxx += (x - mx) ** 2
-          syy += (y - my) ** 2
-          sxy += (x - mx) * (y - my)
-        }
-        const angle = Math.atan2(2 * sxy, sxx - syy) / 2
-        patches.push({ at: { x: mx, y: my }, dir: { x: Math.cos(angle), y: Math.sin(angle) }, pixels: points.length })
-      }
-      return patches.sort((p, q) => q.pixels - p.pixels)
-    },
-    { pngs, from, to }
-  )
-
-// How many red pixels within 30 px of `at` turn near white (a hovered handle's gold glow) from the
-// first view to the second.
-const lit = (page: Page, pngs: [string, string], at: { x: number; y: number }): Promise<number> =>
-  page.evaluate(
-    async ({ pngs, at }) => {
-      const views: Uint8ClampedArray[] = []
-      for (const png of pngs) {
-        const image = new Image()
-        image.src = `data:image/png;base64,${png}`
-        await image.decode()
-        const canvas = document.createElement('canvas')
-        canvas.width = image.width
-        canvas.height = image.height
-        const context = canvas.getContext('2d')!
-        context.drawImage(image, 0, 0)
-        const scale = image.width / innerWidth
-        const r = Math.round(30 * scale)
-        views.push(context.getImageData(Math.round(at.x * scale) - r, Math.round(at.y * scale) - r, 2 * r, 2 * r).data)
-      }
-      const [before, after] = views
-      let n = 0
-      for (let i = 0; i < before.length; i += 4) if (before[i] - before[i + 1] > 60 && after[i] > 235 && after[i + 1] > 220 && after[i + 2] > 190) n++
-      return n
-    },
-    { pngs, at }
-  )
-
-// The gizmo's X arrow on the screen: a red patch the Move tool draws that lights up under the
-// pointer, as a hovered handle does. Leaves the pointer on it.
-async function xArrow(page: Page, ui: Locator): Promise<Arrow | null> {
-  const size = page.viewportSize()!
-  const box = (selector: string): Promise<{ x: number; y: number; width: number; height: number } | null> =>
-    ui.locator(selector).first().boundingBox({ timeout: 2000 }).catch(() => null)
-  const [left, right, top] = [await box('.eui-left'), await box('.eui-right-col'), await box('.eui-toolbar')]
-  const from = { x: Math.ceil((left?.x ?? 0) + (left?.width ?? 0)), y: Math.ceil((top?.y ?? 0) + (top?.height ?? 0)) }
-  const to = { x: Math.floor(right?.x ?? size.width), y: size.height }
-  const shoot = async (): Promise<string> => (await page.screenshot()).toString('base64')
-  const view = async (tool: string): Promise<string> => {
-    await ui.locator(`[data-tip^="${tool} ("]`).click()
-    await page.waitForTimeout(700)
-    return shoot()
-  }
-  const without = await view('Select')
-  const drawn = await view('Move')
-  const patches = await redPatches(page, [without, drawn], from, to)
-  for (const patch of patches.slice(0, 6)) {
-    await page.mouse.move(patch.at.x, patch.at.y, { steps: 4 })
-    await page.waitForTimeout(500)
-    if ((await lit(page, [drawn, await shoot()], patch.at)) >= 40) return patch
-  }
-  return null
-}
-
-// Where the composite the editor autosaved puts the entity named `name`.
-async function savedPosition(page: Page, name: string): Promise<Point | null> {
-  const text = await storedFile(page, COMPOSITE)
-  if (text == null) return null
-  const { components } = JSON.parse(text) as { components: { name: string; data: Record<string, { json?: { value?: string; position?: Point } }> }[] }
-  const names = components.find((c) => c.name === 'core-schema::Name')?.data ?? {}
-  const entity = Object.keys(names).find((e) => names[e].json?.value === name)
-  return entity == null ? null : (components.find((c) => c.name === 'core::Transform')?.data[entity]?.json?.position ?? null)
-}
-
-const storedFile = (page: Page, path: string): Promise<string | null> =>
-  page.evaluate(
-    async ({ id, path }) => {
-      try {
-        const parts = ['dcl-editor', 'projects', id, ...path.split('/')]
-        const name = parts.pop()!
-        let dir = await navigator.storage.getDirectory()
-        for (const part of parts) dir = await dir.getDirectoryHandle(part)
-        return await (await (await dir.getFileHandle(name)).getFile()).text()
-      } catch {
-        return null
-      }
-    },
-    { id: PROJECT_ID, path }
-  )
-
-test('the scene editor opens, edits and plays a starter scene inside the page', async ({ page }, testInfo) => {
+test('the page hosts the scene editor: Create, preview, privileged scene, reload by id, Play, leaving', async ({ page }, testInfo) => {
   expect(process.env.WEB_EDITOR_DIR, 'WEB_EDITOR_DIR').toBeTruthy()
   const blocked: string[] = []
   await keepOffProduction(page.context(), blocked)
@@ -355,7 +198,6 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
     await installSpies(page)
     await scenes.locator('.eui-create').getByText('Your scenes').waitFor({ timeout: 60_000 })
     await expect(page.locator('header button[data-page="create"][aria-current="page"]'), 'Create is the menu page open').toHaveCount(1)
-    await expect(scenes.getByText(CREATE_INTRO)).toHaveCount(1)
     const info = await page.evaluate(() => {
       const { version, openProject, services, identity } = (window as GateWindow).__dclEditorHost!
       const script = document.querySelector<HTMLScriptElement>('script[src$="/editor.js"]')
@@ -371,13 +213,7 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
     expect((await spy(page)).modes, 'listing the scenes changes no mode').toEqual([])
     await expect(page.locator('#dcl-editor-host > *'), 'nothing is docked yet').toHaveCount(0)
     await expect(page.locator('#mygame-canvas')).toHaveCount(1)
-    await page.waitForTimeout(600)
-    await shot('1-create-page-1280x720')
-    await page.setViewportSize({ width: 1920, height: 1080 })
-    await page.waitForTimeout(1200)
-    await shot('1-create-page-1920x1080')
-    await page.setViewportSize({ width: 1280, height: 720 })
-    await page.waitForTimeout(600)
+    await shot('1-create-page')
   })
 
   const identityBefore = await page.evaluate(() => (window as GateWindow).__dclEditorHost?.identity().address ?? null).catch(() => null)
@@ -399,7 +235,6 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
       return projects.find((project) => project.name === name)?.id ?? ''
     }, PROJECT_NAME)
     expect(PROJECT_ID, 'a new scene gets an id with a random tail').toMatch(/^gate-scene-[a-z0-9]{4}$/)
-    expect(await previewId(page, PROJECT_ID), 'the id the store keeps for the project').toBe(preview)
     await expect(createPage, 'the Create page closed for the editor').toHaveCount(0)
     await expect.poll(async () => (await manifest(page)) != null, { timeout: 60_000, message: 'the preview is published' }).toBe(true)
     const published = (await manifest(page))!
@@ -408,7 +243,6 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
     note(`built + published ${Date.now() - createdAt} ms after Create: preview ${preview}, entity ${entityId}, v${published.version}, ${published.entity.content.length} files`)
     expect(Buffer.from(entityId.slice(4), 'base64').toString(), 'a b64- preview id').toBe(`/preview/${preview}-${machineId}`)
     expect(published.entity.content.map((c) => c.file)).toEqual(expect.arrayContaining(['bin/index.js', 'scene.json']))
-    expect(await storedFile(page, 'src/index.ts'), 'the project is stored in the browser').toContain('engine.addEntity()')
     expect(
       await page.evaluate(async () => (await (await caches.open('dcl-editor-preview-v1')).keys()).filter((r) => r.url.includes('/preview/gate-scene/')).length),
       'nothing is served under the scene’s name'
@@ -447,52 +281,7 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
     }))
 
   if (attached) {
-    await step('3b "Add a box" puts a box in front of the player, and a real pointer drag on the gizmo’s X arrow moves it along X', async () => {
-      await sceneTab.click()
-      const player = await position(page)
-      await ui.getByRole('button', { name: 'Add a box' }).click()
-      await expect.poll(() => savedPosition(page, BOX), { timeout: 30_000, message: 'the box is autosaved' }).not.toBeNull()
-      const placed = (await savedPosition(page, BOX))!
-      const ahead = Math.hypot(placed.x - player.x, placed.z - player.z)
-      note(`player at (${player.x.toFixed(2)}, ${player.z.toFixed(2)}); box at (${placed.x.toFixed(2)}, ${placed.y.toFixed(2)}, ${placed.z.toFixed(2)}), ${ahead.toFixed(2)} m away`)
-      expect(ahead, 'the box lands a few metres from the player').toBeGreaterThan(1.5)
-      expect(ahead).toBeLessThan(5)
-      let arrow: Arrow | null = null
-      await expect
-        .poll(async () => (arrow = await xArrow(page, ui)) != null, { timeout: 60_000, message: 'the gizmo’s X arrow is drawn in the viewport, and lights up under the pointer' })
-        .toBe(true)
-      await shot('2b-gizmo-on-box')
-      const { at, dir, pixels } = arrow!
-      note(`X arrow: ${pixels} red px around (${at.x.toFixed(0)}, ${at.y.toFixed(0)}), running (${dir.x.toFixed(2)}, ${dir.y.toFixed(2)}), lit under the pointer`)
-      await page.mouse.down()
-      await page.mouse.move(at.x + dir.x * 120, at.y + dir.y * 120, { steps: 12 })
-      await page.waitForTimeout(300)
-      await page.mouse.up()
-      await expect
-        .poll(async () => Math.abs(((await savedPosition(page, BOX))?.x ?? placed.x) - placed.x), { timeout: 30_000, message: 'the drag moved the box along X' })
-        .toBeGreaterThan(0.3)
-      const moved = (await savedPosition(page, BOX))!
-      note(`dragged 120 px: box (${placed.x.toFixed(3)}, ${placed.z.toFixed(3)}) -> (${moved.x.toFixed(3)}, ${moved.z.toFixed(3)}); dx ${(moved.x - placed.x).toFixed(3)} dz ${(moved.z - placed.z).toFixed(3)}`)
-      expect(Math.abs(moved.z - placed.z), 'only along X').toBeLessThan(0.05)
-      expect(Math.abs(moved.y - placed.y)).toBeLessThan(0.05)
-      await shot('2c-box-dragged')
-    })
-
-    await step('4 edits are stored, rebuilt and published; a code save reloads the scene by id and it logs the new marker', async () => {
-      // an entity made in the hierarchy: autosaved as the composite, which the rebuild publishes
-      const row = ui.locator('.eui-left .eui-row', { hasText: ENTITY_NAME })
-      const start = (await manifest(page))!.version
-      await sceneTab.click()
-      await ui.locator('[data-tip="New entity"]').click()
-      await ui.getByPlaceholder('Entity name').fill(ENTITY_NAME)
-      await ui.getByRole('button', { name: 'Create', exact: true }).click()
-      await expect(row).toHaveCount(1)
-      await expect.poll(() => storedFile(page, COMPOSITE), { timeout: 30_000, message: 'the composite is in the store' }).toContain(ENTITY_NAME)
-      await expect
-        .poll(async () => (await manifest(page))!.entity.content.map((c) => c.file), { timeout: 30_000, message: 'the composite is published' })
-        .toEqual(expect.arrayContaining([COMPOSITE, 'main.crdt']))
-      note(`entity "${ENTITY_NAME}" autosaved to ${COMPOSITE}; manifest v${start} -> v${(await manifest(page))!.version}`)
-
+    await step('4 a code save is rebuilt and published, reloads the scene by id, and it logs the new marker', async () => {
       const save = async (version: number, replace: boolean): Promise<number> => {
         await page.keyboard.press('ControlOrMeta+Home')
         if (replace) await page.keyboard.press('Shift+ArrowDown')
@@ -520,14 +309,12 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
       expect(after.entity.id, 'the entity id is stable').toBe(entityId)
       expect(after.version).toBeGreaterThanOrEqual(before + 2)
       expect(transport.filter((line) => line === `reload ${entityId}`).length, 'reloaded by id').toBeGreaterThanOrEqual(2)
-      expect(await storedFile(page, 'src/index.ts'), 'the edit is in the store').toMatch(/^console\.log\('GATE_MARKER v2'\)\n/)
       expect((await spy(page)).canvasKeys, 'what is typed in the editor stays out of the engine').toBe(keysBefore)
       await ui.locator('.eui-studio-hbtn').click()
       await ui.locator('.eui-toolbar').waitFor()
-      await expect(row, 'the entity came back from the published build').toHaveCount(1)
     })
 
-    await step('5 Play then Stop restarts only the project scene and returns the player to its spawn', async () => {
+    await step('5 Play then Stop restarts only the project scene, never the HUD scene', async () => {
       const before = await spy(page)
       const playAt = Date.now()
       const run = ui.locator('[data-tip^="Run the scene"]')
@@ -537,24 +324,12 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
       await expect.poll(async () => (await spy(page)).modes.at(-1), { timeout: 60_000, message: 'the host is in play mode' }).toBe('play')
       await ui.locator('[data-tip^="Scene is running"]').waitFor()
       await expect.poll(frozen, { timeout: 30_000, message: 'the scene runs' }).toBe(false)
-      // running, the starter's code has its cube, next to the box added above
-      await expect.poll(() => ui.locator('.eui-left .eui-row', { hasText: 'Box' }).count(), { timeout: 30_000 }).toBeGreaterThanOrEqual(2)
       await shot('4-playing')
-      // the player walks off while playing: Stop puts them back at the scene's spawn, the parcel's centre
-      await cmd(page, 'walk_player_to 3 0 3 10')
-      const walked = await position(page)
-      expect(Math.hypot(walked.x - 8, walked.z - 8), 'the player walked away from the spawn').toBeGreaterThan(4)
       await ui.locator('[data-tip="Restart the scene from tick 0"]').click()
       await expect.poll(async () => (await spy(page)).modes.at(-1), { timeout: 60_000, message: 'back in edit mode' }).toBe('edit')
       await run.waitFor({ timeout: 60_000 })
       await expect.poll(frozen, { timeout: 30_000, message: 'paused again after Stop' }).toBe(true)
       const after = await spy(page)
-      const fromSpawn = async (): Promise<number> => {
-        const at = await position(page)
-        return Math.hypot(at.x - 8, at.z - 8)
-      }
-      await expect.poll(fromSpawn, { timeout: 15_000, message: 'Stop returns the player to the spawn' }).toBeLessThan(1)
-      note(`player walked to (${walked.x.toFixed(1)}, ${walked.z.toFixed(1)}) while playing; after Stop: ${await cmd(page, 'player_position')}`)
       const reloads = after.console.filter((line) => line.startsWith('reload'))
       note(`engine spawned ${JSON.stringify(spawns(playAt))}; bridgeReady ${before.bridgeReady} -> ${after.bridgeReady}; hello ${before.hello} -> ${after.hello}`)
       note(`reloads ${JSON.stringify(reloads)}`)
@@ -586,19 +361,10 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
     await expect.poll(() => seen(/GATE_HOME up/, backAt), { timeout: 120_000, message: 'the home scene runs again' }).toBe(true)
     await expect(page.locator('#dcl-editor-host > *'), 'the docked editor is gone').toHaveCount(0)
     await expect(nav, 'the Create page still covers the HUD').toHaveCount(0)
-    const text = (await card.innerText()).replace(/\s+/g, ' ')
-    note(`after Back to scenes: url ${page.url()}; card "${text}"; clock ${await clockBack()}; modes ${JSON.stringify((await spy(page)).modes)}`)
-    expect(text).toMatch(/On this device only · opened/)
-    expect(text).toContain('Not published')
-    expect(text, 'no slug, no preview id').not.toMatch(new RegExp(`${PROJECT_ID}|${preview}`))
+    note(`after Back to scenes: url ${page.url()}; clock ${await clockBack()}; modes ${JSON.stringify((await spy(page)).modes)}`)
     expect((await spy(page)).modes.at(-1)).toBe('off')
     expect(realm()).toBe(homeRealm)
-    await shot('5-back-to-scenes-1280x720')
-    await page.setViewportSize({ width: 1920, height: 1080 })
-    await page.waitForTimeout(1200)
-    await shot('5-back-to-scenes-1920x1080')
-    await page.setViewportSize({ width: 1280, height: 720 })
-    await page.waitForTimeout(600)
+    await shot('5-back-to-scenes')
     // the page's own close gives the HUD back
     await page.locator('header').getByRole('button', { name: 'Close', exact: true }).click()
     await nav.waitFor({ timeout: 30_000 })
@@ -669,18 +435,4 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
   expect(failed, 'failed steps').toEqual([])
   expect(serviceRequests, 'a guest sends the project service nothing').toEqual([])
   expect(blocked, 'deployments to real servers').toEqual([])
-})
-
-test('?editor=<project> this browser does not have opens the Create page once in-world, and says so', async ({ page }, testInfo) => {
-  const lines: string[] = []
-  page.on('console', (message) => lines.push(message.text()))
-  const homeRealm = `${testInfo.project.use.baseURL!}${HOME_REALM}`
-  await page.goto(`${ENTRY}?guest=1&editor=${PROJECT_ID}&realm=${encodeURIComponent(homeRealm)}&position=0,0&${SERVERS}`, { waitUntil: 'commit' })
-  await expect.poll(() => lines.some((line) => /GATE_HOME up/.test(line)), { timeout: 420_000, message: 'the home scene runs' }).toBe(true)
-  const scenes = page.locator(SCENES)
-  await scenes.getByText(`“${PROJECT_ID}” is not on this device or on your account.`, { exact: false }).waitFor({ timeout: 120_000 })
-  expect(await page.evaluate(() => (window as GateWindow).__dclEditorHost!.openProject)).toBe(PROJECT_ID)
-  await expect(page.locator(NAV), 'the Create page covers the HUD').toHaveCount(0)
-  await expect(page.locator(`${UI} .eui-toolbar`), 'nothing docked').toHaveCount(0)
-  await expect.poll(() => new URL(page.url()).searchParams.get('editor'), { message: "the engine's url sync keeps the flag" }).toBe(PROJECT_ID)
 })
