@@ -219,7 +219,7 @@ test('a scene built in the browser runs from the preview realm and hot-reloads',
   const wanted = (r: PreviewRequest) => r.status === 200 && (r.body ?? '').includes(`"${base}"`)
   const gets = (hash: string) => requests.filter((r) => r.method === 'GET' && r.url === `${realm}/content/contents/${hash}`)
   const strayKeys = await page.evaluate(async () => {
-    const keys = await (await caches.open('ipfs-path-cache-v1')).keys()
+    const keys = await (await caches.open('ipfs-path-cache-v2')).keys()
     return keys.map((k) => k.url).filter((url) => url.includes('/preview/'))
   })
   const lines = [
