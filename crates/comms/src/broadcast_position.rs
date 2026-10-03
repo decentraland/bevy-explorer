@@ -78,6 +78,7 @@ fn broadcast_position(
     mut last_anim: Local<LastAnim>,
     time: Res<Time>,
     contexts: Query<&GlobalCrdtState>,
+    crdt_contexts: Res<crate::global_crdt::CrdtContexts>,
     wallet: Res<Wallet>,
 ) {
     // An authoritative server has no avatar to announce — hammurabi's reportPosition is
@@ -86,7 +87,7 @@ fn broadcast_position(
         return;
     }
     // client-only system (see above): the single shared context holds the realm bounds
-    let Ok(global_crdt) = contexts.single() else {
+    let Ok(global_crdt) = contexts.get(crdt_contexts.shared()) else {
         return;
     };
     let Ok((player, dynamics, scene_anim, head_sync, point_at)) = player.single() else {

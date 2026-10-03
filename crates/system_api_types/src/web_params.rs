@@ -82,7 +82,8 @@ fn delivery(field: &str) -> Delivery {
         | "content_server"
         | "log_fps"
         | "gpu_bytes_per_frame"
-        | "compute_threads" => Launch,
+        | "compute_threads"
+        | "local_scene_server" => Launch,
         "editor" => Host,
         "base_domain" => Resolved,
         other => {

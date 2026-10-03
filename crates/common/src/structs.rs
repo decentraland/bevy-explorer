@@ -1640,6 +1640,11 @@ pub struct ShowOutOfBounds(pub bool);
 #[derive(Debug, Resource, Default)]
 pub struct EditorMode(pub bool);
 
+/// Run a server copy of each authoritative scene inside this engine (isServer() true, joined to
+/// the client copy over an in-engine scene room) instead of relying on an external server.
+#[derive(Debug, Resource, Default)]
+pub struct LocalSceneServer(pub bool);
+
 // resource into which systems can add debug info
 #[derive(Resource, Default, Debug)]
 pub struct DebugInfo {

@@ -12,6 +12,11 @@ pub fn op_error(state: &WorkerContext, message: String) {
 }
 
 #[wasm_bindgen]
+pub fn op_is_server(op_state: &WorkerContext) -> bool {
+    dcl::js::engine::op_is_server(op_state.rc())
+}
+
+#[wasm_bindgen]
 pub fn op_crdt_send_to_renderer(op_state: &WorkerContext, messages: js_sys::ArrayBuffer) {
     let view = js_sys::Uint8Array::new(&messages);
     dcl::js::engine::crdt_send_to_renderer(op_state.rc(), &view.to_vec())

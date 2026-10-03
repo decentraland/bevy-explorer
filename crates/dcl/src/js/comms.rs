@@ -124,6 +124,7 @@ pub async fn op_comms_recv_binary(
 
     let context = state.borrow::<CrdtContext>();
     let hash = context.hash.clone();
+    let scene = context.scene_id.0;
 
     let mut results = Vec::default();
 
@@ -132,7 +133,11 @@ pub async fn op_comms_recv_binary(
             RpcStreamSender::<(String, Vec<u8>)>::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::SubscribeBinaryBus { hash, sender: sx })?;
+            .push(RpcCall::SubscribeBinaryBus {
+                hash,
+                scene,
+                sender: sx,
+            })?;
         state.put(BinaryBusReceiver(rx));
     }
 

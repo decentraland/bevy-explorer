@@ -25,9 +25,9 @@ use common::{
     terrain::{Occupancy, TerrainChange, TerrainTargets, BORDER_PADDING},
     util::{TaskExt, TryPushChildrenEx},
 };
-use comms::global_crdt::{CrdtContexts, GlobalCrdtState};
+use comms::global_crdt::{CrdtContexts, GlobalCrdtState, SceneCrdtContext};
 use dcl::{
-    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore, CrdtType},
+    interface::{crdt_context::CrdtContext, CrdtStore, CrdtType},
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
@@ -46,6 +46,7 @@ use crate::{
     bounds_calc::scene_regions,
     parcel_to_vec3,
     renderer_context::{RendererSceneContext, SceneState, FROZEN_BLOCK},
+    server_role::{scene_interfaces, ServerRole},
     update_world::{visibility::VisibilityComponent, ComponentTracker},
     vec3_to_parcel, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
     SceneThreadHandle,
@@ -250,7 +251,13 @@ pub struct SerializedCrdtStore(pub Vec<u8>);
 pub(crate) fn load_scene_javascript(
     mut commands: Commands,
     config: Res<AppConfig>,
-    loading_scenes: Query<(Entity, &SceneLoading, &SceneEntityDefinitionHandle)>,
+    loading_scenes: Query<(
+        Entity,
+        &SceneLoading,
+        &SceneEntityDefinitionHandle,
+        Option<&SceneCrdtContext>,
+        Has<ServerRole>,
+    )>,
     scene_definitions: Res<Assets<EntityDefinition>>,
     main_crdts: Res<Assets<SerializedCrdtStore>>,
     ipfas: IpfsAssetServer,
@@ -264,9 +271,9 @@ pub(crate) fn load_scene_javascript(
     preview_mode: Res<PreviewMode>,
     mut storage_buffers: Option<ResMut<Assets<ShaderStorageBuffer>>>,
 ) {
-    for (root, state, h_scene) in loading_scenes
+    for (root, state, h_scene, own_context, server_role) in loading_scenes
         .iter()
-        .filter(|(_, state, _)| matches!(**state, SceneLoading::MainCrdt { .. }))
+        .filter(|(_, state, ..)| matches!(**state, SceneLoading::MainCrdt { .. }))
     {
         let mut fail = |msg: &str| {
             warn!("{root:?} failed to initialize scene: {msg}");
@@ -376,22 +383,20 @@ pub(crate) fn load_scene_javascript(
             )
         };
 
-        let crdt_component_interfaces = CrdtComponentInterfaces(HashMap::from_iter(
-            crdt_component_interfaces
-                .0
-                .iter()
-                .map(|(id, interface)| (*id, interface.crdt_type())),
-        ));
+        let crdt_component_interfaces = scene_interfaces(&crdt_component_interfaces, server_role);
 
         // spawn bevy-side scene
         let initial_position = base.as_vec2() * Vec2::splat(PARCEL_SIZE);
 
         // setup the scene root entity
         let scene_id = SceneId(root);
-        let title = meta
+        let mut title = meta
             .display
             .and_then(|display| display.title)
             .unwrap_or("???".to_owned());
+        if server_role {
+            title.push_str(" [server]");
+        }
 
         // portable PID, else realm + parcel
         let storage_root = match &portable {
@@ -400,6 +405,12 @@ pub(crate) fn load_scene_javascript(
                 let about_url = ipfas.ipfs().about_url().unwrap_or_default();
                 format!("{about_url}:{}:{}", base.x, base.y)
             }
+        };
+        // the server copy keeps its own scene storage, apart from the player's copy
+        let storage_root = if server_role {
+            format!("{storage_root}#server")
+        } else {
+            storage_root
         };
 
         if let Some(fixed_time) = meta
@@ -437,7 +448,9 @@ pub(crate) fn load_scene_javascript(
         // the shared context otherwise), with position data localized for this scene.
         // Scene origin in DCL proto-space (z-forward, matching proto Vector3 coordinates)
         let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
-        let crdt_context = crdt_contexts.for_scene_hash(&definition.id);
+        let crdt_context = own_context
+            .map(|c| c.0)
+            .unwrap_or_else(|| crdt_contexts.for_scene_hash(&definition.id));
         let Ok(global_scene) = global_scenes.get(crdt_context) else {
             // context spawned this frame and not yet flushed — retry next frame
             debug!("{root:?} waiting for crdt context");
@@ -569,8 +582,13 @@ pub(crate) fn load_scene_javascript(
             },
         ));
 
+        if server_role {
+            commands.entity(root).try_insert(Visibility::Hidden);
+        }
+
         commands.entity(root).try_insert((
             SceneInitialData { js: h_code },
+            SceneCrdtContext(crdt_context),
             SceneLoading::Javascript {
                 global_updates: Some(global_updates),
                 scene_origin,
@@ -638,6 +656,7 @@ pub(crate) fn initialize_scene(
         &SceneInitialData,
         &mut RendererSceneContext,
         Option<&SuperUserScene>,
+        Has<ServerRole>,
     )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
@@ -648,7 +667,9 @@ pub(crate) fn initialize_scene(
     editor_mode: Res<EditorMode>,
     portable_scenes: Res<PortableScenes>,
 ) {
-    for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
+    for (root, mut state, initial_data, mut context, super_user, server_role) in
+        loading_scenes.iter_mut()
+    {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
             continue;
         }
@@ -686,12 +707,7 @@ pub(crate) fn initialize_scene(
             _ => panic!("bad state"),
         };
 
-        let crdt_component_interfaces = CrdtComponentInterfaces(HashMap::from_iter(
-            crdt_component_interfaces
-                .0
-                .iter()
-                .map(|(id, interface)| (*id, interface.crdt_type())),
-        ));
+        let crdt_component_interfaces = scene_interfaces(&crdt_component_interfaces, server_role);
 
         let inspected = testing_data
             .inspect_hash
@@ -704,7 +720,7 @@ pub(crate) fn initialize_scene(
             context.title.clone(),
             testing_data.test_mode,
             preview_mode.is_preview,
-            server_mode(),
+            server_mode() || server_role,
         );
 
         let (main_sx, kill_guard) = spawn_scene(
@@ -749,7 +765,7 @@ pub(crate) fn initialize_scene(
             && portable_scenes
                 .get(&context.hash)
                 .is_some_and(|source| source.parent_scene.is_none());
-        if editor_mode.0 && super_user.is_none() && !startup_portable {
+        if editor_mode.0 && super_user.is_none() && !startup_portable && !server_role {
             context.refreeze_at_tick = Some(3);
         }
 
@@ -1565,7 +1581,10 @@ pub fn process_scene_lifecycle(
             Option<&SceneLoading>,
             Has<SuperUserScene>,
         ),
-        Or<(With<SceneLoading>, With<RendererSceneContext>)>,
+        (
+            Or<(With<SceneLoading>, With<RendererSceneContext>)>,
+            Without<ServerRole>,
+        ),
     >,
     range: Res<SceneLoadDistance>,
     mut live_scenes: ResMut<LiveScenes>,
@@ -1781,6 +1800,7 @@ fn animate_ready_scene(
         &mut Transform,
         Ref<RendererSceneContext>,
         Option<&Children>,
+        Has<ServerRole>,
     )>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -1807,7 +1827,7 @@ fn animate_ready_scene(
         ));
     }
 
-    for (root, mut transform, ctx, children) in q.iter_mut() {
+    for (root, mut transform, ctx, children, server_role) in q.iter_mut() {
         // skip animating imposters
         if current_imposter_scene
             .0
@@ -1837,7 +1857,8 @@ fn animate_ready_scene(
             // }
         }
 
-        if ctx.is_added() {
+        // a server copy is never seen, so it gets no loading quads or preview grid
+        if ctx.is_added() && !server_role {
             let mut children = Vec::new();
             for parcel in ctx.parcels.iter() {
                 let position = ((*parcel - ctx.base) * IVec2::new(1, -1))
@@ -1974,7 +1995,7 @@ impl Material for LoadingMaterial {
 
 pub fn handle_live_scene_info(
     mut events: EventReader<SystemApi>,
-    scenes: Query<(&RendererSceneContext, Option<&SuperUserScene>)>,
+    scenes: Query<(&RendererSceneContext, Option<&SuperUserScene>), Without<ServerRole>>,
     ipfas: IpfsAssetServer,
 ) {
     let mut senders = events
