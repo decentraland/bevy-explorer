@@ -131,7 +131,7 @@ cargo build --release --bin headless --no-default-features --features headless,l
 ./target/release/headless --realm <url> --location 0,0 --server-mode
 ```
 
-`--local-scene-server` (`?localSceneServer` on web) skips the external process: the client runs a hidden server copy of each authoritative scene itself (`isServer()` true, nothing rendered) and talks to it over an in-engine scene room — for local previews such as the editor's Play.
+`--local-scene-server` (on web, `localSceneServer` from the embedding host's boot config, or `?localSceneServer` on a page served from localhost) skips the external process: the client runs a hidden server copy of each authoritative scene itself (`isServer()` true, its own `authoritative-server` identity, nothing rendered) and talks to it over an in-engine scene room — for local previews such as the editor's Play.
 
 `--orchestrated` runs it as a multi-scene worker driven over stdin/stdout instead. See [`deploy/headless/launcher/README.md`](deploy/headless/launcher/README.md) for the CLI contract and [`docs/headless-sdk-preview.md`](docs/headless-sdk-preview.md) for how it replaces hammurabi in the SDK preview.
 
