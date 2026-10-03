@@ -69,7 +69,7 @@ or it'll render too big on most displays:
 ## 5. Running the gates
 
 Agents that run gates in parallel must each use their own port set (`GATE_PORT`,
-`GATE_BRIDGE_PORT`, `GATE_SERVICE_PORT`, `GATE_WORLDS_PORT`; `e2e/README.md` "Running gates side by
+`GATE_BRIDGE_PORT`, `GATE_SERVICE_PORT`; `e2e/README.md` "Running gates side by
 side"), never the defaults while another run may be up, and never a port another session's dev
 server holds.
 

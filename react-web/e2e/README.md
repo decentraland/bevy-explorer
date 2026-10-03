@@ -108,7 +108,7 @@ engine in `deploy/web/engine/pkg` (`just wasm`), the TS bindings
 # `scene/about` and fetches the scene from its own /editor/scene/, checked against that id
 npm run export-static -w @dcl-editor/scene
 npm run build -w @dcl-editor/web
-# here: every gate, or one by name (preview-realm, editor, sync, publish, npm)
+# here: every gate, or one by name (preview-realm, editor)
 WEB_EDITOR_DIR=/path/to/dcl-editor npx playwright test --config playwright.gate.config.ts [name]
 ```
 
@@ -119,8 +119,8 @@ editor"). The servers are then yours to start.
 
 Besides Vite and the bridge scene, the config starts two servers out of that checkout (Node 24,
 no build): its project storage service, over a directory that starts empty
-(`.vite/gate-projects-<service port>`), and its stand-in Worlds content server. The page is
-pointed at the service with `?editor-projects=` (`e2e/gate.ts`), and the publish gate at the Worlds server with `?editor-worlds=`.
+(`.vite/gate-projects-<service port>`). The page is
+pointed at the service with `?editor-projects=` (`e2e/gate.ts`).
 
 ### Running gates side by side
 
@@ -132,7 +132,6 @@ reused:
 | `GATE_PORT` | 5230 | the page (Vite) |
 | `GATE_BRIDGE_PORT` | 8110 | the bridge scene (`?bridgePort=`) |
 | `GATE_SERVICE_PORT` | 8787 | the project storage service (`?editor-projects=`) |
-| `GATE_WORLDS_PORT` | 8799 | the stand-in Worlds server (`?editor-worlds=`) |
 
 Two runs at once each take their own set. In the same checkout they also keep their own Vite
 cache, project data and `test-results/gate-<page port>/`, but build the same `bridge-scene/bin`,
@@ -141,7 +140,7 @@ so start the second once the first's bridge scene is up, or use another checkout
 ```bash
 WEB_EDITOR_DIR=/path/to/dcl-editor npx playwright test --config playwright.gate.config.ts e2e/editor.gate
 WEB_EDITOR_DIR=/path/to/dcl-editor GATE_PORT=5330 GATE_BRIDGE_PORT=8210 GATE_SERVICE_PORT=8887 \
-  GATE_WORLDS_PORT=8899 npx playwright test --config playwright.gate.config.ts e2e/sync.gate
+  npx playwright test --config playwright.gate.config.ts e2e/editor.gate
 ```
 
 A name filter is matched against the whole path, so in a checkout whose path contains `editor`,
@@ -149,23 +148,10 @@ A name filter is matched against the whole path, so in a checkout whose path con
 
 | Spec | What passes |
 |---|---|
-| `editor.gate.spec.ts` | As a guest: the sidebar's Create button opens the HUD's Create page and the editor lists the scenes in it; New scene stores, builds and publishes the Example starter in the browser under a random preview id and docks the editor; the editor's own scene attaches; "Add a box" puts a box in front of the player and a real pointer drag on the gizmo's X arrow (found on screen) moves it along X; an entity and a code edit rebuild and reload it by id; Play, a walk, Stop (the player is back at the spawn); Back to scenes is the Create page again, with the player and the clock back; the menu top bar's Create item opens it again without loading the editor again, the scene opens, and Back to Decentraland gives the HUD back; `?editor=<project>` opens the scene directly. Nothing is asked of the project service. Its steps pass or fail one by one. A second, short test opens `?editor=<project>` in a browser without it: the Create page says so. |
-| `sync.gate.spec.ts` | One wallet on two devices (two browser contexts, two engines at once): a scene made on the first is listed from the account on the second, downloaded, built and run; an edit there reaches the first without a write; an edit on both is a conflict, and "Keep both" leaves both versions on the account. A second test, with no browser, asks the live service for what it must refuse: a scene's signed fetch, another intent or origin, an unsigned request, a stranger reading or referencing the owner's files, a stale save. |
-| `publish.gate.spec.ts` | Signed in, with `?editor-worlds=` naming the gate's Worlds server: the page's own dialog names the world, the scene, the files and the wallet; Cancel sends nothing; Sign and publish deploys an entity the server accepts (the spec recomputes every hash and checks the auth chain); then a guest's engine enters the world by its url and logs the published bundle's marker. |
-| `npm.gate.spec.ts` | As a guest: a `.zip` of the starter that imports `color` from npm is imported, the package and the five it depends on come from the real registry (reads only) and are pinned by sha512, and the scene logs a value the package computed. |
+| `editor.gate.spec.ts` | As a guest: nothing of the editor loads before the sidebar's Create button is clicked; the Create page opens with the editor's list in its body; New scene previews the starter from the service worker under a random id and the engine travels there; the editor's scene spawns privileged next to the HUD's without logging in over the player; a code save reloads only that scene, by id, and keys typed in the editor never reach the canvas; Play and Stop restart only the project scene, never the HUD's; Back to scenes and Back to Decentraland give the realm, clock and HUD back; the menu's Create item reopens without refetching the editor; `?editor=<project>` opens the scene directly. Nothing is asked of the project service. |
 
-The wallet is a key made in the test and stored the way a login leaves it
-(`localStorage['single-sign-on-<address>']`, see `e2e/gate.ts`); the page signs it in from the
-welcome screen. The player starts in a one-scene realm the gate's Vite server answers at
-`/gate-home`, so the default profile the engine deploys for a new wallet goes nowhere; the specs
-abort (and fail on) any deployment to a host that is not local, and drop the engine's analytics.
-What a signed-in page still asks of production are lookups: the avatar's wearables and profile,
-and a comms adapter for the scene.
-
-The publish gate's world is `gate.eth`, not a `.dcl.eth` name: the engine reads a realm that ends
-in `.dcl.eth` and does not start with `https://` as a world NAME on Decentraland's own server
-(`map_realm_name`, mirrored by `src/lib/realmCheck.ts`), so a world of that name on a local http
-server cannot be entered by its url.
+The player starts in a one-scene realm the gate's Vite server answers at `/gate-home`; the spec
+aborts (and fails on) any deployment to a host that is not local, and drops the engine's analytics.
 
 `GATE_SHOTS=<dir>` keeps a screenshot of each screen.
 
