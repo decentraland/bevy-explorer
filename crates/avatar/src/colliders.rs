@@ -11,7 +11,7 @@ use common::{
     sets::SceneSets,
     structs::{PlayerModifiers, PointerTargetType, PrimaryCamera, PrimaryUser},
 };
-use comms::global_crdt::ForeignPlayer;
+use comms::global_crdt::{ForeignPlayer, HiddenPeer};
 use dcl_component::{proto_components::sdk::components::ColliderLayer, SceneEntityId};
 use input_manager::{InputManager, InputPriority};
 use rapier3d_f64::{
@@ -56,7 +56,7 @@ impl Plugin for AvatarColliderPlugin {
 
 fn update_avatar_colliders(
     mut colliders: ResMut<AvatarColliders>,
-    foreign_players: Query<(Entity, &ForeignPlayer, &GlobalTransform)>,
+    foreign_players: Query<(Entity, &ForeignPlayer, &GlobalTransform), Without<HiddenPeer>>,
     primary_player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
 ) {
     let mut positions = foreign_players

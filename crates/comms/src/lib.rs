@@ -149,7 +149,8 @@ bitflags::bitflags! {
         const LIVEKIT = 1 << 1;
         /// The Archipelago island-assignment transport.
         const ARCHIPELAGO = 1 << 2;
-        /// The in-engine scene room; carries scene bus traffic only, so no broadcaster targets it.
+        /// The in-engine scene room: scene bus traffic, plus the avatar state fanned out to an
+        /// auth server, so no broadcaster targets it directly.
         const LOOPBACK = 1 << 3;
         /// The realm's Pulse avatar-state transport (only carries convertible avatar state), and
         /// the only carrier of avatar state — movement, emotes and profile-version announcements
@@ -447,7 +448,9 @@ pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
                 unreliable,
                 recipient: NetworkMessageRecipient::All,
             });
-        } else if auth_server_fanout && BroadcastTarget::LIVEKIT.includes(&transport.transport_type)
+        } else if auth_server_fanout
+            && (BroadcastTarget::LIVEKIT | BroadcastTarget::LOOPBACK)
+                .intersects(BroadcastTarget::flag_for(&transport.transport_type))
         {
             let _ = transport.sender.try_send(NetworkMessage {
                 message: Box::new(message.clone()),
@@ -509,6 +512,9 @@ fn process_realm_change(
 pub struct SetCurrentScene {
     pub realm_name: String,
     pub scene_id: String,
+    /// the scene's server copy runs in this engine: its room is only ever the loopback
+    #[serde(skip)]
+    pub local_server: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -628,7 +634,8 @@ fn connect_scene_room(
         if adapter_override.0.is_some() && !preview_mode.is_preview {
             warn_once!("DCL_SCENE_ROOM_ADAPTER is ignored outside preview mode");
         }
-        if ev.scene_id.is_empty() {
+        if ev.scene_id.is_empty() || ev.local_server {
+            // a locally served scene joins its loopback room once the server copy is up
             *gatekeeper_task = None;
         } else if let Some(adapter) = adapter_override
             .0

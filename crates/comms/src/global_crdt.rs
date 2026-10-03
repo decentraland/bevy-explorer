@@ -270,9 +270,9 @@ pub struct GlobalCrdtState {
     pub(crate) realm_bounds: (IVec2, IVec2),
     // per-component localizer registry (populated as components are first sent)
     localizers: HashMap<SceneComponentId, Localizer>,
-    /// false for an in-engine server copy's room: its peers are the local player, who must
-    /// not get a second (rendered) avatar, so only their scene bus traffic is taken
-    materialize_players: bool,
+    /// an in-engine server copy's room: its peers are the local player, so they are
+    /// spawned as [`HiddenPeer`]s that never get a second, rendered avatar
+    server_role: bool,
 }
 
 impl GlobalCrdtState {
@@ -289,16 +289,34 @@ impl GlobalCrdtState {
             lookup: Default::default(),
             realm_bounds: (IVec2::MAX, IVec2::MIN),
             localizers: Default::default(),
-            materialize_players: true,
+            server_role: false,
         }
     }
 
-    /// A room context whose peers are never materialized as `ForeignPlayer`s.
-    pub fn without_players(mut self) -> Self {
-        self.materialize_players = false;
+    /// The room of an in-engine server copy, which presents `identity` as its own `PLAYER`.
+    pub fn server_role(mut self, identity: &str) -> Self {
+        self.server_role = true;
+        self.update_crdt(
+            SceneComponentId::PLAYER_IDENTITY_DATA,
+            CrdtType::LWW_ANY,
+            SceneEntityId::PLAYER,
+            &PbPlayerIdentityData {
+                address: identity.to_owned(),
+                is_guest: true,
+            },
+        );
         self
     }
+
+    pub fn is_server_role(&self) -> bool {
+        self.server_role
+    }
 }
+
+/// A peer of an in-engine server copy's room: the local player seen from the server side.
+/// It carries the player's data into the copy's crdt context but never renders.
+#[derive(Component)]
+pub struct HiddenPeer;
 
 /// The crdt context a scene root reads and is subscribed to, so per-scene routing never has
 /// to infer it from the hash (two scene copies may share one).
@@ -820,19 +838,6 @@ pub fn process_transport_updates(
                     if discard_player_updates.0 {
                         continue;
                     }
-                    if !state.materialize_players {
-                        if let PlayerMessage::PlayerData(Message::Scene(scene)) = update.message {
-                            if state.room.as_ref() == Some(&scene.scene_id) {
-                                process_messagebus(
-                                    scene,
-                                    format!("{:#x}", update.address),
-                                    context_entity,
-                                    &mut bus,
-                                );
-                            }
-                        }
-                        continue;
-                    }
                     // create/update timestamp/transport_id on the foreign player
                     let (entity, scene_id, audio_channel) =
                         if let Some((entity, scene_id, channel)) =
@@ -866,12 +871,23 @@ pub fn process_transport_updates(
                             let (audio_sender, audio_receiver) =
                                 mpsc::channel::<ForeignAudioData>(10);
 
-                            let new_entity = commands
-                                .spawn((
-                                    // Below ground until a position arrives, so a peer with no
-                                    // avatar-state channel is not shown standing at the origin.
-                                    Transform::from_xyz(0.0, -10.0, 0.0),
+                            let mut new_player = commands.spawn((
+                                // Below ground until a position arrives, so a peer with no
+                                // avatar-state channel is not shown standing at the origin.
+                                Transform::from_xyz(0.0, -10.0, 0.0),
+                                HeadSync::default(),
+                                PointAtSync::default(),
+                            ));
+                            if state.server_role {
+                                new_player.insert((HiddenPeer, Visibility::Hidden));
+                            } else {
+                                new_player.insert((
                                     Visibility::default(),
+                                    Propagate(RenderLayers::default()),
+                                ));
+                            }
+                            let new_entity = new_player
+                                .insert((
                                     ForeignPlayer {
                                         address: update.address,
                                         context: context_entity,
@@ -886,9 +902,6 @@ pub fn process_transport_updates(
                                         available_transports: Default::default(),
                                         current_transport: None,
                                     },
-                                    HeadSync::default(),
-                                    PointAtSync::default(),
-                                    Propagate(RenderLayers::default()),
                                 ))
                                 .id();
 
