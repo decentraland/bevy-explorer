@@ -133,6 +133,16 @@ and then the bundle under its new hash. It does not ask `entities/active` again 
 parcels it already resolved), so a change to the scene's parcels needs a new launch.
 `react-web/e2e/preview-realm.gate.spec.ts` runs this whole loop in the real engine.
 
+## Editor scene
+
+The worker answers a second, simpler realm for the editor package's own super-user scene
+(react-web `features/editorHost/host/editorScene.ts`): `<PAGE_DIR>editor-scene/<entityId>/`, from
+cache `dcl-editor-scene-v1`. The page writes `<realm>contents/<hash>` for the entity and each file
+it lists, every one checked against its hash first, then `<realm>about` (listing the entity in
+`scenesUrn`, `baseUrl` = `<realm>contents/`). The worker serves `GET about` and
+`GET contents/<hash>` as stored, with the headers above; anything else is a 404. Only the
+current entity is kept: staging another one deletes the rest.
+
 ## Security
 
 - Routes read only keys under their own realm prefix, only from `dcl-editor-preview-v1`. The one

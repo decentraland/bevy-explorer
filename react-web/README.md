@@ -67,8 +67,8 @@ npm run dev
 a fake bridge, no engine. Add `&previousLogin=1` for the returning-user flow.
 
 **Scene editor (dev)** — the editor is an external package (the `dcl-editor` repo's
-`packages/web/dist`); this app only hosts it, and only on localhost (or an allowed deployment with
-a released package — `src/features/editorHost/config.ts`). Where it is available the sidebar rail
+`packages/web/dist`); this app only hosts it, and only on localhost (or a deployment with a
+released package — see **Releasing the editor**). Where it is available the sidebar rail
 and the menu top bar get **Create**, a menu page whose body the editor renders its home into
 (`src/features/editorHost/CreatePage.tsx`). Nothing of the editor is requested until the page
 opens, which it also does once in-world on a url with `?editor` (`?editor=<projectId>` also names
@@ -79,28 +79,57 @@ WEB_EDITOR_DIR=<dcl-editor checkout, packages/web built> npm run dev
 # then click Create in the rail, or open http://localhost:5173/?editor
 ```
 
-Vite serves `$WEB_EDITOR_DIR/packages/web/dist` same-origin under `/editor/`. Opening the editor
-first adds the page's own host script (`src/features/editorHost/host/`, built as a separate file
-next to the HUD's assets so neither the host nor its signing code is in the HUD bundle), which sets
-`window.__dclEditorHost` (`host/host.ts` — the contract, v1.1) and loads `/editor/editor.js`, which
-leaves `window.__dclEditor`. The page calls its `mountHome(body, { close })`, and the returned
-unmount when the page closes. Opening a scene closes the page and docks the editor into the host's
-container; its "back to scenes" (`host.openCreatePage()`) and Exit (`host.exit()`) both leave the
-scene and travel back, the first then reopening the Create page. The package
-must hold `editor.js`, `web-build/` and `scene/` (the editor scene's static realm: `scene/about`
-listing it in `scenesUrn`, with an absolute url — export the scene for the port you serve on:
-`npm run export-static -w @dcl-editor/scene -- --editor-base http://localhost:5173/editor/`).
+Vite serves `$WEB_EDITOR_DIR/packages/web/dist` same-origin under `/editor/`. The HUD itself only
+knows whether to offer Create (`editorHost/config.ts`); the rest is a chunk of its own
+(`editorHost/EditorHost.tsx`, a `React.lazy` boundary) that loads when Create first opens, or at
+start with `?editor`. It sets `window.__dclEditorHost` (`host/host.ts` — the contract, v1.1) and
+loads `<editor base>editor.js`, which leaves `window.__dclEditor`. The page calls its
+`mountHome(body, { close })`, and the returned unmount when the page closes. Opening a scene closes
+the page and docks the editor into the host's container; its "back to scenes"
+(`host.openCreatePage()`) and Exit (`host.exit()`) both leave the scene and travel back, the first
+then reopening the Create page. The host talks to the bridge scene on its own channel
+(`host/bridge.ts`: its travels and its scene), and its signing code (`host/signer.ts`, with the
+curve library) is a separate script added the first time the editor signs.
+
+The package must hold `editor.js`, `web-build/` and `scene/`: the editor scene's `export-static`
+output (`scene/about` plus the content files named by hash). The page never runs those files from
+the package's host: `spawnEditorScene` fetches the entity, checks it and every file it lists
+against their hashes (`host/editorScene.ts`), stores them, and the service worker serves them at
+`<PAGE_DIR>editor-scene/<entityId>`, which is the realm the engine spawns. The `baseUrl` inside
+`scene/about` is not used, so the export needs no `--editor-base`.
 
 The host signs for the editor with the signed-in wallet's stored identity, which the editor never
 sees: `signedFetch` only for urls under the project storage service, `signDeployment` only after
 the page's own confirmation dialog. A guest gets `not-signed-in`. On localhost the services are
 `http://localhost:8787` (projects) and the production Worlds content server; `?editor-projects=<url>`
-and `?editor-worlds=<url>` point them elsewhere, on localhost only. Before signing a deployment the
+and `?editor-worlds=<url>` point them at other local (loopback) services, on localhost only. Before signing a deployment the
 page's dialog names the world, scene, files, the Worlds server's host and the wallet; it keeps
 the editor's fixed size and only Cancel or Sign close it.
 
 In dev, `?bridgePort=<port>` loads the bridge scene from `http://localhost:<port>` instead of
 :8100 (the gates run their own); production builds ignore it.
+
+### Releasing the editor
+
+A production build has no editor at all (none of its code ships) until a package is pinned. To release one:
+
+1. Publish the editor's `packages/web/dist` to a **versioned, immutable** CDN directory that sends
+   `Access-Control-Allow-Origin: *` and `Cross-Origin-Resource-Policy: cross-origin` (the page is
+   cross-origin isolated, and `editor.js` loads with `crossorigin`).
+2. Set `PINNED_EDITOR` in `src/features/editorHost/config.ts`:
+   - `base`: that directory, with the trailing slash;
+   - `editorJsIntegrity`: `sha384-` + `openssl dgst -sha384 -binary editor.js | openssl base64 -A`.
+     The editor's own manifest of its worker, wasm, snapshot and css (sha384 each) is inside
+     `editor.js`, so this one hash covers them; checking those is the editor's job, not the page's;
+   - `editorSceneEntity`: the editor scene's entity id, the `urn:decentraland:entity:<id>` in
+     `scene/about` (also printed by `export-static`). The page spawns only that entity, from bytes
+     it has checked against it; a file that does not match is refused and nothing is spawned;
+   - `hosts`: the deployment hostnames that offer Create (loopback always does).
+
+   `PINNED_SERVICES` in `source.ts` says which project service and Worlds server that package talks to.
+
+A pinned production build (`vite build`) loads the released package on loopback too; the dev
+server always serves its own `/editor/`.
 
 ## Deploy (production)
 
@@ -114,7 +143,7 @@ explorer URL (e.g. `decentraland.zone/bevy-web`, assets on the versioned CDN pat
 | `engine/` | engine boot module + workers + `pkg/` (wasm) — no page | `wasm-pack` (CI) |
 | `bridge-scene/static/` | the exported bridge-scene realm | `npm run bundle` (CI) |
 | `service_worker.js` | shared root-scope SW: rewrites COEP → `credentialless` | tracked |
-| `preview_realm.js` | the SW's preview realm for the scene editor (`PREVIEW_REALM.md`), loaded with `importScripts` | tracked |
+| `preview_realm.js` | the SW's preview realm and editor-scene realm for the scene editor (`PREVIEW_REALM.md`), loaded with `importScripts` | tracked |
 
 **URL rules (learned the hard way):**
 - The page is served at a **no-trailing-slash entry** (`/bevy-web`) while assets live on the
