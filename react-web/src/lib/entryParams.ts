@@ -33,7 +33,9 @@ const INTERNAL_PARAMS = [
   'simerror',
   'simhover',
   'previousLogin',
-  'perm'
+  'perm',
+  // dev only (lib/systemScene.ts)
+  ...(import.meta.env.PROD ? [] : ['bridgePort'])
 ]
 
 /** What the dialog advertises: every link-settable engine param, then the page's own. */

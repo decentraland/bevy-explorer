@@ -19,11 +19,18 @@ import { serviceUrl } from './baseDomain'
 //     so it doesn't need to be same-origin — and version-pinning it avoids mirror skew anyway.
 //   • DEV default: the LIVE preview realm from `sdk-commands start` on :8100 (started by the vite
 //     plugin) — fast iteration, the scene hot-reloads. (BASE_URL is '/' in dev, so ?bundled=1
-//     still resolves to this origin's /bridge-scene/static.)
+//     still resolves to this origin's /bridge-scene/static.) `?bridgePort=` moves it to another
+//     loopback port, so a gate run gets a bridge of its own.
 export const SYSTEM_SCENE =
   import.meta.env.PROD || new URLSearchParams(location.search).has('bundled')
     ? new URL('bridge-scene/static/BevyExplorerUI', new URL(import.meta.env.BASE_URL, PAGE_DIR)).href
-    : 'http://localhost:8100'
+    : `http://localhost:${devBridgePort(location.search)}`
+
+/** The dev bridge scene's port: `?bridgePort=<port>`, else 8100. Only ever a loopback port. */
+function devBridgePort(search: string): number {
+  const port = Number(/^\d{1,5}$/.exec(new URLSearchParams(search).get('bridgePort') ?? '')?.[0])
+  return port > 0 && port < 65536 ? port : 8100
+}
 
 // Worlds we ship as first-party UI scenes. Accepted bare or as a full worlds-content-server url —
 // the engine's ipfs layer expands `name.dcl.eth` into the latter, and boot.js reverses it for the

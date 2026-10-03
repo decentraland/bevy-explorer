@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { PROJECTS, docked, enterWorld, homeSearch, keepOffProduction, notes, openEditor, storedFile, watch } from './gate'
+import { PROJECTS, docked, enterWorld, homeSearch, importZip, keepOffProduction, notes, openEditor, storedFile, watch } from './gate'
 
 const REGISTRY = 'https://registry.npmjs.org'
 const PROJECT_ID = 'packed-scene'
@@ -44,20 +44,18 @@ test('an imported scene that needs an npm package resolves it, builds and runs',
   const blocked: string[] = []
   await keepOffProduction(page.context(), blocked)
   const device = watch(page, testInfo, 'npm')
-  const { ui } = device
+  const { home } = device
 
   await enterWorld(device, `guest=1&${homeSearch(origin)}`)
   await openEditor(device)
 
-  const chooser = page.waitForEvent('filechooser')
-  await ui.getByRole('button', { name: 'Import .zip' }).click()
-  await (await chooser).setFiles(packedScene(testInfo.outputPath('packed')))
-  await ui.getByText('Scene imported').waitFor()
-  await ui.getByText('It uses 1 package from npm (color).', { exact: false }).waitFor()
-  await ui.getByText(/^Ready: color 4\.\d+\.\d+, and \d+ packages they depend on\.$/).waitFor({ timeout: 120_000 })
+  await importZip(device, packedScene(testInfo.outputPath('packed')))
+  await home.getByText('Scene imported').waitFor()
+  await home.getByText('It uses 1 package from npm (color).', { exact: false }).waitFor()
+  await home.getByText(/^Ready: color 4\.\d+\.\d+, and \d+ packages they depend on\.$/).waitFor({ timeout: 120_000 })
   await device.shot('g5-1-imported-with-packages')
   const at = Date.now()
-  await ui.getByRole('button', { name: 'Open scene' }).click()
+  await home.getByRole('button', { name: 'Open scene' }).click()
   await expect.poll(() => device.seen(MARKER, at), { timeout: 180_000, message: 'the engine runs code from the package' }).toBe(true)
   await docked(device)
   await device.shot('g5-2-running')

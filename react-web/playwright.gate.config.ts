@@ -8,6 +8,9 @@ import { defineConfig, devices } from '@playwright/test'
 //   npm:           an imported scene whose code needs a package from npm
 //   WEB_EDITOR_DIR=<dcl-editor checkout> npx playwright test --config playwright.gate.config.ts [name]
 const PORT = Number(process.env.GATE_PORT ?? 5230)
+// a bridge scene of its own, off the everyday dev :8100; the specs pass it as ?bridgePort (e2e/gate.ts)
+const BRIDGE_PORT = Number(process.env.GATE_BRIDGE_PORT ?? 8110)
+process.env.GATE_BRIDGE_PORT = String(BRIDGE_PORT)
 const EDITOR = JSON.stringify(process.env.WEB_EDITOR_DIR ?? '')
 // starts empty on every run
 const PROJECTS_DATA = '.vite/gate-projects'
@@ -39,7 +42,7 @@ export default defineConfig({
     {
       command: `npx vite --config e2e/vite.gate.config.ts --configLoader native --port ${PORT} --strictPort`,
       url: `http://localhost:${PORT}`,
-      // the bridge scene on :8100 is the webServer below (see playwright.config.ts)
+      // the bridge scene is the webServer below, not vite's own on :8100
       env: { BRIDGE_SCENE_PREVIEW: '0' },
       reuseExistingServer: false,
       timeout: 120_000
@@ -47,10 +50,10 @@ export default defineConfig({
     {
       // built, then served: `start` alone runs npm install over a node_modules that is a symlink
       command:
-        'npx --no-install sdk-commands build --skip-install && npx --no-install sdk-commands start --no-client --skip-build --no-watch --port 8100',
+        `npx --no-install sdk-commands build --skip-install && npx --no-install sdk-commands start --no-client --skip-build --no-watch --port ${BRIDGE_PORT}`,
       cwd: 'bridge-scene',
-      url: 'http://127.0.0.1:8100/about',
-      reuseExistingServer: true,
+      url: `http://127.0.0.1:${BRIDGE_PORT}/about`,
+      reuseExistingServer: false,
       timeout: 120_000
     },
     {

@@ -11,6 +11,12 @@ export const HOME_REALM = '/gate-home'
 export const HOME_UP = /GATE_HOME up/
 export const NAV = 'nav[aria-label="Main navigation"]'
 export const UI = '#dcl-editor-host > #editor-ui-host'
+/** The Create page's body, where the editor renders its home. */
+export const HOME = '#dcl-editor-home'
+/** The editor's home (a shadow root inside the Create page's body). */
+export const SCENES = `${HOME} #editor-ui-host`
+/** The page's bridge scene: the one playwright.gate.config.ts starts. */
+export const BRIDGE = `bridgePort=${process.env.GATE_BRIDGE_PORT ?? 8110}`
 /** playwright.gate.config.ts starts both. */
 export const PROJECTS = 'http://localhost:8787'
 export const WORLDS = 'http://localhost:8799'
@@ -72,6 +78,8 @@ export interface Device {
   page: Page
   /** The editor's UI (a shadow root inside the host's container). */
   ui: Locator
+  /** The editor's home on the Create page. */
+  home: Locator
   nav: Locator
   lines: { t: number; text: string }[]
   seen(re: RegExp, since?: number): boolean
@@ -103,6 +111,7 @@ export function watch(page: Page, testInfo: TestInfo, name: string): Device {
     name,
     page,
     ui: page.locator(UI),
+    home: page.locator(SCENES),
     nav: page.locator(NAV),
     lines,
     seen: (re, since = 0) => lines.some((l) => l.t >= since && re.test(l.text)),
@@ -126,7 +135,7 @@ export function watch(page: Page, testInfo: TestInfo, name: string): Device {
 export async function enterWorld(device: Device, search: string, up: RegExp = HOME_UP): Promise<void> {
   const { page } = device
   // a first visit: the page reloads itself once its service worker is active, then boots the engine
-  await page.goto(`/?${search}`, { waitUntil: 'commit' })
+  await page.goto(`/?${search}&${BRIDGE}`, { waitUntil: 'commit' })
   const jump = page.getByRole('button', { name: /JUMP INTO DECENTRALAND/ })
   await expect(async () => {
     if (!device.seen(up) && (await jump.isVisible()) && (await jump.isEnabled())) await jump.click({ timeout: 2000 }).catch(() => {})
@@ -136,16 +145,53 @@ export async function enterWorld(device: Device, search: string, up: RegExp = HO
 
 export const homeSearch = (origin: string, extra = ''): string => `realm=${encodeURIComponent(`${origin}${HOME_REALM}`)}&position=0,0${extra}`
 
-/** The sidebar's Create button, up to the editor's home screen. */
+/** The sidebar's Create button, up to the editor's home on the Create page. */
 export async function openEditor(device: Device): Promise<void> {
-  const { page, ui, nav } = device
+  const { page, nav } = device
   const create = nav.getByRole('button', { name: 'Create' })
   await create.waitFor({ timeout: 120_000 })
   await create.click()
   await page.waitForFunction(() => (window as GateWindow).__dclEditorHost != null && (window as GateWindow).__dclEditor != null, null, { timeout: 120_000 })
-  await ui.locator('.eui-home').waitFor({ timeout: 60_000 })
-  await ui.getByText('Your scenes').waitFor()
+  await device.home.locator('.eui-create').getByText('Your scenes').waitFor({ timeout: 60_000 })
 }
+
+/** The docked editor's Back to scenes: the HUD's Create page lists the scenes again. */
+export async function backToScenes(device: Device): Promise<void> {
+  await device.ui.locator('.eui-topbar-home').click()
+  await device.home.locator('.eui-create').waitFor({ timeout: 60_000 })
+}
+
+/** The docked editor's gear menu, Back to Decentraland: the HUD comes back. */
+export async function backToDecentraland(device: Device): Promise<void> {
+  const { page, ui } = device
+  await ui.locator('.eui-topbar-menu-wrap button[data-tip="Settings"]').click()
+  // by position: the button is gone before a locator click has finished with it
+  const back = (await ui.getByRole('button', { name: 'Back to Decentraland' }).boundingBox())!
+  await page.mouse.click(back.x + back.width / 2, back.y + back.height / 2)
+  await device.nav.waitFor({ timeout: 120_000 })
+}
+
+/** Import on the Create page: a menu where the browser can also pick a folder. */
+export async function importZip(device: Device, file: string): Promise<void> {
+  const { page, home } = device
+  const chooser = page.waitForEvent('filechooser')
+  await home.getByRole('button', { name: 'Import', exact: true }).click()
+  const zip = home.getByRole('button', { name: 'A .zip file' })
+  if (await zip.count()) await zip.click()
+  await (await chooser).setFiles(file)
+}
+
+/** The random id a project is previewed under (the editor's store, Origin Private File System). */
+export const previewId = (page: Page, id: string): Promise<string | null> =>
+  page.evaluate(async (id) => {
+    try {
+      const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('dcl-editor')
+      const index = JSON.parse(await (await (await root.getFileHandle('index.json')).getFile()).text()) as { projects: { id: string; previewId?: string }[] }
+      return index.projects.find((project) => project.id === id)?.previewId ?? null
+    } catch {
+      return null
+    }
+  }, id)
 
 /** false too while a reloaded scene is not pinned yet */
 export const frozen = (page: Page): Promise<boolean> =>
@@ -161,13 +207,13 @@ export async function docked(device: Device): Promise<void> {
   await expect.poll(() => frozen(device.page), { timeout: 60_000, message: `${device.name}: the editor paused the scene` }).toBe(true)
 }
 
-/** A scene from the Example starter, opened. */
+/** A scene from the Example starter, made on the Create page and opened. */
 export async function newScene(device: Device, name: string): Promise<void> {
-  const { ui } = device
-  await ui.getByRole('button', { name: '+ New scene' }).click()
-  await ui.getByText('Example', { exact: true }).click()
-  await ui.locator('.eui-home-modal input').fill(name)
-  await ui.getByRole('button', { name: 'Create scene' }).click()
+  const { home } = device
+  await home.getByRole('button', { name: '+ New scene' }).click()
+  await home.getByText('Example', { exact: true }).click()
+  await home.locator('.eui-home-modal input').fill(name)
+  await home.getByRole('button', { name: 'Create scene' }).click()
   await docked(device)
 }
 
