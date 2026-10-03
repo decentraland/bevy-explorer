@@ -578,12 +578,13 @@ fn connect_scene_room(
     // a scene whose server copy runs in this engine is served over the loopback room; checked
     // every frame as the copy usually starts after the player is already in the scene
     if let Some(ev) = last_scene.as_ref() {
-        let adapter = format!("loopback:{}", ev.scene_id);
         let on_loopback = current
             .0
             .as_ref()
             .is_some_and(|(_, a, _)| a.starts_with("loopback:"));
         if let Some(server) = local_servers.0.get(&ev.scene_id) {
+            // names the server instance, so a reloaded copy (same hash) is rejoined
+            let adapter = format!("loopback:{}:{}", ev.scene_id, server.server_end.to_bits());
             if !current
                 .0
                 .as_ref()
