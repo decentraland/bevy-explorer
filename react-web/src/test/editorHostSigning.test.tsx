@@ -10,7 +10,7 @@ import { createUnsafeIdentity } from '../../bridge-scene/node_modules/@dcl/crypt
 import { PopupHost } from '../design'
 import { editorSource } from '../features/editorHost/config'
 import type { EditorHostScript } from '../features/editorHost/host/editorHost'
-import { guardUrlSync, openEditor, type DclEditorHostV1 } from '../features/editorHost/host/host'
+import { guardUrlSync, loadEditor, type DclEditorHostV1 } from '../features/editorHost/host/host'
 import { useEditorHost } from '../features/editorHost/useEditorHost'
 import { PAGE_DIR } from '../lib/publicUrl'
 import { fakeSession } from './harness'
@@ -35,12 +35,12 @@ async function signIn(): Promise<void> {
 }
 
 describe('editor host signing', () => {
-  // the editor is opened as a guest, the way Create opens it
+  // the host is published as a guest, the way the Create page loads it
   beforeAll(async () => {
     w.engine_console_command = async () => ''
     const { result } = renderHook(() => useEditorHost(editorSource('', 'localhost', PAGE_DIR), session))
-    act(() => result.current!.open())
-    await act(async () => w.__dclEditorHostScript!({ guardUrlSync, openEditor }))
+    void result.current!.load().catch(() => {})
+    await act(async () => w.__dclEditorHostScript!({ guardUrlSync, loadEditor }))
   })
 
   it('signs fetches to the project service only, as the signed-in wallet, with metadata the editor cannot set', async () => {
@@ -86,7 +86,12 @@ describe('editor host signing', () => {
     await signIn()
     const declined = expect(host().signDeployment(request)).rejects.toThrow('cancelled')
     const dialog = await screen.findByRole('dialog')
-    for (const fact of ['boedo.dcl.eth', 'My scene', '12 (3.2 MB)', owner.address]) expect(dialog).toHaveTextContent(fact)
+    const short = `${owner.address.slice(0, 6)}…${owner.address.slice(-4)}`
+    for (const fact of ['boedo.dcl.eth', 'My scene', '12 (3.2 MB)', 'worlds-content-server.decentraland.org', short]) expect(dialog).toHaveTextContent(fact)
+    expect(screen.getByText(short)).toHaveAttribute('title', owner.address)
+    // a stray click on the scrim is not an answer
+    await userEvent.click(dialog.closest('[tabindex="-1"]')!)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await declined
 
@@ -94,6 +99,8 @@ describe('editor host signing', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Sign and publish' }))
     const chain = (await signed) as AuthChain
     expect(await Authenticator.validateSignature(request.entityId, chain, null)).toEqual({ ok: true, message: undefined })
-    await expect(host().signDeployment({ ...request, entityId: 'get:/projects:1:{}' })).rejects.toThrow('invalid entity id')
+    for (const entityId of ['get:/projects:1:{}', 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG', 'a'.repeat(64)]) {
+      await expect(host().signDeployment({ ...request, entityId })).rejects.toThrow('invalid entity id')
+    }
   })
 })
