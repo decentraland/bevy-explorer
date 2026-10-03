@@ -80,30 +80,22 @@ function deleteFromPrototypeChain(obj, name) {
   return false;
 }
 
-// The wasm module exports every op to every scene; native registers these for the super-user
-// scene only (crates/dcl_deno/src/js/op_wrappers/system_api.rs `ops`). Keep the two lists equal.
-const SUPER_USER_OPS = new Set([
-  "op_accept_friend_request", "op_block_user", "op_bridge_to_page", "op_cancel_friend_request",
-  "op_check_for_update", "op_console_command", "op_delete_friend", "op_get_avatar_modifiers",
-  "op_get_bindings", "op_get_block_update_stream", "op_get_blocked_users", "op_get_blocking_status",
-  "op_get_bridge_stream", "op_get_chat_stream", "op_get_current_login",
-  "op_get_friend_connectivity_stream", "op_get_friends", "op_get_friendship_event_stream",
-  "op_get_home_scene", "op_get_hover_stream", "op_get_mic_state", "op_get_mutual_friends",
-  "op_get_online_friends", "op_get_permanent_permissions", "op_get_permission_request_stream",
-  "op_get_permission_types", "op_get_permission_used_stream", "op_get_previous_login",
-  "op_get_profile_changed_stream", "op_get_proximity_stream", "op_get_received_friend_requests",
-  "op_get_satellite_view", "op_get_scene_loading_ui_stream", "op_get_sent_friend_requests",
-  "op_get_social_initialized", "op_get_system_action_stream", "op_get_user_profile",
-  "op_get_voice_stream", "op_kernel_fetch_headers", "op_live_scene_info", "op_login_cancel",
-  "op_login_guest", "op_login_new_code", "op_login_new_success", "op_login_previous", "op_logout",
-  "op_motd", "op_native_input", "op_quit", "op_read_block_update_stream", "op_read_bridge_stream",
-  "op_read_chat_stream", "op_read_friend_connectivity_stream", "op_read_friendship_event_stream",
-  "op_read_hover_stream", "op_read_permission_request_stream", "op_read_permission_used_stream",
-  "op_read_profile_changed_stream", "op_read_proximity_stream", "op_read_scene_loading_ui_stream",
-  "op_read_system_action_stream", "op_read_voice_stream", "op_reject_friend_request", "op_send_chat",
-  "op_send_friend_request", "op_set_avatar", "op_set_bindings", "op_set_home_scene",
-  "op_set_interactable_area", "op_set_mic_enabled", "op_set_permanent_permission", "op_set_setting",
-  "op_set_single_permission", "op_set_ui_focus", "op_settings", "op_unblock_user",
+// Ordinary scenes get only these ops (what native gives a non-super-user scene); the
+// super-user scene gets every export. A new op stays out of scenes until it is added here.
+const SCENE_OPS = new Set([
+  "op_camera_fov", "op_change_realm", "op_comms_recv_binary", "op_comms_send_binary_single",
+  "op_comms_send_string", "op_communicated_with_renderer", "op_continue_running",
+  "op_copy_to_clipboard", "op_crdt_recv_from_renderer", "op_crdt_send_to_renderer", "op_emote",
+  "op_error", "op_external_url", "op_get_connected_players", "op_get_platform",
+  "op_get_player_data", "op_get_players_in_scene", "op_get_texture_size", "op_get_user_data",
+  "op_log", "op_log_test_plan", "op_log_test_result", "op_move_player_to", "op_open_explorer_ui",
+  "op_open_nft_dialog", "op_portable_kill", "op_portable_list", "op_portable_spawn",
+  "op_read_file", "op_realm_information", "op_scene_emote", "op_scene_information",
+  "op_send_async", "op_send_batch", "op_set_elapsed", "op_signed_fetch_headers", "op_stop_emote",
+  "op_subscribe", "op_take_and_compare_snapshot", "op_teleport_to", "op_testing_enabled",
+  "op_ui_focus", "op_unsubscribe", "op_walk_player_to", "op_webstorage_clear", "op_webstorage_get",
+  "op_webstorage_has", "op_webstorage_iterate_keys", "op_webstorage_key", "op_webstorage_length",
+  "op_webstorage_remove", "op_webstorage_set", "op_world_time",
 ]);
 
 const jsContext = Object.create(null);
@@ -194,7 +186,7 @@ function createJsContext(wasmApi, context) {
 
   const ops = Object.create(null);
   for (const exportName in wasmApi) {
-    if (exportName.substring(0, 3) === "op_" && (isSuper || !SUPER_USER_OPS.has(exportName))) {
+    if (exportName.substring(0, 3) === "op_" && (isSuper || SCENE_OPS.has(exportName))) {
       Object.defineProperty(ops, exportName, {
         configurable: false,
         get() {

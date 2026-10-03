@@ -1,5 +1,5 @@
-// What the web engine's scripts let a scene reach: the sandbox worker hands the system ops to the
-// super-user scene only, and the service worker's asset cache keeps each origin's responses apart.
+// What the web engine's scripts let a scene reach: ordinary scenes get only the scene ops (every
+// other op goes to the super-user scene alone), and the service worker's asset cache keeps each origin's responses apart.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -18,21 +18,26 @@ function sandboxOps(isSuper: boolean, opNames: string[]): Record<string, unknown
     console: object
   ) => { createJsContext: (wasmApi: object, context: object) => void; scope: () => SceneScope }
   const worker = load({ navigator: {}, BroadcastChannel: class {} }, quiet)
-  const wasmApi = Object.fromEntries([...opNames, 'op_crdt_send_to_renderer'].map((name) => [name, vi.fn()]))
+  const wasmApi = Object.fromEntries(opNames.map((name) => [name, vi.fn()]))
   worker.createJsContext({ ...wasmApi, is_super: () => isSuper }, { get_scene_title: () => 'scene' })
   return worker.scope().Deno.core.ops
 }
 
 describe('scene isolation on web', () => {
-  it('gives every op native registers for the super-user scene to that scene only', () => {
-    const native = /if super_user \{\s*vec!\[([^\]]*)\]/.exec(read('../../../crates/dcl_deno/src/js/op_wrappers/system_api.rs'))
-    const systemOps = [...(native?.[1] ?? '').matchAll(/(op_\w+)\(\)/g)].map((m) => m[1])
+  it('gives ordinary scenes only the scene ops, and the super-user scene every op', () => {
+    const opsIn = (src: string): string[] => [...src.matchAll(/pub (?:async )?fn (op_\w+)/g)].map((m) => m[1])
+    const dir = '../../../crates/dcl_wasm/src/inner/'
+    const systemOps = opsIn(read(`${dir}op_wrappers/system_api.rs`))
+    const sceneOps = ['adaption_layer_helper', 'comms', 'engine', 'ethereum_controller', 'events', 'fetch', 'player', 'portables', 'restricted_actions', 'runtime', 'testing', 'user_identity']
+      .flatMap((name) => opsIn(read(`${dir}op_wrappers/${name}.rs`)))
+      .concat(opsIn(read(`${dir}mod.rs`)), opsIn(read(`${dir}local_storage.rs`)))
     expect(systemOps).toContain('op_kernel_fetch_headers')
 
-    const scene = sandboxOps(false, systemOps)
-    expect(systemOps.filter((op) => op in scene)).toEqual([])
-    expect('op_crdt_send_to_renderer' in scene).toBe(true)
-    expect(systemOps.filter((op) => !(op in sandboxOps(true, systemOps)))).toEqual([])
+    const all = [...systemOps, ...sceneOps]
+    const scene = sandboxOps(false, all)
+    expect(Object.getOwnPropertyNames(scene).sort()).toEqual([...sceneOps].sort())
+    expect(all.filter((op) => !(op in sandboxOps(true, all)))).toEqual([])
+    expect('op_new_unlisted' in sandboxOps(false, [...all, 'op_new_unlisted'])).toBe(false)
   })
 
   it("never answers one origin's asset request with another origin's cached response", async () => {
