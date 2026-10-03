@@ -33,6 +33,11 @@ function pushSystem(ctx: Ctx, message: string): void {
 }
 
 export function registerWorld(ctx: Ctx): void {
+  ctx.on('getHomeScene', async () => {
+    const home = await BevyApi.getHomeScene()
+    ctx.send({ kind: 'homeScene', ...home })
+  })
+
   ctx.on('getMap', () => {
     const pos = getPlayer()?.position
     ctx.send({ kind: 'mapState', x: Math.floor((pos?.x ?? 0) / 16), y: Math.floor((pos?.z ?? 0) / 16) })

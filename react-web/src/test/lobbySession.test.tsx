@@ -1,6 +1,7 @@
 import { act, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { renderSession } from './harness'
+import { DEFAULT_REALM } from '../lib/baseDomain'
+import { enterAsGuest, renderSession } from './harness'
 
 describe('lobby session regressions', () => {
   it('waits for playerReady before opening and fetching Backpack', async () => {
@@ -44,5 +45,27 @@ describe('lobby session regressions', () => {
     expect(second.travelId).not.toBe(first.travelId)
     h.driver.emit({ kind: 'travelResult', travelId: second.travelId!, realm: second.realm, ok: true })
     await waitFor(() => expect(h.session().phase).toBe('world'))
+  })
+
+  it.each(['my-home.dcl.eth', DEFAULT_REALM])('waits for the native home response and returns to its saved parcel in %s', async (realm) => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    act(() => h.session().lobbyPage.toggle())
+    act(() => h.session().lobbyPage.travel(null))
+    expect(h.driver.sentOf('teleport')).toHaveLength(0)
+    expect(h.session().lobbyPage.open).toBe(true)
+    expect(h.driver.sent).toContainEqual({ kind: 'getHomeScene' })
+
+    h.driver.emit({ kind: 'homeScene', realm, parcel: { x: 12, y: -7 } })
+    expect(h.session().homeScene()).toEqual({ realm: realm === DEFAULT_REALM ? null : realm, parcel: '12,-7' })
+    act(() => h.session().lobbyPage.travel(null))
+    expect(h.driver.last('teleport')).toMatchObject({ realm, x: 12, y: -7 })
+    expect(h.session().lobbyPage.open).toBe(false)
+
+    act(() => h.session().lobbyPage.toggle())
+    expect(h.session().homeScene()).toBeNull()
+    h.driver.emit({ kind: 'homeScene', realm: 'new-home.dcl.eth', parcel: { x: 3, y: 4 } })
+    act(() => h.session().lobbyPage.travel(null))
+    expect(h.driver.last('teleport')).toMatchObject({ realm: 'new-home.dcl.eth', x: 3, y: 4 })
   })
 })

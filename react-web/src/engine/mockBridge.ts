@@ -21,6 +21,7 @@ import {
 import { applyProfileEdit } from './profileEdit'
 import type { Color3 } from './generated'
 import { GENESIS_SATELLITE_VIEW } from '../features/map/atlas'
+import { DEFAULT_REALM } from '../lib/baseDomain'
 
 // A fully-populated passport for the mock, so the React passport shows every section.
 function richProfile(address: string, name: string, isGuest: boolean): Profile {
@@ -528,6 +529,11 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     }
 
     await wait(o.latency)
+
+    if (msg.kind === 'getHomeScene') {
+      reply({ kind: 'homeScene', realm: DEFAULT_REALM, parcel: { x: 0, y: 0 } })
+      return
+    }
 
     if (msg.kind === 'sendChat') {
       // Echo the local player's message back (the engine would broadcast it).

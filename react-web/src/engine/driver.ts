@@ -63,8 +63,7 @@ export interface LoginDriver {
    *  home scene. Optional — the mock has no engine to launch. */
   launch?(realm?: string, position?: string, host?: LaunchHostOptions): void
   /** The engine's persisted home scene — the Skip target. Available pre-launch; null until the
-   *  engine module is up. Optional — the mock has no engine (and native skips keep the engine's
-   *  own start realm, which already IS home). */
+   *  engine module is up. Native and mock clients request it through the scene bridge instead. */
   homeScene?(): { realm: string | null; parcel: string } | null
   /** Run an engine console command line (e.g. "/time 12 0") and resolve with its reply, without
    *  the reply landing in chat. Optional — the mock has no engine console. */
