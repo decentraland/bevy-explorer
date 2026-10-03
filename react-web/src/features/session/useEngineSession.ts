@@ -1472,7 +1472,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const travelFromLobby = useCallback(
     (driver: NonNullable<typeof driverRef.current>, dest: Destination): void => {
       if (driver.launch == null) {
-        setLobby(false)
+        if (dest?.kind !== 'world') setLobby(false)
         travelInPlace(driver, dest)
         return
       }
