@@ -15,8 +15,12 @@ export const UI = '#dcl-editor-host > #editor-ui-host'
 export const HOME = '#dcl-editor-home'
 /** The editor's home (a shadow root inside the Create page's body). */
 export const SCENES = `${HOME} #editor-ui-host`
-/** The page's bridge scene: the one playwright.gate.config.ts starts. */
-export const BRIDGE = `bridgePort=${process.env.GATE_BRIDGE_PORT ?? 8110}`
+/** The page's bridge scene: the one playwright.gate.config.ts starts. A production build bundles its own. */
+export const BRIDGE = process.env.GATE_ENTRY ? '' : `bridgePort=${process.env.GATE_BRIDGE_PORT ?? 8110}`
+/** The page's entry path: the dev server's root, or `GATE_ENTRY` (a production layout's no-slash entry). */
+export const ENTRY = process.env.GATE_ENTRY ?? '/'
+/** Where the page loads the editor package from: its own /editor/, or `GATE_EDITOR_BASE` (a CDN). */
+export const editorBase = (origin: string): string => process.env.GATE_EDITOR_BASE ?? `${origin}/editor/`
 /** playwright.gate.config.ts starts both. */
 export const PROJECTS = 'http://localhost:8787'
 export const WORLDS = 'http://localhost:8799'

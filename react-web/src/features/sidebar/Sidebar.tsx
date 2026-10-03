@@ -11,7 +11,7 @@ import type { NavAction } from '../../engine/protocol'
 import { keyHintFor, useBindingsSnapshot, type BindingsSnapshot } from '../../lib/bindingLabels'
 import { userColor } from '../../lib/identity'
 import type { EngineSession } from '../session/useEngineSession'
-import { EditorEntryContext, type EditorEntry } from '../editorHost/entry'
+import { EDITOR_BUILD, EditorOffered } from '../editorHost/config'
 import { useLiveEventCount } from '../events/eventsApi'
 import { useAutoHide } from './useAutoHide'
 import { hudInsetRef } from '../../lib/hudInset'
@@ -114,7 +114,7 @@ const BOTTOM: Item[] = [
 
 type VoiceProps = NearbyVoice & { onOpen: (button: HTMLElement) => void }
 
-function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, voice: VoiceProps, create: EditorEntry | null, onViewProfile?: () => void): React.JSX.Element | null {
+function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, voice: VoiceProps, create: boolean, onViewProfile?: () => void): React.JSX.Element | null {
   if (item.kind === 'divider') return <div key={`d${i}`} className={styles.divider} />
   const shortcut = 'hotkey' in item && item.hotkey != null ? keyHintFor(snap, item.hotkey) : undefined
   if (item.kind === 'chat')
@@ -254,9 +254,8 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
       </RailButton>
     )
   }
-  // only where the scene editor is available
   if (item.kind === 'create')
-    return create && <RailButton key="create" icon={item.icon} label={item.label} active={session.create.open} onClick={session.create.toggle} />
+    return EDITOR_BUILD && create ? <RailButton key="create" icon={item.icon} label={item.label} active={session.create.open} onClick={session.create.toggle} /> : null
   if (item.kind === 'skybox')
     return <RailButton key="skybox" icon={item.icon} label={item.label} active={session.skybox.open} onClick={session.skybox.toggle} />
   if (item.kind === 'events')
@@ -311,7 +310,7 @@ export function Sidebar({
 }): React.JSX.Element {
   const snap = useBindingsSnapshot()
   const liveEvents = useLiveEventCount()
-  const create = useContext(EditorEntryContext)
+  const create = useContext(EditorOffered)
   const [configOpen, setConfigOpen] = useState(false)
   const [voiceAnchor, setVoiceAnchor] = useState<HTMLElement | null>(null)
   const autoHide = useAutoHide(configOpen || voiceAnchor != null)

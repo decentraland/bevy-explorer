@@ -6,13 +6,21 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { PROJECTS, docked, enterWorld, homeSearch, importZip, keepOffProduction, notes, openEditor, storedFile, watch } from './gate'
 
 const REGISTRY = 'https://registry.npmjs.org'
-const PROJECT_ID = 'packed-scene'
 // Color('rgb(255, 0, 0)').hex(), computed by the `color` package and the four it depends on
 const MARKER = /GATE_NPM #FF0000/
+
+// project ids carry a random tail: find one by the name it was made under
+const projectIdOf = (page: Page, name: string): Promise<string> =>
+  page.evaluate(async (name) => {
+    const root = await navigator.storage.getDirectory()
+    const index = await (await (await root.getDirectoryHandle('dcl-editor')).getFileHandle('index.json')).getFile()
+    const { projects } = JSON.parse(await index.text()) as { projects: Array<{ id: string; name: string }> }
+    return projects.find((project) => project.name === name)?.id ?? ''
+  }, name)
 
 interface Lock {
   dependencies: Record<string, string>
@@ -60,7 +68,9 @@ test('an imported scene that needs an npm package resolves it, builds and runs',
   await docked(device)
   await device.shot('g5-2-running')
 
-  const lock = JSON.parse((await storedFile(page, PROJECT_ID, 'dcl-editor.lock.json'))!) as Lock
+  const projectId = await projectIdOf(page, 'Packed scene')
+  expect(projectId, 'the import got an id with a random tail').toMatch(/^packed-scene-[a-z0-9]{4}$/)
+  const lock = JSON.parse((await storedFile(page, projectId, 'dcl-editor.lock.json'))!) as Lock
   const registry = device.requests(REGISTRY)
   note(`locked ${Object.keys(lock.packages).join(', ')}; ${registry.length} registry requests (${registry.filter((l) => l.includes('.tgz')).length} tarballs); marker ${device.lines.find((l) => l.t >= at && MARKER.test(l.text))!.t - at} ms after Open`)
   expect(Object.keys(lock.dependencies)).toEqual(['color'])

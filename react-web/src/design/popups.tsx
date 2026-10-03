@@ -149,7 +149,9 @@ function PopupLayer({ node, isTop, locked }: { node: PopupNode; isTop: boolean; 
   // `.dim` is the shared dimmed+blurred modal scrim; without `dim` it's a transparent click-catcher
   // for an anchored popover (the profile card).
   if (!node.options.backdrop) return <>{content}</>
-  const className = node.options.dim ? `${styles.backdrop} ${styles.dim}${node.options.fixed ? ` ${styles.fixed}` : ''}` : styles.backdrop
+  let className = styles.backdrop
+  if (node.options.dim) className += ` ${styles.dim}`
+  if (node.options.dim && node.options.fixed) className += ` ${styles.fixed}`
   return (
     <div ref={ref} className={className} tabIndex={-1} onClick={() => { if (closesOnBackdrop(node.options)) close() }}>
       {/* dim popups scale in via the pop layer; an anchored popover (dim:false) just appears. */}

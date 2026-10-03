@@ -643,9 +643,7 @@ export interface TravelResultMessage {
   message?: string
 }
 
-/** Spawn or kill the scene editor's own super-user scene (page → scene). `source` is the realm
- *  url the editor package serves it from and `hash` its entity id: the permissions it needs are
- *  granted to that scene alone, and cleared again on a kill. */
+/** Spawn or kill the scene editor's super-user scene, served at `<PAGE_DIR>editor-scene/<hash>`. */
 export interface EditorSceneRequest {
   kind: 'editorScene'
   id: number

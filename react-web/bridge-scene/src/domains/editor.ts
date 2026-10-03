@@ -10,6 +10,8 @@ import type { Ctx } from '../bridge'
 const PERMISSIONS = ['ForceCamera', 'SetLocomotion', 'MovePlayer']
 const LIVE_TIMEOUT_MS = 30_000
 const LIVE_POLL_MS = 500
+// only the realm the page stages (editorHost/host/editorScene.ts) runs with these rights
+const ENTITY_ID = /^baf[a-z2-7]+$/
 
 function setPermissions(hash: string, allow: 'Allow' | null): void {
   for (const ty of PERMISSIONS) BevyApi.setPermanentPermission({ level: 'Scene', value: hash, ty, allow })
@@ -32,12 +34,15 @@ export function registerEditor(ctx: Ctx): void {
     try {
       const run = BevyApi.consoleCommand
       if (run == null) throw new Error('the engine console is not available')
+      if (!ENTITY_ID.test(msg.hash) || !msg.source.endsWith(`/editor-scene/${msg.hash}`)) throw new Error('not the editor scene')
       if (msg.action === 'spawn') {
         setPermissions(msg.hash, 'Allow')
         try {
           await run('spawn', [msg.source, 'true'])
           await waitLive(msg.hash)
         } catch (e) {
+          // a scene that started late or without its rights must not keep running
+          await run('kill', [msg.source]).catch(() => undefined)
           setPermissions(msg.hash, null)
           throw e
         }

@@ -1,12 +1,14 @@
 // The page's side of the editor host contract (v1.1): the object the editor package finds at
 // window.__dclEditorHost, the element it mounts into, and the script tag that loads it.
-// This directory is its own script (editorHost.ts), added to the page when the editor is first
-// opened: keep the HUD's modules out of its imports, types aside.
 
 import type { AuthChainLink, AuthIdentity } from '../../auth/sso'
-import type { EditorServices, EditorSource } from '../config'
 import type { EditorHudMode } from '../hudMode'
-import { signDeployment, signFetch } from './sign'
+import { PROJECT_ID, type EditorServices, type EditorSource } from '../source'
+import { CID_PATTERN } from './cid'
+import { sceneIdFromAbout, stageEditorScene } from './editorScene'
+import type { Signer } from './signer'
+// Vite's worker pipeline is what bundles a file on its own; this one is loaded by script tag.
+import signerUrl from './signer.ts?worker&url'
 
 export interface DeploymentRequest {
   world: string
@@ -34,7 +36,8 @@ export interface DclEditorHostV1 {
   setMode: (mode: 'edit' | 'play' | 'off') => void
   /** Travel the running engine to `<pageDir>preview/<projectId>` at parcel `x,y`. */
   openPreview: (projectId: string, position: string) => Promise<void>
-  /** Spawn the package's own scene (`<editorBase>scene`) with its permissions; resolves once live. */
+  /** Spawn the package's own scene (`<editorBase>scene`, checked against the pin and served by
+   *  the page) with its permissions; resolves once live. */
   spawnEditorScene: () => Promise<{ hash: string }>
   /** fetch a url under `services.projects` as the signed-in wallet. Rejects 'not-allowed' for any
    *  other url and 'not-signed-in' for a guest. */
@@ -76,6 +79,7 @@ type HostWindow = Window & {
   __dclEditorHost?: DclEditorHostV1
   __dclEditor?: Partial<EditorPackage>
   set_url_params?: (optionsJson: string) => void
+  __dclEditorSigner?: (signer: Signer) => void
 }
 
 interface Home {
@@ -83,11 +87,7 @@ interface Home {
   position: string | null
 }
 
-// deploy/web/PREVIEW_REALM.md
-const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
 const PARCEL = /^(-?\d+),(-?\d+)$/
-// a bare content hash: nothing a signed fetch or a login message could be mistaken for
-const ENTITY_ID = /^baf(?:krei|ybei)[a-z2-7]{52}$/
 
 // Where the player was before the first preview.
 let home: Home | null = null
@@ -96,7 +96,7 @@ let returning: Home | null = null
 // The console line that restores the clock the player had when the editor was opened.
 let clock: Promise<string | null> | null = null
 let published = false
-let attempts = 0
+let editorAttempts = 0
 let editor: Promise<EditorPackage> | null = null
 
 /** The engine's url-sync options as the page records them: `editor` as the entry url had it (the
@@ -111,6 +111,35 @@ function hostUrlOptions(optionsJson: string, previewRoot: string, back: Home | n
   return JSON.stringify(options)
 }
 
+// a module that failed to load stays failed under its url, so a retry loads it under another
+function attemptUrl(url: string, attempt: number): string {
+  return attempt === 1 ? url : `${url}${url.includes('?') ? '&' : '?'}retry=${attempt}`
+}
+
+let signer: Promise<Signer> | null = null
+let signerAttempts = 0
+/** The signing script, added to the page the first time it is needed. */
+function loadSigner(): Promise<Signer> {
+  signer ??= new Promise<Signer>((resolve, reject) => {
+    const w = window as HostWindow
+    const script = document.createElement('script')
+    script.type = 'module'
+    script.src = attemptUrl(signerUrl, ++signerAttempts)
+    w.__dclEditorSigner = (loaded) => {
+      delete w.__dclEditorSigner
+      resolve(loaded)
+    }
+    script.onerror = () => {
+      delete w.__dclEditorSigner
+      script.remove()
+      signer = null
+      reject(new Error('the signer failed to load'))
+    }
+    document.head.appendChild(script)
+  })
+  return signer
+}
+
 let guarded = false
 /** Route the engine's url sync through hostUrlOptions; a no-op until boot.js has defined it.
  *  `flag` is the entry url's `editor` value (false when it had none). */
@@ -120,14 +149,6 @@ export function guardUrlSync(pageDir: string, flag: string | boolean): void {
   if (guarded || sync == null) return
   guarded = true
   w.set_url_params = (optionsJson) => sync(hostUrlOptions(optionsJson, `${pageDir}preview/`, home ?? returning, flag))
-}
-
-/** The scene `/spawn` loads from a realm: the first its `/about` lists. */
-function sceneHashFromAbout(about: unknown): string {
-  const urn = (about as { configurations?: { scenesUrn?: unknown[] } } | null)?.configurations?.scenesUrn?.[0]
-  const hash = typeof urn === 'string' ? /^urn:decentraland:entity:([^?]+)/.exec(urn)?.[1] : undefined
-  if (hash == null) throw new Error('the editor scene realm lists no scene')
-  return hash
 }
 
 /** `url` normalised, when it is under `base`; null otherwise. */
@@ -143,10 +164,9 @@ function clockRestore(reply: string): string | null {
   return clock == null ? null : `/time ${Number(clock[2]) / 3600} ${clock[1]}`
 }
 
-/** Publish the host object and its container. */
 function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps, flag: string | boolean): void {
   const w = window as HostWindow
-  const sceneUrl = `${source.base}scene`
+  const packageScene = `${source.base}scene`
   guardUrlSync(pageDir, flag)
 
   const container = document.createElement('div')
@@ -154,7 +174,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
   container.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:var(--z-editor)'
   document.body.appendChild(container)
 
-  let scene: Promise<{ hash: string }> | null = null
+  let scene: Promise<{ hash: string; realm: string }> | null = null
   // before the editor first stops the clock to edit
   const readClock = (): void => {
     clock ??= deps.engineConsole('/time').then(clockRestore, () => null)
@@ -170,7 +190,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     const spawned = scene
     scene = null
     void spawned
-      ?.then(({ hash }) => deps.scene('kill', sceneUrl, hash))
+      ?.then(({ hash, realm }) => deps.scene('kill', realm, hash))
       .catch((e: unknown) => console.error('[editor host] killing the editor scene failed', e))
     // the editor pins the scene it inspects and stops the clock to edit
     const restore = clock
@@ -219,14 +239,23 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     },
     spawnEditorScene() {
       scene ??= (async () => {
-        const about = await fetch(`${sceneUrl}/about`)
-        if (!about.ok) throw new Error(`the editor scene realm answered ${about.status}`)
-        const hash = sceneHashFromAbout(await about.json())
-        await deps.scene('spawn', sceneUrl, hash)
-        return { hash }
+        let hash = source.editorSceneEntity
+        if (hash == null) {
+          // a dev package: the scene its realm lists
+          const about = await fetch(`${packageScene}/about`)
+          if (!about.ok) throw new Error(`the editor scene realm answered ${about.status}`)
+          hash = sceneIdFromAbout(await about.json())
+        }
+        const realm = await stageEditorScene(packageScene, hash, pageDir)
+        await deps.scene('spawn', realm, hash)
+        return { hash, realm }
       })()
-      scene.catch(() => (scene = null))
-      return scene
+      const pending = scene
+      // leave() may already have started another
+      pending.catch(() => {
+        if (scene === pending) scene = null
+      })
+      return pending.then(({ hash }) => ({ hash }))
     },
     async signedFetch(url, init) {
       const target = under(source.services.projects, url)
@@ -235,16 +264,17 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       if (identity == null) throw new Error('not-signed-in')
       const method = (init?.method ?? 'GET').toUpperCase()
       const own = Object.entries(init?.headers ?? {}).filter(([name]) => !/^x-identity-/i.test(name))
-      const signed = await signFetch(identity, method, target)
+      const signed = await (await loadSigner()).signFetch(identity, method, target)
       return fetch(target, { method, body: init?.body, headers: { ...Object.fromEntries(own), ...signed } })
     },
     async signDeployment(request) {
       const identity = deps.login()
       if (identity == null) throw new Error('not-signed-in')
-      if (!ENTITY_ID.test(request.entityId)) throw new Error('signDeployment: invalid entity id')
+      // a bare content hash: nothing a signed fetch or a login message could be mistaken for
+      if (!CID_PATTERN.test(request.entityId)) throw new Error('signDeployment: invalid entity id')
       const server = new URL(source.services.worldsContent).host
       if (!(await deps.confirmDeployment(request, identity.authChain[0].payload, server))) throw new Error('cancelled')
-      return signDeployment(identity, request.entityId)
+      return (await loadSigner()).signDeployment(identity, request.entityId)
     },
     openCreatePage() {
       leave()
@@ -287,10 +317,9 @@ export function loadEditor(source: EditorSource, pageDir: string, deps: EditorHo
     }
     if (w.__dclEditor != null) return loaded()
     script.type = 'module'
-    // a module that failed to load stays failed under its url
-    script.src = `${source.base}editor.js${attempts++ === 0 ? '' : `?retry=${attempts}`}`
-    if (source.integrity != null) {
-      script.integrity = source.integrity
+    script.src = attemptUrl(`${source.base}editor.js`, ++editorAttempts)
+    if (source.editorJsIntegrity != null) {
+      script.integrity = source.editorJsIntegrity
       script.crossOrigin = 'anonymous'
     }
     script.onload = loaded
