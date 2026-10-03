@@ -45,7 +45,7 @@ SEED_FORGER=4
 SEED_PEER_C=5
 SEED_OBS_C=6
 
-HEADLESS="$REPO/target/debug/headless"
+HEADLESS="$REPO/target/debug/dcl_headless_server"
 UTIL="$REPO/target/debug/harness-util"
 PIDS=()
 
@@ -80,7 +80,7 @@ rm -rf "$WORK"; mkdir -p "$LOGS" "$WORK/content/contents"
 say "building headless + sidecar + harness-util (debug)..."
 # headless spawns the dcl_deno_ipc sidecar binary; both are required (see CLAUDE.md)
 ( cd "$REPO" && cargo build --package dcl_deno_ipc \
-    && cargo build --features headless --bin headless \
+    && cargo build --features headless --bin dcl_headless_server \
     && cargo build -p harness-util ) \
   >"$LOGS/build.log" 2>&1 || die "build failed (see $LOGS/build.log)"
 

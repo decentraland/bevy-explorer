@@ -79,7 +79,7 @@ static SESSION_LOG: OnceLock<String> = OnceLock::new();
 // flags. The rendering clients' options (`ClientOptions`) are not flags here at all.
 #[derive(clap::Parser)]
 #[command(
-    name = "headless",
+    name = "dcl_headless_server",
     about = "Headless scene runner: an authoritative scene server, or a render-free test client",
     mut_arg("realm", |a| a.help("Realm to boot into; absent = http://localhost:8000")),
     mut_arg("position", |a| {

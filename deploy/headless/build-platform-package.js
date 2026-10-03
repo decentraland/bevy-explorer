@@ -5,7 +5,7 @@
 //
 //   node deploy/headless/build-platform-package.js \
 //     --platform darwin-arm64 --version 0.1.0 \
-//     --engine target/release/headless --sidecar target/release/dcl_deno_ipc \
+//     --engine target/release/dcl_headless_server --sidecar target/release/dcl_deno_ipc \
 //     --out deploy/headless/dist
 
 const fs = require('fs')
@@ -43,7 +43,7 @@ fs.mkdirSync(binDir, { recursive: true })
 
 const exeSuffix = target.os === 'win32' ? '.exe' : ''
 for (const [src, name] of [
-  [engine, `headless${exeSuffix}`],
+  [engine, `dcl_headless_server${exeSuffix}`],
   [sidecar, `dcl_deno_ipc${exeSuffix}`]
 ]) {
   fs.copyFileSync(src, path.join(binDir, name))
@@ -78,7 +78,7 @@ fs.writeFileSync(
   `# @dcl-regenesislabs/bevy-headless-server-${platform}\n\n` +
     `Platform binaries for [@dcl-regenesislabs/bevy-headless-server](https://www.npmjs.com/package/@dcl-regenesislabs/bevy-headless-server).\n` +
     `Install that package instead; this one is selected automatically.\n\n` +
-    `\`headless\` and \`dcl_deno_ipc\` must stay in the same directory — the engine execs the\n` +
+    `\`dcl_headless_server\` and \`dcl_deno_ipc\` must stay in the same directory — the engine execs the\n` +
     `sidecar from its own location.\n`
 )
 
