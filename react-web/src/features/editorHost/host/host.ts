@@ -1,4 +1,4 @@
-// The page's side of the editor host contract (v1): the object the editor package finds at
+// The page's side of the editor host contract (v1.1): the object the editor package finds at
 // window.__dclEditorHost, the element it mounts into, and the script tag that loads it.
 // This directory is its own script (editorHost.ts), added to the page when the editor is first
 // opened: keep the HUD's modules out of its imports, types aside.
@@ -42,8 +42,17 @@ export interface DclEditorHostV1 {
   /** Ask the player to confirm a Worlds deployment, then sign its entity id. Rejects 'cancelled'
    *  when declined and 'not-signed-in' for a guest. */
   signDeployment: (request: DeploymentRequest) => Promise<AuthChainLink[]>
+  /** Leave the scene as exit() does, then show the HUD's Create page. */
+  openCreatePage: () => void
   /** Unmount the editor, kill its scene, restore the HUD and the clock, and travel back. */
   exit: () => void
+}
+
+/** What editor.js leaves at window.__dclEditor. */
+export interface EditorPackage {
+  /** Render the editor's home into `el` (the Create page's body); returns its unmount. */
+  mountHome: (el: HTMLElement, api: { close: () => void }) => () => void
+  unmount: () => void
 }
 
 /** What the host needs from the HUD, read at call time. */
@@ -55,16 +64,17 @@ export interface EditorHostDeps {
   identity: () => { address: string | null; isGuest: boolean }
   /** The stored identity of the wallet the player is in-world as; null for a guest. */
   login: () => AuthIdentity | null
-  /** The player's answer to "sign this deployment as `wallet`?". */
-  confirmDeployment: (request: DeploymentRequest, wallet: string) => Promise<boolean>
+  /** The player's answer to "sign this deployment as `wallet`, for `server`?". */
+  confirmDeployment: (request: DeploymentRequest, wallet: string, server: string) => Promise<boolean>
   setMode: (mode: EditorHudMode) => void
+  showCreatePage: (open: boolean) => void
   travel: (realm: string, parcel?: { x: number; y: number }) => Promise<void>
   scene: (action: 'spawn' | 'kill', source: string, hash: string) => Promise<void>
 }
 
 type HostWindow = Window & {
   __dclEditorHost?: DclEditorHostV1
-  __dclEditor?: { mount: () => void; unmount: () => void }
+  __dclEditor?: Partial<EditorPackage>
   set_url_params?: (optionsJson: string) => void
 }
 
@@ -77,14 +87,17 @@ interface Home {
 const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
 const PARCEL = /^(-?\d+),(-?\d+)$/
 // a bare content hash: nothing a signed fetch or a login message could be mistaken for
-const ENTITY_ID = /^[A-Za-z0-9]{46,64}$/
+const ENTITY_ID = /^baf(?:krei|ybei)[a-z2-7]{52}$/
 
 // Where the player was before the first preview.
 let home: Home | null = null
+// The home being travelled back to: the url still names the preview realm until the travel lands.
+let returning: Home | null = null
 // The console line that restores the clock the player had when the editor was opened.
 let clock: Promise<string | null> | null = null
 let published = false
 let attempts = 0
+let editor: Promise<EditorPackage> | null = null
 
 /** The engine's url-sync options as the page records them: `editor` as the entry url had it (the
  *  engine echoes its own, unset, flag) and a preview realm replaced by the place to go back to. */
@@ -106,7 +119,7 @@ export function guardUrlSync(pageDir: string, flag: string | boolean): void {
   const sync = w.set_url_params
   if (guarded || sync == null) return
   guarded = true
-  w.set_url_params = (optionsJson) => sync(hostUrlOptions(optionsJson, `${pageDir}preview/`, home, flag))
+  w.set_url_params = (optionsJson) => sync(hostUrlOptions(optionsJson, `${pageDir}preview/`, home ?? returning, flag))
 }
 
 /** The scene `/spawn` loads from a realm: the first its `/about` lists. */
@@ -142,6 +155,44 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
   document.body.appendChild(container)
 
   let scene: Promise<{ hash: string }> | null = null
+  // before the editor first stops the clock to edit
+  const readClock = (): void => {
+    clock ??= deps.engineConsole('/time').then(clockRestore, () => null)
+  }
+
+  const leave = (): void => {
+    try {
+      w.__dclEditor?.unmount?.()
+    } catch (e) {
+      console.error('[editor host] unmount failed', e)
+    }
+    host.openProject = null
+    const spawned = scene
+    scene = null
+    void spawned
+      ?.then(({ hash }) => deps.scene('kill', sceneUrl, hash))
+      .catch((e: unknown) => console.error('[editor host] killing the editor scene failed', e))
+    // the editor pins the scene it inspects and stops the clock to edit
+    const restore = clock
+    clock = null
+    void deps
+      .engineConsole('/set_scene')
+      .then(() => restore)
+      .then((line) => (line == null ? undefined : deps.engineConsole(line)))
+      .catch((e: unknown) => console.error('[editor host] restoring the engine failed', e))
+    deps.setMode('off')
+    const back = home
+    home = null
+    if (back == null) return
+    returning = back
+    const parcel = PARCEL.exec(back.position ?? '')
+    deps
+      .travel(back.realm ?? deps.defaultRealm, parcel ? { x: Number(parcel[1]), y: Number(parcel[2]) } : undefined)
+      .catch((e: unknown) => console.error('[editor host] travelling back failed', e))
+      .finally(() => {
+        if (returning === back) returning = null
+      })
+  }
 
   const host: DclEditorHostV1 = {
     version: 1,
@@ -153,12 +204,16 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     services: source.services,
     engineConsole: deps.engineConsole,
     identity: deps.identity,
-    setMode: deps.setMode,
+    setMode(mode) {
+      if (mode !== 'off') readClock()
+      deps.setMode(mode)
+    },
     async openPreview(projectId, position) {
       const parcel = PARCEL.exec(position)
       if (!PROJECT_ID.test(projectId) || parcel == null) throw new Error('openPreview: invalid project id or position')
+      readClock()
       const q = new URLSearchParams(location.search)
-      home ??= { realm: q.get('realm'), position: q.get('position') }
+      home ??= returning ?? { realm: q.get('realm'), position: q.get('position') }
       // no trailing slash: the engine appends /about
       await deps.travel(`${pageDir}preview/${projectId}`, { x: Number(parcel[1]), y: Number(parcel[2]) })
     },
@@ -187,58 +242,50 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       const identity = deps.login()
       if (identity == null) throw new Error('not-signed-in')
       if (!ENTITY_ID.test(request.entityId)) throw new Error('signDeployment: invalid entity id')
-      if (!(await deps.confirmDeployment(request, identity.authChain[0].payload))) throw new Error('cancelled')
+      const server = new URL(source.services.worldsContent).host
+      if (!(await deps.confirmDeployment(request, identity.authChain[0].payload, server))) throw new Error('cancelled')
       return signDeployment(identity, request.entityId)
     },
+    openCreatePage() {
+      leave()
+      deps.showCreatePage(true)
+    },
     exit() {
-      try {
-        w.__dclEditor?.unmount()
-      } catch (e) {
-        console.error('[editor host] unmount failed', e)
-      }
-      host.openProject = null
-      const spawned = scene
-      scene = null
-      void spawned
-        ?.then(({ hash }) => deps.scene('kill', sceneUrl, hash))
-        .catch((e: unknown) => console.error('[editor host] killing the editor scene failed', e))
-      // the editor pins the scene it inspects and stops the clock to edit
-      const restore = clock
-      clock = null
-      void deps
-        .engineConsole('/set_scene')
-        .then(() => restore)
-        .then((line) => (line == null ? undefined : deps.engineConsole(line)))
-        .catch((e: unknown) => console.error('[editor host] restoring the engine failed', e))
-      deps.setMode('off')
-      const back = home
-      home = null
-      if (back == null) return
-      const parcel = PARCEL.exec(back.position ?? '')
-      deps
-        .travel(back.realm ?? deps.defaultRealm, parcel ? { x: Number(parcel[1]), y: Number(parcel[2]) } : undefined)
-        .catch((e: unknown) => console.error('[editor host] travelling back failed', e))
+      leave()
+      deps.showCreatePage(false)
     }
   }
   w.__dclEditorHost = host
 }
 
-/** Open the editor: the first time publishes the host and loads the package, later times mount
- *  it again. Settles when the editor has taken over, or rejects when its package failed to load.
- *  `flag` is the entry url's `editor` value (false when it had none). */
-export function openEditor(source: EditorSource, pageDir: string, deps: EditorHostDeps, flag: string | boolean): Promise<void> {
+/** Publish the host (once) and load the editor package (once). Rejects when the package failed
+ *  to load or has no mountHome; a later call tries again. `flag` is the entry url's `editor`
+ *  value (false when it had none). */
+export function loadEditor(source: EditorSource, pageDir: string, deps: EditorHostDeps, flag: string | boolean): Promise<EditorPackage> {
   const w = window as HostWindow
-  clock ??= deps.engineConsole('/time').then(clockRestore, () => null)
   if (!published) {
     published = true
     publishHost(source, pageDir, deps, flag)
   }
-  if (w.__dclEditor != null) {
-    w.__dclEditor.mount()
-    return Promise.resolve()
-  }
-  return new Promise((resolve, reject) => {
+  editor ??= new Promise<EditorPackage>((resolve, reject) => {
     const script = document.createElement('script')
+    const failed = (): void => {
+      script.remove()
+      editor = null
+      reject(new Error('the editor package failed to load'))
+    }
+    const loaded = (): void => {
+      const pkg = w.__dclEditor
+      if (typeof pkg?.mountHome === 'function' && typeof pkg.unmount === 'function') return resolve(pkg as EditorPackage)
+      try {
+        // an older package mounts itself on load
+        pkg?.unmount?.()
+      } catch (e) {
+        console.error('[editor host] unmount failed', e)
+      }
+      failed()
+    }
+    if (w.__dclEditor != null) return loaded()
     script.type = 'module'
     // a module that failed to load stays failed under its url
     script.src = `${source.base}editor.js${attempts++ === 0 ? '' : `?retry=${attempts}`}`
@@ -246,14 +293,9 @@ export function openEditor(source: EditorSource, pageDir: string, deps: EditorHo
       script.integrity = source.integrity
       script.crossOrigin = 'anonymous'
     }
-    const failed = (): void => {
-      script.remove()
-      clock = null
-      deps.setMode('off')
-      reject(new Error('the editor package failed to load'))
-    }
-    script.onload = () => (w.__dclEditor != null ? resolve() : failed())
+    script.onload = loaded
     script.onerror = failed
     document.head.appendChild(script)
   })
+  return editor
 }

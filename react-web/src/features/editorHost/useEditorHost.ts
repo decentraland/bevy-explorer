@@ -1,8 +1,8 @@
-// Opens the scene editor in this page (config.ts): from a Create button, or once in-world when
-// the entry url asked for it. Until then it does nothing: no element, no script, no request.
+// Hosts the scene editor in this page (config.ts): its home renders in the Create page, opened
+// from a Create button or once in-world when the entry url asked for it. Until then it does
+// nothing: no element, no script, no request.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { showToast } from '../../design'
 import { bridgeChannelName } from '../../engine/protocol'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { PAGE_DIR } from '../../lib/publicUrl'
@@ -12,6 +12,7 @@ import { editorEntry, type EditorSource } from './config'
 import { confirmDeployment } from './DeployConfirm'
 import type { EditorEntry } from './entry'
 import type { EditorHostScript } from './host/editorHost'
+import type { EditorPackage } from './host/host'
 // Vite's worker pipeline is what bundles a file on its own; this one is loaded by script tag.
 import hostScriptUrl from './host/editorHost.ts?worker&url'
 
@@ -53,7 +54,6 @@ export function useEditorHost(source: EditorSource | null, session: EngineSessio
   const [entry] = useState(() => editorEntry(location.search))
   const flag = entry.project ?? entry.open
   const [loading, setLoading] = useState(false)
-  const busy = useRef(false)
 
   // with `?editor`, before the engine's first url sync would drop the flag
   const engineUp = session.login.engineReady
@@ -65,14 +65,14 @@ export function useEditorHost(source: EditorSource | null, session: EngineSessio
     )
   }, [source, entry, flag, engineUp])
 
-  const open = useCallback(() => {
-    if (source == null || busy.current || latest.current.editor.mode !== 'off') return
-    busy.current = true
-    setLoading(true)
-    bridgeChannelName() // seeds __bridgeSession when nothing has yet
-    loadHostScript()
-      .then((host) =>
-        host.openEditor(
+  const load = useCallback(
+    async (): Promise<EditorPackage> => {
+      if (source == null) throw new Error('no editor on this page')
+      setLoading(true)
+      bridgeChannelName() // seeds __bridgeSession when nothing has yet
+      try {
+        const host = await loadHostScript()
+        return await host.loadEditor(
           source,
           PAGE_DIR,
           {
@@ -92,27 +92,27 @@ export function useEditorHost(source: EditorSource | null, session: EngineSessio
             },
             confirmDeployment,
             setMode: (mode) => latest.current.editor.setMode(mode),
+            showCreatePage: (open) => latest.current.create.show(open),
             travel: (realm, parcel) => latest.current.editor.travel(realm, parcel),
             scene: (action, url, hash) => latest.current.editor.scene(action, url, hash)
           },
           flag
         )
-      )
-      .catch(() => showToast('Create could not be loaded. Try again in a moment.', { tone: 'error' }))
-      .finally(() => {
-        busy.current = false
+      } finally {
         setLoading(false)
-      })
-  }, [source, flag])
+      }
+    },
+    [source, flag]
+  )
 
-  // once: leaving the editor travels, and the player is in-world again after it
+  // once: Create opens when the player is first in-world
   const auto = useRef(entry.open)
   const inWorld = session.phase === 'world'
   useEffect(() => {
-    if (!auto.current || !inWorld) return
+    if (source == null || !auto.current || !inWorld) return
     auto.current = false
-    open()
-  }, [inWorld, open])
+    latest.current.create.show(true)
+  }, [source, inWorld])
 
-  return useMemo(() => (source == null ? null : { open, loading }), [source, open, loading])
+  return useMemo(() => (source == null ? null : { load, loading }), [source, load, loading])
 }

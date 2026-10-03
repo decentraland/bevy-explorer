@@ -1,10 +1,12 @@
-// The HUD's way into the scene editor: what the Create buttons (menu top bar, sidebar rail) read.
-// null, the default, is a page with no editor: the buttons are not rendered.
+// The HUD's way into the scene editor: what the Create entry points (menu top bar, sidebar rail)
+// and the Create page read. null, the default, is a page with no editor: Create is not offered.
 
 import { createContext } from 'react'
+import type { EditorPackage } from './host/host'
 
 export interface EditorEntry {
-  open: () => void
+  /** The editor package, loaded (and the host published) the first time. */
+  load: () => Promise<EditorPackage>
   /** The editor package is downloading. */
   loading: boolean
 }

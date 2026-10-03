@@ -53,8 +53,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: 'Settings', icon: 'settings', hotkey: 'Settings', page: 'settings' }
 ]
 
-// The scene editor: not a page, it closes the menu and takes the screen. Listed only where the
-// editor is available.
+// The scene editor's home (editorHost/CreatePage). Listed only where the editor is available.
 const CREATE_ITEM: MenuItem = { label: 'Create', icon: 'create', page: 'create' }
 
 export function MainMenuShell({
@@ -114,10 +113,7 @@ export function MainMenuShell({
                 data-page={m.page}
                 aria-current={m.page === active ? 'page' : undefined}
                 onClick={() => {
-                  if (m === CREATE_ITEM) {
-                    onClose()
-                    create?.open()
-                  } else if (m.page !== active) onNavigate(m.page)
+                  if (m.page !== active) onNavigate(m.page)
                 }}
               >
                 <span className={styles.menuIcon}>
