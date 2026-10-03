@@ -32,7 +32,9 @@ use common::{
     sets::SceneSets,
     structs::{EmoteLifecycle, EmoteLifecycleEvent, EmoteLifecycleSource, EmoteMask, PrimaryUser},
 };
-use comms::global_crdt::{process_transport_updates, CrdtContexts, ForeignPlayer};
+use comms::global_crdt::{
+    process_transport_updates, CrdtContexts, ForeignPlayer, SceneCrdtContext,
+};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{common::AvatarMask, EmoteState, PbAvatarEmoteCommand},
@@ -133,6 +135,7 @@ fn flush_emote_reports(
     mut scenes: Query<&mut RendererSceneContext>,
     containing_scene: ContainingScene,
     crdt_contexts: Res<CrdtContexts>,
+    scene_contexts: Query<(Entity, &SceneCrdtContext)>,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs_f64();
@@ -145,6 +148,15 @@ fn flush_emote_reports(
         // Which scenes hear this avatar, and as which entity. A player: the scenes around it that
         // share its crdt context (all of them on a client; its room's on a multi-tenant server).
         let (targets, id) = match (foreign, primary, container) {
+            // a room's peer is heard by the scenes on that room's context, wherever it stands
+            (Some(foreign), ..) if foreign.context != crdt_contexts.shared() => (
+                scene_contexts
+                    .iter()
+                    .filter(|(_, context)| context.0 == foreign.context)
+                    .map(|(scene, _)| scene)
+                    .collect(),
+                foreign.scene_id,
+            ),
             (Some(foreign), ..) => {
                 let targets = containing_scene
                     .get_area(avatar, PLAYER_COLLIDER_RADIUS)
