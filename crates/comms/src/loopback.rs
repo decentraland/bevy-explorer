@@ -13,6 +13,7 @@ use wallet::Wallet;
 
 use crate::{
     global_crdt::{GlobalCrdtState, NetworkUpdate, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
+    pulse::plugin::LocalListenerLive,
     NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport, TransportType,
 };
 
@@ -106,6 +107,7 @@ fn pump_loopbacks(
     contexts: Query<&GlobalCrdtState>,
     wallet: Res<Wallet>,
     time: Res<Time>,
+    pulse_live: Res<LocalListenerLive>,
 ) {
     let me = wallet.address();
     let now = time.elapsed_secs_f64();
@@ -171,9 +173,11 @@ fn pump_loopbacks(
                 }
                 .into()
             } else {
-                // avatar state reaches the server as its own movement feed (Pulse's role
-                // for a real server), not as an ignored byte-transport packet
+                // avatar state reaches a server over Pulse; only while the in-engine listener is
+                // not carrying it does the room hand the player's movement over itself, so a
+                // solo preview keeps working offline
                 let message = match message {
+                    rfc4::packet::Message::Movement(_) if pulse_live.0 => continue,
                     rfc4::packet::Message::Movement(movement) => PlayerMessage::Movement {
                         movement: Box::new(movement),
                         teleport: false,
