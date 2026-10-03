@@ -67,11 +67,16 @@ impl Plugin for TextureCameraPlugin {
             (
                 update_layer_properties,
                 update_camera_layers,
-                update_texture_cameras,
-                update_avatar_layers,
-                update_directional_light_layers
-                    .after(update_directional_light)
-                    .before(PropagateSet::<RenderLayers>::default()),
+                // consumers of layer properties / changed_layers must see this frame's changes,
+                // since changed_layers is cleared in PostUpdate
+                (
+                    update_texture_cameras,
+                    update_avatar_layers,
+                    update_directional_light_layers
+                        .after(update_directional_light)
+                        .before(PropagateSet::<RenderLayers>::default()),
+                )
+                    .after(update_layer_properties),
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -98,8 +103,45 @@ impl From<PbCameraLayer> for CameraLayer {
 
 #[derive(Resource, Default)]
 pub struct SceneLayerProperties {
+    // active owner per render layer (latest claim wins)
     layers: HashMap<u32, (Entity, PbCameraLayer)>,
-    ent_to_layer: HashMap<Entity, u32>,
+    // every claimant: render layer, props and claim order
+    ent_to_layer: HashMap<Entity, (u32, PbCameraLayer, u64)>,
+    next_claim: u64,
+}
+
+impl SceneLayerProperties {
+    fn claim(&mut self, ent: Entity, render_layer: u32, layer: PbCameraLayer) {
+        self.next_claim += 1;
+        self.ent_to_layer
+            .insert(ent, (render_layer, layer.clone(), self.next_claim));
+        self.layers.insert(render_layer, (ent, layer));
+    }
+
+    // drop the entity's claim. if it owned the layer, hand the layer to the most recent
+    // remaining claimant (or clear it) and return it
+    fn release(&mut self, ent: Entity) -> Option<u32> {
+        let (render_layer, ..) = self.ent_to_layer.remove(&ent)?;
+        if !self
+            .layers
+            .get(&render_layer)
+            .is_some_and(|(e, _)| *e == ent)
+        {
+            return None;
+        }
+
+        let next = self
+            .ent_to_layer
+            .iter()
+            .filter(|(_, (l, ..))| *l == render_layer)
+            .max_by_key(|(_, (.., order))| *order)
+            .map(|(e, (_, layer, _))| (*e, layer.clone()));
+        match next {
+            Some(next) => self.layers.insert(render_layer, next),
+            None => self.layers.remove(&render_layer),
+        };
+        Some(render_layer)
+    }
 }
 
 fn update_layer_properties(
@@ -108,23 +150,15 @@ fn update_layer_properties(
     mut props: ResMut<SceneLayerProperties>,
     mut cache: ResMut<TextureLayersCache>,
 ) {
-    let mut changed = HashSet::new();
-
     for removed in removed.read() {
-        if let Some(layer) = props.ent_to_layer.remove(&removed) {
-            if props.layers.get(&layer).is_some_and(|(e, _)| e == &removed) {
-                props.layers.remove(&layer);
-                cache.changed_layers.insert(layer);
-            }
+        if let Some(layer) = props.release(removed) {
+            cache.changed_layers.insert(layer);
         }
     }
 
     for (ent, layer, container) in q.iter() {
-        if let Some(layer) = props.ent_to_layer.remove(&ent) {
-            if props.layers.get(&layer).is_some_and(|(e, _)| e == &ent) {
-                props.layers.remove(&layer);
-                changed.insert(layer);
-            }
+        if let Some(layer) = props.release(ent) {
+            cache.changed_layers.insert(layer);
         }
 
         if layer.0.layer == 0 {
@@ -133,7 +167,7 @@ fn update_layer_properties(
         }
 
         let render_layer = cache.get_layer(container.root, layer.0.layer);
-        props.layers.insert(render_layer, (ent, layer.0.clone()));
+        props.claim(ent, render_layer, layer.0.clone());
         cache.changed_layers.insert(render_layer);
         debug!("changed layer {:?} -> {:?}", render_layer, &layer.0);
     }
@@ -503,5 +537,286 @@ impl TextureLayersCache {
         });
         slf.changed_layers.clear();
         slf.free = free;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dcl_component::SceneEntityId;
+
+    fn setup() -> (App, Entity) {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .init_resource::<TextureLayersCache>()
+            .init_resource::<SceneLayerProperties>()
+            .add_systems(Update, update_layer_properties);
+        let root = app.world_mut().spawn_empty().id();
+        (app, root)
+    }
+
+    fn spawn_layer(app: &mut App, root: Entity, layer: u32) -> Entity {
+        app.world_mut()
+            .spawn((
+                CameraLayer(PbCameraLayer {
+                    layer,
+                    ..Default::default()
+                }),
+                ContainerEntity {
+                    container: root,
+                    root,
+                    container_id: SceneEntityId::ROOT,
+                },
+            ))
+            .id()
+    }
+
+    fn render_layer(app: &mut App, root: Entity, layer: u32) -> u32 {
+        app.world_mut()
+            .resource_mut::<TextureLayersCache>()
+            .get_layer(root, layer)
+    }
+
+    #[test]
+    fn removing_camera_layer_removes_layer_properties() {
+        let (mut app, root) = setup();
+        let ent = spawn_layer(&mut app, root, 1);
+        app.update();
+        let ix = render_layer(&mut app, root, 1);
+        assert!(app
+            .world()
+            .resource::<SceneLayerProperties>()
+            .layers
+            .contains_key(&ix));
+
+        app.world_mut().entity_mut(ent).remove::<CameraLayer>();
+        app.update();
+        let props = app.world().resource::<SceneLayerProperties>();
+        assert!(!props.layers.contains_key(&ix));
+        assert!(props.ent_to_layer.is_empty());
+    }
+
+    #[test]
+    fn despawning_camera_layer_entity_removes_layer_properties() {
+        let (mut app, root) = setup();
+        let ent = spawn_layer(&mut app, root, 1);
+        app.update();
+
+        app.world_mut().despawn(ent);
+        app.update();
+        let props = app.world().resource::<SceneLayerProperties>();
+        assert!(props.layers.is_empty());
+        assert!(props.ent_to_layer.is_empty());
+    }
+
+    #[test]
+    fn avatar_layers_follow_camera_layer_add_and_remove() {
+        let (mut app, root) = setup();
+        app.add_systems(Update, update_avatar_layers.after(update_layer_properties))
+            .add_systems(PostUpdate, TextureLayersCache::cleanup);
+        let avatar = app
+            .world_mut()
+            .spawn((PrimaryUser::default(), Propagate(RenderLayers::default())))
+            .id();
+        let ent = app
+            .world_mut()
+            .spawn((
+                CameraLayer(PbCameraLayer {
+                    layer: 1,
+                    show_avatars: Some(true),
+                    ..Default::default()
+                }),
+                ContainerEntity {
+                    container: root,
+                    root,
+                    container_id: SceneEntityId::ROOT,
+                },
+            ))
+            .id();
+        app.update();
+        let ix = render_layer(&mut app, root, 1) as usize;
+        let avatar_layers = |app: &App| {
+            app.world()
+                .get::<Propagate<RenderLayers>>(avatar)
+                .unwrap()
+                .0
+                .clone()
+        };
+        assert!(avatar_layers(&app).intersects(&RenderLayers::layer(ix)));
+
+        app.world_mut().entity_mut(ent).remove::<CameraLayer>();
+        app.update();
+        assert!(!avatar_layers(&app).intersects(&RenderLayers::layer(ix)));
+    }
+
+    #[test]
+    fn directional_light_layer_cleared_when_camera_layer_removed_or_disabled() {
+        let (mut app, root) = setup();
+        // update_directional_light rebuilds SceneGlobalLight (layers included) every frame
+        app.init_resource::<SceneGlobalLight>()
+            .init_resource::<scene_runner::initialize_scene::ScenePointers>()
+            .init_resource::<scene_runner::initialize_scene::LiveScenes>()
+            .init_resource::<scene_runner::initialize_scene::PortableScenes>()
+            .insert_resource(common::structs::TimeOfDay { time: 0.0 })
+            .add_systems(
+                Update,
+                (
+                    update_directional_light,
+                    update_directional_light_layers
+                        .after(update_directional_light)
+                        .after(update_layer_properties),
+                ),
+            );
+        let light_layer = |directional_light| {
+            CameraLayer(PbCameraLayer {
+                layer: 1,
+                directional_light: Some(directional_light),
+                ..Default::default()
+            })
+        };
+        let ent = app
+            .world_mut()
+            .spawn((
+                light_layer(true),
+                ContainerEntity {
+                    container: root,
+                    root,
+                    container_id: SceneEntityId::ROOT,
+                },
+            ))
+            .id();
+        app.update();
+        let ix = RenderLayers::layer(render_layer(&mut app, root, 1) as usize);
+        let lit = |app: &App| {
+            app.world()
+                .resource::<SceneGlobalLight>()
+                .layers
+                .intersects(&ix)
+        };
+        assert!(lit(&app));
+
+        // disabling directional_light clears the bit
+        app.world_mut().entity_mut(ent).insert(light_layer(false));
+        app.update();
+        assert!(!lit(&app));
+
+        // re-enabling then removing the layer clears the bit
+        app.world_mut().entity_mut(ent).insert(light_layer(true));
+        app.update();
+        assert!(lit(&app));
+        app.world_mut().entity_mut(ent).remove::<CameraLayer>();
+        app.update();
+        assert!(!lit(&app));
+    }
+
+    #[test]
+    fn moving_camera_layer_removes_old_layer() {
+        let (mut app, root) = setup();
+        let ent = spawn_layer(&mut app, root, 1);
+        app.update();
+        let old_ix = render_layer(&mut app, root, 1);
+        let new_ix = render_layer(&mut app, root, 2);
+
+        app.world_mut()
+            .entity_mut(ent)
+            .insert(CameraLayer(PbCameraLayer {
+                layer: 2,
+                ..Default::default()
+            }));
+        app.update();
+        let props = app.world().resource::<SceneLayerProperties>();
+        assert!(!props.layers.contains_key(&old_ix));
+        assert!(props.layers.contains_key(&new_ix));
+        assert_eq!(props.ent_to_layer.get(&ent).map(|(l, ..)| *l), Some(new_ix));
+    }
+
+    fn set_layer(app: &mut App, ent: Entity, layer: u32, show_avatars: bool) {
+        app.world_mut()
+            .entity_mut(ent)
+            .insert(CameraLayer(PbCameraLayer {
+                layer,
+                show_avatars: Some(show_avatars),
+                ..Default::default()
+            }));
+    }
+
+    fn owner(app: &App, ix: u32) -> Option<(Entity, bool)> {
+        app.world()
+            .resource::<SceneLayerProperties>()
+            .layers
+            .get(&ix)
+            .map(|(e, l)| (*e, l.show_avatars()))
+    }
+
+    #[test]
+    fn removing_latest_owner_reverts_layer_to_previous_claimant() {
+        let (mut app, root) = setup();
+        let a = spawn_layer(&mut app, root, 1);
+        set_layer(&mut app, a, 1, true);
+        let b = spawn_layer(&mut app, root, 2);
+        app.update();
+        let ix1 = render_layer(&mut app, root, 1);
+        let ix2 = render_layer(&mut app, root, 2);
+
+        set_layer(&mut app, b, 1, false);
+        app.update();
+        assert_eq!(owner(&app, ix1), Some((b, false)));
+        assert_eq!(owner(&app, ix2), None);
+
+        app.world_mut().entity_mut(b).remove::<CameraLayer>();
+        app.update();
+        assert_eq!(owner(&app, ix1), Some((a, true)));
+        assert_eq!(owner(&app, ix2), None);
+    }
+
+    #[test]
+    fn moving_latest_owner_away_reverts_layer_to_previous_claimant() {
+        let (mut app, root) = setup();
+        let a = spawn_layer(&mut app, root, 1);
+        set_layer(&mut app, a, 1, true);
+        app.update();
+        let b = spawn_layer(&mut app, root, 1);
+        app.update();
+        let ix1 = render_layer(&mut app, root, 1);
+        let ix2 = render_layer(&mut app, root, 2);
+        assert_eq!(owner(&app, ix1), Some((b, false)));
+
+        set_layer(&mut app, b, 2, false);
+        app.update();
+        assert_eq!(owner(&app, ix1), Some((a, true)));
+        assert_eq!(owner(&app, ix2), Some((b, false)));
+    }
+
+    #[test]
+    fn removing_all_claimants_clears_layer() {
+        let (mut app, root) = setup();
+        let a = spawn_layer(&mut app, root, 1);
+        app.update();
+        let b = spawn_layer(&mut app, root, 1);
+        app.update();
+        let ix1 = render_layer(&mut app, root, 1);
+
+        app.world_mut().entity_mut(b).remove::<CameraLayer>();
+        app.update();
+        assert_eq!(owner(&app, ix1), Some((a, false)));
+
+        app.world_mut().despawn(a);
+        app.update();
+        let props = app.world().resource::<SceneLayerProperties>();
+        assert!(props.layers.is_empty());
+        assert!(props.ent_to_layer.is_empty());
+    }
+
+    #[test]
+    fn remove_and_readd_in_same_frame_keeps_layer() {
+        let (mut app, root) = setup();
+        let a = spawn_layer(&mut app, root, 1);
+        app.update();
+        let ix1 = render_layer(&mut app, root, 1);
+
+        app.world_mut().entity_mut(a).remove::<CameraLayer>();
+        set_layer(&mut app, a, 1, true);
+        app.update();
+        assert_eq!(owner(&app, ix1), Some((a, true)));
     }
 }
