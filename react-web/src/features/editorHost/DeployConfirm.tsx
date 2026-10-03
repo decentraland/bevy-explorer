@@ -35,7 +35,7 @@ export function confirmDeployment(request: DeploymentRequest, wallet: string, se
             {wallet.slice(0, 6)}…{wallet.slice(-4)}
           </dd>
         </dl>
-        <p className={styles.note}>Signing is free — it proves this publish comes from your account.</p>
+        <p className={styles.note}>Signing is free — it proves this publish comes from your account. You sign the scene as the editor built it; the server is where the editor sends it.</p>
       </>
     ),
     actions: [

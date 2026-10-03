@@ -52,6 +52,9 @@
                 typeof entity.id === 'string' &&
                 entity.id.startsWith(LOCAL_HASH_PREFIX) &&
                 Array.isArray(entity.pointers) &&
+                // they become the realm's parcels in /about
+                entity.pointers.length > 0 &&
+                entity.pointers.every((p) => typeof p === 'string' && PARCEL.test(p)) &&
                 Array.isArray(entity.content);
             return valid ? entity : null;
         } catch {
