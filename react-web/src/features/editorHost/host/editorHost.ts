@@ -1,14 +1,14 @@
-// The editor host as a script of its own: useEditorHost adds it when the editor is first opened
+// The editor host as a script of its own: useEditorHost adds it when Create is first opened
 // and takes it through a one-shot hook, so neither the host nor the signing code is in the HUD
 // bundle.
 
-import { guardUrlSync, openEditor } from './host'
+import { guardUrlSync, loadEditor } from './host'
 
 export interface EditorHostScript {
   guardUrlSync: typeof guardUrlSync
-  openEditor: typeof openEditor
+  loadEditor: typeof loadEditor
 }
 
 type HookWindow = Window & { __dclEditorHostScript?: (script: EditorHostScript) => void }
 
-;(window as HookWindow).__dclEditorHostScript?.({ guardUrlSync, openEditor })
+;(window as HookWindow).__dclEditorHostScript?.({ guardUrlSync, loadEditor })

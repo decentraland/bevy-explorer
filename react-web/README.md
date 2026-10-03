@@ -69,8 +69,9 @@ a fake bridge, no engine. Add `&previousLogin=1` for the returning-user flow.
 **Scene editor (dev)** — the editor is an external package (the `dcl-editor` repo's
 `packages/web/dist`); this app only hosts it, and only on localhost (or an allowed deployment with
 a released package — `src/features/editorHost/config.ts`). Where it is available the sidebar rail
-and the menu top bar get a **Create** button; nothing of the editor is requested until it is
-clicked, or until the player is in-world on a url with `?editor` (`?editor=<projectId>` also names
+and the menu top bar get **Create**, a menu page whose body the editor renders its home into
+(`src/features/editorHost/CreatePage.tsx`). Nothing of the editor is requested until the page
+opens, which it also does once in-world on a url with `?editor` (`?editor=<projectId>` also names
 the project to open). In mock and native mode there is no editor.
 
 ```bash
@@ -81,8 +82,11 @@ WEB_EDITOR_DIR=<dcl-editor checkout, packages/web built> npm run dev
 Vite serves `$WEB_EDITOR_DIR/packages/web/dist` same-origin under `/editor/`. Opening the editor
 first adds the page's own host script (`src/features/editorHost/host/`, built as a separate file
 next to the HUD's assets so neither the host nor its signing code is in the HUD bundle), which sets
-`window.__dclEditorHost` (`host/host.ts` — the contract, v1) and loads `/editor/editor.js`; that
-mounts into the host's container. After the editor's Exit, Create mounts it again. The package
+`window.__dclEditorHost` (`host/host.ts` — the contract, v1.1) and loads `/editor/editor.js`, which
+leaves `window.__dclEditor`. The page calls its `mountHome(body, { close })`, and the returned
+unmount when the page closes. Opening a scene closes the page and docks the editor into the host's
+container; its "back to scenes" (`host.openCreatePage()`) and Exit (`host.exit()`) both leave the
+scene and travel back, the first then reopening the Create page. The package
 must hold `editor.js`, `web-build/` and `scene/` (the editor scene's static realm: `scene/about`
 listing it in `scenesUrn`, with an absolute url — export the scene for the port you serve on:
 `npm run export-static -w @dcl-editor/scene -- --editor-base http://localhost:5173/editor/`).
@@ -91,7 +95,12 @@ The host signs for the editor with the signed-in wallet's stored identity, which
 sees: `signedFetch` only for urls under the project storage service, `signDeployment` only after
 the page's own confirmation dialog. A guest gets `not-signed-in`. On localhost the services are
 `http://localhost:8787` (projects) and the production Worlds content server; `?editor-projects=<url>`
-and `?editor-worlds=<url>` point them elsewhere, on localhost only.
+and `?editor-worlds=<url>` point them elsewhere, on localhost only. Before signing a deployment the
+page's dialog names the world, scene, files, the Worlds server's host and the wallet; it keeps
+the editor's fixed size and only Cancel or Sign close it.
+
+In dev, `?bridgePort=<port>` loads the bridge scene from `http://localhost:<port>` instead of
+:8100 (the gates run their own); production builds ignore it.
 
 ## Deploy (production)
 

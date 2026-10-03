@@ -54,7 +54,7 @@ import { unrecognisedEntryParams } from './lib/entryParams'
 import { PAGE_DIR } from './lib/publicUrl'
 import { editorParams, editorSource } from './features/editorHost/config'
 import { EditorEntryContext } from './features/editorHost/entry'
-import { EditorOpening } from './features/editorHost/EditorOpening'
+import { CreatePage } from './features/editorHost/CreatePage'
 import { useEditorHost } from './features/editorHost/useEditorHost'
 
 const params = new URLSearchParams(location.search)
@@ -274,6 +274,7 @@ function Hud(): React.JSX.Element {
     else if (page === 'events') session.events.toggle()
     else if (page === 'shop') session.shop.toggle()
     else if (page === 'gallery') session.gallery.toggle()
+    else if (page === 'create') session.create.toggle()
     // Profile-chip actions (forwarded from MainMenuShell's ProfileChip): View Profile
     // opens the full passport (same as for other users), not the small profile card.
     else if (page === 'profile') viewMyProfile()
@@ -287,7 +288,7 @@ function Hud(): React.JSX.Element {
 
   // A full-screen MainMenuShell page is open (covers the whole HUD).
   const pageOpen =
-    session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.shop.open || session.gallery.open
+    session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.shop.open || session.gallery.open || session.create.open
 
   // Tell the engine how much of the screen the persistent HUD occupies. A full-screen page is
   // transient, so the last in-world value stands while one is open.
@@ -413,9 +414,11 @@ function Hud(): React.JSX.Element {
               onViewProfile={(u) => openPassport(u.address)}
             />
           </SurfaceBoundary>
+          <SurfaceBoundary name="Create" open={session.create.open} onCrash={session.closeAllPanels}>
+            <CreatePage create={session.create} profile={session.profile} onNavigate={goToMenuPage} />
+          </SurfaceBoundary>
         </EditorEntryContext.Provider>
       )}
-      {editorEntry?.loading && <EditorOpening />}
       {/* Popups (imperative overlay stack) live inside the session provider so popup-mounted surfaces
           — the world <ProfileCard> — can read useSession(). */}
       <PopupHost />

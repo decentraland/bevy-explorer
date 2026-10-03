@@ -256,7 +256,7 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
   }
   // only where the scene editor is available
   if (item.kind === 'create')
-    return create && <RailButton key="create" icon={item.icon} label={item.label} active={create.loading} onClick={create.open} />
+    return create && <RailButton key="create" icon={item.icon} label={item.label} active={session.create.open} onClick={session.create.toggle} />
   if (item.kind === 'skybox')
     return <RailButton key="skybox" icon={item.icon} label={item.label} active={session.skybox.open} onClick={session.skybox.toggle} />
   if (item.kind === 'events')
