@@ -1,7 +1,18 @@
-use crate::{serde_parse, serde_result, WasmError, WorkerContext};
+use crate::{is_super, serde_parse, serde_result, WasmError, WorkerContext};
 use js_sys;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+
+// These two go through RpcCalls, not SuperUserScene, so nothing else stops an ordinary scene.
+fn require_super(state: &WorkerContext) -> Result<(), WasmError> {
+    if is_super(state) {
+        Ok(())
+    } else {
+        Err(WasmError::from(anyhow::anyhow!(
+            "system api: not available to this scene"
+        )))
+    }
+}
 
 #[wasm_bindgen]
 pub async fn op_check_for_update(state: &WorkerContext) -> Result<JsValue, WasmError> {
@@ -93,6 +104,7 @@ pub async fn op_kernel_fetch_headers(
     method: Option<String>,
     meta: Option<String>,
 ) -> Result<js_sys::Array, WasmError> {
+    require_super(state)?;
     dcl::js::system_api::op_kernel_fetch_headers(state.rc(), uri, method, meta)
         .await
         .map(|r| {
@@ -218,6 +230,7 @@ pub async fn op_get_user_profile(
     state: &WorkerContext,
     address: String,
 ) -> Result<JsValue, WasmError> {
+    require_super(state)?;
     let profile = dcl::js::system_api::op_get_user_profile(state.rc(), address).await;
     // use a specific serializer to convert to object here, as wasm_bindgen's conversion otherwise produces a Map
     profile

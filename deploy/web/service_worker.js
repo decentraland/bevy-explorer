@@ -1,7 +1,4 @@
-// MUST stay in sync with crates/image_processing/src/processor/wasm_fs.rs: the asset processor
-// reads the raw responses this worker caches and writes the processed bytes back over the same
-// key. (A one-time v2 bump to purge stale local-preview entries broke that pairing — the
-// localhost bypass below already makes stale localhost entries unreadable, so no purge needed.)
+// Cache name and key MUST match crates/image_processing/src/processor/wasm_fs.rs.
 const CACHE_NAME = 'ipfs-path-cache-v2';
 const CUSTOM_HEADER = 'X-IPFS';
 

@@ -144,6 +144,8 @@ function createJsContext(wasmApi, context) {
   // two scenes agreeing on a bucket name would have a shared filesystem.
   deleteFromPrototypeChain(self.navigator, "storage");
   deleteFromPrototypeChain(self.navigator, "storageBuckets");
+  // the page's service worker registration (and its cache routes) is no scene's business
+  deleteFromPrototypeChain(self.navigator, "serviceWorker");
 
   // IndexedDB is same-origin too, and holds more than its own data: platform/src/web_save.js keeps
   // the FileSystemDirectoryHandle for the user's picked scene folder there (db `dcl-editor`, store
