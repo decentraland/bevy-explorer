@@ -2,7 +2,7 @@
 // reads the raw responses this worker caches and writes the processed bytes back over the same
 // key. (A one-time v2 bump to purge stale local-preview entries broke that pairing — the
 // localhost bypass below already makes stale localhost entries unreadable, so no purge needed.)
-const CACHE_NAME = 'ipfs-path-cache-v1';
+const CACHE_NAME = 'ipfs-path-cache-v2';
 const CUSTOM_HEADER = 'X-IPFS';
 
 self.addEventListener('install', (event) => {
@@ -83,7 +83,6 @@ async function cacheFirstStrategy(request) {
         return fetch(stripCustomHeader(request));
     }
 
-    //Generate a cache key from the path only
     const cacheKey = getCacheKey(request);
 
     //Open the cache
@@ -108,9 +107,11 @@ async function cacheFirstStrategy(request) {
     return networkResponse;
 }
 
+// Keyed by origin too: any client can fill this cache, so a path-only key let one server's
+// response stand in for another's (a scene fetching evil.com/<hash> poisoned catalyst/<hash>).
 function getCacheKey(request) {
     const url = new URL(request.url);
-    return url.pathname + url.search;
+    return url.origin + url.pathname + url.search;
 }
 
 function stripCustomHeader(request) {
