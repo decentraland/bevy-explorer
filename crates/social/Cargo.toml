@@ -15,6 +15,7 @@ dcl_component = { workspace = true }
 platform = { workspace = true }
 system_bridge = { workspace = true }
 wallet = { workspace = true }
+notifications = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
