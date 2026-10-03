@@ -1321,6 +1321,7 @@ fn update_scene_room(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     scenes: Query<&RendererSceneContext>,
+    local_server: Res<common::structs::LocalSceneServer>,
 ) {
     let (Some(realm), Some(scene)) = (
         realm.config.realm_name.as_ref(),
@@ -1335,6 +1336,7 @@ fn update_scene_room(
             writer.write(SetCurrentScene {
                 realm_name: default(),
                 scene_id: default(),
+                local_server: false,
             });
         }
         return;
@@ -1350,6 +1352,9 @@ fn update_scene_room(
     let ev = SetCurrentScene {
         realm_name: realm.to_owned(),
         scene_id: scene.hash.clone(),
+        local_server: local_server.0
+            && scene.authoritative_multiplayer
+            && !common::structs::server_mode(),
     };
 
     *last = Some(ev.clone());

@@ -55,7 +55,7 @@ use common::{
     util::{DespawnWith, JoinRelativeExt, SceneSpawnerPlus, TaskExt, TryPushChildrenEx},
 };
 use comms::{
-    global_crdt::{CrdtContexts, ForeignPlayer, GlobalCrdtState},
+    global_crdt::{CrdtContexts, ForeignPlayer, GlobalCrdtState, HiddenPeer},
     profile::UserProfile,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -339,9 +339,13 @@ impl From<&UserProfile> for AvatarShape {
 }
 
 // set (foreign) user's default avatar shape based on profile data
+#[allow(clippy::type_complexity)]
 fn update_base_avatar_shape(
     mut commands: Commands,
-    root_avatar_defs: Query<(Entity, Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
+    root_avatar_defs: Query<
+        (Entity, Option<&ForeignPlayer>, &UserProfile),
+        (Changed<UserProfile>, Without<HiddenPeer>),
+    >,
 ) {
     for (ent, maybe_player, profile) in &root_avatar_defs {
         let id = match maybe_player {

@@ -1,14 +1,18 @@
 //! In-engine authoritative server: with [`LocalSceneServer`] on, every authoritative scene gets a
 //! second copy of itself in server role (isServer() true, its own crdt context) joined to the
 //! client copy over the loopback scene room (`comms::loopback`). The copy only forwards
-//! logic components across the scene boundary, so it never builds anything renderable.
+//! logic and collision components across the scene boundary, and anything renderable its
+//! gltf colliders bring along is stripped, so it never draws.
 
 use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_console::ConsoleCommand;
 use common::structs::{server_mode, LocalSceneServer};
 use comms::{
-    global_crdt::{GlobalCrdtState, SceneCrdtContext},
-    loopback::{spawn_server_end, LocalSceneServer as LocalServerRoom, LocalSceneServers},
+    global_crdt::{ForeignPlayer, GlobalCrdtState, HiddenPeer, SceneCrdtContext},
+    loopback::{
+        spawn_server_end, LocalSceneServer as LocalServerRoom, LocalSceneServers, LoopbackEnd,
+        AUTH_SERVER_IDENTITY,
+    },
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::CrdtComponentInterfaces;
@@ -27,12 +31,15 @@ pub struct ServerRole {
     pub client: Entity,
 }
 
-/// What a server copy forwards to the engine: its logic-side state. Everything else (meshes,
-/// materials, gltf, ui, audio, video, avatars, ...) stays in the scene's own store.
-const SERVER_COMPONENTS: [SceneComponentId; 3] = [
+/// What a server copy forwards to the engine: its logic-side state and what raycasts need to
+/// collide with. Everything else (mesh renderers, materials, ui, audio, video, avatars, ...)
+/// stays in the scene's own store.
+const SERVER_COMPONENTS: [SceneComponentId; 5] = [
     SceneComponentId::TRANSFORM,
     SceneComponentId::TWEEN,
     SceneComponentId::RAYCAST,
+    SceneComponentId::MESH_COLLIDER,
+    SceneComponentId::GLTF_CONTAINER,
 ];
 
 pub fn scene_interfaces(extractors: &CrdtExtractors, server: bool) -> CrdtComponentInterfaces {
@@ -55,6 +62,7 @@ impl Plugin for ServerRolePlugin {
                 .chain()
                 .in_set(SceneSets::PostInit),
         );
+        app.add_systems(PostUpdate, strip_server_renderables);
         app.add_console_command::<SceneRenderStatsCommand, _>(scene_render_stats);
     }
 }
@@ -77,7 +85,7 @@ fn spawn_server_copies(
             continue;
         }
         let context = commands
-            .spawn(GlobalCrdtState::new(Some(ctx.hash.clone())).without_players())
+            .spawn(GlobalCrdtState::new(Some(ctx.hash.clone())).server_role(AUTH_SERVER_IDENTITY))
             .id();
         let server_end = spawn_server_end(&mut commands, &ctx.hash, context);
         let root = commands
@@ -100,6 +108,28 @@ fn spawn_server_copies(
                 server_end,
             },
         );
+    }
+}
+
+/// A server copy's gltf colliders arrive inside full gltf instances; keep the collider data
+/// and drop what would draw (the shared mesh assets are the client copy's, nothing new uploads).
+#[allow(clippy::type_complexity)]
+fn strip_server_renderables(
+    mut commands: Commands,
+    meshes: Query<
+        (Entity, &ContainerEntity),
+        (With<Mesh3d>, Or<(Added<Mesh3d>, Added<ContainerEntity>)>),
+    >,
+    servers: Query<(), With<ServerRole>>,
+) {
+    for (entity, container) in &meshes {
+        if servers.contains(container.root) {
+            commands.entity(entity).remove::<(
+                Mesh3d,
+                MeshMaterial3d<StandardMaterial>,
+                MeshMaterial3d<scene_material::SceneMaterial>,
+            )>();
+        }
     }
 }
 
@@ -138,6 +168,12 @@ fn scene_render_stats(
     mesh_assets: Res<Assets<Mesh>>,
     images: Res<Assets<Image>>,
     gltf_assets: Res<Assets<bevy::gltf::Gltf>>,
+    (players, contexts, loopbacks, servers): (
+        Query<Has<HiddenPeer>, With<ForeignPlayer>>,
+        Query<&GlobalCrdtState>,
+        Query<(), With<LoopbackEnd>>,
+        Res<LocalSceneServers>,
+    ),
 ) {
     if input.take().is_none() {
         return;
@@ -179,6 +215,15 @@ fn scene_render_stats(
         mesh_assets.len(),
         images.len(),
         gltf_assets.len()
+    ));
+    lines.push(format!(
+        "comms: foreign_players={} hidden_peers={} crdt_contexts={} server_rooms={} loopback_ends={} local_servers={}",
+        players.iter().count(),
+        players.iter().filter(|hidden| *hidden).count(),
+        contexts.iter().count(),
+        contexts.iter().filter(|c| c.is_server_role()).count(),
+        loopbacks.iter().count(),
+        servers.0.len(),
     ));
     input.reply_ok(lines.join("\n"));
 }

@@ -41,6 +41,7 @@ pub struct LoopbackEnd {
     receiver: mpsc::Receiver<NetworkMessage>,
     peer: Option<Entity>,
     server: bool,
+    joined: bool,
 }
 
 fn spawn_end(
@@ -64,6 +65,7 @@ fn spawn_end(
                 receiver,
                 peer,
                 server,
+                joined: false,
             },
         ))
         .id()
@@ -99,19 +101,53 @@ fn delivered(from_server: bool, recipient: NetworkMessageRecipient, me: Address)
 }
 
 fn pump_loopbacks(
-    mut ends: Query<&mut LoopbackEnd>,
+    mut ends: Query<(Entity, &mut LoopbackEnd)>,
     transports: Query<&Transport>,
     contexts: Query<&GlobalCrdtState>,
     wallet: Res<Wallet>,
+    time: Res<Time>,
 ) {
     let me = wallet.address();
-    for mut end in &mut ends {
+    let now = time.elapsed_secs_f64();
+    for (entity, mut end) in &mut ends {
+        // the player's half went away: the server sees them leave the room
+        if let (true, Some(gone), Some(me)) = (end.server, end.peer, me) {
+            if !transports.contains(gone) {
+                end.peer = None;
+                if let Some(own) = transports
+                    .get(entity)
+                    .ok()
+                    .and_then(|t| contexts.get(t.context).ok())
+                {
+                    let _ = own.get_sender().try_send(NetworkUpdate::PlayerLeft {
+                        transport_id: entity,
+                        address: me,
+                    });
+                }
+            }
+        }
         let peer = end.peer.filter(|peer| transports.contains(*peer));
         let target = peer
             .and_then(|peer| transports.get(peer).ok())
             .and_then(|transport| contexts.get(transport.context).ok())
             .map(GlobalCrdtState::get_sender);
         let from_server = end.server;
+        // the room announces the player to the server as soon as they join, like a
+        // LiveKit participant-connected event
+        if let (false, false, Some(peer), Some(target), Some(me)) =
+            (from_server, end.joined, peer, target.as_ref(), me)
+        {
+            end.joined = target
+                .try_send(
+                    PlayerUpdate {
+                        transport_id: peer,
+                        message: PlayerMessage::Joined,
+                        address: me,
+                    }
+                    .into(),
+                )
+                .is_ok();
+        }
         while let Ok(outgoing) = end.receiver.try_recv() {
             let (Some(peer), Some(target), Some(me)) = (peer, target.as_ref(), me) else {
                 continue;
@@ -135,9 +171,19 @@ fn pump_loopbacks(
                 }
                 .into()
             } else {
+                // avatar state reaches the server as its own movement feed (Pulse's role
+                // for a real server), not as an ignored byte-transport packet
+                let message = match message {
+                    rfc4::packet::Message::Movement(movement) => PlayerMessage::Movement {
+                        movement: Box::new(movement),
+                        teleport: false,
+                        timestamp: now,
+                    },
+                    message => PlayerMessage::PlayerData(message),
+                };
                 PlayerUpdate {
                     transport_id: peer,
-                    message: PlayerMessage::PlayerData(message),
+                    message,
                     address: me,
                 }
                 .into()
