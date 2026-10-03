@@ -16,6 +16,9 @@ export interface PopupOptions {
   /** The backdrop is the shared dimmed+blurred modal scrim (default). `false` → transparent
    *  click-catcher, for an anchored popover that must not dim the HUD behind it. */
   dim?: boolean
+  /** The dim scrim at device px, without the reference-canvas scale: for a dialog that must
+   *  match the scene editor's fixed-size UI. */
+  fixed?: boolean
   /** A predicate is evaluated at click time, so a popup can refuse while it holds unsaved
    *  state (the passport in edit mode) without reopening itself with new options. */
   backdropClickCloses?: boolean | (() => boolean)
@@ -35,6 +38,7 @@ type ResolvedOptions = Required<Omit<PopupOptions, 'onClose' | 'confirmClose'>> 
 const DEFAULTS: Required<Omit<PopupOptions, 'onClose' | 'confirmClose'>> = {
   backdrop: true,
   dim: true,
+  fixed: false,
   backdropClickCloses: true
 }
 const closesOnBackdrop = (o: ResolvedOptions): boolean =>
@@ -145,7 +149,7 @@ function PopupLayer({ node, isTop, locked }: { node: PopupNode; isTop: boolean; 
   // `.dim` is the shared dimmed+blurred modal scrim; without `dim` it's a transparent click-catcher
   // for an anchored popover (the profile card).
   if (!node.options.backdrop) return <>{content}</>
-  const className = node.options.dim ? `${styles.backdrop} ${styles.dim}` : styles.backdrop
+  const className = node.options.dim ? `${styles.backdrop} ${styles.dim}${node.options.fixed ? ` ${styles.fixed}` : ''}` : styles.backdrop
   return (
     <div ref={ref} className={className} tabIndex={-1} onClick={() => { if (closesOnBackdrop(node.options)) close() }}>
       {/* dim popups scale in via the pop layer; an anchored popover (dim:false) just appears. */}
@@ -213,6 +217,8 @@ export interface DialogOptions {
   /** `false` → no × and a backdrop click does nothing, so a stray click can't make the choice; only
    *  the actions and Escape (which resolves `null`) close it. Default true. */
   dismissible?: boolean
+  /** See PopupOptions.fixed. */
+  fixed?: boolean
 }
 
 /**
@@ -251,7 +257,7 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
           {opts.body}
         </ModalShell>
       ),
-      { onClose: () => settle(null), backdropClickCloses: opts.dismissible ?? true } // default dim scrim from PopupHost
+      { onClose: () => settle(null), backdropClickCloses: opts.dismissible ?? true, fixed: opts.fixed ?? false } // default dim scrim from PopupHost
     )
   })
 }
