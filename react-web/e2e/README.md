@@ -92,13 +92,15 @@ WEB_EDITOR_DIR=/path/to/dcl-editor npx playwright test --config playwright.gate.
 ```
 
 It starts its own Vite server on :5230 (`e2e/vite.gate.config.ts`: the app's config plus the
-web-build files under `/web-build/`) and the bridge scene on :8100 (reused if already running).
+web-build files under `/web-build/`) and a bridge scene of its own on `GATE_BRIDGE_PORT` (default
+:8110, never reused, so a dev server's :8100 is left alone); every spec loads the page with
+`?bridgePort=` pointing at it (`e2e/gate.ts`).
 `npm run test:e2e` skips it.
 
 ## Editor gates (real engine, same config)
 
 Five specs drive the scene editor package inside this page with real clicks. They need a
-dcl-editor checkout whose package accepts host contract v1, exported for the gate's port:
+dcl-editor checkout whose package speaks host contract v1.1 (`mountHome`), exported for the gate's port:
 
 ```bash
 # in the dcl-editor checkout: the editor scene's `about` holds an absolute url
@@ -108,14 +110,14 @@ npm run build -w @dcl-editor/web
 WEB_EDITOR_DIR=/path/to/dcl-editor npx playwright test --config playwright.gate.config.ts [name]
 ```
 
-Besides Vite on :5230 and the bridge scene on :8100, the config starts two servers out of that
+Besides Vite on :5230 and the bridge scene on :8110, the config starts two servers out of that
 checkout (Node 24, no build): its project storage service on :8787, over a directory that starts
 empty (`.vite/gate-projects`), and its stand-in Worlds content server on :8799. Both ports must be
 free.
 
 | Spec | What passes |
 |---|---|
-| `editor.gate.spec.ts` | As a guest: the sidebar's Create button opens the editor; a scene from the Example starter is stored, built and published in the browser; the editor's own scene attaches; an entity and a code edit rebuild and reload it by id; Play, a walk, Stop (the player is back at the spawn); Exit back to the HUD; the menu top bar's Create item opens it again and the scene made before opens. Nothing is asked of the project service. Its seven steps pass or fail one by one. A second, short test opens the editor with `?editor=<project>`. |
+| `editor.gate.spec.ts` | As a guest: the sidebar's Create button opens the HUD's Create page and the editor lists the scenes in it; New scene stores, builds and publishes the Example starter in the browser under a random preview id and docks the editor; the editor's own scene attaches; "Add a box" puts a box in front of the player and a real pointer drag on the gizmo's X arrow (found on screen) moves it along X; an entity and a code edit rebuild and reload it by id; Play, a walk, Stop (the player is back at the spawn); Back to scenes is the Create page again, with the player and the clock back; the menu top bar's Create item opens it again without loading the editor again, the scene opens, and Back to Decentraland gives the HUD back; `?editor=<project>` opens the scene directly. Nothing is asked of the project service. Its steps pass or fail one by one. A second, short test opens `?editor=<project>` in a browser without it: the Create page says so. |
 | `sync.gate.spec.ts` | One wallet on two devices (two browser contexts, two engines at once): a scene made on the first is listed from the account on the second, downloaded, built and run; an edit there reaches the first without a write; an edit on both is a conflict, and "Keep both" leaves both versions on the account. A second test, with no browser, asks the live service for what it must refuse: a scene's signed fetch, another intent or origin, an unsigned request, a stranger reading or referencing the owner's files, a stale save. |
 | `publish.gate.spec.ts` | Signed in, with `?editor-worlds=http://localhost:8799`: the page's own dialog names the world, the scene, the files and the wallet; Cancel sends nothing; Sign and publish deploys an entity the server accepts (the spec recomputes every hash and checks the auth chain); then a guest's engine enters the world by its url and logs the published bundle's marker. |
 | `npm.gate.spec.ts` | As a guest: a `.zip` of the starter that imports `color` from npm is imported, the package and the five it depends on come from the real registry (reads only) and are pinned by sha512, and the scene logs a value the package computed. |

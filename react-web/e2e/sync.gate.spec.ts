@@ -9,6 +9,7 @@ import { hashV1 } from '../bridge-scene/node_modules/@dcl/hashing/dist/index.js'
 import {
   EDITOR_METADATA,
   PROJECTS,
+  backToScenes,
   keepOffProduction,
   docked,
   enterWorld,
@@ -90,14 +91,15 @@ test('one wallet on two devices: a scene syncs, fast-forwards, and a conflict lo
 
   const a = await device('device-a')
   await test.step('device A: a new scene is copied to the account', async () => {
-    await a.ui.getByText('Synced with your account.').waitFor({ timeout: 30_000 })
+    await a.home.getByText('Synced with your account.').waitFor({ timeout: 30_000 })
     expect(await account.projects(wallet), 'the account starts empty').toEqual([])
     await newScene(a, PROJECT_NAME)
     await saveFirstLine(a, marker('v1'), logged('v1'), false)
     await synced(a)
     await expect.poll(async () => (await account.file(wallet, PROJECT_ID, CODE)).split('\n')[0], { message: 'the account holds v1' }).toBe(marker('v1'))
     const { version, files } = await account.manifest(wallet, PROJECT_ID)
-    const sent = a.requests(PROJECTS)
+    // the service's assistant routes answer 503 where no assistant is set up: not a signature check
+    const sent = a.requests(PROJECTS).filter((line) => !line.includes(' /assistant/'))
     const firstManifest = sent.findIndex((line) => line.startsWith(`PUT /projects/${PROJECT_ID}/manifest`))
     note(`A (${wallet.address}) synced "${PROJECT_NAME}": account version ${version}, ${Object.keys(files).length} files; ${sent.filter((l) => l.startsWith('PUT /blobs/')).length} blob uploads, ${manifestPuts(a).length} manifest writes`)
     expect(sent.slice(0, firstManifest).some((line) => line.startsWith('PUT /blobs/')), 'content first, manifest last').toBe(true)
@@ -108,9 +110,9 @@ test('one wallet on two devices: a scene syncs, fast-forwards, and a conflict lo
   const b = await device('device-b')
   await test.step('device B: the scene is listed from the account, downloaded, built and run', async () => {
     expect(await storedFile(b.page, PROJECT_ID, CODE), 'nothing of it on this device yet').toBeNull()
-    const remote = b.ui.locator('.eui-scene-card[data-sync="remote"]')
+    const remote = b.home.locator('.eui-create-card[data-sync="remote"]')
     await remote.getByText(PROJECT_NAME).waitFor({ timeout: 30_000 })
-    await expect(remote.getByText('Not on this device yet. Opening it downloads it.')).toHaveCount(1)
+    await expect(remote.getByText('On your account · opening it downloads it')).toHaveCount(1)
     await b.shot('g2-2-device-b-lists-it')
     const at = Date.now()
     await remote.click()
@@ -131,10 +133,10 @@ test('one wallet on two devices: a scene syncs, fast-forwards, and a conflict lo
     await expect.poll(async () => (await account.manifest(wallet, PROJECT_ID)).version, { message: 'B saved a new version' }).toBe(before + 1)
     afterB = before + 1
     const putsOnA = manifestPuts(a).length
-    await a.ui.locator('.eui-topbar-home').click()
-    const card = a.ui.locator('.eui-scene-card', { hasText: PROJECT_NAME })
+    await backToScenes(a)
+    const card = a.home.locator('.eui-create-card', { hasText: PROJECT_NAME })
     await card.waitFor()
-    await a.ui.getByText('Synced with your account.').waitFor({ timeout: 30_000 })
+    await a.home.getByText('Synced with your account.').waitFor({ timeout: 30_000 })
     await a.shot('g2-4-home-with-synced-project')
     const at = Date.now()
     await card.click()
