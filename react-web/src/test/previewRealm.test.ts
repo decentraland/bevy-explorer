@@ -70,12 +70,13 @@ describe('preview realm', () => {
 
   it('returns the scene for any of its pointers, nothing for other parcels, and asks a catalyst for the rest', async () => {
     const eyes = { id: 'bafkreieyes', pointers: ['urn:decentraland:off-chain:base-avatars:eyes_00'] }
-    const catalyst = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify([eyes])))
+    const remoteScene = { id: 'bafkreiscene', type: 'scene', pointers: ['5,-2'] }
+    const catalyst = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify([eyes, remoteScene])))
     expect(await (await active(['9,9', '5,-2'])).json()).toEqual([entity])
     expect(await (await active(['9,9'])).json()).toEqual([])
     expect(catalyst).not.toHaveBeenCalled()
 
-    // the engine resolves the avatar's wearables through its realm
+    // the engine resolves the avatar's wearables through its realm; a scene there is not the project's
     expect(await (await active(['5,-2', eyes.pointers[0]])).json()).toEqual([entity, eyes])
     const [url, init] = catalyst.mock.lastCall!
     expect(url).toBe('https://peer.decentraland.org/content/entities/active')

@@ -8,17 +8,16 @@ import userEvent from '@testing-library/user-event'
 import { Authenticator, type AuthChain } from '../../bridge-scene/node_modules/@dcl/crypto'
 import { createUnsafeIdentity } from '../../bridge-scene/node_modules/@dcl/crypto/dist/crypto'
 import { PopupHost } from '../design'
-import { editorSource } from '../features/editorHost/config'
-import type { EditorHostScript } from '../features/editorHost/host/editorHost'
-import { guardUrlSync, loadEditor, type DclEditorHostV1 } from '../features/editorHost/host/host'
-import { useEditorHost } from '../features/editorHost/useEditorHost'
-import { PAGE_DIR } from '../lib/publicUrl'
+import { useEditorHost } from '../features/editorHost/EditorHost'
+import type { DclEditorHostV1 } from '../features/editorHost/host/host'
+import { signDeployment, signFetch } from '../features/editorHost/host/sign'
+import type { Signer } from '../features/editorHost/host/signer'
 import { fakeSession } from './harness'
 
 type HostWindow = Window & {
   __dclEditorHost?: DclEditorHostV1
-  __dclEditorHostScript?: (script: EditorHostScript) => void
   engine_console_command?: (line: string) => Promise<string>
+  __dclEditorSigner?: (signer: Signer) => void
 }
 const w = window as HostWindow
 const session = fakeSession()
@@ -38,9 +37,10 @@ describe('editor host signing', () => {
   // the host is published as a guest, the way the Create page loads it
   beforeAll(async () => {
     w.engine_console_command = async () => ''
-    const { result } = renderHook(() => useEditorHost(editorSource('', 'localhost', PAGE_DIR), session))
-    void result.current!.load().catch(() => {})
-    await act(async () => w.__dclEditorHostScript!({ guardUrlSync, loadEditor }))
+    // what the signing script does once the page adds it (jsdom runs no scripts)
+    new MutationObserver(() => w.__dclEditorSigner?.({ signFetch, signDeployment })).observe(document.head, { childList: true })
+    const { result } = renderHook(() => useEditorHost('', session))
+    await act(async () => void result.current!.load().catch(() => {}))
   })
 
   it('signs fetches to the project service only, as the signed-in wallet, with metadata the editor cannot set', async () => {

@@ -1,6 +1,4 @@
-// Hosts the scene editor in this page (config.ts): its home renders in the Create page, opened
-// from a Create button or once in-world when the entry url asked for it. Until then it does
-// nothing: no element, no script, no request.
+// The scene editor's host and Create page: a chunk of its own, loaded only once Create is wanted.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { bridgeChannelName } from '../../engine/protocol'
@@ -8,61 +6,39 @@ import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { PAGE_DIR } from '../../lib/publicUrl'
 import { getStoredLogin, rootAddress } from '../auth/sso'
 import type { EngineSession } from '../session/useEngineSession'
-import { editorEntry, type EditorSource } from './config'
+import { CreatePage } from './CreatePage'
 import { confirmDeployment } from './DeployConfirm'
-import type { EditorEntry } from './entry'
-import type { EditorHostScript } from './host/editorHost'
-import type { EditorPackage } from './host/host'
-// Vite's worker pipeline is what bundles a file on its own; this one is loaded by script tag.
-import hostScriptUrl from './host/editorHost.ts?worker&url'
+import { bridgeScene, bridgeTravel } from './host/bridge'
+import { guardUrlSync, loadEditor, type EditorPackage } from './host/host'
+import { editorEntry, editorSource } from './source'
 
 type HostWindow = Window & {
   engine_console_command?: (line: string) => Promise<string>
-  __dclEditorHostScript?: (script: EditorHostScript) => void
   __bridgeSession?: string
 }
 
-let hostScript: Promise<EditorHostScript> | null = null
-let attempts = 0
-/** The host script, added to the page the first time it is needed. */
-function loadHostScript(): Promise<EditorHostScript> {
-  hostScript ??= new Promise<EditorHostScript>((resolve, reject) => {
-    const w = window as HostWindow
-    const script = document.createElement('script')
-    script.type = 'module'
-    // a module that failed to load stays failed under its url
-    script.src = attempts++ === 0 ? hostScriptUrl : `${hostScriptUrl}${hostScriptUrl.includes('?') ? '&' : '?'}retry=${attempts}`
-    w.__dclEditorHostScript = (loaded) => {
-      delete w.__dclEditorHostScript
-      resolve(loaded)
-    }
-    script.onerror = () => {
-      delete w.__dclEditorHostScript
-      script.remove()
-      hostScript = null
-      reject(new Error('the editor host failed to load'))
-    }
-    document.head.appendChild(script)
-  })
-  return hostScript
+export interface EditorEntry {
+  /** The editor package, loaded (and the host published) the first time. */
+  load: () => Promise<EditorPackage>
+  /** The editor package is downloading. */
+  loading: boolean
 }
 
-export function useEditorHost(source: EditorSource | null, session: EngineSession): EditorEntry | null {
+/** `entrySearch`: the ENTRY url's query, from before the engine's url sync rewrote it. */
+export function useEditorHost(entrySearch: string, session: EngineSession): EditorEntry | null {
   const latest = useRef(session)
   latest.current = session
-  // from the ENTRY url: the engine's url sync rewrites location.search
-  const [entry] = useState(() => editorEntry(location.search))
+  const [{ source, entry }] = useState(() => ({
+    source: editorSource(entrySearch, location.hostname, PAGE_DIR),
+    entry: editorEntry(entrySearch)
+  }))
   const flag = entry.project ?? entry.open
   const [loading, setLoading] = useState(false)
 
   // with `?editor`, before the engine's first url sync would drop the flag
   const engineUp = session.login.engineReady
   useEffect(() => {
-    if (source == null || !entry.open || !engineUp) return
-    loadHostScript().then(
-      (host) => host.guardUrlSync(PAGE_DIR, flag),
-      () => {}
-    )
+    if (source != null && entry.open && engineUp) guardUrlSync(PAGE_DIR, flag)
   }, [source, entry, flag, engineUp])
 
   const load = useCallback(
@@ -71,8 +47,7 @@ export function useEditorHost(source: EditorSource | null, session: EngineSessio
       setLoading(true)
       bridgeChannelName() // seeds __bridgeSession when nothing has yet
       try {
-        const host = await loadHostScript()
-        return await host.loadEditor(
+        return await loadEditor(
           source,
           PAGE_DIR,
           {
@@ -93,8 +68,8 @@ export function useEditorHost(source: EditorSource | null, session: EngineSessio
             confirmDeployment,
             setMode: (mode) => latest.current.editor.setMode(mode),
             showCreatePage: (open) => latest.current.create.show(open),
-            travel: (realm, parcel) => latest.current.editor.travel(realm, parcel),
-            scene: (action, url, hash) => latest.current.editor.scene(action, url, hash)
+            travel: bridgeTravel,
+            scene: bridgeScene
           },
           flag
         )
@@ -115,4 +90,18 @@ export function useEditorHost(source: EditorSource | null, session: EngineSessio
   }, [source, inWorld])
 
   return useMemo(() => (source == null ? null : { load, loading }), [source, load, loading])
+}
+
+export default function EditorHost({
+  session,
+  entrySearch,
+  onNavigate
+}: {
+  session: EngineSession
+  entrySearch: string
+  onNavigate: (page: string) => void
+}): React.JSX.Element | null {
+  const entry = useEditorHost(entrySearch, session)
+  if (entry == null || session.phase !== 'world' || session.menuOpen) return null
+  return <CreatePage entry={entry} create={session.create} profile={session.profile} onNavigate={onNavigate} />
 }

@@ -5,7 +5,7 @@
 import { useContext, useEffect, useState } from 'react'
 import { Button, DclLogo, Icon, type IconName } from '../../design'
 import { keyHintFor, useBindingsSnapshot } from '../../lib/bindingLabels'
-import { EditorEntryContext } from '../editorHost/entry'
+import { EDITOR_BUILD, EditorOffered } from '../editorHost/config'
 import { ProfileChip } from './ProfileChip'
 import styles from './MainMenuShell.module.css'
 import onBackpack from '../../assets/menu-on/backpack.webp'
@@ -53,7 +53,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: 'Settings', icon: 'settings', hotkey: 'Settings', page: 'settings' }
 ]
 
-// The scene editor's home (editorHost/CreatePage). Listed only where the editor is available.
+// The scene editor's home (editorHost/CreatePage).
 const CREATE_ITEM: MenuItem = { label: 'Create', icon: 'create', page: 'create' }
 
 export function MainMenuShell({
@@ -82,8 +82,8 @@ export function MainMenuShell({
   // Animate the entrance only on a fresh open (no other shell mounted), not on page switches.
   const [animate] = useState(() => openShells === 0)
   const bindingsSnap = useBindingsSnapshot()
-  const create = useContext(EditorEntryContext)
-  const items = create == null ? MENU_ITEMS : [...MENU_ITEMS, CREATE_ITEM]
+  const offered = useContext(EditorOffered)
+  const items = EDITOR_BUILD && offered ? [...MENU_ITEMS, CREATE_ITEM] : MENU_ITEMS
   useEffect(() => {
     openShells++
     return () => {
@@ -112,9 +112,7 @@ export function MainMenuShell({
                 className={`${styles.menuItem} ${m.page === active ? styles.menuActive : ''}`.trim()}
                 data-page={m.page}
                 aria-current={m.page === active ? 'page' : undefined}
-                onClick={() => {
-                  if (m.page !== active) onNavigate(m.page)
-                }}
+                onClick={() => m.page !== active && onNavigate(m.page)}
               >
                 <span className={styles.menuIcon}>
                   {m.page === active && SELECTED_ART[m.page] != null ? (

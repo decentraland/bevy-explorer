@@ -10,13 +10,14 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { BRIDGE, HOME, HOME_REALM, NAV, PROJECTS, SCENES, UI, keepOffProduction, previewId } from './gate'
+import { BRIDGE, ENTRY, HOME, HOME_REALM, NAV, PROJECTS, SCENES, UI, editorBase, keepOffProduction, previewId } from './gate'
 import { cmd, position } from './helpers'
 
 type Point = { x: number; y: number; z: number }
 
 const PROJECT_NAME = 'Gate scene'
-const PROJECT_ID = 'gate-scene'
+// a new scene's id carries a random tail: step 2 reads it back from the store
+let PROJECT_ID = 'gate-scene'
 const MARKER = /GATE_MARKER v(\d+)/
 const ENTITY_NAME = 'Gate entity'
 const COMPOSITE = 'assets/scene/main.composite'
@@ -317,20 +318,18 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
     )
   const origin = testInfo.project.use.baseURL!
   const homeRealm = `${origin}${HOME_REALM}`
+  const editorJs = `${editorBase(origin)}editor.js`
   let entityId = ''
   let editorScene = ''
 
-  // the engine only takes absolute content urls, so the editor scene is exported for one origin
-  const about = await (await page.request.get('/editor/scene/about')).text()
-  expect(about, `the editor scene must be exported with --editor-base ${origin}/editor/`).toContain(`baseUrl=${origin}/editor/scene/`)
-
-  // What the page asks of the editor package and of its own host script. The dev server's
-  // `?worker&url` module only names that script's url.
+  // What the page asks of the editor package and of its own Create chunk (all of features/editorHost
+  // but the HUD's config and mode). The dev server's `?worker&url` module only names a script's url.
   const editorRequests: string[] = []
   const serviceRequests: string[] = []
   page.on('request', (request) => {
     const { pathname, search } = new URL(request.url())
-    if (/^\/editor\/|\/editorHost\/host\//.test(pathname) && search !== '?worker&url') editorRequests.push(pathname)
+    if (request.url().startsWith(editorBase(origin))) editorRequests.push(request.url().split('?')[0])
+    else if (/\/editorHost\/(?!config\.ts|hudMode\.ts)|\/EditorHost-[\w-]+\.js$/.test(pathname) && search !== '?worker&url') editorRequests.push(pathname)
     if (request.url().startsWith(PROJECTS)) serviceRequests.push(`${request.method()} ${pathname}`)
   })
 
@@ -340,7 +339,7 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
 
   await step('1 the sidebar Create button opens the Create page, the editor lists the scenes there, and nothing of it loads before the click', async () => {
     // a first visit: the page reloads itself once its service worker is active, then boots the engine
-    await page.goto(`/?guest=1&realm=${encodeURIComponent(homeRealm)}&position=0,0&${BRIDGE}`, { waitUntil: 'commit' })
+    await page.goto(`${ENTRY}?guest=1&realm=${encodeURIComponent(homeRealm)}&position=0,0&${BRIDGE}`, { waitUntil: 'commit' })
     await expect.poll(() => seen(/GATE_HOME up/), { timeout: 420_000, message: 'the home scene runs' }).toBe(true)
     const create = nav.getByRole('button', { name: 'Create' })
     await create.waitFor({ timeout: 120_000 })
@@ -359,12 +358,12 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
     await expect(scenes.getByText(CREATE_INTRO)).toHaveCount(1)
     const info = await page.evaluate(() => {
       const { version, openProject, services, identity } = (window as GateWindow).__dclEditorHost!
-      const script = document.querySelector<HTMLScriptElement>('script[src$="/editor/editor.js"]')
+      const script = document.querySelector<HTMLScriptElement>('script[src$="/editor.js"]')
       return { version, openProject, services, identity: identity(), script: script?.src ?? null }
     })
     note(`editor script ${info.script}; host v${info.version}, services ${JSON.stringify(info.services)}; identity ${JSON.stringify(info.identity)}; url ${page.url()}`)
     note(`requested: ${JSON.stringify(editorRequests.slice(0, 4))}`)
-    expect(info.script, 'loaded from <PAGE_DIR>editor/').toBe(`${origin}/editor/editor.js`)
+    expect(info.script, 'loaded from the editor base').toBe(editorJs)
     expect(info).toMatchObject({ version: 1, openProject: null, services: { projects: PROJECTS } })
     expect(info.identity.isGuest).toBe(true)
     expect(new URL(page.url()).searchParams.has('editor'), 'Create does not put the flag in the url').toBe(false)
@@ -393,6 +392,13 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
     const [called] = (await spy(page)).openPreview
     preview = called.split('@')[0]
     expect(called, 'a random preview id, at the base parcel').toMatch(/^p[0-9a-f]{32}@0,0$/)
+    PROJECT_ID = await page.evaluate(async (name) => {
+      const root = await navigator.storage.getDirectory()
+      const index = await (await (await root.getDirectoryHandle('dcl-editor')).getFileHandle('index.json')).getFile()
+      const { projects } = JSON.parse(await index.text()) as { projects: Array<{ id: string; name: string }> }
+      return projects.find((project) => project.name === name)?.id ?? ''
+    }, PROJECT_NAME)
+    expect(PROJECT_ID, 'a new scene gets an id with a random tail').toMatch(/^gate-scene-[a-z0-9]{4}$/)
     expect(await previewId(page, PROJECT_ID), 'the id the store keeps for the project').toBe(preview)
     await expect(createPage, 'the Create page closed for the editor').toHaveCount(0)
     await expect.poll(async () => (await manifest(page)) != null, { timeout: 60_000, message: 'the preview is published' }).toBe(true)
@@ -607,11 +613,11 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
     // the page fades in
     await page.waitForTimeout(600)
     await shot('6-create-in-the-top-bar')
-    const loads = editorRequests.filter((path) => path === '/editor/editor.js').length
+    const loads = editorRequests.filter((url) => url === editorJs).length
     await item.click()
     await card.waitFor({ timeout: 60_000 })
     await expect(page.locator('header button[data-page="settings"][aria-current="page"]'), 'the Settings page closed').toHaveCount(0)
-    expect(editorRequests.filter((path) => path === '/editor/editor.js').length, 'mounted again, not fetched again').toBe(loads)
+    expect(editorRequests.filter((url) => url === editorJs).length, 'mounted again, not fetched again').toBe(loads)
     await shot('7-create-page-again')
     const reopenedAt = Date.now()
     await card.click()
@@ -641,7 +647,7 @@ test('the scene editor opens, edits and plays a starter scene inside the page', 
 
   await step('8 ?editor=<project> opens that scene directly once in-world, with no list in between', async () => {
     const at = Date.now()
-    await page.goto(`/?guest=1&editor=${PROJECT_ID}&realm=${encodeURIComponent(homeRealm)}&position=0,0&${BRIDGE}`, { waitUntil: 'commit' })
+    await page.goto(`${ENTRY}?guest=1&editor=${PROJECT_ID}&realm=${encodeURIComponent(homeRealm)}&position=0,0&${BRIDGE}`, { waitUntil: 'commit' })
     await expect.poll(() => seen(/GATE_HOME up/, at), { timeout: 420_000, message: 'the home scene runs' }).toBe(true)
     await expect.poll(() => spawns(at), { timeout: 180_000, message: 'the engine runs the project scene' }).toContain(entityId)
     await ui.locator('.eui-toolbar').waitFor({ timeout: 120_000 })
@@ -669,7 +675,7 @@ test('?editor=<project> this browser does not have opens the Create page once in
   const lines: string[] = []
   page.on('console', (message) => lines.push(message.text()))
   const homeRealm = `${testInfo.project.use.baseURL!}${HOME_REALM}`
-  await page.goto(`/?guest=1&editor=${PROJECT_ID}&realm=${encodeURIComponent(homeRealm)}&position=0,0&${BRIDGE}`, { waitUntil: 'commit' })
+  await page.goto(`${ENTRY}?guest=1&editor=${PROJECT_ID}&realm=${encodeURIComponent(homeRealm)}&position=0,0&${BRIDGE}`, { waitUntil: 'commit' })
   await expect.poll(() => lines.some((line) => /GATE_HOME up/.test(line)), { timeout: 420_000, message: 'the home scene runs' }).toBe(true)
   const scenes = page.locator(SCENES)
   await scenes.getByText(`“${PROJECT_ID}” is not on this device or on your account.`, { exact: false }).waitFor({ timeout: 120_000 })

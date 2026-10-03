@@ -53,11 +53,11 @@ import { openRealmError } from './features/error/RealmErrorModal'
 import { DIALOG_TITLE, isDialogSource } from './features/error/fatalError'
 import { openEntryParamsDialog } from './features/gate/EntryParamsDialog'
 import { unrecognisedEntryParams } from './lib/entryParams'
-import { PAGE_DIR } from './lib/publicUrl'
-import { editorParams, editorSource } from './features/editorHost/config'
-import { EditorEntryContext } from './features/editorHost/entry'
-import { CreatePage } from './features/editorHost/CreatePage'
-import { useEditorHost } from './features/editorHost/useEditorHost'
+import { EDITOR_BUILD, editorOffered, EditorOffered } from './features/editorHost/config'
+// The scene editor's host and Create page: loaded once Create is first opened. lazy() keeps a
+// failed load, so a crash swaps in a fresh one for the next open.
+const loadEditorHost = () => lazy(() => import('./features/editorHost/EditorHost'))
+let EditorHost = /* @__PURE__ */ loadEditorHost()
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
@@ -100,10 +100,11 @@ const GATE_REASON = gateReason()
 // front-end doesn't recognise get an interstitial before anything boots — captured at module
 // scope, from the ENTRY url, so a later history.replaceState can't retire the warning.
 const UNTRUSTED_PARAMS = untrustedLaunchParams({ native: MODE === 'native' })
-// The scene editor this page can open (an allowed host with a package), from the ENTRY url; null = none.
-const EDITOR_SOURCE = MODE === 'engine' ? editorSource(location.search, location.hostname, PAGE_DIR) : null
+const EDITOR = EDITOR_BUILD && MODE === 'engine' && editorOffered(location.hostname)
+// the ENTRY url: the engine's url sync rewrites it
+const ENTRY_SEARCH = location.search
 // Entry-url params nothing reads (lib/entryParams.ts) — told to the user once the HUD is up.
-const UNRECOGNISED_PARAMS = unrecognisedEntryParams(params, EDITOR_SOURCE != null ? editorParams(location.hostname) : [])
+const UNRECOGNISED_PARAMS = unrecognisedEntryParams(params, EDITOR_BUILD && EDITOR ? ['editor', 'editor-projects', 'editor-worlds'] : [])
 
 export function App(): React.JSX.Element {
   const showFps = useFpsToggle()
@@ -190,7 +191,9 @@ function Hud(): React.JSX.Element {
   }, [])
 
   const session = useEngineSession(createDriver)
-  const editorEntry = useEditorHost(EDITOR_SOURCE, session)
+  // mounted for good once wanted: `?editor`, or Create opened
+  const [editorWanted, setEditorWanted] = useState(params.has('editor'))
+  if (EDITOR_BUILD && EDITOR && !editorWanted && session.create.open) setEditorWanted(true)
 
   // A link with params the Explorer doesn't know gets an ordinary dialog listing what was ignored
   // and what it accepts — informational, nothing is frozen behind it.
@@ -288,14 +291,13 @@ function Hud(): React.JSX.Element {
     else if (page === 'signout') session.logout()
   }
 
-  // The scene editor owns the screen: no chrome in 'edit', only the reticle and prompts in 'play',
-  // and no loading overlay in either (a scene reloads on every edit).
-  const editorMode = session.editor.mode
-  const editing = editorMode !== 'off'
-
   // A full-screen MainMenuShell page is open (covers the whole HUD).
   const pageOpen =
     session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.shop.open || session.gallery.open || session.lobbyPage.open || session.create.open
+  // The scene editor owns the screen: no chrome in 'edit', only the reticle and prompts in 'play',
+  // and no loading overlay in either (a scene reloads on every edit).
+  const editorMode = session.editor.mode
+  const chrome = !pageOpen && editorMode === 'off'
 
   // Tell the engine how much of the screen the persistent HUD occupies. A full-screen page is
   // transient, so the last in-world value stands while one is open.
@@ -332,18 +334,18 @@ function Hud(): React.JSX.Element {
           </SurfaceBoundary>
         </>
       )}
-      {session.phase === 'entering' && !editing && (
+      {session.phase === 'entering' && editorMode === 'off' && (
         <SceneLoadingOverlay scene={session.sceneLoading} progress={session.loadingProgress} travellingTo={session.travellingTo} />
       )}
       {session.phase === 'world' && !session.menuOpen && (
-        <EditorEntryContext.Provider value={editorEntry}>
+        <EditorOffered.Provider value={EDITOR}>
           {session.lobbyPage.open && (
             <LobbyHome onPick={session.lobbyPage.travel} onClose={session.lobbyPage.toggle} setEngineViewport={session.setEngineViewport} />
           )}
           {/* The full-screen menu pages own the whole screen; hide the rail + chat so
               they don't show through (the map page's body is transparent). */}
-          {!pageOpen && !editing && <Sidebar session={session} onViewProfile={viewMyProfile} />}
-          {!pageOpen && !editing && (
+          {chrome && <Sidebar session={session} onViewProfile={viewMyProfile} />}
+          {chrome && (
             <Minimap
               minimap={session.minimap}
               map={session.map}
@@ -359,15 +361,13 @@ function Hud(): React.JSX.Element {
               proximity={session.proximity}
             />
           )}
-          {!editing && (
-            <Chat
-              chat={session.chat}
-              hidden={session.friends.open || pageOpen}
-              me={session.profile.data}
-              onTeleport={(x, y) => session.map.teleport(x, y)}
-              onVisitWorld={(name) => openWorldVisit({ worldName: name, onConfirm: () => session.map.changeRealm(name) })}
-            />
-          )}
+          <Chat
+            chat={session.chat}
+            hidden={session.friends.open || !chrome}
+            me={session.profile.data}
+            onTeleport={(x, y) => session.map.teleport(x, y)}
+            onVisitWorld={(name) => openWorldVisit({ worldName: name, onConfirm: () => session.map.changeRealm(name) })}
+          />
           <SurfaceBoundary name="Friends" open={session.friends.open} onCrash={session.closeAllPanels}>
             <FriendsPanel friends={session.friends} />
           </SurfaceBoundary>
@@ -435,10 +435,21 @@ function Hud(): React.JSX.Element {
               onViewProfile={(u) => openPassport(u.address)}
             />
           </SurfaceBoundary>
-          <SurfaceBoundary name="Create" open={session.create.open} onCrash={session.closeAllPanels}>
-            <CreatePage create={session.create} profile={session.profile} onNavigate={goToMenuPage} />
-          </SurfaceBoundary>
-        </EditorEntryContext.Provider>
+        </EditorOffered.Provider>
+      )}
+      {EDITOR_BUILD && EDITOR && editorWanted && (
+        <SurfaceBoundary
+          name="Create"
+          open={session.create.open}
+          onCrash={() => {
+            EditorHost = loadEditorHost()
+            session.closeAllPanels()
+          }}
+        >
+          <Suspense fallback={null}>
+            <EditorHost session={session} entrySearch={ENTRY_SEARCH} onNavigate={goToMenuPage} />
+          </Suspense>
+        </SurfaceBoundary>
       )}
       {/* Popups (imperative overlay stack) live inside the session provider so popup-mounted surfaces
           — the world <ProfileCard> — can read useSession(). */}

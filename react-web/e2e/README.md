@@ -99,16 +99,22 @@ web-build files under `/web-build/`) and a bridge scene of its own on `GATE_BRID
 
 ## Editor gates (real engine, same config)
 
-Five specs drive the scene editor package inside this page with real clicks. They need a
-dcl-editor checkout whose package speaks host contract v1.1 (`mountHome`), exported for the gate's port:
+Five specs drive the scene editor package inside this page with real clicks. They need a built
+engine in `deploy/web/engine/pkg` (`just wasm`), the TS bindings
+(`just ts-bindings`), and a dcl-editor checkout whose package speaks host contract v1.1 (`mountHome`):
 
 ```bash
-# in the dcl-editor checkout: the editor scene's `about` holds an absolute url
+# in the dcl-editor checkout (the page reads only the entity id from `scene/about`, not its url)
 npm run export-static -w @dcl-editor/scene -- --editor-base http://localhost:5230/editor/
 npm run build -w @dcl-editor/web
 # here: every gate, or one by name (preview-realm, editor, sync, publish, npm)
 WEB_EDITOR_DIR=/path/to/dcl-editor npx playwright test --config playwright.gate.config.ts [name]
 ```
+
+`editor.gate.spec.ts` also runs against a production build: `GATE_ENTRY=/bevy-web` loads the
+page at that no-slash entry with the bundled bridge scene (no `?bridgePort`), and
+`GATE_EDITOR_BASE=<url>/` is where the pinned package is served from (README "Releasing the
+editor"). The servers are then yours to start.
 
 Besides Vite on :5230 and the bridge scene on :8110, the config starts two servers out of that
 checkout (Node 24, no build): its project storage service on :8787, over a directory that starts

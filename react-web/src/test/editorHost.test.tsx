@@ -2,24 +2,23 @@
 // available, loads it only when the Create page opens, and what it hands the editor keeps the
 // engine on a short leash. What it signs for the editor is in editorHostSigning.test.tsx.
 import { describe, it, expect, vi } from 'vitest'
-import { act, render, renderHook, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { ToastHost } from '../design'
 import userEvent from '@testing-library/user-event'
-import { editorEntry, editorSource } from '../features/editorHost/config'
+import { editorOffered, EditorOffered } from '../features/editorHost/config'
 import { CreatePage } from '../features/editorHost/CreatePage'
-import { EditorEntryContext } from '../features/editorHost/entry'
-import type { EditorHostScript } from '../features/editorHost/host/editorHost'
-import { guardUrlSync, loadEditor, type DclEditorHostV1, type EditorPackage } from '../features/editorHost/host/host'
-import { useEditorHost } from '../features/editorHost/useEditorHost'
+import { useEditorHost } from '../features/editorHost/EditorHost'
+import { type DclEditorHostV1, type EditorPackage } from '../features/editorHost/host/host'
+import { editorEntry, editorSource } from '../features/editorHost/source'
 import type { EngineSession } from '../features/session/useEngineSession'
 import { MainMenuShell } from '../features/menu/MainMenuShell'
 import { Sidebar } from '../features/sidebar/Sidebar'
+import { bridgeChannelName, type Envelope } from '../engine/protocol'
 import { PAGE_DIR } from '../lib/publicUrl'
 import { fakeSession } from './harness'
 
 type HostWindow = Window & {
   __dclEditorHost?: DclEditorHostV1
-  __dclEditorHostScript?: (script: EditorHostScript) => void
   __dclEditor?: Partial<EditorPackage>
   set_url_params?: (json: string) => void
   engine_console_command?: (line: string) => Promise<string>
@@ -34,11 +33,8 @@ describe('editor host', () => {
   it.each([
     ['an untrusted host', 'evil.example'],
     ['a lookalike of an allowed host', 'decentraland.zone.evil.example']
-  ])('has no editor on %s, even with ?editor', (_, hostname) => {
-    history.replaceState(null, '', '/?editor')
-    const { result } = renderHook(() => useEditorHost(editorSource('?editor', hostname, PAGE_DIR), fakeSession()))
-    expect(result.current).toBeNull()
-    expect(scripts()).toEqual([])
+  ])('has no editor on %s', (_, hostname) => {
+    expect(editorOffered(hostname)).toBe(false)
   })
 
   it('reads the project and the local service overrides from the entry url', () => {
@@ -51,6 +47,10 @@ describe('editor host', () => {
     expect(editorSource('?editor-projects=http://localhost:9000/&editor-worlds=javascript:alert(1)', 'localhost', PAGE_DIR)?.services).toEqual({
       projects: 'http://localhost:9000',
       worldsContent: 'https://worlds-content-server.decentraland.org'
+    })
+    expect(editorSource('?editor-projects=https://evil.example/v1&editor-worlds=http://127.0.0.1:8799', 'localhost', PAGE_DIR)?.services).toEqual({
+      projects: 'http://localhost:8787',
+      worldsContent: 'http://127.0.0.1:8799'
     })
   })
 
@@ -69,7 +69,7 @@ describe('editor host', () => {
     expect(screen.queryAllByRole('button', { name: /Create/ })).toEqual([])
     plain.unmount()
 
-    render(<EditorEntryContext.Provider value={{ load: vi.fn(), loading: false }}>{surfaces}</EditorEntryContext.Provider>)
+    render(<EditorOffered.Provider value>{surfaces}</EditorOffered.Provider>)
     const [rail, topBar] = screen.getAllByRole('button', { name: /Create/ })
     await userEvent.click(rail)
     expect(s.create.toggle).toHaveBeenCalledTimes(1)
@@ -83,16 +83,26 @@ describe('editor host', () => {
     const engineConsole = vi.fn(async (line: string) => (line === '/time' ? 'time 10:30 -> 10:30, speed 7 (elapsed: 37800)' : ''))
     w.engine_console_command = engineConsole
     history.replaceState(null, '', '/?realm=boedo.dcl.eth&position=3,4')
-    const travel = vi.fn(async () => {})
-    session.editor.travel = travel
-    const source = editorSource('', 'localhost', PAGE_DIR)
+    // the bridge scene: the host's travels reach it, and it answers each
+    const travel = vi.fn()
+    let held: (() => void) | null = null
+    let holdNext = false
+    const bridge = new BroadcastChannel(bridgeChannelName())
+    bridge.onmessage = ({ data }: MessageEvent<Envelope>) => {
+      if (data.to !== 'scene' || (data.msg.kind !== 'teleport' && data.msg.kind !== 'changeRealm')) return
+      const msg = data.msg
+      travel(msg.realm, msg.kind === 'teleport' ? { x: msg.x, y: msg.y } : undefined)
+      const answer = (): void => bridge.postMessage({ to: 'page', msg: { kind: 'travelResult', travelId: msg.travelId!, realm: msg.realm!, ok: true } } satisfies Envelope)
+      if (holdNext) [held, holdNext] = [answer, false]
+      else answer()
+    }
 
     function Page({ s }: { s: EngineSession }): React.JSX.Element {
       return (
-        <EditorEntryContext.Provider value={useEditorHost(source, s)}>
-          <CreatePage create={s.create} profile={s.profile} onNavigate={vi.fn()} />
+        <>
+          <CreatePage entry={useEditorHost('', s)!} create={s.create} profile={s.profile} onNavigate={vi.fn()} />
           <ToastHost />
-        </EditorEntryContext.Provider>
+        </>
       )
     }
     const view = render(<Page s={session} />)
@@ -102,8 +112,7 @@ describe('editor host', () => {
     const opened = { ...session, create: { ...session.create, open: true } }
     view.rerender(<Page s={opened} />)
     expect(screen.getByText('Opening Create…')).toBeInTheDocument()
-    expect(scripts()).toEqual([expect.stringContaining('editorHost')])
-    await act(async () => w.__dclEditorHostScript!({ guardUrlSync, loadEditor }))
+    await act(async () => {})
     expect(host()).toMatchObject({
       version: 1,
       pageDir: PAGE_DIR,
@@ -149,12 +158,11 @@ describe('editor host', () => {
     expect(JSON.parse(synced.mock.lastCall![0] as string)).toEqual({ realm: 'boedo.dcl.eth', position: '3,4', editor: false })
 
     // back to scenes: the editor's scene is left as on exit, and the Create page opens
-    let landed = (): void => {}
-    travel.mockImplementationOnce(() => new Promise<void>((resolve) => (landed = resolve)))
+    holdNext = true
     host().openCreatePage()
     expect(editor.unmount).toHaveBeenCalledTimes(1)
     expect(session.editor.setMode).toHaveBeenLastCalledWith('off')
-    expect(travel).toHaveBeenLastCalledWith('boedo.dcl.eth', { x: 3, y: 4 })
+    await vi.waitFor(() => expect(travel).toHaveBeenLastCalledWith('boedo.dcl.eth', { x: 3, y: 4 }))
     expect(session.create.show).toHaveBeenLastCalledWith(true)
     // the inspection pin is cleared and the clock is the one read on the way in
     await vi.waitFor(() => expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', '/set_scene', '/time 10.5 7']))
@@ -162,11 +170,12 @@ describe('editor host', () => {
     w.set_url_params!(JSON.stringify({ realm, position: '4,-2', editor: false }))
     expect(JSON.parse(synced.mock.lastCall![0] as string)).toMatchObject({ realm: 'boedo.dcl.eth', position: '3,4' })
     await host().openPreview('my-scene', '4,-2')
-    await act(async () => landed())
+    await act(async () => held!())
     host().openCreatePage()
-    expect(travel).toHaveBeenLastCalledWith('boedo.dcl.eth', { x: 3, y: 4 })
+    await vi.waitFor(() => expect(travel).toHaveBeenLastCalledWith('boedo.dcl.eth', { x: 3, y: 4 }))
 
     host().exit()
+    bridge.close()
     expect(session.create.show).toHaveBeenLastCalledWith(false)
     expect(scripts().filter((src) => src.includes('editor.js'))).toHaveLength(1)
   })

@@ -8,6 +8,8 @@ import backpackPng from '../assets/sidebar-icons/backpack.png'
 import bugPng from '../assets/sidebar-icons/bug.png'
 import chatPng from '../assets/sidebar-icons/chat.png'
 import communitiesPng from '../assets/sidebar-icons/communities.png'
+// a cube with a plus: the scene editor (a file, so the HUD bundle doesn't carry the path)
+import createSvg from '../assets/sidebar-icons/create.svg?no-inline'
 import emotesPng from '../assets/sidebar-icons/emotes.png'
 import eventsPng from '../assets/sidebar-icons/events.png'
 import friendsPng from '../assets/sidebar-icons/friends.png'
@@ -55,6 +57,7 @@ const MASK_ART: Partial<Record<IconName, string>> = {
   bug: bugPng,
   chat: chatPng,
   communities: communitiesPng,
+  create: createSvg,
   emotes: emotesPng,
   events: eventsPng,
   friends: friendsPng,
@@ -79,10 +82,7 @@ const COLOR_ART: Partial<Record<IconName, string>> = {
 // Only the icons WITHOUT Unity png art — anything present in MASK_ART renders as a mask.
 const PATHS: Partial<Record<IconName, string>> = {
   profile:
-    'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
-  // a cube with a plus: the scene editor
-  create:
-    'M10 4.6l7.2 4.1-7.2 4.1-7.2-4.1zM2.8 10l6.5 3.7v7.9l-6.5-3.7zM10.7 13.7l6.5-3.7v7.9l-6.5 3.7zM18.6 1.5h1.8v2.1h2.1v1.8h-2.1v2.1h-1.8V5.4h-2.1V3.6h2.1z'
+    'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'
 }
 
 export function Icon({
