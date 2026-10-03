@@ -83,7 +83,7 @@ fn delivery(field: &str) -> Delivery {
         | "log_fps"
         | "gpu_bytes_per_frame"
         | "compute_threads" => Launch,
-        "editor" => Host,
+        "editor" | "hold_world" => Host,
         "base_domain" => Resolved,
         other => {
             panic!("launch option `{other}` has no web delivery — add it to web_params::delivery")

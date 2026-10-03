@@ -148,11 +148,24 @@ describe('system-action menu shortcuts', () => {
     expect(screen.queryByText('realm error')).toBeNull()
   })
 
-  it('declares the loading overlay as covered until the world is revealed', async () => {
+  it('Cancel closes what the in-world lobby opened before the lobby itself', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().lobbyPage.toggle())
+    act(() => h.session().profile.toggle())
+    expect(h.session().lobbyPage.open).toBe(true)
+    act(() => h.driver.emit(action('Cancel')))
+    expect(h.session().profile.open).toBe(false)
+    expect(h.session().lobbyPage.open).toBe(true)
+    act(() => h.driver.emit(action('Cancel')))
+    expect(h.session().lobbyPage.open).toBe(false)
+  })
+
+  it('declares the lobby and the loading overlay as covered until the world is revealed', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h, { keepSent: true })
     const focus = h.driver.sent.filter((m) => m.kind === 'uiFocus').map((m) => m.covered)
-    expect(focus).toEqual([true, false])
+    expect(focus).toEqual([true, true, false])
   })
 
   it("declares uiFocus to the engine: panels/popups set ui, a full-screen page sets covered, a focused text field sets text", async () => {

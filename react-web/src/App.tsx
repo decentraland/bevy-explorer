@@ -21,6 +21,7 @@ import { PlacesPage } from './features/places/PlacesPage'
 import { EventsPage } from './features/events/EventsPage'
 import { ShopPage } from './features/shop/ShopPage'
 import { PlacesPicker } from './features/places/PlacesPicker'
+import { LobbyHome } from './features/lobby/LobbyHome'
 import { GalleryPage } from './features/gallery/GalleryPage'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Minimap } from './features/minimap/Minimap'
@@ -258,7 +259,10 @@ function Hud(): React.JSX.Element {
   // Top-nav navigation between the full-screen menu pages (Settings/Backpack/Map)
   // and the Communities panel. Each toggle is mutually exclusive.
   const goToMenuPage = (page: string): void => {
-    if (page === 'settings') session.settings.toggle()
+    // the startup lobby mounts only the Backpack; other pages wait for the world
+    if (session.phase === 'lobby' && page !== 'backpack' && page !== 'signout') return
+    if (page === 'lobby') session.lobbyPage.toggle()
+    else if (page === 'settings') session.settings.toggle()
     else if (page === 'backpack') session.backpack.toggle()
     else if (page === 'communities') session.communities.toggle()
     else if (page === 'map') session.map.toggle()
@@ -274,7 +278,7 @@ function Hud(): React.JSX.Element {
 
   // A full-screen MainMenuShell page is open (covers the whole HUD).
   const pageOpen =
-    session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.shop.open || session.gallery.open
+    session.settings.open || session.backpack.open || session.communities.open || session.map.open || session.places.open || session.events.open || session.shop.open || session.gallery.open || session.lobbyPage.open
 
   // Tell the engine how much of the screen the persistent HUD occupies. A full-screen page is
   // transient, so the last in-world value stands while one is open.
@@ -300,11 +304,25 @@ function Hud(): React.JSX.Element {
       {rpc && <EngineHost rpc={rpc} />}
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
+      {session.phase === 'lobby' && (
+        <>
+          <LobbyHome onPick={session.pickDestination} setEngineViewport={session.setEngineViewport} />
+          <SurfaceBoundary name="Notifications" open={session.notifications.open} onCrash={session.closeAllPanels}>
+            <NotificationsPanel notifications={session.notifications} friends={session.friends} anchor="lobby" />
+          </SurfaceBoundary>
+          <SurfaceBoundary name="Backpack" open={session.backpack.open} onCrash={session.closeAllPanels}>
+            <BackpackPage backpack={session.backpack} emotes={session.emotes} profile={session.profile} onNavigate={goToMenuPage} setEngineViewport={session.setEngineViewport} initialTab={backpackTab} modal />
+          </SurfaceBoundary>
+        </>
+      )}
       {session.phase === 'entering' && (
         <SceneLoadingOverlay scene={session.sceneLoading} progress={session.loadingProgress} travellingTo={session.travellingTo} />
       )}
       {session.phase === 'world' && !session.menuOpen && (
         <>
+          {session.lobbyPage.open && (
+            <LobbyHome onPick={session.lobbyPage.travel} onClose={session.lobbyPage.toggle} setEngineViewport={session.setEngineViewport} />
+          )}
           {/* The full-screen menu pages own the whole screen; hide the rail + chat so
               they don't show through (the map page's body is transparent). */}
           {!pageOpen && <Sidebar session={session} onViewProfile={viewMyProfile} />}
@@ -341,7 +359,7 @@ function Hud(): React.JSX.Element {
             <ProfilePanel profile={session.profile} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Notifications" open={session.notifications.open} onCrash={session.closeAllPanels}>
-            <NotificationsPanel notifications={session.notifications} friends={session.friends} />
+            <NotificationsPanel notifications={session.notifications} friends={session.friends} anchor={session.lobbyPage.open ? 'lobbyInWorld' : 'rail'} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Skybox" open={session.skybox.open} onCrash={session.closeAllPanels}>
             <SkyboxMenu skybox={session.skybox} />
@@ -356,7 +374,7 @@ function Hud(): React.JSX.Element {
             />
           </SurfaceBoundary>
           <SurfaceBoundary name="Backpack" open={session.backpack.open} onCrash={session.closeAllPanels}>
-            <BackpackPage backpack={session.backpack} emotes={session.emotes} profile={session.profile} onNavigate={goToMenuPage} setEngineViewport={session.setEngineViewport} initialTab={backpackTab} />
+            <BackpackPage backpack={session.backpack} emotes={session.emotes} profile={session.profile} onNavigate={goToMenuPage} setEngineViewport={session.setEngineViewport} initialTab={backpackTab} modal={session.lobbyPage.open} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Communities" open={session.communities.open} onCrash={session.closeAllPanels}>
             <CommunitiesPage

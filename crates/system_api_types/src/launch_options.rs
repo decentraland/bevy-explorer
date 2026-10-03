@@ -102,6 +102,12 @@ pub struct ClientOptions {
     #[arg(long, help_heading = HOST)]
     pub editor: bool,
 
+    /// Load no realm scenes and join no realm comms (Pulse still connects) until the first
+    /// successful realm change request. For a lobby shown before entering the world. Set by the
+    /// host page.
+    #[arg(long, help_heading = HOST)]
+    pub hold_world: bool,
+
     /// A `decentraland://` link as the scheme handler or the launcher passes it: `realm`,
     /// `position` and `dclenv` fill the matching launch options (main.rs)
     #[arg(hide = true, value_name = "decentraland://…")]

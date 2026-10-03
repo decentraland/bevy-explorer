@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import { hoverKey, proximityKey } from '../../engine/pointerKeys'
 import type { LoginDriver } from '../../engine/driver'
+import type { LaunchHostOptions } from '../../engine/engineRpc'
+import { recordVisit } from '../lobby/lobbyApi'
 import type { SatelliteView } from '../../engine/generated'
 import type { PreviewFocus } from '../../engine/protocol'
 import type { InteractableArea } from '../../lib/hudInset'
@@ -395,7 +397,7 @@ export type LoginStatus =
   | 'sign-in-or-guest'
   | 'reuse-login-or-new'
 
-export type SessionPhase = 'login' | 'picking' | 'entering' | 'world'
+export type SessionPhase = 'login' | 'lobby' | 'picking' | 'entering' | 'world'
 
 // Where the user chose to spawn after login (the post-jump-in Places picker). `null` = skip → the
 // engine's default spawn (Genesis Plaza). A world switches realm; a parcel teleports once spawned.
@@ -440,6 +442,15 @@ export interface LoginFlow {
 
 export interface EngineSession {
   phase: SessionPhase
+  playerReady: boolean
+  /** The engine has drawn the lobby stage and avatar, so the page's stand-in can fade out. */
+  lobbyStageReady: boolean
+  /** The lobby reopened in-world from the menu. */
+  lobbyPage: { open: boolean; toggle: () => void; travel: (dest: Destination) => void }
+  /** The Backpack avatar preview's on-screen rect (CSS px), while it is open. */
+  avatarPreviewRect: { x: number; y: number; width: number; height: number } | null
+  /** The persisted home destination the lobby's landing card shows (null before the engine knows). */
+  homeScene: () => { realm: string | null; parcel: string } | null
   /** Post-jump-in Places picker: choose where to spawn (or null to skip → Genesis Plaza). */
   pickDestination: (dest: Destination) => void
   login: LoginFlow
@@ -491,7 +502,7 @@ export interface EngineSession {
   nav: (action: NavAction) => void
   /** Report (or clear) the screen rect where the scene should render an engine view. */
   setEngineViewport: (
-    region: 'map' | 'avatarPreview',
+    region: 'map' | 'avatarPreview' | 'lobby',
     rect: { x: number; y: number; width: number; height: number } | null,
     dpr?: number
   ) => void
@@ -522,6 +533,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // The address of the engine's actual reusable previous login (drives "Welcome back").
   const [prevUserId, setPrevUserId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
+  busyRef.current = busy
   const [error, setError] = useState<string | null>(null)
   // Engine boots (autostart) while the login screen is up; this flips true once it can take commands.
   const [engineReady, setEngineReady] = useState(false)
@@ -548,8 +561,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [submitted, setSubmitted] = useState(false)
   // The post-jump-in Places picker: stay in 'picking' until the user chooses a destination (or skips).
   const [destinationPicked, setDestinationPicked] = useState(false)
-  // Deferred login: the login call captured on Jump in, run only once the user picks a destination
-  // (so the engine is launched straight at that destination instead of loading Genesis Plaza first).
+  // Signed in and shown the lobby, with the engine launched holding the world back (web) or already
+  // running (native, mock). Ends once a destination lands; a failed one returns here.
+  const [lobby, setLobby] = useState(false)
+  const lobbyRef = useRef(false)
+  const [lobbyStageReady, setLobbyStageReady] = useState(false)
+  lobbyRef.current = lobby
+  // The engine launches once per page (boot.js), so after that a destination is a runtime travel.
+  const launchedRef = useRef(false)
+  // The last place recorded as visited (realm|title), so walking inside one scene records it once.
+  const visitedTitle = useRef('')
+  // The login captured on Jump in, run once the engine is launched (for the lobby, or straight at a
+  // ?position/?realm destination).
   const pendingLogin = useRef<((driver: LoginDriver) => Promise<unknown>) | null>(null)
   // Native fresh sign-in (driver.loginNew) in flight: non-null shows the verification-code panel;
   // `code` fills in when the engine's 'loginCode' message lands. The attempt counter invalidates
@@ -685,6 +708,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [satelliteView, setSatelliteView] = useState<SatelliteView | null>(null)
   const [sceneTitle, setSceneTitle] = useState('')
   const [placesOpen, setPlacesOpen] = useState(false)
+  // The lobby reopened in-world: over the running world, under the panels it opens.
+  const [lobbyOpen, setLobbyOpen] = useState(false)
+  const [home, setHome] = useState<{ realm: string | null; parcel: string } | null>(null)
   const [eventsOpen, setEventsOpen] = useState(false)
   const [shopOpen, setShopOpen] = useState(false)
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([])
@@ -955,13 +981,30 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'realmInfo':
           setSatelliteView(msg.satelliteView)
           break
+        case 'homeScene':
+          setHome({ realm: msg.realm === DEFAULT_REALM ? null : msg.realm, parcel: `${msg.parcel.x},${msg.parcel.y}` })
+          break
         case 'travelResult':
           if (msg.travelId !== travelSeq.current) break
           setTravellingTo(null)
           if (!msg.ok) setTravelError(`Couldn't travel to "${msg.realm}": ${msg.message ?? 'unknown error'}`)
+          if (lobbyRef.current) {
+            if (msg.ok) setLobby(false)
+            else setDestinationPicked(false)
+          }
+          break
+        case 'lobbyStageReady':
+          setLobbyStageReady(true)
           break
         case 'sceneInfo':
           setSceneTitle(msg.title)
+          if (msg.title !== '' && msg.parcel != null && msg.realm && !msg.preview && (msg.genesis || msg.realm.includes('.'))) {
+            const key = `${msg.realm}|${msg.title}`
+            if (key !== visitedTitle.current) {
+              visitedTitle.current = key
+              recordVisit({ realm: msg.realm, genesis: msg.genesis === true, parcel: msg.parcel }).catch(() => undefined)
+            }
+          }
           break
         case 'gallery':
           setGalleryPhotos([...msg.photos].sort((a, b) => photoTime(b.dateTime) - photoTime(a.dateTime)))
@@ -1077,6 +1120,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // A realm change from the HUD: the loader shows from the request until the engine reports the
   // outcome (it validates the destination before leaving the current realm).
   const travel = useCallback((msg: ChangeRealmRequest | (TeleportRequest & { realm: string })) => {
+    setLobbyOpen(false)
     const travelId = ++travelSeq.current
     setTravellingTo(msg.realm)
     driverRef.current?.send({ ...msg, travelId })
@@ -1157,6 +1201,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   )
   const closeAllPanels = useCallback(() => {
     setChatOpen(false)
+    setLobbyOpen(false)
     panelSetters.forEach((set) => set(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -1181,7 +1226,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
-    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || shopOpen || galleryOpen
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || shopOpen || galleryOpen || lobbyOpen
   // What takes the screen from the chat, for requestFocusChat: the main menu, the emote wheel, and
   // the two modals App renders above everything (permission prompt, fatal error).
   chatCoveredRef.current =
@@ -1193,6 +1238,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // gamepad alike. No DOM cancel handling here; see the pre-world fallback further down.
   const anyPanelOpen =
     menuPageOpen || friendsOpen || profileOpen || notificationsOpen || emotesOpen || skyboxOpen
+  // Everything that can sit over the in-world lobby: Cancel closes these before the lobby.
+  const anyPanelOpenExceptLobby =
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || shopOpen || galleryOpen ||
+    friendsOpen || profileOpen || notificationsOpen || emotesOpen || skyboxOpen
   const toggleFriends = useCallback(() => exclusive(setFriendsOpen), [exclusive])
   const loadSettings = useCallback(() => ensure('getSettings'), [ensure])
   const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => ensure('getSettings')), [exclusive, ensure])
@@ -1200,13 +1249,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const toggleNotifications = useCallback(() => exclusive(setNotificationsOpen, () => send('getNotifications')), [exclusive, send])
   const toggleEmotes = useCallback(() => exclusive(setEmotesOpen, () => ensure('getEmotes')), [exclusive, ensure])
   const toggleBackpack = useCallback(
-    () =>
+    () => {
+      if (!playerReadyRef.current) return
       exclusive(setBackpackOpen, () => {
         ensure('getWearables')
         ensure('getEmotes') // Backpack's Emotes tab reuses the emotes list.
         ensure('getOutfits') // Backpack's Outfits tab.
         driverRef.current?.send({ kind: 'getOwnedNames' })
-      }),
+      })
+    },
     [exclusive, ensure]
   )
   const toggleCommunities = useCallback(() => exclusive(setCommunitiesOpen, () => ensure('getCommunities')), [exclusive, ensure])
@@ -1272,6 +1323,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setGalleryStorage((s) => ({ ...s, current: Math.max(0, s.current - 1) }))
   }, [])
   const teleport = useCallback((x: number, y: number) => {
+    setLobbyOpen(false)
     driverRef.current?.send({ kind: 'teleport', x, y })
   }, [])
   const teleportToPlace = useCallback(
@@ -1280,6 +1332,44 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       else driverRef.current?.send({ kind: 'teleport', x, y })
     },
     [satelliteView, travel]
+  )
+  // The in-world lobby: open it over the world (closing other pages), and travel from it the
+  // way any in-world pick does — a runtime realm change or teleport, then close.
+  const toggleLobby = useCallback(() => {
+    // a page over the lobby (or anything else) gives way to it; only the lobby alone closes
+    const closing = lobbyOpen && !anyPanelOpenExceptLobby
+    setChatOpen(false)
+    panelSetters.forEach((set) => set(false))
+    setLobbyOpen(!closing)
+    if (!closing) setLobbyStageReady(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lobbyOpen, anyPanelOpenExceptLobby])
+  const homeScene = useCallback(() => driverRef.current?.homeScene?.() ?? home, [home])
+  useEffect(() => {
+    if ((!lobby && !lobbyOpen) || driverRef.current?.homeScene != null) return
+    setHome(null)
+    driverRef.current?.send({ kind: 'getHomeScene' })
+  }, [lobby, lobbyOpen])
+  // Opening the Backpack or the lobby rebuilds the stage, so the page's stand-in shows again.
+  useEffect(() => {
+    if (backpackOpen) setLobbyStageReady(false)
+  }, [backpackOpen])
+  const travelFromLobbyInWorld = useCallback(
+    (dest: Destination) => {
+      if (dest == null) {
+        const home = homeScene()
+        if (home == null) return
+        const [x, y] = home.parcel.split(',').map(Number)
+        travel({ kind: 'teleport', realm: home.realm ?? DEFAULT_REALM, x, y })
+      } else if (dest.kind === 'parcel') teleportToPlace(dest.x, dest.y)
+      else {
+        const [x, y] = (dest.position ?? '').split(',').map(Number)
+        if (Number.isFinite(x) && Number.isFinite(y)) travel({ kind: 'teleport', realm: dest.realm, x, y })
+        else travel({ kind: 'changeRealm', realm: dest.realm })
+      }
+      setLobbyOpen(false)
+    },
+    [homeScene, teleportToPlace, travel]
   )
   const setMinimapConfig = useCallback(
     (config: { style: MinimapStyle; rotation: MinimapRotation; visibleMeters: number }) => {
@@ -1299,84 +1389,35 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     []
   )
-  // Post-jump-in Places picker: choose a destination (or null to skip → Genesis Plaza), then leave
-  // the picker. A world switches realm now; a parcel is teleported once the avatar spawns.
-  const pickDestination = useCallback((dest: Destination) => {
-    const driver = driverRef.current
-    if (driver == null) return
-    setBusy(true)
-    setDestinationPicked(true) // flip to the loading overlay first
+  // Runs the login captured at Jump In, once the engine is up.
+  const runPendingLogin = useCallback((driver: NonNullable<typeof driverRef.current>): void => {
+    const login = pendingLogin.current
+    pendingLogin.current = null
+    Promise.resolve(login?.(driver))
+      .then(() => setBusy(false))
+      .catch((e: unknown) => {
+        console.error('[login] post-launch login failed:', e)
+        // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
+        // e.message would be undefined and the login screen would show no error at all.
+        const msg = e instanceof Error ? e.message : String(e)
+        setError(msg !== '' ? msg : 'Login failed')
+        setBusy(false)
+        // Back to the LOGIN screen, not the picker or lobby: neither renders an error, and the
+        // login screen is where the retry / profile-reset actions live. The engine stays
+        // launched (start()'s __bevyStarted guard makes the next launch a no-op).
+        setSubmitted(false)
+        setDestinationPicked(false)
+        setLobby(false)
+      })
+  }, [])
 
-    // Boot the engine straight at the chosen destination, then run the deferred login. `engine_run`
-    // is heavy and runs on the shared main thread, so defer it a paint (rAF, setTimeout fallback) so
-    // the loading overlay is on screen before the freeze — same trick as the login loader. Run once.
-    let ran = false
-    const run = (): void => {
-      // Bail if the session unmounted during the deferred kick — cleanup nulls driverRef, so this
-      // guards against launching on a disposed driver (the rAF/timeout aren't otherwise cancellable).
-      if (ran || driverRef.current == null) return
-      ran = true
-      const runDeferredLogin = (): void => {
-        const login = pendingLogin.current
-        pendingLogin.current = null
-        Promise.resolve(login?.(driver))
-          .then(() => setBusy(false))
-          .catch((e: unknown) => {
-            console.error('[login] post-launch login failed:', e)
-            // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
-            // e.message would be undefined and the login screen would show no error at all.
-            const msg = e instanceof Error ? e.message : String(e)
-            setError(msg !== '' ? msg : 'Login failed')
-            setBusy(false)
-            // Back to the LOGIN screen, not the picker: the picker renders no error, and the
-            // login screen is where the retry / profile-reset actions live. The engine stays
-            // launched (start()'s __bevyStarted guard makes the next launch a no-op).
-            setSubmitted(false)
-            setDestinationPicked(false)
-          })
-      }
-      // No launch = the engine is already running at its own start realm (native): the pick maps
-      // to runtime directives instead of boot parameters. A world switches realm now (works
-      // pre-login); a parcel teleport needs a spawned player, so it's held until playerReady.
-      // A parcel pick sends no realm change: if the picker was reachable at all the engine
-      // omitted ?realm=, which it only does when it booted on the HUD's own DEFAULT_REALM —
-      // a changeRealm to the same realm is NOT a no-op (full scene purge + reconnect). Skip
-      // likewise keeps the engine's own start realm.
-      if (driver.launch == null) {
-        // Deferred to the playerReady flush only if the player hasn't spawned yet. Fresh sign-in
-        // completes login BEFORE the picker, so playerReady has usually fired by pick time and the
-        // flush would never run again — send immediately then. An immediate teleport still lands
-        // after a just-sent changeRealm: the engine applies teleports after realm changes and
-        // overrides the spawn position.
-        const sendParcel = (x: number, y: number): void => {
-          if (playerReadyRef.current) driver.send({ kind: 'teleport', x, y })
-          else pendingParcel.current = { x, y }
-        }
-        if (dest?.kind === 'world') {
-          travel({ kind: 'changeRealm', realm: dest.realm })
-          const [x, y] = (dest.position ?? '').split(',').map(Number)
-          if (Number.isFinite(x) && Number.isFinite(y)) sendParcel(x, y)
-        } else if (dest?.kind === 'parcel') {
-          sendParcel(dest.x, dest.y)
-        }
-        runDeferredLogin()
-        return
-      }
+  // Boots the engine (once per page) and watches the boot for a panic. False when launch threw.
+  const launchEngine = useCallback(
+    (driver: NonNullable<typeof driverRef.current>, realm: string, position?: string, host?: LaunchHostOptions): boolean => {
       bootPollStop.current = false
-      driverRef.current?.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
-      // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
-      // so only the chosen scene streams in. (No-op on the mock, which has no engine to launch.)
-      // Parcels pass the MAIN realm explicitly — the engine's initialRealm may carry a ?realm
-      // override (possibly an invalid world after a failed validation), and inheriting it would
-      // strand a Genesis pick "Reconnecting to the realm" forever.
+      driver.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
       try {
-        if (dest == null) {
-          // Skip goes HOME — the engine's persisted home scene (0,0 on the default realm unless
-          // the user pinned one; the engine gives no realm before launch, so the default is ours).
-          const home = driver.homeScene?.()
-          driver.launch?.(home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0')
-        } else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
-        else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
+        driver.launch?.(realm, position, host)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
         // wasm trap). The readable message is captured on the engine via enginePanic().
@@ -1384,8 +1425,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         setFatalError({ message: panic ?? (e as Error)?.message ?? 'The engine failed to start.', source: 'launch' })
         driverRef.current?.clearEnginePanic?.()
         setBusy(false)
-        return
+        return false
       }
+      launchedRef.current = true
       // A boot panic can also surface a frame or two AFTER launch() returns (async wasm init / OnceCell)
       // — launch() returns normally, so poll the panic hook during boot and raise it as a FATAL 'launch'
       // error, not the dismissable 'runtime' crash the heartbeat watchdog would otherwise mislabel it as.
@@ -1402,11 +1444,110 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         if (++polls < 24) pollTimer.current = setTimeout(pollPanic, 250) // ~6s boot window
       }
       pollTimer.current = setTimeout(pollPanic, 250)
-      runDeferredLogin()
+      return true
+    },
+    []
+  )
+
+  // A destination for an engine already running at its own start realm (native, mock): runtime
+  // directives instead of boot parameters. A world switches realm now (works pre-login); a parcel
+  // teleport needs a spawned player, so it's held until playerReady. A parcel pick sends no realm
+  // change: if the picker was reachable at all the engine omitted ?realm=, which it only does when
+  // it booted on the HUD's own DEFAULT_REALM — a changeRealm to the same realm is NOT a no-op (full
+  // scene purge + reconnect). Skip likewise keeps the engine's own start realm.
+  const travelInPlace = useCallback(
+    (driver: NonNullable<typeof driverRef.current>, dest: Destination): void => {
+      // Deferred to the playerReady flush only if the player hasn't spawned yet. Fresh sign-in
+      // completes login BEFORE the picker, so playerReady has usually fired by pick time and the
+      // flush would never run again — send immediately then. An immediate teleport still lands
+      // after a just-sent changeRealm: the engine applies teleports after realm changes and
+      // overrides the spawn position.
+      const sendParcel = (x: number, y: number): void => {
+        if (playerReadyRef.current) driver.send({ kind: 'teleport', x, y })
+        else pendingParcel.current = { x, y }
+      }
+      if (dest?.kind === 'world') {
+        travel({ kind: 'changeRealm', realm: dest.realm })
+        const [x, y] = (dest.position ?? '').split(',').map(Number)
+        if (Number.isFinite(x) && Number.isFinite(y)) sendParcel(x, y)
+      } else if (dest?.kind === 'parcel') {
+        sendParcel(dest.x, dest.y)
+      }
+    },
+    [travel]
+  )
+
+  // Leaving the lobby. On web the engine is holding the world on its boot realm, and only a
+  // realm change releases it, so every destination names its realm (Skip goes home).
+  const travelFromLobby = useCallback(
+    (driver: NonNullable<typeof driverRef.current>, dest: Destination): void => {
+      if (driver.launch == null) {
+        if (dest?.kind !== 'world') setLobby(false)
+        travelInPlace(driver, dest)
+        return
+      }
+      if (dest == null) {
+        const home = driver.homeScene?.()
+        const [x, y] = (home?.parcel ?? '0,0').split(',').map(Number)
+        travel({ kind: 'teleport', realm: home?.realm ?? DEFAULT_REALM, x, y })
+      } else if (dest.kind === 'parcel') {
+        travel({ kind: 'teleport', realm: DEFAULT_REALM, x: dest.x, y: dest.y })
+      } else {
+        const [x, y] = (dest.position ?? '').split(',').map(Number)
+        if (Number.isFinite(x) && Number.isFinite(y)) travel({ kind: 'teleport', realm: dest.realm, x, y })
+        else travel({ kind: 'changeRealm', realm: dest.realm })
+      }
+    },
+    [travel, travelInPlace]
+  )
+
+  // Post-jump-in Places picker (or the lobby): choose a destination (or null to skip → home),
+  // then leave the picker. A world switches realm now; a parcel is teleported once the avatar spawns.
+  const pickDestination = useCallback((dest: Destination) => {
+    const driver = driverRef.current
+    if (driver == null) return
+    // from the lobby, a pick waits for sign-in: it releases the hold, so a failed sign-in
+    // afterwards would leave the world loaded under the sign-in screen
+    if (lobbyRef.current && busyRef.current) return
+    setDestinationPicked(true) // flip to the loading overlay first
+    if (lobbyRef.current) {
+      travelFromLobby(driver, dest)
+      return
+    }
+    setBusy(true)
+
+    // Boot the engine straight at the chosen destination, then run the deferred login. `engine_run`
+    // is heavy and runs on the shared main thread, so defer it a paint (rAF, setTimeout fallback) so
+    // the loading overlay is on screen before the freeze — same trick as the login loader. Run once.
+    let ran = false
+    const run = (): void => {
+      // Bail if the session unmounted during the deferred kick — cleanup nulls driverRef, so this
+      // guards against launching on a disposed driver (the rAF/timeout aren't otherwise cancellable).
+      if (ran || driverRef.current == null) return
+      ran = true
+      if (driver.launch == null) {
+        travelInPlace(driver, dest)
+        runPendingLogin(driver)
+        return
+      }
+      // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
+      // so only the chosen scene streams in. (No-op on the mock, which has no engine to launch.)
+      // Parcels pass the MAIN realm explicitly — the engine's initialRealm may carry a ?realm
+      // override (possibly an invalid world after a failed validation), and inheriting it would
+      // strand a Genesis pick "Reconnecting to the realm" forever.
+      let launched: boolean
+      if (dest == null) {
+        // Skip goes HOME — the engine's persisted home scene (0,0 on the default realm unless
+        // the user pinned one; the engine gives no realm before launch, so the default is ours).
+        const home = driver.homeScene?.()
+        launched = launchEngine(driver, home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0')
+      } else if (dest.kind === 'world') launched = launchEngine(driver, dest.realm, dest.position)
+      else launched = launchEngine(driver, DEFAULT_REALM, `${dest.x},${dest.y}`)
+      if (launched) runPendingLogin(driver)
     }
     requestAnimationFrame(() => requestAnimationFrame(run))
     setTimeout(run, 60)
-  }, [travel])
+  }, [launchEngine, runPendingLogin, travelFromLobby, travelInPlace])
   // Boot-mode flags (?hud=0 / ?guest=1 / ?systemScene= — see lib/bootMode.ts), captured once
   // per session mount so tests can vary location.search between mounts.
   const boot = useRef(bootMode())
@@ -1657,6 +1798,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setPlayerReady(false)
     setSubmitted(false) // back to the login screen
     setDestinationPicked(false) // re-show the picker on the next jump-in
+    setLobby(false)
+    setLobbyOpen(false)
+    setLobbyStageReady(false)
+    visitedTitle.current = ''
     pendingLogin.current = null
     // The next account starts clean: it fetches its own data and hasn't spawned yet.
     fetchedRef.current.clear()
@@ -1664,8 +1809,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     pendingParcel.current = null
   }, [closeAllPanels])
 
+  // Where the Backpack's avatar shows through, so the lobby under its modal can open the same hole.
+  const [avatarPreviewRect, setAvatarPreviewRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const setEngineViewport = useCallback(
-    (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null, dpr?: number) => {
+    (region: 'map' | 'avatarPreview' | 'lobby', rect: { x: number; y: number; width: number; height: number } | null, dpr?: number) => {
+      if (region === 'avatarPreview') setAvatarPreviewRect(rect)
       driverRef.current?.send({ kind: 'engineViewport', region, rect, dpr })
     },
     []
@@ -1675,29 +1823,52 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'interactableArea', ...area })
   }, [])
 
-  // Show the loader BEFORE starting login. The engine's WASM/GPU init runs heavily on the shared
-  // main thread and freezes whatever's on screen; starting it while the login screen is still up
-  // hangs the login UI (the frozen "Jump in" button). So flip to the loader and let it paint (two
-  // frames) first, THEN kick off the engine work — the freeze then happens behind the loader, where
-  // it reads as loading. On failure, fall back to the login screen.
+  // engine_run briefly blocks the main thread, so the lobby (or the loader) paints first and the
+  // launch runs behind it, never under the interactive sign-in screen. On failure, back to sign-in.
   const submitLogin = useCallback(
     (loginCall: (driver: LoginDriver) => Promise<unknown>) => {
       const driver = driverRef.current
       if (driver == null || busy || !engineReady) return
       setError(null)
-      // Don't log in yet — capture the login and show the destination picker. The engine is warm
-      // (WASM + GPU) but hasn't loaded any scene; pickDestination launches it at the chosen place and
-      // runs this login then. Deferring the engine work to the pick is what avoids the wasted load.
       pendingLogin.current = loginCall
       setSubmitted(true)
+      // A ?position/?realm link launches straight there (pickDestination, from the url effect).
+      if (urlDestination.current != null) return
+      // Otherwise the lobby: launch now holding the world back, so signing in, the avatar and
+      // friends work but no scene loads until a destination is picked (which releases it).
+      setLobby(true)
+      setLobbyStageReady(false)
+      setBusy(true)
+      let ran = false
+      const run = (): void => {
+        if (ran || driverRef.current == null) return
+        ran = true
+        if (driver.launch != null && !launchedRef.current) {
+          const home = driver.homeScene?.()
+          if (!launchEngine(driver, home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0', { holdWorld: true })) return
+        }
+        runPendingLogin(driver)
+      }
+      // Defer a paint so the lobby is on screen before engine_run's main-thread work.
+      requestAnimationFrame(() => requestAnimationFrame(run))
+      setTimeout(run, 60)
     },
-    [busy, engineReady]
+    [busy, engineReady, launchEngine, runPendingLogin]
   )
+
 
   const exploreAsGuest = useCallback(() => submitLogin((d) => d.loginGuest()), [submitLogin])
   // Reuse the existing login. The driver picks the path its backend supports (console
   // `/login_identity` for the engine, `loginPrevious` over the bridge).
   const jumpIn = useCallback(() => submitLogin((d) => d.jumpIn()), [submitLogin])
+  // A stored session goes straight to the lobby, once per page: the lobby's profile menu is where
+  // to sign out or switch accounts.
+  const autoEntered = useRef(false)
+  useEffect(() => {
+    if (status !== 'reuse-login-or-new' || submitted || !engineReady || autoEntered.current) return
+    autoEntered.current = true
+    jumpIn()
+  }, [status, submitted, engineReady, jumpIn])
   // The engine tags profile-fetch login failures (vs bad credentials etc.) with this marker —
   // mirrors PROFILE_FETCH_FAILED in system_bridge. Only then do we offer the destructive reset.
   const profileFetchFailed = error != null && error.includes('profile fetch failed')
@@ -1838,17 +2009,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     : !destinationPicked
       ? urlDestination.current != null
         ? 'entering' // a ?position/?realm launch is about to fire — never flash the picker
-        : 'picking'
+        : lobby
+          ? 'lobby'
+          : 'picking'
       : loaderActive
         ? 'entering'
         : 'world'
 
-  // Once a launch has been requested the bridge scene must exist — on web the engine boots at the
-  // picked realm and the scene with it, on native it booted with the engine — so from here on its
-  // absence is a fault, not a normal wait. NOT 'picking': on web nothing is launched until the
-  // user picks, so an idle picker has no bridge to wait for.
+  // Once launched the bridge scene must exist, so from here on its absence is a fault. Not
+  // 'picking': nothing is launched behind the picker.
   useEffect(() => {
-    if (phase === 'entering' || phase === 'world') driverRef.current?.expectBridge?.()
+    if (phase === 'lobby' || phase === 'entering' || phase === 'world') driverRef.current?.expectBridge?.()
   }, [phase])
 
   // HUD focus, declared to the engine (fire-and-forget; latest wins). `ui` reserves all
@@ -1954,7 +2125,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const uiFocus = anyPanelOpen || popupOpen || locked
   // `covered` also spans the loading overlay: it outlives the engine's own out-of-world state
   // (player spawn, render-settle, reveal debounce), so the engine can't see that tail itself.
-  const covered = menuPageOpen || phase === 'entering'
+  const covered = menuPageOpen || phase === 'lobby' || phase === 'entering'
   // The open menu page, by the SystemAction that toggles it (the pages are exclusive, so at most
   // one is open). The engine answers a scene's openExplorerUi from this, and writes the page's
   // opened/closed events to the scene whose request opened it.
@@ -1966,8 +2137,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     : galleryOpen ? 'Gallery'
     : null
   useEffect(() => {
-    if (phase !== 'world' && phase !== 'entering') return
-    driverRef.current?.send({ kind: 'uiFocus', ui: uiFocus, text: textFocused, scroll: scrollHover, covered, menu })
+    if (phase !== 'world' && phase !== 'entering' && phase !== 'lobby') return
+    // The lobby holds input like a menu page: the player can't walk under it.
+    const ui = uiFocus || phase === 'lobby'
+    driverRef.current?.send({ kind: 'uiFocus', ui, text: textFocused, scroll: scrollHover, covered, menu })
   }, [phase, uiFocus, textFocused, scrollHover, covered, menu])
 
   // Pre-world the bridge stream doesn't exist, so popups opened during login/entering
@@ -1980,7 +2153,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       e.stopPropagation()
       closeTopPopup()
     },
-    { capture: true, enabled: phase !== 'world' }
+    { capture: true, enabled: phase !== 'world' && phase !== 'lobby' }
   )
 
   // Engine-authoritative hotkeys (the [M]/[Z]/… hints in the nav + sidebar): SystemAction
@@ -2000,7 +2173,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       ensureScrollLoop()
       return
     }
-    if (!pressed || phase !== 'world' || isInputLocked()) return
+    if (!pressed || (phase !== 'world' && phase !== 'lobby') || isInputLocked()) return
     if (isEditableTarget(document.activeElement)) return
     if ((window as EngineFocusWindow).__engineTextFocus) return
     // 'Cancel' is the one action handled even with a popup open: the engine resolved the
@@ -2009,9 +2182,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // cancelLayers), else any open panels. One layer per press.
     if (action === 'Cancel') {
       if (hasOpenPopup()) closeTopPopup()
-      else if (!dispatchCancelLayer()) panelSetters.forEach((set) => set(false))
+      else if (dispatchCancelLayer()) return
+      // the lobby sits under the panels it opens: close those first, then the lobby
+      else if (anyPanelOpenExceptLobby) panelSetters.forEach((set) => set(false))
+      else setLobbyOpen(false)
       return
     }
+    // the startup lobby mounts only what it opens itself; the world's hotkeys wait for the world
+    if (phase === 'lobby') return
     if (hasOpenPopup()) return
     // Quick emotes: while the wheel is open, QuickEmoteN plays that slot's emote (which also
     // closes the wheel). With the wheel closed a number does nothing — this covers both
@@ -2052,6 +2230,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   return {
     phase,
+    playerReady,
+    lobbyStageReady,
+    lobbyPage: { open: lobbyOpen, toggle: toggleLobby, travel: travelFromLobbyInWorld },
+    homeScene,
+    avatarPreviewRect,
     pickDestination,
     sceneLoading,
     loadingProgress,

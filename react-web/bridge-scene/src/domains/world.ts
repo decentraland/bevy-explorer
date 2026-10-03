@@ -33,6 +33,11 @@ function pushSystem(ctx: Ctx, message: string): void {
 }
 
 export function registerWorld(ctx: Ctx): void {
+  ctx.on('getHomeScene', async () => {
+    const home = await BevyApi.getHomeScene()
+    ctx.send({ kind: 'homeScene', ...home })
+  })
+
   ctx.on('getMap', () => {
     const pos = getPlayer()?.position
     ctx.send({ kind: 'mapState', x: Math.floor((pos?.x ?? 0) / 16), y: Math.floor((pos?.z ?? 0) / 16) })
@@ -222,7 +227,16 @@ export function registerWorld(ctx: Ctx): void {
         // stale name can survive after stepping onto an undeployed parcel.
         if (current == null && attempts < SCENE_LOOKUP_ATTEMPTS) return
         publishedParcel = key
-        ctx.send({ kind: 'sceneInfo', title: current?.title ?? '' })
+        // read with the scene, so a visit is never paired with the realm the player just left
+        const [{ realmInfo }, satelliteView] = await Promise.all([getRealm({}), BevyApi.getSatelliteView()]).catch(() => [{ realmInfo: undefined }, null] as const)
+        ctx.send({
+          kind: 'sceneInfo',
+          title: current?.title ?? '',
+          parcel: { x: px, y: py },
+          realm: realmInfo?.realmName ?? '',
+          genesis: satelliteView != null,
+          preview: realmInfo?.isPreview ?? false
+        })
       })
     )
   )

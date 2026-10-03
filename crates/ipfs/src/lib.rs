@@ -51,7 +51,7 @@ use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{
     rpc::{RpcResultReceiver, RpcResultSender},
     sets::RealmLifecycle,
-    structs::{AppConfig, CommsConfig, CurrentRealm, PreviewMode, ServerConfiguration},
+    structs::{AppConfig, CommsConfig, CurrentRealm, PreviewMode, ServerConfiguration, WorldHold},
     util::TaskCompat,
 };
 use ipfs_path::IpfsAsset;
@@ -665,7 +665,34 @@ pub fn change_realm(
     mut target: ResMut<RealmInitialLocation>,
     mut in_flight: Local<Vec<InFlightRealmChange>>,
     mut issued: Local<u64>,
+    world_hold: Option<Res<WorldHold>>,
+    mut commands: Commands,
 ) {
+    // Polled before the realm watch: a change's result is sent after its realm config, so a
+    // success seen here is applied below in this same run.
+    let mut released = false;
+    let latest = *issued;
+    in_flight.retain_mut(|change| {
+        let result = match change.result.poll_once() {
+            Ok(None) => return true,
+            Ok(Some(result)) => result,
+            Err(()) => return false,
+        };
+        // A failed change leaves the player in the current realm, so the landing target it set up
+        // for the new one must not carry over to a later change. Only the latest request owns it.
+        if result.is_err() && change.id == latest {
+            *target = RealmInitialLocation::None;
+        }
+        released |= result.is_ok();
+        if change.report {
+            print.write(PrintConsoleLine::new(match result {
+                Ok(()) => format!("Realm set to `{}`", change.realm),
+                Err(e) => format!("Failed to set realm `{}`: {e}", change.realm),
+            }));
+        }
+        false
+    });
+
     match *realm_change {
         None => *realm_change = Some(ipfs.realm_config_receiver.clone()),
         Some(ref mut realm_change) => {
@@ -703,26 +730,10 @@ pub fn change_realm(
         }
     }
 
-    let latest = *issued;
-    in_flight.retain_mut(|change| {
-        let result = match change.result.poll_once() {
-            Ok(None) => return true,
-            Ok(Some(result)) => result,
-            Err(()) => return false,
-        };
-        // A failed change leaves the player in the current realm, so the landing target it set up
-        // for the new one must not carry over to a later change. Only the latest request owns it.
-        if result.is_err() && change.id == latest {
-            *target = RealmInitialLocation::None;
-        }
-        if change.report {
-            print.write(PrintConsoleLine::new(match result {
-                Ok(()) => format!("Realm set to `{}`", change.realm),
-                Err(e) => format!("Failed to set realm `{}`: {e}", change.realm),
-            }));
-        }
-        false
-    });
+    // the boot realm never lands in `in_flight`, so a lobby holds until it asks to enter a realm
+    if released && world_hold.is_some() {
+        commands.remove_resource::<WorldHold>();
+    }
 
     if !change_realm_requests.is_empty() {
         if preview_mode.is_preview {

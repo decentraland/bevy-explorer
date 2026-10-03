@@ -18,6 +18,7 @@ import marketplacePng from '../assets/sidebar-icons/marketplace.png'
 import micPng from '../assets/sidebar-icons/mic.png'
 import notificationsPng from '../assets/sidebar-icons/notifications.png'
 import placesPng from '../assets/sidebar-icons/places.png'
+import lobbyPng from '../assets/sidebar-icons/lobby.png'
 import settingsPng from '../assets/sidebar-icons/settings.png'
 import skyboxPng from '../assets/sidebar-icons/skybox.png'
 import voiceHearingPng from '../assets/sidebar-icons/voice-hearing.png'
@@ -37,6 +38,7 @@ export type IconName =
   | 'chat'
   | 'emotes'
   | 'places'
+  | 'lobby'
   | 'gallery'
   | 'marketplace'
   | 'bug'
@@ -48,6 +50,7 @@ export type IconName =
 
 const MASK_ART: Partial<Record<IconName, string>> = {
   backpack: backpackPng,
+  lobby: lobbyPng,
   bug: bugPng,
   chat: chatPng,
   communities: communitiesPng,

@@ -3,7 +3,7 @@
 // the top bar is identical and consistent. Pages pass their content as children.
 
 import { useEffect, useState } from 'react'
-import { DclLogo, Icon, type IconName } from '../../design'
+import { Button, DclLogo, Icon, type IconName } from '../../design'
 import { keyHintFor, useBindingsSnapshot } from '../../lib/bindingLabels'
 import { ProfileChip } from './ProfileChip'
 import styles from './MainMenuShell.module.css'
@@ -92,6 +92,10 @@ export function MainMenuShell({
           <DclLogo size={27} />
           <span className={styles.brandName}>Decentraland</span>
         </div>
+        <Button variant="accent" size="header" className={styles.lobby} onClick={() => onNavigate('lobby')}>
+          <Icon name="lobby" size={24} />
+          Lobby
+        </Button>
         <nav className={styles.menu}>
           {MENU_ITEMS.map((m) => {
             const shortcut = m.hotkey != null ? keyHintFor(bindingsSnap, m.hotkey) : undefined

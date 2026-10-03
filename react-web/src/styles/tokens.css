@@ -10,6 +10,7 @@
   --brand-active: rgba(229, 39, 75, 0.5);
   --panel: #161518; /* dark panel surface */
   --accent: #ff743a; /* category / selected orange */
+  --accent-hover: #ff8a5a;
   --accent-ink: #1a1206; /* dark text/icon on an --accent (orange) fill */
   --text: #fcfcfc;
   --gold: #ffc95b;
@@ -134,6 +135,7 @@
   --row-hover: var(--pearl);
   --row-press: #cfcdd4;
   --black: #000000;
+  --white: #ffffff;
   --fill-faint: rgba(255, 255, 255, 0.06); /* hover wash on dark buttons */
   --scrim-40: rgba(0, 0, 0, 0.22);
   --scrim-20: rgba(0, 0, 0, 0.1);
@@ -212,6 +214,29 @@
   --type-30: 30px;
   --type-32: 32px;
   --type-36: 36px;
+
+  /* Lobby cards. Translucent values are measured on screen against the parity capture, not
+     copied from layout alphas (those blend in linear space). */
+  --lobby-card: rgba(20, 20, 26, 0.84);
+  --lobby-pill: rgb(22, 21, 24);
+  --lobby-online: rgb(48, 205, 0);
+  --lobby-live: rgb(255, 0, 0);
+  --lobby-ink: rgb(252, 252, 252);
+  --lobby-ink-dim: rgb(191, 191, 199);
+  --lobby-tooltip: rgba(0, 0, 0, 0.7);
+  /* titles set semibold with a faux-bold flag, ~11% wider than plain bold */
+  --lobby-title-tracking: 0.068em;
+  --lobby-skeleton: linear-gradient(90deg, rgba(143, 66, 219, 0.35), rgba(143, 66, 219, 0.7), rgba(143, 66, 219, 0.35));
+  --header-btn: var(--black);
+  --header-btn-hover: rgb(31, 31, 31);
+  --header-btn-ring: rgba(255, 255, 255, 0.18); /* measured: rgb(46,46,46) over black */
+  --rail-dot: rgba(255, 255, 255, 0.6);
+  --rail-dot-active: rgb(255, 51, 153);
+  --rail-arrow: rgba(28, 28, 33, 0.7);
+  --rail-arrow-hover: rgb(56, 56, 66);
+  --rail-arrow-pressed: rgb(13, 13, 15);
+  --ease-outcubic: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --verified-end: #c640cd; /* the verified badge's gradient, from --brand */
   --type-96: 96px;
   --fw-regular: 400;
   --fw-medium: 500;

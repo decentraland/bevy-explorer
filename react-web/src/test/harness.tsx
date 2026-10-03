@@ -124,12 +124,13 @@ export function renderSession(
 export async function enterAsGuest(h: Harness, opts: { keepSent?: boolean } = {}): Promise<void> {
   await waitFor(() => expect(h.session().login.status).not.toBe('loading'))
   act(() => h.session().login.exploreAsGuest())
-  // Jump in now just shows the Places picker — the login is deferred until a destination is picked.
-  await waitFor(() => expect(h.session().phase).toBe('picking'))
-  // Skip it (null = default spawn); this launches the engine and runs the deferred login.
-  act(() => h.session().pickDestination(null))
-  // getPreviousLogin is the first call; the deferred login (fired on pick) adds a second.
+  // Jump in signs in and shows the lobby; getPreviousLogin is the first call, the login the second.
+  await waitFor(() => expect(h.session().phase).toBe('lobby'))
   await waitFor(() => expect(h.driver.calls.length).toBeGreaterThan(1))
+  // the lobby takes picks once sign-in has finished
+  await waitFor(() => expect(h.session().login.busy).toBe(false))
+  // Jump in from the lobby (null = home).
+  act(() => h.session().pickDestination(null))
   await waitFor(() => expect(h.session().phase).toBe('entering'))
   h.driver.emit({ kind: 'event', name: 'playerReady' })
   // No loading state received counts as still-loading, so report "done" like the real
@@ -166,6 +167,11 @@ export const fakeProfileState = (over: Partial<ProfileState> = {}): ProfileState
 export function fakeSession(): EngineSession {
   return {
     phase: 'world',
+    playerReady: true,
+    lobbyStageReady: false,
+    lobbyPage: { open: false, toggle: vi.fn(), travel: vi.fn() },
+    homeScene: () => null,
+    avatarPreviewRect: null,
     pickDestination: vi.fn(),
     sceneLoading: null,
     loadingProgress: 0,

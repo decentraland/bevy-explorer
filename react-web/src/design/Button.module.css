@@ -52,12 +52,49 @@
   letter-spacing: 0;
 }
 
+/* the JUMP IN on a place card: a fixed-height label + icon */
+.card {
+  height: 40px;
+  padding: 0 16px 0 20px;
+  border-radius: var(--r-md);
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+}
+.cardSm {
+  width: 100%;
+  height: 32px;
+  border-radius: var(--r-md);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+}
+
+/* icon + label in a menu bar (the Lobby button) */
+.header {
+  height: 42px;
+  padding: 0 15px 0 10px;
+  gap: 5px;
+  border-radius: var(--r-button);
+  font-size: var(--type-18);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 /* variants */
 .primary {
   background: var(--brand);
 }
 .primary:hover:not(:disabled) {
   background: var(--brand-hover);
+}
+
+.accent {
+  background: var(--accent);
+}
+.accent:hover:not(:disabled) {
+  background: var(--accent-hover);
 }
 
 .secondary {

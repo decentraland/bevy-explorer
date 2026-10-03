@@ -60,8 +60,12 @@ npm run dev
 
 **Engine mode (default)** — `http://localhost:5173/`: real engine in the SAME document
 (canvas at z-0 behind the HUD; engine module from `../deploy/web/engine`), with
-`systemScene=http://localhost:8100` (the bridge scene). React login → **Explore as Guest** (`/login_guest`) → scene-loading overlay
+`systemScene=http://localhost:8100` (the bridge scene). React login → **Explore as Guest** (`/login_guest`) → lobby → **Jump in** → scene-loading overlay
 (real data) → world. Needs a local engine build at `../deploy/web`.
+
+The lobby enables **Customize** once the player is ready. Its landing card uses the saved home
+destination; native clients retrieve it through the bridge. Failed realm travel from the startup
+lobby returns to the lobby so another destination can be chosen.
 
 **Mock mode** — `http://localhost:5173/?mock=1`: full UI (login + scene-loading) on
 a fake bridge, no engine. Add `&previousLogin=1` for the returning-user flow.
@@ -139,6 +143,15 @@ Two tiers cover every domain's bridge API and the clicks that drive them:
 npm test            # tier 1 (fast, deterministic)
 npm run test:e2e    # tier 2 (real engine; local, needs a GPU)
 ```
+
+Run the lobby and carousel regression checks without a browser:
+
+```bash
+npm test -- src/test/lobbySession.test.tsx src/test/lobby.test.tsx src/test/rail.test.tsx
+```
+
+These cover player readiness, persisted native homes, failed travel recovery, carousel navigation,
+and the CSS contracts for the avatar cutout. DOM hit-testing still needs browser verification.
 
 ## Status
 
