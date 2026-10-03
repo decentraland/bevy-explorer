@@ -9,7 +9,12 @@ use web_sys::{Cache, DedicatedWorkerGlobalScope, Response, ResponseInit};
 // over the same key so subsequent loads are served pre-processed.
 fn key(filename: &str) -> Result<String, JsValue> {
     let url = web_sys::Url::new(filename)?;
-    Ok(format!("{}{}{}", url.origin(), url.pathname(), url.search()))
+    Ok(format!(
+        "{}{}{}",
+        url.origin(),
+        url.pathname(),
+        url.search()
+    ))
 }
 
 pub async fn read_file(filename: &str) -> Result<Vec<u8>, anyhow::Error> {
