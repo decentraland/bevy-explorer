@@ -7,6 +7,11 @@ import arrowRight from '../assets/rail/arrow-right.png'
 import { MaskIcon } from './MaskIcon'
 import styles from './Rail.module.css'
 
+function pageStride(el: HTMLDivElement, perPage: number, gap: number): number {
+  const card = el.firstElementChild?.firstElementChild as HTMLElement | null
+  return perPage * ((card?.offsetWidth ?? 0) + gap)
+}
+
 export function Rail({
   perPage,
   gap,
@@ -29,9 +34,7 @@ export function Rail({
       const el = viewport.current
       const next = Math.max(0, Math.min(pages - 1, p))
       if (el == null) return
-      const card = el.firstElementChild?.firstElementChild as HTMLElement | null
-      const stride = (card?.offsetWidth ?? 0) + gap
-      el.scrollTo({ left: Math.min(next * perPage * stride, el.scrollWidth - el.clientWidth), behavior: 'smooth' })
+      el.scrollTo({ left: Math.min(next * pageStride(el, perPage, gap), el.scrollWidth - el.clientWidth), behavior: 'smooth' })
     },
     [gap, pages, perPage]
   )
@@ -41,11 +44,14 @@ export function Rail({
     if (el == null) return
     const onScroll = (): void => {
       const max = el.scrollWidth - el.clientWidth
-      setPage(max <= 0 ? 0 : Math.round((el.scrollLeft / max) * (pages - 1)))
+      const stride = pageStride(el, perPage, gap)
+      if (max <= 0 || stride <= 0) setPage(0)
+      else if (el.scrollLeft >= max - 1) setPage(pages - 1)
+      else setPage(Math.max(0, Math.min(pages - 2, Math.round(el.scrollLeft / stride))))
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
-  }, [pages])
+  }, [gap, pages, perPage])
 
   useEffect(() => {
     viewport.current?.scrollTo({ left: 0 })
