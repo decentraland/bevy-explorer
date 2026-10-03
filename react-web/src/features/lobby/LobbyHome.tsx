@@ -12,7 +12,7 @@ import { ProfileChip } from '../menu/ProfileChip'
 import { BACKDROP_EDGE_FADE, FLOOR, backdropRect, floorShadeGradient } from '../../engine/lobbyStage'
 import { userColor } from '../../lib/identity'
 import { clip } from '../backpack/BackpackModal'
-import { holeMask } from '../../lib/holeMask'
+import { holeClip } from '../../lib/holeClip'
 import { EngineViewport } from '../engine/EngineViewport'
 import { useStoredProfile } from '../login/useStoredProfile'
 import { eventDestination } from '../events/eventsApi'
@@ -119,7 +119,7 @@ export function LobbyHome({
   const hole = session.backpack.open ? clipToModal(session.avatarPreviewRect) : null
   const scale = rootRef.current != null ? rootRef.current.getBoundingClientRect().width / rootRef.current.offsetWidth || 1 : 1
   const backpackHole =
-    hole == null ? undefined : holeMask({ x: hole.x / scale, y: hole.y / scale, width: hole.width / scale, height: hole.height / scale })
+    hole == null ? undefined : holeClip({ x: hole.x / scale, y: hole.y / scale, width: hole.width / scale, height: hole.height / scale })
 
   // The page is scaled to its 1920×1080 canvas, so pointer coordinates are converted into it.
   const trackTooltip = (e: React.MouseEvent): void => {

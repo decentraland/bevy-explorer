@@ -4,7 +4,7 @@
 import { useRef } from 'react'
 import { Close, HeaderButton } from '../../design'
 import { useSession } from '../session/SessionContext'
-import { holeMask } from '../../lib/holeMask'
+import { holeClip } from '../../lib/holeClip'
 import styles from './BackpackModal.module.css'
 
 export function BackpackModal({ onClose, children }: { onClose: () => void; children: React.ReactNode }): React.JSX.Element {
@@ -15,7 +15,16 @@ export function BackpackModal({ onClose, children }: { onClose: () => void; chil
   const hole = preview != null && frame != null ? clip(preview, frame) : null
   return (
     <div className={styles.root}>
-      <div className={styles.dim} style={hole != null ? holeMask(hole) : undefined} onClick={onClose} aria-hidden="true" />
+      <div
+        className={styles.dim}
+        style={hole != null ? holeClip(hole) : undefined}
+        onClick={(e) => {
+          const frame = frameRef.current?.getBoundingClientRect()
+          if (frame && e.clientX >= frame.left && e.clientX < frame.right && e.clientY >= frame.top && e.clientY < frame.bottom) return
+          onClose()
+        }}
+        aria-hidden="true"
+      />
       <div ref={frameRef} className={styles.frame} role="dialog" aria-label="Backpack">
         {children}
         <HeaderButton className={styles.close} aria-label="Close" onClick={onClose}>

@@ -3,11 +3,13 @@
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
+  pointer-events: none;
 }
 .dim {
   position: absolute;
   inset: 0;
   background: var(--scrim);
+  pointer-events: auto;
 }
 .frame {
   position: absolute;
@@ -25,4 +27,5 @@
   top: 14px;
   right: 16px;
   z-index: 3;
+  pointer-events: auto;
 }
