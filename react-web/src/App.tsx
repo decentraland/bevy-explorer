@@ -334,7 +334,7 @@ function Hud(): React.JSX.Element {
           </SurfaceBoundary>
         </>
       )}
-      {session.phase === 'entering' && editorMode === 'off' && (
+      {session.phase === 'entering' && editorMode === 'off' && !session.create.open && (
         <SceneLoadingOverlay scene={session.sceneLoading} progress={session.loadingProgress} travellingTo={session.travellingTo} />
       )}
       {session.phase === 'world' && !session.menuOpen && (

@@ -355,12 +355,21 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
 
   await step('6 Back to scenes leaves the scene for the Create page, and the player is back where they came from', async () => {
     const backAt = Date.now()
+    // the trip back happens behind the Create page: no loading screen in between
+    await page.evaluate(() => {
+      const w = window as GateWindow & { __loadingSeen?: boolean }
+      w.__loadingSeen = false
+      new MutationObserver(() => {
+        if ([...document.querySelectorAll('[role="status"]')].some((el) => /^(LOADING \d+%|TRAVELLING TO|RECONNECTING)/.test(el.textContent ?? ''))) w.__loadingSeen = true
+      }).observe(document.body, { childList: true, subtree: true, characterData: true })
+    })
     await ui.locator('.eui-topbar-home').click()
     await scenes.locator('.eui-create').waitFor({ timeout: 60_000 })
     await expect(card, 'the Create page lists the scene').toHaveCount(1)
     await expect.poll(() => seen(/GATE_HOME up/, backAt), { timeout: 120_000, message: 'the home scene runs again' }).toBe(true)
     await expect(page.locator('#dcl-editor-host > *'), 'the docked editor is gone').toHaveCount(0)
     await expect(nav, 'the Create page still covers the HUD').toHaveCount(0)
+    expect(await page.evaluate(() => (window as GateWindow & { __loadingSeen?: boolean }).__loadingSeen), 'no loading screen on the way back').toBe(false)
     note(`after Back to scenes: url ${page.url()}; clock ${await clockBack()}; modes ${JSON.stringify((await spy(page)).modes)}`)
     expect((await spy(page)).modes.at(-1)).toBe('off')
     expect(realm()).toBe(homeRealm)
