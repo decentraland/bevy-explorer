@@ -9,7 +9,7 @@ worker (`preview_realm.js`) only reads it.
 - `<PAGE_DIR>` is the directory the service worker is registered at (its scope).
 - A realm lives at `<PAGE_DIR>preview/<projectId>/`, `projectId` matching `/^[a-z0-9][a-z0-9-]{0,63}$/`.
 - Every request under `<PAGE_DIR>preview/` is answered by the worker and never reaches
-  `ipfs-path-cache-v1`. Anything it does not hold is a 404. One thing is not the project's to
+  `ipfs-path-cache-v2`. Anything it does not hold is a 404. One thing is not the project's to
   hold: the pointers that are not parcels (see Routes).
 
 ## Store
