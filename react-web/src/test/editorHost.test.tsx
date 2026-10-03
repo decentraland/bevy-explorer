@@ -153,6 +153,15 @@ describe('editor host', () => {
     await host().openPreview('my-scene', '4,-2')
     expect(travel).toHaveBeenLastCalledWith(realm, { x: 4, y: -2 })
 
+    // the console takes the editor's own commands, about the scene it edits, and nothing else
+    const own = `b64-${btoa('/preview/my-scene-m1')}`
+    for (const line of ['/spawn https://evil.example/x true', '/kill x', '/logout', '/login_identity x', '/changerealm x', `/reload b64-${btoa('/preview/other-m1')}`, '/reload', '/set_scene bafkreihud'])
+      await expect(host().engineConsole(line), line).rejects.toThrow('not-allowed')
+    await host().engineConsole(`/reload ${own}`)
+    await host().engineConsole(`set_scene ${own}`)
+    expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/reload ${own}`, `set_scene ${own}`])
+    engineConsole.mockClear()
+
     // the engine's url sync, as boot.js receives it while on the preview realm
     w.set_url_params!(JSON.stringify({ realm, position: '4,-2', editor: false }))
     expect(JSON.parse(synced.mock.lastCall![0] as string)).toEqual({ realm: 'boedo.dcl.eth', position: '3,4', editor: false })
@@ -165,7 +174,7 @@ describe('editor host', () => {
     await vi.waitFor(() => expect(travel).toHaveBeenLastCalledWith('boedo.dcl.eth', { x: 3, y: 4 }))
     expect(session.create.show).toHaveBeenLastCalledWith(true)
     // the inspection pin is cleared and the clock is the one read on the way in
-    await vi.waitFor(() => expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', '/set_scene', '/time 10.5 7']))
+    await vi.waitFor(() => expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/set_scene', '/time 10.5 7']))
     // a scene opened again before the travel back lands still goes home to where the player was
     w.set_url_params!(JSON.stringify({ realm, position: '4,-2', editor: false }))
     expect(JSON.parse(synced.mock.lastCall![0] as string)).toMatchObject({ realm: 'boedo.dcl.eth', position: '3,4' })

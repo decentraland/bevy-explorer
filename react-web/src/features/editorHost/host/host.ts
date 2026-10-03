@@ -88,6 +88,16 @@ interface Home {
 }
 
 const PARCEL = /^(-?\d+),(-?\d+)$/
+// What the editor drives through the console: the scene it edits. Never spawn, kill, login or a
+// realm change, which would go around spawnEditorScene and openPreview.
+const EDITOR_COMMANDS = new Set([
+  'component_default', 'component_names', 'component_schema', 'crdt_initial', 'crdt_snapshot', 'debug_colliders',
+  'delete_component', 'delete_entity', 'freeze_scene', 'highlight', 'move_player_to', 'new_entity', 'player_position',
+  'reload', 'save_composite', 'scene_content', 'scene_logs', 'scene_stats', 'set_component', 'set_component_raw',
+  'set_scene', 'texture_camera_screenshot', 'tick_scene', 'time', 'unfreeze_scene'
+])
+// headers the editor may send on a request signed as the player
+const SIGNED_FETCH_HEADERS = new Set(['accept', 'content-type', 'if-match', 'if-none-match'])
 
 // Where the player was before the first preview.
 let home: Home | null = null
@@ -175,6 +185,20 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
   document.body.appendChild(container)
 
   let scene: Promise<{ hash: string; realm: string }> | null = null
+  let editorHash: string | null = null
+  let previewing: string | null = null
+  // the project being previewed (its `b64-` entity id names /preview/<id>-<machine>) or the editor's own scene
+  const editedScene = (id: string | undefined): boolean => {
+    if (id == null) return false
+    if (id === editorHash) return true
+    if (previewing == null || !id.startsWith('b64-')) return false
+    try {
+      const path = atob(id.slice(4))
+      return path === `/preview/${previewing}` || path.startsWith(`/preview/${previewing}-`)
+    } catch {
+      return false
+    }
+  }
   // before the editor first stops the clock to edit
   const readClock = (): void => {
     clock ??= deps.engineConsole('/time').then(clockRestore, () => null)
@@ -187,6 +211,8 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       console.error('[editor host] unmount failed', e)
     }
     host.openProject = null
+    previewing = null
+    editorHash = null
     const spawned = scene
     scene = null
     void spawned
@@ -222,7 +248,12 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     container,
     openProject: typeof flag === 'string' ? flag : null,
     services: source.services,
-    engineConsole: deps.engineConsole,
+    engineConsole(line) {
+      const [name = '', ...args] = line.trim().replace(/^\//, '').split(/\s+/)
+      const namesScene = name === 'reload' || (name === 'set_scene' && args.length > 0)
+      if (!EDITOR_COMMANDS.has(name) || (namesScene && !editedScene(args.at(0)))) return Promise.reject(new Error('not-allowed'))
+      return deps.engineConsole(line)
+    },
     identity: deps.identity,
     setMode(mode) {
       if (mode !== 'off') readClock()
@@ -234,6 +265,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       readClock()
       const q = new URLSearchParams(location.search)
       home ??= returning ?? { realm: q.get('realm'), position: q.get('position') }
+      previewing = projectId
       // no trailing slash: the engine appends /about
       await deps.travel(`${pageDir}preview/${projectId}`, { x: Number(parcel[1]), y: Number(parcel[2]) })
     },
@@ -248,6 +280,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
         }
         const realm = await stageEditorScene(packageScene, hash, pageDir)
         await deps.scene('spawn', realm, hash)
+        editorHash = hash
         return { hash, realm }
       })()
       const pending = scene
@@ -263,7 +296,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       const identity = deps.login()
       if (identity == null) throw new Error('not-signed-in')
       const method = (init?.method ?? 'GET').toUpperCase()
-      const own = Object.entries(init?.headers ?? {}).filter(([name]) => !/^x-identity-/i.test(name))
+      const own = Object.entries(init?.headers ?? {}).filter(([name]) => SIGNED_FETCH_HEADERS.has(name.toLowerCase()))
       const signed = await (await loadSigner()).signFetch(identity, method, target)
       return fetch(target, { method, body: init?.body, headers: { ...Object.fromEntries(own), ...signed } })
     },
