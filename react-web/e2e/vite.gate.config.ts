@@ -37,7 +37,7 @@ const HOME_CONTENT: Record<string, string> = {
 }
 
 // The realm the editor gate's player starts in and goes back to (e2e/editor.gate.spec.ts): the
-// engine only takes absolute content urls, so /about is written for the port it is asked on.
+// engine only takes absolute content urls, so /about names this server's own port, not the Host it was asked with.
 function homeRealm(): Plugin {
   return {
     name: 'gate-home-realm',
@@ -45,7 +45,8 @@ function homeRealm(): Plugin {
       server.middlewares.use((req, res, next) => {
         const path = (req.url ?? '').split('?')[0]
         if (!path.startsWith(HOME)) return next()
-        const contents = `http://${req.headers.host}${HOME}contents`
+        const origin = `http://localhost:${GATE_PORTS.page}`
+        const contents = `${origin}${HOME}contents`
         const body =
           path === `${HOME}about`
             ? JSON.stringify({
@@ -60,7 +61,7 @@ function homeRealm(): Plugin {
                 content: { healthy: true, publicUrl: contents },
                 // answers 404, "no profile": a wallet can log in here and its default profile
                 // is deployed to this realm's content url, which is nowhere
-                lambdas: { healthy: true, publicUrl: `http://${req.headers.host}${HOME}lambdas` },
+                lambdas: { healthy: true, publicUrl: `${origin}${HOME}lambdas` },
                 comms: { healthy: true, protocol: 'v3', fixedAdapter: 'offline:offline' }
               })
             : HOME_CONTENT[path.slice(`${HOME}contents/`.length)]
