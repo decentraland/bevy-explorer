@@ -104,7 +104,9 @@
             });
             const found = res.ok ? await res.json() : null;
             // an error, not an empty list: the engine asks again instead of calling them missing
-            return Array.isArray(found) ? json(local.concat(found)) : respond(null, 502, BYTES_TYPE);
+            if (!Array.isArray(found)) return respond(null, 502, BYTES_TYPE);
+            // the parcels are the project's alone
+            return json(local.concat(found.filter((e) => e?.type !== 'scene')));
         } catch {
             return respond(null, 502, BYTES_TYPE);
         }
@@ -139,5 +141,16 @@
         return notFound();
     }
 
-    globalThis.dclPreviewRealm = { handle };
+    // The editor package's own scene (react-web host/editorScene.ts): the page stores `about` and
+    // the files it checked against their hashes, under `<root><entityId>/`; this serves them as stored.
+    async function handleEditorScene(request, root, store) {
+        const { origin, pathname } = new URL(request.url);
+        const path = (origin + pathname).slice(root.length);
+        if (request.method !== 'GET' || !/^baf[a-z2-7]+\/(about|contents\/baf[a-z2-7]+)$/.test(path)) return notFound();
+        const stored = await store.match(root + path);
+        if (!stored) return notFound();
+        return respond(stored.body, 200, path.endsWith('/about') ? JSON_TYPE : BYTES_TYPE);
+    }
+
+    globalThis.dclPreviewRealm = { handle, handleEditorScene };
 })();

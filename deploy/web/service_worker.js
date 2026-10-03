@@ -14,6 +14,9 @@ const CACHED_HEADER = 'X-IPFS-Cached';
 // from this cache alone. Scenes can't write it: the sandbox worker deletes `caches`.
 const PREVIEW_CACHE_NAME = 'dcl-editor-preview-v1';
 const PREVIEW_ROOT = new URL('preview/', self.registration.scope).href;
+// The editor package's scene, staged by the page from checked bytes (preview_realm.js).
+const EDITOR_SCENE_CACHE_NAME = 'dcl-editor-scene-v1';
+const EDITOR_SCENE_ROOT = new URL('editor-scene/', self.registration.scope).href;
 let previewRealm = null;
 try {
     importScripts('preview_realm.js');
@@ -32,7 +35,7 @@ self.addEventListener('activate', (event) => {
     console.log('[IPFS Cache Service Worker]: Active');
     
     // An array of cache names that are "allowed" to exist.
-    const cacheWhitelist = [CACHE_NAME, PREVIEW_CACHE_NAME];
+    const cacheWhitelist = [CACHE_NAME, PREVIEW_CACHE_NAME, EDITOR_SCENE_CACHE_NAME];
 
     event.waitUntil(
         // Get all the cache keys (names) that exist.
@@ -61,6 +64,10 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(servePreviewRealm(request));
         return;
     }
+    if (request.url.startsWith(EDITOR_SCENE_ROOT)) {
+        event.respondWith(serveEditorScene(request));
+        return;
+    }
 
     // Check if the request has our custom header.
     if (request.headers.has(CUSTOM_HEADER)) {
@@ -75,19 +82,27 @@ self.addEventListener('fetch', (event) => {
     }
 });
 
+async function serveEditorScene(request) {
+    if (!previewRealm) return unavailable();
+    const cache = await caches.open(EDITOR_SCENE_CACHE_NAME);
+    return previewRealm.handleEditorScene(request, EDITOR_SCENE_ROOT, cache);
+}
+
+function unavailable() {
+    return new Response(null, {
+        status: 503,
+        headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-Content-Type-Options': 'nosniff',
+            'Content-Security-Policy': 'sandbox',
+            'Cross-Origin-Resource-Policy': 'same-origin',
+            'Cache-Control': 'no-store',
+        },
+    });
+}
+
 async function servePreviewRealm(request) {
-    if (!previewRealm) {
-        return new Response(null, {
-            status: 503,
-            headers: {
-                'Content-Type': 'application/octet-stream',
-                'X-Content-Type-Options': 'nosniff',
-                'Content-Security-Policy': 'sandbox',
-                'Cross-Origin-Resource-Policy': 'same-origin',
-                'Cache-Control': 'no-store',
-            },
-        });
-    }
+    if (!previewRealm) return unavailable();
     const cache = await caches.open(PREVIEW_CACHE_NAME);
     return previewRealm.handle(request, PREVIEW_ROOT, cache);
 }
