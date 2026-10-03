@@ -259,6 +259,8 @@ window.__setShaderCompiling = (on) => {
 // engine; text inputs are skipped so typing never moves the avatar. Tab is left alone off-canvas —
 // there it is focus navigation, not a game key. The re-dispatched clone bubbles back here with the
 // canvas as target, which the target check drops (no loop).
+const ACTIVATION_KEYS = new Set(['Space', 'Enter', 'NumpadEnter'])
+const CONTROLS = 'button, a[href], select, summary, [role="button"]'
 const forwardKeyToEngine = (e) => {
   const canvas = document.getElementById('mygame-canvas')
   if (!canvas || e.target === canvas) return
@@ -266,6 +268,8 @@ const forwardKeyToEngine = (e) => {
   const t = e.composedPath()[0] ?? e.target
   if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
   if (e.code === 'Tab') return
+  // Space/Enter press a focused editor control, not Jump; the keyup still goes so nothing sticks
+  if (e.type === 'keydown' && ACTIVATION_KEYS.has(e.code) && t instanceof Element && t.getRootNode() instanceof ShadowRoot && t.closest(CONTROLS)) return
   canvas.dispatchEvent(new KeyboardEvent(e.type, e))
 }
 window.addEventListener('keydown', forwardKeyToEngine)
