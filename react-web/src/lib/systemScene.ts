@@ -42,6 +42,11 @@ const WORLDS_PREFIX = `${serviceUrl('worldsServer')}/world/`
 // parameter, and a link can't make someone else's machine serve it.
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]'])
 
+/** A page served from the developer's own machine. */
+export function isLoopbackHost(hostname: string): boolean {
+  return LOOPBACK.has(hostname.toLowerCase())
+}
+
 function normalise(value: string): string {
   return value.trim().replace(/\/+$/, '')
 }
