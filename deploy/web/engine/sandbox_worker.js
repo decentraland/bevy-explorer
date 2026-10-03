@@ -80,6 +80,24 @@ function deleteFromPrototypeChain(obj, name) {
   return false;
 }
 
+// Ordinary scenes get only these ops (what native gives a non-super-user scene); the
+// super-user scene gets every export. A new op stays out of scenes until it is added here.
+const SCENE_OPS = new Set([
+  "op_camera_fov", "op_change_realm", "op_comms_recv_binary", "op_comms_send_binary_single",
+  "op_comms_send_string", "op_communicated_with_renderer", "op_continue_running",
+  "op_copy_to_clipboard", "op_crdt_recv_from_renderer", "op_crdt_send_to_renderer", "op_emote",
+  "op_error", "op_external_url", "op_get_connected_players", "op_get_platform",
+  "op_get_player_data", "op_get_players_in_scene", "op_get_texture_size", "op_get_user_data",
+  "op_log", "op_log_test_plan", "op_log_test_result", "op_move_player_to", "op_open_explorer_ui",
+  "op_open_nft_dialog", "op_portable_kill", "op_portable_list", "op_portable_spawn",
+  "op_read_file", "op_realm_information", "op_scene_emote", "op_scene_information",
+  "op_send_async", "op_send_batch", "op_set_elapsed", "op_signed_fetch_headers", "op_stop_emote",
+  "op_subscribe", "op_take_and_compare_snapshot", "op_teleport_to", "op_testing_enabled",
+  "op_ui_focus", "op_unsubscribe", "op_walk_player_to", "op_webstorage_clear", "op_webstorage_get",
+  "op_webstorage_has", "op_webstorage_iterate_keys", "op_webstorage_key", "op_webstorage_length",
+  "op_webstorage_remove", "op_webstorage_set", "op_world_time",
+]);
+
 const jsContext = Object.create(null);
 var jsProxy = undefined;
 var jsPreamble = undefined;
@@ -118,6 +136,8 @@ function createJsContext(wasmApi, context) {
   // two scenes agreeing on a bucket name would have a shared filesystem.
   deleteFromPrototypeChain(self.navigator, "storage");
   deleteFromPrototypeChain(self.navigator, "storageBuckets");
+  // the page's service worker registration (and its cache routes) is no scene's business
+  deleteFromPrototypeChain(self.navigator, "serviceWorker");
 
   // IndexedDB is same-origin too, and holds more than its own data: platform/src/web_save.js keeps
   // the FileSystemDirectoryHandle for the user's picked scene folder there (db `dcl-editor`, store
@@ -128,7 +148,7 @@ function createJsContext(wasmApi, context) {
   deleteFromPrototypeChain(self, "indexedDB");
 
   // CacheStorage is the last same-origin store the sandbox could see — it holds the ipfs fetch
-  // cache (`ipfs-path-cache-v1`), so a scene could read every asset the client has pulled and, more
+  // cache (`ipfs-path-cache-v2`), so a scene could read every asset the client has pulled and, more
   // to the point, write to keys the loader later serves. Its users are elsewhere:
   // image_processing/src/processor/wasm_fs.rs runs on the asset processor worker, which engine.js spawns
   // as its own worker, and service_worker.js is a different context entirely.
@@ -166,7 +186,7 @@ function createJsContext(wasmApi, context) {
 
   const ops = Object.create(null);
   for (const exportName in wasmApi) {
-    if (exportName.substring(0, 3) === "op_") {
+    if (exportName.substring(0, 3) === "op_" && (isSuper || SCENE_OPS.has(exportName))) {
       Object.defineProperty(ops, exportName, {
         configurable: false,
         get() {
