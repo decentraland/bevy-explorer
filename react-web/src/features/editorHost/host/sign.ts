@@ -28,7 +28,9 @@ export async function signFetch(identity: AuthIdentity, method: string, url: str
   const timestamp = String(Date.now())
   // fixed here: the service takes this intent only, and refuses a scene's signed fetch
   const metadata = JSON.stringify({ intent: 'dcl:editor:projects', signer: 'dcl:editor', origin: location.origin })
-  const payload = [method, new URL(url).pathname, timestamp, metadata].join(':').toLowerCase()
+  const { pathname, search } = new URL(url)
+  // the query too: a verifier reading the path as the server sees it includes it
+  const payload = [method, `${pathname}${search}`, timestamp, metadata].join(':').toLowerCase()
   const headers: Record<string, string> = { 'x-identity-timestamp': timestamp, 'x-identity-metadata': metadata }
   const chain = await signPayload(identity, payload)
   chain.forEach((link, i) => (headers[`x-identity-auth-chain-${i}`] = JSON.stringify(link)))

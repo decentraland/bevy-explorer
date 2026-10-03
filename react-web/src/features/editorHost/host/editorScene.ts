@@ -28,8 +28,9 @@ export async function stageEditorScene(packageScene: string, entityId: string, p
   if (navigator.serviceWorker?.controller == null) throw new Error('the page has no service worker to serve the editor scene')
   const realm = `${pageDir}editor-scene/${entityId}`
   const entity = await verified(`${packageScene}/${entityId}`, entityId)
-  const { content } = JSON.parse(new TextDecoder().decode(entity)) as { content: { hash: string }[] }
-  const hashes = [...new Set(content.map((c) => c.hash))]
+  const { content } = JSON.parse(new TextDecoder().decode(entity)) as { content?: unknown }
+  if (!Array.isArray(content)) throw new Error(`the editor scene ${entityId} lists no files`)
+  const hashes = [...new Set(content.map((c: { hash?: unknown }) => String(c?.hash)))]
   const bad = hashes.find((hash) => !CID_PATTERN.test(hash))
   if (bad != null) throw new Error(`the editor scene names a file by ${bad}, not a content hash`)
   const files = await Promise.all(hashes.map(async (hash) => [hash, await verified(`${packageScene}/${hash}`, hash)] as const))

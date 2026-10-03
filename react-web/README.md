@@ -98,9 +98,17 @@ against their hashes (`host/editorScene.ts`), stores them, and the service worke
 `<PAGE_DIR>editor-scene/<entityId>`, which is the realm the engine spawns. The `baseUrl` inside
 `scene/about` is not used, so the export needs no `--editor-base`.
 
-The host signs for the editor with the signed-in wallet's stored identity, which the editor never
-sees: `signedFetch` only for urls under the project storage service, `signDeployment` only after
-the page's own confirmation dialog. A guest gets `not-signed-in`. On localhost the services are
+The host signs for the editor with the signed-in wallet's stored identity; the host API never
+hands the key over. That is a property of the API, not an isolation boundary: the package runs in
+this page's own JavaScript realm, so the pin, its integrity hash and the allowed hosts are what
+keep untrusted code out. `signedFetch` signs only urls under the project storage service, with
+the query, the host's fixed metadata and only the `accept`, `content-type`, `if-match` and
+`if-none-match` headers the editor sets; any method is allowed, so the editor can also delete the
+player's stored scenes. `signDeployment` signs only after the page's own confirmation dialog, and
+only the entity id: the world is inside that entity, but the dialog shows the world and server the
+editor reports. `engineConsole` passes only the commands the editor uses to inspect and drive the
+scene it edits; `reload` and `set_scene` must name that scene or the editor's own. A guest gets
+`not-signed-in`. On localhost the services are
 `http://localhost:8787` (projects) and the production Worlds content server; `?editor-projects=<url>`
 and `?editor-worlds=<url>` point them at other local (loopback) services, on localhost only. Before signing a deployment the
 page's dialog names the world, scene, files, the Worlds server's host and the wallet; it keeps

@@ -60,17 +60,18 @@ describe('editor host signing', () => {
     await host().signedFetch('http://localhost:8787/projects/p1/manifest?x=1', {
       method: 'put',
       body: '{}',
-      headers: { 'content-type': 'application/json', 'X-Identity-Metadata': '{"signer":"decentraland-kernel-scene"}' }
+      headers: { 'content-type': 'application/json', 'X-Identity-Metadata': '{"signer":"decentraland-kernel-scene"}', 'x-forwarded-for': '1.2.3.4' }
     })
     const [url, init] = fetched.mock.lastCall!
     const headers = init!.headers as Record<string, string>
     expect(url).toBe('http://localhost:8787/projects/p1/manifest?x=1')
     expect(headers['content-type']).toBe('application/json')
     expect(headers['X-Identity-Metadata']).toBeUndefined()
+    expect(headers['x-forwarded-for'], 'only the headers the host allows').toBeUndefined()
     expect(JSON.parse(headers['x-identity-metadata'])).toEqual({ intent: 'dcl:editor:projects', signer: 'dcl:editor', origin: location.origin })
     // what a signed-fetch verifier rebuilds and checks (ADR-44)
     const chain = [0, 1, 2].map((i) => JSON.parse(headers[`x-identity-auth-chain-${i}`]))
-    const payload = `put:/projects/p1/manifest:${headers['x-identity-timestamp']}:${headers['x-identity-metadata']}`.toLowerCase()
+    const payload = `put:/projects/p1/manifest?x=1:${headers['x-identity-timestamp']}:${headers['x-identity-metadata']}`.toLowerCase()
     expect(await Authenticator.validateSignature(payload, chain, null)).toEqual({ ok: true, message: undefined })
     fetched.mockRestore()
   })
