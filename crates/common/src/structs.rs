@@ -1665,17 +1665,15 @@ impl LocalSceneServer {
 
     /// The header a server copy's request to `uri` carries instead of a signature: the served
     /// realm's storage routes, as the dev server serves them (`/values`, `/players`, `/env`).
+    /// Without a token (a native `dcl start` preview) the request is signed as before.
     pub fn storage_header(&self, uri: &str) -> Option<(String, String)> {
         let rest = uri
             .strip_prefix(self.realm.as_deref()?)?
             .strip_prefix('/')?;
         let route = rest.split(['/', '?']).next()?;
-        matches!(route, "values" | "players" | "env").then(|| {
-            (
-                LOCAL_STORAGE_HEADER.to_owned(),
-                self.storage_token.clone().unwrap_or_default(),
-            )
-        })
+        let token = self.storage_token.clone()?;
+        matches!(route, "values" | "players" | "env")
+            .then(|| (LOCAL_STORAGE_HEADER.to_owned(), token))
     }
 }
 
@@ -1722,6 +1720,15 @@ mod local_scene_server_tests {
         assert_eq!(
             LocalSceneServer::default().storage_header("https://page/preview/p1/values/k"),
             None
+        );
+        let tokenless = LocalSceneServer {
+            storage_token: None,
+            ..local
+        };
+        assert_eq!(
+            tokenless.storage_header("https://page/preview/p1/values/k"),
+            None,
+            "signed as before"
         );
     }
 }
