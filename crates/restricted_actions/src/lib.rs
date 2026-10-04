@@ -1693,10 +1693,8 @@ fn send_scene_messages(
         }
 
         for (transport, scene_room) in transports.iter() {
-            // A client sends to any scene room it holds (it holds one). When serving, also
-            // require the room to belong to this scene so N scenes in one engine don't
-            // cross-talk. Either way only rooms feeding the scene's own context, so a client
-            // copy and its in-engine server copy never write into each other's half.
+            // only rooms on the scene's own context (a client copy and its server copy share a
+            // hash); a server also matches the room to the scene so N scenes don't cross-talk
             let send = transport.context == scene_context
                 && if is_server {
                     scene_room.is_some_and(|r| &r.0 == hash)
@@ -2305,9 +2303,8 @@ fn filename_looks_like_url(filename: &str) -> bool {
     url::Url::parse(filename.trim()).is_ok()
 }
 
-/// True when a readFile target is an absolute URL on a local realm's own origin. On web that
-/// origin is the page's, where the editor keeps every previewed project's unpublished files, and
-/// any scene there (a portable, a smart wearable) is told the realm's url.
+/// A readFile target on a local realm's own origin: on web that is the page's, which holds every
+/// previewed project's unpublished files, and any scene there is told the realm's url.
 fn reads_local_realm_origin(filename: &str, realm: &CurrentRealm) -> bool {
     // as the loader will see it: `/https://..` becomes a url there
     let filename = ipfs::ipfs_path::content_file_path(filename);

@@ -1,8 +1,6 @@
 //! In-engine authoritative server: with [`LocalSceneServer`] naming the current realm, each of its
-//! authoritative scenes gets a second copy of itself in server role (isServer() true, its own crdt context) joined to the
-//! client copy over the loopback scene room (`comms::loopback`). The copy only forwards
-//! logic and collision components across the scene boundary, and anything renderable its
-//! gltf colliders bring along is stripped, so it never draws.
+//! authoritative scenes gets a hidden server-role copy, joined to the client copy over
+//! `comms::loopback`, that forwards only logic and collision components and never draws.
 
 use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_console::ConsoleCommand;
@@ -33,9 +31,7 @@ pub struct ServerRole {
     pub client: Entity,
 }
 
-/// What a server copy forwards to the engine: its logic-side state and what raycasts need to
-/// collide with. Everything else (mesh renderers, materials, ui, audio, video, avatars, ...)
-/// stays in the scene's own store.
+/// What a server copy forwards to the engine: logic-side state and what raycasts collide with.
 const SERVER_COMPONENTS: [SceneComponentId; 5] = [
     SceneComponentId::TRANSFORM,
     SceneComponentId::TWEEN,

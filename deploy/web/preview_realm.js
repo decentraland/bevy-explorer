@@ -29,8 +29,7 @@
     const noContent = () => respond(null, 204, BYTES_TYPE);
 
     // Scenes run in sandbox workers on this origin and learn the preview's url from their realm
-    // info; a project's files are the engine's and the page's alone. `client` is the url of the
-    // service worker client that sent the request, undefined when it has none.
+    // info. `client` is the requesting service worker client's url, undefined when it has none.
     function fromScene(client) {
         return typeof client !== 'string' || new URL(client).pathname.endsWith('/sandbox_worker.bundle.js');
     }
@@ -132,10 +131,8 @@
         return stored ? respond(stored.body, 200, BYTES_TYPE) : notFound();
     }
 
-    // The storage the dev server (sdk-commands start) serves a scene's server, per realm, in one
-    // JSON document like its server-storage.json: { env, world, players }. Only the server copy
-    // the page is running may reach it: the engine adds the page's secret to that copy's storage
-    // requests, and the page keeps a `{ token }` entry under `<realm>/__server` while it previews.
+    // The dev server's scene-server storage, per realm, as one { env, world, players } document,
+    // open only to requests carrying the `{ token }` the page keeps under `<realm>/__server`.
     const STORAGE_HEADER = 'x-dcl-local-server';
     const STORAGE_ROUTE = /^(?:values(?:\/(.*))?|players\/([^/]+)\/values(?:\/(.*))?|env\/(.*))$/;
     const writes = new Map();
