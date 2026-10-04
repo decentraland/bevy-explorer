@@ -3,7 +3,8 @@
 // authoritative: its server copy runs the server branch (isServer() true), a client message is
 // applied by it on Play, Stop restarts it with the player's copy, and leaving turns it off. What the
 // server stores outlives Stop and a page reload, and the player's copy cannot read it. The same
-// project made non-authoritative gets no server copy. Run: see playwright.gate.config.ts.
+// project made non-authoritative gets no server copy. The editor shows the copy's console and storage.
+// Run: see playwright.gate.config.ts.
 
 import { appendFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
@@ -213,6 +214,15 @@ test('an authoritative preview runs its server in the tab, only while the editor
     return at
   }
   await play(1)
+
+  // the editor's logs drawer: the server copy's console, and the storage it keeps
+  await ui.getByRole('button', { name: 'Show build / server logs' }).click()
+  const logTab = (name: string) => ui.locator('.eui-logs-tabs button', { hasText: name })
+  await logTab('Build').click()
+  await expect(ui.locator('.eui-logs-body'), 'the server copy console in Build').toContainText('SRVGATE server applied bump', { timeout: 30_000 })
+  await logTab('Storage').click()
+  await expect(ui.locator('.eui-value-row', { hasText: 'bumps' }), 'the server copy storage in Storage').toBeVisible({ timeout: 30_000 })
+  await ui.getByRole('button', { name: 'Hide logs' }).first().click()
 
   // Stop restarts the scene from tick 0, and its server with it: Play again counts from 0 again
   const stopAt = Date.now()
