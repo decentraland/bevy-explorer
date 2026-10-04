@@ -164,13 +164,34 @@ struct SceneLogsCommand {
     /// Number of entries to show (default 20)
     #[arg(default_value = "20")]
     count: usize,
+    /// Read the scene's in-engine server copy instead
+    #[arg(long)]
+    server: bool,
 }
 
-fn scene_logs_cmd(mut input: ConsoleCommand<SceneLogsCommand>, resolver: SceneResolver) {
+fn scene_logs_cmd(
+    mut input: ConsoleCommand<SceneLogsCommand>,
+    resolver: SceneResolver,
+    servers: Query<(Entity, &ServerRole)>,
+) {
     if let Some(Ok(cmd)) = input.take() {
-        match resolver.resolve() {
+        let resolved = resolver.resolve().and_then(|(client, ctx)| {
+            if !cmd.server {
+                return Ok(ctx);
+            }
+            let server = servers
+                .iter()
+                .find(|(_, role)| role.client == client)
+                .ok_or_else(|| "the scene has no server copy".to_string())?;
+            resolver
+                .scenes
+                .get(server.0)
+                .map(|(_, ctx)| ctx)
+                .map_err(|_| "could not find the server copy's context".to_string())
+        });
+        match resolved {
             Err(e) => input.reply_failed(e),
-            Ok((_, ctx)) => {
+            Ok(ctx) => {
                 let (missed, entries, _) = ctx.logs.read();
                 let entries: Vec<_> = entries.into_iter().rev().take(cmd.count).rev().collect();
                 if entries.is_empty() {
