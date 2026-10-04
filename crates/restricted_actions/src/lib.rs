@@ -2205,6 +2205,7 @@ fn handle_sign_request(
     // present only in the headless server binary; None everywhere else
     delegations: Option<Res<wallet::delegation::StorageDelegations>>,
     local_server: Option<Res<common::structs::LocalSceneServer>>,
+    mut server_copy_identity: Local<Option<Wallet>>,
 ) {
     for ev in events.read() {
         if let RpcCall::SignRequest {
@@ -2227,6 +2228,9 @@ fn handle_sign_request(
                 continue;
             }
 
+            let storage_route = local_server
+                .as_ref()
+                .is_some_and(|local| local.is_storage_route(uri));
             let Ok(uri) = Uri::try_from(uri) else {
                 response.send(Err(format!("failed to parse uri: {uri}")));
                 continue;
@@ -2260,9 +2264,21 @@ fn handle_sign_request(
                 continue;
             }
 
+            // an in-engine server copy has no identity of its own: never the player's, but a
+            // tokenless dev preview's storage stays signed as before
+            let wallet = if *server && !common::structs::server_mode() && !storage_route {
+                server_copy_identity
+                    .get_or_insert_with(|| {
+                        let mut guest = Wallet::default();
+                        guest.finalize_as_guest();
+                        guest
+                    })
+                    .clone()
+            } else {
+                wallet.clone()
+            };
             let method = method.clone();
             let meta = meta.to_owned().unwrap_or_default();
-            let wallet = wallet.clone();
             let task = IoTaskPool::get()
                 .spawn_compat(async move { sign_request(&method, &uri, &wallet, meta).await });
             tasks.push((response.clone(), task));
@@ -2564,5 +2580,72 @@ mod readfile_url_guard_tests {
                 "{s} is scene content and must still be readable"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod sign_request_tests {
+    use bevy::tasks::TaskPool;
+    use common::{
+        rpc::{RpcCall, RpcResultSender},
+        structs::LocalSceneServer,
+    };
+
+    use super::*;
+
+    fn signer(app: &mut App, uri: &str, server: bool) -> String {
+        let (response, mut rx) = RpcResultSender::channel();
+        app.world_mut().send_event(RpcCall::SignRequest {
+            method: "GET".to_owned(),
+            uri: uri.to_owned(),
+            meta: None,
+            scene: None,
+            server,
+            response,
+        });
+        for _ in 0..500 {
+            app.update();
+            if let Ok(Some(headers)) = rx.poll_once() {
+                let headers = headers.unwrap();
+                let (_, link) = headers
+                    .iter()
+                    .find(|(name, _)| name == "x-identity-auth-chain-0")
+                    .unwrap();
+                return serde_json::from_str::<serde_json::Value>(link).unwrap()["payload"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("no signature for {uri}");
+    }
+
+    #[test]
+    fn a_server_copys_requests_are_never_signed_as_the_player() {
+        IoTaskPool::get_or_init(TaskPool::new);
+        let mut player = Wallet::default();
+        player.finalize_as_guest();
+        let player_address = format!("{:#x}", player.address().unwrap());
+        let mut app = App::new();
+        app.add_event::<RpcCall>()
+            .insert_resource(player)
+            .insert_resource(LocalSceneServer {
+                realm: Some("https://page/preview/p1".to_owned()),
+                storage_token: Some("secret".to_owned()),
+            })
+            .add_systems(Update, handle_sign_request);
+
+        assert_eq!(
+            signer(&mut app, "https://api.example/x", false),
+            player_address
+        );
+        let server = signer(&mut app, "https://api.example/x", true);
+        assert_ne!(server, player_address);
+        assert_eq!(
+            signer(&mut app, "https://api.example/y", true),
+            server,
+            "one identity for the session"
+        );
     }
 }
