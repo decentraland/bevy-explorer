@@ -9,7 +9,6 @@ import type { EngineRpc } from '../../engine/engineRpc'
 import { bridgeChannelName } from '../../engine/protocol'
 import { BASE_DOMAIN, SERVICE_OVERRIDES } from '../../lib/baseDomain'
 import { bootMode } from '../../lib/bootMode'
-import { loopbackHostOptions } from '../../lib/launchGate'
 import { PAGE_DIR } from '../../lib/publicUrl'
 // Moved to lib/systemScene.ts; whether a link may override it is lib/launchGate.ts's call.
 import { SYSTEM_SCENE } from '../../lib/systemScene'
@@ -49,7 +48,6 @@ function injectEngine(): void {
   // ui scene has a HUD-side default (our bundled bridge scene, unless a link overrode it).
   window.__bevyBootConfig = {
     ...launchOptionsFromUrl(params),
-    ...loopbackHostOptions(params, location.hostname),
     ...SERVICE_OVERRIDES,
     baseDomain: BASE_DOMAIN,
     systemScene: bootMode().systemScene ?? SYSTEM_SCENE

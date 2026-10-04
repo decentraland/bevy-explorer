@@ -14,7 +14,7 @@ use dcl_component::{
 use ipfs::IpfsResource;
 use scene_runner::{
     initialize_scene::SuperUserScene, renderer_context::RendererSceneContext,
-    update_world::material::VideoTextureOutput, ContainerEntity,
+    server_role::ServerRole, update_world::material::VideoTextureOutput, ContainerEntity,
 };
 use texture_camera::TextureCamera;
 
@@ -54,7 +54,8 @@ struct SetSceneCommand {
 fn set_scene_cmd(
     mut input: ConsoleCommand<SetSceneCommand>,
     mut active: ResMut<ActiveInspectionScene>,
-    scenes: Query<(Entity, &RendererSceneContext)>,
+    // a scene's in-engine server copy shares its hash: the editor pins the one the player sees
+    scenes: Query<(Entity, &RendererSceneContext), Without<ServerRole>>,
 ) {
     if let Some(Ok(cmd)) = input.take() {
         let Some(pattern) = cmd.pattern else {

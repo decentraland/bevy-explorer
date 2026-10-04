@@ -102,11 +102,6 @@ pub struct ClientOptions {
     #[arg(long, help_heading = HOST)]
     pub editor: bool,
 
-    /// Run authoritative scenes' servers inside this engine (a hidden server copy of the scene
-    /// joined over an in-engine scene room) instead of an external server. For local previews
-    #[arg(long, help_heading = HOST)]
-    pub local_scene_server: bool,
-
     /// A `decentraland://` link as the scheme handler or the launcher passes it: `realm`,
     /// `position` and `dclenv` fill the matching launch options (main.rs)
     #[arg(hide = true, value_name = "decentraland://…")]

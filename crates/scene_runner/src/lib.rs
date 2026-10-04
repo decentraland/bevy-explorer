@@ -1323,6 +1323,7 @@ fn update_scene_room(
     scenes: Query<&RendererSceneContext>,
     local_server: Res<common::structs::LocalSceneServer>,
 ) {
+    let served = local_server.serves(&realm);
     let (Some(realm), Some(scene)) = (
         realm.config.realm_name.as_ref(),
         player
@@ -1342,20 +1343,14 @@ fn update_scene_room(
         return;
     };
 
-    if last
-        .as_ref()
-        .is_some_and(|ev| &ev.realm_name == realm && ev.scene_id == scene.hash)
-    {
-        return;
-    }
-
     let ev = SetCurrentScene {
         realm_name: realm.to_owned(),
         scene_id: scene.hash.clone(),
-        local_server: local_server.0
-            && scene.authoritative_multiplayer
-            && !common::structs::server_mode(),
+        local_server: served && scene.authoritative_multiplayer && !common::structs::server_mode(),
     };
+    if last.as_ref() == Some(&ev) {
+        return;
+    }
 
     *last = Some(ev.clone());
     debug!("set scene room {ev:?}");
