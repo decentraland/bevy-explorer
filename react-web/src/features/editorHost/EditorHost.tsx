@@ -102,6 +102,7 @@ export default function EditorHost({
   onNavigate: (page: string) => void
 }): React.JSX.Element | null {
   const entry = useEditorHost(entrySearch, session)
-  if (entry == null || session.phase !== 'world' || session.menuOpen) return null
+  // a travel (back to scenes) is 'entering': the page stays over it, the loading overlay yields to it
+  if (entry == null || (session.phase !== 'world' && session.phase !== 'entering') || session.menuOpen) return null
   return <CreatePage entry={entry} create={session.create} profile={session.profile} onNavigate={onNavigate} />
 }

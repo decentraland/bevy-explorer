@@ -7,7 +7,7 @@ import { ToastHost } from '../design'
 import userEvent from '@testing-library/user-event'
 import { editorOffered, EditorOffered } from '../features/editorHost/config'
 import { CreatePage } from '../features/editorHost/CreatePage'
-import { useEditorHost } from '../features/editorHost/EditorHost'
+import EditorHost, { useEditorHost } from '../features/editorHost/EditorHost'
 import { type DclEditorHostV1, type EditorPackage } from '../features/editorHost/host/host'
 import { editorEntry, editorSource } from '../features/editorHost/source'
 import type { EngineSession } from '../features/session/useEngineSession'
@@ -187,5 +187,11 @@ describe('editor host', () => {
     bridge.close()
     expect(session.create.show).toHaveBeenLastCalledWith(false)
     expect(scripts().filter((src) => src.includes('editor.js'))).toHaveLength(1)
+  })
+
+  it('keeps the Create page over the travel back to scenes', () => {
+    const travelling: EngineSession = { ...session, phase: 'entering', create: { ...session.create, open: true } }
+    render(<EditorHost session={travelling} entrySearch="" onNavigate={vi.fn()} />)
+    expect(document.getElementById('dcl-editor-home')).toBeInTheDocument()
   })
 })
