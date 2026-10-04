@@ -1671,13 +1671,18 @@ impl LocalSceneServer {
     /// realm's storage routes, as the dev server serves them (`/values`, `/players`, `/env`).
     /// Without a token (a native `dcl start` preview) the request is signed as before.
     pub fn storage_header(&self, uri: &str) -> Option<(String, String)> {
-        let rest = uri
-            .strip_prefix(self.realm.as_deref()?)?
-            .strip_prefix('/')?;
-        let route = rest.split(['/', '?']).next()?;
         let token = self.storage_token.clone()?;
-        matches!(route, "values" | "players" | "env")
+        self.is_storage_route(uri)
             .then(|| (LOCAL_STORAGE_HEADER.to_owned(), token))
+    }
+
+    /// One of the served realm's storage routes, with or without a token.
+    pub fn is_storage_route(&self, uri: &str) -> bool {
+        self.realm
+            .as_deref()
+            .and_then(|realm| uri.strip_prefix(realm)?.strip_prefix('/'))
+            .and_then(|rest| rest.split(['/', '?']).next())
+            .is_some_and(|route| matches!(route, "values" | "players" | "env"))
     }
 }
 
