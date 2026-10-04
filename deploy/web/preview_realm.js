@@ -198,15 +198,28 @@
     }
 
     // `/values[/key]`, `/players/<address>/values[/key]`, `/env/<key>`, answered as the dev server does
+    const decode = (part) => (part === undefined ? undefined : decodeURIComponent(part));
+
+    function scopeOf(data, env, address) {
+        if (env !== undefined) return data.env;
+        if (address === undefined) return data.world;
+        data.players[address] = dict(data.players[address]);
+        return data.players[address];
+    }
+
+    function missing(name, env, address) {
+        if (env !== undefined) return `Environment variable '${name}' not found`;
+        if (address !== undefined) return `Player storage key '${name}' not found for '${address}'`;
+        return `Storage key '${name}' not found`;
+    }
+
     async function handleStorage(request, realm, route, storage) {
-        if (!storage || !(await allowed(request, realm, storage))) return respond(null, 403, BYTES_TYPE);
+        if (!storage || !(await allowed(request, realm, storage))) return forbidden();
         let key, address, env;
         try {
-            key = route[1] ?? route[3];
-            address = route[2] === undefined ? undefined : decodeURIComponent(route[2]);
-            env = route[4];
-            key = key === undefined ? undefined : decodeURIComponent(key);
-            env = env === undefined ? undefined : decodeURIComponent(env);
+            key = decode(route[1] ?? route[3]);
+            address = decode(route[2]);
+            env = decode(route[4]);
         } catch {
             return json({ message: 'Malformed key' }, 400);
         }
@@ -214,31 +227,20 @@
         if (address === '') return json({ message: 'Address is required' }, 400);
         const docKey = realm + '__storage';
         const method = request.method;
-        const scope = (data) => (env !== undefined ? data.env : address !== undefined ? (data.players[address] = dict(data.players[address])) : data.world);
+        const name = env ?? key;
 
         if (method === 'GET') {
-            const data = await readStorage(storage, docKey);
-            const values = scope(data);
-            if (env === undefined && key === undefined) return page(values, request.url);
-            const name = env ?? key;
-            if (!Object.hasOwn(values, name)) {
-                const message =
-                    env !== undefined
-                        ? `Environment variable '${name}' not found`
-                        : address !== undefined
-                          ? `Player storage key '${name}' not found for '${address}'`
-                          : `Storage key '${name}' not found`;
-                return json({ message }, 404);
-            }
+            const values = scopeOf(await readStorage(storage, docKey), env, address);
+            if (name === undefined) return page(values, request.url);
+            if (!Object.hasOwn(values, name)) return json({ message: missing(name, env, address) }, 404);
             return json({ value: values[name] });
         }
-        const name = env ?? key;
         if (name === undefined || (method !== 'PUT' && method !== 'DELETE')) return notFound();
         const body = method === 'PUT' ? await bodyValue(request) : null;
         if (method === 'PUT' && body === null) return json({ message: `Failed to set '${name}'` }, 500);
         return serialized(docKey, async () => {
             const data = await readStorage(storage, docKey);
-            const values = scope(data);
+            const values = scopeOf(data, env, address);
             if (method === 'PUT') values[name] = body.value;
             else delete values[name];
             await storage.put(docKey, new Response(JSON.stringify(data), { headers: { 'Content-Type': JSON_TYPE } }));
