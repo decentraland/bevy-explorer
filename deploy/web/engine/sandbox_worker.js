@@ -88,7 +88,7 @@ const SCENE_OPS = new Set([
   "op_copy_to_clipboard", "op_crdt_recv_from_renderer", "op_crdt_send_to_renderer", "op_emote",
   "op_error", "op_external_url", "op_get_connected_players", "op_get_platform",
   "op_get_player_data", "op_get_players_in_scene", "op_get_texture_size", "op_get_user_data",
-  "op_log", "op_log_test_plan", "op_log_test_result", "op_move_player_to", "op_open_explorer_ui",
+  "op_is_server", "op_log", "op_log_test_plan", "op_log_test_result", "op_move_player_to", "op_open_explorer_ui",
   "op_open_nft_dialog", "op_portable_kill", "op_portable_list", "op_portable_spawn",
   "op_read_file", "op_realm_information", "op_scene_emote", "op_scene_information",
   "op_send_async", "op_send_batch", "op_set_elapsed", "op_signed_fetch_headers", "op_stop_emote",
