@@ -13,7 +13,8 @@ interface StorageStore extends PreviewStore {
 
 declare global {
   var dclPreviewRealm: {
-    handle: (request: Request, previewRoot: string, store: PreviewStore, storage?: StorageStore) => Promise<Response>
+    handle: (request: Request, previewRoot: string, store: PreviewStore, storage?: StorageStore, client?: string) => Promise<Response>
+    handleEditorScene: (request: Request, root: string, store: PreviewStore, client?: string) => Promise<Response>
   }
 }
 
@@ -51,12 +52,14 @@ const store = storeOf({
 const PAGE = 'https://play.example/bevy-web/'
 const SANDBOX = 'https://play.example/bevy-web/engine/pkg/sandbox_worker.bundle.js'
 
-const get = (url: string, client: string | null = PAGE): Promise<Response> => dclPreviewRealm.handle(new Request(url), ROOT, store, client ?? undefined)
+const get = (url: string, client: string | null = PAGE): Promise<Response> =>
+  dclPreviewRealm.handle(new Request(url), ROOT, store, undefined, client ?? undefined)
 const active = (pointers: string[]): Promise<Response> =>
   dclPreviewRealm.handle(
     new Request(`${REALM}content/entities/active`, { method: 'POST', body: JSON.stringify({ pointers }) }),
     ROOT,
     store,
+    undefined,
     PAGE
   )
 
@@ -143,6 +146,21 @@ describe('preview realm', () => {
       expect([url, res.status]).toEqual([url, 404])
       expect(res.headers.get('Content-Security-Policy')).toBe('sandbox')
     }
+  })
+
+  it('never answers a scene’s own requests, whose realm info names the preview', async () => {
+    for (const path of ['about', 'scene.json', `content/contents/${GAME_HASH}`, `content/contents/${ENTITY_ID}`]) {
+      // a client the worker cannot name is refused too
+      for (const client of [SANDBOX, null]) {
+        const res = await get(`${REALM}${path}`, client)
+        expect([path, client, res.status]).toEqual([path, client, 403])
+      }
+    }
+    const editorRoot = `${PAGE}editor-scene/`
+    const editorStore = storeOf({ [`${editorRoot}bafkreiabc/about`]: '{}' })
+    const editorAbout = (client: string): Promise<Response> =>
+      dclPreviewRealm.handleEditorScene(new Request(`${editorRoot}bafkreiabc/about`), editorRoot, editorStore, client)
+    expect([(await editorAbout(PAGE)).status, (await editorAbout(SANDBOX)).status]).toEqual([200, 403])
   })
 
   describe('storage for the in-tab scene server', () => {

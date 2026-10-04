@@ -103,8 +103,12 @@ function unavailable() {
 
 async function servePreviewRealm(request, clientId) {
     if (!previewRealm) return unavailable();
-    const [cache, storage] = await Promise.all([caches.open(PREVIEW_CACHE_NAME), caches.open(PREVIEW_STORAGE_CACHE_NAME)]);
-    return previewRealm.handle(request, PREVIEW_ROOT, cache, storage);
+    const [cache, storage, client] = await Promise.all([
+        caches.open(PREVIEW_CACHE_NAME),
+        caches.open(PREVIEW_STORAGE_CACHE_NAME),
+        clientUrl(clientId),
+    ]);
+    return previewRealm.handle(request, PREVIEW_ROOT, cache, storage, client);
 }
 
 /**
