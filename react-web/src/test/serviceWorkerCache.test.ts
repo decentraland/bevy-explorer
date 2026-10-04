@@ -1,13 +1,13 @@
-// The service worker's asset cache: what it fetches stays with the origin it came from; only an
-// entry under the shared key (which the engine writes, once it has checked the bytes against the
-// content hash) answers for every content server.
+// The service worker's asset cache: what it fetches stays under the url it came from; only an
+// entry under the shared key (the hash alone, which the engine writes once it has checked the bytes
+// against that hash) answers for every content server.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 const SHARED = 'https://shared.invalid'
 
-// the worker's script, run against a stand-in global; `bodies` is what each url's server answers
+// the worker's script, run against a stand-in global; `seeded` is what the cache already holds
 function serviceWorker(seeded: Record<string, string> = {}) {
   const listeners: Record<string, (event: unknown) => void> = {}
   const store = new Map<string, Response>(Object.entries(seeded).map(([key, body]) => [key, new Response(body)]))
@@ -30,10 +30,10 @@ function serviceWorker(seeded: Record<string, string> = {}) {
   ) => void
   load(self, { open: async () => cache }, network, { log: vi.fn(), warn: vi.fn() })
 
-  const asset = async (url: string): Promise<{ body: string; cached: boolean }> => {
+  const asset = async (url: string, method = 'GET'): Promise<{ body: string; cached: boolean }> => {
     let reply: Promise<Response> | undefined
     listeners.fetch({
-      request: new Request(url, { headers: { 'X-IPFS': '1' } }),
+      request: new Request(url, { method, headers: { 'X-IPFS': '1' } }),
       respondWith: (r: Promise<Response>) => (reply = r)
     })
     const response = await reply!
@@ -43,7 +43,8 @@ function serviceWorker(seeded: Record<string, string> = {}) {
 }
 
 describe('service worker asset cache', () => {
-  const path = '/contents/bafkreiexample'
+  const hash = 'bafkreiexample'
+  const path = `/contents/${hash}`
 
   it('keeps what it fetches with the origin that served it', async () => {
     const { asset, network, keys } = serviceWorker()
@@ -56,13 +57,30 @@ describe('service worker asset cache', () => {
 
   it('answers every origin from the shared entry, dropping the origin\'s own copy', async () => {
     const { asset, network, keys } = serviceWorker({
-      [SHARED + path]: 'checked',
+      [`${SHARED}/${hash}`]: 'checked',
       [`https://evil.example${path}`]: 'unchecked'
     })
     expect(await asset(`https://peer.example${path}`)).toEqual({ body: 'checked', cached: true })
+    // whatever path the server keeps its content under
+    expect(await asset(`https://worlds.example/world${path}`)).toEqual({ body: 'checked', cached: true })
     expect(await asset(`https://evil.example${path}`)).toEqual({ body: 'checked', cached: true })
     expect(network).not.toHaveBeenCalled()
     // and drops that origin's own copy
-    expect(keys()).toEqual([SHARED + path])
+    expect(keys()).toEqual([`${SHARED}/${hash}`])
+  })
+
+  it('keys a request by where its path ends, not by what follows a `#`', async () => {
+    const { asset, keys } = serviceWorker()
+    await asset(`https://evil.example/contents/bafkreitarget#${path}`)
+    expect(keys()).toEqual(['https://evil.example/contents/bafkreitarget'])
+  })
+
+  it('neither stores nor answers anything but a GET', async () => {
+    const { asset, network, keys } = serviceWorker()
+    expect(await asset(`https://peer.example${path}`, 'HEAD')).toEqual({ body: 'https://peer.example', cached: false })
+    expect(keys()).toEqual([])
+    expect(await asset(`https://peer.example${path}`)).toEqual({ body: 'https://peer.example', cached: false })
+    expect(await asset(`https://peer.example${path}`, 'HEAD')).toEqual({ body: 'https://peer.example', cached: false })
+    expect(network).toHaveBeenCalledTimes(3)
   })
 })

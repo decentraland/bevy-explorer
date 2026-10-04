@@ -88,11 +88,17 @@ async function cacheFirstStrategy(request) {
         return fetch(stripCustomHeader(request));
     }
 
-    // Two keys. The shared one drops the origin, so every content server serving a hash hits the
-    // same entry. This worker never writes it: any client (a scene included) can make it fetch and
-    // store a response, so what it stores stays with the origin it came from. The engine moves an
-    // entry to the shared key once it has checked the bytes against the hash.
-    const sharedKey = SHARED_ORIGIN + reqUrl.pathname + reqUrl.search;
+    // Cache entries are keyed by url alone, so only a GET may fill or be answered from one.
+    if (request.method !== 'GET') {
+        return fetch(stripCustomHeader(request));
+    }
+
+    // Two keys. The shared one is the hash alone (the last path segment), so every content server
+    // serving a hash hits the same entry. This worker never writes it: any client (a scene
+    // included) can make it fetch and store a response, so what it stores stays under the url it
+    // came from. The engine moves an entry to the shared key once it has checked the bytes
+    // against the hash.
+    const sharedKey = SHARED_ORIGIN + '/' + reqUrl.pathname.split('/').pop();
     const originKey = reqUrl.origin + reqUrl.pathname + reqUrl.search;
 
     //Open the cache

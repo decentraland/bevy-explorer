@@ -2,7 +2,7 @@ pub mod content_hash;
 #[cfg(feature = "ipfs_debug")]
 mod ipfs_debug;
 pub mod ipfs_path;
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", test))]
 pub mod web_cache;
 
 use std::{
@@ -1865,7 +1865,8 @@ impl AssetReader for IpfsIo {
             #[cfg(target_arch = "wasm32")]
             if let Some(key @ CacheKey::Content(_)) = &cache_key {
                 if sw_caches && !sw_cached {
-                    if let Err(e) = web_cache::share(&remote, &data, || cacheable(key)).await {
+                    if let Err(e) = web_cache::share(&remote, key.name(), &data, || cacheable(key))
+                            .await {
                         warn!("failed to share cache item `{remote}`: {e:?}");
                     }
                 }
