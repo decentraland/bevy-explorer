@@ -1640,10 +1640,8 @@ pub struct ShowOutOfBounds(pub bool);
 #[derive(Debug, Resource, Default)]
 pub struct EditorMode(pub bool);
 
-/// The realm (its url, without `/about`) whose authoritative scenes run a server copy inside this
-/// engine (isServer() true, joined to the client copy over an in-engine scene room) instead of on
-/// an external server, and the secret that copy's storage requests to that realm carry. Set by
-/// `/local_scene_server`; no realm is off.
+/// The realm (url without `/about`) whose authoritative scenes run a server copy in this engine,
+/// and the secret that copy's storage requests carry. Set by `/local_scene_server`.
 #[derive(Debug, Resource, Default)]
 pub struct LocalSceneServer {
     pub realm: Option<String>,
@@ -1667,9 +1665,8 @@ impl LocalSceneServer {
                 .is_some_and(|root| root == Self::realm_root(&realm.about_url))
     }
 
-    /// The header a server copy's request to `uri` carries instead of a signature: the served
-    /// realm's storage routes, as the dev server serves them (`/values`, `/players`, `/env`).
-    /// Without a token (a native `dcl start` preview) the request is signed as before.
+    /// The header a server copy's storage request carries instead of a signature; none without a
+    /// token (a native `dcl start` preview), which is signed as before.
     pub fn storage_header(&self, uri: &str) -> Option<(String, String)> {
         let token = self.storage_token.clone()?;
         self.is_storage_route(uri)

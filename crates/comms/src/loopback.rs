@@ -1,7 +1,5 @@
-//! An in-engine scene room between an authoritative scene and its server copy running in the
-//! same engine. Two `Transport` halves hand each other the rfc4 packets a LiveKit scene room
-//! would carry, with the same identities (the local wallet, `authoritative-server`) and the
-//! same delivery rules, so neither copy can tell it from the real room.
+//! An in-engine scene room between an authoritative scene and its server copy: two `Transport`
+//! halves with a LiveKit scene room's packets, identities and delivery rules.
 
 use alloy_core::primitives::Address;
 use bevy::{platform::collections::HashMap, prelude::*};
@@ -173,9 +171,8 @@ fn pump_loopbacks(
                 }
                 .into()
             } else {
-                // avatar state reaches a server over Pulse; only while the in-engine listener is
-                // not carrying it does the room hand the player's movement over itself, so a
-                // solo preview keeps working offline
+                // movement reaches a server over Pulse; the room carries it only while the
+                // in-engine listener is down, so a solo preview works offline
                 let message = match message {
                     rfc4::packet::Message::Movement(_) if pulse_live.0 => continue,
                     rfc4::packet::Message::Movement(movement) => PlayerMessage::Movement {

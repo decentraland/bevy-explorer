@@ -143,15 +143,13 @@ pub(crate) struct PulseSession {
     /// Who this session signs as when it is not the engine's own identity: an in-engine scene
     /// listener joins as a guest of its own, never as the player it observes.
     identity: Option<Wallet>,
-    /// Appended to a local realm's LSD key while this engine serves scenes itself, so the
-    /// partition holds this tab alone: two tabs on one project would otherwise share one, and
-    /// both in-tab servers would see, and claim authority over, every player in it.
+    /// Salts a local realm's LSD key while this engine serves scenes, so two tabs on one project
+    /// don't share a partition and both claim authority over every player in it.
     partition_salt: Option<String>,
 }
 
-/// Whether the in-engine scene listener is carrying the local player to the server copies: true
-/// once both it and the player's own session are established. Until then (Pulse unreachable,
-/// still connecting) the scene loopback feeds the player's movement to them in-process.
+/// The in-engine scene listener and the player's session are both established; until then the
+/// scene loopback feeds the player's movement to the server copies in-process.
 #[derive(Resource, Default)]
 pub struct LocalListenerLive(pub bool);
 
@@ -631,9 +629,8 @@ fn connect_pulse(
     );
 }
 
-/// While this engine serves scenes itself (`/local_scene_server`), its server copies listen on a
-/// guest identity of their own, whose address also salts the partition the tab's player and
-/// listener share; when it stops, the listener goes and the player rejoins the plain partition.
+/// While this engine serves scenes, its server copies listen as a guest of their own, whose address
+/// salts the partition the tab's player and listener share.
 fn follow_local_server(
     mut commands: Commands,
     local_server: Option<Res<LocalSceneServer>>,
