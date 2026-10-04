@@ -2370,6 +2370,17 @@ fn filename_looks_like_url(filename: &str) -> bool {
     url::Url::parse(filename.trim()).is_ok()
 }
 
+/// True when a readFile target is an absolute URL on a local realm's own origin. On web that
+/// origin is the page's, where the editor keeps every previewed project's unpublished files, and
+/// any scene there (a portable, a smart wearable) is told the realm's url.
+fn reads_local_realm_origin(filename: &str, realm: &CurrentRealm) -> bool {
+    realm.is_local()
+        && url::Url::parse(filename.trim())
+            .ok()
+            .zip(url::Url::parse(&realm.about_url).ok())
+            .is_some_and(|(target, realm)| target.origin() == realm.origin())
+}
+
 #[allow(clippy::type_complexity)]
 fn handle_read_file(
     mut events: EventReader<RpcCallEvent>,
@@ -2380,6 +2391,7 @@ fn handle_read_file(
         )>,
     >,
     ipfs: IpfsAssetServer,
+    realm: Res<CurrentRealm>,
 ) {
     for ev in events.read() {
         if let (
@@ -2400,6 +2412,12 @@ fn handle_read_file(
             if server_mode() && filename_looks_like_url(filename) {
                 response.send(Err(format!(
                     "readFile: absolute URLs are not permitted on the authoritative server ({filename})"
+                )));
+                continue;
+            }
+            if reads_local_realm_origin(filename, &realm) {
+                response.send(Err(format!(
+                    "readFile: the local realm's origin is not readable by url ({filename})"
                 )));
                 continue;
             }
@@ -2556,7 +2574,32 @@ pub fn process_startup_scenes(
 
 #[cfg(test)]
 mod readfile_url_guard_tests {
-    use super::filename_looks_like_url;
+    use super::{filename_looks_like_url, reads_local_realm_origin};
+    use common::structs::CurrentRealm;
+
+    #[test]
+    fn a_local_realms_own_origin_is_not_readable_by_url() {
+        let mut realm = CurrentRealm {
+            about_url: "https://play.example/bevy-web/preview/my-scene/about".to_owned(),
+            ..Default::default()
+        };
+        realm.config.local_scene_parcels = Some(vec!["0,0".to_owned()]);
+        for own in [
+            "https://play.example/bevy-web/preview/my-scene/content/contents/b64-x",
+            "https://play.example/bevy-web/preview/other/scene.json",
+            " https://play.example/bevy-web/editor-scene/bafkrei/about",
+        ] {
+            assert!(reads_local_realm_origin(own, &realm), "{own}");
+        }
+        for other in ["https://api.example/data.json", "models/scene.glb"] {
+            assert!(!reads_local_realm_origin(other, &realm), "{other}");
+        }
+        realm.config.local_scene_parcels = None;
+        assert!(!reads_local_realm_origin(
+            "https://play.example/x.json",
+            &realm
+        ));
+    }
 
     #[test]
     fn absolute_urls_of_any_scheme_are_url_shaped() {
