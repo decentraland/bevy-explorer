@@ -101,7 +101,7 @@ Every response carries `X-Content-Type-Options: nosniff`, `Content-Security-Poli
 `Cross-Origin-Resource-Policy: same-origin` and `Cache-Control: no-store`, with
 `Content-Type: application/json` for `about`, `scene.json` and `entities/active` and
 `application/octet-stream` for everything else. Headers stored with a cache entry are dropped. A
-navigation to a preview URL downloads; it never renders.
+navigation to a preview URL has no client and gets a 403 (see Security); it never renders.
 
 ## Launch
 
