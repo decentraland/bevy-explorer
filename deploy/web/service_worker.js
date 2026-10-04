@@ -9,6 +9,8 @@ const PREVIEW_ROOT = new URL('preview/', self.registration.scope).href;
 // The editor package's scene, staged by the page from checked bytes (preview_realm.js).
 const EDITOR_SCENE_CACHE_NAME = 'dcl-editor-scene-v1';
 const EDITOR_SCENE_ROOT = new URL('editor-scene/', self.registration.scope).href;
+// The preview realm's storage for an in-tab scene server (preview_realm.js). Never synced anywhere.
+const PREVIEW_STORAGE_CACHE_NAME = 'dcl-editor-storage-v1';
 let previewRealm = null;
 try {
     importScripts('preview_realm.js');
@@ -27,7 +29,7 @@ self.addEventListener('activate', (event) => {
     console.log('[IPFS Cache Service Worker]: Active');
     
     // An array of cache names that are "allowed" to exist.
-    const cacheWhitelist = [CACHE_NAME, PREVIEW_CACHE_NAME, EDITOR_SCENE_CACHE_NAME];
+    const cacheWhitelist = [CACHE_NAME, PREVIEW_CACHE_NAME, EDITOR_SCENE_CACHE_NAME, PREVIEW_STORAGE_CACHE_NAME];
 
     event.waitUntil(
         // Get all the cache keys (names) that exist.
@@ -101,8 +103,8 @@ function unavailable() {
 
 async function servePreviewRealm(request, clientId) {
     if (!previewRealm) return unavailable();
-    const [cache, client] = await Promise.all([caches.open(PREVIEW_CACHE_NAME), clientUrl(clientId)]);
-    return previewRealm.handle(request, PREVIEW_ROOT, cache, client);
+    const [cache, storage] = await Promise.all([caches.open(PREVIEW_CACHE_NAME), caches.open(PREVIEW_STORAGE_CACHE_NAME)]);
+    return previewRealm.handle(request, PREVIEW_ROOT, cache, storage);
 }
 
 /**

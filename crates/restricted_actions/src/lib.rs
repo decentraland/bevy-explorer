@@ -2204,6 +2204,7 @@ fn handle_sign_request(
     wallet: Res<Wallet>,
     // present only in the headless server binary; None everywhere else
     delegations: Option<Res<wallet::delegation::StorageDelegations>>,
+    local_server: Option<Res<common::structs::LocalSceneServer>>,
 ) {
     for ev in events.read() {
         if let RpcCall::SignRequest {
@@ -2211,9 +2212,21 @@ fn handle_sign_request(
             uri,
             meta,
             scene,
+            server,
             response,
         } = ev
         {
+            // an in-engine server copy's storage is the page's own, which takes a secret instead of
+            // a signature: nothing is signed with the player's key for it
+            if let Some(header) = local_server
+                .as_ref()
+                .and_then(|local| local.storage_header(uri))
+                .filter(|_| *server && !common::structs::server_mode())
+            {
+                response.send(Ok(vec![header]));
+                continue;
+            }
+
             let Ok(uri) = Uri::try_from(uri) else {
                 response.send(Err(format!("failed to parse uri: {uri}")));
                 continue;

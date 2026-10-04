@@ -6,11 +6,13 @@ import '../../../deploy/web/preview_realm.js'
 interface PreviewStore {
   match: (key: string) => Promise<Response | undefined>
 }
+interface StorageStore extends PreviewStore {
+  put: (key: string, value: Response) => Promise<void>
+}
 
 declare global {
   var dclPreviewRealm: {
-    handle: (request: Request, previewRoot: string, store: PreviewStore, client?: string) => Promise<Response>
-    handleEditorScene: (request: Request, root: string, store: PreviewStore, client?: string) => Promise<Response>
+    handle: (request: Request, previewRoot: string, store: PreviewStore, storage?: StorageStore) => Promise<Response>
   }
 }
 
@@ -140,5 +142,74 @@ describe('preview realm', () => {
       expect([url, res.status]).toEqual([url, 404])
       expect(res.headers.get('Content-Security-Policy')).toBe('sandbox')
     }
+  })
+
+  describe('storage for the in-tab scene server', () => {
+    // what the page keeps in dcl-editor-storage-v1 (react-web host/previewStorage.ts)
+    function storageOf(access: { realm: string; token: string }): StorageStore {
+      const entries = new Map<string, string>([[`${ROOT}__server`, JSON.stringify(access)]])
+      return {
+        match: async (key) => (entries.has(key) ? new Response(entries.get(key)) : undefined),
+        put: async (key, value) => void entries.set(key, await value.text())
+      }
+    }
+    const realm = REALM.slice(0, -1)
+    const call = (storage: StorageStore, path: string, init: RequestInit & { token?: string } = {}): Promise<Response> =>
+      dclPreviewRealm.handle(
+        new Request(`${REALM}${path}`, { ...init, headers: init.token == null ? {} : { 'x-dcl-local-server': init.token } }),
+        ROOT,
+        store,
+        storage
+      )
+    const put = (value: unknown): RequestInit => ({ method: 'PUT', body: JSON.stringify({ value }) })
+
+    it('answers the routes the dev server serves a scene server, as it does', async () => {
+      const storage = storageOf({ realm, token: 't1' })
+      const as = { token: 't1' }
+      expect(await (await call(storage, 'values/score', { ...as, ...put({ best: 3 }) })).json()).toEqual({ value: { best: 3 } })
+      expect(await (await call(storage, 'values/scene%2Fname', { ...as, ...put('arena') })).json()).toEqual({ value: 'arena' })
+      expect(await (await call(storage, 'values/score', as)).json()).toEqual({ value: { best: 3 } })
+      expect(await (await call(storage, 'values?prefix=sc&limit=1&offset=1', as)).json()).toEqual({
+        data: [{ key: 'scene/name', value: 'arena' }],
+        pagination: { offset: 1, total: 2 }
+      })
+      expect((await call(storage, 'values/score', { ...as, method: 'DELETE' })).status).toBe(204)
+      expect((await call(storage, 'values/score', as)).status).toBe(404)
+
+      // a player's values are theirs alone
+      await call(storage, 'players/0xab/values/coins', { ...as, ...put(5) })
+      expect(await (await call(storage, 'players/0xab/values/coins', as)).json()).toEqual({ value: 5 })
+      expect((await call(storage, 'players/0xcd/values/coins', as)).status).toBe(404)
+      expect(await (await call(storage, 'players/0xab/values', as)).json()).toEqual({
+        data: [{ key: 'coins', value: 5 }],
+        pagination: { offset: 0, total: 1 }
+      })
+      expect(await (await call(storage, 'values', as)).json()).toEqual({ data: [{ key: 'scene/name', value: 'arena' }], pagination: { offset: 0, total: 1 } })
+
+      expect((await call(storage, 'env/API_KEY', { ...as, ...put('k-1') })).status).toBe(204)
+      expect(await (await call(storage, 'env/API_KEY', as)).json()).toEqual({ value: 'k-1' })
+      expect((await call(storage, 'env/API_KEY', { ...as, method: 'DELETE' })).status).toBe(204)
+      expect((await call(storage, 'env/API_KEY', as)).status).toBe(404)
+    })
+
+    it('opens a realm’s storage only to the token the page keeps for that realm', async () => {
+      const storage = storageOf({ realm, token: 't1' })
+      await call(storage, 'env/API_KEY', { token: 't1', ...put('k-1') })
+      for (const token of [undefined, 't2']) {
+        for (const path of ['env/API_KEY', 'values', 'players/0xab/values']) {
+          const res = await call(storage, path, { token })
+          expect([path, token, res.status, await res.text()]).toEqual([path, token, 403, ''])
+        }
+        expect((await call(storage, 'values/x', { token, ...put(1) })).status).toBe(403)
+      }
+      // the same token does not open another project's realm
+      const other = await dclPreviewRealm.handle(
+        new Request(`${ROOT}other-scene/env/API_KEY`, { headers: { 'x-dcl-local-server': 't1' } }),
+        ROOT,
+        store,
+        storage
+      )
+      expect(other.status).toBe(403)
+    })
   })
 })

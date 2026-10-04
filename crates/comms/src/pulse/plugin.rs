@@ -636,7 +636,7 @@ fn connect_pulse(
 /// listener share; when it stops, the listener goes and the player rejoins the plain partition.
 fn follow_local_server(
     mut commands: Commands,
-    local_server: Res<LocalSceneServer>,
+    local_server: Option<Res<LocalSceneServer>>,
     config: Option<Res<PulseConfig>>,
     realm_override: Option<Res<PulseRealmOverride>>,
     mut sessions: Query<(Entity, &mut PulseSession)>,
@@ -652,7 +652,8 @@ fn follow_local_server(
     let listener = sessions.iter().find_map(|(entity, session)| {
         matches!(&session.role, PulseRole::Listener(l) if l.local).then_some(entity)
     });
-    let salt = match (local_server.0.is_some(), listener) {
+    let serving = local_server.is_some_and(|local| local.realm.is_some());
+    let salt = match (serving, listener) {
         (true, None) => {
             if !sessions
                 .iter()

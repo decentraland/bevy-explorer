@@ -884,8 +884,11 @@ fn send_scene_updates(
         });
         realm_info.room = Some("loopback".to_owned());
         realm_info.is_connected_scene_room = Some(true);
+        // a preview, as `dcl start` serves it: the sdk keeps its storage on the realm itself
+        let is_preview = std::mem::replace(&mut realm_info.is_preview, true);
         realm_info_cache.local_server.clear();
         DclWriter::new(&mut realm_info_cache.local_server).write(&realm_info);
+        realm_info.is_preview = is_preview;
         // Server-mode room adapter is `livekit:...?access_token=<JWT>` minted by the
         // orchestrator for THIS scene. Redact the token: RealmInfo is exposed to scene
         // JS via op_realm_information, so passing it verbatim would let a hostile scene

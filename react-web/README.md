@@ -111,8 +111,12 @@ scene it edits; `reload` and `set_scene` must name that scene or the editor's ow
 `not-signed-in`.
 
 A project whose `scene.json` sets `authoritativeMultiplayer: true` runs its server in the tab while
-it is previewed: `openPreview` sends `/local_scene_server <PAGE_DIR>preview/<projectId>` before the
-trip, and leaving sends `/local_scene_server off` once the player is back. The engine then runs a
+it is previewed: `openPreview` sends `/local_scene_server <PAGE_DIR>preview/<projectId> <token>`
+before the trip, and leaving sends `/local_scene_server off` once the player is back. The server's
+`Storage` and `EnvVar` are the preview realm's own, kept in the browser by the service worker
+(`deploy/web/PREVIEW_REALM.md` "Storage"), open only to requests carrying that token, which the
+page stores fresh per preview (`host/previewStorage.ts`) and the engine adds for the server copy
+alone; leaving deletes it, and the values stay. The engine then runs a
 hidden server copy of that realm's authoritative scenes (none for any other realm, or for a plain
 scene), joined to the player's copy over an in-engine scene room; it is paused while the editor
 freezes the scene, and a reload by id (save, Stop) restarts it with the player's copy. The switch is

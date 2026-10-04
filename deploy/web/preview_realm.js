@@ -24,8 +24,9 @@
         });
     }
 
-    const json = (value) => respond(JSON.stringify(value), 200, JSON_TYPE);
+    const json = (value, status = 200) => respond(JSON.stringify(value), status, JSON_TYPE);
     const notFound = () => respond(null, 404, BYTES_TYPE);
+    const noContent = () => respond(null, 204, BYTES_TYPE);
 
     // Scenes run in sandbox workers on this origin and learn the preview's url from their realm
     // info; a project's files are the engine's and the page's alone. `client` is the url of the
@@ -131,12 +132,126 @@
         return stored ? respond(stored.body, 200, BYTES_TYPE) : notFound();
     }
 
-    // `store` is the preview Cache (anything with `match(url)`). Always answers, and from the
-    // store alone, but for the pointers a catalyst owns (activeEntities).
-    async function handle(request, previewRoot, store, client) {
+    // The storage the dev server (sdk-commands start) serves a scene's server, per realm, in one
+    // JSON document like its server-storage.json: { env, world, players }. Only the server copy
+    // the page is running may reach it: the engine adds the page's secret to that copy's storage
+    // requests, and the page keeps one `{ realm, token }` entry, for the project it previews.
+    const STORAGE_HEADER = 'x-dcl-local-server';
+    const STORAGE_ROUTE = /^(?:values(?:\/(.*))?|players\/([^/]+)\/values(?:\/(.*))?|env\/(.*))$/;
+    const writes = new Map();
+
+    // one read-modify-write at a time per realm
+    function serialized(key, task) {
+        const next = (writes.get(key) || Promise.resolve()).then(task, task);
+        const settled = next.catch(() => {});
+        writes.set(key, settled);
+        settled.then(() => {
+            if (writes.get(key) === settled) writes.delete(key);
+        });
+        return next;
+    }
+
+    async function allowed(request, realm, previewRoot, storage) {
+        const token = request.headers.get(STORAGE_HEADER);
+        const stored = token ? await storage.match(previewRoot + '__server') : null;
+        if (!stored) return false;
+        try {
+            const access = await stored.json();
+            return typeof access.token === 'string' && access.token === token && access.realm + '/' === realm;
+        } catch {
+            return false;
+        }
+    }
+
+    async function readStorage(storage, key) {
+        const stored = await storage.match(key);
+        let data = null;
+        try {
+            data = stored ? await stored.json() : null;
+        } catch {
+            data = null;
+        }
+        const map = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+        return { env: map(data && data.env), world: map(data && data.world), players: map(data && data.players) };
+    }
+
+    function page(values, url) {
+        const params = new URL(url).searchParams;
+        const prefix = params.get('prefix');
+        let entries = Object.entries(values).map(([key, value]) => ({ key, value }));
+        if (prefix) entries = entries.filter((entry) => entry.key.startsWith(prefix));
+        const total = entries.length;
+        const offset = params.has('offset') ? Math.max(0, parseInt(params.get('offset'), 10) || 0) : 0;
+        const limit = params.has('limit') ? Math.max(1, parseInt(params.get('limit'), 10) || 0) : entries.length;
+        return json({ data: entries.slice(offset, offset + limit), pagination: { offset, total } });
+    }
+
+    async function bodyValue(request) {
+        try {
+            return { value: JSON.parse(await request.text()).value };
+        } catch {
+            return null;
+        }
+    }
+
+    // `/values[/key]`, `/players/<address>/values[/key]`, `/env/<key>`, answered as the dev server does
+    async function handleStorage(request, realm, route, previewRoot, storage) {
+        if (!storage || !(await allowed(request, realm, previewRoot, storage))) return respond(null, 403, BYTES_TYPE);
+        let key, address, env;
+        try {
+            key = route[1] ?? route[3];
+            address = route[2] === undefined ? undefined : decodeURIComponent(route[2]);
+            env = route[4];
+            key = key === undefined ? undefined : decodeURIComponent(key);
+            env = env === undefined ? undefined : decodeURIComponent(env);
+        } catch {
+            return json({ message: 'Malformed key' }, 400);
+        }
+        if (key === '' || env === '') return json({ message: 'Key is required' }, 400);
+        if (address === '') return json({ message: 'Address is required' }, 400);
+        const docKey = realm + '__storage';
+        const method = request.method;
+        const scope = (data) => (env !== undefined ? data.env : address !== undefined ? (data.players[address] ??= {}) : data.world);
+
+        if (method === 'GET') {
+            const data = await readStorage(storage, docKey);
+            const values = scope(data);
+            if (env === undefined && key === undefined) return page(values, request.url);
+            const name = env ?? key;
+            if (!Object.prototype.hasOwnProperty.call(values, name)) {
+                const message =
+                    env !== undefined
+                        ? `Environment variable '${name}' not found`
+                        : address !== undefined
+                          ? `Player storage key '${name}' not found for '${address}'`
+                          : `Storage key '${name}' not found`;
+                return json({ message }, 404);
+            }
+            return json({ value: values[name] });
+        }
+        const name = env ?? key;
+        if (name === undefined || (method !== 'PUT' && method !== 'DELETE')) return notFound();
+        const body = method === 'PUT' ? await bodyValue(request) : null;
+        if (method === 'PUT' && body === null) return json({ message: `Failed to set '${name}'` }, 500);
+        return serialized(docKey, async () => {
+            const data = await readStorage(storage, docKey);
+            const values = scope(data);
+            if (method === 'PUT') values[name] = body.value;
+            else delete values[name];
+            await storage.put(docKey, new Response(JSON.stringify(data), { headers: { 'Content-Type': JSON_TYPE } }));
+            if (method === 'DELETE' || env !== undefined) return noContent();
+            return json({ value: body.value });
+        });
+    }
+
+    // `store` is the preview Cache (anything with `match(url)`), `storage` the storage cache
+    // (`match`, `put`). Always answers, and from the stores alone, but for the pointers a
+    // catalyst owns (activeEntities).
+    async function handle(request, previewRoot, store, storage) {
         const target = parse(request.url, previewRoot);
         if (!target) return notFound();
-        if (fromScene(client)) return forbidden();
+        const route = STORAGE_ROUTE.exec(target.path);
+        if (route) return handleStorage(request, target.realm, route, previewRoot, storage);
         const entity = await readEntity(store, target.realm);
         if (!entity) return notFound();
 
