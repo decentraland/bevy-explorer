@@ -101,7 +101,7 @@ Every response carries `X-Content-Type-Options: nosniff`, `Content-Security-Poli
 `Cross-Origin-Resource-Policy: same-origin` and `Cache-Control: no-store`, with
 `Content-Type: application/json` for `about`, `scene.json` and `entities/active` and
 `application/octet-stream` for everything else. Headers stored with a cache entry are dropped. A
-navigation to a preview URL downloads; it never renders.
+navigation to a preview URL has no client and gets a 403 (see Security); it never renders.
 
 ## Launch
 
@@ -133,6 +133,33 @@ and then the bundle under its new hash. It does not ask `entities/active` again 
 parcels it already resolved), so a change to the scene's parcels needs a new launch.
 `react-web/e2e/preview-realm.gate.spec.ts` runs this whole loop in the real engine.
 
+## Storage
+
+The routes `sdk-commands start` serves a scene's server (`storage-service.js`), per realm, for the
+server copy the engine runs in the tab (`/local_scene_server`, react-web README "Scene editor"):
+
+| Request | Answer |
+|---|---|
+| `GET <realm>values?prefix=&limit=&offset=` | `{ "data": [{ "key", "value" }], "pagination": { "offset", "total" } }` |
+| `GET / PUT / DELETE <realm>values/<key>` | `{ "value" }` (404 when missing) / `{ "value" }` / 204 |
+| `GET <realm>players/<address>/values?…`, `GET / PUT / DELETE …/values/<key>` | the same, for that address alone |
+| `GET / PUT / DELETE <realm>env/<key>` | `{ "value" }` (404 when missing) / 204 / 204 |
+
+PUT bodies are `{ "value": … }`. Everything is kept in cache `dcl-editor-storage-v1` under
+`<realm>__storage`, one JSON `{ env, world, players }` per realm like the dev server's
+`server-storage.json`; writes to a realm are applied one at a time. It survives reloads and is never
+synced or logged.
+
+Unlike the dev server, every storage route answers 403 (no body) unless the request carries
+`x-dcl-local-server: <token>` and `<realm>__server` in that cache holds `{ "token": "<token>" }`.
+The page writes that entry when it previews a project and deletes it when it stops, only if it
+still holds its own token, so another tab previewing or leaving never closes it (react-web
+`host/previewStorage.ts`); the engine adds the header to the storage requests of that realm's
+server copy alone, in place of a signature, and to nothing else. So a player's copy, another
+project's scene or any other scene cannot read or write it, and only previewed projects' storage
+is open at all. The server copy's realm info says `isPreview`, which is what points the
+SDK's `Storage` and `EnvVar` at the realm.
+
 ## Editor scene
 
 The worker answers a second, simpler realm for the editor package's own super-user scene
@@ -145,14 +172,15 @@ current entity is kept: staging another one deletes the rest.
 
 ## Security
 
-- Routes read only keys under their own realm prefix, only from `dcl-editor-preview-v1`. The one
+- Routes read only keys under their own realm prefix, only from `dcl-editor-preview-v1` (storage:
+  `dcl-editor-storage-v1`, the one cache the worker writes). The one
   request the worker makes is the `entities/active` forward: a fixed catalyst url, the non-parcel
   pointers and nothing else.
 - Scene code cannot write the store: `engine/sandbox_worker.js` deletes `caches` (and `indexedDB`,
   `navigator.storage`) from the scene worker before any scene code runs, and the service worker
-  itself never writes this cache. At most a scene can read preview URLs with `fetch`.
-- Nor can scene code read it, though its realm info names the preview's url: every route here and
-  under `editor-scene/` answers 403 to a request whose service worker client is a scene's sandbox
-  (`engine/pkg/sandbox_worker.bundle.js`), or that has no client. That covers its `fetch`, XHR and
-  `import()` alike.
+  itself never writes this cache. Nor can it read the storage token.
+- Nor can scene code read it, though its realm info names the preview's url: every route but
+  storage, here and under `editor-scene/`, answers 403 to a request whose service worker client is
+  a scene's sandbox (`engine/pkg/sandbox_worker.bundle.js`), or that has no client. That covers its
+  `fetch`, XHR and `import()` alike.
 - Project bytes are same-origin with the page, hence the headers above.

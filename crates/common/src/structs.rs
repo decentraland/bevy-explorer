@@ -1640,6 +1640,105 @@ pub struct ShowOutOfBounds(pub bool);
 #[derive(Debug, Resource, Default)]
 pub struct EditorMode(pub bool);
 
+/// The realm (url without `/about`) whose authoritative scenes run a server copy in this engine,
+/// and the secret that copy's storage requests carry. Set by `/local_scene_server`.
+#[derive(Debug, Resource, Default)]
+pub struct LocalSceneServer {
+    pub realm: Option<String>,
+    pub storage_token: Option<String>,
+}
+
+impl LocalSceneServer {
+    pub fn realm_root(url: &str) -> &str {
+        url.strip_suffix("/about")
+            .unwrap_or(url)
+            .trim_end_matches('/')
+    }
+
+    /// Only a local realm: on any other, the scene's real authoritative server keeps authority
+    /// whatever the console was told.
+    pub fn serves(&self, realm: &CurrentRealm) -> bool {
+        realm.is_local()
+            && self
+                .realm
+                .as_deref()
+                .is_some_and(|root| root == Self::realm_root(&realm.about_url))
+    }
+
+    /// The header a server copy's storage request carries instead of a signature; none without a
+    /// token (a native `dcl start` preview), which is signed as before.
+    pub fn storage_header(&self, uri: &str) -> Option<(String, String)> {
+        let token = self.storage_token.clone()?;
+        self.is_storage_route(uri)
+            .then(|| (LOCAL_STORAGE_HEADER.to_owned(), token))
+    }
+
+    /// One of the served realm's storage routes, with or without a token.
+    pub fn is_storage_route(&self, uri: &str) -> bool {
+        self.realm
+            .as_deref()
+            .and_then(|realm| uri.strip_prefix(realm)?.strip_prefix('/'))
+            .and_then(|rest| rest.split(['/', '?']).next())
+            .is_some_and(|route| matches!(route, "values" | "players" | "env"))
+    }
+}
+
+/// Carries `LocalSceneServer::storage_token`; the page's service worker serves the preview
+/// realm's storage routes only to requests that carry it.
+pub const LOCAL_STORAGE_HEADER: &str = "x-dcl-local-server";
+
+#[cfg(test)]
+mod local_scene_server_tests {
+    use super::LocalSceneServer;
+
+    #[test]
+    fn only_the_served_realms_storage_routes_get_the_token() {
+        let local = LocalSceneServer {
+            realm: Some("https://page/preview/p1".to_owned()),
+            storage_token: Some("secret".to_owned()),
+        };
+        let token = |uri: &str| local.storage_header(uri).map(|(_, value)| value);
+        assert_eq!(
+            token("https://page/preview/p1/values/k").as_deref(),
+            Some("secret")
+        );
+        assert_eq!(
+            token("https://page/preview/p1/values?prefix=a").as_deref(),
+            Some("secret")
+        );
+        assert_eq!(
+            token("https://page/preview/p1/players/0xab/values/k").as_deref(),
+            Some("secret")
+        );
+        assert_eq!(
+            token("https://page/preview/p1/env/KEY").as_deref(),
+            Some("secret")
+        );
+        for other in [
+            "https://page/preview/p1/about",
+            "https://page/preview/p1/content/contents/b64-x",
+            "https://page/preview/p10/values/k",
+            "https://page/preview/p2/values/k",
+            "https://storage.decentraland.org/values/k",
+        ] {
+            assert_eq!(token(other), None, "{other}");
+        }
+        assert_eq!(
+            LocalSceneServer::default().storage_header("https://page/preview/p1/values/k"),
+            None
+        );
+        let tokenless = LocalSceneServer {
+            storage_token: None,
+            ..local
+        };
+        assert_eq!(
+            tokenless.storage_header("https://page/preview/p1/values/k"),
+            None,
+            "signed as before"
+        );
+    }
+}
+
 // resource into which systems can add debug info
 #[derive(Resource, Default, Debug)]
 pub struct DebugInfo {

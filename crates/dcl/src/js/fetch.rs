@@ -53,7 +53,11 @@ pub async fn op_signed_fetch_headers(
 ) -> Result<Vec<(String, String)>, anyhow::Error> {
     debug!("op_signed_fetch_headers");
 
-    let is_preview = state.borrow().borrow::<CrdtContext>().preview;
+    let (is_preview, is_server) = {
+        let state = state.borrow();
+        let context = state.borrow::<CrdtContext>();
+        (context.preview, context.is_server)
+    };
     let url = Url::parse(&uri)?;
     if !is_preview && !(["https", "wss"].contains(&url.scheme())) && !url.is_loopback() {
         anyhow::bail!("URL scheme must be `https` (request `{}`)", uri);
@@ -106,6 +110,7 @@ pub async fn op_signed_fetch_headers(
             uri,
             meta: Some(serde_json::to_string(&meta).unwrap()),
             scene: Some(urn),
+            server: is_server,
             response: sx,
         })?;
 

@@ -33,6 +33,7 @@ use serde::Deserialize;
 use crate::{
     initialize_scene::SceneEntityDefinitionHandle,
     renderer_context::RendererSceneContext,
+    server_role::ServerRole,
     update_world::{
         lights::LightSource,
         material::{
@@ -581,6 +582,7 @@ fn update_ready_gltfs(
         &mut RendererSceneContext,
         &mut SceneResourceLookup,
         &mut ComponentTracker,
+        Has<ServerRole>,
     )>,
     _debug_query: Query<(
         Entity,
@@ -646,7 +648,7 @@ fn update_ready_gltfs(
             // track if any animations exist
             let mut has_animations = false;
 
-            let Ok((mut context, mut resource_lookup, mut tracker)) =
+            let Ok((mut context, mut resource_lookup, mut tracker, server_role)) =
                 contexts.get_mut(dcl_scene_entity.root)
             else {
                 continue;
@@ -688,8 +690,15 @@ fn update_ready_gltfs(
                         continue;
                     }
 
+                    // a server copy keeps only collision data: no lights, no materials, no meshes
+                    if server_role && (maybe_point.is_some() || maybe_spot.is_some()) {
+                        commands
+                            .entity(spawned_ent)
+                            .remove::<(PointLight, SpotLight)>();
+                    }
+
                     // enable shadows for other lights
-                    if let Some(point) = maybe_point {
+                    if let Some(point) = maybe_point.filter(|_| !server_role) {
                         commands.entity(spawned_ent).try_insert((
                             PointLight {
                                 shadows_enabled: true,
@@ -703,7 +712,7 @@ fn update_ready_gltfs(
                             },
                         ));
                     }
-                    if let Some(spot) = maybe_spot {
+                    if let Some(spot) = maybe_spot.filter(|_| !server_role) {
                         commands.entity(spawned_ent).try_insert((
                             SpotLight {
                                 shadows_enabled: true,
@@ -925,7 +934,7 @@ fn update_ready_gltfs(
                     }
 
                     // substitute material
-                    if let Some(h_material) = maybe_material {
+                    if let Some(h_material) = maybe_material.filter(|_| !server_role) {
                         let material_name = gltf
                             .named_materials
                             .iter()

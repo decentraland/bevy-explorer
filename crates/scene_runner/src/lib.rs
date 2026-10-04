@@ -72,6 +72,7 @@ pub mod initialize_scene;
 pub mod permissions;
 pub mod primary_entities;
 pub mod renderer_context;
+pub mod server_role;
 #[cfg(test)]
 pub mod test;
 pub mod update_scene;
@@ -333,6 +334,7 @@ impl Plugin for SceneRunnerPlugin {
         );
 
         app.add_plugins(SceneLifecyclePlugin);
+        app.add_plugins(server_role::ServerRolePlugin);
 
         app.add_systems(
             Update,
@@ -799,6 +801,8 @@ struct RealmInfoCache {
     connected: Option<(String, Vec<u8>)>,
     // server mode holds N rooms in ServerSceneRooms (empty on clients), keyed by scene hash
     server: HashMap<String, Vec<u8>>,
+    // an in-engine server copy is always in its loopback room
+    local_server: Vec<u8>,
 }
 
 fn send_scene_updates(
@@ -807,6 +811,7 @@ fn send_scene_updates(
         &mut RendererSceneContext,
         &GlobalTransform,
         Has<SuperUserScene>,
+        Has<server_role::ServerRole>,
     )>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
@@ -877,6 +882,13 @@ fn send_scene_updates(
             DclWriter::new(&mut bytes).write(&realm_info);
             (scene.scene_id.clone(), bytes)
         });
+        realm_info.room = Some("loopback".to_owned());
+        realm_info.is_connected_scene_room = Some(true);
+        // a preview, as `dcl start` serves it: the sdk keeps its storage on the realm itself
+        let is_preview = std::mem::replace(&mut realm_info.is_preview, true);
+        realm_info_cache.local_server.clear();
+        DclWriter::new(&mut realm_info_cache.local_server).write(&realm_info);
+        realm_info.is_preview = is_preview;
         // Server-mode room adapter is `livekit:...?access_token=<JWT>` minted by the
         // orchestrator for THIS scene. Redact the token: RealmInfo is exposed to scene
         // JS via op_realm_information, so passing it verbatim would let a hostile scene
@@ -915,7 +927,7 @@ fn send_scene_updates(
 
     updates.scene_queue.pop_front();
 
-    let (_, mut context, scene_transform, is_super) = scenes.get_mut(ent).unwrap();
+    let (_, mut context, scene_transform, is_super, server_role) = scenes.get_mut(ent).unwrap();
 
     // only live scenes are queued, so this only fails if the scene broke this frame
     let Some(sender) = context.sender().cloned() else {
@@ -977,6 +989,7 @@ fn send_scene_updates(
 
     // add realm info
     let realm_bytes = match realm_info_cache.connected.as_ref() {
+        _ if server_role => realm_info_cache.local_server.as_slice(),
         Some((hash, bytes)) if *hash == context.hash => bytes.as_slice(),
         _ => realm_info_cache
             .server
@@ -1311,7 +1324,9 @@ fn update_scene_room(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     scenes: Query<&RendererSceneContext>,
+    local_server: Res<common::structs::LocalSceneServer>,
 ) {
+    let served = local_server.serves(&realm);
     let (Some(realm), Some(scene)) = (
         realm.config.realm_name.as_ref(),
         player
@@ -1325,22 +1340,20 @@ fn update_scene_room(
             writer.write(SetCurrentScene {
                 realm_name: default(),
                 scene_id: default(),
+                local_server: false,
             });
         }
         return;
     };
 
-    if last
-        .as_ref()
-        .is_some_and(|ev| &ev.realm_name == realm && ev.scene_id == scene.hash)
-    {
-        return;
-    }
-
     let ev = SetCurrentScene {
         realm_name: realm.to_owned(),
         scene_id: scene.hash.clone(),
+        local_server: served && scene.authoritative_multiplayer && !common::structs::server_mode(),
     };
+    if last.as_ref() == Some(&ev) {
+        return;
+    }
 
     *last = Some(ev.clone());
     debug!("set scene room {ev:?}");

@@ -14,7 +14,7 @@ use dcl_component::{
 use ipfs::IpfsResource;
 use scene_runner::{
     initialize_scene::SuperUserScene, renderer_context::RendererSceneContext,
-    update_world::material::VideoTextureOutput, ContainerEntity,
+    server_role::ServerRole, update_world::material::VideoTextureOutput, ContainerEntity,
 };
 use texture_camera::TextureCamera;
 
@@ -54,7 +54,8 @@ struct SetSceneCommand {
 fn set_scene_cmd(
     mut input: ConsoleCommand<SetSceneCommand>,
     mut active: ResMut<ActiveInspectionScene>,
-    scenes: Query<(Entity, &RendererSceneContext)>,
+    // a scene's in-engine server copy shares its hash: the editor pins the one the player sees
+    scenes: Query<(Entity, &RendererSceneContext), Without<ServerRole>>,
 ) {
     if let Some(Ok(cmd)) = input.take() {
         let Some(pattern) = cmd.pattern else {
@@ -163,13 +164,34 @@ struct SceneLogsCommand {
     /// Number of entries to show (default 20)
     #[arg(default_value = "20")]
     count: usize,
+    /// Read the scene's in-engine server copy instead
+    #[arg(long)]
+    server: bool,
 }
 
-fn scene_logs_cmd(mut input: ConsoleCommand<SceneLogsCommand>, resolver: SceneResolver) {
+fn scene_logs_cmd(
+    mut input: ConsoleCommand<SceneLogsCommand>,
+    resolver: SceneResolver,
+    servers: Query<(Entity, &ServerRole)>,
+) {
     if let Some(Ok(cmd)) = input.take() {
-        match resolver.resolve() {
+        let resolved = resolver.resolve().and_then(|(client, ctx)| {
+            if !cmd.server {
+                return Ok(ctx);
+            }
+            let server = servers
+                .iter()
+                .find(|(_, role)| role.client == client)
+                .ok_or_else(|| "the scene has no server copy".to_string())?;
+            resolver
+                .scenes
+                .get(server.0)
+                .map(|(_, ctx)| ctx)
+                .map_err(|_| "could not find the server copy's context".to_string())
+        });
+        match resolved {
             Err(e) => input.reply_failed(e),
-            Ok((_, ctx)) => {
+            Ok(ctx) => {
                 let (missed, entries, _) = ctx.logs.read();
                 let entries: Vec<_> = entries.into_iter().rev().take(cmd.count).rev().collect();
                 if entries.is_empty() {

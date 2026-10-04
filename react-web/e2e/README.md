@@ -99,7 +99,7 @@ pointing at it (`e2e/gate.ts`).
 
 ## Editor gates (real engine, same config)
 
-Five specs drive the scene editor package inside this page with real clicks. They need a built
+Six specs drive the scene editor package inside this page with real clicks. They need a built
 engine in `deploy/web/engine/pkg` (`just wasm`), the TS bindings
 (`just ts-bindings`), and a dcl-editor checkout whose package speaks host contract v1.1 (`mountHome`):
 
@@ -149,6 +149,7 @@ A name filter is matched against the whole path, so in a checkout whose path con
 | Spec | What passes |
 |---|---|
 | `editor.gate.spec.ts` | As a guest: nothing of the editor loads before the sidebar's Create button is clicked; the Create page opens with the editor's list in its body; New scene previews the starter from the service worker under a random id and the engine travels there; the editor's scene spawns privileged next to the HUD's without logging in over the player; a code save reloads only that scene, by id, and keys typed in the editor never reach the canvas; Play and Stop restart only the project scene, never the HUD's; Back to scenes and Back to Decentraland give the realm, clock and HUD back; the menu's Create item reopens without refetching the editor; `?editor=<project>` opens the scene directly. Nothing is asked of the project service. |
+| `server-role.gate.spec.ts` | The editor's starter (authoritative) gets a server copy in the tab; with server code written into the project, the copy runs the `isServer()` branch, a client message is applied by it on Play and answered, the editor's logs drawer shows the copy's console in Build and its storage in Storage, Stop restarts it with the player's copy (Play counts from 0 again), what it stores outlives Stop and a page reload while the player's copy is refused it (403), leaving turns the switch off, and the same project made non-authoritative gets no copy. |
 
 The player starts in a one-scene realm the gate's Vite server answers at `/gate-home`; the spec
 aborts (and fails on) any deployment to a host that is not local, and drops the engine's analytics.

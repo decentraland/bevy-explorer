@@ -24,13 +24,15 @@ use common::{
     },
     sets::SceneSets,
     structs::{
-        server_mode, AvatarDynamicState, CurrentRealm, EngineMovementControl, PermissionType,
-        PlayerTeleported, PreviewCommand, PrimaryCamera, PrimaryUser, StartupScenes, ZOrder,
+        server_mode, AvatarDynamicState, CurrentRealm, EngineMovementControl, LocalSceneServer,
+        PermissionType, PlayerTeleported, PreviewCommand, PrimaryCamera, PrimaryUser,
+        StartupScenes, ZOrder,
     },
     util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
-    global_crdt::{CrdtContexts, ForeignPlayer},
+    global_crdt::{CrdtContexts, ForeignPlayer, SceneCrdtContext},
+    loopback::AUTH_SERVER_IDENTITY,
     preview::handle_preview_socket,
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
     NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
@@ -52,6 +54,7 @@ use scene_runner::{
     },
     permissions::Permission,
     renderer_context::RendererSceneContext,
+    server_role::ServerRole,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
     ContainingScene, OutOfWorld, SceneEntity,
 };
@@ -1205,7 +1208,11 @@ fn get_user_data(
     mut pending_remote_requests: Local<
         Vec<(Address, RpcResultSender<Result<SerializedProfile, ()>>)>,
     >,
-    mut scenes: Query<&mut RendererSceneContext>,
+    mut scenes: Query<(
+        &mut RendererSceneContext,
+        Option<&SceneCrdtContext>,
+        Has<ServerRole>,
+    )>,
     mut profile_manager: ProfileManager,
     contexts: Res<CrdtContexts>,
 ) {
@@ -1218,11 +1225,21 @@ fn get_user_data(
         _ => None,
     }) {
         debug!("process get_user_data for {:?}", scene);
+        // an in-engine server copy is the room's authority, never the player it serves
+        if user.is_none() && scenes.get(*scene).is_ok_and(|(.., server)| server) {
+            response.send(Ok(SerializedProfile {
+                user_id: Some(AUTH_SERVER_IDENTITY.to_owned()),
+                name: AUTH_SERVER_IDENTITY.to_owned(),
+                eth_address: AUTH_SERVER_IDENTITY.to_owned(),
+                ..Default::default()
+            }));
+            continue;
+        }
         match user {
             None => match profile.profile.as_ref() {
                 Some(profile) => response.send(Ok(profile.content.clone())),
                 None => {
-                    if let Ok(mut ctx) = scenes.get_mut(*scene) {
+                    if let Ok((mut ctx, ..)) = scenes.get_mut(*scene) {
                         // Force parcel scenes to wait until user data is available
                         // (existing scenes rely on getUserData resolving before they
                         // proceed). Portables/global scenes must NOT be frozen this
@@ -1246,7 +1263,7 @@ fn get_user_data(
                 // mutable RendererSceneContext query
                 let scene_context = scenes
                     .get(*scene)
-                    .map(|ctx| contexts.for_scene_hash(&ctx.hash))
+                    .map(|(ctx, own, _)| contexts.for_scene(own, &ctx.hash))
                     .unwrap_or_else(|_| contexts.shared());
                 if let Some((_, profile)) = others.iter().find(|(fp, _)| {
                     fp.context == scene_context && *address == format!("{:#x}", fp.address)
@@ -1279,7 +1296,7 @@ fn get_user_data(
         if let Some(profile) = profile.profile.as_ref() {
             for (scene, sender) in pending_primary_requests.drain(..) {
                 info!("replying on cloned response");
-                if let Ok(mut ctx) = scenes.get_mut(scene) {
+                if let Ok((mut ctx, ..)) = scenes.get_mut(scene) {
                     ctx.blocked.remove("get_user_data");
                 }
                 sender.send(Ok(profile.content.clone()));
@@ -1309,15 +1326,27 @@ fn get_user_data(
 #[derive(SystemParam)]
 struct ScenePresence<'w, 's> {
     contexts: Res<'w, CrdtContexts>,
-    scenes: Query<'w, 's, &'static RendererSceneContext>,
+    scenes: Query<
+        'w,
+        's,
+        (
+            &'static RendererSceneContext,
+            Option<&'static SceneCrdtContext>,
+            Has<ServerRole>,
+        ),
+    >,
 }
 
 impl ScenePresence<'_, '_> {
     fn context_of(&self, scene: Entity) -> Entity {
         self.scenes
             .get(scene)
-            .map(|ctx| self.contexts.for_scene_hash(&ctx.hash))
+            .map(|(ctx, own, _)| self.contexts.for_scene(own, &ctx.hash))
             .unwrap_or_else(|_| self.contexts.shared())
+    }
+
+    fn is_server_role(&self, scene: Entity) -> bool {
+        self.scenes.get(scene).is_ok_and(|(_, _, server)| server)
     }
 }
 
@@ -1336,9 +1365,9 @@ fn get_connected_players(
             .iter()
             .filter(|f| f.context == scene_context)
             .map(|f| format!("{:#x}", f.address));
-        // a headless server has no real local player — don't report its fake player as
-        // a connected peer (it would appear as a ghost to every scene)
-        let own = (!server_mode())
+        // a server has no real local player — don't report its fake player (or, for an
+        // in-engine server copy, the player it serves) as a connected peer
+        let own = (!server_mode() && !presence.is_server_role(*scene))
             .then(|| me.address().map(|address| format!("{address:#x}")))
             .flatten();
         let results = others.chain(own).collect();
@@ -1360,7 +1389,7 @@ fn get_players_in_scene(
     }) {
         let mut results = Vec::default();
         // skip the fake local player in server mode (see get_connected_players)
-        if !server_mode() {
+        if !server_mode() && !presence.is_server_role(*scene) {
             if let Ok(player) = me.single() {
                 if containing_scene.get(player).contains(scene) {
                     if let Some(address) = wallet.address() {
@@ -1375,11 +1404,13 @@ fn get_players_in_scene(
         // qualifies) AND positionally inside the scene (vacuously true for orchestrated
         // server scenes, which host as portables)
         let scene_context = presence.context_of(*scene);
+        let positional = scene_context == presence.contexts.shared();
         results.extend(
             others
                 .iter()
                 .filter(|(e, f)| {
-                    f.context == scene_context && containing_scene.get(*e).contains(scene)
+                    f.context == scene_context
+                        && (!positional || containing_scene.get(*e).contains(scene))
                 })
                 .map(|(_, f)| format!("{:#x}", f.address)),
         );
@@ -1480,11 +1511,13 @@ fn event_player_disconnected(
 fn event_player_moved_scene(
     mut enter_senders: Local<HashMap<Entity, RpcEventSender>>,
     mut leave_senders: Local<HashMap<Entity, RpcEventSender>>,
-    mut current_scene: Local<HashMap<Address, Entity>>,
+    // by player entity: the local player and its hidden peer in a server copy's room share an
+    // address but are in different scenes
+    mut current_scene: Local<HashMap<Entity, (Address, Entity)>>,
     players: Query<(Entity, Option<&ForeignPlayer>), Or<(With<PrimaryUser>, With<ForeignPlayer>)>>,
     me: Res<Wallet>,
     containing_scene: ContainingScene,
-    scenes: Query<(Entity, &RendererSceneContext)>,
+    scenes: Query<(Entity, &RendererSceneContext, Option<&SceneCrdtContext>)>,
     contexts: Res<CrdtContexts>,
     mut events: EventReader<RpcCall>,
 ) {
@@ -1508,8 +1541,8 @@ fn event_player_moved_scene(
     let shared = contexts.shared();
     let scene_of_context: HashMap<Entity, Entity> = scenes
         .iter()
-        .filter_map(|(scene_ent, ctx)| {
-            let context = contexts.for_scene_hash(&ctx.hash);
+        .filter_map(|(scene_ent, ctx, own)| {
+            let context = contexts.for_scene(own, &ctx.hash);
             (context != shared).then_some((context, scene_ent))
         })
         .collect();
@@ -1520,14 +1553,19 @@ fn event_player_moved_scene(
         .iter()
         .filter(|(_, f)| !(server_mode() && f.is_none()))
         .flat_map(|(p, f)| {
-            if let Some(scene) = f.and_then(|f| scene_of_context.get(&f.context)) {
-                return Some((f.unwrap().address, *scene));
+            if let Some(f) = f.filter(|f| f.context != shared) {
+                return scene_of_context
+                    .get(&f.context)
+                    .map(|scene| (p, (f.address, *scene)));
             }
             containing_scene.get_parcel(p).map(|parcel| {
                 (
-                    f.map(|f| f.address)
-                        .unwrap_or(me.address().unwrap_or_default()),
-                    parcel,
+                    p,
+                    (
+                        f.map(|f| f.address)
+                            .unwrap_or(me.address().unwrap_or_default()),
+                        parcel,
+                    ),
                 )
             })
         })
@@ -1537,14 +1575,14 @@ fn event_player_moved_scene(
     let mut left: HashMap<Entity, Vec<Address>> = HashMap::new();
     let mut entered: HashMap<Entity, Vec<Address>> = HashMap::new();
 
-    for (address, scene) in current_scene.iter() {
-        if new_scene.get(address) != Some(scene) {
+    for (player, (address, scene)) in current_scene.iter() {
+        if new_scene.get(player).map(|(_, s)| s) != Some(scene) {
             left.entry(*scene).or_default().push(*address);
         }
     }
 
-    for (address, scene) in new_scene.iter() {
-        if current_scene.get(address) != Some(scene) {
+    for (player, (address, scene)) in new_scene.iter() {
+        if current_scene.get(player).map(|(_, s)| s) != Some(scene) {
             entered.entry(*scene).or_default().push(*address);
         }
     }
@@ -1613,7 +1651,8 @@ fn event_scene_ready(
 fn send_scene_messages(
     mut events: EventReader<RpcCall>,
     transports: Query<(&Transport, Option<&SceneRoom>)>,
-    scenes: Query<&RendererSceneContext>,
+    scenes: Query<(&RendererSceneContext, Has<ServerRole>)>,
+    presence: ScenePresence,
 ) {
     for (scene, data, recipient) in events.read().filter_map(|c| match c {
         RpcCall::SendMessageBus {
@@ -1623,10 +1662,12 @@ fn send_scene_messages(
         } => Some((scene, data, recipient)),
         _ => None,
     }) {
-        let Ok(ctx) = scenes.get(*scene) else {
+        let Ok((ctx, server_role)) = scenes.get(*scene) else {
             continue;
         };
         let hash = &ctx.hash;
+        let is_server = server_mode() || server_role;
+        let scene_context = presence.context_of(*scene);
 
         debug!(
             "messagebus sent from scene {}: {:?} (auth = {})",
@@ -1647,19 +1688,19 @@ fn send_scene_messages(
         // A client routes authoritative-scene traffic to the auth server. WE are the
         // auth server, so keep the scene's intended recipient (targeted peer or broadcast)
         // — otherwise the server would address messages to itself and clients never receive them.
-        if ctx.authoritative_multiplayer && !server_mode() {
+        if ctx.authoritative_multiplayer && !is_server {
             recipient = NetworkMessageRecipient::AuthServer;
         }
 
         for (transport, scene_room) in transports.iter() {
-            // Client (prod) path unchanged: send to any scene room. When serving, also
-            // require the room to belong to this scene so N scenes in one engine don't
-            // cross-talk (a server may hold several scene rooms; a client holds one).
-            let send = if server_mode() {
-                scene_room.is_some_and(|r| &r.0 == hash)
-            } else {
-                scene_room.is_some()
-            };
+            // only rooms on the scene's own context (a client copy and its server copy share a
+            // hash); a server also matches the room to the scene so N scenes don't cross-talk
+            let send = transport.context == scene_context
+                && if is_server {
+                    scene_room.is_some_and(|r| &r.0 == hash)
+                } else {
+                    scene_room.is_some()
+                };
             if send {
                 let _ = transport
                     .sender
@@ -2158,6 +2199,8 @@ fn handle_sign_request(
     wallet: Res<Wallet>,
     // present only in the headless server binary; None everywhere else
     delegations: Option<Res<wallet::delegation::StorageDelegations>>,
+    local_server: Option<Res<LocalSceneServer>>,
+    mut server_copy_identity: Local<Option<Wallet>>,
 ) {
     for ev in events.read() {
         if let RpcCall::SignRequest {
@@ -2165,9 +2208,27 @@ fn handle_sign_request(
             uri,
             meta,
             scene,
+            server,
             response,
         } = ev
         {
+            let server_copy = *server && !server_mode();
+            // an in-engine server copy's storage is the page's own, which takes a secret instead of
+            // a signature: nothing is signed with the player's key for it
+            if let Some(header) = local_server
+                .as_ref()
+                .filter(|_| server_copy)
+                .and_then(|local| local.storage_header(uri))
+            {
+                response.send(Ok(vec![header]));
+                continue;
+            }
+            // a server copy never signs as the player; a tokenless dev preview's storage is the
+            // one exception, signed as before
+            let as_guest = server_copy
+                && !local_server
+                    .as_ref()
+                    .is_some_and(|local| local.is_storage_route(uri));
             let Ok(uri) = Uri::try_from(uri) else {
                 response.send(Err(format!("failed to parse uri: {uri}")));
                 continue;
@@ -2201,9 +2262,19 @@ fn handle_sign_request(
                 continue;
             }
 
+            let wallet = if as_guest {
+                server_copy_identity
+                    .get_or_insert_with(|| {
+                        let mut guest = Wallet::default();
+                        guest.finalize_as_guest();
+                        guest
+                    })
+                    .clone()
+            } else {
+                wallet.clone()
+            };
             let method = method.clone();
             let meta = meta.to_owned().unwrap_or_default();
-            let wallet = wallet.clone();
             let task = IoTaskPool::get()
                 .spawn_compat(async move { sign_request(&method, &uri, &wallet, meta).await });
             tasks.push((response.clone(), task));
@@ -2232,9 +2303,8 @@ fn filename_looks_like_url(filename: &str) -> bool {
     url::Url::parse(filename.trim()).is_ok()
 }
 
-/// True when a readFile target is an absolute URL on a local realm's own origin. On web that
-/// origin is the page's, where the editor keeps every previewed project's unpublished files, and
-/// any scene there (a portable, a smart wearable) is told the realm's url.
+/// A readFile target on a local realm's own origin: on web that is the page's, which holds every
+/// previewed project's unpublished files, and any scene there is told the realm's url.
 fn reads_local_realm_origin(filename: &str, realm: &CurrentRealm) -> bool {
     // as the loader will see it: `/https://..` becomes a url there
     let filename = ipfs::ipfs_path::content_file_path(filename);
@@ -2505,5 +2575,72 @@ mod readfile_url_guard_tests {
                 "{s} is scene content and must still be readable"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod sign_request_tests {
+    use bevy::tasks::TaskPool;
+    use common::{
+        rpc::{RpcCall, RpcResultSender},
+        structs::LocalSceneServer,
+    };
+
+    use super::*;
+
+    fn signer(app: &mut App, uri: &str, server: bool) -> String {
+        let (response, mut rx) = RpcResultSender::channel();
+        app.world_mut().send_event(RpcCall::SignRequest {
+            method: "GET".to_owned(),
+            uri: uri.to_owned(),
+            meta: None,
+            scene: None,
+            server,
+            response,
+        });
+        for _ in 0..500 {
+            app.update();
+            if let Ok(Some(headers)) = rx.poll_once() {
+                let headers = headers.unwrap();
+                let (_, link) = headers
+                    .iter()
+                    .find(|(name, _)| name == "x-identity-auth-chain-0")
+                    .unwrap();
+                return serde_json::from_str::<serde_json::Value>(link).unwrap()["payload"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("no signature for {uri}");
+    }
+
+    #[test]
+    fn a_server_copys_requests_are_never_signed_as_the_player() {
+        IoTaskPool::get_or_init(TaskPool::new);
+        let mut player = Wallet::default();
+        player.finalize_as_guest();
+        let player_address = format!("{:#x}", player.address().unwrap());
+        let mut app = App::new();
+        app.add_event::<RpcCall>()
+            .insert_resource(player)
+            .insert_resource(LocalSceneServer {
+                realm: Some("https://page/preview/p1".to_owned()),
+                storage_token: Some("secret".to_owned()),
+            })
+            .add_systems(Update, handle_sign_request);
+
+        assert_eq!(
+            signer(&mut app, "https://api.example/x", false),
+            player_address
+        );
+        let server = signer(&mut app, "https://api.example/x", true);
+        assert_ne!(server, player_address);
+        assert_eq!(
+            signer(&mut app, "https://api.example/y", true),
+            server,
+            "one identity for the session"
+        );
     }
 }

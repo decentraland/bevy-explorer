@@ -348,8 +348,9 @@ pub fn setup_primary_profile(
             // update cache
             cache.update(profile.clone());
 
-            // send to scenes (every context: the local player is `PLAYER` in all of them)
-            for mut global_crdt in contexts.iter_mut() {
+            // send to scenes (every context the local player is `PLAYER` in; a server copy's
+            // room has its own identity there)
+            for mut global_crdt in contexts.iter_mut().filter(|c| !c.is_server_role()) {
                 global_crdt.update_crdt(
                     SceneComponentId::PLAYER_IDENTITY_DATA,
                     CrdtType::LWW_ANY,

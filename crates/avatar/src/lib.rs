@@ -55,7 +55,7 @@ use common::{
     util::{DespawnWith, JoinRelativeExt, SceneSpawnerPlus, TaskExt, TryPushChildrenEx},
 };
 use comms::{
-    global_crdt::{ForeignPlayer, GlobalCrdtState},
+    global_crdt::{CrdtContexts, ForeignPlayer, GlobalCrdtState, HiddenPeer},
     profile::UserProfile,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -194,17 +194,17 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>, mut view: ResMut
 }
 
 /// Send player avatar info into scene crdts — a foreign player's into their own context,
-/// the local player's (`PLAYER`) into the client's single context (a multi-context
-/// server has no real local player: skip). Also registered directly by the headless
-/// server, where the rest of AvatarPlugin (render-bound) is omitted.
+/// the local player's (`PLAYER`) into the shared context. Also registered directly by the
+/// headless server, where the rest of AvatarPlugin (render-bound) is omitted.
 pub fn update_avatar_info(
     updated_players: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
     mut contexts: Query<&mut GlobalCrdtState>,
+    crdt_contexts: Res<CrdtContexts>,
 ) {
     for (player, profile) in &updated_players {
         let Some(mut state) = (match player {
             Some(player) => contexts.get_mut(player.context).ok(),
-            None => contexts.single_mut().ok(),
+            None => contexts.get_mut(crdt_contexts.shared()).ok(),
         }) else {
             continue;
         };
@@ -339,9 +339,13 @@ impl From<&UserProfile> for AvatarShape {
 }
 
 // set (foreign) user's default avatar shape based on profile data
+#[allow(clippy::type_complexity)]
 fn update_base_avatar_shape(
     mut commands: Commands,
-    root_avatar_defs: Query<(Entity, Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
+    root_avatar_defs: Query<
+        (Entity, Option<&ForeignPlayer>, &UserProfile),
+        (Changed<UserProfile>, Without<HiddenPeer>),
+    >,
 ) {
     for (ent, maybe_player, profile) in &root_avatar_defs {
         let id = match maybe_player {

@@ -87,6 +87,8 @@ export const HUD_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
   // portable scenes (a spawn can be privileged)
   'spawn',
   'kill',
+  // the editor host's switch for an in-tab scene server
+  'local_scene_server',
   // console no-op / native quit
   'clear',
   'exit',

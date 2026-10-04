@@ -3,6 +3,7 @@ pub mod broadcast_position;
 pub mod global_crdt;
 #[cfg(feature = "livekit")]
 pub mod livekit;
+pub mod loopback;
 pub mod movement_compressed;
 pub mod preview;
 pub mod profile;
@@ -101,6 +102,7 @@ impl Plugin for CommsPlugin {
             GlobalCrdtPlugin,
             UserProfilePlugin,
             PreviewPlugin,
+            loopback::LoopbackPlugin,
         ));
 
         #[cfg(feature = "livekit")]
@@ -127,6 +129,9 @@ pub enum TransportType {
     /// channel feeds a bridge that converts rfc4 bytes into Pulse `ClientMessage`s; spawned only on
     /// livekit realms (see `pulse::plugin`).
     Pulse,
+    /// One half of the in-engine scene room between an authoritative scene and its server copy
+    /// (see `loopback`).
+    SceneLoopback,
 }
 
 bitflags::bitflags! {
@@ -144,6 +149,9 @@ bitflags::bitflags! {
         const LIVEKIT = 1 << 1;
         /// The Archipelago island-assignment transport.
         const ARCHIPELAGO = 1 << 2;
+        /// The in-engine scene room: scene bus traffic, plus the avatar state fanned out to an
+        /// auth server, so no broadcaster targets it directly.
+        const LOOPBACK = 1 << 3;
         /// The realm's Pulse avatar-state transport (only carries convertible avatar state), and
         /// the only carrier of avatar state — movement, emotes and profile-version announcements
         /// all target this alone.
@@ -158,6 +166,7 @@ impl BroadcastTarget {
             TransportType::Livekit => BroadcastTarget::LIVEKIT,
             TransportType::Archipelago => BroadcastTarget::ARCHIPELAGO,
             TransportType::Pulse => BroadcastTarget::PULSE,
+            TransportType::SceneLoopback => BroadcastTarget::LOOPBACK,
         }
     }
 
@@ -439,7 +448,9 @@ pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
                 unreliable,
                 recipient: NetworkMessageRecipient::All,
             });
-        } else if auth_server_fanout && BroadcastTarget::LIVEKIT.includes(&transport.transport_type)
+        } else if auth_server_fanout
+            && (BroadcastTarget::LIVEKIT | BroadcastTarget::LOOPBACK)
+                .intersects(BroadcastTarget::flag_for(&transport.transport_type))
         {
             let _ = transport.sender.try_send(NetworkMessage {
                 message: Box::new(message.clone()),
@@ -457,7 +468,7 @@ fn process_realm_change(
     mut manager: AdapterManager,
     wallet: Res<Wallet>,
     disable_realm_comms: Option<Res<DisableRealmComms>>,
-    contexts: Query<Entity, With<global_crdt::GlobalCrdtState>>,
+    contexts: Res<global_crdt::CrdtContexts>,
 ) {
     // headless servers must never join realm-wide comms (archipelago / world room /
     // preview ws-room) — they would show up as a ghost participant. Scene rooms are
@@ -484,14 +495,10 @@ fn process_realm_change(
                     .map(|(_, tail)| tail)
                     .unwrap_or(adapter.as_str());
                 // realm transports are client-only (gate above): the single shared context
-                let Ok(context) = contexts.single() else {
-                    return;
-                };
+                let context = contexts.shared();
                 manager.connect(real_adapter, context);
             } else if let Some(adapter) = comms.fixed_adapter.as_ref() {
-                let Ok(context) = contexts.single() else {
-                    return;
-                };
+                let context = contexts.shared();
                 manager.connect(adapter, context);
             }
         } else {
@@ -505,6 +512,9 @@ fn process_realm_change(
 pub struct SetCurrentScene {
     pub realm_name: String,
     pub scene_id: String,
+    /// the scene's server copy runs in this engine: its room is only ever the loopback
+    #[serde(skip)]
+    pub local_server: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -557,7 +567,9 @@ fn connect_scene_room(
     disabled: Res<DisableSceneRoomGatekeeper>,
     adapter_override: Res<SceneRoomAdapterOverride>,
     preview_mode: Res<common::structs::PreviewMode>,
-    contexts: Query<Entity, With<global_crdt::GlobalCrdtState>>,
+    contexts: Res<global_crdt::CrdtContexts>,
+    local_servers: Res<loopback::LocalSceneServers>,
+    mut last_scene: Local<Option<SetCurrentScene>>,
 ) {
     if disabled.0 {
         // orchestrated servers receive pre-minted adapters over the control channel and
@@ -565,7 +577,50 @@ fn connect_scene_room(
         scene.clear();
         return;
     }
-    if let Some(ev) = scene.read().last().cloned() {
+    let new_scene = scene.read().last().cloned();
+    if new_scene.is_some() {
+        last_scene.clone_from(&new_scene);
+    }
+    // a scene whose server copy runs in this engine is served over the loopback room; checked
+    // every frame as the copy usually starts after the player is already in the scene
+    if let Some(ev) = last_scene.as_ref() {
+        let on_loopback = current
+            .0
+            .as_ref()
+            .is_some_and(|(_, a, _)| a.starts_with("loopback:"));
+        if let Some(server) = local_servers.0.get(&ev.scene_id) {
+            // names the server instance, so a reloaded copy (same hash) is rejoined
+            let adapter = format!("loopback:{}:{}", ev.scene_id, server.server_end.to_bits());
+            if !current
+                .0
+                .as_ref()
+                .is_some_and(|(existing, a, _)| existing == ev && *a == adapter)
+            {
+                if let Some((_, _, entity)) = current.0.take() {
+                    if let Ok(mut commands) = commands.get_entity(entity) {
+                        commands.despawn();
+                    }
+                }
+                *gatekeeper_task = None;
+                let client_end = loopback::connect_client_end(
+                    &mut commands,
+                    &ev.scene_id,
+                    server.server_end,
+                    contexts.shared(),
+                );
+                info!("joined the local server room for {}", ev.scene_id);
+                current.0 = Some((ev.clone(), adapter, client_end));
+            }
+            return;
+        } else if on_loopback && new_scene.is_none() {
+            if let Some((_, _, entity)) = current.0.take() {
+                if let Ok(mut commands) = commands.get_entity(entity) {
+                    commands.despawn();
+                }
+            }
+        }
+    }
+    if let Some(ev) = new_scene {
         if let Some((existing, room, entity)) = current.0.take() {
             if existing == ev {
                 current.0 = Some((existing, room, entity));
@@ -579,7 +634,8 @@ fn connect_scene_room(
         if adapter_override.0.is_some() && !preview_mode.is_preview {
             warn_once!("DCL_SCENE_ROOM_ADAPTER is ignored outside preview mode");
         }
-        if ev.scene_id.is_empty() {
+        if ev.scene_id.is_empty() || ev.local_server {
+            // a locally served scene joins its loopback room once the server copy is up
             *gatekeeper_task = None;
         } else if let Some(adapter) = adapter_override
             .0
@@ -596,9 +652,7 @@ fn connect_scene_room(
                 warn_once!("ignoring non-livekit scene room adapter override");
                 return;
             }
-            let Ok(context) = contexts.single() else {
-                return;
-            };
+            let context = contexts.shared();
             if let Some(ent) = manager.connect_scene(&adapter, context) {
                 commands
                     .entity(ent)
@@ -660,9 +714,7 @@ fn connect_scene_room(
             Some(Ok((adapter, ev))) => {
                 // client-only (gatekeeper is disabled on servers): the client's scene
                 // rooms feed its single shared context, all scenes share one view
-                let Ok(context) = contexts.single() else {
-                    return;
-                };
+                let context = contexts.shared();
                 if let Some(ent) = manager.connect_scene(&adapter, context) {
                     warn!("added scene channel {ev:?}");
                     commands

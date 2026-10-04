@@ -34,6 +34,7 @@ use ipfs::{
 use scene_runner::{
     initialize_scene::PARCEL_SIZE,
     renderer_context::RendererSceneContext,
+    server_role::ServerRole,
     update_world::{
         avatar_modifier_area::InputModifier,
         mesh_collider::{
@@ -584,7 +585,8 @@ pub fn apply_movement(
         ),
         With<PrimaryUser>,
     >,
-    mut scenes: Query<(Entity, &mut SceneColliderData)>,
+    // a server copy's colliders duplicate its client copy's; the player only meets the latter
+    mut scenes: Query<(Entity, &mut SceneColliderData), Without<ServerRole>>,
     time_res: Res<Time>,
     mut info: ResMut<AvatarMovementInfo>,
     mut jumping: Local<bool>,
@@ -822,7 +824,8 @@ pub struct CentralCollisions(HashMap<Entity, HashSet<ColliderId>>);
 
 fn resolve_collisions(
     mut player: Query<(&mut Transform, &ActivePlayerComponent<AvatarMovement>), With<PrimaryUser>>,
-    mut scenes: Query<(Entity, &mut SceneColliderData)>,
+    // a server copy's colliders duplicate its client copy's; the player only meets the latter
+    mut scenes: Query<(Entity, &mut SceneColliderData), Without<ServerRole>>,
     mut push: ResMut<CollisionPush>,
     time: Res<Time>,
     mut movement_control: ResMut<EngineMovementControl>,

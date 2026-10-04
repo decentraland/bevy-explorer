@@ -247,10 +247,12 @@ pub enum RpcCall {
     },
     SubscribeMessageBus {
         hash: String,
+        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribeBinaryBus {
         hash: String,
+        scene: Entity,
         sender: RpcStreamSender<(String, Vec<u8>)>,
     },
     TestPlan {
@@ -306,6 +308,8 @@ pub enum RpcCall {
         /// scene hash of the requesting scene, when the request originates from scene JS —
         /// selects a per-scene storage delegation in server mode
         scene: Option<String>,
+        /// the requesting scene runs in server role (`isServer()`)
+        server: bool,
         response: RpcResultSender<Result<Vec<(String, String)>, String>>,
     },
     ReadFile {
