@@ -67,15 +67,23 @@ pub async fn put(cache: &Cache, key: &str, old: &Response, data: &[u8]) -> Resul
     Ok(())
 }
 
-/// Moves `url`'s entry from its origin to the shared key. `data` is the response's bytes, which
-/// the caller has checked against the hash in `url`.
-pub async fn share(url: &str, data: &[u8]) -> Result<(), JsValue> {
+/// Moves `url`'s entry from its origin to the shared key, if `matches_hash`: whether `data`, the
+/// response's bytes, are what the hash in `url` names. That is only asked once there is an entry
+/// to move.
+pub async fn share(
+    url: &str,
+    data: &[u8],
+    matches_hash: impl FnOnce() -> bool,
+) -> Result<(), JsValue> {
     let cache = open().await?;
     let [shared, origin] = keys(url)?;
-    // nothing stored: an uncacheable response, or the page is not under this worker
+    // nothing stored: the worker doesn't cache localhost, or the page is not under this worker
     let Some(stored) = get(&cache, &origin).await? else {
         return Ok(());
     };
+    if !matches_hash() {
+        return Ok(());
+    }
     put(&cache, &shared, &stored, data).await?;
     JsFuture::from(cache.delete_with_str(&origin)).await?;
     Ok(())

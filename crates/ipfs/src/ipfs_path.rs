@@ -68,6 +68,23 @@ impl IpfsAsset for bevy_kira_audio::AudioSource {
     }
 }
 
+/// The name an asset is cached under.
+pub enum CacheKey {
+    /// The content's own hash, taken from data a server gave us. The cache only takes bytes
+    /// that match it.
+    Content(String),
+    /// A digest of the url, made here.
+    Url(String),
+}
+
+impl CacheKey {
+    pub fn name(&self) -> &str {
+        match self {
+            CacheKey::Content(name) | CacheKey::Url(name) => name,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IpfsType {
     ContentFile {
@@ -587,8 +604,16 @@ impl IpfsPath {
         self.ipfs_type.hash(context).map(|h| h.into_owned())
     }
 
-    pub fn hash_names_content(&self, context: &IpfsContext) -> bool {
-        self.ipfs_type.hash_names_content(context)
+    pub fn cache_key(&self, context: &IpfsContext) -> Option<CacheKey> {
+        let hash = self.hash(context)?;
+        if !self.should_cache(&hash) {
+            return None;
+        }
+        Some(if self.ipfs_type.hash_names_content(context) {
+            CacheKey::Content(hash)
+        } else {
+            CacheKey::Url(hash)
+        })
     }
 
     pub fn context_free_hash(&self) -> Result<Option<String>, anyhow::Error> {
