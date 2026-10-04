@@ -1657,10 +1657,14 @@ impl LocalSceneServer {
             .trim_end_matches('/')
     }
 
+    /// Only a local realm: on any other, the scene's real authoritative server keeps authority
+    /// whatever the console was told.
     pub fn serves(&self, realm: &CurrentRealm) -> bool {
-        self.realm
-            .as_deref()
-            .is_some_and(|root| root == Self::realm_root(&realm.about_url))
+        realm.is_local()
+            && self
+                .realm
+                .as_deref()
+                .is_some_and(|root| root == Self::realm_root(&realm.about_url))
     }
 
     /// The header a server copy's request to `uri` carries instead of a signature: the served

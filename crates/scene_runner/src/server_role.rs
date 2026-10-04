@@ -379,6 +379,16 @@ mod tests {
         assert_eq!(copies(&mut world), vec![], "another realm's switch");
 
         world.resource_mut::<LocalSceneServer>().realm = Some("https://page/preview/p1".to_owned());
+        assert_eq!(
+            copies(&mut world),
+            vec![],
+            "a realm that serves no local project"
+        );
+
+        world
+            .resource_mut::<CurrentRealm>()
+            .config
+            .local_scene_parcels = Some(vec!["0,0".to_owned()]);
         assert_eq!(copies(&mut world), vec![authoritative]);
         let rooms = world.resource::<LocalSceneServers>();
         assert!(rooms.0.contains_key("auth") && !rooms.0.contains_key("plain"));
