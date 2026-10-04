@@ -5,6 +5,7 @@ import { GATE_PORTS } from './e2e/ports'
 //   preview-realm: a scene built in the browser, served by the service worker and hot-reloaded
 //   editor:        what the page owes the editor package: Create, preview, its privileged scene,
 //                  reload by id, Play/Stop without restarting the HUD scene, leaving
+//   server-role:   an authoritative preview's server runs in the tab, only while it is previewed
 //   WEB_EDITOR_DIR=<dcl-editor checkout> npx playwright test --config playwright.gate.config.ts [name]
 // every port comes from e2e/ports.ts; a bridge scene of its own, off the everyday dev :8100, that
 // the specs pass as ?bridgePort (e2e/gate.ts)
