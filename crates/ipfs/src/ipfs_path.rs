@@ -625,7 +625,7 @@ pub(crate) fn normalize_path(path: &str) -> String {
 /// windows drive prefix) would discard.
 ///
 /// Both `ContentFile` constructors funnel through here, so the invariant holds by construction.
-pub(crate) fn content_file_path(file_path: &str) -> Cow<'_, str> {
+pub fn content_file_path(file_path: &str) -> Cow<'_, str> {
     if is_http_url(file_path) {
         return Cow::Borrowed(file_path);
     }

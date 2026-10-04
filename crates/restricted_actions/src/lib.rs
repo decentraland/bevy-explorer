@@ -2236,6 +2236,8 @@ fn filename_looks_like_url(filename: &str) -> bool {
 /// origin is the page's, where the editor keeps every previewed project's unpublished files, and
 /// any scene there (a portable, a smart wearable) is told the realm's url.
 fn reads_local_realm_origin(filename: &str, realm: &CurrentRealm) -> bool {
+    // as the loader will see it: `/https://..` becomes a url there
+    let filename = ipfs::ipfs_path::content_file_path(filename);
     realm.is_local()
         && url::Url::parse(filename.trim())
             .ok()
@@ -2449,6 +2451,9 @@ mod readfile_url_guard_tests {
             "https://play.example/bevy-web/preview/my-scene/content/contents/b64-x",
             "https://play.example/bevy-web/preview/other/scene.json",
             " https://play.example/bevy-web/editor-scene/bafkrei/about",
+            // content paths the loader turns into these urls
+            "/https://play.example/bevy-web/preview/my-scene/scene.json",
+            "\\https://play.example/bevy-web/preview/my-scene/scene.json",
         ] {
             assert!(reads_local_realm_origin(own, &realm), "{own}");
         }
