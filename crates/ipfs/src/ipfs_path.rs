@@ -158,6 +158,24 @@ impl IpfsType {
         }
     }
 
+    // true when `hash` is the content's own id, taken from data a server gave us. The other
+    // hashes are digests of the url, made here.
+    fn hash_names_content(&self, context: &IpfsContext) -> bool {
+        match self {
+            IpfsType::ContentFile {
+                content_hash: scene_hash,
+                file_path,
+            } => context
+                .entities
+                .get(scene_hash)
+                .is_some_and(|entity| entity.collection.hash(file_path).is_some()),
+            IpfsType::Entity { .. } | IpfsType::SceneContent { .. } => true,
+            IpfsType::UrlCached { .. }
+            | IpfsType::UrlUncached { .. }
+            | IpfsType::IndexDb { .. } => false,
+        }
+    }
+
     fn hash<'a>(&'a self, context: &'a IpfsContext) -> Option<Cow<'a, str>> {
         let x: Option<Cow<'a, str>> = match self {
             IpfsType::ContentFile {
@@ -567,6 +585,10 @@ impl IpfsPath {
 
     pub fn hash<'a>(&'a self, context: &'a IpfsContext) -> Option<String> {
         self.ipfs_type.hash(context).map(|h| h.into_owned())
+    }
+
+    pub fn hash_names_content(&self, context: &IpfsContext) -> bool {
+        self.ipfs_type.hash_names_content(context)
     }
 
     pub fn context_free_hash(&self) -> Result<Option<String>, anyhow::Error> {

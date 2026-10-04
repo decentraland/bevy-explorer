@@ -118,6 +118,8 @@ function createJsContext(wasmApi, context) {
   // two scenes agreeing on a bucket name would have a shared filesystem.
   deleteFromPrototypeChain(self.navigator, "storage");
   deleteFromPrototypeChain(self.navigator, "storageBuckets");
+  // the page's service worker registration (and its cache routes) is no scene's business
+  deleteFromPrototypeChain(self.navigator, "serviceWorker");
 
   // IndexedDB is same-origin too, and holds more than its own data: platform/src/web_save.js keeps
   // the FileSystemDirectoryHandle for the user's picked scene folder there (db `dcl-editor`, store
@@ -128,7 +130,7 @@ function createJsContext(wasmApi, context) {
   deleteFromPrototypeChain(self, "indexedDB");
 
   // CacheStorage is the last same-origin store the sandbox could see — it holds the ipfs fetch
-  // cache (`ipfs-path-cache-v1`), so a scene could read every asset the client has pulled and, more
+  // cache (`ipfs-path-cache-v2`), so a scene could read every asset the client has pulled and, more
   // to the point, write to keys the loader later serves. Its users are elsewhere:
   // image_processing/src/processor/wasm_fs.rs runs on the asset processor worker, which engine.js spawns
   // as its own worker, and service_worker.js is a different context entirely.

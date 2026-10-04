@@ -1,9 +1,14 @@
-// MUST stay in sync with crates/image_processing/src/processor/wasm_fs.rs: the asset processor
-// reads the raw responses this worker caches and writes the processed bytes back over the same
-// key. (A one-time v2 bump to purge stale local-preview entries broke that pairing — the
-// localhost bypass below already makes stale localhost entries unreadable, so no purge needed.)
-const CACHE_NAME = 'ipfs-path-cache-v1';
+// MUST stay in sync with crates/ipfs/src/web_cache.rs (cache name, both keys, the cached header):
+// the engine moves entries it has checked to the shared key, and its asset processor reads the
+// raw responses this worker caches and writes the processed bytes back over the same key.
+// v2: v1 entries were shared across content servers on the path alone, with nothing checked.
+const CACHE_NAME = 'ipfs-path-cache-v2';
 const CUSTOM_HEADER = 'X-IPFS';
+// Stand-in origin for entries shared across content servers. `.invalid` is reserved, so no real
+// server's own entries can land on these keys.
+const SHARED_ORIGIN = 'https://shared.invalid';
+// Set on responses answered from the cache.
+const CACHED_HEADER = 'X-IPFS-Cached';
 
 self.addEventListener('install', (event) => {
     // Force the waiting service worker to become the active service worker.
@@ -83,16 +88,32 @@ async function cacheFirstStrategy(request) {
         return fetch(stripCustomHeader(request));
     }
 
-    //Generate a cache key from the path only
-    const cacheKey = getCacheKey(request);
+    // Two keys. The shared one drops the origin, so every content server serving a hash hits the
+    // same entry. This worker never writes it: any client (a scene included) can make it fetch and
+    // store a response, so what it stores stays with the origin it came from. The engine moves an
+    // entry to the shared key once it has checked the bytes against the hash.
+    const sharedKey = SHARED_ORIGIN + reqUrl.pathname + reqUrl.search;
+    const originKey = reqUrl.origin + reqUrl.pathname + reqUrl.search;
 
     //Open the cache
     const cache = await caches.open(CACHE_NAME);
 
     //Try to find a response in the cache
-    const cachedResponse = await cache.match(cacheKey);
+    const sharedResponse = await cache.match(sharedKey);
+    if (sharedResponse) {
+        // an origin's own copy is dead weight once the shared entry exists (one can be left behind
+        // when the engine never got to check it). Not awaited: nothing depends on it.
+        cache.delete(originKey).catch(() => {});
+    }
+    const cachedResponse = sharedResponse ?? (await cache.match(originKey));
     if (cachedResponse) {
-        return cachedResponse;
+        const headers = new Headers(cachedResponse.headers);
+        headers.set(CACHED_HEADER, '1');
+        return new Response(cachedResponse.body, {
+            status: cachedResponse.status,
+            statusText: cachedResponse.statusText,
+            headers
+        });
     }
 
     //If not in cache, fetch from network
@@ -102,15 +123,10 @@ async function cacheFirstStrategy(request) {
     if (networkResponse.ok) {
         // Store the new response in the cache
         const responseToCache = networkResponse.clone();
-        await cache.put(cacheKey, responseToCache);
+        await cache.put(originKey, responseToCache);
     }
     
     return networkResponse;
-}
-
-function getCacheKey(request) {
-    const url = new URL(request.url);
-    return url.pathname + url.search;
 }
 
 function stripCustomHeader(request) {

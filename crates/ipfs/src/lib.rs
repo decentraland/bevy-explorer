@@ -1,6 +1,9 @@
+pub mod content_hash;
 #[cfg(feature = "ipfs_debug")]
 mod ipfs_debug;
 pub mod ipfs_path;
+#[cfg(target_arch = "wasm32")]
+pub mod web_cache;
 
 use std::{
     borrow::Cow,
@@ -1183,8 +1186,6 @@ impl IpfsIo {
         }
         .map(|url| format!("{url}/entities/active"));
 
-        let maybe_cache_path = self.cache_path().map(ToOwned::to_owned);
-
         match request {
             ActiveEntitiesRequest::Pointers(pointers) => {
                 let client = self.client.clone();
@@ -1219,22 +1220,6 @@ impl IpfsIo {
                         serde_json::from_slice(&fetched.body).map_err(|e| anyhow!(e))?;
                     let mut res = Vec::default();
                     for entity in active_entities.0 {
-                        let id = entity.id.as_ref().unwrap();
-                        // cache to file system
-
-                        // `id` is read straight out of the response body
-                        if let Some(cache_path) =
-                            maybe_cache_path.as_ref().and_then(|p| p.join_relative(id))
-                        {
-                            if id.starts_with("b64-") || !cache_path.exists() {
-                                let mut file = async_fs::File::create(&cache_path).await?;
-                                let mut buf = Vec::default();
-                                serde_json::to_writer(&mut buf, &entity)?;
-                                file.write_all(&buf).await?;
-                                file.sync_all().await?;
-                            }
-                        }
-
                         // return active entity struct
                         res.push(EntityDefinition {
                             id: entity.id.unwrap(),
@@ -1647,7 +1632,13 @@ impl AssetReader for IpfsIo {
                 return Ok(Box::new(VecReader::new(daft_buffer)));
             }
 
-            let hash = ipfs_path.hash(&*self.context.read().await);
+            let (hash, hash_names_content) = {
+                let context = self.context.read().await;
+                (
+                    ipfs_path.hash(&context),
+                    ipfs_path.hash_names_content(&context),
+                )
+            };
 
             if let Some(cache_path) = self.cache_path() {
                 if let Some(hash) = &hash {
@@ -1766,6 +1757,13 @@ impl AssetReader for IpfsIo {
 
             let mut attempt = 0;
             let mut no_cache = false;
+            // wasm: whether the service worker cached this response, and answered from its cache
+            #[cfg(target_arch = "wasm32")]
+            let (mut sw_caches, sw_cached);
+            #[cfg(target_arch = "wasm32")]
+            {
+                sw_caches = false;
+            }
             let data = loop {
                 attempt += 1;
 
@@ -1778,6 +1776,7 @@ impl AssetReader for IpfsIo {
                         .as_ref()
                         .is_some_and(|hash| ipfs_path.should_cache(hash))
                 {
+                    sw_caches = true;
                     request.header("X-IPFS", "true")
                 } else {
                     request
@@ -1850,8 +1849,42 @@ impl AssetReader for IpfsIo {
                     }
                 }
 
+                #[cfg(target_arch = "wasm32")]
+                {
+                    sw_cached = fetched.headers.contains_key(web_cache::CACHED_HEADER);
+                }
+
                 break fetched.body;
             };
+
+            // A cache keyed on the hash alone answers for every server, so it only takes bytes
+            // that are what the hash names: any server (and on web any scene, through the service
+            // worker) can otherwise file its own bytes under another's hash.
+            #[cfg(target_arch = "wasm32")]
+            let check_hash = hash_names_content && sw_caches && !sw_cached;
+            #[cfg(not(target_arch = "wasm32"))]
+            let check_hash = hash_names_content && !no_cache;
+            let matches_hash = check_hash
+                && hash.as_ref().is_some_and(|hash| {
+                    let matches = content_hash::matches_content_hash(hash, &data);
+                    if !matches {
+                        // not expected from a decentraland deployment: either the server sent
+                        // other bytes, or the hash was made in a way `content_hash` doesn't know
+                        warn!(
+                            "`{remote}` ({} bytes) does not hash to `{hash}`: not caching it under that hash",
+                            data.len()
+                        );
+                    }
+                    matches
+                });
+
+            // the service worker holds a fresh response per origin; move it to the shared entry
+            #[cfg(target_arch = "wasm32")]
+            if matches_hash {
+                if let Err(e) = web_cache::share(&remote, &data).await {
+                    warn!("failed to share cache item `{remote}`: {e:?}");
+                }
+            }
 
             // `hash` reaches us from the entity json, so it must not steer the cache path
             let cache_paths = self.cache_path().zip(hash.as_ref()).and_then(|(root, h)| {
@@ -1862,7 +1895,10 @@ impl AssetReader for IpfsIo {
             });
 
             if let (Some(hash), Some((cache_path, final_path))) = (hash, cache_paths) {
-                if !no_cache && ipfs_path.should_cache(&hash) {
+                if !no_cache
+                    && ipfs_path.should_cache(&hash)
+                    && (!hash_names_content || matches_hash)
+                {
                     let cache_path_str = cache_path.to_string_lossy().into_owned();
                     // ignore errors trying to cache
                     match async_fs::File::create(&cache_path).await {
