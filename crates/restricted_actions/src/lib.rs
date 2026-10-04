@@ -24,8 +24,9 @@ use common::{
     },
     sets::SceneSets,
     structs::{
-        server_mode, AvatarDynamicState, CurrentRealm, EngineMovementControl, PermissionType,
-        PlayerTeleported, PreviewCommand, PrimaryCamera, PrimaryUser, StartupScenes, ZOrder,
+        server_mode, AvatarDynamicState, CurrentRealm, EngineMovementControl, LocalSceneServer,
+        PermissionType, PlayerTeleported, PreviewCommand, PrimaryCamera, PrimaryUser,
+        StartupScenes, ZOrder,
     },
     util::{AsH160, TaskCompat, TaskExt},
 };
@@ -2200,7 +2201,7 @@ fn handle_sign_request(
     wallet: Res<Wallet>,
     // present only in the headless server binary; None everywhere else
     delegations: Option<Res<wallet::delegation::StorageDelegations>>,
-    local_server: Option<Res<common::structs::LocalSceneServer>>,
+    local_server: Option<Res<LocalSceneServer>>,
     mut server_copy_identity: Local<Option<Wallet>>,
 ) {
     for ev in events.read() {
@@ -2213,20 +2214,23 @@ fn handle_sign_request(
             response,
         } = ev
         {
+            let server_copy = *server && !server_mode();
             // an in-engine server copy's storage is the page's own, which takes a secret instead of
             // a signature: nothing is signed with the player's key for it
             if let Some(header) = local_server
                 .as_ref()
+                .filter(|_| server_copy)
                 .and_then(|local| local.storage_header(uri))
-                .filter(|_| *server && !common::structs::server_mode())
             {
                 response.send(Ok(vec![header]));
                 continue;
             }
-
-            let storage_route = local_server
-                .as_ref()
-                .is_some_and(|local| local.is_storage_route(uri));
+            // a server copy never signs as the player; a tokenless dev preview's storage is the
+            // one exception, signed as before
+            let as_guest = server_copy
+                && !local_server
+                    .as_ref()
+                    .is_some_and(|local| local.is_storage_route(uri));
             let Ok(uri) = Uri::try_from(uri) else {
                 response.send(Err(format!("failed to parse uri: {uri}")));
                 continue;
@@ -2260,9 +2264,7 @@ fn handle_sign_request(
                 continue;
             }
 
-            // an in-engine server copy has no identity of its own: never the player's, but a
-            // tokenless dev preview's storage stays signed as before
-            let wallet = if *server && !common::structs::server_mode() && !storage_route {
+            let wallet = if as_guest {
                 server_copy_identity
                     .get_or_insert_with(|| {
                         let mut guest = Wallet::default();
