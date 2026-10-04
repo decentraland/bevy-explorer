@@ -33,7 +33,9 @@ const INTERNAL_PARAMS = [
   'simerror',
   'simhover',
   'previousLogin',
-  'perm'
+  'perm',
+  // dev only (lib/systemScene.ts)
+  ...(import.meta.env.PROD ? [] : ['bridgePort'])
 ]
 
 /** What the dialog advertises: every link-settable engine param, then the page's own. */
@@ -47,8 +49,9 @@ export function acceptedEntryParams(): AcceptedParam[] {
   return [...engine, ...page]
 }
 
-/** The entry url's params that nothing reads — ignored, and worth telling the user about. */
-export function unrecognisedEntryParams(q: URLSearchParams): string[] {
-  const accepted = new Set([...acceptedEntryParams().map((p) => p.name), ...INTERNAL_PARAMS])
+/** The entry url's params that nothing reads — ignored, and worth telling the user about.
+ *  `hostParams`: host-delivered params this page is acting on (the scene editor's `editor`). */
+export function unrecognisedEntryParams(q: URLSearchParams, hostParams: string[] = []): string[] {
+  const accepted = new Set([...acceptedEntryParams().map((p) => p.name), ...INTERNAL_PARAMS, ...hostParams])
   return [...new Set(q.keys())].filter((name) => !accepted.has(name))
 }

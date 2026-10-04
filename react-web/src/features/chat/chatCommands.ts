@@ -42,12 +42,8 @@ export const HELP_TEXT = [
   '/<command> [args] — run any engine console command (see /commands; /help <command> for its usage)',
 ].join('\n')
 
-/** Engine console commands the HUD never runs from chat, and drops from `/commands`, even though
- *  the engine registers them: the scene-inspector/editor set serves other HUDs (the editor and
- *  component-inspector system scenes) through the same console op and dumps whole-scene JSON;
- *  lock/unlock_preview and show_ui are preview-scene tooling; the login/logout/chat set are
- *  agent-harness commands that would desync this HUD's own session state; clear/exit are a
- *  console no-op and a native quit. */
+/** Engine console commands chat never runs nor lists: other HUDs' and harnesses' tooling, and
+ *  spawn/kill (`/spawn <url> true` starts a scene with super-user rights). */
 export const HUD_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
   // scene inspector — read
   'set_scene',
@@ -88,6 +84,9 @@ export const HUD_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
   'login_identity',
   'logout',
   'chat',
+  // portable scenes (a spawn can be privileged)
+  'spawn',
+  'kill',
   // console no-op / native quit
   'clear',
   'exit',

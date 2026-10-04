@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { createReadStream, statSync } from 'node:fs'
+import { createReadStream, existsSync, statSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -77,7 +77,7 @@ const MIME: Record<string, string> = {
 // the COOP/COEP headers WebGPU + wasm threads require. Used to host the engine
 // bundle (../deploy/web) and the built bridge scene in a same-origin iframe —
 // no npm download needed.
-function serveStatic(prefix: string, dirFromConfig: string): Plugin {
+export function serveStatic(prefix: string, dirFromConfig: string): Plugin {
   const root = fileURLToPath(new URL(dirFromConfig, import.meta.url))
   return {
     name: `serve-static:${prefix}`,
@@ -111,6 +111,17 @@ function serveStatic(prefix: string, dirFromConfig: string): Plugin {
   }
 }
 
+// Dev-only: the scene editor package (a dcl-editor checkout's packages/web/dist, named by
+// WEB_EDITOR_DIR) served same-origin under /editor/, where `?editor` loads it from on localhost
+// (src/features/editorHost). Without the variable nothing is mounted.
+function editorPackage(): Plugin[] {
+  const checkout = process.env.WEB_EDITOR_DIR
+  if (!checkout) return []
+  const dist = join(checkout, 'packages/web/dist')
+  if (!existsSync(join(dist, 'editor.js'))) console.warn(`[editor] ${dist}/editor.js is missing: build the editor's web package`)
+  return [serveStatic('/editor/', dist)]
+}
+
 // Apply the cross-origin-isolation headers the engine needs to every response EXCEPT the
 // proxied auth dapp (/auth). The auth site is a normal web page that signs in with popups /
 // OAuth redirects, which `Cross-Origin-Opener-Policy: same-origin` would break — and it does
@@ -142,6 +153,9 @@ export default defineConfig(({ command, mode }) => ({
   // PUBLIC_URL for an absolute CDN base; otherwise './' (relative → works from any path, e.g. a
   // local `serve deploy/web`). Dev keeps '/'.
   base: command === 'build' ? (process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/` : './') : '/',
+  // The editor host's signing script's own deps: it is outside the page's import graph, so they
+  // would be found when it first loads, and a late find reloads the page.
+  optimizeDeps: { include: ['@noble/secp256k1', '@noble/hashes/sha3'] },
   plugins: [
     react(),
     bridgeScenePreview(),
@@ -152,9 +166,12 @@ export default defineConfig(({ command, mode }) => ({
     // that header the requests need a CORS preflight, which the peer catalysts reject — no
     // scenes, no avatars. (serveStatic handles a single file fine: rel resolves to the root.)
     serveStatic('/service_worker.js', '../deploy/web/service_worker.js'),
+    // importScripts'd by the service worker (the editor's preview realm), so it sits beside it.
+    serveStatic('/preview_realm.js', '../deploy/web/preview_realm.js'),
     // Our headless super-user bridge scene (exported deployable). Pointed at by
     // the engine's systemScene so it loads as the trusted --system-scene scene.
-    serveStatic('/bridge-scene/static/', './bridge-scene/static')
+    serveStatic('/bridge-scene/static/', './bridge-scene/static'),
+    ...editorPackage()
   ],
   build: {
     // The app IS the production page: build straight into the npm-published deploy/web tree,

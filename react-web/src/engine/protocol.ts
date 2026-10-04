@@ -112,6 +112,8 @@ export interface NavActionRequest {
 /** Page→scene handshake ping, repeated until the scene answers `bridgeReady` (see BridgeChannel). */
 export interface HelloRequest {
   kind: 'hello'
+  /** The page's directory: the bridge scene keeps the first one it hears to recognise the page's own realms. */
+  pageDir?: string
 }
 
 /** Scene→page: every domain is registered and the scene is listening. */
@@ -175,6 +177,7 @@ export type PageToScene =
   | ChangeRealmRequest
   | MinimapConfigRequest
   | PermissionResolveRequest
+  | EditorSceneRequest
   | EngineViewportRequest
   | InteractableAreaMessage
   | GetGalleryRequest
@@ -640,6 +643,23 @@ export interface TravelResultMessage {
   realm: string
   ok: boolean
   message?: string
+}
+
+/** Spawn or kill the scene editor's super-user scene, served at `<PAGE_DIR>editor-scene/<hash>`. */
+export interface EditorSceneRequest {
+  kind: 'editorScene'
+  id: number
+  action: 'spawn' | 'kill'
+  source: string
+  hash: string
+}
+
+/** How an `editorScene` request ended (scene → page). A spawn answers once the scene is live. */
+export interface EditorSceneResultMessage {
+  kind: 'editorSceneResult'
+  id: number
+  ok: boolean
+  error?: string
 }
 
 /** A scene's pending permission prompt relayed from the engine (e.g. it wants to move you
@@ -1295,6 +1315,7 @@ export type SceneToPage =
   | GalleryPhotoMessage
   | PermissionRequestMessage
   | PermissionWithdrawnMessage
+  | EditorSceneResultMessage
 
 // ---- envelope --------------------------------------------------------------
 

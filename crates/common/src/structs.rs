@@ -1754,6 +1754,17 @@ pub struct CurrentRealm {
     pub public_url: String,
 }
 
+impl CurrentRealm {
+    /// Serves a project being developed (a `dcl start` server, or the web editor's preview), which
+    /// it signals by listing the project's parcels in its `about`.
+    pub fn is_local(&self) -> bool {
+        self.config
+            .local_scene_parcels
+            .as_ref()
+            .is_some_and(|parcels| !parcels.is_empty())
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CommsConfig {
