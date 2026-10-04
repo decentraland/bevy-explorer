@@ -41,7 +41,14 @@ impl Plugin for LivekitPlugin {
                 .add_systems(PreUpdate, crate::livekit::web::dispatch_page_events);
         }
 
-        app.add_plugins(MicPlugin);
+        // a headless app has no microphone, and plays no voices
+        if app
+            .world()
+            .get_resource::<common::structs::NoRenderApp>()
+            .is_none()
+        {
+            app.add_plugins(MicPlugin);
+        }
         app.add_plugins(LivekitRuntimePlugin);
         app.add_plugins(LivekitRoomPlugin);
         app.add_plugins(LivekitParticipantPlugin);

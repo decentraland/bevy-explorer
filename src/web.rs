@@ -266,7 +266,7 @@ pub fn engine_home_scene() -> String {
 
 /// Round-trip the page's object through JSON rather than `serde_wasm_bindgen::from_value`: that
 /// only visits the struct's own fields, so `deny_unknown_fields` would never see a misspelt key.
-fn parse_options(options: &JsValue) -> Result<EngineRunOptions, JsValue> {
+pub(crate) fn parse_options(options: &JsValue) -> Result<EngineRunOptions, JsValue> {
     let json = String::from(js_sys::JSON::stringify(options)?);
     EngineRunOptions::from_json(&json)
         .map(EngineRunOptions::without_empty_strings)
