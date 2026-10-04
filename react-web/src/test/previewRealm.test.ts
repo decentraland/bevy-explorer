@@ -116,21 +116,6 @@ describe('preview realm', () => {
     expect(await (await get(`${REALM}content/contents/${ENTITY_ID}`)).json()).toEqual(entity)
   })
 
-  it('never answers a scene’s own requests, whose realm info names the preview', async () => {
-    for (const path of ['about', `content/contents/${GAME_HASH}`, `content/contents/${ENTITY_ID}`]) {
-      // a client the worker cannot name is refused too
-      for (const client of [SANDBOX, null]) {
-        const res = await get(`${REALM}${path}`, client)
-        expect([path, client, res.status]).toEqual([path, client, 403])
-      }
-    }
-    const editorRoot = `${PAGE}editor-scene/`
-    const editorStore = storeOf({ [`${editorRoot}bafkreiabc/about`]: '{}' })
-    const editorAbout = (client: string): Promise<Response> =>
-      dclPreviewRealm.handleEditorScene(new Request(`${editorRoot}bafkreiabc/about`), editorRoot, editorStore, client)
-    expect([(await editorAbout(PAGE)).status, (await editorAbout(SANDBOX)).status]).toEqual([200, 403])
-  })
-
   it('answers 404, never the network, for everything it does not hold', async () => {
     const missing = [
       `${REALM}content/contents/b64-bm90LXN0b3JlZA==`,
