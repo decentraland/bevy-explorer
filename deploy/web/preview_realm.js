@@ -163,6 +163,10 @@
         }
     }
 
+    // null-prototype, so a key such as `__proto__` is just a key
+    const dict = (value) =>
+        Object.assign(Object.create(null), value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+
     async function readStorage(storage, key) {
         const stored = await storage.match(key);
         let data = null;
@@ -171,8 +175,7 @@
         } catch {
             data = null;
         }
-        const map = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
-        return { env: map(data && data.env), world: map(data && data.world), players: map(data && data.players) };
+        return { env: dict(data && data.env), world: dict(data && data.world), players: dict(data && data.players) };
     }
 
     function page(values, url) {
@@ -211,14 +214,14 @@
         if (address === '') return json({ message: 'Address is required' }, 400);
         const docKey = realm + '__storage';
         const method = request.method;
-        const scope = (data) => (env !== undefined ? data.env : address !== undefined ? (data.players[address] ??= {}) : data.world);
+        const scope = (data) => (env !== undefined ? data.env : address !== undefined ? (data.players[address] = dict(data.players[address])) : data.world);
 
         if (method === 'GET') {
             const data = await readStorage(storage, docKey);
             const values = scope(data);
             if (env === undefined && key === undefined) return page(values, request.url);
             const name = env ?? key;
-            if (!Object.prototype.hasOwnProperty.call(values, name)) {
+            if (!Object.hasOwn(values, name)) {
                 const message =
                     env !== undefined
                         ? `Environment variable '${name}' not found`

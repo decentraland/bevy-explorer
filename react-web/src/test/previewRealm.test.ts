@@ -211,5 +211,25 @@ describe('preview realm', () => {
       )
       expect(other.status).toBe(403)
     })
+
+    it('keeps an address named like a prototype key to its own realm', async () => {
+      const mine = storageOf({ realm, token: 't1' })
+      await call(mine, 'players/__proto__/values/0xvictim', { token: 't1', ...put({ score: 999 }) })
+      try {
+        expect(({} as Record<string, unknown>)['0xvictim']).toBeUndefined()
+        const otherRealm = `${ROOT}other-scene`
+        const theirs = storageOf({ realm: otherRealm, token: 't2' })
+        const read = await dclPreviewRealm.handle(
+          new Request(`${otherRealm}/players/0xvictim/values/score`, { headers: { 'x-dcl-local-server': 't2' } }),
+          ROOT,
+          store,
+          theirs
+        )
+        expect(read.status).toBe(404)
+        expect(await (await call(mine, 'players/__proto__/values/0xvictim', { token: 't1' })).json()).toEqual({ value: { score: 999 } })
+      } finally {
+        delete (Object.prototype as Record<string, unknown>)['0xvictim']
+      }
+    })
   })
 })
