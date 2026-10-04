@@ -1262,9 +1262,7 @@ fn get_user_data(
                 // mutable RendererSceneContext query
                 let scene_context = scenes
                     .get(*scene)
-                    .map(|(ctx, own, _)| {
-                        own.map_or_else(|| contexts.for_scene_hash(&ctx.hash), |c| c.0)
-                    })
+                    .map(|(ctx, own, _)| contexts.for_scene(own, &ctx.hash))
                     .unwrap_or_else(|_| contexts.shared());
                 if let Some((_, profile)) = others.iter().find(|(fp, _)| {
                     fp.context == scene_context && *address == format!("{:#x}", fp.address)
@@ -1342,9 +1340,7 @@ impl ScenePresence<'_, '_> {
     fn context_of(&self, scene: Entity) -> Entity {
         self.scenes
             .get(scene)
-            .map(|(ctx, own, _)| {
-                own.map_or_else(|| self.contexts.for_scene_hash(&ctx.hash), |c| c.0)
-            })
+            .map(|(ctx, own, _)| self.contexts.for_scene(own, &ctx.hash))
             .unwrap_or_else(|_| self.contexts.shared())
     }
 
@@ -1545,7 +1541,7 @@ fn event_player_moved_scene(
     let scene_of_context: HashMap<Entity, Entity> = scenes
         .iter()
         .filter_map(|(scene_ent, ctx, own)| {
-            let context = own.map_or_else(|| contexts.for_scene_hash(&ctx.hash), |c| c.0);
+            let context = contexts.for_scene(own, &ctx.hash);
             (context != shared).then_some((context, scene_ent))
         })
         .collect();

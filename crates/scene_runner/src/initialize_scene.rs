@@ -448,9 +448,7 @@ pub(crate) fn load_scene_javascript(
         // the shared context otherwise), with position data localized for this scene.
         // Scene origin in DCL proto-space (z-forward, matching proto Vector3 coordinates)
         let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
-        let crdt_context = own_context
-            .map(|c| c.0)
-            .unwrap_or_else(|| crdt_contexts.for_scene_hash(&definition.id));
+        let crdt_context = crdt_contexts.for_scene(own_context, &definition.id);
         let Ok(global_scene) = global_scenes.get(crdt_context) else {
             // context spawned this frame and not yet flushed — retry next frame
             debug!("{root:?} waiting for crdt context");
