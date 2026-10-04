@@ -7168,6 +7168,7 @@ dependencies = [
  "console 0.1.0",
  "futures-io",
  "futures-lite",
+ "js-sys",
  "multihash-codetable",
  "platform",
  "reqwest 0.12.28",
@@ -7177,7 +7178,10 @@ dependencies = [
  "url",
  "urlencoding",
  "urn",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-fs",
+ "web-sys",
  "web-time",
 ]
 

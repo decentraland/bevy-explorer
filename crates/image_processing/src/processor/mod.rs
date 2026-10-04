@@ -26,7 +26,7 @@ pub(crate) async fn process_events(
     resp_sx: UnboundedSender<Result<AssetForProcessing, ()>>,
 ) {
     while let Some(req) = req_rx.blocking_recv() {
-        let Ok(raw_bytes) = read_file(&req.cache_path).await else {
+        let Ok((raw_bytes, key)) = read_file(&req.cache_path).await else {
             error!("can't read {:?}", req.cache_path);
             let _ = resp_sx.send(Err(()));
             continue;
@@ -54,7 +54,7 @@ pub(crate) async fn process_events(
             },
         };
 
-        let Ok(()) = write_file(&req.cache_path, &data).await else {
+        let Ok(()) = write_file(&key, &data).await else {
             error!("can't write {:?}", req.base_path);
             let _ = resp_sx.send(Err(()));
             continue;
