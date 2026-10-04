@@ -181,6 +181,17 @@ describe('editor host', () => {
     expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/local_scene_server ${realm} ${token}`, `/reload ${own}`, `set_scene ${own}`])
     await expect(host().engineConsole('/local_scene_server off'), 'the editor cannot').rejects.toThrow('not-allowed')
     engineConsole.mockClear()
+    // the editor's Storage tab reads the server's values with the server's token, never its env keys
+    const fetched = vi.fn(async (_url: string, _init?: RequestInit) => new Response('{}'))
+    vi.stubGlobal('fetch', fetched)
+    await host().previewStorageFetch('/values/best?x=1', { method: 'PUT', headers: { 'Content-Type': 'application/json', cookie: 'c' }, body: '{}' })
+    expect(fetched).toHaveBeenLastCalledWith(`${realm}/values/best?x=1`, {
+      method: 'PUT',
+      body: '{}',
+      headers: { 'Content-Type': 'application/json', 'x-dcl-local-server': token }
+    })
+    for (const path of ['/env/SECRET', '/values/../env/SECRET', '/../other/values', 'https://evil.example/values'])
+      await expect(host().previewStorageFetch(path), path).rejects.toThrow('not-allowed')
 
     // the engine's url sync, as boot.js receives it while on the preview realm
     w.set_url_params!(JSON.stringify({ realm, position: '4,-2', editor: false }))
@@ -210,6 +221,7 @@ describe('editor host', () => {
       ])
     )
     expect(access()).toBeNull()
+    await expect(host().previewStorageFetch('/values'), 'no preview open').rejects.toThrow('not-allowed')
     vi.unstubAllGlobals()
 
     host().exit()
