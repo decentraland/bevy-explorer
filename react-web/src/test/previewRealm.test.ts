@@ -2,6 +2,7 @@
 // what the engine fetches from a realm, served from the preview cache alone.
 import { describe, expect, it, vi } from 'vitest'
 import '../../../deploy/web/preview_realm.js'
+import { grantStorage, revokeStorage } from '../features/editorHost/host/previewStorage'
 
 interface PreviewStore {
   match: (key: string) => Promise<Response | undefined>
@@ -147,7 +148,7 @@ describe('preview realm', () => {
   describe('storage for the in-tab scene server', () => {
     // what the page keeps in dcl-editor-storage-v1 (react-web host/previewStorage.ts)
     function storageOf(access: { realm: string; token: string }): StorageStore {
-      const entries = new Map<string, string>([[`${ROOT}__server`, JSON.stringify(access)]])
+      const entries = new Map<string, string>([[`${access.realm}/__server`, JSON.stringify({ token: access.token })]])
       return {
         match: async (key) => (entries.has(key) ? new Response(entries.get(key)) : undefined),
         put: async (key, value) => void entries.set(key, await value.text())
@@ -210,6 +211,38 @@ describe('preview realm', () => {
         storage
       )
       expect(other.status).toBe(403)
+    })
+
+    it('keeps each tab’s grant open while another tab previews and leaves', async () => {
+      const entries = new Map<string, string>()
+      const shared: StorageStore & { delete: (key: string) => Promise<boolean> } = {
+        match: async (key) => (entries.has(key) ? new Response(entries.get(key)) : undefined),
+        put: async (key, value) => void entries.set(key, await value.text()),
+        delete: async (key) => entries.delete(key)
+      }
+      vi.stubGlobal('caches', { open: async () => shared })
+      try {
+        const read = async (project: string, token: string): Promise<number> =>
+          (
+            await dclPreviewRealm.handle(
+              new Request(`${ROOT}${project}/values`, { headers: { 'x-dcl-local-server': token } }),
+              ROOT,
+              store,
+              shared
+            )
+          ).status
+        const a = (await grantStorage(`${ROOT}scene-a`))!
+        const b = (await grantStorage(`${ROOT}scene-b`))!
+        expect([await read('scene-a', a), await read('scene-b', b)]).toEqual([200, 200])
+        await revokeStorage(`${ROOT}scene-b`, b)
+        expect([await read('scene-a', a), await read('scene-b', b)]).toEqual([200, 403])
+        // a later grant for the same realm is not closed by an earlier tab leaving
+        const a2 = (await grantStorage(`${ROOT}scene-a`))!
+        await revokeStorage(`${ROOT}scene-a`, a)
+        expect(await read('scene-a', a2)).toBe(200)
+      } finally {
+        vi.unstubAllGlobals()
+      }
     })
 
     it('keeps an address named like a prototype key to its own realm', async () => {

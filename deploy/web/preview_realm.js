@@ -135,7 +135,7 @@
     // The storage the dev server (sdk-commands start) serves a scene's server, per realm, in one
     // JSON document like its server-storage.json: { env, world, players }. Only the server copy
     // the page is running may reach it: the engine adds the page's secret to that copy's storage
-    // requests, and the page keeps one `{ realm, token }` entry, for the project it previews.
+    // requests, and the page keeps a `{ token }` entry under `<realm>/__server` while it previews.
     const STORAGE_HEADER = 'x-dcl-local-server';
     const STORAGE_ROUTE = /^(?:values(?:\/(.*))?|players\/([^/]+)\/values(?:\/(.*))?|env\/(.*))$/;
     const writes = new Map();
@@ -151,13 +151,13 @@
         return next;
     }
 
-    async function allowed(request, realm, previewRoot, storage) {
+    async function allowed(request, realm, storage) {
         const token = request.headers.get(STORAGE_HEADER);
-        const stored = token ? await storage.match(previewRoot + '__server') : null;
+        const stored = token ? await storage.match(realm + '__server') : null;
         if (!stored) return false;
         try {
             const access = await stored.json();
-            return typeof access.token === 'string' && access.token === token && access.realm + '/' === realm;
+            return typeof access.token === 'string' && access.token === token;
         } catch {
             return false;
         }
@@ -198,8 +198,8 @@
     }
 
     // `/values[/key]`, `/players/<address>/values[/key]`, `/env/<key>`, answered as the dev server does
-    async function handleStorage(request, realm, route, previewRoot, storage) {
-        if (!storage || !(await allowed(request, realm, previewRoot, storage))) return respond(null, 403, BYTES_TYPE);
+    async function handleStorage(request, realm, route, storage) {
+        if (!storage || !(await allowed(request, realm, storage))) return respond(null, 403, BYTES_TYPE);
         let key, address, env;
         try {
             key = route[1] ?? route[3];
@@ -254,7 +254,7 @@
         const target = parse(request.url, previewRoot);
         if (!target) return notFound();
         const route = STORAGE_ROUTE.exec(target.path);
-        if (route) return handleStorage(request, target.realm, route, previewRoot, storage);
+        if (route) return handleStorage(request, target.realm, route, storage);
         const entity = await readEntity(store, target.realm);
         if (!entity) return notFound();
 

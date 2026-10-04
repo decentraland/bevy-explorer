@@ -151,13 +151,13 @@ PUT bodies are `{ "value": … }`. Everything is kept in cache `dcl-editor-stora
 synced or logged.
 
 Unlike the dev server, every storage route answers 403 (no body) unless the request carries
-`x-dcl-local-server: <token>` and `<PAGE_DIR>preview/__server` in that cache holds
-`{ "realm": "<PAGE_DIR>preview/<projectId>", "token": "<token>" }` for this realm. The page writes
-that one entry when it previews a project and deletes it when it stops (react-web
+`x-dcl-local-server: <token>` and `<realm>__server` in that cache holds `{ "token": "<token>" }`.
+The page writes that entry when it previews a project and deletes it when it stops, only if it
+still holds its own token, so another tab previewing or leaving never closes it (react-web
 `host/previewStorage.ts`); the engine adds the header to the storage requests of that realm's
 server copy alone, in place of a signature, and to nothing else. So a player's copy, another
-project's scene or any other scene cannot read or write it, and only the previewed project's
-storage is open at all. The server copy's realm info says `isPreview`, which is what points the
+project's scene or any other scene cannot read or write it, and only previewed projects' storage
+is open at all. The server copy's realm info says `isPreview`, which is what points the
 SDK's `Storage` and `EnvVar` at the realm.
 
 ## Editor scene
