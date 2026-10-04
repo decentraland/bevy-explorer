@@ -5,18 +5,22 @@
 // service_worker.js reads it; scenes cannot (sandbox_worker.js deletes `caches`)
 const CACHE = 'dcl-editor-storage-v1'
 
-const accessKey = (pageDir: string): string => `${pageDir}preview/__server`
+// per realm: every tab on the origin shares the cache
+const accessKey = (realm: string): string => `${realm}/__server`
 
-/** Open `realm`'s storage to its server copy, and close every other's. Null without Cache Storage. */
-export async function grantStorage(pageDir: string, realm: string): Promise<string | null> {
+/** Open `realm`'s storage to its server copy. Null without Cache Storage. */
+export async function grantStorage(realm: string): Promise<string | null> {
   if (typeof caches === 'undefined') return null
   const token = crypto.randomUUID()
-  await (await caches.open(CACHE)).put(accessKey(pageDir), new Response(JSON.stringify({ realm, token })))
+  await (await caches.open(CACHE)).put(accessKey(realm), new Response(JSON.stringify({ token })))
   return token
 }
 
-/** Close the storage of whichever realm was open; what is stored stays. */
-export async function revokeStorage(pageDir: string): Promise<void> {
+/** Close `realm`'s storage if `token` still opens it; what is stored stays. */
+export async function revokeStorage(realm: string, token: string): Promise<void> {
   if (typeof caches === 'undefined') return
-  await (await caches.open(CACHE)).delete(accessKey(pageDir))
+  const cache = await caches.open(CACHE)
+  const stored = await cache.match(accessKey(realm))
+  const access: unknown = stored ? await stored.json().catch(() => null) : null
+  if (access != null && typeof access === 'object' && 'token' in access && access.token === token) await cache.delete(accessKey(realm))
 }

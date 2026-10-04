@@ -90,11 +90,12 @@ describe('editor host', () => {
         opened(name)
         return {
           put: async (key: string, value: Response) => void storage.set(key, await value.text()),
+          match: async (key: string) => (storage.has(key) ? new Response(storage.get(key)) : undefined),
           delete: async (key: string) => storage.delete(key)
         }
       }
     })
-    const access = (): { realm: string; token: string } | null => JSON.parse(storage.get(`${PAGE_DIR}preview/__server`) ?? 'null')
+    const access = (): { token: string } | null => JSON.parse(storage.get(`${PAGE_DIR}preview/my-scene/__server`) ?? 'null')
     history.replaceState(null, '', '/?realm=boedo.dcl.eth&position=3,4')
     // the bridge scene: the host's travels reach it, and it answers each
     const travel = vi.fn()
@@ -175,7 +176,7 @@ describe('editor host', () => {
     // the host, not the editor, turns on the in-tab server for the previewed realm, before the trip,
     // with a fresh token that opens that realm's storage and no other
     const { token } = access()!
-    expect(access()).toEqual({ realm, token: expect.stringMatching(/^[0-9a-f-]{36}$/) })
+    expect(access()).toEqual({ token: expect.stringMatching(/^[0-9a-f-]{36}$/) })
     expect(opened).toHaveBeenCalledWith('dcl-editor-storage-v1')
     expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/local_scene_server ${realm} ${token}`, `/reload ${own}`, `set_scene ${own}`])
     await expect(host().engineConsole('/local_scene_server off'), 'the editor cannot').rejects.toThrow('not-allowed')

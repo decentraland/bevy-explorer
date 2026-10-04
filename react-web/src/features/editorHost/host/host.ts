@@ -207,16 +207,21 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
   // an authoritative preview runs its server in this tab, only while a project is previewed; one
   // switch at a time, so turning one preview off never closes the next one's storage
   let switching: Promise<void> = Promise.resolve()
+  let grant: { realm: string; token: string } | null = null
   const serveLocally = (realm: string | null): Promise<void> => {
     switching = switching.then(async () => {
       try {
+        const granted = grant
         if (realm == null) {
           if (previewing != null) return
-          await revokeStorage(pageDir)
+          grant = null
+          if (granted != null) await revokeStorage(granted.realm, granted.token)
           await deps.engineConsole('/local_scene_server off')
           return
         }
-        const token = await grantStorage(pageDir, realm)
+        const token = await grantStorage(realm)
+        grant = token == null ? null : { realm, token }
+        if (granted != null && granted.realm !== realm) await revokeStorage(granted.realm, granted.token)
         await deps.engineConsole(`/local_scene_server ${realm}${token == null ? '' : ` ${token}`}`)
       } catch (e) {
         console.error('[editor host] switching the in-tab scene server failed', e)
