@@ -1307,13 +1307,6 @@ fn on_handshake_response(
     }
 }
 
-/// Whether the current realm serves scenes off a local `dcl start` dev server, which the preview
-/// server signals by listing the project's parcels in its `about`. Those realms all advertise the
-/// same realm name, so their Pulse partition is keyed differently — see `resolve_lsd_realm`.
-fn is_local_realm(realm: &CurrentRealm) -> bool {
-    realm.is_local()
-}
-
 /// Keep a listening server's routing in step with the scenes it hosts: which context owns each
 /// hosted parcel, a Pulse `Transport` per context, and the AoI the whole lot adds up to.
 /// Registered in server mode only — a client has no listener and no server contexts.
@@ -1562,7 +1555,7 @@ fn flush_listener_aoi(session: &mut PulseSession, now: f64) {
 /// `b64-` addressed scene has loaded.
 fn announced_realm(session: &PulseSession, realm: &CurrentRealm) -> Option<String> {
     let name = realm_name(session, realm);
-    if name.is_none() && !common::structs::multi_tenant() && !is_local_realm(realm) {
+    if name.is_none() && !common::structs::multi_tenant() && !realm.is_local() {
         warn!("pulse: no realm name yet (no peers will be visible)");
     }
     name
@@ -1582,7 +1575,7 @@ fn realm_name(session: &PulseSession, realm: &CurrentRealm) -> Option<String> {
         return None;
     }
 
-    if is_local_realm(realm) {
+    if realm.is_local() {
         // Every `dcl start` dev server advertises the same realm name, so a preview announces the
         // LSD key derived from the scene it serves instead — see `resolve_lsd_realm`.
         let LsdRealm::Resolved(key) = &session.lsd_realm else {
@@ -1665,7 +1658,7 @@ fn resolve_lsd_realm_of(
     if realm_changed {
         session.lsd_realm = LsdRealm::Unresolved { retry_at: 0.0 };
     }
-    if !is_local_realm(realm) {
+    if !realm.is_local() {
         return;
     }
 
