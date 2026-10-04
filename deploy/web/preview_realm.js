@@ -27,6 +27,14 @@
     const json = (value) => respond(JSON.stringify(value), 200, JSON_TYPE);
     const notFound = () => respond(null, 404, BYTES_TYPE);
 
+    // Scenes run in sandbox workers on this origin and learn the preview's url from their realm
+    // info; a project's files are the engine's and the page's alone. `client` is the url of the
+    // service worker client that sent the request, undefined when it has none.
+    function fromScene(client) {
+        return typeof client !== 'string' || new URL(client).pathname.endsWith('/sandbox_worker.bundle.js');
+    }
+    const forbidden = () => respond(null, 403, BYTES_TYPE);
+
     // `<previewRoot><projectId>/<path>` -> { realm, path }, or null for anything else.
     function parse(url, previewRoot) {
         const { origin, pathname } = new URL(url);
@@ -125,9 +133,10 @@
 
     // `store` is the preview Cache (anything with `match(url)`). Always answers, and from the
     // store alone, but for the pointers a catalyst owns (activeEntities).
-    async function handle(request, previewRoot, store) {
+    async function handle(request, previewRoot, store, client) {
         const target = parse(request.url, previewRoot);
         if (!target) return notFound();
+        if (fromScene(client)) return forbidden();
         const entity = await readEntity(store, target.realm);
         if (!entity) return notFound();
 
@@ -146,7 +155,8 @@
 
     // The editor package's own scene (react-web host/editorScene.ts): the page stores `about` and
     // the files it checked against their hashes, under `<root><entityId>/`; this serves them as stored.
-    async function handleEditorScene(request, root, store) {
+    async function handleEditorScene(request, root, store, client) {
+        if (fromScene(client)) return forbidden();
         const { origin, pathname } = new URL(request.url);
         const path = (origin + pathname).slice(root.length);
         if (request.method !== 'GET' || !/^baf[a-z2-7]+\/(about|contents\/baf[a-z2-7]+)$/.test(path)) return notFound();

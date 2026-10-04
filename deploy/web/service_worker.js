@@ -53,11 +53,11 @@ self.addEventListener('fetch', (event) => {
     const request = event.request;
 
     if (request.url.startsWith(PREVIEW_ROOT)) {
-        event.respondWith(servePreviewRealm(request));
+        event.respondWith(servePreviewRealm(request, event.clientId));
         return;
     }
     if (request.url.startsWith(EDITOR_SCENE_ROOT)) {
-        event.respondWith(serveEditorScene(request));
+        event.respondWith(serveEditorScene(request, event.clientId));
         return;
     }
 
@@ -74,10 +74,16 @@ self.addEventListener('fetch', (event) => {
     }
 });
 
-async function serveEditorScene(request) {
+// The url of the document or worker that sent a request (preview_realm.js refuses scenes' sandboxes).
+async function clientUrl(clientId) {
+    const client = clientId ? await self.clients.get(clientId) : undefined;
+    return client ? client.url : undefined;
+}
+
+async function serveEditorScene(request, clientId) {
     if (!previewRealm) return unavailable();
-    const cache = await caches.open(EDITOR_SCENE_CACHE_NAME);
-    return previewRealm.handleEditorScene(request, EDITOR_SCENE_ROOT, cache);
+    const [cache, client] = await Promise.all([caches.open(EDITOR_SCENE_CACHE_NAME), clientUrl(clientId)]);
+    return previewRealm.handleEditorScene(request, EDITOR_SCENE_ROOT, cache, client);
 }
 
 function unavailable() {
@@ -93,10 +99,10 @@ function unavailable() {
     });
 }
 
-async function servePreviewRealm(request) {
+async function servePreviewRealm(request, clientId) {
     if (!previewRealm) return unavailable();
-    const cache = await caches.open(PREVIEW_CACHE_NAME);
-    return previewRealm.handle(request, PREVIEW_ROOT, cache);
+    const [cache, client] = await Promise.all([caches.open(PREVIEW_CACHE_NAME), clientUrl(clientId)]);
+    return previewRealm.handle(request, PREVIEW_ROOT, cache, client);
 }
 
 /**

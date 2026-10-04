@@ -9,7 +9,8 @@ interface PreviewStore {
 
 declare global {
   var dclPreviewRealm: {
-    handle: (request: Request, previewRoot: string, store: PreviewStore) => Promise<Response>
+    handle: (request: Request, previewRoot: string, store: PreviewStore, client?: string) => Promise<Response>
+    handleEditorScene: (request: Request, root: string, store: PreviewStore, client?: string) => Promise<Response>
   }
 }
 
@@ -43,12 +44,17 @@ const store = storeOf({
   [`${ROOT}Bad_Id/__manifest`]: manifest
 })
 
-const get = (url: string): Promise<Response> => dclPreviewRealm.handle(new Request(url), ROOT, store)
+// the service worker's client for the request: the page (and the engine on it), or a scene's sandbox
+const PAGE = 'https://play.example/bevy-web/'
+const SANDBOX = 'https://play.example/bevy-web/engine/pkg/sandbox_worker.bundle.js'
+
+const get = (url: string, client: string | null = PAGE): Promise<Response> => dclPreviewRealm.handle(new Request(url), ROOT, store, client ?? undefined)
 const active = (pointers: string[]): Promise<Response> =>
   dclPreviewRealm.handle(
     new Request(`${REALM}content/entities/active`, { method: 'POST', body: JSON.stringify({ pointers }) }),
     ROOT,
-    store
+    store,
+    PAGE
   )
 
 describe('preview realm', () => {
@@ -102,6 +108,21 @@ describe('preview realm', () => {
 
     // the engine loads the scene entity through the contents route
     expect(await (await get(`${REALM}content/contents/${ENTITY_ID}`)).json()).toEqual(entity)
+  })
+
+  it('never answers a scene’s own requests, whose realm info names the preview', async () => {
+    for (const path of ['about', `content/contents/${GAME_HASH}`, `content/contents/${ENTITY_ID}`]) {
+      // a client the worker cannot name is refused too
+      for (const client of [SANDBOX, null]) {
+        const res = await get(`${REALM}${path}`, client)
+        expect([path, client, res.status]).toEqual([path, client, 403])
+      }
+    }
+    const editorRoot = `${PAGE}editor-scene/`
+    const editorStore = storeOf({ [`${editorRoot}bafkreiabc/about`]: '{}' })
+    const editorAbout = (client: string): Promise<Response> =>
+      dclPreviewRealm.handleEditorScene(new Request(`${editorRoot}bafkreiabc/about`), editorRoot, editorStore, client)
+    expect([(await editorAbout(PAGE)).status, (await editorAbout(SANDBOX)).status]).toEqual([200, 403])
   })
 
   it('answers 404, never the network, for everything it does not hold', async () => {

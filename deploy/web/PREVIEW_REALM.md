@@ -151,4 +151,8 @@ current entity is kept: staging another one deletes the rest.
 - Scene code cannot write the store: `engine/sandbox_worker.js` deletes `caches` (and `indexedDB`,
   `navigator.storage`) from the scene worker before any scene code runs, and the service worker
   itself never writes this cache. At most a scene can read preview URLs with `fetch`.
+- Nor can scene code read it, though its realm info names the preview's url: every route here and
+  under `editor-scene/` answers 403 to a request whose service worker client is a scene's sandbox
+  (`engine/pkg/sandbox_worker.bundle.js`), or that has no client. That covers its `fetch`, XHR and
+  `import()` alike.
 - Project bytes are same-origin with the page, hence the headers above.
