@@ -392,6 +392,11 @@ impl CrdtContexts {
             .copied()
             .or_else(|| (!common::structs::multi_tenant()).then(|| self.shared()))
     }
+
+    /// The context of a scene root: its own [`SceneCrdtContext`] when it has one, else by hash.
+    pub fn for_scene(&self, own: Option<&SceneCrdtContext>, hash: &str) -> Entity {
+        own.map_or_else(|| self.for_scene_hash(hash), |c| c.0)
+    }
 }
 
 impl GlobalCrdtState {
