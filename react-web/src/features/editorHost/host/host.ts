@@ -6,6 +6,7 @@ import type { EditorHudMode } from '../hudMode'
 import { PROJECT_ID, type EditorServices, type EditorSource } from '../source'
 import { CID_PATTERN } from './cid'
 import { sceneIdFromAbout, stageEditorScene } from './editorScene'
+import { grantStorage, revokeStorage } from './previewStorage'
 import type { Signer } from './signer'
 // Vite's worker pipeline is what bundles a file on its own; this one is loaded by script tag.
 import signerUrl from './signer.ts?worker&url'
@@ -203,12 +204,25 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
   const readClock = (): void => {
     clock ??= deps.engineConsole('/time').then(clockRestore, () => null)
   }
-  // an authoritative preview runs its server in this tab, only while a project is previewed
-  const serveLocally = (realm: string | null): void => {
-    if (realm == null && previewing != null) return
-    deps
-      .engineConsole(`/local_scene_server ${realm ?? 'off'}`)
-      .catch((e: unknown) => console.error('[editor host] switching the in-tab scene server failed', e))
+  // an authoritative preview runs its server in this tab, only while a project is previewed; one
+  // switch at a time, so turning one preview off never closes the next one's storage
+  let switching: Promise<void> = Promise.resolve()
+  const serveLocally = (realm: string | null): Promise<void> => {
+    switching = switching.then(async () => {
+      try {
+        if (realm == null) {
+          if (previewing != null) return
+          await revokeStorage(pageDir)
+          await deps.engineConsole('/local_scene_server off')
+          return
+        }
+        const token = await grantStorage(pageDir, realm)
+        await deps.engineConsole(`/local_scene_server ${realm}${token == null ? '' : ` ${token}`}`)
+      } catch (e) {
+        console.error('[editor host] switching the in-tab scene server failed', e)
+      }
+    })
+    return switching
   }
 
   const leave = (): void => {
@@ -237,7 +251,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     const back = home
     home = null
     if (back == null) {
-      serveLocally(null)
+      void serveLocally(null)
       return
     }
     returning = back
@@ -247,7 +261,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       .catch((e: unknown) => console.error('[editor host] travelling back failed', e))
       .finally(() => {
         if (returning === back) returning = null
-        serveLocally(null)
+        void serveLocally(null)
       })
   }
 
@@ -280,7 +294,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       // no trailing slash: the engine appends /about
       const realm = `${pageDir}preview/${projectId}`
       // before the trip, so the scene room is the in-tab one from the first frame
-      serveLocally(realm)
+      await serveLocally(realm)
       await deps.travel(realm, { x: Number(parcel[1]), y: Number(parcel[2]) })
     },
     spawnEditorScene() {

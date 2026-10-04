@@ -220,6 +220,7 @@ pub async fn op_kernel_fetch_headers(
             uri,
             meta,
             scene: None,
+            server: false,
             response: sx,
         })?;
 

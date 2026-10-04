@@ -81,6 +81,8 @@ impl Plugin for ServerRolePlugin {
 struct LocalSceneServerCommand {
     /// realm url, `off`, or nothing for the current realm
     realm: Option<String>,
+    /// the secret the server copy's storage requests to that realm carry
+    storage_token: Option<String>,
 }
 
 fn local_scene_server_cmd(
@@ -88,7 +90,11 @@ fn local_scene_server_cmd(
     mut local_server: ResMut<LocalSceneServer>,
     realm: Res<CurrentRealm>,
 ) {
-    let Some(Ok(LocalSceneServerCommand { realm: target })) = input.take() else {
+    let Some(Ok(LocalSceneServerCommand {
+        realm: target,
+        storage_token,
+    })) = input.take()
+    else {
         return;
     };
     let target = match target.as_deref() {
@@ -102,8 +108,12 @@ fn local_scene_server_cmd(
     };
     info!("{reply}");
     input.reply_ok(reply);
-    if local_server.0 != target {
-        local_server.0 = target;
+    let storage_token = storage_token.filter(|_| target.is_some());
+    if local_server.realm != target || local_server.storage_token != storage_token {
+        *local_server = LocalSceneServer {
+            realm: target,
+            storage_token,
+        };
     }
 }
 
@@ -347,7 +357,10 @@ mod tests {
             about_url: "https://page/preview/p1/about".to_owned(),
             ..Default::default()
         });
-        world.insert_resource(LocalSceneServer(Some("https://page/preview/p2".to_owned())));
+        world.insert_resource(LocalSceneServer {
+            realm: Some("https://page/preview/p2".to_owned()),
+            storage_token: None,
+        });
         world.init_resource::<LocalSceneServers>();
         world.init_resource::<LiveScenes>();
         world.init_resource::<PortableScenes>();
@@ -365,7 +378,7 @@ mod tests {
 
         assert_eq!(copies(&mut world), vec![], "another realm's switch");
 
-        world.resource_mut::<LocalSceneServer>().0 = Some("https://page/preview/p1".to_owned());
+        world.resource_mut::<LocalSceneServer>().realm = Some("https://page/preview/p1".to_owned());
         assert_eq!(copies(&mut world), vec![authoritative]);
         let rooms = world.resource::<LocalSceneServers>();
         assert!(rooms.0.contains_key("auth") && !rooms.0.contains_key("plain"));
