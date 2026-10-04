@@ -54,6 +54,16 @@ describe('editor host signing', () => {
       await expect(host().signedFetch(url)).rejects.toThrow('not-allowed')
     }
     await expect(host().signedFetch('http://localhost:8787/projects')).rejects.toThrow('not-signed-in')
+    // a stored login for another wallet than the one in-world signs nothing
+    const other = createUnsafeIdentity()
+    const otherKey = `single-sign-on-${other.address.toLowerCase()}`
+    const otherIdentity = await Authenticator.initializeAuthChain(other.address, createUnsafeIdentity(), 60, async (message) =>
+      Authenticator.createSignature(other, message)
+    )
+    localStorage.setItem(otherKey, JSON.stringify(otherIdentity))
+    session.profile.data = { address: owner.address.toLowerCase(), name: 'Tester', hasClaimedName: false, isGuest: false }
+    await expect(host().signedFetch('http://localhost:8787/projects')).rejects.toThrow('not-signed-in')
+    localStorage.removeItem(otherKey)
     expect(fetched).not.toHaveBeenCalled()
 
     await signIn()
