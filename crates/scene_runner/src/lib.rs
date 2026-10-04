@@ -801,6 +801,25 @@ struct RealmInfoCache {
     server: HashMap<String, Vec<u8>>,
 }
 
+/// The realm's base url and name as scenes are told them (`PbRealmInfo`).
+pub fn realm_base_url_and_name(realm: &CurrentRealm) -> (String, String) {
+    let base_url = realm
+        .about_url
+        .strip_suffix("/about")
+        .unwrap_or(&realm.about_url);
+    let realm_name = realm.config.realm_name.clone().unwrap_or_default();
+    // an orchestrated engine has no realm name of its own, and stripping `/` off the end of
+    // the content url is not what this is for
+    let base_url = if realm_name.is_empty() {
+        base_url
+    } else {
+        base_url
+            .strip_suffix(&format!("/{realm_name}"))
+            .unwrap_or(base_url)
+    };
+    (base_url.to_owned(), realm_name)
+}
+
 fn send_scene_updates(
     mut scenes: Query<(
         Entity,
@@ -836,22 +855,9 @@ fn send_scene_updates(
         || scene_realms.is_changed()
         || preview_mode.is_changed()
     {
-        let base_url = realm
-            .about_url
-            .strip_suffix("/about")
-            .unwrap_or(&realm.about_url);
-        let realm_name = realm.config.realm_name.clone().unwrap_or_default();
-        // an orchestrated engine has no realm name of its own, and stripping `/` off the end of
-        // the content url is not what this is for
-        let base_url = if realm_name.is_empty() {
-            base_url
-        } else {
-            base_url
-                .strip_suffix(&format!("/{realm_name}"))
-                .unwrap_or(base_url)
-        };
+        let (base_url, realm_name) = realm_base_url_and_name(&realm);
         let mut realm_info = PbRealmInfo {
-            base_url: base_url.to_owned(),
+            base_url,
             realm_name,
             network_id: realm.config.network_id.unwrap_or_default() as i32,
             comms_adapter: realm

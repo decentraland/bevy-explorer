@@ -24,10 +24,11 @@ use common::{
     },
     sets::SceneSets,
     structs::{
-        server_mode, AvatarDynamicState, EngineMovementControl, PermissionType, PlayerTeleported,
-        PreviewCommand, PrimaryCamera, PrimaryUser, StartupScenes, ZOrder,
+        server_mode, AvatarDynamicState, CurrentRealm, EngineMovementControl, PermissionType,
+        PlayerTeleported, PreviewCommand, PreviewMode, PrimaryCamera, PrimaryUser, SceneMeta,
+        StartupScenes, ZOrder,
     },
-    util::{AsH160, TaskCompat, TaskExt},
+    util::{AsH160, TaskCompat, TaskExt, UrlLoopbackExt},
 };
 use comms::{
     global_crdt::{CrdtContexts, ForeignPlayer},
@@ -51,11 +52,14 @@ use scene_runner::{
         LiveScenes, PortableScenes, PortableSource, SceneLoading, SuperUserScene, PARCEL_SIZE,
     },
     permissions::Permission,
+    realm_base_url_and_name,
     renderer_context::RendererSceneContext,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
     ContainingScene, OutOfWorld, SceneEntity,
 };
+use serde::Serialize;
 use serde_json::{json, Value};
+use system_bridge::SystemApi;
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
 use user_input::avatar_movement::{ActivePlayerComponent, AvatarMovement, AvatarMovementInfo};
@@ -2146,9 +2150,41 @@ fn handle_spawned_command(
     })
 }
 
-#[allow(clippy::type_complexity)]
+#[derive(Serialize, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+struct SignedFetchMetaRealm {
+    hostname: String,
+    protocol: String,
+    server_name: String,
+}
+
+#[derive(Serialize, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+struct SignedFetchMeta {
+    origin: Option<String>,
+    scene_id: Option<String>,
+    parcel: Option<String>,
+    tld: Option<String>,
+    network: Option<String>,
+    is_guest: Option<bool>,
+    realm: SignedFetchMetaRealm,
+    signer: String,
+}
+
+// the server's fake player has no identity (#1102), and the server never signs as a guest
+fn signed_fetch_is_guest(server: bool, profile: Option<&UserProfile>) -> Result<bool, String> {
+    if server {
+        return Ok(false);
+    }
+    profile
+        .map(|profile| !profile.content.has_connected_web3.unwrap_or(false))
+        .ok_or_else(|| "no player identity!".to_owned())
+}
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn handle_sign_request(
     mut events: EventReader<RpcCall>,
+    mut system_events: EventReader<SystemApi>,
     mut tasks: Local<
         Vec<(
             RpcResultSender<Result<Vec<(String, String)>, String>>,
@@ -2158,16 +2194,31 @@ fn handle_sign_request(
     wallet: Res<Wallet>,
     // present only in the headless server binary; None everywhere else
     delegations: Option<Res<wallet::delegation::StorageDelegations>>,
+    realm: Res<CurrentRealm>,
+    scene_realms: Res<comms::global_crdt::SceneRealms>,
+    server_rooms: Res<comms::ServerSceneRooms>,
+    preview_mode: Res<PreviewMode>,
+    profile: Res<CurrentUserProfile>,
+    ipfs: IpfsAssetServer,
 ) {
     for ev in events.read() {
         if let RpcCall::SignRequest {
             method,
             uri,
-            meta,
             scene,
             response,
         } = ev
         {
+            let https_or_local = url::Url::parse(uri).is_ok_and(|url| {
+                preview_mode.is_preview
+                    || ["https", "wss"].contains(&url.scheme())
+                    || url.is_loopback()
+            });
+            if !https_or_local {
+                response.send(Err(format!("URL scheme must be `https` (request `{uri}`)")));
+                continue;
+            }
+
             let Ok(uri) = Uri::try_from(uri) else {
                 response.send(Err(format!("failed to parse uri: {uri}")));
                 continue;
@@ -2178,7 +2229,7 @@ fn handle_sign_request(
             if let Some(delegation) = delegations
                 .as_ref()
                 .filter(|_| wallet::delegation::is_storage_request(&uri))
-                .and_then(|d| scene.as_deref().and_then(|s| d.get(s)))
+                .and_then(|d| d.get(scene))
                 .filter(|d| {
                     !d.is_expired(
                         web_time::SystemTime::now()
@@ -2200,6 +2251,70 @@ fn handle_sign_request(
                 tasks.push((response.clone(), task));
                 continue;
             }
+
+            let is_guest = match signed_fetch_is_guest(server_mode(), profile.profile.as_ref()) {
+                Ok(is_guest) => is_guest,
+                Err(e) => {
+                    response.send(Err(e));
+                    continue;
+                }
+            };
+            let (base_url, realm_name) = realm_base_url_and_name(&realm);
+            // an orchestrated engine is told each scene's realm, as for the scene's realm info
+            let realm_name = if server_rooms.0.contains_key(scene) {
+                scene_realms
+                    .for_scene_hash(scene, realm.config.realm_name.as_deref())
+                    .unwrap_or_default()
+            } else {
+                realm_name
+            };
+
+            let method = method.clone();
+            let scene = scene.clone();
+            let wallet = wallet.clone();
+            let ipfs = ipfs.ipfs().clone();
+            let task = IoTaskPool::get().spawn_compat(async move {
+                let (definition, _) = ipfs
+                    .entity_definition(&scene)
+                    .await
+                    .ok_or_else(|| anyhow!("no entity definition"))?;
+                let scene_meta =
+                    serde_json::from_str::<SceneMeta>(&definition.metadata.unwrap_or_default())?;
+
+                let meta = SignedFetchMeta {
+                    origin: Some(base_url.clone()),
+                    scene_id: Some(scene),
+                    parcel: Some(scene_meta.scene.base),
+                    tld: Some("org".to_owned()),
+                    network: Some("mainnet".to_owned()),
+                    is_guest: Some(is_guest),
+                    realm: SignedFetchMetaRealm {
+                        hostname: base_url,
+                        protocol: "v3".to_owned(),
+                        server_name: realm_name,
+                    },
+                    signer: "decentraland-kernel-scene".to_owned(),
+                };
+                debug!("signed fetch meta {:?}", meta);
+
+                sign_request(&method, &uri, &wallet, serde_json::to_string(&meta)?).await
+            });
+            tasks.push((response.clone(), task));
+        }
+    }
+
+    for ev in system_events.read() {
+        if let SystemApi::SignRequest {
+            method,
+            uri,
+            meta,
+            response,
+        } = ev
+        {
+            let Ok(uri) = Uri::try_from(uri) else {
+                response.send(Err(format!("failed to parse uri: {uri}")));
+                continue;
+            };
 
             let method = method.clone();
             let meta = meta.to_owned().unwrap_or_default();
@@ -2457,5 +2572,38 @@ mod readfile_url_guard_tests {
                 "{s} is scene content and must still be readable"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod signed_fetch_identity_tests {
+    use super::*;
+
+    fn profile(has_connected_web3: Option<bool>) -> UserProfile {
+        UserProfile {
+            version: 0,
+            content: SerializedProfile {
+                has_connected_web3,
+                ..Default::default()
+            },
+            base_url: Default::default(),
+        }
+    }
+
+    #[test]
+    fn server_is_not_guest() {
+        assert!(!signed_fetch_is_guest(true, None).unwrap());
+        assert!(!signed_fetch_is_guest(true, Some(&profile(None))).unwrap());
+    }
+
+    #[test]
+    fn client_without_identity_errors() {
+        assert!(signed_fetch_is_guest(false, None).is_err());
+    }
+
+    #[test]
+    fn client_is_guest_unless_web3_connected() {
+        assert!(signed_fetch_is_guest(false, Some(&profile(None))).unwrap());
+        assert!(!signed_fetch_is_guest(false, Some(&profile(Some(true)))).unwrap());
     }
 }
