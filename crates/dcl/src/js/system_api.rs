@@ -214,12 +214,11 @@ pub async fn op_kernel_fetch_headers(
 
     state
         .borrow_mut()
-        .borrow_mut::<RpcCalls>()
-        .push(RpcCall::SignRequest {
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SignRequest {
             method: method.unwrap_or_else(|| String::from("get")),
             uri,
             meta,
-            scene: None,
             response: sx,
         })?;
 
@@ -1222,4 +1221,51 @@ pub async fn op_read_block_update_stream(
     state.borrow_mut().put(receiver);
 
     res
+}
+
+#[cfg(test)]
+mod kernel_fetch_tests {
+    use super::*;
+    use crate::js::test_state::TestState;
+    use futures_lite::future::{block_on, poll_once};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    fn fetch(
+        state: &Rc<RefCell<TestState>>,
+    ) -> impl std::future::Future<Output = Result<Vec<(String, String)>, anyhow::Error>> {
+        op_kernel_fetch_headers(
+            state.clone(),
+            "https://example.com".to_owned(),
+            None,
+            Some("{}".to_owned()),
+        )
+    }
+
+    #[test]
+    fn goes_to_the_system_channel() {
+        let (sx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut state = TestState::default();
+        state.put(RpcCalls::default());
+        state.put(SuperUserScene(sx));
+        let state = Rc::new(RefCell::new(state));
+
+        assert!(block_on(poll_once(fetch(&state))).is_none());
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(SystemApi::SignRequest { meta: Some(meta), .. }) if meta == "{}"
+        ));
+        assert!(state.borrow().borrow::<RpcCalls>().is_empty());
+    }
+
+    // an ordinary scene's state has no system channel
+    #[test]
+    fn signs_nothing_without_the_system_channel() {
+        let mut state = TestState::default();
+        state.put(RpcCalls::default());
+        let state = Rc::new(RefCell::new(state));
+
+        let result = catch_unwind(AssertUnwindSafe(|| block_on(poll_once(fetch(&state)))));
+        assert!(result.is_err());
+        assert!(state.borrow().borrow::<RpcCalls>().is_empty());
+    }
 }

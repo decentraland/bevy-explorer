@@ -78,6 +78,14 @@ pub enum SystemApi {
     Logout,
     GetSettings(RpcResultSender<Vec<SettingInfo>>),
     SetSetting(String, f32),
+    /// Sign a request with the engine wallet, with caller-supplied metadata. Scene-originated
+    /// signing goes through `RpcCall::SignRequest`, whose metadata the engine builds.
+    SignRequest {
+        method: String,
+        uri: String,
+        meta: Option<String>,
+        response: RpcResultSender<Result<Vec<(String, String)>, String>>,
+    },
     SetAvatar(SetAvatarData, RpcResultSender<Result<u32, String>>),
     GetNativeInput(RpcResultSender<InputIdentifier>),
     GetBindings(RpcResultSender<BindingsData>),

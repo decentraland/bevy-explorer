@@ -25,6 +25,7 @@ bevy_dui = { workspace = true }
 bevy_console = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 alloy-core = { workspace = true }
 urlencoding = { workspace = true }

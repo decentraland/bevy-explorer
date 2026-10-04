@@ -302,10 +302,9 @@ pub enum RpcCall {
     SignRequest {
         method: String,
         uri: String,
-        meta: Option<String>,
-        /// scene hash of the requesting scene, when the request originates from scene JS —
-        /// selects a per-scene storage delegation in server mode
-        scene: Option<String>,
+        /// scene hash of the requesting scene — the engine builds the signed metadata from it,
+        /// and it selects a per-scene storage delegation in server mode
+        scene: String,
         response: RpcResultSender<Result<Vec<(String, String)>, String>>,
     },
     ReadFile {
