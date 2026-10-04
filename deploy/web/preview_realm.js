@@ -249,12 +249,13 @@
 
     // `store` is the preview Cache (anything with `match(url)`), `storage` the storage cache
     // (`match`, `put`). Always answers, and from the stores alone, but for the pointers a
-    // catalyst owns (activeEntities).
-    async function handle(request, previewRoot, store, storage) {
+    // catalyst owns (activeEntities). Storage routes take any client: their token is the gate.
+    async function handle(request, previewRoot, store, storage, client) {
         const target = parse(request.url, previewRoot);
         if (!target) return notFound();
         const route = STORAGE_ROUTE.exec(target.path);
         if (route) return handleStorage(request, target.realm, route, storage);
+        if (fromScene(client)) return forbidden();
         const entity = await readEntity(store, target.realm);
         if (!entity) return notFound();
 
