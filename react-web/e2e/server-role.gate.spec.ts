@@ -1,7 +1,8 @@
 // The in-tab server gate: an authoritative project previewed in the editor runs its server in the
 // REAL engine, switched on by the page's editor host for that preview alone. The editor's starter is
 // authoritative: its server copy runs the server branch (isServer() true), a client message is
-// applied by it on Play, Stop restarts it with the player's copy, and leaving turns it off; the same
+// applied by it on Play, Stop restarts it with the player's copy, and leaving turns it off. What the
+// server stores outlives Stop and a page reload, and the player's copy cannot read it. The same
 // project made non-authoritative gets no server copy. Run: see playwright.gate.config.ts.
 
 import { appendFileSync } from 'node:fs'
@@ -10,9 +11,13 @@ import { SERVERS, ENTRY, HOME, HOME_REALM, NAV, SCENES, UI, keepOffProduction } 
 
 const PROJECT_NAME = 'Server gate'
 
-// replaces the starter's code: the server owns a counter the client asks it to bump once it runs
+// replaces the starter's code: the server owns a counter the client asks it to bump once it runs,
+// and keeps how many bumps it has ever applied in its storage
 const SCENE = `import { engine, Schemas } from '@dcl/sdk/ecs'
 import { isServer, registerMessages, syncEntity } from '@dcl/sdk/network'
+import { Storage } from '@dcl/sdk/server'
+import { getRealm } from '~system/Runtime'
+import { signedFetch } from '~system/SignedFetch'
 
 const Counter = engine.defineComponent('srvgate:Counter', { value: Schemas.Number })
 const room = registerMessages({
@@ -26,15 +31,23 @@ export function main() {
     const counter = engine.addEntity()
     Counter.create(counter, { value: 0 })
     syncEntity(counter, [Counter.componentId], 1)
-    room.onMessage('bump', (data, context) => {
+    room.onMessage('bump', async (data, context) => {
       const value = Counter.get(counter).value + data.by
       Counter.getMutable(counter).value = value
-      console.log('SRVGATE server applied bump from=' + context?.from + ' value=' + value)
+      const stored = (((await Storage.get('bumps')) as number | null) ?? 0) + 1
+      await Storage.set('bumps', stored)
+      console.log('SRVGATE server applied bump from=' + context?.from + ' value=' + value + ' stored=' + stored)
       void room.send('bumped', { value })
     })
   } else {
     console.log('SRVGATE client isServer()=false')
-    room.onMessage('bumped', (data) => console.log('SRVGATE client heard bumped value=' + data.value))
+    room.onMessage('bumped', async (data) => {
+      console.log('SRVGATE client heard bumped value=' + data.value)
+      // the server's storage, asked for by the player's copy directly
+      const { realmInfo } = await getRealm({})
+      const res = await signedFetch({ url: realmInfo!.baseUrl + '/values/bumps' })
+      console.log('SRVGATE client storage read status=' + res.status)
+    })
     // a second of running: only after Play, as the editor pauses the scene at its third tick
     let running = 0
     engine.addSystem((dt) => {
@@ -154,7 +167,8 @@ test('an authoritative preview runs its server in the tab, only while the editor
       },
       { name: PROJECT_NAME, source, authoritative }
     )
-  note(`project ${await writeProject(SCENE, true)} has server code`)
+  const projectId = await writeProject(SCENE, true)
+  note(`project ${projectId} has server code`)
 
   const openAt = Date.now()
   await card.click()
@@ -174,7 +188,7 @@ test('an authoritative preview runs its server in the tab, only while the editor
   await expect.poll(frozen, { timeout: 60_000, message: 'the editor paused it' }).toBe(true)
   note(`opened: ${JSON.stringify(since(openAt, /local s(erver|cene server)|SRVGATE/))}`)
 
-  const play = async (): Promise<number> => {
+  const play = async (stored: number): Promise<number> => {
     const at = Date.now()
     await sceneTab.click()
     await run.click()
@@ -191,10 +205,14 @@ test('an authoritative preview runs its server in the tab, only while the editor
         message: 'and the client hears it'
       })
       .toBe(1)
+    expect(since(at, /SRVGATE server applied bump/)[0], 'the stored count goes on from the last run').toContain(`stored=${stored}`)
+    await expect
+      .poll(() => since(at, /SRVGATE client storage read status=/), { timeout: 30_000, message: 'the client asked' })
+      .toEqual([expect.stringContaining('status=403')])
     note(`Play: ${JSON.stringify(since(at, /SRVGATE|local server/))}`)
     return at
   }
-  await play()
+  await play(1)
 
   // Stop restarts the scene from tick 0, and its server with it: Play again counts from 0 again
   const stopAt = Date.now()
@@ -213,7 +231,15 @@ test('an authoritative preview runs its server in the tab, only while the editor
     })
     .toBeGreaterThan(0)
   await expect.poll(frozen, { timeout: 60_000, message: 'paused after Stop' }).toBe(true)
-  await play()
+  await play(2)
+
+  // a page reload straight into the project: the stored count is still there
+  const reloadAt = Date.now()
+  await page.goto(`${ENTRY}?guest=1&editor=${projectId}&realm=${encodeURIComponent(homeRealm)}&position=0,0&${SERVERS}`, { waitUntil: 'commit' })
+  await ui.locator('.eui-toolbar').waitFor({ timeout: 420_000 })
+  await expect.poll(() => since(reloadAt, starts).length, { timeout: 120_000, message: 'a server copy starts after the reload' }).toBe(1)
+  await expect.poll(frozen, { timeout: 60_000, message: 'the editor paused it' }).toBe(true)
+  await play(3)
 
   // leaving the editor turns the server off
   const exitAt = Date.now()
