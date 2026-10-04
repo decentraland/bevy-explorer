@@ -140,7 +140,8 @@ fn spawn_server_copies(
             .spawn((
                 SceneHash(ctx.hash.clone()),
                 SceneLoading::SceneEntity,
-                SceneEntityDefinitionHandle(definition.0.clone()),
+                // weak: a reload must find the definition gone and fetch it again, not this copy's
+                SceneEntityDefinitionHandle(definition.0.clone_weak()),
                 ServerRole { client },
                 SceneCrdtContext(context),
             ))
