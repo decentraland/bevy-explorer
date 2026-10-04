@@ -82,6 +82,19 @@ describe('editor host', () => {
     w.set_url_params = synced
     const engineConsole = vi.fn(async (line: string) => (line === '/time' ? 'time 10:30 -> 10:30, speed 7 (elapsed: 37800)' : ''))
     w.engine_console_command = engineConsole
+    // the service worker's storage cache: who may reach a preview's storage
+    const storage = new Map<string, string>()
+    const opened = vi.fn()
+    vi.stubGlobal('caches', {
+      open: async (name: string) => {
+        opened(name)
+        return {
+          put: async (key: string, value: Response) => void storage.set(key, await value.text()),
+          delete: async (key: string) => storage.delete(key)
+        }
+      }
+    })
+    const access = (): { realm: string; token: string } | null => JSON.parse(storage.get(`${PAGE_DIR}preview/__server`) ?? 'null')
     history.replaceState(null, '', '/?realm=boedo.dcl.eth&position=3,4')
     // the bridge scene: the host's travels reach it, and it answers each
     const travel = vi.fn()
@@ -109,8 +122,8 @@ describe('editor host', () => {
     expect(scripts()).toEqual([])
     expect(w.__dclEditorHost).toBeUndefined()
 
-    const opened = { ...session, create: { ...session.create, open: true } }
-    view.rerender(<Page s={opened} />)
+    const open = { ...session, create: { ...session.create, open: true } }
+    view.rerender(<Page s={open} />)
     expect(screen.getByText('Opening Create…')).toBeInTheDocument()
     await act(async () => {})
     expect(host()).toMatchObject({
@@ -131,7 +144,7 @@ describe('editor host', () => {
     expect(session.create.show).toHaveBeenLastCalledWith(false)
 
     view.rerender(<Page s={session} />)
-    await act(async () => view.rerender(<Page s={opened} />))
+    await act(async () => view.rerender(<Page s={open} />))
     const retry = document.querySelector<HTMLScriptElement>('script[src*="editor.js?retry"]')!
     const unmountHome = vi.fn()
     const editor = { mountHome: vi.fn((_el: HTMLElement, _api: { close: () => void }) => unmountHome), unmount: vi.fn() }
@@ -159,8 +172,12 @@ describe('editor host', () => {
       await expect(host().engineConsole(line), line).rejects.toThrow('not-allowed')
     await host().engineConsole(`/reload ${own}`)
     await host().engineConsole(`set_scene ${own}`)
-    // the host, not the editor, turns on the in-tab server for the previewed realm, before the trip
-    expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/local_scene_server ${realm}`, `/reload ${own}`, `set_scene ${own}`])
+    // the host, not the editor, turns on the in-tab server for the previewed realm, before the trip,
+    // with a fresh token that opens that realm's storage and no other
+    const { token } = access()!
+    expect(access()).toEqual({ realm, token: expect.stringMatching(/^[0-9a-f-]{36}$/) })
+    expect(opened).toHaveBeenCalledWith('dcl-editor-storage-v1')
+    expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/local_scene_server ${realm} ${token}`, `/reload ${own}`, `set_scene ${own}`])
     await expect(host().engineConsole('/local_scene_server off'), 'the editor cannot').rejects.toThrow('not-allowed')
     engineConsole.mockClear()
 
@@ -184,13 +201,15 @@ describe('editor host', () => {
     await act(async () => held!())
     host().openCreatePage()
     await vi.waitFor(() => expect(travel).toHaveBeenLastCalledWith('boedo.dcl.eth', { x: 3, y: 4 }))
-    // off once the player is home; the held trip landing after the reopen left it on
+    // off once the player is home, storage closed; the held trip landing after the reopen left it on
     await vi.waitFor(() =>
       expect(engineConsole.mock.calls.map(([line]) => line).filter((line) => line.startsWith('/local_scene_server'))).toEqual([
-        `/local_scene_server ${realm}`,
+        expect.stringMatching(new RegExp(`^/local_scene_server ${realm} [0-9a-f-]{36}$`)),
         '/local_scene_server off'
       ])
     )
+    expect(access()).toBeNull()
+    vi.unstubAllGlobals()
 
     host().exit()
     bridge.close()
