@@ -58,7 +58,8 @@ mod io {
         JsFuture::from(caches.open(CACHE_NAME)).await?.dyn_into()
     }
 
-    async fn get(cache: &Cache, key: &str) -> Result<Option<Response>, JsValue> {
+    /// The entry under `key`.
+    pub async fn get(cache: &Cache, key: &str) -> Result<Option<Response>, JsValue> {
         let response = JsFuture::from(cache.match_with_str(key)).await?;
         if response.is_undefined() {
             return Ok(None);

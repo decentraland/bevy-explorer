@@ -269,6 +269,7 @@ fn init_asset_cmd(
                             .timeout(std::time::Duration::from_secs(60))
                             .send()
                             .await
+                            .and_then(|resp| resp.error_for_status())
                         {
                             Ok(resp) => match resp.bytes().await {
                                 Ok(bytes) => {
