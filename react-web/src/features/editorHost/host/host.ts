@@ -6,7 +6,7 @@ import type { EditorHudMode } from '../hudMode'
 import { PROJECT_ID, type EditorServices, type EditorSource } from '../source'
 import { CID_PATTERN } from './cid'
 import { sceneIdFromAbout, stageEditorScene } from './editorScene'
-import { grantStorage, revokeStorage } from './previewStorage'
+import { grantStorage, revokeStorage, STORAGE_HEADER } from './previewStorage'
 import type { Signer } from './signer'
 // Vite's worker pipeline is what bundles a file on its own; this one is loaded by script tag.
 import signerUrl from './signer.ts?worker&url'
@@ -43,6 +43,9 @@ export interface DclEditorHostV1 {
   /** fetch a url under `services.projects` as the signed-in wallet. Rejects 'not-allowed' for any
    *  other url and 'not-signed-in' for a guest. */
   signedFetch: (url: string, init?: { method?: string; headers?: Record<string, string>; body?: BodyInit | null }) => Promise<Response>
+  /** fetch `path` (`/values…` or `/players/<address>/values…`) from the previewed project's storage
+   *  as its server copy does. Rejects 'not-allowed' for any other path or with no preview open. */
+  previewStorageFetch: (path: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<Response>
   /** Ask the player to confirm a Worlds deployment, then sign its entity id. Rejects 'cancelled'
    *  when declined and 'not-signed-in' for a guest. */
   signDeployment: (request: DeploymentRequest) => Promise<AuthChainLink[]>
@@ -97,6 +100,8 @@ const EDITOR_COMMANDS = new Set([
   'reload', 'save_composite', 'scene_content', 'scene_logs', 'scene_stats', 'set_component', 'set_component_raw',
   'set_scene', 'texture_camera_screenshot', 'tick_scene', 'time', 'unfreeze_scene'
 ])
+// the routes the editor's Storage tab reads and writes; env keys are the server's alone
+const PREVIEW_STORAGE_PATH = /^(?:values|players\/[^/]+\/values)(?:\/[^/]+)?$/
 // headers the editor may send on a request signed as the player
 const SIGNED_FETCH_HEADERS = new Set(['accept', 'content-type', 'if-match', 'if-none-match'])
 
@@ -332,6 +337,18 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       const own = Object.entries(init?.headers ?? {}).filter(([name]) => SIGNED_FETCH_HEADERS.has(name.toLowerCase()))
       const signed = await (await loadSigner()).signFetch(identity, method, target)
       return fetch(target, { method, body: init?.body, headers: { ...Object.fromEntries(own), ...signed } })
+    },
+    async previewStorageFetch(path, init) {
+      await switching
+      const realm = previewing == null ? null : `${pageDir}preview/${previewing}`
+      const access = grant
+      if (realm == null || access?.realm !== realm) throw new Error('not-allowed')
+      const base = new URL(`${realm}/`)
+      const target = new URL(path.replace(/^\/+/, ''), base)
+      const route = target.href.startsWith(base.href) ? target.pathname.slice(base.pathname.length) : ''
+      if (!PREVIEW_STORAGE_PATH.test(route)) throw new Error('not-allowed')
+      const type = Object.entries(init?.headers ?? {}).filter(([name]) => name.toLowerCase() === 'content-type')
+      return fetch(target.href, { method: init?.method ?? 'GET', body: init?.body, headers: { ...Object.fromEntries(type), [STORAGE_HEADER]: access.token } })
     },
     async signDeployment(request) {
       const identity = deps.login()

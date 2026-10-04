@@ -5,6 +5,9 @@
 // service_worker.js reads it; scenes cannot (sandbox_worker.js deletes `caches`)
 const CACHE = 'dcl-editor-storage-v1'
 
+// the header service_worker.js checks the token in, as the engine sends it
+export const STORAGE_HEADER = 'x-dcl-local-server'
+
 // per realm: every tab on the origin shares the cache
 const accessKey = (realm: string): string => `${realm}/__server`
 
