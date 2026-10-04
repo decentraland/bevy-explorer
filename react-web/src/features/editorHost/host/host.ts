@@ -203,6 +203,13 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
   const readClock = (): void => {
     clock ??= deps.engineConsole('/time').then(clockRestore, () => null)
   }
+  // an authoritative preview runs its server in this tab, only while a project is previewed
+  const serveLocally = (realm: string | null): void => {
+    if (realm == null && previewing != null) return
+    deps
+      .engineConsole(`/local_scene_server ${realm ?? 'off'}`)
+      .catch((e: unknown) => console.error('[editor host] switching the in-tab scene server failed', e))
+  }
 
   const leave = (): void => {
     try {
@@ -229,7 +236,10 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     deps.setMode('off')
     const back = home
     home = null
-    if (back == null) return
+    if (back == null) {
+      serveLocally(null)
+      return
+    }
     returning = back
     const parcel = PARCEL.exec(back.position ?? '')
     deps
@@ -237,6 +247,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       .catch((e: unknown) => console.error('[editor host] travelling back failed', e))
       .finally(() => {
         if (returning === back) returning = null
+        serveLocally(null)
       })
   }
 
@@ -267,7 +278,10 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       home ??= returning ?? { realm: q.get('realm'), position: q.get('position') }
       previewing = projectId
       // no trailing slash: the engine appends /about
-      await deps.travel(`${pageDir}preview/${projectId}`, { x: Number(parcel[1]), y: Number(parcel[2]) })
+      const realm = `${pageDir}preview/${projectId}`
+      // before the trip, so the scene room is the in-tab one from the first frame
+      serveLocally(realm)
+      await deps.travel(realm, { x: Number(parcel[1]), y: Number(parcel[2]) })
     },
     spawnEditorScene() {
       scene ??= (async () => {

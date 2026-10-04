@@ -131,7 +131,7 @@ cargo build --release --bin headless --no-default-features --features headless,l
 ./target/release/headless --realm <url> --location 0,0 --server-mode
 ```
 
-`--local-scene-server` (on web, `localSceneServer` from the embedding host's boot config, or `?localSceneServer` on a page served from localhost) skips the external process: the client runs a hidden server copy of each authoritative scene itself (`isServer()` true, its own `authoritative-server` identity, nothing rendered) and talks to it over an in-engine scene room — for local previews such as the editor's Play. Like the headless server, the copy hears players' movement, emotes and presence from Pulse, through a scene listener of its own on a partition only that tab uses (falling back to the player's in-process movement while Pulse is unreachable).
+`/local_scene_server [realm|off]` (an engine console command; with no argument, the current realm) skips the external process: for the realm it names, the client runs a hidden server copy of each authoritative scene itself (`isServer()` true, its own `authoritative-server` identity, nothing rendered, paused while the player's copy is frozen) and talks to it over an in-engine scene room — for local previews such as the editor's Play, whose host turns it on for the previewed project only (react-web README "Scene editor"). Like the headless server, the copy hears players' movement, emotes and presence from Pulse, through a scene listener of its own on a partition only that tab uses (falling back to the player's in-process movement while Pulse is unreachable).
 
 `--orchestrated` runs it as a multi-scene worker driven over stdin/stdout instead. See [`deploy/headless/launcher/README.md`](deploy/headless/launcher/README.md) for the CLI contract and [`docs/headless-sdk-preview.md`](docs/headless-sdk-preview.md) for how it replaces hammurabi in the SDK preview.
 
@@ -139,7 +139,7 @@ cargo build --release --bin headless --no-default-features --features headless,l
 
 `cargo run --release --bin decentra-bevy -- --help` lists every flag with its description.
 
-The launch parameters shared with the web build — realm, spawn parcel, ui scene, portables, preview, editor, local scene server, content server, pulse server, imposter source, base domain, fps logging, gpu bytes per frame — are declared once, in `crates/system_api_types/src/launch_options.rs`: each field is the native `--flag`, the `engine_run` options key and the entry-url query param, and the react page's parameter table is generated from it. Which of those a link may set without a warning is the page's own policy (`react-web/src/lib/launchGate.ts`). Native-only flags (rendering, imposters, debug, the `--builtin-*` ui pieces) live on `DecentralandArguments` in `src/lib.rs`.
+The launch parameters shared with the web build — realm, spawn parcel, ui scene, portables, preview, editor, content server, pulse server, imposter source, base domain, fps logging, gpu bytes per frame — are declared once, in `crates/system_api_types/src/launch_options.rs`: each field is the native `--flag`, the `engine_run` options key and the entry-url query param, and the react page's parameter table is generated from it. Which of those a link may set without a warning is the page's own policy (`react-web/src/lib/launchGate.ts`). Native-only flags (rendering, imposters, debug, the `--builtin-*` ui pieces) live on `DecentralandArguments` in `src/lib.rs`.
 
 ## Testing
 

@@ -83,8 +83,7 @@ fn delivery(field: &str) -> Delivery {
         | "log_fps"
         | "gpu_bytes_per_frame"
         | "compute_threads" => Launch,
-        // makes the client its own scene authority: an embedding host's call, not a link's
-        "editor" | "local_scene_server" => Host,
+        "editor" => Host,
         "base_domain" => Resolved,
         other => {
             panic!("launch option `{other}` has no web delivery — add it to web_params::delivery")

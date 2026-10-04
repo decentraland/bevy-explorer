@@ -159,7 +159,9 @@ describe('editor host', () => {
       await expect(host().engineConsole(line), line).rejects.toThrow('not-allowed')
     await host().engineConsole(`/reload ${own}`)
     await host().engineConsole(`set_scene ${own}`)
-    expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/reload ${own}`, `set_scene ${own}`])
+    // the host, not the editor, turns on the in-tab server for the previewed realm, before the trip
+    expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/local_scene_server ${realm}`, `/reload ${own}`, `set_scene ${own}`])
+    await expect(host().engineConsole('/local_scene_server off'), 'the editor cannot').rejects.toThrow('not-allowed')
     engineConsole.mockClear()
 
     // the engine's url sync, as boot.js receives it while on the preview realm
@@ -182,6 +184,13 @@ describe('editor host', () => {
     await act(async () => held!())
     host().openCreatePage()
     await vi.waitFor(() => expect(travel).toHaveBeenLastCalledWith('boedo.dcl.eth', { x: 3, y: 4 }))
+    // off once the player is home; the held trip landing after the reopen left it on
+    await vi.waitFor(() =>
+      expect(engineConsole.mock.calls.map(([line]) => line).filter((line) => line.startsWith('/local_scene_server'))).toEqual([
+        `/local_scene_server ${realm}`,
+        '/local_scene_server off'
+      ])
+    )
 
     host().exit()
     bridge.close()

@@ -5,8 +5,6 @@
 // with a line of doc each so the dialog can show what IS accepted, the internal ones just known.
 
 import { WEB_PARAMS } from '../engine/generated'
-import { LOOPBACK_HOST_PARAMS } from './launchGate'
-import { isLoopbackHost } from './systemScene'
 
 export interface AcceptedParam {
   name: string
@@ -53,16 +51,7 @@ export function acceptedEntryParams(): AcceptedParam[] {
 
 /** The entry url's params that nothing reads — ignored, and worth telling the user about.
  *  `hostParams`: host-delivered params this page is acting on (the scene editor's `editor`). */
-export function unrecognisedEntryParams(
-  q: URLSearchParams,
-  hostParams: string[] = [],
-  hostname = location.hostname
-): string[] {
-  const accepted = new Set([
-    ...acceptedEntryParams().map((p) => p.name),
-    ...INTERNAL_PARAMS,
-    ...hostParams,
-    ...(isLoopbackHost(hostname) ? LOOPBACK_HOST_PARAMS : [])
-  ])
+export function unrecognisedEntryParams(q: URLSearchParams, hostParams: string[] = []): string[] {
+  const accepted = new Set([...acceptedEntryParams().map((p) => p.name), ...INTERNAL_PARAMS, ...hostParams])
   return [...new Set(q.keys())].filter((name) => !accepted.has(name))
 }

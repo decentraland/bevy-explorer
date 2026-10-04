@@ -463,6 +463,7 @@ impl Plugin for PulsePlugin {
             Update,
             (
                 connect_pulse,
+                follow_local_server,
                 // ahead of `follow_realm`: a realm change clears the derived key here, so the
                 // re-announce that `follow_realm` may send can't carry the previous realm's one.
                 resolve_lsd_realm,
@@ -557,6 +558,30 @@ fn spawn_driver(config: &PulseTransportConfig) -> (PulseLink, PulseDriverHandle)
     (link, driver)
 }
 
+fn new_session(
+    config: &PulseConfig,
+    realm_override: Option<&PulseRealmOverride>,
+    role: PulseRole,
+    identity: Option<Wallet>,
+    partition_salt: Option<String>,
+) -> PulseSession {
+    PulseSession {
+        link: None,
+        _driver: None,
+        decoder: PulseDecoder::new(config.parcel_grid),
+        role,
+        lsd_realm: LsdRealm::Unresolved { retry_at: 0.0 },
+        realm_override: realm_override.map(|announced| announced.0.clone()),
+        grid: config.parcel_grid,
+        transport_config: config.transport.clone(),
+        server_id: config.server_id.clone(),
+        last_state: None,
+        state: Connection::Down { respawn_at: 0.0 },
+        identity,
+        partition_salt,
+    }
+}
+
 /// Bring a session up once a [`PulseConfig`] is present. No-op afterwards (session exists). The
 /// driver itself isn't spawned here — the session starts in `Down`, and `pump_pulse` builds it on
 /// the first tick, so initial connect and reconnect share one path.
@@ -567,7 +592,6 @@ fn connect_pulse(
     config: Option<Res<PulseConfig>>,
     sessions: Query<(), With<PulseSession>>,
     realm_override: Option<Res<PulseRealmOverride>>,
-    local_server: Option<Res<LocalSceneServer>>,
 ) {
     let Some(config) = config else {
         return;
@@ -582,71 +606,101 @@ fn connect_pulse(
     let Ok(crdt) = crdt.get(context) else {
         return;
     };
-    let session = |role, identity, partition_salt| PulseSession {
-        link: None,
-        _driver: None,
-        decoder: PulseDecoder::new(config.parcel_grid),
-        role,
-        lsd_realm: LsdRealm::Unresolved { retry_at: 0.0 },
-        realm_override: realm_override.as_ref().map(|announced| announced.0.clone()),
-        grid: config.parcel_grid,
-        transport_config: config.transport.clone(),
-        server_id: config.server_id.clone(),
-        last_state: None,
-        state: Connection::Down { respawn_at: 0.0 },
-        identity,
-        partition_salt,
-    };
-
-    if common::structs::server_mode() {
-        commands.spawn(session(
-            PulseRole::Listener(ListenerRole::default()),
-            None,
-            None,
-        ));
+    let role = if common::structs::server_mode() {
+        PulseRole::Listener(ListenerRole::default())
     } else {
-        // this engine's own scene servers listen on a guest identity of their own, whose address
-        // also salts the partition the tab's player and listener share
-        let listener = local_server.is_some_and(|local| local.0).then(|| {
-            let mut wallet = Wallet::default();
-            wallet.finalize_as_guest();
-            wallet
-        });
-        let salt = listener
-            .as_ref()
-            .and_then(Wallet::address)
-            .map(|address| format!("{address:x}")[..16].to_owned());
-        commands.spawn(session(
-            PulseRole::Player(PlayerRole {
-                context,
-                sink: crdt.get_sender(),
-                routing_transport: None,
-                routing_realm: None,
-                replay_pending: false,
-            }),
-            None,
-            salt.clone(),
-        ));
-        if let Some(wallet) = listener {
-            info!(
-                "pulse: in-engine scene listener as guest {:#x}; server copies are fed in-process until it connects",
-                wallet.address().unwrap_or_default()
-            );
-            commands.spawn(session(
-                PulseRole::Listener(ListenerRole {
-                    local: true,
-                    ..default()
-                }),
-                Some(wallet),
-                salt,
-            ));
-        }
-    }
+        PulseRole::Player(PlayerRole {
+            context,
+            sink: crdt.get_sender(),
+            routing_transport: None,
+            routing_realm: None,
+            replay_pending: false,
+        })
+    };
+    commands.spawn(new_session(
+        &config,
+        realm_override.as_deref(),
+        role,
+        None,
+        None,
+    ));
 
     info!(
         "pulse: session created for {}:{}",
         config.transport.host, config.transport.port
     );
+}
+
+/// While this engine serves scenes itself (`/local_scene_server`), its server copies listen on a
+/// guest identity of their own, whose address also salts the partition the tab's player and
+/// listener share; when it stops, the listener goes and the player rejoins the plain partition.
+fn follow_local_server(
+    mut commands: Commands,
+    local_server: Res<LocalSceneServer>,
+    config: Option<Res<PulseConfig>>,
+    realm_override: Option<Res<PulseRealmOverride>>,
+    mut sessions: Query<(Entity, &mut PulseSession)>,
+    outboxes: Query<(Entity, &PulseOutbox)>,
+    mut local_live: ResMut<LocalListenerLive>,
+) {
+    let Some(config) = config else {
+        return;
+    };
+    if common::structs::server_mode() {
+        return;
+    }
+    let listener = sessions.iter().find_map(|(entity, session)| {
+        matches!(&session.role, PulseRole::Listener(l) if l.local).then_some(entity)
+    });
+    let salt = match (local_server.0.is_some(), listener) {
+        (true, None) => {
+            if !sessions
+                .iter()
+                .any(|(_, session)| matches!(session.role, PulseRole::Player(_)))
+            {
+                return;
+            }
+            let mut wallet = Wallet::default();
+            wallet.finalize_as_guest();
+            let salt = wallet
+                .address()
+                .map(|address| format!("{address:x}")[..16].to_owned());
+            info!(
+                "pulse: in-engine scene listener as guest {:#x}; server copies are fed in-process until it connects",
+                wallet.address().unwrap_or_default()
+            );
+            commands.spawn(new_session(
+                &config,
+                realm_override.as_deref(),
+                PulseRole::Listener(ListenerRole {
+                    local: true,
+                    ..default()
+                }),
+                Some(wallet),
+                salt.clone(),
+            ));
+            salt
+        }
+        (false, Some(listener)) => {
+            info!("pulse: in-engine scene listener stopped");
+            commands.entity(listener).despawn();
+            for (transport, outbox) in &outboxes {
+                if outbox.session == listener {
+                    commands.entity(transport).despawn();
+                }
+            }
+            local_live.0 = false;
+            None
+        }
+        _ => return,
+    };
+    for (_, mut session) in &mut sessions {
+        if matches!(session.role, PulseRole::Player(_)) {
+            // the next resolve re-announces the player under the new key
+            session.partition_salt.clone_from(&salt);
+            session.lsd_realm = LsdRealm::Unresolved { retry_at: 0.0 };
+        }
+    }
 }
 
 /// Keep the routing `Transport` entity in step with the current realm: (re)spawn it on a realm

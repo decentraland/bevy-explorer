@@ -1640,10 +1640,25 @@ pub struct ShowOutOfBounds(pub bool);
 #[derive(Debug, Resource, Default)]
 pub struct EditorMode(pub bool);
 
-/// Run a server copy of each authoritative scene inside this engine (isServer() true, joined to
-/// the client copy over an in-engine scene room) instead of relying on an external server.
+/// The realm (its url, without `/about`) whose authoritative scenes run a server copy inside this
+/// engine (isServer() true, joined to the client copy over an in-engine scene room) instead of on
+/// an external server. Set by `/local_scene_server`; `None` is off.
 #[derive(Debug, Resource, Default)]
-pub struct LocalSceneServer(pub bool);
+pub struct LocalSceneServer(pub Option<String>);
+
+impl LocalSceneServer {
+    pub fn realm_root(url: &str) -> &str {
+        url.strip_suffix("/about")
+            .unwrap_or(url)
+            .trim_end_matches('/')
+    }
+
+    pub fn serves(&self, realm: &CurrentRealm) -> bool {
+        self.0
+            .as_deref()
+            .is_some_and(|root| root == Self::realm_root(&realm.about_url))
+    }
+}
 
 // resource into which systems can add debug info
 #[derive(Resource, Default, Debug)]

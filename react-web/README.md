@@ -108,7 +108,18 @@ player's stored scenes. `signDeployment` signs only after the page's own confirm
 only the entity id: the world is inside that entity, but the dialog shows the world and server the
 editor reports. `engineConsole` passes only the commands the editor uses to inspect and drive the
 scene it edits; `reload` and `set_scene` must name that scene or the editor's own. A guest gets
-`not-signed-in`. On localhost the services are
+`not-signed-in`.
+
+A project whose `scene.json` sets `authoritativeMultiplayer: true` runs its server in the tab while
+it is previewed: `openPreview` sends `/local_scene_server <PAGE_DIR>preview/<projectId>` before the
+trip, and leaving sends `/local_scene_server off` once the player is back. The engine then runs a
+hidden server copy of that realm's authoritative scenes (none for any other realm, or for a plain
+scene), joined to the player's copy over an in-engine scene room; it is paused while the editor
+freezes the scene, and a reload by id (save, Stop) restarts it with the player's copy. The switch is
+the host's alone: it is not one of the editor's `engineConsole` commands, chat does not forward it,
+and no url parameter sets it. The editor's own privileged scene can still reach any console command.
+
+On localhost the services are
 `http://localhost:8787` (projects) and the production Worlds content server; `?editor-projects=<url>`
 and `?editor-worlds=<url>` point them at other local (loopback) services, on localhost only. Before signing a deployment the
 page's dialog names the world, scene, files, the Worlds server's host and the wallet; it keeps

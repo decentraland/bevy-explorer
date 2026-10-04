@@ -6,8 +6,8 @@
 import { SERVICES, type ServiceDef } from '../engine/generated'
 import { BASE_DOMAIN, hostBaseDomain, isTrustedBaseDomain, normaliseServiceUrl } from './baseDomain'
 import { bootMode } from './bootMode'
-import { isLoopbackHost, isTrustedSystemScene } from './systemScene'
-import { webParam, type LaunchOptions } from './webParams'
+import { isTrustedSystemScene } from './systemScene'
+import { webParam } from './webParams'
 
 export interface UntrustedParam {
   name: string
@@ -81,18 +81,6 @@ for (const s of SERVICES) {
   }
 }
 for (const name of Object.keys(GATES)) webParam(name)
-
-// `host` params an embedding page sets (the editor host passes them in __bevyBootConfig). A page
-// on the developer's own machine is its own embedding host, so there the entry url may set them;
-// anywhere else a link carrying one is ignored.
-export const LOOPBACK_HOST_PARAMS = ['localSceneServer']
-for (const name of LOOPBACK_HOST_PARAMS) webParam(name)
-
-/** The `host` flags this page takes from its entry url: only when served from loopback. */
-export function loopbackHostOptions(q: URLSearchParams, hostname: string): LaunchOptions {
-  if (!isLoopbackHost(hostname)) return {}
-  return Object.fromEntries(LOOPBACK_HOST_PARAMS.filter((name) => q.has(name)).map((name) => [name, true]))
-}
 
 /** The gated params whose entry-url value this front-end doesn't recognise. Empty = boot. */
 export function untrustedLaunchParams({ native }: { native: boolean }): UntrustedParam[] {
