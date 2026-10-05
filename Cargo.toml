@@ -314,7 +314,7 @@ web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
 web-fs = "0.2.6"
 
-notify-rust = "4.18"
+notify-rust = { version = "4.18.1", git = "https://github.com/robtfm/notify-rust", branch = "dcl" }
 getrandom = { version = "0.3" }
 
 [dependencies]
