@@ -9,6 +9,9 @@ impl Plugin for NativeNotificationsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_state(NotificationsState::Granted);
 
+        #[cfg(windows)]
+        app.init_non_send_resource::<NativeNotifications>();
+
         app.add_systems(
             Update,
             build_native_notification.run_if(in_state(NotificationsState::Granted)),
@@ -16,6 +19,16 @@ impl Plugin for NativeNotificationsPlugin {
     }
 }
 
+#[cfg(windows)]
+#[derive(Default, Deref, DerefMut)]
+struct NativeNotifications(EntityHashMap<NotificationHandle>);
+
+#[cfg(windows)]
+#[expect(dead_code, reason = "Might be usable later")]
+#[derive(Component)]
+struct NativeNotification;
+
+#[cfg(not(windows))]
 #[expect(dead_code, reason = "Might be usable later")]
 #[derive(Component)]
 struct NativeNotification(NotificationHandle);
@@ -23,6 +36,7 @@ struct NativeNotification(NotificationHandle);
 fn build_native_notification(
     mut commands: Commands,
     notifications: Populated<(Entity, &Notification), Without<NativeNotification>>,
+    #[cfg(windows)] mut native_notifications: NonSendMut<NativeNotifications>,
 ) {
     for (entity, notification) in notifications.into_inner() {
         let mut notify = notify_rust::Notification::new();
@@ -39,8 +53,15 @@ fn build_native_notification(
             continue;
         };
 
+        #[cfg(not(windows))]
         commands
             .entity(entity)
             .insert(NativeNotification(notification_handle));
+
+        #[cfg(windows)]
+        {
+            commands.entity(entity).insert(NativeNotification);
+            native_notifications.insert(entity, notification_handle);
+        }
     }
 }
