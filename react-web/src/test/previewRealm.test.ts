@@ -163,6 +163,11 @@ describe('preview realm', () => {
       expect((await call('values/score', client, { method: 'DELETE' })).status).toBe(403)
     }
     expect(await (await call('values/score', PAGE)).json()).toEqual({ value: 3 })
+
+    // the editor clears a preview's test data the way the storage service does
+    expect((await call('values', PAGE, { method: 'DELETE' })).status).toBe(404)
+    expect((await call('values', PAGE, { method: 'DELETE', headers: { 'X-Confirm-Delete-All': 'true' } })).status).toBe(204)
+    expect((await call('values/score', PAGE)).status).toBe(404)
   })
 
   it('answers 404, never the network, for everything it does not hold', async () => {

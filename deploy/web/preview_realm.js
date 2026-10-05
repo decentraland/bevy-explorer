@@ -228,6 +228,15 @@
             if (!Object.hasOwn(values, name)) return json({ message: missing(name, env, address) }, 404);
             return json({ value: values[name] });
         }
+        if (name === undefined && method === 'DELETE' && request.headers.get('x-confirm-delete-all') === 'true') {
+            return serialized(docKey, async () => {
+                const data = await readStorage(storage, docKey);
+                if (address === undefined) data.world = {};
+                else delete data.players[address];
+                await storage.put(docKey, new Response(JSON.stringify(data), { headers: { 'Content-Type': JSON_TYPE } }));
+                return noContent();
+            });
+        }
         if (name === undefined || (method !== 'PUT' && method !== 'DELETE')) return notFound();
         const body = method === 'PUT' ? await bodyValue(request) : null;
         if (method === 'PUT' && body === null) return json({ message: `Failed to set '${name}'` }, 500);
