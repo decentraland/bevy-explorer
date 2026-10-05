@@ -7,6 +7,8 @@
 // redirect the browser to `/auth/login?redirectTo=<here>`; the auth site signs in and
 // redirects back, by which point the identity is already in localStorage.
 
+import { inShell, postToShell } from '../../lib/shell'
+
 // The standard Decentraland AuthIdentity, as serialized by @dcl/crypto / @dcl/single-sign-on
 // -client. It is the SAME shape no matter how the user signed in (wallet/MetaMask, social,
 // OTP, magic) — we just read whatever is stored and forward it; nothing here is method-specific.
@@ -88,9 +90,11 @@ export function authLoginUrl(redirectTo: string = location.href): string {
   return `/auth/login?redirectTo=${encodeURIComponent(redirectTo)}`
 }
 
-// Send the browser to the auth site to sign in (fresh account or switch account).
+// Send the browser to the auth site to sign in (fresh account or switch account). Inside the shell
+// the shell navigates, so the auth site gets the top-level page and returns to the shell's URL.
 export function redirectToAuth(redirectTo: string = location.href): void {
-  location.replace(authLoginUrl(redirectTo))
+  if (inShell) postToShell({ type: 'bevy-shell:auth-login' })
+  else location.replace(authLoginUrl(redirectTo))
 }
 
 // Sign out: drop every SSO identity for this origin (matches sites' disconnect for the

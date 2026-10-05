@@ -140,7 +140,7 @@ struct ReactHudCef {
 }
 
 fn react_hud_url() -> Option<String> {
-    // explicit override, e.g. a live vite server (REACT_HUD_URL=http://localhost:5173/?native=1)
+    // explicit override, e.g. a live vite server (REACT_HUD_URL=http://localhost:5173/app.html?native=1)
     // for HMR against the native engine.
     if let Ok(url) = std::env::var("REACT_HUD_URL") {
         return Some(url);
@@ -160,9 +160,9 @@ fn react_hud_url() -> Option<String> {
     }
     if roots
         .iter()
-        .any(|root| root.join("assets/react-hud/index.html").is_file())
+        .any(|root| root.join("assets/react-hud/app.html").is_file())
     {
-        return Some("cef://localhost/react-hud/index.html?native=1".to_string());
+        return Some("cef://localhost/react-hud/app.html?native=1".to_string());
     }
     None
 }

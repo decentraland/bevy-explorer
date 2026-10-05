@@ -51,14 +51,17 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // For same-origin requests, add COOP/COEP headers to enable SharedArrayBuffer
+    // Same-origin page loads: isolate the app, and keep the shell that embeds it unisolated
     if (request.mode === 'navigate' || request.destination === 'document') {
         event.respondWith(addCrossOriginIsolationHeaders(request));
     }
 });
 
 /**
- * Fetches a request and adds Cross-Origin-Isolation headers to enable SharedArrayBuffer.
+ * Fetches a page and sets its isolation headers. The app (app.html: HUD + engine) gets
+ * Document-Isolation-Policy, which makes it cross-origin isolated (SharedArrayBuffer) in a process
+ * of its own. Every other page, the shell that embeds the app included, loses the host's COOP/COEP:
+ * an isolated top-level page would take the app's process back in with it.
  */
 async function addCrossOriginIsolationHeaders(request) {
     const response = await fetch(request);
@@ -66,8 +69,11 @@ async function addCrossOriginIsolationHeaders(request) {
     // Only modify same-origin responses
     if (response.type === 'basic') {
         const newHeaders = new Headers(response.headers);
-        newHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
-        newHeaders.set('Cross-Origin-Embedder-Policy', 'credentialless');
+        newHeaders.delete('Cross-Origin-Opener-Policy');
+        newHeaders.delete('Cross-Origin-Embedder-Policy');
+        if (new URL(request.url).pathname.endsWith('/app.html')) {
+            newHeaders.set('Document-Isolation-Policy', 'isolate-and-credentialless');
+        }
 
         return new Response(response.body, {
             status: response.status,

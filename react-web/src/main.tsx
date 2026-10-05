@@ -8,6 +8,7 @@ import { installLocalNetworkFetch } from './lib/localNetworkFetch'
 import { installHudScale } from './lib/hudScale'
 import { countLaunch } from './lib/launchCount'
 import { isNativeHud } from './lib/bootMode'
+import { inShell } from './lib/shell'
 import './styles/global.css'
 
 // Before anything fetches: annotate loopback/local-network requests so Chrome's Local Network
@@ -37,9 +38,10 @@ if (isNativeHud()) {
   } catch {
     /* defineProperty can throw if already overridden; non-fatal */
   }
-} else {
+} else if (!inShell) {
   // Prod-only (web): swap the host's COEP require-corp for credentialless via the shared root SW
-  // (catalyst <img> thumbnails send no CORP). No-op in dev; never in the native webview.
+  // (catalyst <img> thumbnails send no CORP). No-op in dev; never in the native webview. Inside
+  // the shell, the shell registers it.
   registerCoiServiceWorker()
 }
 
