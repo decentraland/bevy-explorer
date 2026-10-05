@@ -52,6 +52,9 @@ export type RpcMethod =
   | 'loginIdentity'
   | 'loginCancel'
   | 'logout'
+  | 'guestLogin'
+  | 'guestSign'
+  | 'guestDiscard'
 
 // ---- page -> scene ---------------------------------------------------------
 
@@ -59,6 +62,7 @@ export interface RpcRequest {
   kind: 'rpc:req'
   id: string
   method: RpcMethod
+  params?: Record<string, string>
 }
 
 /** Send a chat message (page → engine via the scene's BevyApi.sendChat). */

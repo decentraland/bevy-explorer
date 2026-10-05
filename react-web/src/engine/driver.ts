@@ -15,6 +15,10 @@ export interface LoginDriver {
   getPreviousLogin(): Promise<{ userId: string | null }>
   loginPrevious(defaultOnError?: boolean): Promise<unknown>
   loginGuest(): Promise<void>
+  /** Create a guest account that persists across visits (a thirdweb guest wallet) and sign in
+   *  with it, replacing any earlier guest. Absent where there is no engine to take the identity;
+   *  `loginGuest` stays the throwaway guest (?guest=1, scene previews). */
+  loginPersistentGuest?(): Promise<void>
   loginCancel(): Promise<void>
   /** Sign out of the current account → back to the login screen. */
   logout(): Promise<void>

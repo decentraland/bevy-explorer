@@ -5,7 +5,9 @@
 // Like dcl-editor's bus, streams/events are delivered through ONE generic
 // `on(msg => …)` subscription; only request/response (login) is correlated by id.
 
-import type { AuthIdentity } from '../features/auth/sso'
+import { createGuestIdentity } from '../features/auth/guest'
+import { encodeIdentity, type AuthIdentity } from '../features/auth/sso'
+import type { GuestWallet } from '../features/auth/thirdweb'
 import { BridgeChannel } from './bridgeChannel'
 import type { LoginDriver } from './driver'
 import {
@@ -23,7 +25,8 @@ type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; time
 const QUICK_RPC_TIMEOUT_MS: Partial<Record<RpcMethod, number>> = {
   getPreviousLogin: 10_000,
   loginCancel: 10_000,
-  logout: 10_000
+  logout: 10_000,
+  guestDiscard: 10_000
 }
 
 export class BridgeClient implements LoginDriver {
@@ -49,6 +52,18 @@ export class BridgeClient implements LoginDriver {
 
   loginGuest(): Promise<void> {
     return this.rpc<void>('loginGuest')
+  }
+
+  // Native: the bridge scene makes the thirdweb calls and keeps the session id (the page's
+  // cef:// origin is not one thirdweb accepts); the identity then goes in through the engine
+  // console. The mock has no engine console, so it stays a plain guest.
+  async loginPersistentGuest(): Promise<void> {
+    if (!('engine_console_command' in window)) return this.loginGuest()
+    const identity = await createGuestIdentity({
+      login: (sessionId) => this.rpc<GuestWallet>('guestLogin', { sessionId }),
+      sign: (token, message) => this.rpc<string>('guestSign', { token, message })
+    })
+    await this.command(`/login_identity ${encodeIdentity(identity)}`)
   }
 
   loginCancel(): Promise<void> {
@@ -84,6 +99,8 @@ export class BridgeClient implements LoginDriver {
   async loginNew(): Promise<void> {
     const r = await this.rpc<LoginPreviousResult>('loginNew')
     if (r && r.success === false) throw new Error(r.error || 'Sign-in failed')
+    // Signing in with an account replaces the guest.
+    this.rpc<void>('guestDiscard').catch(() => {})
   }
 
   send(msg: PageToScene): void {
@@ -116,7 +133,7 @@ export class BridgeClient implements LoginDriver {
     return run ? run(line) : Promise.reject(new Error('engine console not available'))
   }
 
-  private rpc<T>(method: RpcMethod): Promise<T> {
+  private rpc<T>(method: RpcMethod, params?: Record<string, string>): Promise<T> {
     const id = crypto.randomUUID()
     return new Promise<T>((resolve, reject) => {
       const limit = QUICK_RPC_TIMEOUT_MS[method]
@@ -127,7 +144,7 @@ export class BridgeClient implements LoginDriver {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer })
       // The engine's boot shim answers these before any bridge scene exists, so they skip the
       // handshake queue rather than gating the login screen on a scene sign-in does not involve.
-      this.ch.sendNow({ kind: 'rpc:req', id, method })
+      this.ch.sendNow({ kind: 'rpc:req', id, method, params })
     })
   }
 

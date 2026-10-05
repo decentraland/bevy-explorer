@@ -5,6 +5,17 @@ import { BevyApi } from '../bevy-api'
 import { relay } from '../system-helpers'
 import { identity } from '../identity'
 import type { Ctx } from '../bridge'
+import { GUEST_SESSION_KEY, guestLogin, guestSign } from '../../../src/features/auth/thirdweb'
+
+// The Bevy engine injects a persistent localStorage into system scenes.
+declare const localStorage: {
+  setItem: (key: string, value: string) => void
+  removeItem: (key: string) => void
+}
+
+// thirdweb only serves origins on the project's allowlist, and the native page's cef:// origin is
+// not one. The scene's fetch runs in the engine, so it can name one that is (as Godot does).
+const THIRDWEB_HEADERS = { Origin: 'https://decentraland.org' }
 
 const SIGN_INS = new Set(['loginPrevious', 'loginNew', 'loginIdentity'])
 
@@ -36,6 +47,15 @@ export function registerSession(ctx: Ctx): void {
         case 'loginIdentity': value = await BevyApi.loginPrevious(); break
         case 'loginGuest': BevyApi.loginGuest(); break
         case 'loginCancel': BevyApi.loginCancel(); break
+        // Persistent guest (native): the page builds the identity, the thirdweb calls run here.
+        case 'guestLogin': {
+          const sessionId = msg.params?.sessionId ?? ''
+          localStorage.setItem(GUEST_SESSION_KEY, sessionId)
+          value = await guestLogin(sessionId, THIRDWEB_HEADERS)
+          break
+        }
+        case 'guestSign': value = await guestSign(msg.params?.token ?? '', msg.params?.message ?? '', THIRDWEB_HEADERS); break
+        case 'guestDiscard': localStorage.removeItem(GUEST_SESSION_KEY); break
         case 'logout': BevyApi.logout(); break
         default: throw new Error(`unsupported method ${String(msg.method)}`)
       }

@@ -1907,7 +1907,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   )
 
 
-  const exploreAsGuest = useCallback(() => submitLogin((d) => d.loginGuest()), [submitLogin])
+  // The button creates a guest account that persists; ?guest=1 stays a throwaway guest.
+  const exploreAsGuest = useCallback(() => submitLogin((d) => d.loginPersistentGuest?.() ?? d.loginGuest()), [submitLogin])
+  const autoGuest = useCallback(() => submitLogin((d) => d.loginGuest()), [submitLogin])
   // Reuse the existing login. The driver picks the path its backend supports (console
   // `/login_identity` for the engine, `loginPrevious` over the bridge).
   const jumpIn = useCallback(() => submitLogin((d) => d.jumpIn()), [submitLogin])
@@ -1994,10 +1996,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // true on the first call and gates re-entry.
   useEffect(() => {
     if (boot.current.autoLogin == null || !engineReady || submitted) return
-    if (boot.current.autoLogin === 'guest') exploreAsGuest()
+    if (boot.current.autoLogin === 'guest') autoGuest()
     // scene-owned: no React login at all — just boot the engine (a no-op deferred login).
     else submitLogin(() => Promise.resolve())
-  }, [engineReady, submitted, exploreAsGuest, submitLogin])
+  }, [engineReady, submitted, autoGuest, submitLogin])
 
   // Render-settle. When the scene flips from loading → loaded (visible true→false), hold the loader
   // a beat longer while the engine actually renders the world (compiling shaders / uploading
