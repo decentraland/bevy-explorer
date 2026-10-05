@@ -145,6 +145,7 @@ authoritative preview's scene server, which the editor host starts in the tab
 | `GET / PUT / DELETE <realm>values/<key>` | `{ "value" }` (404 when missing) / `{ "value" }` / 204 |
 | `GET <realm>players/<address>/values?…`, `GET / PUT / DELETE …/values/<key>` | the same, for that address alone |
 | `GET / PUT / DELETE <realm>env/<key>` | `{ "value" }` (404 when missing) / 204 / 204 |
+| `DELETE <realm>values` or `…/players/<address>/values`, with `X-Confirm-Delete-All: true` | clears that scope, 204 (404 without the header) |
 
 PUT bodies are `{ "value": … }`. Everything is kept in cache `dcl-editor-storage-v1` under
 `<realm>__storage`, one JSON `{ env, world, players }` per realm like the dev server's
