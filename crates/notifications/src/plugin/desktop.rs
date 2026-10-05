@@ -18,6 +18,9 @@ impl Plugin for NativeNotificationsPlugin {
             Update,
             build_native_notification.run_if(in_state(NotificationsState::Granted)),
         );
+
+        #[cfg(windows)]
+        app.add_observer(native_notification_removed);
     }
 }
 
@@ -66,4 +69,13 @@ fn build_native_notification(
             native_notifications.insert(entity, notification_handle);
         }
     }
+}
+
+#[cfg(windows)]
+fn native_notification_removed(
+    trigger: Trigger<OnRemove, NativeNotification>,
+    mut native_notifications: NonSendMut<NativeNotifications>,
+) {
+    let entity = trigger.target();
+    native_notifications.remove(&entity);
 }
