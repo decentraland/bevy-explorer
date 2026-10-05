@@ -41,6 +41,7 @@ export async function startHeadless(compiledModule, options) {
   const sandboxes = createSandboxHost({
     compiledModule,
     sharedMemory,
+    role: "server",
     onWorkerCrash: (e) => console.error("[headless] sandbox worker crashed", e),
   });
   window.terminate_sandbox = sandboxes.terminate;
