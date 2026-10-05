@@ -100,6 +100,7 @@ type HostWindow = Window & {
   __dclEditor?: Partial<EditorPackage>
   set_url_params?: (optionsJson: string) => void
   __dclEditorSigner?: (signer: Signer) => void
+  __bevyStartServer?: (options: { realm: string; position: string; preview: true }) => Promise<unknown>
 }
 
 interface Home {
@@ -108,6 +109,8 @@ interface Home {
 }
 
 const PARCEL = /^(-?\d+),(-?\d+)$/
+// engine.js runs each scene server in a hidden frame and has no stop: removing the frame ends it
+const SERVER_FRAME = 'iframe[src$="/headless.html"]'
 // What the editor drives through the console: the scene it edits. Never spawn, kill, login or a
 // realm change, which would go around spawnEditorScene and openPreview.
 const EDITOR_COMMANDS = new Set([
@@ -197,6 +200,14 @@ export function guardUrlSync(pageDir: string, flag: string | boolean): void {
   w.set_url_params = (optionsJson) => sync(hostUrlOptions(optionsJson, `${pageDir}preview/`, home ?? returning, flag))
 }
 
+/** Whether the preview realm's scene runs its own server (scene.json `authoritativeMultiplayer`). */
+async function authoritative(realm: string): Promise<boolean> {
+  const res = await fetch(`${realm}/scene.json`)
+  if (!res.ok) return false
+  const scene: unknown = await res.json()
+  return typeof scene === 'object' && scene != null && 'authoritativeMultiplayer' in scene && scene.authoritativeMultiplayer === true
+}
+
 /** `url` normalised, when it is under `base`; null otherwise. */
 function under(base: string | null, url: string): string | null {
   if (base == null || !URL.canParse(url)) return null
@@ -260,7 +271,25 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     clock ??= deps.engineConsole('/time').then(clockRestore, () => null)
   }
 
+  // one switch at a time, so a stop never lands between another preview's start and its frame
+  let serverSwitch: Promise<void> = Promise.resolve()
+  const serveScene = (realm: string | null, position = ''): Promise<void> => {
+    serverSwitch = serverSwitch.then(async () => {
+      for (const frame of document.querySelectorAll(SERVER_FRAME)) frame.remove()
+      if (realm == null) return
+      try {
+        if (!(await authoritative(realm))) return
+        if (w.__bevyStartServer == null) throw new Error('this engine cannot run a scene server')
+        await w.__bevyStartServer({ realm, position, preview: true })
+      } catch (e) {
+        console.error('[editor host] starting the scene server failed', e)
+      }
+    })
+    return serverSwitch
+  }
+
   const leave = (): void => {
+    void serveScene(null)
     try {
       w.__dclEditor?.unmount?.()
     } catch (e) {
@@ -323,7 +352,10 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       home ??= returning ?? { realm: q.get('realm'), position: q.get('position') }
       previewing = projectId
       // no trailing slash: the engine appends /about
-      await deps.travel(`${pageDir}preview/${projectId}`, { x: Number(parcel[1]), y: Number(parcel[2]) })
+      const realm = `${pageDir}preview/${projectId}`
+      // before the trip, so the client finds its server there
+      await serveScene(realm, position)
+      await deps.travel(realm, { x: Number(parcel[1]), y: Number(parcel[2]) })
     },
     spawnEditorScene() {
       scene ??= (async () => {

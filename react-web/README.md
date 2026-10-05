@@ -124,6 +124,12 @@ and `?editor-worlds=<url>` point them at other local (loopback) services, on loc
 page's dialog names the world, scene, files, the Worlds server's host and the wallet; it keeps
 the editor's fixed size and only Cancel or Sign close it.
 
+When the previewed scene's `scene.json` has `authoritativeMultiplayer: true`, `openPreview` first
+starts its scene server beside the client (`__bevyStartServer`, a headless engine in a hidden frame,
+`deploy/web/engine/headless.js`); one runs at a time, and leaving the preview or opening another
+removes its frame. Its scene logs go to that frame's console; the editor's Storage tab cannot
+reach its storage yet.
+
 In dev, `?bridgePort=<port>` loads the bridge scene from `http://localhost:<port>` instead of
 :8100 (the gates run their own); production builds ignore it.
 
