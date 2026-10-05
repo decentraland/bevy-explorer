@@ -7,7 +7,7 @@
 // Domain types mirror scene/src/bevy-api/interface.ts so the bridge scene can
 // forward SystemApi results verbatim.
 
-import type { Color3, SatelliteView, SceneLoadingUi } from './generated'
+import type { Color3, HomeScene, SatelliteView, SceneLoadingUi } from './generated'
 
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
@@ -171,6 +171,7 @@ export type PageToScene =
   | CancelJoinRequestRequest
   | GetCommunityDetailRequest
   | GetMapRequest
+  | GetHomeSceneRequest
   | TeleportRequest
   | ChangeRealmRequest
   | MinimapConfigRequest
@@ -565,6 +566,14 @@ export interface GetMapRequest {
   kind: 'getMap'
 }
 
+export interface GetHomeSceneRequest {
+  kind: 'getHomeScene'
+}
+
+export interface HomeSceneMessage extends HomeScene {
+  kind: 'homeScene'
+}
+
 /** The local player's live pose, streamed for the minimap. Position is in world metres
  *  (not parcels) so the map can scroll smoothly between parcels; both yaws are degrees.
  *  `yaw` is the avatar's heading (drives the arrow), `camYaw` the camera's (drives
@@ -590,9 +599,20 @@ export interface RealmInfoMessage {
  *  from the live scene list and pushed when the parcel changes — NOT the same as the
  *  `sceneLoading` title, which describes the entry overlay and goes stale the moment you
  *  walk into the next scene. Empty when the parcel has no deployed scene. */
+/** The lobby stage and its avatar have been drawn (scene → page), so the page's stand-in can go. */
+export interface LobbyStageReadyMessage {
+  kind: 'lobbyStageReady'
+}
+
 export interface SceneInfoMessage {
   kind: 'sceneInfo'
   title: string
+  /** The parcel the title was resolved for, and the realm it is in. */
+  parcel?: { x: number; y: number }
+  realm?: string
+  /** Genesis City (it advertises the satellite map); anything else is a World or a local realm. */
+  genesis?: boolean
+  preview?: boolean
 }
 
 /** Minimap style/zoom/rotation (page → scene). The scene only runs the Camera-style
@@ -691,7 +711,7 @@ export interface PermissionResolveRequest {
  */
 export interface EngineViewportRequest {
   kind: 'engineViewport'
-  region: 'map' | 'avatarPreview'
+  region: 'map' | 'avatarPreview' | 'lobby'
   rect: { x: number; y: number; width: number; height: number } | null
   /** `devicePixelRatio` at the time the rect was measured. The rect is in CSS pixels, so this is
    *  what turns it into the physical pixels the scene should actually render — without it a
@@ -1290,9 +1310,11 @@ export type SceneToPage =
   | RequestFailedMessage
   | CommunityDetailMessage
   | MapMessage
+  | HomeSceneMessage
   | PlayerPoseMessage
   | RealmInfoMessage
   | SceneInfoMessage
+  | LobbyStageReadyMessage
   | GalleryMessage
   | GalleryPhotoMessage
   | PermissionRequestMessage

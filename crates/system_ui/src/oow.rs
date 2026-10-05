@@ -4,7 +4,7 @@ use bevy::{image::ImageLoaderSettings, prelude::*};
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::{
     rpc::RpcStreamSender,
-    structs::{CurrentRealm, PrimaryUser, ZOrder},
+    structs::{CurrentRealm, PrimaryUser, WorldHold, ZOrder},
     util::TryPushChildrenEx,
 };
 use scene_runner::{
@@ -62,9 +62,15 @@ pub struct OowUiPlugin;
 impl Plugin for OowUiPlugin {
     fn build(&self, app: &mut App) {
         if app.world().resource::<NativeUi>().loading_scene {
-            app.add_systems(Update, update_loading_scene_dialog);
+            app.add_systems(
+                Update,
+                update_loading_scene_dialog.run_if(not(resource_exists::<WorldHold>)),
+            );
         } else {
-            app.add_systems(Update, update_loading_backdrop);
+            app.add_systems(
+                Update,
+                update_loading_backdrop.run_if(not(resource_exists::<WorldHold>)),
+            );
         }
         app.add_systems(Update, (pipe_scene_loading_ui_stream, animate_logo_pulse));
     }
@@ -242,6 +248,7 @@ fn pipe_scene_loading_ui_stream(
     mut senders: Local<Vec<RpcStreamSender<SceneLoadingUi>>>,
     mut last_state: Local<Option<SceneLoadingUi>>,
     current_realm: Res<CurrentRealm>,
+    world_hold: Option<Res<WorldHold>>,
 ) {
     // Collect new stream subscribers
     senders.extend(requests.read().filter_map(|ev| {
@@ -261,7 +268,8 @@ fn pipe_scene_loading_ui_stream(
     }
 
     // Compute current state
-    let visible = wallet.address().is_some() && !oow.is_empty();
+    // held for a lobby, the player waits out-of-world but nothing is loading
+    let visible = wallet.address().is_some() && !oow.is_empty() && world_hold.is_none();
 
     let current_state = if let (true, Ok(player)) = (visible, player.single()) {
         let (title, pending_assets) =

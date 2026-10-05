@@ -27,7 +27,6 @@ function label(name: string, address: string): string {
 }
 
 
-
 interface Identity {
   address: string
   claimed?: boolean

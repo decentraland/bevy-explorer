@@ -7,6 +7,8 @@ import { VoiceBars } from './VoiceBars'
 import { ColorPicker } from './ColorPicker'
 import { Chip } from './Chip'
 import { Pager } from './Pager'
+import { Rail } from './Rail'
+import { HeaderButton } from './HeaderButton'
 import { OptionMenu } from './OptionMenu'
 import { HintsButton, KeyCap } from './HintsButton'
 import { useState } from 'react'
@@ -17,7 +19,7 @@ import { Slider } from './Slider'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
 import { Tabs } from './Tabs'
-import { Bag, People, Pin } from './Glyphs'
+import { Bag, Close, People, Pin, VerifiedBadge } from './Glyphs'
 import { TextArea } from './TextArea'
 import { DateField } from './DateField'
 import { Panel } from './Panel'
@@ -447,6 +449,34 @@ export function Showcase(): React.JSX.Element {
         </div>
       </Section>
 
+      <Section title="Rail">
+        <div style={{ width: 600 }}>
+          <Rail perPage={3} gap={8}>
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} style={{ width: 194, height: 120, borderRadius: 'var(--lobby-card-radius)', background: 'var(--lobby-card)', display: 'grid', placeItems: 'center' }}>
+                Card {i + 1}
+              </div>
+            ))}
+          </Rail>
+        </div>
+      </Section>
+      <Section title="HeaderButton">
+        <HeaderButton aria-label="Close">
+          <Close size={12} />
+        </HeaderButton>
+        <HeaderButton shape="pill" style={{ width: 163 }}>
+          Profile
+        </HeaderButton>
+      </Section>
+      <Section title="Button (card sizes)">
+        <Button size="card">Jump in</Button>
+        <div style={{ width: 264 }}>
+          <Button size="cardSm">Jump in</Button>
+        </div>
+      </Section>
+      <Section title="VerifiedBadge">
+        <VerifiedBadge />
+      </Section>
       <Section title="Pager">
         <Pager page={2} count={9} onChange={() => undefined} />
       </Section>

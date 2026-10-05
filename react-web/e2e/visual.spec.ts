@@ -26,6 +26,22 @@ const EVENTS_FIXTURE = [
   { id: 'e2', name: 'Galaga night', x: 0, y: 0, world: true, server: 'galaga.dcl.eth', live: true, start_at: '2025-06-26T14:30:00Z', total_attendees: 3 }
 ]
 
+const PLACES_FIXTURE = [
+  { id: 'p1', title: 'Genesis Plaza', image: 'https://example.com/p1.png', positions: ['0,0'], base_position: '0,0', owner: null, contact_name: 'Decentraland Foundation', user_count: 8 },
+  { id: 'p2', title: 'Old McTiger Farm', image: 'https://example.com/p2.png', positions: ['10,20'], base_position: '10,20', owner: null, contact_name: 'METATIGER', user_count: 3 },
+  { id: 'p3', title: 'Antrom RPG', image: 'https://example.com/p3.png', positions: ['-30,40'], base_position: '-30,40', owner: null, contact_name: 'Matt', user_count: 0 },
+  { id: 'p4', title: 'Sky Chaser', image: 'https://example.com/p4.png', positions: ['55,-12'], base_position: '55,-12', owner: null, contact_name: 'stom', user_count: 5 }
+]
+
+/** The lobby's places, worlds and live events, fixed. */
+async function stubLobbyData(page: Page): Promise<void> {
+  const places = (data: unknown[]): { contentType: string; body: string } => ({ contentType: 'application/json', body: JSON.stringify({ ok: true, total: data.length, data }) })
+  await page.route(/places\.[^/]+\/api\/places\?with_realms_detail=true&positions=/, (route) => route.fulfill(places(PLACES_FIXTURE.slice(0, 1))))
+  await page.route(/places\.[^/]+\/api\/(places|destinations|worlds)/, (route) => route.fulfill(places(PLACES_FIXTURE)))
+  await page.route(/worlds-content-server\.[^/]+\/live-data/, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: { perWorld: [] } }) }))
+  await page.route(/\/api\/events\?with_connected_users=true/, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: EVENTS_FIXTURE }) }))
+}
+
 /** Make the page deterministic — call before the first navigation in each test. */
 async function prepare(page: Page): Promise<void> {
   // install (not setFixedTime): setFixedTime pins Date but leaves setTimeout on REAL time, so the
@@ -52,11 +68,17 @@ async function settle(page: Page): Promise<void> {
   await page.waitForTimeout(200)
 }
 
+/** Leave the lobby through its landing card (home) — the first JUMP IN on the page, enabled once
+ *  sign-in has finished. */
+async function jumpInFromLobby(page: Page): Promise<void> {
+  await page.getByRole('heading', { name: /Welcome/ }).waitFor()
+  await page.getByRole('button', { name: /^jump in$/i }).first().click()
+}
+
 async function enterWorld(page: Page): Promise<void> {
   await page.goto('/?mock=1')
   await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
-  // Entry now goes through the destination picker; skip it (default spawn) to reach the world HUD.
-  await page.getByRole('button', { name: /SKIP TO HOME/i }).click()
+  await jumpInFromLobby(page)
   await page.waitForSelector('nav[aria-label="Main navigation"]')
 }
 
@@ -64,8 +86,8 @@ async function enterWorld(page: Page): Promise<void> {
  *  is what the name editor's picker and tabs need in order to appear. */
 async function enterWorldReturning(page: Page): Promise<void> {
   await page.goto('/?mock=1&previousLogin=1')
-  await page.getByRole('button', { name: /JUMP INTO DECENTRALAND/i }).click()
-  await page.getByRole('button', { name: /SKIP TO HOME/i }).click()
+  // a stored session goes straight to the lobby
+  await jumpInFromLobby(page)
   await page.waitForSelector('nav[aria-label="Main navigation"]')
 }
 
@@ -94,14 +116,16 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('login-fresh.png')
   })
 
-  test('login — welcome back', async ({ page }) => {
-    await page.goto('/?mock=1&previousLogin=1')
-    await settle(page)
-    await expect(page).toHaveScreenshot('login-welcome.png')
-  })
-
   // Mobile gate — the download-the-app page shown on mobile (forced with ?gate=1; desktop UA → both
   // store buttons). Returns before the HUD, so no ?mock needed.
+  test('lobby', async ({ page }) => {
+    await stubLobbyData(page)
+    await page.goto('/?mock=1&previousLogin=1')
+    await page.getByRole('heading', { name: /Welcome/ }).waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('lobby.png')
+  })
+
   test('mobile gate', async ({ page }) => {
     await page.goto('/?gate=1')
     await settle(page)
@@ -152,7 +176,7 @@ test.describe('visual — mock HUD', () => {
   test('permission dialog', async ({ page }) => {
     await page.goto('/?mock=1&perm=1')
     await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
-    await page.getByRole('button', { name: /SKIP TO HOME/i }).click()
+    await jumpInFromLobby(page)
     await page.getByRole('alertdialog').waitFor()
     await settle(page)
     await expect(page).toHaveScreenshot('permission-dialog.png')
@@ -235,7 +259,7 @@ test.describe('visual — mock HUD', () => {
   test('hover tooltips (radial)', async ({ page }) => {
     await page.goto('/?mock=1&simhover=7')
     await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
-    await page.getByRole('button', { name: /SKIP TO HOME/i }).click()
+    await jumpInFromLobby(page)
     await page.waitForSelector('nav[aria-label="Main navigation"]')
     await page.getByText('Show Profile').waitFor() // the seeded hover arrives ~1.5s after entry
     const vp = page.viewportSize()

@@ -20,7 +20,7 @@ use common::{
     sets::RealmLifecycle,
     structs::{
         server_mode, AppConfig, AppError, CurrentRealm, EditorMode, GlobalCrdtStateUpdate,
-        IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
+        IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime, WorldHold,
     },
     terrain::{Occupancy, TerrainChange, TerrainTargets, BORDER_PADDING},
     util::{TaskExt, TryPushChildrenEx},
@@ -112,7 +112,7 @@ impl Plugin for SceneLifecyclePlugin {
             PostUpdate,
             (
                 process_realm_change,
-                load_active_entities,
+                load_active_entities.run_if(not(resource_exists::<WorldHold>)),
                 process_scene_lifecycle,
             )
                 .chain()
