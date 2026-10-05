@@ -49,10 +49,12 @@ export function confirmDeployment(request: DeploymentRequest, wallet: string, se
   }).then((choice) => choice === 'sign')
 }
 
-/** Resolves true only when the player chose to sign removing the scene at `request.coordinate`. */
+/** Resolves true only when the player chose to sign removing the scene at `request.coordinate`,
+ *  or every scene in the world when it is null. */
 export function confirmUndeploy(request: UndeployRequest, wallet: string, server: string): Promise<boolean> {
+  const all = request.coordinate == null
   return showDialog({
-    title: 'Unpublish this scene?',
+    title: all ? 'Unpublish this world?' : 'Unpublish this scene?',
     fixed: true,
     dismissible: false,
     body: (
@@ -61,18 +63,21 @@ export function confirmUndeploy(request: UndeployRequest, wallet: string, server
           <dt>World</dt>
           <dd>{request.world}</dd>
           <dt>Parcel</dt>
-          <dd>{request.coordinate}</dd>
+          <dd>{request.coordinate ?? 'All scenes'}</dd>
           <dt>Server</dt>
           <dd>{server}</dd>
           <dt>Signed by</dt>
           {short(wallet)}
         </dl>
-        <p className={styles.note}>The scene on this parcel is removed from the world for everyone. Signing is free — it proves the request comes from your account.</p>
+        <p className={styles.note}>
+          {all ? 'Every scene in this world is removed for everyone.' : 'The scene on this parcel is removed from the world for everyone.'} Signing is free — it
+          proves the request comes from your account.
+        </p>
       </>
     ),
     actions: [
       { id: 'cancel', label: 'Cancel', variant: 'secondary' },
-      { id: 'sign', label: 'Sign and unpublish' }
+      { id: 'sign', label: all ? 'Sign and unpublish all' : 'Sign and unpublish' }
     ]
   }).then((choice) => choice === 'sign')
 }

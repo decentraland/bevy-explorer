@@ -22,7 +22,8 @@ export interface DeploymentRequest {
 
 export interface UndeployRequest {
   world: string
-  coordinate: string
+  /** null: the whole world, every scene in it */
+  coordinate: string | null
 }
 
 export interface SignedFetchInit {
@@ -127,6 +128,7 @@ const SIGNED_METHODS: Record<keyof SignedServices, ReadonlySet<string>> = {
 }
 // the server's router ignores case and a trailing slash
 const UNDEPLOY = /^\/world\/([^/]+)\/scenes\/([^/]+)\/?$/i
+const UNDEPLOY_WORLD = /^\/entities\/([^/]+)\/?$/i
 
 // Where the player was before the first preview.
 let home: Home | null = null
@@ -354,9 +356,10 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       if (metadata != null && (typeof metadata !== 'object' || Array.isArray(metadata) || editorMetadata(metadata))) throw new Error('not-allowed')
       const identity = await deps.login()
       if (identity == null) throw new Error('not-signed-in')
-      const undeploy = other?.service === 'worldsContent' && method === 'DELETE' ? UNDEPLOY.exec(new URL(target).pathname) : null
+      const path = new URL(target).pathname
+      const undeploy = other?.service === 'worldsContent' && method === 'DELETE' ? (UNDEPLOY.exec(path) ?? UNDEPLOY_WORLD.exec(path)) : null
       if (undeploy != null) {
-        const request = { world: decodeURIComponent(undeploy[1]), coordinate: decodeURIComponent(undeploy[2]) }
+        const request = { world: decodeURIComponent(undeploy[1]), coordinate: undeploy[2] == null ? null : decodeURIComponent(undeploy[2]) }
         if (!(await deps.confirmUndeploy(request, identity.authChain[0].payload, new URL(target).host))) throw new Error('cancelled')
       }
       const own = Object.entries(init?.headers ?? {}).filter(([name]) => SIGNED_FETCH_HEADERS.has(name.toLowerCase()))

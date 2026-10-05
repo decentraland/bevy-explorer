@@ -196,6 +196,14 @@ describe('editor host signing', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Sign and unpublish' }))
     await removed
     expect(fetched.mock.lastCall![0]).toBe(`${url.replace('/scenes/', '/Scenes/')}/`)
+    fetched.mockClear()
+
+    // the whole world, every scene in it
+    const world = expect(host().signedFetch('https://worlds-content-server.decentraland.org/Entities/boedo.dcl.eth/', { method: 'DELETE' })).rejects.toThrow('cancelled')
+    expect(await screen.findByRole('dialog')).toHaveTextContent('All scenes')
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await world
+    expect(fetched).not.toHaveBeenCalled()
     fetched.mockRestore()
   })
 })
