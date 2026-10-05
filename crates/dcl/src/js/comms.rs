@@ -11,9 +11,9 @@ use crate::{RpcCalls, SceneResourceCounters};
 
 use super::State;
 
-const MAX_COMMS_MESSAGE_BYTES: usize = 30_000;
+pub const MAX_COMMS_MESSAGE_BYTES: usize = 30_000;
 const MAX_NETWORK_MESSAGE_QUEUE: usize = 1024;
-const MAX_SEND_MESSAGES_PER_TICK: usize = 512;
+pub const MAX_SEND_MESSAGES_PER_TICK: usize = 512;
 
 // Outbound message budget, reset each tick by `crdt_send_to_renderer`. Enforced in the op (not
 // the JS wrapper) so a scene calling the op directly is still bounded.

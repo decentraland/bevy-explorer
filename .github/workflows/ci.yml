@@ -435,11 +435,13 @@ jobs:
           rm -f ./deploy/web/engine/pkg/.gitignore
           WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm)
           echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
-          # Inline the glue into the sandbox worker: scene code shares that worker's realm and
-          # can re-import any module in it by URL, which for pkg/webgpu_build.js hands back our
-          # INITIALISED instance and with it the shared engine heap. Inlining turns the glue's
-          # exports into module-scope bindings of the bundle. Re-runs on every wasm build,
-          # since it embeds a copy of the generated glue.
+          # the scene runtime each sandbox worker runs its scene on, in that runtime's own memory
+          wasm-pack build crates/dcl_scene_wasm --target web $WASM_OPT_FLAG --out-dir ../../deploy/web/engine/pkg-scene --no-default-features
+          rm -f ./deploy/web/engine/pkg-scene/.gitignore
+          # Inline the scene runtime's glue into the sandbox worker: scene code shares that
+          # worker's realm and can re-import any module in it by URL. Inlining turns the worker's
+          # modules into module-scope bindings of the bundle. Re-runs on every wasm build, since it
+          # embeds a copy of the generated glue.
           npx --yes esbuild@0.28.1 ./deploy/web/engine/sandbox_worker.js \
             --bundle --format=esm --log-level=error \
             --metafile="${RUNNER_TEMP:-/tmp}/sandbox_worker.meta.json" \

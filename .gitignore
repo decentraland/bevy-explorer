@@ -13,6 +13,7 @@ config.json
 /deploy/web/sidebar-icons
 /deploy/web/modules
 /deploy/web/engine/pkg
+/deploy/web/engine/pkg-scene
 /deploy/web/bridge-scene
 /deploy/web/.env
 /deploy/web/package-lock.json

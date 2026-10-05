@@ -8,7 +8,10 @@ use bevy::{
     platform::collections::HashMap,
 };
 use common::rpc::{IpcMessage, RequestContext, SCENE_IPC_CONTEXT};
-use dcl::js::{SceneResponseReceiver, SceneResponseSender};
+use dcl::{
+    js::{SceneResponseReceiver, SceneResponseSender, TaggedSceneResponseSender},
+    SceneId,
+};
 use dcl_deno_ipc::{write_msg, EngineToScene, SceneToEngine};
 use interprocess::local_socket::{
     tokio::{RecvHalf, SendHalf, Stream},
@@ -80,11 +83,11 @@ async fn scene_ipc_out(
     loop {
         tokio::select! {
             scene_rx = scene_rx.recv() => {
-                let Some(scene_rx) = scene_rx else {
+                let Some((scene_id, response)) = scene_rx else {
                     warn!("scene_ipc_out exit on scene_rx closed");
                     return;
                 };
-                write_msg(&mut stream, &SceneToEngine::SceneResponse(scene_rx)).await;
+                write_msg(&mut stream, &SceneToEngine::SceneResponse(scene_id, response)).await;
             }
             close_rx = close_rx.recv() => {
                 let Some(close_id) = close_rx else {
@@ -115,7 +118,7 @@ async fn scene_ipc_out(
 
 async fn scene_ipc_in(
     mut stream: RecvHalf,
-    scene_sx: SceneResponseSender,
+    scene_sx: TaggedSceneResponseSender,
     system_api_sx: tokio::sync::mpsc::UnboundedSender<SystemApi>,
 ) {
     let mut renderer_senders = HashMap::new();
@@ -138,7 +141,10 @@ async fn scene_ipc_in(
                     new_scene_info.scene_context,
                     ipfs::SceneJsFile(Arc::new(new_scene_info.scene_js)),
                     new_scene_info.crdt_component_interfaces,
-                    scene_sx.clone(),
+                    SceneResponseSender::new(
+                        SceneId(bevy::ecs::entity::Entity::from_bits(id)),
+                        scene_sx.clone(),
+                    ),
                     global_sx.subscribe(),
                     new_scene_info.storage_root,
                     new_scene_info.inspect,

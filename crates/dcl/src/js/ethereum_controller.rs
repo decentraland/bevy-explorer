@@ -26,7 +26,7 @@ pub async fn op_send_async(
     let params: Vec<serde_json::Value> = serde_json::from_str(&params)?;
 
     match method.as_str() {
-        "eth_sendTransaction" | "eth_signTypedData_v4" => {
+        signing if RPCSendableMessage::SIGNING_METHODS.contains(&signing) => {
             let (sx, rx) = RpcResultSender::<Result<serde_json::Value, String>>::channel();
 
             state

@@ -4326,6 +4326,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "dcl_scene_wasm"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "common",
+ "console_error_panic_hook",
+ "dcl",
+ "dcl_wasm",
+ "getrandom 0.3.4",
+ "ipfs",
+ "rmp-serde",
+ "system_bridge",
+ "tokio",
+ "uuid",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "dcl_wasm"
 version = "0.1.0"
 dependencies = [
@@ -4338,6 +4356,7 @@ dependencies = [
  "js-sys",
  "log",
  "once_cell",
+ "rmp-serde",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

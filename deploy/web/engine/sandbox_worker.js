@@ -1,11 +1,23 @@
 // sandbox_worker.js - Runs inside the final Web Worker, the most isolated environment.
 
-// Import the wasm-bindgen generated JS glue code.
-import init, * as wasm_bindgen_exports from "./pkg/webgpu_build.js";
+// The scene runtime the scene runs on, in its own memory, and the copy module the engine half
+// of the relay uses (relayStart below). The engine's own glue is never loaded here.
+import initSceneRuntime, * as sceneRuntimeExports from "./pkg-scene/dcl_scene_wasm.js";
+import { relayCopyWasm } from "./relay_copy.js";
 
 // The capability the trusted super-user scene is given below. Captured before the scrub so the
 // constructor survives while the global does not.
 const RealBroadcastChannel = self.BroadcastChannel;
+// Likewise this script's own way out: scene code can replace the globals, and what goes through
+// postMessage carries killToken.
+const workerPostMessage = self.postMessage.bind(self);
+const workerClose = self.close.bind(self);
+// Stack traces are only ever formatted the default way: scene code can't install a formatter.
+Object.defineProperty(Error, "prepareStackTrace", {
+  get: () => undefined,
+  set: () => {},
+  configurable: false,
+});
 
 // self.WebSocket = {}
 
@@ -173,25 +185,8 @@ function createJsContext(wasmApi, context) {
         configurable: false,
         get() {
           return (...args) => {
-            // Tier-2 handshake (see forceTerminate in engine.js): flag the wasm entry, and
-            // once the engine has decided to terminate this worker, park instead of entering
-            // — never throw, scene code could catch. IN_RUST-first ordering pairs with the
-            // engine's KILL-first + wait-for-IN_RUST==0, so a terminate can never land while
-            // this thread holds a lock inside the shared engine wasm.
-            Atomics.store(killFlags, IN_RUST, 1);
-            if (Atomics.load(killFlags, KILL) === 1) {
-              Atomics.store(killFlags, IN_RUST, 0);
-              // last words: nothing after the wait ever runs
-              console.warn(`[Sandbox Worker] scene ${sceneId}: kill flag set; parking until terminate`);
-              Atomics.wait(killFlags, PARK, 0);
-            }
-            let result;
-            try {
-              // wrap ops to inject context arg
-              result = wasmApi[exportName](context, ...args);
-            } finally {
-              Atomics.store(killFlags, IN_RUST, 0);
-            }
+            // wrap ops to inject context arg
+            const result = wasmApi[exportName](context, ...args);
             if (result && typeof result.then === "function") {
               // async op: track it while its future is live, so the teardown drain can
               // name what is still holding scene state if it fails to drain.
@@ -370,7 +365,8 @@ function require(moduleName) {
   return code;
 }
 
-var wasm_init = undefined;
+// the exports scene code runs against: the scene runtime's
+const sceneApi = sceneRuntimeExports;
 var wasmContext = undefined;
 var sceneId = undefined;
 // Per-worker secrets from engine.js (INIT_WORKER payload). Scene code shares this realm and
@@ -383,7 +379,7 @@ var sceneId = undefined;
 var killToken = undefined;
 var shutdownToken = undefined;
 function postToEngine(message) {
-  postMessage({ ...message, killToken });
+  workerPostMessage({ ...message, killToken });
 }
 
 // Tier-2 handshake flags, shared with engine.js (layout documented there; the dummy is
@@ -401,41 +397,32 @@ const outstandingOps = new Map();
 // the engine's SHUTDOWN escalation. Posts the ack in all cases — it tells engine.js not to
 // escalate further and to drop its worker map entry.
 //
-// The state can only be freed once nothing else references it: async ops hold a state
-// reference (and the context wrapper's borrow) for as long as their future lives. The
-// engine has already closed the channels and set the kill flag by the time this runs, so
-// parked ops resume, complete inertly and drop their references — wait for that (bounded,
-// under engine.js's escalation grace). A future awaiting something that never resolves
-// keeps its reference forever; then freeing this thread's stack/TLS would corrupt the
-// engine when the future's waker later fires, so leak the thread state instead.
+// The relay goes first: it is all that holds engine-side state, and nothing after needs it.
+// The scene state can only be freed once nothing else references it: async ops hold a state
+// reference (and the context wrapper's borrow) for as long as their future lives. With the
+// relay gone their channels are closed, so parked ops resume, complete inertly and drop their
+// references — wait for that (bounded, under engine.js's escalation grace). A future awaiting
+// something that never resolves keeps its reference forever; then the state is left for the
+// worker's exit to discard. It is all in the scene runtime's own memory.
 const DRAIN_TIMEOUT_MS = 4000;
 var toreDown = false;
 function tearDown() {
   if (toreDown) return;
   toreDown = true;
-  // IN_RUST is held for the ENTIRE teardown, not per wasm call: the drain's setTimeout gaps
-  // exist so the executor can poll draining op futures, and those polls enter the engine
-  // wasm without setting any flag — a terminate landing mid-poll would be exactly the
-  // corruption forceTerminate exists to avoid. Never cleared: the worker closes itself at
-  // the end, and the SHUTDOWN_COMPLETE ack (not the flag) tells the engine this worker is
-  // done. Re-asserted each drain tick in case a scene op resumed in a gap and its
-  // finally-clear clobbered it.
-  Atomics.store(killFlags, IN_RUST, 1);
-  if (!wasm_init || wasmContext === undefined) {
-    finishTearDown(wasm_init !== undefined);
+  relayFinish?.();
+  if (!relayFinish || wasmContext === undefined) {
+    finishTearDown(true);
     return;
   }
   const startedAt = performance.now();
   const drain = () => {
-    Atomics.store(killFlags, IN_RUST, 1);
     const refs = wasmContext.ref_count();
     if (refs > 1 && performance.now() - startedAt < DRAIN_TIMEOUT_MS) {
       setTimeout(drain, 100);
       return;
     }
     if (refs > 1) {
-      // dropping under live references would panic (and freeing would corrupt the engine
-      // when a parked future's waker later fires) — skip the drop and leak
+      // dropping under live references would panic — skip the drop and leave it
       const parked = [...outstandingOps].map(([op, n]) => (n > 1 ? `${op} x${n}` : op)).join(", ");
       console.warn(`[Sandbox Worker] scene ${sceneId}: ${refs - 1} op future(s) still hold scene state after ${DRAIN_TIMEOUT_MS}ms (${parked || "untracked"})`);
       wasmContext = undefined;
@@ -445,7 +432,7 @@ function tearDown() {
     // refs == 1 still holds at the drop: nothing interleaves a sync block
     let stateFreed = false;
     try {
-      wasm_bindgen_exports.drop_context(wasmContext);
+      sceneApi.drop_context(wasmContext);
       stateFreed = true;
     } catch (e) {
       console.error(`[Sandbox Worker] scene ${sceneId}: error dropping scene context:`, e);
@@ -456,15 +443,203 @@ function tearDown() {
   drain();
 }
 
-function finishTearDown(destroyThread) {
-  if (destroyThread) {
-    wasm_init.__wbindgen_thread_destroy();
-  } else if (wasm_init) {
+function finishTearDown(stateFreed) {
+  if (!stateFreed) {
     console.warn(`[Sandbox Worker] scene ${sceneId}: scene state still in use; leaking thread state`);
   }
+  relayFinish?.();
   console.debug(`[Sandbox Worker] scene ${sceneId}: teardown complete`);
   postToEngine({ type: "SHUTDOWN_COMPLETE", sceneId });
-  self.close();
+  workerClose();
+}
+
+// The worker runs the scene on the scene runtime (B, its own memory, through its own glue), and
+// an engine-module instance with NO glue (A) relays the scene's channels to and from the engine
+// (crates/dcl_wasm/src/inner/relay.rs). A's relay imports are the copy module and B's relay
+// exports (behind the guards in relayStart); every other import of A is a no-op stub.
+// Nothing here keeps engine memory, A's exports or the copy module reachable from scene code:
+// they live in this closure only.
+//
+// Captured before scene code runs, so scene code can't swap what the relay loop calls.
+const relayAtomicsStore = Atomics.store;
+const relayAtomicsLoad = Atomics.load;
+const relayAtomicsWait = Atomics.wait;
+const relaySetTimeout = setTimeout;
+const relayPostTask = self.scheduler?.postTask?.bind(self.scheduler);
+const relayLog = {
+  debug: console.debug.bind(console),
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+};
+var relayFinish = undefined;
+async function relayStart(compiledModule, sharedMemory, sceneModule) {
+  const scene = await initSceneRuntime({ module_or_path: sceneModule });
+  const {
+    instance: { exports: copy },
+  } = await WebAssembly.instantiate(relayCopyWasm, { relay: { engine: sharedMemory, scene: scene.memory } });
+
+  // IN_RUST is set only while this thread is inside A, which runs on engine memory: the engine
+  // terminates the worker only once it is clear (engine.js forceTerminate). Set first, then
+  // check KILL, pairing with the engine's KILL-first; once killed, park instead of entering.
+  // Scene code shares this realm and may run inside a call to B (B's glue uses the globals), so
+  // a call to B leaves A for its duration, and anything B throws is caught here: A never unwinds.
+  const enterA = () => {
+    relayAtomicsStore(killFlags, IN_RUST, 1);
+    if (relayAtomicsLoad(killFlags, KILL) === 1) {
+      relayAtomicsStore(killFlags, IN_RUST, 0);
+      // last words: nothing after the wait ever runs
+      relayLog.warn(`[Relay] scene ${sceneId}: kill flag set; parking until terminate`);
+      relayAtomicsWait(killFlags, PARK, 0);
+    }
+  };
+  const leaveA = () => relayAtomicsStore(killFlags, IN_RUST, 0);
+  // Scene code running inside a call to B could reach something that enters A (teardown's
+  // relayFinish): nothing may enter A while A is on the stack, and calls to B keep the depth.
+  let depth = 0;
+  const enter = (f) => {
+    if (depth > 0) throw new Error("relay re-entered");
+    depth += 1;
+    enterA();
+    try {
+      return f();
+    } finally {
+      leaveA();
+      depth -= 1;
+    }
+  };
+  let failure = undefined;
+  // fixed arity: spreading would run the array iterator, which scene code can replace
+  const callB = (f) => (a, b, c) => {
+    leaveA();
+    let result = 0;
+    try {
+      result = f(a, b, c);
+    } catch (e) {
+      failure ??= e;
+    }
+    enterA();
+    return result;
+  };
+  const relayImports = {
+    relay_copy_to_b: copy.copy_to_b,
+    relay_copy_from_b: copy.copy_from_b,
+    relay_b_alloc: callB(scene.relay_b_alloc),
+    relay_b_deliver: callB(scene.relay_b_deliver),
+    relay_b_pump: callB(scene.relay_b_pump),
+    relay_b_next_len: callB(scene.relay_b_next_len),
+    relay_b_next_ptr: callB(scene.relay_b_next_ptr),
+    relay_b_pop: callB(scene.relay_b_pop),
+  };
+
+  let relay;
+  const imports = {};
+  for (const { module, name, kind } of WebAssembly.Module.imports(compiledModule)) {
+    imports[module] ??= {};
+    // shimmed (`__wbg_<name>_<hash>`) or, for imports needing no conversion, the bare name
+    const relayName = /^(?:__wbg_)?(relay_[a-z_]+?)(?:_[0-9a-f]{16})?$/.exec(name)?.[1];
+    if (kind === "memory") {
+      imports[module][name] = sharedMemory;
+    } else if (relayName && relayImports[relayName]) {
+      imports[module][name] = relayImports[relayName];
+    } else if (name === "__wbindgen_init_externref_table") {
+      // as the glue's: touches only this instance's externref table, never memory
+      imports[module][name] = () => {
+        const table = relay.__wbindgen_externrefs;
+        const offset = table.grow(4);
+        table.set(0, undefined);
+        table.set(offset + 0, undefined);
+        table.set(offset + 1, null);
+        table.set(offset + 2, true);
+        table.set(offset + 3, false);
+      };
+    } else {
+      imports[module][name] = () => {};
+    }
+  }
+  relay = (await WebAssembly.instantiate(compiledModule, imports)).exports;
+  // what the glue's __wbg_finalize_init does: stack and TLS for this thread
+  enter(() => relay.__wbindgen_start());
+  postToEngine({ type: "INIT_COMPLETE" });
+
+  // B failed under a relay call: end the scene
+  const checkFailure = () => {
+    if (failure === undefined) return false;
+    relayLog.error(`[Relay] scene ${sceneId}: scene runtime failed; ending the scene`, failure);
+    enter(() => relay.relay_fail());
+    return true;
+  };
+  const logStats = () => {
+    const stat = (i) => relay.relay_stat(i);
+    relayLog.debug(
+      `[Relay] scene ${sceneId}: to scene ${stat(0)}, to engine ${stat(1)}, bytes ${stat(2)}, failures ${stat(3)}, limits broken ${stat(4)}, system api ${stat(5)}`
+    );
+  };
+
+  // the engine pushes the scene before spawning us, but another scene's push can hold the lock
+  let got = 0;
+  for (let attempt = 0; attempt < 100 && !got; attempt++) {
+    got = enter(() => relay.relay_init());
+    if (!got) await new Promise((resolve) => relaySetTimeout(resolve, 10));
+  }
+  if (!got) throw new Error("no scene in the relay queue");
+  // from the engine's side, not the scene runtime's
+  sceneId = BigInt.asUintN(64, enter(() => relay.relay_scene_id()));
+
+  let done = false;
+  let finishRequested = false;
+  relayFinish = () => {
+    if (done) return;
+    if (depth > 0) {
+      // A is on the stack: step finishes once it returns
+      finishRequested = true;
+      return;
+    }
+    done = true;
+    try {
+      enter(() => {
+        logStats();
+        relay.relay_drop();
+        relay.__wbindgen_thread_destroy();
+      });
+    } catch (e) {
+      relayLog.error(`[Relay] scene ${sceneId}: relay teardown failed; leaking its thread state`, e);
+    }
+  };
+
+  // poll both, then sleep: yield to the event loop rather than block. The options object has no
+  // prototype, so reading its members can't reach anything scene code defined.
+  const sleep = (ms, f) =>
+    relayPostTask ? relayPostTask(f, { __proto__: null, delay: ms }) : relaySetTimeout(f, ms);
+  const step = () => {
+    if (done) return;
+    let killed = 0;
+    let moved = 0;
+    try {
+      enter(() => {
+        killed = relay.relay_killed();
+        if (!killed) moved = relay.relay_pump();
+      });
+      if (checkFailure()) killed = 1;
+    } catch (e) {
+      relayLog.error(`[Relay] scene ${sceneId}: relay failed; ending the scene`, e);
+      killed = 1;
+    }
+    if (finishRequested) {
+      relayFinish();
+      return;
+    }
+    if (killed) {
+      // ends the scene loop; its teardown calls relayFinish
+      try {
+        sceneApi.relay_b_kill();
+      } catch (e) {
+        relayLog.error(`[Relay] scene ${sceneId}: scene runtime failed to stop`, e);
+      }
+      return;
+    }
+    sleep(moved ? 0 : 1, step);
+  };
+  step();
 }
 
 var initialized = false;
@@ -505,22 +680,14 @@ self.onmessage = async (event) => {
     }
 
     try {
-      // init wasm
-      wasm_init = await init({
-        module_or_path: compiledModule,
-        memory: sharedMemory,
-      });
+      await relayStart(compiledModule, sharedMemory, event.data.payload.sceneModule);
     } catch (e) {
-      console.error(
-        "[Scene Worker] Error during Wasm instantiation or setup:",
-        e
-      );
-      postToEngine({ type: `INIT_FAILED` });
-      self.close();
+      console.error("[Relay] start failed:", e);
+      // after INIT_COMPLETE the engine won't respawn us, so ack the exit instead
+      postToEngine({ type: relayFinish ? "SHUTDOWN_COMPLETE" : "INIT_FAILED", sceneId });
+      workerClose();
       return;
     }
-
-    postToEngine({ type: `INIT_COMPLETE` });
 
     // add listener to clean up on unhandled rejections
     self.addEventListener("unhandledrejection", (event) => {
@@ -545,7 +712,7 @@ self.onmessage = async (event) => {
     });
 
     try {
-      wasmContext = await wasm_bindgen_exports.wasm_init_scene();
+      wasmContext = await sceneApi.wasm_init_scene();
     } catch (e) {
       console.error("[Scene Worker] Error during scene construction:", e);
       tearDown();
@@ -553,17 +720,16 @@ self.onmessage = async (event) => {
     }
 
     // report which scene this worker picked up (workers pop from a shared queue, so the
-    // mapping isn't knowable at spawn time) — engine.js keeps a sceneId -> Worker map for
-    // kill escalation
-    sceneId = wasmContext.get_scene_id();
+    // mapping isn't knowable at spawn time; relayStart read it from the relay) — engine.js
+    // keeps a sceneId -> Worker map for kill escalation
     postToEngine({ type: "SCENE_READY", sceneId });
 
     try {
-      createJsContext(wasm_bindgen_exports, wasmContext);
+      createJsContext(sceneApi, wasmContext);
       const ops = jsContext.Deno.core.ops;
 
       // preload modules
-      await preloadModules(wasmContext, wasm_bindgen_exports.builtin_module);
+      await preloadModules(wasmContext, sceneApi.builtin_module);
 
       const sceneCode = wasmContext.get_source();
       let module = await runWithScope(sceneCode);

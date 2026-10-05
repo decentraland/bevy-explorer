@@ -21,19 +21,19 @@ struct LocalStorage(HashMap<String, String>);
 
 const STORAGE_DIR: &str = "local_storage";
 
-// The scene's storage directory, held open for the life of the worker.
+// The scene's storage file, held open for the life of the worker.
 //
 // Deliberately NOT `web_fs`: that resolves navigator.storage.getDirectory() — the OPFS *root*, which
 // also holds config.json and the ipfs cache — on every single open, so it would need OPFS reachable
 // from the scene's realm the whole time the scene runs. sandbox_worker.js scrubs the API off the
 // worker global instead, and this handle keeps working afterwards because it is a live object rather
-// than a fresh lookup. It also can't be walked upwards (`..` is rejected), so it grants the subtree
-// and nothing else.
+// than a fresh lookup. Only the scene's own file: scene code can reach this runtime's memory and so
+// steer what it does with anything it holds, so it holds nothing wider.
 thread_local! {
-    static DIR: RefCell<Option<FileSystemDirectoryHandle>> = const { RefCell::new(None) };
+    static FILE: RefCell<Option<FileSystemFileHandle>> = const { RefCell::new(None) };
 }
 
-async fn open_dir() -> Result<FileSystemDirectoryHandle, JsValue> {
+async fn open_file(scene_urn: &str) -> Result<FileSystemFileHandle, JsValue> {
     let global = js_sys::global().unchecked_into::<WorkerGlobalScope>();
     let root: FileSystemDirectoryHandle =
         JsFuture::from(global.navigator().storage().get_directory())
@@ -42,36 +42,35 @@ async fn open_dir() -> Result<FileSystemDirectoryHandle, JsValue> {
 
     let options = FileSystemGetDirectoryOptions::new();
     options.set_create(true);
-    Ok(
+    let dir: FileSystemDirectoryHandle =
         JsFuture::from(root.get_directory_handle_with_options(STORAGE_DIR, &options))
+            .await?
+            .unchecked_into();
+
+    // created now, as the handle can't be had later
+    let options = FileSystemGetFileOptions::new();
+    options.set_create(true);
+    Ok(
+        JsFuture::from(dir.get_file_handle_with_options(scene_urn, &options))
             .await?
             .unchecked_into(),
     )
 }
 
-async fn read(scene_urn: &str) -> Result<Option<String>, JsValue> {
-    let Some(dir) = DIR.with(|dir| dir.borrow().clone()) else {
+async fn read() -> Result<Option<String>, JsValue> {
+    let Some(handle) = FILE.with(|file| file.borrow().clone()) else {
         return Ok(None);
     };
-    // A scene that has never stored anything has no file; that isn't an error.
-    let Ok(handle) = JsFuture::from(dir.get_file_handle(scene_urn)).await else {
-        return Ok(None);
-    };
-    let file = JsFuture::from(handle.unchecked_into::<FileSystemFileHandle>().get_file()).await?;
+    let file = JsFuture::from(handle.get_file()).await?;
     let text = JsFuture::from(file.unchecked_into::<web_sys::File>().text()).await?;
-    Ok(text.as_string())
+    // A scene that has never stored anything has an empty file; that isn't an error.
+    Ok(text.as_string().filter(|text| !text.is_empty()))
 }
 
-async fn store(scene_urn: &str, data: &str) -> Result<(), JsValue> {
-    let Some(dir) = DIR.with(|dir| dir.borrow().clone()) else {
+async fn store(data: &str) -> Result<(), JsValue> {
+    let Some(handle) = FILE.with(|file| file.borrow().clone()) else {
         return Err(JsValue::from_str("scene storage unavailable"));
     };
-    let options = FileSystemGetFileOptions::new();
-    options.set_create(true);
-    let handle: FileSystemFileHandle =
-        JsFuture::from(dir.get_file_handle_with_options(scene_urn, &options))
-            .await?
-            .unchecked_into();
 
     let writable: FileSystemWritableFileStream = JsFuture::from(handle.create_writable())
         .await?
@@ -88,15 +87,15 @@ pub async fn init(state: &WorkerContext) {
     // while navigator.storage is still there. wasm_init_scene (our caller) returns before
     // sandbox_worker.js builds the js context and scrubs, so this is the last chance to take it —
     // including for a scene with nothing stored yet, which still needs the handle to write later.
-    match open_dir().await {
-        Ok(dir) => DIR.with(|slot| *slot.borrow_mut() = Some(dir)),
+    match open_file(&scene_urn).await {
+        Ok(file) => FILE.with(|slot| *slot.borrow_mut() = Some(file)),
         Err(e) => {
             warn!("failed to open scene storage: {e:?}");
             return;
         }
     }
 
-    let buf = match read(&scene_urn).await {
+    let buf = match read().await {
         Ok(Some(buf)) => buf,
         Ok(None) => return,
         Err(e) => {
@@ -114,7 +113,6 @@ pub async fn init(state: &WorkerContext) {
 }
 
 fn write(state: &WorkerContext) {
-    let scene_urn = state.state.borrow().borrow::<CrdtContext>().hash.clone();
     let storage = state.state.borrow().borrow::<LocalStorage>().clone();
 
     spawn_local(async move {
@@ -123,7 +121,7 @@ fn write(state: &WorkerContext) {
             return;
         };
 
-        if let Err(e) = store(&scene_urn, &data).await {
+        if let Err(e) = store(&data).await {
             warn!("failed to write storage: {e:?}");
         }
     })

@@ -196,13 +196,12 @@ impl<'de, T> Deserialize<'de> for RpcResultSender<T> {
         D: Deserializer<'de>,
     {
         let id = u64::deserialize(deserializer)?;
-        let (router, cancel) = ipc_router(id);
+        let (router, cancel) = ipc_router(id).map_err(serde::de::Error::custom)?;
         let (sx, mut rx) = tokio::sync::mpsc::channel(1);
 
         let cancel_router = router.clone();
         tokio::spawn(async move {
             rx.recv().await; // block till all senders are dropped
-            debug!("last dropped {id} - {}", std::any::type_name::<T>());
             let _ = cancel_router.send((id, IpcMessage::Closed));
         });
 

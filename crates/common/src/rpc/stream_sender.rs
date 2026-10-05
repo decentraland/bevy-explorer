@@ -209,7 +209,7 @@ impl<'de, T> Deserialize<'de> for RpcStreamSender<T> {
         D: Deserializer<'de>,
     {
         let id = u64::deserialize(deserializer)?;
-        let (router, close_channel) = ipc_router(id);
+        let (router, close_channel) = ipc_router(id).map_err(serde::de::Error::custom)?;
         let (sx, mut rx) = tokio::sync::mpsc::channel(1);
 
         let cancel_router = router.clone();

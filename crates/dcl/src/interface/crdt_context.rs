@@ -88,7 +88,6 @@ impl CrdtContext {
         }
 
         SceneCensus {
-            scene_id: self.scene_id,
             born: std::mem::take(&mut self.nascent),
             died: std::mem::take(&mut self.death_row),
         }

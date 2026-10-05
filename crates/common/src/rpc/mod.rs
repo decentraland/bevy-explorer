@@ -11,7 +11,7 @@ use alloy_core::primitives::Address;
 use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, sync::Arc};
-use tokio_util::sync::CancellationToken;
+pub use tokio_util::sync::CancellationToken;
 
 pub use result_sender::{RpcResultReceiver, RpcResultSender};
 pub use stream_sender::{RpcStreamReceiver, RpcStreamSender};
@@ -35,22 +35,32 @@ pub(crate) fn ipc_register<T: IpcEndpoint + 'static>(
     })
 }
 
-pub(crate) fn ipc_router(
-    id: u64,
-) -> (
-    tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>,
-    CancellationToken,
-) {
-    ENGINE_IPC_CONTEXT.with(|cell| {
-        let mut ctx = cell.borrow_mut();
-        let ctx = ctx.as_mut().unwrap();
+type IpcRouter = tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>;
 
-        let token = CancellationToken::new();
-        if ctx.ipc_channel_registry.insert(id, token.clone()).is_some() {
-            warn!("ipc channel {id} deserialized twice; the first remote's close will cut off the second");
-        }
-        (ctx.ipc_router.clone(), token)
-    })
+pub(crate) fn ipc_router(id: u64) -> Result<(IpcRouter, CancellationToken), &'static str> {
+    ENGINE_IPC_CONTEXT
+        .try_with(|cell| {
+            let mut ctx = cell.try_borrow_mut().map_err(|_| "ipc context in use")?;
+            let ctx = ctx.as_mut().ok_or("no ipc context")?;
+
+            if let Some(max) = ctx.max_channels {
+                if ctx.ipc_channel_registry.contains_key(&id) {
+                    return Err("ipc channel id reused");
+                }
+                if ctx.ipc_channel_registry.len() >= max {
+                    return Err("too many open ipc channels");
+                }
+            }
+            let token = ctx
+                .parent_token
+                .as_ref()
+                .map_or_else(CancellationToken::new, CancellationToken::child_token);
+            if ctx.ipc_channel_registry.insert(id, token.clone()).is_some() {
+                warn!("ipc channel {id} deserialized twice; the first remote's close will cut off the second");
+            }
+            Ok((ctx.ipc_router.clone(), token))
+        })
+        .map_err(|_| "no ipc context")?
 }
 
 pub struct RequestContext {
@@ -62,6 +72,11 @@ pub struct RequestContext {
 pub struct ResponseContext {
     pub ipc_channel_registry: HashMap<u64, CancellationToken>,
     pub ipc_router: tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>,
+    /// For an untrusted remote: decoding a channel fails once this many are open, or if its id
+    /// is already open.
+    pub max_channels: Option<usize>,
+    /// Channels decoded here close when this is cancelled, as well as on the remote's close.
+    pub parent_token: Option<CancellationToken>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -112,6 +127,11 @@ pub struct CompareSnapshotResult {
 pub struct RPCSendableMessage {
     pub method: String,
     pub params: Vec<serde_json::Value>, // Using serde_json::Value for unknown[]
+}
+
+impl RPCSendableMessage {
+    /// The methods a scene may ask the user's wallet to sign (`RpcCall::SendAsync`).
+    pub const SIGNING_METHODS: &[&str] = &["eth_sendTransaction", "eth_signTypedData_v4"];
 }
 
 pub type RpcEventSender = RpcStreamSender<String>;

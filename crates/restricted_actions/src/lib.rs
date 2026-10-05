@@ -1840,6 +1840,11 @@ pub fn handle_eth_async(
             continue;
         }
 
+        if !RPCSendableMessage::SIGNING_METHODS.contains(&body.method.as_str()) {
+            response.send(Err(format!("method {} is not available", body.method)));
+            continue;
+        }
+
         let last_action_time = scenes
             .get(*scene)
             .ok()

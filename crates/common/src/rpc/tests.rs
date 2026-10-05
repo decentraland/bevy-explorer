@@ -21,6 +21,8 @@ impl Bridge {
         ENGINE_IPC_CONTEXT.set(Some(ResponseContext {
             ipc_channel_registry: Default::default(),
             ipc_router,
+            max_channels: None,
+            parent_token: None,
         }));
         let rt = tokio::runtime::Builder::new_current_thread()
             .build()

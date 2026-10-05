@@ -117,10 +117,9 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
         error!("[{scene_id:?}] more than {MAX_CRDT_SENDS_PER_TICK} CRDT batches in one tick; terminating the scene");
         let _ = op_state
             .borrow_mut::<SceneResponseSender>()
-            .try_send(SceneResponse::Error(
-                scene_id,
-                format!("scene sent more than {MAX_CRDT_SENDS_PER_TICK} CRDT batches in a tick"),
-            ));
+            .try_send(SceneResponse::Error(format!(
+                "scene sent more than {MAX_CRDT_SENDS_PER_TICK} CRDT batches in a tick"
+            )));
         op_state.borrow::<KillFlag>().kill();
         return;
     }
@@ -137,10 +136,9 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
         );
         let _ = op_state
             .borrow_mut::<SceneResponseSender>()
-            .try_send(SceneResponse::Error(
-                scene_id,
-                format!("scene exceeded the {MAX_CRDT_BATCH_BYTES}-byte CRDT batch limit"),
-            ));
+            .try_send(SceneResponse::Error(format!(
+                "scene exceeded the {MAX_CRDT_BATCH_BYTES}-byte CRDT batch limit"
+            )));
         op_state.borrow::<KillFlag>().kill();
         return;
     }
@@ -194,7 +192,6 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
     let sender = op_state.borrow_mut::<SceneResponseSender>();
     sender
         .try_send(SceneResponse::Ok(
-            entity_map.scene_id,
             census,
             updates,
             SceneElapsedTime(elapsed_time),
@@ -216,7 +213,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
         // advisory telemetry: drop the snapshot if the channel is full
         let _ = op_state
             .borrow_mut::<SceneResponseSender>()
-            .try_send(SceneResponse::Stats(scene_id, snapshot));
+            .try_send(SceneResponse::Stats(snapshot));
     }
 
     op_state.put(writers);
@@ -246,10 +243,9 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
             );
             let _ = op_state
                 .borrow_mut::<SceneResponseSender>()
-                .try_send(SceneResponse::Error(
-                    scene_id,
-                    format!("scene exceeded the {MAX_CRDT_STORE_BYTES}-byte CRDT store limit"),
-                ));
+                .try_send(SceneResponse::Error(format!(
+                    "scene exceeded the {MAX_CRDT_STORE_BYTES}-byte CRDT store limit"
+                )));
             op_state.borrow::<KillFlag>().kill();
         } else {
             let headroom = (MAX_CRDT_STORE_BYTES - retained) as u64;
@@ -304,11 +300,10 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                 let filtered_store = op_state.borrow_mut().take::<FilteredCrdtStore>();
                 snapshot.merge_newer(filtered_store.0.clone());
                 op_state.borrow_mut().put(filtered_store);
-                let scene_id = op_state.borrow_mut().borrow::<CrdtContext>().scene_id;
                 op_state
                     .borrow_mut()
                     .borrow_mut::<SceneResponseSender>()
-                    .try_send(SceneResponse::CrdtSnapshot(scene_id, snapshot))
+                    .try_send(SceneResponse::CrdtSnapshot(snapshot))
                     .expect("failed to send crdt snapshot");
                 continue;
             }
@@ -337,7 +332,6 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                 // allocation is used today (batched per-entity instantiation is a later fix).
                 let mut allocator = op_state.borrow_mut().take::<AllocatorContext>();
                 let mut filtered_store = op_state.borrow_mut().take::<FilteredCrdtStore>();
-                let scene_id = allocator.0.scene_id;
                 // One result per requested slot, in order: a caller-specified id (validated below)
                 // or a freshly-allocated one, else the reason it couldn't be allocated. authored
                 // entities live above the reserved-static range (512); avoid the u16::MAX wrap
@@ -392,7 +386,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                 let _ = op_state
                     .borrow_mut()
                     .borrow_mut::<SceneResponseSender>()
-                    .try_send(SceneResponse::EntityAllocated(scene_id, results));
+                    .try_send(SceneResponse::EntityAllocated(results));
                 continue;
             }
             other => break other,
