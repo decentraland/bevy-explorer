@@ -62,19 +62,19 @@ describe('chat rich messages', () => {
   it('clicking a sender opens the shared profile card', async () => {
     renderChat({ messages: [line('gm', '0xbob')], members: [{ address: '0xbob', name: 'Bob' }] })
     await userEvent.click(screen.getByRole('button', { name: 'View Bob' })) // avatar button
-    expect(openProfileCard).toHaveBeenCalledWith('0xbob', expect.any(Number), expect.any(Number))
+    expect(openProfileCard).toHaveBeenCalledWith('0xbob', expect.any(Number), expect.any(Number), expect.anything())
   })
 
   it('right-clicking a sender also opens the card', () => {
     renderChat({ messages: [line('gm', '0xbob')], members: [{ address: '0xbob', name: 'Bob' }] })
     fireEvent.contextMenu(screen.getByRole('button', { name: 'View Bob' }))
-    expect(openProfileCard).toHaveBeenCalledWith('0xbob', expect.any(Number), expect.any(Number))
+    expect(openProfileCard).toHaveBeenCalledWith('0xbob', expect.any(Number), expect.any(Number), expect.anything())
   })
 
   it('clicking an @mention opens the card for that user', async () => {
     renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice', picture: 'p.png' }] })
     await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
-    expect(openProfileCard).toHaveBeenCalledWith('0xalice', expect.any(Number), expect.any(Number))
+    expect(openProfileCard).toHaveBeenCalledWith('0xalice', expect.any(Number), expect.any(Number), expect.anything())
   })
 
   it('a mention queued from another surface (the card) drops @name into the draft', async () => {

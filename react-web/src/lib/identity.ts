@@ -1,6 +1,7 @@
 // Shared player-identity helpers (name color, #tag split, short address). Used by
 // the chat, members, and friends UIs so the rarity-colored naming is consistent.
 
+import { looksClaimed } from '../engine/mention'
 import { serviceUrl } from './baseDomain'
 import { resolveNameColor, userNameColor, type Rgb } from '../engine/nameColor'
 
@@ -52,10 +53,6 @@ export function nameColor(seed: string): string {
   return RARITY[hash(seed) % RARITY.length]
 }
 
-/** A claimed name has no #suffix and isn't a raw address. */
-export function looksClaimed(name: string): boolean {
-  return name.trim().length > 0 && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
-}
 
 /** The colour a person's name and avatar are drawn in, everywhere in the HUD. */
 export function userColor(address: string, name: string, claimed?: boolean, custom?: Rgb | null): string {

@@ -7,6 +7,8 @@ import styles from './SearchField.module.css'
 interface SearchFieldProps {
   /** 'light': off-white field with dark ink and a clear button (menu pages). */
   variant?: 'dark' | 'light'
+  /** 'sm': a 36px field that fills its container (chat emoji panel). */
+  size?: 'md' | 'sm'
   value?: string
   defaultValue?: string
   placeholder?: string
@@ -15,6 +17,7 @@ interface SearchFieldProps {
 
 export function SearchField({
   variant = 'dark',
+  size = 'md',
   value,
   defaultValue = '',
   placeholder = 'Search',
@@ -31,7 +34,7 @@ export function SearchField({
   const set = (e: React.ChangeEvent<HTMLInputElement>): void => setValue(e.target.value)
 
   return (
-    <label className={`${styles.search} ${variant === 'light' ? styles.light : ''}`.trim()}>
+    <label className={`${styles.search} ${variant === 'light' ? styles.light : ''} ${size === 'sm' ? styles.sm : ''}`.trim()}>
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" className={styles.icon}>
         <circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.6" />
         <path d="M11 11l3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />

@@ -4,7 +4,7 @@
 // relay of the scene social state (BevyApi.social.*), guest-disabled.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Avatar, BlockedUser, Button, ControlButton, Envelope, Kebab, Spinner, Tabs, Tooltip, hasOpenPopup, type TabItem } from '../../design'
+import { Avatar, BlockedUser, Button, ControlButton, Envelope, Kebab, Spinner, Tabs, Tooltip, VerifiedBadge, hasOpenPopup, type TabItem } from '../../design'
 import { shortAddr, splitName, userColor } from '../../lib/identity'
 import type { BlockedUser as Blocked, Friend, FriendRequest } from '../../engine/protocol'
 import type { FriendsState } from '../session/useEngineSession'
@@ -15,6 +15,7 @@ import { confirmUnblock } from './friendDialogs'
 import { openFriendRequest } from './FriendRequestPopup'
 import { useProfile } from '../session/profileStore'
 import { hudInsetRef } from '../../lib/hudInset'
+import { looksClaimed } from '../../engine/mention'
 import styles from './FriendsPanel.module.css'
 
 type Tab = 'friends' | 'requests' | 'blocked'
@@ -25,28 +26,7 @@ function label(name: string, address: string): string {
   return name.trim() ? name : shortAddr(address)
 }
 
-/** Claimed names (no #suffix, not a raw address) get the verified check. */
-function isClaimed(name: string): boolean {
-  return name.trim().length > 0 && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
-}
 
-function Verified(): React.JSX.Element {
-  return (
-    <svg className={styles.verified} viewBox="0 0 16 16" aria-label="verified">
-      <defs>
-        <linearGradient id="vrf" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ff2d55" />
-          <stop offset="1" stopColor="#c640cd" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M8 1l1.7 1.2 2.1-.2 1 1.8 1.9.9-.5 2 .9 1.9-1.6 1.4.1 2.1-2 .6-1.1 1.8-2-.7-2 .7-1.1-1.8-2-.6.1-2.1L1.6 8.6l.9-1.9-.5-2 1.9-.9 1-1.8 2.1.2z"
-        fill="url(#vrf)"
-      />
-      <path d="M5.5 8l1.7 1.7L10.8 6" stroke="#fff" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
 
 interface Identity {
   address: string
@@ -60,12 +40,12 @@ function colorOf(user: Identity & { name: string }): string {
 
 function NameLabel({ name, user, message }: { name: string; user: Identity; message?: boolean }): React.JSX.Element {
   const { base, tag } = splitName(label(name, user.address))
-  const claimed = user.claimed ?? isClaimed(name)
+  const claimed = user.claimed ?? looksClaimed(name)
   return (
     <span className={styles.name} style={{ color: colorOf({ ...user, name }) }}>
       {base}
       {!claimed && tag && <span className={styles.tag}>{tag}</span>}
-      {claimed && <Verified />}
+      {claimed && <VerifiedBadge size={14} />}
       {message && <Envelope className={styles.envelope} />}
     </span>
   )

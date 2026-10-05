@@ -245,6 +245,8 @@ export interface NearbyMember {
   name: string
   /** Avatar face snapshot URL (when the profile has loaded). */
   picture?: string
+  /** Wears a claimed name (from the engine's profile, once it has loaded). */
+  claimed?: boolean
 }
 
 /** A player started or stopped talking in voice chat (engine getVoiceStream, scene → page). */

@@ -141,7 +141,3 @@
   background: linear-gradient(transparent 9.5px, var(--divider-strong) 9.5px, var(--divider-strong) 10.5px, transparent 10.5px);
 }
 
-.verified {
-  width: 16px;
-  height: 16px;
-}

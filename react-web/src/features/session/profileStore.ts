@@ -9,6 +9,7 @@
 // it is mounted, so a chat line on screen keeps its sender resolved however long ago they left; an
 // entry nobody has shown for a while is swept. The engine announces profile changes (the
 // `profileChanged` stream); an entry someone is still showing is re-read, the rest are dropped.
+import { looksClaimed } from '../../engine/mention'
 import { useCallback, useSyncExternalStore } from 'react'
 import type { Profile } from '../../engine/protocol'
 import { userColor } from '../../lib/identity'
@@ -126,7 +127,6 @@ export function useProfile(address: string): Profile | undefined {
 /** A one-off read for code outside render (a click handler); no subscription, no fetch. */
 export const peekProfile = (address: string): Profile | undefined => entries.get(profileKey(address))?.profile
 
-const looksClaimed = (name: string): boolean => !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
 
 /** Identity a list already carries. Never overwrites the engine's copy; keeps an entry warm while
  *  the list keeps vouching for it (a nearby player stays resolvable until well after they leave). */

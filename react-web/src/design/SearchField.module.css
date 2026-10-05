@@ -41,7 +41,7 @@
   padding: 0 8px 0 11.5px;
   border: none;
   border-radius: var(--r-md);
-  background: var(--surface-light);
+  background: var(--search-light-bg, var(--surface-light));
 }
 .light:focus-within {
   border: none;
@@ -78,4 +78,13 @@
   height: 10px;
   background: var(--black);
   mask: url('../assets/backpack/icon-close.webp') center / contain no-repeat;
+}
+
+.sm {
+  width: 100%;
+  height: 36px;
+  border-radius: var(--r-button);
+}
+.sm .input {
+  font-size: var(--type-14);
 }

@@ -134,6 +134,7 @@
   --row-hover: var(--pearl);
   --row-press: #cfcdd4;
   --black: #000000;
+  --white: #ffffff;
   --fill-faint: rgba(255, 255, 255, 0.06); /* hover wash on dark buttons */
   --scrim-40: rgba(0, 0, 0, 0.22);
   --scrim-20: rgba(0, 0, 0, 0.1);
@@ -227,6 +228,35 @@
   --ease-inout: cubic-bezier(0.333, 0, 0.667, 1); /* flat-tangent keyframe curve */
   --ease-outquad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --ease-inoutquad: cubic-bezier(0.455, 0.03, 0.515, 0.955);
+
+  /* ---- chat ----
+     On-screen (sRGB) values measured from captures: a translucent overlay blended in linear light
+     reads lighter than the same CSS alpha. */
+  --chat-focus: rgba(0, 0, 0, 0.44); /* messages column while hovered/focused */
+  --chat-head: rgba(0, 0, 0, 0.72);
+  --chat-members: rgba(0, 0, 0, 0.7);
+  --chat-members-head: rgba(0, 0, 0, 0.94);
+  --chat-bubble: rgba(0, 0, 0, 0.7);
+  --chat-mention: #3a0f50;
+  --chat-mention-rim: linear-gradient(180deg, #fe2d57 0%, #c740cd 100%);
+  --chat-day: rgba(0, 0, 0, 0.6);
+  --chat-input: rgba(0, 0, 0, 0.37);
+  --chat-input-focus: rgba(0, 0, 0, 0.71);
+  --chat-new: rgba(255, 45, 85, 0.73);
+  --chat-system: #0cde00;
+  --chat-link: #00b2ff;
+  --chat-hover: rgba(255, 255, 255, 0.24); /* white α0.051 over black, in linear light */
+  --chat-pressed: rgba(255, 255, 255, 0.18);
+  --chat-divider: rgba(255, 255, 255, 0.2);
+  --chat-avatar-ring: rgba(255, 255, 255, 0.48);
+  --counter-half: #ffbc5b;
+  --emoji-tab: #a09ba8;
+  --emoji-header: #cfcdd4;
+  --emoji-hover: #43404a;
+  --emoji-search: #d6d6d6;
+  --chat-dur-chrome: var(--dur-slide);
+  --chat-dur-arrive: 500ms;
+  --chat-dur-idle: 3s;
 
   /* ---- modal (ported from dcl-react-ui) ---- */
   --modal-pad: 30px;
