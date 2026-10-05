@@ -6,8 +6,8 @@ use common::{
 };
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
-    js::SceneResponseSender,
-    RendererResponse, SceneResponse,
+    js::{SceneResponseSender, TaggedSceneResponseSender},
+    RendererResponse, SceneId, SceneResponse,
 };
 use interprocess::local_socket::{
     tokio::{RecvHalf, SendHalf},
@@ -54,13 +54,13 @@ pub enum EngineToScene {
 
 #[derive(Serialize, Deserialize)]
 pub enum SceneToEngine {
-    SceneResponse(SceneResponse),
+    SceneResponse(SceneId, SceneResponse),
     SystemApi(SystemApi),
     IpcMessage(u64, IpcMessage),
 }
 
 thread_local! {
-    static RENDERER_SENDER: RefCell<Option<SceneResponseSender>> = const { RefCell::new(None) };
+    static RENDERER_SENDER: RefCell<Option<TaggedSceneResponseSender>> = const { RefCell::new(None) };
     static SYSTEM_API_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>> = const { RefCell::new(None) };
 }
 
@@ -166,6 +166,8 @@ pub fn init_runtime() -> anyhow::Result<()> {
         ENGINE_IPC_CONTEXT.set(Some(ResponseContext {
             ipc_channel_registry: Default::default(),
             ipc_router: router_sx,
+            max_channels: None,
+            parent_token: None,
         }));
 
         let f_out = rt.spawn(renderer_ipc_out(ipc_outbound, new_scene_rx, router_rx));
@@ -220,7 +222,7 @@ pub async fn renderer_ipc_out(
                     return;
                 };
 
-                RENDERER_SENDER.set(Some(response_channel));
+                RENDERER_SENDER.set(Some(response_channel.channel().clone()));
 
                 if let Some(system_api_sender) = system_api_sender {
                     SYSTEM_API_SENDER.set(Some(system_api_sender));
@@ -323,7 +325,7 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
         let msg: SceneToEngine = rmp_serde::from_slice(&buffer).unwrap();
 
         match msg {
-            SceneToEngine::SceneResponse(scene_response) => RENDERER_SENDER.with(|sender| {
+            SceneToEngine::SceneResponse(id, scene_response) => RENDERER_SENDER.with(|sender| {
                 let mut sender = sender.borrow_mut();
                 let sender = sender.as_mut().unwrap();
                 // HEADLESS-ONLY: EXIT_ON_SIDECAR_LOSS marks the orchestrated headless server,
@@ -333,11 +335,11 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
                 // that outruns the bevy-side drain only stalls itself. Desktop and tests
                 // (flag unset) keep the original panic-on-failure behavior unchanged.
                 if EXIT_ON_SIDECAR_LOSS.load(Ordering::SeqCst) {
-                    if let Err(e) = sender.try_send(scene_response) {
+                    if let Err(e) = sender.try_send((id, scene_response)) {
                         warn!("dropping scene response: renderer channel unavailable ({e})");
                     }
                 } else {
-                    sender.try_send(scene_response).unwrap();
+                    sender.try_send((id, scene_response)).unwrap();
                 }
             }),
             SceneToEngine::IpcMessage(id, ipc_message) => {

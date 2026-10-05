@@ -1,11 +1,13 @@
 pub mod gotham_state;
 pub mod local_storage;
 pub mod op_wrappers;
+pub mod relay;
+pub mod relay_proto;
 
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
-use common::structs::GlobalCrdtStateUpdate;
+use common::{rpc::CancellationToken, structs::GlobalCrdtStateUpdate};
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     js::{
@@ -34,15 +36,30 @@ pub struct SceneInitializationData {
     pub super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     pub scene_origin: bevy::prelude::Vec3,
     pub kill_flag: KillFlag,
+    /// Cancelled by the engine when it drops the scene: closes every rpc channel the relay
+    /// decoded from it, whether or not the worker gets to clean up.
+    pub ipc_close: CancellationToken,
 }
 
-// Static storage shared data
+// Scenes waiting for a worker. Each wasm instance has its own copy: in engine memory the engine
+// pushes and a sandbox worker's relay (relay.rs) pops; in a scene runtime's memory the runtime
+// queues the scene the relay handed it, for `wasm_init_scene`.
 static SCENE_QUEUE: OnceCell<Arc<Mutex<Vec<SceneInitializationData>>>> = OnceCell::new();
 
 pub fn init_runtime() {
     if SCENE_QUEUE.set(Default::default()).is_err() {
         panic!("can't init wasm queue");
     }
+}
+
+/// The scene runtime (crates/dcl_scene_wasm) queues the scene the relay handed it, for
+/// `wasm_init_scene` to pick up.
+pub fn queue_scene(data: SceneInitializationData) -> bool {
+    SCENE_QUEUE
+        .get()
+        .and_then(|queue| queue.try_lock().ok())
+        .map(|mut queue| queue.push(data))
+        .is_some()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -67,6 +84,7 @@ pub fn spawn_scene(
     let (thread_sx, thread_rx) = unbounded_channel();
     let kill_flag = KillFlag::default();
     let (kill_guard, killed) = tokio::sync::oneshot::channel();
+    let ipc_close = CancellationToken::new();
 
     IoTaskPool::get()
         .spawn(async move {
@@ -88,6 +106,7 @@ pub fn spawn_scene(
                     super_user,
                     scene_origin,
                     kill_flag: kill_flag.clone(),
+                    ipc_close: ipc_close.clone(),
                 });
 
             // spin up a scene thread to consume it
@@ -99,6 +118,7 @@ pub fn spawn_scene(
             // the job of escalating if that doesn't happen
             let _ = killed.await;
             kill_flag.kill();
+            ipc_close.cancel();
             terminate_sandbox(scene_id.0.to_bits());
         })
         .detach();

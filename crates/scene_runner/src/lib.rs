@@ -28,7 +28,7 @@ use common::{
 use comms::{global_crdt::GlobalCrdtState, SceneRoomConnection, SetCurrentScene};
 use dcl::{
     interface::CrdtType,
-    js::{scene_response_channel, SceneResponseReceiver, SceneResponseSender},
+    js::{scene_response_channel, SceneResponseReceiver, TaggedSceneResponseSender},
     RendererResponse, SceneCensus, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
 };
 use dcl_component::{
@@ -81,7 +81,7 @@ pub mod util;
 // bookkeeping struct for javascript execution of scenes
 #[derive(Resource)]
 pub struct SceneUpdates {
-    pub sender: SceneResponseSender,
+    pub sender: TaggedSceneResponseSender,
     receiver: SceneResponseReceiver,
     pub jobs_in_flight: HashSet<Entity>,
     pub update_deadline: SystemTime,
@@ -1068,7 +1068,6 @@ fn send_scene_updates(
     // the lifecycle pass drains for every scene before we'd get a chance to send.
     // Holds only engine-originated changes, so it never echoes the scene's census.
     let census = SceneCensus {
-        scene_id: SceneId(ent),
         born: std::mem::take(&mut context.outbound_born),
         died: std::mem::take(&mut context.outbound_died),
     };
@@ -1106,8 +1105,8 @@ fn receive_scene_updates(
 ) {
     loop {
         let maybe_completed_job = match updates.receiver().try_recv() {
-            Ok(response) => match response {
-                SceneResponse::CrdtSnapshot(scene_id, crdt) => {
+            Ok((scene_id, response)) => match response {
+                SceneResponse::CrdtSnapshot(crdt) => {
                     // scene ids are the scene root entity
                     snapshot_events.write(CrdtSnapshotEvent {
                         scene_entity: scene_id.0,
@@ -1115,14 +1114,14 @@ fn receive_scene_updates(
                     });
                     None
                 }
-                SceneResponse::EntityAllocated(scene_id, results) => {
+                SceneResponse::EntityAllocated(results) => {
                     entity_allocated_events.write(EntityAllocatedEvent {
                         scene_entity: scene_id.0,
                         results,
                     });
                     None
                 }
-                SceneResponse::Stats(scene_id, counters) => {
+                SceneResponse::Stats(counters) => {
                     if let Ok(mut context) = scenes.get_mut(scene_id.0) {
                         context.resource_counters = Some(counters);
                     }
@@ -1132,7 +1131,7 @@ fn receive_scene_updates(
                     toaster.add_toast("inspector", "Scene paused waiting for inspector session");
                     None
                 }
-                SceneResponse::CompareSnapshot(scene_id, compare) => {
+                SceneResponse::CompareSnapshot(compare) => {
                     debug!("[{scene_id:?}] requested snapshot");
                     if let Ok(context) = scenes.get(scene_id.0) {
                         rpc_call_events.write(RpcCallEvent {
@@ -1145,7 +1144,7 @@ fn receive_scene_updates(
                     }
                     None
                 }
-                SceneResponse::Error(scene_id, message) => {
+                SceneResponse::Error(message) => {
                     let root = scene_id.0;
                     if let Ok(mut context) = scenes.get_mut(root) {
                         context.state = SceneState::Broken;
@@ -1159,12 +1158,11 @@ fn receive_scene_updates(
                     }
                     Some(root)
                 }
-                SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages, rpc_calls) => {
+                SceneResponse::Ok(census, mut crdt, runtime, messages, rpc_calls) => {
                     // scene ids are the scene root entity
                     let root = scene_id.0;
                     debug!(
-                        "scene {:?}/{:?} received updates! [+{}, -{}, {} rpc",
-                        census.scene_id,
+                        "scene {:?} received updates! [+{}, -{}, {} rpc",
                         root,
                         census.born.len(),
                         census.died.len(),
@@ -1238,7 +1236,7 @@ fn receive_scene_updates(
                     }
                     Some(root)
                 }
-                SceneResponse::ImmediateRpcCall(scene_id, call) => {
+                SceneResponse::ImmediateRpcCall(call) => {
                     debug!("[{scene_id:?}] immediate rpc: {call:?}");
                     if let Ok(context) = scenes.get(scene_id.0) {
                         rpc_call_events.write(RpcCallEvent {

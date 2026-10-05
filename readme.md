@@ -56,7 +56,7 @@ cargo install wasm-pack
 just wasm     # builds the wasm into deploy/web/engine/pkg, then serves react-web and opens a browser
 ```
 
-`just wasm` is the whole loop: `wasm-pack build`, re-bundle the sandbox worker (it inlines the wasm glue, so it must be rebuilt with the wasm), `npm install` in `react-web` and `react-web/bridge-scene`, then `npm run dev`.
+`just wasm` is the whole loop: `wasm-pack build` for the engine and for the scene runtime (`crates/dcl_scene_wasm`, into `pkg-scene`), re-bundle the sandbox worker (it inlines the wasm glue, so it must be rebuilt with the wasm), `npm install` in `react-web` and `react-web/bridge-scene`, then `npm run dev`.
 
 Useful URLs once the dev server is up:
 

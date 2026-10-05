@@ -21,7 +21,6 @@ impl SceneId {
 // message from scene describing new and deleted entities
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SceneCensus {
-    pub scene_id: SceneId,
     pub born: HashSet<SceneEntityId>,
     pub died: HashSet<SceneEntityId>,
 }
@@ -148,27 +147,26 @@ mod rpc_calls_tests {
 // data from scene to renderer
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SceneResponse {
-    Error(SceneId, String),
+    Error(String),
     Ok(
-        SceneId,
         SceneCensus,
         CrdtStore,
         SceneElapsedTime,
         Vec<SceneLogMessage>,
         RpcCalls,
     ),
-    ImmediateRpcCall(SceneId, RpcCall),
+    ImmediateRpcCall(RpcCall),
     WaitingForInspector,
-    CompareSnapshot(SceneId, CompareSnapshot),
+    CompareSnapshot(CompareSnapshot),
     /// Response to [`RendererResponse::GetCrdtSnapshot`]: the full scene-side CRDT state.
-    CrdtSnapshot(SceneId, CrdtStore),
+    CrdtSnapshot(CrdtStore),
     /// Response to [`RendererResponse::AllocateEntity`]: one result per requested slot, in order —
     /// `Ok(id)` for an instantiated entity, `Err` for a slot that couldn't be allocated (an explicit
     /// id that was already live, or no free id for a fresh allocation).
-    EntityAllocated(SceneId, Vec<Result<SceneEntityId, AllocError>>),
+    EntityAllocated(Vec<Result<SceneEntityId, AllocError>>),
     /// Advisory periodic snapshot of the scene's cumulative resource counters. Dropped
     /// (never blocks) when the channel is full.
-    Stats(SceneId, SceneResourceCounters),
+    Stats(SceneResourceCounters),
 }
 
 /// Cumulative per-scene resource counters, incremented by the scene-side ops and flushed

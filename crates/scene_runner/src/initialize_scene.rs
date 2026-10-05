@@ -28,6 +28,7 @@ use common::{
 use comms::global_crdt::{CrdtContexts, GlobalCrdtState};
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore, CrdtType},
+    js::SceneResponseSender,
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
@@ -510,13 +511,15 @@ pub(crate) fn load_scene_javascript(
             initial_crdt.clean_up(&census.died);
             let updates = initial_crdt.clone().take_updates();
 
-            if let Err(e) = scene_updates.sender.try_send(SceneResponse::Ok(
+            if let Err(e) = scene_updates.sender.try_send((
                 context.scene_id,
-                census,
-                updates,
-                SceneElapsedTime(0.0),
-                Default::default(),
-                Default::default(),
+                SceneResponse::Ok(
+                    census,
+                    updates,
+                    SceneElapsedTime(0.0),
+                    Default::default(),
+                    Default::default(),
+                ),
             )) {
                 error!("failed to send initial updates to renderer: {e}");
             }
@@ -675,7 +678,7 @@ pub(crate) fn initialize_scene(
 
         info!("{root:?}: starting scene sandbox");
 
-        let thread_sx = scene_updates.sender.clone();
+        let thread_sx = SceneResponseSender::new(context.scene_id, scene_updates.sender.clone());
 
         let (global_updates, scene_origin, crdt_context) = match *state {
             SceneLoading::Javascript {

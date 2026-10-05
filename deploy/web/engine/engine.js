@@ -304,25 +304,22 @@ export async function initEngine() {
 
   // killFlags layout (Int32Array over a per-worker SharedArrayBuffer, shared with the worker
   // script — NOT with scene code, which can't see the worker's module scope):
-  //   [0] KILL: engine has decided to terminate; the worker's op wrapper parks instead of
+  //   [0] KILL: engine has decided to terminate; the worker's relay parks instead of
   //       entering the engine wasm
-  //   [1] IN_RUST: the worker is inside a wasm call (op wrapper), or anywhere in its
-  //       teardown — held across the whole teardown because the drain's timer gaps let the
-  //       executor poll draining op futures, and those polls enter the engine wasm unflagged
+  //   [1] IN_RUST: the worker is inside the relay, the only code it runs on engine memory
   //   [2] park target for Atomics.wait — never written
   const KILL = 0, IN_RUST = 1;
 
   // Tier-2 forceful kill: a worker that ignored SHUTDOWN is stuck in a sync spin. A naive
   // Worker.terminate() could land mid-op while the worker holds a lock inside the shared
   // engine wasm memory (allocator, channel mutex) and corrupt the engine, so handshake
-  // first: set KILL, then wait for IN_RUST to clear. Once KILL is visible the op wrapper
-  // parks before entering rust, so IN_RUST == 0 means the worker can never re-enter — the
-  // spin is pure JS and terminate is safe. The worker's few unwrapped wasm calls all sit in
-  // its bounded init path (pre-scene-code), where a 20s-unresponsive scene cannot be.
+  // first: set KILL, then wait for IN_RUST to clear. Once KILL is visible the relay parks
+  // before entering the engine wasm, so IN_RUST == 0 means the worker can never re-enter —
+  // whatever it is spinning in, terminate is safe for the engine.
   //
-  // The dead thread's state in the shared wasm memory is deliberately leaked: a parked
-  // async op future may still reference it, and its waker can fire after the terminate
-  // (channel close, comms), so freeing the stack/TLS here would corrupt the engine.
+  // The dead relay's state in the shared wasm memory is deliberately leaked: engine threads
+  // can still wake its tasks after the terminate (channel close), so freeing its stack/TLS
+  // here would corrupt the engine.
   const forceTerminate = (sceneId) => {
     const entry = sandboxWorkers.get(sceneId);
     if (!entry) return;
@@ -375,19 +372,39 @@ export async function initEngine() {
     }, KILL_GRACE_MS);
   };
 
-  // Setup sandbox worker spawn callback
-  window.spawn_and_init_sandbox = async () => {
+  // the scene runtime every sandbox worker runs its scene on, compiled once for all of them; a
+  // failed fetch or compile isn't kept, so the next spawn tries again
+  let sceneRuntimeModule;
+  const compileSceneRuntime = () =>
+    (sceneRuntimeModule ??= WebAssembly.compileStreaming(
+      fetch(new URL("./pkg-scene/dcl_scene_wasm_bg.wasm", import.meta.url))
+    ).catch((e) => {
+      sceneRuntimeModule = undefined;
+      throw e;
+    }));
+
+  // Setup sandbox worker spawn callback. The worker runs its scene on the scene runtime, in that
+  // runtime's own memory, and relays it to the engine through an engine-module instance with no
+  // glue (crates/dcl_wasm/src/inner/relay.rs).
+  const spawnSandbox = async () => {
+    let sceneModule;
+    // the engine waits on this for its queued scene, so keep trying rather than fail it
+    while (!sceneModule) {
+      try {
+        sceneModule = await compileSceneRuntime();
+      } catch (e) {
+        console.error("[Main JS] scene runtime failed to load; retrying", e);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
     var timeoutId;
     return new Promise((resolve, _reject) => {
       // The BUNDLE, not sandbox_worker.js. Scene code shares this worker's realm, and any
-      // module in that realm can be re-imported by URL — which for "./pkg/webgpu_build.js"
-      // hands back OUR initialised instance (wasm-bindgen's init returns the cached exports),
-      // shared engine heap and all. Inlining makes the glue's exports ordinary module-scope
-      // bindings of the bundle instead. A scene can still import the bundle's URL, but a
-      // namespace object exposes only that module's *exports*, and this entry has none — so
-      // it gets an empty object. Keep sandbox_worker.js export-free or that stops being true.
-      // Built alongside the wasm (see react-web/README.md); lives in pkg/ so the glue's
-      // relative paths still resolve. sandbox_worker.js is unchanged, just no longer the entry.
+      // module in that realm can be re-imported by URL. Inlining makes the scene runtime's glue
+      // and the relay's modules ordinary module-scope bindings of the bundle instead. A scene
+      // can still import the bundle's URL, but a namespace object exposes only that module's
+      // *exports*, and this entry has none — so it gets an empty object. Keep sandbox_worker.js
+      // export-free or that stops being true. Built alongside the wasm (see react-web/README.md).
       const sandboxWorkerPath = new URL("./pkg/sandbox_worker.bundle.js", import.meta.url);
 
       var timeoutCount = 0;
@@ -433,6 +450,7 @@ export async function initEngine() {
             bridgeSession: window.__bridgeSession,
             killToken,
             shutdownToken,
+            sceneModule,
           },
         });
         let warnedForgery = false;
@@ -489,6 +507,7 @@ export async function initEngine() {
       clearTimeout(timeoutId);
     });
   };
+  window.spawn_and_init_sandbox = spawnSandbox;
 
   // Step 3: Initialize engine
   setLoadingStepActive('init');
