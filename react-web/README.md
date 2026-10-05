@@ -127,8 +127,10 @@ the editor's fixed size and only Cancel or Sign close it.
 When the previewed scene's `scene.json` has `authoritativeMultiplayer: true`, `openPreview` first
 starts its scene server beside the client (`__bevyStartServer`, a headless engine in a hidden frame,
 `deploy/web/engine/headless.js`); one runs at a time, and leaving the preview or opening another
-removes its frame. Its scene logs go to that frame's console; the editor's Storage tab cannot
-reach its storage yet.
+removes its frame. Its scene logs go to that frame's console. The server keeps the dev server's
+storage in the preview realm, open only to its sandboxes and this page
+(`deploy/web/PREVIEW_REALM.md` "Storage"); the editor's Storage tab reaches it through
+`previewStorageFetch`, which takes only the open preview's storage routes.
 
 In dev, `?bridgePort=<port>` loads the bridge scene from `http://localhost:<port>` instead of
 :8100 (the gates run their own); production builds ignore it.

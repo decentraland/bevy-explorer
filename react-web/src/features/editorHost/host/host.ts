@@ -60,6 +60,9 @@ export interface DclEditorHostV1 {
    *  'not-allowed' for any other url, method or editor metadata, 'cancelled' when the player declines
    *  an undeploy, and 'not-signed-in' for a guest. */
   signedFetch: (url: string, init?: SignedFetchInit) => Promise<Response>
+  /** fetch `path` (`/values…`, `/players/<address>/values…` or `/env/<key>`) from the previewed
+   *  project's storage. Rejects 'not-allowed' for any other path or with no preview open. */
+  previewStorageFetch: (path: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<Response>
   /** Ask the player to confirm a Worlds deployment, then sign its entity id. Rejects 'cancelled'
    *  when declined and 'not-signed-in' for a guest. */
   signDeployment: (request: DeploymentRequest) => Promise<AuthChainLink[]>
@@ -132,6 +135,8 @@ const SIGNED_METHODS: Record<keyof SignedServices, ReadonlySet<string>> = {
 // the server's router ignores case and a trailing slash
 const UNDEPLOY = /^\/world\/([^/]+)\/scenes\/([^/]+)\/?$/i
 const UNDEPLOY_WORLD = /^\/entities\/([^/]+)\/?$/i
+// a preview realm's storage routes (deploy/web/PREVIEW_REALM.md "Storage")
+const PREVIEW_STORAGE_PATH = /^(?:values|players\/[^/]+\/values)(?:\/[^/]+)?$|^env\/[^/]+$/
 
 // Where the player was before the first preview.
 let home: Home | null = null
@@ -402,6 +407,14 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       const loaded = await loadSigner()
       const signed = await loaded.signFetch(identity, method, target, signerFor(loaded, identity), metadata)
       return fetch(target, { method, body: init?.body, signal, headers: { ...Object.fromEntries(own), ...signed } })
+    },
+    previewStorageFetch(path, init) {
+      if (previewing == null) return Promise.reject(new Error('not-allowed'))
+      const base = new URL(`${pageDir}preview/${previewing}/`)
+      const target = new URL(path.replace(/^\/+/, ''), base)
+      const route = target.href.startsWith(base.href) ? target.pathname.slice(base.pathname.length) : ''
+      if (!PREVIEW_STORAGE_PATH.test(route)) return Promise.reject(new Error('not-allowed'))
+      return fetch(target.href, { method: init?.method ?? 'GET', headers: init?.headers, body: init?.body })
     },
     async signDeployment(request) {
       const identity = await deps.login()

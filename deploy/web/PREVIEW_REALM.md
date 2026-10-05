@@ -154,7 +154,8 @@ synced or logged.
 Who may call them, as the native preview trusts its own server: the worker answers a storage route
 only when the request's service worker client is
 
-- a window on this origin: the page (the editor's Storage tab) and the scene server's hidden `headless.html` frame, which is the page's
+- a window on this origin: the page (the editor's Storage tab, through the host's
+  `previewStorageFetch`) and the scene server's hidden `headless.html` frame, which is the page's
   own code; or
 - a scene server's sandbox: `engine/pkg/sandbox_worker.bundle.js?server`, the url
   `engine/sandbox_host.js` gives the sandboxes of a `role: "server"` instance (`headless.js`).
