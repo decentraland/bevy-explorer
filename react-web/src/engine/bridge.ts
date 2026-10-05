@@ -63,7 +63,7 @@ export class BridgeClient implements LoginDriver {
       login: (sessionId) => this.rpc<GuestWallet>('guestLogin', { sessionId }),
       sign: (token, message) => this.rpc<string>('guestSign', { token, message })
     })
-    await this.command(`/login_identity ${encodeIdentity(identity)}`)
+    await this.command(`/login_identity ${encodeIdentity(identity)} --guest`)
   }
 
   loginCancel(): Promise<void> {

@@ -25,8 +25,9 @@ export interface LoginDriver {
   /** Hand a same-domain SSO identity to the engine (replaces the auth-server poll).
    *  `defaultOnError` continues with (and deploys) a default profile if the user's current
    *  profile can't be fetched — it OVERWRITES the server-side profile, so only pass it after
-   *  a failed attempt, with explicit user consent. */
-  loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean): Promise<void>
+   *  a failed attempt, with explicit user consent. `guest` marks a guest account: the
+   *  engine reports it as a guest in analytics and refuses its transactions. */
+  loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean, guest?: boolean): Promise<void>
   /** Reuse the existing login (the "Jump in" button). Each backend logs in the way it
    *  supports: console `/login_identity` for the engine, `loginPrevious` over the bridge.
    *  `defaultOnError` as for loginWithIdentity. */

@@ -66,8 +66,8 @@ export class EngineDriver implements LoginDriver {
     await this.rpc.command('/logout')
   }
 
-  async loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean): Promise<void> {
-    const flag = defaultOnError === true ? ' --default-on-error' : ''
+  async loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean, guest?: boolean): Promise<void> {
+    const flag = (defaultOnError === true ? ' --default-on-error' : '') + (guest === true ? ' --guest' : '')
     await this.rpc.command(`/login_identity ${encodeIdentity(identity)}${flag}`)
     this.scheduleReadyFallback()
   }

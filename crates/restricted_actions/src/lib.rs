@@ -1845,6 +1845,12 @@ pub fn handle_eth_async(
             continue;
         }
 
+        // A guest account has no wallet to approve with, so don't ask the user to allow it.
+        if wallet.is_guest_account() {
+            response.send(Err("guest accounts cannot sign transactions".to_owned()));
+            continue;
+        }
+
         let last_action_time = scenes
             .get(*scene)
             .ok()

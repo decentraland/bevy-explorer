@@ -71,8 +71,9 @@ pub enum SystemApi {
     /// Log in with an AuthIdentity the web page already holds (base64-encoded AuthIdentity
     /// JSON read from localStorage) — no auth-server round-trip. The identity is the same
     /// regardless of how the user signed in (wallet, social, OTP, magic).
-    /// bool: as for LoginPrevious.
-    LoginWithIdentity(String, bool, RpcResultSender<Result<(), String>>),
+    /// bools: as for LoginPrevious; the identity is a guest account (see
+    /// `Wallet::is_guest_account`).
+    LoginWithIdentity(String, bool, bool, RpcResultSender<Result<(), String>>),
     LoginGuest,
     LoginCancel,
     Logout,
