@@ -1,14 +1,20 @@
-// The page's own "sign this deployment?" dialog: the editor asks, the player answers here, and
-// only a yes reaches the signer (host/host.ts signDeployment).
+// The page's own "sign this deployment?" and "sign this undeploy?" dialogs: the editor asks, the
+// player answers here, and only a yes reaches the signer (host/host.ts).
 
 import { showDialog } from '../../design'
-import type { DeploymentRequest } from './host/host'
+import type { DeploymentRequest, UndeployRequest } from './host/host'
 import styles from './DeployConfirm.module.css'
 
 function size(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
+
+const short = (wallet: string): React.JSX.Element => (
+  <dd className={styles.wallet} title={wallet}>
+    {wallet.slice(0, 6)}…{wallet.slice(-4)}
+  </dd>
+)
 
 /** Resolves true only when the player chose to sign. `server`: the host it publishes to. */
 export function confirmDeployment(request: DeploymentRequest, wallet: string, server: string): Promise<boolean> {
@@ -31,9 +37,7 @@ export function confirmDeployment(request: DeploymentRequest, wallet: string, se
           <dt>Server</dt>
           <dd>{server}</dd>
           <dt>Signed by</dt>
-          <dd className={styles.wallet} title={wallet}>
-            {wallet.slice(0, 6)}…{wallet.slice(-4)}
-          </dd>
+          {short(wallet)}
         </dl>
         <p className={styles.note}>Signing is free — it proves this publish comes from your account. You sign the scene as the editor built it; the server is where the editor sends it.</p>
       </>
@@ -41,6 +45,34 @@ export function confirmDeployment(request: DeploymentRequest, wallet: string, se
     actions: [
       { id: 'cancel', label: 'Cancel', variant: 'secondary' },
       { id: 'sign', label: 'Sign and publish' }
+    ]
+  }).then((choice) => choice === 'sign')
+}
+
+/** Resolves true only when the player chose to sign removing the scene at `request.coordinate`. */
+export function confirmUndeploy(request: UndeployRequest, wallet: string, server: string): Promise<boolean> {
+  return showDialog({
+    title: 'Unpublish this scene?',
+    fixed: true,
+    dismissible: false,
+    body: (
+      <>
+        <dl className={styles.facts}>
+          <dt>World</dt>
+          <dd>{request.world}</dd>
+          <dt>Parcel</dt>
+          <dd>{request.coordinate}</dd>
+          <dt>Server</dt>
+          <dd>{server}</dd>
+          <dt>Signed by</dt>
+          {short(wallet)}
+        </dl>
+        <p className={styles.note}>The scene on this parcel is removed from the world for everyone. Signing is free — it proves the request comes from your account.</p>
+      </>
+    ),
+    actions: [
+      { id: 'cancel', label: 'Cancel', variant: 'secondary' },
+      { id: 'sign', label: 'Sign and unpublish' }
     ]
   }).then((choice) => choice === 'sign')
 }

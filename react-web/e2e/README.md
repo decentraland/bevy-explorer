@@ -101,7 +101,7 @@ pointing at it (`e2e/gate.ts`).
 
 Five specs drive the scene editor package inside this page with real clicks. They need a built
 engine in `deploy/web/engine/pkg` (`just wasm`), the TS bindings
-(`just ts-bindings`), and a dcl-editor checkout whose package speaks host contract v1.1 (`mountHome`):
+(`just ts-bindings`), and a dcl-editor checkout whose package speaks host contract v1.1 or later (`mountHome`):
 
 ```bash
 # in the dcl-editor checkout; any --editor-base will do: the page reads only the entity id from
