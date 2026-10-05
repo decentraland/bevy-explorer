@@ -216,9 +216,10 @@ function signedTarget(services: SignedServices | undefined, url: string, method:
   return null
 }
 
-// a signature only the editor's own service should get
+// a signature only the editor's own service should get; checked as signed, lowercased
 function editorMetadata(metadata: Record<string, unknown>): boolean {
-  return metadata.signer === 'dcl:editor' || (typeof metadata.intent === 'string' && metadata.intent.startsWith('dcl:editor:'))
+  const folded = JSON.parse(JSON.stringify(metadata).toLowerCase()) as Record<string, unknown>
+  return folded.signer === 'dcl:editor' || (typeof folded.intent === 'string' && folded.intent.startsWith('dcl:editor:'))
 }
 
 /** The console line that puts the clock back, from the engine's reply to a bare `/time`. */

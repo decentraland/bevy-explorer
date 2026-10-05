@@ -133,7 +133,10 @@ describe('editor host signing', () => {
       ['https://multiplayer-server.decentraland.org/logs', { method: 'POST' }],
       ['https://multiplayer-server.decentraland.org/rooms'],
       ['https://storage.decentraland.org/players', { metadata: { signer: 'dcl:editor' } }],
-      ['https://storage.decentraland.org/players', { metadata: { intent: 'dcl:editor:projects' } }]
+      ['https://storage.decentraland.org/players', { metadata: { intent: 'dcl:editor:projects' } }],
+      // the payload is signed lowercased, so a case change still signs as the editor
+      ['https://storage.decentraland.org/players', { metadata: { signer: 'DCL:Editor' } }],
+      ['https://storage.decentraland.org/players', { metadata: { Intent: 'dcl:editor:projects' } }]
     ]
     for (const [url, init] of refused) await expect(host().signedFetch(url, init), url).rejects.toThrow('not-allowed')
     expect(fetched).not.toHaveBeenCalled()
