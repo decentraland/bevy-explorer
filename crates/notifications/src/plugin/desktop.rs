@@ -1,3 +1,5 @@
+#[cfg(windows)]
+use bevy::ecs::entity::EntityHashMap;
 use bevy::prelude::*;
 use notify_rust::NotificationHandle;
 
