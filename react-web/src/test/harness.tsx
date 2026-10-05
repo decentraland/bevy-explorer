@@ -129,9 +129,11 @@ export async function enterAsGuest(h: Harness, opts: { keepSent?: boolean } = {}
   await waitFor(() => expect(h.driver.calls.length).toBeGreaterThan(1))
   // the lobby takes picks once sign-in has finished
   await waitFor(() => expect(h.session().login.busy).toBe(false))
-  // Jump in from the lobby (null = home).
+  // Jump in from the lobby (null = home): a realm change, which releases the held world.
   act(() => h.session().pickDestination(null))
   await waitFor(() => expect(h.session().phase).toBe('entering'))
+  const go = h.driver.last('teleport')!
+  h.driver.emit({ kind: 'travelResult', travelId: go.travelId!, realm: go.realm!, ok: true })
   h.driver.emit({ kind: 'event', name: 'playerReady' })
   // No loading state received counts as still-loading, so report "done" like the real
   // bridge-scene's stream does.

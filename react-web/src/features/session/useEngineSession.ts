@@ -1479,17 +1479,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     [travel]
   )
 
-  // Leaving the lobby. On web the engine is holding the world on its boot realm, and only a
-  // realm change releases it, so every destination names its realm (Skip goes home).
+  // Leaving the lobby. The engine is holding the world on its boot realm (native holds whenever
+  // the lobby shows, see src/lib.rs), and only a realm change releases it, so every destination
+  // names its realm (Skip goes home).
   const travelFromLobby = useCallback(
-    (driver: NonNullable<typeof driverRef.current>, dest: Destination): void => {
-      if (driver.launch == null) {
-        if (dest?.kind !== 'world') setLobby(false)
-        travelInPlace(driver, dest)
-        return
-      }
+    (dest: Destination): void => {
       if (dest == null) {
-        const home = driver.homeScene?.()
+        const home = homeScene()
         const [x, y] = (home?.parcel ?? '0,0').split(',').map(Number)
         travel({ kind: 'teleport', realm: home?.realm ?? DEFAULT_REALM, x, y })
       } else if (dest.kind === 'parcel') {
@@ -1500,7 +1496,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         else travel({ kind: 'changeRealm', realm: dest.realm })
       }
     },
-    [travel, travelInPlace]
+    [homeScene, travel]
   )
 
   // Post-jump-in Places picker (or the lobby): choose a destination (or null to skip → home),
@@ -1513,7 +1509,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (lobbyRef.current && busyRef.current) return
     setDestinationPicked(true) // flip to the loading overlay first
     if (lobbyRef.current) {
-      travelFromLobby(driver, dest)
+      travelFromLobby(dest)
       return
     }
     setBusy(true)

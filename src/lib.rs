@@ -369,16 +369,22 @@ impl DecentralandApp {
         #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
         if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode() {
             let launch = &decentraland_app_config.arguments.launch;
+            // an explicit destination (--realm and/or --position) or a non-default
+            // configured home realm IS the destination: injected into the page URL as
+            // ?realm= so the HUD skips its places picker (parity with ?realm= on web).
+            // Otherwise the param is omitted so the picker shows — and the HUD's own
+            // default-realm assumption then matches the realm the engine actually booted.
+            let server = (launch.realm.is_some()
+                || launch.position.is_some()
+                || decentraland_app_config.boot_server() != AppConfig::default().home_realm())
+            .then(|| decentraland_app_config.boot_server());
+            // no destination means the lobby shows, so hold the world until its first realm
+            // change, as the web page does with `hold_world` (preview refuses realm changes)
+            if server.is_none() && !launch.preview {
+                app.insert_resource(common::structs::WorldHold);
+            }
             app.add_plugins(react_hud_cef::ReactHudCefPlugin {
-                // an explicit destination (--realm and/or --position) or a non-default
-                // configured home realm IS the destination: injected into the page URL as
-                // ?realm= so the HUD skips its places picker (parity with ?realm= on web).
-                // Otherwise the param is omitted so the picker shows — and the HUD's own
-                // default-realm assumption then matches the realm the engine actually booted.
-                server: (launch.realm.is_some()
-                    || launch.position.is_some()
-                    || decentraland_app_config.boot_server() != AppConfig::default().home_realm())
-                .then(|| decentraland_app_config.boot_server()),
+                server,
                 position: launch.position.clone(),
                 guest: decentraland_app_config.arguments.guest,
             });

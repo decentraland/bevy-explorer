@@ -3,6 +3,7 @@ import { act, waitFor } from '@testing-library/react'
 import { renderSession, enterAsGuest, FakeDriver } from './harness'
 import { openProfileCard } from '../features/profileCard/ProfileCard'
 import { resetPopups } from '../design'
+import { DEFAULT_REALM } from '../lib/baseDomain'
 
 // The avatarClick handler opens the world profile card as a popup; stub it so we can assert the call.
 vi.mock('../features/profileCard/ProfileCard', () => ({ openProfileCard: vi.fn() }))
@@ -237,7 +238,7 @@ describe('session domain', () => {
     expect(h.driver.sentOf('getWearables')).toHaveLength(2)
   })
 
-  it('after a logout, a place picked for the next account waits for that account to spawn', async () => {
+  it('after a logout, a place picked for the next account names its realm, so it lands without waiting to spawn', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h)
     act(() => h.session().logout())
@@ -248,9 +249,8 @@ describe('session domain', () => {
     await waitFor(() => expect(h.session().login.busy).toBe(false))
     h.driver.sent.length = 0
     act(() => h.session().pickDestination({ kind: 'parcel', x: 10, y: 20 }))
-    expect(h.driver.sentOf('teleport')).toHaveLength(0)
-    h.driver.emit({ kind: 'event', name: 'playerReady' })
-    await waitFor(() => expect(h.driver.sentOf('teleport')).toEqual([{ kind: 'teleport', x: 10, y: 20 }]))
+    // the engine keeps the parcel as the realm's landing target, so it isn't held for playerReady
+    expect(h.driver.sentOf('teleport')).toEqual([{ kind: 'teleport', realm: DEFAULT_REALM, x: 10, y: 20, travelId: 2 }])
   })
 
   it('a runtime crash from the watchdog sets a dismissable fatal; dismiss re-arms the watchdog', async () => {

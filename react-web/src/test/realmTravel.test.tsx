@@ -14,11 +14,11 @@ describe('in-world realm change', () => {
     expect(h.session().phase).toBe('world')
 
     act(() => h.session().map.changeRealm('boedo.dcl.eth'))
-    expect(h.driver.sentOf('changeRealm')).toEqual([{ kind: 'changeRealm', realm: 'boedo.dcl.eth', travelId: 1 }])
+    expect(h.driver.sentOf('changeRealm')).toEqual([{ kind: 'changeRealm', realm: 'boedo.dcl.eth', travelId: 2 }])
     expect(h.session().travellingTo).toBe('boedo.dcl.eth')
     expect(h.session().phase).toBe('entering')
 
-    h.driver.emit({ kind: 'travelResult', travelId: 1, realm: 'boedo.dcl.eth', ok: true })
+    h.driver.emit({ kind: 'travelResult', travelId: 2, realm: 'boedo.dcl.eth', ok: true })
     expect(h.session().travellingTo).toBeNull()
     expect(h.session().travelError).toBeNull()
   })
@@ -27,7 +27,7 @@ describe('in-world realm change', () => {
     const h = renderSession()
     await enterAsGuest(h)
     act(() => h.session().map.changeRealm('noexiste.dcl.eth'))
-    h.driver.emit({ kind: 'travelResult', travelId: 1, realm: 'noexiste.dcl.eth', ok: false, message: 'status: 404 Not Found' })
+    h.driver.emit({ kind: 'travelResult', travelId: 2, realm: 'noexiste.dcl.eth', ok: false, message: 'status: 404 Not Found' })
     expect(h.session().travellingTo).toBeNull()
     expect(h.session().travelError).toBe('Couldn\'t travel to "noexiste.dcl.eth": status: 404 Not Found')
     await waitFor(() => expect(h.session().phase).toBe('world'))
@@ -40,7 +40,7 @@ describe('in-world realm change', () => {
     await enterAsGuest(h)
     act(() => h.session().map.changeRealm('first.dcl.eth'))
     act(() => h.session().map.changeRealm('second.dcl.eth'))
-    h.driver.emit({ kind: 'travelResult', travelId: 1, realm: 'first.dcl.eth', ok: false, message: 'superseded by a later realm change' })
+    h.driver.emit({ kind: 'travelResult', travelId: 2, realm: 'first.dcl.eth', ok: false, message: 'superseded by a later realm change' })
     expect(h.session().travellingTo).toBe('second.dcl.eth')
     expect(h.session().travelError).toBeNull()
   })
@@ -51,8 +51,8 @@ describe('in-world realm change', () => {
     act(() => h.session().chat.send('/world boedo.dcl.eth'))
     act(() => h.session().chat.send('/goto genesis'))
     expect(h.driver.sentOf('changeRealm')).toEqual([
-      { kind: 'changeRealm', realm: 'boedo.dcl.eth', travelId: 1 },
-      { kind: 'changeRealm', realm: DEFAULT_REALM, travelId: 2 }
+      { kind: 'changeRealm', realm: 'boedo.dcl.eth', travelId: 2 },
+      { kind: 'changeRealm', realm: DEFAULT_REALM, travelId: 3 }
     ])
     expect(h.session().travellingTo).toBe(DEFAULT_REALM)
   })
