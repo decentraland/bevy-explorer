@@ -46,10 +46,8 @@ pub struct SceneTestResult {
 
 pub fn op_log_test_plan(state: &mut impl State, body: SceneTestPlan) -> Result<(), anyhow::Error> {
     debug!("op_log_test_plan");
-    let scene = state.borrow::<CrdtContext>().scene_id.0;
 
     state.borrow_mut::<RpcCalls>().push(RpcCall::TestPlan {
-        scene,
         plan: body.tests.into_iter().map(|p| p.name).collect(),
     })
 }
@@ -59,10 +57,8 @@ pub fn op_log_test_result(
     body: SceneTestResult,
 ) -> Result<(), anyhow::Error> {
     debug!("op_log_test_results");
-    let scene = state.borrow::<CrdtContext>().scene_id.0;
 
     state.borrow_mut::<RpcCalls>().push(RpcCall::TestResult {
-        scene,
         name: body.name,
         success: body.ok,
         error: body.error,
@@ -102,7 +98,7 @@ pub fn op_take_and_compare_snapshot(
     let camera_target = [camera_target.0, camera_target.1, camera_target.2];
     let snapshot_size = [snapshot_size.0, snapshot_size.1];
 
-    let scene = state.borrow::<CrdtContext>().scene_id.0;
+    let scene_id = state.borrow::<CrdtContext>().scene_id;
     let sender = state.borrow_mut::<SceneResponseSender>();
 
     if method.grey_pixel_diff.is_none() {
@@ -112,14 +108,16 @@ pub fn op_take_and_compare_snapshot(
     let (sx, mut rx) = RpcResultSender::channel();
 
     sender
-        .try_send(SceneResponse::CompareSnapshot(CompareSnapshot {
-            scene,
-            camera_position,
-            camera_target,
-            snapshot_size,
-            name,
-            response: sx,
-        }))
+        .try_send(SceneResponse::CompareSnapshot(
+            scene_id,
+            CompareSnapshot {
+                camera_position,
+                camera_target,
+                snapshot_size,
+                name,
+                response: sx,
+            },
+        ))
         .expect("failed to send to renderer");
 
     let (error, stored_snapshot_found, similarity) = loop {

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use bevy::{platform::collections::HashSet, prelude::*};
 
 use common::{
@@ -52,7 +54,7 @@ pub enum SceneState {
 #[derive(Component, Debug)]
 pub struct RendererSceneContext {
     pub scene_id: SceneId,
-    pub hash: String,
+    pub hash: Arc<str>,
     pub storage_root: String,
     pub is_portable: bool,
     pub start_tick: u32,
@@ -202,7 +204,7 @@ impl RendererSceneContext {
     ) -> Self {
         let mut new_context = Self {
             scene_id,
-            hash,
+            hash: hash.into(),
             storage_root,
             is_portable,
             start_tick,

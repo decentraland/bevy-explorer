@@ -148,7 +148,7 @@ fn update_scene_driven_animation(
         }
         let ctx = scenes.get(scene_ent).ok()?;
         let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-            ctx.hash.clone(),
+            ctx.hash.to_string(),
             anim.src.to_lowercase(),
         ));
         let ipfs_ctx = ipfas.ipfs().context.blocking_read();
@@ -169,7 +169,7 @@ fn update_scene_driven_animation(
             .iter()
             .filter_map(|sound_src| {
                 let sound_path = IpfsPath::new(IpfsType::new_content_file(
-                    ctx.hash.clone(),
+                    ctx.hash.to_string(),
                     sound_src.to_lowercase(),
                 ));
                 match sound_path.hash(&ipfs_ctx) {
@@ -195,7 +195,7 @@ fn update_scene_driven_animation(
         Some(SceneDrivenAnimationRequest {
             src: anim.src.clone(),
             urn,
-            scene_hash: ctx.hash.clone(),
+            scene_hash: ctx.hash.to_string(),
             content_hash,
             r#loop: anim.r#loop,
             speed: anim.speed,

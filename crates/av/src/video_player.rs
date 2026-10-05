@@ -154,7 +154,7 @@ fn new_player_source<T: AVPlayer>(
         other => av_sinks::<T>(
             (*ipfs).clone(),
             other.to_owned(),
-            context.hash.clone(),
+            context.hash.to_string(),
             image.clone(),
             true,
             false,

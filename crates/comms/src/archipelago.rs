@@ -12,7 +12,7 @@ use serde_json::json;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use common::{
-    rpc::{RpcCall, RpcEventSender},
+    rpc::{RpcCall, RpcCallEvent, RpcEventSender},
     structs::CurrentRealm,
     util::TaskExt,
 };
@@ -129,9 +129,9 @@ fn manage_islands(
     contexts: Query<Entity, With<GlobalCrdtState>>,
     current_realm: Res<CurrentRealm>,
     mut senders: Local<Vec<RpcEventSender>>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
 ) {
-    for sender in events.read().filter_map(|ev| match ev {
+    for sender in events.read().filter_map(|ev| match &ev.call {
         RpcCall::SubscribeRealmChanged { sender } => Some(sender),
         _ => None,
     }) {

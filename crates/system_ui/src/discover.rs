@@ -642,7 +642,6 @@ pub fn spawn_discover_popup(
             report: true,
         };
         let rpc_ev = RpcCall::TeleportPlayer {
-            scene: None,
             to: Some(to.0),
             realm: None,
             response: Default::default(),

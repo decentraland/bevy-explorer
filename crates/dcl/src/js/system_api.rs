@@ -515,7 +515,6 @@ pub async fn op_get_user_profile(
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::GetUserData {
             user: Some(address),
-            scene,
             response: sx,
         })?;
 

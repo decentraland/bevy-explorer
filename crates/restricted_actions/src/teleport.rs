@@ -1,6 +1,6 @@
 use bevy::{math::Vec3Swizzles, prelude::*};
 use common::{
-    rpc::{RpcCall, RpcResultSender},
+    rpc::{RpcCall, RpcCallEvent, RpcResultSender},
     structs::{AvatarDynamicState, PermissionType, PrimaryUser},
 };
 use comms::global_crdt::ForeignPlayer;
@@ -28,7 +28,7 @@ type TeleportAction = (
 
 pub fn teleport_player(
     mut commands: Commands,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     mut perms: Permission<TeleportAction>,
     mut realm_target: ResMut<RealmInitialLocation>,
@@ -36,13 +36,12 @@ pub fn teleport_player(
 ) {
     let mut actions: Vec<TeleportAction> = Vec::new();
 
-    for (scene, to, realm, response) in events.read().filter_map(|ev| match ev {
+    for (scene, to, realm, response) in events.read().filter_map(|ev| match &ev.call {
         RpcCall::TeleportPlayer {
-            scene,
             to,
             realm,
             response,
-        } => Some((*scene, *to, realm.clone(), response.clone())),
+        } => Some((ev.origin.scene(), *to, realm.clone(), response.clone())),
         _ => None,
     }) {
         let parcel = to.map(|to| format!("({},{})", to.x, to.y));

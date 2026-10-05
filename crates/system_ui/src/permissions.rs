@@ -244,7 +244,7 @@ fn set_permission_settings_content(
             let hilight = target.ty == Some(ty);
             let mut props = DuiProps::default().with_prop("permission-name", ty.title().to_owned());
             if let Some(hash) = scene_hash.as_ref() {
-                props = spawn_setting(props, ty, PermissionLevel::Scene(hash.clone()), true);
+                props = spawn_setting(props, ty, PermissionLevel::Scene(hash.to_string()), true);
             } else {
                 props = spawn_setting(props, ty, PermissionLevel::Scene(String::default()), false);
             }

@@ -9,7 +9,7 @@ use bevy::{
 };
 use bimap::BiMap;
 use common::{
-    rpc::{RpcCall, RpcEventSender, RpcStreamSender},
+    rpc::{RpcCall, RpcCallEvent, RpcEventSender, RpcOrigin, RpcStreamSender},
     structs::{
         AudioDecoderError, EmoteCommand, EmoteLifecycle, EmoteLifecycleEvent, EmoteLifecycleSource,
         EmoteMask, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
@@ -734,7 +734,7 @@ pub fn process_transport_updates(
     mut chat_events: EventWriter<ChatEvent>,
     mut string_senders: Local<HashMap<String, RpcEventSender>>,
     mut binary_senders: Local<HashMap<String, RpcStreamSender<(String, Vec<u8>)>>>,
-    mut subscribers: EventReader<RpcCall>,
+    mut subscribers: EventReader<RpcCallEvent>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
     mut remote_anim: Local<RemoteAnimState>,
@@ -742,12 +742,12 @@ pub fn process_transport_updates(
 ) {
     // gather any event receivers
     for ev in subscribers.read() {
-        match ev {
-            RpcCall::SubscribeMessageBus { sender, hash } => {
-                string_senders.insert(hash.clone(), sender.clone());
+        match (&ev.origin, &ev.call) {
+            (RpcOrigin::Scene { hash, .. }, RpcCall::SubscribeMessageBus { sender }) => {
+                string_senders.insert(hash.to_string(), sender.clone());
             }
-            RpcCall::SubscribeBinaryBus { sender, hash } => {
-                binary_senders.insert(hash.clone(), sender.clone());
+            (RpcOrigin::Scene { hash, .. }, RpcCall::SubscribeBinaryBus { sender }) => {
+                binary_senders.insert(hash.to_string(), sender.clone());
             }
             _ => (),
         }

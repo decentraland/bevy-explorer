@@ -262,12 +262,8 @@ pub fn update_directional_light(
     }
 
     // if the primary parcel doesn't specify anything, check any portables
-    let mut portable_settings: Option<(
-        &String,
-        Entity,
-        Option<&LightSource>,
-        Option<&GlobalLight>,
-    )> = None;
+    let mut portable_settings: Option<(&str, Entity, Option<&LightSource>, Option<&GlobalLight>)> =
+        None;
     for entity in containing_scene.get_portables(false) {
         if let Ok((ctx, maybe_light, maybe_global)) = lights.get(entity) {
             if maybe_light.is_none() && maybe_global.is_none() {
@@ -276,7 +272,7 @@ pub fn update_directional_light(
 
             let apply = match portable_settings {
                 None => true,
-                Some((existing, ..)) => &ctx.hash < existing,
+                Some((existing, ..)) => &*ctx.hash < existing,
             };
 
             if !apply {

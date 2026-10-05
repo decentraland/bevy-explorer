@@ -107,11 +107,10 @@ impl IntoIterator for RpcCalls {
 #[cfg(test)]
 mod rpc_calls_tests {
     use super::*;
-    use bevy::prelude::{Entity, Quat};
+    use bevy::prelude::Quat;
 
     fn a_call() -> RpcCall {
         RpcCall::MoveCamera {
-            scene: Entity::PLACEHOLDER,
             facing: Quat::IDENTITY,
         }
     }
@@ -158,9 +157,9 @@ pub enum SceneResponse {
         Vec<SceneLogMessage>,
         RpcCalls,
     ),
-    ImmediateRpcCall(RpcCall),
+    ImmediateRpcCall(SceneId, RpcCall),
     WaitingForInspector,
-    CompareSnapshot(CompareSnapshot),
+    CompareSnapshot(SceneId, CompareSnapshot),
     /// Response to [`RendererResponse::GetCrdtSnapshot`]: the full scene-side CRDT state.
     CrdtSnapshot(SceneId, CrdtStore),
     /// Response to [`RendererResponse::AllocateEntity`]: one result per requested slot, in order —

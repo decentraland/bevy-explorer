@@ -20,7 +20,7 @@ use common::{
     profile::SerializedProfile,
     rpc::{
         EntityDefinitionResponse, PortableLocation, RPCSendableMessage, ReadFileResponse, RpcCall,
-        RpcEventSender, RpcResultSender, SpawnResponse,
+        RpcCallEvent, RpcEventSender, RpcOrigin, RpcResultSender, SpawnResponse,
     },
     sets::SceneSets,
     structs::{
@@ -69,7 +69,7 @@ pub struct RestrictedActionsPlugin;
 
 impl Plugin for RestrictedActionsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<RpcCall>();
+        app.add_event::<RpcCallEvent>();
         app.add_systems(
             Update,
             (
@@ -148,7 +148,7 @@ pub struct ActivePlayerMove {
 /// Pending move data queued through the permission system.
 pub enum PendingPlayerMove {
     Move {
-        scene: Option<Entity>,
+        origin: RpcOrigin,
         target: Vec3,
         looking_at: Option<Vec3>,
         duration: Option<f32>,
@@ -156,7 +156,7 @@ pub enum PendingPlayerMove {
         response: Option<RpcResultSender<bool>>,
     },
     Walk {
-        scene: Option<Entity>,
+        origin: RpcOrigin,
         target: Vec3,
         stop_threshold: f32,
         timeout: Option<f32>,
@@ -167,7 +167,7 @@ pub enum PendingPlayerMove {
 impl PendingPlayerMove {
     fn scene(&self) -> Option<Entity> {
         match self {
-            Self::Move { scene, .. } | Self::Walk { scene, .. } => *scene,
+            Self::Move { origin, .. } | Self::Walk { origin, .. } => origin.scene(),
         }
     }
 
@@ -203,7 +203,7 @@ fn cancel_active_move(
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn handle_player_move_requests(
     mut commands: Commands,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     scenes: Query<&RendererSceneContext>,
     mut player: Query<
         (
@@ -230,16 +230,15 @@ pub fn handle_player_move_requests(
     };
 
     for ev in events.read() {
-        let pending = match ev {
+        let pending = match &ev.call {
             RpcCall::MovePlayer {
-                scene,
                 to,
                 looking_at,
                 duration,
                 camera_rotation,
                 response,
             } => PendingPlayerMove::Move {
-                scene: *scene,
+                origin: ev.origin.clone(),
                 target: *to,
                 looking_at: *looking_at,
                 duration: *duration,
@@ -247,13 +246,12 @@ pub fn handle_player_move_requests(
                 response: response.clone(),
             },
             RpcCall::WalkPlayer {
-                scene,
                 to,
                 stop_threshold,
                 timeout,
                 response,
             } => PendingPlayerMove::Walk {
-                scene: *scene,
+                origin: ev.origin.clone(),
                 target: *to,
                 stop_threshold: *stop_threshold,
                 timeout: *timeout,
@@ -383,7 +381,7 @@ fn apply_player_move(
             duration,
             response,
             camera_rotation,
-            scene,
+            origin,
         } => {
             if let Some(d) = duration {
                 let d = d.max(f32::EPSILON);
@@ -427,10 +425,12 @@ fn apply_player_move(
             }
 
             if let Some(camera_rotation) = camera_rotation {
-                if let Some(scene) = scene {
-                    commands.send_event(RpcCall::MoveCamera {
-                        scene,
-                        facing: camera_rotation,
+                if origin.scene().is_some() {
+                    commands.send_event(RpcCallEvent {
+                        origin,
+                        call: RpcCall::MoveCamera {
+                            facing: camera_rotation,
+                        },
                     });
                 } else {
                     warn!("MoveTo action without scene had camera_rotation");
@@ -585,13 +585,15 @@ pub fn update_player_move(
 }
 
 pub fn move_camera(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut camera: Query<&mut PrimaryCamera>,
     player: Query<(&Transform, Entity), With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
-    for (root, facing) in events.read().filter_map(|ev| match ev {
-        RpcCall::MoveCamera { scene, facing } => Some((scene, facing)),
+    for (root, facing) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::MoveCamera { facing }) => {
+            Some((scene, facing))
+        }
         _ => None,
     }) {
         if !player
@@ -622,20 +624,24 @@ type ChangeRealmAction = (String, RpcResultSender<Result<(), String>>, bool);
 
 fn change_realm(
     mut commands: Commands,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut perms: Permission<ChangeRealmAction>,
     mut target: ResMut<RealmInitialLocation>,
     super_user: Query<(), With<SuperUserScene>>,
 ) {
-    for (scene, to, message, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::ChangeRealm {
-            scene,
-            to,
-            message,
-            response,
-        } => Some((scene, to, message, response.clone())),
-        _ => None,
-    }) {
+    for (scene, to, message, response) in
+        events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+            (
+                RpcOrigin::Scene { entity: scene, .. },
+                RpcCall::ChangeRealm {
+                    to,
+                    message,
+                    response,
+                },
+            ) => Some((scene, to, message, response.clone())),
+            _ => None,
+        })
+    {
         perms.check(
             PermissionType::ChangeRealm,
             *scene,
@@ -668,15 +674,13 @@ fn change_realm(
 }
 
 fn external_url(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut perms: Permission<(RpcResultSender<Result<(), String>>, String)>,
 ) {
-    for (scene, url, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::ExternalUrl {
-            scene,
-            url,
-            response,
-        } => Some((scene, url, response)),
+    for (scene, url, response) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::ExternalUrl { url, response }) => {
+            Some((scene, url, response))
+        }
         _ => None,
     }) {
         perms.check(
@@ -867,7 +871,7 @@ type SpawnResponseChannel = Option<RpcResultSender<Result<SpawnResponse, String>
 fn spawn_portable(
     mut commands: Commands,
     current_portables: Res<PortableScenes>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut pending_lookups: Local<
         Vec<(
             Task<Result<(String, PortableSource), String>>,
@@ -888,14 +892,17 @@ fn spawn_portable(
     let mut failed_portables = HashSet::new();
 
     // process incoming events
-    for (location, spawner, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::SpawnPortable {
-            location,
-            spawner,
-            response,
-        } => Some((location, spawner, response)),
-        _ => None,
-    }) {
+    for (location, spawner, response) in
+        events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+            (
+                RpcOrigin::Scene {
+                    entity: spawner, ..
+                },
+                RpcCall::SpawnPortable { location, response },
+            ) => Some((location, spawner, response)),
+            _ => None,
+        })
+    {
         // authoritative-server mode: a tenant scene must not spawn arbitrary portables
         // in the shared engine (cross-tenant resource-exhaustion DoS).
         if server_mode() {
@@ -918,7 +925,7 @@ fn spawn_portable(
             response.send(Err("Scene entity not found".to_owned()));
             continue;
         };
-        let parent_hash = scene.hash.clone();
+        let parent_hash = scene.hash.to_string();
 
         match location {
             PortableLocation::Urn(urn) => {
@@ -1071,7 +1078,7 @@ fn portable_matches_location(
 fn kill_portable(
     mut commands: Commands,
     portables: Res<PortableScenes>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     scenes: Query<&RendererSceneContext>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
@@ -1079,12 +1086,10 @@ fn kill_portable(
 ) {
     let mut kill_portables = HashSet::new();
 
-    for (scene, location, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::KillPortable {
-            scene,
-            location,
-            response,
-        } => Some((scene, location, response)),
+    for (scene, location, response) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::KillPortable { location, response }) => {
+            Some((scene, location, response))
+        }
         _ => None,
     }) {
         // requesting scene may kill a portable only if it spawned the portable,
@@ -1166,11 +1171,11 @@ fn kill_portable(
 
 fn list_portables(
     portables: ResMut<PortableScenes>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     live_scenes: Res<LiveScenes>,
     contexts: Query<&RendererSceneContext>,
 ) {
-    for response in events.read().filter_map(|ev| match ev {
+    for response in events.read().filter_map(|ev| match &ev.call {
         RpcCall::ListPortables { response } => Some(response),
         _ => None,
     }) {
@@ -1202,9 +1207,12 @@ fn get_user_data(
     profile: Res<CurrentUserProfile>,
     others: Query<(&ForeignPlayer, &UserProfile)>,
     me: Res<Wallet>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut pending_primary_requests: Local<
-        Vec<(Entity, RpcResultSender<Result<SerializedProfile, ()>>)>,
+        Vec<(
+            Option<Entity>,
+            RpcResultSender<Result<SerializedProfile, ()>>,
+        )>,
     >,
     mut pending_remote_requests: Local<
         Vec<(Address, RpcResultSender<Result<SerializedProfile, ()>>)>,
@@ -1213,12 +1221,8 @@ fn get_user_data(
     mut profile_manager: ProfileManager,
     contexts: Res<CrdtContexts>,
 ) {
-    for (user, scene, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::GetUserData {
-            user,
-            scene,
-            response,
-        } => Some((user, scene, response)),
+    for (user, scene, response) in events.read().filter_map(|ev| match &ev.call {
+        RpcCall::GetUserData { user, response } => Some((user, ev.origin.scene(), response)),
         _ => None,
     }) {
         debug!("process get_user_data for {:?}", scene);
@@ -1226,7 +1230,7 @@ fn get_user_data(
             None => match profile.profile.as_ref() {
                 Some(profile) => response.send(Ok(profile.content.clone())),
                 None => {
-                    if let Ok(mut ctx) = scenes.get_mut(*scene) {
+                    if let Some(mut ctx) = scene.and_then(|scene| scenes.get_mut(scene).ok()) {
                         // Force parcel scenes to wait until user data is available
                         // (existing scenes rely on getUserData resolving before they
                         // proceed). Portables/global scenes must NOT be frozen this
@@ -1240,7 +1244,7 @@ fn get_user_data(
                         }
                     }
                     info!("cloning response");
-                    pending_primary_requests.push((*scene, response.clone()))
+                    pending_primary_requests.push((scene, response.clone()))
                 }
             },
             Some(address) => {
@@ -1248,10 +1252,10 @@ fn get_user_data(
                 // context — a co-tenant room's players aren't served from cache.
                 // resolved inline (not via ScenePresence) as this system already holds a
                 // mutable RendererSceneContext query
-                let scene_context = scenes
-                    .get(*scene)
+                let scene_context = scene
+                    .and_then(|scene| scenes.get(scene).ok())
                     .map(|ctx| contexts.for_scene_hash(&ctx.hash))
-                    .unwrap_or_else(|_| contexts.shared());
+                    .unwrap_or_else(|| contexts.shared());
                 if let Some((_, profile)) = others.iter().find(|(fp, _)| {
                     fp.context == scene_context && *address == format!("{:#x}", fp.address)
                 }) {
@@ -1283,7 +1287,7 @@ fn get_user_data(
         if let Some(profile) = profile.profile.as_ref() {
             for (scene, sender) in pending_primary_requests.drain(..) {
                 info!("replying on cloned response");
-                if let Ok(mut ctx) = scenes.get_mut(scene) {
+                if let Some(mut ctx) = scene.and_then(|scene| scenes.get_mut(scene).ok()) {
                     ctx.blocked.remove("get_user_data");
                 }
                 sender.send(Ok(profile.content.clone()));
@@ -1328,14 +1332,18 @@ impl ScenePresence<'_, '_> {
 fn get_connected_players(
     me: Res<Wallet>,
     others: Query<&ForeignPlayer>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     presence: ScenePresence,
 ) {
-    for (scene, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::GetConnectedPlayers { scene, response } => Some((scene, response)),
+    for (scene, response) in events.read().filter_map(|ev| match &ev.call {
+        RpcCall::GetConnectedPlayers { response } => Some((ev.origin.scene(), response)),
         _ => None,
     }) {
-        let scene_context = presence.context_of(*scene);
+        // an engine request (console) has no scene: it resolves to the shared context
+        let scene_context = scene.map_or_else(
+            || presence.contexts.shared(),
+            |scene| presence.context_of(scene),
+        );
         let others = others
             .iter()
             .filter(|f| f.context == scene_context)
@@ -1354,12 +1362,14 @@ fn get_players_in_scene(
     me: Query<Entity, With<PrimaryUser>>,
     wallet: Res<Wallet>,
     others: Query<(Entity, &ForeignPlayer)>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     containing_scene: ContainingScene,
     presence: ScenePresence,
 ) {
-    for (scene, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::GetPlayersInScene { scene, response } => Some((scene, response)),
+    for (scene, response) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::GetPlayersInScene { response }) => {
+            Some((scene, response))
+        }
         _ => None,
     }) {
         let mut results = Vec::default();
@@ -1394,12 +1404,14 @@ fn get_players_in_scene(
 // todo: move this to global_crdt to do it all in one place?
 fn event_player_connected(
     mut senders: Local<Vec<(Entity, RpcEventSender)>>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     players: Query<&ForeignPlayer, Added<ForeignPlayer>>,
     presence: ScenePresence,
 ) {
-    for (scene, sender) in events.read().filter_map(|ev| match ev {
-        RpcCall::SubscribePlayerConnected { scene, sender } => Some((scene, sender)),
+    for (scene, sender) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::SubscribePlayerConnected { sender }) => {
+            Some((scene, sender))
+        }
         _ => None,
     }) {
         senders.push((*scene, sender.clone()));
@@ -1430,7 +1442,7 @@ fn event_player_connected(
 // todo: move this to global_crdt to do it all in one place?
 fn event_player_disconnected(
     mut senders: Local<Vec<(Entity, RpcEventSender)>>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     players: Query<(Entity, &ForeignPlayer), Added<ForeignPlayer>>,
     mut removed: RemovedComponents<ForeignPlayer>,
     // (address, context) recorded while the player still exists — the component is
@@ -1439,8 +1451,11 @@ fn event_player_disconnected(
     presence: ScenePresence,
 ) {
     // gather new receivers
-    for (scene, sender) in events.read().filter_map(|ev| match ev {
-        RpcCall::SubscribePlayerDisconnected { scene, sender } => Some((scene, sender)),
+    for (scene, sender) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (
+            RpcOrigin::Scene { entity: scene, .. },
+            RpcCall::SubscribePlayerDisconnected { sender },
+        ) => Some((scene, sender)),
         _ => None,
     }) {
         senders.push((*scene, sender.clone()));
@@ -1490,12 +1505,17 @@ fn event_player_moved_scene(
     containing_scene: ContainingScene,
     scenes: Query<(Entity, &RendererSceneContext)>,
     contexts: Res<CrdtContexts>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
 ) {
     // gather new receivers
-    for (enter, scene, sender) in events.read().filter_map(|ev| match ev {
-        RpcCall::SubscribePlayerEnteredScene { scene, sender } => Some((true, scene, sender)),
-        RpcCall::SubscribePlayerLeftScene { scene, sender } => Some((false, scene, sender)),
+    for (enter, scene, sender) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (
+            RpcOrigin::Scene { entity: scene, .. },
+            RpcCall::SubscribePlayerEnteredScene { sender },
+        ) => Some((true, scene, sender)),
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::SubscribePlayerLeftScene { sender }) => {
+            Some((false, scene, sender))
+        }
         _ => None,
     }) {
         if enter {
@@ -1577,12 +1597,14 @@ fn event_player_moved_scene(
 // todo: move this to global_crdt to do it all in one place?
 fn event_scene_ready(
     mut senders: Local<Vec<(Entity, RpcEventSender)>>,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     unready_gltfs: Query<&SceneEntity, (With<GltfDefinition>, Without<GltfProcessed>)>,
     mut previously_unready: Local<HashSet<Entity>>,
 ) {
-    for (scene, sender) in events.read().filter_map(|ev| match ev {
-        RpcCall::SubscribeSceneReady { scene, sender } => Some((scene, sender)),
+    for (scene, sender) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::SubscribeSceneReady { sender }) => {
+            Some((scene, sender))
+        }
         _ => None,
     }) {
         senders.push((*scene, sender.clone()));
@@ -1615,16 +1637,14 @@ fn event_scene_ready(
 }
 
 fn send_scene_messages(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     transports: Query<(&Transport, Option<&SceneRoom>)>,
     scenes: Query<&RendererSceneContext>,
 ) {
-    for (scene, data, recipient) in events.read().filter_map(|c| match c {
-        RpcCall::SendMessageBus {
-            scene,
-            data,
-            recipient,
-        } => Some((scene, data, recipient)),
+    for (scene, data, recipient) in events.read().filter_map(|c| match (&c.origin, &c.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::SendMessageBus { data, recipient }) => {
+            Some((scene, data, recipient))
+        }
         _ => None,
     }) {
         let Ok(ctx) = scenes.get(*scene) else {
@@ -1638,7 +1658,7 @@ fn send_scene_messages(
         );
         let message = rfc4::Packet {
             message: Some(rfc4::packet::Message::Scene(rfc4::Scene {
-                scene_id: hash.clone(),
+                scene_id: hash.to_string(),
                 data: data.clone(),
             })),
             protocol_version: 100,
@@ -1660,7 +1680,7 @@ fn send_scene_messages(
             // require the room to belong to this scene so N scenes in one engine don't
             // cross-talk (a server may hold several scene rooms; a client holds one).
             let send = if server_mode() {
-                scene_room.is_some_and(|r| &r.0 == hash)
+                scene_room.is_some_and(|r| *r.0 == **hash)
             } else {
                 scene_room.is_some()
             };
@@ -1675,17 +1695,15 @@ fn send_scene_messages(
 
 fn open_nft_dialog(
     mut commands: Commands,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     containing_scene: ContainingScene,
     primary_user: Query<Entity, With<PrimaryUser>>,
     asset_server: Res<AssetServer>,
 ) {
-    for (scene, urn, response) in events.read().filter_map(|c| match c {
-        RpcCall::OpenNftDialog {
-            scene,
-            urn,
-            response,
-        } => Some((scene, urn, response)),
+    for (scene, urn, response) in events.read().filter_map(|c| match (&c.origin, &c.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::OpenNftDialog { urn, response }) => {
+            Some((scene, urn, response))
+        }
         _ => None,
     }) {
         // headless server: the "nft" asset source and the DUI template registry are
@@ -1796,7 +1814,7 @@ fn show_nft_dialog(
 
 #[allow(clippy::type_complexity)]
 pub fn handle_eth_async(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     scenes: Query<&RendererSceneContext>,
     wallet: Res<Wallet>,
     time: Res<Time>,
@@ -1808,12 +1826,10 @@ pub fn handle_eth_async(
     >,
     mut perms: Permission<(RPCSendableMessage, RpcResultSender<Result<Value, String>>)>,
 ) {
-    for (body, scene, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::SendAsync {
-            body,
-            scene,
-            response,
-        } => Some((body, scene, response)),
+    for (body, scene, response) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::SendAsync { body, response }) => {
+            Some((body, scene, response))
+        }
         _ => None,
     }) {
         // The engine wallet is AUTHORITATIVE_SERVER_KEY on a server; never sign for a scene.
@@ -1900,17 +1916,15 @@ fn open_url(url: &str) -> Result<(), String> {
 }
 
 pub fn handle_copy_to_clipboard(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     scenes: Query<&RendererSceneContext>,
     time: Res<Time>,
     mut perms: Permission<(String, RpcResultSender<Result<(), String>>)>,
 ) {
-    for (text, scene, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::CopyToClipboard {
-            text,
-            scene,
-            response,
-        } => Some((text, scene, response)),
+    for (text, scene, response) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::CopyToClipboard { text, response }) => {
+            Some((text, scene, response))
+        }
         _ => None,
     }) {
         let last_action_time = scenes
@@ -1958,18 +1972,16 @@ pub fn handle_copy_to_clipboard(
 
 #[allow(clippy::type_complexity)]
 pub fn handle_texture_size(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     ipfas: IpfsAssetServer,
     scenes: Query<&RendererSceneContext>,
     mut pending: Local<Vec<(Handle<Image>, RpcResultSender<Result<Vec2, String>>)>>,
     images: Res<Assets<Image>>,
 ) {
-    for (scene, src, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::GetTextureSize {
-            scene,
-            src,
-            response,
-        } => Some((scene, src, response)),
+    for (scene, src, response) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::GetTextureSize { src, response }) => {
+            Some((scene, src, response))
+        }
         _ => None,
     }) {
         let Ok(scene_hash) = scenes.get(*scene).map(|ctx| &ctx.hash) else {
@@ -1996,17 +2008,19 @@ pub fn handle_texture_size(
 }
 
 pub fn handle_generic_perm(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut perms: Permission<RpcResultSender<bool>>,
     mut tys: Local<HashSet<PermissionType>>,
 ) {
     for ev in events.read() {
-        if let RpcCall::RequestGenericPermission {
-            scene,
-            ty,
-            message,
-            response,
-        } = ev
+        if let (
+            RpcOrigin::Scene { entity: scene, .. },
+            RpcCall::RequestGenericPermission {
+                ty,
+                message,
+                response,
+            },
+        ) = (&ev.origin, &ev.call)
         {
             let allow_out_of_scene = matches!(
                 ty,
@@ -2183,7 +2197,7 @@ fn signed_fetch_is_guest(server: bool, profile: Option<&UserProfile>) -> Result<
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn handle_sign_request(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut system_events: EventReader<SystemApi>,
     mut tasks: Local<
         Vec<(
@@ -2202,12 +2216,16 @@ fn handle_sign_request(
     ipfs: IpfsAssetServer,
 ) {
     for ev in events.read() {
-        if let RpcCall::SignRequest {
-            method,
-            uri,
-            scene,
-            response,
-        } = ev
+        // the requesting scene's hash: the engine builds the signed metadata from it, and it
+        // selects a per-scene storage delegation in server mode
+        if let (
+            RpcOrigin::Scene { hash: scene, .. },
+            RpcCall::SignRequest {
+                method,
+                uri,
+                response,
+            },
+        ) = (&ev.origin, &ev.call)
         {
             let https_or_local = url::Url::parse(uri).is_ok_and(|url| {
                 preview_mode.is_preview
@@ -2261,7 +2279,7 @@ fn handle_sign_request(
             };
             let (base_url, realm_name) = realm_base_url_and_name(&realm);
             // an orchestrated engine is told each scene's realm, as for the scene's realm info
-            let realm_name = if server_rooms.0.contains_key(scene) {
+            let realm_name = if server_rooms.0.contains_key(&**scene) {
                 scene_realms
                     .for_scene_hash(scene, realm.config.realm_name.as_deref())
                     .unwrap_or_default()
@@ -2270,7 +2288,7 @@ fn handle_sign_request(
             };
 
             let method = method.clone();
-            let scene = scene.clone();
+            let scene = scene.to_string();
             let wallet = wallet.clone();
             let ipfs = ipfs.ipfs().clone();
             let task = IoTaskPool::get().spawn_compat(async move {
@@ -2349,7 +2367,7 @@ fn filename_looks_like_url(filename: &str) -> bool {
 
 #[allow(clippy::type_complexity)]
 fn handle_read_file(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut tasks: Local<
         Vec<(
             RpcResultSender<Result<ReadFileResponse, String>>,
@@ -2359,11 +2377,12 @@ fn handle_read_file(
     ipfs: IpfsAssetServer,
 ) {
     for ev in events.read() {
-        if let RpcCall::ReadFile {
-            scene_hash,
-            filename,
-            response,
-        } = ev
+        if let (
+            RpcOrigin::Scene {
+                hash: scene_hash, ..
+            },
+            RpcCall::ReadFile { filename, response },
+        ) = (&ev.origin, &ev.call)
         {
             // SSRF guard — SERVER MODE ONLY. readFile must serve only the scene's own
             // content files. When a filename is missing from the content map,
@@ -2380,7 +2399,7 @@ fn handle_read_file(
                 continue;
             }
             let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-                scene_hash.to_owned(),
+                scene_hash.to_string(),
                 filename.to_owned(),
             ));
             let ipfs_pathbuf = PathBuf::from(&ipfs_path);
@@ -2414,7 +2433,7 @@ fn handle_read_file(
 
 #[allow(clippy::type_complexity)]
 fn handle_entity_definition(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut tasks: Local<
         Vec<(
             RpcResultSender<Option<EntityDefinitionResponse>>,
@@ -2424,7 +2443,7 @@ fn handle_entity_definition(
     ipfs: IpfsAssetServer,
 ) {
     for ev in events.read() {
-        if let RpcCall::EntityDefinition { urn, response } = ev {
+        if let RpcCall::EntityDefinition { urn, response } = &ev.call {
             let ipfs = ipfs.ipfs().clone();
             let urn = urn.to_owned();
 

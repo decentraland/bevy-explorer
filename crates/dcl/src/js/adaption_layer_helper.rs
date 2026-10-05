@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use common::rpc::{RpcCall, RpcResultSender};
 use serde::Serialize;
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use crate::RpcCalls;
 
 use super::State;
 
@@ -19,16 +19,11 @@ pub async fn op_get_texture_size(
     src: String,
 ) -> Result<TextureSize, anyhow::Error> {
     let (sx, rx) = RpcResultSender::channel();
-    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
 
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::GetTextureSize {
-            scene,
-            src,
-            response: sx,
-        })?;
+        .push(RpcCall::GetTextureSize { src, response: sx })?;
 
     let Ok(result) = rx.await.map_err(|e| anyhow::anyhow!(e)) else {
         return Ok(TextureSize {

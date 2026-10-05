@@ -3,7 +3,7 @@ use bevy::log::debug;
 use common::rpc::{PortableLocation, RpcCall, RpcResultSender, SpawnResponse};
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use crate::RpcCalls;
 
 use super::State;
 
@@ -21,14 +21,11 @@ pub async fn op_portable_spawn(
         _ => anyhow::bail!("provide exactly one of `pid` and `ens`"),
     };
 
-    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
-
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::SpawnPortable {
             location,
-            spawner: scene,
             response: sx,
         })?;
 
@@ -42,13 +39,10 @@ pub async fn op_portable_kill(
     debug!("op_portable_kill");
     let (sx, rx) = RpcResultSender::channel();
 
-    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
-
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::KillPortable {
-            scene,
             location: PortableLocation::Urn(pid.clone()),
             response: sx,
         })?;

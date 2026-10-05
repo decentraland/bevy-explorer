@@ -21,7 +21,7 @@ use collectibles::{
     Emote, EmoteExtraData, EmoteUrn,
 };
 use common::{
-    rpc::{RpcCall, RpcEventSender},
+    rpc::{RpcCall, RpcCallEvent, RpcEventSender, RpcOrigin},
     sets::SceneSets,
     structs::{
         AudioEmitter, AudioType, AvatarDynamicState, EmoteCommand, EmoteLifecycle,
@@ -164,7 +164,7 @@ pub struct LastEmoteCommand(EmoteCommand);
 #[allow(clippy::type_complexity)]
 fn handle_trigger_emotes(
     mut commands: Commands,
-    mut emote_cmds: EventReader<RpcCall>,
+    mut emote_cmds: EventReader<RpcCallEvent>,
     player: Query<(Entity, Option<&EmoteCommand>), With<PrimaryUser>>,
     mut perms: Permission<EmoteCommand>,
 ) {
@@ -177,13 +177,11 @@ fn handle_trigger_emotes(
 
     for ev in emote_cmds.read() {
         // a stop is an empty command; `animate` reports the interruption
-        let (scene, command) = match ev {
-            RpcCall::TriggerEmote {
-                scene,
-                urn,
-                r#loop,
-                mask,
-            } => (
+        let (scene, command) = match (&ev.origin, &ev.call) {
+            (
+                RpcOrigin::Scene { entity: scene, .. },
+                RpcCall::TriggerEmote { urn, r#loop, mask },
+            ) => (
                 scene,
                 EmoteCommand {
                     urn: urn.clone(),
@@ -192,7 +190,7 @@ fn handle_trigger_emotes(
                     mask: *mask,
                 },
             ),
-            RpcCall::StopEmote { scene } => (
+            (RpcOrigin::Scene { entity: scene, .. }, RpcCall::StopEmote) => (
                 scene,
                 EmoteCommand {
                     urn: String::new(),
@@ -234,10 +232,10 @@ fn broadcast_emote(
     mut count: Local<u32>,
     time: Res<Time>,
     mut senders: Local<Vec<RpcEventSender>>,
-    mut subscribe_events: EventReader<RpcCall>,
+    mut subscribe_events: EventReader<RpcCallEvent>,
 ) {
     // gather any event receivers
-    for sender in subscribe_events.read().filter_map(|ev| match ev {
+    for sender in subscribe_events.read().filter_map(|ev| match &ev.call {
         RpcCall::SubscribePlayerExpression { sender } => Some(sender),
         _ => None,
     }) {

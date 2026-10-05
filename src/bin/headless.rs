@@ -29,7 +29,7 @@ use collectibles::EmoteMetadataPlugin;
 use common::{
     inputs::InputMap,
     profile::SerializedProfile,
-    rpc::RpcCall,
+    rpc::RpcCallEvent,
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CursorLocks, EngineMovementControl,
@@ -524,7 +524,7 @@ fn main() -> AppExit {
         // synthetic client. Scene rooms are a separate, authoritative-presence concern.
         .insert_resource(comms::DisableRealmComms(args.server_mode))
         .insert_resource(delegations)
-        .add_event::<RpcCall>()
+        .add_event::<RpcCallEvent>()
         .add_event::<SystemAudio>()
         .add_event::<PermissionUsed>();
 
@@ -915,7 +915,7 @@ fn reap_scene_contexts(
             return true;
         }
         if portables.contains_key(hash)
-            || live.iter().any(|ctx| &ctx.hash == hash)
+            || live.iter().any(|ctx| *ctx.hash == **hash)
             || loading.iter().any(|loading_hash| &loading_hash.0 == hash)
         {
             return true;
@@ -1270,7 +1270,7 @@ fn demux_scene_logs(
             for log in backlog {
                 emit_scene_log(&ctx.hash, &log);
             }
-            (ctx.hash.clone(), rx)
+            (ctx.hash.to_string(), rx)
         });
         while let Ok(log) = rx.try_recv() {
             emit_scene_log(&ctx.hash, &log);
@@ -1305,17 +1305,17 @@ fn emit_scene_status(
     // per engine lifetime — a re-broken scene would silently stay broken while the
     // orchestrator still believes it is live.
     let current: std::collections::HashSet<String> =
-        scenes.iter().map(|ctx| ctx.hash.clone()).collect();
+        scenes.iter().map(|ctx| ctx.hash.to_string()).collect();
     live.retain(|hash| current.contains(hash));
     broken.retain(|hash| current.contains(hash));
 
     for ctx in scenes.iter() {
-        if ctx.tick_number >= 1 && !live.contains(&ctx.hash) {
-            live.insert(ctx.hash.clone());
+        if ctx.tick_number >= 1 && !live.contains(&*ctx.hash) {
+            live.insert(ctx.hash.to_string());
             ctl_emit(&serde_json::json!({"type": "scene-live", "scene": ctx.hash}));
         }
-        if ctx.broken() && !broken.contains(&ctx.hash) {
-            broken.insert(ctx.hash.clone());
+        if ctx.broken() && !broken.contains(&*ctx.hash) {
+            broken.insert(ctx.hash.to_string());
             ctl_emit(&serde_json::json!({"type": "scene-broken", "scene": ctx.hash}));
         }
     }
@@ -1353,7 +1353,7 @@ fn emit_scene_stats(
             continue;
         };
         let (base, prev_at) = prev
-            .get(&ctx.hash)
+            .get(&*ctx.hash)
             .cloned()
             .unwrap_or((SceneResourceCounters::default(), 0.0));
         println!(
@@ -1391,11 +1391,11 @@ fn emit_scene_stats(
                 "mem": {"heap_used": cur.heap_used, "heap_limit": cur.heap_limit},
             })
         );
-        prev.insert(ctx.hash.clone(), (cur.clone(), elapsed));
+        prev.insert(ctx.hash.to_string(), (cur.clone(), elapsed));
     }
 
     let current: std::collections::HashSet<String> =
-        scenes.iter().map(|ctx| ctx.hash.clone()).collect();
+        scenes.iter().map(|ctx| ctx.hash.to_string()).collect();
     prev.retain(|hash, _| current.contains(hash));
 }
 

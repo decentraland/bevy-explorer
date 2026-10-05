@@ -54,7 +54,6 @@ pub async fn op_get_user_data(state: Rc<RefCell<impl State>>) -> Result<UserData
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::GetUserData {
             user: None, // current user
-            scene,
             response: sx,
         })?;
 
@@ -87,7 +86,6 @@ pub async fn op_get_player_data(
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::GetUserData {
             user: Some(id),
-            scene,
             response: sx,
         })?;
 
