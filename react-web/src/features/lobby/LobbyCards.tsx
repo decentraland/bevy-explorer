@@ -129,7 +129,7 @@ export function FriendCard({ friend, color, where, onOpen }: { friend: Friend; c
       <Avatar src={friend.picture} name={friend.name} color={color} framed size={44} status={friend.status === 'away' ? 'away' : 'online'} />
       <span className={styles.friendName} style={{ color }}>
         <span>{friend.name}</span>
-        {friend.claimed && <VerifiedBadge className={styles.verified} />}
+        {friend.claimed && <VerifiedBadge size={14} />}
       </span>
       <span className={styles.friendWhere}>
         <MaskIcon src={location} size={12} />

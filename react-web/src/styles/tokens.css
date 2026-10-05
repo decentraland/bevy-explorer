@@ -236,7 +236,6 @@
   --rail-arrow-hover: rgb(56, 56, 66);
   --rail-arrow-pressed: rgb(13, 13, 15);
   --ease-outcubic: cubic-bezier(0.215, 0.61, 0.355, 1);
-  --verified-end: #c640cd; /* the verified badge's gradient, from --brand */
   --type-96: 96px;
   --fw-regular: 400;
   --fw-medium: 500;

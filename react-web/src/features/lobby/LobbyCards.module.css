@@ -236,11 +236,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.verified {
-  width: 14px;
-  height: 14px;
-  flex: none;
-}
 .friendWhere {
   position: absolute;
   left: 6px;
