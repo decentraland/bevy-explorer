@@ -88,7 +88,7 @@ export interface EditorHostDeps {
   /** The player's answer to "sign this deployment as `wallet`, for `server`?". */
   confirmDeployment: (request: DeploymentRequest, wallet: string, server: string) => Promise<boolean>
   /** The player's answer to "sign removing this scene from `request.world` as `wallet`?". */
-  confirmUndeploy: (request: UndeployRequest, wallet: string, server: string) => Promise<boolean>
+  confirmUndeploy: (request: UndeployRequest, wallet: string, server: string, signal?: AbortSignal) => Promise<boolean>
   setMode: (mode: EditorHudMode) => void
   showCreatePage: (open: boolean) => void
   travel: (realm: string, parcel?: { x: number; y: number }) => Promise<void>
@@ -356,16 +356,20 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       if (metadata != null && (typeof metadata !== 'object' || Array.isArray(metadata) || editorMetadata(metadata))) throw new Error('not-allowed')
       const identity = await deps.login()
       if (identity == null) throw new Error('not-signed-in')
+      const signal = init?.signal
+      signal?.throwIfAborted()
       const path = new URL(target).pathname
       const undeploy = other?.service === 'worldsContent' && method === 'DELETE' ? (UNDEPLOY.exec(path) ?? UNDEPLOY_WORLD.exec(path)) : null
       if (undeploy != null) {
         const request = { world: decodeURIComponent(undeploy[1]), coordinate: undeploy[2] == null ? null : decodeURIComponent(undeploy[2]) }
-        if (!(await deps.confirmUndeploy(request, identity.authChain[0].payload, new URL(target).host))) throw new Error('cancelled')
+        const confirmed = await deps.confirmUndeploy(request, identity.authChain[0].payload, new URL(target).host, signal)
+        signal?.throwIfAborted()
+        if (!confirmed) throw new Error('cancelled')
       }
       const own = Object.entries(init?.headers ?? {}).filter(([name]) => SIGNED_FETCH_HEADERS.has(name.toLowerCase()))
       const loaded = await loadSigner()
       const signed = await loaded.signFetch(identity, method, target, signerFor(loaded, identity), metadata)
-      return fetch(target, { method, body: init?.body, signal: init?.signal, headers: { ...Object.fromEntries(own), ...signed } })
+      return fetch(target, { method, body: init?.body, signal, headers: { ...Object.fromEntries(own), ...signed } })
     },
     async signDeployment(request) {
       const identity = await deps.login()

@@ -50,13 +50,14 @@ export function confirmDeployment(request: DeploymentRequest, wallet: string, se
 }
 
 /** Resolves true only when the player chose to sign removing the scene at `request.coordinate`,
- *  or every scene in the world when it is null. */
-export function confirmUndeploy(request: UndeployRequest, wallet: string, server: string): Promise<boolean> {
+ *  or every scene in the world when it is null. Closes, declined, when `signal` aborts. */
+export function confirmUndeploy(request: UndeployRequest, wallet: string, server: string, signal?: AbortSignal): Promise<boolean> {
   const all = request.coordinate == null
   return showDialog({
     title: all ? 'Unpublish this world?' : 'Unpublish this scene?',
     fixed: true,
     dismissible: false,
+    signal,
     body: (
       <>
         <dl className={styles.facts}>

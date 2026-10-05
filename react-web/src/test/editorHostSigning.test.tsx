@@ -204,6 +204,15 @@ describe('editor host signing', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await world
     expect(fetched).not.toHaveBeenCalled()
+
+    // the editor gave up while the player was still deciding: nothing is left to sign
+    const abort = new AbortController()
+    const dropped = expect(host().signedFetch(url, { method: 'DELETE', signal: abort.signal })).rejects.toThrow('aborted')
+    await screen.findByRole('dialog')
+    abort.abort()
+    await dropped
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(fetched).not.toHaveBeenCalled()
     fetched.mockRestore()
   })
 })
