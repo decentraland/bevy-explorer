@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto'
 import { appendFileSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test'
-import { APP, NAV, SERVERS, appFrame } from './gate'
+import { SERVERS } from './gate'
 import { cmd } from './helpers'
 
 // what the editor previews a project under: a random id, never its name
@@ -71,14 +71,15 @@ async function previewWorker(context: BrowserContext): Promise<Worker> {
 // Every request the worker answers from the preview realm, logged inside the worker itself.
 async function recordPreviewRequests(worker: Worker): Promise<void> {
   await worker.evaluate(() => {
-    type Handle = (request: Request, root: string, store: unknown, client?: string) => Promise<Response>
+    type Handle = (request: Request, ...rest: unknown[]) => Promise<Response>
     const scope = globalThis as unknown as { dclPreviewRealm: { handle: Handle }; __gateLog?: PreviewRequest[] }
     if (scope.__gateLog) return
     const log: PreviewRequest[] = (scope.__gateLog = [])
     const handle = scope.dclPreviewRealm.handle
-    scope.dclPreviewRealm.handle = async (request, root, store, client) => {
+    // every argument: the worker passes the storage cache and the requesting client too
+    scope.dclPreviewRealm.handle = async (request, ...rest) => {
       const body = request.method === 'POST' ? await request.clone().text() : undefined
-      const response = await handle(request, root, store, client)
+      const response = await handle(request, ...rest)
       log.push({ t: Date.now(), method: request.method, url: request.url, status: response.status, body })
       return response
     }
@@ -196,9 +197,7 @@ test('a scene built in the browser runs from the preview realm and hot-reloads',
   const v1At = markers.find((m) => m.version === 1)!.t
   // not part of the gate: whether the HUD reaches the world on this realm
   const hudReady = await page
-    .frameLocator(APP)
-    .locator(NAV)
-    .waitFor({ timeout: 60_000 })
+    .waitForSelector('nav[aria-label="Main navigation"]', { timeout: 60_000 })
     .then(() => true)
     .catch(() => false)
 
@@ -210,7 +209,7 @@ test('a scene built in the browser runs from the preview realm and hot-reloads',
   expect(second.published!.entityId, 'the entity id is stable across publishes').toBe(entityId)
   expect(bundleV2, 'the bundle id changes with its bytes').not.toBe(bundleV1)
   const reloadAt = Date.now()
-  const reply = await cmd(appFrame(page), `/reload ${entityId}`)
+  const reply = await cmd(page, `/reload ${entityId}`)
   await expect.poll(() => sawMarker(2, reloadAt), { timeout: 120_000, message: 'the scene logs its v2 marker' }).toBe(true)
   const v2At = markers.find((m) => m.version === 2)!.t
 
