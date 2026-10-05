@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
 use common::{
-    rpc::{RpcCall, RpcResultSender, SpawnResponse},
+    rpc::{RpcCall, RpcCallEvent, RpcResultSender, SpawnResponse},
     structs::PrimaryUser,
 };
 use console::{DoAddConsoleCommand, PendingConsoleResponses};
@@ -40,20 +40,19 @@ struct MovePlayerToCommand {
 
 fn move_player_to_cmd(
     mut input: ConsoleCommand<MovePlayerToCommand>,
-    mut events: EventWriter<RpcCall>,
+    mut events: EventWriter<RpcCallEvent>,
     mut pending: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(command)) = input.take() {
         let to = DclTranslation([command.x, command.y, command.z]).to_bevy_translation();
         let (response, rx) = RpcResultSender::<bool>::channel();
-        events.write(RpcCall::MovePlayer {
-            scene: None,
+        events.write(RpcCallEvent::engine(RpcCall::MovePlayer {
             to,
             looking_at: None,
             duration: command.duration,
             camera_rotation: None,
             response: Some(response),
-        });
+        }));
         let (x, y, z) = (command.x, command.y, command.z);
         let has_duration = command.duration.is_some();
         let responder = input.take_responder();
@@ -95,19 +94,18 @@ struct WalkPlayerToCommand {
 
 fn walk_player_to_cmd(
     mut input: ConsoleCommand<WalkPlayerToCommand>,
-    mut events: EventWriter<RpcCall>,
+    mut events: EventWriter<RpcCallEvent>,
     mut pending: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(command)) = input.take() {
         let to = DclTranslation([command.x, command.y, command.z]).to_bevy_translation();
         let (response, rx) = RpcResultSender::<bool>::channel();
-        events.write(RpcCall::WalkPlayer {
-            scene: None,
+        events.write(RpcCallEvent::engine(RpcCall::WalkPlayer {
             to,
             stop_threshold: 0.5,
             timeout: command.timeout,
             response,
-        });
+        }));
         let (x, y, z) = (command.x, command.y, command.z);
         let responder = input.take_responder();
         pending.push_receiver(
@@ -153,12 +151,12 @@ struct ListPortablesCommand;
 
 fn list_portables_cmd(
     mut input: ConsoleCommand<ListPortablesCommand>,
-    mut events: EventWriter<RpcCall>,
+    mut events: EventWriter<RpcCallEvent>,
     mut pending: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(_)) = input.take() {
         let (response, rx) = RpcResultSender::<Vec<SpawnResponse>>::channel();
-        events.write(RpcCall::ListPortables { response });
+        events.write(RpcCallEvent::engine(RpcCall::ListPortables { response }));
         let responder = input.take_responder();
         pending.push_receiver(
             rx,
@@ -186,17 +184,16 @@ struct ConnectedPlayersCommand;
 
 fn connected_players_cmd(
     mut input: ConsoleCommand<ConnectedPlayersCommand>,
-    mut events: EventWriter<RpcCall>,
+    mut events: EventWriter<RpcCallEvent>,
     mut pending: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(_)) = input.take() {
         let (response, rx) = RpcResultSender::<Vec<String>>::channel();
         // console command has no scene: resolves to the shared context (client: every
         // player; multi-tenant server: none — its shared context holds no players)
-        events.write(RpcCall::GetConnectedPlayers {
-            scene: Entity::PLACEHOLDER,
+        events.write(RpcCallEvent::engine(RpcCall::GetConnectedPlayers {
             response,
-        });
+        }));
         let responder = input.take_responder();
         pending.push_receiver(
             rx,
@@ -223,17 +220,16 @@ struct GetUserDataCommand {
 
 fn get_user_data_cmd(
     mut input: ConsoleCommand<GetUserDataCommand>,
-    mut events: EventWriter<RpcCall>,
+    mut events: EventWriter<RpcCallEvent>,
     mut pending: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(command)) = input.take() {
         let (response, rx) =
             RpcResultSender::<Result<common::profile::SerializedProfile, ()>>::channel();
-        events.write(RpcCall::GetUserData {
+        events.write(RpcCallEvent::engine(RpcCall::GetUserData {
             user: command.address.clone(),
-            scene: Entity::PLACEHOLDER,
             response,
-        });
+        }));
         let label = command.address.unwrap_or_else(|| "self".to_string());
         let responder = input.take_responder();
         pending.push_receiver(

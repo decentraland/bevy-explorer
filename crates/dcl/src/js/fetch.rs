@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use bevy::log::debug;
 use common::rpc::{RpcCall, RpcResultSender};
 
-use crate::{interface::crdt_context::CrdtContext, js::State, RpcCalls};
+use crate::{js::State, RpcCalls};
 
 pub async fn op_signed_fetch_headers(
     state: Rc<RefCell<impl State>>,
@@ -12,8 +12,6 @@ pub async fn op_signed_fetch_headers(
     method: Option<String>,
 ) -> Result<Vec<(String, String)>, anyhow::Error> {
     debug!("op_signed_fetch_headers");
-
-    let scene = state.borrow().borrow::<CrdtContext>().hash.clone();
 
     let (sx, rx) = RpcResultSender::channel();
 
@@ -23,7 +21,6 @@ pub async fn op_signed_fetch_headers(
         .push(RpcCall::SignRequest {
             method: method.unwrap_or_else(|| String::from("get")),
             uri,
-            scene,
             response: sx,
         })?;
 

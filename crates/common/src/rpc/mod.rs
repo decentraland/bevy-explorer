@@ -10,7 +10,7 @@ use crate::{
 use alloy_core::primitives::Address;
 use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use std::{cell::RefCell, sync::Arc};
 use tokio_util::sync::CancellationToken;
 
 pub use result_sender::{RpcResultReceiver, RpcResultSender};
@@ -94,7 +94,6 @@ pub struct SpawnResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompareSnapshot {
-    pub scene: Entity,
     pub camera_position: [f32; 3],
     pub camera_target: [f32; 3],
     pub snapshot_size: [u32; 2],
@@ -130,21 +129,52 @@ pub enum OpenExplorerUiResult {
     RejectedNoUserGesture = 5,
 }
 
-#[derive(Event, Debug, Clone, Serialize, Deserialize)]
+/// Who issued an [`RpcCall`]. Attached by the engine where it receives the call, never
+/// supplied by the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RpcOrigin {
+    /// the calling scene: its root entity and its scene hash
+    Scene { entity: Entity, hash: Arc<str> },
+    /// the engine itself: console and agent commands, system ui, automatic testing
+    Engine,
+}
+
+impl RpcOrigin {
+    pub fn scene(&self) -> Option<Entity> {
+        match self {
+            Self::Scene { entity, .. } => Some(*entity),
+            Self::Engine => None,
+        }
+    }
+}
+
+#[derive(Event, Debug, Clone)]
+pub struct RpcCallEvent {
+    pub origin: RpcOrigin,
+    pub call: RpcCall,
+}
+
+impl RpcCallEvent {
+    pub fn engine(call: RpcCall) -> Self {
+        Self {
+            origin: RpcOrigin::Engine,
+            call,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RpcCall {
     ChangeRealm {
-        scene: Entity,
         to: String,
         message: Option<String>,
         response: RpcResultSender<Result<(), String>>,
     },
     ExternalUrl {
-        scene: Entity,
         url: String,
         response: RpcResultSender<Result<(), String>>,
     },
     MovePlayer {
-        scene: Option<Entity>,
         to: Vec3,
         looking_at: Option<Vec3>,
         duration: Option<f32>,
@@ -152,14 +182,12 @@ pub enum RpcCall {
         response: Option<RpcResultSender<bool>>,
     },
     WalkPlayer {
-        scene: Option<Entity>,
         to: Vec3,
         stop_threshold: f32,
         timeout: Option<f32>,
         response: RpcResultSender<bool>,
     },
     TeleportPlayer {
-        scene: Option<Entity>,
         /// The parcel to land on; `None` (with a realm) is the realm's default spawn.
         to: Option<IVec2>,
         /// The realm `to` belongs to: a realm change (a full reconnect, as for `ChangeRealm`) happens first.
@@ -167,16 +195,13 @@ pub enum RpcCall {
         response: RpcResultSender<Result<(), String>>,
     },
     MoveCamera {
-        scene: Entity,
         facing: Quat,
     },
     SpawnPortable {
         location: PortableLocation,
-        spawner: Entity,
         response: RpcResultSender<Result<SpawnResponse, String>>,
     },
     KillPortable {
-        scene: Entity,
         location: PortableLocation,
         response: RpcResultSender<bool>,
     },
@@ -185,47 +210,36 @@ pub enum RpcCall {
     },
     GetUserData {
         user: Option<String>,
-        scene: Entity,
         response: RpcResultSender<Result<SerializedProfile, ()>>,
     },
     GetConnectedPlayers {
-        /// calling scene — scopes the answer to its own room in partitioned mode
-        scene: Entity,
         response: RpcResultSender<Vec<String>>,
     },
     GetPlayersInScene {
-        scene: Entity,
         response: RpcResultSender<Vec<String>>,
     },
     OpenNftDialog {
-        scene: Entity,
         urn: String,
         response: RpcResultSender<Result<(), String>>,
     },
     OpenExplorerUi {
-        scene: Entity,
         /// raw `decentraland.sdk.components.common.ExplorerUi` value
         ui: i32,
         response: RpcResultSender<OpenExplorerUiResult>,
     },
     SubscribePlayerConnected {
-        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribePlayerDisconnected {
-        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribePlayerEnteredScene {
-        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribePlayerLeftScene {
-        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribeSceneReady {
-        scene: Entity,
         sender: RpcEventSender,
     },
     SubscribePlayerExpression {
@@ -241,24 +255,19 @@ pub enum RpcCall {
         sender: RpcEventSender,
     },
     SendMessageBus {
-        scene: Entity,
         data: Vec<u8>,
         recipient: Option<Address>,
     },
     SubscribeMessageBus {
-        hash: String,
         sender: RpcEventSender,
     },
     SubscribeBinaryBus {
-        hash: String,
         sender: RpcStreamSender<(String, Vec<u8>)>,
     },
     TestPlan {
-        scene: Entity,
         plan: Vec<String>,
     },
     TestResult {
-        scene: Entity,
         name: String,
         success: bool,
         error: Option<String>,
@@ -266,49 +275,37 @@ pub enum RpcCall {
     TestSnapshot(CompareSnapshot),
     SendAsync {
         body: RPCSendableMessage,
-        scene: Entity,
         response: RpcResultSender<Result<serde_json::Value, String>>,
     },
     GetTextureSize {
-        scene: Entity,
         src: String,
         response: RpcResultSender<Result<Vec2, String>>,
     },
     RequestGenericPermission {
-        scene: Entity,
         ty: PermissionType,
         message: Option<String>,
         response: RpcResultSender<bool>,
     },
     TriggerEmote {
-        scene: Entity,
         urn: String,
         r#loop: bool,
         mask: EmoteMask,
     },
-    StopEmote {
-        scene: Entity,
-    },
+    StopEmote,
     UiFocus {
-        scene: Entity,
         action: RpcUiFocusAction,
         response: RpcResultSender<Result<Option<String>, String>>,
     },
     CopyToClipboard {
-        scene: Entity,
         text: String,
         response: RpcResultSender<Result<(), String>>,
     },
     SignRequest {
         method: String,
         uri: String,
-        /// scene hash of the requesting scene — the engine builds the signed metadata from it,
-        /// and it selects a per-scene storage delegation in server mode
-        scene: String,
         response: RpcResultSender<Result<Vec<(String, String)>, String>>,
     },
     ReadFile {
-        scene_hash: String,
         filename: String,
         response: RpcResultSender<Result<ReadFileResponse, String>>,
     },

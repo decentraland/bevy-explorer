@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
 use common::{
-    rpc::{RpcCall, RpcResultSender},
+    rpc::{RpcCall, RpcCallEvent, RpcResultSender},
     structs::{AppConfig, PreviewMode, PrimaryUser, SceneLoadDistance},
 };
 use console::PendingConsoleResponses;
@@ -31,12 +31,11 @@ pub fn change_location(
     if let Some(Ok(command)) = input.take() {
         if let Some(realm) = command.realm {
             let (response, rx) = RpcResultSender::channel();
-            commands.send_event(RpcCall::TeleportPlayer {
-                scene: None,
+            commands.send_event(RpcCallEvent::engine(RpcCall::TeleportPlayer {
                 to: Some(IVec2::new(command.x, command.y)),
                 realm: Some(realm.clone()),
                 response,
-            });
+            }));
             let location = (command.x, command.y);
             pending.push_receiver(
                 rx,

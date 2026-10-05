@@ -17,7 +17,7 @@ use bevy::{
 };
 
 use common::{
-    rpc::RpcCall,
+    rpc::{RpcCall, RpcCallEvent, RpcOrigin},
     sets::{SceneLoopSets, SceneSets},
     structs::{
         AppConfig, AppError, CurrentRealm, DebugInfo, EditorMode, NoRenderApp, PreviewMode,
@@ -983,10 +983,10 @@ fn send_scene_updates(
 
     // add realm info
     let realm_bytes = match realm_info_cache.connected.as_ref() {
-        Some((hash, bytes)) if *hash == context.hash => bytes.as_slice(),
+        Some((hash, bytes)) if **hash == *context.hash => bytes.as_slice(),
         _ => realm_info_cache
             .server
-            .get(&context.hash)
+            .get(&*context.hash)
             .map(Vec::as_slice)
             .unwrap_or(realm_info_cache.disconnected.as_slice()),
     };
@@ -1099,7 +1099,7 @@ fn receive_scene_updates(
     mut scenes: Query<&mut RendererSceneContext>,
     crdt_interfaces: Res<CrdtExtractors>,
     frame: Res<FrameCount>,
-    mut rpc_call_events: EventWriter<RpcCall>,
+    mut rpc_call_events: EventWriter<RpcCallEvent>,
     mut toaster: Toaster,
     mut snapshot_events: EventWriter<CrdtSnapshotEvent>,
     mut entity_allocated_events: EventWriter<EntityAllocatedEvent>,
@@ -1132,10 +1132,17 @@ fn receive_scene_updates(
                     toaster.add_toast("inspector", "Scene paused waiting for inspector session");
                     None
                 }
-                SceneResponse::CompareSnapshot(compare) => {
-                    let scene = compare.scene;
-                    debug!("[{scene:?}] requested snapshot");
-                    rpc_call_events.write(RpcCall::TestSnapshot(compare.clone()));
+                SceneResponse::CompareSnapshot(scene_id, compare) => {
+                    debug!("[{scene_id:?}] requested snapshot");
+                    if let Ok(context) = scenes.get(scene_id.0) {
+                        rpc_call_events.write(RpcCallEvent {
+                            origin: RpcOrigin::Scene {
+                                entity: scene_id.0,
+                                hash: context.hash.clone(),
+                            },
+                            call: RpcCall::TestSnapshot(compare),
+                        });
+                    }
                     None
                 }
                 SceneResponse::Error(scene_id, message) => {
@@ -1214,8 +1221,14 @@ fn receive_scene_updates(
                             //     updates.jobs_in_flight.contains(root) || context.tick_number <= 2
                             // );
 
-                            for rpc_call in rpc_calls {
-                                rpc_call_events.write(rpc_call);
+                            for call in rpc_calls {
+                                rpc_call_events.write(RpcCallEvent {
+                                    origin: RpcOrigin::Scene {
+                                        entity: root,
+                                        hash: context.hash.clone(),
+                                    },
+                                    call,
+                                });
                             }
                         }
                     } else {
@@ -1225,9 +1238,17 @@ fn receive_scene_updates(
                     }
                     Some(root)
                 }
-                SceneResponse::ImmediateRpcCall(rpc_call) => {
-                    debug!("immediate rpc: {rpc_call:?}");
-                    rpc_call_events.write(rpc_call);
+                SceneResponse::ImmediateRpcCall(scene_id, call) => {
+                    debug!("[{scene_id:?}] immediate rpc: {call:?}");
+                    if let Ok(context) = scenes.get(scene_id.0) {
+                        rpc_call_events.write(RpcCallEvent {
+                            origin: RpcOrigin::Scene {
+                                entity: scene_id.0,
+                                hash: context.hash.clone(),
+                            },
+                            call,
+                        });
+                    }
                     None
                 }
             },
@@ -1338,14 +1359,14 @@ fn update_scene_room(
 
     if last
         .as_ref()
-        .is_some_and(|ev| &ev.realm_name == realm && ev.scene_id == scene.hash)
+        .is_some_and(|ev| &ev.realm_name == realm && *ev.scene_id == *scene.hash)
     {
         return;
     }
 
     let ev = SetCurrentScene {
         realm_name: realm.to_owned(),
-        scene_id: scene.hash.clone(),
+        scene_id: scene.hash.to_string(),
     };
 
     *last = Some(ev.clone());

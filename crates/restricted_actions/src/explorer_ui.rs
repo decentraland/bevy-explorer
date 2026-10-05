@@ -10,7 +10,7 @@
 use bevy::prelude::*;
 use common::{
     inputs::HudPanel,
-    rpc::{OpenExplorerUiResult, RpcCall, RpcResultSender},
+    rpc::{OpenExplorerUiResult, RpcCall, RpcCallEvent, RpcOrigin, RpcResultSender},
     structs::{PermissionType, PrimaryUser},
 };
 use dcl_component::{
@@ -72,7 +72,7 @@ pub type OpenRequest = (SceneOpen, RpcResultSender<OpenExplorerUiResult>);
 
 #[allow(clippy::too_many_arguments)]
 pub fn open_explorer_ui(
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut perms: Permission<OpenRequest>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
@@ -81,12 +81,10 @@ pub fn open_explorer_ui(
     mut state: ResMut<ExplorerUiState>,
     time: Res<Time>,
 ) {
-    for (scene, ui, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::OpenExplorerUi {
-            scene,
-            ui,
-            response,
-        } => Some((*scene, *ui, response.clone())),
+    for (scene, ui, response) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
+        (RpcOrigin::Scene { entity: scene, .. }, RpcCall::OpenExplorerUi { ui, response }) => {
+            Some((*scene, *ui, response.clone()))
+        }
         _ => None,
     }) {
         let in_scene = player

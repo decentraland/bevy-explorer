@@ -100,7 +100,7 @@ fn debug_dump_scene(
                 .unwrap()
                 .to_owned()
                 .join("scene_dump")
-                .join(&scene.hash);
+                .join(&*scene.hash);
             std::fs::create_dir_all(&dump_folder).unwrap();
 
             // total / succeed / fail
@@ -109,7 +109,7 @@ fn debug_dump_scene(
             for content_file in def.content.files() {
                 count.lock().unwrap().0 += 1;
                 let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-                    scene.hash.to_owned(),
+                    scene.hash.to_string(),
                     content_file.to_owned(),
                 ));
 

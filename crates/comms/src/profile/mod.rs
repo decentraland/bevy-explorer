@@ -29,7 +29,7 @@ use super::{
 };
 use common::{
     profile::{LambdaProfiles, SerializedProfile},
-    rpc::{RpcEventSender, RpcStreamSender},
+    rpc::{RpcCallEvent, RpcEventSender, RpcStreamSender},
     sets::SceneSets,
     structs::PrimaryUser,
     util::{TaskCompat, TaskExt},
@@ -318,7 +318,7 @@ pub fn setup_primary_profile(
     mut current_profile: ResMut<CurrentUserProfile>,
     transports: Query<&Transport>,
     mut senders: Local<Vec<RpcEventSender>>,
-    mut subscribe_events: EventReader<RpcCall>,
+    mut subscribe_events: EventReader<RpcCallEvent>,
     mut deploy_task: Local<Option<(u32, Task<Result<(), anyhow::Error>>)>>,
     wallet: Res<Wallet>,
     ipfas: IpfsAssetServer,
@@ -328,7 +328,7 @@ pub fn setup_primary_profile(
     time: Res<Time>,
 ) {
     // gather any event receivers
-    for sender in subscribe_events.read().filter_map(|ev| match ev {
+    for sender in subscribe_events.read().filter_map(|ev| match &ev.call {
         RpcCall::SubscribeProfileChanged { sender } => Some(sender),
         _ => None,
     }) {

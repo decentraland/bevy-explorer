@@ -6,7 +6,7 @@ use bevy::log::debug;
 use common::rpc::{RPCSendableMessage, RpcCall, RpcResultSender};
 use tokio::sync::Mutex;
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use crate::RpcCalls;
 
 use super::State;
 
@@ -29,14 +29,11 @@ pub async fn op_send_async(
         "eth_sendTransaction" | "eth_signTypedData_v4" => {
             let (sx, rx) = RpcResultSender::<Result<serde_json::Value, String>>::channel();
 
-            let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
-
             state
                 .borrow_mut()
                 .borrow_mut::<RpcCalls>()
                 .push(RpcCall::SendAsync {
                     body: RPCSendableMessage { method, params },
-                    scene,
                     response: sx,
                 })?;
 

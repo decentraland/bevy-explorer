@@ -25,17 +25,19 @@ pub async fn op_read_file(
 ) -> Result<ReadFileResponse, anyhow::Error> {
     debug!("op_read_file {filename}");
 
-    let scene_hash = op_state.borrow_mut().borrow::<CrdtContext>().hash.clone();
+    let scene_id = op_state.borrow().borrow::<CrdtContext>().scene_id;
     let (sx, rx) = RpcResultSender::channel();
 
     op_state
         .borrow_mut()
         .borrow_mut::<SceneResponseSender>()
-        .try_send(SceneResponse::ImmediateRpcCall(RpcCall::ReadFile {
-            scene_hash,
-            filename,
-            response: sx,
-        }))
+        .try_send(SceneResponse::ImmediateRpcCall(
+            scene_id,
+            RpcCall::ReadFile {
+                filename,
+                response: sx,
+            },
+        ))
         .unwrap();
 
     let res = rx.await;

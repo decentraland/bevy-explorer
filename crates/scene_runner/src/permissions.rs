@@ -81,14 +81,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
             .contains(&scene);
         self.scenes
             .get(scene)
-            .map(|ctx| {
-                (
-                    in_scene,
-                    ctx.hash.as_str(),
-                    ctx.title.as_str(),
-                    ctx.is_portable,
-                )
-            })
+            .map(|ctx| (in_scene, &*ctx.hash, ctx.title.as_str(), ctx.is_portable))
             .ok()
     }
 

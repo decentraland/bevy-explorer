@@ -832,7 +832,7 @@ fn update_render_avatar(
                                     .and_then(|ctx| {
                                         let scene_hash = &ctx.hash;
                                         let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-                                            scene_hash.clone(),
+                                            scene_hash.to_string(),
                                             e.to_lowercase(),
                                         ));
                                         let ipfs_context = ipfas.ipfs().context.blocking_read();

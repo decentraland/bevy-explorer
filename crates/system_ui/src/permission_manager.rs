@@ -274,7 +274,7 @@ fn update_permissions(
             permit,
             PermissionDialog {
                 level: None,
-                hash: hash.to_owned(),
+                hash: hash.to_string(),
                 realm: req.realm.clone(),
             },
             ZOrder::Permission.default(),
@@ -369,7 +369,7 @@ pub fn handle_scene_permissions(
                         system_bridge::PermissionRequest {
                             ty: req.ty,
                             additional: req.additional.clone(),
-                            scene: hash.clone(),
+                            scene: hash.to_string(),
                             id: *handle,
                         },
                     ));
@@ -484,7 +484,7 @@ pub fn handle_scene_permissions(
                     system_bridge::PermissionRequest {
                         ty: req.ty,
                         additional: req.additional.clone(),
-                        scene: hash.clone(),
+                        scene: hash.to_string(),
                         id: next_id,
                     },
                 ));

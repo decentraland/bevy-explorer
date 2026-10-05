@@ -37,7 +37,7 @@ use crate::{
 };
 use common::{
     inputs::InputMap,
-    rpc::RpcCall,
+    rpc::RpcCallEvent,
     sets::RealmLifecycle,
     structs::{
         AppConfig, CurrentRealm, CursorLocks, GraphicsSettings, PermissionUsed, PreviewMode,
@@ -152,7 +152,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.insert_resource(TimeOfDay {
         time: 10.0 * 3600.0,
     });
-    app.add_event::<RpcCall>();
+    app.add_event::<RpcCallEvent>();
     app.add_event::<ScrollTargetEvent>();
     app.add_event::<PermissionUsed>();
     app.insert_resource(SceneLoadDistance {

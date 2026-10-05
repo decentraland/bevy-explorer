@@ -483,7 +483,7 @@ pub(crate) fn load_scene_javascript(
             // `global_scene.subscribe`, so we keep main.crdt separate to get a clean baseline.
             let mut context = CrdtContext::new(
                 scene_id,
-                renderer_context.hash.clone(),
+                renderer_context.hash.to_string(),
                 renderer_context.title.clone(),
                 false,
                 false,
@@ -696,11 +696,11 @@ pub(crate) fn initialize_scene(
         let inspected = testing_data
             .inspect_hash
             .as_ref()
-            .is_some_and(|inspect_hash| inspect_hash == &context.hash);
+            .is_some_and(|inspect_hash| **inspect_hash == *context.hash);
 
         let scene_context = CrdtContext::new(
             context.scene_id,
-            context.hash.clone(),
+            context.hash.to_string(),
             context.title.clone(),
             testing_data.test_mode,
             preview_mode.is_preview,
@@ -1813,7 +1813,7 @@ fn animate_ready_scene(
             .0
             .as_ref()
             .and_then(|(scene, _)| scene.hash_and_urn())
-            .is_some_and(|(hash, _)| hash == ctx.hash)
+            .is_some_and(|(hash, _)| *hash == *ctx.hash)
         {
             continue;
         }
@@ -1997,8 +1997,8 @@ pub fn handle_live_scene_info(
     let scene_info = scenes
         .iter()
         .map(|(ctx, maybe_super)| LiveSceneInfo {
-            hash: ctx.hash.clone(),
-            base_url: base_urls.get(&ctx.hash).map(ToOwned::to_owned),
+            hash: ctx.hash.to_string(),
+            base_url: base_urls.get(&*ctx.hash).map(ToOwned::to_owned),
             title: ctx.title.clone(),
             parcels: ctx
                 .parcels

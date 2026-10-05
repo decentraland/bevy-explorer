@@ -67,7 +67,7 @@ fn set_scene_cmd(
         let matches: Vec<_> = scenes
             .iter()
             .filter(|(_, ctx)| {
-                ctx.hash == pattern || ctx.title.to_lowercase().contains(&pattern_lower)
+                *ctx.hash == *pattern || ctx.title.to_lowercase().contains(&pattern_lower)
             })
             .collect();
 

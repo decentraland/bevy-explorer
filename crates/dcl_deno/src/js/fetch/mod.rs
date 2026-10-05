@@ -320,13 +320,11 @@ async fn fetch_send_inner(
         .ok()
         .expect("multiple op_fetch_send ongoing");
 
-    let scene = state.borrow_mut().borrow::<CrdtContext>().scene_id.0;
     let (sx, rx) = RpcResultSender::channel();
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::RequestGenericPermission {
-            scene,
             ty: common::structs::PermissionType::Fetch,
             message: Some(url.clone()),
             response: sx,

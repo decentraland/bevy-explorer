@@ -7,7 +7,7 @@ use common::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
+use crate::{RpcCalls, SceneResourceCounters};
 
 use super::State;
 
@@ -64,7 +64,6 @@ pub async fn op_comms_send_string(
     if !try_spend_budget(&mut *state) {
         anyhow::bail!("per-tick message budget exhausted ({MAX_SEND_MESSAGES_PER_TICK})");
     }
-    let scene = state.borrow::<CrdtContext>().scene_id.0;
     let mut data = vec![CommsMessageType::String as u8];
     data.extend(message.into_bytes());
     let counters = state.borrow_mut::<SceneResourceCounters>();
@@ -73,7 +72,6 @@ pub async fn op_comms_send_string(
     state
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::SendMessageBus {
-            scene,
             data,
             recipient: None,
         })
@@ -96,8 +94,6 @@ pub async fn op_comms_send_binary_single(
         anyhow::bail!("per-tick message budget exhausted ({MAX_SEND_MESSAGES_PER_TICK})");
     }
 
-    let context = state.borrow::<CrdtContext>();
-    let scene = context.scene_id.0;
     let mut data = vec![CommsMessageType::Binary as u8];
     data.extend(message.as_ref());
 
@@ -109,11 +105,7 @@ pub async fn op_comms_send_binary_single(
 
     state
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::SendMessageBus {
-            scene,
-            data,
-            recipient,
-        })
+        .push(RpcCall::SendMessageBus { data, recipient })
 }
 
 pub async fn op_comms_recv_binary(
@@ -122,9 +114,6 @@ pub async fn op_comms_recv_binary(
     debug!("op_comms_recv_binary");
     let mut state = state.borrow_mut();
 
-    let context = state.borrow::<CrdtContext>();
-    let hash = context.hash.clone();
-
     let mut results = Vec::default();
 
     if !state.has::<BinaryBusReceiver>() {
@@ -132,7 +121,7 @@ pub async fn op_comms_recv_binary(
             RpcStreamSender::<(String, Vec<u8>)>::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::SubscribeBinaryBus { hash, sender: sx })?;
+            .push(RpcCall::SubscribeBinaryBus { sender: sx })?;
         state.put(BinaryBusReceiver(rx));
     }
 
