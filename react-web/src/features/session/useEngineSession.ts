@@ -1902,6 +1902,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         setBusy(false)
         pendingLogin.current = null
         setSubmitted(true)
+        // the engine booted holding the world, as for Jump in: the pick is the lobby's
+        if (urlDestination.current == null) {
+          setLobby(true)
+          setLobbyStageReady(false)
+        }
       })
       .catch((e: unknown) => {
         if (attempt !== authAttempt.current) return // cancelled: the rejection is expected

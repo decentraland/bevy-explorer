@@ -25,6 +25,14 @@ describe('lobby session regressions', () => {
     expect(h.driver.sentOf('getOutfits')).toHaveLength(1)
   })
 
+  it('opens the native startup lobby after a fresh sign-in, not the places picker', async () => {
+    const h = renderSession()
+    Object.assign(h.driver, { loginNew: async () => {} })
+    await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
+    await act(async () => h.session().login.startWithAccount())
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
+  })
+
   it('returns to the native startup lobby after failed world travel and permits retry', async () => {
     const h = renderSession()
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
