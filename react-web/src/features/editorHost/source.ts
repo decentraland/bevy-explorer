@@ -18,14 +18,40 @@ export interface EditorServices {
   projects: string | null
   /** Base url of the Worlds content server deployments go to. */
   worldsContent: string
+  /** The services the editor may sign requests to as a scene would; only beside a real Worlds server. */
+  signed?: SignedServices
+}
+
+/** Base urls (no trailing slash) host.signedFetch signs for, pathname only. */
+export interface SignedServices {
+  worldsContent: string
+  commsGatekeeper: string
+  storage: string
+  creatorsData: string
+  multiplayer: string
 }
 
 export interface EditorSource extends EditorPin {
   services: EditorServices
 }
 
+const signedFor = (tld: 'zone' | 'org'): SignedServices => ({
+  worldsContent: `https://worlds-content-server.decentraland.${tld}`,
+  commsGatekeeper: `https://comms-gatekeeper.decentraland.${tld}`,
+  storage: `https://storage.decentraland.${tld}`,
+  creatorsData: 'https://creators-data.decentraland.org/v2',
+  multiplayer: `https://multiplayer-server.decentraland.${tld}`
+})
+const SIGNED_SERVICES = [signedFor('zone'), signedFor('org')]
+
+// a Worlds server of either environment brings its own; a local one none
+function withSigned(services: Omit<EditorServices, 'signed'>): EditorServices {
+  const signed = SIGNED_SERVICES.find((s) => s.worldsContent === services.worldsContent.replace(/\/+$/, ''))
+  return signed == null ? services : { ...services, signed }
+}
+
 /** What the released package talks to. projects: null until the storage service is deployed. */
-const PINNED_SERVICES: EditorServices = { projects: null, worldsContent: 'https://worlds-content-server.decentraland.zone' }
+const PINNED_SERVICES: EditorServices = withSigned({ projects: null, worldsContent: 'https://worlds-content-server.decentraland.zone' })
 
 const LOOPBACK_SERVICES: EditorServices = {
   projects: 'http://localhost:8787',
@@ -55,10 +81,10 @@ export function editorSource(search: string, hostname: string, pageDir: string):
   const q = new URLSearchParams(search)
   return {
     ...pin,
-    services: {
+    services: withSigned({
       projects: serviceUrl(q.get(SERVICE_PARAMS.projects)) ?? LOOPBACK_SERVICES.projects,
       worldsContent: serviceUrl(q.get(SERVICE_PARAMS.worldsContent)) ?? LOOPBACK_SERVICES.worldsContent
-    }
+    })
   }
 }
 
