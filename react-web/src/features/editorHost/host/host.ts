@@ -63,6 +63,9 @@ export interface DclEditorHostV1 {
   /** fetch `path` (`/values…`, `/players/<address>/values…` or `/env/<key>`) from the previewed
    *  project's storage. Rejects 'not-allowed' for any other path or with no preview open. */
   previewStorageFetch: (path: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<Response>
+  /** contract v1.3: the open preview's scene server console, the lines after `after` (a `seq` it
+   *  returned, 0 for all it keeps); empty with no server running. */
+  previewServerLogs: (after: number) => ServerLogLine[]
   /** Ask the player to confirm a Worlds deployment, then sign its entity id. Rejects 'cancelled'
    *  when declined and 'not-signed-in' for a guest. */
   signDeployment: (request: DeploymentRequest) => Promise<AuthChainLink[]>
@@ -70,6 +73,12 @@ export interface DclEditorHostV1 {
   openCreatePage: () => void
   /** Unmount the editor, kill its scene, restore the HUD and the clock, and travel back. */
   exit: () => void
+}
+
+export interface ServerLogLine {
+  seq: number
+  level: 'log' | 'error' | 'system'
+  msg: string
 }
 
 /** What editor.js leaves at window.__dclEditor. */
@@ -415,6 +424,11 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       const route = target.href.startsWith(base.href) ? target.pathname.slice(base.pathname.length) : ''
       if (!PREVIEW_STORAGE_PATH.test(route)) return Promise.reject(new Error('not-allowed'))
       return fetch(target.href, { method: init?.method ?? 'GET', headers: init?.headers, body: init?.body })
+    },
+    previewServerLogs(after) {
+      const frame = document.querySelector<HTMLIFrameElement>(SERVER_FRAME)
+      const read = (frame?.contentWindow as (Window & { sceneLogsAfter?: (after: number) => ServerLogLine[] }) | null | undefined)?.sceneLogsAfter
+      return read == null || !Number.isFinite(after) ? [] : read(after)
     },
     async signDeployment(request) {
       const identity = await deps.login()

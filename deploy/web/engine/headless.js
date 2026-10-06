@@ -29,6 +29,21 @@ function claimRealm(realm) {
  * @param {object} options - an engine_run options object; the launch options are read
  * @returns {Promise<{ engine: Worker, compute: Worker[], memory: WebAssembly.Memory }>}
  */
+// the server's scene console output (src/headless/web.rs forward_scene_logs), newest last
+const SCENE_LOG_LINES = 500;
+const sceneLogs = [];
+let sceneLogSeq = 0;
+
+/**
+ * @param {number} after - the last `seq` already read
+ * @returns {Array<{ seq: number, level: string, msg: string }>}
+ */
+export function sceneLogsAfter(after) {
+  // a cursor from a server this frame replaced reads it from the start
+  const from = after > sceneLogSeq ? 0 : after;
+  return sceneLogs.filter((line) => line.seq > from);
+}
+
 export async function startHeadless(compiledModule, options) {
   if (!(await claimRealm(options.realm))) {
     throw new Error(`headless: ${options.realm} already has a scene server in this browser`);
@@ -53,5 +68,11 @@ export async function startHeadless(compiledModule, options) {
   glue.livekit_host_main();
   const { engine, compute } = glue.headless_start(options, glueUrl);
   engine.onerror = (e) => console.error("[headless] engine worker crashed", e);
+  engine.addEventListener("message", (e) => {
+    const log = e.data?.sceneLog;
+    if (log === undefined) return;
+    sceneLogs.push({ seq: ++sceneLogSeq, level: log.level, msg: log.msg });
+    if (sceneLogs.length > SCENE_LOG_LINES) sceneLogs.shift();
+  });
   return { engine, compute, memory: sharedMemory };
 }
