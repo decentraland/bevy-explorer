@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { bridgeChannelName } from '../../engine/protocol'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { PAGE_DIR } from '../../lib/publicUrl'
-import { getStoredLogin, rootAddress } from '../auth/sso'
+import { getLogin, rootAddress } from '../auth/sso'
 import type { EngineSession } from '../session/useEngineSession'
 import { CreatePage } from './CreatePage'
 import { confirmDeployment } from './DeployConfirm'
@@ -59,9 +59,9 @@ export function useEditorHost(entrySearch: string, session: EngineSession): Edit
               const { profile, login } = latest.current
               return { address: profile.data?.address ?? login.account, isGuest: profile.data?.isGuest ?? login.account == null }
             },
-            login: () => {
+            login: async () => {
               const me = latest.current.profile.data
-              const stored = getStoredLogin()
+              const stored = await getLogin()
               if (me == null || me.isGuest || stored == null) return null
               return rootAddress(stored.identity).toLowerCase() === me.address.toLowerCase() ? stored.identity : null
             },

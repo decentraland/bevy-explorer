@@ -41,7 +41,7 @@ describe('editor scene', () => {
       defaultRealm: '',
       engineConsole: async () => '',
       identity: () => ({ address: null, isGuest: true }),
-      login: () => null,
+      login: async () => null,
       confirmDeployment: async () => false,
       setMode: vi.fn(),
       showCreatePage: vi.fn(),

@@ -7,6 +7,8 @@ import { PROJECT_ID, type EditorServices, type EditorSource } from '../source'
 import { CID_PATTERN } from './cid'
 import { sceneIdFromAbout, stageEditorScene } from './editorScene'
 import type { Signer } from './signer'
+import type { SignMessage } from './sign'
+import { inShell, shellRequest } from '../../../lib/shell'
 // Vite's worker pipeline is what bundles a file on its own; this one is loaded by script tag.
 import signerUrl from './signer.ts?worker&url'
 
@@ -66,7 +68,7 @@ export interface EditorHostDeps {
   engineConsole: (line: string) => Promise<string>
   identity: () => { address: string | null; isGuest: boolean }
   /** The stored identity of the wallet the player is in-world as; null for a guest. */
-  login: () => AuthIdentity | null
+  login: () => Promise<AuthIdentity | null>
   /** The player's answer to "sign this deployment as `wallet`, for `server`?". */
   confirmDeployment: (request: DeploymentRequest, wallet: string, server: string) => Promise<boolean>
   setMode: (mode: EditorHudMode) => void
@@ -124,6 +126,11 @@ function hostUrlOptions(optionsJson: string, previewRoot: string, back: Home | n
 // a module that failed to load stays failed under its url, so a retry loads it under another
 function attemptUrl(url: string, attempt: number): string {
   return attempt === 1 ? url : `${url}${url.includes('?') ? '&' : '?'}retry=${attempt}`
+}
+
+// inside the web shell the key stays in the shell, which signs on request (src/shell/main.ts)
+function signerFor(loaded: Signer, identity: AuthIdentity): SignMessage {
+  return inShell ? (address, message) => shellRequest<string>('sign', { signer: address, message }) : loaded.localSigner(identity)
 }
 
 let signer: Promise<Signer> | null = null
@@ -293,21 +300,23 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     async signedFetch(url, init) {
       const target = under(source.services.projects, url)
       if (target == null) throw new Error('not-allowed')
-      const identity = deps.login()
+      const identity = await deps.login()
       if (identity == null) throw new Error('not-signed-in')
       const method = (init?.method ?? 'GET').toUpperCase()
       const own = Object.entries(init?.headers ?? {}).filter(([name]) => SIGNED_FETCH_HEADERS.has(name.toLowerCase()))
-      const signed = await (await loadSigner()).signFetch(identity, method, target)
+      const loaded = await loadSigner()
+      const signed = await loaded.signFetch(identity, method, target, signerFor(loaded, identity))
       return fetch(target, { method, body: init?.body, headers: { ...Object.fromEntries(own), ...signed } })
     },
     async signDeployment(request) {
-      const identity = deps.login()
+      const identity = await deps.login()
       if (identity == null) throw new Error('not-signed-in')
       // a bare content hash: nothing a signed fetch or a login message could be mistaken for
       if (!CID_PATTERN.test(request.entityId)) throw new Error('signDeployment: invalid entity id')
       const server = new URL(source.services.worldsContent).host
       if (!(await deps.confirmDeployment(request, identity.authChain[0].payload, server))) throw new Error('cancelled')
-      return (await loadSigner()).signDeployment(identity, request.entityId)
+      const loaded = await loadSigner()
+      return loaded.signDeployment(identity, request.entityId, signerFor(loaded, identity))
     },
     openCreatePage() {
       leave()

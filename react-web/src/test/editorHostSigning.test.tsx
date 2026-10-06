@@ -10,7 +10,7 @@ import { createUnsafeIdentity } from '../../bridge-scene/node_modules/@dcl/crypt
 import { PopupHost } from '../design'
 import { useEditorHost } from '../features/editorHost/EditorHost'
 import type { DclEditorHostV1 } from '../features/editorHost/host/host'
-import { signDeployment, signFetch } from '../features/editorHost/host/sign'
+import { localSigner, signDeployment, signFetch } from '../features/editorHost/host/sign'
 import type { Signer } from '../features/editorHost/host/signer'
 import { fakeSession } from './harness'
 
@@ -38,7 +38,7 @@ describe('editor host signing', () => {
   beforeAll(async () => {
     w.engine_console_command = async () => ''
     // what the signing script does once the page adds it (jsdom runs no scripts)
-    new MutationObserver(() => w.__dclEditorSigner?.({ signFetch, signDeployment })).observe(document.head, { childList: true })
+    new MutationObserver(() => w.__dclEditorSigner?.({ signFetch, signDeployment, localSigner })).observe(document.head, { childList: true })
     const { result } = renderHook(() => useEditorHost('', session))
     await act(async () => void result.current!.load().catch(() => {}))
   })
