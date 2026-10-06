@@ -4,7 +4,6 @@ import { createGuestIdentity, webGuestBackend } from '../features/auth/guest'
 import {
   clearGuestLogin,
   clearStoredLogins,
-  getStoredGuestLogin,
   getStoredLogin,
   loginExpired,
   publicLogin,
@@ -41,8 +40,8 @@ export async function request(method: unknown, params: unknown): Promise<unknown
         throw new Error(`not signed in as ${signer}`)
       }
       pinned = true
-      // Signing in with an account replaces the guest.
-      if (!login.guest && getStoredGuestLogin()) clearGuestLogin()
+      // Signing in with an account replaces the guest (an expired one included).
+      if (!login.guest) clearGuestLogin()
       return personalSign(ephemeral.privateKey, message)
     }
     // "Explore as guest": a guest account that persists across visits (features/auth/guest.ts),

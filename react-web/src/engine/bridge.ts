@@ -16,6 +16,7 @@ import {
   type PageToScene,
   type PreviousLogin,
   type RpcMethod,
+  type RpcRequest,
   type SceneToPage
 } from './protocol'
 
@@ -28,6 +29,9 @@ const QUICK_RPC_TIMEOUT_MS: Partial<Record<RpcMethod, number>> = {
   logout: 10_000,
   guestDiscard: 10_000
 }
+
+// Answered by the bridge scene, not the engine's boot shim.
+const SCENE_RPCS: ReadonlySet<RpcMethod> = new Set(['guestLogin', 'guestSign', 'guestDiscard'])
 
 export class BridgeClient implements LoginDriver {
   private readonly ch: BridgeChannel
@@ -142,9 +146,12 @@ export class BridgeClient implements LoginDriver {
         reject(new Error(`bridge rpc ${method} timed out`))
       }, limit)
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer })
-      // The engine's boot shim answers these before any bridge scene exists, so they skip the
-      // handshake queue rather than gating the login screen on a scene sign-in does not involve.
-      this.ch.sendNow({ kind: 'rpc:req', id, method, params })
+      // The engine's boot shim answers the login rpcs before any bridge scene exists, so they skip
+      // the handshake queue rather than gating the login screen on a scene sign-in does not
+      // involve. The guest rpcs are the scene's, so they wait for it.
+      const msg: RpcRequest = { kind: 'rpc:req', id, method, params }
+      if (SCENE_RPCS.has(method)) this.ch.send(msg)
+      else this.ch.sendNow(msg)
     })
   }
 
