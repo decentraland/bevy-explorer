@@ -9,7 +9,7 @@
 
 import { type Page, expect, test } from '@playwright/test'
 
-export const APP_URL = process.env.E2E_URL ?? 'http://localhost:5173/'
+export const APP_URL = process.env.E2E_URL ?? 'http://localhost:5173/app.html'
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
 /** Wait until the engine console RPC is live (same document as the app — no iframe). */
