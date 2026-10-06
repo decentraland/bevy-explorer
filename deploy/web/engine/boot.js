@@ -21,7 +21,8 @@
 //     window.engine / engine_console_command — the console RPC (built by engine.js post-launch)
 //     __bevyStartServer(options) — starts a headless scene server for a local preview beside the
 //       client (engine.js startServer): for the host that opened the preview. `options` are
-//       engine_run launch options naming the preview realm; resolves once it is started
+//       engine_run launch options naming the preview realm; resolves once it is started, rejects
+//       when the realm already has a server in this browser
 //     __defaultRealm() / __serviceUrl(name) / __defaultBaseDomain() — HOST-PROVIDED
 //       (react-web/src/lib/baseDomain.ts, defined before this module is injected), for the url
 //       sync only: the host's default realm, a service's resolved base url (its ?<name>= override,
