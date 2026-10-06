@@ -287,7 +287,9 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
 
   // one switch at a time, so a stop never lands between another preview's start and its frame
   let serverSwitch: Promise<void> = Promise.resolve()
+  let served: { realm: string; position: string } | null = null
   const serveScene = (realm: string | null, position = ''): Promise<void> => {
+    served = realm == null ? null : { realm, position }
     serverSwitch = serverSwitch.then(async () => {
       for (const frame of document.querySelectorAll(SERVER_FRAME)) frame.remove()
       if (realm == null) return
@@ -351,7 +353,10 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       const [name = '', ...args] = line.trim().replace(/^\//, '').split(/\s+/)
       const namesScene = name === 'reload' || (name === 'set_scene' && args.length > 0)
       if (!EDITOR_COMMANDS.has(name) || (namesScene && !editedScene(args.at(0)))) return Promise.reject(new Error('not-allowed'))
-      return deps.engineConsole(line)
+      const reply = deps.engineConsole(line)
+      // the editor reloads its scene for new code, which the server must run too
+      if (name === 'reload' && served != null) void serveScene(served.realm, served.position)
+      return reply
     },
     identity: deps.identity,
     setMode(mode) {
