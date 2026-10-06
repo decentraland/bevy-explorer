@@ -1105,7 +1105,15 @@ async fn fetch_catalyst_profile(
     address: Address,
     ipfs: std::sync::Arc<IpfsIo>,
 ) -> Result<Option<UserProfile>, anyhow::Error> {
-    let url = format!("{}/profiles/{address:#x}", endpoint.trim_end_matches('/'));
+    fetch_catalyst_profile_by_id(endpoint, format!("{address:#x}"), ipfs).await
+}
+
+async fn fetch_catalyst_profile_by_id(
+    endpoint: String,
+    id: String,
+    ipfs: std::sync::Arc<IpfsIo>,
+) -> Result<Option<UserProfile>, anyhow::Error> {
+    let url = format!("{}/profiles/{id}", endpoint.trim_end_matches('/'));
     debug!("requesting profile from {url}");
 
     let response = ipfs
@@ -1149,6 +1157,20 @@ async fn fetch_catalyst_profile(
             content,
             base_url,
         }))
+}
+
+/// The curated default looks (avatar-assets `default-profiles`), deployed on the catalyst as
+/// profiles under the pointers `default1` to `default{DEFAULT_LOOKS}`.
+pub const DEFAULT_LOOKS: u32 = 160;
+
+pub async fn get_default_look(
+    ipfs: std::sync::Arc<IpfsIo>,
+    index: u32,
+) -> Result<Option<UserProfile>, anyhow::Error> {
+    let Some(endpoint) = ipfs.lambda_endpoint() else {
+        anyhow::bail!("not connected");
+    };
+    fetch_catalyst_profile_by_id(endpoint, format!("default{index}"), ipfs).await
 }
 
 /// Resolve one profile through the registry -> catalyst chain without the engine cache

@@ -20,8 +20,11 @@ use common::{
     },
     util::{TaskCompat, TaskExt},
 };
-use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
+use comms::profile::{
+    get_default_look, get_remote_profile, CurrentUserProfile, UserProfile, DEFAULT_LOOKS,
+};
 use ipfs::{IpfsAssetServer, IpfsIo};
+use rand::{seq::SliceRandom, Rng};
 use scene_runner::Toaster;
 use system_bridge::{NativeUi, SystemApi, PROFILE_FETCH_FAILED};
 use tokio::sync::oneshot::error::TryRecvError;
@@ -408,6 +411,110 @@ async fn get_profile_with_retry(
     Err(format!("{PROFILE_FETCH_FAILED}: {last_error}"))
 }
 
+/// The profile a login lands with.
+enum LoginProfile {
+    /// On the server.
+    Deployed(UserProfile),
+    /// Built here for an account with none; deployed on entry.
+    New(UserProfile),
+}
+
+async fn login_profile(
+    root_address: Address,
+    ipfs: std::sync::Arc<IpfsIo>,
+    default_on_error: bool,
+    guest_account: bool,
+) -> Result<LoginProfile, String> {
+    match get_profile_with_retry(root_address, ipfs.clone(), default_on_error).await? {
+        Some(profile) => Ok(LoginProfile::Deployed(profile)),
+        None if guest_account => Ok(LoginProfile::New(
+            new_guest_profile(root_address, ipfs).await,
+        )),
+        None => Ok(LoginProfile::New(new_profile(root_address, &ipfs))),
+    }
+}
+
+fn new_profile(address: Address, ipfs: &IpfsIo) -> UserProfile {
+    UserProfile {
+        version: 0,
+        content: SerializedProfile {
+            has_connected_web3: Some(true),
+            eth_address: format!("{address:#x}"),
+            user_id: Some(format!("{address:#x}")),
+            ..Default::default()
+        },
+        base_url: ipfs.contents_endpoint().unwrap_or_default(),
+    }
+}
+
+const GUEST_FIRST_NAMES: &[&str] = &[
+    "Astra", "Bolt", "Cinder", "Dusk", "Ember", "Flint", "Gale", "Haze", "Indigo", "Jade",
+    "Kestrel", "Lumen", "Mica", "Nimbus", "Onyx", "Pixel", "Quill", "Rune", "Sable", "Talon",
+    "Umber", "Vesper", "Wren", "Xenon", "Yarrow", "Zephyr", "Comet", "Delta", "Echo", "Nova",
+];
+const GUEST_LAST_NAMES: &[&str] = &[
+    "Brightwater",
+    "Cloudrunner",
+    "Dawnstrider",
+    "Emberfall",
+    "Frostvale",
+    "Glassmoor",
+    "Hollowpine",
+    "Ironwood",
+    "Lanternlight",
+    "Mistgrove",
+    "Nightfield",
+    "Oakenshield",
+    "Riverstone",
+    "Silverbrook",
+    "Stormwatch",
+    "Thornwood",
+    "Wildmarsh",
+    "Windward",
+    "Ashgrove",
+    "Starfall",
+];
+
+fn random_guest_name() -> String {
+    let mut rng = rand::thread_rng();
+    format!(
+        "{} {}",
+        GUEST_FIRST_NAMES.choose(&mut rng).unwrap(),
+        GUEST_LAST_NAMES.choose(&mut rng).unwrap()
+    )
+}
+
+/// A guest account is created without a profile; give it a name and one of the curated
+/// default looks so it doesn't start as every other new guest. Falls back to the engine's
+/// default look if the catalyst can't provide one.
+async fn new_guest_profile(address: Address, ipfs: std::sync::Arc<IpfsIo>) -> UserProfile {
+    let index = rand::thread_rng().gen_range(1..=DEFAULT_LOOKS);
+    let look = match get_default_look(ipfs.clone(), index).await {
+        Ok(Some(look)) => Some(look.content.avatar),
+        Ok(None) => {
+            warn!("default look {index} not found");
+            None
+        }
+        Err(e) => {
+            warn!("default look {index}: {e}");
+            None
+        }
+    };
+    let mut profile = new_profile(address, &ipfs);
+    profile.content.name = random_guest_name();
+    if let Some(look) = look {
+        let own = &mut profile.content.avatar;
+        own.body_shape = look.body_shape;
+        own.wearables = look.wearables;
+        own.force_render = look.force_render;
+        own.eyes = look.eyes;
+        own.hair = look.hair;
+        own.skin = look.skin;
+        // snapshots are the look's own; ours are empty until something renders them
+    }
+    profile
+}
+
 const ACCOUNT_LOCKED: &str = "the account cannot change after entering a realm";
 
 fn account_locked(wallet: &Wallet, world_hold: &Option<Res<WorldHold>>) -> bool {
@@ -427,7 +534,7 @@ fn process_login_bridge(
                         EphemeralKey,
                         Vec<ChainLink>,
                         bool,
-                        Option<UserProfile>,
+                        LoginProfile,
                         RpcResultSender<Result<(), String>>,
                     ),
                     (),
@@ -489,8 +596,10 @@ fn process_login_bridge(
                     } = previous_login;
 
                     let profile =
-                        match get_profile_with_retry(root_address, ipfs, default_on_error).await {
-                            Ok(maybe_profile) => maybe_profile,
+                        match login_profile(root_address, ipfs, default_on_error, guest_account)
+                            .await
+                        {
+                            Ok(profile) => profile,
                             Err(e) => {
                                 rpc_result_sender.send(Err(e));
                                 return Err(());
@@ -537,8 +646,8 @@ fn process_login_bridge(
                         };
 
                     let profile =
-                        match get_profile_with_retry(root_address, ipfs, default_on_error).await {
-                            Ok(maybe_profile) => maybe_profile,
+                        match login_profile(root_address, ipfs, default_on_error, false).await {
+                            Ok(profile) => profile,
                             Err(e) => {
                                 result_sender.send(Err(e));
                                 return Err(());
@@ -575,8 +684,10 @@ fn process_login_bridge(
                     };
 
                     let profile =
-                        match get_profile_with_retry(root_address, ipfs, default_on_error).await {
-                            Ok(maybe_profile) => maybe_profile,
+                        match login_profile(root_address, ipfs, default_on_error, guest_account)
+                            .await
+                        {
+                            Ok(profile) => profile,
                             Err(e) => {
                                 rpc_result_sender.send(Err(e));
                                 return Err(());
@@ -662,22 +773,12 @@ fn process_login_bridge(
                 }
                 segment_config
                     .update_identity(format!("{:#x}", wallet.address().unwrap()), guest_account);
-                if let Some(profile) = profile {
-                    current_profile.profile = Some(profile);
-                    current_profile.is_deployed = true;
-                } else {
-                    current_profile.profile = Some(UserProfile {
-                        version: 0,
-                        content: SerializedProfile {
-                            has_connected_web3: Some(true),
-                            eth_address: format!("{:#x}", wallet.address().unwrap()),
-                            user_id: Some(format!("{:#x}", wallet.address().unwrap())),
-                            ..Default::default()
-                        },
-                        base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
-                    });
-                    current_profile.is_deployed = false;
-                }
+                let (profile, deployed) = match profile {
+                    LoginProfile::Deployed(profile) => (profile, true),
+                    LoginProfile::New(profile) => (profile, false),
+                };
+                current_profile.profile = Some(profile);
+                current_profile.is_deployed = deployed;
 
                 sender.send(Ok(()));
             }

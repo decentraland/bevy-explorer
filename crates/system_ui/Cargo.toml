@@ -43,6 +43,7 @@ reqwest = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 async-std = { workspace = true }
+rand = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 build-time = { workspace = true }

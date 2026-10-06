@@ -12049,6 +12049,7 @@ dependencies = [
  "input_manager",
  "ipfs",
  "platform",
+ "rand 0.8.8",
  "reqwest 0.12.28",
  "scene_material",
  "scene_runner",
