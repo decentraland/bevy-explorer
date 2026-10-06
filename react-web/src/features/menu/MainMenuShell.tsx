@@ -2,9 +2,10 @@
 // body). Every full-screen menu page (Settings, Backpack, …) renders inside this so
 // the top bar is identical and consistent. Pages pass their content as children.
 
-import { useEffect, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { Button, DclLogo, Icon, type IconName } from '../../design'
 import { keyHintFor, useBindingsSnapshot } from '../../lib/bindingLabels'
+import { EDITOR_BUILD, EditorOffered } from '../editorHost/config'
 import { ProfileChip } from './ProfileChip'
 import styles from './MainMenuShell.module.css'
 import onBackpack from '../../assets/menu-on/backpack.webp'
@@ -42,7 +43,6 @@ export interface MenuItem {
 // The menu pages we support (others hidden). Matches the Figma nav bar
 // (icon + LABEL [shortcut]). Every item is now a React page.
 export const MENU_ITEMS: MenuItem[] = [
-  { label: 'Communities', icon: 'communities', hotkey: 'Communities', page: 'communities' },
   { label: 'Places', icon: 'places', hotkey: 'Places', page: 'places' },
   { label: 'Events', icon: 'events', page: 'events' },
   { label: 'Shop', icon: 'marketplace', page: 'shop' },
@@ -51,6 +51,9 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: 'Gallery', icon: 'gallery', hotkey: 'Gallery', page: 'gallery' },
   { label: 'Settings', icon: 'settings', hotkey: 'Settings', page: 'settings' }
 ]
+
+// The scene editor's home (editorHost/CreatePage).
+const CREATE_ITEM: MenuItem = { label: 'Create', icon: 'create', page: 'create' }
 
 export function MainMenuShell({
   active,
@@ -78,6 +81,8 @@ export function MainMenuShell({
   // Animate the entrance only on a fresh open (no other shell mounted), not on page switches.
   const [animate] = useState(() => openShells === 0)
   const bindingsSnap = useBindingsSnapshot()
+  const offered = useContext(EditorOffered)
+  const items = EDITOR_BUILD && offered ? [...MENU_ITEMS, CREATE_ITEM] : MENU_ITEMS
   useEffect(() => {
     openShells++
     return () => {
@@ -97,7 +102,7 @@ export function MainMenuShell({
           Lobby
         </Button>
         <nav className={styles.menu}>
-          {MENU_ITEMS.map((m) => {
+          {items.map((m) => {
             const shortcut = m.hotkey != null ? keyHintFor(bindingsSnap, m.hotkey) : undefined
             return (
               <button

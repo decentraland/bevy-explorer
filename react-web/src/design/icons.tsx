@@ -8,6 +8,8 @@ import backpackPng from '../assets/sidebar-icons/backpack.png'
 import bugPng from '../assets/sidebar-icons/bug.png'
 import chatPng from '../assets/sidebar-icons/chat.png'
 import communitiesPng from '../assets/sidebar-icons/communities.png'
+// a cube with a plus: the scene editor (a file, so the HUD bundle doesn't carry the path)
+import createSvg from '../assets/sidebar-icons/create.svg?no-inline'
 import emotesPng from '../assets/sidebar-icons/emotes.png'
 import eventsPng from '../assets/sidebar-icons/events.png'
 import friendsPng from '../assets/sidebar-icons/friends.png'
@@ -47,6 +49,7 @@ export type IconName =
   | 'voice-off'
   | 'voice-hearing'
   | 'voice-speaking'
+  | 'create'
 
 const MASK_ART: Partial<Record<IconName, string>> = {
   backpack: backpackPng,
@@ -54,6 +57,7 @@ const MASK_ART: Partial<Record<IconName, string>> = {
   bug: bugPng,
   chat: chatPng,
   communities: communitiesPng,
+  create: createSvg,
   emotes: emotesPng,
   events: eventsPng,
   friends: friendsPng,

@@ -1167,11 +1167,7 @@ fn on_handshake_response(
 /// server signals by listing the project's parcels in its `about`. Those realms all advertise the
 /// same realm name, so their Pulse partition is keyed differently — see `resolve_lsd_realm`.
 fn is_local_realm(realm: &CurrentRealm) -> bool {
-    realm
-        .config
-        .local_scene_parcels
-        .as_ref()
-        .is_some_and(|parcels| !parcels.is_empty())
+    realm.is_local()
 }
 
 /// Keep a listening server's routing in step with the scenes it hosts: which context owns each

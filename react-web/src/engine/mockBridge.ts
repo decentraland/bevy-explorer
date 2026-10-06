@@ -683,7 +683,8 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       travelResult(msg.realm, msg.travelId)
       return
     }
-    if (msg.kind === 'permissionResolve') return // no engine to apply the decision in the mock
+    // no engine to apply the decision in, and no editor in mock mode
+    if (msg.kind === 'permissionResolve' || msg.kind === 'editorScene') return
     if (msg.kind === 'getCommunities') {
       reply({ kind: 'communities', communities: mockCommunities })
       return

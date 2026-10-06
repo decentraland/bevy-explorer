@@ -29,6 +29,8 @@ import { getCursor } from '../pointer/cursorStore'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { formatConsoleReply, parseChatCommand } from '../chat/chatCommands'
 import { PARCEL_METERS, isGenesisSatelliteView } from '../map/atlas'
+import { EDITOR_BUILD } from '../editorHost/config'
+import { hudActsOn, type EditorHudMode } from '../editorHost/hudMode'
 import type {
   AvatarColorTarget,
   AppNotification,
@@ -440,6 +442,13 @@ export interface LoginFlow {
   useDifferentAccount: () => void
 }
 
+/** The scene editor's handle on the session (features/editorHost). */
+export interface EditorHostState {
+  /** 'edit' takes the HUD chrome and its hotkeys away, 'play' leaves a player's minimum. */
+  mode: EditorHudMode
+  setMode: (mode: EditorHudMode) => void
+}
+
 export interface EngineSession {
   phase: SessionPhase
   playerReady: boolean
@@ -495,8 +504,11 @@ export interface EngineSession {
   events: EventsState
   shop: ShopState
   gallery: GalleryState
+  /** The Create page (features/editorHost/CreatePage); `show` opens or closes it without toggling. */
+  create: { open: boolean; toggle: () => void; show: (open: boolean) => void }
   /** Scene permission prompts (e.g. ChangeRealm) awaiting an Allow/Deny. */
   permissions: PermissionsState
+  editor: EditorHostState
   mic: { enabled: boolean; available: boolean; toggle: () => void }
   /** Trigger a sidebar nav action in the scene (open menu/popup, emotes, mic). */
   nav: (action: NavAction) => void
@@ -592,6 +604,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const travelSeq = useRef(0)
   const [travellingTo, setTravellingTo] = useState<string | null>(null)
   const [travelError, setTravelError] = useState<string | null>(null)
+  const [editorMode, setEditorModeState] = useState<EditorHudMode>('off')
   const [playerReady, setPlayerReady] = useState(false)
   // Ref twin of playerReady: the destination pick runs in a callback that would close over a
   // stale value of the state.
@@ -720,6 +733,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [galleryLoaded, setGalleryLoaded] = useState(false)
   const [galleryMetas, setGalleryMetas] = useState<Record<string, GalleryPhotoMeta | null>>({})
   const [galleryOpen, setGalleryOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequestMessage[]>([])
   const chatId = useRef(0)
   // The speed to restore when Time progression is turned back on (the last running speed seen).
@@ -1168,7 +1182,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // Toggle one exclusive panel (closing chat + all others); optionally run onOpen.
   // All exclusive (one-at-a-time) panel setters. Toggling one closes chat + the rest.
-  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setEventsOpen, setShopOpen, setGalleryOpen, setSkyboxOpen]
+  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setEventsOpen, setShopOpen, setGalleryOpen, setCreateOpen, setSkyboxOpen]
   const exclusive = useCallback(
     (setSelf: React.Dispatch<React.SetStateAction<boolean>>, onOpen?: () => void) => {
       setChatOpen(false)
@@ -1228,11 +1242,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
-    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || shopOpen || galleryOpen || lobbyOpen
+    settingsOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || eventsOpen || shopOpen || galleryOpen || lobbyOpen || createOpen
   // What takes the screen from the chat, for requestFocusChat: the main menu, the emote wheel, and
   // the two modals App renders above everything (permission prompt, fatal error).
   chatCoveredRef.current =
-    menuPageOpen || emotesOpen || permissionQueue.length > 0 || fatalError != null
+    menuPageOpen || emotesOpen || permissionQueue.length > 0 || fatalError != null || (EDITOR_BUILD && editorMode !== 'off')
 
   // In-world, cancel is an ENGINE action: the cancel key flows to the engine like any other
   // input, resolves to 'Cancel', and comes back on the action stream — the dispatcher below
@@ -1268,6 +1282,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const togglePlaces = useCallback(() => exclusive(setPlacesOpen), [exclusive])
   const toggleEvents = useCallback(() => exclusive(setEventsOpen), [exclusive])
   const toggleShop = useCallback(() => exclusive(setShopOpen), [exclusive])
+  const toggleCreate = useCallback(() => exclusive(setCreateOpen), [exclusive])
+  const showCreate = useCallback((open: boolean) => {
+    setChatOpen(false)
+    panelSetters.forEach((set) => set(open && set === setCreateOpen))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // The engine clock as `/time` (no args) reports it; null when there is no engine console.
   const readClock = useCallback(async (): Promise<{ hours: number; speed: number } | null> => {
     const reply = await driverRef.current?.command?.('/time').catch(() => undefined)
@@ -1787,6 +1807,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'navAction', action })
   }, [closeAllPanels])
 
+  const setEditorMode = useCallback((mode: EditorHudMode) => {
+    if (mode !== 'off') panelSetters.forEach((set) => set(false))
+    setEditorModeState(mode)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const logout = useCallback(() => {
     driverRef.current?.logout().catch((e: Error) => console.error('[session] logout failed', e))
     clearLogins() // drop the same-domain SSO identity for this origin
@@ -2055,7 +2081,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // belongs to that panel — the engine reserves the Scroll actions (every input bound to
   // them stands down for world consumers: camera zoom on a shared wheel, movement on a
   // shared key) while their edges keep streaming for the driver below. Tracked on
-  // pointerover (element-boundary crossings), walking up for scrollable overflow.
+  // pointer crossings (pointerover, and pointermove for shadow roots), walking up for scrollable overflow.
   const [scrollHover, setScrollHover] = useState(false)
   const scrollElRef = useRef<Element | null>(null)
   const lastWheelAtRef = useRef(0)
@@ -2067,16 +2093,23 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         (/(auto|scroll)/.test(s.overflowX) && el.scrollWidth > el.clientWidth)
       )
     }
-    const findScrollable = (t: EventTarget | null): Element | null => {
+    // from the composed path: inside a shadow root (the scene editor's UI) e.target is its host
+    const findScrollable = (t: EventTarget | undefined): Element | null => {
       let el = t instanceof Element ? t : null
       while (el != null && el !== document.body) {
         if (scrollable(el)) return el
-        el = el.parentElement
+        const root = el.parentElement == null ? el.getRootNode() : null
+        el = root instanceof ShadowRoot ? root.host : el.parentElement
       }
       return null
     }
+    // a crossing inside a shadow root never reaches the window as pointerover
+    let over: EventTarget | undefined
     const onOver = (e: PointerEvent): void => {
-      scrollElRef.current = findScrollable(e.target)
+      const t = e.composedPath()[0]
+      if (t === over) return
+      over = t
+      scrollElRef.current = findScrollable(t)
       setScrollHover(scrollElRef.current != null)
     }
     // Every wheel event is stamped so the scroll driver can tell a wheel-sourced Scroll
@@ -2086,9 +2119,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       lastWheelAtRef.current = performance.now()
     }
     window.addEventListener('pointerover', onOver)
+    window.addEventListener('pointermove', onOver)
     window.addEventListener('wheel', onWheel, true)
     return () => {
       window.removeEventListener('pointerover', onOver)
+      window.removeEventListener('pointermove', onOver)
       window.removeEventListener('wheel', onWheel, true)
     }
   }, [])
@@ -2179,6 +2214,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!pressed || (phase !== 'world' && phase !== 'lobby') || isInputLocked()) return
     if (isEditableTarget(document.activeElement)) return
     if ((window as EngineFocusWindow).__engineTextFocus) return
+    if (EDITOR_BUILD && !hudActsOn(editorMode, action)) return
     // 'Cancel' is the one action handled even with a popup open: the engine resolved the
     // cancel key or gamepad button, and this is the single layered close — topmost popup
     // first, else the topmost registered leaf layer (lightbox, open dropdown — see
@@ -2326,6 +2362,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     places: { open: placesOpen, toggle: togglePlaces },
     events: { open: eventsOpen, toggle: toggleEvents },
     shop: { open: shopOpen, toggle: toggleShop },
+    create: { open: createOpen, toggle: toggleCreate, show: showCreate },
     gallery: {
       list: galleryPhotos,
       current: galleryStorage.current,
@@ -2338,6 +2375,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       remove: removeGalleryPhoto
     },
     permissions: { pending: permissionQueue, resolve: resolvePermission },
+    editor: { mode: editorMode, setMode: setEditorMode },
     mic: { enabled: mic.enabled, available: mic.available, toggle: toggleMic },
     nav,
     setEngineViewport,
