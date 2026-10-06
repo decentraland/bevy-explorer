@@ -45,6 +45,21 @@ export function sceneLogsAfter(after) {
   return sceneLogs.filter((line) => line.seq > after);
 }
 
+function loadLivekit() {
+  if (window.LivekitClient !== undefined) return Promise.resolve();
+  const theirs = window.parent.document.querySelector('script[src*="livekit-client"]');
+  if (theirs === null) return Promise.reject(new Error("the client page has no livekit-client"));
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = theirs.src;
+    script.integrity = theirs.integrity;
+    script.crossOrigin = "anonymous";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("livekit-client failed to load"));
+    document.head.appendChild(script);
+  });
+}
+
 export async function startHeadless(compiledModule, options) {
   if (!(await claimRealm(options.realm))) {
     throw new Error(`headless: ${options.realm} already has a scene server in this browser`);
@@ -63,9 +78,9 @@ export async function startHeadless(compiledModule, options) {
   window.terminate_sandbox = sandboxes.terminate;
   window.spawn_and_init_sandbox = sandboxes.spawn;
 
-  // Livekit rooms: the livekit-client objects (WebRTC) live on this document. The library is
-  // the client page's (EngineHost.tsx loads it), which a same-origin frame can reach.
-  if (window.parent !== window) window.LivekitClient ??= window.parent.LivekitClient;
+  // Livekit rooms: this frame's own copy of the client page's library (EngineHost.tsx loads it),
+  // so the rooms and their connections belong to this document and close when the frame goes.
+  await loadLivekit();
   glue.livekit_host_main();
   const { engine, compute } = glue.headless_start(options, glueUrl);
   engine.onerror = (e) => console.error("[headless] engine worker crashed", e);
