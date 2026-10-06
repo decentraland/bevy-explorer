@@ -62,6 +62,12 @@ describe('profile chip dropdown', () => {
     expect(onExit).toHaveBeenCalledTimes(1)
   })
 
+  it('offers no Sign Out without a handler', async () => {
+    render(<ProfileChip name="Tester" address="0xabcdef123456" onViewProfile={vi.fn()} onExit={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button'))
+    expect(screen.queryByRole('button', { name: /SIGN OUT/i })).toBeNull()
+  })
+
   it('copies the wallet address', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })

@@ -67,7 +67,8 @@ export function ProfileChip({
   address?: string
   claimed?: boolean
   onViewProfile: () => void
-  onSignOut: () => void
+  /** Only the startup lobby can sign out: once in world the account is fixed for the session. */
+  onSignOut?: () => void
   /** Absent in the lobby, which has no menu page to exit. */
   onExit?: () => void
   /** The menu top bar's chip, or the lobby header's pill. */
@@ -143,10 +144,12 @@ export function ProfileChip({
           </div>
 
           <div className={styles.actions}>
-            <button type="button" className={styles.action} onClick={onSignOut}>
-              <PowerIcon />
-              SIGN OUT
-            </button>
+            {onSignOut && (
+              <button type="button" className={styles.action} onClick={onSignOut}>
+                <PowerIcon />
+                SIGN OUT
+              </button>
+            )}
             {onExit && (
               <button type="button" className={`${styles.action} ${styles.exit}`} onClick={onExit}>
                 <ExitIcon />

@@ -537,6 +537,10 @@ export function photoTime(dateTime: string): number {
   return Number.isNaN(t) ? 0 : t
 }
 
+function initialMessages(): ChatLine[] {
+  return [{ sender: '', message: 'Type /help for available commands.', channel: 'Nearby', id: -1, ts: Date.now() }]
+}
+
 export function useEngineSession(createDriver: () => LoginDriver): EngineSession {
   const driverRef = useRef<LoginDriver | null>(null)
   const [status, setStatus] = useState<LoginStatus>('loading')
@@ -613,9 +617,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
-  const [messages, setMessages] = useState<ChatLine[]>(() => [
-    { sender: '', message: 'Type /help for available commands.', channel: 'Nearby', id: -1, ts: Date.now() }
-  ])
+  const [messages, setMessages] = useState<ChatLine[]>(initialMessages)
   const [members, setMembers] = useState<NearbyMember[]>([])
   const [speaking, setSpeaking] = useState<ReadonlySet<string>>(() => new Set())
   // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
@@ -1416,7 +1418,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     const login = pendingLogin.current
     pendingLogin.current = null
     Promise.resolve(login?.(driver))
-      .then(() => setBusy(false))
+      .then(() => {
+        urlDestination.current = null
+        setBusy(false)
+      })
       .catch((e: unknown) => {
         console.error('[login] post-launch login failed:', e)
         // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
@@ -1574,8 +1579,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // ?position shadow ?realm made a reload in a custom realm respawn in Genesis at the same
   // coordinates (a parcel launch passes DEFAULT_REALM explicitly). The engine's URL sync only
   // writes ?position when the realm honours one; realms with fixed scene urns (worlds) spawn at
-  // their base scene and ignore it anyway. Consumed once — after a sign-out the picker shows
-  // normally.
+  // their base scene and ignore it anyway. Consumed by the first successful login — a failed one
+  // retries to the same destination, the engine having already launched there unheld, where the
+  // lobby can't work; after a sign-out the picker shows normally.
   const urlDestination = useRef<Destination>(
     (() => {
       const q = new URLSearchParams(location.search)
@@ -1601,7 +1607,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // already there — skip the picker and keep the realm (the no-launch pickDestination(null)
       // path). No validation fetch either: the engine booted on this realm, and preview/file
       // realms wouldn't pass the worlds-server about probe anyway.
-      urlDestination.current = null
       pickDestination(null)
       return
     }
@@ -1613,15 +1618,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       checkRealm(dest.realm)
         .then((result) => {
           if (result === 'ok') pickDestination(dest)
-          else setFatalError({ message: realmCheckMessage(dest.realm, result), source: 'realm' })
+          else {
+            urlDestination.current = null
+            setFatalError({ message: realmCheckMessage(dest.realm, result), source: 'realm' })
+          }
         })
         .finally(() => {
-          urlDestination.current = null
           validatingRealm.current = false
         })
       return
     }
-    urlDestination.current = null
     pickDestination(dest)
   }, [submitted, destinationPicked, pickDestination])
   // Optimistically reflect a new equipped set so the button flips to "Unequip" immediately AND the
@@ -1831,6 +1837,26 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     fetchedRef.current.clear()
     playerReadyRef.current = false
     pendingParcel.current = null
+    // Nothing of this account's may show under the next one, or be saved onto it: an unsaved
+    // Backpack look is dropped rather than committed after the engine has let the account go.
+    backpackWasOpen.current = false
+    profileRevertRef.current = null
+    setProfile(null)
+    setPrevUserId(null)
+    setOwnedNames([])
+    setProfileSaving(false)
+    setProfileSaveError(null)
+    setSaveError(null)
+    setEquippedWearables([])
+    setBodyShape(undefined)
+    setForceRenderState([])
+    setAvatarColors(undefined)
+    setNotifications([])
+    setCommunities([])
+    setFriendPending(new Set())
+    setMutualFriends({})
+    setMessages(initialMessages)
+    setChatUnread(0)
   }, [closeAllPanels])
 
   // Where the Backpack's avatar shows through, so the lobby under its modal can open the same hole.

@@ -431,6 +431,16 @@ impl GlobalCrdtState {
         );
     }
 
+    pub fn delete_crdt(&mut self, component_id: SceneComponentId, id: SceneEntityId) {
+        let crdt_type = CrdtType::LWW_ANY;
+        let timestamp = self.store.force_update(component_id, crdt_type, id, None);
+        let crdt_message = put_component(&id, &component_id, &timestamp, None);
+        self.send_update(
+            GlobalCrdtStateUpdate::Crdt(crdt_message, Localizer::None),
+            "component delete",
+        );
+    }
+
     pub fn delete_entity(&mut self, id: SceneEntityId) {
         self.store.clean_up(&HashSet::from_iter(Some(id)));
         let crdt_message = delete_entity(&id);

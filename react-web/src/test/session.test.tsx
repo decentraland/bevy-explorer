@@ -119,6 +119,32 @@ describe('session domain', () => {
     }
   })
 
+  it('a ?position login that fails retries to the same destination, not the lobby', async () => {
+    const url = new URL(location.href)
+    class FailOnceDriver extends LaunchRecordingDriver {
+      failed = false
+      async loginGuest(): Promise<void> {
+        await super.loginGuest()
+        if (!this.failed) {
+          this.failed = true
+          throw 'profile fetch failed'
+        }
+      }
+    }
+    try {
+      const driver = new FailOnceDriver()
+      const h = await launchFromUrl('/?position=10,20', driver)
+      await waitFor(() => expect(h.session().phase).toBe('login'))
+      expect(driver.hosts[0]?.holdWorld).not.toBe(true)
+      act(() => h.session().login.exploreAsGuest())
+      await waitFor(() => expect(driver.calls.filter((c) => c === 'loginGuest')).toHaveLength(2))
+      expect(h.session().phase).toBe('entering')
+      expect(driver.hosts.every((host) => host?.holdWorld !== true)).toBe(true)
+    } finally {
+      history.replaceState(null, '', url.pathname + url.search)
+    }
+  })
+
   it('an unreachable ?realm shows the not-reachable modal and never launches', async () => {
     const url = new URL(location.href)
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))

@@ -72,7 +72,10 @@ export function registerAvatarDraft(ctx: Ctx, sendEquipped: () => Promise<void>)
     const from = deployed
     const me = getPlayer()
     if (edited == null || from == null || me == null) return
+    // the account can change while this waits; the look must not land on the next one
+    const signedOut = (): boolean => getPlayer()?.userId !== me.userId
     const look = await fittingLook(edited)
+    if (signedOut()) return
     // The page keeps its own copy of the equipped set, which still has the dropped wearables.
     const dropped = look.wearables.length !== edited.wearables.length
     if (sameLook(look, from)) {
@@ -83,6 +86,7 @@ export function registerAvatarDraft(ctx: Ctx, sendEquipped: () => Promise<void>)
     try {
       await BevyApi.setAvatar(lookDeploy(look, from, me.name))
     } catch (e) {
+      if (signedOut()) return
       // "cancelled" isn't a failure: a later setAvatar (another close, a profile save) replaced this
       // one before it deployed, and the engine's copy that one deploys already carries this look.
       if (!String(e).includes('cancelled')) {
@@ -91,6 +95,7 @@ export function registerAvatarDraft(ctx: Ctx, sendEquipped: () => Promise<void>)
         return
       }
     }
+    if (signedOut()) return
     deployed = look
     if (draft === edited) draft = null
     if (dropped) await sendEquipped()

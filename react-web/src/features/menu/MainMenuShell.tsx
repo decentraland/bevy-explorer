@@ -135,7 +135,6 @@ export function MainMenuShell({
             address={profileAddress}
             claimed={profileClaimed}
             onViewProfile={() => onNavigate('profile')}
-            onSignOut={() => onNavigate('signout')}
             onExit={onClose}
           />
         )}
