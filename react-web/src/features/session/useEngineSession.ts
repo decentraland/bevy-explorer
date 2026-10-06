@@ -2,7 +2,7 @@
 // Owns the driver and exposes the login flow + scene-loading state + phase.
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
+import { clearLogins, getLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import { hoverKey, proximityKey } from '../../engine/pointerKeys'
 import type { LoginDriver } from '../../engine/driver'
 import type { LaunchHostOptions } from '../../engine/engineRpc'
@@ -1033,15 +1033,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // own saved login via loginPrevious; there is no log-in-with-raw-identity surface), so a stale
     // localStorage entry would strand the user on a button that throws. The driver folds both
     // signals together (engine saved login + SSO) into getPreviousLogin().
-    const login = getStoredLogin()
-    setStored(login)
+    const login = getLogin().catch(() => null)
+    void login.then(setStored)
     driver
       .getPreviousLogin()
       .then((r) => {
         setPrevUserId(r.userId)
         setStatus(r.userId ? 'reuse-login-or-new' : 'sign-in-or-guest')
       })
-      .catch(() => setStatus(login ? 'reuse-login-or-new' : 'sign-in-or-guest'))
+      .catch(() => login.then((l) => setStatus(l ? 'reuse-login-or-new' : 'sign-in-or-guest')))
 
     return () => {
       off()
@@ -1789,7 +1789,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   const logout = useCallback(() => {
     driverRef.current?.logout().catch((e: Error) => console.error('[session] logout failed', e))
-    clearStoredLogins() // drop the same-domain SSO identity for this origin
+    clearLogins() // drop the same-domain SSO identity for this origin
     setStored(null)
     setStatus('sign-in-or-guest')
     closeAllPanels()

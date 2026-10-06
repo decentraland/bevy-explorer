@@ -184,6 +184,8 @@ export default defineConfig(({ command, mode }) => ({
         // independently (vendor + design system rarely change). The heavy full-screen
         // menu pages are grouped together and kept out of the core HUD chunk.
         manualChunks(id) {
+          // the shell's signing code: kept out of `vendor` so the shell doesn't load the HUD's libs
+          if (id.includes('node_modules/@noble/')) return 'crypto'
           if (id.includes('node_modules')) return 'vendor'
           // The emoji dataset is ~716KB (78KB gz) — over half the JS. Pin it to its own chunk so
           // it caches independently and never bloats/busts the core HUD chunk. (Deferring it fully

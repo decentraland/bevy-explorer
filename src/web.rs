@@ -86,6 +86,23 @@ extern "C" {
     fn page_copy_to_clipboard(text: &str) -> js_sys::Promise;
     #[wasm_bindgen(js_name = "__readClipboard")]
     fn page_read_clipboard() -> js_sys::Promise;
+
+    /// Signs a message with an ephemeral key the engine doesn't hold (the web shell's: see
+    /// `wallet::remote_signer`), resolving with the signature's hex. Defined by the HUD's
+    /// EngineHost only when the page runs inside the shell.
+    #[wasm_bindgen(js_name = "__signMessage")]
+    fn page_sign_message(signer: &str, message: &str) -> js_sys::Promise;
+}
+
+fn remote_sign(signer: String, message: String) -> wallet::remote_signer::RemoteSignFuture {
+    Box::pin(async move {
+        let signature = wasm_bindgen_futures::JsFuture::from(page_sign_message(&signer, &message))
+            .await
+            .map_err(|e| format!("{e:?}"))?;
+        signature
+            .as_string()
+            .ok_or_else(|| "signature is not a string".to_owned())
+    })
 }
 
 fn read_clipboard() -> copypwasmta::wasm_clipboard::ClipboardFuture<String> {
@@ -357,6 +374,7 @@ pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
         get: read_clipboard,
         set: write_clipboard,
     });
+    wallet::remote_signer::set_remote_sign(remote_sign);
 
     let options = parse_options(&options)?;
     let _ = LAUNCH_OPTIONS.set(options.clone());

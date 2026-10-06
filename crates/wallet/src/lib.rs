@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod browser_auth;
 pub mod delegation;
+pub mod remote_signer;
 pub mod signed_login;
 
 pub struct WalletPlugin;
@@ -83,6 +84,21 @@ impl Wallet {
         write.root_address = Some(root_address);
         write.delegates = auth;
         write.inner = Some(Box::new(local_wallet));
+    }
+
+    /// Like `finalize`, for an ephemeral key held outside the engine (`remote_signer`).
+    pub fn finalize_remote(
+        &mut self,
+        root_address: Address,
+        ephemeral_address: Address,
+        auth: Vec<ChainLink>,
+    ) {
+        let mut write = self.0.try_write().unwrap();
+        write.root_address = Some(root_address);
+        write.delegates = auth;
+        write.inner = Some(Box::new(remote_signer::RemoteSigner {
+            address: ephemeral_address,
+        }));
     }
 
     pub async fn sign_message(&self, message: String) -> Result<SimpleAuthChain, WalletError> {

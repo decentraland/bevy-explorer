@@ -30,7 +30,7 @@ use ui_core::{
     ui_actions::{close_ui_happy, Click, EventCloneExt, On},
 };
 use wallet::{
-    browser_auth::{finish_remote_ephemeral_request, init_remote_ephemeral_request},
+    browser_auth::{finish_remote_ephemeral_request, init_remote_ephemeral_request, EphemeralKey},
     Wallet,
 };
 
@@ -367,12 +367,15 @@ fn get_previous_login(config: &AppConfig) -> Option<PreviousLogin> {
 /// This is the standard Decentraland AuthIdentity, so it is identical regardless of how the
 /// user signed in (wallet/MetaMask, social, OTP, magic). The web page just reads it from
 /// localStorage and forwards it — there is nothing login-method-specific here.
-fn parse_auth_identity(
-    payload: &str,
-) -> Result<(Address, PrivateKeySigner, Vec<ChainLink>), String> {
-    wallet::browser_auth::parse_auth_identity(payload)
-        .and_then(wallet::browser_auth::auth_identity_parts)
-        .map_err(|e| e.to_string())
+fn parse_auth_identity(payload: &str) -> Result<(Address, EphemeralKey, Vec<ChainLink>), String> {
+    let parts = wallet::browser_auth::parse_auth_identity(payload)
+        .and_then(wallet::browser_auth::auth_identity_key_parts)
+        .map_err(|e| e.to_string())?;
+    if matches!(parts.1, EphemeralKey::Remote(_)) && !wallet::remote_signer::remote_sign_available()
+    {
+        return Err("identity has no ephemeral private key".to_owned());
+    }
+    Ok(parts)
 }
 
 /// Fetch the profile, retrying on failure. Ok(None) means the user has no profile (or
@@ -415,7 +418,7 @@ fn process_login_bridge(
                 Result<
                     (
                         Address,
-                        PrivateKeySigner,
+                        EphemeralKey,
                         Vec<ChainLink>,
                         Option<UserProfile>,
                         RpcResultSender<Result<(), String>>,
@@ -474,7 +477,7 @@ fn process_login_bridge(
 
                     Ok((
                         previous_login.root_address,
-                        local_wallet,
+                        EphemeralKey::Local(local_wallet),
                         auth,
                         profile,
                         rpc_result_sender,
@@ -516,7 +519,13 @@ fn process_login_bridge(
                             }
                         };
 
-                    Ok((root_address, local_wallet, auth, profile, result_sender))
+                    Ok((
+                        root_address,
+                        EphemeralKey::Local(local_wallet),
+                        auth,
+                        profile,
+                        result_sender,
+                    ))
                 }));
             }
             SystemApi::LoginWithIdentity(payload, default_on_error, rpc_result_sender) => {
@@ -525,7 +534,7 @@ fn process_login_bridge(
                 // from it directly, no auth-server request/poll. Mirrors LoginPrevious.
                 let ipfs = ipfas.ipfs().clone();
                 *login_task = Some(IoTaskPool::get().spawn_compat(async move {
-                    let (root_address, local_wallet, auth) = match parse_auth_identity(&payload) {
+                    let (root_address, ephemeral_key, auth) = match parse_auth_identity(&payload) {
                         Ok(parts) => parts,
                         Err(e) => {
                             rpc_result_sender.send(Err(e));
@@ -542,7 +551,13 @@ fn process_login_bridge(
                             }
                         };
 
-                    Ok((root_address, local_wallet, auth, profile, rpc_result_sender))
+                    Ok((
+                        root_address,
+                        ephemeral_key,
+                        auth,
+                        profile,
+                        rpc_result_sender,
+                    ))
                 }));
             }
             SystemApi::LoginGuest => {
@@ -574,22 +589,34 @@ fn process_login_bridge(
 
     if let Some(mut task) = login_task.take() {
         match task.complete() {
-            Some(Ok((root_address, local_wallet, auth, profile, sender))) => {
+            Some(Ok((root_address, ephemeral_key, auth, profile, sender))) => {
                 if let Ok(mut window) = window.single_mut() {
                     window.focused = true;
                 }
 
-                let ephemeral_key = local_wallet.to_bytes().to_vec();
+                match ephemeral_key {
+                    EphemeralKey::Local(local_wallet) => {
+                        let ephemeral_key = local_wallet.to_bytes().to_vec();
 
-                // store to app config
-                config.previous_login = Some(PreviousLogin {
-                    root_address,
-                    ephemeral_key,
-                    auth: auth.clone(),
-                });
-                platform::write_config_file(&*config);
+                        // store to app config
+                        config.previous_login = Some(PreviousLogin {
+                            root_address,
+                            ephemeral_key,
+                            auth: auth.clone(),
+                        });
+                        platform::write_config_file(&*config);
 
-                wallet.finalize(root_address, local_wallet, auth);
+                        wallet.finalize(root_address, local_wallet, auth);
+                    }
+                    // the page holds the key, so there is none to store, and none from an
+                    // earlier login should stay behind
+                    EphemeralKey::Remote(ephemeral_address) => {
+                        if config.previous_login.take().is_some() {
+                            platform::write_config_file(&*config);
+                        }
+                        wallet.finalize_remote(root_address, ephemeral_address, auth);
+                    }
+                }
                 segment_config.update_identity(format!("{:#x}", wallet.address().unwrap()), false);
                 if let Some(profile) = profile {
                     current_profile.profile = Some(profile);
