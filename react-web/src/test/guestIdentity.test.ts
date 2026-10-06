@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { getPublicKey } from '@noble/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { createGuestIdentity, publicKeyAddress, type GuestBackend } from '../features/auth/guest'
 
 const hexToBytes = (hex: string): Uint8Array => Uint8Array.from(hex.match(/../g) ?? [], (b) => parseInt(b, 16))
 
 describe('guest identity', () => {
   it('derives the checksummed address of a public key', () => {
-    const publicKey = getPublicKey(hexToBytes('00'.repeat(31) + '01'), false)
+    const publicKey = secp256k1.getPublicKey(hexToBytes('00'.repeat(31) + '01'), false)
     expect(publicKeyAddress(publicKey)).toBe('0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf')
   })
 
@@ -26,7 +26,7 @@ describe('guest identity', () => {
     const identity = await createGuestIdentity(backend)
 
     const { address, privateKey } = identity.ephemeralIdentity
-    expect(address).toBe(publicKeyAddress(getPublicKey(hexToBytes(privateKey.slice(2)), false)))
+    expect(address).toBe(publicKeyAddress(secp256k1.getPublicKey(hexToBytes(privateKey?.slice(2) ?? ''), false)))
     const payload = `Decentraland Login\nEphemeral address: ${address}\nExpiration: ${identity.expiration}`
     expect(identity.authChain).toEqual([
       { type: 'SIGNER', payload: '0x1e9a6ddcb5d0b8c2ffd79372e022d63d053ab1bf', signature: '' },

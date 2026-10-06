@@ -1,6 +1,8 @@
 // Persistent guest accounts: "Explore as guest" creates a thirdweb guest wallet and signs in with
-// it like any other account, so the guest keeps its avatar and name across visits.
-import { getPublicKey, utils } from '@noble/secp256k1'
+// it like any other account, so the guest keeps its avatar and name across visits. On web this
+// runs in the shell page (src/shell/main.ts), which keeps the identity and its key with the
+// other sign-ins; on native, in the page with the bridge scene making the thirdweb calls.
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { keccak_256 } from '@noble/hashes/sha3.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
 import type { AuthIdentity } from './sso'
@@ -41,8 +43,8 @@ export async function createGuestIdentity(backend: GuestBackend): Promise<AuthId
   const sessionId = bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
   const { token, walletAddress } = await backend.login(sessionId)
 
-  const privateKey = utils.randomSecretKey()
-  const publicKey = getPublicKey(privateKey, false)
+  const privateKey = secp256k1.utils.randomSecretKey()
+  const publicKey = secp256k1.getPublicKey(privateKey, false)
   const address = publicKeyAddress(publicKey)
   const expiration = new Date(Date.now() + IDENTITY_LIFETIME_MS).toISOString()
   const payload = `Decentraland Login\nEphemeral address: ${address}\nExpiration: ${expiration}`

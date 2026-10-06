@@ -652,7 +652,12 @@ fn process_login_bridge(
                         if config.previous_login.take().is_some() {
                             platform::write_config_file(&*config);
                         }
-                        wallet.finalize_remote(root_address, ephemeral_address, auth, guest_account);
+                        wallet.finalize_remote(
+                            root_address,
+                            ephemeral_address,
+                            auth,
+                            guest_account,
+                        );
                     }
                 }
                 segment_config
