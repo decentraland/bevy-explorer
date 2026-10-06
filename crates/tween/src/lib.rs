@@ -18,7 +18,7 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 use scene_runner::{
-    renderer_context::RendererSceneContext,
+    renderer_context::{RendererSceneContext, FROZEN_BLOCK},
     update_world::{material::PbMaterialComponent, AddCrdtInterfaceExt},
     ContainerEntity, SceneEntity,
 };
@@ -338,7 +338,12 @@ fn update_tween(
             continue;
         };
 
-        let delta_secs = time.delta_secs();
+        // a frozen scene (editor pause) holds its tweens where they are, without reporting them paused
+        let delta_secs = if scene.blocked.contains(FROZEN_BLOCK) {
+            0.0
+        } else {
+            time.delta_secs()
+        };
         let playing = tween.playing.unwrap_or(true);
         let unbounded_continuous = tween.is_continuous() && tween.duration <= 0.;
         let delta = if playing {
