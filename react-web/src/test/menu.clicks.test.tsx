@@ -18,8 +18,8 @@ describe('main menu shell nav', () => {
 
   it('clicking a non-active page navigates to it', async () => {
     const { onNavigate } = shell()
-    await userEvent.click(screen.getByRole('button', { name: /Communities/ }))
-    expect(onNavigate).toHaveBeenCalledWith('communities')
+    await userEvent.click(screen.getByRole('button', { name: /Places/ }))
+    expect(onNavigate).toHaveBeenCalledWith('places')
     await userEvent.click(screen.getByRole('button', { name: /Map/ }))
     expect(onNavigate).toHaveBeenCalledWith('map')
     await userEvent.click(screen.getByRole('button', { name: /Backpack/ }))
