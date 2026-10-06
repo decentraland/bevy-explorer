@@ -73,7 +73,9 @@ async function addCrossOriginIsolationHeaders(request) {
         const path = new URL(request.url).pathname;
         const scope = new URL(self.registration.scope).pathname;
         newHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
-        if (path === scope + 'app.html') {
+        // the scene server's frame (engine/headless.js) takes the app's policy: the app scripts it,
+        // which only documents with the same policy may do
+        if (path === scope + 'app.html' || path === scope + 'engine/headless.html') {
             newHeaders.delete('Cross-Origin-Embedder-Policy');
             newHeaders.set('Document-Isolation-Policy', 'isolate-and-credentialless');
         } else if (path === scope || path === scope + 'index.html') {
