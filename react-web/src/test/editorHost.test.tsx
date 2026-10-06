@@ -46,7 +46,7 @@ describe('editor host', () => {
     expect(editorEntry('?editor=true')).toEqual({ open: true, project: null })
     expect(editorEntry('?editor=my-scene')).toEqual({ open: true, project: 'my-scene' })
     expect(editorEntry('?editor=../x')).toEqual({ open: true, project: null })
-    expect(editorSource('?editor-projects=http://localhost:9000/&editor-worlds=javascript:alert(1)', 'localhost', PAGE_DIR)?.services).toEqual({
+    expect(editorSource('?editor-projects=http://localhost:9000/&editor-worlds=javascript:alert(1)', 'localhost', PAGE_DIR, 'decentraland.org')?.services).toEqual({
       projects: 'http://localhost:9000',
       worldsContent: 'https://worlds-content-server.decentraland.org',
       signed: {
@@ -58,9 +58,23 @@ describe('editor host', () => {
       }
     })
     // a local Worlds server: nothing else is signed for
-    expect(editorSource('?editor-projects=https://evil.example/v1&editor-worlds=http://127.0.0.1:8799', 'localhost', PAGE_DIR)?.services).toEqual({
+    expect(editorSource('?editor-projects=https://evil.example/v1&editor-worlds=http://127.0.0.1:8799', 'localhost', PAGE_DIR, 'decentraland.org')?.services).toEqual({
       projects: 'http://localhost:8787',
       worldsContent: 'http://127.0.0.1:8799'
+    })
+  })
+
+  it("deploys to the session's base domain, not the page's", () => {
+    expect(editorSource('?baseDomain=decentraland.org', 'decentraland.zone', PAGE_DIR, 'decentraland.org')?.services).toEqual({
+      projects: 'https://web-editor-dev.dclregenesislabs.xyz',
+      worldsContent: 'https://worlds-content-server.decentraland.org',
+      signed: {
+        worldsContent: 'https://worlds-content-server.decentraland.org',
+        commsGatekeeper: 'https://comms-gatekeeper.decentraland.org',
+        storage: 'https://storage.decentraland.org',
+        creatorsData: 'https://creators-data.decentraland.org/v2',
+        multiplayer: 'https://multiplayer-server.decentraland.org'
+      }
     })
   })
 
