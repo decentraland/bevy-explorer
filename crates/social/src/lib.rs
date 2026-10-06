@@ -223,6 +223,16 @@ fn init_social_client(
         }
     }
 
+    // logged out: drop the connection, or the previous account stays online and its
+    // events keep arriving until the next login replaces it
+    if wallet.is_changed() && wallet.address().is_none() {
+        social.0 = None;
+        *friends = None;
+        *connectivity = None;
+        *block_updates = None;
+        *chats = None;
+    }
+
     let restart_requested = std::mem::take(&mut restart.0);
     let reconnect_signal = wallet.is_changed() || restart_requested || social.0.is_none();
     if reconnect_signal && consumer_requested.0 && wallet.address().is_some() {
@@ -294,6 +304,16 @@ fn init_social_client(
         if is_social_consumer_request(event) {
             consumer_requested.0 = true;
         }
+    }
+
+    // logged out: drop the connection, or the previous account stays online and its
+    // events keep arriving until the next login replaces it
+    if wallet.is_changed() && wallet.address().is_none() {
+        social.0 = None;
+        *friends = None;
+        *connectivity = None;
+        *block_updates = None;
+        *chats = None;
     }
 
     let reconnect_signal = wallet.is_changed() || social.0.is_none();

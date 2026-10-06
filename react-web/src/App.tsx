@@ -263,7 +263,7 @@ function Hud(): React.JSX.Element {
   // and the Communities panel. Each toggle is mutually exclusive.
   const goToMenuPage = (page: string): void => {
     // the startup lobby mounts only the Backpack; other pages wait for the world
-    if (session.phase === 'lobby' && page !== 'backpack' && page !== 'signout') return
+    if (session.phase === 'lobby' && page !== 'backpack') return
     if (page === 'lobby') session.lobbyPage.toggle()
     else if (page === 'settings') session.settings.toggle()
     else if (page === 'backpack') session.backpack.toggle()
@@ -276,7 +276,6 @@ function Hud(): React.JSX.Element {
     // Profile-chip actions (forwarded from MainMenuShell's ProfileChip): View Profile
     // opens the full passport (same as for other users), not the small profile card.
     else if (page === 'profile') viewMyProfile()
-    else if (page === 'signout') session.logout()
   }
 
   // A full-screen MainMenuShell page is open (covers the whole HUD).

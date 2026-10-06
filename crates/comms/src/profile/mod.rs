@@ -338,7 +338,19 @@ pub fn setup_primary_profile(
     if let Ok((player, maybe_profile)) = player.single() {
         if maybe_profile.is_none() || current_profile.is_changed() {
             let Some(profile) = current_profile.profile.as_ref() else {
-                commands.entity(player).remove::<UserProfile>();
+                if maybe_profile.is_some() {
+                    commands.entity(player).remove::<UserProfile>();
+                    // logged out: scenes must stop seeing the previous account as `PLAYER`
+                    for mut global_crdt in contexts.iter_mut() {
+                        for component_id in [
+                            SceneComponentId::PLAYER_IDENTITY_DATA,
+                            SceneComponentId::AVATAR_BASE,
+                            SceneComponentId::AVATAR_EQUIPPED_DATA,
+                        ] {
+                            global_crdt.delete_crdt(component_id, SceneEntityId::PLAYER);
+                        }
+                    }
+                }
                 return;
             };
 

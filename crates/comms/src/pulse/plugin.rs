@@ -25,7 +25,7 @@ use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 use common::{
     bounds_calc::scene_regions,
-    structs::{CurrentRealm, EmoteMask, OutOfWorld, PlayerTeleported, PrimaryUser},
+    structs::{CurrentRealm, EmoteMask, OutOfWorld, PlayerTeleported, PrimaryUser, WorldHold},
     util::{TaskCompat, TaskExt},
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -707,6 +707,7 @@ fn drain_pulse_outbox(
 }
 
 /// Drain status + inbound bytes each frame; advance the connection; decode and dispatch.
+#[allow(clippy::too_many_arguments)]
 fn pump_pulse(
     session: Option<ResMut<PulseSession>>,
     realm: Res<CurrentRealm>,
@@ -715,6 +716,7 @@ fn pump_pulse(
     player: Query<(&GlobalTransform, Has<OutOfWorld>), With<PrimaryUser>>,
     profile: Option<Res<CurrentUserProfile>>,
     sinks: Query<&PulseSink>,
+    world_hold: Option<Res<WorldHold>>,
 ) {
     let Some(session) = session else {
         return;
@@ -730,7 +732,7 @@ fn pump_pulse(
         .unwrap_or(0);
 
     drain_status(session, now);
-    drive_connection(session, &wallet, profile_version, now);
+    drive_connection(session, &wallet, world_hold.is_some(), profile_version, now);
     flush_replay(session, &sinks, &realm);
     drain_inbound(session, &sinks, &realm, &player, in_world, now);
     flush_listener_aoi(session, now);
@@ -867,7 +869,13 @@ fn drain_status(session: &mut PulseSession, now: f64) {
 /// the transport-up status; signing waits additionally for an identity (`PulseConfig` may be present
 /// before login). Each retryable handshake failure folds back to `Idle` (driver still up) with a
 /// cooldown.
-fn drive_connection(session: &mut PulseSession, wallet: &Wallet, profile_version: i32, now: f64) {
+fn drive_connection(
+    session: &mut PulseSession,
+    wallet: &Wallet,
+    world_held: bool,
+    profile_version: i32,
+    now: f64,
+) {
     match &mut session.state {
         // Passive states: `Connecting` waits for the transport-up status; the others are terminal or
         // steady.
@@ -875,8 +883,14 @@ fn drive_connection(session: &mut PulseSession, wallet: &Wallet, profile_version
         Connection::Down { respawn_at } => {
             // Nothing to dial for without an identity to hand the handshake; the server drops an
             // unauthenticated peer after a timeout, which would otherwise cycle the connection
-            // for as long as the login screen is up.
-            if !session.role.wants_connection() || now < *respawn_at || wallet.address().is_none() {
+            // for as long as the login screen is up. Nor while the world is held: the lobby
+            // signs in before the account is settled, and the server evicts any other session
+            // of a wallet that connects.
+            if !session.role.wants_connection()
+                || now < *respawn_at
+                || wallet.address().is_none()
+                || world_held
+            {
                 return;
             }
             let (link, driver) = spawn_driver(&session.transport_config);

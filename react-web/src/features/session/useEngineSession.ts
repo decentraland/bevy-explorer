@@ -525,6 +525,10 @@ export function photoTime(dateTime: string): number {
   return Number.isNaN(t) ? 0 : t
 }
 
+function initialMessages(): ChatLine[] {
+  return [{ sender: '', message: 'Type /help for available commands.', channel: 'Nearby', id: -1, ts: Date.now() }]
+}
+
 export function useEngineSession(createDriver: () => LoginDriver): EngineSession {
   const driverRef = useRef<LoginDriver | null>(null)
   const [status, setStatus] = useState<LoginStatus>('loading')
@@ -600,9 +604,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [hover, setHover] = useState<HoverAction[]>([])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
-  const [messages, setMessages] = useState<ChatLine[]>(() => [
-    { sender: '', message: 'Type /help for available commands.', channel: 'Nearby', id: -1, ts: Date.now() }
-  ])
+  const [messages, setMessages] = useState<ChatLine[]>(initialMessages)
   const [members, setMembers] = useState<NearbyMember[]>([])
   const [speaking, setSpeaking] = useState<ReadonlySet<string>>(() => new Set())
   // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
@@ -1805,6 +1807,26 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     fetchedRef.current.clear()
     playerReadyRef.current = false
     pendingParcel.current = null
+    // Nothing of this account's may show under the next one, or be saved onto it: an unsaved
+    // Backpack look is dropped rather than committed after the engine has let the account go.
+    backpackWasOpen.current = false
+    profileRevertRef.current = null
+    setProfile(null)
+    setPrevUserId(null)
+    setOwnedNames([])
+    setProfileSaving(false)
+    setProfileSaveError(null)
+    setSaveError(null)
+    setEquippedWearables([])
+    setBodyShape(undefined)
+    setForceRenderState([])
+    setAvatarColors(undefined)
+    setNotifications([])
+    setCommunities([])
+    setFriendPending(new Set())
+    setMutualFriends({})
+    setMessages(initialMessages)
+    setChatUnread(0)
   }, [closeAllPanels])
 
   // Where the Backpack's avatar shows through, so the lobby under its modal can open the same hole.

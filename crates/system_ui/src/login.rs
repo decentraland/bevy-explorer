@@ -16,7 +16,7 @@ use common::{
     sets::SceneSets,
     structs::{
         ActiveDialog, AppConfig, ChainLink, CurrentRealm, DialogPermit, PreviousLogin, SystemAudio,
-        ZOrder,
+        WorldHold, ZOrder,
     },
     util::{TaskCompat, TaskExt},
 };
@@ -408,6 +408,12 @@ async fn get_profile_with_retry(
     Err(format!("{PROFILE_FETCH_FAILED}: {last_error}"))
 }
 
+const ACCOUNT_LOCKED: &str = "the account cannot change after entering a realm";
+
+fn account_locked(wallet: &Wallet, world_hold: &Option<Res<WorldHold>>) -> bool {
+    world_hold.is_none() && wallet.address().is_some()
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_login_bridge(
     mut e: EventReader<SystemApi>,
@@ -433,6 +439,7 @@ fn process_login_bridge(
     mut current_profile: ResMut<CurrentUserProfile>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
     mut config: ResMut<AppConfig>,
+    world_hold: Option<Res<WorldHold>>,
 ) {
     for ev in e.read().cloned() {
         match ev {
@@ -447,6 +454,22 @@ fn process_login_bridge(
             SystemApi::GetPreviousLogin(rpc_result_sender) => {
                 rpc_result_sender
                     .send(get_previous_login(&config).map(|pl| format!("{:#x}", pl.root_address)));
+            }
+            // the account can only change while the world is held (the lobby): once in
+            // world, comms and scenes are bound to the wallet that entered
+            SystemApi::LoginPrevious(_, sender) | SystemApi::LoginWithIdentity(_, _, sender)
+                if account_locked(&wallet, &world_hold) =>
+            {
+                sender.send(Err(ACCOUNT_LOCKED.to_owned()));
+            }
+            SystemApi::LoginNew(_, code_sender, result_sender)
+                if account_locked(&wallet, &world_hold) =>
+            {
+                code_sender.send(Err(ACCOUNT_LOCKED.to_owned()));
+                result_sender.send(Err(ACCOUNT_LOCKED.to_owned()));
+            }
+            SystemApi::LoginGuest | SystemApi::Logout if account_locked(&wallet, &world_hold) => {
+                warn!("{ACCOUNT_LOCKED}");
             }
             SystemApi::LoginPrevious(default_on_error, rpc_result_sender) => {
                 let ipfs = ipfas.ipfs().clone();
@@ -589,6 +612,10 @@ fn process_login_bridge(
 
     if let Some(mut task) = login_task.take() {
         match task.complete() {
+            // started in the lobby over another account, finished after the world was entered
+            Some(Ok((.., sender))) if account_locked(&wallet, &world_hold) => {
+                sender.send(Err(ACCOUNT_LOCKED.to_owned()));
+            }
             Some(Ok((root_address, ephemeral_key, auth, profile, sender))) => {
                 if let Ok(mut window) = window.single_mut() {
                     window.focused = true;

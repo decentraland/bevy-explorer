@@ -39,8 +39,8 @@ export function registerSession(ctx: Ctx): void {
         case 'logout': BevyApi.logout(); break
         default: throw new Error(`unsupported method ${String(msg.method)}`)
       }
-      // The engine keeps the old identity through a logout, so a completed sign-in is what says the
-      // (possibly same) account is back and must be announced again.
+      // A completed sign-in says the (possibly same) account is back and must be announced again,
+      // even if no frame saw the player gone in between.
       if (SIGN_INS.has(msg.method) && (value as { success?: boolean } | undefined)?.success !== false) ready = false
       ctx.send({ kind: 'rpc:res', id: msg.id, ok: true, value })
     } catch (err) {
@@ -77,6 +77,8 @@ export function registerSession(ctx: Ctx): void {
   ctx.push(() => {
     const player = getPlayer()
     identity.observe(player?.userId ?? null)
+    // the engine clears the player on logout; the next one is announced afresh
+    if (player == null) ready = false
     if (ready) return
     if (player != null) {
       ready = true

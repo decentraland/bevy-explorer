@@ -296,9 +296,12 @@ export function registerProfile(ctx: Ctx): void {
       return
     }
 
+    // the account can change while this waits; the edit and its answers belong to this one only
+    const signedOut = (): boolean => getPlayer()?.userId !== player.userId
     const data: SetAvatarData = {}
     if (msg.name !== undefined) {
       const owned = await fetchOwnedNames(player.userId).catch(() => [])
+      if (signedOut()) return
       // An empty bodyShapeUrn and null colors mean "leave the avatar alone" — the name is the only
       // thing this edit touches, and the Backpack owns the rest.
       data.base = { skinColor: null, eyesColor: null, hairColor: null, bodyShapeUrn: '', name: msg.name }
@@ -317,15 +320,18 @@ export function registerProfile(ctx: Ctx): void {
       // is a genuinely failed save and the HUD must not keep showing the edit as if it stuck.
       await BevyApi.setAvatar(data)
     } catch (e) {
+      if (signedOut()) return
       console.error('[profile] save failed', e)
       ctx.send({ kind: 'profileSaved', ok: false, error: e instanceof Error ? e.message : String(e) })
       return
     }
 
+    if (signedOut()) return
     ctx.send({ kind: 'profileSaved', ok: true })
     // setAvatar amends the engine's own copy of the profile before it resolves, so re-reading it
     // is the post-save state — no need to fold the edit in by hand.
     const av = await fetchProfile(player.userId)
+    if (signedOut()) return
     ctx.send({ kind: 'profile', profile: toProfile(av, player.userId, player.isGuest, player.name) })
   })
 

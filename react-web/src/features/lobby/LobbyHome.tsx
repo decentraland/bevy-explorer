@@ -167,7 +167,7 @@ export function LobbyHome({
             address={profile?.address}
             claimed={profile?.hasClaimedName}
             onViewProfile={() => profile && openPassport(profile.address)}
-            onSignOut={session.logout}
+            onSignOut={onClose ? undefined : session.logout}
           />
           {onClose && (
             <HeaderButton aria-label="Close" onClick={onClose}>

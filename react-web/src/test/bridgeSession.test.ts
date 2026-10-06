@@ -56,9 +56,22 @@ describe('bridge session', () => {
     frame()
     expect(readies(sent)).toBe(1)
     await req({ kind: 'rpc:req', id: '1', method: 'logout' })
-    frame() // the engine keeps the old identity until the next login lands
+    frame() // no frame has seen the player gone yet
     expect(readies(sent)).toBe(1)
     await req({ kind: 'rpc:req', id: '2', method: 'loginPrevious' })
+    frame()
+    expect(readies(sent)).toBe(2)
+  })
+
+  it('announces playerReady again once the engine has cleared the player and set the next one', () => {
+    const { ctx, sent, frame } = fakeCtx()
+    registerSession(ctx)
+    player = { userId: '0xa' }
+    frame()
+    player = null // logout
+    frame()
+    expect(readies(sent)).toBe(1)
+    player = { userId: '0xb' } // a login the bridge did not relay (the web console command)
     frame()
     expect(readies(sent)).toBe(2)
   })
