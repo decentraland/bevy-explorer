@@ -946,37 +946,15 @@ fn drain_control_commands(
 /// so the orchestrator can route them to its per-scene SSE log buffers.
 fn demux_scene_logs(
     scenes: Query<(Entity, &RendererSceneContext)>,
-    mut receivers: Local<
-        std::collections::HashMap<
-            Entity,
-            (String, common::util::RingBufferReceiver<SceneLogMessage>),
-        >,
-    >,
+    mut receivers: Local<webgpu_build::headless::SceneLogReceivers>,
 ) {
-    for (ent, ctx) in scenes.iter() {
-        let (_, rx) = receivers.entry(ent).or_insert_with(|| {
-            let (_missed, backlog, rx) = ctx.logs.read();
-            for log in backlog {
-                emit_scene_log(&ctx.hash, &log);
-            }
-            (ctx.hash.to_string(), rx)
-        });
-        while let Ok(log) = rx.try_recv() {
-            emit_scene_log(&ctx.hash, &log);
-        }
-    }
-    receivers.retain(|ent, _| scenes.contains(*ent));
+    webgpu_build::headless::drain_scene_logs(&scenes, &mut receivers, emit_scene_log);
 }
 
 fn emit_scene_log(hash: &str, log: &SceneLogMessage) {
-    let level = match log.level {
-        dcl::SceneLogLevel::Log => "log",
-        dcl::SceneLogLevel::SceneError => "error",
-        dcl::SceneLogLevel::SystemError => "system",
-    };
     println!(
         "@scene-log {}",
-        serde_json::json!({"scene": hash, "level": level, "ts": log.timestamp, "msg": log.message})
+        serde_json::json!({"scene": hash, "level": webgpu_build::headless::scene_log_level(&log.level), "ts": log.timestamp, "msg": log.message})
     );
 }
 

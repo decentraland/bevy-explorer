@@ -5,7 +5,6 @@
 
 use std::{cell::RefCell, rc::Rc, str::FromStr, time::Duration};
 
-use bevy::platform::collections::HashMap;
 use bevy::{
     app::{PluginsState, TaskPoolThreadAssignmentPolicy},
     log::{Level, LogPlugin},
@@ -13,7 +12,6 @@ use bevy::{
     web_worker::WorkerSpec,
 };
 use common::structs::IVec2Arg;
-use dcl::SceneLogMessage;
 use dcl_wasm::init_runtime;
 use system_api_types::launch_options::LaunchOptions;
 use wallet::Wallet;
@@ -170,7 +168,6 @@ fn run_on_worker_timer(mut app: App) -> AppExit {
     AppExit::Success
 }
 
-/// Liveness lines, as the native binary's supervisor prints.
 /// Each scene's console output, posted to the page (headless.js) for the editor to show, as the
 /// native server's `@scene-log` lines are.
 fn forward_scene_logs(
@@ -178,40 +175,26 @@ fn forward_scene_logs(
         Entity,
         &scene_runner::renderer_context::RendererSceneContext,
     )>,
-    mut receivers: Local<HashMap<Entity, common::util::RingBufferReceiver<SceneLogMessage>>>,
+    mut receivers: Local<super::SceneLogReceivers>,
 ) {
     let Ok(scope) = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>() else {
         return;
     };
-    for (ent, ctx) in scenes.iter() {
-        let rx = receivers.entry(ent).or_insert_with(|| {
-            let (_missed, backlog, rx) = ctx.logs.read();
-            for log in backlog {
-                post_scene_log(&scope, &log);
-            }
-            rx
-        });
-        while let Ok(log) = rx.try_recv() {
-            post_scene_log(&scope, &log);
-        }
-    }
-    receivers.retain(|ent, _| scenes.contains(*ent));
+    super::drain_scene_logs(&scenes, &mut receivers, |_, log| {
+        let line = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(
+            &line,
+            &"level".into(),
+            &super::scene_log_level(&log.level).into(),
+        );
+        let _ = js_sys::Reflect::set(&line, &"msg".into(), &log.message.as_str().into());
+        let message = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&message, &"sceneLog".into(), &line);
+        let _ = scope.post_message(&message);
+    });
 }
 
-fn post_scene_log(scope: &web_sys::DedicatedWorkerGlobalScope, log: &SceneLogMessage) {
-    let level = match log.level {
-        dcl::SceneLogLevel::Log => "log",
-        dcl::SceneLogLevel::SceneError => "error",
-        dcl::SceneLogLevel::SystemError => "system",
-    };
-    let line = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(&line, &"level".into(), &level.into());
-    let _ = js_sys::Reflect::set(&line, &"msg".into(), &log.message.as_str().into());
-    let message = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(&message, &"sceneLog".into(), &line);
-    let _ = scope.post_message(&message);
-}
-
+/// Liveness lines, as the native binary's supervisor prints.
 fn report(
     time: Res<Time>,
     scenes: Query<&scene_runner::renderer_context::RendererSceneContext>,
