@@ -2,7 +2,7 @@
 // stores anything. Inside the web shell the app must never touch localStorage: reading it loads the
 // origin's whole storage area into the app's process, and that area holds the sign-in key the shell
 // keeps (src/shell/main.ts). There they live in IndexedDB, read once before the HUD renders and
-// written through; elsewhere (the native CEF HUD, app.html opened directly) in localStorage.
+// written through; elsewhere (the native CEF HUD, app.html opened directly in dev) in localStorage.
 import { inShell } from './shell'
 
 // Every key the HUD stores. The shell moves these out of localStorage (migratePrefs).
@@ -87,7 +87,7 @@ export function setPref(key: string, value: string): void {
 }
 
 // Shell side, before the app loads: move any values an earlier version kept in localStorage into
-// IndexedDB, and drop them from localStorage.
+// IndexedDB, and drop them from localStorage. A value IndexedDB already has is newer, and stays.
 export async function migratePrefs(): Promise<void> {
   const found: [string, string][] = []
   for (const key of Object.values(PREF)) {
@@ -97,7 +97,13 @@ export async function migratePrefs(): Promise<void> {
   if (found.length === 0) return
   const s = await store('readwrite')
   await new Promise<void>((resolve, reject) => {
-    for (const [key, value] of found) s.put(value, key)
+    for (const [key, value] of found) {
+      // an existing key fails the add; don't let that fail the rest
+      s.add(value, key).onerror = (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
     s.transaction.oncomplete = () => resolve()
     s.transaction.onerror = () => reject(s.transaction.error)
   })

@@ -81,15 +81,8 @@ export function getStoredLogin(): StoredLogin | null {
   return best ? { address: best.address, identity: best.identity } : null
 }
 
-// The stored identity whose ephemeral key is `address`, for signing with it.
-export function findStoredIdentity(address: string): AuthIdentity | null {
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i)
-    if (!key || !key.startsWith(SSO_PREFIX + '0x')) continue
-    const identity = readIdentity(key.slice(SSO_PREFIX.length))
-    if (identity?.ephemeralIdentity.address?.toLowerCase() === address.toLowerCase()) return identity
-  }
-  return null
+export function loginExpired(login: StoredLogin): boolean {
+  return expirationMs(login.identity) <= Date.now()
 }
 
 // A login without its ephemeral private key.

@@ -360,9 +360,9 @@ fn get_previous_login(config: &AppConfig) -> Option<PreviousLogin> {
 }
 
 /// Decode a base64(JSON) AuthIdentity into the pieces the wallet needs: the root (signer)
-/// address, the ephemeral LocalWallet, and the delegate auth chain (the ECDSA_EPHEMERAL
-/// link(s), i.e. the chain WITHOUT the SIGNER entry — matching what
-/// `finish_remote_ephemeral_request` / `get_previous_login` use).
+/// address, the ephemeral key (just its address when the page holds the key), and the delegate
+/// auth chain (the ECDSA_EPHEMERAL link(s), i.e. the chain WITHOUT the SIGNER entry — matching
+/// what `finish_remote_ephemeral_request` / `get_previous_login` use).
 ///
 /// This is the standard Decentraland AuthIdentity, so it is identical regardless of how the
 /// user signed in (wallet/MetaMask, social, OTP, magic). The web page just reads it from

@@ -60,8 +60,9 @@ self.addEventListener('fetch', (event) => {
 /**
  * Fetches a page and sets its isolation headers. The app (app.html: HUD + engine) gets
  * Document-Isolation-Policy, which makes it cross-origin isolated (SharedArrayBuffer) in a process
- * of its own. Every other page, the shell that embeds the app included, loses the host's COOP/COEP:
- * an isolated top-level page would take the app's process back in with it.
+ * of its own. The shell that embeds it (the scope's index page) loses the host's COEP: an isolated
+ * top-level page would take the app's process back in with it. Any other page (another host's
+ * engine page, say) gets COOP/COEP credentialless to enable SharedArrayBuffer.
  */
 async function addCrossOriginIsolationHeaders(request) {
     const response = await fetch(request);
@@ -69,10 +70,16 @@ async function addCrossOriginIsolationHeaders(request) {
     // Only modify same-origin responses
     if (response.type === 'basic') {
         const newHeaders = new Headers(response.headers);
-        newHeaders.delete('Cross-Origin-Opener-Policy');
-        newHeaders.delete('Cross-Origin-Embedder-Policy');
-        if (new URL(request.url).pathname.endsWith('/app.html')) {
+        const path = new URL(request.url).pathname;
+        const scope = new URL(self.registration.scope).pathname;
+        newHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
+        if (path === scope + 'app.html') {
+            newHeaders.delete('Cross-Origin-Embedder-Policy');
             newHeaders.set('Document-Isolation-Policy', 'isolate-and-credentialless');
+        } else if (path === scope || path === scope + 'index.html') {
+            newHeaders.delete('Cross-Origin-Embedder-Policy');
+        } else {
+            newHeaders.set('Cross-Origin-Embedder-Policy', 'credentialless');
         }
 
         return new Response(response.body, {

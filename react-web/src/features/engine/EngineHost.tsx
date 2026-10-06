@@ -16,7 +16,7 @@ import { SYSTEM_SCENE } from '../../lib/systemScene'
 import { launchOptionsFromUrl, type LaunchOptions } from '../../lib/webParams'
 
 // Engine media libs the wasm expects as globals (LivekitClient, Hls) — loaded from CDNs like the
-// old boot page did. Pinned with integrity hashes: they run beside the stored sign-in key.
+// old boot page did. Pinned with integrity hashes: they run in the app, which the shell signs for.
 const CDN_LIBS = [
   {
     src: 'https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js',

@@ -15,7 +15,7 @@ use common::{
     },
 };
 use dcl_wasm::init_runtime;
-use futures_lite::io::AsyncReadExt;
+use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use input_manager::InputPriorities;
 use once_cell::sync::OnceCell;
 use scene_runner::vec3_to_parcel;
@@ -208,6 +208,18 @@ pub async fn engine_init() -> Result<JsValue, JsValue> {
 
     let mut config = AppConfig::from_json(buf.as_bytes());
     config.reset_outdated_settings();
+
+    // the web shell holds the sign-in key: drop one an earlier version saved here
+    if config.previous_login.take().is_some() {
+        let write = async {
+            let mut file = web_fs::File::create("config.json").await?;
+            file.write_all(serde_json::to_string(&config)?.as_bytes())
+                .await
+        };
+        if let Err(e) = write.await {
+            warn!("couldn't rewrite config.json: {e:?}");
+        }
+    }
 
     let _ = INIT_DATA.set(config);
 

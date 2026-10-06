@@ -9,12 +9,13 @@ export function postToShell(message: { type: string; [key: string]: unknown }): 
   window.parent.postMessage(message, location.origin)
 }
 
+const REQUEST_TIMEOUT_MS = 10_000
 let nextId = 0
 const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
 let listening = false
 
 // Ask the shell for something and wait for its answer: `bevy-shell:request` out, the matching
-// `bevy-shell:response` back.
+// `bevy-shell:response` back. The shell answers at once, so no answer means no shell.
 export function shellRequest<T>(method: string, params?: unknown): Promise<T> {
   if (!listening) {
     listening = true
@@ -33,5 +34,8 @@ export function shellRequest<T>(method: string, params?: unknown): Promise<T> {
     const id = nextId++
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject })
     postToShell({ type: 'bevy-shell:request', id, method, params })
+    setTimeout(() => {
+      if (pending.delete(id)) reject(new Error(`no answer from the shell to ${method}`))
+    }, REQUEST_TIMEOUT_MS)
   })
 }
