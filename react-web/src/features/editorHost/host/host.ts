@@ -63,10 +63,10 @@ export interface DclEditorHostV1 {
   /** fetch `path` (`/values…`, `/players/<address>/values…` or `/env/<key>`) from the previewed
    *  project's storage. Rejects 'not-allowed' for any other path or with no preview open. */
   previewStorageFetch: (path: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<Response>
-  /** contract v1.3: the open preview's scene server console, the lines after `after` (a `seq` it
+  /** the open preview's scene server console, the lines after `after` (a `seq` it
    *  returned, 0 for all it keeps); empty with no server running. */
   previewServerLogs: (after: number) => ServerLogLine[]
-  /** contract v1.3: the open preview has new content (a build landed); its scene server restarts on it. */
+  /** the open preview has new content (a build landed); its scene server restarts on it. */
   previewChanged: () => void
   /** Ask the player to confirm a Worlds deployment, then sign its entity id. Rejects 'cancelled'
    *  when declined and 'not-signed-in' for a guest. */
