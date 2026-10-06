@@ -76,7 +76,7 @@ async function jumpInFromLobby(page: Page): Promise<void> {
 }
 
 async function enterWorld(page: Page): Promise<void> {
-  await page.goto('/?mock=1')
+  await page.goto('/app.html?mock=1')
   await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
   await jumpInFromLobby(page)
   await page.waitForSelector('nav[aria-label="Main navigation"]')
@@ -85,7 +85,7 @@ async function enterWorld(page: Page): Promise<void> {
 /** Enter as the returning mock user (`previousLogin=1`): a wallet holding two claimed NAMEs, which
  *  is what the name editor's picker and tabs need in order to appear. */
 async function enterWorldReturning(page: Page): Promise<void> {
-  await page.goto('/?mock=1&previousLogin=1')
+  await page.goto('/app.html?mock=1&previousLogin=1')
   // a stored session goes straight to the lobby
   await jumpInFromLobby(page)
   await page.waitForSelector('nav[aria-label="Main navigation"]')
@@ -104,13 +104,13 @@ test.describe('visual — mock HUD', () => {
   })
 
   test('design-system showcase', async ({ page }) => {
-    await page.goto('/?showcase=1')
+    await page.goto('/app.html?showcase=1')
     await settle(page)
     await expect(page).toHaveScreenshot('showcase.png', { fullPage: true })
   })
 
   test('login — fresh (sign in or guest)', async ({ page }) => {
-    await page.goto('/?mock=1')
+    await page.goto('/app.html?mock=1')
     await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).waitFor()
     await settle(page)
     await expect(page).toHaveScreenshot('login-fresh.png')
@@ -120,21 +120,21 @@ test.describe('visual — mock HUD', () => {
   // store buttons). Returns before the HUD, so no ?mock needed.
   test('lobby', async ({ page }) => {
     await stubLobbyData(page)
-    await page.goto('/?mock=1&previousLogin=1')
+    await page.goto('/app.html?mock=1&previousLogin=1')
     await page.getByRole('heading', { name: /Welcome/ }).waitFor()
     await settle(page)
     await expect(page).toHaveScreenshot('lobby.png')
   })
 
   test('mobile gate', async ({ page }) => {
-    await page.goto('/?gate=1')
+    await page.goto('/app.html?gate=1')
     await settle(page)
     await expect(page).toHaveScreenshot('mobile-gate.png')
   })
 
   // Browser gate — the "use Chrome" page shown on non-Chromium desktop (forced with ?gate=browser).
   test('browser gate', async ({ page }) => {
-    await page.goto('/?gate=browser')
+    await page.goto('/app.html?gate=browser')
     await settle(page)
     await expect(page).toHaveScreenshot('browser-gate.png')
   })
@@ -142,7 +142,7 @@ test.describe('visual — mock HUD', () => {
   // GPU gate — the "enable WebGPU / hardware acceleration" page shown before boot when no usable GPU
   // adapter is found (forced with ?gate=gpu; real detection is the async probe in App).
   test('gpu gate', async ({ page }) => {
-    await page.goto('/?gate=gpu')
+    await page.goto('/app.html?gate=gpu')
     await settle(page)
     await expect(page).toHaveScreenshot('gpu-gate.png')
   })
@@ -150,7 +150,7 @@ test.describe('visual — mock HUD', () => {
   // Engine error popup — ?simerror=launch seeds a sample boot-panic (fatal: Reload only, no
   // Dismiss). Mock mode → no engine iframe, fully deterministic.
   test('engine error popup', async ({ page }) => {
-    await page.goto('/?mock=1&simerror=launch')
+    await page.goto('/app.html?mock=1&simerror=launch')
     await settle(page)
     await expect(page).toHaveScreenshot('engine-error.png')
   })
@@ -158,7 +158,7 @@ test.describe('visual — mock HUD', () => {
   // Realm error popup — ?simerror=realm seeds a "world not found" fatalError, distinct from the
   // full-screen CrashModal above: it renders through the popup layer (dismissible, PopupHost .dim).
   test('realm error popup', async ({ page }) => {
-    await page.goto('/?mock=1&simerror=realm')
+    await page.goto('/app.html?mock=1&simerror=realm')
     await settle(page)
     await expect(page).toHaveScreenshot('realm-error.png')
   })
@@ -174,7 +174,7 @@ test.describe('visual — mock HUD', () => {
 
   // Permission dialog — ?perm=1 fires a sample scene permission request shortly after entering world.
   test('permission dialog', async ({ page }) => {
-    await page.goto('/?mock=1&perm=1')
+    await page.goto('/app.html?mock=1&perm=1')
     await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
     await jumpInFromLobby(page)
     await page.getByRole('alertdialog').waitFor()
@@ -257,7 +257,7 @@ test.describe('visual — mock HUD', () => {
   // ?simhover=7 seeds seven prompts (one disabled → "Too far, get closer"); React anchors them at the
   // live DOM cursor, so we move the mouse to the viewport centre to place them deterministically.
   test('hover tooltips (radial)', async ({ page }) => {
-    await page.goto('/?mock=1&simhover=7')
+    await page.goto('/app.html?mock=1&simhover=7')
     await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
     await jumpInFromLobby(page)
     await page.waitForSelector('nav[aria-label="Main navigation"]')

@@ -266,37 +266,12 @@ const DEFAULTS: MockOptions = {
   latency: 600
 }
 
-// In ?mock=1&previousLogin=1, seed a fake same-domain SSO identity so the session's
-// localStorage read lights up the "welcome back" reuse flow (no real auth site in mock).
-// The 0xmock… address is deliberately non-hex so sso.ts hides it from real engine sessions.
-function seedMockSso(o: MockOptions): void {
-  const key = `single-sign-on-${o.userId}`
-  if (o.hasPreviousLogin) {
-    if (!localStorage.getItem(key)) {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          ephemeralIdentity: { address: '0xeeee000000000000000000000000000000000001', publicKey: '0x04', privateKey: '0x' + '11'.repeat(32) },
-          expiration: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
-          authChain: [
-            { type: 'SIGNER', payload: o.userId, signature: '' },
-            { type: 'ECDSA_EPHEMERAL', payload: 'Decentraland Login\nEphemeral address: 0xeeee\nExpiration: ', signature: '0xabc' }
-          ]
-        })
-      )
-    }
-  } else {
-    localStorage.removeItem(key)
-  }
-}
-
 let running: (() => void) | null = null
 
 // Idempotent: StrictMode runs the HUD's useMemo twice, and a second bridge would answer every message again.
 export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
   if (running) return running
   const o = { ...DEFAULTS, ...opts }
-  seedMockSso(o)
   // Stateful so markNotificationsRead persists across reopens (like the real service).
   const mockNow = 1_700_000_000_000
   // Shapes mirror the real notifications service: friendship notifications carry the other user

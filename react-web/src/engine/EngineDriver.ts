@@ -5,7 +5,7 @@
 //     from the super-user bridge scene over the `bevy-ui-bridge` BroadcastChannel
 //     and are delivered through ONE generic `on(msg => …)` subscription.
 
-import { getStoredLogin, rootAddress, type AuthIdentity } from '../features/auth/sso'
+import { getLogin, rootAddress, type AuthIdentity } from '../features/auth/sso'
 import type { LoginDriver } from './driver'
 import type { EngineRpc, LaunchHostOptions } from './engineRpc'
 import { BridgeChannel } from './bridgeChannel'
@@ -38,7 +38,7 @@ export class EngineDriver implements LoginDriver {
   async getPreviousLogin(): Promise<{ userId: string | null }> {
     // The engine has no console command to query a saved login, but a same-domain SSO identity
     // in localStorage is exactly that — a previous login we can hand back via `/login_identity`.
-    const login = getStoredLogin()
+    const login = await getLogin()
     return { userId: login ? rootAddress(login.identity) : null }
   }
 
@@ -75,7 +75,7 @@ export class EngineDriver implements LoginDriver {
   // "Jump in": reuse the SSO identity via `/login_identity`; if none is stored, fall back to
   // the engine's own saved login.
   async jumpIn(defaultOnError?: boolean): Promise<void> {
-    const login = getStoredLogin()
+    const login = await getLogin()
     if (login) await this.loginWithIdentity(login.identity, defaultOnError)
     else await this.loginPrevious(defaultOnError)
   }

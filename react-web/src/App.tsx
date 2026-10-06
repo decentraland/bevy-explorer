@@ -41,6 +41,7 @@ import { useWindowKeyDown } from './lib/useWindowKeyDown'
 import { useHudInsetReport } from './lib/hudInset'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
+import { inShell } from './lib/shell'
 import { hasUsableGpu } from './lib/gpu'
 import { MobileGate, GateChecking } from './features/gate/MobileGate'
 import { UntrustedLaunchGate } from './features/gate/UntrustedLaunchGate'
@@ -83,6 +84,8 @@ function gateReason(): 'mobile' | 'browser' | 'gpu' | null {
   if (params.get('gate') === 'browser') return 'browser'
   if (params.get('gate') === 'gpu') return 'gpu'
   if (!isChromiumBased() && !hasBypassCookie()) return 'browser'
+  // inside the shell the engine's SharedArrayBuffer needs Document-Isolation-Policy (Chrome 137+)
+  if (inShell && !crossOriginIsolated) return 'browser'
   return null
 }
 const GATE_REASON = gateReason()

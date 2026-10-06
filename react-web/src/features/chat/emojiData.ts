@@ -3,6 +3,7 @@
 // it for the grid picker and for ":shortcode:" autocomplete in the chat input.
 
 import data from './emojis_complete.json'
+import { getPref, PREF, setPref } from '../../lib/prefs'
 
 export interface Emoji {
   code: string
@@ -32,12 +33,11 @@ export const EMOJI_GROUPS: EmojiGroup[] = (data.categories as RawCategory[]).map
 export const EMOJI_BY_CODE: Map<string, Emoji> = new Map(ALL.map((e) => [e.code, e]))
 
 // "Frequently used" — persisted across sessions, most-recent first.
-const RECENTS_KEY = 'dcl-emoji-recents'
 const RECENTS_MAX = 18
 
 export function loadRecents(): string[] {
   try {
-    const v = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]')
+    const v = JSON.parse(getPref(PREF.emojiRecents) ?? '[]')
     return Array.isArray(v) ? (v as string[]) : []
   } catch {
     return []
@@ -46,11 +46,7 @@ export function loadRecents(): string[] {
 
 export function pushRecent(code: string): string[] {
   const next = [code, ...loadRecents().filter((c) => c !== code)].slice(0, RECENTS_MAX)
-  try {
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(next))
-  } catch {
-    // ignore quota / privacy-mode failures
-  }
+  setPref(PREF.emojiRecents, JSON.stringify(next))
   return next
 }
 

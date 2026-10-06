@@ -8,6 +8,8 @@ import { installLocalNetworkFetch } from './lib/localNetworkFetch'
 import { installHudScale } from './lib/hudScale'
 import { countLaunch } from './lib/launchCount'
 import { isNativeHud } from './lib/bootMode'
+import { inShell } from './lib/shell'
+import { loadPrefs } from './lib/prefs'
 import './styles/global.css'
 
 // Before anything fetches: annotate loopback/local-network requests so Chrome's Local Network
@@ -16,8 +18,8 @@ installLocalNetworkFetch()
 
 // Keep --ui-scale in sync with the viewport (DPI-correct, like Unity's CanvasScaler).
 installHudScale()
-countLaunch()
 
+let redirecting = false
 // NATIVE (?native=1): bevy renders the 3D world *behind* this transparent webview, so the page must
 // be transparent (in web mode the engine canvas lives in this document at z-0, so the body
 // background is fine).
@@ -37,16 +39,26 @@ if (isNativeHud()) {
   } catch {
     /* defineProperty can throw if already overridden; non-fatal */
   }
-} else {
-  // Prod-only (web): swap the host's COEP require-corp for credentialless via the shared root SW
-  // (catalyst <img> thumbnails send no CORP). No-op in dev; never in the native webview.
+} else if (window.parent === window && import.meta.env.PROD) {
+  // On the web the app belongs inside the shell (index.html), which keeps the sign-in key out of
+  // this page's process; opened on its own it would read the key itself.
+  redirecting = true
+  location.replace(new URL('./', location.href).href + location.search + location.hash)
+} else if (!inShell) {
+  // Dev, and the credentialless embed: swap the host's COEP require-corp for credentialless via
+  // the shared root SW (catalyst <img> thumbnails send no CORP). Never in the native webview.
+  // Inside the shell, the shell registers it.
   registerCoiServiceWorker()
 }
 
 // App picks the mode: ?mock=1 → login UI against the fake bridge (no engine);
 // default → real engine in a same-document canvas driven over console commands.
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-)
+// The HUD's stored values are read before it renders (lib/prefs).
+if (!redirecting) void loadPrefs().then(() => {
+  countLaunch()
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  )
+})

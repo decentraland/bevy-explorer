@@ -321,6 +321,10 @@ window.set_url_params = (optionsJson) => {
     const options = Object.fromEntries(Object.entries(JSON.parse(optionsJson)).map(([name, raw]) => [name, urlValue(name, raw)]))
     applyOptionsToUrlParams(urlParams, options)
     history.replaceState(null, '', window.location.pathname + '?' + urlParams.toString())
+    // inside the web shell (react-web/index.html) this page is an iframe; the shell owns the address bar
+    if (window.parent !== window && !window.credentialless) {
+      window.parent.postMessage({ type: 'bevy-shell:url', search: '?' + urlParams.toString() }, window.location.origin)
+    }
   } catch (e) {
     console.log(`set url params failed: ${e}`)
   }

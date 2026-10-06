@@ -231,7 +231,11 @@ pub struct AuthIdentity {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct EphemeralIdentity {
-    private_key: String,
+    #[serde(default)]
+    address: Option<String>,
+    // absent when the page keeps the key and signs for us (see `EphemeralKey::Remote`)
+    #[serde(default)]
+    private_key: Option<String>,
 }
 
 async fn fetch_identity(identity_id: &str) -> Result<AuthIdentity, anyhow::Error> {
@@ -267,6 +271,25 @@ async fn fetch_identity(identity_id: &str) -> Result<AuthIdentity, anyhow::Error
 pub fn auth_identity_parts(
     identity: AuthIdentity,
 ) -> Result<(Address, PrivateKeySigner, Vec<ChainLink>), anyhow::Error> {
+    match auth_identity_key_parts(identity)? {
+        (root_address, EphemeralKey::Local(ephemeral_wallet), delegates) => {
+            Ok((root_address, ephemeral_wallet, delegates))
+        }
+        (_, EphemeralKey::Remote(_), _) => anyhow::bail!("identity has no ephemeral private key"),
+    }
+}
+
+/// The ephemeral key of an AuthIdentity: the key itself, or (when the page that holds it keeps
+/// it, and signs for us through `remote_signer`) its address.
+pub enum EphemeralKey {
+    Local(PrivateKeySigner),
+    Remote(Address),
+}
+
+/// `auth_identity_parts`, for an identity that may come without its private key.
+pub fn auth_identity_key_parts(
+    identity: AuthIdentity,
+) -> Result<(Address, EphemeralKey, Vec<ChainLink>), anyhow::Error> {
     let signer = identity
         .auth_chain
         .iter()
@@ -277,13 +300,19 @@ pub fn auth_identity_parts(
         .as_h160()
         .ok_or_else(|| anyhow!("bad root address: {:?}", signer.payload))?;
 
-    let key_hex = identity
-        .ephemeral_identity
-        .private_key
-        .trim()
-        .trim_start_matches("0x");
-    let ephemeral_wallet =
-        PrivateKeySigner::from_str(key_hex).map_err(|e| anyhow!("bad ephemeral key: {e}"))?;
+    let ephemeral_key = match (
+        identity.ephemeral_identity.private_key.as_deref(),
+        identity.ephemeral_identity.address.as_deref(),
+    ) {
+        (Some(key), _) => EphemeralKey::Local(
+            PrivateKeySigner::from_str(key.trim().trim_start_matches("0x"))
+                .map_err(|e| anyhow!("bad ephemeral key: {e}"))?,
+        ),
+        (None, Some(address)) => EphemeralKey::Remote(
+            Address::from_str(address.trim()).map_err(|e| anyhow!("bad ephemeral address: {e}"))?,
+        ),
+        (None, None) => anyhow::bail!("identity missing ephemeral key"),
+    };
 
     let delegates: Vec<ChainLink> = identity
         .auth_chain
@@ -294,7 +323,7 @@ pub fn auth_identity_parts(
         anyhow::bail!("identity missing ephemeral delegate link");
     }
 
-    Ok((root_address, ephemeral_wallet, delegates))
+    Ok((root_address, ephemeral_key, delegates))
 }
 
 /// Decode the base64(JSON) form the web page forwards from localStorage.

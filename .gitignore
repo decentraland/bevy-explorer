@@ -8,6 +8,7 @@ config.json
 # react-web build outputs (vite build --outDir deploy/web) + its public/ copies
 /deploy/web/assets
 /deploy/web/index.html
+/deploy/web/app.html
 /deploy/web/category-icons
 /deploy/web/favicon
 /deploy/web/sidebar-icons

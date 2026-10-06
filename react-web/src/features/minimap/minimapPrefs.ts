@@ -1,4 +1,4 @@
-// Minimap preferences, persisted across sessions in localStorage (same approach as the
+// Minimap preferences, persisted across sessions (lib/prefs, same approach as the
 // chat's emoji recents — these are page-side UI choices, not engine settings, so they don't
 // belong in the `settings` bridge domain).
 //
@@ -6,13 +6,14 @@
 // leave the minimap in a state it can't render.
 
 import type { MinimapRotation, MinimapStyle } from '../../engine/protocol'
+import { getPref, PREF, setPref } from '../../lib/prefs'
 
-const STYLE_KEY = 'dcl-minimap-style'
-const ROTATION_KEY = 'dcl-minimap-rotation'
-const ZOOM_KEY = 'dcl-minimap-zoom'
-const MARKERS_KEY = 'dcl-minimap-markers'
-const OPEN_KEY = 'dcl-minimap-open'
-const WORLD_OPEN_KEY = 'dcl-minimap-open-world'
+const STYLE_KEY = PREF.minimapStyle
+const ROTATION_KEY = PREF.minimapRotation
+const ZOOM_KEY = PREF.minimapZoom
+const MARKERS_KEY = PREF.minimapMarkers
+const OPEN_KEY = PREF.minimapOpen
+const WORLD_OPEN_KEY = PREF.minimapWorldOpen
 
 const STYLES: MinimapStyle[] = ['parcel', 'satellite', 'imposters']
 const ROTATIONS: MinimapRotation[] = ['camera', 'north']
@@ -41,21 +42,8 @@ export const ALL_MARKER_CATEGORIES = [
   'parkour'
 ]
 
-function read(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function write(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    // ignore quota / privacy-mode failures
-  }
-}
+const read = getPref
+const write = setPref
 
 export function loadStyle(): MinimapStyle {
   const v = read(STYLE_KEY)

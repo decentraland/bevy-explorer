@@ -7,18 +7,22 @@
 // redirect the browser to `/auth/login?redirectTo=<here>`; the auth site signs in and
 // redirects back, by which point the identity is already in localStorage.
 
+import { inShell, postToShell, shellRequest } from '../../lib/shell'
+
 // The standard Decentraland AuthIdentity, as serialized by @dcl/crypto / @dcl/single-sign-on
 // -client. It is the SAME shape no matter how the user signed in (wallet/MetaMask, social,
 // OTP, magic) — we just read whatever is stored and forward it; nothing here is method-specific.
 // `expiration` is an ISO date string once round-tripped through JSON; authChain[0] is the
 // SIGNER (root address), authChain[1] the ECDSA_EPHEMERAL delegate the engine needs.
+// `privateKey` is absent from an identity handed out by the web shell, which keeps the key and
+// signs for the engine (src/shell/main.ts).
 export interface AuthChainLink {
   type: string
   payload: string
   signature: string
 }
 export interface AuthIdentity {
-  ephemeralIdentity: { address: string; publicKey: string; privateKey: string }
+  ephemeralIdentity: { address: string; publicKey: string; privateKey?: string }
   expiration: string
   authChain: AuthChainLink[]
 }
@@ -77,6 +81,28 @@ export function getStoredLogin(): StoredLogin | null {
   return best ? { address: best.address, identity: best.identity } : null
 }
 
+export function loginExpired(login: StoredLogin): boolean {
+  return expirationMs(login.identity) <= Date.now()
+}
+
+// A login without its ephemeral private key.
+export function publicLogin(login: StoredLogin | null): StoredLogin | null {
+  if (!login) return null
+  const { privateKey: _, ...ephemeralIdentity } = login.identity.ephemeralIdentity
+  return { address: login.address, identity: { ...login.identity, ephemeralIdentity } }
+}
+
+// The signed-in identity, from wherever this page can see it: inside the web shell the shell
+// reads it and hands back the public parts (the app never touches the origin's localStorage).
+export function getLogin(): Promise<StoredLogin | null> {
+  return inShell ? shellRequest<StoredLogin | null>('identity') : Promise.resolve(getStoredLogin())
+}
+
+export function clearLogins(): void {
+  if (inShell) void shellRequest('logout')
+  else clearStoredLogins()
+}
+
 // The user's root (wallet) address for a stored identity = the SIGNER link payload.
 export function rootAddress(identity: AuthIdentity): string {
   return identity.authChain?.[0]?.payload ?? ''
@@ -88,9 +114,11 @@ export function authLoginUrl(redirectTo: string = location.href): string {
   return `/auth/login?redirectTo=${encodeURIComponent(redirectTo)}`
 }
 
-// Send the browser to the auth site to sign in (fresh account or switch account).
+// Send the browser to the auth site to sign in (fresh account or switch account). Inside the shell
+// the shell navigates, so the auth site gets the top-level page and returns to the shell's URL.
 export function redirectToAuth(redirectTo: string = location.href): void {
-  location.replace(authLoginUrl(redirectTo))
+  if (inShell) postToShell({ type: 'bevy-shell:auth-login' })
+  else location.replace(authLoginUrl(redirectTo))
 }
 
 // Sign out: drop every SSO identity for this origin (matches sites' disconnect for the
