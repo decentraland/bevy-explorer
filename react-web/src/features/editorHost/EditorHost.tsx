@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { bridgeChannelName } from '../../engine/protocol'
-import { DEFAULT_REALM } from '../../lib/baseDomain'
+import { BASE_DOMAIN, DEFAULT_REALM } from '../../lib/baseDomain'
 import { PAGE_DIR } from '../../lib/publicUrl'
 import { getLogin, rootAddress } from '../auth/sso'
 import type { EngineSession } from '../session/useEngineSession'
@@ -29,7 +29,7 @@ export function useEditorHost(entrySearch: string, session: EngineSession): Edit
   const latest = useRef(session)
   latest.current = session
   const [{ source, entry }] = useState(() => ({
-    source: editorSource(entrySearch, location.hostname, PAGE_DIR),
+    source: editorSource(entrySearch, location.hostname, PAGE_DIR, BASE_DOMAIN),
     entry: editorEntry(entrySearch)
   }))
   const flag = entry.project ?? entry.open

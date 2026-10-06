@@ -50,11 +50,13 @@ function withSigned(services: Omit<EditorServices, 'signed'>): EditorServices {
   return signed == null ? services : { ...services, signed }
 }
 
-/** What the released package talks to: the project service (dcl-editor packages/service) and Worlds. */
-const PINNED_SERVICES: EditorServices = withSigned({
-  projects: 'https://web-editor-dev.dclregenesislabs.xyz',
-  worldsContent: 'https://worlds-content-server.decentraland.zone'
-})
+/** What the released package talks to: the project service (dcl-editor packages/service) and the
+ *  session's Worlds server. The base domain, not ?worldsServer=, so a link can't redirect deployments. */
+const pinnedServices = (baseDomain: string): EditorServices =>
+  withSigned({
+    projects: 'https://web-editor-dev.dclregenesislabs.xyz',
+    worldsContent: `https://worlds-content-server.${baseDomain}`
+  })
 
 const LOOPBACK_SERVICES: EditorServices = {
   projects: 'http://localhost:8787',
@@ -75,12 +77,12 @@ function serviceUrl(raw: string | null): string | null {
 
 /** The editor this page opens, or null when it has none. A dev server on loopback serves its
  *  own package (vite.config.ts `editorPackage`); a production build uses the pin wherever it runs. */
-export function editorSource(search: string, hostname: string, pageDir: string): EditorSource | null {
+export function editorSource(search: string, hostname: string, pageDir: string, baseDomain: string): EditorSource | null {
   const loopback = isLoopback(hostname)
   const dev: EditorPin = { base: `${pageDir}editor/`, editorJsIntegrity: null, editorSceneEntity: null }
   const pin = loopback && (import.meta.env.DEV || PINNED_EDITOR == null) ? dev : PINNED_EDITOR
   if (pin == null) return null
-  if (!loopback) return { ...pin, services: PINNED_SERVICES }
+  if (!loopback) return { ...pin, services: pinnedServices(baseDomain) }
   const q = new URLSearchParams(search)
   return {
     ...pin,
