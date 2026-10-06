@@ -71,14 +71,15 @@ async function previewWorker(context: BrowserContext): Promise<Worker> {
 // Every request the worker answers from the preview realm, logged inside the worker itself.
 async function recordPreviewRequests(worker: Worker): Promise<void> {
   await worker.evaluate(() => {
-    type Handle = (request: Request, root: string, store: unknown, client?: string) => Promise<Response>
+    type Handle = (request: Request, ...rest: unknown[]) => Promise<Response>
     const scope = globalThis as unknown as { dclPreviewRealm: { handle: Handle }; __gateLog?: PreviewRequest[] }
     if (scope.__gateLog) return
     const log: PreviewRequest[] = (scope.__gateLog = [])
     const handle = scope.dclPreviewRealm.handle
-    scope.dclPreviewRealm.handle = async (request, root, store, client) => {
+    // every argument: the worker passes the storage cache and the requesting client too
+    scope.dclPreviewRealm.handle = async (request, ...rest) => {
       const body = request.method === 'POST' ? await request.clone().text() : undefined
-      const response = await handle(request, root, store, client)
+      const response = await handle(request, ...rest)
       log.push({ t: Date.now(), method: request.method, url: request.url, status: response.status, body })
       return response
     }

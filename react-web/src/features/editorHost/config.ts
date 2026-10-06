@@ -7,8 +7,8 @@ import type { EditorPin } from './source'
 /** The released package (README "Releasing the editor") and the hosts besides loopback that offer
  *  it; null = none, so a production build carries no editor at all. */
 export const PINNED_EDITOR = {
-  base: 'https://cdn.jsdelivr.net/npm/@dcl-regenesislabs/web-editor@0.1.1-37488485379.commit-740cc2a/',
-  editorJsIntegrity: 'sha384-TFHWPQDoQRt7nflxRkyGhfwBOrOrdvGHFoDUUBBHlZpUykc8gemJJy3eeejbAgzM',
+  base: 'https://cdn.jsdelivr.net/npm/@dcl-regenesislabs/web-editor@0.1.1-37509646646.commit-126b34d/',
+  editorJsIntegrity: 'sha384-QB4EGCaQRfWEsbx/az85NPsqfxmkDBmgU9MnLYMTHaSfKLeYU+N54Eqisns4i0z1',
   editorSceneEntity: 'bafkreidzfny4im7pqpzuedreg2q5e6pd3vokz7h2py5b6zjxn3er6h4f5i',
   hosts: ['decentraland.zone']
 } as (EditorPin & { hosts: string[] }) | null

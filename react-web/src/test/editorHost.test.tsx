@@ -2,7 +2,7 @@
 // available, loads it only when the Create page opens, and what it hands the editor keeps the
 // engine on a short leash. What it signs for the editor is in editorHostSigning.test.tsx.
 import { describe, it, expect, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, renderHook, screen } from '@testing-library/react'
 import { ToastHost } from '../design'
 import userEvent from '@testing-library/user-event'
 import { editorOffered, EditorOffered } from '../features/editorHost/config'
@@ -22,6 +22,8 @@ type HostWindow = Window & {
   __dclEditor?: Partial<EditorPackage>
   set_url_params?: (json: string) => void
   engine_console_command?: (line: string) => Promise<string>
+  __bevyStartServer?: (options: unknown) => Promise<unknown>
+  __bevyBootConfig?: Record<string, unknown>
 }
 const w = window as HostWindow
 
@@ -88,6 +90,8 @@ describe('editor host', () => {
   it('loads nothing until the Create page opens; mounts the home in its body, and keeps the engine to preview realms', async () => {
     const synced = vi.fn()
     w.set_url_params = synced
+    // the preview realm: no scene server for this scene
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 404 }))
     const engineConsole = vi.fn(async (line: string) => (line === '/time' ? 'time 10:30 -> 10:30, speed 7 (elapsed: 37800)' : ''))
     w.engine_console_command = engineConsole
     history.replaceState(null, '', '/?realm=boedo.dcl.eth&position=3,4')
@@ -195,6 +199,63 @@ describe('editor host', () => {
     bridge.close()
     expect(session.create.show).toHaveBeenLastCalledWith(false)
     expect(scripts().filter((src) => src.includes('editor.js'))).toHaveLength(1)
+    vi.unstubAllGlobals()
+  })
+
+  it("runs an authoritative preview's scene server beside the client, one at a time, until the preview is left", async () => {
+    const { result } = renderHook(() => useEditorHost('', session))
+    await act(async () => void result.current!.load().catch(() => {}))
+    const bridge = new BroadcastChannel(bridgeChannelName())
+    bridge.onmessage = ({ data }: MessageEvent<Envelope>) => {
+      const msg = data.msg
+      if (data.to === 'scene' && (msg.kind === 'teleport' || msg.kind === 'changeRealm'))
+        bridge.postMessage({ to: 'page', msg: { kind: 'travelResult', travelId: msg.travelId!, realm: msg.realm!, ok: true } } satisfies Envelope)
+    }
+    // the preview realm's scene.json, as the service worker serves it
+    vi.stubGlobal('fetch', async (url: string) =>
+      url.endsWith('/scene.json') ? Response.json({ main: 'bin/index.js', authoritativeMultiplayer: url.includes('/preview/game/') }) : new Response(null, { status: 404 })
+    )
+    // engine.js: each server is a hidden frame of the page
+    // each server logs the same three lines, numbered from 1 in its own frame (headless.js)
+    const lines = [1, 2, 3].map((seq) => ({ seq, level: 'log' as const, msg: `line ${seq}` }))
+    const startServer = vi.fn(async (_options: unknown) => {
+      const frame = document.createElement('iframe')
+      frame.src = `${PAGE_DIR}engine/headless.html`
+      document.body.appendChild(frame)
+      Object.assign(frame.contentWindow!, { sceneLogsAfter: (after: number) => lines.filter((line) => line.seq > after) })
+      return {}
+    })
+    w.__bevyStartServer = startServer
+    // the client's backends, which the server must share to meet it
+    w.__bevyBootConfig = { baseDomain: 'decentraland.zone', realm: 'https://other', position: '9,9' }
+    const servers = (): number => document.querySelectorAll('iframe[src$="/headless.html"]').length
+    const realm = `${PAGE_DIR}preview/game`
+    const started = (position: string): unknown[] => [{ baseDomain: 'decentraland.zone', realm, position, preview: true }]
+
+    await host().openPreview('game', '4,-2')
+    expect(startServer.mock.calls).toEqual([started('4,-2')])
+    expect(servers()).toBe(1)
+    const first = host().previewServerLogs(0)
+    expect(first.map((line) => line.msg)).toEqual(['line 1', 'line 2', 'line 3'])
+    // opened again: the old server goes, a new one serves it
+    await host().openPreview('game', '5,-2')
+    expect(startServer.mock.calls).toEqual([started('4,-2'), started('5,-2')])
+    expect(servers()).toBe(1)
+    expect(host().previewServerLogs(first[first.length - 1].seq).map((line) => line.msg), 'the new server counts from 0 again').toEqual(['line 1', 'line 2', 'line 3'])
+    // a scene with no server of its own
+    await host().openPreview('plain', '0,0')
+    expect(startServer).toHaveBeenCalledTimes(2)
+    expect(servers()).toBe(0)
+
+    await host().openPreview('game', '4,-2')
+    expect(servers()).toBe(1)
+    host().exit()
+    await vi.waitFor(() => expect(servers()).toBe(0))
+    expect(startServer).toHaveBeenCalledTimes(3)
+    bridge.close()
+    delete w.__bevyStartServer
+    delete w.__bevyBootConfig
+    vi.unstubAllGlobals()
   })
 
   it('keeps the Create page over the travel back to scenes', () => {

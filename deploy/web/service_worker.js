@@ -17,6 +17,8 @@ const PREVIEW_ROOT = new URL('preview/', self.registration.scope).href;
 // The editor package's scene, staged by the page from checked bytes (preview_realm.js).
 const EDITOR_SCENE_CACHE_NAME = 'dcl-editor-scene-v1';
 const EDITOR_SCENE_ROOT = new URL('editor-scene/', self.registration.scope).href;
+// A preview realm's storage, for its scene server and the page (preview_realm.js). Never synced anywhere.
+const PREVIEW_STORAGE_CACHE_NAME = 'dcl-editor-storage-v1';
 let previewRealm = null;
 try {
     importScripts('preview_realm.js');
@@ -35,7 +37,7 @@ self.addEventListener('activate', (event) => {
     console.log('[IPFS Cache Service Worker]: Active');
     
     // An array of cache names that are "allowed" to exist.
-    const cacheWhitelist = [CACHE_NAME, PREVIEW_CACHE_NAME, EDITOR_SCENE_CACHE_NAME];
+    const cacheWhitelist = [CACHE_NAME, PREVIEW_CACHE_NAME, EDITOR_SCENE_CACHE_NAME, PREVIEW_STORAGE_CACHE_NAME];
 
     event.waitUntil(
         // Get all the cache keys (names) that exist.
@@ -82,15 +84,15 @@ self.addEventListener('fetch', (event) => {
     }
 });
 
-// The url of the document or worker that sent a request (preview_realm.js refuses scenes' sandboxes).
-async function clientUrl(clientId) {
+// The document or worker that sent a request, as preview_realm.js tells scenes' sandboxes apart.
+async function requestClient(clientId) {
     const client = clientId ? await self.clients.get(clientId) : undefined;
-    return client ? client.url : undefined;
+    return client ? { url: client.url, type: client.type } : undefined;
 }
 
 async function serveEditorScene(request, clientId) {
     if (!previewRealm) return unavailable();
-    const [cache, client] = await Promise.all([caches.open(EDITOR_SCENE_CACHE_NAME), clientUrl(clientId)]);
+    const [cache, client] = await Promise.all([caches.open(EDITOR_SCENE_CACHE_NAME), requestClient(clientId)]);
     return previewRealm.handleEditorScene(request, EDITOR_SCENE_ROOT, cache, client);
 }
 
@@ -109,8 +111,12 @@ function unavailable() {
 
 async function servePreviewRealm(request, clientId) {
     if (!previewRealm) return unavailable();
-    const [cache, client] = await Promise.all([caches.open(PREVIEW_CACHE_NAME), clientUrl(clientId)]);
-    return previewRealm.handle(request, PREVIEW_ROOT, cache, client);
+    const [cache, storage, client] = await Promise.all([
+        caches.open(PREVIEW_CACHE_NAME),
+        caches.open(PREVIEW_STORAGE_CACHE_NAME),
+        requestClient(clientId),
+    ]);
+    return previewRealm.handle(request, PREVIEW_ROOT, cache, storage, client);
 }
 
 /**

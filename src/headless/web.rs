@@ -15,7 +15,7 @@ use common::structs::IVec2Arg;
 use dcl_wasm::init_runtime;
 use system_api_types::launch_options::LaunchOptions;
 use wallet::Wallet;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::js_sys;
 use web_time::Instant;
 
@@ -125,7 +125,7 @@ pub fn headless_run(options: JsValue) -> Result<(), JsValue> {
     wallet.finalize_as_guest();
 
     super::assemble(&mut app, config, &launch, &realm, true, wallet);
-    app.add_systems(PreUpdate, report);
+    app.add_systems(PreUpdate, (report, forward_scene_logs));
 
     app.run();
     Ok(())
@@ -166,6 +166,32 @@ fn run_on_worker_timer(mut app: App) -> AppExit {
     }));
     schedule(tick.borrow().as_ref().unwrap(), Duration::ZERO);
     AppExit::Success
+}
+
+/// Each scene's console output, posted to the page (headless.js) for the editor to show, as the
+/// native server's `@scene-log` lines are.
+fn forward_scene_logs(
+    scenes: Query<(
+        Entity,
+        &scene_runner::renderer_context::RendererSceneContext,
+    )>,
+    mut receivers: Local<super::SceneLogReceivers>,
+) {
+    let Ok(scope) = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>() else {
+        return;
+    };
+    super::drain_scene_logs(&scenes, &mut receivers, |_, log| {
+        let line = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(
+            &line,
+            &"level".into(),
+            &super::scene_log_level(&log.level).into(),
+        );
+        let _ = js_sys::Reflect::set(&line, &"msg".into(), &log.message.as_str().into());
+        let message = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&message, &"sceneLog".into(), &line);
+        let _ = scope.post_message(&message);
+    });
 }
 
 /// Liveness lines, as the native binary's supervisor prints.

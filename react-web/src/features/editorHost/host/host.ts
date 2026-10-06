@@ -60,6 +60,14 @@ export interface DclEditorHostV1 {
    *  'not-allowed' for any other url, method or editor metadata, 'cancelled' when the player declines
    *  an undeploy, and 'not-signed-in' for a guest. */
   signedFetch: (url: string, init?: SignedFetchInit) => Promise<Response>
+  /** fetch `path` (`/values…`, `/players/<address>/values…` or `/env/<key>`) from the previewed
+   *  project's storage. Rejects 'not-allowed' for any other path or with no preview open. */
+  previewStorageFetch: (path: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<Response>
+  /** the open preview's scene server console, the lines after `after` (a `seq` it
+   *  returned, 0 for all it keeps); empty with no server running. */
+  previewServerLogs: (after: number) => ServerLogLine[]
+  /** the open preview has new content (a build landed); its scene server restarts on it. */
+  previewChanged: () => void
   /** Ask the player to confirm a Worlds deployment, then sign its entity id. Rejects 'cancelled'
    *  when declined and 'not-signed-in' for a guest. */
   signDeployment: (request: DeploymentRequest) => Promise<AuthChainLink[]>
@@ -67,6 +75,12 @@ export interface DclEditorHostV1 {
   openCreatePage: () => void
   /** Unmount the editor, kill its scene, restore the HUD and the clock, and travel back. */
   exit: () => void
+}
+
+export interface ServerLogLine {
+  seq: number
+  level: 'log' | 'error' | 'system'
+  msg: string
 }
 
 /** What editor.js leaves at window.__dclEditor. */
@@ -100,6 +114,8 @@ type HostWindow = Window & {
   __dclEditor?: Partial<EditorPackage>
   set_url_params?: (optionsJson: string) => void
   __dclEditorSigner?: (signer: Signer) => void
+  __bevyStartServer?: (options: Record<string, unknown> & { realm: string; position: string; preview: true }) => Promise<unknown>
+  __bevyBootConfig?: Record<string, unknown>
 }
 
 interface Home {
@@ -108,6 +124,8 @@ interface Home {
 }
 
 const PARCEL = /^(-?\d+),(-?\d+)$/
+// engine.js runs each scene server in a hidden frame and has no stop: removing the frame ends it
+const SERVER_FRAME = 'iframe[src$="/headless.html"]'
 // What the editor drives through the console: the scene it edits. Never spawn, kill, login or a
 // realm change, which would go around spawnEditorScene and openPreview.
 const EDITOR_COMMANDS = new Set([
@@ -129,6 +147,8 @@ const SIGNED_METHODS: Record<keyof SignedServices, ReadonlySet<string>> = {
 // the server's router ignores case and a trailing slash
 const UNDEPLOY = /^\/world\/([^/]+)\/scenes\/([^/]+)\/?$/i
 const UNDEPLOY_WORLD = /^\/entities\/([^/]+)\/?$/i
+// a preview realm's storage routes (deploy/web/PREVIEW_REALM.md "Storage")
+const PREVIEW_STORAGE_PATH = /^(?:values|players\/[^/]+\/values)(?:\/[^/]+)?$|^env\/[^/]+$/
 
 // Where the player was before the first preview.
 let home: Home | null = null
@@ -197,6 +217,14 @@ export function guardUrlSync(pageDir: string, flag: string | boolean): void {
   w.set_url_params = (optionsJson) => sync(hostUrlOptions(optionsJson, `${pageDir}preview/`, home ?? returning, flag))
 }
 
+/** Whether the preview realm's scene runs its own server (scene.json `authoritativeMultiplayer`). */
+async function authoritative(realm: string): Promise<boolean> {
+  const res = await fetch(`${realm}/scene.json`)
+  if (!res.ok) return false
+  const scene: unknown = await res.json()
+  return typeof scene === 'object' && scene != null && 'authoritativeMultiplayer' in scene && scene.authoritativeMultiplayer === true
+}
+
 /** `url` normalised, when it is under `base`; null otherwise. */
 function under(base: string | null, url: string): string | null {
   if (base == null || !URL.canParse(url)) return null
@@ -260,7 +288,34 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     clock ??= deps.engineConsole('/time').then(clockRestore, () => null)
   }
 
+  // one switch at a time, so a stop never lands between another preview's start and its frame
+  let serverSwitch: Promise<void> = Promise.resolve()
+  let served: { realm: string; position: string } | null = null
+  let restartQueued = false
+  // the host's count of server log lines (previewServerLogs): where the running frame's start, and the last given out
+  let logBase = 0
+  let logLatest = 0
+  const serveScene = (realm: string | null, position = ''): Promise<void> => {
+    served = realm == null ? null : { realm, position }
+    serverSwitch = serverSwitch.then(async () => {
+      for (const frame of document.querySelectorAll(SERVER_FRAME)) frame.remove()
+      logBase = logLatest
+      if (realm == null) return
+      try {
+        if (!(await authoritative(realm))) return
+        if (w.__bevyStartServer == null) throw new Error('this engine cannot run a scene server')
+        // the client's backends (base domain, service overrides) too, or the two never meet; the
+        // server reads only the shared launch options
+        await w.__bevyStartServer({ ...w.__bevyBootConfig, realm, position, preview: true })
+      } catch (e) {
+        console.error('[editor host] starting the scene server failed', e)
+      }
+    })
+    return serverSwitch
+  }
+
   const leave = (): void => {
+    void serveScene(null)
     try {
       w.__dclEditor?.unmount?.()
     } catch (e) {
@@ -323,7 +378,10 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       home ??= returning ?? { realm: q.get('realm'), position: q.get('position') }
       previewing = projectId
       // no trailing slash: the engine appends /about
-      await deps.travel(`${pageDir}preview/${projectId}`, { x: Number(parcel[1]), y: Number(parcel[2]) })
+      const realm = `${pageDir}preview/${projectId}`
+      // before the trip, so the client finds its server there
+      await serveScene(realm, position)
+      await deps.travel(realm, { x: Number(parcel[1]), y: Number(parcel[2]) })
     },
     spawnEditorScene() {
       scene ??= (async () => {
@@ -370,6 +428,33 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       const loaded = await loadSigner()
       const signed = await loaded.signFetch(identity, method, target, signerFor(loaded, identity), metadata)
       return fetch(target, { method, body: init?.body, signal, headers: { ...Object.fromEntries(own), ...signed } })
+    },
+    previewStorageFetch(path, init) {
+      if (previewing == null) return Promise.reject(new Error('not-allowed'))
+      const base = new URL(`${pageDir}preview/${previewing}/`)
+      const target = new URL(path.replace(/^\/+/, ''), base)
+      const route = target.href.startsWith(base.href) ? target.pathname.slice(base.pathname.length) : ''
+      if (!PREVIEW_STORAGE_PATH.test(route)) return Promise.reject(new Error('not-allowed'))
+      return fetch(target.href, { method: init?.method ?? 'GET', headers: init?.headers, body: init?.body })
+    },
+    previewChanged() {
+      // builds land in bursts: one restart waits behind the switch in progress, with the latest content
+      if (served == null || restartQueued) return
+      restartQueued = true
+      void serverSwitch.then(() => {
+        restartQueued = false
+        if (served != null) void serveScene(served.realm, served.position)
+      })
+    },
+    previewServerLogs(after) {
+      const frame = document.querySelector<HTMLIFrameElement>(SERVER_FRAME)
+      const read = (frame?.contentWindow as (Window & { sceneLogsAfter?: (after: number) => ServerLogLine[] }) | null | undefined)?.sceneLogsAfter
+      if (read == null || !Number.isFinite(after)) return []
+      // each server frame counts from 0; on the host's count a restarted server's lines come after
+      // the last one's, so a cursor never skips them
+      const lines = read(Math.max(0, after - logBase)).map((line) => ({ ...line, seq: logBase + line.seq }))
+      if (lines.length > 0) logLatest = Math.max(logLatest, lines[lines.length - 1].seq)
+      return lines.filter((line) => line.seq > after)
     },
     async signDeployment(request) {
       const identity = await deps.login()

@@ -6,11 +6,19 @@ import '../../../deploy/web/preview_realm.js'
 interface PreviewStore {
   match: (key: string) => Promise<Response | undefined>
 }
+interface StorageStore extends PreviewStore {
+  put: (key: string, value: Response) => Promise<void>
+}
+// the service worker client behind a request, as service_worker.js resolves it
+interface Client {
+  url: string
+  type: 'window' | 'worker' | 'sharedworker'
+}
 
 declare global {
   var dclPreviewRealm: {
-    handle: (request: Request, previewRoot: string, store: PreviewStore, client?: string) => Promise<Response>
-    handleEditorScene: (request: Request, root: string, store: PreviewStore, client?: string) => Promise<Response>
+    handle: (request: Request, previewRoot: string, store: PreviewStore, storage?: StorageStore, client?: Client) => Promise<Response>
+    handleEditorScene: (request: Request, root: string, store: PreviewStore, client?: Client) => Promise<Response>
   }
 }
 
@@ -45,15 +53,20 @@ const store = storeOf({
 })
 
 // the service worker's client for the request: the page (and the engine on it), or a scene's sandbox
-const PAGE = 'https://play.example/bevy-web/'
-const SANDBOX = 'https://play.example/bevy-web/engine/pkg/sandbox_worker.bundle.js'
+const PAGE_DIR = 'https://play.example/bevy-web/'
+const PAGE: Client = { url: PAGE_DIR, type: 'window' }
+const SANDBOX: Client = { url: `${PAGE_DIR}engine/pkg/sandbox_worker.bundle.js`, type: 'worker' }
+// a scene server's sandbox (engine/sandbox_host.js, role 'server')
+const SERVER_SANDBOX: Client = { url: `${SANDBOX.url}?server`, type: 'worker' }
 
-const get = (url: string, client: string | null = PAGE): Promise<Response> => dclPreviewRealm.handle(new Request(url), ROOT, store, client ?? undefined)
+const get = (url: string, client: Client | null = PAGE): Promise<Response> =>
+  dclPreviewRealm.handle(new Request(url), ROOT, store, undefined, client ?? undefined)
 const active = (pointers: string[]): Promise<Response> =>
   dclPreviewRealm.handle(
     new Request(`${REALM}content/entities/active`, { method: 'POST', body: JSON.stringify({ pointers }) }),
     ROOT,
     store,
+    undefined,
     PAGE
   )
 
@@ -118,11 +131,43 @@ describe('preview realm', () => {
         expect([path, client, res.status]).toEqual([path, client, 403])
       }
     }
-    const editorRoot = `${PAGE}editor-scene/`
+    // the server loads its scene through its engine: its sandboxes get no files either
+    expect((await get(`${REALM}content/contents/${GAME_HASH}`, SERVER_SANDBOX)).status).toBe(403)
+    const editorRoot = `${PAGE_DIR}editor-scene/`
     const editorStore = storeOf({ [`${editorRoot}bafkreiabc/about`]: '{}' })
-    const editorAbout = (client: string): Promise<Response> =>
+    const editorAbout = (client: Client): Promise<Response> =>
       dclPreviewRealm.handleEditorScene(new Request(`${editorRoot}bafkreiabc/about`), editorRoot, editorStore, client)
     expect([(await editorAbout(PAGE)).status, (await editorAbout(SANDBOX)).status]).toEqual([200, 403])
+  })
+
+  it('opens a realm’s storage to the page and its scene server, to no scene', async () => {
+    const entries = new Map<string, string>()
+    const storage: StorageStore = {
+      match: async (key) => (entries.has(key) ? new Response(entries.get(key)) : undefined),
+      put: async (key, value) => void entries.set(key, await value.text())
+    }
+    const call = (path: string, client: Client | undefined, init?: RequestInit): Promise<Response> =>
+      dclPreviewRealm.handle(new Request(`${REALM}${path}`, init), ROOT, store, storage, client)
+
+    const set = await call('values/score', SERVER_SANDBOX, { method: 'PUT', body: JSON.stringify({ value: 3 }) })
+    expect(await set.json()).toEqual({ value: 3 })
+    expect(await (await call('values/score', PAGE)).json()).toEqual({ value: 3 })
+    expect(await (await call('players/0xab/values', SERVER_SANDBOX)).json()).toEqual({ data: [], pagination: { offset: 0, total: 0 } })
+
+    // the scene's client copy, a portable or a smart wearable, and a client the worker cannot name
+    for (const client of [SANDBOX, undefined]) {
+      for (const path of ['values/score', 'values', 'players/0xab/values', 'env/API_KEY']) {
+        const res = await call(path, client)
+        expect([path, client, res.status, await res.text()]).toEqual([path, client, 403, ''])
+      }
+      expect((await call('values/score', client, { method: 'DELETE' })).status).toBe(403)
+    }
+    expect(await (await call('values/score', PAGE)).json()).toEqual({ value: 3 })
+
+    // the editor clears a preview's test data the way the storage service does
+    expect((await call('values', PAGE, { method: 'DELETE' })).status).toBe(404)
+    expect((await call('values', PAGE, { method: 'DELETE', headers: { 'X-Confirm-Delete-All': 'true' } })).status).toBe(204)
+    expect((await call('values/score', PAGE)).status).toBe(404)
   })
 
   it('answers 404, never the network, for everything it does not hold', async () => {

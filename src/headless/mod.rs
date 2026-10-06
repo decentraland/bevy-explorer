@@ -6,7 +6,9 @@
 //! - [`web`]: the web entry, a second instance of the engine module in the page
 
 mod app;
+mod logs;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
 pub use app::{assemble, config};
+pub use logs::{drain_scene_logs, scene_log_level, SceneLogReceivers};

@@ -15,10 +15,11 @@ const compileSceneRuntime = () =>
 
 /**
  * @param {{ compiledModule: WebAssembly.Module, sharedMemory: WebAssembly.Memory,
- *           bridgeSession?: string, onWorkerCrash: (e: ErrorEvent) => void }} engine
+ *           bridgeSession?: string, onWorkerCrash: (e: ErrorEvent) => void,
+ *           role?: "server" }} engine
  * @returns {{ spawn: () => Promise<void>, terminate: (sceneId: bigint) => void }}
  */
-export function createSandboxHost({ compiledModule, sharedMemory, bridgeSession, onWorkerCrash }) {
+export function createSandboxHost({ compiledModule, sharedMemory, bridgeSession, onWorkerCrash, role }) {
   // Live sandbox workers by scene id (BigInt), for kill escalation — see terminate_sandbox.
   // Entries are added on SCENE_READY (a worker reports which scene it popped from the shared
   // queue) and removed on SHUTDOWN_COMPLETE (the worker's dying ack, posted on every exit
@@ -124,7 +125,8 @@ export function createSandboxHost({ compiledModule, sharedMemory, bridgeSession,
       // can still import the bundle's URL, but a namespace object exposes only that module's
       // *exports*, and this entry has none — so it gets an empty object. Keep sandbox_worker.js
       // export-free or that stops being true. Built alongside the wasm (see react-web/README.md).
-      const sandboxWorkerPath = new URL("./pkg/sandbox_worker.bundle.js", import.meta.url);
+      // A server's sandboxes are told apart by url: the service worker opens preview storage to them.
+      const sandboxWorkerPath = new URL(`./pkg/sandbox_worker.bundle.js${role === "server" ? "?server" : ""}`, import.meta.url);
 
       var timeoutCount = 0;
       let logTimeout = () => {
