@@ -163,7 +163,8 @@ function createPreview(): void {
   const c = engine.addEntity()
 
   const lobby = stage === 'lobby'
-  AvatarShape.create(a, { ...avatarShape(), name: undefined, talking: false })
+  // the shape is added by syncShape once the player's look is known: an empty one would render
+  // the default body, which the engine keeps on show until the real look has loaded
   CameraLayers.create(a, { layers: [LAYER] })
   Transform.create(a, {
     position: Vector3.create(8, 0, 8),
@@ -255,11 +256,13 @@ function disposePreview(): void {
 function syncShape(): void {
   if (avatarEntity == null) return
   const shape = avatarShape()
+  if (!shape.bodyShape) return
   const key = JSON.stringify(shape)
   if (key === lastShapeKey) return
   lastShapeKey = key
   const mut = AvatarShape.getMutableOrNull(avatarEntity)
   if (mut != null) Object.assign(mut, shape)
+  else AvatarShape.create(avatarEntity, { ...shape, name: undefined, talking: false })
 }
 
 export function registerAvatarPreview(ctx: Ctx): void {
@@ -332,14 +335,14 @@ export function registerAvatarPreview(ctx: Ctx): void {
     syncShape()
   })
 
-  // Keep the preview in sync with the player. Poll fast until the avatar actually has a
-  // body shape (the player may not be ready the instant the Backpack opens — that left the
-  // column empty), then throttle to ~2/s to pick up equips.
+  // Keep the preview in sync with the player. Poll fast until the avatar has a shape (the
+  // player's look may not be known the instant the stage opens), then throttle to ~2/s to
+  // pick up equips.
   let acc = 0
   ctx.push((dt) => {
     if (rect == null || avatarEntity == null) return
     acc += dt
-    const ready = lastShapeKey.length > 1
+    const ready = lastShapeKey !== ''
     if (acc < (ready ? 0.5 : 0.1)) return
     acc = 0
     syncShape()
